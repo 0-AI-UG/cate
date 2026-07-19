@@ -18,14 +18,21 @@
 // braille animating in the OSC title (noteAgentTitle) or terminal body
 // (noteAgentSpinnerByte) means running (see agentSpinner), and a settle timer
 // (WAITING_SETTLE_MS) bridges spinner-frame gaps before flipping to
-// waitingForInput and notifying. Hook-covered agents ignore spinner inputs
-// entirely — a stray braille glyph in `cat`ed output must not flip state.
+// waitingForInput and notifying.
+//
+// A hook-covered agent flips onto the hook-driven path only once its FIRST
+// hook event arrives — never on presence alone. Injection is best-effort (the
+// PATH shim loses to rc-file PATH prepends, aliases, and absolute-path
+// launches), so an agent that never speaks hooks must degrade to the spinner
+// fallback instead of sitting on waitingForInput through every turn. Once an
+// event has arrived the events are authoritative for that process: spinner
+// inputs are ignored from then on (a stray braille glyph in `cat`ed output
+// cannot flip state), until the process exits and the latch resets.
 //
 // Presence (noteAgentPresence, fed 1 Hz from main's process-tree scan) stays
 // authoritative for EXISTENCE on both paths: hooks can't report a crash or
 // exit (codex never fires SessionEnd), so notRunning/finished always come
-// from the scan. An agent that is present but has never fired a hook event
-// shows waitingForInput (fresh launch) without notifying.
+// from the scan.
 // =============================================================================
 
 import { useStatusStore, workspaceIdForTerminal } from '../../stores/statusStore'
@@ -35,8 +42,9 @@ import { AGENTS, type AgentId } from '../../../shared/agents'
 import type { AgentHookEvent } from '../../../shared/agentHooks'
 import type { AgentState } from '../../../shared/types'
 
-/** Agents whose running/idle state comes from hook events. cursor/agy are
- *  deliberately absent — they stay on the spinner fallback (see header). */
+/** Agents whose running/idle state comes from hook events once any arrive.
+ *  cursor/agy are deliberately absent — they stay on the spinner fallback
+ *  permanently (see header). */
 const HOOK_STATUS_AGENTS: ReadonlySet<AgentId> = new Set<AgentId>([
   'claude-code',
   'codex',
@@ -60,10 +68,13 @@ const AGENT_ID_BY_DISPLAY_NAME: ReadonlyMap<string, AgentId> = new Map(
 interface Tracker {
   present: boolean
   wasPresent: boolean
-  /** True when this terminal's agent is hook-covered: spinner inputs are
-   *  ignored and hookTurnActive drives running/idle. Set by the first hook
-   *  event or by presence (whichever learns the agent id first); reset when
-   *  the scan finds a fallback agent in the terminal. */
+  /** True once this terminal's agent has actually spoken hooks: spinner
+   *  inputs are ignored and hookTurnActive drives running/idle. Latched by
+   *  the FIRST hook event only — never by presence, because injection is
+   *  best-effort (PATH shims lose to rc-file prepends/aliases) and a
+   *  hook-covered agent whose injection was bypassed must keep the spinner
+   *  fallback. Reset when the process exits (the next launch re-proves
+   *  itself) or when the scan finds a fallback agent in the terminal. */
   hookDriven: boolean
   /** turn-start seen more recently than turn-end/session-end. */
   hookTurnActive: boolean
@@ -321,16 +332,16 @@ export function noteAgentSpinnerByte(terminalId: string): void {
 
 /** Main's process scan reported whether the agent CLI is present. The agent
  *  name is written to statusStore by the caller (useProcessMonitor) BEFORE
- *  this runs, so the hook/fallback routing derived from it here is current. */
+ *  this runs, so the hook/fallback routing derived from it here is current.
+ *  Presence never latches hookDriven — only a real hook event proves the
+ *  injection worked (see the Tracker.hookDriven doc). */
 export function noteAgentPresence(terminalId: string, present: boolean): void {
   const t = trackerFor(terminalId)
   t.wasPresent = t.present
   t.present = present
   if (present) {
     const agentId = agentIdForTerminal(terminalId)
-    if (agentId && HOOK_STATUS_AGENTS.has(agentId)) {
-      markHookDriven(t)
-    } else if (agentId && t.hookDriven) {
+    if (agentId && t.hookDriven && !HOOK_STATUS_AGENTS.has(agentId)) {
       // A fallback agent (cursor/agy) took over a terminal that previously ran
       // a hook-covered one — hand state back to the spinner path.
       t.hookDriven = false
@@ -338,8 +349,11 @@ export function noteAgentPresence(terminalId: string, present: boolean): void {
       t.hookPermissionWait = false
     }
   } else {
-    // The process is gone; any in-flight turn died with it. Clearing here also
-    // prevents a stale running state if the same agent relaunches later.
+    // The process is gone; any in-flight turn died with it. Clearing also
+    // drops the hookDriven latch: the NEXT launch may be injection-bypassed
+    // (alias/absolute path), so it must re-prove hooks before spinners are
+    // ignored again.
+    t.hookDriven = false
     t.hookTurnActive = false
     t.hookPermissionWait = false
   }

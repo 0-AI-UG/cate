@@ -152,8 +152,9 @@ describe('hook-driven agents (claude/codex/pi/opencode)', () => {
     expect(sendOsNotification).not.toHaveBeenCalled()
   })
 
-  it('spinner inputs are ignored — a stray braille glyph cannot flip state', () => {
+  it('after the first hook event, spinner inputs are ignored — a stray braille glyph cannot flip state', () => {
     noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('session-start')) // injection proven
     // `cat`ed output containing braille / a title spinner frame:
     noteAgentSpinnerByte(PTY)
     noteAgentTitle(PTY, true)
@@ -166,6 +167,53 @@ describe('hook-driven agents (claude/codex/pi/opencode)', () => {
     vi.advanceTimersByTime(WAITING_SETTLE_MS * 2)
     expect(state()).toBe('running')
     expect(sendOsNotification).not.toHaveBeenCalled()
+  })
+
+  it('bypassed injection (no hook events ever) keeps the spinner fallback working', () => {
+    // Regression: claude launched via an alias/absolute path — or with the
+    // PATH shim shadowed by an rc-file prepend — never fires hook events. The
+    // agent must NOT sit on waitingForInput through every turn; the spinner
+    // fallback owns state until hooks actually speak.
+    noteAgentPresence(PTY, true)
+    expect(state()).toBe('waitingForInput')
+
+    noteAgentTitle(PTY, true) // turn running, spinner in the OSC title
+    expect(state()).toBe('running')
+
+    noteAgentTitle(PTY, false) // turn ended → settle → notify
+    vi.advanceTimersByTime(WAITING_SETTLE_MS)
+    expect(state()).toBe('waitingForInput')
+    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('the first hook event takes over from the spinner path mid-flight', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentTitle(PTY, true) // spinner-driven running (injection unproven)
+    expect(state()).toBe('running')
+
+    noteAgentHookEvent(hookEvent('turn-start')) // hooks speak → they own state
+    expect(state()).toBe('running')
+    noteAgentTitle(PTY, false) // spinner input now ignored
+    vi.advanceTimersByTime(WAITING_SETTLE_MS * 2)
+    expect(state()).toBe('running')
+
+    noteAgentHookEvent(hookEvent('turn-end'))
+    expect(state()).toBe('waitingForInput')
+  })
+
+  it('the hookDriven latch resets on exit — a bypassed relaunch falls back to spinners', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start'))
+    noteAgentHookEvent(hookEvent('turn-end'))
+    expect(state()).toBe('waitingForInput')
+
+    noteAgentPresence(PTY, false) // agent exits
+    expect(state()).toBe('finished')
+
+    // Relaunched WITHOUT working injection: spinners must drive again.
+    noteAgentPresence(PTY, true)
+    noteAgentTitle(PTY, true)
+    expect(state()).toBe('running')
   })
 
   it('session-end acts like turn-end for state but stays silent', () => {

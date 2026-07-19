@@ -40,16 +40,57 @@ describe('claude spec', () => {
     cwd: '/home/u/proj',
   }
 
-  test('shim args inject --settings with the bridge on all six hook events', () => {
-    const args = spec.shim!.args(ctx)
-    expect(args[0]).toBe('--settings')
-    const settings = JSON.parse(args[1]) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> }
-    expect(Object.keys(settings.hooks).sort()).toEqual(
+  const file = spec.projectFiles![0]
+
+  test('shim injects NO argv (hooks ride the project file; PATH shims are bypassable)', () => {
+    // Regression: --settings hook injection via the PATH shim silently died
+    // for every user whose shell rc prepends the CLI's install dir (uv/bun
+    // boilerplate prepends ~/.local/bin — where claude lives). Hooks must not
+    // depend on the shim; it survives only for session pre-assignment.
+    expect(spec.shim!.args(ctx)).toEqual([])
+  })
+
+  test('creates .claude/settings.local.json with the bridge on all six hook events', () => {
+    expect(file.relPath).toBe('.claude/settings.local.json')
+    const out = file.build(null, ctx)!
+    const parsed = JSON.parse(out) as { hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string }> }>> }
+    expect(Object.keys(parsed.hooks).sort()).toEqual(
       ['Notification', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'].sort(),
     )
-    for (const entries of Object.values(settings.hooks)) {
-      expect(entries[0].hooks[0].command).toBe(ctx.bridgeCommand)
+    for (const groups of Object.values(parsed.hooks)) {
+      expect(groups).toHaveLength(1)
+      expect(groups[0].hooks[0]).toEqual({ type: 'command', command: ctx.bridgeCommand })
     }
+  })
+
+  test('merges into an existing settings.local.json: user fields/hooks kept, stale Cate groups refreshed', () => {
+    const existing = JSON.stringify({
+      permissions: { allow: ['Bash(npm test)'] }, // claude's own "always allow" grants
+      hooks: {
+        Stop: [
+          { matcher: '*', hooks: [{ type: 'command', command: '/home/u/my-stop-hook.sh' }] },
+          { hooks: [{ type: 'command', command: `/old-boot-dir/${CATE_HOOK_MARKER}-bridge-claude-code` }] },
+        ],
+      },
+    })
+    const out = file.build(existing, ctx)!
+    const parsed = JSON.parse(out) as {
+      permissions: unknown
+      hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>
+    }
+    expect(parsed.permissions).toEqual({ allow: ['Bash(npm test)'] })
+    const stopCommands = parsed.hooks.Stop.flatMap((g) => g.hooks.map((h) => h.command))
+    expect(stopCommands).toContain('/home/u/my-stop-hook.sh')
+    expect(stopCommands).toContain(ctx.bridgeCommand)
+    expect(stopCommands).not.toContain(`/old-boot-dir/${CATE_HOOK_MARKER}-bridge-claude-code`)
+    // Every tracked event gained our group.
+    expect(parsed.hooks.UserPromptSubmit.flatMap((g) => g.hooks.map((h) => h.command))).toContain(ctx.bridgeCommand)
+  })
+
+  test('leaves an unparseable settings file alone; identical rewrite is a no-op', () => {
+    expect(file.build('{not json', ctx)).toBeNull()
+    const fresh = file.build(null, ctx)!
+    expect(file.build(fresh, ctx)).toBeNull()
   })
 
   test('preassign declares --session-id gated on session-affecting argv', () => {
@@ -99,7 +140,7 @@ describe('claude spec', () => {
     })
     expect(resume?.kind).toBe('turn-resume')
     expect(resume?.sessionId).toBe(base.session_id)
-    expect(spec.shim!.args(ctx).join(' ')).toContain('PostToolUse')
+    expect(file.build(null, ctx)).toContain('PostToolUse')
   })
 })
 

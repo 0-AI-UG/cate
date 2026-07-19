@@ -185,26 +185,23 @@ describe.skipIf(!posix)('agentHooks capability', () => {
         )
       })
 
-    // Plain launch: --settings JSON prepended, user args preserved after it.
+    // Plain launch: NO injected argv (claude's hooks ride the project file —
+    // the shim is bypassable, so nothing load-bearing may depend on it).
     const argv = await run({}, ['--model', 'haiku'])
-    expect(argv[0]).toBe('--settings')
-    const settings = JSON.parse(argv[1]) as { hooks: Record<string, unknown> }
-    expect(Object.keys(settings.hooks)).toContain('SessionStart')
-    expect(argv.slice(2)).toEqual(['--model', 'haiku'])
+    expect(argv).toEqual(['--model', 'haiku'])
 
     // Preassign env set → --session-id injected ahead of user args.
     const assigned = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
     const argv2 = await run({ CATE_SESSION_PREASSIGN_CLAUDE_CODE: assigned }, ['-p', 'hi'])
-    expect(argv2.slice(2, 4)).toEqual(['--session-id', assigned])
-    expect(argv2.slice(4)).toEqual(['-p', 'hi'])
+    expect(argv2).toEqual(['--session-id', assigned, '-p', 'hi'])
 
     // …but a session-affecting user flag disables preassignment.
     const argv3 = await run({ CATE_SESSION_PREASSIGN_CLAUDE_CODE: assigned }, ['--resume', assigned])
     expect(argv3).not.toContain('--session-id')
-    expect(argv3.slice(2)).toEqual(['--resume', assigned])
+    expect(argv3).toEqual(['--resume', assigned])
   })
 
-  test('prepareWorkspace writes cursor/agy hook files, git-excludes them, and seeds agy trust', async () => {
+  test('prepareWorkspace writes claude/cursor/agy hook files, git-excludes them, and seeds agy trust', async () => {
     const home = tmpDir('home')
     mkdirSync(path.join(home, '.gemini', 'antigravity-cli'), { recursive: true })
     const cap = makeCap({ hasBin: async () => true, homeDir: () => home })
@@ -213,6 +210,11 @@ describe.skipIf(!posix)('agentHooks capability', () => {
 
     await cap.prepareWorkspace(cwd)
 
+    const claudeSettings = JSON.parse(readFileSync(path.join(cwd, '.claude', 'settings.local.json'), 'utf-8')) as {
+      hooks: Record<string, unknown>
+    }
+    expect(Object.keys(claudeSettings.hooks)).toContain('SessionStart')
+    expect(Object.keys(claudeSettings.hooks)).toContain('Stop')
     const cursorHooks = JSON.parse(readFileSync(path.join(cwd, '.cursor', 'hooks.json'), 'utf-8')) as {
       hooks: Record<string, Array<{ command: string }>>
     }
@@ -221,6 +223,7 @@ describe.skipIf(!posix)('agentHooks capability', () => {
     expect(Object.keys(agyHooks)).toEqual(['cate-hook-bridge'])
 
     const exclude = readFileSync(path.join(cwd, '.git', 'info', 'exclude'), 'utf-8')
+    expect(exclude).toContain('/.claude/settings.local.json')
     expect(exclude).toContain('/.cursor/hooks.json')
     expect(exclude).toContain('/.agents/hooks.json')
 

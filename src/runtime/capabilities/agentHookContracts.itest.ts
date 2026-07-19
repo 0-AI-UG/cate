@@ -12,11 +12,15 @@
 // fallback probe's parsers (agentSessions.ts) pinned: every id learned from a
 // hook is asserted to join the same on-disk store the probe scans.
 //
-// Per-CLI mechanism (all verified live 2026-07-18):
-//   claude  · JSON-on-stdin hooks injected per-invocation via --settings
-//             '<inline JSON>'. session_id/transcript_path/cwd on every event;
-//             /clear = SessionEnd(reason=clear) + SessionStart(source=clear,
-//             new id); --session-id pre-assigns the id. Works in -p and TUI.
+// Per-CLI mechanism (all verified live 2026-07-18; claude file channel
+// re-pinned 2026-07-19):
+//   claude  · JSON-on-stdin hooks configured in <cwd>/.claude/
+//             settings.local.json (project scope — PATH-independent, unlike
+//             the --settings argv channel this replaced, which rode a
+//             bypassable PATH shim). session_id/transcript_path/cwd on every
+//             event; /clear = SessionEnd(reason=clear) + SessionStart(
+//             source=clear, new id); --session-id pre-assigns the id. Works
+//             in -p and TUI.
 //             Permission-wait: Notification hook, notification_type
 //             "permission_prompt" (and "idle_prompt" once idle nags kick in).
 //             Approval resolution: PostToolUse fires once the approved tool
@@ -291,19 +295,28 @@ async function driveTui(bin: string, args: string[], cwd: string, env: Record<st
 }
 
 // =============================================================================
-// claude — hooks via --settings inline JSON
+// claude — hooks via <cwd>/.claude/settings.local.json (project scope). File
+// injection on purpose: the earlier `--settings` argv channel rode the PATH
+// shim, which any rc-file PATH prepend (~/.local/bin — claude's own install
+// dir), alias, or absolute-path launch silently bypasses. The pinned contract
+// is that project-local settings hooks fire in BOTH TUI and print mode.
 // =============================================================================
 
 describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
-  const claudeSettings = (bridge: string): string =>
-    JSON.stringify({
-      hooks: Object.fromEntries(
-        ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd'].map((e) => [
-          e,
-          [{ hooks: [{ type: 'command', command: bridge }] }],
-        ]),
-      ),
-    })
+  const writeClaudeSettings = (cwd: string, bridge: string): void => {
+    mkdirSync(join(cwd, '.claude'), { recursive: true })
+    writeFileSync(
+      join(cwd, '.claude', 'settings.local.json'),
+      JSON.stringify({
+        hooks: Object.fromEntries(
+          ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd'].map((e) => [
+            e,
+            [{ hooks: [{ type: 'command', command: bridge }] }],
+          ]),
+        ),
+      }),
+    )
+  }
 
   const byName = (events: BridgeEvent[], name: string): BridgeEvent[] =>
     events.filter((e) => e.payload.hook_event_name === name)
@@ -317,12 +330,13 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     const cwd = makeCwd('claude')
     const eventsFile = join(cwd, 'events.jsonl')
     const bridge = writeBridge(cwd)
+    writeClaudeSettings(cwd, bridge)
     const tid = `cate-term-claude-${Date.now()}`
     const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
 
     const tui = await driveTui(
       'claude',
-      ['--model', 'haiku', '--settings', claudeSettings(bridge)],
+      ['--model', 'haiku'],
       cwd,
       cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
     )
@@ -379,6 +393,7 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
   test('print mode: --session-id pre-assigns the id; hooks fire on a resume relaunch', { timeout: 300_000 }, async () => {
     const cwd = makeCwd('claude-assign')
     const bridge = writeBridge(cwd)
+    writeClaudeSettings(cwd, bridge)
     const tid = `cate-term-claude-p-${Date.now()}`
     const assigned = randomUUID()
 
@@ -387,7 +402,7 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     const eventsFile = join(cwd, 'events-assign.jsonl')
     await run(
       'claude',
-      ['-p', PROMPT, '--model', 'haiku', '--session-id', assigned, '--settings', claudeSettings(bridge)],
+      ['-p', PROMPT, '--model', 'haiku', '--session-id', assigned],
       { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 240_000 },
     )
     const events = readJsonl<BridgeEvent>(eventsFile)
@@ -408,7 +423,7 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     const eventsFile2 = join(cwd, 'events-resume.jsonl')
     await run(
       'claude',
-      ['-p', PROMPT2, '--resume', assigned, '--model', 'haiku', '--settings', claudeSettings(bridge)],
+      ['-p', PROMPT2, '--resume', assigned, '--model', 'haiku'],
       { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid }), timeout: 240_000 },
     )
     const resumeEvents = readJsonl<BridgeEvent>(eventsFile2)
@@ -428,12 +443,13 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     const cwd = makeCwd('claude-perm')
     const eventsFile = join(cwd, 'events.jsonl')
     const bridge = writeBridge(cwd)
+    writeClaudeSettings(cwd, bridge)
     const tid = `cate-term-claude-perm-${Date.now()}`
     const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
 
     const tui = await driveTui(
       'claude',
-      ['--model', 'haiku', '--settings', claudeSettings(bridge)],
+      ['--model', 'haiku'],
       cwd,
       cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
     )

@@ -94,9 +94,14 @@ export interface HookInjectionContext {
 export interface AgentHookSpec {
   /**
    * PATH-shim argv injection: terminals are plain user-typed shells, so CLIs
-   * with per-invocation hook flags (claude/codex/pi) are intercepted by an
-   * executable of the same name earlier in PATH that exec's the real binary
-   * with `args` prepended.
+   * with per-invocation flags (codex hooks, pi's -e extension, claude/pi
+   * session pre-assignment) are intercepted by an executable of the same name
+   * earlier in PATH that exec's the real binary with `args` prepended.
+   * CAVEAT: the shim dir only wins while it stays first on PATH — a shell rc
+   * file prepending the CLI's own install dir (~/.local/bin etc.), an alias,
+   * or an absolute-path launch bypasses it. Prefer a file/env channel where
+   * the CLI offers one; consumers must tolerate shim-injected events never
+   * arriving.
    */
   shim?: {
     /** Extra argv tokens inserted BEFORE the user's own args. */
@@ -123,12 +128,13 @@ export interface AgentHookSpec {
     vars(ctx: HookInjectionContext): Record<string, string>
   }
   /**
-   * Workspace-scoped hook files (cursor/agy read hooks.json from the project).
-   * `build` returns the file's new content given the existing one, or null to
-   * leave the file untouched. Merge policy (never clobber user config): a
-   * missing file is created; a parseable file is merged — our entries (marked
-   * by the CATE_HOOK_MARKER in the command path) are replaced/refreshed, every
-   * user entry is preserved; an unparseable file is left alone.
+   * Workspace-scoped hook files (claude's .claude/settings.local.json,
+   * cursor/agy's hooks.json). `build` returns the file's new content given
+   * the existing one, or null to leave the file untouched. Merge policy
+   * (never clobber user config): a missing file is created; a parseable file
+   * is merged — our entries (marked by the CATE_HOOK_MARKER in the command
+   * path) are replaced/refreshed, every user entry is preserved; an
+   * unparseable file is left alone.
    */
   projectFiles?: Array<{
     relPath: string
@@ -157,22 +163,34 @@ export const CATE_HOOK_MARKER = 'cate-hook'
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null)
 
 // ---------------------------------------------------------------------------
-// claude — per-invocation `--settings '<inline JSON>'`; JSON payload on hook
-// stdin; session_id/transcript_path/cwd on every event.
+// claude — hooks ride in <workspace>/.claude/settings.local.json (project
+// scope, merged by claude over user settings; same file whether claude is in
+// TUI or -p mode). File injection on purpose: the original per-invocation
+// `--settings` shim relied on the shim dir staying FIRST on PATH, which every
+// rc-file `export PATH="~/.local/bin:$PATH"` prepend (uv/bun/brew boilerplate
+// — and claude installs into ~/.local/bin) silently defeats, as do aliases
+// and absolute-path launches. The shim survives only for session
+// pre-assignment. JSON payload on hook stdin; session_id/transcript_path/cwd
+// on every event.
 // ---------------------------------------------------------------------------
 
 const CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
 
+/** One matcher-group per event, holding only our bridge command. */
+interface ClaudeHookGroup {
+  matcher?: unknown
+  hooks?: Array<{ type?: unknown; command?: unknown }>
+  [k: string]: unknown
+}
+
+interface ClaudeSettingsJson {
+  hooks?: Record<string, ClaudeHookGroup[]>
+  [k: string]: unknown
+}
+
 const claudeSpec: AgentHookSpec = {
   shim: {
-    args: (ctx) => [
-      '--settings',
-      JSON.stringify({
-        hooks: Object.fromEntries(
-          CLAUDE_EVENTS.map((e) => [e, [{ hooks: [{ type: 'command', command: ctx.bridgeCommand }] }]]),
-        ),
-      }),
-    ],
+    args: () => [],
     preassign: {
       flag: '--session-id',
       // claude's session-affecting argv: resume (2 spellings), continue
@@ -180,6 +198,52 @@ const claudeSpec: AgentHookSpec = {
       blockers: ['--resume', '-r', '--continue', '-c', '--session-id', 'resume'],
     },
   },
+  projectFiles: [
+    {
+      relPath: '.claude/settings.local.json',
+      build: (existing, ctx) => {
+        const oursGroup = (): ClaudeHookGroup => ({ hooks: [{ type: 'command', command: ctx.bridgeCommand }] })
+        const oursHooks = (): Record<string, ClaudeHookGroup[]> =>
+          Object.fromEntries(CLAUDE_EVENTS.map((e) => [e, [oursGroup()]]))
+        if (existing === null) return JSON.stringify({ hooks: oursHooks() }, null, 2) + '\n'
+        // Merge, never clobber: claude owns this file too (its "always allow"
+        // permission grants land here), so every user field and every user
+        // hook group is preserved. Only groups consisting solely of STALE Cate
+        // bridge entries (per-boot paths, recognized by the marker) are
+        // dropped, then the fresh group is appended per tracked event.
+        // Unparseable → leave alone.
+        let parsed: ClaudeSettingsJson
+        try {
+          parsed = JSON.parse(existing) as ClaudeSettingsJson
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+        } catch {
+          return null
+        }
+        const hooks: Record<string, ClaudeHookGroup[]> =
+          typeof parsed.hooks === 'object' && parsed.hooks !== null && !Array.isArray(parsed.hooks)
+            ? parsed.hooks
+            : {}
+        for (const event of CLAUDE_EVENTS) {
+          const kept: ClaudeHookGroup[] = []
+          for (const group of Array.isArray(hooks[event]) ? hooks[event] : []) {
+            if (typeof group !== 'object' || group === null) {
+              kept.push(group)
+              continue
+            }
+            const entries = Array.isArray(group.hooks) ? group.hooks : []
+            const filtered = entries.filter(
+              (h) => !(typeof h?.command === 'string' && h.command.includes(CATE_HOOK_MARKER)),
+            )
+            if (entries.length > 0 && filtered.length === 0) continue // group was ours
+            kept.push(filtered.length === entries.length ? group : { ...group, hooks: filtered })
+          }
+          hooks[event] = [...kept, oursGroup()]
+        }
+        const out = JSON.stringify({ ...parsed, hooks }, null, 2) + '\n'
+        return out === existing ? null : out
+      },
+    },
+  ],
   normalize: (p) => {
     const base = {
       sessionId: str(p.session_id),
