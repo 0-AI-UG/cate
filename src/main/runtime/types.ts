@@ -14,7 +14,7 @@
 //     terminal.ts, which must stay in the IPC layer for cross-window transfer).
 // =============================================================================
 
-import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity, TerminalAgentSession } from '../../shared/types'
+import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity } from '../../shared/types'
 import type { AgentHookEvent } from '../../shared/agentHooks'
 import type { RuntimeId } from './locator'
 
@@ -56,11 +56,13 @@ export interface PtyHandle {
   shell?: string
 }
 
-/** Per-pty process-tree-derived activity, for the shell process monitor.
- *  `activity` mirrors what shell.ts broadcasts on SHELL_ACTIVITY_UPDATE; the
- *  agent fields say whether a known agent CLI (Claude/Codex/pi/…) is a direct
- *  child and its display name. Carry-across of a transient miss + the screen-
- *  state override stay in shell.ts (session-layer concerns). */
+/** Per-pty activity for the shell process monitor. `activity` mirrors what
+ *  shell.ts broadcasts on SHELL_ACTIVITY_UPDATE (first non-shell direct
+ *  child); the agent fields report the HOOK-REGISTERED agent pid's liveness
+ *  (agentPresence.ts) — presence rises when the agent's hooks first speak and
+ *  falls when its pid leaves the process table, wherever in the tree it lives
+ *  (tmux panes included). Carry-across of a transient miss + the screen-state
+ *  override stay in shell.ts (session-layer concerns). */
 export interface PtyActivity {
   activity: TerminalActivity
   agentName: string | null
@@ -86,9 +88,10 @@ export interface ProcessHost {
   /**
    * Process-monitor scan for the given pty ids (those this host owns). Takes ONE
    * `ps` snapshot of the host's process table and derives, per id, the activity
-   * indicator + agent-CLI detection. Runs on whichever host owns the ptys, so a
-   * remote terminal's activity reflects the daemon's process tree. Ids not owned
-   * by this host are omitted. POSIX-only; returns {} where `ps` is unavailable.
+   * indicator + the hook-registered agent pid's liveness. Runs on whichever host
+   * owns the ptys, so a remote terminal's activity reflects the daemon's process
+   * tree. Ids not owned by this host are omitted. POSIX-only; returns {} where
+   * `ps` is unavailable.
    */
   scanActivity(ids: string[]): Promise<Record<string, PtyActivity>>
   /**
@@ -98,15 +101,6 @@ export interface ProcessHost {
    * omitted. POSIX-only; returns {} where `lsof` is unavailable.
    */
   scanPorts(ids: string[]): Promise<Record<string, number[]>>
-  /**
-   * Resolve the agent-CLI session this pty is running, for terminal
-   * session-restore: detect the agent among the pty's direct children, take
-   * THAT process's cwd, and look up the newest session for it in the CLI's
-   * own session store on this host (src/runtime/capabilities/agentSessions.ts).
-   * Null when no agent is running, the agent has no session-store adapter, or
-   * no stored session matches. POSIX-only.
-   */
-  probeAgentSession(id: string): Promise<TerminalAgentSession | null>
 }
 
 // ---------------------------------------------------------------------------

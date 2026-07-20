@@ -8,9 +8,9 @@
 // This replaces the old store-probing contract suite: hooks are documented,
 // versioned CLI surfaces, so the contract is stronger — but a CLI update can
 // still move them, and that must fail HERE (loudly, pre-release), not in a
-// user's restored terminal. The store-join steps below also keep the shipped
-// fallback probe's parsers (agentSessions.ts) pinned: every id learned from a
-// hook is asserted to join the same on-disk store the probe scans.
+// user's restored terminal. Hooks are the ONLY session-identity source (no
+// store-probe fallback exists anymore), so these contracts are load-bearing
+// for terminal session restore.
 //
 // Per-CLI mechanism (all verified live 2026-07-18; claude file channel
 // re-pinned 2026-07-19):
@@ -48,6 +48,23 @@
 //             unanswerable approval is then auto-rejected and the turn Stops.
 //             Approval resolution: PostToolUse (label post_tool_use) fires
 //             after an executed command, same payload family.
+//   cursor  · JSON-on-stdin hooks configured in <workspace>/.cursor/hooks.json
+//             (project scope, discovered by the CLI itself; hooks landed in
+//             the CLI ~2026.07 — pinned live 2026-07-19 against
+//             2026.07.16-899851b). Schema: {version: 1, hooks: {<event>:
+//             [{command}]}} — flat handlers, NOT the claude/codex group
+//             shape. session_id (= conversation_id) on every event; payload
+//             cwd is often "" — workspace_roots[0] is the join key;
+//             transcript_path null on sessionStart, set from the first
+//             tool/turn event. sessionStart fires AT LAUNCH (TUI), but turn
+//             events are TUI-only: -p mode never fires beforeSubmitPrompt/
+//             stop (sessionStart, tool events and sessionEnd still do).
+//             --resume fires NO sessionStart, keeps the id — and ADOPTS an
+//             unknown id as a fresh chat (exit 0) instead of failing, so a
+//             stale stamp degrades to a fresh session, never a wrong one.
+//             NO permission hook event exists: beforeShellExecution fires
+//             before EVERY shell command (auto-approved alike, before the
+//             command runs), so it cannot mark "blocked on approval".
 //   pi      · in-process extension auto-discovered from <cwd>/.pi/extensions/
 //             *.ts (project scope — launch-method independent, unlike the -e
 //             argv channel this replaced; moved 2026-07-19).
@@ -72,7 +89,9 @@
 //
 // Permission-wait exists ONLY on claude/codex/opencode. pi has no approval
 // concept at all (tools execute directly — verified: zero approval strings in
-// its dist).
+// its dist). cursor HAS native approval prompts but no hook event that marks
+// them (see above) — while parked on approval, the last event is an ordinary
+// beforeShellExecution, indistinguishable from an auto-approved run.
 //
 // Opt-in only: drives the real, locally-installed CLIs with the user's
 // accounts (a few tiny prompts — cents; pi is offline/free). *.itest.ts is
@@ -90,7 +109,8 @@ import { dirname, join } from 'node:path'
 import {
   chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs'
-import { FILE_STORES, newestOpencodeSessionFor } from './agentSessions'
+import { createAgentPresenceTracker } from './agentPresence'
+import { snapshotProcessTree } from './process'
 
 /** Headless CLI run with stdin CLOSED — several CLIs (codex exec, pi -p,
  *  opencode run) block reading a never-ending stdin pipe otherwise. PWD is
@@ -177,6 +197,7 @@ process.stdin.on('end', () => {
   try { payload = JSON.parse(d) } catch { payload = { raw: d } }
   fs.appendFileSync(process.env.CATE_EVENTS_FILE, JSON.stringify({
     terminalId: process.env.CATE_TERMINAL_ID ?? null,
+    ppid: process.ppid,
     payload,
   }) + '\\n')
 })
@@ -188,6 +209,9 @@ process.stdin.on('end', () => {
 
 interface BridgeEvent {
   terminalId: string | null
+  /** The hook process's parent pid — the lineage claim the daemon bridge
+   *  posts (agentPresence.ts walks the ancestry from here to the agent). */
+  ppid?: number
   payload: Record<string, unknown>
 }
 
@@ -350,11 +374,23 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     await tui.waitFor(() => byName(events(), 'Stop').length > 0, 120_000, 'Stop')
     expect(byName(events(), 'Stop')[0].payload.session_id).toBe(id1)
 
-    // Store join: transcript_path is real and the shipped fallback probe's
-    // parser reads the same id + cwd from it.
+    // transcript_path points at a real transcript once the first prompt ran —
+    // the moment the RESUMABLE_FROM_SESSION_START gating counts on.
     expect(existsSync(transcript1), 'transcript exists after first prompt').toBe(true)
-    const meta = FILE_STORES['claude-code'].meta(readFileSync(transcript1, 'utf8'))
-    expect(meta).toEqual({ sessionId: id1, cwd })
+
+    // Presence lineage contract: every hook process is a descendant of the
+    // agent, so the REAL tracker must resolve the bridge's recorded parent
+    // pid to the live claude process — this is the entire basis of
+    // hook-anchored presence (the pty tree plays no part, which is what
+    // makes detection tmux/screen/setsid-proof).
+    const lineage = events().find((e) => typeof e.ppid === 'number')
+    expect(lineage, 'bridge recorded its parent pid').toBeTruthy()
+    const tracker = createAgentPresenceTracker({ snapshot: snapshotProcessTree })
+    await tracker.notePost(tid, 'claude-code', lineage!.ppid)
+    expect(
+      tracker.presenceFor(tid, await snapshotProcessTree()),
+      'ancestry walk lands on the live claude',
+    ).toEqual({ agentName: 'Claude Code', agentPresent: true })
 
     // /clear rotates IN the same process: old session ends (reason=clear),
     // new one starts (source=clear) with a fresh id — the push signal that
@@ -577,12 +613,11 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     expect(events.some((e) => e.payload.hook_event_name === 'UserPromptSubmit')).toBe(true)
     expect(events.some((e) => e.payload.hook_event_name === 'Stop')).toBe(true)
 
-    // Store join: transcript_path IS the rollout file the fallback probe
-    // scans; its meta line must agree on id + cwd.
+    // transcript_path IS the rollout file, stored under the codex sessions
+    // root and named by the session id.
     expect(rollout).toContain(`${homedir()}/.codex/sessions/`)
     expect(rollout).toContain(id)
     expect(existsSync(rollout)).toBe(true)
-    expect(FILE_STORES.codex.meta(readFileSync(rollout, 'utf8'))).toEqual({ sessionId: id, cwd })
     expectEcho(events, tid)
 
     // exec resume: same id, same rollout, source=resume — no fork.
@@ -744,6 +779,192 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
 })
 
 // =============================================================================
+// cursor — hooks via <workspace>/.cursor/hooks.json (project scope, cursor's
+// own flat schema). The CLI is a launcher script the user's installer links
+// as cursor-agent; hooks fire regardless of launch method (repo file).
+// =============================================================================
+
+describe.skipIf(!LIVE || !hasBin('cursor-agent'))('cursor hook contract', () => {
+  /** The SHIPPED channel: the five events Cate's cursorSpec registers, plus
+   *  beforeShellExecution where a test pins why it is NOT mapped. */
+  const writeCursorHooks = (cwd: string, bridge: string, extraEvents: string[] = []): void => {
+    mkdirSync(join(cwd, '.cursor'), { recursive: true })
+    writeFileSync(
+      join(cwd, '.cursor', 'hooks.json'),
+      JSON.stringify({
+        version: 1,
+        hooks: Object.fromEntries(
+          ['sessionStart', 'beforeSubmitPrompt', 'postToolUse', 'stop', 'sessionEnd', ...extraEvents].map((e) => [
+            e,
+            [{ command: bridge }],
+          ]),
+        ),
+      }),
+    )
+  }
+
+  const byName = (events: BridgeEvent[], name: string): BridgeEvent[] =>
+    events.filter((e) => e.payload.hook_event_name === name)
+
+  // Transcripts land under ~/.cursor/projects/<slug-of-cwd>/agent-transcripts/
+  // <id>/<id>.jsonl — the slug dir is derived from this test's tmp cwd, so it
+  // is exclusively ours to remove.
+  const registerTranscriptCleanup = (transcriptPath: string): void => {
+    cleanups.push(() => rmSync(dirname(dirname(dirname(transcriptPath))), { recursive: true, force: true }))
+  }
+
+  test('TUI: sessionStart at launch; beforeSubmitPrompt/stop bracket turns; --resume keeps the id with NO sessionStart', { retry: 1, timeout: 420_000 }, async () => {
+    const cwd = makeCwd('cursor')
+    const eventsFile = join(cwd, 'events.jsonl')
+    const bridge = writeBridge(cwd)
+    writeCursorHooks(cwd, bridge)
+    const tid = `cate-term-cursor-${Date.now()}`
+    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
+
+    const tui = await driveTui(
+      'cursor-agent',
+      [],
+      cwd,
+      cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
+    )
+
+    // Identity is PUSHED at launch (unlike codex's first-submit deferral).
+    await tui.waitFor(() => byName(events(), 'sessionStart').length > 0, 60_000, 'sessionStart')
+    const start = byName(events(), 'sessionStart')[0].payload
+    expect(start.session_id).toMatch(UUID_RE)
+    expect(start.session_id, 'session_id and conversation_id are the same uuid').toBe(start.conversation_id)
+    expect((start.workspace_roots as string[])[0], 'workspace_roots[0] is the session join key').toBe(cwd)
+    expect(start.transcript_path, 'no transcript at launch').toBeNull()
+    const id = start.session_id as string
+
+    // Turn status: prompt-submit and turn-end push for the same session.
+    await tui.send(PROMPT)
+    await tui.waitFor(() => byName(events(), 'beforeSubmitPrompt').length > 0, 120_000, 'beforeSubmitPrompt')
+    expect(byName(events(), 'beforeSubmitPrompt')[0].payload.session_id).toBe(id)
+    await tui.waitFor(() => byName(events(), 'stop').length > 0, 180_000, 'stop')
+    const stop = byName(events(), 'stop')[0].payload
+    expect(stop.session_id).toBe(id)
+    expect(stop.status).toBe('completed')
+
+    // transcript_path materializes with the turn and points at a real file.
+    const transcript = byName(events(), 'stop')[0].payload.transcript_path as string
+    expect(transcript).toContain(`${homedir()}/.cursor/projects/`)
+    expect(transcript).toContain(id)
+    expect(existsSync(transcript)).toBe(true)
+    registerTranscriptCleanup(transcript)
+    expectEcho(events(), tid)
+    tui.kill()
+
+    // Resume relaunch (the shipped restore argv, --resume <id>): the session
+    // keeps its id and NO sessionStart fires — the tracker must key on
+    // whatever event carries the id first (beforeSubmitPrompt here).
+    const eventsFile2 = join(cwd, 'events-resume.jsonl')
+    const tui2 = await driveTui(
+      'cursor-agent',
+      ['--resume', id],
+      cwd,
+      cleanEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid }),
+    )
+    const resumeEvents = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile2)
+    await tui2.settle(8_000)
+    await tui2.send(PROMPT2)
+    await tui2.waitFor(() => byName(resumeEvents(), 'stop').length > 0, 180_000, 'stop on resumed session')
+    expect(byName(resumeEvents(), 'sessionStart').length, 'no sessionStart on --resume').toBe(0)
+    expect(byName(resumeEvents(), 'beforeSubmitPrompt')[0].payload.session_id, 'resume re-attaches to the SAME session').toBe(id)
+    expect(byName(resumeEvents(), 'stop')[0].payload.session_id).toBe(id)
+    expectEcho(resumeEvents(), tid)
+    tui2.kill()
+  })
+
+  // Print mode pins the TURN-COVERAGE GAP the spec documents: sessionStart,
+  // tool events and sessionEnd fire, but beforeSubmitPrompt/stop never do —
+  // turn status is TUI-only. It also pins WHY beforeShellExecution is not a
+  // permission signal: with --force nothing ever prompts, yet the event fires
+  // for every command.
+  test('print mode: no turn events; beforeShellExecution fires even for auto-approved commands', { timeout: 300_000 }, async () => {
+    const cwd = makeCwd('cursor-print')
+    const bridge = writeBridge(cwd)
+    writeCursorHooks(cwd, bridge, ['beforeShellExecution'])
+    const tid = `cate-term-cursor-p-${Date.now()}`
+    const eventsFile = join(cwd, 'events.jsonl')
+
+    await run(
+      'cursor-agent',
+      ['-p', '--trust', '-f', 'Run exactly this shell command: echo cate-cursor-probe'],
+      { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 240_000 },
+    )
+    const events = readJsonl<BridgeEvent>(eventsFile)
+    const start = events.find((e) => e.payload.hook_event_name === 'sessionStart')?.payload
+    expect(start?.session_id).toMatch(UUID_RE)
+    const id = start?.session_id as string
+
+    // The print-mode gap: NO prompt-submit, NO stop.
+    const names = events.map((e) => e.payload.hook_event_name)
+    expect(names, 'print mode fires no beforeSubmitPrompt').not.toContain('beforeSubmitPrompt')
+    expect(names, 'print mode fires no stop').not.toContain('stop')
+
+    // Tool + lifecycle events still flow, all under the same id.
+    const post = events.find((e) => e.payload.hook_event_name === 'postToolUse')?.payload
+    expect(post, 'postToolUse fired').toBeTruthy()
+    expect(post?.session_id).toBe(id)
+    const end = events.find((e) => e.payload.hook_event_name === 'sessionEnd')?.payload
+    expect(end, 'sessionEnd fired').toBeTruthy()
+    expect(end?.session_id).toBe(id)
+    registerTranscriptCleanup(end?.transcript_path as string)
+
+    // --force auto-approves EVERYTHING, yet beforeShellExecution still fired —
+    // the event precedes every shell command, not just prompted ones, which is
+    // why cursorSpec maps no permission-wait.
+    const shell = events.find((e) => e.payload.hook_event_name === 'beforeShellExecution')?.payload
+    expect(shell, 'beforeShellExecution fires without any approval prompt').toBeTruthy()
+    expect(shell?.command).toContain('echo cate-cursor-probe')
+    expectEcho(events, tid)
+  })
+
+  // Resumability pins for the stamp gating: an id announced at sessionStart
+  // but never prompted IS resumable (create-chat mints exactly that state),
+  // and an UNKNOWN id is ADOPTED as a fresh chat instead of failing — a stale
+  // stamp degrades to a fresh session under the same id, never a wrong one.
+  test('print mode: a never-used chat id resumes; an unknown id is adopted, not rejected', { timeout: 420_000 }, async () => {
+    const cwd = makeCwd('cursor-resume')
+    const bridge = writeBridge(cwd)
+    writeCursorHooks(cwd, bridge)
+    const tid = `cate-term-cursor-r-${Date.now()}`
+
+    const created = execFileSync('cursor-agent', ['create-chat'], { env: cleanEnv(), timeout: 60_000 })
+      .toString()
+      .trim()
+    expect(created).toMatch(UUID_RE)
+
+    const eventsFile = join(cwd, 'events.jsonl')
+    await run(
+      'cursor-agent',
+      ['-p', '--trust', '-f', '--resume', created, PROMPT],
+      { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 240_000 },
+    )
+    const events = readJsonl<BridgeEvent>(eventsFile)
+    const end = events.find((e) => e.payload.hook_event_name === 'sessionEnd')?.payload
+    expect(end?.session_id, 'never-used chat id resumes as itself').toBe(created)
+    registerTranscriptCleanup(end?.transcript_path as string)
+    expectEcho(events, tid)
+
+    // Ghost id: adopted (exit 0, events under the ghost id) — NOT an error.
+    const ghost = '99999999-9999-4999-8999-999999999999'
+    const eventsFile2 = join(cwd, 'events-ghost.jsonl')
+    await run(
+      'cursor-agent',
+      ['-p', '--trust', '-f', '--resume', ghost, PROMPT],
+      { cwd, env: cleanEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid }), timeout: 240_000 },
+    )
+    const ghostEvents = readJsonl<BridgeEvent>(eventsFile2)
+    const ghostEnd = ghostEvents.find((e) => e.payload.hook_event_name === 'sessionEnd')?.payload
+    expect(ghostEnd?.session_id, 'unknown id is adopted as a fresh chat').toBe(ghost)
+    expect(ghostEvents.some((e) => e.payload.hook_event_name === 'sessionStart'), 'no sessionStart on --resume').toBe(false)
+    registerTranscriptCleanup(ghostEnd?.transcript_path as string)
+  })
+})
+
+// =============================================================================
 // pi — in-process extension discovered from <cwd>/.pi/extensions (offline:
 // fake provider via -e, zero cost). pi is launched by ABSOLUTE PATH on
 // purpose: the file channel must fire regardless of how the binary was found
@@ -863,10 +1084,8 @@ export default function (pi: ExtensionAPI) {
     expect(sessionFile).toContain(id)
     cleanups.push(() => rmSync(dirname(sessionFile), { recursive: true, force: true }))
 
-    // Store join: the event's sessionFile is the store file the fallback
-    // probe scans, and its header agrees on id + cwd.
+    // The event's sessionFile is a real on-disk session store file.
     expect(existsSync(sessionFile)).toBe(true)
-    expect(FILE_STORES.pi.meta(readFileSync(sessionFile, 'utf8'))).toEqual({ sessionId: id, cwd })
     expectEcho(events, tid)
 
     // Resume via the shipped restore argv (--session <id>): same id, same file.
@@ -920,8 +1139,6 @@ export const CateEventLogger = async ({ directory }) => {
 }
 `
 
-  const OPENCODE_DB = join(homedir(), '.local', 'share', 'opencode', 'opencode.db')
-
   // The provider on this machine may 401 — the busy→idle lifecycle and the
   // session row are emitted regardless (verified), so a failed completion
   // must NOT fail the contract. Never assert on exit code or reply text.
@@ -963,16 +1180,6 @@ export const CateEventLogger = async ({ directory }) => {
     ).toBe(true)
     expect(events.some((e) => e.type === 'session.idle' && e.sessionID === id), 'session.idle').toBe(true)
     expectEcho(events.map((e) => ({ cateTerminalId: e.cate_terminal_id })), tid)
-
-    // Store join: the fallback probe's sqlite lookup resolves the same id.
-    // The row's WAL commit can trail process exit by a moment — poll briefly.
-    let stored = await newestOpencodeSessionFor(OPENCODE_DB, cwd)
-    const deadline = Date.now() + 15_000
-    while (stored !== id && Date.now() < deadline) {
-      await sleep(500)
-      stored = await newestOpencodeSessionFor(OPENCODE_DB, cwd)
-    }
-    expect(stored, 'fallback probe resolves the hook-reported id').toBe(id)
 
     // Resume identifies by the first sessionID-bearing event — session.created
     // does NOT fire again, and no NEW session may appear.

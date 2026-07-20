@@ -5,7 +5,6 @@ import { setMainWindowReady, flushPendingOpenPaths } from './openPath'
 import { getActiveMainWindow, sendToWindow, listDockWindowIds, listWindows, windowFromEvent } from '../windowRegistry'
 import { flushDockWindowsBeforeQuit } from '../dockWindowFlush'
 import { flushAllLoggers, killAllTerminals } from '../ipc/terminal'
-import { flushAgentSessionStamps } from '../ipc/shell'
 import { guardQuit, isQuitCommitted, markQuitCommitted } from './quitConfirm'
 import { saveProjectStateSync } from '../projectWorkspaceStore'
 import { flushPendingWritesSync as flushSettingsPendingWritesSync } from '../settingsFile'
@@ -49,11 +48,6 @@ const FLUSH_TIMEOUT_MS = 1500
 // stall quit. Kept short relative to FLUSH_TIMEOUT_MS — it runs BEFORE the main
 // renderer's session flush, so dock sync + session save share the quit budget.
 const DOCK_FLUSH_TIMEOUT_MS = 600
-// Bound the quit-time agent-session stamp flush (a store probe per agent
-// terminal whose session hooks have NOT identified — hook-stamped terminals
-// are already current and skipped; the bound guards a hung remote runtime).
-// Runs before the dock flush so BOTH window kinds serialize fresh stamps.
-const AGENT_STAMP_FLUSH_TIMEOUT_MS = 800
 // Bound the await of extension-server / runtime teardown on will-quit before the
 // hard reallyExit(). Long enough for a clean local SIGTERM, short enough that an
 // unresponsive remote socket can't stall quit (the daemon reaps orphans anyway).
@@ -177,40 +171,29 @@ export function registerLifecycleHandlers(): void {
       proceed()
     })
 
-    // Refresh the terminal agent-session stamps FIRST (bounded): the stamp
-    // being saved is exactly "what to resume after restart", and terminals
-    // whose agent predates hook injection (or a never-prompted codex TUI)
-    // have no hook-pushed stamp yet — probe those now; hook-stamped terminals
-    // are already current and skipped. Each window receives its stamp
-    // updates before its flush/save request on the same ordered IPC channel,
-    // so both dock windows and the main renderer serialize the fresh values.
-    flushAgentSessionStamps(AGENT_STAMP_FLUSH_TIMEOUT_MS)
-      .catch(() => {})
-      .then(() => {
-        // FINAL, AWAITED sync from every dock window NEXT, so the main
-        // renderer's session flush (which reads listDockWindows() / main's
-        // cached dock state) sees the freshest dock layout + terminal/canvas
-        // state instead of stale data from the last sync. Bounded by
-        // DOCK_FLUSH_TIMEOUT_MS so an unresponsive dock window can't delay
-        // quit. The session-flush safety timeout is armed only once
-        // SESSION_FLUSH_SAVE is actually sent, so the earlier flushes never
-        // eat into the main renderer's save budget — the timeouts are
-        // sequential, not shared.
-        const dockWindowIds = listDockWindowIds()
-        return flushDockWindowsBeforeQuit({
-          windowIds: dockWindowIds,
-          requestSync: (id) => sendToWindow(id, DOCK_WINDOW_FLUSH_SYNC),
-          subscribeAck: (handler) => {
-            const listener = (e: Electron.IpcMainEvent) => {
-              const win = windowFromEvent(e)
-              if (win) handler(win.id)
-            }
-            ipcMain.on(DOCK_WINDOW_FLUSH_SYNC_DONE, listener)
-            return () => ipcMain.removeListener(DOCK_WINDOW_FLUSH_SYNC_DONE, listener)
-          },
-          timeoutMs: DOCK_FLUSH_TIMEOUT_MS,
-        })
-      })
+    // Agent-session stamps are hook-pushed the moment identity changes, so
+    // they are already current at quit — no refresh step. FIRST a FINAL,
+    // AWAITED sync from every dock window, so the main renderer's session
+    // flush (which reads listDockWindows() / main's cached dock state) sees
+    // the freshest dock layout + terminal/canvas state instead of stale data
+    // from the last sync. Bounded by DOCK_FLUSH_TIMEOUT_MS so an unresponsive
+    // dock window can't delay quit. The session-flush safety timeout is armed
+    // only once SESSION_FLUSH_SAVE is actually sent, so the dock flush never
+    // eats into the main renderer's save budget — the timeouts are
+    // sequential, not shared.
+    flushDockWindowsBeforeQuit({
+      windowIds: listDockWindowIds(),
+      requestSync: (id) => sendToWindow(id, DOCK_WINDOW_FLUSH_SYNC),
+      subscribeAck: (handler) => {
+        const listener = (e: Electron.IpcMainEvent) => {
+          const win = windowFromEvent(e)
+          if (win) handler(win.id)
+        }
+        ipcMain.on(DOCK_WINDOW_FLUSH_SYNC_DONE, listener)
+        return () => ipcMain.removeListener(DOCK_WINDOW_FLUSH_SYNC_DONE, listener)
+      },
+      timeoutMs: DOCK_FLUSH_TIMEOUT_MS,
+    })
       .catch(() => {})
       .finally(() => {
         if (isQuitCommitted()) return

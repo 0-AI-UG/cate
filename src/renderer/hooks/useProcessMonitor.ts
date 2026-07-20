@@ -94,11 +94,11 @@ export function useOwnedTerminalTelemetry(): void {
   }, [])
 
   // Agent-session stamps for terminal restore: main derives them from the
-  // agent-hook event stream (falling back to an on-demand store probe when
-  // hooks haven't spoken — see agentSessionStamps.ts) and sends the (deduped)
-  // result here; it lands on the terminal's PanelState, which persists into
-  // session.json. On restore, TerminalPanel types the resume command into the
-  // fresh shell. Null clears the stamp (the agent exited).
+  // agent-hook event stream (hook-pushed ONLY — see agentSessionStamps.ts)
+  // and sends the (deduped) result here; it lands on the terminal's
+  // PanelState, which persists into session.json. On restore, TerminalPanel
+  // types the resume command into the fresh shell. Null clears the stamp
+  // (the agent exited).
   useEffect(() => {
     const api = window.electronAPI
     if (!api?.onShellAgentSessionUpdate) return

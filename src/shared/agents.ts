@@ -22,6 +22,7 @@
 export type AgentId =
   | 'claude-code'
   | 'codex'
+  | 'cursor'
   | 'opencode'
   | 'pi'
 
@@ -45,6 +46,15 @@ export const AGENTS: readonly AgentDef[] = [
     matchProcess: (n) => n === 'claude' || n === 'claude-code' || n.startsWith('claude'),
   },
   { id: 'codex', displayName: 'Codex', command: 'codex', matchProcess: (n) => n === 'codex' },
+  // The install script links ~/.local/bin/cursor-agent; the CLI keeps the
+  // invoked name as its process title (comm is the full launcher path, which
+  // the process scan basenames), so both spellings show up in the wild.
+  {
+    id: 'cursor',
+    displayName: 'Cursor',
+    command: 'cursor-agent',
+    matchProcess: (n) => n === 'cursor-agent' || n === 'cursor',
+  },
   { id: 'opencode', displayName: 'OpenCode', command: 'opencode', matchProcess: (n) => n === 'opencode' },
   // @earendil-works/pi-coding-agent — runs as the `pi` binary.
   { id: 'pi', displayName: 'PI Agent', command: 'pi', matchProcess: (n) => n === 'pi' },
@@ -79,6 +89,9 @@ export function matchAgentProcess(procName: string): string | null {
 const RESUME_ARGS: Record<AgentId, (sessionId: string) => string[]> = {
   'claude-code': (sid) => ['--resume', sid],
   codex: (sid) => ['resume', sid],
+  // --resume ADOPTS an unknown id (fresh chat under that id, exit 0) rather
+  // than failing — a stale stamp degrades to a fresh session, never a wrong one.
+  cursor: (sid) => ['--resume', sid],
   // pi's --resume is an interactive picker; --session takes an exact id.
   pi: (sid) => ['--session', sid],
   opencode: (sid) => ['--session', sid],

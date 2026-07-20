@@ -213,6 +213,122 @@ describe('codex spec', () => {
   })
 })
 
+describe('cursor spec', () => {
+  const spec = AGENT_HOOK_SPECS.cursor
+  const file = spec.projectFiles![0]
+  // Field set mirrors the live-captured payloads (cursor-agent 2026.07.16):
+  // session_id === conversation_id, cwd rides in workspace_roots (the payload
+  // `cwd` field is often ""), transcript_path null until the first tool/turn.
+  const base = {
+    conversation_id: 'abcdefab-1111-4222-8333-444444444444',
+    generation_id: 'abcdefab-1111-4222-8333-444444444444',
+    session_id: 'abcdefab-1111-4222-8333-444444444444',
+    model: 'composer-2.5',
+    cursor_version: '2026.07.16-899851b',
+    workspace_roots: ['/w'],
+    user_email: 'u@example.com',
+    transcript_path: '/home/u/.cursor/projects/slug/agent-transcripts/abcd/abcd.jsonl',
+  }
+
+  test('creates .cursor/hooks.json (version 1, flat [{command}] handlers) on all five events', () => {
+    expect(file.relPath).toBe('.cursor/hooks.json')
+    const parsed = JSON.parse(file.build(null, ctx)!) as {
+      version: number
+      hooks: Record<string, Array<{ command: string }>>
+    }
+    expect(parsed.version).toBe(1)
+    expect(Object.keys(parsed.hooks).sort()).toEqual(
+      ['beforeSubmitPrompt', 'postToolUse', 'sessionEnd', 'sessionStart', 'stop'].sort(),
+    )
+    for (const handlers of Object.values(parsed.hooks)) {
+      expect(handlers).toEqual([{ command: ctx.bridgeCommand }])
+    }
+  })
+
+  test('merges into an existing hooks.json: user hooks/fields kept, stale Cate entries refreshed', () => {
+    const existing = JSON.stringify({
+      version: 1,
+      hooks: {
+        stop: [
+          { command: '/home/u/my-stop-hook.sh' },
+          { command: `/old-boot-dir/${CATE_HOOK_MARKER}-bridge-cursor` },
+        ],
+        // A user event Cate doesn't track survives untouched.
+        beforeShellExecution: [{ command: '/home/u/audit.sh' }],
+      },
+    })
+    const out = file.build(existing, ctx)!
+    const parsed = JSON.parse(out) as { version: number; hooks: Record<string, Array<{ command: string }>> }
+    expect(parsed.version).toBe(1)
+    const stopCommands = parsed.hooks.stop.map((h) => h.command)
+    expect(stopCommands).toContain('/home/u/my-stop-hook.sh')
+    expect(stopCommands).toContain(ctx.bridgeCommand)
+    expect(stopCommands).not.toContain(`/old-boot-dir/${CATE_HOOK_MARKER}-bridge-cursor`)
+    expect(parsed.hooks.beforeShellExecution).toEqual([{ command: '/home/u/audit.sh' }])
+    expect(parsed.hooks.sessionStart.map((h) => h.command)).toContain(ctx.bridgeCommand)
+  })
+
+  test('a "hooks": [] value is replaced, never silently swallowed', () => {
+    // The exact bug the OLD cursor merge shipped: [] passes typeof-object,
+    // and named keys assigned onto an array vanish in JSON.stringify.
+    const out = file.build(JSON.stringify({ version: 1, hooks: [] }), ctx)!
+    const parsed = JSON.parse(out) as { hooks: Record<string, Array<{ command: string }>> }
+    expect(Array.isArray(parsed.hooks)).toBe(false)
+    expect(parsed.hooks.sessionStart[0].command).toBe(ctx.bridgeCommand)
+  })
+
+  test('leaves an unparseable hooks.json alone; identical rewrite is a no-op', () => {
+    expect(file.build('{not json', ctx)).toBeNull()
+    const fresh = file.build(null, ctx)!
+    expect(file.build(fresh, ctx)).toBeNull()
+  })
+
+  test('lifecycle events normalize; cwd comes from workspace_roots', () => {
+    const start = norm('cursor', {
+      hook_event_name: 'sessionStart',
+      ...base,
+      transcript_path: null, // null until the first tool/turn event
+      is_background_agent: false,
+    })
+    expect(start).toMatchObject({
+      agentId: 'cursor',
+      kind: 'session-start',
+      sessionId: base.session_id,
+      cwd: '/w',
+    })
+    expect(start?.transcriptPath).toBeUndefined()
+    expect(norm('cursor', { hook_event_name: 'beforeSubmitPrompt', prompt: 'hi', attachments: [], ...base })).toMatchObject(
+      { kind: 'turn-start', transcriptPath: base.transcript_path },
+    )
+    expect(
+      norm('cursor', { hook_event_name: 'postToolUse', tool_name: 'Shell', tool_input: {}, duration: 1, ...base })?.kind,
+    ).toBe('turn-resume')
+    expect(norm('cursor', { hook_event_name: 'stop', status: 'completed', loop_count: 0, ...base })?.kind).toBe('turn-end')
+    // Abort fires stop too (status "aborted", occasionally a second "error"
+    // stop) — same turn-end either way.
+    expect(norm('cursor', { hook_event_name: 'stop', status: 'aborted', loop_count: 0, ...base })?.kind).toBe('turn-end')
+    expect(
+      norm('cursor', { hook_event_name: 'sessionEnd', reason: 'completed', final_status: 'completed', ...base })?.kind,
+    ).toBe('session-end')
+  })
+
+  test('untracked events drop — beforeShellExecution is NOT a permission signal', () => {
+    // It fires before EVERY shell command (auto-approved or prompted alike),
+    // so mapping it to permission-wait would notify on every tool call.
+    expect(
+      norm('cursor', { hook_event_name: 'beforeShellExecution', command: 'echo x', sandbox: false, ...base }),
+    ).toBeNull()
+    expect(norm('cursor', { hook_event_name: 'preToolUse', tool_name: 'Shell', ...base })).toBeNull()
+  })
+
+  test('falls back to conversation_id when session_id is absent', () => {
+    const { session_id: _dropped, ...noSession } = base
+    expect(norm('cursor', { hook_event_name: 'stop', status: 'completed', ...noSession })?.sessionId).toBe(
+      base.conversation_id,
+    )
+  })
+})
+
 describe('pi spec', () => {
   const spec = AGENT_HOOK_SPECS.pi
   const file = spec.projectFiles![0]

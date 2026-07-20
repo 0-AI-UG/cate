@@ -10,36 +10,40 @@
 //      path would rewrite user repos every boot and re-trigger codex's
 //      "modified since last trusted" hook review on every restart. Contents
 //      are regenerated on every boot; stale files are harmless.
-//   2. plant the hook env on every PTY (endpoint + per-boot token +
-//      CATE_TERMINAL_ID — the terminal↔event correlation contract — plus the
-//      opencode ambient config);
+//   2. plant the hook env on every PTY (endpoint + per-terminal derived token
+//      + CATE_TERMINAL_ID — the terminal↔event correlation contract — plus
+//      the opencode ambient config);
 //   3. prepare workspace-scoped hook files (claude, codex, pi) at PTY create
 //      time;
 //   4. ingest hook posts on a daemon-owned loopback HTTP endpoint, normalize
 //      them (shared code), and emit AgentHookEvents to subscribers (the
 //      rpcServer forwards them to the client as evt frames).
 //
-// Transport choice: loopback HTTP with a per-boot bearer token. Hook handlers
-// always run on the daemon's own host (they are children of PTYs this daemon
-// spawned), so loopback suffices even for remote workspaces — the daemon
-// ingests locally and the normalized events ride the existing LF-JSON pipe to
-// the app. HTTP over a unix socket was rejected because the in-process
-// injections (pi extension, opencode plugin) post with plain `fetch`, which
-// cannot target a unix socket without extra dependencies. (The pi extension
-// is a workspace file — pi discovers <cwd>/.pi/extensions/*.ts itself — not
-// a hooks-dir support file.)
+// Transport choice: loopback HTTP with a PER-TERMINAL bearer token
+// (HMAC-SHA256 of the pty id under a per-boot secret, validated against the
+// terminalId each post claims — so a process inside one terminal cannot forge
+// events for another). Hook handlers always run on the daemon's own host
+// (they are children of PTYs this daemon spawned), so loopback suffices even
+// for remote workspaces — the daemon ingests locally and the normalized
+// events ride the existing LF-JSON pipe to the app. HTTP over a unix socket
+// was rejected because the in-process injections (pi extension, opencode
+// plugin) post with plain `fetch`, which cannot target a unix socket without
+// extra dependencies. (The pi extension is a workspace file — pi discovers
+// <cwd>/.pi/extensions/*.ts itself — not a hooks-dir support file.)
 //
-// Bridge choice: a tiny sh wrapper exec'ing the daemon's OWN node binary
-// (process.execPath) on a daemon-written JS file. Node is NOT guaranteed on
-// the user's PATH, but the daemon is always a working node on this host; the
-// bundled `cate` CLI was rejected as the bridge because it is absent in
-// dev/direct mode and its runtime is gated on the CATE_API setting.
+// Bridge choice: a tiny wrapper (sh script on POSIX, .cmd on win32) running
+// the daemon's OWN node binary (process.execPath) on a daemon-written JS
+// file. Node is NOT guaranteed on the user's PATH, but the daemon is always a
+// working node on this host; the bundled `cate` CLI was rejected as the
+// bridge because it is absent in dev/direct mode and its runtime is gated on
+// the CATE_API setting.
 //
-// Electron-free; POSIX-only (win32 degrades to a no-op — PTYs spawn plain).
+// Electron-free; runs on every platform (the wrapper flavor is the only
+// platform-specific piece).
 // =============================================================================
 
 import { execFile } from 'child_process'
-import { randomBytes } from 'crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 import http from 'http'
 import os from 'os'
 import path from 'path'
@@ -60,21 +64,21 @@ import {
 const MAX_BODY_BYTES = 512 * 1024
 
 export interface AgentHooksCapability {
-  /** The full spawn env for a PTY: hook endpoint/token, CATE_TERMINAL_ID=ptyId,
-   *  and ambient per-agent vars. Lazily boots the ingestion endpoint + hooks
-   *  dir on first use. Returns `env` unchanged on win32 or when hook setup
-   *  fails (a plain shell is always spawnable). */
+  /** The full spawn env for a PTY: hook endpoint + this terminal's derived
+   *  token, CATE_TERMINAL_ID=ptyId, and ambient per-agent vars. Lazily boots
+   *  the ingestion endpoint + hooks dir on first use. Returns `env` unchanged
+   *  when hook setup fails (a plain shell is always spawnable). */
   envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
   /** Write workspace-scoped hook files (claude, codex, pi) for the PTY's cwd
    *  and keep them out of git status via .git/info/exclude. Best-effort and
-   *  idempotent; no-op on win32, and never touches the user's home dir
-   *  (~/.codex, ~/.claude etc. are the CLIs' USER-GLOBAL config dirs —
-   *  injection stays repo-local). */
+   *  idempotent; never touches the user's home dir (~/.codex, ~/.claude etc.
+   *  are the CLIs' USER-GLOBAL config dirs — injection stays repo-local). */
   prepareWorkspace(cwd: string): Promise<void>
   /** Subscribe to normalized hook events. Returns an unsubscribe. */
   subscribe(onEvent: (event: AgentHookEvent) => void): () => void
-  /** The ingestion endpoint (boots it if needed) — for tests/diagnostics. */
-  endpoint(): Promise<{ url: string; token: string; dir: string }>
+  /** The ingestion endpoint (boots it if needed) — for tests/diagnostics.
+   *  `tokenFor` derives the bearer token a given terminal's posts must carry. */
+  endpoint(): Promise<{ url: string; dir: string; tokenFor: (terminalId: string) => string }>
   /** Close the ingestion endpoint. The stable hooks dir is left in place —
    *  repo hook files embed its bridge paths, which must survive restarts. */
   dispose(): void
@@ -85,12 +89,20 @@ export interface AgentHooksDeps {
   hasBin?: (command: string) => Promise<boolean>
   /** Override the stable hooks dir (tests). Default: ~/.cate/agent-hooks. */
   hooksDir?: string
+  /** Called on every AUTHENTICATED post for a known agent — including ones
+   *  whose payload normalizes to null — with the poster's lineage claim
+   *  (`pid`: the bridge's parent / the in-process agent itself; undefined
+   *  when the poster didn't send one). AWAITED before the HTTP response goes
+   *  out: the presence tracker's ancestry walk needs the bridge's process
+   *  chain alive, and the bridge holds it exactly until it hears back. */
+  onPost?: (post: { terminalId: string; agentId: AgentId; pid?: number }) => void | Promise<void>
 }
 
 interface HookState {
   dir: string
   url: string
-  token: string
+  /** Per-boot secret the per-terminal bearer tokens derive from. */
+  secret: string
   server: http.Server
   /** Ambient env vars (spec.env), applied only where the key isn't set yet. */
   ambientVars: Record<string, string>
@@ -98,15 +110,27 @@ interface HookState {
   contexts: Map<AgentId, HookInjectionContext>
 }
 
-/** `command -v` probe, cached per daemon (the PATH the daemon spawns shells
- *  with is fixed for its lifetime). */
+/** The bearer token a terminal's hook posts must carry: HMAC-SHA256 of the
+ *  pty id under the per-boot secret. Binding the token to the terminal id
+ *  means a process can only post events for ITS OWN terminal — reading the
+ *  env of one PTY yields nothing that spoofs another. */
+export function hookTokenForTerminal(secret: string, terminalId: string): string {
+  return createHmac('sha256', secret).update(terminalId).digest('hex')
+}
+
+/** Binary-presence probe (`command -v` / win32 `where`), cached per daemon
+ *  (the PATH the daemon spawns shells with is fixed for its lifetime). */
 function makeHasBin(): (command: string) => Promise<boolean> {
   const cache = new Map<string, Promise<boolean>>()
   return (command) => {
     let hit = cache.get(command)
     if (!hit) {
       hit = new Promise<boolean>((resolve) => {
-        execFile('/bin/sh', ['-c', 'command -v -- "$1"', 'sh', command], { timeout: 3000 }, (err) => resolve(!err))
+        if (process.platform === 'win32') {
+          execFile('where', [command], { timeout: 3000, windowsHide: true }, (err) => resolve(!err))
+        } else {
+          execFile('/bin/sh', ['-c', 'command -v -- "$1"', 'sh', command], { timeout: 3000 }, (err) => resolve(!err))
+        }
       })
       cache.set(command, hit)
     }
@@ -132,7 +156,10 @@ process.stdin.on('end', () => {
   if (!endpoint || !token || !agentId) process.exit(0)
   let payload
   try { payload = JSON.parse(data) } catch { payload = { raw: data } }
-  const body = JSON.stringify({ agentId, terminalId: process.env.${CATE_TERMINAL_ID_ENV} || null, payload })
+  // pid: the bridge's PARENT — the agent CLI (or its sh hook-command layer),
+  // never the bridge itself. The daemon walks the ancestry from here to find
+  // the agent process for liveness tracking.
+  const body = JSON.stringify({ agentId, terminalId: process.env.${CATE_TERMINAL_ID_ENV} || null, pid: process.ppid, payload })
   const req = http.request(endpoint + '/hook', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, 'content-length': Buffer.byteLength(body) },
@@ -158,9 +185,18 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     }
   }
 
-  const handleRequest = (req: http.IncomingMessage, res: http.ServerResponse, token: string): void => {
+  /** Constant-time check of the presented bearer against the terminal's
+   *  derived token. Length equality is checked first (timingSafeEqual throws
+   *  on mismatched lengths; the expected length is public anyway). */
+  const tokenMatches = (authorization: string | undefined, secret: string, terminalId: string): boolean => {
+    if (!authorization?.startsWith('Bearer ')) return false
+    const presented = Buffer.from(authorization.slice('Bearer '.length))
+    const expected = Buffer.from(hookTokenForTerminal(secret, terminalId))
+    return presented.length === expected.length && timingSafeEqual(presented, expected)
+  }
+
+  const handleRequest = (req: http.IncomingMessage, res: http.ServerResponse, secret: string): void => {
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return }
-    if (req.headers.authorization !== `Bearer ${token}`) { res.statusCode = 401; res.end(); return }
     let size = 0
     const chunks: Buffer[] = []
     req.on('data', (c: Buffer) => {
@@ -170,28 +206,52 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     })
     req.on('error', () => { /* client vanished mid-post */ })
     req.on('end', () => {
-      try {
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          agentId?: unknown
-          terminalId?: unknown
-          payload?: unknown
+      void (async () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+            agentId?: unknown
+            terminalId?: unknown
+            pid?: unknown
+            payload?: unknown
+          }
+          if (
+            typeof body.agentId === 'string' &&
+            typeof body.terminalId === 'string' &&
+            body.terminalId &&
+            typeof body.payload === 'object' &&
+            body.payload !== null
+          ) {
+            // The token is PER TERMINAL (HMAC of the claimed terminalId), so it
+            // can only be validated after the body names the terminal. A forged
+            // terminalId fails here: its token lives only in that pty's env.
+            if (!tokenMatches(req.headers.authorization, secret, body.terminalId)) {
+              res.statusCode = 401
+              res.end()
+              return
+            }
+            // Presence lineage: every authenticated post from a known agent
+            // counts, even one whose payload normalizes to null — the post
+            // itself proves the agent is alive. Awaited BEFORE responding so
+            // the bridge keeps its ancestry chain alive through the walk.
+            if (deps.onPost && body.agentId in AGENT_HOOK_SPECS) {
+              try {
+                await deps.onPost({
+                  terminalId: body.terminalId,
+                  agentId: body.agentId as AgentId,
+                  pid: typeof body.pid === 'number' ? body.pid : undefined,
+                })
+              } catch { /* presence tracking must never fail the hook */ }
+            }
+            const event = normalizeAgentHookPayload(body.agentId, body.terminalId, body.payload as Record<string, unknown>)
+            if (event) emit(event)
+          }
+          res.statusCode = 204
+          res.end()
+        } catch {
+          res.statusCode = 400
+          res.end()
         }
-        if (
-          typeof body.agentId === 'string' &&
-          typeof body.terminalId === 'string' &&
-          body.terminalId &&
-          typeof body.payload === 'object' &&
-          body.payload !== null
-        ) {
-          const event = normalizeAgentHookPayload(body.agentId, body.terminalId, body.payload as Record<string, unknown>)
-          if (event) emit(event)
-        }
-        res.statusCode = 204
-        res.end()
-      } catch {
-        res.statusCode = 400
-        res.end()
-      }
+      })()
     })
   }
 
@@ -219,18 +279,27 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     const bridgeJs = path.join(dir, 'cate-hook-bridge.js')
     await writeFile(bridgeJs, BRIDGE_JS)
 
-    const token = randomBytes(24).toString('hex')
+    const secret = randomBytes(32).toString('hex')
     const contexts = new Map<AgentId, HookInjectionContext>()
     const ambientVars: Record<string, string> = {}
 
     for (const agent of AGENTS) {
       const spec: AgentHookSpec = AGENT_HOOK_SPECS[agent.id]
       // Per-agent bridge wrapper: hook configs get ONE command path with no
-      // args (codex runs the command string directly), so the agent id
-      // rides as a baked-in argv of the wrapper.
-      const wrapper = path.join(dir, `cate-hook-bridge-${agent.id}`)
-      await writeFile(wrapper, `#!/bin/sh\nexec ${shQuote(process.execPath)} ${shQuote(bridgeJs)} ${shQuote(agent.id)} "$@"\n`)
-      await chmod(wrapper, 0o755)
+      // args (codex runs the command string directly), so the agent id rides
+      // as a baked-in argv of the wrapper. sh script on POSIX, .cmd on win32.
+      // NOTE: the wrapper CONTENT embeds this daemon's node (process.execPath)
+      // and is rewritten every boot — two daemons sharing this dir (dev build
+      // + packaged app) flip-flop it between their node paths. Benign: both
+      // are working node binaries, and codex's hook trust keys on the wrapper
+      // PATH (via hooks.json), which never changes.
+      const wrapper = path.join(dir, `cate-hook-bridge-${agent.id}${process.platform === 'win32' ? '.cmd' : ''}`)
+      if (process.platform === 'win32') {
+        await writeFile(wrapper, `@echo off\r\n"${process.execPath}" "${bridgeJs}" "${agent.id}" %*\r\n`)
+      } else {
+        await writeFile(wrapper, `#!/bin/sh\nexec ${shQuote(process.execPath)} ${shQuote(bridgeJs)} ${shQuote(agent.id)} "$@"\n`)
+        await chmod(wrapper, 0o755)
+      }
 
       const supportFile = spec.env?.file
       let filePath = ''
@@ -244,18 +313,18 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       if (spec.env) Object.assign(ambientVars, spec.env.vars(ctx))
     }
 
-    const server = http.createServer((req, res) => handleRequest(req, res, token))
+    const server = http.createServer((req, res) => handleRequest(req, res, secret))
     const port = await new Promise<number>((resolve, reject) => {
       server.once('error', reject)
       server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port))
     })
     server.unref()
-    return { dir, url: `http://127.0.0.1:${port}`, token, server, ambientVars, contexts }
+    return { dir, url: `http://127.0.0.1:${port}`, secret, server, ambientVars, contexts }
   }
 
   return {
     async envForPty(ptyId, env) {
-      if (process.platform === 'win32' || disposed) return env
+      if (disposed) return env
       let state: HookState
       try {
         state = await ensureReady()
@@ -268,13 +337,13 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
         if (out[k] === undefined) out[k] = v
       }
       out[CATE_HOOK_ENDPOINT_ENV] = state.url
-      out[CATE_HOOK_TOKEN_ENV] = state.token
+      out[CATE_HOOK_TOKEN_ENV] = hookTokenForTerminal(state.secret, ptyId)
       out[CATE_TERMINAL_ID_ENV] = ptyId
       return out
     },
 
     async prepareWorkspace(cwd) {
-      if (process.platform === 'win32' || disposed) return
+      if (disposed) return
       // Never plant agent files in the user's home directory: ~/.codex and
       // ~/.claude are the CLIs' USER-GLOBAL config dirs, and writing there
       // would violate the repo-local-only injection policy. Bail on an
@@ -326,7 +395,11 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
 
     async endpoint() {
       const state = await ensureReady()
-      return { url: state.url, token: state.token, dir: state.dir }
+      return {
+        url: state.url,
+        dir: state.dir,
+        tokenFor: (terminalId: string) => hookTokenForTerminal(state.secret, terminalId),
+      }
     },
 
     dispose() {

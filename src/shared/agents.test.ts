@@ -5,6 +5,9 @@ describe('matchAgentDef', () => {
   it('resolves the AgentDef for a detected process name, case-insensitively', () => {
     expect(matchAgentDef('claude')?.id).toBe('claude-code')
     expect(matchAgentDef('Codex')?.id).toBe('codex')
+    // The CLI's launcher is cursor-agent; comm can also surface as cursor.
+    expect(matchAgentDef('cursor-agent')?.id).toBe('cursor')
+    expect(matchAgentDef('cursor')?.id).toBe('cursor')
     expect(matchAgentDef('node')).toBeNull()
   })
 
@@ -21,6 +24,7 @@ describe('resumeCommandForAgent', () => {
     const uuid = '11111111-1111-4111-8111-111111111111'
     expect(resumeCommandForAgent('claude-code', uuid)).toBe(`claude --resume ${uuid}`)
     expect(resumeCommandForAgent('codex', uuid)).toBe(`codex resume ${uuid}`)
+    expect(resumeCommandForAgent('cursor', uuid)).toBe(`cursor-agent --resume ${uuid}`)
     expect(resumeCommandForAgent('pi', uuid)).toBe(`pi --session ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
   })

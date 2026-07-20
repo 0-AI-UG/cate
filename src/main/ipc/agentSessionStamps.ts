@@ -5,22 +5,17 @@
 // on restore). Emits SHELL_AGENT_SESSION_UPDATE, so the renderer/persistence/
 // restore chain is unchanged from the old probe-based producer.
 //
-// Identity sources, in authority order:
-//   1. HOOK EVENTS (this module's ingest) — the agent CLIs push their own
-//      session identity through the unified hook stream (agentHooks.ts /
-//      agentHookEvents.ts) the moment it changes. Fresh by construction; once
-//      a hook event has been seen for a terminal's agent run, probe results
-//      are ignored for it.
-//   2. FALLBACK PROBE (shell.ts → runtime.process.probeAgentSession →
-//      agentSessions.ts store scans) — on-demand only: once on the
-//      agent-present rising edge and once in the quit-time flush, and only
-//      while NO hook event has been seen for that terminal. Covers agents the
-//      hooks can't: a codex TUI before its first prompt (pushes nothing until
-//      then — the fd scan is the only signal) and agents launched before Cate
-//      injected hooks (e.g. an app upgrade mid-session).
-//   3. The 1 Hz process scan (shell.ts) stays the authority on "agent gone":
-//      its falling edge clears the stamp AND resets hook authority, so the
-//      next agent run in the same terminal starts the hierarchy over.
+// Identity comes from HOOK EVENTS ONLY (this module's ingest): the agent CLIs
+// push their own session identity through the unified hook stream
+// (agentHooks.ts / agentHookEvents.ts) the moment it changes — fresh by
+// construction. There is deliberately NO store-scanning fallback: an agent
+// whose hooks never speak (launched before injection, codex trust not yet
+// granted) simply has no resume stamp — a guessed stamp risks resuming the
+// WRONG session, which is worse than a plain-shell restore. The 1 Hz scan
+// (shell.ts) stays the authority on "agent gone": it reports the liveness of
+// the pid the agent's own hook posts registered (agentPresence.ts), and its
+// falling edge clears the stamp, so the next run re-proves itself via fresh
+// events.
 //
 // Resumability gating: a stamp is only worth persisting if resuming it works.
 // claude's SessionStart fires at TUI launch BEFORE any transcript exists, and
@@ -52,6 +47,9 @@ import { sendToWindow } from '../windowRegistry'
 const RESUMABLE_FROM_SESSION_START: Record<AgentId, boolean> = {
   'claude-code': false,
   codex: true,
+  // A never-used sessionStart id is resumable (--resume even ADOPTS unknown
+  // ids as a fresh chat rather than failing) — pinned live.
+  cursor: true,
   pi: true,
   opencode: true,
 }
@@ -60,10 +58,6 @@ interface StampState {
   /** Dedup key of the last SHELL_AGENT_SESSION_UPDATE sent, so an unchanged
    *  stamp doesn't re-emit (and re-touch renderer panel state). */
   key?: string | null
-  /** True once any hook event has been ingested for this terminal's current
-   *  agent run — from then on hook identity outranks the fallback probe.
-   *  Reset by the falling edge (agent exited). */
-  hookActive: boolean
   /** Monotonic ingest counter — an async cwd lookup captures it and drops its
    *  result if a newer event (or a clear) landed while it was in flight. */
   seq: number
@@ -74,7 +68,7 @@ const states = new Map<string, StampState>()
 function stateFor(terminalId: string): StampState {
   let st = states.get(terminalId)
   if (!st) {
-    st = { hookActive: false, seq: 0 }
+    st = { seq: 0 }
     states.set(terminalId, st)
   }
   return st
@@ -109,7 +103,6 @@ export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent)
   const { terminalId } = event
   const st = stateFor(terminalId)
   st.seq++
-  st.hookActive = true
   if (event.kind === 'session-end') {
     emit(terminalId, null)
     return
@@ -131,26 +124,11 @@ export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent)
     .catch(() => { /* runtime gone — no stamp beats a cwd-less guess */ })
 }
 
-/** True once hook events have identified this terminal's current agent run —
- *  the fallback probe is skipped/discarded for it (hook stamps are fresher by
- *  construction). */
-export function hasHookSessionIdentity(terminalId: string): boolean {
-  return states.get(terminalId)?.hookActive === true
-}
-
-/** Apply a fallback-probe result — dropped when hook identity arrived while
- *  the probe was in flight. */
-export function applyProbedAgentSession(terminalId: string, session: TerminalAgentSession | null): void {
-  if (hasHookSessionIdentity(terminalId)) return
-  emit(terminalId, session)
-}
-
 /** Falling edge: the agent exited while the terminal lives on — nothing to
- *  resume. Clears the stamp and resets hook authority for the next run. */
+ *  resume. Clears the stamp; the next agent run re-stamps via fresh events. */
 export function clearAgentSessionStamp(terminalId: string): void {
   const st = stateFor(terminalId)
   st.seq++
-  st.hookActive = false
   emit(terminalId, null)
 }
 

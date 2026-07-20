@@ -310,6 +310,99 @@ const codexSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
+// cursor — JSON-on-stdin hooks configured in <workspace>/.cursor/hooks.json
+// (project scope, discovered by the CLI itself; schema differs from the
+// claude/codex shared shape: {version: 1, hooks: {<event>: [{command}]}}).
+// Hooks fire in the CLI since ~2026.07 (pinned live 2026-07-19 against
+// 2026.07.16-899851b). session_id (= conversation_id) on every event;
+// payload cwd is often "" — workspace_roots[0] is the real join key.
+// transcript_path is null on sessionStart, set from the first tool/turn
+// event on.
+//
+// Turn coverage is TUI-only: print mode (-p) fires sessionStart, tool events
+// and sessionEnd but NEVER beforeSubmitPrompt/stop. sessionStart does NOT
+// fire on --resume — the tracker keys on whatever event carries the id first.
+// stop fires on abort too (status "aborted", sometimes followed by a second
+// "error" stop — idempotent for the FSM).
+//
+// NO permission-wait mapping on purpose: cursor has no dedicated permission
+// hook event (pinned live). beforeShellExecution fires before EVERY shell
+// command — auto-approved or prompted alike, and before the command RUNS, not
+// just before a prompt — so mapping it would flag every approved long-running
+// command as "waiting" and fire a needs-permission notification per shell
+// call. During a real approval prompt cursor therefore shows 'running' until
+// the user answers; postToolUse (turn-resume) re-asserts the turn afterwards.
+// ---------------------------------------------------------------------------
+
+const CURSOR_EVENTS = ['sessionStart', 'beforeSubmitPrompt', 'postToolUse', 'stop', 'sessionEnd']
+
+interface CursorHooksJson {
+  version?: unknown
+  hooks?: Record<string, Array<{ command?: unknown }>>
+  [k: string]: unknown
+}
+
+const cursorSpec: AgentHookSpec = {
+  projectFiles: [
+    {
+      relPath: '.cursor/hooks.json',
+      // Shared with the user's own cursor hooks — merged, never clobbered.
+      // Not mergeSharedHooksFile: cursor's per-event entries are flat
+      // [{command}] handlers, not {matcher, hooks: [...]} groups.
+      build: (existing, ctx) => {
+        const ours = (): CursorHooksJson => ({
+          version: 1,
+          hooks: Object.fromEntries(CURSOR_EVENTS.map((e) => [e, [{ command: ctx.bridgeCommand }]])),
+        })
+        if (existing === null) return JSON.stringify(ours(), null, 2) + '\n'
+        let parsed: CursorHooksJson
+        try {
+          parsed = JSON.parse(existing) as CursorHooksJson
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+        } catch {
+          return null
+        }
+        // The !Array.isArray guard is load-bearing (same bug class as the
+        // shared merge): a `"hooks": []` value passes typeof-object, and named
+        // keys assigned onto an array vanish in JSON.stringify.
+        const hooks: Record<string, Array<{ command?: unknown }>> =
+          typeof parsed.hooks === 'object' && parsed.hooks !== null && !Array.isArray(parsed.hooks)
+            ? parsed.hooks
+            : {}
+        for (const event of CURSOR_EVENTS) {
+          const kept = (Array.isArray(hooks[event]) ? hooks[event] : []).filter(
+            (h) => !(typeof h?.command === 'string' && h.command.includes(CATE_HOOK_MARKER)),
+          )
+          hooks[event] = [...kept, { command: ctx.bridgeCommand }]
+        }
+        const out = JSON.stringify({ version: parsed.version ?? 1, ...parsed, hooks }, null, 2) + '\n'
+        return out === existing ? null : out
+      },
+    },
+  ],
+  normalize: (p) => {
+    const roots = Array.isArray(p.workspace_roots) ? p.workspace_roots : []
+    const base = {
+      // session_id and conversation_id are the same uuid on every observed
+      // event; keep the fallback in case one spelling disappears in an update.
+      sessionId: str(p.session_id) ?? str(p.conversation_id),
+      cwd: str(roots[0]) ?? undefined,
+      transcriptPath: str(p.transcript_path) ?? undefined,
+    }
+    switch (p.hook_event_name) {
+      case 'sessionStart': return { kind: 'session-start', ...base }
+      case 'beforeSubmitPrompt': return { kind: 'turn-start', ...base }
+      // Fires after EVERY executed tool call — the idempotent "turn is
+      // running" re-assertion (and the only turn signal print mode has).
+      case 'postToolUse': return { kind: 'turn-resume', ...base }
+      case 'stop': return { kind: 'turn-end', ...base }
+      case 'sessionEnd': return { kind: 'session-end', ...base }
+      default: return null
+    }
+  },
+}
+
+// ---------------------------------------------------------------------------
 // pi — in-process extension auto-discovered from <cwd>/.pi/extensions/*.ts
 // (project scope, `--no-extensions` disables). File injection on purpose: the
 // original `-e <tempfile>` argv channel was launch-method dependent (any
@@ -342,6 +435,7 @@ export default function (pi: any) {
       body: JSON.stringify({
         agentId: "pi",
         terminalId: process.env.${CATE_TERMINAL_ID_ENV} ?? null,
+        pid: process.pid, // in-process: this IS the agent, for presence tracking
         payload: { event, sessionId, sessionFile, cwd: process.cwd() },
       }),
     }).catch(() => {});
@@ -404,6 +498,7 @@ export const CateHookBridge = async () => {
         body: JSON.stringify({
           agentId: "opencode",
           terminalId: process.env.${CATE_TERMINAL_ID_ENV} ?? null,
+          pid: process.pid, // in-process: this IS the agent, for presence tracking
           payload: {
             type: event.type,
             sessionID: props.sessionID ?? props.info?.id ?? null,
@@ -453,6 +548,7 @@ const opencodeSpec: AgentHookSpec = {
 export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
   'claude-code': claudeSpec,
   codex: codexSpec,
+  cursor: cursorSpec,
   pi: piSpec,
   opencode: opencodeSpec,
 }

@@ -104,7 +104,6 @@ export const Methods = {
   ptySetVisibility: 'pty.setVisibility',
   ptyScanActivity: 'pty.scanActivity',
   ptyScanPorts: 'pty.scanPorts',
-  ptyProbeAgentSession: 'pty.probeAgentSession',
 
   // --- agent hooks (normalized push events from the daemon's hook ingestion) ---
   // subscribe returns a streamId; AgentHookEvtPayload frames arrive as evts.

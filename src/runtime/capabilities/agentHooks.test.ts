@@ -2,8 +2,9 @@
 // Daemon-side agent hooks capability tests — the REAL implementation, no
 // mocks: the hooks dir materializes on disk, the loopback ingestion endpoint
 // runs, the generated bridge executes under /bin/sh, and workspace
-// preparation writes/merges project hook files. POSIX-only mechanisms (the
-// capability itself no-ops on win32).
+// preparation writes/merges project hook files. The capability runs on every
+// platform (win32 gets a .cmd wrapper); only the sh-wrapper exec test is
+// POSIX-gated.
 // =============================================================================
 
 import { execFile } from 'node:child_process'
@@ -33,7 +34,13 @@ function tmpDir(sub: string): string {
 /** Every test capability gets its OWN hooks dir (the production default is a
  *  fixed per-user dir — sharing it across tests would leak state and files
  *  into the real ~/.cate). */
-function makeCap(deps: { hasBin?: (c: string) => Promise<boolean>; hooksDir?: string } = {}): AgentHooksCapability {
+function makeCap(
+  deps: {
+    hasBin?: (c: string) => Promise<boolean>
+    hooksDir?: string
+    onPost?: (post: { terminalId: string; agentId: string; pid?: number }) => void | Promise<void>
+  } = {},
+): AgentHooksCapability {
   const cap = createAgentHooksCapability({ hooksDir: tmpDir('stable'), ...deps })
   cleanups.push(() => cap.dispose())
   return cap
@@ -63,14 +70,14 @@ const post = (url: string, token: string | null, body: unknown): Promise<Respons
     body: JSON.stringify(body),
   })
 
-describe.skipIf(!posix)('agentHooks capability', () => {
+describe('agentHooks capability', () => {
   test('envForPty plants the hook env and ambient opencode config', async () => {
     const cap = makeCap()
     const env = await cap.envForPty('rpty-1-local', { PATH: '/usr/bin:/bin', HOME: '/home/u' })
 
     expect(env.CATE_TERMINAL_ID).toBe('rpty-1-local')
     expect(env.CATE_HOOK_ENDPOINT).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
-    expect(env.CATE_HOOK_TOKEN).toMatch(/^[0-9a-f]{48}$/)
+    expect(env.CATE_HOOK_TOKEN).toMatch(/^[0-9a-f]{64}$/)
     // Untouched caller env survives — including PATH: injection is file/env
     // only, so nothing is prepended.
     expect(env.HOME).toBe('/home/u')
@@ -84,6 +91,10 @@ describe.skipIf(!posix)('agentHooks capability', () => {
     // An env var the caller already set is never clobbered by ambient vars.
     const env2 = await cap.envForPty('rpty-2-local', { PATH: '/bin', OPENCODE_CONFIG_CONTENT: 'user-value' })
     expect(env2.OPENCODE_CONFIG_CONTENT).toBe('user-value')
+
+    // The token is PER TERMINAL — one pty's env spoofs nothing for another.
+    expect(env2.CATE_HOOK_TOKEN).toMatch(/^[0-9a-f]{64}$/)
+    expect(env2.CATE_HOOK_TOKEN).not.toBe(env.CATE_HOOK_TOKEN)
   })
 
   test('a failed setup yields a plain shell, then a retry on the same dir succeeds', async () => {
@@ -131,7 +142,7 @@ describe.skipIf(!posix)('agentHooks capability', () => {
   test('ingestion: valid posts emit normalized events; bad token / unknown payloads do not', async () => {
     const cap = makeCap()
     const events = collect(cap)
-    const { url, token } = await cap.endpoint()
+    const { url, tokenFor } = await cap.endpoint()
 
     const claudeStart = {
       hook_event_name: 'SessionStart',
@@ -140,7 +151,7 @@ describe.skipIf(!posix)('agentHooks capability', () => {
       transcript_path: '/h/.claude/projects/x/1.jsonl',
       cwd: '/w',
     }
-    expect((await post(url, token, { agentId: 'claude-code', terminalId: 'rpty-9', payload: claudeStart })).status).toBe(204)
+    expect((await post(url, tokenFor('rpty-9'), { agentId: 'claude-code', terminalId: 'rpty-9', payload: claudeStart })).status).toBe(204)
     await waitFor(() => events.length === 1)
     expect(events[0]).toMatchObject({
       terminalId: 'rpty-9',
@@ -153,16 +164,60 @@ describe.skipIf(!posix)('agentHooks capability', () => {
     // Wrong/missing token → rejected, no event.
     expect((await post(url, 'not-the-token', { agentId: 'claude-code', terminalId: 'rpty-9', payload: claudeStart })).status).toBe(401)
     expect((await post(url, null, { agentId: 'claude-code', terminalId: 'rpty-9', payload: claudeStart })).status).toBe(401)
+    // ANOTHER terminal's valid token → rejected: the token is bound to the
+    // terminalId the post claims, so one pty's env can't forge events for a
+    // different terminal.
+    expect((await post(url, tokenFor('rpty-other'), { agentId: 'claude-code', terminalId: 'rpty-9', payload: claudeStart })).status).toBe(401)
     // Unknown agent / untracked payload / missing terminal id → accepted, dropped.
-    await post(url, token, { agentId: 'nope', terminalId: 'rpty-9', payload: claudeStart })
-    await post(url, token, { agentId: 'claude-code', terminalId: 'rpty-9', payload: { hook_event_name: 'PreToolUse' } })
-    await post(url, token, { agentId: 'claude-code', terminalId: '', payload: claudeStart })
+    await post(url, tokenFor('rpty-9'), { agentId: 'nope', terminalId: 'rpty-9', payload: claudeStart })
+    await post(url, tokenFor('rpty-9'), { agentId: 'claude-code', terminalId: 'rpty-9', payload: { hook_event_name: 'PreToolUse' } })
+    await post(url, tokenFor(''), { agentId: 'claude-code', terminalId: '', payload: claudeStart })
     await new Promise((r) => setTimeout(r, 100))
     expect(events.length).toBe(1)
   })
 
-  test('the generated bridge posts a stdin payload end-to-end (sh wrapper → node → HTTP)', async () => {
-    const cap = makeCap()
+  test('onPost fires per authenticated known-agent post — awaited before the response, with the lineage pid', async () => {
+    const calls: Array<{ terminalId: string; agentId: string; pid?: number }> = []
+    let postSettledBeforeResponse = false
+    const cap = makeCap({
+      onPost: async (post) => {
+        // Async on purpose: the response must WAIT for this (the bridge holds
+        // its process chain alive only until it hears back).
+        await new Promise((r) => setTimeout(r, 50))
+        calls.push(post)
+        postSettledBeforeResponse = true
+      },
+    })
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+
+    const payload = { hook_event_name: 'Stop', session_id: '11111111-2222-4333-8444-555555555555', cwd: '/w' }
+    const res = await post(url, tokenFor('rpty-p'), { agentId: 'claude-code', terminalId: 'rpty-p', pid: 4242, payload })
+    expect(res.status).toBe(204)
+    expect(postSettledBeforeResponse).toBe(true)
+    expect(calls).toEqual([{ terminalId: 'rpty-p', agentId: 'claude-code', pid: 4242 }])
+    await waitFor(() => events.length === 1)
+
+    // A payload that normalizes to null still proves the agent is alive.
+    await post(url, tokenFor('rpty-p'), { agentId: 'claude-code', terminalId: 'rpty-p', pid: 4242, payload: { hook_event_name: 'PreToolUse' } })
+    await waitFor(() => calls.length === 2)
+    expect(events.length).toBe(1) // still no normalized event
+
+    // Missing/malformed pid → undefined (the tracker ignores it), never a crash.
+    await post(url, tokenFor('rpty-p'), { agentId: 'claude-code', terminalId: 'rpty-p', pid: 'nope', payload })
+    await waitFor(() => calls.length === 3)
+    expect(calls[2].pid).toBeUndefined()
+
+    // No onPost for a bad token or an unknown agent.
+    await post(url, 'wrong-token', { agentId: 'claude-code', terminalId: 'rpty-p', pid: 4242, payload })
+    await post(url, tokenFor('rpty-p'), { agentId: 'not-an-agent', terminalId: 'rpty-p', pid: 4242, payload })
+    await new Promise((r) => setTimeout(r, 150))
+    expect(calls.length).toBe(3)
+  })
+
+  test.skipIf(!posix)('the generated bridge posts a stdin payload end-to-end (sh wrapper → node → HTTP)', async () => {
+    const posts: Array<{ agentId: string; pid?: number }> = []
+    const cap = makeCap({ onPost: (p) => { posts.push(p) } })
     const events = collect(cap)
     const { dir } = await cap.endpoint()
     const env = await cap.envForPty('rpty-bridge', { PATH: '/usr/bin:/bin' })
@@ -195,9 +250,14 @@ describe.skipIf(!posix)('agentHooks capability', () => {
       sessionId: payload.session_id,
     })
     expect(events[0].raw.turn_id).toBe('turn-1')
+    // The bridge reports its PARENT as the lineage pid. The sh wrapper execs
+    // node in place, so the bridge's parent here is THIS test process — in
+    // production it is the agent CLI (or its sh hook-command layer), which is
+    // what the presence tracker walks up from.
+    expect(posts).toEqual([{ terminalId: 'rpty-bridge', agentId: 'codex', pid: process.pid }])
   })
 
-  test('prepareWorkspace writes the claude + codex + pi hook files and git-excludes them', async () => {
+  test('prepareWorkspace writes the claude + codex + cursor + pi hook files and git-excludes them', async () => {
     const cap = makeCap({ hasBin: async () => true })
     const cwd = tmpDir('ws')
     mkdirSync(path.join(cwd, '.git')) // enough of a repo for info/exclude
@@ -218,9 +278,20 @@ describe.skipIf(!posix)('agentHooks capability', () => {
     expect(Object.keys(codexHooks.hooks)).toContain('PermissionRequest')
     const { dir } = await cap.endpoint()
     expect(codexHooks.hooks.SessionStart[0].hooks[0]).toMatchObject({
-      command: path.join(dir, 'cate-hook-bridge-codex'),
+      command: path.join(dir, posix ? 'cate-hook-bridge-codex' : 'cate-hook-bridge-codex.cmd'),
       timeout: 60,
     })
+
+    // cursor discovers <workspace>/.cursor/hooks.json itself — its schema is
+    // the flat {version, hooks: {event: [{command}]}} shape.
+    const cursorHooks = JSON.parse(readFileSync(path.join(cwd, '.cursor', 'hooks.json'), 'utf-8')) as {
+      version: number
+      hooks: Record<string, Array<{ command: string }>>
+    }
+    expect(cursorHooks.version).toBe(1)
+    expect(cursorHooks.hooks.sessionStart[0].command).toBe(
+      path.join(dir, posix ? 'cate-hook-bridge-cursor' : 'cate-hook-bridge-cursor.cmd'),
+    )
 
     // pi's extension is auto-discovered from <cwd>/.pi/extensions — self-gated
     // on the hook env, so it is inert outside Cate terminals.
@@ -230,6 +301,7 @@ describe.skipIf(!posix)('agentHooks capability', () => {
     const exclude = readFileSync(path.join(cwd, '.git', 'info', 'exclude'), 'utf-8')
     expect(exclude).toContain('/.claude/settings.local.json')
     expect(exclude).toContain('/.codex/hooks.json')
+    expect(exclude).toContain('/.cursor/hooks.json')
     expect(exclude).toContain('/.pi/extensions/cate-hook.ts')
 
     // Idempotent: a second prepare does not duplicate exclude lines.
@@ -292,19 +364,20 @@ describe.skipIf(!posix)('agentHooks capability', () => {
     await capNone.prepareWorkspace(cwd2)
     expect(existsSync(path.join(cwd2, '.claude'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.codex'))).toBe(false)
+    expect(existsSync(path.join(cwd2, '.cursor'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.pi'))).toBe(false)
   })
 
   test('subscribe/unsubscribe stops delivery; dispose keeps the stable hooks dir', async () => {
     const cap = createAgentHooksCapability({ hooksDir: tmpDir('dispose') })
-    const { url, token, dir } = await cap.endpoint()
+    const { url, tokenFor, dir } = await cap.endpoint()
     const events: AgentHookEvent[] = []
     const unsub = cap.subscribe((e) => events.push(e))
     const payload = { event: 'agent_end', sessionId: 's-1', sessionFile: '/f', cwd: '/w' }
-    await post(url, token, { agentId: 'pi', terminalId: 't', payload })
+    await post(url, tokenFor('t'), { agentId: 'pi', terminalId: 't', payload })
     await waitFor(() => events.length === 1)
     unsub()
-    await post(url, token, { agentId: 'pi', terminalId: 't', payload })
+    await post(url, tokenFor('t'), { agentId: 'pi', terminalId: 't', payload })
     await new Promise((r) => setTimeout(r, 100))
     expect(events.length).toBe(1)
 
@@ -316,7 +389,7 @@ describe.skipIf(!posix)('agentHooks capability', () => {
   })
 })
 
-describe.skipIf(!posix)('ensureGitExcluded', () => {
+describe('ensureGitExcluded', () => {
   test('resolves a worktree .git file through gitdir + commondir', async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'cate-hooks-wt-'))
     cleanups.push(() => rmSync(root, { recursive: true, force: true }))

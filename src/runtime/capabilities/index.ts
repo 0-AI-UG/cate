@@ -12,7 +12,8 @@ import { hostExtensionsRoot, extractArtifact } from './extensions'
 import { createWatchPool } from './fileWatcher'
 import { runRipgrepSearch } from '../search/engine'
 import { createVcsCapability } from './vcs'
-import { createProcessCapability, type ProcessCapability } from './process'
+import { createProcessCapability, snapshotProcessTree, type ProcessCapability } from './process'
+import { createAgentPresenceTracker } from './agentPresence'
 import { resolveShell } from './shellResolver'
 import { createAgentCapability } from './agent'
 import { createAgentHooksCapability, type AgentHooksCapability } from './agentHooks'
@@ -192,10 +193,16 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   const vcs = createVcsCapability({ env, scopeId: config.id })
 
   // Agent hook injection: every PTY gets the hook env (ingestion endpoint,
-  // per-boot token, CATE_TERMINAL_ID, ambient agent env) and its cwd gets the
+  // per-terminal token, CATE_TERMINAL_ID, ambient agent env) and its cwd gets the
   // workspace-scoped hook files, so agent CLIs the user types push their
-  // session/turn/permission events back to this daemon.
-  const agentHooks = createAgentHooksCapability()
+  // session/turn/permission events back to this daemon. Presence is anchored
+  // to those posts: each one carries the poster's lineage pid, the tracker
+  // resolves it to the agent process, and scanActivity reports that pid's
+  // liveness — the one presence authority (no child scan).
+  const agentPresence = createAgentPresenceTracker({ snapshot: snapshotProcessTree })
+  const agentHooks = createAgentHooksCapability({
+    onPost: ({ terminalId, agentId, pid }) => agentPresence.notePost(terminalId, agentId, pid),
+  })
 
   const innerProc = createProcessCapability({
     resolveShell: (requested) => {
@@ -211,6 +218,7 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
       envForPty: (ptyId, env) => agentHooks.envForPty(ptyId, env),
       prepareWorkspace: (cwd) => agentHooks.prepareWorkspace(cwd),
     },
+    agentPresence,
   })
 
   // The daemon is the AUTHORITATIVE cwd check (RemoteRuntime.validateCwd is a

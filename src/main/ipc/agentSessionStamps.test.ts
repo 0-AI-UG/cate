@@ -2,8 +2,7 @@
 // Stamping rules for hook-pushed agent-session identity (agentSessionStamps.ts):
 // per-agent resumability gating (claude only stamps once a turn proves the
 // session is persisted), the /clear rotation (clear on session-end, re-stamp
-// only after the next turn), the cwd fallback for cwd-less payloads,
-// dedup, and the hook-over-probe authority handoff.
+// only after the next turn), the cwd fallback for cwd-less payloads, and dedup.
 // =============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -26,12 +25,7 @@ vi.mock('../windowRegistry', () => ({
   },
 }))
 
-import {
-  ingestAgentSessionStamp,
-  applyProbedAgentSession,
-  clearAgentSessionStamp,
-  hasHookSessionIdentity,
-} from './agentSessionStamps'
+import { ingestAgentSessionStamp, clearAgentSessionStamp } from './agentSessionStamps'
 
 let nextCwd: string | null = '/runtime-cwd'
 let getCwdCalls = 0
@@ -80,7 +74,6 @@ describe('claude resumability gating', () => {
   it('does not stamp on session-start (no transcript exists yet — resume would fail)', () => {
     ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'session-start', 'id-1', '/w'))
     expect(stamps(tid)).toEqual([])
-    expect(hasHookSessionIdentity(tid)).toBe(true) // but hooks HAVE spoken
   })
 
   it.each(['turn-start', 'turn-end', 'permission-wait'] as const)('stamps on %s', (kind) => {
@@ -104,7 +97,7 @@ describe('claude resumability gating', () => {
 })
 
 describe('agents whose first sessionId-bearing event is already persisted', () => {
-  it.each(['codex', 'pi', 'opencode'] as const)('%s stamps on session-start', (agentId) => {
+  it.each(['codex', 'cursor', 'pi', 'opencode'] as const)('%s stamps on session-start', (agentId) => {
     ingestAgentSessionStamp(runtime, ev(tid, agentId, 'session-start', 'id-1', '/w'))
     expect(stamps(tid)).toEqual([{ agentId, sessionId: 'id-1', cwd: '/w' }])
   })
@@ -163,27 +156,12 @@ describe('emit mechanics', () => {
     ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', 'id-1', '/w'))
     expect(harness.sent).toHaveLength(0)
   })
-})
 
-describe('hook-over-probe authority', () => {
-  it('applies a probe result while hooks have not spoken', () => {
-    applyProbedAgentSession(tid, { agentId: 'claude-code', sessionId: 'probed', cwd: '/w' })
-    expect(stamps(tid)).toEqual([{ agentId: 'claude-code', sessionId: 'probed', cwd: '/w' }])
-  })
-
-  it('drops a probe result once any hook event was ingested (even a gated one)', () => {
-    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'session-start', 'id-1', '/w'))
-    applyProbedAgentSession(tid, { agentId: 'claude-code', sessionId: 'stale-probe', cwd: '/w' })
-    expect(stamps(tid)).toEqual([])
-  })
-
-  it('falling-edge clear resets hook authority for the next agent run', () => {
+  it('falling-edge clear emits null; the next run re-stamps from fresh events', () => {
     ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', 'id-1', '/w'))
     clearAgentSessionStamp(tid)
     expect(stamps(tid)).toEqual([{ agentId: 'codex', sessionId: 'id-1', cwd: '/w' }, null])
-    expect(hasHookSessionIdentity(tid)).toBe(false)
-    // A hook-less relaunch in the same terminal is probe territory again.
-    applyProbedAgentSession(tid, { agentId: 'codex', sessionId: 'id-2', cwd: '/w' })
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'session-start', 'id-2', '/w'))
     expect(stamps(tid).at(-1)).toEqual({ agentId: 'codex', sessionId: 'id-2', cwd: '/w' })
   })
 })

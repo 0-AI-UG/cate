@@ -38,7 +38,11 @@ export function selectAgentInfoByPanel(
     // the process is gone; leave `state` ungated so the finished/awaiting
     // indicators still render.
     const name = terminal.agentPresent ? terminal.agentName : null
-    out[resolvePanelId(key)] = { state: terminal.agentState, name, logo: getAgentLogo(name) }
+    out[resolvePanelId(key)] = {
+      state: terminal.agentState,
+      name,
+      logo: getAgentLogo(name),
+    }
   }
   return out
 }

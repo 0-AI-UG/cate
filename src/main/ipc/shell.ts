@@ -1,12 +1,12 @@
 // =============================================================================
 // Shell / Process Monitor IPC handlers
-// Walks the process tree to detect agent CLIs (Claude, Codex, etc.), dev-server
+// Polls each terminal's runtime ProcessHost for activity (first non-shell
+// child), the hook-registered agent pid's liveness (agentPresence.ts — the
+// falling edge behind 'finished' and the resume-stamp clear), dev-server
 // ports, and working directory. The actual ps/lsof scans run inside each
 // terminal's runtime ProcessHost (local OR remote daemon) — this module owns
 // only the polling cadence, the owner-window routing, and the cross-scan
-// carry-across that keeps tab names from flickering. For a LOCAL terminal the
-// behaviour is byte-identical to before (the local ProcessHost runs the same
-// ps/lsof); for a REMOTE terminal the scans run on the daemon host.
+// carry-across that keeps tab names from flickering.
 // =============================================================================
 
 import { app, ipcMain } from 'electron'
@@ -20,21 +20,15 @@ import {
 import { getRuntimeForTerminal, getTerminalIds, getTerminalOwner, onTerminalSessionsChanged } from './terminal'
 import { sendToWindow, broadcastToAll, isAnyWindowFocused } from '../windowRegistry'
 import type { Runtime, PtyActivity } from '../runtime/types'
-import type { TerminalActivity, TerminalAgentSession } from '../../shared/types'
-import {
-  applyProbedAgentSession,
-  clearAgentSessionStamp,
-  dropAgentSessionStampState,
-  hasHookSessionIdentity,
-} from './agentSessionStamps'
+import type { TerminalActivity } from '../../shared/types'
+import { clearAgentSessionStamp, dropAgentSessionStampState } from './agentSessionStamps'
 
 interface PreviousState {
   /** Last agent name seen — carried across transient scan misses so the tab
    *  name doesn't flicker when a single scan cycle fails to spot the agent. */
   previousAgentName: string | null
-  /** Whether the last scan saw an agent — the rising edge triggers the one-shot
-   *  fallback session probe, the falling edge (agent exited while the terminal
-   *  lives on) clears the persisted resume stamp. */
+  /** Whether the last scan saw an agent — the falling edge (agent exited while
+   *  the terminal lives on) clears the persisted resume stamp. */
   previousAgentPresent?: boolean
 }
 
@@ -59,14 +53,14 @@ export function getRunningTerminals(): Array<{ processName: string | null }> {
   return out
 }
 
-// Fast poll: process-tree scan for agent detection — drives the activity
-// indicators and the agent "needs input" / "finished" notifications. It stays
-// at 1s while a window is focused so the UI feels live, but backs off to 5s
-// when the whole app is unfocused: the activity indicators aren't visible then,
-// and agent "needs input" detection is driven by PTY title/spinner events in
-// the renderer (event-based, not this scan), so a few extra seconds of presence
-// latency costs nothing while the scan rate — the real background-CPU/battery
-// drain — drops ~5×. (Each cycle forks one `ps` snapshot per runtime.)
+// Fast poll: activity + agent-pid liveness scan — drives the activity
+// indicators and the finished/notRunning presence edges. It stays at 1s while
+// a window is focused so the UI feels live, but backs off to 5s when the
+// whole app is unfocused: the activity indicators aren't visible then, and
+// agent "needs input" detection is driven by hook events (push-based, not
+// this scan), so a few extra seconds of presence latency costs nothing while
+// the scan rate — the real background-CPU/battery drain — drops ~5×. (Each
+// cycle forks one `ps` snapshot per runtime.)
 const ACTIVITY_POLL_FOCUSED_MS = 1000
 const ACTIVITY_POLL_UNFOCUSED_MS = 5000
 let pollInterval: ReturnType<typeof setInterval> | null = null
@@ -186,17 +180,12 @@ async function runActivityScan(): Promise<void> {
           lastActivity.set(terminalId, activity)
           sendToWindow(ownerWindowId, SHELL_ACTIVITY_UPDATE, terminalId, activity, agentName, agentPresent)
 
-          // Agent-session stamp edges (identity itself is hook-pushed — see
-          // agentSessionStamps.ts). Rising edge: one fallback probe, only when
-          // no hook event has identified this agent yet (a codex TUI before
-          // its first prompt, or an agent launched before Cate injected
-          // hooks). Falling edge: clear the stamp — the agent exited while
-          // the terminal lives on, so there is nothing to resume. An app quit
+          // Agent-session stamps are hook-pushed ONLY (agentSessionStamps.ts);
+          // this scan owns just the falling edge: the agent exited while the
+          // terminal lives on, so there is nothing to resume. An app quit
           // kills the poll loop itself, leaving the last stamp persisted —
           // exactly "what was running at save time".
-          if (agentPresent && !prev.previousAgentPresent) {
-            if (!hasHookSessionIdentity(terminalId)) void probeAndEmitAgentSession(runtime, terminalId)
-          } else if (!agentPresent && prev.previousAgentPresent) {
+          if (!agentPresent && prev.previousAgentPresent) {
             clearAgentSessionStamp(terminalId)
           }
         }
@@ -205,56 +194,6 @@ async function runActivityScan(): Promise<void> {
   } finally {
     pollBusy = false
   }
-}
-
-/**
- * Quit-time stamp flush: probe every agent-hosting terminal whose session the
- * hook stream has NOT identified (agents launched before Cate injected hooks,
- * or a codex TUI that was never prompted), emitting fresh
- * SHELL_AGENT_SESSION_UPDATE stamps so the session save that follows persists
- * a usable resume id. Hook-identified terminals are skipped — their stamps
- * are pushed the moment identity changes (including the /clear-just-before-
- * quit rotation the old poll-era flush existed for), so a probe could only be
- * staler. Called from the before-quit sequence BEFORE the dock-window flush and
- * the main renderer's SESSION_FLUSH_SAVE — IPC ordering per window then
- * guarantees the renderer sees the stamps before it serializes panel state.
- * Bounded: a hung probe (dead remote) must never stall quit.
- */
-export async function flushAgentSessionStamps(timeoutMs: number): Promise<void> {
-  const probes: Promise<void>[] = []
-  for (const terminalId of getTerminalIds()) {
-    if (!previousStates.get(terminalId)?.previousAgentPresent) continue
-    if (hasHookSessionIdentity(terminalId)) continue
-    const runtime = getRuntimeForTerminal(terminalId)
-    if (!runtime) continue
-    probes.push(probeAndEmitAgentSession(runtime, terminalId))
-  }
-  if (probes.length === 0) return
-  await Promise.race([
-    Promise.allSettled(probes),
-    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
-  ])
-}
-
-/** One-shot fallback probe (rising edge / quit flush) — the store scan on the
- *  terminal's runtime host. Hook-pushed identity always outranks the result
- *  (applyProbedAgentSession drops it if hooks spoke while it was in flight). */
-async function probeAndEmitAgentSession(runtime: Runtime, terminalId: string): Promise<void> {
-  let session: TerminalAgentSession | null = null
-  try {
-    session = await runtime.process.probeAgentSession(terminalId)
-  } catch (err) {
-    log.debug('[shell] probeAgentSession failed: %s', err instanceof Error ? err.message : String(err))
-    return // transient failure — keep the last stamp rather than clearing it
-  }
-  // The agent may have exited while this probe was in flight — the falling
-  // edge already cleared the stamp, and a late result must not resurrect it
-  // (nothing is running to resume).
-  if (!previousStates.get(terminalId)?.previousAgentPresent) return
-  // A present agent with no stored session yet (just launched, nothing
-  // prompted) probes to null — emit it so a stale stamp from an earlier
-  // agent in this terminal doesn't outlive that agent's own sessions.
-  applyProbedAgentSession(terminalId, session)
 }
 
 /**

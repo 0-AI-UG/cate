@@ -1,7 +1,7 @@
 // =============================================================================
 // Agent activity coordinator: a hook-event FSM plus presence edges.
 //
-// Running/idle for all agents (claude/codex/pi/opencode) is driven by the
+// Running/idle for all agents (claude/codex/cursor/pi/opencode) is driven by the
 // normalized agent-hook event stream (SHELL_AGENT_HOOK_EVENT →
 // noteAgentHookEvent): turn-start flips to 'running' immediately, turn-end
 // flips back to 'waitingForInput' and fires the "needs input" notification,
@@ -13,17 +13,19 @@
 // back to 'running' silently. The events are authoritative, so no settle
 // timer is involved.
 //
-// Presence (noteAgentPresence, fed 1 Hz from main's process-tree scan) stays
-// authoritative for EXISTENCE: hooks can't report a crash or exit (codex never
-// fires SessionEnd), so notRunning/finished always come from the scan.
+// Presence (noteAgentPresence, fed 1 Hz from main's activity scan) stays
+// authoritative for EXISTENCE — but it is itself hook-anchored now: the
+// daemon registers the agent's pid from its first hook post's lineage
+// (runtime/capabilities/agentPresence.ts) and the scan reports that pid's
+// liveness. Hooks can't report a crash or exit (codex never fires
+// SessionEnd), so notRunning/finished still come from the scan's falling
+// edge.
 //
-// Accepted limitation: hook injection is best-effort. Hook files are
-// repo-scoped, so injection no longer depends on how the CLI was launched,
-// but an agent can still run without hooks (codex before its native trust
-// prompt is answered, a CLI launched before Cate injected the files). An
-// agent that never speaks hooks shows 'waitingForInput' for as long as it is
-// present — no running shimmer, no notifications — and still resolves to
-// finished/notRunning via the process scan.
+// Hook injection is best-effort, and hooks are the ONLY detection channel:
+// an agent that never speaks them (codex before its native trust prompt is
+// answered, a CLI launched before Cate injected the files, an unparseable
+// settings file) is simply not detected — no indicator, no notifications,
+// like any other process in the terminal.
 // =============================================================================
 
 import { useStatusStore, workspaceIdForTerminal } from '../../stores/statusStore'
@@ -204,9 +206,9 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
   }
 }
 
-/** Main's process scan reported whether the agent CLI is present. The agent
- *  name is written to statusStore by the caller (useProcessMonitor) BEFORE
- *  this runs, so commit reads a current name. */
+/** Main's scan reported whether the hook-registered agent pid is alive. The
+ *  agent name is written to statusStore by the caller (useProcessMonitor)
+ *  BEFORE this runs, so commit reads a current name. */
 export function noteAgentPresence(terminalId: string, present: boolean): void {
   const t = trackerFor(terminalId)
   t.wasPresent = t.present

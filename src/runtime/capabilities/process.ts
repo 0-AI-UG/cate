@@ -13,10 +13,9 @@ import type { IPty } from 'node-pty'
 import os from 'os'
 import { execFile } from 'child_process'
 import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../../main/runtime/types'
-import type { TerminalActivity, TerminalAgentSession } from '../../shared/types'
-import { matchAgentDef, matchAgentProcess } from '../../shared/agents'
+import type { TerminalActivity } from '../../shared/types'
+import type { AgentPresenceTracker } from './agentPresence'
 import { catePathEnv } from '../cateCli'
-import { probeSessionForAgent, startTimeForPid } from './agentSessions'
 import {
   type ProcTree,
   snapshotProcessTreeProc,
@@ -68,8 +67,9 @@ function snapshotProcessTreePs(): Promise<ProcTree> {
   })
 }
 
-/** Process-table snapshot: /proc on Linux (no fork — #246), `ps` elsewhere. */
-function snapshotProcessTree(): Promise<ProcTree> {
+/** Process-table snapshot: /proc on Linux (no fork — #246), `ps` elsewhere.
+ *  Exported for the agent-presence tracker's registration-time walk. */
+export function snapshotProcessTree(): Promise<ProcTree> {
   return isLinux ? snapshotProcessTreeProc() : snapshotProcessTreePs()
 }
 
@@ -100,32 +100,21 @@ function descendantsOf(pid: number, tree: ProcTree): number[] {
   return out
 }
 
-// Agent detection list lives in src/shared/agents.ts (one place, shared with the
-// renderer's logo map) — matchAgentProcess maps a child process name to its
-// display name.
-
 function isShellProcess(name: string): boolean {
   const shells = ['zsh', 'bash', 'fish', 'sh', 'tcsh', 'ksh', 'dash']
   return shells.includes(name.toLowerCase())
 }
 
-/** Derive one pty's activity + agent detection from its direct children. */
-function activityForPid(shellPid: number, tree: ProcTree): PtyActivity {
-  const childrenToScan = tree.childrenByPid.get(shellPid) ?? []
-  let foundAgentName: string | null = null
-  let firstChildName: string | null = null
-  for (const childPid of childrenToScan) {
+/** The activity indicator: the pty's first non-shell direct child. Agent
+ *  detection deliberately does NOT live here — presence is hook-anchored
+ *  (agentPresence.ts), so it survives tmux/screen/setsid detaching the agent
+ *  from this pty's tree, where a child scan is structurally blind. */
+function activityForPid(shellPid: number, tree: ProcTree): TerminalActivity {
+  for (const childPid of tree.childrenByPid.get(shellPid) ?? []) {
     const name = tree.nameByPid.get(childPid)
-    if (!name) continue
-    if (firstChildName === null && !isShellProcess(name)) firstChildName = name
-    if (!foundAgentName) {
-      const agentMatch = matchAgentProcess(name)
-      if (agentMatch) foundAgentName = agentMatch
-    }
+    if (name && !isShellProcess(name)) return { type: 'running', processName: name }
   }
-  const activity: TerminalActivity =
-    firstChildName != null ? { type: 'running', processName: firstChildName } : { type: 'idle' }
-  return { activity, agentName: foundAgentName, agentPresent: foundAgentName != null }
+  return { type: 'idle' }
 }
 
 // node-pty is loaded LAZILY so the daemon still starts (and serves files/git)
@@ -175,6 +164,14 @@ export interface ProcessDeps {
     envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
     prepareWorkspace(cwd: string): Promise<void>
   }
+  /**
+   * Hook-anchored agent presence (agentPresence.ts): scanActivity reads each
+   * pty's agent fields from the tracker's registered-pid liveness instead of
+   * scanning children, and pty teardown drops the registration. Optional —
+   * without it every pty reports no agent (hosts/tests that don't wire hooks
+   * have no way to register one anyway).
+   */
+  agentPresence?: Pick<AgentPresenceTracker, 'presenceFor' | 'drop'>
 }
 
 /** The capability the daemon holds onto: the ProcessHost plus the concrete
@@ -292,6 +289,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       pty.onExit(({ exitCode }) => {
         ptys.delete(id)
         idle.delete(id)
+        deps.agentPresence?.drop(id)
         onExit(id, exitCode)
       })
       return { id, pid: pty.pid, notice: shell.notice, shell: shell.path }
@@ -322,6 +320,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       try { pty.kill() } catch { /* already dead */ }
       ptys.delete(id)
       idle.delete(id)
+      deps.agentPresence?.drop(id)
     },
 
     async getCwd(id: string): Promise<string | null> {
@@ -350,39 +349,15 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       if (owned.length === 0 || process.platform === 'win32') return {}
       const tree = await snapshotProcessTree()
       const out: Record<string, PtyActivity> = {}
-      for (const { id, pid } of owned) out[id] = activityForPid(pid, tree)
-      return out
-    },
-
-    async probeAgentSession(id: string): Promise<TerminalAgentSession | null> {
-      const pty = ptys.get(id)
-      if (!pty || process.platform === 'win32') return null
-      // Same direct-children detection as activityForPid, but resolving the
-      // AgentDef (its id keys the session-store adapter).
-      const tree = await snapshotProcessTree()
-      let agentPid: number | null = null
-      let agentId: string | null = null
-      for (const childPid of tree.childrenByPid.get(pty.pid) ?? []) {
-        const name = tree.nameByPid.get(childPid)
-        const def = name ? matchAgentDef(name) : null
-        if (def) {
-          agentPid = childPid
-          agentId = def.id
-          break
-        }
+      for (const { id, pid } of owned) {
+        // Agent fields come from the hook-registered pid's liveness against
+        // this same snapshot — same 1 Hz authority for "agent gone" as
+        // before, but anchored to a pid the agent itself proved, not to a
+        // position in the pty's tree.
+        const presence = deps.agentPresence?.presenceFor(id, tree) ?? { agentName: null, agentPresent: false }
+        out[id] = { activity: activityForPid(pid, tree), ...presence }
       }
-      if (agentPid == null || agentId == null) return null
-      // The AGENT process's cwd is the session join key (the CLIs record the
-      // cwd they were launched in); fall back to the shell's cwd — while the
-      // agent runs in the foreground the two can only differ for a subshell
-      // launch like `(cd sub && claude)`. Its start time gates the store scan:
-      // sessions are persisted lazily, so without the gate a fresh agent would
-      // probe to the PREVIOUS session in the same cwd.
-      const [agentCwd, agentStartMs] = await Promise.all([cwdForPid(agentPid), startTimeForPid(agentPid)])
-      const cwd = agentCwd ?? (await cwdForPid(pty.pid))
-      if (!cwd) return null
-      const sessionId = await probeSessionForAgent({ agentId, agentPid, cwd, agentStartMs })
-      return sessionId ? { agentId, sessionId, cwd } : null
+      return out
     },
 
     async scanPorts(ids: string[]): Promise<Record<string, number[]>> {

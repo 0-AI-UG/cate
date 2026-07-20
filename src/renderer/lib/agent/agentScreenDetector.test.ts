@@ -92,17 +92,17 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     )
   })
 
-  it('bypassed injection (present, no hook events ever) shows waitingForInput and never notifies', () => {
-    // Accepted limitation: an agent running without hooks (e.g. codex before
-    // its native trust prompt is answered) never speaks them. It parks on
-    // waitingForInput while present — no false running, no notifications.
+  it('presence without turn events shows waitingForInput and never notifies', () => {
+    // Presence is hook-anchored daemon-side (the agent's first post registers
+    // its pid), so present-with-no-TURN-events is a registered agent between
+    // prompts: parked on waitingForInput — no false running, no notifications.
     noteAgentPresence(PTY, true)
     expect(state()).toBe('waitingForInput')
     noteAgentPresence(PTY, true) // more 1 Hz scan ticks
     expect(state()).toBe('waitingForInput')
     expect(sendOsNotification).not.toHaveBeenCalled()
 
-    // The process scan still resolves its end honestly.
+    // The scan's falling edge still resolves its end honestly.
     noteAgentPresence(PTY, false)
     expect(state()).toBe('finished')
   })
