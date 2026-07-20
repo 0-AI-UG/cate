@@ -12,20 +12,40 @@
 // (onShellAgentHookEvent) for its own features.
 // =============================================================================
 
-import { SHELL_AGENT_HOOK_EVENT } from '../../shared/ipc-channels'
-import type { AgentHookEvent } from '../../shared/agentHooks'
+import { ipcMain } from 'electron'
+import { AGENT_HOOKS_INSPECT, SHELL_AGENT_HOOK_EVENT } from '../../shared/ipc-channels'
+import type { AgentHookAgentState, AgentHookEvent } from '../../shared/agentHooks'
 import { runtimes } from '../runtime/runtimeManager'
-import type { RuntimeId } from '../runtime/locator'
+import { parseLocator, type RuntimeId } from '../runtime/locator'
 import { getTerminalOwner } from './terminal'
 import { sendToWindow } from '../windowRegistry'
 import { ingestAgentSessionStamp } from './agentSessionStamps'
 
 const unsubs = new Map<RuntimeId, () => void>()
 
+/**
+ * Inspect a workspace's per-agent hook-file injection for the Settings UI. The
+ * work happens in the agent-hooks capability on whichever host owns the
+ * workspace (local daemon or a remote one), so it is correct for remote
+ * workspaces too — main just resolves the runtime and forwards the cwd.
+ */
+async function inspectAgentHooks(locator: string): Promise<AgentHookAgentState[]> {
+  const { runtimeId, path: cwd } = parseLocator(locator)
+  if (!cwd) return []
+  try {
+    return await runtimes.resolve(runtimeId).agentHooks.inspectWorkspace(cwd)
+  } catch {
+    return [] // runtime not connected / inspection failed — no state to show
+  }
+}
+
 /** Subscribe to each runtime's hook stream as it connects (LOCAL and remote
  *  alike; a reconnect resubscribes on the fresh RemoteRuntime). Call once at
  *  startup, before ensureLocalRuntime kicks off the LOCAL connect. */
 export function registerAgentHookForwarding(): void {
+  // Settings UI: report a workspace's current per-agent injection state.
+  ipcMain.handle(AGENT_HOOKS_INSPECT, (_event, locator: string) => inspectAgentHooks(locator))
+
   runtimes.onConnected((id, runtime) => {
     unsubs.get(id)?.()
     unsubs.set(

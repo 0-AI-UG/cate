@@ -82,6 +82,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   // deeper validation (shape of the model ref / sidebar layout) lives in the
   // renderer consumers, which validate hand-edited partial shapes.
   agentDefaultModel: 'object',
+  agentHookInjection: 'object',
   cateAgentModel: 'object',
   cateAgentOrchestratorAgentId: 'string',
   cateAgentObserveCooldownMin: 'number',

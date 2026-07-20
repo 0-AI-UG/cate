@@ -23,7 +23,7 @@ const stubProcess = {} as unknown as ProcessHost
 const stubAgent = {} as unknown as AgentHost
 const stubServer = {} as unknown as ServerHost
 const stubTunnel = {} as unknown as TunnelHost
-const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {} }
+const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {}, inspectWorkspace: async () => [] }
 
 // Wire an RpcServer and a RuntimeRpcClient back-to-back, in-process, over the
 // real LF-JSON framing. This proves the entire wire stack (framing, req/res
@@ -441,6 +441,7 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
           emit = onEvent
           return () => { emit = null }
         },
+        inspectWorkspace: async () => [],
       },
       server: stubServer,
       tunnel: stubTunnel,

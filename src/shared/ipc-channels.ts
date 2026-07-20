@@ -94,6 +94,9 @@ export const SHELL_AGENT_SCREEN_STATE = 'shell:agentScreenState'
 // Normalized push-based agent-CLI hook event (session identity / turn status /
 // permission-wait, ingested by the runtime daemon) — main -> owning window.
 export const SHELL_AGENT_HOOK_EVENT = 'shell:agentHookEvent'
+// Inspect a workspace's per-agent hook-file injection state (folder present /
+// injected) for the Settings UI — renderer -> main (invoke).
+export const AGENT_HOOKS_INSPECT = 'agentHooks:inspect'
 
 // Settings
 export const SETTINGS_GET = 'settings:get'

@@ -5,6 +5,8 @@
 
 import type { Theme } from './theme'
 export type { Theme } from './theme'
+import type { AgentId } from './agents'
+import type { AgentHookMode } from './agentHooks'
 
 // -----------------------------------------------------------------------------
 // Geometry primitives
@@ -1516,6 +1518,13 @@ export interface AppSettings {
    *  none. Was renderer localStorage (cate.agent.defaultModel.v1) before. */
   agentDefaultModel: AgentModelRef | null
 
+  /** Per-workspace, per-agent overrides for repo-local hook-file injection
+   *  (push-based agent status/session events — see src/shared/agentHooks.ts).
+   *  Keyed by workspace id; each maps an AgentId to 'auto' | 'on' | 'off'.
+   *  Missing workspace or agent ⇒ 'auto' (inject only when the agent's config
+   *  folder already exists in the repo). Sparse: only real overrides stored. */
+  agentHookInjection: Record<string, Partial<Record<AgentId, AgentHookMode>>>
+
   // Cate Agent — the model both headless Cate Agent brains (observer + orchestrator) run on.
   // null falls back to agentDefaultModel, then pi's first-available. Chosen by the
   // user in Settings → Cate Agent.
@@ -1624,6 +1633,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // Agent
   agentDefaultModel: null,
+  agentHookInjection: {},
 
   // Cate Agent
   cateAgentModel: null,

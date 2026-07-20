@@ -42,12 +42,11 @@
 // platform-specific piece).
 // =============================================================================
 
-import { execFile } from 'child_process'
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 import http from 'http'
 import os from 'os'
 import path from 'path'
-import { chmod, mkdir, readFile, stat, writeFile } from 'fs/promises'
+import { chmod, mkdir, readFile, stat, unlink, writeFile } from 'fs/promises'
 import { AGENTS, type AgentId } from '../../shared/agents'
 import {
   AGENT_HOOK_SPECS,
@@ -55,7 +54,11 @@ import {
   CATE_HOOK_ENDPOINT_ENV,
   CATE_HOOK_TOKEN_ENV,
   CATE_TERMINAL_ID_ENV,
+  agentHookFolder,
   normalizeAgentHookPayload,
+  resolveAgentHookMode,
+  type AgentHookAgentState,
+  type AgentHookConfig,
   type AgentHookEvent,
   type AgentHookSpec,
   type HookInjectionContext,
@@ -69,11 +72,20 @@ export interface AgentHooksCapability {
    *  the ingestion endpoint + hooks dir on first use. Returns `env` unchanged
    *  when hook setup fails (a plain shell is always spawnable). */
   envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
-  /** Write workspace-scoped hook files (claude, codex, pi) for the PTY's cwd
-   *  and keep them out of git status via .git/info/exclude. Best-effort and
-   *  idempotent; never touches the user's home dir (~/.codex, ~/.claude etc.
-   *  are the CLIs' USER-GLOBAL config dirs — injection stays repo-local). */
-  prepareWorkspace(cwd: string): Promise<void>
+  /** Write (or, for 'off', remove) workspace-scoped hook files for the PTY's
+   *  cwd and keep the ones we wrote out of git status via .git/info/exclude.
+   *  `config` carries per-agent tri-state overrides: 'auto' (default) injects
+   *  only when the agent's own config folder already exists in the repo, 'on'
+   *  always injects, 'off' strips any entries Cate previously wrote.
+   *  Best-effort and idempotent; never touches the user's home dir (~/.codex,
+   *  ~/.claude etc. are the CLIs' USER-GLOBAL config dirs — injection stays
+   *  repo-local). */
+  prepareWorkspace(cwd: string, config?: AgentHookConfig): Promise<void>
+  /** Inspect a workspace's per-agent hook-file injection state (for the
+   *  Settings UI): which agents write repo files, whether each one's config
+   *  folder is already in the repo (the 'auto' signal), and whether Cate has
+   *  injected there. Read-only; runs on the host that owns the workspace. */
+  inspectWorkspace(cwd: string): Promise<AgentHookAgentState[]>
   /** Subscribe to normalized hook events. Returns an unsubscribe. */
   subscribe(onEvent: (event: AgentHookEvent) => void): () => void
   /** The ingestion endpoint (boots it if needed) — for tests/diagnostics.
@@ -85,8 +97,6 @@ export interface AgentHooksCapability {
 }
 
 export interface AgentHooksDeps {
-  /** Binary-presence probe for gating workspace file writes (tests inject). */
-  hasBin?: (command: string) => Promise<boolean>
   /** Override the stable hooks dir (tests). Default: ~/.cate/agent-hooks. */
   hooksDir?: string
   /** Called on every AUTHENTICATED post for a known agent — including ones
@@ -118,23 +128,21 @@ export function hookTokenForTerminal(secret: string, terminalId: string): string
   return createHmac('sha256', secret).update(terminalId).digest('hex')
 }
 
-/** Binary-presence probe (`command -v` / win32 `where`), cached per daemon
- *  (the PATH the daemon spawns shells with is fixed for its lifetime). */
-function makeHasBin(): (command: string) => Promise<boolean> {
-  const cache = new Map<string, Promise<boolean>>()
-  return (command) => {
-    let hit = cache.get(command)
-    if (!hit) {
-      hit = new Promise<boolean>((resolve) => {
-        if (process.platform === 'win32') {
-          execFile('where', [command], { timeout: 3000, windowsHide: true }, (err) => resolve(!err))
-        } else {
-          execFile('/bin/sh', ['-c', 'command -v -- "$1"', 'sh', command], { timeout: 3000 }, (err) => resolve(!err))
-        }
-      })
-      cache.set(command, hit)
-    }
-    return hit
+/** Whether `cwd` is a place we may plant repo-local hook files: an absolute
+ *  path that is NOT the user's home dir (~/.claude, ~/.codex etc. are the
+ *  CLIs' USER-GLOBAL config dirs — off-limits) and not empty/relative (which
+ *  would resolve against the daemon's own cwd). */
+export function isRepoLocalCwd(cwd: string, home: string): boolean {
+  return !!cwd && path.isAbsolute(cwd) && !!home && path.resolve(cwd) !== path.resolve(home)
+}
+
+/** True iff `dir` exists and is a directory — the 'auto' injection gate (an
+ *  agent's repo-local config folder present means that agent is in use here). */
+async function dirExists(dir: string): Promise<boolean> {
+  try {
+    return (await stat(dir)).isDirectory()
+  } catch {
+    return false
   }
 }
 
@@ -174,7 +182,6 @@ setTimeout(() => process.exit(0), 10000)
 `
 
 export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHooksCapability {
-  const hasBin = deps.hasBin ?? makeHasBin()
   const listeners = new Set<(event: AgentHookEvent) => void>()
   let ready: Promise<HookState> | null = null
   let disposed = false
@@ -342,15 +349,11 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       return out
     },
 
-    async prepareWorkspace(cwd) {
+    async prepareWorkspace(cwd, config) {
       if (disposed) return
-      // Never plant agent files in the user's home directory: ~/.codex and
-      // ~/.claude are the CLIs' USER-GLOBAL config dirs, and writing there
-      // would violate the repo-local-only injection policy. Bail on an
-      // empty/relative cwd too — resolving those against the daemon's own
-      // cwd would write files somewhere the user never asked for.
-      const home = os.homedir()
-      if (!cwd || !path.isAbsolute(cwd) || !home || path.resolve(cwd) === path.resolve(home)) return
+      // Never plant (or strip) agent files in the user's home dir or against a
+      // non-absolute cwd — see isRepoLocalCwd.
+      if (!isRepoLocalCwd(cwd, os.homedir())) return
       let state: HookState
       try {
         state = await ensureReady()
@@ -361,11 +364,31 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       for (const agent of AGENTS) {
         const spec = AGENT_HOOK_SPECS[agent.id]
         if (!spec.projectFiles) continue
-        // Only touch workspaces of users who actually have this CLI — no
-        // hook-file litter for everyone else.
-        if (!(await hasBin(agent.command).catch(() => false))) continue
+        const mode = resolveAgentHookMode(config, agent.id)
+        // 'off': reclaim anything we previously injected, then move on.
+        if (mode === 'off') {
+          for (const pf of spec.projectFiles) {
+            const filePath = path.join(cwd, pf.relPath)
+            let existing: string
+            try {
+              existing = await readFile(filePath, 'utf-8')
+            } catch { continue /* absent — nothing to strip */ }
+            try {
+              const res = pf.strip?.(existing)
+              if (res && 'delete' in res) await unlink(filePath)
+              else if (res && 'content' in res && res.content !== existing) await writeFile(filePath, res.content)
+            } catch { /* best-effort — never block the terminal spawn */ }
+          }
+          continue
+        }
+        // 'auto': inject only when the agent's config folder is already in the
+        // repo (a "used here" signal). 'on': always inject.
+        if (mode === 'auto') {
+          const folder = agentHookFolder(agent.id)
+          if (folder && !(await dirExists(path.join(cwd, folder)))) continue
+        }
         const ctx = state.contexts.get(agent.id)!
-        for (const pf of spec.projectFiles ?? []) {
+        for (const pf of spec.projectFiles) {
           const filePath = path.join(cwd, pf.relPath)
           let existing: string | null = null
           try {
@@ -386,6 +409,34 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
         }
       }
       if (excludeRels.length > 0) await ensureGitExcluded(cwd, excludeRels)
+    },
+
+    async inspectWorkspace(cwd) {
+      const repoLocal = isRepoLocalCwd(cwd, os.homedir())
+      const states: AgentHookAgentState[] = []
+      for (const agent of AGENTS) {
+        const spec = AGENT_HOOK_SPECS[agent.id]
+        const fileInjecting = !!spec.projectFiles?.length
+        let folderPresent = false
+        let injected = false
+        // Only touch the filesystem for a real repo cwd (never ~ or a relative
+        // path — same policy as prepareWorkspace).
+        if (fileInjecting && repoLocal) {
+          const folder = agentHookFolder(agent.id)
+          folderPresent = folder ? await dirExists(path.join(cwd, folder)) : false
+          for (const pf of spec.projectFiles ?? []) {
+            try {
+              const content = await readFile(path.join(cwd, pf.relPath), 'utf-8')
+              if (content.includes(CATE_HOOK_MARKER)) {
+                injected = true
+                break
+              }
+            } catch { /* absent — not injected via this path */ }
+          }
+        }
+        states.push({ agentId: agent.id, displayName: agent.displayName, fileInjecting, folderPresent, injected })
+      }
+      return states
     },
 
     subscribe(onEvent) {

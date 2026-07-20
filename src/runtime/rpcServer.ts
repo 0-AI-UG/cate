@@ -178,6 +178,7 @@ export class RpcServer {
       // --- agent hooks --- normalized events stream back keyed by the streamId ---
       case Methods.agentHooksSubscribe: return this.startAgentHooks()
       case Methods.agentHooksUnsubscribe: return this.stopAgentHooks(s(0))
+      case Methods.agentHooksInspect: return api.agentHooks.inspectWorkspace(s(0))
 
       // --- agent (pi) --- line/exit stream back keyed by the agent id ---
       case Methods.agentEnsurePi: return api.agent.ensurePi()

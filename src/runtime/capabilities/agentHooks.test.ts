@@ -13,8 +13,8 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, test, vi } from 'vitest'
-import { createAgentHooksCapability, ensureGitExcluded, type AgentHooksCapability } from './agentHooks'
-import type { AgentHookEvent } from '../../shared/agentHooks'
+import { createAgentHooksCapability, ensureGitExcluded, isRepoLocalCwd, type AgentHooksCapability } from './agentHooks'
+import { agentHookFolder, type AgentHookEvent } from '../../shared/agentHooks'
 
 const posix = process.platform !== 'win32'
 
@@ -36,7 +36,6 @@ function tmpDir(sub: string): string {
  *  into the real ~/.cate). */
 function makeCap(
   deps: {
-    hasBin?: (c: string) => Promise<boolean>
     hooksDir?: string
     onPost?: (post: { terminalId: string; agentId: string; pid?: number }) => void | Promise<void>
   } = {},
@@ -258,9 +257,14 @@ describe('agentHooks capability', () => {
   })
 
   test('prepareWorkspace writes the claude + codex + cursor + pi hook files and git-excludes them', async () => {
-    const cap = makeCap({ hasBin: async () => true })
+    const cap = makeCap()
     const cwd = tmpDir('ws')
     mkdirSync(path.join(cwd, '.git')) // enough of a repo for info/exclude
+    // 'auto' (the default) injects only where the agent's config folder already
+    // exists — seed all four so this covers every file writer.
+    for (const id of ['claude-code', 'codex', 'cursor', 'pi'] as const) {
+      mkdirSync(path.join(cwd, agentHookFolder(id)!))
+    }
 
     await cap.prepareWorkspace(cwd)
 
@@ -314,32 +318,32 @@ describe('agentHooks capability', () => {
 
   test('prepareWorkspace never touches the user home dir or a non-absolute cwd', async () => {
     // ~/.codex and ~/.claude are the CLIs' USER-GLOBAL config dirs — writing
-    // agent files there is exactly the policy this guard enforces. The guard
-    // must bail before ANY file work, so the hasBin probe (the first step of
-    // the per-agent loop) is the observable tripwire.
-    const probed: string[] = []
-    const cap = makeCap({
-      hasBin: async (c) => {
-        probed.push(c)
-        return true
-      },
-    })
-    await cap.prepareWorkspace(os.homedir())
-    await cap.prepareWorkspace(os.homedir() + path.sep) // trailing-slash spelling
-    await cap.prepareWorkspace('')
-    await cap.prepareWorkspace('relative/path')
-    expect(probed).toEqual([])
+    // agent files there is exactly the policy isRepoLocalCwd enforces.
+    const home = os.homedir()
+    expect(isRepoLocalCwd(home, home)).toBe(false)
+    expect(isRepoLocalCwd(home + path.sep, home)).toBe(false) // trailing-slash spelling
+    expect(isRepoLocalCwd('', home)).toBe(false)
+    expect(isRepoLocalCwd('relative/path', home)).toBe(false)
+    expect(isRepoLocalCwd(path.join(home, 'code', 'repo'), home)).toBe(true)
+
+    const cap = makeCap()
+    // The guard actually short-circuits prepareWorkspace: forcing every agent
+    // 'on' would otherwise write into home, so a clean home subtree proves it.
+    const forceOn = { 'claude-code': 'on', codex: 'on', cursor: 'on', pi: 'on' } as const
+    await cap.prepareWorkspace(home, forceOn)
+    await cap.prepareWorkspace('', forceOn)
+    expect(existsSync(path.join(home, '.codex', 'hooks.json'))).toBe(false)
 
     // Sanity: the same capability still prepares a real workspace.
     const cwd = tmpDir('ws-guard')
-    await cap.prepareWorkspace(cwd)
-    expect(probed.length).toBeGreaterThan(0)
+    await cap.prepareWorkspace(cwd, forceOn)
     expect(existsSync(path.join(cwd, '.codex', 'hooks.json'))).toBe(true)
   })
 
   test('prepareWorkspace leaves other files in .pi/extensions alone and reclaims a drifted cate-hook.ts', async () => {
-    const cap = makeCap({ hasBin: async () => true })
+    const cap = makeCap()
     const cwd = tmpDir('ws-pi')
+    // .pi already exists here, so 'auto' injects pi.
     mkdirSync(path.join(cwd, '.pi', 'extensions'), { recursive: true })
     writeFileSync(path.join(cwd, '.pi', 'extensions', 'user-ext.ts'), '// mine\n')
     writeFileSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'), '// stale or edited\n')
@@ -351,21 +355,113 @@ describe('agentHooks capability', () => {
     expect(readFileSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'), 'utf-8')).toContain('CATE_HOOK_ENDPOINT')
   })
 
-  test('prepareWorkspace never clobbers unparseable user hook files and skips absent CLIs', async () => {
-    const capAll = makeCap({ hasBin: async () => true })
+  test('prepareWorkspace never clobbers unparseable user hook files and skips CLIs with no folder', async () => {
+    const capAll = makeCap()
     const cwd = tmpDir('ws2')
+    // .claude exists (so 'auto' injects claude) but its settings are broken —
+    // the merge leaves an unparseable user file untouched.
     mkdirSync(path.join(cwd, '.claude'), { recursive: true })
     writeFileSync(path.join(cwd, '.claude', 'settings.local.json'), '{broken json')
     await capAll.prepareWorkspace(cwd)
     expect(readFileSync(path.join(cwd, '.claude', 'settings.local.json'), 'utf-8')).toBe('{broken json')
 
-    const capNone = makeCap({ hasBin: async () => false })
+    // No agent folders present → 'auto' writes nothing at all.
+    const capNone = makeCap()
     const cwd2 = tmpDir('ws3')
     await capNone.prepareWorkspace(cwd2)
     expect(existsSync(path.join(cwd2, '.claude'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.codex'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.cursor'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.pi'))).toBe(false)
+  })
+
+  test('auto injects only agents whose config folder already exists', async () => {
+    const cap = makeCap()
+    const cwd = tmpDir('ws-auto')
+    mkdirSync(path.join(cwd, '.git'))
+    mkdirSync(path.join(cwd, '.codex')) // only codex is "in use" here
+
+    await cap.prepareWorkspace(cwd) // no config → all 'auto'
+
+    expect(existsSync(path.join(cwd, '.codex', 'hooks.json'))).toBe(true)
+    // The rest have no folder → auto skips them (no litter).
+    expect(existsSync(path.join(cwd, '.claude'))).toBe(false)
+    expect(existsSync(path.join(cwd, '.cursor'))).toBe(false)
+    expect(existsSync(path.join(cwd, '.pi'))).toBe(false)
+  })
+
+  test("'on' injects with no pre-existing folder; 'off' strips our entries but keeps the user's", async () => {
+    const cap = makeCap()
+    const cwd = tmpDir('ws-onoff')
+    mkdirSync(path.join(cwd, '.git'))
+    // Pre-seed a user permission + a user hook so we can prove merge and strip
+    // both preserve user content in this shared file.
+    mkdirSync(path.join(cwd, '.claude'))
+    writeFileSync(
+      path.join(cwd, '.claude', 'settings.local.json'),
+      JSON.stringify(
+        { permissions: { allow: ['Bash(ls:*)'] }, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'user-thing' }] }] } },
+        null,
+        2,
+      ) + '\n',
+    )
+
+    await cap.prepareWorkspace(cwd, { 'claude-code': 'on' })
+    let settings = JSON.parse(readFileSync(path.join(cwd, '.claude', 'settings.local.json'), 'utf-8')) as {
+      permissions: { allow: string[] }
+      hooks: Record<string, unknown>
+    }
+    expect(JSON.stringify(settings.hooks.SessionStart)).toContain('cate-hook') // ours added
+    expect(settings.permissions.allow).toEqual(['Bash(ls:*)']) // user field kept
+    expect(JSON.stringify(settings.hooks.Stop)).toContain('user-thing') // user hook kept
+
+    await cap.prepareWorkspace(cwd, { 'claude-code': 'off' })
+    settings = JSON.parse(readFileSync(path.join(cwd, '.claude', 'settings.local.json'), 'utf-8'))
+    expect(JSON.stringify(settings)).not.toContain('cate-hook') // ours stripped
+    expect(settings.permissions.allow).toEqual(['Bash(ls:*)']) // user field survives
+    expect(JSON.stringify(settings.hooks.Stop)).toContain('user-thing') // user hook survives
+  })
+
+  test("'off' deletes pi's owned extension but leaves user extensions", async () => {
+    const cap = makeCap()
+    const cwd = tmpDir('ws-pi-off')
+    mkdirSync(path.join(cwd, '.pi', 'extensions'), { recursive: true })
+    writeFileSync(path.join(cwd, '.pi', 'extensions', 'user-ext.ts'), '// mine\n')
+
+    await cap.prepareWorkspace(cwd) // auto: .pi exists → injects pi
+    expect(existsSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'))).toBe(true)
+
+    await cap.prepareWorkspace(cwd, { pi: 'off' })
+    expect(existsSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'))).toBe(false)
+    expect(readFileSync(path.join(cwd, '.pi', 'extensions', 'user-ext.ts'), 'utf-8')).toBe('// mine\n')
+  })
+
+  test('inspectWorkspace reports per-agent folder + injected state for the Settings UI', async () => {
+    const cap = makeCap()
+    const cwd = tmpDir('ws-inspect')
+    mkdirSync(path.join(cwd, '.git'))
+    mkdirSync(path.join(cwd, '.claude')) // folder present but left un-injected
+    mkdirSync(path.join(cwd, '.codex')) // injected below
+    await cap.prepareWorkspace(cwd, { codex: 'on', 'claude-code': 'off' })
+
+    const states = await cap.inspectWorkspace(cwd)
+    const byId = Object.fromEntries(states.map((s) => [s.agentId, s]))
+
+    expect(byId.codex).toMatchObject({ fileInjecting: true, folderPresent: true, injected: true })
+    expect(byId['claude-code']).toMatchObject({ fileInjecting: true, folderPresent: true, injected: false })
+    expect(byId.cursor).toMatchObject({ fileInjecting: true, folderPresent: false, injected: false })
+    expect(byId.pi).toMatchObject({ fileInjecting: true, folderPresent: false, injected: false })
+    // opencode injects via env only — no repo files, hence no folder/injected state.
+    expect(byId.opencode).toMatchObject({ fileInjecting: false, folderPresent: false, injected: false })
+    // Every agent carries a display name for the UI.
+    expect(states.every((s) => s.displayName.length > 0)).toBe(true)
+  })
+
+  test('inspectWorkspace touches no files for a home / relative cwd', async () => {
+    const cap = makeCap()
+    const states = await cap.inspectWorkspace(os.homedir())
+    expect(states.length).toBeGreaterThan(0) // still lists agents for the UI
+    expect(states.every((s) => !s.folderPresent && !s.injected)).toBe(true)
   })
 
   test('subscribe/unsubscribe stops delivery; dispose keeps the stable hooks dir', async () => {

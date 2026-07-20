@@ -4,7 +4,7 @@
 
 import type { AgentCreateOptions, AgentEventEnvelope, AgentExtensionUIResponse, AgentImageAttachment, AgentModelRef, AgentModelDescriptor, AgentRpcState, AgentSessionListEntry, AgentSessionStats, AgentSlashCommand, AgentThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
-import type { AgentHookEvent } from './agentHooks'
+import type { AgentHookEvent, AgentHookAgentState } from './agentHooks'
 import type { ExtensionListEntry, ExtensionManifest } from './extensions'
 
 /** Lifecycle state of the auto-updater, surfaced to the renderer for the
@@ -406,6 +406,10 @@ export interface ElectronAPI {
 
   /** Set a single setting value. */
   settingsSet<K extends keyof AppSettings>(key: K, value: AppSettings[K]): Promise<void>
+
+  /** Inspect a workspace's per-agent hook-file injection state (for the
+   *  Settings UI). `locator` is the workspace's rootPath locator. */
+  agentHooksInspect(locator: string): Promise<AgentHookAgentState[]>
 
   /** Get all settings. */
   settingsGetAll(): Promise<AppSettings>

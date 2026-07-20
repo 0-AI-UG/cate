@@ -79,6 +79,7 @@ export class DeferredRuntime implements Runtime {
           if (realUnsub) { realUnsub(); realUnsub = null }
         }
       },
+      inspectWorkspace: (cwd) => d((c) => c.agentHooks.inspectWorkspace(cwd)),
     }
 
     this.server = {

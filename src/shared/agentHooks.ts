@@ -83,6 +83,47 @@ export interface HookInjectionContext {
   filePath: string
 }
 
+/**
+ * Per-agent injection preference for a workspace's PROJECT hook files.
+ *  - 'auto' (default): inject only when the agent's own config folder already
+ *    exists in the repo (e.g. .claude, .codex) — a "this agent is relevant
+ *    here" signal that avoids littering unrelated repos.
+ *  - 'on': always inject, even in a repo with no such folder yet.
+ *  - 'off': never inject, and strip any hook entries Cate previously wrote.
+ * Only the FILE channel is gated; the ambient env channel (endpoint/token +
+ * opencode's config var) is always planted — it leaves no repo trace.
+ */
+export type AgentHookMode = 'auto' | 'on' | 'off'
+
+/** Sparse per-agent overrides; any agent absent resolves to 'auto'. */
+export type AgentHookConfig = Partial<Record<AgentId, AgentHookMode>>
+
+/** The effective mode for one agent (missing → 'auto'). */
+export function resolveAgentHookMode(config: AgentHookConfig | undefined, agentId: AgentId): AgentHookMode {
+  return config?.[agentId] ?? 'auto'
+}
+
+/** Result of a projectFile's `strip`: leave it (null), delete an owned file,
+ *  or rewrite a shared file without our entries. */
+export type AgentHookStrip = null | { delete: true } | { content: string }
+
+/** Live per-agent injection state for one workspace, for the Settings UI.
+ *  Produced by the agent-hooks capability on whichever host owns the workspace
+ *  (so it is correct for remote workspaces too); the renderer imports only the
+ *  type. */
+export interface AgentHookAgentState {
+  agentId: AgentId
+  displayName: string
+  /** false = env-only injection (opencode): always on, writes no repo files,
+   *  so it has no tri-state and no folder/injected state. */
+  fileInjecting: boolean
+  /** The agent's own config folder (.claude, .codex, …) exists in the repo —
+   *  the signal 'auto' gates on. */
+  folderPresent: boolean
+  /** A repo hook file carrying Cate's marker is present (we've injected here). */
+  injected: boolean
+}
+
 export interface AgentHookSpec {
   /**
    * Ambient env injection (opencode): vars planted on every PTY. Verified
@@ -112,6 +153,15 @@ export interface AgentHookSpec {
   projectFiles?: Array<{
     relPath: string
     build(existing: string | null, ctx: HookInjectionContext): string | null
+    /**
+     * Inverse of `build` for the 'off' mode: remove Cate's entries from the
+     * existing file. Returns null to leave it untouched (nothing of ours is
+     * present), `{ delete: true }` to remove a file Cate owns outright (pi's
+     * extension), or `{ content }` to rewrite a SHARED file with only our
+     * entries stripped (every user entry preserved). Absent → 'off' cannot
+     * reclaim this file, so it is merely not refreshed.
+     */
+    strip?(existing: string): AgentHookStrip
   }>
   /** Normalize one raw payload posted by this agent's bridge. Null = drop
    *  (an event Cate doesn't track, e.g. claude's idle_prompt notification). */
@@ -195,6 +245,64 @@ function mergeSharedHooksFile(
   return out === existing ? null : out
 }
 
+/**
+ * Inverse of mergeSharedHooksFile: drop OUR bridge entries from every tracked
+ * event, preserving every user entry and field, and prune events left empty by
+ * the removal. Returns { content } when anything of ours was removed, or null
+ * when the file has nothing of ours / is unparseable (leave it alone). Never
+ * deletes the file — it is shared with the user's own hooks.
+ */
+function stripSharedHooksFile(existing: string, events: readonly string[]): AgentHookStrip {
+  let parsed: SharedHooksJson
+  try {
+    parsed = JSON.parse(existing) as SharedHooksJson
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  } catch {
+    return null
+  }
+  if (typeof parsed.hooks !== 'object' || parsed.hooks === null || Array.isArray(parsed.hooks)) return null
+  const hooks = parsed.hooks as Record<string, HookGroup[]>
+  let changed = false
+  for (const event of events) {
+    if (!Array.isArray(hooks[event])) continue
+    const kept: HookGroup[] = []
+    for (const group of hooks[event]) {
+      if (typeof group !== 'object' || group === null) {
+        kept.push(group)
+        continue
+      }
+      const entries = Array.isArray(group.hooks) ? group.hooks : []
+      const filtered = entries.filter(
+        (h) => !(typeof h?.command === 'string' && h.command.includes(CATE_HOOK_MARKER)),
+      )
+      if (entries.length > 0 && filtered.length === 0) {
+        changed = true // group was purely ours — drop it
+        continue
+      }
+      if (filtered.length !== entries.length) {
+        changed = true
+        kept.push({ ...group, hooks: filtered })
+      } else {
+        kept.push(group)
+      }
+    }
+    if (kept.length === 0) delete hooks[event]
+    else hooks[event] = kept
+  }
+  if (!changed) return null
+  return { content: JSON.stringify({ ...parsed, hooks }, null, 2) + '\n' }
+}
+
+/** The repo-local config folder whose presence gates 'auto' injection for one
+ *  agent (`.claude`, `.codex`, `.cursor`, `.pi`), or null for an env-only
+ *  agent (opencode) that writes no project files. Derived from the agent's
+ *  first project file so it stays in lockstep with the spec. */
+export function agentHookFolder(agentId: AgentId): string | null {
+  const rel = AGENT_HOOK_SPECS[agentId]?.projectFiles?.[0]?.relPath
+  if (!rel) return null
+  return rel.split('/')[0]
+}
+
 // ---------------------------------------------------------------------------
 // claude — hooks ride in <workspace>/.claude/settings.local.json (project
 // scope, merged by claude over user settings; same file whether claude is in
@@ -218,6 +326,7 @@ const claudeSpec: AgentHookSpec = {
         mergeSharedHooksFile(existing, CLAUDE_EVENTS, () => ({
           hooks: [{ type: 'command', command: ctx.bridgeCommand }],
         })),
+      strip: (existing) => stripSharedHooksFile(existing, CLAUDE_EVENTS),
     },
   ],
   normalize: (p) => {
@@ -287,6 +396,7 @@ const codexSpec: AgentHookSpec = {
         mergeSharedHooksFile(existing, CODEX_EVENTS, () => ({
           hooks: [{ type: 'command', command: ctx.bridgeCommand, timeout: CODEX_HOOK_TIMEOUT }],
         })),
+      strip: (existing) => stripSharedHooksFile(existing, CODEX_EVENTS),
     },
   ],
   normalize: (p) => {
@@ -378,6 +488,29 @@ const cursorSpec: AgentHookSpec = {
         const out = JSON.stringify({ version: parsed.version ?? 1, ...parsed, hooks }, null, 2) + '\n'
         return out === existing ? null : out
       },
+      strip: (existing) => {
+        let parsed: CursorHooksJson
+        try {
+          parsed = JSON.parse(existing) as CursorHooksJson
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+        } catch {
+          return null
+        }
+        if (typeof parsed.hooks !== 'object' || parsed.hooks === null || Array.isArray(parsed.hooks)) return null
+        const hooks = parsed.hooks
+        let changed = false
+        for (const event of CURSOR_EVENTS) {
+          if (!Array.isArray(hooks[event])) continue
+          const kept = hooks[event].filter(
+            (h) => !(typeof h?.command === 'string' && h.command.includes(CATE_HOOK_MARKER)),
+          )
+          if (kept.length !== hooks[event].length) changed = true
+          if (kept.length === 0) delete hooks[event]
+          else hooks[event] = kept
+        }
+        if (!changed) return null
+        return { content: JSON.stringify({ ...parsed, hooks }, null, 2) + '\n' }
+      },
     },
   ],
   normalize: (p) => {
@@ -458,6 +591,9 @@ const piSpec: AgentHookSpec = {
       // .pi/extensions/ alone. The content is boot-independent (the endpoint
       // rides in env), so an up-to-date file is never rewritten.
       build: (existing) => (existing === PI_EXTENSION_SOURCE ? null : PI_EXTENSION_SOURCE),
+      // Cate owns this file outright (header marker). Remove it wholesale;
+      // leave a user file that merely shares the name (no marker) alone.
+      strip: (existing) => (existing.includes(CATE_HOOK_MARKER) ? { delete: true } : null),
     },
   ],
   normalize: (p) => {

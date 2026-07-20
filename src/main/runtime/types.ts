@@ -15,7 +15,7 @@
 // =============================================================================
 
 import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity } from '../../shared/types'
-import type { AgentHookEvent } from '../../shared/agentHooks'
+import type { AgentHookAgentState, AgentHookConfig, AgentHookEvent } from '../../shared/agentHooks'
 import type { RuntimeId } from './locator'
 
 // ---------------------------------------------------------------------------
@@ -43,6 +43,11 @@ export interface PtyCreateOptions {
    *  callers (tests, tooling) spawn untouched shells and write nothing. Rides
    *  the same opts pass-through as `env`. */
   agentHooks?: boolean
+  /** Per-agent injection overrides for this pty's workspace (tri-state
+   *  auto/on/off; missing agents default to 'auto'). Only meaningful with
+   *  agentHooks; gates the workspace FILE writes, not the ambient env. Rides
+   *  the same opts pass-through as `env`, so it reaches a remote host. */
+  agentHookConfig?: AgentHookConfig
 }
 
 export interface PtyHandle {
@@ -118,6 +123,9 @@ export interface AgentHookHost {
   /** Subscribe to normalized agent hook events from this host's terminals.
    *  Returns an unsubscribe. */
   subscribe(onEvent: (event: AgentHookEvent) => void): () => void
+  /** Inspect a workspace's per-agent hook-file injection state (for the
+   *  Settings UI) on this host — correct for remote workspaces too. */
+  inspectWorkspace(cwd: string): Promise<AgentHookAgentState[]>
 }
 
 // ---------------------------------------------------------------------------

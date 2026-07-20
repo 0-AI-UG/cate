@@ -216,7 +216,7 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     idleSuspend: config.idleSuspend,
     hooks: {
       envForPty: (ptyId, env) => agentHooks.envForPty(ptyId, env),
-      prepareWorkspace: (cwd) => agentHooks.prepareWorkspace(cwd),
+      prepareWorkspace: (cwd, config) => agentHooks.prepareWorkspace(cwd, config),
     },
     agentPresence,
   })
@@ -255,7 +255,10 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     id: config.id,
     process: proc,
     agent,
-    agentHooks: { subscribe: (onEvent) => agentHooks.subscribe(onEvent) },
+    agentHooks: {
+      subscribe: (onEvent) => agentHooks.subscribe(onEvent),
+      inspectWorkspace: (cwd) => agentHooks.inspectWorkspace(cwd),
+    },
     file,
     vcs,
     server,

@@ -36,6 +36,7 @@ import type { FileAccessContext } from './types'
 import type { RuntimeRpcClient } from './rpcClient'
 import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload, AgentHookEvtPayload, SearchEvtPayload, ServerEvtPayload, TunnelEvtPayload, TunnelListenEvtPayload } from '../../runtime/protocol'
 import type { FileTreeNode, FileSearchResult } from '../../shared/types'
+import type { AgentHookAgentState } from '../../shared/agentHooks'
 
 export class RemoteRuntime implements Runtime {
   readonly process: ProcessHost
@@ -151,6 +152,7 @@ export class RemoteRuntime implements Runtime {
           }
         }
       },
+      inspectWorkspace: (cwd) => call<AgentHookAgentState[]>(Methods.agentHooksInspect, [cwd]),
     }
 
     // Server: the extension's server child runs on the daemon's host; its

@@ -66,6 +66,7 @@ import {
   SHELL_CWD_UPDATE,
   SHELL_AGENT_SCREEN_STATE,
   SHELL_AGENT_HOOK_EVENT,
+  AGENT_HOOKS_INSPECT,
   SETTINGS_GET,
   SETTINGS_SET,
   SETTINGS_GET_ALL,
@@ -409,6 +410,7 @@ const invokeForwarders = {
   // Shell / Process Monitor
 
   // Settings
+  agentHooksInspect: makeInvoker<'agentHooksInspect'>(AGENT_HOOKS_INSPECT),
   settingsGet: makeInvoker<'settingsGet'>(SETTINGS_GET),
   settingsSet: makeInvoker<'settingsSet'>(SETTINGS_SET),
   settingsGetAll: makeInvoker<'settingsGetAll'>(SETTINGS_GET_ALL),

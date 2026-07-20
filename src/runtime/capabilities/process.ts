@@ -15,6 +15,7 @@ import { execFile } from 'child_process'
 import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../../main/runtime/types'
 import type { TerminalActivity } from '../../shared/types'
 import type { AgentPresenceTracker } from './agentPresence'
+import type { AgentHookConfig } from '../../shared/agentHooks'
 import { catePathEnv } from '../cateCli'
 import {
   type ProcTree,
@@ -162,7 +163,7 @@ export interface ProcessDeps {
    */
   hooks?: {
     envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
-    prepareWorkspace(cwd: string): Promise<void>
+    prepareWorkspace(cwd: string, config?: AgentHookConfig): Promise<void>
   }
   /**
    * Hook-anchored agent presence (agentPresence.ts): scanActivity reads each
@@ -264,7 +265,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       if (deps.hooks && opts.agentHooks) {
         try {
           env = await deps.hooks.envForPty(id, env)
-          await deps.hooks.prepareWorkspace(cwd)
+          await deps.hooks.prepareWorkspace(cwd, opts.agentHookConfig)
         } catch { /* hook injection unavailable */ }
       }
       const pty = ptySpawn(shell.path, shell.args, {

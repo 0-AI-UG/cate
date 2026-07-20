@@ -109,6 +109,8 @@ export const Methods = {
   // subscribe returns a streamId; AgentHookEvtPayload frames arrive as evts.
   agentHooksSubscribe: 'agentHooks.subscribe',
   agentHooksUnsubscribe: 'agentHooks.unsubscribe',
+  // inspect a workspace's per-agent hook-file injection state (Settings UI).
+  agentHooksInspect: 'agentHooks.inspect',
 
   vcsIsRepo: 'vcs.isRepo',
   vcsFindRepos: 'vcs.findRepos',
