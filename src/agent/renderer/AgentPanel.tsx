@@ -3,10 +3,15 @@
 //
 // Layout (Codex-style):
 //   ┌──────────────┬───────────────────────────────────────────────┐
-//   │  Sidebar     │  Header  (model picker · stop)                │
+//   │  Sidebar     │           Welcome / thread                    │
 //   │  • New chat  │ ───────────────────────────────────────────── │
-//   │  • Recent    │           Welcome / thread                    │
+//   │  • Recent    │  Composer (model · worktree · send)           │
 //   └──────────────┴───────────────────────────────────────────────┘
+//
+// The composer is the shared ChatComposer (src/renderer/chat), the same one the
+// Cate Agent sidebar renders, so both surfaces carry one set of controls. Model
+// and worktree live on it rather than in a header; the header row only appears
+// when it has something to hold (the sidebar toggle, or the settings title).
 //
 // The sidebar is collapsible (hamburger in header). Per-agent settings
 // (custom agents/prompts/extensions) were removed — the agent is opinionated;
@@ -1131,25 +1136,29 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Header — only the sidebar toggle (when collapsed) and the current-view
-         *  title. Model, worktree and session controls live in the composer. */}
-        <div className="flex items-center gap-1 px-2 h-10 shrink-0">
-          {!sidebarOpen && (
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-hover"
-              title="Open sidebar"
-            >
-              <SidebarIcon size={14} />
-            </button>
-          )}
+         *  title. Model, worktree and session controls live in the composer, so
+         *  in the chat view with the sidebar open there is nothing left to show:
+         *  drop the row entirely rather than reserve 40px of empty chrome. */}
+        {(!sidebarOpen || view === 'settings') && (
+          <div className="flex items-center gap-1 px-2 h-10 shrink-0">
+            {!sidebarOpen && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-hover"
+                title="Open sidebar"
+              >
+                <SidebarIcon size={14} />
+              </button>
+            )}
 
-          {view === 'settings' && (
-            <div className="px-2 py-1 text-[12px] font-medium text-primary flex items-center gap-1.5">
-              <Gear size={12} />
-              Settings
-            </div>
-          )}
-        </div>
+            {view === 'settings' && (
+              <div className="px-2 py-1 text-[12px] font-medium text-primary flex items-center gap-1.5">
+                <Gear size={12} />
+                Settings
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Body */}
         {view === 'settings' ? (
