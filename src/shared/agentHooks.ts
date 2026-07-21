@@ -1,10 +1,10 @@
 // =============================================================================
 // Agent hook abstraction — the per-CLI declarations that turn the agent
 // CLIs' hook/extension/plugin surfaces into ONE normalized push event stream.
-// Each agent entry declares (a) HOW Cate injects its hook bridge (ambient env
-// or workspace-scoped files) and (b) how that CLI's raw hook payload
-// normalizes into an AgentHookEvent. Adding a CLI is one entry here plus its
-// AgentDef in agents.ts.
+// Each agent entry declares (a) WHICH workspace-scoped files Cate writes to
+// inject its hook bridge and (b) how that CLI's raw hook payload normalizes
+// into an AgentHookEvent. Adding a CLI is one entry here plus its AgentDef in
+// agents.ts.
 //
 // The injection/payload contracts are pinned LIVE against the installed CLIs
 // by src/runtime/capabilities/agentHookContracts.itest.ts — when a CLI update
@@ -78,9 +78,6 @@ export interface HookInjectionContext {
    *  path is STABLE across daemon restarts (it lands in repo-scoped hook
    *  files, and codex additionally keys its persisted hook trust on it). */
   bridgeCommand: string
-  /** Absolute path of this agent's in-process support file (opencode
-   *  plugin), when the spec declares one. Empty otherwise. */
-  filePath: string
 }
 
 /**
@@ -90,8 +87,9 @@ export interface HookInjectionContext {
  *    here" signal that avoids littering unrelated repos.
  *  - 'on': always inject, even in a repo with no such folder yet.
  *  - 'off': never inject, and strip any hook entries Cate previously wrote.
- * Only the FILE channel is gated; the ambient env channel (endpoint/token +
- * opencode's config var) is always planted — it leaves no repo trace.
+ * The shared CATE_HOOK_* env (endpoint/token/terminal id) is planted on every
+ * PTY regardless — it leaves no repo trace, and a hook file that never gets
+ * written simply never reads it.
  */
 export type AgentHookMode = 'auto' | 'on' | 'off'
 
@@ -114,9 +112,6 @@ export type AgentHookStrip = null | { delete: true } | { content: string }
 export interface AgentHookAgentState {
   agentId: AgentId
   displayName: string
-  /** false = env-only injection (opencode): always on, writes no repo files,
-   *  so it has no tri-state and no folder/injected state. */
-  fileInjecting: boolean
   /** The agent's own config folder (.claude, .codex, …) exists in the repo —
    *  the signal 'auto' gates on. */
   folderPresent: boolean
@@ -126,21 +121,11 @@ export interface AgentHookAgentState {
 
 export interface AgentHookSpec {
   /**
-   * Ambient env injection (opencode): vars planted on every PTY. Verified
-   * against the opencode 1.18.x binary: OPENCODE_CONFIG_CONTENT is parsed and
-   * MERGED over global+project config as a "local"-scope source at the end of
-   * Config.loadInstanceState, with `plugin` arrays deduplicated and appended —
-   * it does NOT replace the user's config, so this is safe for ambient
-   * injection. (Caveat: a user who exports their own OPENCODE_CONFIG_CONTENT
-   * in shell rc overwrites ours — injection degrades to none, never breaks.)
-   */
-  env?: {
-    file: { name: string; content(): string }
-    vars(ctx: HookInjectionContext): Record<string, string>
-  }
-  /**
    * Workspace-scoped hook files (claude's .claude/settings.local.json,
-   * codex's .codex/hooks.json, pi's .pi/extensions/cate-hook.ts). `build`
+   * codex's .codex/hooks.json, pi's .pi/extensions/cate-hook.ts,
+   * opencode's .opencode/plugin/cate-hook.js) — the ONLY injection channel:
+   * every agent is reached this way, so every agent gets the same tri-state.
+   * `build`
    * returns the file's new content given the existing one, or null to leave
    * the file untouched. Update policy is per-file: a SHARED file (claude's
    * settings, which also carries user config; codex's hooks.json, where users
@@ -294,9 +279,9 @@ function stripSharedHooksFile(existing: string, events: readonly string[]): Agen
 }
 
 /** The repo-local config folder whose presence gates 'auto' injection for one
- *  agent (`.claude`, `.codex`, `.cursor`, `.pi`), or null for an env-only
- *  agent (opencode) that writes no project files. Derived from the agent's
- *  first project file so it stays in lockstep with the spec. */
+ *  agent (`.claude`, `.codex`, `.cursor`, `.opencode`, `.pi`), or null for an
+ *  agent that writes no project files. Derived from the agent's first project
+ *  file so it stays in lockstep with the spec. */
 export function agentHookFolder(agentId: AgentId): string | null {
   const rel = AGENT_HOOK_SPECS[agentId]?.projectFiles?.[0]?.relPath
   if (!rel) return null
@@ -613,12 +598,93 @@ const piSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
-// opencode — in-process plugin via the OPENCODE_CONFIG_CONTENT env var (merged
-// over the user's config, see AgentHookSpec.env). The plugin forwards only the
-// five bus events Cate tracks; the bus is otherwise chatty (message parts).
+// grok (xAI Grok Build) — hooks ride in <project>/.grok/hooks/cate.json. Grok
+// loads every *.json in that dir, so Cate owns one file there outright rather
+// than merging into a shared one (pi-style ownership, codex-style trust).
+//
+// Two grok-specific quirks, both pinned live by agentHookContracts.itest.ts:
+//
+//  · Casing is split: the FILE keys events in CamelCase ("SessionStart"), the
+//    PAYLOAD reports them in snake_case ("session_start") on a camelCase
+//    envelope (sessionId / workspaceRoot / toolName). Neither spelling is a
+//    typo; both are contract.
+//  · Grok also scans OTHER vendors' hook files — <project>/.claude/settings
+//    .json + settings.local.json — by default. Cate injects its claude bridge
+//    into settings.local.json, so a grok session fires the CLAUDE wrapper too,
+//    with a grok payload. The bridge drops those posts (see BRIDGE_JS's
+//    GROK_HOOK_EVENT guard); without it a grok terminal would be labelled
+//    Claude Code and offered claude's resume command.
+//
+// Project hooks are gated on grok's folder trust: until the user runs
+// /hooks-trust, the file is silently inert (no error, no events) — and grok
+// resolves a project root only inside a git repo, so a non-repo workspace
+// never loads them at all. Both are normal, not failure states.
 // ---------------------------------------------------------------------------
 
-const OPENCODE_PLUGIN_SOURCE = `// Generated by the Cate runtime daemon (agent hook injection). Do not edit.
+const GROK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
+
+const GROK_HOOK_TIMEOUT = 60
+
+const grokSpec: AgentHookSpec = {
+  projectFiles: [
+    {
+      // `cate.json` is ours alone — grok merges every file in the dir, so a
+      // user's own hooks live beside it untouched.
+      relPath: `.grok/hooks/${CATE_HOOK_MARKER}.json`,
+      build: (existing, ctx) =>
+        mergeSharedHooksFile(existing, GROK_EVENTS, () => ({
+          hooks: [{ type: 'command', command: ctx.bridgeCommand, timeout: GROK_HOOK_TIMEOUT }],
+        })),
+      strip: (existing) => (existing.includes(CATE_HOOK_MARKER) ? { delete: true } : null),
+    },
+  ],
+  normalize: (p) => {
+    const base = {
+      sessionId: str(p.sessionId),
+      cwd: str(p.cwd) ?? undefined,
+      // Absent on session_start (the session file does not exist yet); the
+      // updates.jsonl path from the first prompt onwards.
+      transcriptPath: str(p.transcriptPath) ?? undefined,
+    }
+    switch (p.hookEventName) {
+      case 'session_start': return { kind: 'session-start', ...base }
+      case 'user_prompt_submit': return { kind: 'turn-start', ...base }
+      // Fires after every executed tool call; the one following a
+      // permission_prompt is the approval resolution.
+      case 'post_tool_use': return { kind: 'turn-resume', ...base }
+      case 'stop': return { kind: 'turn-end', ...base }
+      case 'session_end': return { kind: 'session-end', ...base }
+      case 'notification':
+        // permission_prompt = parked on tool approval. PreToolUse fires ~30ms
+        // earlier for the same call but precedes EVERY tool, approved or not,
+        // so it cannot mark the wait — which is why it isn't injected at all.
+        return p.notificationType === 'permission_prompt' ? { kind: 'permission-wait', ...base } : null
+      default: return null
+    }
+  },
+}
+
+// ---------------------------------------------------------------------------
+// opencode — an in-process plugin at <project>/.opencode/plugin/cate-hook.js.
+// opencode scans `{plugin,plugins}/*.{ts,js}` under every config directory it
+// resolves and imports each match at startup (verified against the 1.18.3
+// binary: a probe file in .opencode/plugin/ was loaded and received
+// session.created / session.status / session.idle). Two contract details that
+// suite pins: the extension must be .js (.mjs is outside the glob), and EVERY
+// exported factory is invoked — not just the default — hence a single named
+// export here.
+//
+// This replaced an earlier OPENCODE_CONFIG_CONTENT ambient-env injection. The
+// repo file is the documented channel, it survives a user who sets that var
+// themselves, and it puts opencode on the same Auto/On/Off tri-state (and the
+// same ownership/strip rules) as every other agent.
+//
+// The plugin forwards only the five bus events Cate tracks; the bus is
+// otherwise chatty (message parts, plugin.added, catalog.updated…).
+// ---------------------------------------------------------------------------
+
+const OPENCODE_PLUGIN_SOURCE = `// cate-hook — generated by Cate (agent hook injection); do not edit.
+// Inert outside Cate terminals: it no-ops unless the CATE_HOOK_* env vars are set.
 const ENDPOINT = process.env.${CATE_HOOK_ENDPOINT_ENV}
 const TOKEN = process.env.${CATE_HOOK_TOKEN_ENV}
 const TRACKED = new Set(["session.created", "session.status", "session.idle", "permission.asked", "permission.replied"])
@@ -651,12 +717,18 @@ export const CateHookBridge = async () => {
 `
 
 const opencodeSpec: AgentHookSpec = {
-  env: {
-    file: { name: 'cate-hook-opencode.mjs', content: () => OPENCODE_PLUGIN_SOURCE },
-    vars: (ctx) => ({
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [`file://${ctx.filePath}`] }),
-    }),
-  },
+  projectFiles: [
+    {
+      // `.js`, not `.mjs`: opencode's scan glob is `*.{ts,js}` only.
+      relPath: '.opencode/plugin/cate-hook.js',
+      // Cate owns this whole file (the header marker says so): rewrite on any
+      // drift and leave every other file in .opencode/plugin/ alone. The
+      // content is boot-independent (the endpoint rides in env), so an
+      // up-to-date file is never rewritten.
+      build: (existing) => (existing === OPENCODE_PLUGIN_SOURCE ? null : OPENCODE_PLUGIN_SOURCE),
+      strip: (existing) => (existing.includes(CATE_HOOK_MARKER) ? { delete: true } : null),
+    },
+  ],
   normalize: (p) => {
     const base = { sessionId: str(p.sessionID), cwd: str(p.directory) ?? undefined }
     switch (p.type) {
@@ -685,6 +757,7 @@ export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
   'claude-code': claudeSpec,
   codex: codexSpec,
   cursor: cursorSpec,
+  grok: grokSpec,
   pi: piSpec,
   opencode: opencodeSpec,
 }

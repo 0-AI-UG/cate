@@ -15,7 +15,6 @@ import {
 
 const ctx: HookInjectionContext = {
   bridgeCommand: '/cate/hooks/cate-hook-bridge-x',
-  filePath: '/cate/hooks/support-file',
 }
 
 const norm = (agentId: string, payload: Record<string, unknown>) =>
@@ -371,16 +370,107 @@ describe('pi spec', () => {
   })
 })
 
+describe('grok spec', () => {
+  const spec = AGENT_HOOK_SPECS.grok
+  const file = spec.projectFiles![0]
+  // Field-for-field the live payload shape (agentHookContracts.itest.ts):
+  // camelCase envelope, snake_case event value.
+  const base = {
+    sessionId: '019f8441-15a5-79f2-ae8c-8ad1021a9e18',
+    cwd: '/home/u/proj',
+    workspaceRoot: '/home/u/proj',
+    transcriptPath: '/home/u/.grok/sessions/%2Fhome%2Fu%2Fproj/019f8441/updates.jsonl',
+  }
+
+  test('owns .grok/hooks/cate.json: created with the bridge + timeout on all six events', () => {
+    // One file of its own in a directory grok merges — a user's other hook
+    // files in .grok/hooks/ are never touched.
+    expect(file.relPath).toBe('.grok/hooks/cate-hook.json')
+    const parsed = JSON.parse(file.build(null, ctx)!) as {
+      hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string; timeout: number }> }>>
+    }
+    // File keys are CamelCase even though the payload reports snake_case.
+    expect(Object.keys(parsed.hooks).sort()).toEqual(
+      ['Notification', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'],
+    )
+    for (const groups of Object.values(parsed.hooks)) {
+      expect(groups[0].hooks[0]).toEqual({ type: 'command', command: ctx.bridgeCommand, timeout: 60 })
+    }
+    // PreToolUse is deliberately absent: it fires before EVERY tool call, so
+    // it cannot mark a permission wait (Notification does that).
+    expect(parsed.hooks.PreToolUse).toBeUndefined()
+  })
+
+  test('reclaims a drifted file but leaves a same-named user file alone', () => {
+    const ours = file.build(null, ctx)!
+    expect(file.build(ours, ctx)).toBeNull() // up to date — no rewrite
+    expect(file.strip!(ours)).toEqual({ delete: true })
+    // No marker = not ours (a user's own cate-hook.json): never deleted.
+    expect(file.strip!('{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"mine.sh"}]}]}}')).toBeNull()
+  })
+
+  test('lifecycle events normalize with identity fields', () => {
+    expect(norm('grok', { hookEventName: 'session_start', ...base, source: 'new' })).toMatchObject({
+      kind: 'session-start',
+      sessionId: base.sessionId,
+      cwd: '/home/u/proj',
+      transcriptPath: base.transcriptPath,
+    })
+    expect(norm('grok', { hookEventName: 'user_prompt_submit', ...base })?.kind).toBe('turn-start')
+    expect(norm('grok', { hookEventName: 'stop', ...base })?.kind).toBe('turn-end')
+    expect(norm('grok', { hookEventName: 'session_end', ...base })?.kind).toBe('session-end')
+    // Approval resolution / any executed tool call.
+    expect(norm('grok', { hookEventName: 'post_tool_use', ...base, toolName: 'run_terminal_command' })?.kind)
+      .toBe('turn-resume')
+  })
+
+  test('session_start carries no transcriptPath — the field stays optional', () => {
+    const { transcriptPath, ...noTranscript } = base
+    expect(norm('grok', { hookEventName: 'session_start', ...noTranscript })).toMatchObject({
+      kind: 'session-start',
+      sessionId: base.sessionId,
+      transcriptPath: undefined,
+    })
+  })
+
+  test('Notification maps permission_prompt to permission-wait and drops other types', () => {
+    expect(
+      norm('grok', {
+        hookEventName: 'notification',
+        ...base,
+        notificationType: 'permission_prompt',
+        message: 'Tool permission requested',
+      })?.kind,
+    ).toBe('permission-wait')
+    expect(norm('grok', { hookEventName: 'notification', ...base, notificationType: 'turn_complete' })).toBeNull()
+  })
+
+  test('claude-shaped and untracked payloads drop', () => {
+    // The snake_case envelope is CLAUDE's, not grok's — a payload that reached
+    // the grok normalizer in that shape is not a grok event.
+    expect(norm('grok', { hook_event_name: 'SessionStart', session_id: 'x' })).toBeNull()
+    expect(norm('grok', { hookEventName: 'SessionStart', ...base })).toBeNull() // CamelCase is the FILE casing
+    expect(norm('grok', { hookEventName: 'pre_tool_use', ...base })).toBeNull()
+    expect(norm('grok', { hookEventName: 'permission_denied', ...base })).toBeNull()
+  })
+})
+
 describe('opencode spec', () => {
   const spec = AGENT_HOOK_SPECS.opencode
 
-  test('env injection merges a plugin entry via OPENCODE_CONFIG_CONTENT', () => {
-    const vars = spec.env!.vars(ctx)
-    const config = JSON.parse(vars.OPENCODE_CONFIG_CONTENT) as { plugin: string[] }
-    expect(config.plugin).toEqual([`file://${ctx.filePath}`])
-    // Only the plugin key: the config-content merge rides ON TOP of the user's
-    // config, so anything else here would override user settings.
-    expect(Object.keys(config)).toEqual(['plugin'])
+  test('the plugin lands where opencode scans, and Cate owns it outright', () => {
+    const pf = spec.projectFiles![0]
+    // opencode scans `{plugin,plugins}/*.{ts,js}` under its config dirs — .mjs
+    // would never be picked up.
+    expect(pf.relPath).toBe('.opencode/plugin/cate-hook.js')
+
+    const source = pf.build(null, ctx)!
+    // Cate owns the file outright: marked, never rewritten when current,
+    // reclaimed on 'off', and a same-named user file is left alone.
+    expect(source).toContain(CATE_HOOK_MARKER)
+    expect(pf.build(source, ctx)).toBeNull()
+    expect(pf.strip!(source)).toEqual({ delete: true })
+    expect(pf.strip!('// my own plugin\n')).toBeNull()
   })
 
   test('normalizes bus events; busy status starts the turn, idle event ends it', () => {
@@ -405,7 +495,7 @@ describe('opencode spec', () => {
     // denial and the turn runs on to its own end), so the plugin doesn't
     // forward the reply value at all.
     expect(norm('opencode', { type: 'permission.replied', sessionID: 'ses_1' })?.kind).toBe('turn-resume')
-    expect(spec.env!.file.content()).toContain('permission.replied')
+    expect(spec.projectFiles![0].build(null, ctx)).toContain('permission.replied')
   })
 })
 

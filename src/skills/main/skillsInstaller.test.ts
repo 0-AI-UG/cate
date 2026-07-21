@@ -137,6 +137,32 @@ describe('skillsInstaller workspace manifest', () => {
     expect(manifest().seeded).toEqual(['keep-me'])
   })
 
+  // Regression: a workspace written by an older Cate can carry rows for a
+  // target since dropped (`antigravity`). install() reuses "the same skill
+  // installed for another agent here" as its file source, and resolving that
+  // row's target used to THROW `Unknown skill target: antigravity` — so one
+  // stale row blocked installing that skill for ANY agent. Stale rows are now
+  // filtered on read, and the pruned list is what the next write persists.
+  it('ignores manifest rows for targets this version dropped', async () => {
+    files.set(MANIFEST, JSON.stringify({
+      skills: [
+        { skillId: entry().id, name: entry().name, targetId: 'antigravity', path: '/ws/.agent/skills/demo/SKILL.md', origin: 'local' },
+        { skillId: entry().id, name: entry().name, targetId: 'claude-code', path: '/claude', origin: 'local' },
+      ],
+      seeded: ['cate/cate-cli:antigravity@abc'],
+    }))
+    store.read.mockResolvedValue([{ relPath: 'SKILL.md', text: 'cached' }])
+
+    // Installing for a live target must succeed, not throw.
+    await install(entry(), 'grok', WS)
+
+    expect(files.get(`${WS}/.grok/skills/demo-skill/SKILL.md`)).toContain('name: demo-skill')
+    // The stale row is gone from the persisted manifest; live rows are kept.
+    expect(manifest().skills.map((s) => s.targetId)).toEqual(['claude-code', 'grok'])
+    // Its files on disk are NOT touched — only the tracking row is dropped.
+    expect(removed).toEqual([])
+  })
+
   it('rejects traversal paths before changing the workspace or manifest', async () => {
     files.set(MANIFEST, JSON.stringify({ skills: [], seeded: ['keep-me'] }))
     const beforeDirs = new Set(dirs)

@@ -4,17 +4,16 @@
 //
 //   1. materialize a STABLE per-user hooks dir (~/.cate/agent-hooks — same
 //      convention as the extensions root): the stdin→HTTP bridge, per-agent
-//      bridge wrappers, and the opencode in-process support file. Stable on
-//      purpose: the bridge paths are embedded in repo-scoped hook files
-//      (.codex/hooks.json, .claude/settings.local.json), where a per-boot
+//      bridge wrappers. Stable on purpose: the bridge paths are embedded in
+//      repo-scoped hook files (.codex/hooks.json,
+//      .claude/settings.local.json), where a per-boot
 //      path would rewrite user repos every boot and re-trigger codex's
 //      "modified since last trusted" hook review on every restart. Contents
 //      are regenerated on every boot; stale files are harmless.
 //   2. plant the hook env on every PTY (endpoint + per-terminal derived token
-//      + CATE_TERMINAL_ID — the terminal↔event correlation contract — plus
-//      the opencode ambient config);
-//   3. prepare workspace-scoped hook files (claude, codex, pi) at PTY create
-//      time;
+//      + CATE_TERMINAL_ID — the terminal↔event correlation contract);
+//   3. prepare workspace-scoped hook files (claude, codex, cursor, grok, pi,
+//      opencode) at PTY create time;
 //   4. ingest hook posts on a daemon-owned loopback HTTP endpoint, normalize
 //      them (shared code), and emit AgentHookEvents to subscribers (the
 //      rpcServer forwards them to the client as evt frames).
@@ -26,10 +25,10 @@
 // (they are children of PTYs this daemon spawned), so loopback suffices even
 // for remote workspaces — the daemon ingests locally and the normalized
 // events ride the existing LF-JSON pipe to the app. HTTP over a unix socket
-// was rejected because the in-process injections (pi extension, opencode
-// plugin) post with plain `fetch`, which cannot target a unix socket without
-// extra dependencies. (The pi extension is a workspace file — pi discovers
-// <cwd>/.pi/extensions/*.ts itself — not a hooks-dir support file.)
+// was rejected because the in-process injections (the pi extension, the
+// opencode plugin) post with plain `fetch`, which cannot target a unix socket
+// without extra dependencies. Both are workspace files the CLI discovers on
+// its own (<cwd>/.pi/extensions/*.ts, <cwd>/.opencode/plugin/*.js).
 //
 // Bridge choice: a tiny wrapper (sh script on POSIX, .cmd on win32) running
 // the daemon's OWN node binary (process.execPath) on a daemon-written JS
@@ -60,7 +59,6 @@ import {
   type AgentHookAgentState,
   type AgentHookConfig,
   type AgentHookEvent,
-  type AgentHookSpec,
   type HookInjectionContext,
 } from '../../shared/agentHooks'
 
@@ -68,13 +66,13 @@ const MAX_BODY_BYTES = 512 * 1024
 
 export interface AgentHooksCapability {
   /** The full spawn env for a PTY: hook endpoint + this terminal's derived
-   *  token, CATE_TERMINAL_ID=ptyId, and ambient per-agent vars. Lazily boots
-   *  the ingestion endpoint + hooks dir on first use. Returns `env` unchanged
-   *  when hook setup fails (a plain shell is always spawnable). `config` carries
-   *  the workspace's per-agent tri-state: an env-only agent (opencode) set to
-   *  'off' has its ambient vars withheld, which is how it is turned off (it
-   *  writes no repo files to strip). */
-  envForPty(ptyId: string, env: Record<string, string>, config?: AgentHookConfig): Promise<Record<string, string>>
+   *  token + CATE_TERMINAL_ID=ptyId. Agent-agnostic (the per-agent tri-state
+   *  is enforced by prepareWorkspace, the only injection channel) and repo-free,
+   *  so it is planted unconditionally: a hook file that was never written
+   *  simply never reads it. Lazily boots the ingestion endpoint + hooks dir on
+   *  first use; returns `env` unchanged when hook setup fails (a plain shell is
+   *  always spawnable). */
+  envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
   /** Write (or, for 'off', remove) workspace-scoped hook files for the PTY's
    *  cwd and keep the ones we wrote out of git status via .git/info/exclude.
    *  `config` carries per-agent tri-state overrides: 'auto' (default) injects
@@ -117,11 +115,7 @@ interface HookState {
   /** Per-boot secret the per-terminal bearer tokens derive from. */
   secret: string
   server: http.Server
-  /** Ambient env vars (spec.env) per owning agent, applied only where the key
-   *  isn't set yet. Keyed by agent so an env-only agent set to 'off' can have
-   *  its vars withheld (its sole injection channel — see envForPty). */
-  ambientVarsByAgent: Map<AgentId, Record<string, string>>
-  /** Per-agent injection context (bridge wrapper + support file paths). */
+  /** Per-agent injection context (the bridge wrapper path). */
   contexts: Map<AgentId, HookInjectionContext>
 }
 
@@ -167,6 +161,15 @@ process.stdin.on('end', () => {
   const endpoint = process.env.${CATE_HOOK_ENDPOINT_ENV}
   const token = process.env.${CATE_HOOK_TOKEN_ENV}
   if (!endpoint || !token || !agentId) process.exit(0)
+  // Cross-vendor guard. grok scans OTHER CLIs' hook files (.claude/settings
+  // .local.json, .cursor/hooks.json) by default, so a grok session also spawns
+  // the wrapper we injected for claude — with a grok payload. GROK_HOOK_EVENT
+  // is a RESERVED var grok's hook runner injects into every hook process it
+  // spawns (and strips from user-supplied env), so its presence is a
+  // deterministic "grok ran me", not a heuristic: drop the post unless the
+  // wrapper's baked-in agent id agrees. The grok-native wrapper still reports
+  // the event, so nothing is lost.
+  if (!!process.env.GROK_HOOK_EVENT !== (agentId === 'grok')) process.exit(0)
   let payload
   try { payload = JSON.parse(data) } catch { payload = { raw: data } }
   // pid: the bridge's PARENT — the agent CLI (or its sh hook-command layer),
@@ -293,10 +296,8 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
 
     const secret = randomBytes(32).toString('hex')
     const contexts = new Map<AgentId, HookInjectionContext>()
-    const ambientVarsByAgent = new Map<AgentId, Record<string, string>>()
 
     for (const agent of AGENTS) {
-      const spec: AgentHookSpec = AGENT_HOOK_SPECS[agent.id]
       // Per-agent bridge wrapper: hook configs get ONE command path with no
       // args (codex runs the command string directly), so the agent id rides
       // as a baked-in argv of the wrapper. sh script on POSIX, .cmd on win32.
@@ -313,16 +314,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
         await chmod(wrapper, 0o755)
       }
 
-      const supportFile = spec.env?.file
-      let filePath = ''
-      if (supportFile) {
-        filePath = path.join(dir, supportFile.name)
-        await writeFile(filePath, supportFile.content())
-      }
-      const ctx: HookInjectionContext = { bridgeCommand: wrapper, filePath }
-      contexts.set(agent.id, ctx)
-
-      if (spec.env) ambientVarsByAgent.set(agent.id, spec.env.vars(ctx))
+      contexts.set(agent.id, { bridgeCommand: wrapper })
     }
 
     const server = http.createServer((req, res) => handleRequest(req, res, secret))
@@ -331,11 +323,11 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port))
     })
     server.unref()
-    return { dir, url: `http://127.0.0.1:${port}`, secret, server, ambientVarsByAgent, contexts }
+    return { dir, url: `http://127.0.0.1:${port}`, secret, server, contexts }
   }
 
   return {
-    async envForPty(ptyId, env, config) {
+    async envForPty(ptyId, env) {
       if (disposed) return env
       let state: HookState
       try {
@@ -344,15 +336,6 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
         return env // hook setup failed — spawn a plain shell
       }
       const out = { ...env }
-      // Ambient per-agent vars never clobber a value the caller/user set. An
-      // env-only agent set to 'off' has its vars withheld: env is its sole
-      // injection channel, so this is what turns it off.
-      for (const [agentId, vars] of state.ambientVarsByAgent) {
-        if (resolveAgentHookMode(config, agentId) === 'off') continue
-        for (const [k, v] of Object.entries(vars)) {
-          if (out[k] === undefined) out[k] = v
-        }
-      }
       out[CATE_HOOK_ENDPOINT_ENV] = state.url
       out[CATE_HOOK_TOKEN_ENV] = hookTokenForTerminal(state.secret, ptyId)
       out[CATE_TERMINAL_ID_ENV] = ptyId
@@ -426,12 +409,11 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       const states: AgentHookAgentState[] = []
       for (const agent of AGENTS) {
         const spec = AGENT_HOOK_SPECS[agent.id]
-        const fileInjecting = !!spec.projectFiles?.length
         let folderPresent = false
         let injected = false
         // Only touch the filesystem for a real repo cwd (never ~ or a relative
         // path — same policy as prepareWorkspace).
-        if (fileInjecting && repoLocal) {
+        if (repoLocal) {
           const folder = agentHookFolder(agent.id)
           folderPresent = folder ? await dirExists(path.join(cwd, folder)) : false
           for (const pf of spec.projectFiles ?? []) {
@@ -444,7 +426,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
             } catch { /* absent — not injected via this path */ }
           }
         }
-        states.push({ agentId: agent.id, displayName: agent.displayName, fileInjecting, folderPresent, injected })
+        states.push({ agentId: agent.id, displayName: agent.displayName, folderPresent, injected })
       }
       return states
     },

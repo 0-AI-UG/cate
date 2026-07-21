@@ -28,6 +28,7 @@ import { workspaceDisplayName } from '../lib/fs/displayPath'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { InlineEditInput } from './InlineEditInput'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
+import { canvasKey, toggleCollapsed, useTreeCollapseStore } from './treeCollapse'
 import { Tooltip } from '../ui/Tooltip'
 
 // Stable empty map so the ports selector returns a referentially-constant value
@@ -321,15 +322,16 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
 
   // Per-canvas collapse state (canvas rows fold their children, like the
   // workspace row folds its tree). Absent = expanded; default is expanded.
-  const [collapsedCanvases, setCollapsedCanvases] = useState<Set<string>>(new Set())
-  const toggleCanvas = useCallback((canvasId: string) => {
-    setCollapsedCanvases((prev) => {
-      const next = new Set(prev)
-      if (next.has(canvasId)) next.delete(canvasId)
-      else next.add(canvasId)
-      return next
-    })
-  }, [])
+  // Persisted in treeCollapse so it survives a restart, like the skills rows.
+  const collapsedKeys = useTreeCollapseStore((s) => s.collapsed)
+  const isCanvasCollapsed = useCallback(
+    (canvasId: string) => collapsedKeys.has(canvasKey(workspace.id, canvasId)),
+    [collapsedKeys, workspace.id],
+  )
+  const toggleCanvas = useCallback(
+    (canvasId: string) => toggleCollapsed(canvasKey(workspace.id, canvasId)),
+    [workspace.id],
+  )
 
   const beginRename = useCallback(() => {
     setRenameValue(workspace.name || (workspace.rootPath ? workspaceDisplayName(workspace.rootPath) : '') || 'Workspace')
@@ -883,7 +885,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         <div className="flex flex-col">
           {canvasPanels.map((cp) => {
             const children = childrenByCanvas[cp.id] || []
-            const collapsed = collapsedCanvases.has(cp.id)
+            const collapsed = isCanvasCollapsed(cp.id)
             return (
               <React.Fragment key={cp.id}>
                 {renderCanvasRow(cp, children.length > 0, collapsed)}
@@ -908,7 +910,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
               </div>
               {detachedCanvases.map((cp) => {
                 const children = detachedChildrenByCanvas[cp.panelId] || []
-                const collapsed = collapsedCanvases.has(cp.panelId)
+                const collapsed = isCanvasCollapsed(cp.panelId)
                 return (
                   <React.Fragment key={cp.panelId}>
                     {renderDetachedCanvasRow(cp, children.length > 0, collapsed)}

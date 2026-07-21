@@ -74,8 +74,9 @@
 //             pin launch-method independence and registers a fake offline
 //             provider via -e, so pi runs cost nothing and need no
 //             credentials.
-//   opencode· in-process plugin injected via OPENCODE_CONFIG_CONTENT env (no
-//             config file); bus events carry sessionID; session.status
+//   opencode· in-process plugin injected as <project>/.opencode/plugin/*.js
+//             (no shared vendor config file); bus events carry sessionID;
+//             session.status
 //             busy/idle + session.idle mark turn state. The full lifecycle
 //             fires even when the provider errors, so this works with broken
 //             auth. ALWAYS spawn with OPENCODE_DISABLE_AUTOUPDATE=1 — the TUI
@@ -150,13 +151,15 @@ function hasBin(name: string): boolean {
   }
 }
 
-// A nested CLAUDECODE/ANTHROPIC/CODEX env changes the CLIs' behavior (observed:
-// claude silently stops persisting transcripts) — always drive them with the
-// agent vars stripped, like a real Cate terminal.
+// A nested CLAUDECODE/ANTHROPIC/CODEX/GROK env changes the CLIs' behavior
+// (observed: claude silently stops persisting transcripts) — always drive them
+// with the agent vars stripped, like a real Cate terminal. GROK_* matters
+// doubly here: the grok suite asserts on the reserved hook-runner vars, which
+// an inherited value would forge.
 function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
   const base = Object.fromEntries(
     Object.entries(process.env).filter(
-      ([k, v]) => v !== undefined && !/^(CLAUDE|ANTHROPIC|CODEX)/i.test(k) && k !== 'CLAUDECODE',
+      ([k, v]) => v !== undefined && !/^(CLAUDE|ANTHROPIC|CODEX|GROK)/i.test(k) && k !== 'CLAUDECODE',
     ),
   ) as Record<string, string>
   return { ...base, ...extra }
@@ -195,9 +198,17 @@ process.stdin.on('data', (c) => { d += c })
 process.stdin.on('end', () => {
   let payload
   try { payload = JSON.parse(d) } catch { payload = { raw: d } }
+  // Reserved hook-runner env: grok injects these on EVERY hook process
+  // (undefined for the other CLIs). GROK_HOOK_EVENT is the deterministic
+  // "grok ran me" marker the shipped bridge keys its agent disambiguation on.
+  const env = {}
+  for (const k of ['GROK_HOOK_EVENT', 'GROK_SESSION_ID', 'GROK_WORKSPACE_ROOT', 'CLAUDE_PROJECT_DIR']) {
+    if (process.env[k] !== undefined) env[k] = process.env[k]
+  }
   fs.appendFileSync(process.env.CATE_EVENTS_FILE, JSON.stringify({
     terminalId: process.env.CATE_TERMINAL_ID ?? null,
     ppid: process.ppid,
+    env,
     payload,
   }) + '\\n')
 })
@@ -212,6 +223,8 @@ interface BridgeEvent {
   /** The hook process's parent pid — the lineage claim the daemon bridge
    *  posts (agentPresence.ts walks the ancestry from here to the agent). */
   ppid?: number
+  /** Reserved hook-runner env vars present on the hook process (grok only). */
+  env?: Record<string, string>
   payload: Record<string, unknown>
 }
 
@@ -242,6 +255,9 @@ function expectEcho(events: { terminalId?: unknown; cateTerminalId?: unknown }[]
 interface Tui {
   pid: number
   send: (line: string) => Promise<void>
+  /** Write raw bytes with no trailing Enter — for answering a menu by key
+   *  (Esc to dismiss, arrows to move) where `send` would submit a line. */
+  press: (keys: string) => void
   settle: (ms: number) => Promise<void>
   waitFor: (pred: () => boolean, timeoutMs: number, label: string) => Promise<void>
   peek: () => string
@@ -287,6 +303,7 @@ async function driveTui(bin: string, args: string[], cwd: string, env: Record<st
       await sleep(800) // let TUI input handling settle before submit
       p.write('\r')
     },
+    press: (keys) => { p.write(keys) },
     settle: async (ms) => {
       const start = Date.now()
       while (Date.now() - start < ms) {
@@ -1105,7 +1122,7 @@ export default function (pi: ExtensionAPI) {
 })
 
 // =============================================================================
-// opencode — in-process plugin via OPENCODE_CONFIG_CONTENT env
+// opencode — in-process plugin at <project>/.opencode/plugin/*.js
 // =============================================================================
 
 describe.skipIf(!LIVE || !hasBin('opencode'))('opencode hook contract', () => {
@@ -1146,16 +1163,23 @@ export const CateEventLogger = async ({ directory }) => {
     await run('opencode', args, { cwd, env, timeout: 180_000 }).catch(() => {})
   }
 
-  test('run: env-injected plugin streams sessionID + busy/idle; --session resumes', { timeout: 420_000 }, async () => {
+  // Injection is a plain file under <project>/.opencode/plugin/: opencode scans
+  // `{plugin,plugins}/*.{ts,js}` under each config dir it resolves and imports
+  // every match at startup. Two contract details pinned here: the extension
+  // must be .js (.mjs is outside the glob), and EVERY exported factory is
+  // invoked — not just the default — which is why the shipped plugin has a
+  // single named export.
+  test('run: .opencode/plugin/*.js streams sessionID + busy/idle; --session resumes', { timeout: 420_000 }, async () => {
     const cwd = makeCwd('opencode')
-    const plugin = join(cwd, 'cate-plugin.mjs')
-    writeFileSync(plugin, PLUGIN_JS)
+    mkdirSync(join(cwd, '.opencode', 'plugin'), { recursive: true })
+    writeFileSync(join(cwd, '.opencode', 'plugin', 'cate-probe.js'), PLUGIN_JS)
+    // .mjs beside it must be ignored — if it were loaded, plugin.init doubles.
+    writeFileSync(join(cwd, '.opencode', 'plugin', 'ignored.mjs'), PLUGIN_JS)
     const tid = `cate-term-opencode-${Date.now()}`
     const env = (eventsFile: string): Record<string, string> =>
       cleanEnv({
         CATE_EVENTS_FILE: eventsFile,
         CATE_TERMINAL_ID: tid,
-        OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [`file://${plugin}`] }),
         // The autoupdate modal steals keystrokes and self-updates — never
         // spawn opencode without this.
         OPENCODE_DISABLE_AUTOUPDATE: '1',
@@ -1164,7 +1188,7 @@ export const CateEventLogger = async ({ directory }) => {
     const eventsFile = join(cwd, 'events.jsonl')
     await runTolerant(['run', PROMPT], cwd, env(eventsFile))
     const events = readJsonl<OcEvent>(eventsFile)
-    expect(events.some((e) => e.type === 'plugin.init'), 'plugin injected via env').toBe(true)
+    expect(events.filter((e) => e.type === 'plugin.init').length, 'loaded once, from the .js only').toBe(1)
     const created = events.find((e) => e.type === 'session.created')
     expect(created?.sessionID, 'session.created pushes the id').toMatch(/^ses_/)
     const id = created?.sessionID as string
@@ -1205,11 +1229,11 @@ export const CateEventLogger = async ({ directory }) => {
   test('TUI: permission.asked while a bash call waits; approval pushes permission.replied', { retry: 1, timeout: 420_000 }, async () => {
     const { createServer } = await import('node:http')
     const cwd = makeCwd('opencode-perm')
-    const plugin = join(cwd, 'cate-plugin.mjs')
+    mkdirSync(join(cwd, '.opencode', 'plugin'), { recursive: true })
     // Same shape as PLUGIN_JS but with the FULL properties object — the
     // permission payload (permission/metadata) lives beside sessionID.
     writeFileSync(
-      plugin,
+      join(cwd, '.opencode', 'plugin', 'cate-perm.js'),
       `
 import { appendFileSync } from "node:fs"
 const OUT = process.env.CATE_EVENTS_FILE
@@ -1271,8 +1295,9 @@ export const CatePermLogger = async () => ({
     const tuiEnv = cleanEnv({
       CATE_EVENTS_FILE: eventsFile,
       CATE_TERMINAL_ID: tid,
+      // Config content here is TEST scaffolding (gate bash, register the fake
+      // provider) — the plugin itself rides in .opencode/plugin/, as in prod.
       OPENCODE_CONFIG_CONTENT: JSON.stringify({
-        plugin: [`file://${plugin}`],
         permission: { bash: 'ask' },
         provider: {
           catefake: {
@@ -1321,5 +1346,544 @@ export const CatePermLogger = async () => ({
     )
     expectEcho(events().map((e) => ({ cateTerminalId: e.cate_terminal_id })), tid)
     tui.kill()
+  })
+})
+
+// =============================================================================
+// grok (xAI Grok Build) — hooks via <project>/.grok/hooks/*.json, gated on
+// grok's own folder trust. Closest sibling to codex: a repo file grok
+// discovers itself, silently inert until the user grants trust once. Two
+// things make grok unlike every other CLI here and drive the product design:
+//
+//   1. The payload is camelCase (hookEventName / sessionId / cwd /
+//      workspaceRoot / toolName), and the EVENT NAME VALUE is snake_case
+//      ("session_start") even though the config key is CamelCase
+//      ("SessionStart"). Config casing and payload casing are different
+//      alphabets; both are pinned below.
+//   2. grok also SCANS OTHER VENDORS' hook files — <project>/.claude/
+//      settings.json and settings.local.json, plus .cursor/hooks.json — by
+//      default ([compat.claude] hooks). Cate already injects its bridge into
+//      .claude/settings.local.json, so in any workspace with claude injection
+//      a grok session fires the CLAUDE-labelled bridge wrapper, which would
+//      otherwise report agentId=claude-code for a grok process (wrong panel
+//      label, wrong presence, wrong resume command). The disambiguator is
+//      GROK_HOOK_EVENT: a reserved var grok's hook runner injects into EVERY
+//      hook process it spawns, whatever file the hook came from. The shipped
+//      bridge drops a post whose baked-in agent id disagrees with that marker;
+//      these tests pin the marker's presence on both hook sources.
+//
+// Harness-only trust: GROK_FOLDER_TRUST=0 ungates project hooks without
+// writing to the user's ~/.grok (the shipped product plants no trust — the
+// user grants it once via /hooks-trust, exactly like codex's review prompt).
+//
+// Verified live 2026-07-21 against grok 0.2.106.
+// =============================================================================
+
+describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
+  /** hooks.json event keys are CamelCase; the payload's hookEventName echoes
+   *  the same events in snake_case. Both casings are contract. */
+  const GROK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd', 'Notification']
+
+  /** A cwd that grok resolves a PROJECT ROOT for. Project-scoped hooks are
+   *  keyed on that root, and grok derives it from the git repo — a plain
+   *  directory yields projectRoot=null and loads no project hooks at all
+   *  (pinned below). */
+  const makeRepo = (sub: string): string => {
+    const dir = makeCwd(sub)
+    execFileSync('git', ['init', '-q'], { cwd: dir })
+    return dir
+  }
+
+  /** The SHIPPED channel: one JSON file under <project>/.grok/hooks/. */
+  const writeGrokHooks = (root: string, bridge: string): void => {
+    mkdirSync(join(root, '.grok', 'hooks'), { recursive: true })
+    writeFileSync(
+      // Same filename the shipped injection uses (grokSpec's relPath).
+      join(root, '.grok', 'hooks', 'cate-hook.json'),
+      JSON.stringify({
+        hooks: Object.fromEntries(GROK_EVENTS.map((e) => [e, [{ hooks: [{ type: 'command', command: bridge, timeout: 60 }] }]])),
+      }),
+    )
+  }
+
+  /** The file Cate injects for CLAUDE — which grok reads too (compat scan). */
+  const writeClaudeCompatHooks = (root: string, bridge: string): void => {
+    mkdirSync(join(root, '.claude'), { recursive: true })
+    writeFileSync(
+      join(root, '.claude', 'settings.local.json'),
+      JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: bridge }] }] } }),
+    )
+  }
+
+  /** HARNESS ONLY — ungates project hooks without touching the user's
+   *  ~/.grok/trusted_folders.toml. A headless PTY cannot answer the
+   *  interactive folder-trust prompt deterministically. */
+  const untrustedEnv = (extra: Record<string, string> = {}): Record<string, string> => cleanEnv(extra)
+  const trustedEnv = (extra: Record<string, string> = {}): Record<string, string> =>
+    cleanEnv({ GROK_FOLDER_TRUST: '0', ...extra })
+
+  /** Never let a test run self-update the binary out from under the suite. */
+  const NO_UPDATE = ['--no-auto-update']
+
+  const byName = (events: BridgeEvent[], snakeName: string): BridgeEvent[] =>
+    events.filter((e) => e.payload.hookEventName === snakeName)
+
+  interface InspectHook {
+    event: string
+    hookType: string
+    target: string
+    source: { type: string; path: string }
+    vendor?: string
+    compatibilityStatus?: string
+  }
+
+  /** `grok inspect --json` — grok's own view of what it discovered for a
+   *  directory. Costs nothing and needs no auth, so the discovery/trust half
+   *  of the contract is pinned even when the account is logged out. */
+  const inspect = (
+    cwd: string,
+    env: Record<string, string>,
+  ): { hooks: InspectHook[]; projectTrusted: boolean; projectRoot: string | null; skills?: Array<{ name: string; source: { path: string } }> } =>
+    JSON.parse(execFileSync('grok', ['inspect', '--json'], { cwd, env, timeout: 60_000 }).toString())
+
+  // ---------------------------------------------------------------------------
+  // Discovery + trust (auth-free)
+  // ---------------------------------------------------------------------------
+
+  // The safety property Cate's injection rides on, and the reason a freshly
+  // injected workspace can be silent: an UNTRUSTED project's hooks are not
+  // "errored", they are invisible. Cate must treat missing grok events as
+  // normal, never as a broken install.
+  test('inspect: project hooks are silently skipped until the folder is trusted', () => {
+    const cwd = makeRepo('grok-untrusted')
+    writeGrokHooks(cwd, writeBridge(cwd))
+    const seen = inspect(cwd, untrustedEnv())
+    expect(seen.projectTrusted, 'a fresh project starts untrusted').toBe(false)
+    expect(seen.hooks, 'untrusted project contributes NO hooks').toEqual([])
+  })
+
+  // Project scope is anchored on a git repo: in a plain directory grok
+  // resolves NO project root and .grok/hooks is never consulted — trusted or
+  // not. A non-repo workspace therefore gets no grok hooks at all.
+  test('inspect: a non-repo directory resolves no project root and loads no project hooks', () => {
+    const cwd = makeCwd('grok-norepo')
+    writeGrokHooks(cwd, writeBridge(cwd))
+    const seen = inspect(cwd, trustedEnv())
+    expect(seen.projectRoot, 'no git repo — no project root').toBeNull()
+    expect(seen.hooks, 'project hooks need a project root').toEqual([])
+  })
+
+  // The shipped file lands where grok looks, with the shape grok parses.
+  test('inspect: a trusted project loads .grok/hooks/*.json', () => {
+    const cwd = makeRepo('grok-trusted')
+    const bridge = writeBridge(cwd)
+    writeGrokHooks(cwd, bridge)
+    const seen = inspect(cwd, trustedEnv())
+    expect(seen.projectTrusted).toBe(true)
+    for (const event of GROK_EVENTS) {
+      const hit = seen.hooks.find((h) => h.event === event && h.target === bridge)
+      expect(hit, `${event} handler registered from .grok/hooks`).toBeTruthy()
+      expect(hit?.hookType).toBe('command')
+      expect(hit?.source.type).toBe('project')
+      expect(hit?.source.path, 'sourced from the .grok/hooks dir').toContain(join('.grok', 'hooks'))
+      expect(hit?.vendor, 'a native grok hook carries no vendor tag').toBeUndefined()
+    }
+  })
+
+  // THE cross-vendor contract: grok reads Cate's CLAUDE injection too. If this
+  // ever stops being true the disambiguation in the bridge becomes dead code;
+  // while it IS true, a grok session in a claude-injected workspace posts
+  // through the claude-labelled wrapper and must be re-attributed.
+  test('inspect: grok also loads the .claude/settings.local.json Cate injects, tagged vendor=claude', () => {
+    const cwd = makeRepo('grok-compat')
+    const bridge = writeBridge(cwd)
+    writeClaudeCompatHooks(cwd, bridge)
+    const seen = inspect(cwd, trustedEnv())
+    const compat = seen.hooks.find((h) => h.event === 'SessionStart' && h.target === bridge)
+    expect(compat, 'grok discovers the claude-vendored hook file').toBeTruthy()
+    expect(compat?.vendor).toBe('claude')
+    expect(compat?.compatibilityStatus).toBe('enabled')
+    expect(compat?.source.path, 'sourced from the repo .claude dir').toContain('.claude')
+
+    // Dedup: an IDENTICAL command registered for the same event by both
+    // sources collapses to one handler, and the claude-vendored entry is the
+    // survivor. Cate does NOT rely on this — its two wrappers have different
+    // paths (the agent id is baked into the wrapper argv) — but if it ever
+    // stopped holding for identical commands, a user who hand-copied one
+    // command into both files would get doubled events.
+    writeGrokHooks(cwd, bridge)
+    const same = inspect(cwd, trustedEnv()).hooks.filter((h) => h.event === 'SessionStart' && h.target === bridge)
+    expect(same.length, 'identical command in both sources = ONE handler').toBe(1)
+    expect(same[0].vendor, 'the claude-vendored entry survives dedup').toBe('claude')
+
+    // The shipped shape: DIFFERENT commands (per-agent wrappers) both load, so
+    // a grok session in a claude-injected workspace fires BOTH bridges. That
+    // is what the GROK_HOOK_EVENT guard exists to disambiguate.
+    const grokBridge = join(cwd, 'cate-bridge-grok.js')
+    writeFileSync(grokBridge, readFileSync(bridge, 'utf8'))
+    chmodSync(grokBridge, 0o755)
+    writeGrokHooks(cwd, grokBridge)
+    const distinct = inspect(cwd, trustedEnv()).hooks.filter((h) => h.event === 'SessionStart')
+    expect(distinct.length, 'distinct commands BOTH load').toBe(2)
+    expect(distinct.filter((h) => h.vendor === 'claude').length).toBe(1)
+    expect(distinct.filter((h) => h.vendor === undefined).length).toBe(1)
+  })
+
+  // ---------------------------------------------------------------------------
+  // Skills (auth-free) — the OTHER half of Cate's per-agent integration, whose
+  // install dir is declared alongside the hook spec in src/shared/agents.ts.
+  // ---------------------------------------------------------------------------
+
+  // Cate installs grok skills to <project>/.grok/skills (AgentDef.skills). grok
+  // ALSO reads .agents, .claude and .cursor skills, but those dirs belong to
+  // the agents that own them — installing there would double-write a skill the
+  // user asked for once.
+  test('inspect: a skill installed to .grok/skills is discovered as a project skill', () => {
+    const cwd = makeRepo('grok-skills')
+    const name = 'cate-probe-skill'
+    mkdirSync(join(cwd, '.grok', 'skills', name), { recursive: true })
+    writeFileSync(
+      join(cwd, '.grok', 'skills', name, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: probe\n---\n\nbody\n`,
+    )
+    const found = inspect(cwd, cleanEnv()).skills?.find((s) => s.name === name)
+    expect(found, 'grok discovers the skill Cate installed').toBeTruthy()
+    expect(found?.source.path).toContain(join('.grok', 'skills', name))
+  })
+
+  // Skills and hooks degrade INDEPENDENTLY: folder trust gates code execution
+  // (hooks/MCP/LSP), not skill discovery. So in a repo the user has not trusted
+  // yet, a Cate-installed skill works immediately while its hooks stay inert —
+  // Cate must not treat "no hook events" as "the grok integration is broken".
+  test('inspect: skills load in an UNTRUSTED project where hooks do not', () => {
+    const cwd = makeRepo('grok-skills-untrusted')
+    const name = 'cate-probe-untrusted'
+    mkdirSync(join(cwd, '.grok', 'skills', name), { recursive: true })
+    writeFileSync(
+      join(cwd, '.grok', 'skills', name, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: probe\n---\n\nbody\n`,
+    )
+    writeGrokHooks(cwd, writeBridge(cwd))
+
+    const seen = inspect(cwd, untrustedEnv())
+    expect(seen.projectTrusted, 'hooks present + never granted = untrusted').toBe(false)
+    expect(seen.hooks, 'hooks stay inert').toEqual([])
+    expect(seen.skills?.some((s) => s.name === name), 'skills load anyway').toBe(true)
+  })
+
+  // ---------------------------------------------------------------------------
+  // Live sessions (needs a logged-in grok — `grok login`)
+  // ---------------------------------------------------------------------------
+
+  test('headless: hooks stream identity + turn status through one session id', { timeout: 420_000 }, async () => {
+    const cwd = makeRepo('grok-headless')
+    const bridge = writeBridge(cwd)
+    writeGrokHooks(cwd, bridge)
+    const tid = `cate-term-grok-${Date.now()}`
+    const eventsFile = join(cwd, 'events.jsonl')
+
+    await run(
+      'grok',
+      [...NO_UPDATE, '-p', PROMPT],
+      { cwd, env: trustedEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 300_000 },
+    )
+    const events = readJsonl<BridgeEvent>(eventsFile)
+    const start = byName(events, 'session_start')[0]?.payload
+    expect(start, 'SessionStart fired — absence means hook discovery or trust drifted').toBeTruthy()
+    // Payload casing: camelCase keys, snake_case event VALUE. Both are pinned
+    // because the normalizer keys off exactly these spellings.
+    expect(start?.sessionId, 'session ids are UUIDs (v7 when grok generates them)').toMatch(UUID_RE)
+    expect(start?.cwd, 'hook payload cwd is the session join key').toBe(cwd)
+    expect(start?.workspaceRoot, 'workspaceRoot resolves to the project').toContain(cwd)
+    expect(start?.session_id, 'no snake_case alias — camelCase only').toBeUndefined()
+    const id = start?.sessionId as string
+
+    for (const name of ['user_prompt_submit', 'stop']) {
+      const hits = byName(events, name)
+      expect(hits.length, `${name} fired`).toBeGreaterThan(0)
+      for (const h of hits) expect(h.payload.sessionId, `${name} reports the same id`).toBe(id)
+    }
+    // Turn order is the state machine the tracker runs.
+    const order = events.map((e) => e.payload.hookEventName)
+    expect(order.indexOf('stop')).toBeGreaterThan(order.indexOf('user_prompt_submit'))
+    expect(order.indexOf('user_prompt_submit')).toBeGreaterThan(order.indexOf('session_start'))
+
+    // The reserved runner env — the deterministic "grok spawned me" marker.
+    const first = events[0]
+    expect(first.env?.GROK_HOOK_EVENT, 'runner injects the event name').toBe('session_start')
+    expect(first.env?.GROK_SESSION_ID, 'runner injects the session id').toBe(id)
+    expect(first.env?.GROK_WORKSPACE_ROOT).toContain(cwd)
+    expectEcho(events, tid)
+
+    // Presence lineage: the hook process is a descendant of the grok CLI, so
+    // the real tracker must resolve the recorded parent pid to a live grok.
+    // (Asserted against the process tree captured while the run was alive is
+    // impossible headlessly — the run has exited — so only the claim shape is
+    // checked here; the TUI test below does the live ancestry walk.)
+    const lineage = events.find((e) => typeof e.ppid === 'number')
+    expect(lineage, 'bridge recorded its parent pid').toBeTruthy()
+
+    cleanups.push(() => rmSync(join(homedir(), '.grok', 'sessions'), { recursive: true, force: true }))
+  })
+
+  test('headless: PostToolUse reports the tool that ran', { timeout: 420_000 }, async () => {
+    const cwd = makeRepo('grok-tool')
+    const bridge = writeBridge(cwd)
+    writeGrokHooks(cwd, bridge)
+    const tid = `cate-term-grok-tool-${Date.now()}`
+    const eventsFile = join(cwd, 'events.jsonl')
+
+    await run(
+      'grok',
+      [...NO_UPDATE, '--permission-mode', 'bypassPermissions', '-p', 'Run exactly this shell command: echo cate-pt-probe'],
+      { cwd, env: trustedEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 300_000 },
+    )
+    const events = readJsonl<BridgeEvent>(eventsFile)
+    const post = byName(events, 'post_tool_use')[0]?.payload
+    expect(post, 'PostToolUse fired').toBeTruthy()
+    expect(post?.sessionId).toBe(byName(events, 'session_start')[0]?.payload.sessionId)
+    // grok's OWN tool name, not the claude alias the matcher accepts.
+    expect(post?.toolName).toBe('run_terminal_command')
+    expect((post?.toolInput as { command?: string })?.command).toContain('echo')
+    const order = events.map((e) => e.payload.hookEventName)
+    expect(order.indexOf('stop')).toBeGreaterThan(order.indexOf('post_tool_use'))
+    expectEcho(events, tid)
+  })
+
+  // Resume is the terminal-restore contract: the shipped argv (`grok --resume
+  // <id>`) must keep pushing hook events, and an id that no longer exists must
+  // FAIL rather than silently starting a fresh session under the stale stamp.
+  test('headless: resume keeps hooks flowing; an unknown id fails', { timeout: 420_000 }, async () => {
+    const cwd = makeRepo('grok-resume')
+    const bridge = writeBridge(cwd)
+    writeGrokHooks(cwd, bridge)
+    const tid = `cate-term-grok-resume-${Date.now()}`
+
+    const eventsFile = join(cwd, 'events.jsonl')
+    await run(
+      'grok',
+      [...NO_UPDATE, '-p', PROMPT],
+      { cwd, env: trustedEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 300_000 },
+    )
+    const id = byName(readJsonl<BridgeEvent>(eventsFile), 'session_start')[0]?.payload.sessionId as string
+    expect(id).toMatch(UUID_RE)
+
+    const eventsFile2 = join(cwd, 'events-resume.jsonl')
+    await run(
+      'grok',
+      [...NO_UPDATE, '--resume', id, '-p', PROMPT2],
+      { cwd, env: trustedEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid }), timeout: 300_000 },
+    )
+    const resumeEvents = readJsonl<BridgeEvent>(eventsFile2)
+    const resumed = byName(resumeEvents, 'session_start')[0]?.payload
+    expect(resumed, 'SessionStart fires on the resumed run').toBeTruthy()
+    expect(resumed?.sessionId, 'resume re-attaches to the SAME session').toBe(id)
+    expect(byName(resumeEvents, 'stop').length, 'the resumed turn completes').toBeGreaterThan(0)
+    expectEcho(resumeEvents, tid)
+
+    // A dead id must reject — this is what lets Cate fall back to a plain shell.
+    await expect(
+      run('grok', [...NO_UPDATE, '--resume', '99999999-9999-4999-8999-999999999999', '-p', 'hi'],
+        { cwd, env: trustedEnv(), timeout: 120_000 }),
+    ).rejects.toThrow()
+  })
+
+  // The gate behind RESUMABLE_FROM_SESSION_START (agentSessionStamps.ts): is
+  // the id announced by SessionStart resumable BEFORE the turn it opened for
+  // finished? For claude it is not — it announces at TUI launch, and resuming
+  // that empty id fails, so claude is stamped only from its first turn event.
+  // grok is safe: SessionStart is deferred to the submit, so the session is
+  // already on disk, and a run killed mid-turn still resumes. A regression
+  // here would make Cate hand a restored terminal a resume command that
+  // errors — degrading silently to a plain shell.
+  test('a session killed mid-turn is still resumable from its SessionStart id', { retry: 1, timeout: 420_000 }, async () => {
+    const cwd = makeRepo('grok-midturn')
+    const bridge = writeBridge(cwd)
+    writeGrokHooks(cwd, bridge)
+    const tid = `cate-term-grok-mid-${Date.now()}`
+    const eventsFile = join(cwd, 'events.jsonl')
+    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
+
+    const tui = await driveTui(
+      'grok',
+      NO_UPDATE,
+      cwd,
+      trustedEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
+    )
+    await tui.settle(10_000)
+    // A long answer, so the turn is still running when we pull the plug.
+    await tui.send('Count slowly from 1 to 40, one number per line.')
+    await tui.waitFor(() => byName(events(), 'session_start').length > 0, 120_000, 'SessionStart')
+    const id = byName(events(), 'session_start')[0].payload.sessionId as string
+    expect(byName(events(), 'stop'), 'killed before the turn completed').toEqual([])
+    tui.kill()
+    await sleep(2_000)
+
+    // The shipped restore argv must succeed against that id.
+    await run('grok', [...NO_UPDATE, '--resume', id, '-p', PROMPT], { cwd, env: trustedEnv(), timeout: 300_000 })
+  })
+
+  // The misattribution guard, pinned end to end: with ONLY Cate's claude
+  // injection present (no .grok/hooks), a grok run still fires that bridge —
+  // and the process it fires carries GROK_HOOK_EVENT, which is how the shipped
+  // bridge knows the payload is grok's and not claude's.
+  test('headless: the claude-injected bridge fires for grok, marked by GROK_HOOK_EVENT', { timeout: 420_000 }, async () => {
+    const cwd = makeRepo('grok-crossfire')
+    const bridge = writeBridge(cwd)
+    writeClaudeCompatHooks(cwd, bridge) // no .grok/hooks on purpose
+    const tid = `cate-term-grok-x-${Date.now()}`
+    const eventsFile = join(cwd, 'events.jsonl')
+
+    await run(
+      'grok',
+      [...NO_UPDATE, '-p', PROMPT],
+      { cwd, env: trustedEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }), timeout: 300_000 },
+    )
+    const events = readJsonl<BridgeEvent>(eventsFile)
+    expect(events.length, 'grok fired the claude-vendored hook file').toBeGreaterThan(0)
+    const start = events[0]
+    // Payload is grok-shaped even though the FILE is claude's — a claude
+    // normalizer reading hook_event_name would see nothing and drop it, while
+    // presence would still be credited to claude. Hence the env marker.
+    expect(start.payload.hookEventName).toBe('session_start')
+    expect(start.payload.hook_event_name).toBeUndefined()
+    expect(start.env?.GROK_HOOK_EVENT, 'the disambiguator is present on a compat-sourced hook').toBe('session_start')
+    expect(start.env?.CLAUDE_PROJECT_DIR, 'grok sets the claude-compat alias too').toContain(cwd)
+    expectEcho(events, tid)
+  })
+
+  // The TUI opens on a WELCOME MENU (New worktree / Resume session / Changelog
+  // / Quit) — no session exists yet, so NO hook fires at launch. Identity
+  // arrives with the first prompt submit, where SessionStart and
+  // UserPromptSubmit land together. Same deferral as codex, opposite of claude
+  // and cursor: Cate cannot stamp a restored grok terminal until the user
+  // prompts, and until then the terminal has no session id to restore against.
+  test('TUI: hooks are silent at launch; SessionStart arrives with the first submit', { retry: 1, timeout: 420_000 }, async () => {
+    const cwd = makeRepo('grok-tui')
+    const bridge = writeBridge(cwd)
+    writeGrokHooks(cwd, bridge)
+    const tid = `cate-term-grok-tui-${Date.now()}`
+    const eventsFile = join(cwd, 'events.jsonl')
+    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
+
+    const tui = await driveTui(
+      'grok',
+      NO_UPDATE,
+      cwd,
+      trustedEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
+    )
+    await tui.settle(12_000)
+    expect(
+      events().map((e) => e.payload.hookEventName),
+      'no hook fires while the welcome menu is up',
+    ).toEqual([])
+
+    await tui.send(PROMPT)
+    await tui.waitFor(() => byName(events(), 'session_start').length > 0, 120_000, 'SessionStart after submit')
+    const start = byName(events(), 'session_start')[0].payload
+    expect(start.sessionId).toMatch(UUID_RE)
+    expect(start.cwd).toBe(cwd)
+    // Deferred, but still ordered: the session opens before the prompt it was
+    // opened for.
+    await tui.waitFor(() => byName(events(), 'user_prompt_submit').length > 0, 60_000, 'UserPromptSubmit')
+    expect(byName(events(), 'user_prompt_submit')[0].payload.sessionId).toBe(start.sessionId)
+
+    const lineage = events().find((e) => typeof e.ppid === 'number')
+    expect(lineage, 'bridge recorded its parent pid').toBeTruthy()
+    const tracker = createAgentPresenceTracker({ snapshot: snapshotProcessTree })
+    await tracker.notePost(tid, 'grok', lineage!.ppid)
+    expect(
+      tracker.presenceFor(tid, await snapshotProcessTree()),
+      'ancestry walk lands on the live grok',
+    ).toEqual({ agentName: 'Grok', agentPresent: true })
+
+    await tui.waitFor(() => byName(events(), 'stop').length > 0, 180_000, 'Stop')
+    expect(byName(events(), 'stop')[0].payload.sessionId).toBe(start.sessionId)
+    expectEcho(events(), tid)
+    tui.kill()
+  })
+
+  // Permission-wait is PUSHED, and spelled exactly like claude's:
+  // Notification with notificationType "permission_prompt". PreToolUse fires
+  // ~30ms earlier for the SAME call, but it fires before every tool whether or
+  // not approval is needed (cursor's problem), so Notification is the only
+  // event that means "parked on the user".
+  //
+  // This test CANCELS the prompt instead of approving it. Blind-Enter on grok's
+  // approval menu is not safe to automate: the highlighted row can be a
+  // remembered "always allow" grant, and accepting it writes
+  // `[ui] permission_mode = "always-approve"` into the USER-GLOBAL
+  // ~/.grok/config.toml — silently disabling every approval prompt on the
+  // machine, and poisoning later runs of this very test (the second run never
+  // prompts, so it times out). Cancelling keeps the run inert. The resolution
+  // half of the contract (PostToolUse marks the turn back in flight) is covered
+  // by the headless PostToolUse test, which needs no menu interaction.
+  test('TUI: Notification(permission_prompt) fires while blocked on approval', { retry: 1, timeout: 420_000 }, async () => {
+    const cwd = makeRepo('grok-perm')
+    const bridge = writeBridge(cwd)
+    writeGrokHooks(cwd, bridge)
+    const tid = `cate-term-grok-perm-${Date.now()}`
+    const eventsFile = join(cwd, 'events.jsonl')
+    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
+
+    const tui = await driveTui(
+      'grok',
+      NO_UPDATE,
+      cwd,
+      trustedEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
+    )
+    await tui.settle(10_000)
+    await tui.send('Use the shell tool to run exactly this command: touch needs-approval.txt')
+    await tui.waitFor(
+      () => byName(events(), 'notification').some((e) => e.payload.notificationType === 'permission_prompt'),
+      180_000,
+      'Notification(permission_prompt)',
+    )
+    const id = byName(events(), 'session_start')[0].payload.sessionId as string
+    const perm = byName(events(), 'notification').find((e) => e.payload.notificationType === 'permission_prompt')?.payload
+    expect(perm?.sessionId, 'permission-wait identifies the session').toBe(id)
+    expect(perm?.message).toContain('permission')
+    // Still in flight — the wait signal precedes any Stop.
+    expect(byName(events(), 'stop').length, 'no Stop while blocked on approval').toBe(0)
+
+    // PreToolUse is deliberately NOT in the shipped file, so it is absent
+    // here: it fires ~30ms before this Notification for the same call, but it
+    // precedes EVERY tool call, approved or not (cursor's problem), so it
+    // cannot mark a wait. Notification is the only event that means "parked".
+    expect(byName(events(), 'pre_tool_use'), 'PreToolUse is not injected').toEqual([])
+
+    // session_start carries NO transcriptPath (the session file does not exist
+    // yet); every later event does. The normalizer must treat it as optional.
+    const startPayload = byName(events(), 'session_start')[0].payload
+    expect(startPayload.transcriptPath, 'absent on session_start').toBeUndefined()
+    expect(startPayload.source).toBe('new')
+    expect(perm?.transcriptPath, 'later events carry the updates.jsonl path').toContain('.grok/sessions/')
+
+    // The hazard, pinned: row 1 of grok's approval menu is PRESELECTED and is
+    // the blanket grant, so a bare Enter here silently turns approvals off for
+    // the whole machine. If this assertion ever fails, re-read the menu before
+    // touching the key this test sends.
+    //   1 (●) Yes, and don't ask again for anything (always-approve mode)
+    //   2 (○) Yes, proceed
+    //   3 (○) No, reject (type to add feedback)
+    expect(tui.peek(), 'approval menu still defaults to the blanket grant').toContain('always-approve')
+
+    // Ctrl+C cancels the turn (Esc does NOT dismiss this menu — verified).
+    // "Turn cancelled by user", Stop fires, and no grant is persisted.
+    tui.press('\x03')
+    await tui.waitFor(() => byName(events(), 'stop').length > 0, 120_000, 'Stop after cancel')
+    expect(byName(events(), 'stop')[0].payload.sessionId).toBe(id)
+    // The gated command never ran.
+    expect(existsSync(join(cwd, 'needs-approval.txt')), 'cancelled tool call did not execute').toBe(false)
+    expectEcho(events(), tid)
+    tui.kill()
+
+    // Guard the machine-global side effect this test used to cause: nothing
+    // here may write a blanket approval into the user's grok config.
+    const userConfig = join(homedir(), '.grok', 'config.toml')
+    if (existsSync(userConfig)) {
+      expect(readFileSync(userConfig, 'utf8'), 'test must not grant a global always-approve')
+        .not.toContain('always-approve')
+    }
   })
 })

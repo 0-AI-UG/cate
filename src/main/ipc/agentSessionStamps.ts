@@ -50,6 +50,10 @@ const RESUMABLE_FROM_SESSION_START: Record<AgentId, boolean> = {
   // A never-used sessionStart id is resumable (--resume even ADOPTS unknown
   // ids as a fresh chat rather than failing) — pinned live.
   cursor: true,
+  // grok's TUI defers SessionStart to the first prompt submit, so a session is
+  // already open and on disk when the id arrives — a session killed mid-turn,
+  // before its Stop, still resumes (pinned live).
+  grok: true,
   pi: true,
   opencode: true,
 }

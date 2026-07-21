@@ -21,7 +21,10 @@ import { ensureSkillName } from './frontmatter'
 import * as skillStore from './skillStore'
 import * as savedSkills from './savedSkills'
 import { getToken } from './skillSources'
-import { slugifySkillName, type InstalledSkill, type SkillEntry, type SkillTargetId } from '../../shared/skills'
+import {
+  isKnownSkillTarget, slugifySkillName,
+  type InstalledSkill, type SkillEntry, type SkillTargetId,
+} from '../../shared/skills'
 import { fetchSkillFiles, type SkillFile } from './githubCrawl'
 import { skillPathSegments } from './skillPath'
 
@@ -48,7 +51,16 @@ async function readManifestData(runtime: Runtime, runtimeId: string, hostCwd: st
     const raw = await runtime.file.readFile(manifestPath(runtimeId, hostCwd))
     const parsed = JSON.parse(raw) as SkillsManifest
     return {
-      skills: Array.isArray(parsed.skills) ? parsed.skills : [],
+      // Rows for targets this Cate no longer supports (e.g. `antigravity`,
+      // dropped with its agent) are filtered out on the way in: they would
+      // otherwise render as a phantom agent in the skills tree, and reaching
+      // targetInfo/skillsRootDir with one THROWS — which used to break
+      // installing any skill that had a stale row for the same skillId. The
+      // next manifest write persists the pruned list, so this self-heals.
+      // Only the tracking row goes; files already on disk are left alone.
+      skills: Array.isArray(parsed.skills)
+        ? parsed.skills.filter((s) => isKnownSkillTarget(s?.targetId))
+        : [],
       seeded: Array.isArray(parsed.seeded) ? parsed.seeded.filter((s) => typeof s === 'string') : [],
     }
   } catch {

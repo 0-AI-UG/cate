@@ -157,12 +157,12 @@ export interface ProcessDeps {
   idleSuspend?: boolean
   /**
    * Agent hook injection (see agentHooks.ts): plants the per-pty hook env
-   * (ingestion endpoint/token + CATE_TERMINAL_ID + ambient agent env) and prepares
+   * (ingestion endpoint/token + CATE_TERMINAL_ID) and prepares
    * workspace-scoped hook files before the shell spawns. Optional — hosts and
    * tests without hook support spawn plain shells.
    */
   hooks?: {
-    envForPty(ptyId: string, env: Record<string, string>, config?: AgentHookConfig): Promise<Record<string, string>>
+    envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
     prepareWorkspace(cwd: string, config?: AgentHookConfig): Promise<void>
   }
   /**
@@ -259,12 +259,12 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       // (CATE_API), also put the bundled `cate` on PATH so agents can run it.
       let env = catePathEnv({ ...deps.getEnv(), ...(opts.env ?? {}) })
       // Agent hook injection (opt-in per pty via opts.agentHooks): hook env
-      // (endpoint/token/CATE_TERMINAL_ID + ambient agent env) on the pty, workspace
+      // (endpoint/token/CATE_TERMINAL_ID) on the pty, workspace
       // hook files in its cwd. Failure degrades to a plain shell — a terminal
       // must never fail to open over hooks.
       if (deps.hooks && opts.agentHooks) {
         try {
-          env = await deps.hooks.envForPty(id, env, opts.agentHookConfig)
+          env = await deps.hooks.envForPty(id, env)
           await deps.hooks.prepareWorkspace(cwd, opts.agentHookConfig)
         } catch { /* hook injection unavailable */ }
       }

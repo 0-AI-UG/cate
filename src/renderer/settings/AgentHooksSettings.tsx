@@ -1,10 +1,8 @@
 // =============================================================================
 // Agent hooks settings — per-workspace, per-agent control over Cate's hook
-// injection (the push-based agent status/session events). File-injecting agents
-// (claude, codex, cursor, pi) get a tri-state: Auto (inject only when the
-// agent's own config folder is already in the repo), On, or Off. Env-only
-// agents (opencode) inject via an ambient var and write no repo files, so they
-// get a plain On/Off — 'Off' withholds that var.
+// injection (the push-based agent status/session events). Every agent injects
+// through workspace files, so every agent gets the same tri-state: Auto (inject
+// only when the agent's own config folder is already in the repo), On, or Off.
 //
 // Overrides live in settings.agentHookInjection keyed by workspace id and are
 // applied by the terminal layer on the NEXT terminal spawn (injection is a
@@ -19,13 +17,8 @@ import { SearchableBlock } from './SettingsComponents'
 import type { AgentId } from '../../shared/agents'
 import type { AgentHookAgentState, AgentHookMode } from '../../shared/agentHooks'
 
-// Tri-state for file-injecting agents; env-only agents use the last two.
-const FILE_OPTIONS = [
+const MODE_OPTIONS = [
   { value: 'auto', label: 'Auto' },
-  { value: 'on', label: 'On' },
-  { value: 'off', label: 'Off' },
-] as const
-const ENV_OPTIONS = [
   { value: 'on', label: 'On' },
   { value: 'off', label: 'Off' },
 ] as const
@@ -69,7 +62,7 @@ export function AgentHooksSettings() {
 
   return (
     <div className="flex flex-col gap-1">
-      <SearchableBlock keywords="agent hooks injection claude codex cursor pi opencode status presence auto on off">
+      <SearchableBlock keywords="agent hooks injection claude codex cursor grok pi opencode status presence auto on off">
         <p className="text-xs text-muted py-2 leading-relaxed">
           Cate writes tiny git-ignored hook files so agent CLIs report session and turn status
           back to it. <span className="text-secondary">Auto</span> injects only where an agent&apos;s
@@ -84,7 +77,7 @@ export function AgentHooksSettings() {
           const mode: AgentHookMode = overrides[a.agentId] ?? 'auto'
           // The one "looks on but does nothing" state we can detect: Auto with
           // no config folder present, so Auto silently skips injection here.
-          const dormant = a.fileInjecting && mode === 'auto' && !a.folderPresent
+          const dormant = mode === 'auto' && !a.folderPresent
           return (
             <div key={a.agentId} className="flex items-center gap-3 py-2.5 border-b border-subtle">
               <div className="flex flex-col flex-1 min-w-0">
@@ -93,19 +86,11 @@ export function AgentHooksSettings() {
                   <span className="text-xs text-muted mt-0.5">Auto skips here: no config folder yet.</span>
                 )}
               </div>
-              {a.fileInjecting ? (
-                <Segmented
-                  value={mode}
-                  options={FILE_OPTIONS}
-                  onChange={(v) => setMode(a.agentId, v as AgentHookMode)}
-                />
-              ) : (
-                <Segmented
-                  value={mode === 'off' ? 'off' : 'on'}
-                  options={ENV_OPTIONS}
-                  onChange={(v) => setMode(a.agentId, v === 'off' ? 'off' : 'auto')}
-                />
-              )}
+              <Segmented
+                value={mode}
+                options={MODE_OPTIONS}
+                onChange={(v) => setMode(a.agentId, v as AgentHookMode)}
+              />
             </div>
           )
         })}

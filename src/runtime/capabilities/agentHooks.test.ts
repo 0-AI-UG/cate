@@ -14,7 +14,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, test, vi } from 'vitest'
 import { createAgentHooksCapability, ensureGitExcluded, isRepoLocalCwd, type AgentHooksCapability } from './agentHooks'
-import { agentHookFolder, type AgentHookEvent } from '../../shared/agentHooks'
+import { CATE_HOOK_MARKER, agentHookFolder, type AgentHookEvent } from '../../shared/agentHooks'
 
 const posix = process.platform !== 'win32'
 
@@ -70,7 +70,7 @@ const post = (url: string, token: string | null, body: unknown): Promise<Respons
   })
 
 describe('agentHooks capability', () => {
-  test('envForPty plants the hook env and ambient opencode config', async () => {
+  test('envForPty plants the hook env, agent-agnostic and non-clobbering', async () => {
     const cap = makeCap()
     const env = await cap.envForPty('rpty-1-local', { PATH: '/usr/bin:/bin', HOME: '/home/u' })
 
@@ -82,32 +82,13 @@ describe('agentHooks capability', () => {
     expect(env.HOME).toBe('/home/u')
     expect(env.PATH).toBe('/usr/bin:/bin')
 
-    // opencode ambient config: a plugin file that exists on disk.
-    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT) as { plugin: string[] }
-    expect(config.plugin[0]).toMatch(/^file:\/\//)
-    expect(existsSync(config.plugin[0].slice('file://'.length))).toBe(true)
+    // Injection is workspace files only — no per-agent env is planted.
+    expect(Object.keys(env).filter((k) => !k.startsWith('CATE_')).sort()).toEqual(['HOME', 'PATH'])
 
-    // An env var the caller already set is never clobbered by ambient vars.
-    const env2 = await cap.envForPty('rpty-2-local', { PATH: '/bin', OPENCODE_CONFIG_CONTENT: 'user-value' })
-    expect(env2.OPENCODE_CONFIG_CONTENT).toBe('user-value')
-
+    const env2 = await cap.envForPty('rpty-2-local', { PATH: '/bin' })
     // The token is PER TERMINAL — one pty's env spoofs nothing for another.
     expect(env2.CATE_HOOK_TOKEN).toMatch(/^[0-9a-f]{64}$/)
     expect(env2.CATE_HOOK_TOKEN).not.toBe(env.CATE_HOOK_TOKEN)
-  })
-
-  test("config 'off' for an env-only agent withholds its ambient var", async () => {
-    const cap = makeCap()
-    // Off: the opencode plugin var is its only injection channel, so it is
-    // withheld — but the shared hook env stays (it leaves no repo trace).
-    const off = await cap.envForPty('rpty-off', { PATH: '/bin' }, { opencode: 'off' })
-    expect(off.OPENCODE_CONFIG_CONTENT).toBeUndefined()
-    expect(off.CATE_HOOK_ENDPOINT).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
-    expect(off.CATE_TERMINAL_ID).toBe('rpty-off')
-
-    // 'on' (and the default absent → 'auto') both inject it.
-    const on = await cap.envForPty('rpty-on', { PATH: '/bin' }, { opencode: 'on' })
-    expect(on.OPENCODE_CONFIG_CONTENT).toBeDefined()
   })
 
   test('a failed setup yields a plain shell, then a retry on the same dir succeeds', async () => {
@@ -272,13 +253,52 @@ describe('agentHooks capability', () => {
     expect(posts).toEqual([{ terminalId: 'rpty-bridge', agentId: 'codex', pid: process.pid }])
   })
 
-  test('prepareWorkspace writes the claude + codex + cursor + pi hook files and git-excludes them', async () => {
+  // Cross-vendor guard. grok scans .claude/settings.local.json (and
+  // .cursor/hooks.json) by default, so a grok session ALSO spawns the wrapper
+  // Cate injected for claude — with a grok payload. GROK_HOOK_EVENT is a
+  // reserved var grok's runner injects into every hook process it spawns, so
+  // it deterministically identifies the caller: the claude wrapper must stay
+  // silent when grok ran it, and the grok wrapper must stay silent when
+  // anything else did. Contract pinned live in agentHookContracts.itest.ts.
+  test.skipIf(!posix)('the bridge drops posts whose agent disagrees with GROK_HOOK_EVENT', async () => {
+    const posts: Array<{ agentId: string }> = []
+    const cap = makeCap({ onPost: (p) => { posts.push(p) } })
+    const events = collect(cap)
+    const { dir } = await cap.endpoint()
+    const baseEnv = await cap.envForPty('rpty-guard', { PATH: '/usr/bin:/bin' })
+
+    const fire = (agent: string, env: Record<string, string>, payload: object): Promise<void> =>
+      new Promise((resolve, reject) => {
+        const child = execFile(path.join(dir, `cate-hook-bridge-${agent}`), [], { env, timeout: 15_000 },
+          (err) => (err ? reject(err) : resolve()))
+        child.stdin!.end(JSON.stringify(payload))
+      })
+
+    const grokPayload = { hookEventName: 'session_start', sessionId: 'aaaaaaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee', cwd: '/w' }
+    const grokEnv = { ...baseEnv, GROK_HOOK_EVENT: 'session_start' }
+
+    // grok ran the CLAUDE wrapper (compat scan) — dropped, not misattributed.
+    await fire('claude-code', grokEnv, grokPayload)
+    // claude ran the GROK wrapper — impossible in practice, but the guard is
+    // symmetric, so this drops too.
+    await fire('grok', baseEnv, grokPayload)
+    expect(posts, 'neither mismatched invocation reached the daemon').toEqual([])
+    expect(events).toEqual([])
+
+    // The matching pair posts normally.
+    await fire('grok', grokEnv, grokPayload)
+    await waitFor(() => events.length === 1)
+    expect(events[0]).toMatchObject({ agentId: 'grok', kind: 'session-start', sessionId: grokPayload.sessionId })
+    expect(posts).toEqual([{ terminalId: 'rpty-guard', agentId: 'grok', pid: process.pid }])
+  })
+
+  test('prepareWorkspace writes the claude + codex + cursor + grok + pi hook files and git-excludes them', async () => {
     const cap = makeCap()
     const cwd = tmpDir('ws')
     mkdirSync(path.join(cwd, '.git')) // enough of a repo for info/exclude
     // 'auto' (the default) injects only where the agent's config folder already
-    // exists — seed all four so this covers every file writer.
-    for (const id of ['claude-code', 'codex', 'cursor', 'pi'] as const) {
+    // exists — seed all five so this covers every file writer.
+    for (const id of ['claude-code', 'codex', 'cursor', 'grok', 'pi'] as const) {
       mkdirSync(path.join(cwd, agentHookFolder(id)!))
     }
 
@@ -313,6 +333,18 @@ describe('agentHooks capability', () => {
       path.join(dir, posix ? 'cate-hook-bridge-cursor' : 'cate-hook-bridge-cursor.cmd'),
     )
 
+    // grok merges every *.json in <project>/.grok/hooks; Cate owns cate-hook.json
+    // there. CamelCase event keys, 60s timeout, PreToolUse deliberately absent.
+    const grokHooks = JSON.parse(readFileSync(path.join(cwd, '.grok', 'hooks', 'cate-hook.json'), 'utf-8')) as {
+      hooks: Record<string, Array<{ hooks: Array<{ command: string; timeout: number }> }>>
+    }
+    expect(Object.keys(grokHooks.hooks)).toContain('Notification')
+    expect(grokHooks.hooks.PreToolUse).toBeUndefined()
+    expect(grokHooks.hooks.SessionStart[0].hooks[0]).toMatchObject({
+      command: path.join(dir, posix ? 'cate-hook-bridge-grok' : 'cate-hook-bridge-grok.cmd'),
+      timeout: 60,
+    })
+
     // pi's extension is auto-discovered from <cwd>/.pi/extensions — self-gated
     // on the hook env, so it is inert outside Cate terminals.
     const piExt = readFileSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'), 'utf-8')
@@ -322,6 +354,7 @@ describe('agentHooks capability', () => {
     expect(exclude).toContain('/.claude/settings.local.json')
     expect(exclude).toContain('/.codex/hooks.json')
     expect(exclude).toContain('/.cursor/hooks.json')
+    expect(exclude).toContain('/.grok/hooks/cate-hook.json')
     expect(exclude).toContain('/.pi/extensions/cate-hook.ts')
 
     // Idempotent: a second prepare does not duplicate exclude lines.
@@ -452,6 +485,34 @@ describe('agentHooks capability', () => {
     expect(readFileSync(path.join(cwd, '.pi', 'extensions', 'user-ext.ts'), 'utf-8')).toBe('// mine\n')
   })
 
+  test('opencode: auto gates the plugin file on .opencode, off removes it', async () => {
+    const cap = makeCap()
+    const rel = path.join('.opencode', 'plugin', 'cate-hook.js')
+    const gated = tmpDir('ws-opencode-auto')
+
+    // auto + no .opencode folder → no file (the ambient env var still covers it).
+    await cap.prepareWorkspace(gated)
+    expect(existsSync(path.join(gated, rel))).toBe(false)
+
+    // 'on' writes it even without the folder; it must land in opencode's scan
+    // glob (`{plugin,plugins}/*.{ts,js}`) and carry Cate's marker.
+    await cap.prepareWorkspace(gated, { opencode: 'on' })
+    expect(readFileSync(path.join(gated, rel), 'utf-8')).toContain(CATE_HOOK_MARKER)
+
+    await cap.prepareWorkspace(gated, { opencode: 'off' })
+    expect(existsSync(path.join(gated, rel))).toBe(false)
+
+    // auto + .opencode present → injected, and a user's own plugin is left alone.
+    const used = tmpDir('ws-opencode-used')
+    mkdirSync(path.join(used, '.opencode', 'plugin'), { recursive: true })
+    writeFileSync(path.join(used, '.opencode', 'plugin', 'user.js'), '// mine\n')
+    await cap.prepareWorkspace(used)
+    expect(existsSync(path.join(used, rel))).toBe(true)
+    await cap.prepareWorkspace(used, { opencode: 'off' })
+    expect(existsSync(path.join(used, rel))).toBe(false)
+    expect(readFileSync(path.join(used, '.opencode', 'plugin', 'user.js'), 'utf-8')).toBe('// mine\n')
+  })
+
   test('inspectWorkspace reports per-agent folder + injected state for the Settings UI', async () => {
     const cap = makeCap()
     const cwd = tmpDir('ws-inspect')
@@ -463,12 +524,12 @@ describe('agentHooks capability', () => {
     const states = await cap.inspectWorkspace(cwd)
     const byId = Object.fromEntries(states.map((s) => [s.agentId, s]))
 
-    expect(byId.codex).toMatchObject({ fileInjecting: true, folderPresent: true, injected: true })
-    expect(byId['claude-code']).toMatchObject({ fileInjecting: true, folderPresent: true, injected: false })
-    expect(byId.cursor).toMatchObject({ fileInjecting: true, folderPresent: false, injected: false })
-    expect(byId.pi).toMatchObject({ fileInjecting: true, folderPresent: false, injected: false })
-    // opencode injects via env only — no repo files, hence no folder/injected state.
-    expect(byId.opencode).toMatchObject({ fileInjecting: false, folderPresent: false, injected: false })
+    expect(byId.codex).toMatchObject({ folderPresent: true, injected: true })
+    expect(byId['claude-code']).toMatchObject({ folderPresent: true, injected: false })
+    expect(byId.cursor).toMatchObject({ folderPresent: false, injected: false })
+    expect(byId.pi).toMatchObject({ folderPresent: false, injected: false })
+    // opencode injects a repo file like every other agent.
+    expect(byId.opencode).toMatchObject({ folderPresent: false, injected: false })
     // Every agent carries a display name for the UI.
     expect(states.every((s) => s.displayName.length > 0)).toBe(true)
   })

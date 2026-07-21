@@ -43,7 +43,7 @@ Download a prebuilt release. Don't build from source for daily use.
 
 ## What's inside
 
-- **Agent-aware terminals.** Cate hooks the agent CLIs it supports (Claude Code, Codex, Cursor, OpenCode, Pi), so the agent itself reports turn start, turn end, and permission prompts. That drives the panel's running / waiting / finished state and the notification you get when one needs an answer. An agent that posts no hooks shows no status.
+- **Agent-aware terminals.** Cate hooks the agent CLIs it supports (Claude Code, Codex, Cursor, Grok, OpenCode, Pi), so the agent itself reports turn start, turn end, and permission prompts. That drives the panel's running / waiting / finished state and the notification you get when one needs an answer. An agent that posts no hooks shows no status.
 - **Agent sessions survive restarts.** The hook stream carries each CLI's session id. Reopen the project and terminals return with their scrollback, and the agent is reattached with its own resume command. A stale id falls back to a plain shell rather than resuming the wrong conversation.
 - **Worktrees for parallel branches.** Type what you're working on and Cate creates a worktree and branch, based on a local or remote branch or an open PR. Each gets a color that follows it through the sidebar, dock tabs, and a territory drawn behind its panels on the canvas.
 - **Panels on a canvas or in a dock.** Terminals, Monaco editors, browsers, PDF/image/DOCX viewers, extension webviews, nested canvases. Float them on the canvas, dock them into tabs and splits, or drag them into their own window. Layout persists per project.

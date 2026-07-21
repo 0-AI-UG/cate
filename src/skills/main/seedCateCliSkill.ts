@@ -12,10 +12,13 @@
 //   - gated by the cliSkillInstallEnabled setting (Settings → CLI);
 //   - `cate-agent` is always seeded — it is Cate's own agent and `.cate/` is
 //     already Cate-managed;
-//   - every other target (claude-code, pi-native, opencode, codex)
-//     is seeded only when its tool dir (`.claude`, `.agents`, …) already exists
-//     in the workspace, so repos don't grow dot-dirs for agents nobody uses
-//     there. A tool dir created later is picked up on a subsequent open.
+//   - every other target (one per agent CLI that declares `skills` in
+//     src/shared/agents.ts — claude-code, codex, cursor, grok, opencode,
+//     pi-native) is seeded only when its tool dir (`.claude`, `.agents`, …)
+//     already exists in the workspace, so repos don't grow dot-dirs for agents
+//     nobody uses there. A tool dir created later is picked up on a subsequent
+//     open. The loop is over SKILL_TARGETS, so a newly declared agent target is
+//     seeded with no change here.
 //   - a `seeded` marker in skills.json carries the CONTENT HASH of the bundle
 //     it wrote (`<skillId>:<target>@<hash>`). When a newer app ships a changed
 //     bundle, a copy still matching its marker's hash (unedited) is refreshed
