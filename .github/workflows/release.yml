@@ -294,6 +294,10 @@ jobs:
       # prebuild, so `npm install` already built it from source. The --docker
       # linux-arm64 cross-build compiles node-pty in the container — all of these
       # Linux cases are exactly the ones runner.os != 'Linux' skips.
+      # The windows runner image ships Visual Studio 2026 (18.x), which node-gyp
+      # only learned to detect in 12.1.0 — hence the node-gyp override in
+      # package.json. Without it this step fails with "could not find any Visual
+      # Studio installation to use".
       - name: Compile node-pty from source (mac/win; Linux builds it at install)
         if: runner.os != 'Linux'
         run: npm rebuild node-pty --build-from-source

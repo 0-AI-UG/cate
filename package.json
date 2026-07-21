@@ -66,6 +66,9 @@
     "protobufjs",
     "sharp"
   ],
+  "overrides": {
+    "node-gyp": "^12.4.0"
+  },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.80.6",
     "@earendil-works/pi-ai": "^0.80.6",
