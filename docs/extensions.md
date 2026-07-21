@@ -25,6 +25,7 @@ Cate only standardizes how it serves/launches an extension and a small reverse A
 {
   "id": "acme.example",
   "name": "Example",
+  "category": "development",
   "panels": [
     { "id": "main", "label": "Example", "icon": "...", "defaultSize": { "width": 600, "height": 400 } }
   ],
@@ -34,6 +35,19 @@ Cate only standardizes how it serves/launches an extension and a small reverse A
   "cateApi": ["workspace.read", "editor.write", "storage"]
 }
 ```
+
+`category` is the functional grouping Settings → Extensions filters the catalog by. It answers "what do I use this for?", never "how is it built" — the url/frontend/server split is invisible to users. The list is deliberately short (a 20-category catalog filters no better than none), and anything unrecognised or missing falls back to **Other**:
+
+| id | label | typical extensions |
+| --- | --- | --- |
+| `ai` | AI | agent tooling, MCP, model/usage viewers |
+| `development` | Development | editors, code tooling, dev servers |
+| `data` | Data | databases, query/table browsers |
+| `design` | Design | diagrams, whiteboards, visual editors |
+| `productivity` | Productivity | issues, docs, notes, planning |
+| `communication` | Communication | chat, mail, meetings |
+| `sales` | Sales & CRM | CRM and pipeline tools |
+| `other` | Other | fallback |
 
 `server`, `url` and `frontend` are all **optional**, and a manifest normally declares exactly one. Mode precedence when several are present is **`server` > `url` > `frontend`** (a mixed manifest still loads; the extra fields are simply ignored):
 

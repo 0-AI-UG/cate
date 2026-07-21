@@ -79,6 +79,7 @@ is always at the artifact root.
   "id": "acme.example",
   "name": "Example",
   "version": "1.0.0",
+  "category": "development",
   "description": "One-line catalog description.",
   "frontend": "dist/index.html",
   "panels": [
@@ -95,6 +96,7 @@ is always at the artifact root.
 | `id` | Required. Must match `^[A-Za-z0-9][A-Za-z0-9._-]*$` (it becomes a filesystem path). Convention: `publisher.name`, e.g. `cate.mermaid`. Invalid id rejects the whole manifest. |
 | `name` | Display name; falls back to `id`. |
 | `version` | SemVer-ish, must match `^[A-Za-z0-9][A-Za-z0-9.+_-]*$` or it is silently dropped (treated as `0.0.0`). The artifact is `<id>-<version>.tgz`; **bump it for every published change**. |
+| `category` | Functional group the catalog filters by: `ai`, `development`, `data`, `design`, `productivity`, `communication`, `sales`, `other`. Pick by what the extension is *for*, not how it is built. Missing or unknown files it under **Other**; the catalog build rejects an unknown value. |
 | `panels` | Required, non-empty. Every panel needs non-empty `id` and `label` or the whole manifest is rejected. `icon` is an inline SVG string. `defaultSize` needs both numbers. |
 | `frontend` | Entry HTML for frontend-only extensions. Ignored when `server` is present (the server serves its own frontend). |
 | `server` | Optional; makes the extension server-backed. `command` required; `readyPath` defaults to `/health`, `portEnv` to `PORT`. |
