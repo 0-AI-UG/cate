@@ -318,6 +318,8 @@ export default function ExtensionPanel({
   // data-filedrop on the wrapper (not an overlay) lets the shared drag tracker
   // find this target; the drop effect above toggles the webview to
   // pointer-events:none during a Cate drag so hit-testing reaches the wrapper.
+  // A url-mode extension resolves an empty preloadPath (remote origins get no
+  // cate host API) — omit the attribute entirely rather than pass "file://".
   return (
     <div
       ref={rootRef}
@@ -328,7 +330,7 @@ export default function ExtensionPanel({
         key={`${panelId}:${extensionId}`}
         ref={webviewRef as any}
         src={state.url}
-        preload={`file://${state.preloadPath}`}
+        {...(state.preloadPath ? { preload: `file://${state.preloadPath}` } : {})}
         className="w-full h-full"
         partition={`persist:ext-${extensionId}`}
       />

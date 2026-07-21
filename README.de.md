@@ -12,7 +12,7 @@
 > **Hinweis:** Diese Übersetzung wurde automatisch erstellt und kann Ungenauigkeiten enthalten.
 
 <p align="center">
-  Missionskontrolle für Ihre Coding-Agenten: eine unendliche Arbeitsfläche für Terminals, Editoren, Browser und Dokumente.
+  Eine IDE auf unendlicher Arbeitsfläche für parallele Coding-Agenten.
 </p>
 
 <p align="center">
@@ -45,15 +45,13 @@ Laden Sie eine vorgefertigte Version herunter. Bauen Sie für den täglichen Geb
 
 ## Was drinsteckt
 
-- **Agenten-bewusste Terminals:** Cate erkennt Coding-Agenten (Claude Code, Codex und andere), die in einem beliebigen Terminal laufen. Tabs zeigen den Agentenzustand live: läuft, fertig oder wartet auf Eingabe, mit einer Systembenachrichtigung, wenn ein Agent Sie braucht. Terminals überstehen Neustarts und Fensterwechsel mit intaktem Verlauf, Farben und Vollbild-TUIs.
-- **Paralleles Arbeiten:** Beschreiben Sie, woran Sie arbeiten, und Cate erstellt einen Git-Worktree mit eigenem Branch, eigener Farbe und eigenem Territorium auf der Fläche. Checken Sie eine PR direkt in einen Worktree aus, und lassen Sie `.env` oder `node_modules` automatisch in jeden neuen verlinken.
-- **Agenten-steuerbarer Browser:** eingebaute Browser-Panels, die Agenten über die `cate`-CLI aus der Shell steuern können: Seiten öffnen, Screenshots aufnehmen, Accessibility-Snapshots lesen, klicken und tippen.
-- **Integrierter Agent-Chat:** ein eingebetteter Coding-Agent (Pi) mit Chat-Threads und Modellgedächtnis pro Thread. Verbinden Sie Anthropic, OpenAI Codex, GitHub Copilot, Gemini, OpenRouter, Groq, Mistral, DeepSeek und weitere per OAuth oder API-Key.
-- **Arbeitsfläche & Layout:** unendliches Zoomen und Verschieben, Andocken als Tabs und Splits in vier Zonen, ablösbare Fenster, gespeicherte Layouts und Sitzungswiederherstellung über mehrere Projekte.
-- **Editoren & Dokumente:** Monaco-Editoren mit Syntaxhervorhebung, Multi-Cursor, Diffs und Markdown-Vorschau; Dokument-Panels für PDFs, DOCX und Bilder.
-- **Git:** git-bewusster Dateibaum mit Live-Überwachung, dazu eine Versionsverwaltungs-Seitenleiste für Staging, Branches, Worktrees, Verlauf und Inline-Diffs. Volltextsuche.
-- **Remote-Arbeitsbereiche:** Verbinden Sie sich per SSH mit einer Maschine und arbeiten Sie wie in einem lokalen Ordner. Terminals, Agenten und Suche laufen remote über einen leichtgewichtigen Runtime-Daemon.
-- **Navigation:** flächenweite Suche über Dateien, Terminal-Verlauf und Panel-Titel; Befehlspalette; Tastaturnavigation von Panel zu Panel.
+- **Agenten-bewusste Terminals:** Cate klinkt sich per Hooks in die unterstützten Agenten-CLIs ein (Claude Code, Codex, Cursor, OpenCode, Pi), sodass der Agent selbst Turn-Beginn, Turn-Ende und Berechtigungsabfragen meldet. Das steuert den Panel-Zustand (läuft, wartet, fertig) und die Benachrichtigung, wenn einer eine Antwort braucht. Ein Agent, der keine Hooks sendet, zeigt keinen Status.
+- **Agenten-Sitzungen überstehen Neustarts:** Der Hook-Strom trägt die Sitzungs-ID jeder CLI. Öffnen Sie das Projekt erneut, kommen die Terminals mit ihrem Verlauf zurück und der Agent wird mit seinem eigenen Resume-Befehl wieder angehängt. Eine veraltete ID fällt auf eine einfache Shell zurück, statt die falsche Unterhaltung fortzusetzen.
+- **Worktrees für parallele Branches:** Beschreiben Sie, woran Sie arbeiten, und Cate legt Worktree und Branch an, ausgehend von einem lokalen oder entfernten Branch oder einer offenen PR. Jeder bekommt eine Farbe, die ihn durch Seitenleiste und Dock-Tabs begleitet, samt Territorium hinter seinen Panels auf der Arbeitsfläche.
+- **Panels auf der Fläche oder im Dock:** Terminals, Monaco-Editoren, Browser, PDF-/Bild-/DOCX-Anzeigen, Erweiterungs-Webviews, verschachtelte Flächen. Lassen Sie sie schweben, docken Sie sie als Tabs und Splits an oder ziehen Sie sie in ein eigenes Fenster. Das Layout bleibt pro Projekt erhalten.
+- **Git und Suche:** Versionsverwaltungs-Seitenleiste für Staging, Commits, Branches, Stash und Verlauf über mehrere Repos; Git-Markierungen im Dateibaum; Diffs nebeneinander. Ripgrep-Suche über den Arbeitsbereich, und `Cmd+K` für Befehle, Panels und Dateien.
+- **Eine CLI, die Agenten aufrufen können:** In einem Cate-Terminal steuert `cate` ein Browser-Panel (`open`, `screenshot`, `snapshot`, `click`, `type`), liest ein anderes Terminal, öffnet Dateien, verwaltet Panels. Einstellungen → CLI gibt jede Fläche getrennt für Lesen und Steuern frei.
+- **Lokal und remote gehen denselben Weg:** Ein einziger Runtime-Daemon bedient jeden Arbeitsbereich. Zeigen Sie Cate per SSH oder WSL auf einen Host: Terminals, Git, Suche und Agenten laufen dort; Editoren, Browser und Fläche bleiben lokal.
 
 ## Erweiterungen
 

@@ -172,7 +172,11 @@ export function getSharedPanelDef(type: PanelType | string): SharedPanelDefiniti
 }
 
 /** True when a canvas node hosting this panel type must stay mounted even when
- *  scrolled off-screen (its live `<webview>` state can't survive a remount). */
+ *  scrolled off-screen (its live `<webview>` state can't survive a remount).
+ *
+ *  Per-TYPE answer only. Extension panels are refined per INSTANCE in
+ *  `renderer/panels/keepMountedPanels.ts`: url-mode extensions (remote SaaS
+ *  pages) are cullable because their session lives in a persistent partition. */
 export function keepsMountedOffscreen(type: PanelType | string | undefined): boolean {
   return !!type && getSharedPanelDef(type).keepMountedOffscreen
 }
