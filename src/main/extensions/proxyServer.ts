@@ -477,6 +477,23 @@ export async function getProxyUrlFor(args: {
   const manifest = extensionManager.getManifest(extensionId)
   if (!manifest) return null
 
+  // URL-BACKED (manifest.url, no server): the panel points straight at a remote
+  // https page — no proxy server, no route token, no spawned process. Mode
+  // precedence is server > url > frontend, so this is only taken when the
+  // manifest declares no server.
+  //
+  // Security: such a guest gets NO cate host API. Guest identity is derived from
+  // the proxy's own origin + opaque routeToken (identityForGuestUrl), which a
+  // remote origin can never satisfy; handing it the cateHost preload would only
+  // create a bridge whose every call is rejected, while widening the surface a
+  // third-party page can poke at. So we return an empty preloadPath (the panel
+  // then omits the attribute) — and webSecurity.ts independently strips the
+  // preload from any guest whose URL isn't the proxy origin, so this holds even
+  // if the renderer asked for one.
+  if (!manifest.server && manifest.url) {
+    return { url: manifest.url, preloadPath: '' }
+  }
+
   const port = await ensureProxyServer()
   const routeToken = registerRoute(extensionId, workspaceId)
 

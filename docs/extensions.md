@@ -2,10 +2,11 @@
 
 ## Overview
 
-An extension adds panels to Cate by shipping a **web frontend**, and optionally a **local server process** for backend work. Each panel renders on the canvas like any built-in panel (zooms, clips, composites). Extensions come in two shapes:
+An extension adds panels to Cate by shipping a **web frontend**, and optionally a **local server process** for backend work. Each panel renders on the canvas like any built-in panel (zooms, clips, composites). Extensions come in three shapes:
 
 - **Frontend-only** (default) — just static web assets. Cate serves them and the panel talks to Cate solely through the `cateHost` bridge. No process, port, token, or lifecycle to manage. Best for tools that only need the Cate API (viewers, formatters, pickers, dashboards over `cate.storage`).
 - **Server-backed** — also ships a local server for full OS access (filesystem, processes, sockets, network) without a capability broker. Cate spawns **one server per extension per workspace** and points every panel's webview at it. The relationship is always **n:1** — many panels, one server — and the server handles concurrent panels: routing state and events per panel id, isolating panel-local data, and tolerating panels opening and closing independently.
+- **URL** — no assets and no process: the manifest names a remote `https://` page and the panel is pointed straight at it. The panel webview is a top-level browsing context, so pages that refuse to be framed (`X-Frame-Options` / `frame-ancestors`) still load, and each extension keeps its own persistent session partition so a login survives restarts. Best for wrapping a hosted web app (chat, CRM, dashboards) as a panel. A URL extension gets **no** `cateHost` bridge — see Security Hygiene.
 
 Cate only standardizes how it serves/launches an extension and a small reverse API back into Cate. The built-in agent panel is server-backed and is the canonical reference.
 
@@ -29,11 +30,16 @@ Cate only standardizes how it serves/launches an extension and a small reverse A
   ],
   "frontend": "dist/index.html",
   "server": { "command": "node dist/server.js", "readyPath": "/health", "portEnv": "PORT" },
+  "url": "https://example.com/app",
   "cateApi": ["workspace.read", "editor.write", "storage"]
 }
 ```
 
-`server` is **optional** — omit it for a frontend-only extension, where Cate serves the `frontend` entry statically and injects only the `cateHost` bridge. When `server` is present it serves the frontend itself at `PORT` and `frontend` is ignored.
+`server`, `url` and `frontend` are all **optional**, and a manifest normally declares exactly one. Mode precedence when several are present is **`server` > `url` > `frontend`** (a mixed manifest still loads; the extra fields are simply ignored):
+
+- frontend-only: Cate serves the `frontend` entry statically and injects the `cateHost` bridge.
+- server-backed: the server serves the frontend itself at `PORT`; `frontend` is ignored.
+- url: `url` must be an absolute **`https://`** URL. Anything else (`http:` including `localhost`, `file:`, `javascript:`, `data:`, garbage) is dropped at manifest validation and the extension falls back to its other modes. Use `server` for a local dev server; `url` is for hosted pages only.
 
 ## Lifecycle
 
@@ -50,6 +56,7 @@ Applies only to **server-backed** extensions. Frontend-only panels are plain web
 - Servers bind `127.0.0.1` only. Cate injects `HOST=127.0.0.1` into the server's environment and the server is expected to bind that host; a server that ignores `HOST` and binds `0.0.0.0` would expose itself on the network, defeating the token gate. Honoring `HOST` (alongside `PORT`) is part of the server contract.
 - Per-server random port + shared token (`CATE_TOKEN`); the server requires the token on every panel connection so other local processes/tabs can't drive it. Panels authenticate with the token and identify themselves by `cate.panel.id`.
 - Tight CSP on the webview.
+- **URL extensions get no Cate API.** A guest's identity (which extension, which workspace) is derived from the opaque route token in the local proxy's own origin, so a remote page can never prove one — handing it the `cateHost` preload would only create a bridge whose every call is rejected. Cate therefore attaches no preload to a `url` panel, and the main process independently strips the preload from any guest whose URL isn't the proxy origin. `cateApi` scopes in a url-mode manifest are inert. The page still runs in the extension's own persistent partition, so its cookies/logins are isolated from other extensions and from browser panels.
 
 ## Reverse API
 
