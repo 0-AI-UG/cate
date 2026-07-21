@@ -22,6 +22,16 @@ export function worktreeMetaFor(wsId: string, worktreeId: string | undefined): W
   return ws?.worktrees?.find((w) => w.id === worktreeId)
 }
 
+/** The branch currently checked out in a worktree, by id — the live git fact, never
+ *  the denormalized copy. Mirrors the id rule in `useWorktrees`: a worktree with no
+ *  persisted metadata (the primary, normally) is keyed by its own path. Undefined
+ *  when the id is unknown or its checkout is gone. */
+export function worktreeBranchFor(wsId: string, rootPath: string, worktreeId: string | null | undefined): string | undefined {
+  if (!worktreeId) return undefined
+  const path = worktreeMetaFor(wsId, worktreeId)?.path ?? worktreeId
+  return gitStatusStore.getSnapshot(rootPath).worktrees.find((w) => w.path === path)?.branch || undefined
+}
+
 /** Tear down a worktree by id: remove the checkout from disk (best-effort) and
  *  drop its store records (worktree entry + additional root) before refreshing
  *  git status. No-op for an unknown/cleared id, so it's safe to fire on dead
