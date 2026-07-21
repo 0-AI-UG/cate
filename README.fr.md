@@ -12,7 +12,7 @@
 > **Note :** Cette traduction a été générée automatiquement et peut contenir des inexactitudes.
 
 <p align="center">
-  Le centre de contrôle de vos agents de code : un canevas infini pour vos terminaux, éditeurs, navigateurs et documents.
+  Un IDE à canevas infini pour agents de code en parallèle.
 </p>
 
 <p align="center">
@@ -45,15 +45,13 @@ Téléchargez une version précompilée. Ne compilez pas depuis les sources pour
 
 ## Ce qu'il contient
 
-- **Terminaux conscients des agents :** Cate détecte les agents de code (Claude Code, Codex et d'autres) qui tournent dans n'importe quel terminal. Les onglets affichent l'état de l'agent en direct : en cours, terminé ou en attente d'une réponse, avec une notification système quand un agent a besoin de vous. Les terminaux survivent aux redémarrages et aux déplacements de fenêtre avec leur historique, leurs couleurs et leurs TUI plein écran intacts.
-- **Travail parallèle :** décrivez ce sur quoi vous travaillez et Cate crée un worktree git avec sa propre branche, sa couleur et son territoire sur le canevas. Récupérez une PR directement dans un worktree, et liez automatiquement `.env` ou `node_modules` dans chaque nouveau worktree.
-- **Navigateur pilotable par agent :** des panneaux navigateur intégrés que les agents peuvent contrôler depuis le shell via la CLI `cate` : ouvrir des pages, prendre des captures d'écran, lire des instantanés d'accessibilité, cliquer et saisir du texte.
-- **Chat d'agent intégré :** un agent de code embarqué (Pi) avec fils de discussion et mémoire de modèle par fil. Connectez Anthropic, OpenAI Codex, GitHub Copilot, Gemini, OpenRouter, Groq, Mistral, DeepSeek et d'autres via OAuth ou clé API.
-- **Canevas et disposition :** zoom et déplacement infinis, ancrage en onglets et divisions sur quatre zones, fenêtres détachables, dispositions enregistrées et restauration de session multi-projets.
-- **Éditeurs et documents :** éditeurs Monaco avec coloration syntaxique, multi-curseur, diffs et aperçu Markdown ; panneaux de document pour PDF, DOCX et images.
-- **Git :** arborescence de fichiers consciente de git avec suivi en direct, plus une barre latérale de contrôle de source pour l'index, les branches, les worktrees, l'historique et les diffs en ligne. Recherche plein texte.
-- **Espaces de travail distants :** connectez-vous à une machine via SSH et travaillez comme sur un dossier local. Terminaux, agents et recherche s'exécutent à distance via un démon runtime léger.
-- **Navigation :** recherche sur tout le canevas dans les fichiers, l'historique des terminaux et les titres de panneaux ; palette de commandes ; navigation clavier de panneau en panneau.
+- **Terminaux conscients des agents :** Cate installe ses hooks dans les CLI d'agents prises en charge (Claude Code, Codex, Cursor, OpenCode, Pi) : l'agent signale lui-même le début et la fin d'un tour ainsi que les demandes d'autorisation. C'est ce qui alimente l'état du panneau (en cours, en attente, terminé) et la notification quand un agent attend votre réponse. Un agent qui n'envoie aucun hook n'affiche aucun état.
+- **Les sessions d'agent survivent aux redémarrages :** le flux de hooks transporte l'identifiant de session de chaque CLI. Rouvrez le projet : les terminaux reviennent avec leur historique et l'agent est rattaché via sa propre commande de reprise. Un identifiant périmé retombe sur un simple shell plutôt que de reprendre la mauvaise conversation.
+- **Worktrees pour branches parallèles :** décrivez ce sur quoi vous travaillez et Cate crée un worktree et une branche, à partir d'une branche locale ou distante ou d'une PR ouverte. Chacun reçoit une couleur qui le suit dans la barre latérale, les onglets du dock et un territoire dessiné derrière ses panneaux sur le canevas.
+- **Des panneaux sur le canevas ou dans le dock :** terminaux, éditeurs Monaco, navigateurs, visionneuses PDF/image/DOCX, webviews d'extensions, canevas imbriqués. Faites-les flotter sur le canevas, ancrez-les en onglets et divisions, ou glissez-les dans leur propre fenêtre. La disposition est conservée par projet.
+- **Git et recherche :** barre latérale de contrôle de source pour l'index, les commits, les branches, le stash et l'historique, sur plusieurs dépôts ; badges git dans l'arborescence ; diffs côte à côte. Recherche ripgrep sur l'espace de travail, et `Cmd+K` pour les commandes, les panneaux et les fichiers.
+- **Une CLI que les agents peuvent appeler :** dans un terminal Cate, `cate` pilote un panneau navigateur (`open`, `screenshot`, `snapshot`, `click`, `type`), lit un autre terminal, ouvre des fichiers, gère les panneaux. Réglages → CLI autorise chaque surface séparément en lecture et en contrôle.
+- **Local et distant suivent le même chemin :** un seul démon runtime sert tous les espaces de travail. Pointez Cate vers une machine en SSH ou WSL : terminaux, git, recherche et agents s'y exécutent ; éditeurs, navigateur et canevas restent en local.
 
 ## Extensions
 
