@@ -141,6 +141,14 @@ export interface ChatComposerProps {
   onManageModels?: () => void
   /** Fired when the model menu opens, so the call site can refresh the list. */
   onModelMenuOpen?: () => void
+  /** Optional controlled open state, so a call site can open the menu itself
+   *  (the agent panel's readiness banner points at it). Uncontrolled if unset. */
+  modelMenuOpen?: boolean
+  onModelMenuOpenChange?: (open: boolean) => void
+  modelTitle?: string
+  /** Whether sending mid-run steers the agent. False folds Stop out into its own
+   *  control and keeps the send button labelled "Send". Default true. */
+  canSteer?: boolean
 
   // worktree card — rendered iff onPickWorktree is supplied
   worktrees?: JoinedWorktree[]
@@ -151,8 +159,10 @@ export interface ChatComposerProps {
   /** Repo root, for the create-worktree form. Falls back to the primary worktree. */
   rootPath?: string
   /** Returns the new worktree's id, which becomes the selection. */
-  onCreateWorktree?: (name: string, baseRef: string) => Promise<string | null>
-  onCheckoutPr?: (pr: unknown) => Promise<string | null>
+  /** `baseRef` stays undefined when unset — an empty string would slip past
+   *  vcs.ts's `baseRef ?? 'HEAD'` default and reach git as a real ref. */
+  onCreateWorktree?: (name: string, baseRef?: string) => Promise<string | null>
+  onCheckoutPr?: (pr: PrListItem) => Promise<string | null>
 
   // optional capabilities — each rendered iff its handler is supplied
   images?: AgentImageAttachment[]
@@ -190,6 +200,10 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   onPickModel,
   onManageModels,
   onModelMenuOpen,
+  modelMenuOpen,
+  onModelMenuOpenChange,
+  modelTitle = 'Model for this chat',
+  canSteer = true,
   worktrees = [],
   selectedWorktreeId = null,
   onPickWorktree,
@@ -222,7 +236,13 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     resize()
   }, [resize])
 
-  const [modelOpen, setModelOpen] = React.useState(false)
+  // Uncontrolled by default; a call site that passes `modelMenuOpen` drives it.
+  const [innerModelOpen, setInnerModelOpen] = React.useState(false)
+  const modelOpen = modelMenuOpen ?? innerModelOpen
+  const setModelOpen = (open: boolean): void => {
+    setInnerModelOpen(open)
+    onModelMenuOpenChange?.(open)
+  }
   const [wtAnchor, setWtAnchor] = React.useState<DOMRect | null>(null)
   const [creating, setCreating] = React.useState(false)
   const wtBtn = React.useRef<HTMLButtonElement>(null)
@@ -411,12 +431,12 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
             <>
               <PillButton
                 open={modelOpen}
-                title="Model for this chat"
+                title={modelTitle}
                 onClick={() => {
                   // Refresh on open, not on mount: a provider signed in since the
                   // composer mounted should show up without reopening the panel.
                   if (!modelOpen) onModelMenuOpen?.()
-                  setModelOpen((v) => !v)
+                  setModelOpen(!modelOpen)
                 }}
               >
                 <span className="truncate">{modelLabel}</span>
@@ -477,27 +497,37 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
             >
               <Spinner size={15} weight="bold" className="animate-spin" />
             </div>
-          ) : running && !canSend ? (
-            <button
-              type="button"
-              onClick={onStop}
-              aria-label="Stop"
-              title="Stop the run"
-              className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-red-400 hover:bg-hover-strong active:scale-[0.92] transition-all duration-100"
-            >
-              <Stop size={13} weight="fill" />
-            </button>
           ) : (
-            <button
-              type="button"
-              onClick={onSubmit}
-              disabled={!canSend}
-              aria-label={running ? 'Steer' : 'Send'}
-              title={running ? 'Steer' : 'Send'}
-              className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-primary hover:bg-hover-strong active:scale-[0.92] transition-all duration-100 disabled:opacity-30"
-            >
-              <ArrowUp size={15} />
-            </button>
+            <>
+              {/* Steerable surfaces fold Stop into the send button: with a draft
+                  typed, sending steers the running agent, so Stop only appears
+                  when there is nothing to send. Surfaces that cannot steer show
+                  Stop as its own control, otherwise a run with a half-typed
+                  message would be unstoppable. */}
+              {running && (!canSteer || !canSend) && (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  aria-label="Stop"
+                  title="Stop the run"
+                  className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-red-400 hover:bg-hover-strong active:scale-[0.92] transition-all duration-100"
+                >
+                  <Stop size={13} weight="fill" />
+                </button>
+              )}
+              {(!running || !canSteer || canSend) && (
+                <button
+                  type="button"
+                  onClick={onSubmit}
+                  disabled={!canSend}
+                  aria-label={running && canSteer ? 'Steer' : 'Send'}
+                  title={running && canSteer ? 'Steer' : 'Send'}
+                  className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full border border-strong bg-transparent text-secondary hover:text-primary hover:bg-hover-strong active:scale-[0.92] transition-all duration-100 disabled:opacity-30"
+                >
+                  <ArrowUp size={15} />
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -530,7 +560,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               inlinePicker
               flat
               onSubmit={async (name, baseRef) => {
-                const id = await onCreateWorktree(name, baseRef ?? '')
+                const id = await onCreateWorktree(name, baseRef || undefined)
                 if (id) pickWorktree(id)
                 closeWorktreeMenu()
               }}

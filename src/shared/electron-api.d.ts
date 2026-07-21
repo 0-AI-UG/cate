@@ -527,6 +527,11 @@ export interface ElectronAPI {
    *  Returns 'discard' | 'cancel'. */
   confirmDiscardJob(payload: { hasWorktree?: boolean; terminalCount?: number }): Promise<'discard' | 'cancel'>
 
+  /** Native confirmation shown when the agent panel's working directory is
+   *  switched to another worktree, which disposes its open chats and reopens a
+   *  single fresh one in the new checkout. Returns 'switch' | 'cancel'. */
+  confirmSwitchAgentWorktree(payload: { chatCount: number; hasMessages: boolean; worktreeName?: string }): Promise<'switch' | 'cancel'>
+
   /** Native confirmation shown when external files/folders are dropped onto the
    *  file explorer. Returns 'copy' (duplicate into the directory), 'move'
    *  (relocate into the directory, removing the originals), or 'cancel'. */

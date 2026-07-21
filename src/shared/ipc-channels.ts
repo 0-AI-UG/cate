@@ -222,6 +222,7 @@ export const DIALOG_CONFIRM_CLOSE_CANVAS = 'dialog:confirmCloseCanvas'
 export const DIALOG_CONFIRM_IMPORT = 'dialog:confirmImport'
 export const DIALOG_CONFIRM_RELOAD_WORKSPACE = 'dialog:confirmReloadWorkspace'
 export const DIALOG_CONFIRM_DISCARD_JOB = 'dialog:confirmDiscardJob'
+export const DIALOG_CONFIRM_SWITCH_AGENT_WORKTREE = 'dialog:confirmSwitchAgentWorktree'
 export const DIALOG_TERMINAL_LINK_OPEN = 'dialog:terminalLinkOpen'
 
 // Canvas wallpaper — read an arbitrary image file as a data URL (the file is

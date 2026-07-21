@@ -20,7 +20,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  CaretDown,
   Sidebar as SidebarIcon,
   Gear,
   ChatCircle,
@@ -42,8 +41,10 @@ import {
 import { buildFileMentions, type LineRef } from './agentDrop'
 import { ChatThread } from './ChatThread'
 import { AgentSidebar } from './AgentSidebar'
-import { ChatInput } from './AgentChatInput'
-import { ModelPickerDropdown } from './ModelPicker'
+import { ChatComposer, type ChatComposerProps } from '../../renderer/chat/ChatComposer'
+import { useWorktrees } from '../../renderer/stores/useWorktrees'
+import { useWorktreeActions } from '../../renderer/stores/useWorktreeActions'
+import type { PrListItem } from '../../renderer/sidebar/CreateWorktreeForm'
 import {
   ExtensionDialog,
   ExtensionWidget,
@@ -67,6 +68,47 @@ import { useAgentReadiness, useProvidersLoaded } from '../../renderer/stores/pro
 import { resolveWorktree } from '../../shared/worktrees'
 
 // -----------------------------------------------------------------------------
+// Worktree switch gate
+//
+// The panel's worktree IS its cwd, and pi's cwd is fixed at spawn — switching
+// disposes every open chat and reopens a single fresh one in the new checkout
+// (see the reinit effect below). On the canvas that lived behind a context
+// menu; in the composer it's one click, so ask first whenever there is real
+// work to lose. Uses the same native-dialog pattern as the other close gates
+// (confirmCloseTerminal / confirmCloseDirty).
+// -----------------------------------------------------------------------------
+
+/** Re-tag `panelId` to `target` behind the confirm gate, writing through the
+ *  same setPanelWorktreeId action the canvas WorktreePill uses. Returns true
+ *  when the switch happened. */
+export async function switchAgentWorktree(opts: {
+  workspaceId: string
+  panelId: string
+  target: { id: string; path: string; label?: string; branch?: string }
+  /** The panel's current working directory. */
+  cwd: string
+  /** Chats currently open in the panel. */
+  chatCount: number
+  /** Whether the active chat has any messages. */
+  hasMessages: boolean
+}): Promise<boolean> {
+  const { workspaceId, panelId, target } = opts
+  // Same checkout (e.g. picking the row the pill already falls back to): the
+  // reinit never runs, so there is nothing to confirm.
+  const destructive = target.path !== opts.cwd && (opts.chatCount > 1 || opts.hasMessages)
+  if (destructive && window.electronAPI?.confirmSwitchAgentWorktree) {
+    const choice = await window.electronAPI.confirmSwitchAgentWorktree({
+      chatCount: opts.chatCount,
+      hasMessages: opts.hasMessages,
+      worktreeName: target.label || target.branch || undefined,
+    })
+    if (choice !== 'switch') return false
+  }
+  useAppStore.getState().setPanelWorktreeId(workspaceId, panelId, target.id)
+  return true
+}
+
+// -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
 
@@ -77,6 +119,15 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   const panelState = workspace?.panels[panelId]
   const taggedWorktree = resolveWorktree(panelState?.worktreeId, workspace?.worktrees)
   const cwd = taggedWorktree?.path ?? workspace?.rootPath ?? ''
+
+  // Worktree picker in the composer. Same read-time join and same create path
+  // every other worktree surface uses; orphans (metadata whose checkout is
+  // gone) are not pickable. The selection writes through setPanelWorktreeId —
+  // the very same action the canvas WorktreePill uses.
+  const rootPath = workspace?.rootPath ?? ''
+  const joinedWorktrees = useWorktrees(rootPath, workspaceId)
+  const worktrees = useMemo(() => joinedWorktrees.filter((w) => !w.isOrphan), [joinedWorktrees])
+  const { createWorktree, checkoutPr } = useWorktreeActions(rootPath, workspaceId)
 
   // ---------------------------------------------------------------------------
   // Multi-chat session bookkeeping.
@@ -92,6 +143,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   // ---------------------------------------------------------------------------
   const [openChats, setOpenChats] = useState<OpenChat[]>([])
   const [activeAgentKey, setActiveAgentKey] = useState<string | null>(null)
+  /** Composer model menu, held here so the readiness banner can open it. */
+  const [modelPickerOpen, setModelPickerOpen] = useState(false)
   /** Ref mirror — the unmount cleanup needs the latest openChats list to
    *  dispose every pi process we ever spawned. */
   const openChatsRef = useRef<OpenChat[]>([])
@@ -147,7 +200,6 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     Array<{ provider: string; model: string; label?: string }>
   >([])
   const [view, setView] = useState<'chat' | 'settings'>('chat')
-  const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   /** Pi-session entries on disk for this workspace's cwd. Sidebar source of
@@ -489,13 +541,39 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   }, [activeAgentKey])
 
   const handlePickModel = useCallback(async (m: { provider: string; model: string }) => {
-    setModelPickerOpen(false)
     if (!activeAgentKey) return
     const ref: AgentModelRef = { provider: m.provider, model: m.model }
     useAgentStore.getState().setModel(activeAgentKey, ref)
     try { await window.electronAPI.agentSetModel(activeAgentKey, ref) }
     catch (err) { log.warn('[AgentPanel] setModel failed', err) }
   }, [activeAgentKey])
+
+  // Re-tag this panel's worktree — i.e. move the agent's working directory. The
+  // cwd effect below does the rest (dispose the old checkout's chats, reopen in
+  // the new one), which is destructive, so gate it behind a confirm whenever
+  // there is real work in the panel.
+  const handlePickWorktree = useCallback(async (id: string) => {
+    const target = worktrees.find((w) => w.id === id)
+    if (!target) return
+    await switchAgentWorktree({
+      workspaceId,
+      panelId,
+      target,
+      cwd,
+      chatCount: openChatsRef.current.length,
+      hasMessages: (useAgentStore.getState().panels[activeAgentKey ?? '']?.messages.length ?? 0) > 0,
+    })
+  }, [worktrees, cwd, activeAgentKey, workspaceId, panelId])
+
+  const handleCreateWorktree = useCallback(async (name: string, baseRef?: string) => {
+    const meta = await createWorktree(name, baseRef)
+    return meta?.id ?? null
+  }, [createWorktree])
+
+  const handleCheckoutPr = useCallback(async (pr: PrListItem) => {
+    const meta = await checkoutPr(pr)
+    return meta?.id ?? null
+  }, [checkoutPr])
 
   const handleNewChat = useCallback(async () => {
     const myGen = ++openGenRef.current
@@ -969,6 +1047,58 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   }, [handleAddImage, setDraft, workspaceId])
 
   // ---------------------------------------------------------------------------
+  // Composer
+  //
+  // Both call sites (empty state and below-thread) render the same shared
+  // composer with the same props; only the placeholder differs.
+  // ---------------------------------------------------------------------------
+
+  const composerProps: Omit<ChatComposerProps, 'placeholder'> = {
+    draft,
+    onChange: setDraft,
+    onSubmit: handleSend,
+    onStop: handleInterrupt,
+    disabled: composerDisabled,
+    running,
+    textareaRef,
+    commands,
+    images: draftImages,
+    onAddImage: handleAddImage,
+    onRemoveImage: handleRemoveImage,
+    onPaste: handlePaste,
+    onDrop: handleDrop,
+    stats,
+    thinkingLevel,
+    onPickThinkingLevel: handlePickThinkingLevel,
+    autoCompactionEnabled,
+    onManualCompact: handleManualCompact,
+    onToggleAutoCompaction: handleToggleAutoCompaction,
+    compactionActive: compaction.active,
+    planModeActive,
+    onTogglePlanMode: handleTogglePlanMode,
+    onSlashOpen: handleSlashOpen,
+    // Model is per-chat: the pick targets the active chat's slice only and
+    // never writes the persisted default.
+    models: availableModels,
+    selectedModel,
+    onPickModel: handlePickModel,
+    onManageModels: openProviderSettings,
+    onModelMenuOpen: () => { void refreshModels() },
+    modelMenuOpen: modelPickerOpen,
+    onModelMenuOpenChange: setModelPickerOpen,
+    // Worktree = this panel's working directory.
+    worktrees,
+    selectedWorktreeId: panelState?.worktreeId ?? null,
+    onPickWorktree: (id) => { void handlePickWorktree(id) },
+    rootPath,
+    worktreeMenuHeading: 'Work in…',
+    worktreeTitle:
+      'The agent’s working directory. Switching restarts its chats in the new checkout.',
+    onCreateWorktree: handleCreateWorktree,
+    onCheckoutPr: handleCheckoutPr,
+  }
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
@@ -1000,8 +1130,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       )}
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        {/* Header — only the sidebar toggle (when collapsed) and the model
-         *  picker / current-view title. Session controls live in the input. */}
+        {/* Header — only the sidebar toggle (when collapsed) and the current-view
+         *  title. Model, worktree and session controls live in the composer. */}
         <div className="flex items-center gap-1 px-2 h-10 shrink-0">
           {!sidebarOpen && (
             <button
@@ -1013,30 +1143,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
             </button>
           )}
 
-          {view === 'chat' ? (
-            <div className="relative">
-              <button
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={() => { setModelPickerOpen((v) => { if (!v) void refreshModels(); return !v }) }}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] text-primary hover:bg-hover"
-              >
-                <ChatCircle size={12} className="text-agent-light" />
-                <span className="truncate max-w-[220px]">
-                  {selectedModel ? selectedModel.model : 'Pick a model'}
-                </span>
-                <CaretDown size={10} className="text-muted" />
-              </button>
-              {modelPickerOpen && (
-                <ModelPickerDropdown
-                  models={availableModels}
-                  selected={selectedModel}
-                  onPick={handlePickModel}
-                  onClose={() => setModelPickerOpen(false)}
-                  onManage={() => { setModelPickerOpen(false); openProviderSettings() }}
-                />
-              )}
-            </div>
-          ) : (
+          {view === 'settings' && (
             <div className="px-2 py-1 text-[12px] font-medium text-primary flex items-center gap-1.5">
               <Gear size={12} />
               Settings
@@ -1059,23 +1166,24 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                 <span className="flex-1 truncate" title={readiness.error}>
                   {readiness.message}
                 </span>
-                <button
-                  onClick={() => {
-                    if (readiness.kind === 'noModel' && availableModels.length > 0) {
-                      void refreshModels()
-                      setModelPickerOpen(true)
-                    } else {
-                      openProviderSettings()
-                    }
-                  }}
-                  className="px-2 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium shrink-0"
-                >
-                  {readiness.kind === 'noModel' && availableModels.length > 0
-                    ? 'Pick model'
-                    : readiness.kind === 'needsReauth'
-                      ? 'Reconnect'
-                      : 'Set up provider'}
-                </button>
+                {/* A missing model is fixed at the composer's model pill, not in
+                    provider settings — send the user to the control that fixes
+                    the thing the banner is complaining about. */}
+                {readiness.kind === 'noModel' ? (
+                  <button
+                    onClick={() => { void refreshModels(); setModelPickerOpen(true) }}
+                    className="px-2 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium shrink-0"
+                  >
+                    Pick model
+                  </button>
+                ) : (
+                  <button
+                    onClick={openProviderSettings}
+                    className="px-2 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[11px] font-medium shrink-0"
+                  >
+                    {readiness.kind === 'needsReauth' ? 'Reconnect' : 'Set up provider'}
+                  </button>
+                )}
               </div>
             ) : null}
 
@@ -1092,31 +1200,9 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                   <div className="text-[16px] font-medium text-primary mb-3 text-center">
                     What should we work on?
                   </div>
-                  <div className="w-full -mx-3">
-                    <ChatInput
-                      draft={draft}
-                      onChange={setDraft}
-                      onSubmit={handleSend}
-                      onStop={handleInterrupt}
-                      disabled={composerDisabled}
-                      running={running}
-                      textareaRef={textareaRef}
-                      commands={commands}
-                      images={draftImages}
-                      onAddImage={handleAddImage}
-                      onRemoveImage={handleRemoveImage}
-                      onPaste={handlePaste}
-                      onDrop={handleDrop}
-                      stats={stats}
-                      thinkingLevel={thinkingLevel}
-                      onPickThinkingLevel={handlePickThinkingLevel}
-                      autoCompactionEnabled={autoCompactionEnabled}
-                      onManualCompact={handleManualCompact}
-                      onToggleAutoCompaction={handleToggleAutoCompaction}
-                      compactionActive={compaction.active}
-                      planModeActive={planModeActive}
-                      onTogglePlanMode={handleTogglePlanMode}
-                      onSlashOpen={handleSlashOpen}
+                  <div className="w-full">
+                    <ChatComposer
+                      {...composerProps}
                       placeholder={composerPlaceholder ?? 'Ask the agent anything about this workspace…'}
                     />
                   </div>
@@ -1146,32 +1232,9 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
                     <ExtensionDialog request={currentUiRequest} onRespond={handleUiResponse} />
                   </div>
                 )}
-                <ChatInput
-                  draft={draft}
-                  onChange={setDraft}
-                  onSubmit={handleSend}
-                  onStop={handleInterrupt}
-                  disabled={composerDisabled}
-                  running={running}
-                  textareaRef={textareaRef}
-                  commands={commands}
-                  images={draftImages}
-                  onAddImage={handleAddImage}
-                  onRemoveImage={handleRemoveImage}
-                  onPaste={handlePaste}
-                  onDrop={handleDrop}
-                  stats={stats}
-                  thinkingLevel={thinkingLevel}
-                  onPickThinkingLevel={handlePickThinkingLevel}
-                  autoCompactionEnabled={autoCompactionEnabled}
-                  onManualCompact={handleManualCompact}
-                  onToggleAutoCompaction={handleToggleAutoCompaction}
-                  compactionActive={compaction.active}
-                  planModeActive={planModeActive}
-                  onTogglePlanMode={handleTogglePlanMode}
-                  onSlashOpen={handleSlashOpen}
-                  placeholder={composerPlaceholder}
-                />
+                <div className="px-3 py-2 shrink-0">
+                  <ChatComposer {...composerProps} placeholder={composerPlaceholder} />
+                </div>
               </>
             )}
           </div>

@@ -20,6 +20,7 @@ import {
   DIALOG_CONFIRM_IMPORT,
   DIALOG_CONFIRM_RELOAD_WORKSPACE,
   DIALOG_CONFIRM_DISCARD_JOB,
+  DIALOG_CONFIRM_SWITCH_AGENT_WORKTREE,
   DIALOG_TERMINAL_LINK_OPEN,
   CANVAS_READ_BACKGROUND_IMAGE,
 } from '../../shared/ipc-channels'
@@ -309,6 +310,29 @@ export function registerDialogHandlers(): void {
       noLink: true,
     })
     return result.response === 0 ? 'discard' : 'cancel'
+  })
+
+  // Confirm switching an agent panel to another worktree. The panel's cwd is
+  // fixed at spawn, so switching disposes every open chat and reopens a single
+  // fresh one in the new checkout. Returns 'switch' | 'cancel'.
+  ipcMain.handle(DIALOG_CONFIRM_SWITCH_AGENT_WORKTREE, async (event, payload: { chatCount?: number; hasMessages?: boolean; worktreeName?: string }) => {
+    const win = windowFromEvent(event)
+    const chatCount = payload?.chatCount ?? 1
+    const name = payload?.worktreeName?.trim()
+    const detail =
+      chatCount > 1
+        ? `The ${chatCount} chats open in this panel will be closed and a fresh chat opened in the new worktree. Their transcripts stay on disk.`
+        : 'This chat will be closed and a fresh one opened in the new worktree. Its transcript stays on disk.'
+    const result = await dialog.showMessageBox(win!, {
+      type: 'warning',
+      message: name ? `Move this agent to “${name}”?` : 'Move this agent to another worktree?',
+      detail,
+      buttons: ['Switch', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    })
+    return result.response === 0 ? 'switch' : 'cancel'
   })
 
   // Ask where to open a Cmd/Ctrl+clicked terminal link the first time (while the
