@@ -4,8 +4,10 @@
 //
 // Three subsections:
 //   1. Catalog — browse catalog entries; install (download), enable/disable, and
-//      manage installed ones (update / reinstall / remove). Opening an
-//      extension's panels happens from the canvas toolbar, not here.
+//      manage installed ones (update / reinstall / remove). Browsing is filtered
+//      by functional category (manifest `category`), narrowed by a search box,
+//      and paginated at CATALOG_PAGE_SIZE rows. Opening an extension's panels
+//      happens from the canvas toolbar, not here.
 //   2. Sideloaded — local dev folders added via "Add local folder…", removable.
 //   3. Catalog sources — view/add/remove catalog source URLs and refresh.
 //
@@ -16,13 +18,19 @@
 // Styling mirrors SkillsSettings.
 // =============================================================================
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Plus, Trash, CircleNotch, ArrowsClockwise, ArrowCircleUp, Warning, CaretRight } from '@phosphor-icons/react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Plus, Trash, CircleNotch, ArrowsClockwise, ArrowCircleUp, Warning, CaretRight, CaretLeft } from '@phosphor-icons/react'
 import { SettingRow, SearchableBlock, SecondaryButton, Toggle, TextInput } from './SettingsComponents'
 import { Tooltip } from '../ui/Tooltip'
 import { errorMessage } from '../lib/errorMessage'
 import { useExtensionsStore, ensureExtensionsStarted } from '../stores/extensionsStore'
-import type { ExtensionListEntry } from '../../shared/extensions'
+import {
+  EXTENSION_CATEGORIES,
+  extensionCategoryLabel,
+  resolveExtensionCategory,
+  type ExtensionCategory,
+  type ExtensionListEntry,
+} from '../../shared/extensions'
 
 const api = () => window.electronAPI
 
@@ -43,6 +51,78 @@ const PERMISSION_LABELS: Record<string, string> = {
   files: 'Receive dropped files',
   'files.drop': 'Receive dropped files',
 }
+
+/** How many catalog rows one page shows. The catalog is browsed, not scanned —
+ *  a wall of every extension buries the ones a user is looking for. */
+const CATALOG_PAGE_SIZE = 10
+
+/** One category filter chip (also used for the "All" pseudo-category). */
+const CategoryChip = ({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string
+  count: number
+  active: boolean
+  onClick: () => void
+}) => (
+  <button
+    onClick={onClick}
+    aria-pressed={active}
+    className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full border ${
+      active
+        ? 'border-transparent bg-accent text-white'
+        : 'border-subtle bg-surface-2 text-muted hover:text-primary hover:bg-hover'
+    }`}
+  >
+    {label}
+    <span className="ml-1 text-[10px] opacity-60">{count}</span>
+  </button>
+)
+
+/** Numbered pager: ‹ 1 2 3 ›. Rendered only when there is more than one page. */
+const Pager = ({
+  page,
+  pageCount,
+  onPage,
+}: {
+  page: number
+  pageCount: number
+  onPage: (page: number) => void
+}) => (
+  <div className="flex items-center justify-center gap-1 py-1">
+    <button
+      aria-label="Previous page"
+      onClick={() => onPage(page - 1)}
+      disabled={page === 0}
+      className="p-1 rounded text-muted hover:text-primary disabled:opacity-30"
+    >
+      <CaretLeft size={11} />
+    </button>
+    {Array.from({ length: pageCount }, (_, i) => (
+      <button
+        key={i}
+        onClick={() => onPage(i)}
+        aria-current={i === page ? 'page' : undefined}
+        className={`min-w-[20px] text-[11px] px-1.5 py-0.5 rounded ${
+          i === page ? 'bg-surface-3 text-primary' : 'text-muted hover:text-primary hover:bg-hover'
+        }`}
+      >
+        {i + 1}
+      </button>
+    ))}
+    <button
+      aria-label="Next page"
+      onClick={() => onPage(page + 1)}
+      disabled={page >= pageCount - 1}
+      className="p-1 rounded text-muted hover:text-primary disabled:opacity-30"
+    >
+      <CaretRight size={11} />
+    </button>
+  </div>
+)
 
 /** A small muted icon button (reinstall / remove / remove source).
  *  Hoisted to module scope so it isn't redefined on every ExtensionsSettings
@@ -159,6 +239,10 @@ export function ExtensionsSettings() {
   // permissions) is expanded. Keyed by `source:id` so a sideloaded copy of a
   // catalog extension can't collide.
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Catalog browse state: free-text query, category filter, and current page.
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState<ExtensionCategory | 'all'>('all')
+  const [page, setPage] = useState(0)
 
   const toggleExpanded = (key: string) =>
     setExpanded((prev) => {
@@ -304,8 +388,42 @@ export function ExtensionsSettings() {
     // removeCatalogSource refreshes the catalog, which broadcasts; store updates.
   }
 
-  const catalogEntries = entries.filter((e) => e.source === 'catalog')
+  const catalogEntries = useMemo(() => entries.filter((e) => e.source === 'catalog'), [entries])
   const sideloadEntries = entries.filter((e) => e.source === 'sideload')
+
+  // ---------------------------------------------------------------------------
+  // Catalog browse — category chips, search, pagination
+  // ---------------------------------------------------------------------------
+
+  /** How many catalog entries fall under each category (chips show the count and
+   *  categories nobody ships are hidden rather than rendered as empty chips). */
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<ExtensionCategory, number>()
+    for (const entry of catalogEntries) {
+      const c = resolveExtensionCategory(entry.manifest)
+      counts.set(c, (counts.get(c) ?? 0) + 1)
+    }
+    return counts
+  }, [catalogEntries])
+
+  const filteredCatalog = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return catalogEntries.filter((entry) => {
+      if (category !== 'all' && resolveExtensionCategory(entry.manifest) !== category) return false
+      if (!q) return true
+      const haystack = `${entry.manifest.name} ${entry.manifest.id} ${entry.description ?? ''}`
+      return haystack.toLowerCase().includes(q)
+    })
+  }, [catalogEntries, category, query])
+
+  const pageCount = Math.max(1, Math.ceil(filteredCatalog.length / CATALOG_PAGE_SIZE))
+  // Clamp instead of resetting in an effect: a shrinking result set (a refresh
+  // that drops entries) must not leave us rendering a page past the end.
+  const currentPage = Math.min(page, pageCount - 1)
+  const pagedCatalog = filteredCatalog.slice(
+    currentPage * CATALOG_PAGE_SIZE,
+    currentPage * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE,
+  )
 
   // ---------------------------------------------------------------------------
   // Shared rows
@@ -366,7 +484,14 @@ export function ExtensionsSettings() {
         version={version}
         open={open}
         onToggleExpand={() => toggleExpanded(key)}
-        middle={<span className="flex-1 min-w-0 text-[11px] text-muted truncate">{description}</span>}
+        middle={
+          <>
+            <span className="shrink-0 text-[10px] text-muted px-1.5 py-0.5 rounded bg-surface-3">
+              {extensionCategoryLabel(resolveExtensionCategory(m))}
+            </span>
+            <span className="flex-1 min-w-0 text-[11px] text-muted truncate">{description}</span>
+          </>
+        }
         actions={
           !entry.installed ? (
             <SecondaryButton onClick={() => void install(entry)} disabled={inFlight}>
@@ -427,9 +552,56 @@ export function ExtensionsSettings() {
         </div>
 
         {catalogEntries.length > 0 ? (
-          <div className="my-2 rounded-lg border border-subtle overflow-hidden">
-            {catalogEntries.map(renderCatalogRow)}
-          </div>
+          <>
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              <CategoryChip
+                label="All"
+                count={catalogEntries.length}
+                active={category === 'all'}
+                onClick={() => {
+                  setCategory('all')
+                  setPage(0)
+                }}
+              />
+              {EXTENSION_CATEGORIES.filter((c) => (categoryCounts.get(c.id) ?? 0) > 0).map((c) => (
+                <CategoryChip
+                  key={c.id}
+                  label={c.label}
+                  count={categoryCounts.get(c.id) ?? 0}
+                  active={category === c.id}
+                  onClick={() => {
+                    setCategory(c.id)
+                    setPage(0)
+                  }}
+                />
+              ))}
+            </div>
+
+            <div className="mt-2">
+              <TextInput
+                value={query}
+                onChange={(value) => {
+                  setQuery(value)
+                  setPage(0)
+                }}
+                placeholder="Search extensions…"
+                layoutClassName="w-full px-2"
+              />
+            </div>
+
+            {pagedCatalog.length > 0 ? (
+              <>
+                <div className="my-2 rounded-lg border border-subtle overflow-hidden">
+                  {pagedCatalog.map(renderCatalogRow)}
+                </div>
+                {pageCount > 1 && (
+                  <Pager page={currentPage} pageCount={pageCount} onPage={setPage} />
+                )}
+              </>
+            ) : (
+              <p className="text-[11px] text-muted px-1 py-2">No extensions match this filter.</p>
+            )}
+          </>
         ) : refreshing || initialLoad ? (
           <p className="text-[11px] text-muted px-1 py-2">Loading catalog…</p>
         ) : sources.length === 0 ? (

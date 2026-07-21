@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
-import { normalizeManifest } from './extensions'
+import {
+  EXTENSION_CATEGORIES,
+  extensionCategoryLabel,
+  normalizeManifest,
+  resolveExtensionCategory,
+} from './extensions'
 
 // A minimal valid manifest body, parameterised by id/version, so each test can
 // vary only the field under scrutiny.
@@ -37,6 +42,33 @@ describe('normalizeManifest — id validation', () => {
 
   it('rejects ids containing a NUL byte', () => {
     expect(normalizeManifest(manifest({ id: 'a\u0000b' }))).toBeNull()
+  })
+})
+
+describe('normalizeManifest — category validation', () => {
+  it('keeps every known category id', () => {
+    for (const { id } of EXTENSION_CATEGORIES) {
+      expect(normalizeManifest(manifest({ category: id }))?.category).toBe(id)
+    }
+  })
+
+  it('drops an unknown or non-string category, filing it under Other', () => {
+    for (const category of ['frontend', 'url', '', 42, null, {}]) {
+      const m = normalizeManifest(manifest({ category }))
+      expect(m).not.toBeNull()
+      expect(m?.category).toBeUndefined()
+      expect(resolveExtensionCategory(m ?? undefined)).toBe('other')
+    }
+  })
+
+  it('resolves a missing manifest/category to other', () => {
+    expect(resolveExtensionCategory(undefined)).toBe('other')
+    expect(resolveExtensionCategory(normalizeManifest(manifest()) ?? undefined)).toBe('other')
+  })
+
+  it('labels known ids and falls back to the raw id', () => {
+    expect(extensionCategoryLabel('sales')).toBe('Sales & CRM')
+    expect(extensionCategoryLabel('nope')).toBe('nope')
   })
 })
 
@@ -157,6 +189,12 @@ describe.skipIf(!fs.existsSync(EXTENSIONS_DIR))('shipped manifests on disk', () 
       expect(m, `${id}/manifest.json failed to normalize`).not.toBeNull()
       expect(m?.id).toBe(id)
       expect(m?.panels.length).toBeGreaterThan(0)
+      // A declared category must be one we know — a typo would silently demote
+      // the extension to "Other" in the catalog UI. Absence is fine: the
+      // catalog repo is a separate PR that lands after this one.
+      if (parsed.category !== undefined) {
+        expect(m?.category, `${id}/manifest.json has an unknown category`).toBe(parsed.category)
+      }
     }
   })
 

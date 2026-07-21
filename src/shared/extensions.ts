@@ -16,6 +16,50 @@ export const DEFAULT_READY_PATH = '/health'
 export const DEFAULT_PORT_ENV = 'PORT'
 
 // -----------------------------------------------------------------------------
+// Categories
+// -----------------------------------------------------------------------------
+
+/**
+ * The functional categories an extension can declare, in display order.
+ *
+ * Deliberately few and broad: a category answers "what do I use this for?", not
+ * "how is it built" (url / frontend / server — that is an implementation detail
+ * the user never sees). Keeping the list short is the point — a catalog with 20
+ * categories filters no better than one with none. Anything that doesn't fit
+ * falls back to `other` rather than growing the list.
+ */
+export const EXTENSION_CATEGORIES = [
+  { id: 'ai', label: 'AI' },
+  { id: 'development', label: 'Development' },
+  { id: 'data', label: 'Data' },
+  { id: 'design', label: 'Design' },
+  { id: 'productivity', label: 'Productivity' },
+  { id: 'communication', label: 'Communication' },
+  { id: 'sales', label: 'Sales & CRM' },
+  { id: 'other', label: 'Other' },
+] as const
+
+export type ExtensionCategory = (typeof EXTENSION_CATEGORIES)[number]['id']
+
+/** Used when a manifest declares no category, or one we don't recognise. */
+export const DEFAULT_EXTENSION_CATEGORY: ExtensionCategory = 'other'
+
+/** True if `value` is one of the known category ids. */
+export function isExtensionCategory(value: unknown): value is ExtensionCategory {
+  return EXTENSION_CATEGORIES.some((c) => c.id === value)
+}
+
+/** Human label for a category id (falls back to the raw id). */
+export function extensionCategoryLabel(id: string): string {
+  return EXTENSION_CATEGORIES.find((c) => c.id === id)?.label ?? id
+}
+
+/** The category to file a manifest under — always a known id. */
+export function resolveExtensionCategory(manifest: ExtensionManifest | undefined): ExtensionCategory {
+  return manifest?.category ?? DEFAULT_EXTENSION_CATEGORY
+}
+
+// -----------------------------------------------------------------------------
 // Manifest shape
 // -----------------------------------------------------------------------------
 
@@ -36,6 +80,7 @@ export interface ExtensionManifest {
   id: string                    // e.g. "acme.example"
   name: string
   version?: string
+  category?: ExtensionCategory  // functional grouping in the catalog UI
   panels: ExtensionPanelDef[]
   frontend?: string             // entry html for frontend-only (ignored when server/url present)
   server?: ExtensionServerSpec
@@ -189,6 +234,9 @@ export function normalizeManifest(parsed: unknown): ExtensionManifest | null {
   // manifest; downstream code falls back to '0.0.0'. An unsafe version must
   // never reach a path.
   if (isSafeVersion(parsed.version)) manifest.version = parsed.version
+  // An unknown category is dropped rather than kept: the UI files it under
+  // "Other" instead of inventing a filter chip from untrusted catalog text.
+  if (isExtensionCategory(parsed.category)) manifest.category = parsed.category
   if (nonEmptyString(parsed.frontend)) manifest.frontend = parsed.frontend
 
   const server = normalizeServer(parsed.server)
