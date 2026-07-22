@@ -33,6 +33,14 @@ Um diesen Kern herum steht eine vollständige IDE: Monaco-Editoren, eingebettete
 
 **Erste Schritte:** Öffnen Sie einen Ordner und er wird zum Arbeitsbereich. Rechtsklick fügt Panels hinzu, `Cmd+K` öffnet die Befehlspalette, Panels aufs Dock ziehen erzeugt Tabs und Splits. Keine Konfigurationsdateien.
 
+<p align="center">
+  <em>Pssst. Hey, du, werde einer unserer Stargazer :)</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/0-AI-UG/cate"><img src="https://img.shields.io/github/stars/0-AI-UG/cate?style=social" alt="Star Cate on GitHub" /></a>
+</p>
+
 ## Installation
 
 Laden Sie eine vorgefertigte Version herunter. Bauen Sie für den täglichen Gebrauch nicht aus dem Quellcode.
