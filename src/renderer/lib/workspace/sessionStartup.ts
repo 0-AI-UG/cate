@@ -9,7 +9,6 @@ import { deferredSnapshots } from './deferredRestore'
 import { collectPanelIdsFromDockState } from './sessionSerialize'
 import { mark } from '../perfMarks'
 import { restoreWorkspaceLayout } from './sessionRestore'
-import { useWorkspaceTrustStore } from '../../stores/workspaceTrustStore'
 import type {
   MultiWorkspaceSession,
   PanelType,
@@ -68,9 +67,6 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
       snapshot.connection,
     )
     wsIds.push(wsId)
-    // Bind any "we withheld part of this layout" notice filed by the trust gate
-    // during load (which ran before workspace ids existed) so the dialog shows.
-    useWorkspaceTrustStore.getState().adoptPending(wsId, snapshot.rootPath)
 
     if (i === selectedIdx) {
       const isRemote = !!snapshot.connection && snapshot.connection.kind !== 'local'

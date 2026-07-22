@@ -43,6 +43,9 @@ beforeEach(() => {
     projectStateLoad,
   }
   projectStateLoad.mockReset()
+  // These tests are about the hydrate path, not the gate: trust the fixture root
+  // so hydrate gets past it. The trust suite at the bottom clears this.
+  useWorkspaceTrustStore.setState({ trusted: [ROOT], hydrated: true, queue: [] })
 })
 
 import { useAppStore, awaitWorkspaceSync } from '../../stores/appStore'
@@ -152,8 +155,10 @@ describe('hydrateWorkspaceFromDiskIfEmpty — restore', () => {
 
 // -----------------------------------------------------------------------------
 // GHSA-8769-jp52-985f — this is THE function that runs when a user opens a
-// cloned repo, so it is where the trust boundary has to hold. The fixture is the
-// advisory's proof-of-concept workspace.json.
+// cloned repo, so it is the backstop for the trust boundary: the gate proper is
+// on the open path (nothing untrusted gets this far), and these pin that an
+// untrusted rootPath still restores nothing and reads nothing. The fixture is
+// the advisory's proof-of-concept workspace.json.
 // -----------------------------------------------------------------------------
 
 /** The advisory PoC: an agent panel docked so that restoring it mounts pi,
@@ -183,7 +188,7 @@ function hostileDiskState(): { workspace: ProjectWorkspaceFile; session: Project
 
 describe('hydrateWorkspaceFromDiskIfEmpty — workspace trust', () => {
   beforeEach(() => {
-    useWorkspaceTrustStore.setState({ trusted: [], hydrated: true, withheld: {}, pendingByLocator: {} })
+    useWorkspaceTrustStore.setState({ trusted: [], hydrated: true, queue: [] })
   })
 
   it('does not restore a repo-supplied agent panel from an untrusted project', async () => {
@@ -199,20 +204,20 @@ describe('hydrateWorkspaceFromDiskIfEmpty — workspace trust', () => {
     expect(Object.values(ws.panels).some((p) => p.type === 'agent')).toBe(false)
   })
 
-  it('records a prompt notice naming the withheld agent panel', async () => {
-    const id = await freshWorkspace('ws-hostile-notice', '/hostile2')
+  it('does not even read the project files of an untrusted project', async () => {
+    const id = await freshWorkspace('ws-hostile-noread', '/hostile2')
     projectStateLoad.mockResolvedValue(hostileDiskState())
 
     await hydrateWorkspaceFromDiskIfEmpty(id)
 
-    expect(useWorkspaceTrustStore.getState().withheld[id]?.summary.byType.agent).toBe(1)
+    // Nothing is filtered, because nothing is loaded: an untrusted project is
+    // not opened at all, so its `.cate/` files are never touched.
+    expect(projectStateLoad).not.toHaveBeenCalled()
   })
 
   it('restores the same layout once the user trusts the project', async () => {
     const id = await freshWorkspace('ws-trusted', '/trusted-repo')
-    useWorkspaceTrustStore.setState({
-      trusted: ['/trusted-repo'], hydrated: true, withheld: {}, pendingByLocator: {},
-    })
+    useWorkspaceTrustStore.setState({ trusted: ['/trusted-repo'], hydrated: true, queue: [] })
     projectStateLoad.mockResolvedValue(hostileDiskState())
 
     await hydrateWorkspaceFromDiskIfEmpty(id)
@@ -221,6 +226,5 @@ describe('hydrateWorkspaceFromDiskIfEmpty — workspace trust', () => {
     const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
     expect(ws.panels['agent-poc']).toBeDefined()
     expect(ws.panels['agent-poc'].type).toBe('agent')
-    expect(useWorkspaceTrustStore.getState().withheld[id]).toBeUndefined()
   })
 })

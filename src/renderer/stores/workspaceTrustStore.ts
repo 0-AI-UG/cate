@@ -1,12 +1,15 @@
 // =============================================================================
-// workspaceTrustStore — which projects the user has trusted to auto-restore
-// process-bearing panels, plus the per-workspace "we withheld this" notices the
-// trust dialog renders.
+// workspaceTrustStore — which projects the user has trusted to open.
 //
-// The authoritative list lives in the main process (userData/trusted-projects.json,
-// see main/workspaceStateStore.ts). This store is a renderer-side mirror, hydrated
-// once at startup, because the restore path is synchronous-ish and must not race
-// an IPC round-trip per workspace. Trust decisions write through to main.
+// Trust is binary and it gates OPENING. A project is either trusted, in which
+// case it opens normally with everything its layout asks for, or it is not
+// opened at all. There is no restricted/partial mode: the user's two choices
+// are "trust it and open it" and "don't open it".
+//
+// The authoritative list lives in the main process
+// (userData/trusted-projects.json, see main/workspaceStateStore.ts). This store
+// is a renderer-side mirror, hydrated once at startup, so the open path can
+// answer without an IPC round-trip per workspace. Decisions write through.
 //
 // Deliberately NOT persisted per project: the whole point is that the project
 // cannot influence its own trust state (GHSA-8769-jp52-985f).
@@ -14,18 +17,21 @@
 
 import { create } from 'zustand'
 import log from '../lib/logger'
-import type { WithheldSummary } from '../lib/workspace/sessionTrustFilter'
+
+/** One unanswered "do you trust this project?" question, waiting on the dialog. */
+interface TrustPrompt {
+  locator: string
+  resolve: (trusted: boolean) => void
+}
 
 interface WorkspaceTrustState {
   /** Locators the user has explicitly trusted. Mirrors main. */
   trusted: string[]
   /** Whether the mirror has been hydrated from main yet. */
   hydrated: boolean
-  /** Pending prompts, keyed by workspace id, for layouts we filtered. */
-  withheld: Record<string, { locator: string; summary: WithheldSummary }>
-  /** Notices filed before a workspace id existed (startup load runs before
-   *  workspaces are created), keyed by locator and adopted in `adoptPending`. */
-  pendingByLocator: Record<string, WithheldSummary>
+  /** FIFO of pending questions. Only the head is on screen; startup can enqueue
+   *  one per project it wants to reopen and they are asked in turn. */
+  queue: TrustPrompt[]
 }
 
 interface WorkspaceTrustActions {
@@ -33,27 +39,25 @@ interface WorkspaceTrustActions {
   isTrusted: (locator: string | undefined | null) => boolean
   /** Record a trust decision and write it through to main. */
   setTrusted: (locator: string, trusted: boolean) => Promise<void>
-  noteWithheld: (workspaceId: string, locator: string, summary: WithheldSummary) => void
-  /** File a notice before the workspace exists (startup load). */
-  notePending: (locator: string, summary: WithheldSummary) => void
-  /** Bind any pending notice for `locator` to a now-created workspace. */
-  adoptPending: (workspaceId: string, locator: string | undefined | null) => void
-  clearWithheld: (workspaceId: string) => void
+  /** Ask the user unless the project is already trusted. Resolves true when the
+   *  project may be opened. */
+  requestTrust: (locator: string | undefined | null) => Promise<boolean>
+  /** The dialog's answer to the question at the head of the queue. */
+  answerTrustPrompt: (trusted: boolean) => Promise<void>
 }
 
 export const useWorkspaceTrustStore = create<WorkspaceTrustState & WorkspaceTrustActions>((set, get) => ({
   trusted: [],
   hydrated: false,
-  withheld: {},
-  pendingByLocator: {},
+  queue: [],
 
   hydrate: async () => {
     try {
       const trusted = (await window.electronAPI.projectTrustGet()) ?? []
       set({ trusted, hydrated: true })
     } catch (err) {
-      // Fail CLOSED: an unreadable trust list means nothing is trusted, so
-      // layouts restore passive-only rather than silently regaining auto-start.
+      // Fail CLOSED: an unreadable trust list means nothing is trusted, so every
+      // project is re-asked rather than silently opened.
       log.warn('[trust] failed to load trusted projects — treating all as untrusted: %s', err)
       set({ trusted: [], hydrated: true })
     }
@@ -62,7 +66,7 @@ export const useWorkspaceTrustStore = create<WorkspaceTrustState & WorkspaceTrus
   isTrusted: (locator) => !!locator && get().trusted.includes(locator),
 
   setTrusted: async (locator, trusted) => {
-    // Update the mirror first so the caller can restore immediately.
+    // Update the mirror first so the caller can proceed immediately.
     set((s) => ({
       trusted: trusted ? [...s.trusted.filter((p) => p !== locator), locator] : s.trusted.filter((p) => p !== locator),
     }))
@@ -74,41 +78,38 @@ export const useWorkspaceTrustStore = create<WorkspaceTrustState & WorkspaceTrus
     }
   },
 
-  noteWithheld: (workspaceId, locator, summary) => {
-    if (summary.total === 0) return
-    set((s) => ({ withheld: { ...s.withheld, [workspaceId]: { locator, summary } } }))
-  },
-
-  notePending: (locator, summary) => {
-    if (summary.total === 0 || !locator) return
-    set((s) => ({ pendingByLocator: { ...s.pendingByLocator, [locator]: summary } }))
-  },
-
-  adoptPending: (workspaceId, locator) => {
-    if (!locator) return
-    set((s) => {
-      const summary = s.pendingByLocator[locator]
-      if (!summary) return s
-      const pendingByLocator = { ...s.pendingByLocator }
-      delete pendingByLocator[locator]
-      return {
-        pendingByLocator,
-        withheld: { ...s.withheld, [workspaceId]: { locator, summary } },
-      }
+  requestTrust: (locator) => {
+    if (!locator) return Promise.resolve(false)
+    if (get().isTrusted(locator)) return Promise.resolve(true)
+    return new Promise<boolean>((resolve) => {
+      // Duplicates for the same locator are fine — two open paths racing on one
+      // folder both ride the single question, because answering resolves every
+      // queued entry for that locator at once.
+      set((s) => ({ queue: [...s.queue, { locator, resolve }] }))
     })
   },
 
-  clearWithheld: (workspaceId) => {
-    set((s) => {
-      if (!s.withheld[workspaceId]) return s
-      const next = { ...s.withheld }
-      delete next[workspaceId]
-      return { withheld: next }
-    })
+  answerTrustPrompt: async (trusted) => {
+    const head = get().queue[0]
+    if (!head) return
+    if (trusted) await get().setTrusted(head.locator, true)
+    const answered = get().queue.filter((p) => p.locator === head.locator)
+    set((s) => ({ queue: s.queue.filter((p) => p.locator !== head.locator) }))
+    for (const prompt of answered) prompt.resolve(trusted)
   },
 }))
 
-/** Non-hook accessor for the restore path (which runs outside React). */
+/** Non-hook accessor for paths that run outside React. */
 export function isProjectTrusted(locator: string | undefined | null): boolean {
   return useWorkspaceTrustStore.getState().isTrusted(locator)
+}
+
+/**
+ * The gate every open path goes through: resolves true when `locator` may be
+ * opened, either because it is already trusted or because the user just said so
+ * in the dialog. Resolves false when the user declined — the caller must then
+ * not open the project, and must not read anything out of it.
+ */
+export function ensureProjectTrusted(locator: string | undefined | null): Promise<boolean> {
+  return useWorkspaceTrustStore.getState().requestTrust(locator)
 }

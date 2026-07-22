@@ -208,16 +208,10 @@ export async function saveSession(): Promise<void> {
     // the owner (the selected one, else the first in order) wins.
     if (ws && ws.id !== snapshot.workspaceId) continue
 
-    // NEVER write into an untrusted project. We deliberately restored only part
-    // of its layout (see projectTrustGate), so the live workspace is a PARTIAL
-    // view of the file — persisting it would silently delete the very panels we
-    // withheld, and "Trust and restore" would then have nothing left to restore.
-    //
-    // Deliberately a flat rule rather than "skip only while something is
-    // withheld": dismissing the prompt clears that flag, and autosave would
-    // resume and clobber the file a moment later. Not writing into a project the
-    // user has not vouched for is also the right default on its own. Saving
-    // resumes the moment they trust it.
+    // NEVER write into an untrusted project. An open workspace is a trusted one
+    // (the gate is on the open path), so this is an invariant check rather than
+    // a filter — but it is what keeps a revoked-trust project from having its
+    // `.cate/` files rewritten by a workspace that is still on screen.
     if (!isProjectTrusted(snapshot.rootPath)) continue
 
     const wsFile = buildWorkspaceFile(snapshot, snapshot.rootPath, ws?.color)

@@ -24,7 +24,7 @@ import { terminalRegistry } from '../terminal/terminalRegistry'
 import { pendingTerminalStarts } from '../terminal/registryState'
 import { collectPanelIdsFromDockState, projectFilesToSnapshot } from './sessionSerialize'
 import { dockWindowsFromSession } from './sessionLoad'
-import { gateProjectFiles } from './projectTrustGate'
+import { isProjectTrusted } from '../../stores/workspaceTrustStore'
 import type {
   SessionSnapshot,
   ProjectWorkspaceFile,
@@ -86,12 +86,14 @@ export async function reloadActiveWorkspaceFromDisk(): Promise<void> {
   await reloadWorkspaceFromDisk(useAppStore.getState().selectedWorkspaceId)
 }
 
-/** Same rebuild, for a specific workspace — used by the trust dialog's "Trust and
- *  layout" action, which replays the now-unfiltered files after trusting. */
+/** Same rebuild, for a specific workspace. */
 export async function reloadWorkspaceFromDisk(wsId: string): Promise<void> {
   const appStore = useAppStore.getState()
   const ws = appStore.workspaces.find((w) => w.id === wsId)
   if (!ws?.rootPath) return
+  // Backstop: an open workspace is a trusted one (the gate is on the open path),
+  // so this can only fire if trust was revoked under a live workspace.
+  if (!isProjectTrusted(ws.rootPath)) return
   // projectStateLoad is locator-aware: a local rootPath reads local .cate/, a
   // remote cate-runtime:// locator reads .cate/ on the runtime next to the
   // remote repo. Both paths round-trip through the same restore below.
@@ -102,10 +104,7 @@ export async function reloadWorkspaceFromDisk(wsId: string): Promise<void> {
   } | null
   if (!projectState?.workspace) return
 
-  // Untrusted project ⇒ passive layout only (GHSA-8769-jp52-985f). An external
-  // edit to workspace.json is exactly as untrusted as the committed file.
-  const gated = gateProjectFiles(projectState.workspace, projectState.session, ws.rootPath, wsId)
-  const snapshot = projectFilesToSnapshot(gated.workspace, gated.session, ws.rootPath)
+  const snapshot = projectFilesToSnapshot(projectState.workspace, projectState.session, ws.rootPath)
 
   // Keep the workspace's display name/color in sync with the file.
   if (projectState.workspace.name) appStore.renameWorkspace(wsId, projectState.workspace.name)
@@ -122,7 +121,7 @@ export async function reloadWorkspaceFromDisk(wsId: string): Promise<void> {
   const { restoreWorkspaceDetachedWindows } = await import('./sessionStartup')
   await restoreWorkspaceDetachedWindows(
     wsId,
-    dockWindowsFromSession(gated.session),
+    dockWindowsFromSession(projectState.session),
     { closeExisting: true },
   )
   log.info('[session] reloaded workspace %s from disk (%d panels)', wsId, Object.keys(snapshot.panels ?? {}).length)
@@ -175,6 +174,12 @@ export async function hydrateWorkspaceFromDiskIfEmpty(wsId: string): Promise<voi
   // ensureCenterCanvas), which still counts as empty so the disk layout loads.
   if (deferredSnapshots.has(wsId)) return
   if (!isWorkspaceEffectivelyEmpty(wsId)) return
+  // This is the drive-by path from the advisory: opening a cloned repo restores
+  // whatever its committed workspace.json names (GHSA-8769-jp52-985f). The user
+  // was asked before the workspace was pointed at this folder, so a trusted
+  // rootPath is the invariant here — this backstops it, and keeps the repo's
+  // files unread if trust was revoked under a live workspace.
+  if (!isProjectTrusted(ws.rootPath)) return
 
   const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath)) as {
     workspace: ProjectWorkspaceFile
@@ -182,10 +187,7 @@ export async function hydrateWorkspaceFromDiskIfEmpty(wsId: string): Promise<voi
   } | null
   if (!projectState?.workspace) return
 
-  // This is the drive-by path from the advisory: opening a cloned repo restores
-  // whatever its committed workspace.json names. Gate it on explicit trust.
-  const gated = gateProjectFiles(projectState.workspace, projectState.session, ws.rootPath, wsId)
-  const snapshot = projectFilesToSnapshot(gated.workspace, gated.session, ws.rootPath)
+  const snapshot = projectFilesToSnapshot(projectState.workspace, projectState.session, ws.rootPath)
   // Nothing worth restoring (no panels) — let the normal empty-canvas path run.
   if (!snapshot.panels || Object.keys(snapshot.panels).length === 0) return
 
@@ -199,7 +201,7 @@ export async function hydrateWorkspaceFromDiskIfEmpty(wsId: string): Promise<voi
   const { restoreWorkspaceDetachedWindows } = await import('./sessionStartup')
   await restoreWorkspaceDetachedWindows(
     wsId,
-    dockWindowsFromSession(gated.session),
+    dockWindowsFromSession(projectState.session),
     { closeExisting: true },
   )
   log.info('[session] hydrated workspace %s on open (%d panels)', wsId, Object.keys(snapshot.panels).length)

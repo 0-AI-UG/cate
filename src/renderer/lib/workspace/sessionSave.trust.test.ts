@@ -2,12 +2,11 @@
 // =============================================================================
 // Autosave must never write into an untrusted project.
 //
-// Found the hard way: with the trust gate in place but autosave unguarded,
-// opening an untrusted repo restored a PARTIAL layout (process-bearing panels
-// withheld) and then autosave wrote that partial layout straight back over
-// `.cate/workspace.json` — permanently deleting the withheld panels from the
-// user's own file. "Trust and restore" would then restore nothing, because
-// there was nothing left to restore.
+// The gate is on the open path, so an open workspace is a trusted one and this
+// guard should never fire in practice. It is the backstop for the one way that
+// invariant can break — trust revoked under a live workspace — where autosave
+// would otherwise keep rewriting `.cate/` files in a project the user has just
+// said they don't trust.
 //
 // The rule is flat: untrusted project ⇒ no project-state write at all.
 // =============================================================================
@@ -51,7 +50,7 @@ beforeEach(() => {
     ],
     selectedWorkspaceId: 'ws-1',
   } as never)
-  useWorkspaceTrustStore.setState({ trusted: [], hydrated: true, withheld: {}, pendingByLocator: {} })
+  useWorkspaceTrustStore.setState({ trusted: [], hydrated: true, queue: [] })
 })
 
 function savesForRoot(): unknown[][] {
@@ -65,22 +64,28 @@ describe('autosave and workspace trust', () => {
   })
 
   it('writes normally once the project is trusted', async () => {
-    useWorkspaceTrustStore.setState({ trusted: [ROOT], hydrated: true, withheld: {}, pendingByLocator: {} })
+    useWorkspaceTrustStore.setState({ trusted: [ROOT], hydrated: true, queue: [] })
 
     await saveSession()
 
     expect(savesForRoot()).toHaveLength(1)
   })
 
-  it('stays blocked after the trust prompt is dismissed', async () => {
-    // Dismissing clears the withheld notice but grants nothing. If the guard
-    // keyed off that notice instead of trust, autosave would resume here and
-    // clobber the file a moment later — the exact bug this pins.
-    useWorkspaceTrustStore.getState().noteWithheld('ws-1', ROOT, { byType: { agent: 1 }, total: 1 })
-    useWorkspaceTrustStore.getState().clearWithheld('ws-1')
+  it('stops writing when trust is revoked under a live workspace', async () => {
+    useWorkspaceTrustStore.setState({ trusted: [ROOT], hydrated: true, queue: [] })
+    await saveSession()
+    expect(savesForRoot()).toHaveLength(1)
+
+    // Revoked. The workspace is still on screen, but its files are off limits.
+    useWorkspaceTrustStore.setState({ trusted: [], hydrated: true, queue: [] })
+    useAppStore.setState({
+      workspaces: [
+        { id: 'ws-1', name: 'WS2', color: '', rootPath: ROOT, panels: { p1: terminalPanel('p1') } },
+      ],
+    } as never)
 
     await saveSession()
 
-    expect(savesForRoot()).toHaveLength(0)
+    expect(savesForRoot()).toHaveLength(1)
   })
 })

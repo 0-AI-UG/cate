@@ -1,75 +1,64 @@
 // =============================================================================
-// WorkspaceTrustDialog — shown when a project's saved layout asked to open
-// panels Cate withheld because the project isn't trusted.
+// WorkspaceTrustDialog — the one question Cate asks before opening a project it
+// has never opened before: do you trust it?
 //
-// The safe outcome is the DEFAULT: the passive layout is already on screen, and
-// every way out of this dialog except "Trust and restore" leaves it that way.
-// So Escape and the backdrop dismiss freely (this is not a decision we force),
-// but neither grants trust. The notice returns next time the project is opened
-// until the user explicitly trusts it.
+// There are exactly two answers. "Trust and open" opens the project normally.
+// "Don't open" leaves it closed — nothing from the folder is read, no panel is
+// restored, no process is started. There is deliberately no third "open it but
+// hold parts back" option: a half-restored layout is confusing to the user and
+// was a whole subsystem to maintain.
 //
-// "Open restricted" is the secondary action rather than a cancel, because the
-// honest framing is that the user is choosing between two working states, not
-// aborting an operation.
+// So every exit that isn't the primary button means "don't open": Escape and the
+// backdrop decline rather than dismiss, and the decline button holds focus so a
+// stray Enter can't grant trust. Trust is remembered per project (in userData,
+// never in the project) so this is asked once.
 //
-// See sessionTrustFilter.ts for what gets withheld and why (GHSA-8769-jp52-985f).
+// Renders the head of the trust store's queue, so a launch that needs to ask
+// about several projects asks about them one at a time.
+//
+// See GHSA-8769-jp52-985f for what an untrusted project's layout could do.
 // =============================================================================
 
 import { useState } from 'react'
 import { ShieldWarning } from '@phosphor-icons/react'
 import { Modal, btn } from '../ui/Modal'
 import { useWorkspaceTrustStore } from '../stores/workspaceTrustStore'
-import { describeWithheld } from '../lib/workspace/sessionTrustFilter'
-import { trustProjectAndReload } from '../lib/workspace/projectTrustGate'
-import log from '../lib/logger'
 
-interface Props {
-  workspaceId: string
-}
+export function WorkspaceTrustDialog(): JSX.Element | null {
+  const locator = useWorkspaceTrustStore((s) => s.queue[0]?.locator)
+  const answerTrustPrompt = useWorkspaceTrustStore((s) => s.answerTrustPrompt)
+  const [busy, setBusy] = useState(false)
 
-export function WorkspaceTrustDialog({ workspaceId }: Props): JSX.Element | null {
-  const notice = useWorkspaceTrustStore((s) => s.withheld[workspaceId])
-  const clearWithheld = useWorkspaceTrustStore((s) => s.clearWithheld)
-  const [restoring, setRestoring] = useState(false)
+  if (!locator) return null
 
-  if (!notice) return null
-
-  const summary = describeWithheld(notice.summary)
-
-  const onTrust = async (): Promise<void> => {
-    setRestoring(true)
-    try {
-      await trustProjectAndReload(workspaceId, notice.locator)
-    } catch (err) {
-      log.warn('[trust] restore-after-trust failed: %s', err)
-      setRestoring(false)
-    }
+  const answer = (trusted: boolean): void => {
+    setBusy(true)
+    void answerTrustPrompt(trusted).finally(() => setBusy(false))
   }
 
   return (
     <Modal
-      onClose={() => clearWithheld(workspaceId)}
+      onClose={() => answer(false)}
       width={420}
       icon={<ShieldWarning size={16} weight="fill" className="text-amber-400" />}
       title="Do you trust this project?"
-      dismissable={!restoring}
+      dismissable={!busy}
       bodyClassName="px-5 py-4"
     >
       <p className="text-[13px] leading-relaxed text-secondary">
-        This project&apos;s saved layout asked to open {summary}. Those can run code on your
-        machine, so Cate left them closed.
+        Opening a project restores its saved layout, which can start terminals, agents and
+        extensions from that folder — so opening it can run its code on your machine.
       </p>
 
       {/* The path is the one thing that tells the user WHICH project is asking,
-          which matters when a layout restores on launch without them opening
-          anything. Breaks anywhere so a long path can't blow out the card. */}
+          which matters at launch when they didn't open anything themselves.
+          Breaks anywhere so a long path can't blow out the card. */}
       <div className="mt-3 px-2.5 py-2 rounded-md bg-surface-5 border border-subtle">
-        <span className="text-[12px] text-muted font-mono break-all">{notice.locator}</span>
+        <span className="text-[12px] text-muted font-mono break-all">{locator}</span>
       </div>
 
       <p className="mt-3 text-[12px] leading-relaxed text-muted">
-        Only trust projects you would run code from. You can keep working either way, and this is
-        remembered per project.
+        Only open projects you would run code from. This is remembered per project.
       </p>
 
       <div className="mt-5 flex justify-end gap-2">
@@ -79,19 +68,19 @@ export function WorkspaceTrustDialog({ workspaceId }: Props): JSX.Element | null
         <button
           type="button"
           className={btn.secondary}
-          onClick={() => clearWithheld(workspaceId)}
-          disabled={restoring}
+          onClick={() => answer(false)}
+          disabled={busy}
           autoFocus
         >
-          Open restricted
+          Don&apos;t open
         </button>
         <button
           type="button"
           className={btn.primary}
-          onClick={() => void onTrust()}
-          disabled={restoring}
+          onClick={() => answer(true)}
+          disabled={busy}
         >
-          {restoring ? 'Restoring…' : 'Trust and restore'}
+          Trust and open
         </button>
       </div>
     </Modal>

@@ -12,7 +12,8 @@ import { getOrCreateWorkspaceDockStore } from './lib/workspace/dockRegistry'
 import { useStore } from 'zustand'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStateStore } from './stores/uiStateStore'
-import { useWorkspaceTrustStore } from './stores/workspaceTrustStore'
+import { useWorkspaceTrustStore, ensureProjectTrusted } from './stores/workspaceTrustStore'
+import { WorkspaceTrustDialog } from './dialogs/WorkspaceTrustDialog'
 import { useBrowserStore } from './stores/browserStore'
 import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
@@ -229,9 +230,9 @@ function MainApp() {
       await useUIStateStore.getState().loadUIState()
       log.info('Settings loaded')
 
-      // Workspace trust must be mirrored BEFORE any project layout is read:
-      // the gate in sessionLoad fails closed, so loading a layout first would
-      // withhold panels from projects the user has already trusted.
+      // Workspace trust must be mirrored BEFORE any project is opened: the gate
+      // in sessionLoad fails closed, so loading first would re-ask about every
+      // project the user has already trusted.
       await useWorkspaceTrustStore.getState().hydrate()
 
       // The sidebar layout lives solely in settingsStore now; components read it
@@ -240,6 +241,11 @@ function MainApp() {
       // Try to restore previous session — only the core (active workspace).
       // Detached panel/dock windows are recreated afterwards so the main
       // window can paint without waiting on their IPC round-trips.
+      //
+      // This can block on the user: loadSession asks about any project it would
+      // reopen that isn't trusted yet, and the boot splash below is
+      // pointer-events-none so <WorkspaceTrustDialog/> is usable over it. Waiting
+      // is the point — we must not paint a workspace we haven't decided to open.
       let restoredSession: MultiWorkspaceSession | null = null
       let restored = false
       const session = await loadSession()
@@ -322,6 +328,9 @@ function MainApp() {
           app.selectWorkspace(existing.id)
           return
         }
+        // Trust gate — this path creates the workspace directly rather than
+        // going through setWorkspaceRootPath, so it asks for itself.
+        if (!(await ensureProjectTrusted(filePath))) return
         const wsId = app.addWorkspace(folderName, filePath)
         window.electronAPI.recentProjectsAdd(filePath)
         await app.selectWorkspace(wsId)
@@ -380,8 +389,15 @@ function MainApp() {
     [currentWorkspace, selectedWorkspaceId],
   )
 
+  // Pre-workspace render (boot, before any workspace exists). The trust dialog
+  // has to be mounted here too: at launch the first thing that happens is the
+  // trust question, and at that point there is no canvas store yet.
   if (!activeCanvasStore) {
-    return <div className="h-screen w-screen bg-canvas-bg" />
+    return (
+      <div className="h-screen w-screen bg-canvas-bg">
+        <WorkspaceTrustDialog />
+      </div>
+    )
   }
 
   return (
@@ -432,6 +448,7 @@ function MainApp() {
       <WindowChrome />
 
       {/* Main-only modal overlays */}
+      <WorkspaceTrustDialog />
       <WelcomeDialog />
       <OnboardingTour />
       <PostUpdateFeedbackDialog />

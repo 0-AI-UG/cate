@@ -1,11 +1,13 @@
 // =============================================================================
 // GHSA-8769-jp52-985f, end to end in the real app.
 //
-// The unit and integration tests mock the filesystem and the store. This one
-// writes an actual hostile `.cate/workspace.json` to a real directory, opens it
-// as a workspace in a real Electron instance, and asserts that the agent panel
-// the repo asked for never materializes. That covers the pieces mocks cannot:
-// the preload bridge, the main-process trust store, and the real IPC round trip.
+// The unit tests mock the filesystem and the store. This one writes an actual
+// hostile `.cate/workspace.json` to a real directory, points a workspace at it
+// in a real Electron instance, and asserts that the user is asked before
+// anything from that folder is opened — and that declining opens nothing.
+//
+// That covers the pieces mocks cannot: the preload bridge, the main-process
+// trust store, and the real IPC round trip.
 //
 // The advisory's own PoC is the fixture, with the payload changed from launching
 // Calculator to touching a marker file so the assertion is programmatic.
@@ -58,6 +60,17 @@ function writeHostileRepo(): string {
   return dir
 }
 
+/** Point a fresh workspace at the hostile repo, the way the folder picker does.
+ *  Does NOT await — the open blocks on the trust dialog by design. */
+async function openHostileRepo(wsId: string): Promise<void> {
+  await page.evaluate(async ({ dir, id }) => {
+    window.__cateE2E!.addWorkspace('PoC', undefined, id)
+    await window.__cateE2E!.selectWorkspace(id)
+    // Deliberately not awaited: it doesn't resolve until the dialog is answered.
+    void window.__cateE2E!.setWorkspaceRoot(dir)
+  }, { dir: repoDir, id: wsId })
+}
+
 test.beforeEach(async () => {
   repoDir = writeHostileRepo()
   ;({ electronApp: app, mainWindow: page } = await launchApp())
@@ -68,65 +81,58 @@ test.afterEach(async () => {
   fs.rmSync(repoDir, { recursive: true, force: true })
 })
 
-test('opening a hostile repo does not restore its agent panel', async () => {
-  const panels = await page.evaluate(async (dir) => {
-    const id = window.__cateE2E!.addWorkspace('PoC', dir, 'ghsa-poc-ws')
-    await window.__cateE2E!.selectWorkspace(id)
-    // Let the async hydrate-on-open settle.
-    await new Promise((r) => setTimeout(r, 1500))
-    return window.__cateE2E!.panelTypes(id)
-  }, repoDir)
+test('opening an unknown project asks before anything is restored', async () => {
+  await openHostileRepo('ghsa-poc-ws')
 
-  // The repo asked for an agent panel. It must not be there.
+  await expect(page.locator('text=Do you trust this project?')).toBeVisible({ timeout: 5000 })
+  // The safe action holds focus, so a stray Enter can't grant trust.
+  await expect(page.locator('button:has-text("Don\'t open")')).toBeFocused()
+
+  // The repo asked for an agent panel. Nothing is restored while the question
+  // is still open.
+  const panels = await page.evaluate(() => window.__cateE2E!.panelTypes('ghsa-poc-ws'))
   expect(panels).not.toContain('agent')
 })
 
-// HONESTY NOTE: unlike the other two, this test also passes WITHOUT the fix.
-// The e2e profile has no configured pi provider (advisory precondition 3), so pi
-// never starts here and the marker is never touched either way. Verified by
-// reverting the gate: the other two specs fail, this one still passes.
-//
-// It is kept as a backstop, not as evidence. If the harness ever gains a
-// provider, this becomes the real end-to-end assertion. Do not cite it as proof
-// that the payload is blocked; the two specs around it are what demonstrate that.
+test('declining opens nothing', async () => {
+  await openHostileRepo('ghsa-poc-ws2')
+  await expect(page.locator('text=Do you trust this project?')).toBeVisible({ timeout: 5000 })
+
+  await page.locator('button:has-text("Don\'t open")').click()
+  await expect(page.locator('text=Do you trust this project?')).toBeHidden()
+  await page.waitForTimeout(1500)
+
+  // Declining is the end of it: nothing from the repo's layout is open.
+  const panels = await page.evaluate(() => window.__cateE2E!.panelTypes('ghsa-poc-ws2'))
+  expect(panels).not.toContain('agent')
+})
+
 test('the withheld payload never runs (backstop, cannot fail without a provider)', async () => {
-  await page.evaluate(async (dir) => {
-    const id = window.__cateE2E!.addWorkspace('PoC', dir, 'ghsa-poc-ws2')
-    await window.__cateE2E!.selectWorkspace(id)
-    await new Promise((r) => setTimeout(r, 1500))
-  }, repoDir)
+  await openHostileRepo('ghsa-poc-ws3')
+  await expect(page.locator('text=Do you trust this project?')).toBeVisible({ timeout: 5000 })
+  await page.locator('button:has-text("Don\'t open")').click()
+  await page.waitForTimeout(1500)
 
   // No agent panel ⇒ no pi ⇒ no MCP adapter ⇒ the eager server never spawns.
   expect(fs.existsSync(markerPath)).toBe(false)
 })
 
-test('the user is told what was withheld', async () => {
-  await page.evaluate(async (dir) => {
-    const id = window.__cateE2E!.addWorkspace('PoC', dir, 'ghsa-poc-ws3')
-    await window.__cateE2E!.selectWorkspace(id)
-    await new Promise((r) => setTimeout(r, 1500))
-  }, repoDir)
+// HONESTY NOTE: unlike the others, the marker assertion above also passes
+// WITHOUT the fix. The e2e profile has no configured pi provider (advisory
+// precondition 3), so pi never starts here and the marker is never touched
+// either way. It is kept as a backstop, not as evidence — the dialog and
+// no-panel assertions are what demonstrate the fix.
 
-  // Silently dropping the panel would leave the user confused about why their
-  // layout is wrong, so the prompt is part of the fix, not decoration.
+test('trusting opens the project for real', async () => {
+  await openHostileRepo('ghsa-poc-ws4')
   await expect(page.locator('text=Do you trust this project?')).toBeVisible({ timeout: 5000 })
-  await expect(page.locator('text=1 Agent panel')).toBeVisible()
-  // The safe action holds focus, so a stray Enter can't grant trust.
-  await expect(page.locator('button:has-text("Open restricted")')).toBeFocused()
-})
 
-test('dismissing the prompt leaves the project untrusted', async () => {
-  await page.evaluate(async (dir) => {
-    const id = window.__cateE2E!.addWorkspace('PoC', dir, 'ghsa-poc-ws4')
-    await window.__cateE2E!.selectWorkspace(id)
-    await new Promise((r) => setTimeout(r, 1500))
-  }, repoDir)
-
-  await page.locator('button:has-text("Open restricted")').click()
-
-  // Prompt gone, but nothing was trusted and nothing was restored: dismissing
-  // must never be a quiet yes.
+  await page.locator('button:has-text("Trust and open")').click()
   await expect(page.locator('text=Do you trust this project?')).toBeHidden()
+  await page.waitForTimeout(1500)
+
+  // Trust is the ONLY thing that changed: the same layout now restores in full,
+  // agent panel included. There is no half-open state between the two.
   const panels = await page.evaluate(() => window.__cateE2E!.panelTypes('ghsa-poc-ws4'))
-  expect(panels).not.toContain('agent')
+  expect(panels).toContain('agent')
 })
