@@ -29,6 +29,14 @@ Run Claude Code, Codex, or any agent CLI in a Cate terminal and the canvas becom
 
 Open a folder and it becomes a workspace. No config files.
 
+<p align="center">
+  <em>Pst. Hey, you, join our stargazers :)</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/0-AI-UG/cate"><img src="https://img.shields.io/github/stars/0-AI-UG/cate?style=social" alt="Star Cate on GitHub" /></a>
+</p>
+
 ## Install
 
 Download a prebuilt release. Don't build from source for daily use.
