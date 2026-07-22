@@ -78,7 +78,7 @@ export interface AppStoreActions {
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
-  createAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
+  createCateAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
   /** Open an extension-hosted panel on the canvas. `extensionPanelId` selects
    *  which panel from the extension's manifest. `title` defaults to the panel
@@ -109,6 +109,7 @@ export interface AppStoreActions {
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
+  setPanelInitialChat: (workspaceId: string, panelId: string, chatId: string) => void
   setPanelAgentSession: (workspaceId: string, panelId: string, session: TerminalAgentSession | null) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
   removePanelRecord: (workspaceId: string, panelId: string) => void

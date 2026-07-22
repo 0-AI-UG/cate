@@ -120,7 +120,7 @@ export async function runAction(
         // worktreeId (no cwd), so bind it when the selection has one.
         const canvas = canvasStore()
         const wt = canvas ? inheritedWorktreeFromSelection(canvas, appStore().getWorkspace(wsId)?.panels) : {}
-        const panelId = appStore().createAgent(wsId, undefined, placement)
+        const panelId = appStore().createCateAgent(wsId, undefined, placement)
         if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
       }
       break

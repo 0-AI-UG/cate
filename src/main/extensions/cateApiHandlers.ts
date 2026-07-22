@@ -61,7 +61,7 @@ import { extensionManager } from './ExtensionManager'
 import { getCachedCatalog } from './catalog'
 import { getProxyUrlFor, identityForGuestUrl } from './proxyServer'
 import { extensionServerManager } from './ExtensionServerManager'
-import { agentManager } from '../../agent/main/agentManager'
+import { codingManager } from '../../cateAgent/main/codingManager'
 import { getExtensionStorage } from './storage'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { getActiveMainWindow, getWindow } from '../windowRegistry'
@@ -316,7 +316,7 @@ function requireHostWindow(): ReturnType<typeof getActiveMainWindow> {
   return win && !win.isDestroyed() ? win : undefined
 }
 
-/** Map an agentManager rejection to an InvokeResult error. Known lifecycle codes
+/** Map an codingManager rejection to an InvokeResult error. Known lifecycle codes
  *  pass through as-is; anything else is the agent's own failure reason (e.g. an
  *  unsupported-model or auth message from pi), surfaced so the extension can show
  *  it instead of a useless generic code. */
@@ -333,21 +333,21 @@ function agentError(err: unknown, method: string): InvokeResult {
  * host file's) pi conversation.
  *
  * The `resume` handle IS pi's session-jsonl path — the value `open` returned to
- * this extension for this workspace — and pi (via agentManager) consumes it as a
- * full `--session <path>` argument, so we can't accept a bare id here (agentManager
- * doesn't resolve one; that would need an off-limits agentManager change). Instead
+ * this extension for this workspace — and pi (via codingManager) consumes it as a
+ * full `--session <path>` argument, so we can't accept a bare id here (codingManager
+ * doesn't resolve one; that would need an off-limits codingManager change). Instead
  * we canonicalize the path and require it to live inside this workspace's
- * `<cwd>/.cate/pi-agent/` dir — the ONLY place pi writes session jsonl for this
- * workspace (see agentDir.ts hostAgentDir/hostSessionsDir). Anything absolute-but-
+ * `<cwd>/.cate/cate-agent/` dir — the ONLY place pi writes session jsonl for this
+ * workspace (see agentDir.ts hostCodingDir/hostSessionsDir). Anything absolute-but-
  * outside, traversing (`..`), or NUL-bearing is rejected.
  *
  * Invariant relied on: every session file a legitimate `open` hands back is an
- * absolute path under `<cwd>/.cate/pi-agent/`, and pi never writes this
- * workspace's sessions elsewhere. Residual gap: the pi-agent dir is shared by ALL
+ * absolute path under `<cwd>/.cate/cate-agent/`, and pi never writes this
+ * workspace's sessions elsewhere. Residual gap: the cate-agent dir is shared by ALL
  * extensions in a workspace (session files are keyed by cwd, not extensionId), so
  * this stops cross-WORKSPACE / arbitrary-file reads but not one consented
  * extension resuming another extension's session within the SAME workspace. Fully
- * closing that would require per-extension session keying inside agentManager
+ * closing that would require per-extension session keying inside codingManager
  * (out of scope for this file) and remains advisable.
  *
  * Returns the canonicalized path when valid, or null to reject.
@@ -355,11 +355,11 @@ function agentError(err: unknown, method: string): InvokeResult {
 function boundedResumePath(resume: string, runtimeId: string, cwd: string): string | null {
   if (resume.includes('\0')) return null
   // Session paths live on the host that runs pi: native separators for the local
-  // runtime, POSIX for a remote host. Match hostAgentDir's flavor choice.
+  // runtime, POSIX for a remote host. Match hostCodingDir's flavor choice.
   const p = runtimeId === LOCAL_RUNTIME_ID ? path : path.posix
   if (!p.isAbsolute(resume)) return null
   const normalized = p.normalize(resume)
-  const root = p.join(cwd, '.cate', 'pi-agent')
+  const root = p.join(cwd, '.cate', 'cate-agent')
   if (normalized !== root && !normalized.startsWith(root + p.sep)) return null
   return normalized
 }
@@ -603,7 +603,7 @@ export async function dispatchCateInvoke(
       const info = getWorkspaceInfo(workspaceId)
       if (!info) return { error: 'no-workspace', method }
       // Security: a `resume` handle is forwarded to pi as a full session-file path,
-      // so bound it to THIS workspace's pi-agent dir before it can reach the agent
+      // so bound it to THIS workspace's cate-agent dir before it can reach the agent
       // (or prompt for consent) — reject cross-workspace / arbitrary-file handles.
       let resume: string | undefined
       if (rawResume !== undefined) {
@@ -616,7 +616,7 @@ export async function dispatchCateInvoke(
       if (!win) return { error: 'no-host-window', method }
       if (!(await ensureConsent(extensionId, 'agent'))) return { error: 'consent-denied', method }
       try {
-        return await agentManager.openForExtension({
+        return await codingManager.openForExtension({
           workspaceId, locator: info.rootPath, extensionId, sender: win.webContents, resume,
         })
       } catch (err) {
@@ -630,7 +630,7 @@ export async function dispatchCateInvoke(
       const promptText = typeof a.prompt === 'string' ? a.prompt.trim() : ''
       if (!sessionId || !promptText) return { error: 'bad-args', method }
       try {
-        return await agentManager.sendForExtension({ extensionId, sessionId, text: promptText })
+        return await codingManager.sendForExtension({ extensionId, sessionId, text: promptText })
       } catch (err) {
         return agentError(err, method)
       }
@@ -640,12 +640,12 @@ export async function dispatchCateInvoke(
       const a = (args ?? {}) as { sessionId?: unknown }
       const sessionId = typeof a.sessionId === 'string' ? a.sessionId : ''
       if (!sessionId) return { error: 'bad-args', method }
-      await agentManager.disposeForExtension({ extensionId, sessionId })
+      await codingManager.disposeForExtension({ extensionId, sessionId })
       return { ok: true }
     }
 
     case 'cate.agent.cancel': {
-      await agentManager.cancelForExtension(extensionId)
+      await codingManager.cancelForExtension(extensionId)
       return { ok: true }
     }
 

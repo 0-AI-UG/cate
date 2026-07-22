@@ -26,7 +26,7 @@
 import { useAppStore } from '../../stores/appStore'
 import { getActivePanelId } from '../activePanel'
 import { getEntry } from './registryState'
-import { useCateAgentStore } from '../../cateAgent/cateAgentStore'
+import { useCateAgentStore } from '../../../cateAgent/renderer/cateAgentStore'
 import type { Terminal } from '@xterm/xterm'
 
 export type TerminalOutcome = { ok: true; result?: unknown } | { ok: false; error: string }

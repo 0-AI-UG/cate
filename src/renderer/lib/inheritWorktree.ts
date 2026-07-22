@@ -36,6 +36,6 @@ export function inheritedWorktreeFromSelection(
   if (!nodeId || !panels) return {}
   const panelId = activeDockPanelId(canvasState.nodes[nodeId]?.dockLayout)
   const panel = panelId ? panels[panelId] : undefined
-  if (!panel || (panel.type !== 'terminal' && panel.type !== 'agent')) return {}
+  if (!panel || (panel.type !== 'terminal' && panel.type !== 'cateAgent')) return {}
   return { cwd: panel.cwd, worktreeId: panel.worktreeId }
 }

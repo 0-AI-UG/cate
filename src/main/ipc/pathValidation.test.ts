@@ -108,20 +108,20 @@ describe('pathValidation', () => {
   })
 
   // Paths that don't exist yet must validate (not error as "Access denied") so a
-  // first-run worktree can list its empty pi-agent sessions dir and mkdir the
+  // first-run worktree can list its empty cate-agent sessions dir and mkdir the
   // extensions tree. Resolving the nearest existing ancestor still blocks symlink
   // escapes — the regression that motivated the realpath check in the first place.
   describe('not-yet-created paths', () => {
     test('validatePathStrict resolves a deep missing path under the root (the sessions case)', async () => {
-      // Mirrors pi-agent/sessions/<encoded-cwd>: none of these segments exist yet.
-      const missing = path.join(rootDir, '.cate', 'pi-agent', 'sessions', '--encoded--')
+      // Mirrors cate-agent/sessions/<encoded-cwd>: none of these segments exist yet.
+      const missing = path.join(rootDir, '.cate', 'cate-agent', 'sessions', '--encoded--')
       await expect(validatePathStrict(missing, undefined, SCOPE)).resolves.toBe(await fs.realpath(rootDir) + missing.slice(rootDir.length))
     })
 
     test('validatePathForCreation allows a target whose parent chain is missing (the extensions case)', async () => {
-      const dest = path.join(rootDir, '.cate', 'pi-agent', 'extensions', 'subagent')
+      const dest = path.join(rootDir, '.cate', 'cate-agent', 'extensions', 'subagent')
       await expect(validatePathForCreation(dest, undefined, SCOPE)).resolves.toContain(
-        path.join('.cate', 'pi-agent', 'extensions', 'subagent'),
+        path.join('.cate', 'cate-agent', 'extensions', 'subagent'),
       )
     })
 

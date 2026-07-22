@@ -37,7 +37,7 @@ vi.mock('./proxyServer', () => ({
   identityForGuestUrl: () => IDENTITY,
 }))
 vi.mock('./ExtensionServerManager', () => ({ extensionServerManager: { disposeForWebContents: vi.fn() } }))
-vi.mock('../../agent/main/agentManager', () => ({ agentManager: {} }))
+vi.mock('../../cateAgent/main/codingManager', () => ({ codingManager: {} }))
 vi.mock('./storage', () => ({ getExtensionStorage: async () => ({ onChange: () => () => {} }) }))
 vi.mock('../workspaceManager', () => ({ getWorkspaceInfo: vi.fn() }))
 vi.mock('../windowRegistry', () => ({ getActiveMainWindow: () => undefined }))

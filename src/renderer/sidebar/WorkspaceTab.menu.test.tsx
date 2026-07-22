@@ -53,10 +53,10 @@ vi.mock('../lib/terminal/terminalRegistry', () => ({
     getEntry: () => undefined,
   },
 }))
-vi.mock('../../agent/renderer/agentSessionRegistry', () => ({
-  disposeAgentPanel: vi.fn(),
-  getAgentPanelSession: vi.fn(),
-  saveAgentPanelSession: vi.fn(),
+vi.mock('../../cateAgent/renderer/codingSessionRegistry', () => ({
+  disposeCateAgentPanel: vi.fn(),
+  getCateAgentPanelSession: vi.fn(),
+  saveCateAgentPanelSession: vi.fn(),
 }))
 
 import { WorkspaceTab } from './WorkspaceTab'

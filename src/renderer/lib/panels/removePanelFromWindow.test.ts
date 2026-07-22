@@ -4,7 +4,7 @@ const removePanelRecord = vi.fn()
 const releaseCanvasStoreForPanel = vi.fn()
 const release = vi.fn()
 const dispose = vi.fn()
-const disposeAgentPanel = vi.fn()
+const disposeCateAgentPanel = vi.fn()
 const canvasNodes: Record<string, { id: string; dockLayout: { type: 'tabs'; id: string; panelIds: string[]; activeIndex: number } }> = {}
 // Per-id panel types resolved by the child agent-dispose lookup.
 const panelTypes: Record<string, string> = {}
@@ -25,8 +25,8 @@ vi.mock('../../stores/appStore', () => ({
   },
 }))
 
-vi.mock('../../../agent/renderer/agentSessionRegistry', () => ({
-  disposeAgentPanel: (id: string) => disposeAgentPanel(id),
+vi.mock('../../../cateAgent/renderer/codingSessionRegistry', () => ({
+  disposeCateAgentPanel: (id: string) => disposeCateAgentPanel(id),
 }))
 
 vi.mock('../../stores/canvasStore', () => ({
@@ -75,7 +75,7 @@ describe('removePanelFromWindow', () => {
     releaseCanvasStoreForPanel.mockReset()
     release.mockReset()
     dispose.mockReset()
-    disposeAgentPanel.mockReset()
+    disposeCateAgentPanel.mockReset()
     setCanvasNodes([])
     setPanelTypes({})
   })
@@ -105,13 +105,13 @@ describe('removePanelFromWindow', () => {
 
   it('transfer: disposes an agent child so its pi does not leak into the detached window', () => {
     setCanvasNodes(['term1', 'agent1'])
-    setPanelTypes({ term1: 'terminal', agent1: 'agent' })
+    setPanelTypes({ term1: 'terminal', agent1: 'cateAgent' })
     removePanelFromWindow('ws-1', 'canvasA', 'canvas', 'transfer')
 
     // Only the agent child gets its pi chats disposed; the terminal is just
     // released (PTY survives the transfer).
-    expect(disposeAgentPanel).toHaveBeenCalledTimes(1)
-    expect(disposeAgentPanel).toHaveBeenCalledWith('agent1')
+    expect(disposeCateAgentPanel).toHaveBeenCalledTimes(1)
+    expect(disposeCateAgentPanel).toHaveBeenCalledWith('agent1')
     expect(release).toHaveBeenCalledWith('term1')
     expect(release).toHaveBeenCalledWith('agent1')
     expect(removePanelRecord).toHaveBeenCalledWith('ws-1', 'agent1')
@@ -119,14 +119,14 @@ describe('removePanelFromWindow', () => {
 
   it('close: disposes (kills PTY) instead of releasing, for the panel and canvas children', () => {
     setCanvasNodes(['term1', 'agent1'])
-    setPanelTypes({ term1: 'terminal', agent1: 'agent' })
+    setPanelTypes({ term1: 'terminal', agent1: 'cateAgent' })
     removePanelFromWindow('ws-1', 'canvasA', 'canvas', 'close')
 
     expect(dispose).toHaveBeenCalledWith('term1')
     expect(dispose).toHaveBeenCalledWith('agent1') // no-op for non-terminals
     expect(dispose).toHaveBeenCalledWith('canvasA')
     expect(release).not.toHaveBeenCalled()
-    expect(disposeAgentPanel).toHaveBeenCalledWith('agent1')
+    expect(disposeCateAgentPanel).toHaveBeenCalledWith('agent1')
     expect(removePanelRecord).toHaveBeenCalledWith('ws-1', 'term1')
     expect(removePanelRecord).toHaveBeenCalledWith('ws-1', 'agent1')
     expect(removePanelRecord).toHaveBeenCalledWith('ws-1', 'canvasA')

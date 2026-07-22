@@ -19,7 +19,7 @@ export interface CateHostTheme {
 /** Result of one agent turn (`cate.agent.send`): the flattened
  *  `text` for convenience plus the raw final assistant `message` from pi (its role
  *  and content blocks — text, tool calls, etc.), or null if the turn produced none. */
-export interface AgentTurnResult {
+export interface CodingTurnResult {
   text: string
   message: Record<string, unknown> | null
 }
@@ -160,7 +160,7 @@ export interface CateHost {
     /** Open (or `resume` a previous) session; returns its handle. */
     open(opts?: { resume?: string }): Promise<{ sessionId: string } | { error: string }>
     /** Run one turn on an open session; returns the final assistant message. */
-    send(sessionId: string, prompt: string): Promise<AgentTurnResult | { error: string }>
+    send(sessionId: string, prompt: string): Promise<CodingTurnResult | { error: string }>
     /** Tear down the live session (pi's jsonl stays; reopen via `resume`). */
     dispose(sessionId: string): Promise<unknown>
     /** Abort the in-flight turn of this extension's session. */

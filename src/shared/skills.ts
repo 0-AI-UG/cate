@@ -117,10 +117,10 @@ export interface SkillTargetInfo {
 
 /** Cate's own agent panel — the one target with no agent CLI behind it, so it
  *  is the one target not derived from AGENTS. Its skills root needs the main
- *  process's PI_AGENT_DIR, so that path lives in `src/skills/main/targets.ts`. */
+ *  process's CODING_AGENT_DIR, so that path lives in `src/skills/main/targets.ts`. */
 const CATE_AGENT_TARGET: SkillTargetInfo = {
   id: 'cate-agent',
-  label: 'Agent',
+  label: 'Cate Agent',
   layout: 'folder',
   bundledResources: true,
   nameMatchesDir: false,

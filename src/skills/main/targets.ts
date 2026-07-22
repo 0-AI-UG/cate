@@ -11,7 +11,7 @@
 // for the write logic.
 // =============================================================================
 
-import { hostJoin, PI_AGENT_DIR } from '../../agent/main/agentDir'
+import { hostJoin, CODING_AGENT_DIR } from '../../cateAgent/main/codingDir'
 import { agentForSkillTarget } from '../../shared/agents'
 import { getSkillTarget, type SkillTargetId, type SkillTargetInfo } from '../../shared/skills'
 
@@ -19,9 +19,9 @@ import { getSkillTarget, type SkillTargetId, type SkillTargetInfo } from '../../
  *  declares its own on AgentDef.skills (src/shared/agents.ts) — this resolves
  *  through the registry so there is no second dir table to keep in sync. Only
  *  `cate-agent` is spelled out: it is Cate's own panel, not an agent CLI, and
- *  its root needs PI_AGENT_DIR from the main process. */
+ *  its root needs CODING_AGENT_DIR from the main process. */
 function baseSegments(targetId: SkillTargetId): readonly string[] {
-  if (targetId === 'cate-agent') return ['.cate', PI_AGENT_DIR, 'skills']
+  if (targetId === 'cate-agent') return ['.cate', CODING_AGENT_DIR, 'skills']
   const skills = agentForSkillTarget(targetId)?.skills
   // Unreachable: SkillTargetId is exactly cate-agent + the agent-declared ids.
   if (!skills) throw new Error(`No skills root declared for target: ${targetId}`)

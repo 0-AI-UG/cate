@@ -38,7 +38,7 @@ type PanelSliceActions = Pick<
   | 'createEditor'
   | 'createDiffEditor'
   | 'createCanvas'
-  | 'createAgent'
+  | 'createCateAgent'
   | 'createDocument'
   | 'createExtensionPanel'
   | 'closePanel'
@@ -52,6 +52,7 @@ type PanelSliceActions = Pick<
   | 'setPanelDirty'
   | 'setPanelMarkdownPreview'
   | 'setPanelUnsavedContent'
+  | 'setPanelInitialChat'
   | 'setPanelAgentSession'
   | 'addPanel'
   | 'removePanelRecord'
@@ -162,16 +163,16 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
     },
 
-    createAgent(workspaceId, position?, placement?) {
+    createCateAgent(workspaceId, position?, placement?) {
       // Auto-number agent panels (same scheme as terminals) so multiple agents are
       // addressable and distinct — unique across ALL windows, not just this one.
       const panel: PanelState = {
         id: generateId(),
-        type: 'agent',
-        title: nextNumberedTitle(get, workspaceId, 'agent', 'Agent'),
+        type: 'cateAgent',
+        title: nextNumberedTitle(get, workspaceId, 'cateAgent', 'Cate Agent'),
         isDirty: false,
       }
-      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('agent', placement), position)
+      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('cateAgent', placement), position)
     },
 
     createExtensionPanel(workspaceId, extensionId, extensionPanelId, position?, placement?, title?) {
@@ -302,6 +303,10 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     setPanelUnsavedContent(workspaceId, panelId, content) {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, unsavedContent: content }))
+    },
+
+    setPanelInitialChat(workspaceId, panelId, chatId) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, initialChatId: chatId }))
     },
 
     setPanelAgentSession(workspaceId, panelId, session) {

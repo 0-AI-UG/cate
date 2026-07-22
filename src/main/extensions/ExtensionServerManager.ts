@@ -1,7 +1,7 @@
 // =============================================================================
 // ExtensionServerManager — one long-lived server child per (extension,
 // workspace), run THROUGH the runtime (3A). Modeled structurally on
-// AgentManager: a keyed Map of sessions, a per-key lock to serialize lifecycle
+// CodingManager: a keyed Map of sessions, a per-key lock to serialize lifecycle
 // transitions, runtime resolution from the workspace locator, and
 // disposeForWebContents to tie server lifetime to the owning windows.
 //

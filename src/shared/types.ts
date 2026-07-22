@@ -31,7 +31,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'extension'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'cateAgent' | 'document' | 'extension'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -133,6 +133,11 @@ export interface PanelState {
    *  panels this instance renders. */
   extensionId?: string
   extensionPanelId?: string
+  /** Agent panels only: a durable chatsStore chat id to open when the panel first
+   *  mounts (set when a chat is dragged onto the canvas / a dock zone). The mode
+   *  is resolved from the chat record. After the panel adopts it, its own state
+   *  owns the active chat; re-seeding on reload is idempotent. */
+  initialChatId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -614,7 +619,7 @@ export const SHORTCUT_DEFINITIONS = {
   newTerminal: { label: 'New Terminal', shortcut: storedShortcut('t', { command: true }) },
   newBrowser: { label: 'New Browser', shortcut: storedShortcut('b', { command: true, shift: true }) },
   newEditor: { label: 'New Editor', shortcut: storedShortcut('e', { command: true, shift: true }) },
-  newAgent: { label: 'New Agent', shortcut: storedShortcut('a', { command: true, shift: true }) },
+  newAgent: { label: 'New Cate Agent', shortcut: storedShortcut('a', { command: true, shift: true }) },
   newCanvas: { label: 'New Canvas', shortcut: storedShortcut('c', { command: true, shift: true }) },
   newFile: { label: 'New File', shortcut: storedShortcut('n', { command: true }) },
   closePanel: { label: 'Close Panel', shortcut: storedShortcut('w', { command: true }) },
@@ -1233,6 +1238,13 @@ export interface ChatRun {
   attemptsMessageId?: string
 }
 
+/** Which engine drives a chat thread. Missing on legacy on-disk records is
+ *  treated as 'loop' everywhere (back-compat) — see chatMode() / getChatsByMode.
+ *  - loop: the Cate Agent's iterate/verify run (messages + run live in chats.json).
+ *  - coding: a pi coding-agent session; its transcript lives in useCodingStore
+ *    (reloaded from `sessionFile`), NOT in `messages`. */
+export type ChatMode = 'coding' | 'loop'
+
 export interface Chat {
   id: string
   title: string
@@ -1240,6 +1252,18 @@ export interface Chat {
   updatedAt: number
   messages: ChatMessage[]
   run?: ChatRun
+  /** Engine driving this thread. Absent on legacy records → treat as 'loop'. */
+  mode?: ChatMode
+  // ---- Coding-chat only (mode==='coding'); absent/ignored for loop chats. ----
+  /** Pi IPC session key — the slice key in useCodingStore and the `panelId` passed
+   *  to AGENT_* IPC. Stable for the chat's life; the durable link to its live pi. */
+  agentKey?: string
+  /** Pi's on-disk session file (jsonl). Null until pi reports one after turn one. */
+  sessionFile?: string | null
+  /** The chat's working-directory tag (which worktree/checkout it runs in). */
+  worktreeId?: string
+  /** Last model used, so a re-adopting mount resumes with the same one. */
+  model?: CateAgentModelRef
 }
 
 export interface ProjectChatsFile {
@@ -1534,7 +1558,7 @@ export interface AppSettings {
   // Agent
   /** The user-pinned default model applied to every new agent chat, or null for
    *  none. Was renderer localStorage (cate.agent.defaultModel.v1) before. */
-  agentDefaultModel: AgentModelRef | null
+  agentDefaultModel: CateAgentModelRef | null
 
   /** Per-workspace, per-agent overrides for repo-local hook-file injection
    *  (push-based agent status/session events — see src/shared/agentHooks.ts).
@@ -1543,10 +1567,8 @@ export interface AppSettings {
    *  folder already exists in the repo). Sparse: only real overrides stored. */
   agentHookInjection: Record<string, Partial<Record<AgentId, AgentHookMode>>>
 
-  // Cate Agent — the model both headless Cate Agent brains (observer + orchestrator) run on.
-  // null falls back to agentDefaultModel, then pi's first-available. Chosen by the
-  // user in Settings → Cate Agent.
-  cateAgentModel: AgentModelRef | null
+  // Cate Agent — the loop model is the shared `agentDefaultModel` (above), with a
+  // per-chat override on the Chat record; there is no separate global loop model.
   /** The coding-agent CLI each iteration's driver launches in a terminal to do the
    *  actual work — an AgentId from src/shared/agents.ts. Empty ⇒ the driver picks
    *  an installed one itself. */
@@ -1660,7 +1682,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   agentHookInjection: {},
 
   // Cate Agent
-  cateAgentModel: null,
   cateAgentOrchestratorAgentId: '',
   cateAgentObserveCooldownMin: 1,
   cateAgentMaxParallelIterations: 3,
@@ -1731,7 +1752,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   browser: { width: 640, height: 440 },
   editor: { width: 540, height: 420 },
   canvas: { width: 640, height: 480 },
-  agent: { width: 520, height: 440 },
+  cateAgent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
   extension: { width: 520, height: 360 },
 }
@@ -1797,14 +1818,14 @@ export interface CustomOpenAIProvider {
   models: string[]
 }
 
-export interface AgentModelRef {
+export interface CateAgentModelRef {
   provider: string
   model: string
 }
 
 /** A selectable model, derived session-independently from the connected
  *  providers in auth.json (plus the custom OpenAI endpoint in models.json). */
-export interface AgentModelDescriptor {
+export interface CodingModelDescriptor {
   provider: string
   /** Model id passed to pi (e.g. `claude-sonnet-4-6`). */
   id: string
@@ -1815,7 +1836,7 @@ export interface AgentModelDescriptor {
 }
 
 /** Slash command exposed by pi — a skill, prompt template, or extension cmd. */
-export interface AgentSlashCommand {
+export interface CodingSlashCommand {
   name: string
   description?: string
   source: 'extension' | 'prompt' | 'skill'
@@ -1828,11 +1849,11 @@ export interface AgentSlashCommand {
   editable?: boolean
 }
 
-export interface AgentCreateOptions {
+export interface CodingCreateOptions {
   panelId: string
   workspaceId: string
   cwd: string
-  model?: AgentModelRef
+  model?: CateAgentModelRef
   systemPrompt?: string
   /** Resume an existing pi session file (jsonl). When set, pi will load it
    *  on start instead of creating a fresh session. */
@@ -1842,14 +1863,14 @@ export interface AgentCreateOptions {
    *  which tool subset to register for this (headless) session. */
   env?: Record<string, string>
   /** Which per-workspace pi dir this session uses. `'cateAgent'` isolates the Cate
-   *  Agent's headless sessions in `.cate/pi-agent-cate-agent` so their transcripts never
+   *  Agent's headless sessions in `.cate/cate-agent-loop` so their transcripts never
    *  appear in the agent panel's session list. Defaults to `'default'`. */
   agentDir?: 'default' | 'cateAgent'
 }
 
 /** Pi agent events forwarded from main to renderer. We keep the shape loose
  *  since pi's event union is large and may evolve — renderer narrows by `type`. */
-export interface AgentEventEnvelope {
+export interface CodingEventEnvelope {
   panelId: string
   event: {
     type: string
@@ -1858,11 +1879,11 @@ export interface AgentEventEnvelope {
 }
 
 /** Pi's reasoning levels (mirrors `ThinkingLevel` from pi-agent-core). */
-export type AgentThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export type CodingThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 /** Image attachment sent alongside a prompt/steer/followUp. Data is raw base64
  *  (no `data:` prefix) so pi can forward it verbatim as `ImageContent`. */
-export interface AgentImageAttachment {
+export interface CodingImageAttachment {
   data: string
   mimeType: string
   /** Optional filename, kept around so the renderer can display a chip. */
@@ -1870,7 +1891,7 @@ export interface AgentImageAttachment {
 }
 
 /** Snapshot of pi's session stats — fed from `get_session_stats`. */
-export interface AgentSessionStats {
+export interface CodingSessionStats {
   sessionFile?: string
   sessionId?: string
   userMessages: number
@@ -1894,9 +1915,9 @@ export interface AgentSessionStats {
 }
 
 /** Pi RPC session state snapshot. */
-export interface AgentRpcState {
+export interface CodingRpcState {
   model: { id: string; provider: string; name?: string; contextWindow?: number; reasoning?: boolean } | null
-  thinkingLevel: AgentThinkingLevel
+  thinkingLevel: CodingThinkingLevel
   isStreaming: boolean
   isCompacting: boolean
   steeringMode: 'all' | 'one-at-a-time'
@@ -1911,14 +1932,14 @@ export interface AgentRpcState {
 
 /** Pi extension UI request — forwarded verbatim through agent:event so the
  *  renderer can render an in-panel dialog. Dialog methods expect a reply via
- *  AGENT_UI_RESPONSE; fire-and-forget methods don't. */
-export interface AgentExtensionUIRequest {
+ *  CODING_UI_RESPONSE; fire-and-forget methods don't. */
+export interface CodingExtensionUIRequest {
   id: string
   method: 'select' | 'confirm' | 'input' | 'editor' | 'notify' | 'setStatus' | 'setWidget' | 'setTitle' | 'set_editor_text'
   [key: string]: unknown
 }
 
-export interface AgentExtensionUIResponse {
+export interface CodingExtensionUIResponse {
   id: string
   value?: string
   confirmed?: boolean
@@ -1926,7 +1947,7 @@ export interface AgentExtensionUIResponse {
 }
 
 /** A pi session file on disk, parsed enough to populate the chat sidebar. */
-export interface AgentSessionListEntry {
+export interface CodingSessionListEntry {
   /** Absolute path to the .jsonl file. */
   path: string
   /** Pi session id (UUID from header). */

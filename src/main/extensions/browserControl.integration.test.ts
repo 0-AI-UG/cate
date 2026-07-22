@@ -79,7 +79,7 @@ vi.mock('./ExtensionManager', () => ({
 vi.mock('./catalog', () => ({ getCachedCatalog: vi.fn(async () => []) }))
 vi.mock('./proxyServer', () => ({ getProxyUrlFor: vi.fn(), identityForGuestUrl: vi.fn() }))
 vi.mock('./ExtensionServerManager', () => ({ extensionServerManager: {} }))
-vi.mock('../../agent/main/agentManager', () => ({ agentManager: {} }))
+vi.mock('../../cateAgent/main/codingManager', () => ({ codingManager: {} }))
 vi.mock('./storage', () => ({ getExtensionStorage: vi.fn() }))
 vi.mock('../workspaceManager', () => ({ getWorkspaceInfo: vi.fn(() => ({ rootPath: '/ws/root' })) }))
 vi.mock('../runtime/locator', () => ({

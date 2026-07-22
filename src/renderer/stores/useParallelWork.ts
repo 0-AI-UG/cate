@@ -54,7 +54,7 @@ export interface WorktreeStatus {
 
 /** The per-worktree action set a card / row binds its buttons + menu to. */
 export interface CardCallbacks {
-  onLaunch: (type: 'terminal' | 'agent') => void
+  onLaunch: (type: 'terminal' | 'cateAgent') => void
   onPublish: () => void
   onCreatePR: () => void
   onUpdateFromMain: () => void
@@ -116,7 +116,7 @@ export interface UseParallelWork {
   checkoutPr: (pr: PrListItem) => Promise<WorktreeMeta | null>
   /** Spawn a terminal or Agent bound to a worktree. Pass `placement` to pin
    *  it to a specific canvas (the toolbar does); omit for default placement. */
-  launchInWorktree: (wt: JoinedWorktree, type: 'terminal' | 'agent', placement?: PanelPlacement) => void
+  launchInWorktree: (wt: JoinedWorktree, type: 'terminal' | 'cateAgent', placement?: PanelPlacement) => void
   handlePublish: (wt: JoinedWorktree) => Promise<void>
   handleCreatePR: (wt: JoinedWorktree) => Promise<void>
   handleUpdateFromMain: (wt: JoinedWorktree) => Promise<void>
@@ -148,13 +148,13 @@ export function useParallelWork(
   }, [rootPath])
 
   const launchInWorktree = useCallback(
-    (wt: JoinedWorktree, type: 'terminal' | 'agent', placement?: PanelPlacement) => {
+    (wt: JoinedWorktree, type: 'terminal' | 'cateAgent', placement?: PanelPlacement) => {
       if (!workspaceId) return
       const s = useAppStore.getState()
       const panelId =
         type === 'terminal'
           ? s.createTerminal(workspaceId, undefined, undefined, placement, wt.path)
-          : s.createAgent(workspaceId, undefined, placement)
+          : s.createCateAgent(workspaceId, undefined, placement)
       if (panelId) s.setPanelWorktreeId(workspaceId, panelId, wt.id)
     },
     [workspaceId],
@@ -272,7 +272,7 @@ export function useParallelWork(
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       const panelCount = useSettingsStore.getState().closeWorktreePanelsOnDelete
         ? Object.values(ws?.panels ?? {}).filter(
-            (p) => p.worktreeId === wt.id && (p.type === 'terminal' || p.type === 'agent'),
+            (p) => p.worktreeId === wt.id && (p.type === 'terminal' || p.type === 'cateAgent'),
           ).length
         : 0
       const ok = window.confirm(

@@ -3,7 +3,7 @@
 //
 // Only workspace.json is meant to be shared/committed; everything else under
 // .cate/ is machine-local — session.json, the *.tmp/*.bak atomic-write scratch
-// files, the pi-agent dir (sessions + the auth.json copy), and worktrees. A
+// files, the cate-agent dir (sessions + the auth.json copy), and worktrees. A
 // single ignore-all-but-workspace rule covers all of it, so the subsystems that
 // create .cate/ (project state, agent dir, worktrees) all funnel through here
 // instead of dropping their own per-dir .gitignore.
@@ -15,7 +15,7 @@ import path from 'path'
 /** The single ignore-all-but-workspace rule for `.cate/.gitignore`. Exported so
  *  the remote project-state path can write the same file on the runtime. */
 export const CATE_GITIGNORE_CONTENT = `# Cate project-local state. Only workspace.json is shared; everything else
-# (session state, backups, the pi-agent dir, and worktrees) stays local.
+# (session state, backups, the cate-agent dir, and worktrees) stays local.
 *
 !.gitignore
 !workspace.json

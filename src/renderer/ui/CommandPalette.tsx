@@ -28,11 +28,11 @@ import {
   Selection,
   ArrowUUpLeft,
   ArrowUUpRight,
-  ChatCircle,
   Eye,
   CaretLeft,
   CaretRight,
 } from '@phosphor-icons/react'
+import { CateLogo } from './CateLogo'
 import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { PaletteDialogShell } from './Modal'
 import { useUIStore } from '../stores/uiStore'
@@ -47,7 +47,7 @@ import { revealPanel } from '../lib/workspace/panelReveal'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { getRecentFiles } from '../lib/fs/recentFiles'
 import { pathDisplayName, relativeDisplayPath } from '../lib/fs/displayPath'
-import { cateAgentController } from '../cateAgent/cateAgentController'
+import { cateAgentController } from '../../cateAgent/renderer/cateAgentController'
 
 // -----------------------------------------------------------------------------
 // Command definitions
@@ -78,7 +78,7 @@ const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
 const DeleteRuntimeIcon = () => <Trash size={ICON_SIZE} />
 const TutorialIcon = () => <GraduationCap size={ICON_SIZE} />
 const SkillsIcon = () => <PuzzlePiece size={ICON_SIZE} />
-const AgentIcon = () => <ChatCircle size={ICON_SIZE} />
+const AgentIcon = () => <CateLogo size={ICON_SIZE} />
 const ObserveIcon = () => <Eye size={ICON_SIZE} />
 const CloseIcon = () => <X size={ICON_SIZE} />
 const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
@@ -113,7 +113,7 @@ type FlatItem =
   | { kind: 'file'; file: FileResult }
 
 // Panel types worth surfacing as navigable destinations.
-const NAVIGABLE_PANEL_TYPES: PanelType[] = ['terminal', 'editor', 'browser', 'agent', 'document']
+const NAVIGABLE_PANEL_TYPES: PanelType[] = ['terminal', 'editor', 'browser', 'cateAgent', 'document']
 
 // -----------------------------------------------------------------------------
 // Component
@@ -585,6 +585,6 @@ function PanelIcon({ type }: { type: PanelType }) {
   if (type === 'terminal') return <span className={`${cls} text-emerald-400`}><Terminal size={ICON_SIZE} /></span>
   if (type === 'browser')  return <span className={`${cls} text-sky-400`}><Globe size={ICON_SIZE} /></span>
   if (type === 'editor' || type === 'document') return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
-  if (type === 'agent')    return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><ChatCircle size={ICON_SIZE} /></span>
+  if (type === 'cateAgent') return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><CateLogo size={ICON_SIZE} /></span>
   return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
 }
