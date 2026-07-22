@@ -16,6 +16,7 @@ import { deferredSnapshots } from './deferredRestore'
 import { terminalRegistry } from '../terminal/terminalRegistry'
 import { isLocalLocator } from '../../../main/runtime/locator'
 import { deriveSidebarSession } from './sidebarSession'
+import { isProjectTrusted } from '../../stores/workspaceTrustStore'
 import { buildWorkspaceFile, buildSessionFile, collectPanelIdsFromDockState } from './sessionSerialize'
 import type {
   SessionSnapshot,
@@ -206,6 +207,19 @@ export async function saveSession(): Promise<void> {
     // flip-flops, and one layout is lost on restart. Skip the non-owner snapshot;
     // the owner (the selected one, else the first in order) wins.
     if (ws && ws.id !== snapshot.workspaceId) continue
+
+    // NEVER write into an untrusted project. We deliberately restored only part
+    // of its layout (see projectTrustGate), so the live workspace is a PARTIAL
+    // view of the file — persisting it would silently delete the very panels we
+    // withheld, and "Trust and restore" would then have nothing left to restore.
+    //
+    // Deliberately a flat rule rather than "skip only while something is
+    // withheld": dismissing the prompt clears that flag, and autosave would
+    // resume and clobber the file a moment later. Not writing into a project the
+    // user has not vouched for is also the right default on its own. Saving
+    // resumes the moment they trust it.
+    if (!isProjectTrusted(snapshot.rootPath)) continue
+
     const wsFile = buildWorkspaceFile(snapshot, snapshot.rootPath, ws?.color)
 
     // Filter detached dock windows belonging to this workspace
