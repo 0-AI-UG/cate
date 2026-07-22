@@ -224,14 +224,33 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   // The daemon is the AUTHORITATIVE cwd check (RemoteRuntime.validateCwd is a
   // client-side pass-through), so validate the terminal cwd here before spawning,
   // matching what terminal.ts does for a local runtime. Throwing rejects create.
-  // Terminals are validated at the daemon's own scope (the wire carries no
-  // per-workspace scope for pty create; status quo, stated explicitly).
+  //
+  // The cwd is accepted under EITHER scope:
+  //   - the CALLING WORKSPACE's scope (`opts.scopeId`), which is where
+  //     workspaceManager registers each opened workspace root. Without this, a
+  //     workspace outside the daemon's own root — e.g. a project on D:\ while
+  //     the local daemon roots at the home dir (see ensureLocalRuntime) — could
+  //     never start a terminal.
+  //   - the DAEMON's own scope, which covers ptys with no workspace (the daemon
+  //     root, its extensions dir, tmp). This was the only accepted scope before.
   // Keep it a ProcessCapability (spread carries killAllGroups) so the daemon
   // entry can reap process groups on shutdown.
+  const validatePtyCwd = (cwd: string, scopeId?: string): void => {
+    if (scopeId) {
+      try {
+        validateCwd(cwd, undefined, scopeId)
+        return
+      } catch {
+        // Not in the workspace's roots — fall through to the daemon scope so
+        // the thrown error is the same one callers saw before.
+      }
+    }
+    validateCwd(cwd, undefined, config.id)
+  }
   const proc: ProcessCapability = {
     ...innerProc,
     create: async (opts, onData, onExit) => {
-      if (opts.cwd) validateCwd(opts.cwd, undefined, config.id) // throws -> rejects create, matching local
+      if (opts.cwd) validatePtyCwd(opts.cwd, opts.scopeId) // throws -> rejects create, matching local
       return innerProc.create(opts, onData, onExit)
     },
   }
