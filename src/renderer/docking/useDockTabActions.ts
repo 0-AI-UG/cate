@@ -195,6 +195,12 @@ export function useDockTabActions(params: DockTabActionsParams) {
       const hasRight = idx >= 0 && idx < stack.panelIds.length - 1
       const panel = getPanelLocal(panelId)
       const menu: NativeContextMenuItem[] = [
+        ...(panel?.type === 'terminal'
+          ? [
+              { id: 'reset-terminal-rendering', label: 'Reset Terminal Rendering' },
+              { type: 'separator' },
+            ] as NativeContextMenuItem[]
+          : []),
         { id: 'rename', label: 'Rename' },
         { type: 'separator' },
         { id: 'close', label: 'Close', accelerator: 'Cmd+W' },
@@ -209,6 +215,11 @@ export function useDockTabActions(params: DockTabActionsParams) {
       ]
       const id = await window.electronAPI.showContextMenu(menu)
       switch (id) {
+        case 'reset-terminal-rendering': {
+          const { terminalRegistry } = await import('../lib/terminal/terminalRegistry')
+          terminalRegistry.resetRendering(panelId)
+          break
+        }
         case 'rename':
           if (panel) beginRename(panelId, panel.title)
           break

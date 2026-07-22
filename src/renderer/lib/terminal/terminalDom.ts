@@ -99,6 +99,29 @@ export function forceWebglRepaint(): void {
 }
 
 /**
+ * Recover a visibly corrupted terminal without restarting its PTY.
+ *
+ * Silent glyph-atlas corruption does not always fire WebGL's context-loss
+ * event, so users need an explicit escape hatch. Dispose only this panel's GPU
+ * renderer and keep it on xterm's DOM renderer for the rest of the session;
+ * the terminal buffer, scrollback, and running process all remain untouched.
+ * Repaint the other terminals too because their WebGL renderers may share the
+ * atlas that became corrupt.
+ */
+export function resetRendering(panelId: string): void {
+  const entry = registry.get(panelId)
+  if (!entry) return
+
+  webglDisabledPanels.add(panelId)
+  if (entry.webglAddon) {
+    try { entry.webglAddon.dispose() } catch { /* ignore */ }
+    entry.webglAddon = null
+  }
+  releaseWebglGrant(panelId)
+  forceWebglRepaint()
+}
+
+/**
  * Create the WebGL renderer for a granted panel and swap it in for xterm's DOM
  * renderer. No-op if the entry is gone or already on WebGL. On context loss the
  * panel falls back to the DOM renderer for the rest of the session and returns
