@@ -4,28 +4,43 @@
 // state and IPC live in AgentPanel.
 // =============================================================================
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Plus,
   Sidebar as SidebarIcon,
   Gear,
   Trash,
+  ChatCircle,
   ChatCircleDots,
+  Eye,
   MagnifyingGlass,
   X,
 } from '@phosphor-icons/react'
-import type { AgentSessionListEntry } from '../../shared/types'
+import type { AgentSessionListEntry, Chat } from '../../shared/types'
 import { Tooltip } from '../../renderer/ui/Tooltip'
+
+// The status colour a loop chat's dot carries (mirrors CateAgentChatTabs).
+const chatDotColor = (chat: Chat): string => {
+  if (chat.run?.status === 'running') return '#4ade80'
+  if (chat.run?.interrupted || chat.run?.status === 'review') return '#fbbf24'
+  if (chat.run?.status === 'failed') return '#f87171'
+  return 'var(--surface-5)'
+}
 
 export function AgentSidebar({
   chats,
   currentSessionFile,
   openSessionFiles,
+  loopChats,
+  activeLoopChatId,
   search,
   onSearchChange,
-  onNewChat,
+  onNewCodingChat,
+  onNewLoopChat,
   onOpenChat,
+  onOpenLoopChat,
   onDeleteChat,
+  onDeleteLoopChat,
   onCloseChat,
   onOpenSettings,
   onCollapse,
@@ -34,17 +49,25 @@ export function AgentSidebar({
   chats: AgentSessionListEntry[]
   currentSessionFile: string | null
   openSessionFiles: Set<string>
+  loopChats: Chat[]
+  activeLoopChatId: string | null
   search: string
   onSearchChange: (s: string) => void
-  onNewChat: () => void
+  onNewCodingChat: () => void
+  onNewLoopChat: () => void
   onOpenChat: (sessionFile: string) => void
+  onOpenLoopChat: (chatId: string) => void
   onDeleteChat: (sessionFile: string) => void
+  onDeleteLoopChat: (chatId: string) => void
   onCloseChat: (sessionFile: string) => void
   onOpenSettings: () => void
   onCollapse: () => void
   settingsActive: boolean
 }) {
   const grouped = useMemo(() => groupChats(chats), [chats])
+  // Loop chats newest-first, matching the coding recents' order.
+  const orderedLoops = useMemo(() => [...loopChats].reverse(), [loopChats])
+  const [chooserOpen, setChooserOpen] = useState(false)
 
   return (
     <div className="w-[200px] shrink-0 flex flex-col border-r border-subtle bg-surface-0 min-h-0">
@@ -59,15 +82,48 @@ export function AgentSidebar({
           </button>
         </Tooltip>
         <div className="flex-1" />
-        <Tooltip label="New chat">
-          <button
-            onClick={onNewChat}
-            className="p-1.5 rounded-md text-agent-light hover:text-primary hover:bg-agent/20"
-            aria-label="New chat"
-          >
-            <Plus size={14} />
-          </button>
-        </Tooltip>
+        <div className="relative">
+          <Tooltip label="New chat">
+            <button
+              onClick={() => setChooserOpen((o) => !o)}
+              className="p-1.5 rounded-md text-agent-light hover:text-primary hover:bg-agent/20"
+              aria-label="New chat"
+              aria-haspopup="menu"
+              aria-expanded={chooserOpen}
+            >
+              <Plus size={14} />
+            </button>
+          </Tooltip>
+          {chooserOpen && (
+            <>
+              {/* Click-away backdrop. */}
+              <div className="fixed inset-0 z-20" onClick={() => setChooserOpen(false)} />
+              <div
+                role="menu"
+                className="absolute right-0 top-8 z-30 min-w-[168px] rounded-lg border border-strong bg-surface-2 p-1 shadow-lg"
+              >
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => { setChooserOpen(false); onNewCodingChat() }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-secondary hover:bg-hover hover:text-primary transition-colors"
+                >
+                  <ChatCircle size={13} weight="fill" style={{ color: 'rgb(var(--agent-rgb))' }} />
+                  <span>New coding chat</span>
+                </button>
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => { setChooserOpen(false); onNewLoopChat() }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-secondary hover:bg-hover hover:text-primary transition-colors"
+                >
+                  <Eye size={13} style={{ color: 'rgb(var(--agent-rgb))' }} />
+                  <span>New loop chat</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="px-2 pt-2 pb-2 shrink-0">
@@ -83,7 +139,23 @@ export function AgentSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-1 pb-2 min-h-0">
-        {chats.length === 0 ? (
+        {orderedLoops.length > 0 && (
+          <div className="mb-3">
+            <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted/70 font-semibold">
+              Loops
+            </div>
+            {orderedLoops.map((chat) => (
+              <LoopRow
+                key={chat.id}
+                chat={chat}
+                active={chat.id === activeLoopChatId}
+                onOpen={() => onOpenLoopChat(chat.id)}
+                onDelete={() => onDeleteLoopChat(chat.id)}
+              />
+            ))}
+          </div>
+        )}
+        {chats.length === 0 && orderedLoops.length === 0 ? (
           <div className="px-3 py-6 text-center text-[11px] text-muted">
             No chats yet.
           </div>
@@ -97,7 +169,7 @@ export function AgentSidebar({
                 <ChatRow
                   key={c.path}
                   chat={c}
-                  active={c.path === currentSessionFile}
+                  active={!activeLoopChatId && c.path === currentSessionFile}
                   live={openSessionFiles.has(c.path)}
                   onOpen={() => onOpenChat(c.path)}
                   onDelete={() => onDeleteChat(c.path)}
@@ -177,6 +249,48 @@ function ChatRow({
           onClick={(e) => { e.stopPropagation(); onDelete() }}
           className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong opacity-0 group-hover:opacity-100"
           aria-label="Delete chat"
+        >
+          <Trash size={10} />
+        </button>
+      </Tooltip>
+    </div>
+  )
+}
+
+function LoopRow({
+  chat,
+  active,
+  onOpen,
+  onDelete,
+}: {
+  chat: Chat
+  active: boolean
+  onOpen: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div
+      className={`group flex items-center gap-1 px-1 rounded-md ${
+        active ? 'bg-hover-strong' : 'hover:bg-hover'
+      }`}
+    >
+      <button
+        onClick={onOpen}
+        className="flex-1 min-w-0 flex items-center gap-1.5 px-1 py-1 text-left"
+        title={chat.title}
+      >
+        <span
+          aria-hidden
+          className="w-2 h-2 rounded-full shrink-0"
+          style={{ backgroundColor: chatDotColor(chat) }}
+        />
+        <span className="truncate text-[11.5px] text-primary">{chat.title}</span>
+      </button>
+      <Tooltip label="Delete loop chat">
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          className="p-1 rounded-md text-muted hover:text-primary hover:bg-hover-strong opacity-0 group-hover:opacity-100"
+          aria-label="Delete loop chat"
         >
           <Trash size={10} />
         </button>

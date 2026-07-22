@@ -23,7 +23,7 @@
 // without a session file, then pick up pi's freshly-written file from getState.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Sidebar as SidebarIcon,
   Gear,
@@ -46,7 +46,7 @@ import {
   createCodingChatSession,
   type OpenChat,
 } from './agentSessionRegistry'
-import { useChatsStore } from '../../renderer/stores/chatsStore'
+import { useChatsStore, chatMode } from '../../renderer/stores/chatsStore'
 import { AgentSidebar } from './AgentSidebar'
 import { CodingChatView } from './CodingChatView'
 import { useWorktrees } from '../../renderer/stores/useWorktrees'
@@ -62,6 +62,12 @@ import type {
 import type { AgentMessage as StoreMessage } from './agentStore'
 import { loadDefaultModel } from './agentModelPrefs'
 import { resolveWorktree } from '../../shared/worktrees'
+
+// Loop (Cate Agent) chats can also be hosted in this panel. LoopChatView
+// transitively pulls the loop runtime (cateAgentController → xterm) via
+// CateAgentComposer; loading it lazily keeps the terminal off the coding panel's
+// static bundle (the panel today imports no xterm — preserve that).
+const LoopChatView = lazy(() => import('../../renderer/cateAgent/LoopChatView'))
 
 // -----------------------------------------------------------------------------
 // Worktree switch gate
@@ -139,6 +145,11 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   // ---------------------------------------------------------------------------
   const [openChats, setOpenChats] = useState<OpenChat[]>([])
   const [activeAgentKey, setActiveAgentKey] = useState<string | null>(null)
+  // Additive loop-chat branch: when set, the body renders LoopChatView for this
+  // chat instead of the coding CodingChatView. The coding chats above stay alive
+  // and their lifecycle effects keep running — this only swaps what the body
+  // shows, it never tears anything coding down.
+  const [activeLoopChatId, setActiveLoopChatId] = useState<string | null>(null)
   /** Composer model menu, held here so the readiness banner can open it. */
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   /** Ref mirror — the unmount cleanup needs the latest openChats list to
@@ -572,6 +583,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   }, [refreshChats, refreshCommands, markReady, rootPath, workspaceId, cwd, panelId, panelState?.worktreeId])
 
   const handleOpenChat = useCallback(async (sessionFile: string) => {
+    // Picking a coding session flips the body back to coding.
+    setActiveLoopChatId(null)
     // Already open in this panel? Switch to it — its pi keeps running, state
     // is preserved, and there's no respawn cost.
     const existing = openChats.find((c) => c.sessionFile === sessionFile)
@@ -669,6 +682,45 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   }, [refreshChats, handleCloseChat, rootPath])
 
   // ---------------------------------------------------------------------------
+  // Loop-chat actions (additive — separate from the coding pi lifecycle above).
+  //
+  // Loop chats are durable chatsStore records driven by cateAgentController, not
+  // pi sessions. The orchestrator pi session starts lazily on first send, so a
+  // brand-new loop chat just needs its record minted and set active — LoopChatView
+  // renders the empty state + composer until then.
+  // ---------------------------------------------------------------------------
+
+  const handleNewCodingChat = useCallback(() => {
+    setActiveLoopChatId(null)
+    void handleNewChat()
+  }, [handleNewChat])
+
+  const handleNewLoopChat = useCallback(async () => {
+    // Load first, like handleNewChat: minting before the mount's in-flight
+    // projectChatsLoad settles lets that load overwrite the fresh record.
+    await useChatsStore.getState().loadChats(rootPath)
+    const chat = useChatsStore.getState().createChat(rootPath, 'New chat')
+    setActiveLoopChatId(chat.id)
+    setView('chat')
+  }, [rootPath])
+
+  const handleOpenLoopChat = useCallback((chatId: string) => {
+    setActiveLoopChatId(chatId)
+    setView('chat')
+  }, [])
+
+  const handleDeleteLoopChat = useCallback((chatId: string) => {
+    if (activeLoopChatId === chatId) setActiveLoopChatId(null)
+    // cateAgentController transitively pulls the loop runtime (xterm); import it
+    // lazily so the coding panel's static bundle stays terminal-free. closeChat is
+    // the loop delete path — tears down the orchestrator + run work and drops the
+    // durable record.
+    void import('../../renderer/cateAgent/cateAgentController').then(({ cateAgentController }) =>
+      cateAgentController.closeChat(workspaceId, rootPath, chatId),
+    )
+  }, [activeLoopChatId, workspaceId, rootPath])
+
+  // ---------------------------------------------------------------------------
   // Derived state
   // ---------------------------------------------------------------------------
 
@@ -684,6 +736,15 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   const openSessionFiles = useMemo(
     () => new Set(openChats.map((c) => c.sessionFile).filter((s): s is string => !!s)),
     [openChats],
+  )
+
+  // Loop chats this checkout owns (chatsStore is the source of truth; the coding
+  // mount effect already loads it). Rendered as their own sidebar section so the
+  // panel can switch to an existing loop chat.
+  const allChats = useChatsStore((s) => s.chatsByRoot[rootPath])
+  const loopChats = useMemo(
+    () => (allChats ?? []).filter((c) => chatMode(c) === 'loop'),
+    [allChats],
   )
 
   // The agent panel's own settings (custom agents / prompts).
@@ -748,11 +809,16 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
           chats={filteredChats}
           currentSessionFile={currentSessionFile}
           openSessionFiles={openSessionFiles}
+          loopChats={loopChats}
+          activeLoopChatId={activeLoopChatId}
           search={chatSearch}
           onSearchChange={setChatSearch}
-          onNewChat={handleNewChat}
+          onNewCodingChat={handleNewCodingChat}
+          onNewLoopChat={handleNewLoopChat}
           onOpenChat={handleOpenChat}
+          onOpenLoopChat={handleOpenLoopChat}
           onDeleteChat={handleDeleteChat}
+          onDeleteLoopChat={handleDeleteLoopChat}
           onCloseChat={(sessionFile) => {
             const open = openChats.find((c) => c.sessionFile === sessionFile)
             if (open) handleCloseChat(open.agentKey)
@@ -797,6 +863,17 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
             onBack={() => setView('chat')}
             onRefresh={() => { if (activeAgentKey) void refreshCommands(activeAgentKey) }}
           />
+        ) : activeLoopChatId ? (
+          // Loop chat active: render its transcript + composer instead of the
+          // coding body. The coding chats stay mounted-but-unrendered above; their
+          // lifecycle effects still run (guarded on agentKey/sessionReady), so
+          // nothing coding is torn down. LoopChatView brings its own composer, so
+          // the coding composer/worktree pill deliberately does not render here.
+          <div className="relative flex-1 flex flex-col min-h-0 overflow-y-auto">
+            <Suspense fallback={null}>
+              <LoopChatView wsId={workspaceId} rootPath={rootPath} chatId={activeLoopChatId} />
+            </Suspense>
+          </div>
         ) : (
           <CodingChatView
             agentKey={activeAgentKey}
