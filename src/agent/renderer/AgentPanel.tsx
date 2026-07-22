@@ -43,6 +43,7 @@ import {
   resolvePanelChats,
   beginAgentCreate,
   endAgentCreate,
+  createCodingChatSession,
   type OpenChat,
 } from './agentSessionRegistry'
 import { useChatsStore } from '../../renderer/stores/chatsStore'
@@ -541,28 +542,34 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
 
   const handleNewChat = useCallback(async () => {
     const myGen = ++openGenRef.current
-    const key = newAgentKey()
-    useAgentStore.getState().init(key)
     // New chats always start with the user-configured default. If no default
     // is set, fall through to the default-pick effect (first available).
     const model = loadDefaultModel()
-    if (model) useAgentStore.getState().setModel(key, model)
+    // The workspace durably owns coding chats — load before minting so we append
+    // to the on-disk list rather than clobber it.
     if (rootPath) await useChatsStore.getState().loadChats(rootPath)
-    const chatId = useChatsStore.getState().createCodingChat(rootPath, {
-      agentKey: key,
-      sessionFile: null,
+    if (myGen !== openGenRef.current) return
+    // Mint the durable chat + start its pi through the shared primitive; the
+    // panel keeps ownership of the surrounding bookkeeping (open-chats list,
+    // active key, per-chat readiness, command refresh).
+    const { chatId, agentKey: key, ready } = createCodingChatSession(rootPath, {
+      workspaceId,
+      cwd,
       worktreeId: panelState?.worktreeId,
-      model: model ?? undefined,
+      model,
       title: 'New chat',
-    }).id
+      namespace: panelId,
+    })
     setOpenChats((prev) => [...prev, { agentKey: key, sessionFile: null, chatId }])
     setActiveAgentKey(key)
     setView('chat')
-    if (myGen !== openGenRef.current) return
-    await createAgent(key, model)
-    if (myGen !== openGenRef.current) return
-    void refreshChats()
-  }, [createAgent, refreshChats, newAgentKey, rootPath, panelState?.worktreeId])
+    void ready.then((ok) => {
+      if (myGen !== openGenRef.current) return
+      markReady(key, ok)
+      if (ok) void refreshCommands(key)
+      void refreshChats()
+    })
+  }, [refreshChats, refreshCommands, markReady, rootPath, workspaceId, cwd, panelId, panelState?.worktreeId])
 
   const handleOpenChat = useCallback(async (sessionFile: string) => {
     // Already open in this panel? Switch to it — its pi keeps running, state

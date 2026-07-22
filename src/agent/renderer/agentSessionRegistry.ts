@@ -21,7 +21,10 @@
 // =============================================================================
 
 import { useAgentStore } from './agentStore'
+import { agentClient } from './agentClient'
+import log from '../../renderer/lib/logger'
 import { useChatsStore } from '../../renderer/stores/chatsStore'
+import type { AgentModelRef } from '../../shared/types'
 
 export interface OpenChat {
   /** Unique IPC session key — passed as `panelId` to AGENT_* IPC channels and
@@ -54,6 +57,106 @@ export function getAgentPanelSession(panelId: string): AgentPanelSession | undef
  *  unmount) so a remount always re-adopts a fresh snapshot. */
 export function saveAgentPanelSession(panelId: string, session: AgentPanelSession): void {
   sessions.set(panelId, session)
+}
+
+// -----------------------------------------------------------------------------
+// Minting primitive
+//
+// The single place that mints a brand-new durable coding chat and starts its pi
+// session. Shared so any surface (the agent panel, and later a sidebar/composer)
+// creates a coding chat through ONE path instead of duplicating the
+// mint-key → init-slice → createCodingChat → agentCreate dance.
+//
+// The caller owns everything panel-specific that happens *around* a mint
+// (pushing to a panel's open-chats list, marking it active, refreshing its
+// command list). It also owns ensuring chatsStore is already loaded for the root
+// (createCodingChat appends to the in-memory list, so a not-yet-loaded root would
+// clobber chats.json) — this primitive is synchronous and never awaits a load.
+// -----------------------------------------------------------------------------
+
+export interface CreateCodingChatSessionOpts {
+  workspaceId: string
+  /** pi's working directory — fixed at spawn. */
+  cwd: string
+  /** Worktree tag recorded on the durable chat (the checkout it belongs to). */
+  worktreeId?: string
+  /** Model the chat is born with; null falls through to the surface's auto-pick. */
+  model?: AgentModelRef | null
+  title?: string
+  /** Key namespace so distinct hosts never collide. Panels pass their panelId;
+   *  a host without a panel (the sidebar) passes nothing and gets 'agent'. Only
+   *  uniqueness matters — nothing parses the namespace back out of the key. */
+  namespace?: string
+}
+
+export interface CodingChatSession {
+  chatId: string
+  agentKey: string
+  /** Resolves once pi has spawned: true on success, false on failure (the
+   *  failure message is already appended to the chat's slice via appendSystem).
+   *  A host that tracks per-chat readiness (the agent panel's readyByKey) awaits
+   *  this to flip it + fetch slash commands; a host that treats an existing slice
+   *  as ready (ChatView) can ignore it. */
+  ready: Promise<boolean>
+}
+
+/** Mint a durable coding chat and start its pi session. Returns synchronously so
+ *  the caller can record the new key before any teardown could run; the pi spawn
+ *  proceeds in the background and its outcome is exposed via `ready`. */
+export function createCodingChatSession(
+  rootPath: string,
+  opts: CreateCodingChatSessionOpts,
+): CodingChatSession {
+  const { workspaceId, cwd, worktreeId, model, title = 'New chat', namespace = 'agent' } = opts
+  const rnd =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const agentKey = `${namespace}-${rnd}`
+
+  useAgentStore.getState().init(agentKey)
+  if (model) useAgentStore.getState().setModel(agentKey, model)
+
+  const chatId = useChatsStore.getState().createCodingChat(rootPath, {
+    agentKey,
+    sessionFile: null,
+    worktreeId,
+    model: model ?? undefined,
+    title,
+  }).id
+
+  const ready = spawnCodingSession(agentKey, workspaceId, cwd, model ?? null)
+  return { chatId, agentKey, ready }
+}
+
+/** Start pi for a freshly-minted key, deduped against a racing create (belt and
+ *  suspenders — main is idempotent per key too). Reports success/failure; a
+ *  failed spawn surfaces as a system message on the chat's slice. */
+async function spawnCodingSession(
+  agentKey: string,
+  workspaceId: string,
+  cwd: string,
+  model: AgentModelRef | null,
+): Promise<boolean> {
+  if (!beginAgentCreate(agentKey)) return true
+  try {
+    const res = await agentClient.create({
+      panelId: agentKey,
+      workspaceId,
+      cwd,
+      model: model ?? undefined,
+    })
+    if (!res.ok) {
+      useAgentStore.getState().appendSystem(agentKey, `Failed to start agent: ${res.error}`)
+      return false
+    }
+    return true
+  } catch (err) {
+    log.warn('[createCodingChatSession] spawn failed', err)
+    return false
+  } finally {
+    endAgentCreate(agentKey)
+  }
 }
 
 export interface PanelChatsPlan {

@@ -603,6 +603,35 @@ const EmptyState: React.FC = () => (
 )
 
 // =============================================================================
+// LoopTranscript — ONE loop chat's typed transcript (the run-blocks:
+// text/plan/attempts/result/canvas) + its run controls (Continue/Stop/Working).
+// Reads only the given chat (never activeChatId), so any host can render a
+// specific chat. Owns NO composer and NO scroll container. Shared by
+// CateAgentThread's chat case and by LoopChatView.
+// =============================================================================
+
+export const LoopTranscript: React.FC<{ wsId: string; rootPath: string; chat: Chat }> = ({ wsId, rootPath, chat }) => {
+  const cateAgent = useCateAgentWs(wsId)
+  const worktrees = useWorktrees(rootPath, wsId)
+
+  const working = cateAgent.activity === 'working' && !chat.run
+
+  const liveIters = chat.run?.status === 'running' ? (chat.run.iterations ?? []) : []
+  const hasActiveWork =
+    liveIters.some((i) => i.status === 'running' || i.status === 'verifying') ||
+    chat.messages.some((m) => m.kind === 'canvas' && m.working)
+
+  return (
+    <div className="flex flex-col gap-3.5 px-4 py-3 pr-5">
+      {chat.messages.map((msg) => (
+        <MessageBlock key={msg.id} chat={chat} msg={msg} wsId={wsId} rootPath={rootPath} worktrees={worktrees} />
+      ))}
+      <RunControls chat={chat} wsId={wsId} rootPath={rootPath} working={working} activeWork={hasActiveWork} />
+    </div>
+  )
+}
+
+// =============================================================================
 // CateAgentThread — the host-agnostic Cate Agent body. Given a workspace + root
 // it renders the OBSERVER feed (the default front door), the active CHAT's typed
 // transcript + run controls, or the empty state — reading cateAgentStore +
@@ -615,7 +644,6 @@ export const CateAgentThread: React.FC<{ wsId: string; rootPath: string; emptySt
   const cateAgent = useCateAgentWs(wsId)
   const chats = useChatsStore((s) => s.chatsByRoot[rootPath])
   const loadChats = useChatsStore((s) => s.loadChats)
-  const worktrees = useWorktrees(rootPath, wsId)
 
   React.useEffect(() => {
     void loadChats(rootPath)
@@ -623,12 +651,6 @@ export const CateAgentThread: React.FC<{ wsId: string; rootPath: string; emptySt
 
   const list = chats ?? []
   const activeChat = cateAgent.activeChatId ? list.find((c) => c.id === cateAgent.activeChatId) : undefined
-  const working = cateAgent.activity === 'working' && !!activeChat && !activeChat.run
-
-  const liveIters = activeChat?.run?.status === 'running' ? (activeChat.run.iterations ?? []) : []
-  const hasActiveWork =
-    liveIters.some((i) => i.status === 'running' || i.status === 'verifying') ||
-    (activeChat?.messages.some((m) => m.kind === 'canvas' && m.working) ?? false)
 
   // Observer feed tail: the latest turn (since the last user line), capped.
   const feed = cateAgent.feed
@@ -639,12 +661,5 @@ export const CateAgentThread: React.FC<{ wsId: string; rootPath: string; emptySt
     return <ObserverTimeline wsId={wsId} items={visibleFeed} onRun={(prompt) => sendCateAgentMessage(wsId, rootPath, prompt)} />
   }
   if (!activeChat) return <>{emptyState ?? <EmptyState />}</>
-  return (
-    <div className="flex flex-col gap-3.5 px-4 py-3 pr-5">
-      {activeChat.messages.map((msg) => (
-        <MessageBlock key={msg.id} chat={activeChat} msg={msg} wsId={wsId} rootPath={rootPath} worktrees={worktrees} />
-      ))}
-      <RunControls chat={activeChat} wsId={wsId} rootPath={rootPath} working={working} activeWork={hasActiveWork} />
-    </div>
-  )
+  return <LoopTranscript wsId={wsId} rootPath={rootPath} chat={activeChat} />
 }
