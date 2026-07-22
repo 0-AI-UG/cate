@@ -112,31 +112,6 @@ import {
 } from 'node:fs'
 import { createAgentPresenceTracker } from './agentPresence'
 import { snapshotProcessTree } from './process'
-import { AGENT_HOOK_SPECS, normalizeAgentHookPayload, type AgentHookEventKind } from '../../shared/agentHooks'
-import type { AgentId } from '../../shared/agents'
-
-// --- the interrupt contract, shared by every CLI ----------------------------
-// A USER INTERRUPT (Esc / Ctrl+C on a running turn) leaves the CLI back at its
-// prompt, waiting for input. Cate's agent-state FSM learns that ONLY from a
-// normalized 'turn-end'; without one the indicator stays stuck on "running"
-// until the next prompt. Whether a CLI pushes one is per-CLI truth, so each
-// suite below pins its own answer with this helper.
-
-/** The rendered text of a TUI screen, with escape sequences removed. Matching
- *  raw `tui.peek()` is a trap: a colour code like `\x1b[38;5;174m` contains
- *  digits, so a "did the model stream a 3-digit number yet" probe matches
- *  instantly against a screen that has streamed nothing. */
-function stripAnsi(s: string): string {
-  return s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-}
-
-/** The normalized kinds Cate derives from the raw events a CLI pushed —
- *  the FSM's actual input, not the wire payloads. */
-function normalizedKinds(agentId: AgentId, events: BridgeEvent[]): AgentHookEventKind[] {
-  return events
-    .map((e) => normalizeAgentHookPayload(agentId, 'tid', e.payload)?.kind)
-    .filter((k): k is AgentHookEventKind => k !== undefined)
-}
 
 /** Headless CLI run with stdin CLOSED — several CLIs (codex exec, pi -p,
  *  opencode run) block reading a never-ending stdin pipe otherwise. PWD is
@@ -289,23 +264,7 @@ interface Tui {
   kill: () => void
 }
 
-interface TuiOpts {
-  /** Dismiss "Update available" banners by pressing Esc on every poll tick
-   *  (default). Turn this OFF for a test that drives a RUNNING TURN in a CLI
-   *  where Esc is the interrupt key AND the banner never goes away: pi paints
-   *  its update banner permanently, so the blind Esc lands on the turn instead
-   *  and aborts it ~150ms in (observed: the provider's abort signal tripped at
-   *  delta #1, and the test looked like "the CLI never streams"). */
-  dismissUpdateBanner?: boolean
-}
-
-async function driveTui(
-  bin: string,
-  args: string[],
-  cwd: string,
-  env: Record<string, string>,
-  opts: TuiOpts = {},
-): Promise<Tui> {
+async function driveTui(bin: string, args: string[], cwd: string, env: Record<string, string>): Promise<Tui> {
   const { spawn } = await import('node-pty')
   const p = spawn(bin, args, { name: 'xterm-256color', cols: 120, rows: 40, cwd, env })
   let buf = ''
@@ -325,7 +284,7 @@ async function driveTui(
       await sleep(500)
       p.write('\r')
     }
-    if (opts.dismissUpdateBanner !== false && /Update available/i.test(buf)) {
+    if (/Update available/i.test(buf)) {
       buf = ''
       p.write('\x1b')
     }
@@ -375,27 +334,17 @@ async function driveTui(
 // =============================================================================
 
 describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
-  /** Every hook event name claude 2.1.216 knows — read out of the binary's own
-   *  registry. The SHIPPED injection uses only the six in claudeSpec; the
-   *  interrupt test registers ALL of them so "nothing fires" is a statement
-   *  about claude, not about Cate's subset. */
-  const CLAUDE_ALL_EVENTS = [
-    'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PostToolBatch', 'PermissionDenied',
-    'Notification', 'UserPromptSubmit', 'UserPromptExpansion', 'SessionStart', 'SessionEnd',
-    'Stop', 'StopFailure', 'SubagentStart', 'SubagentStop', 'PreCompact', 'PostCompact',
-    'PermissionRequest', 'TeammateIdle', 'TaskCreated', 'TaskCompleted', 'Elicitation',
-    'ElicitationResult', 'ConfigChange', 'InstructionsLoaded', 'MessageDisplay',
-  ]
-
-  /** The six events claudeSpec actually injects in the shipped product. */
-  const SHIPPED_CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
-
-  const writeClaudeSettings = (cwd: string, bridge: string, events = SHIPPED_CLAUDE_EVENTS): void => {
+  const writeClaudeSettings = (cwd: string, bridge: string): void => {
     mkdirSync(join(cwd, '.claude'), { recursive: true })
     writeFileSync(
       join(cwd, '.claude', 'settings.local.json'),
       JSON.stringify({
-        hooks: Object.fromEntries(events.map((e) => [e, [{ hooks: [{ type: 'command', command: bridge }] }]])),
+        hooks: Object.fromEntries(
+          ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd'].map((e) => [
+            e,
+            [{ hooks: [{ type: 'command', command: bridge }] }],
+          ]),
+        ),
       }),
     )
   }
@@ -578,97 +527,6 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     tui.kill()
   })
 
-  // ---------------------------------------------------------------------------
-  // THE INTERRUPT GAP. A user interrupt (Esc) ends the turn — the CLI goes back
-  // to its prompt and is waiting for input — but claude pushes NO hook event
-  // for it. Not Stop (its emitter runs at end-turn, through the abort signal
-  // the interrupt just tripped), not SessionEnd, not Notification(idle_prompt)
-  // (structurally suppressed: its guard skips when user activity is newer than
-  // the last message, which an interrupt keystroke always is), not StopFailure
-  // (error paths only: API error / prompt-too-long / malformed tool use).
-  //
-  // Verified against 2.1.216 with ALL 25 hook events registered, in both
-  // scenarios (interrupt while streaming text, interrupt while a Bash call
-  // runs): nothing arrives, for minutes. Anthropic's own docs say it outright —
-  // "there is no separate event for user-initiated interrupts".
-  //
-  // So this test pins a NEGATIVE contract, and it is the good kind: the day
-  // claude starts pushing something here, this test fails, and that something
-  // becomes the signal Cate should map to turn-end.
-  // ---------------------------------------------------------------------------
-  test('TUI: a user interrupt pushes NO hook event (the turn-end gap)', { retry: 1, timeout: 420_000 }, async () => {
-    const cwd = makeCwd('claude-interrupt')
-    const eventsFile = join(cwd, 'events.jsonl')
-    const bridge = writeBridge(cwd)
-    // ALL events, not the shipped six: the claim under test is about claude.
-    writeClaudeSettings(cwd, bridge, CLAUDE_ALL_EVENTS)
-    const tid = `cate-term-claude-int-${Date.now()}`
-    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
-
-    const tui = await driveTui(
-      'claude',
-      ['--model', 'haiku'],
-      cwd,
-      cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
-    )
-    await tui.waitFor(() => byName(events(), 'SessionStart').length > 0, 60_000, 'SessionStart')
-    registerTranscriptCleanup(byName(events(), 'SessionStart')[0].payload.transcript_path as string)
-
-    // A turn long enough to catch mid-flight. The interrupt must land while the
-    // turn is REALLY running — interrupting an already-finished turn would make
-    // this test pass for the wrong reason, so wait for streamed output first.
-    await tui.send('Write out the numbers from 1 to 3000, one per line, plain text, no tools, no thinking.')
-    await tui.waitFor(() => byName(events(), 'UserPromptSubmit').length > 0, 120_000, 'UserPromptSubmit')
-    // MessageDisplay streams one event per rendered delta, so its arrival is
-    // hook-level proof the turn is producing output RIGHT NOW — a stronger
-    // (and race-free) "in flight" signal than scraping the screen.
-    await tui.waitFor(() => byName(events(), 'MessageDisplay').length > 0, 120_000, 'MessageDisplay (turn in flight)')
-    expect(byName(events(), 'Stop').length, 'turn has not ended on its own yet').toBe(0)
-
-    // Let the turn actually commit some output before cutting it: interrupting
-    // in the same tick as the first delta aborts before claude renders
-    // anything, and then there is no "Interrupted" marker to verify against.
-    await tui.settle(4_000)
-    const before = events().length
-    tui.press('\x1b') // Esc — claude's documented interrupt key ("esc to interrupt")
-
-    // The interrupt REALLY happened: claude prints its own marker.
-    await tui.waitFor(() => /Interrupted/i.test(tui.peek()), 30_000, 'claude\'s "Interrupted" marker')
-
-    // ...and then: silence. 45s is far longer than any hook latency here (the
-    // permission/stop events elsewhere in this suite land within ~1s), and long
-    // enough to rule out a deferred flush.
-    await tui.settle(45_000)
-    const after = events().slice(before)
-    expect(
-      after.map((e) => e.payload.hook_event_name),
-      'NO hook event follows a user interrupt — Cate cannot learn the turn ended from hooks',
-    ).toEqual([])
-    // Stated in the FSM's own terms: no turn-end reaches Cate. This is the
-    // measured fact behind the declared flag — keep them in lockstep.
-    expect(normalizedKinds('claude-code', after)).not.toContain('turn-end')
-    expect(AGENT_HOOK_SPECS['claude-code'].reportsTurnEndOnInterrupt, 'declared gap matches reality').toBe(false)
-
-    // ...but the interrupt IS recoverable from the TRANSCRIPT: claude persists
-    // its "[Request interrupted by user]" marker there, and that is the
-    // file-based signal the runtime's tail-watch maps to a synthetic turn-end
-    // (interrupt recovery, agentHooks capability). Pin interruptRecovery.marker
-    // against the real transcript so a wrong regex fails HERE, with the file's
-    // own tail in the failure message.
-    const claudeTranscript = byName(events(), 'SessionStart')[0].payload.transcript_path as string
-    const claudeTail = readFileSync(claudeTranscript, 'utf8').slice(-8000)
-    expect(claudeTail, 'claude persists its interrupt marker to the transcript').toMatch(
-      AGENT_HOOK_SPECS['claude-code'].interruptRecovery!.marker,
-    )
-
-    // The turn is over as far as claude is concerned: a fresh prompt runs
-    // normally, proving the session is idle and healthy, not wedged.
-    await tui.send(PROMPT)
-    await tui.waitFor(() => byName(events(), 'Stop').length > 0, 120_000, 'Stop on the NEXT turn')
-    expectEcho(events(), tid)
-    tui.kill()
-  })
-
   // Resuming a dead id must FAIL (not silently start fresh) — this is what
   // lets Cate fall back to a plain shell when a stored id has been deleted.
   test('print mode: resuming an unknown session id fails', { timeout: 240_000 }, async () => {
@@ -715,35 +573,17 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
 
   /** The SHIPPED channel: the hooks.json Cate's prepareWorkspace merges into
    *  the project root (same shape, same 60s timeout). */
-  const writeHooksFile = (root: string, bridge: string, events = CODEX_EVENTS): void => {
+  const writeHooksFile = (root: string, bridge: string): void => {
     mkdirSync(join(root, '.codex'), { recursive: true })
     writeFileSync(
       join(root, '.codex', 'hooks.json'),
       JSON.stringify({
         hooks: Object.fromEntries(
-          events.map(([key]) => [key, [{ hooks: [{ type: 'command', command: bridge, timeout: 60 }] }]]),
+          CODEX_EVENTS.map(([key]) => [key, [{ hooks: [{ type: 'command', command: bridge, timeout: 60 }] }]]),
         ),
       }),
     )
   }
-
-  /** EVERY event codex 0.144.5 supports (its HookEventsToml enum — read out of
-   *  the binary and confirmed against the in-app /hooks screen). Note there is
-   *  no SessionEnd and no Notification AT ALL in codex: not "never fires",
-   *  simply not in the enum. Used by the interrupt test so "nothing fires" is
-   *  a statement about codex, not about Cate's five-event subset. */
-  const CODEX_ALL_EVENTS: [string, string][] = [
-    ['PreToolUse', 'pre_tool_use'],
-    ['PermissionRequest', 'permission_request'],
-    ['PostToolUse', 'post_tool_use'],
-    ['PreCompact', 'pre_compact'],
-    ['PostCompact', 'post_compact'],
-    ['SessionStart', 'session_start'],
-    ['UserPromptSubmit', 'user_prompt_submit'],
-    ['SubagentStart', 'subagent_start'],
-    ['SubagentStop', 'subagent_stop'],
-    ['Stop', 'stop'],
-  ]
 
   /** Folder trust for the project root. Inline-table form REQUIRED — the
    *  dotted-path `-c projects."<root>".trust_level=...` spelling silently
@@ -755,18 +595,15 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
    *  HARNESS ONLY — the shipped product plants no trust: a headless test
    *  cannot answer codex's interactive review prompt, so these overrides
    *  simulate the state the user's one-time "trust" click persists. */
-  const hookTrustArg = (root: string, bridge: string, events = CODEX_EVENTS): string =>
-    `hooks.state={${events.map(
+  const hookTrustArg = (root: string, bridge: string): string =>
+    `hooks.state={${CODEX_EVENTS.map(
       ([, label]) => `"${root}/.codex/hooks.json:${label}:0:0"={trusted_hash="${trustedHash(label, bridge, 60)}"}`,
     ).join(',')}}`
 
-  /** The full harness-only trust pre-plant: trusted folder + trusted hooks.
-   *  NOTE the folder-trust key is matched by REALPATH — makeCwd() realpaths its
-   *  tmp dir for exactly this reason (a /var/folders/... key silently fails and
-   *  codex falls back to its interactive trust prompt). */
-  const trustArgs = (root: string, bridge: string, events = CODEX_EVENTS): string[] => [
+  /** The full harness-only trust pre-plant: trusted folder + trusted hooks. */
+  const trustArgs = (root: string, bridge: string): string[] => [
     '-c', folderTrustArg(root),
-    '-c', hookTrustArg(root, bridge, events),
+    '-c', hookTrustArg(root, bridge),
   ]
 
   test('exec: project-file hooks report identity + turn; exec resume reuses id and rollout', { timeout: 420_000 }, async () => {
@@ -921,95 +758,6 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     tui.kill()
   })
 
-  // The interrupt contract (see the claude suite for the failure it guards).
-  // codex has the SAME gap as claude: Ctrl+C on a running turn kills it dead
-  // and pushes nothing — no Stop, no PostToolUse, nothing, with all TEN of its
-  // events registered. Verified against 0.144.5, and the control below proves
-  // the rig: an identical session that is allowed to finish DOES fire Stop.
-  //
-  // Esc is not the key here: on a running turn codex ignores it (verified,
-  // single and double press — the turn streamed on), and at an empty composer
-  // a single Esc QUITS the app.
-  test('TUI: a user interrupt pushes NO hook event (the turn-end gap)', { retry: 1, timeout: 420_000 }, async () => {
-    const cwd = makeCwd('codex-interrupt')
-    const bridge = writeBridge(cwd)
-    writeHooksFile(cwd, bridge, CODEX_ALL_EVENTS)
-    const tid = `cate-term-codex-int-${Date.now()}`
-    const eventsFile = join(cwd, 'events.jsonl')
-    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
-
-    const tui = await driveTui(
-      codexBin(),
-      ['-c', 'approval_policy="untrusted"', ...trustArgs(cwd, bridge, CODEX_ALL_EVENTS)],
-      cwd,
-      cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
-    )
-    await tui.send('Write out the numbers from 1 to 3000, one per line, plain text, no tools.')
-    await tui.waitFor(
-      () => events().some((e) => e.payload.hook_event_name === 'UserPromptSubmit'),
-      180_000,
-      'UserPromptSubmit',
-    )
-    cleanups.push(() => rmSync(events()[0].payload.transcript_path as string, { force: true }))
-    // Streamed numbers on the (ANSI-stripped) screen = the turn is in flight.
-    await tui.waitFor(() => /\b1\d\d\b/.test(stripAnsi(tui.peek())), 180_000, 'streamed output (turn in flight)')
-    expect(
-      events().some((e) => e.payload.hook_event_name === 'Stop'),
-      'turn has not ended on its own yet',
-    ).toBe(false)
-
-    const before = events().length
-    tui.press('\x03') // Ctrl+C — codex's interrupt (Esc is a no-op mid-turn)
-    await tui.waitFor(() => /Conversation interrupted/i.test(stripAnsi(tui.peek())), 30_000, 'codex\'s interrupt line')
-
-    await tui.settle(45_000)
-    const after = events().slice(before)
-    expect(
-      after.map((e) => e.payload.hook_event_name),
-      'NO hook event follows a user interrupt — Cate cannot learn the turn ended from hooks',
-    ).toEqual([])
-    expect(normalizedKinds('codex', after)).not.toContain('turn-end')
-    expect(AGENT_HOOK_SPECS.codex.reportsTurnEndOnInterrupt, 'declared gap matches reality').toBe(false)
-
-    // ...but recoverable from the ROLLOUT: codex records a turn_aborted event
-    // there, which the runtime's tail-watch maps to a synthetic turn-end
-    // (interrupt recovery, agentHooks capability). Pin interruptRecovery.marker
-    // against the real rollout so a wrong regex fails HERE, with its tail shown.
-    const codexRollout = events()[0].payload.transcript_path as string
-    const codexTail = readFileSync(codexRollout, 'utf8').slice(-8000)
-    expect(codexTail, 'codex persists a turn_aborted record to the rollout').toMatch(
-      AGENT_HOOK_SPECS.codex.interruptRecovery!.marker,
-    )
-    expectEcho(events(), tid)
-    tui.kill()
-  })
-
-  // The control for the test above: same hooks, same trust, same TUI — a turn
-  // that ENDS ON ITS OWN does fire Stop. Without this, "no events after the
-  // interrupt" could just mean the hooks were never wired up.
-  test('TUI: a turn left to finish DOES fire Stop (control for the interrupt gap)', { retry: 1, timeout: 300_000 }, async () => {
-    const cwd = makeCwd('codex-stop-control')
-    const bridge = writeBridge(cwd)
-    writeHooksFile(cwd, bridge, CODEX_ALL_EVENTS)
-    const tid = `cate-term-codex-ctl-${Date.now()}`
-    const eventsFile = join(cwd, 'events.jsonl')
-    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
-
-    const tui = await driveTui(
-      codexBin(),
-      ['-c', 'approval_policy="untrusted"', ...trustArgs(cwd, bridge, CODEX_ALL_EVENTS)],
-      cwd,
-      cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
-    )
-    await tui.send(PROMPT)
-    await tui.waitFor(() => events().some((e) => e.payload.hook_event_name === 'Stop'), 240_000, 'Stop')
-    const stop = events().find((e) => e.payload.hook_event_name === 'Stop')!.payload
-    expect(stop.turn_id, 'Stop carries the turn it ends').toEqual(expect.any(String))
-    expect(normalizedKinds('codex', [{ terminalId: tid, payload: stop }])).toEqual(['turn-end'])
-    cleanups.push(() => rmSync(events()[0].payload.transcript_path as string, { force: true }))
-    tui.kill()
-  })
-
   // Negative controls: every broken link in the trust chain must yield ZERO
   // events — a silent skip, no error, no partial delivery. This is the safety
   // property the interactive-trust UX (and Cate's "hooks may never arrive"
@@ -1150,54 +898,6 @@ describe.skipIf(!LIVE || !hasBin('cursor-agent'))('cursor hook contract', () => 
   // turn status is TUI-only. It also pins WHY beforeShellExecution is not a
   // permission signal: with --force nothing ever prompts, yet the event fires
   // for every command.
-  // The interrupt contract (see the claude suite for the failure it guards).
-  // cursor covers itself: aborting a turn pushes `stop` — TWICE, status
-  // "error" then "aborted", ~100ms after the key — and normalize() maps stop
-  // to turn-end regardless of status, so Cate's FSM idles correctly with no
-  // compensating signal. The duplicate is harmless (turn-end is idempotent).
-  test('TUI: a user interrupt pushes stop(aborted) → turn-end', { retry: 1, timeout: 420_000 }, async () => {
-    const cwd = makeCwd('cursor-interrupt')
-    const eventsFile = join(cwd, 'events.jsonl')
-    const bridge = writeBridge(cwd)
-    writeCursorHooks(cwd, bridge)
-    const tid = `cate-term-cursor-int-${Date.now()}`
-    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
-
-    const tui = await driveTui(
-      'cursor-agent',
-      [],
-      cwd,
-      cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
-    )
-    await tui.waitFor(() => byName(events(), 'sessionStart').length > 0, 60_000, 'sessionStart')
-    const id = byName(events(), 'sessionStart')[0].payload.session_id as string
-
-    await tui.send('Write out the numbers from 1 to 3000, one per line, plain text, no tools.')
-    await tui.waitFor(() => byName(events(), 'beforeSubmitPrompt').length > 0, 120_000, 'beforeSubmitPrompt')
-    // Streamed output on screen is the only in-flight proof cursor offers (it
-    // has no per-delta hook), so gate on it: interrupting a turn that already
-    // finished would pass this test for the wrong reason.
-    await tui.waitFor(() => /\b1\d\d\b/.test(stripAnsi(tui.peek())), 180_000, 'streamed output (turn in flight)')
-    expect(byName(events(), 'stop').length, 'turn has not ended on its own yet').toBe(0)
-
-    tui.press('\x1b') // Esc interrupts, though the TUI advertises ctrl+c
-    await tui.waitFor(() => byName(events(), 'stop').length > 0, 60_000, 'stop after interrupt')
-    const stops = byName(events(), 'stop')
-    expect(stops.map((e) => e.payload.status), 'the abort is reported as such').toContain('aborted')
-    for (const s of stops) expect(s.payload.session_id, 'the stop identifies the session').toBe(id)
-    // What the FSM actually receives — and the flag that declares it does:
-    expect(normalizedKinds('cursor', stops)).toContain('turn-end')
-    expect(AGENT_HOOK_SPECS.cursor.reportsTurnEndOnInterrupt, 'declared self-heal matches reality').toBe(true)
-    // The transcript_path on the ABORTED stop is null (only the sibling
-    // "error" stop carries one) — a consumer must not overwrite a known
-    // transcript with it. Cate's stamp never reads transcriptPath, so this is
-    // a pin, not a dependency.
-    const aborted = stops.find((e) => e.payload.status === 'aborted')!
-    expect(aborted.payload.transcript_path).toBeNull()
-    expectEcho(events(), tid)
-    tui.kill()
-  })
-
   test('print mode: no turn events; beforeShellExecution fires even for auto-approved commands', { timeout: 300_000 }, async () => {
     const cwd = makeCwd('cursor-print')
     const bridge = writeBridge(cwd)
@@ -1418,118 +1118,6 @@ export default function (pi: ExtensionAPI) {
     expect(end?.sessionId, 'resume re-attaches to the SAME session').toBe(id)
     expect(end?.sessionFile).toBe(sessionFile)
     expectEcho(resumeEvents, tid)
-  })
-
-  // The interrupt contract (see the claude suite for the failure it guards).
-  // pi covers itself: Esc aborts the provider stream, and the moment that
-  // stream terminates pi emits turn_end + agent_end (~130ms), which normalize()
-  // maps to turn-end. No compensating signal needed.
-  //
-  // The instant fake provider above is useless here — a turn that is already
-  // over cannot be interrupted — so this test brings a SLOW one that emits a
-  // delta every 150ms and honours options.signal, which is exactly how a real
-  // streaming provider behaves on abort.
-  const SLOW_PROVIDER_TS = `
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type AssistantMessage, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-export default function (pi: ExtensionAPI) {
-  pi.registerProvider("fake", {
-    name: "Fake Slow Offline Provider",
-    baseUrl: "http://localhost:0",
-    apiKey: "FAKE_KEY_UNUSED",
-    api: "openai-completions",
-    streamSimple: (model: any, _ctx: any, options: any) => {
-      const stream = createAssistantMessageEventStream();
-      const signal = options?.signal;
-      const log = (o: any) => { try { require("node:fs").appendFileSync(process.env.CATE_PROVIDER_LOG, JSON.stringify(o) + "\\n") } catch {} };
-      log({ ev: "streamSimple", hasSignal: !!signal });
-      (async () => {
-        const output: AssistantMessage = {
-          role: "assistant", content: [], api: model.api, provider: model.provider,
-          model: model.id,
-          usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-          stopReason: "stop", timestamp: Date.now(),
-        } as AssistantMessage;
-        stream.push({ type: "start", partial: output });
-        (output.content as any).push({ type: "text", text: "" });
-        stream.push({ type: "text_start", contentIndex: 0, partial: output });
-        let text = "";
-        // 400 deltas x 150ms = a full minute of streaming to interrupt into.
-        for (let i = 1; i <= 400; i++) {
-          if (signal?.aborted) { log({ ev: "abort", i }); break; } // the abort path under test
-          await sleep(150);
-          if (signal?.aborted) { log({ ev: "abort_post_sleep", i }); break; }
-          const delta = "DELTA-" + i + " ";
-          text += delta;
-          (output.content as any)[0].text = text;
-          stream.push({ type: "text_delta", contentIndex: 0, delta, partial: output });
-        }
-        log({ ev: "loop_done", aborted: !!signal?.aborted });
-        stream.push({ type: "text_end", contentIndex: 0, content: text, partial: output });
-        stream.push({ type: "done", reason: "stop", message: output });
-        stream.end();
-      })();
-      return stream;
-    },
-    models: [{ id: "fake-1", name: "Fake One", reasoning: false, input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128000, maxTokens: 4096 }],
-  });
-}
-`
-
-  test('TUI: a user interrupt pushes agent_end → turn-end', { retry: 1, timeout: 300_000 }, async () => {
-    const cwd = makeCwd('pi-interrupt')
-    const bridge = join(cwd, '.pi', 'extensions', 'cate-hook.ts')
-    mkdirSync(dirname(bridge), { recursive: true })
-    writeFileSync(bridge, BRIDGE_TS)
-    const slow = join(cwd, 'slow-provider.ts')
-    writeFileSync(slow, SLOW_PROVIDER_TS)
-    const tid = `cate-term-pi-int-${Date.now()}`
-    const eventsFile = join(cwd, 'events.jsonl')
-    const providerLog = join(cwd, 'provider.jsonl')
-    const events = (): PiEvent[] => readJsonl<PiEvent>(eventsFile)
-
-    const tui = await driveTui(
-      execFileSync('which', ['pi']).toString().trim(),
-      ['-e', slow, '--provider', 'fake', '--model', 'fake-1'],
-      cwd,
-      cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid, CATE_PROVIDER_LOG: providerLog }),
-      // Esc is pi's interrupt key and its update banner is permanent — the
-      // driver's banner dismissal would abort the very turn under test.
-      { dismissUpdateBanner: false },
-    )
-    await tui.waitFor(() => events().some((e) => e.event === 'session_start'), 60_000, 'session_start')
-    const id = events()[0].sessionId as string
-    cleanups.push(() => rmSync(dirname(events()[0].sessionFile as string), { recursive: true, force: true }))
-
-    await tui.send('stream please')
-    await tui.waitFor(() => events().some((e) => e.event === 'agent_start'), 60_000, 'agent_start')
-    // Deltas visibly on screen = the turn is in flight right now.
-    try {
-      await tui.waitFor(() => /DELTA-\d+/.test(stripAnsi(tui.peek())), 60_000, 'streaming deltas')
-    } catch (e) {
-      let providerTrace = 'NONE — pi never called the provider'
-      try { providerTrace = readFileSync(providerLog, 'utf8') } catch { /* never written */ }
-      throw new Error(`${(e as Error).message}\nPROVIDER LOG:\n${providerTrace}`)
-    }
-    expect(events().some((e) => e.event === 'agent_end'), 'turn still running').toBe(false)
-
-    tui.press('\x1b') // pi's own footer: "escape interrupt" (ctrl+c is clear/exit)
-    await tui.waitFor(() => events().some((e) => e.event === 'agent_end'), 30_000, 'agent_end after interrupt')
-
-    const ended = events().filter((e) => e.event === 'agent_end' || e.event === 'turn_end')
-    for (const e of ended) expect(e.sessionId, 'the turn end identifies the session').toBe(id)
-    // What the FSM actually receives (pi's normalizer keys on `event`).
-    const asBridge = ended.map((e) => ({ terminalId: tid, payload: e as unknown as Record<string, unknown> }))
-    expect(normalizedKinds('pi', asBridge)).toContain('turn-end')
-    expect(AGENT_HOOK_SPECS.pi.reportsTurnEndOnInterrupt, 'declared self-heal matches reality').toBe(true)
-    expectEcho(events(), tid)
-    tui.kill()
   })
 })
 
@@ -2281,21 +1869,10 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
     expect(tui.peek(), 'approval menu still defaults to the blanket grant').toContain('always-approve')
 
     // Ctrl+C cancels the turn (Esc does NOT dismiss this menu — verified).
-    // "Turn cancelled by user", Stop fires, and no grant is persisted. This is
-    // ALSO grok's interrupt contract (the gap claude/codex fail — see their
-    // suites): a user Ctrl+C on an in-flight turn pushes Stop, which
-    // normalize() turns into turn-end, so grok's running indicator idles on its
-    // own. Pinned on the approval-parked turn because the account's free quota
-    // was exhausted while this was written, and a quota-refused streaming turn
-    // dies before it can be interrupted (429 → agent_error + stop{reason:error}
-    // ~3s in); the cancel mechanism (Ctrl+C → grok turn-cancel → Stop) is the
-    // same either way, and grok's own docs list Stop as firing on a "cancelled"
-    // turn. This is why grokSpec.reportsTurnEndOnInterrupt is true.
+    // "Turn cancelled by user", Stop fires, and no grant is persisted.
     tui.press('\x03')
     await tui.waitFor(() => byName(events(), 'stop').length > 0, 120_000, 'Stop after cancel')
     expect(byName(events(), 'stop')[0].payload.sessionId).toBe(id)
-    expect(normalizedKinds('grok', byName(events(), 'stop'))).toContain('turn-end')
-    expect(AGENT_HOOK_SPECS.grok.reportsTurnEndOnInterrupt, 'declared self-heal matches reality').toBe(true)
     // The gated command never ran.
     expect(existsSync(join(cwd, 'needs-approval.txt')), 'cancelled tool call did not execute').toBe(false)
     expectEcho(events(), tid)

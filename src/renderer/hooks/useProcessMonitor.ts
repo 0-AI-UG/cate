@@ -6,7 +6,6 @@ import { noteAgentPresence } from '../lib/agent/agentScreenDetector'
 import { isWorkspaceMonitorReady } from './workspaceMonitorReady'
 import { syncWorktrees } from '../lib/worktreeSync'
 import log from '../lib/logger'
-import { matchAgentProcess } from '../../shared/agents'
 import type { TerminalActivity } from '../../shared/types'
 
 /** Retained for the statusStore.unregisterTerminal wiring. The per-terminal
@@ -53,6 +52,12 @@ export function useOwnedTerminalTelemetry(): void {
           workspaceIdForTerminal(terminalId) ?? useAppStore.getState().selectedWorkspaceId
         if (!actualWorkspaceId) return
 
+        // statusStore is the single home for (agentName, agentPresent). Read the
+        // PRIOR name from there (not a separate module map) so the rising-edge
+        // tab-title push fires once when the name first appears.
+        const prevAgent =
+          useStatusStore.getState().workspaces[actualWorkspaceId]?.terminals[terminalId]?.agentName ?? null
+
         store().setTerminalActivity(actualWorkspaceId, terminalId, terminalActivity)
         store().setAgentPresent(actualWorkspaceId, terminalId, agentPresent)
         store().setAgentName(actualWorkspaceId, terminalId, agentName)
@@ -62,18 +67,16 @@ export function useOwnedTerminalTelemetry(): void {
         // coordinator can read it at commit.
         noteAgentPresence(terminalId, agentPresent)
 
-        // Agent tab title: the clean detected agent name (e.g. "Codex", "Claude
-        // Code") is the canonical tab label for agent terminals. Prefer the
-        // hook-reported name; fall back to the process-scan match so an agent
-        // whose hooks aren't installed still gets a clean name instead of its
-        // raw session title. updatePanelTitleFromAgent numbers duplicates and
-        // skips tabs the user has manually renamed, and no-ops when unchanged.
-        const scannedName =
-          terminalActivity.type === 'running' ? matchAgentProcess(terminalActivity.processName ?? '') : null
-        const displayName = agentName ?? scannedName
-        if (displayName) {
+        // Agent tab title: show the clean detected agent name (e.g. "Codex",
+        // "Claude Code") on the rising edge. This is the canonical tab label
+        // for agent terminals — the raw OSC title (cwd / spinner-prefixed name
+        // / session label) is suppressed for agents in terminalRegistry's
+        // onTitleChange (see applyOscTitleIfNoAgent), so this name sticks.
+        // Duplicates are numbered ("Claude Code 2") by updatePanelTitleFromAgent.
+        // It also skips the update when the user has manually renamed the tab.
+        if (agentName && agentName !== prevAgent) {
           const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
-          useAppStore.getState().updatePanelTitleFromAgent(actualWorkspaceId, panelId, displayName)
+          useAppStore.getState().updatePanelTitleFromAgent(actualWorkspaceId, panelId, agentName)
         }
       },
     )

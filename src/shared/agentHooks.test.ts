@@ -508,30 +508,3 @@ describe('normalizeAgentHookPayload', () => {
     expect(event.terminalId).toBe('term-9')
   })
 })
-
-// The interrupt self-heal table — the declarative half of the contract whose
-// live half is the "user interrupt pushes …" tests in agentHookContracts.
-// itest.ts. Kept here (a plain unit assertion) so a careless flip is caught in
-// the normal suite, not only in the opt-in live run.
-describe('reportsTurnEndOnInterrupt', () => {
-  test('every agent declares its verified interrupt behavior', () => {
-    const table = Object.fromEntries(
-      (Object.keys(AGENT_HOOK_SPECS) as Array<keyof typeof AGENT_HOOK_SPECS>).map((id) => [
-        id,
-        AGENT_HOOK_SPECS[id].reportsTurnEndOnInterrupt,
-      ]),
-    )
-    expect(table).toEqual({
-      // Push NOTHING on interrupt (verified live) — indicator stays stuck.
-      'claude-code': false,
-      codex: false,
-      // Push a mapped turn-end on interrupt (verified live) — self-heal.
-      cursor: true,
-      pi: true,
-      opencode: true,
-      // Expected self-heal via stop{cancelled}; streaming path not yet
-      // observed live (test account quota) — see grokSpec.
-      grok: true,
-    })
-  })
-})

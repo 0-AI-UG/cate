@@ -121,50 +121,6 @@ export interface AgentHookAgentState {
 
 export interface AgentHookSpec {
   /**
-   * Whether this CLI pushes a mapped turn-end when the USER INTERRUPTS a
-   * running turn (Esc / Ctrl+C), the one turn boundary that is NOT a normal
-   * completion.
-   *
-   *  - true: the CLI's interrupt path fires an event that normalize() turns
-   *    into 'turn-end' (cursor's stop{status:aborted}, pi's agent_end,
-   *    opencode's session.idle — each verified live and pinned in
-   *    agentHookContracts.itest.ts). Cate's FSM idles correctly, unaided.
-   *  - false: the CLI pushes NOTHING on interrupt. claude and codex both do
-   *    this — verified live with EVERY one of their hook events registered
-   *    (claude's Stop emitter runs at end-turn, through the very abort signal
-   *    the interrupt trips; codex is identically silent, proven against a
-   *    control turn that DID fire Stop). Cate's running indicator therefore
-   *    stays stuck until the next prompt.
-   *
-   * For the false agents Cate recovers the turn-end out-of-band, from the one
-   * interrupt channel that is still deterministic and file-based (not a
-   * keystroke, not screen scraping, not a settle timer): the CLI writes an
-   * interrupt MARKER into its own transcript, and `interruptRecovery.marker`
-   * below matches it. The runtime arms a transcript tail-watch at turn-start
-   * and synthesizes a turn-end the moment the marker lands (see
-   * runtime/capabilities/agentHooks.ts) — so the FSM idles like it does for the
-   * self-healing agents, just via the transcript rather than a hook.
-   *
-   * The flag itself stays a truthful statement about the CLI: it still pushes
-   * no hook, so the "a user interrupt pushes NO hook event" tests keep guarding
-   * the day claude/codex ship a real interrupt event — the signal to flip this
-   * flag true (they would then self-heal via the hook and the transcript watch
-   * is no longer armed).
-   */
-  reportsTurnEndOnInterrupt: boolean
-  /**
-   * For an agent that pushes NO hook on interrupt (reportsTurnEndOnInterrupt
-   * false), how the runtime recovers the turn-end from the transcript instead.
-   * `marker` matches the transcript's newly-appended tail once the CLI has
-   * written its interrupt marker for the just-aborted turn (claude's
-   * "[Request interrupted by user]", codex's rollout abort record) — both
-   * pinned live against the real transcript in agentHookContracts.itest.ts.
-   * Undefined for the self-healing agents (they get a real hook turn-end and
-   * never need this) and for any false agent whose transcript carries no
-   * distinguishable marker (then the gap simply stays open, honestly).
-   */
-  interruptRecovery?: { marker: RegExp }
-  /**
    * Workspace-scoped hook files (claude's .claude/settings.local.json,
    * codex's .codex/hooks.json, pi's .pi/extensions/cate-hook.ts,
    * opencode's .opencode/plugin/cate-hook.js) — the ONLY injection channel:
@@ -346,12 +302,6 @@ export function agentHookFolder(agentId: AgentId): string | null {
 const CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
 
 const claudeSpec: AgentHookSpec = {
-  // No hook fires on a user interrupt — pinned live (see the field doc).
-  reportsTurnEndOnInterrupt: false,
-  // Recovered from the transcript: claude appends a user-role message whose
-  // content is exactly "[Request interrupted by user]" (also the "…for tool
-  // use" variant) when a turn is aborted. Pinned live in agentHookContracts.
-  interruptRecovery: { marker: /\[Request interrupted by user/ },
   projectFiles: [
     {
       relPath: '.claude/settings.local.json',
@@ -423,18 +373,6 @@ const CODEX_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', '
 const CODEX_HOOK_TIMEOUT = 60
 
 const codexSpec: AgentHookSpec = {
-  // Identically silent on interrupt (Ctrl+C) — pinned live against a control
-  // turn that DID fire Stop, so it is a real gap, not a wiring failure.
-  reportsTurnEndOnInterrupt: false,
-  // Recovered from the rollout: codex writes an event_msg whose payload type is
-  // `turn_aborted` (reason "interrupted") when a running turn is cancelled —
-  // confirmed against real rollouts and the 0.145.0 binary's EventMsg enum. The
-  // marker is deliberately the serialized record TYPE, not free text, so
-  // ordinary assistant output can't trip it; it also serializes for the other
-  // abort reasons (budget/context exceeded), which is correct — any aborted
-  // turn has ended. Pinned live against the real rollout tail in
-  // agentHookContracts.itest.ts.
-  interruptRecovery: { marker: /"turn_aborted"/ },
   projectFiles: [
     {
       relPath: '.codex/hooks.json',
@@ -500,8 +438,6 @@ interface CursorHooksJson {
 }
 
 const cursorSpec: AgentHookSpec = {
-  // Interrupt (Esc) pushes stop{status:aborted} ~100ms later → turn-end.
-  reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
       relPath: '.cursor/hooks.json',
@@ -632,9 +568,6 @@ export default function (pi: any) {
 `
 
 const piSpec: AgentHookSpec = {
-  // Interrupt (Esc) aborts the provider stream; pi then fires agent_end
-  // ~130ms later → turn-end.
-  reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
       relPath: '.pi/extensions/cate-hook.ts',
@@ -693,12 +626,6 @@ const GROK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostTo
 const GROK_HOOK_TIMEOUT = 60
 
 const grokSpec: AgentHookSpec = {
-  // Ctrl+C on an in-flight turn fires Stop → turn-end, pinned live on the
-  // approval-parked turn in agentHookContracts.itest.ts (a free-streaming turn
-  // could not be tested — the account's grok-4.5-build quota was exhausted —
-  // but the cancel mechanism is the same, and grok's docs list Stop as firing
-  // on a "cancelled" turn).
-  reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
       // `cate.json` is ours alone — grok merges every file in the dir, so a
@@ -790,9 +717,6 @@ export const CateHookBridge = async () => {
 `
 
 const opencodeSpec: AgentHookSpec = {
-  // Interrupt (Ctrl+C) aborts the turn and fires session.idle ~45ms later →
-  // turn-end.
-  reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
       // `.js`, not `.mjs`: opencode's scan glob is `*.{ts,js}` only.
