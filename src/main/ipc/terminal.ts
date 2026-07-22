@@ -324,7 +324,19 @@ async function spawnTerminal(
     ? getSetting('agentHookInjection')[options.workspaceId]
     : undefined
   const handle = await runtime.process.create(
-    { cols: options.cols, rows: options.rows, cwd, shell: options.shell, env: cateApiEnv, agentHooks: true, agentHookConfig },
+    {
+      cols: options.cols,
+      rows: options.rows,
+      cwd,
+      shell: options.shell,
+      env: cateApiEnv,
+      agentHooks: true,
+      agentHookConfig,
+      // The workspace whose root this cwd lives under — the daemon validates
+      // against this scope, so a project outside the daemon's own root still
+      // gets a terminal.
+      scopeId: options.workspaceId,
+    },
     onData,
     onExit,
   )

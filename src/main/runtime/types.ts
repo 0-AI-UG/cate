@@ -32,6 +32,12 @@ export interface PtyCreateOptions {
   /** Caller-provided id. Used over the wire so the client registers its data
    *  stream before the create round-trip resolves (no early-output race). */
   id?: string
+  /** Path scope the `cwd` belongs to — the calling workspace's id, the same
+   *  scope workspaceManager registers its root under. The daemon validates the
+   *  cwd against this scope first, falling back to its own root, so a workspace
+   *  outside the daemon root (a D:\ project vs. a home-rooted local daemon) can
+   *  still spawn terminals. Rides the same opts pass-through as `env`. */
+  scopeId?: string
   /** Extra env merged OVER the host's resolved shell env at spawn (e.g. the
    *  first-party CATE_API/CATE_TOKEN vars). Rides the existing opts pass-through
    *  (RemoteRuntime spreads opts; rpcServer forwards verbatim), so no protocol
