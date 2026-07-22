@@ -19,8 +19,11 @@ enabled.** It is on by default; the user can turn it off in Settings → CLI
 ("Command-line control"). While it is off — or outside a Cate terminal — the env
 vars are unset and every command exits `3` with a message explaining how to
 enable the setting. There is nothing to install. The same Settings → CLI section
-holds per-feature toggles (browser control, terminal read, terminal input) —
-a disabled feature's verbs fail with a stable error naming the toggle.
+holds a permission matrix — Browser, Terminal, Panels, Editor and Notifications,
+each split into Read (observe) and Control (act). A verb whose cell is off fails
+with a stable error naming the cell (e.g. `panel-control-disabled: enable Panels
+→ Control in Cate Settings → CLI`); Terminal → Control is the only cell off by
+default.
 
 ## Browser control
 
@@ -168,10 +171,11 @@ about to run. Keys for `press` (case-insensitive): `enter`/`return`, `tab`,
 `ctrl-d`, ...).
 
 Input goes to **whatever runs in the terminal**: a foreground TUI receives the
-keys (arrows move its cursor, `q` is its quit), not the shell. Each half has its
-own toggle in Settings → CLI: `read` requires "Terminal read" (on by default),
-`type`/`press` require "Terminal input", which is **off by default** — while
-off they fail with `terminal-input-disabled` (or `terminal-read-disabled`) and
+keys (arrows move its cursor, `q` is its quit), not the shell. Each half is its
+own cell in the Settings → CLI permission matrix: `read` needs Terminal → Read
+(on by default), `type`/`press` need Terminal → Control, which is **off by
+default** — while off they fail with `terminal-input-disabled` (or
+`terminal-read-disabled`) and
 how to enable it. Terminals the Cate Agent is actively driving refuse input
 (`agent-owned-terminal`).
 

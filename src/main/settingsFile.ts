@@ -61,9 +61,15 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   autoSuspendIdleTerminals: 'boolean',
   cliEnabled: 'boolean',
   cliSkillInstallEnabled: 'boolean',
+  cliBrowserReadEnabled: 'boolean',
   cliBrowserControlEnabled: 'boolean',
   cliTerminalReadEnabled: 'boolean',
   cliTerminalInputEnabled: 'boolean',
+  cliPanelReadEnabled: 'boolean',
+  cliPanelControlEnabled: 'boolean',
+  cliEditorReadEnabled: 'boolean',
+  cliEditorControlEnabled: 'boolean',
+  cliNotifyEnabled: 'boolean',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
   browserShowBookmarksBar: 'boolean',
@@ -82,6 +88,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   // deeper validation (shape of the model ref / sidebar layout) lives in the
   // renderer consumers, which validate hand-edited partial shapes.
   agentDefaultModel: 'object',
+  agentHookInjection: 'object',
   cateAgentModel: 'object',
   cateAgentOrchestratorAgentId: 'string',
   cateAgentObserveCooldownMin: 'number',

@@ -44,7 +44,8 @@ import {
 import { runDriverToCompletion, openDriverTerminal, armBackgroundSend } from './codingAgentLauncher'
 import { runCanvasAgentToCompletion } from './canvasAgentLauncher'
 import { teardownRunWork } from './cateAgentReviewActions'
-import { worktreeMetaFor, teardownWorktree } from './cateAgentWorktrees'
+import { worktreeMetaFor, worktreeBranchFor, teardownWorktree } from './cateAgentWorktrees'
+import { getTargetWorktree } from './cateAgentWorktreeTarget'
 import { getAgentCanvasStore } from '../lib/workspace/canvasAccess'
 import type { PanelType, Point } from '../../shared/types'
 import log from '../lib/logger'
@@ -597,10 +598,13 @@ export async function runCateAgentTool(ctx: CateAgentContext, tool: string, para
         patchRun(rootPath, chatId, { iterations: kept, round })
       }
 
-      // Fresh worktree for this iteration, branched off HEAD.
+      // Fresh worktree for this iteration, branched off the worktree the user picked
+      // in the composer (the same one the winner lands back into), or HEAD when the
+      // pick is unset or its checkout is gone.
       const indexInRound = (runFor(rootPath, chatId)?.iterations ?? []).filter((i) => i.round === round).length + 1
       const nameSource = `${chat.title} r${round}-${indexInRound}`
-      const wt = await createWorktree(wsId, rootPath, nameSource)
+      const baseRef = worktreeBranchFor(wsId, rootPath, getTargetWorktree(chatId))
+      const wt = await createWorktree(wsId, rootPath, nameSource, baseRef)
       const cwd = wt?.cwd ?? rootPath
       const glow = wt ? worktreeMetaFor(wsId, wt.worktreeId)?.color ?? 'rgb(var(--agent-rgb))' : 'rgb(var(--agent-rgb))'
 

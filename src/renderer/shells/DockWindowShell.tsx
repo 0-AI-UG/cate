@@ -25,7 +25,8 @@ import { shouldCloseDockWindow } from './shouldCloseDockWindow'
 import WindowControls from './WindowControls'
 import { useWindowRuntime } from '../lib/hooks/useWindowRuntime'
 import WindowChrome from './WindowChrome'
-import DockWindowTitlebar from './DockWindowTitlebar'
+import { TRAFFIC_LIGHTS_WIDTH } from './MacWindowChrome'
+import { useWindowFullscreen } from '../lib/useWindowFullscreen'
 
 import { PanelHost } from '../panels/PanelHost'
 import { IS_MAC } from '../lib/platform'
@@ -50,6 +51,11 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   const [wsId, setWsId] = useState(initialWorkspaceId ?? '')
   const [ready, setReady] = useState(false)
   const dockStore = useMemo(() => createDockStore(), [])
+  // Native chrome (macOS traffic lights / frameless window controls) only exists
+  // in windowed mode — the OS hides it in fullscreen, so we drop the tab bar's
+  // reservation and the controls overlay to reclaim the row (mirrors the main
+  // window's MacWindowChrome / TitlebarStrip fullscreen collapse).
+  const isFullscreen = useWindowFullscreen()
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hadPanelsRef = useRef(false)
 
@@ -364,19 +370,28 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   return (
     <DockStoreProvider store={dockStore}>
       <div className="dock-window-root relative h-screen w-screen flex flex-col bg-surface-4 overflow-hidden">
-        {/* macOS: DockWindowTitlebar (below) is the header + drag region and owns
-            the traffic-light reservation, so the tab bar sits full-width beneath
-            it with no indent or drag behavior of its own. Windows/Linux keep the
-            tab bar AS the drag region and reserve 132px on the right for the
-            custom WindowControls overlay. Override inside any canvas-node
-            ([data-node-id]) so nested mini-dock tab bars don't inherit either. */}
+        {/* Integrate the window chrome INTO the top dock tab bar row — no separate
+            header bar — so a detached window reads like the main window (whose
+            traffic lights float over the top-left content, MacWindowChrome).
+            macOS: the tab bar reserves 78px on the left for the native traffic
+            lights. Windows/Linux: it reserves 132px on the right for the custom
+            WindowControls overlay. Either way the tab bar itself IS the drag
+            region, and its interactive bits opt back out: direct children (tabs,
+            split, trailing controls) AND every <button> — the latter is needed
+            because a button wrapped in a `display:contents` Tooltip span has no
+            direct-child box for `> *` to reach, so `no-drag` must land on the
+            button itself or it stays draggable and unclickable (e.g. the "+").
+            Dropped in fullscreen (no chrome to clear) and inside any canvas-node
+            ([data-node-id]) so nested mini-dock tab bars don't inherit the indent
+            or drag. */}
         <style>{`
-          ${IS_MAC ? '' : `
+          ${isFullscreen ? '' : `
           .dock-window-root .dock-tab-bar {
-            padding-right: 132px;
+            ${IS_MAC ? `padding-left: ${TRAFFIC_LIGHTS_WIDTH}px;` : 'padding-right: 132px;'}
             -webkit-app-region: drag;
           }
-          .dock-window-root .dock-tab-bar > * { -webkit-app-region: no-drag; }
+          .dock-window-root .dock-tab-bar > *,
+          .dock-window-root .dock-tab-bar button { -webkit-app-region: no-drag; }
           `}
           .dock-window-root [data-node-id] .dock-tab-bar {
             padding-left: 0;
@@ -384,17 +399,6 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
             -webkit-app-region: no-drag;
           }
         `}</style>
-        {/* macOS: conventional header/title bar (unlike the main window's floating
-            island) — traffic-light reservation + drag region + active panel title.
-            Collapses in native fullscreen. */}
-        <DockWindowTitlebar workspaceId={wsId} />
-        {/* Frameless Windows/Linux: custom window controls pinned to the top-right,
-            over the tab bar's reserved right padding. */}
-        {!IS_MAC && (
-          <div className="absolute top-0 right-0 z-30 h-9">
-            <WindowControls />
-          </div>
-        )}
         {/* Full content area — center zone only */}
         <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
           <DockZone
@@ -408,6 +412,23 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
             onPanelRenamed={handlePanelRenamed}
           />
         </div>
+        {/* Frameless Windows/Linux: custom window controls pinned to the top-right,
+            over the tab bar's reserved right padding. Collapses in fullscreen.
+            MUST render AFTER the content (tab bar) above: Electron builds the drag
+            region by walking the DOM in order, union-ing `drag` rects and
+            subtracting `no-drag` ones. If these controls came first, the tab bar's
+            later full-width `drag` would re-union this corner and swallow the
+            clicks (dead hover/press). Rendered last, this `no-drag` overlay
+            subtracts the corner AFTER the tab bar's drag — so it wins. Kept on top
+            visually with z-30. */}
+        {!IS_MAC && !isFullscreen && (
+          <div
+            className="absolute top-0 right-0 z-30 h-9"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+            <WindowControls />
+          </div>
+        )}
         <WindowChrome />
         <FileDropOverlay />
       </div>

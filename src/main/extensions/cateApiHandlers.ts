@@ -28,6 +28,12 @@ import { randomUUID } from 'crypto'
 import path from 'path'
 import log from '../logger'
 import {
+  cliPermissionCellByKey,
+  cliPermissionDenied,
+  cliPermissionForMethod,
+  type CliPermissionKey,
+} from '../../shared/cliPermissions'
+import {
   EXTENSION_LIST,
   EXTENSION_ENABLE,
   EXTENSION_DISABLE,
@@ -76,15 +82,14 @@ const CATE_API_VERSION = 3
 
 const FORWARD_TIMEOUT_MS = 10_000
 
-/** Stable errors for CLI feature groups whose per-feature toggle (Settings →
- *  CLI) is off. Each tells the caller how to get the feature enabled, not just
- *  that it is denied. */
-export const TERMINAL_INPUT_DISABLED =
-  'terminal-input-disabled: enable "Terminal input" in Cate Settings → CLI'
-export const TERMINAL_READ_DISABLED =
-  'terminal-read-disabled: enable "Terminal read" in Cate Settings → CLI'
-export const BROWSER_CONTROL_DISABLED =
-  'browser-control-disabled: enable "Browser control" in Cate Settings → CLI'
+/** Stable errors for CLI permission cells (Settings → CLI) that are off. Each
+ *  tells the caller how to get the feature enabled, not just that it is denied.
+ *  Derived from the matrix so the copy has one home. */
+const deniedFor = (key: CliPermissionKey): string => cliPermissionDenied(cliPermissionCellByKey(key))
+export const TERMINAL_INPUT_DISABLED = deniedFor('cliTerminalInputEnabled')
+export const TERMINAL_READ_DISABLED = deniedFor('cliTerminalReadEnabled')
+export const BROWSER_READ_DISABLED = deniedFor('cliBrowserReadEnabled')
+export const BROWSER_CONTROL_DISABLED = deniedFor('cliBrowserControlEnabled')
 
 interface InvokePayload {
   extensionId: string
@@ -425,6 +430,17 @@ export async function dispatchCateInvoke(
     }
   }
 
+  // Security: the first-party CLI permission matrix (Settings → CLI) — one
+  // read/control cell per surface, checked before anything is touched. A method
+  // no row covers is governed by scopes alone. Extensions never reach this:
+  // their gate is manifest scopes plus, for browser/agent, a consent prompt.
+  if (scope.caller === 'first-party') {
+    const cell = cliPermissionForMethod(method)
+    if (cell && getSetting(cell.key) !== true) {
+      return { error: cliPermissionDenied(cell), method }
+    }
+  }
+
   // Storage (handled in main, backed by storage.ts). Routed by prefix — mirrors
   // requiredScopeFor's storage.* branch — so dispatchStorage's switch is the sole
   // enumeration of the six storage methods.
@@ -440,13 +456,9 @@ export async function dispatchCateInvoke(
     const target = resolvePanelTargetWindow(typeof a.panelId === 'string' ? a.panelId : undefined, 'browser')
     if ('error' in target) return { error: target.error, method }
     // Two flavors of the same gate: extensions get a one-time-per-session
-    // consent prompt (mirroring agent); the first-party CLI is governed by its
-    // per-feature toggle (Settings → CLI) instead of a prompt.
-    if (scope.caller === 'first-party') {
-      if (getSetting('cliBrowserControlEnabled') !== true) {
-        return { error: BROWSER_CONTROL_DISABLED, method }
-      }
-    } else if (!(await ensureConsent(extensionId, 'browser'))) {
+    // consent prompt (mirroring agent); the first-party CLI was already checked
+    // against its Browser read/control cells above, so it needs no prompt.
+    if (scope.caller !== 'first-party' && !(await ensureConsent(extensionId, 'browser'))) {
       return { error: 'consent-denied', method }
     }
     const result = await forwardToOwner(target.wc, { extensionId, workspaceId, panelId: panelId ?? '', method, args })
@@ -468,9 +480,9 @@ export async function dispatchCateInvoke(
 
   // Terminal control: route to the OWNER window of the addressed terminal panel
   // (args.panelId), or the active main window when unaddressed (`read` resolves
-  // the focused terminal renderer-side). Both halves carry a per-feature toggle
-  // (Settings → CLI): read (on by default — scrollback may hold printed
-  // secrets) and type/press (OFF by default — keystrokes into a live shell).
+  // the focused terminal renderer-side). Both halves are permission cells
+  // (Settings → CLI), checked above: Read (on by default — scrollback may hold
+  // printed secrets) and Control (OFF by default — keystrokes into a live shell).
   if (method.startsWith('cate.terminal.')) {
     // First-party (CLI) only for now: an extension's manifest scopes are
     // self-declared, and the terminal consent story (prompt vs toggle) is
@@ -478,13 +490,6 @@ export async function dispatchCateInvoke(
     // ConsentCapability if one appears.
     if (scope.caller !== 'first-party') {
       return { error: 'terminal-first-party-only', method }
-    }
-    if (method === 'cate.terminal.type' || method === 'cate.terminal.press') {
-      if (getSetting('cliTerminalInputEnabled') !== true) {
-        return { error: TERMINAL_INPUT_DISABLED, method }
-      }
-    } else if (getSetting('cliTerminalReadEnabled') !== true) {
-      return { error: TERMINAL_READ_DISABLED, method }
     }
     const a = (args ?? {}) as { panelId?: string }
     const target = resolvePanelTargetWindow(typeof a.panelId === 'string' ? a.panelId : undefined, 'terminal')

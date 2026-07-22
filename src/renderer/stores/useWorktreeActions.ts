@@ -42,10 +42,12 @@ function configuredSymlinkPaths(): string[] | undefined {
 }
 
 export interface WorktreeActions {
-  /** Create a brand-new branch + worktree. Throws on failure (callers surface). */
-  createWorktree: (rawName: string, baseRef?: string) => Promise<void>
+  /** Create a brand-new branch + worktree. Throws on failure (callers surface).
+   *  Returns the registered metadata (null when there is no workspace/root yet) so
+   *  a caller can select what it just created. */
+  createWorktree: (rawName: string, baseRef?: string) => Promise<WorktreeMeta | null>
   /** Check out an existing pull request into its own worktree. */
-  checkoutPr: (pr: PrListItem) => Promise<void>
+  checkoutPr: (pr: PrListItem) => Promise<WorktreeMeta | null>
 }
 
 export function useWorktreeActions(rootPath: string, workspaceId: string | null): WorktreeActions {
@@ -54,7 +56,7 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
 
   const createWorktree = useCallback(
     async (rawName: string, baseRef?: string) => {
-      if (!rootPath || !workspaceId) return
+      if (!rootPath || !workspaceId) return null
       const branch = toBranchName(rawName)
       if (!branch) throw new Error('Please enter a name')
       const targetPath = worktreePathFor(rootPath, branch)
@@ -75,13 +77,14 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
       upsertWorktree(workspaceId, meta)
       addAdditionalRoot(workspaceId, targetPath)
       gitStatusStore.refresh(rootPath)
+      return meta
     },
     [rootPath, workspaceId, upsertWorktree, addAdditionalRoot],
   )
 
   const checkoutPr = useCallback(
     async (pr: PrListItem) => {
-      if (!rootPath || !workspaceId) return
+      if (!rootPath || !workspaceId) return null
       // Slug includes the PR number so contributors' identically-named branches
       // never collide on disk.
       const targetPath = worktreePathFor(rootPath, `pr-${pr.number}-${pr.headRefName}`)
@@ -99,6 +102,7 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
       upsertWorktree(workspaceId, meta)
       addAdditionalRoot(workspaceId, res.path)
       gitStatusStore.refresh(rootPath)
+      return meta
     },
     [rootPath, workspaceId, upsertWorktree, addAdditionalRoot],
   )

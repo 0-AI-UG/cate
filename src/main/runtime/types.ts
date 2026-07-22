@@ -15,6 +15,7 @@
 // =============================================================================
 
 import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity } from '../../shared/types'
+import type { AgentHookAgentState, AgentHookConfig, AgentHookEvent } from '../../shared/agentHooks'
 import type { RuntimeId } from './locator'
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,17 @@ export interface PtyCreateOptions {
    *  (RemoteRuntime spreads opts; rpcServer forwards verbatim), so no protocol
    *  change is needed to reach a remote host. */
   env?: Record<string, string>
+  /** Opt this pty into agent hook injection (hook env + workspace hook files
+   *  — see src/runtime/capabilities/agentHooks.ts). Set by Cate's
+   *  terminal layer for user terminals; OFF by default so bare process.create
+   *  callers (tests, tooling) spawn untouched shells and write nothing. Rides
+   *  the same opts pass-through as `env`. */
+  agentHooks?: boolean
+  /** Per-agent injection overrides for this pty's workspace (tri-state
+   *  auto/on/off; missing agents default to 'auto'). Only meaningful with
+   *  agentHooks; gates the workspace FILE writes, not the ambient env. Rides
+   *  the same opts pass-through as `env`, so it reaches a remote host. */
+  agentHookConfig?: AgentHookConfig
 }
 
 export interface PtyHandle {
@@ -49,11 +61,13 @@ export interface PtyHandle {
   shell?: string
 }
 
-/** Per-pty process-tree-derived activity, for the shell process monitor.
- *  `activity` mirrors what shell.ts broadcasts on SHELL_ACTIVITY_UPDATE; the
- *  agent fields say whether a known agent CLI (Claude/Codex/pi/…) is a direct
- *  child and its display name. Carry-across of a transient miss + the screen-
- *  state override stay in shell.ts (session-layer concerns). */
+/** Per-pty activity for the shell process monitor. `activity` mirrors what
+ *  shell.ts broadcasts on SHELL_ACTIVITY_UPDATE (first non-shell direct
+ *  child); the agent fields report the HOOK-REGISTERED agent pid's liveness
+ *  (agentPresence.ts) — presence rises when the agent's hooks first speak and
+ *  falls when its pid leaves the process table, wherever in the tree it lives
+ *  (tmux panes included). Carry-across of a transient miss + the screen-state
+ *  override stay in shell.ts (session-layer concerns). */
 export interface PtyActivity {
   activity: TerminalActivity
   agentName: string | null
@@ -79,9 +93,10 @@ export interface ProcessHost {
   /**
    * Process-monitor scan for the given pty ids (those this host owns). Takes ONE
    * `ps` snapshot of the host's process table and derives, per id, the activity
-   * indicator + agent-CLI detection. Runs on whichever host owns the ptys, so a
-   * remote terminal's activity reflects the daemon's process tree. Ids not owned
-   * by this host are omitted. POSIX-only; returns {} where `ps` is unavailable.
+   * indicator + the hook-registered agent pid's liveness. Runs on whichever host
+   * owns the ptys, so a remote terminal's activity reflects the daemon's process
+   * tree. Ids not owned by this host are omitted. POSIX-only; returns {} where
+   * `ps` is unavailable.
    */
   scanActivity(ids: string[]): Promise<Record<string, PtyActivity>>
   /**
@@ -91,6 +106,26 @@ export interface ProcessHost {
    * omitted. POSIX-only; returns {} where `lsof` is unavailable.
    */
   scanPorts(ids: string[]): Promise<Record<string, number[]>>
+}
+
+// ---------------------------------------------------------------------------
+// Agent hook host (push-based agent-CLI hook events)
+//
+// The daemon injects hook bridges into the agent CLIs running in its PTYs
+// (ambient env / workspace files — see src/runtime/capabilities/
+// agentHooks.ts), ingests their events on a daemon-local endpoint, and
+// normalizes them (src/shared/agentHooks.ts). This host is the subscription
+// seam: events are already correlated to a pty id (CATE_TERMINAL_ID), so the
+// IPC layer routes each one to the terminal's owning window.
+// ---------------------------------------------------------------------------
+
+export interface AgentHookHost {
+  /** Subscribe to normalized agent hook events from this host's terminals.
+   *  Returns an unsubscribe. */
+  subscribe(onEvent: (event: AgentHookEvent) => void): () => void
+  /** Inspect a workspace's per-agent hook-file injection state (for the
+   *  Settings UI) on this host — correct for remote workspaces too. */
+  inspectWorkspace(cwd: string): Promise<AgentHookAgentState[]>
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +475,7 @@ export interface Runtime {
   readonly id: RuntimeId
   readonly process: ProcessHost
   readonly agent: AgentHost
+  readonly agentHooks: AgentHookHost
   readonly file: FileHost
   readonly vcs: VcsHost
   readonly server: ServerHost

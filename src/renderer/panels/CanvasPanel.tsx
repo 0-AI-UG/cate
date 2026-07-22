@@ -18,9 +18,8 @@ import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, type PanelPlacement } from '../stores/appStore'
 import { useCateAgentStore } from '../cateAgent/cateAgentStore'
-import { useStoreWithEqualityFn } from 'zustand/traditional'
 import type { StoreApi } from 'zustand'
-import { keepsMountedOffscreen } from '../../shared/panels'
+import { useKeepMountedPanelIds } from './keepMountedPanels'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import { setActivePanel } from '../lib/activePanel'
 import { createDockStore, type DockStore } from '../stores/dockStore'
@@ -39,39 +38,6 @@ import { activeDockPanelId } from '../../shared/collectPanelIds'
 // resolver) keep working through the same import path. New code should import
 // directly from './nodeDockRegistry' to skip the heavy CanvasPanel module.
 export { findNodeDockStore, findNodeIdForDockStore }
-
-// Same-membership equality for the keep-mounted set, so the selector below hands
-// back the SAME Set object whenever the ids are unchanged.
-function setEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
-  if (a === b) return true
-  if (a.size !== b.size) return false
-  for (const v of a) if (!b.has(v)) return false
-  return true
-}
-
-// The set of panel ids whose type must stay mounted off-screen (webview-backed
-// extensions). Derived from the workspace's panels with an equality-checked
-// selector so pure panel-state churn (a title edit, dirty flag, etc.) does NOT
-// produce a new Set — the cull's keep-alive cache is keyed on this set's identity,
-// so a stable identity means no re-render here and no per-frame recompute there.
-// Panel `type` is immutable after creation, so this only changes when a
-// keep-mounted panel is actually added or removed.
-function useKeepMountedPanelIds(workspaceId: string): ReadonlySet<string> {
-  return useStoreWithEqualityFn(
-    useAppStore,
-    (s) => {
-      const panels = s.workspaces.find((w) => w.id === workspaceId)?.panels
-      const ids = new Set<string>()
-      if (panels) {
-        for (const p of Object.values(panels)) {
-          if (keepsMountedOffscreen(p.type)) ids.add(p.id)
-        }
-      }
-      return ids
-    },
-    setEqual,
-  )
-}
 
 interface CanvasPanelProps {
   panelId: string
@@ -238,10 +204,13 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
   // `visibleNodeIds` is viewport-culled: we only mount CanvasNodeWrapper for
   // nodes whose bbox overlaps the visible canvas rect (plus a 1-screen margin),
   // so off-screen terminals/editors don't hold live xterm/Monaco instances.
-  // `keepMountedPanelIds` lets the cull exempt webview-backed nodes (extensions)
-  // so panning them off-screen doesn't unmount the guest and reset its session
-  // state. It's a stable, membership-keyed set (see useKeepMountedPanelIds) so
-  // unrelated panel churn (titles, dirty flags) never re-runs the cull.
+  // `keepMountedPanelIds` lets the cull exempt webview-backed nodes (local
+  // extensions) so panning them off-screen doesn't unmount the guest and reset its
+  // session state. url-mode extensions are deliberately NOT exempt: they're remote
+  // SaaS pages whose login survives in the persistent session partition, so they
+  // reload rather than lose state. It's a stable, membership-keyed set (see
+  // useKeepMountedPanelIds) so unrelated panel churn (titles, dirty flags) never
+  // re-runs the cull.
   const nodeIds = useNodeIds(store)
   const keepMountedPanelIds = useKeepMountedPanelIds(workspaceId)
   // Terminals the Cate Agent is driving must also stay mounted off-view: they're

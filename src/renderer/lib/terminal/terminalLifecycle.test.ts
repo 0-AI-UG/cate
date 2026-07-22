@@ -115,8 +115,6 @@ vi.mock('./terminalFileLinkProvider', () => ({
   resolveLinkRoot: () => undefined,
 }))
 vi.mock('../agent/agentScreenDetector', () => ({
-  noteAgentTitle: vi.fn(),
-  noteAgentSpinnerByte: vi.fn(),
   noteAgentPresence: vi.fn(),
   forgetAgentTracker: vi.fn(),
 }))

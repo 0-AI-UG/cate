@@ -62,8 +62,11 @@ import {
   GIT_DISCARD_FILE,
   SHELL_ACTIVITY_UPDATE,
   SHELL_PORTS_UPDATE,
+  SHELL_AGENT_SESSION_UPDATE,
   SHELL_CWD_UPDATE,
   SHELL_AGENT_SCREEN_STATE,
+  SHELL_AGENT_HOOK_EVENT,
+  AGENT_HOOKS_INSPECT,
   SETTINGS_GET,
   SETTINGS_SET,
   SETTINGS_GET_ALL,
@@ -409,6 +412,7 @@ const invokeForwarders = {
   // Shell / Process Monitor
 
   // Settings
+  agentHooksInspect: makeInvoker<'agentHooksInspect'>(AGENT_HOOKS_INSPECT),
   settingsGet: makeInvoker<'settingsGet'>(SETTINGS_GET),
   settingsSet: makeInvoker<'settingsSet'>(SETTINGS_SET),
   settingsGetAll: makeInvoker<'settingsGetAll'>(SETTINGS_GET_ALL),
@@ -678,6 +682,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onShellPortsUpdate(callback: (terminalId: string, ports: number[]) => void): () => void {
     return createIpcListener(SHELL_PORTS_UPDATE, callback)
+  },
+
+  onShellAgentSessionUpdate(callback: (terminalId: string, session: unknown) => void): () => void {
+    return createIpcListener(SHELL_AGENT_SESSION_UPDATE, callback)
+  },
+
+  onShellAgentHookEvent(callback: (terminalId: string, event: unknown) => void): () => void {
+    return createIpcListener(SHELL_AGENT_HOOK_EVENT, callback)
   },
 
   shellReportAgentScreenState(terminalId: string, state: string): void {

@@ -900,7 +900,7 @@ export function ModelPrefRow({
             selected={current}
             onPick={onPick}
             onClose={() => setOpen(false)}
-            className="right-0 w-[280px] max-h-[320px]"
+            className="top-full mt-1 right-0 w-[280px] max-h-[320px]"
             allowNone
             noneLabel={noneLabel}
           />

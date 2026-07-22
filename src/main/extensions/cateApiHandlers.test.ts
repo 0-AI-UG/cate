@@ -42,9 +42,15 @@ const { showOsNotification, settings } = vi.hoisted(() => ({
   showOsNotification: vi.fn(),
   settings: {
     notificationsEnabled: true,
+    cliBrowserReadEnabled: true,
     cliBrowserControlEnabled: true,
     cliTerminalReadEnabled: true,
     cliTerminalInputEnabled: false,
+    cliPanelReadEnabled: true,
+    cliPanelControlEnabled: true,
+    cliEditorReadEnabled: true,
+    cliEditorControlEnabled: true,
+    cliNotifyEnabled: true,
   },
 }))
 vi.mock('../ipc/notifications', () => ({ showOsNotification }))
@@ -133,8 +139,15 @@ import {
   TERMINAL_INPUT_DISABLED,
   TERMINAL_READ_DISABLED,
   BROWSER_CONTROL_DISABLED,
+  BROWSER_READ_DISABLED,
   type InvokeScope,
 } from './cateApiHandlers'
+import {
+  cliPermissionCellByKey,
+  cliPermissionDenied,
+  cliPermissionForMethod,
+} from '../../shared/cliPermissions'
+import { GRANTED_SCOPES } from './workspaceCateApi'
 
 const EXT = 'cate.kitchensink'
 const WS = 'ws-1'
@@ -148,9 +161,15 @@ beforeEach(() => {
   state.enabled = true
   state.scopes = ['storage', 'editor', 'canvas', 'theme', 'ui', 'workspace.read', 'panel']
   settings.notificationsEnabled = true
+  settings.cliBrowserReadEnabled = true
   settings.cliBrowserControlEnabled = true
   settings.cliTerminalReadEnabled = true
   settings.cliTerminalInputEnabled = false
+  settings.cliPanelReadEnabled = true
+  settings.cliPanelControlEnabled = true
+  settings.cliEditorReadEnabled = true
+  settings.cliEditorControlEnabled = true
+  settings.cliNotifyEnabled = true
   activeWindow.value = undefined
   windowsById.clear()
   windowPanelList.value = []
@@ -849,7 +868,7 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('the Browser control toggle (Settings → CLI) gates first-party browser calls', async () => {
+  it('the Browser → Control permission gates acting verbs but not reading ones', async () => {
     settings.cliBrowserControlEnabled = false
     const { win, send } = makeWin()
     activeWindow.value = win
@@ -857,18 +876,85 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
       extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward: vi.fn(),
       caller: 'first-party', grantedScopes: ['browser'],
     }
-    expect(await dispatchCateInvoke(s, 'cate.browser.snapshot', {})).toEqual({
+    expect(await dispatchCateInvoke(s, 'cate.browser.click', { ref: 'e1' })).toEqual({
       error: BROWSER_CONTROL_DISABLED,
-      method: 'cate.browser.snapshot',
+      method: 'cate.browser.click',
     })
-    // Refused by the toggle, not a prompt — and the browser was never touched.
+    // Refused by the permission, not a prompt — and the browser was never touched.
     expect(showMessageBox).not.toHaveBeenCalled()
     expect(send).not.toHaveBeenCalled()
     expect(BROWSER_CONTROL_DISABLED).toMatch(/Settings → CLI/)
+    // Read stays allowed: the two halves are independent.
+    await dispatchCateInvoke(s, 'cate.browser.snapshot', {})
+    expect(send).toHaveBeenCalledTimes(1)
   })
 
-  it('CLI toggles do NOT affect extensions: a consented extension browses with Browser control off', async () => {
+  it('the Browser → Read permission gates snapshot/screenshot while Control stays on', async () => {
+    settings.cliBrowserReadEnabled = false
+    const { win, send } = makeWin()
+    activeWindow.value = win
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward: vi.fn(),
+      caller: 'first-party', grantedScopes: ['browser'],
+    }
+    expect(await dispatchCateInvoke(s, 'cate.browser.snapshot', {})).toEqual({
+      error: BROWSER_READ_DISABLED,
+      method: 'cate.browser.snapshot',
+    })
+    expect(send).not.toHaveBeenCalled()
+    expect(BROWSER_READ_DISABLED).toMatch(/Settings → CLI/)
+    // Control is a separate grant and still goes through.
+    await dispatchCateInvoke(s, 'cate.browser.click', { ref: 'e1' })
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  // --- The rest of the matrix: Panels, Editor, Notifications ------------------
+
+  it('gates panel, editor and notification verbs on their own matrix cells', async () => {
+    const { win } = makeWin()
+    activeWindow.value = win
+    windowPanelList.value = [{ panelId: 'p1', type: 'editor', ownerWindowId: 1 }]
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward: vi.fn(),
+      caller: 'first-party', grantedScopes: [...GRANTED_SCOPES],
+    }
+
+    // Each cell denies exactly its own half, naming itself in the error.
+    settings.cliPanelReadEnabled = false
+    expect(await dispatchCateInvoke(s, 'cate.panel.list', {})).toEqual({
+      error: cliPermissionDenied(cliPermissionCellByKey('cliPanelReadEnabled')),
+      method: 'cate.panel.list',
+    })
+    settings.cliPanelControlEnabled = false
+    expect(await dispatchCateInvoke(s, 'cate.canvas.createPanel', { type: 'terminal' })).toEqual({
+      error: cliPermissionDenied(cliPermissionCellByKey('cliPanelControlEnabled')),
+      method: 'cate.canvas.createPanel',
+    })
+    settings.cliEditorControlEnabled = false
+    expect(await dispatchCateInvoke(s, 'cate.editor.openFile', { path: '/a.ts' })).toEqual({
+      error: cliPermissionDenied(cliPermissionCellByKey('cliEditorControlEnabled')),
+      method: 'cate.editor.openFile',
+    })
+    settings.cliNotifyEnabled = false
+    expect(await dispatchCateInvoke(s, 'cate.ui.notify', { message: 'hi' })).toEqual({
+      error: cliPermissionDenied(cliPermissionCellByKey('cliNotifyEnabled')),
+      method: 'cate.ui.notify',
+    })
+    expect(showOsNotification).not.toHaveBeenCalled()
+  })
+
+  it('an unlisted verb in a covered namespace falls into that surface\'s Control cell', () => {
+    // New verbs must fail into the stricter half rather than escaping the matrix.
+    expect(cliPermissionForMethod('cate.browser.somethingNew')?.key).toBe('cliBrowserControlEnabled')
+    expect(cliPermissionForMethod('cate.panel.somethingNew')?.key).toBe('cliPanelControlEnabled')
+    // Namespaces the matrix doesn't cover stay governed by scopes alone.
+    expect(cliPermissionForMethod('cate.storage.get')).toBeUndefined()
+    expect(cliPermissionForMethod('cate.version')).toBeUndefined()
+  })
+
+  it('CLI permissions do NOT affect extensions: a consented extension browses with both browser cells off', async () => {
     settings.cliBrowserControlEnabled = false
+    settings.cliBrowserReadEnabled = false
     state.enabled = true
     state.scopes = ['browser']
     const { win, send } = makeWin()

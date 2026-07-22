@@ -26,6 +26,7 @@ import {
   startAgentScreenDetector,
   stopAgentScreenDetector,
   applyRemoteAgentScreenState,
+  noteAgentHookEvent,
 } from '../agent/agentScreenDetector'
 import { isExternalFileDrag } from '../fs/importExternalEntries'
 import { revealPanel } from '../workspace/panelReveal'
@@ -55,24 +56,30 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
   // Owner-routed terminal telemetry (agent presence/name, ports, cwd). Main
   // sends these only to each terminal's owning window, so every window must
   // listen for its OWN terminals — otherwise a detached terminal never learns
-  // its agent presence and the detector can't flip it to `running` (the screen
-  // spinner alone isn't enough; resolveAgentState gates running on presence).
+  // its agent presence and the detector can't flip it to `running` (hook
+  // events alone aren't enough; resolveAgentState gates running on presence).
   useOwnedTerminalTelemetry()
 
-  // Agent-screen detector: scans this window's terminals for prompt markers and
-  // reports "needs input"/running state via IPC. The unsubscribe also applies
-  // state broadcast from other windows, so any window keeps the others in sync.
+  // Agent activity coordinator: derives running/"needs input" state from agent
+  // hook events and reports it via IPC. Hook events arrive only in the
+  // terminal's OWNING window
+  // (SHELL_AGENT_HOOK_EVENT), so every window feeds its own; the screen-state
+  // broadcast below mirrors the result so other windows' sidebars agree.
   // Without starting it here, detached terminals never report agent state.
   useEffect(() => {
     startAgentScreenDetector()
-    const off = window.electronAPI?.onAgentScreenStateUpdate?.(
+    const offRemote = window.electronAPI?.onAgentScreenStateUpdate?.(
       (terminalId: string, state: AgentState) => {
         applyRemoteAgentScreenState(terminalId, state)
       },
     )
+    const offHook = window.electronAPI?.onShellAgentHookEvent?.((_terminalId, event) => {
+      noteAgentHookEvent(event)
+    })
     return () => {
       stopAgentScreenDetector()
-      off?.()
+      offRemote?.()
+      offHook?.()
     }
   }, [])
 

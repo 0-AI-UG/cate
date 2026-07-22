@@ -28,6 +28,7 @@ import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { UpdatesSettings } from './UpdatesSettings'
 import { ProvidersSettings } from './ProvidersSettings'
+import { AgentHooksSettings } from './AgentHooksSettings'
 import { CanvasCateAgentSettings } from './CanvasCateAgentSettings'
 import { SkillsSettings } from './SkillsSettings'
 import { ExtensionsSettings } from './ExtensionsSettings'
@@ -46,6 +47,7 @@ const SECTIONS = [
   { title: 'Worktrees', component: WorktreeSettings },
   { title: 'Notifications', component: NotificationSettings },
   { title: 'Providers', component: ProvidersSettings },
+  { title: 'Agent Hooks', component: AgentHooksSettings },
   { title: 'Cate Agent', component: CanvasCateAgentSettings },
   { title: 'Skills', component: SkillsSettings },
   { title: 'Extensions', component: ExtensionsSettings },

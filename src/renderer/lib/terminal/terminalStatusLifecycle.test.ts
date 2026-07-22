@@ -37,8 +37,6 @@ vi.mock('../../stores/appStore', () => ({
 }))
 vi.mock('../workspace/session', () => ({ replayTerminalLog: async () => {} }))
 vi.mock('../agent/agentScreenDetector', () => ({
-  noteAgentTitle: vi.fn(),
-  noteAgentSpinnerByte: vi.fn(),
   forgetAgentTracker: vi.fn(),
 }))
 vi.mock('../../hooks/useProcessMonitor', () => ({ forgetTerminalForProcessMonitor: vi.fn() }))

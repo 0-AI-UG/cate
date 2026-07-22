@@ -7,6 +7,11 @@
 // opened workspace (each agent's per-target dir) or in Cate's own userData — never
 // in another agent's user-home dir.
 //
+// The per-agent half of this file is DERIVED from the canonical agent registry
+// (src/shared/agents.ts): each AgentDef declares its own skills dir + layout,
+// and SKILL_TARGETS projects them. Adding an agent CLI target means editing
+// agents.ts, not this file (beyond widening SkillTargetId).
+//
 // Two homes for a skill:
 //   - saved:     cached in Cate's userData library (skillStore bytes + a
 //                saved-skills.json entry). A personal library, in no workspace.
@@ -16,13 +21,24 @@
 // user installs / adds it there.
 // =============================================================================
 
+import { AGENTS } from './agents'
+
+/** Stable, PERSISTED target ids (recorded per install in a workspace's
+ *  `.cate/skills.json`) — renaming one orphans existing installs.
+ *
+ *  Every id except `cate-agent` belongs to an agent CLI and is declared on that
+ *  agent in src/shared/agents.ts (AgentDef.skills), which is where a NEW target
+ *  is added: SKILL_TARGETS below is derived from AGENTS, so the only thing to
+ *  do here is widen this union. `cate-agent` is Cate's own agent panel, not a
+ *  CLI, so it has no AgentDef and is defined here. */
 export type SkillTargetId =
   | 'claude-code'
   | 'cate-agent'
   | 'pi-native'
   | 'opencode'
   | 'codex'
-  | 'antigravity'
+  | 'cursor'
+  | 'grok'
 
 /** Where a skill lives in a source repo: the directory that contains its
  *  `SKILL.md` (path === '' means the repo root is the skill dir). */
@@ -84,6 +100,8 @@ export interface SavedSkill {
   stars?: number
 }
 
+/** Presentation + layout metadata for one install target. For agent CLIs this
+ *  is projected from AgentDef.skills (see SKILL_TARGETS). */
 export interface SkillTargetInfo {
   id: SkillTargetId
   label: string
@@ -97,16 +115,47 @@ export interface SkillTargetInfo {
   beta?: boolean
 }
 
+/** Cate's own agent panel — the one target with no agent CLI behind it, so it
+ *  is the one target not derived from AGENTS. Its skills root needs the main
+ *  process's PI_AGENT_DIR, so that path lives in `src/skills/main/targets.ts`. */
+const CATE_AGENT_TARGET: SkillTargetInfo = {
+  id: 'cate-agent',
+  label: 'Agent',
+  layout: 'folder',
+  bundledResources: true,
+  nameMatchesDir: false,
+}
+
 /** Static target metadata, shared by main (path/write logic) and renderer (the
- *  install matrix). Workspace-relative base dirs live in `src/skills/main/targets.ts`. */
+ *  install matrix). DERIVED from the agent registry — to add a target, declare
+ *  `skills` on the agent in src/shared/agents.ts; nothing here changes.
+ *  Workspace-relative base dirs live in `src/skills/main/targets.ts`. */
 export const SKILL_TARGETS: readonly SkillTargetInfo[] = [
-  { id: 'claude-code', label: 'Claude Code', layout: 'folder', bundledResources: true, nameMatchesDir: true },
-  { id: 'cate-agent', label: 'Agent', layout: 'folder', bundledResources: true, nameMatchesDir: false },
-  { id: 'pi-native', label: 'Pi', layout: 'folder', bundledResources: true, nameMatchesDir: false },
-  { id: 'opencode', label: 'OpenCode', layout: 'folder', bundledResources: true, nameMatchesDir: false },
-  { id: 'codex', label: 'Codex', layout: 'folder', bundledResources: true, nameMatchesDir: false },
-  { id: 'antigravity', label: 'Antigravity', layout: 'folder', bundledResources: true, nameMatchesDir: false, beta: true },
+  ...AGENTS.flatMap((a) =>
+    a.skills
+      ? [{
+          id: a.skills.targetId,
+          label: a.skills.label ?? a.displayName,
+          layout: a.skills.layout,
+          bundledResources: a.skills.bundledResources,
+          nameMatchesDir: a.skills.nameMatchesDir,
+          ...(a.skills.beta ? { beta: true as const } : {}),
+        }]
+      : [],
+  ),
+  CATE_AGENT_TARGET,
 ]
+
+const SKILL_TARGET_IDS: ReadonlySet<string> = new Set(SKILL_TARGETS.map((t) => t.id))
+
+/** Whether a target id is still supported. Persisted data (a workspace's
+ *  `.cate/skills.json`) can name a target from an older Cate — `antigravity`
+ *  was a target until agent support for it was dropped — so anything read back
+ *  from disk must be checked before it reaches code that assumes a live target
+ *  (getSkillTarget throws, and skillsRootDir has no dir for it). */
+export function isKnownSkillTarget(id: string): id is SkillTargetId {
+  return SKILL_TARGET_IDS.has(id)
+}
 
 export function getSkillTarget(id: SkillTargetId): SkillTargetInfo {
   const t = SKILL_TARGETS.find((x) => x.id === id)

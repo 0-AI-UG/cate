@@ -16,6 +16,7 @@ import type { PanelPlacement } from './appStore'
 import { gitStatusStore } from './gitStatusStore'
 import { useWorktreeActions } from './useWorktreeActions'
 import type { JoinedWorktree } from './useWorktrees'
+import type { WorktreeMeta } from '../../shared/types'
 import type { PrListItem } from '../sidebar/CreateWorktreeForm'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { isLocalLocator } from '../../main/runtime/locator'
@@ -111,8 +112,8 @@ export async function runWorktreeContextMenu(opts: {
 
 export interface UseParallelWork {
   reconcile: () => void
-  createWorktree: (rawName: string, baseRef?: string) => Promise<void>
-  checkoutPr: (pr: PrListItem) => Promise<void>
+  createWorktree: (rawName: string, baseRef?: string) => Promise<WorktreeMeta | null>
+  checkoutPr: (pr: PrListItem) => Promise<WorktreeMeta | null>
   /** Spawn a terminal or Agent bound to a worktree. Pass `placement` to pin
    *  it to a specific canvas (the toolbar does); omit for default placement. */
   launchInWorktree: (wt: JoinedWorktree, type: 'terminal' | 'agent', placement?: PanelPlacement) => void

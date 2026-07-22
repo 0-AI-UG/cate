@@ -9,6 +9,7 @@ import { registerHandlers as registerFilesystemHandlers } from './ipc/filesystem
 import { registerHandlers as registerGitHandlers } from './ipc/git'
 import { registerHandlers as registerSearchHandlers } from './ipc/search'
 import { registerHandlers as registerShellHandlers } from './ipc/shell'
+import { registerAgentHookForwarding } from './ipc/agentHookEvents'
 import { registerHandlers as registerGitMonitorHandlers } from './ipc/git-monitor'
 import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, getSettingSync, setSettingsFromMain } from './store'
 import { registerUIStateHandlers } from './uiStateStore'
@@ -299,6 +300,11 @@ app.whenReady().then(async () => {
   // This ensures MCP servers, `which` lookups, etc. see the full PATH.
   await initShellEnv()
   log.info('Shell environment resolved')
+
+  // Agent hook stream: subscribes to each runtime's normalized hook events as
+  // it connects. Armed BEFORE the LOCAL connect below so the subscription can
+  // never miss the connected event.
+  registerAgentHookForwarding()
 
   // Bring the local workspace online: provision + launch the host-target runtime
   // tarball as a local daemon, the same path remote hosts use. Done after the shell

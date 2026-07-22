@@ -21,11 +21,15 @@ import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useClaimPanelCorner } from './panelChrome'
 import { useOptionalCanvasStoreApi, useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
+import { useUIStore } from '../stores/uiStore'
+import { useMissingAgentHookNotice } from '../hooks/useMissingAgentHookNotice'
+import { Warning } from '@phosphor-icons/react'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
 import { shouldAdjustTerminalCoords } from '../lib/terminal/terminalCoordAdjust'
 import { useTerminalGlow } from '../cateAgent/cateAgentStore'
 import { resolveWorktree } from '../../shared/worktrees'
+import { resumeCommandForAgent } from '../../shared/agents'
 import { CATE_FILE_MIME, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
 import { parseLocator } from '../../main/runtime/locator'
 
@@ -141,6 +145,10 @@ export default function TerminalPanel({
   const isFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
   const canvasApi = useOptionalCanvasStoreApi()
   const zoomLevel = useOptionalCanvasStoreContext((s) => s.zoomLevel, 1)
+
+  // A supported agent CLI running here with no Cate hooks installed → a small
+  // "hooks off" chip linking to Settings (auto-clears when resolved).
+  const missingHookAgent = useMissingAgentHookNotice(workspaceId, panelId, rootPath)
 
   // -------------------------------------------------------------------------
   // Search handlers
@@ -329,12 +337,23 @@ export default function TerminalPanel({
       }
     }
 
+    // Agent session persisted at last save (terminal restore): resolve it to
+    // the resume command the lifecycle types into the fresh shell. Read via
+    // getState — the stamp is written back whenever the agent's hook events
+    // report a session change, and must not re-run this lifecycle effect.
+    const agentSession = useAppStore.getState().workspaces
+      .find((w) => w.id === workspaceId)?.panels[panelId]?.agentSession
+    const resumeCommand = agentSession
+      ? resumeCommandForAgent(agentSession.agentId, agentSession.sessionId) ?? undefined
+      : undefined
+
     // 1. Ensure the terminal + PTY exist in the registry (no-op if already live)
     terminalRegistry
       .getOrCreate(panelId, {
         workspaceId,
         cwd: rootPathRef.current || undefined,
         initialInput,
+        resumeCommand,
       })
       .then((entry) => {
         if (cancelled) return
@@ -764,6 +783,18 @@ export default function TerminalPanel({
             transformOrigin: '0 0',
           }}
         />
+        {/* Supported agent running without Cate hooks — nudge to Settings. */}
+        {missingHookAgent && (
+          <button
+            type="button"
+            onClick={() => useUIStore.getState().openSettings('agent hooks')}
+            title={`${missingHookAgent} is running without Cate hooks — click to set them up in Settings`}
+            className="absolute bottom-2 right-2 z-30 flex items-center gap-1 px-2 py-1 rounded-md bg-surface-3/90 border border-subtle text-[11px] text-secondary hover:text-primary backdrop-blur-sm transition-colors focus:outline-none"
+          >
+            <Warning size={11} className="flex-shrink-0" />
+            Agent hooks off
+          </button>
+        )}
         {/* File-drop indicator is rendered globally by <FileDropOverlay/>
             (this container is marked data-filedrop="terminal"). */}
         {/* Inline URL prompt is rendered outside this scaled box so it

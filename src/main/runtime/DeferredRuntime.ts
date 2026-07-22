@@ -23,6 +23,7 @@ import type {
   FileHost,
   ProcessHost,
   AgentHost,
+  AgentHookHost,
   ServerHost,
   TunnelHost,
   VcsHost,
@@ -31,6 +32,7 @@ import type {
 export class DeferredRuntime implements Runtime {
   readonly process: ProcessHost
   readonly agent: AgentHost
+  readonly agentHooks: AgentHookHost
   readonly file: FileHost
   readonly vcs: VcsHost
   readonly server: ServerHost
@@ -60,6 +62,24 @@ export class DeferredRuntime implements Runtime {
       start: (opts, onLine, onExit) => d((c) => c.agent.start(opts, onLine, onExit)),
       writeLine: (id, line) => { void ready_.then((c) => c.agent.writeLine(id, line)).catch(() => {}) },
       stop: (id) => { void ready_.then((c) => c.agent.stop(id)).catch(() => {}) },
+    }
+
+    this.agentHooks = {
+      // Start-after-ready: return the unsub now; start the real subscription
+      // once ready unless unsubscribed. Mirrors RemoteRuntime.agentHooks.
+      subscribe: (onEvent) => {
+        let stopped = false
+        let realUnsub: (() => void) | null = null
+        ready_.then((c) => {
+          if (stopped) return
+          realUnsub = c.agentHooks.subscribe(onEvent)
+        }).catch(() => { /* subscribe failed; no events */ })
+        return () => {
+          stopped = true
+          if (realUnsub) { realUnsub(); realUnsub = null }
+        }
+      },
+      inspectWorkspace: (cwd) => d((c) => c.agentHooks.inspectWorkspace(cwd)),
     }
 
     this.server = {

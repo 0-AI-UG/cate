@@ -31,8 +31,7 @@ describe('slugifySkillName', () => {
 })
 
 describe('getSkillTarget', () => {
-  it('returns target info and flags antigravity as beta', () => {
+  it('returns target info', () => {
     expect(getSkillTarget('claude-code').label).toBe('Claude Code')
-    expect(getSkillTarget('antigravity').beta).toBe(true)
   })
 })

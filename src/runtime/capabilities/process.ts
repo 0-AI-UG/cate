@@ -14,7 +14,9 @@ import os from 'os'
 import { execFile } from 'child_process'
 import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../../main/runtime/types'
 import type { TerminalActivity } from '../../shared/types'
-import { matchAgentProcess } from '../../shared/agents'
+import { matchAgentDef } from '../../shared/agents'
+import type { AgentPresenceTracker } from './agentPresence'
+import type { AgentHookConfig } from '../../shared/agentHooks'
 import { catePathEnv } from '../cateCli'
 import {
   type ProcTree,
@@ -67,9 +69,24 @@ function snapshotProcessTreePs(): Promise<ProcTree> {
   })
 }
 
-/** Process-table snapshot: /proc on Linux (no fork — #246), `ps` elsewhere. */
-function snapshotProcessTree(): Promise<ProcTree> {
+/** Process-table snapshot: /proc on Linux (no fork — #246), `ps` elsewhere.
+ *  Exported for the agent-presence tracker's registration-time walk. */
+export function snapshotProcessTree(): Promise<ProcTree> {
   return isLinux ? snapshotProcessTreeProc() : snapshotProcessTreePs()
+}
+
+/** A process's cwd. Linux: readlink /proc/<pid>/cwd (no fork — #246). macOS:
+ *  lsof. win32: null. */
+function cwdForPid(pid: number): Promise<string | null> {
+  if (process.platform === 'win32') return Promise.resolve(null)
+  if (isLinux) return getCwdProc(pid)
+  return new Promise((resolve) => {
+    execFile('lsof', ['-a', '-d', 'cwd', '-p', `${pid}`, '-Fn'], { encoding: 'utf-8', timeout: 2000 }, (err, stdout) => {
+      if (err || !stdout) { return resolve(null) }
+      const nameLine = stdout.split('\n').find((l) => l.startsWith('n'))
+      resolve(nameLine ? nameLine.slice(1) : null)
+    })
+  })
 }
 
 /** All descendant pids of `pid` (BFS over the snapshot), excluding `pid`. */
@@ -85,32 +102,41 @@ function descendantsOf(pid: number, tree: ProcTree): number[] {
   return out
 }
 
-// Agent detection list lives in src/shared/agents.ts (one place, shared with the
-// renderer's logo map) — matchAgentProcess maps a child process name to its
-// display name.
-
 function isShellProcess(name: string): boolean {
   const shells = ['zsh', 'bash', 'fish', 'sh', 'tcsh', 'ksh', 'dash']
   return shells.includes(name.toLowerCase())
 }
 
-/** Derive one pty's activity + agent detection from its direct children. */
-function activityForPid(shellPid: number, tree: ProcTree): PtyActivity {
-  const childrenToScan = tree.childrenByPid.get(shellPid) ?? []
-  let foundAgentName: string | null = null
-  let firstChildName: string | null = null
-  for (const childPid of childrenToScan) {
-    const name = tree.nameByPid.get(childPid)
-    if (!name) continue
-    if (firstChildName === null && !isShellProcess(name)) firstChildName = name
-    if (!foundAgentName) {
-      const agentMatch = matchAgentProcess(name)
-      if (agentMatch) foundAgentName = agentMatch
-    }
+/** The activity indicator + a hooks-independent "which agent is running here"
+ *  signal. A supported agent CLI anywhere in the pty's subtree wins: it may run
+ *  under a launcher (grok's npm wrapper execs a versioned binary, etc.), so it
+ *  isn't always the direct child. This is the process-scan detection the tab
+ *  title and the "hooks off" nudge key on — complementary to the hook-anchored
+ *  presence (agentPresence.ts), which still owns running/finished STATE.
+ *
+ *  BLIND SPOT (deliberate, see #480 / agentPresence.ts header): this is a
+ *  DOWNWARD walk of the pty's OWN tree, so it is structurally blind wherever the
+ *  agent is detached from that tree — tmux/screen panes hang off the
+ *  multiplexer server, setsid/nohup daemonize. That is exactly why presence and
+ *  STATE are hook-anchored, not scan-anchored: hooks don't care about topology.
+ *  The two features that key on this scan (clean tab title, "hooks off" nudge)
+ *  therefore degrade to "no clean name / no nudge" under tmux — never a wrong
+ *  state, and the hook path still delivers the tab name + full state there. The
+ *  nudge additionally gates on hook-anchored presence so it can't fire when
+ *  hooks ARE working (see useMissingAgentHookNotice).
+ *
+ *  Falls back to the first non-shell direct child for the generic indicator
+ *  (dev servers, vim). */
+function activityForPid(shellPid: number, tree: ProcTree): TerminalActivity {
+  for (const pid of descendantsOf(shellPid, tree)) {
+    const name = tree.nameByPid.get(pid)
+    if (name && matchAgentDef(name)) return { type: 'running', processName: name }
   }
-  const activity: TerminalActivity =
-    firstChildName != null ? { type: 'running', processName: firstChildName } : { type: 'idle' }
-  return { activity, agentName: foundAgentName, agentPresent: foundAgentName != null }
+  for (const childPid of tree.childrenByPid.get(shellPid) ?? []) {
+    const name = tree.nameByPid.get(childPid)
+    if (name && !isShellProcess(name)) return { type: 'running', processName: name }
+  }
+  return { type: 'idle' }
 }
 
 // node-pty is loaded LAZILY so the daemon still starts (and serves files/git)
@@ -150,6 +176,24 @@ export interface ProcessDeps {
    * backgrounded local terminals still suspend.
    */
   idleSuspend?: boolean
+  /**
+   * Agent hook injection (see agentHooks.ts): plants the per-pty hook env
+   * (ingestion endpoint/token + CATE_TERMINAL_ID) and prepares
+   * workspace-scoped hook files before the shell spawns. Optional — hosts and
+   * tests without hook support spawn plain shells.
+   */
+  hooks?: {
+    envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
+    prepareWorkspace(cwd: string, config?: AgentHookConfig): Promise<void>
+  }
+  /**
+   * Hook-anchored agent presence (agentPresence.ts): scanActivity reads each
+   * pty's agent fields from the tracker's registered-pid liveness instead of
+   * scanning children, and pty teardown drops the registration. Optional —
+   * without it every pty reports no agent (hosts/tests that don't wire hooks
+   * have no way to register one anyway).
+   */
+  agentPresence?: Pick<AgentPresenceTracker, 'presenceFor' | 'drop'>
 }
 
 /** The capability the daemon holds onto: the ProcessHost plus the concrete
@@ -231,16 +275,28 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       const id = opts.id ?? `pty-${Date.now()}-${Math.round(seq++ + Math.random() * 1e6).toString(36)}`
       const ptySpawn = await getPtySpawn()
       const shell = deps.resolveShell(opts.shell)
+      const cwd = opts.cwd || os.homedir()
+      // Merge caller env over the host env; when a CLI endpoint was injected
+      // (CATE_API), also put the bundled `cate` on PATH so agents can run it.
+      let env = catePathEnv({ ...deps.getEnv(), ...(opts.env ?? {}) })
+      // Agent hook injection (opt-in per pty via opts.agentHooks): hook env
+      // (endpoint/token/CATE_TERMINAL_ID) on the pty, workspace
+      // hook files in its cwd. Failure degrades to a plain shell — a terminal
+      // must never fail to open over hooks.
+      if (deps.hooks && opts.agentHooks) {
+        try {
+          env = await deps.hooks.envForPty(id, env)
+          await deps.hooks.prepareWorkspace(cwd, opts.agentHookConfig)
+        } catch { /* hook injection unavailable */ }
+      }
       const pty = ptySpawn(shell.path, shell.args, {
         name: 'xterm-256color',
         cols: opts.cols,
         rows: opts.rows,
         // Empty cwd → the host's home dir (resolved on whichever host this
         // capability runs on: the local machine or the remote daemon).
-        cwd: opts.cwd || os.homedir(),
-        // Merge caller env over the host env; when a CLI endpoint was injected
-        // (CATE_API), also put the bundled `cate` on PATH so agents can run it.
-        env: catePathEnv({ ...deps.getEnv(), ...(opts.env ?? {}) }),
+        cwd,
+        env,
       })
       ptys.set(id, pty)
       if (idleEnabled) {
@@ -255,6 +311,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       pty.onExit(({ exitCode }) => {
         ptys.delete(id)
         idle.delete(id)
+        deps.agentPresence?.drop(id)
         onExit(id, exitCode)
       })
       return { id, pid: pty.pid, notice: shell.notice, shell: shell.path }
@@ -285,20 +342,13 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       try { pty.kill() } catch { /* already dead */ }
       ptys.delete(id)
       idle.delete(id)
+      deps.agentPresence?.drop(id)
     },
 
     async getCwd(id: string): Promise<string | null> {
       const pty = ptys.get(id)
-      if (!pty || process.platform === 'win32') return null
-      // Linux: readlink /proc/<pid>/cwd (no fork — #246). macOS: lsof.
-      if (isLinux) return getCwdProc(pty.pid)
-      return new Promise((resolve) => {
-        execFile('lsof', ['-a', '-d', 'cwd', '-p', `${pty.pid}`, '-Fn'], { encoding: 'utf-8', timeout: 2000 }, (err, stdout) => {
-          if (err || !stdout) { return resolve(null) }
-          const nameLine = stdout.split('\n').find((l) => l.startsWith('n'))
-          resolve(nameLine ? nameLine.slice(1) : null)
-        })
-      })
+      if (!pty) return null
+      return cwdForPid(pty.pid)
     },
 
     setVisibility(id: string, visible: boolean): void {
@@ -321,7 +371,14 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       if (owned.length === 0 || process.platform === 'win32') return {}
       const tree = await snapshotProcessTree()
       const out: Record<string, PtyActivity> = {}
-      for (const { id, pid } of owned) out[id] = activityForPid(pid, tree)
+      for (const { id, pid } of owned) {
+        // Agent fields come from the hook-registered pid's liveness against
+        // this same snapshot — same 1 Hz authority for "agent gone" as
+        // before, but anchored to a pid the agent itself proved, not to a
+        // position in the pty's tree.
+        const presence = deps.agentPresence?.presenceFor(id, tree) ?? { agentName: null, agentPresent: false }
+        out[id] = { activity: activityForPid(pid, tree), ...presence }
+      }
       return out
     },
 

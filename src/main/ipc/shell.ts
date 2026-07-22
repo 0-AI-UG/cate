@@ -1,12 +1,12 @@
 // =============================================================================
 // Shell / Process Monitor IPC handlers
-// Walks the process tree to detect agent CLIs (Claude, Codex, etc.), dev-server
+// Polls each terminal's runtime ProcessHost for activity (first non-shell
+// child), the hook-registered agent pid's liveness (agentPresence.ts — the
+// falling edge behind 'finished' and the resume-stamp clear), dev-server
 // ports, and working directory. The actual ps/lsof scans run inside each
 // terminal's runtime ProcessHost (local OR remote daemon) — this module owns
 // only the polling cadence, the owner-window routing, and the cross-scan
-// carry-across that keeps tab names from flickering. For a LOCAL terminal the
-// behaviour is byte-identical to before (the local ProcessHost runs the same
-// ps/lsof); for a REMOTE terminal the scans run on the daemon host.
+// carry-across that keeps tab names from flickering.
 // =============================================================================
 
 import { app, ipcMain } from 'electron'
@@ -21,11 +21,15 @@ import { getRuntimeForTerminal, getTerminalIds, getTerminalOwner, onTerminalSess
 import { sendToWindow, broadcastToAll, isAnyWindowFocused } from '../windowRegistry'
 import type { Runtime, PtyActivity } from '../runtime/types'
 import type { TerminalActivity } from '../../shared/types'
+import { clearAgentSessionStamp, dropAgentSessionStampState } from './agentSessionStamps'
 
 interface PreviousState {
   /** Last agent name seen — carried across transient scan misses so the tab
    *  name doesn't flicker when a single scan cycle fails to spot the agent. */
   previousAgentName: string | null
+  /** Whether the last scan saw an agent — the falling edge (agent exited while
+   *  the terminal lives on) clears the persisted resume stamp. */
+  previousAgentPresent?: boolean
 }
 
 // Track previous state for transition detection
@@ -49,14 +53,14 @@ export function getRunningTerminals(): Array<{ processName: string | null }> {
   return out
 }
 
-// Fast poll: process-tree scan for agent detection — drives the activity
-// indicators and the agent "needs input" / "finished" notifications. It stays
-// at 1s while a window is focused so the UI feels live, but backs off to 5s
-// when the whole app is unfocused: the activity indicators aren't visible then,
-// and agent "needs input" detection is driven by PTY title/spinner events in
-// the renderer (event-based, not this scan), so a few extra seconds of presence
-// latency costs nothing while the scan rate — the real background-CPU/battery
-// drain — drops ~5×. (Each cycle forks one `ps` snapshot per runtime.)
+// Fast poll: activity + agent-pid liveness scan — drives the activity
+// indicators and the finished/notRunning presence edges. It stays at 1s while
+// a window is focused so the UI feels live, but backs off to 5s when the
+// whole app is unfocused: the activity indicators aren't visible then, and
+// agent "needs input" detection is driven by hook events (push-based, not
+// this scan), so a few extra seconds of presence latency costs nothing while
+// the scan rate — the real background-CPU/battery drain — drops ~5×. (Each
+// cycle forks one `ps` snapshot per runtime.)
 const ACTIVITY_POLL_FOCUSED_MS = 1000
 const ACTIVITY_POLL_UNFOCUSED_MS = 5000
 let pollInterval: ReturnType<typeof setInterval> | null = null
@@ -161,11 +165,29 @@ async function runActivityScan(): Promise<void> {
           const activity: TerminalActivity = scanned?.activity ?? { type: 'idle' }
           // Carry the last-seen agent name across a transient miss (no flicker).
           const agentName = scanned?.agentName ?? prev.previousAgentName
-          const agentPresent = scanned?.agentPresent ?? false
+          // An entirely-missing entry means the scan had nothing to say about
+          // this pty (SIGSTOP-suspended ptys are omitted from scanActivity
+          // results, or the scan transiently missed it) — carry the previous
+          // presence so no phantom falling edge clears the resume stamp. A
+          // genuinely dead pty resolves via terminal teardown (the sessions-
+          // changed handler below drops its previousStates entry), so a
+          // carried `true` can't outlive the terminal. An entry that IS
+          // present with agentPresent:false is a real answer (agent exited).
+          const agentPresent = scanned ? scanned.agentPresent : (prev.previousAgentPresent ?? false)
 
-          previousStates.set(terminalId, { previousAgentName: agentName })
+          const next: PreviousState = { ...prev, previousAgentName: agentName, previousAgentPresent: agentPresent }
+          previousStates.set(terminalId, next)
           lastActivity.set(terminalId, activity)
           sendToWindow(ownerWindowId, SHELL_ACTIVITY_UPDATE, terminalId, activity, agentName, agentPresent)
+
+          // Agent-session stamps are hook-pushed ONLY (agentSessionStamps.ts);
+          // this scan owns just the falling edge: the agent exited while the
+          // terminal lives on, so there is nothing to resume. An app quit
+          // kills the poll loop itself, leaving the last stamp persisted —
+          // exactly "what was running at save time".
+          if (!agentPresent && prev.previousAgentPresent) {
+            clearAgentSessionStamp(terminalId)
+          }
         }
       }),
     )
@@ -266,6 +288,7 @@ export function registerHandlers(): void {
       if (!activeIds.has(terminalId)) {
         previousStates.delete(terminalId)
         lastActivity.delete(terminalId)
+        dropAgentSessionStampState(terminalId)
       }
     }
     for (const terminalId of activeIds) {

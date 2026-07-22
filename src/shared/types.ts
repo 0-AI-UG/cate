@@ -5,6 +5,8 @@
 
 import type { Theme } from './theme'
 export type { Theme } from './theme'
+import type { AgentId } from './agents'
+import type { AgentHookMode } from './agentHooks'
 
 // -----------------------------------------------------------------------------
 // Geometry primitives
@@ -64,6 +66,19 @@ export function isMaximized(node: CanvasNodeState): boolean {
 // Panel state (renderer-side representation)
 // -----------------------------------------------------------------------------
 
+/** A coding-agent CLI session observed in a terminal — pushed exclusively by
+ *  the agent's own hook events (src/main/ipc/agentSessionStamps.ts); an agent
+ *  whose hooks never speak has no session stamp. Persisted on the terminal's
+ *  PanelState so restore can re-attach the agent by id. */
+export interface TerminalAgentSession {
+  /** AgentId from src/shared/agents.ts (e.g. 'claude-code'). */
+  agentId: string
+  sessionId: string
+  /** The cwd the session belongs to (from the hook payload, or the terminal's
+   *  cwd when the payload carries none). */
+  cwd: string
+}
+
 export interface PanelState {
   id: string
   type: PanelType
@@ -108,6 +123,12 @@ export interface PanelState {
    *  registry entry is disposed and `TerminalPanel`'s create effect re-runs at
    *  the new `cwd`. */
   ptyEpoch?: number
+  /** Terminal panels only: the coding-agent session running in this terminal
+   *  at save time (pushed by the agent's own hook events, with a session-store
+   *  probe as fallback for hook-less agents; cleared when the agent exits).
+   *  On restore, TerminalPanel types the agent's resume command into the
+   *  fresh shell and clears this. */
+  agentSession?: TerminalAgentSession
   /** Extension panels only: which installed extension + which of its declared
    *  panels this instance renders. */
   extensionId?: string
@@ -1014,6 +1035,9 @@ export interface ProjectSessionPanel {
   /** Worktree this terminal/agent panel is tagged with. Machine-local (worktree
    *  ids are runtime uuids), so it lives in session.json, not workspace.json. */
   worktreeId?: string
+  /** Agent-CLI session running in this terminal at save time. Machine-local
+   *  (session ids reference stores on this machine's runtime host). */
+  agentSession?: TerminalAgentSession
 }
 
 // -----------------------------------------------------------------------------
@@ -1413,18 +1437,23 @@ export interface AppSettings {
   /** Auto-install the bundled cate-cli skill so agents learn the `cate` command:
    *  seeded into each opened workspace through the skills installer, the same
    *  way for local and remote hosts — Cate's own agent always, other supported
-   *  agents (Claude Code, Pi, OpenCode, Codex, Antigravity) when their tool dir
+   *  agents (Claude Code, Pi, OpenCode, Codex) when their tool dir
    *  exists there (see seedCateCliSkill).
    *  Seeds at most once per workspace/target, never overwrites edits, and an
    *  uninstall sticks. Turning this off stops future installs; it does not
    *  remove an already-installed skill. */
   cliSkillInstallEnabled: boolean
-  /** Per-feature CLI gates (Settings → CLI). Each guards one `cate` command
-   *  group at main-process dispatch; when off, that group returns a stable
-   *  error naming the toggle. cliEnabled above is the master switch — off, no
-   *  endpoint exists and these never come into play. */
-  /** `cate browser *` — drive the browser panel (navigate, click, type,
-   *  screenshot, snapshot), which acts on the user's live logged-in session.
+  /** CLI permission matrix (Settings → CLI): surface × access, Read observes and
+   *  Control acts. Each guards one half of one `cate` command group at
+   *  main-process dispatch; when off, those verbs return a stable error naming
+   *  the cell. cliEnabled above is the master switch — off, no endpoint exists
+   *  and these never come into play. The rows and the method → cell mapping live
+   *  in shared/cliPermissions.ts. */
+  /** Read half of `cate browser *` — screenshot, snapshot, list, current, wait.
+   *  Sees whatever the user's live logged-in session is showing. On by default. */
+  cliBrowserReadEnabled: boolean
+  /** Control half of `cate browser *` — open/back/forward/reload plus click,
+   *  type and press, which act on the user's live logged-in session.
    *  On by default (the CLI's original core feature). */
   cliBrowserControlEnabled: boolean
   /** `cate terminal read` — read other terminal panels' screens/scrollback,
@@ -1432,8 +1461,21 @@ export interface AppSettings {
   cliTerminalReadEnabled: boolean
   /** `cate terminal type` / `press` — SEND INPUT to terminal panels. Off by
    *  default: injecting keystrokes into a live shell is a bigger grant than
-   *  reading it, so it is a separate opt-in. */
+   *  reading it, so it is a separate opt-in. (Terminal → Control in the matrix;
+   *  the key keeps its original name so existing settings.json files apply.) */
   cliTerminalInputEnabled: boolean
+  /** `cate panel list` — enumerate open panels across windows (browser rows
+   *  carry their url). On by default. */
+  cliPanelReadEnabled: boolean
+  /** `cate panel create / focus / close / set-title` — add, focus, close and
+   *  rename panels. On by default. */
+  cliPanelControlEnabled: boolean
+  /** Read the active editor panel's file. On by default. */
+  cliEditorReadEnabled: boolean
+  /** `cate editor open` — open a file in an editor/document panel. On by default. */
+  cliEditorControlEnabled: boolean
+  /** `cate notify` — post a desktop notification. On by default. */
+  cliNotifyEnabled: boolean
 
   // Browser
   browserHomepage: string
@@ -1493,6 +1535,13 @@ export interface AppSettings {
   /** The user-pinned default model applied to every new agent chat, or null for
    *  none. Was renderer localStorage (cate.agent.defaultModel.v1) before. */
   agentDefaultModel: AgentModelRef | null
+
+  /** Per-workspace, per-agent overrides for repo-local hook-file injection
+   *  (push-based agent status/session events — see src/shared/agentHooks.ts).
+   *  Keyed by workspace id; each maps an AgentId to 'auto' | 'on' | 'off'.
+   *  Missing workspace or agent ⇒ 'auto' (inject only when the agent's config
+   *  folder already exists in the repo). Sparse: only real overrides stored. */
+  agentHookInjection: Record<string, Partial<Record<AgentId, AgentHookMode>>>
 
   // Cate Agent — the model both headless Cate Agent brains (observer + orchestrator) run on.
   // null falls back to agentDefaultModel, then pi's first-available. Chosen by the
@@ -1565,9 +1614,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoSuspendIdleTerminals: true,
   cliEnabled: true,
   cliSkillInstallEnabled: true,
+  cliBrowserReadEnabled: true,
   cliBrowserControlEnabled: true,
   cliTerminalReadEnabled: true,
   cliTerminalInputEnabled: false,
+  cliPanelReadEnabled: true,
+  cliPanelControlEnabled: true,
+  cliEditorReadEnabled: true,
+  cliEditorControlEnabled: true,
+  cliNotifyEnabled: true,
 
   // Browser
   browserHomepage: '',
@@ -1602,6 +1657,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // Agent
   agentDefaultModel: null,
+  agentHookInjection: {},
 
   // Cate Agent
   cateAgentModel: null,

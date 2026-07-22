@@ -23,6 +23,7 @@ const stubProcess = {} as unknown as ProcessHost
 const stubAgent = {} as unknown as AgentHost
 const stubServer = {} as unknown as ServerHost
 const stubTunnel = {} as unknown as TunnelHost
+const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {}, inspectWorkspace: async () => [] }
 
 // Wire an RpcServer and a RuntimeRpcClient back-to-back, in-process, over the
 // real LF-JSON framing. This proves the entire wire stack (framing, req/res
@@ -362,6 +363,7 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
       id: 'srv_test',
       process: stubProcess,
       agent: stubAgent,
+      agentHooks: stubAgentHooks,
       server: stubServer,
       tunnel: stubTunnel,
       file: { readFile: async () => { throw new Error('boom on daemon') } } as unknown as FileHost,
@@ -389,6 +391,7 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
       id: 'srv_test',
       process: stubProcess,
       agent: stubAgent,
+      agentHooks: stubAgentHooks,
       server: stubServer,
       tunnel: stubTunnel,
       file: {
@@ -427,6 +430,60 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
     expect(emit).toBeNull() // daemon-side subscription torn down
   })
 
+  test('agentHooks.subscribe streams normalized events over evt frames and stops on unsubscribe', async () => {
+    let emit: ((e: import('../../shared/agentHooks').AgentHookEvent) => void) | null = null
+    const api = {
+      id: 'srv_test',
+      process: stubProcess,
+      agent: stubAgent,
+      agentHooks: {
+        subscribe: (onEvent: (e: import('../../shared/agentHooks').AgentHookEvent) => void) => {
+          emit = onEvent
+          return () => { emit = null }
+        },
+        inspectWorkspace: async () => [],
+      },
+      server: stubServer,
+      tunnel: stubTunnel,
+      file: {} as unknown as FileHost,
+      vcs: {} as VcsHost,
+      validatePath: (p: string) => p,
+      validatePathStrict: async (p: string) => p,
+      validatePathForCreation: async (p: string) => p,
+      validateCwd: (p: string) => p,
+      addAllowedRoot: async () => {},
+      removeAllowedRoot: async () => {},
+      setExclusions: async () => {},
+      setIdleSuspend: async () => {},
+      grantFileAccess: async () => {},
+      registerScopedWriteAllowance: async () => {},
+      clearFileGrantsForWindow: async () => {},
+      clearScopedWriteAllowancesForWindow: async () => {},
+    } as Runtime
+
+    const { remote } = loopback(api)
+    const seen: import('../../shared/agentHooks').AgentHookEvent[] = []
+    const unsubscribe = remote.agentHooks.subscribe((e) => seen.push(e))
+
+    await flush() // let the subscribe round-trip register the stream
+    expect(emit).toBeTypeOf('function')
+    const event: import('../../shared/agentHooks').AgentHookEvent = {
+      terminalId: 'rpty-1-srv_test',
+      agentId: 'claude-code',
+      kind: 'turn-end',
+      sessionId: '11111111-2222-4333-8444-555555555555',
+      cwd: '/w',
+      raw: { hook_event_name: 'Stop' },
+    }
+    emit!(event)
+    await flush()
+    expect(seen).toEqual([event])
+
+    unsubscribe()
+    await flush()
+    expect(emit).toBeNull() // daemon-side subscription torn down
+  })
+
   test('file.searchContent streams batches over evt frames and cancel tears down the daemon search', async () => {
     let callbacks: { onBatch: (f: unknown[]) => void; onDone: (s: unknown, e?: string) => void } | null = null
     let cancelled = false
@@ -434,6 +491,7 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
       id: 'srv_test',
       process: stubProcess,
       agent: stubAgent,
+      agentHooks: stubAgentHooks,
       server: stubServer,
       tunnel: stubTunnel,
       file: {
@@ -487,6 +545,7 @@ function localRuntimeLike(): Runtime {
     id: 'srv_test',
     process: stubProcess,
     agent: stubAgent,
+    agentHooks: stubAgentHooks,
     server: stubServer,
     tunnel: stubTunnel,
     file: {} as FileHost,

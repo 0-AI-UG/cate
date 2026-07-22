@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   useThemeAndScaleHydration: vi.fn(),
   startAgentScreenDetector: vi.fn(),
   stopAgentScreenDetector: vi.fn(),
+  noteAgentHookEvent: vi.fn(),
   revealPanel: vi.fn(),
   loadSettings: vi.fn(),
   loadUIState: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock('../agent/agentScreenDetector', () => ({
   startAgentScreenDetector: h.startAgentScreenDetector,
   stopAgentScreenDetector: h.stopAgentScreenDetector,
   applyRemoteAgentScreenState: vi.fn(),
+  noteAgentHookEvent: h.noteAgentHookEvent,
 }))
 vi.mock('../workspace/panelReveal', () => ({ revealPanel: h.revealPanel }))
 vi.mock('../../hooks/useProcessMonitor', () => ({ useOwnedTerminalTelemetry: h.useOwnedTerminalTelemetry }))
@@ -74,6 +76,7 @@ beforeEach(() => {
   ;(window as unknown as { electronAPI: Record<string, unknown> }).electronAPI = {
     onMenuOpenSettings: vi.fn((cb: () => void) => { captured.menuSettings = cb; return () => {} }),
     onAgentScreenStateUpdate: vi.fn((cb: (...a: unknown[]) => void) => { captured.agent = cb; return () => {} }),
+    onShellAgentHookEvent: vi.fn((cb: (...a: unknown[]) => void) => { captured.hook = cb; return () => {} }),
     onRevealPanelInWindow: vi.fn((cb: (id: string) => void) => { captured.reveal = cb as never; return () => {} }),
     onWindowPanelsChanged: vi.fn((cb: (...a: unknown[]) => void) => { captured.union = cb; return () => {} }),
   }
@@ -107,6 +110,14 @@ describe('useWindowRuntime', () => {
     // Subscribes to the cross-window panel union so this window can discover
     // panels in other windows.
     expect(window.electronAPI.onWindowPanelsChanged).toHaveBeenCalled()
+  })
+
+  it('routes owner-window agent hook events into the coordinator', () => {
+    mount()
+    expect(window.electronAPI.onShellAgentHookEvent).toHaveBeenCalled()
+    const event = { terminalId: 'pty-1', agentId: 'claude-code', kind: 'turn-start', sessionId: 's', raw: {} }
+    act(() => { captured.hook('pty-1', event) })
+    expect(h.noteAgentHookEvent).toHaveBeenCalledWith(event)
   })
 
   it('opens settings when the Cmd+, menu fires (and the detector stops on unmount)', () => {

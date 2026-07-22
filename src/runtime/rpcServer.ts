@@ -16,6 +16,7 @@ import {
   Methods,
   type ReqFrame,
   type HelloFrame,
+  type AgentHookEvtPayload,
   type FsWatchEvtPayload,
   type SearchEvtPayload,
 } from './protocol'
@@ -32,6 +33,7 @@ export class RpcServer {
   private readonly decoder: FrameDecoder
   private readonly watchUnsubs = new Map<string, () => void>()
   private readonly searchCancels = new Map<string, () => void>()
+  private readonly hookUnsubs = new Map<string, () => void>()
   private streamSeq = 0
 
   constructor(
@@ -81,6 +83,10 @@ export class RpcServer {
       try { cancel() } catch { /* ignore */ }
     }
     this.searchCancels.clear()
+    for (const unsub of this.hookUnsubs.values()) {
+      try { unsub() } catch { /* ignore */ }
+    }
+    this.hookUnsubs.clear()
   }
 
   private async dispatch(req: ReqFrame): Promise<void> {
@@ -168,6 +174,11 @@ export class RpcServer {
       case Methods.ptySetVisibility: return api.process.setVisibility(s(0), p[1] as boolean)
       case Methods.ptyScanActivity: return api.process.scanActivity(p[0] as string[])
       case Methods.ptyScanPorts: return api.process.scanPorts(p[0] as string[])
+
+      // --- agent hooks --- normalized events stream back keyed by the streamId ---
+      case Methods.agentHooksSubscribe: return this.startAgentHooks()
+      case Methods.agentHooksUnsubscribe: return this.stopAgentHooks(s(0))
+      case Methods.agentHooksInspect: return api.agentHooks.inspectWorkspace(s(0))
 
       // --- agent (pi) --- line/exit stream back keyed by the agent id ---
       case Methods.agentEnsurePi: return api.agent.ensurePi()
@@ -275,6 +286,23 @@ export class RpcServer {
     const cancel = this.searchCancels.get(streamId)
     if (cancel) {
       try { cancel() } finally { this.searchCancels.delete(streamId) }
+    }
+  }
+
+  private startAgentHooks(): string {
+    const streamId = `h${++this.streamSeq}`
+    const unsub = this.api.agentHooks.subscribe((event) => {
+      const payload: AgentHookEvtPayload = event
+      this.write(serializeFrame({ t: 'evt', streamId, payload }))
+    })
+    this.hookUnsubs.set(streamId, unsub)
+    return streamId
+  }
+
+  private stopAgentHooks(streamId: string): void {
+    const unsub = this.hookUnsubs.get(streamId)
+    if (unsub) {
+      try { unsub() } finally { this.hookUnsubs.delete(streamId) }
     }
   }
 

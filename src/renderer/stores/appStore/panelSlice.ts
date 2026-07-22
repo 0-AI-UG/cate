@@ -52,6 +52,7 @@ type PanelSliceActions = Pick<
   | 'setPanelDirty'
   | 'setPanelMarkdownPreview'
   | 'setPanelUnsavedContent'
+  | 'setPanelAgentSession'
   | 'addPanel'
   | 'removePanelRecord'
   | 'clearCanvas'
@@ -301,6 +302,22 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     setPanelUnsavedContent(workspaceId, panelId, content) {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, unsavedContent: content }))
+    },
+
+    setPanelAgentSession(workspaceId, panelId, session) {
+      setPanelField(set, workspaceId, panelId, (panel) => {
+        // Stamps are re-sent on repeat hook events / fallback probes — skip the
+        // no-op write so panel state (and its session.json persistence) isn't churned.
+        const prev = panel.agentSession
+        if (!session && !prev) return panel
+        if (
+          session && prev &&
+          prev.agentId === session.agentId &&
+          prev.sessionId === session.sessionId &&
+          prev.cwd === session.cwd
+        ) return panel
+        return { ...panel, agentSession: session ?? undefined }
+      })
     },
 
     addPanel(workspaceId, panel) {

@@ -12,8 +12,8 @@ describe('parseStat', () => {
   })
 
   it('reads the 15-char-truncated comm the kernel stores', () => {
-    // Linux truncates comm to 15 chars; "cursor-agent" fits, agent match still works.
-    expect(parseStat('7 (cursor-agent) S 1 7 7')).toEqual({ ppid: 1, comm: 'cursor-agent' })
+    // Hyphenated comm names parse intact.
+    expect(parseStat('7 (claude-code) S 1 7 7')).toEqual({ ppid: 1, comm: 'claude-code' })
   })
 
   it('returns null for malformed input', () => {

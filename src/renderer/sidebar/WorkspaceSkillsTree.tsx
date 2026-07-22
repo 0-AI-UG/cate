@@ -17,8 +17,9 @@ import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { SKILL_TARGETS, type SkillTargetId } from '../../shared/skills'
-import type { AgentId } from '../../shared/agents'
+import { agentForSkillTarget, type AgentId } from '../../shared/agents'
 import { toSkillTargetGroups, type SkillTargetGroup } from './skillTargetGroups'
+import { skillAgentKey, skillsKey, toggleCollapsed, useIsCollapsed, useTreeCollapseStore } from './treeCollapse'
 import log from '../lib/logger'
 
 const api = () => window.electronAPI
@@ -27,22 +28,18 @@ const TARGET_LABEL: Record<string, string> = Object.fromEntries(
   SKILL_TARGETS.map((t) => [t.id, t.label]),
 )
 
-// Skill target → agent id for the logo lookup. cate-agent is Cate's built-in
-// Agent panel — it has no bundled SVG and uses the panel's chat-bubble mark
-// instead; pi-native's logo lives under `pi`.
-const TARGET_LOGO_ID: Partial<Record<SkillTargetId, AgentId>> = {
-  'claude-code': 'claude-code',
-  'pi-native': 'pi',
-  opencode: 'opencode',
-  codex: 'codex',
-  antigravity: 'antigravity',
-}
+// Skill target → agent id for the logo lookup, resolved through the canonical
+// registry so a newly declared target picks up its agent's logo automatically.
+// cate-agent is Cate's built-in Agent panel — it has no AgentDef and no bundled
+// SVG, and uses the panel's chat-bubble mark instead.
+const targetLogoId = (targetId: SkillTargetId): AgentId | null =>
+  agentForSkillTarget(targetId)?.id ?? null
 
 const AgentIcon: React.FC<{ targetId: SkillTargetId }> = ({ targetId }) => {
   if (targetId === 'cate-agent') {
     return <ChatCircle size={11} className="flex-shrink-0 text-[rgb(var(--agent-rgb))]" style={{ opacity: 0.9 }} />
   }
-  const logo = getAgentLogoById(TARGET_LOGO_ID[targetId])
+  const logo = getAgentLogoById(targetLogoId(targetId))
   if (logo) {
     return (
       <img
@@ -64,7 +61,16 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
   rootPath,
 }) => {
   const [groups, setGroups] = useState<SkillTargetGroup[]>([])
-  const [open, setOpen] = useState(true)
+  // Collapse state lives in the persisted sidebar store, not local state: this
+  // component unmounts whenever the workspace row folds, so useState would reset
+  // every fold and every restart.
+  const open = !useIsCollapsed(skillsKey(workspaceId))
+  const collapsed = useTreeCollapseStore((s) => s.collapsed)
+  const toggleOpen = useCallback(() => toggleCollapsed(skillsKey(workspaceId)), [workspaceId])
+  const toggleAgent = useCallback(
+    (targetId: string) => toggleCollapsed(skillAgentKey(workspaceId, targetId)),
+    [workspaceId],
+  )
   // Refetch when the Skills dialog closes — an install/uninstall there should
   // reflect here without a manual refresh.
   const showSkillsDialog = useUIStore((s) => s.showSkillsDialog)
@@ -99,7 +105,7 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
           above it; the caret sits in the indent to its left. */}
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         title={open ? 'Collapse skills' : 'Expand skills'}
         className="flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none mx-1.5 my-0.5 rounded-lg"
       >
@@ -112,20 +118,28 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
       </button>
 
       {open &&
-        groups.map((g) => (
+        groups.map((g) => {
+          const agentOpen = !collapsed.has(skillAgentKey(workspaceId, g.targetId))
+          return (
           <React.Fragment key={g.targetId}>
-            {/* Agent row */}
+            {/* Agent row — collapsible, its caret sits in the indent to the left
+                of the agent icon (mirroring the "Skills" node above). */}
             <button
               type="button"
-              onClick={openDialog}
-              title={TARGET_LABEL[g.targetId] ?? g.targetId}
-              className="flex items-center gap-1.5 h-7 pl-10 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none mx-1.5 my-0.5 rounded-lg"
+              onClick={() => toggleAgent(g.targetId)}
+              title={agentOpen ? 'Collapse skills' : 'Expand skills'}
+              className="flex items-center gap-1.5 h-7 pl-6 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none mx-1.5 my-0.5 rounded-lg"
             >
+              <CaretRight
+                size={10}
+                className={`flex-shrink-0 transition-transform ${agentOpen ? 'rotate-90' : ''}`}
+              />
               <AgentIcon targetId={g.targetId} />
               <span className="truncate min-w-0 flex-1">{TARGET_LABEL[g.targetId] ?? g.targetId}</span>
             </button>
             {/* Skills nested under the agent */}
-            {g.skills.map((s) => (
+            {agentOpen &&
+              g.skills.map((s) => (
               <button
                 key={s.skillId}
                 type="button"
@@ -137,9 +151,10 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
                 <PuzzlePiece size={11} className="flex-shrink-0" style={{ opacity: 0.6 }} />
                 <span className="truncate min-w-0 flex-1">{s.name}</span>
               </button>
-            ))}
+              ))}
           </React.Fragment>
-        ))}
+          )
+        })}
     </>
   )
 }

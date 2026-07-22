@@ -171,17 +171,18 @@ export function registerLifecycleHandlers(): void {
       proceed()
     })
 
-    // FINAL, AWAITED sync from every dock window FIRST, so the main renderer's
-    // session flush (which reads listDockWindows() / main's cached dock state)
-    // sees the freshest dock layout + terminal/canvas state instead of stale data
+    // Agent-session stamps are hook-pushed the moment identity changes, so
+    // they are already current at quit — no refresh step. FIRST a FINAL,
+    // AWAITED sync from every dock window, so the main renderer's session
+    // flush (which reads listDockWindows() / main's cached dock state) sees
+    // the freshest dock layout + terminal/canvas state instead of stale data
     // from the last sync. Bounded by DOCK_FLUSH_TIMEOUT_MS so an unresponsive
     // dock window can't delay quit. The session-flush safety timeout is armed
     // only once SESSION_FLUSH_SAVE is actually sent, so the dock flush never
-    // eats into the main renderer's save budget — the two timeouts are
+    // eats into the main renderer's save budget — the timeouts are
     // sequential, not shared.
-    const dockWindowIds = listDockWindowIds()
     flushDockWindowsBeforeQuit({
-      windowIds: dockWindowIds,
+      windowIds: listDockWindowIds(),
       requestSync: (id) => sendToWindow(id, DOCK_WINDOW_FLUSH_SYNC),
       subscribeAck: (handler) => {
         const listener = (e: Electron.IpcMainEvent) => {

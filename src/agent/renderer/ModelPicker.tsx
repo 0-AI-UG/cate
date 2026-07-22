@@ -15,7 +15,9 @@ type ModelPickerDropdownProps = {
   models: ModelOption[]
   selected: AgentModelRef | null
   onClose: () => void
-  /** Override the container sizing/width (e.g. `w-[280px] max-h-[360px]`). */
+  /** Override the container placement + sizing (e.g. `top-full mt-1 left-0
+   *  w-[280px] max-h-[360px]`). Carries the vertical anchor too, so a call site
+   *  at the bottom of its panel can open upward with `bottom-full mb-1`. */
   className?: string
   /** Footer action (renders a "Manage providers…" button when provided). */
   onManage?: () => void
@@ -38,7 +40,7 @@ export function ModelPickerDropdown({
   selected,
   onPick,
   onClose,
-  className = 'left-0 w-[280px] max-h-[360px]',
+  className = 'top-full mt-1 left-0 w-[280px] max-h-[360px]',
   allowNone = false,
   noneLabel,
   onManage,
@@ -98,7 +100,7 @@ export function ModelPickerDropdown({
   return (
     <div
       ref={wrapRef}
-      className={`absolute top-full mt-1 ${className} flex flex-col rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-20`}
+      className={`absolute ${className} flex flex-col rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-20`}
     >
       <div className="px-2 py-2 border-b border-strong shrink-0">
         <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-0 border border-subtle">

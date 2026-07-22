@@ -170,6 +170,26 @@ describe('workspace.json + session.json round-trip', () => {
     expect(sessText).not.toContain('localhost:3000')
   })
 
+  it('round-trips a terminal agent-session stamp through session.json only', () => {
+    const { snapshot } = buildSnapshot()
+    const agentSession = {
+      agentId: 'claude-code',
+      sessionId: '11111111-1111-4111-8111-111111111111',
+      cwd: WORKTREE_PATH,
+    }
+    snapshot.panels!['term-1'] = { ...snapshot.panels!['term-1'], agentSession }
+
+    const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT, ''))
+    const sessFile = throughDisk(buildSessionFile(snapshot))
+    const restored = projectFilesToSnapshot(wsFile, sessFile, ROOT)
+
+    // The stamp survives restore (TerminalPanel consumes it to type the resume
+    // command) but never reaches the committed workspace.json — session ids
+    // reference stores on this machine's runtime host.
+    expect(restored.panels!['term-1'].agentSession).toEqual(agentSession)
+    expect(JSON.stringify(wsFile)).not.toContain(agentSession.sessionId)
+  })
+
   it('a file outside the workspace root keeps its absolute path through the round trip', () => {
     const { snapshot } = buildSnapshot()
     snapshot.panels!['ed-out'] = panel({
