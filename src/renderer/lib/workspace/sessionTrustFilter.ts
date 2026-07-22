@@ -16,7 +16,7 @@
 //
 // So: until the user explicitly trusts a project, its layout restores PASSIVE
 // state only (canvas geometry, dock structure, editor/document panels rooted
-// inside the project). `describeWithheld` tells the banner what was held back so
+// inside the project). `describeWithheld` tells the dialog what was held back so
 // the user can make an informed call. Trust is recorded in userData, never in
 // the project.
 //
@@ -36,7 +36,7 @@ import type {
 } from '../../../shared/types'
 
 /** What an untrusted project's layout asked for but did not get. Drives the
- *  banner copy; empty `total` means nothing was withheld and no banner shows. */
+ *  dialog copy; empty `total` means nothing was withheld and no prompt shows. */
 export interface WithheldSummary {
   /** Count of withheld panels per type, e.g. `{ agent: 1, browser: 2 }`. */
   byType: Partial<Record<PanelType, number>>
@@ -205,7 +205,7 @@ function pruneCanvases(
   return out
 }
 
-/** Human-readable list for the trust banner, e.g. "1 Agent panel, 2 browser tabs". */
+/** Human-readable list for the trust dialog, e.g. "1 Agent panel, 2 browser tabs". */
 export function describeWithheld(withheld: WithheldSummary): string {
   const labels: Partial<Record<PanelType, [string, string]>> = {
     agent: ['Agent panel', 'Agent panels'],

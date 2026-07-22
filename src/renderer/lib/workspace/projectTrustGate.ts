@@ -5,7 +5,7 @@
 // live layout goes through here: startup load, hydrate-on-open, and
 // reload-from-disk. Trusted projects pass through untouched; untrusted ones are
 // reduced to passive state by `filterUntrustedProjectFiles` and the withheld
-// summary is recorded for the banner.
+// summary is recorded for the dialog.
 //
 // Kept separate from `sessionTrustFilter` (pure, unit-tested) so the filter
 // never has to reach into a store.
@@ -24,7 +24,7 @@ export interface GatedProjectFiles {
 /**
  * Apply the workspace-trust boundary to a project's layout files.
  *
- * `workspaceId` is where a withheld-notice is filed so the banner can offer to
+ * `workspaceId` is where a withheld-notice is filed so the dialog can offer to
  * restore the rest. Pass it when the workspace record already exists; the
  * startup path files its notice later, once ids are assigned.
  */
@@ -50,7 +50,7 @@ export function gateProjectFiles(
 }
 
 /**
- * Trust a project and return its unfiltered layout files, for the banner's
+ * Trust a project and return its unfiltered layout files, for the dialog's
  * "Restore layout" action. The caller replays them through the normal restore.
  */
 export async function trustProjectAndReload(

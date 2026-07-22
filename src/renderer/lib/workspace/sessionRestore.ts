@@ -86,7 +86,7 @@ export async function reloadActiveWorkspaceFromDisk(): Promise<void> {
   await reloadWorkspaceFromDisk(useAppStore.getState().selectedWorkspaceId)
 }
 
-/** Same rebuild, for a specific workspace — used by the trust banner's "Restore
+/** Same rebuild, for a specific workspace — used by the trust dialog's "Trust and
  *  layout" action, which replays the now-unfiltered files after trusting. */
 export async function reloadWorkspaceFromDisk(wsId: string): Promise<void> {
   const appStore = useAppStore.getState()

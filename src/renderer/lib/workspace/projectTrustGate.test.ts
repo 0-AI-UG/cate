@@ -52,7 +52,7 @@ describe('gateProjectFiles — untrusted project', () => {
     expect(workspace.dockState?.zones.center.layout).toBeNull()
   })
 
-  it('files a banner notice naming what it withheld', () => {
+  it('files a prompt notice naming what it withheld', () => {
     gateProjectFiles(hostileWorkspaceFile(), null, ROOT, 'ws-1')
 
     const notice = useWorkspaceTrustStore.getState().withheld['ws-1']

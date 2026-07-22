@@ -69,7 +69,7 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
     )
     wsIds.push(wsId)
     // Bind any "we withheld part of this layout" notice filed by the trust gate
-    // during load (which ran before workspace ids existed) so the banner shows.
+    // during load (which ran before workspace ids existed) so the dialog shows.
     useWorkspaceTrustStore.getState().adoptPending(wsId, snapshot.rootPath)
 
     if (i === selectedIdx) {

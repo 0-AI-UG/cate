@@ -199,7 +199,7 @@ describe('hydrateWorkspaceFromDiskIfEmpty — workspace trust', () => {
     expect(Object.values(ws.panels).some((p) => p.type === 'agent')).toBe(false)
   })
 
-  it('records a banner notice naming the withheld agent panel', async () => {
+  it('records a prompt notice naming the withheld agent panel', async () => {
     const id = await freshWorkspace('ws-hostile-notice', '/hostile2')
     projectStateLoad.mockResolvedValue(hostileDiskState())
 

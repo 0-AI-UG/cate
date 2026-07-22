@@ -108,8 +108,25 @@ test('the user is told what was withheld', async () => {
   }, repoDir)
 
   // Silently dropping the panel would leave the user confused about why their
-  // layout is wrong, so the banner is part of the fix, not decoration.
-  const banner = page.locator('text=wasn\'t fully restored')
-  await expect(banner).toBeVisible({ timeout: 5000 })
+  // layout is wrong, so the prompt is part of the fix, not decoration.
+  await expect(page.locator('text=Do you trust this project?')).toBeVisible({ timeout: 5000 })
   await expect(page.locator('text=1 Agent panel')).toBeVisible()
+  // The safe action holds focus, so a stray Enter can't grant trust.
+  await expect(page.locator('button:has-text("Open restricted")')).toBeFocused()
+})
+
+test('dismissing the prompt leaves the project untrusted', async () => {
+  await page.evaluate(async (dir) => {
+    const id = window.__cateE2E!.addWorkspace('PoC', dir, 'ghsa-poc-ws4')
+    await window.__cateE2E!.selectWorkspace(id)
+    await new Promise((r) => setTimeout(r, 1500))
+  }, repoDir)
+
+  await page.locator('button:has-text("Open restricted")').click()
+
+  // Prompt gone, but nothing was trusted and nothing was restored: dismissing
+  // must never be a quiet yes.
+  await expect(page.locator('text=Do you trust this project?')).toBeHidden()
+  const panels = await page.evaluate(() => window.__cateE2E!.panelTypes('ghsa-poc-ws4'))
+  expect(panels).not.toContain('agent')
 })

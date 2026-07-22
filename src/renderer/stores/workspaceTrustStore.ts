@@ -1,7 +1,7 @@
 // =============================================================================
 // workspaceTrustStore — which projects the user has trusted to auto-restore
 // process-bearing panels, plus the per-workspace "we withheld this" notices the
-// trust banner renders.
+// trust dialog renders.
 //
 // The authoritative list lives in the main process (userData/trusted-projects.json,
 // see main/workspaceStateStore.ts). This store is a renderer-side mirror, hydrated
@@ -21,7 +21,7 @@ interface WorkspaceTrustState {
   trusted: string[]
   /** Whether the mirror has been hydrated from main yet. */
   hydrated: boolean
-  /** Pending banners, keyed by workspace id, for layouts we filtered. */
+  /** Pending prompts, keyed by workspace id, for layouts we filtered. */
   withheld: Record<string, { locator: string; summary: WithheldSummary }>
   /** Notices filed before a workspace id existed (startup load runs before
    *  workspaces are created), keyed by locator and adopted in `adoptPending`. */
