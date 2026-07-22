@@ -64,6 +64,10 @@ declare global {
       clearCanvas(): void
       addWorkspace(name?: string, rootPath?: string, id?: string): string
       selectWorkspace(id: string): Promise<void>
+      /** Panel types present in a workspace (defaults to the selected one). Used
+       *  by the workspace-trust spec to assert that a repo-supplied
+       *  process-bearing panel never materializes. */
+      panelTypes(wsId?: string): string[]
       /** Seed N worktrees on the selected workspace (index 0 = primary, keyed by
        *  the workspace root) WITHOUT a real on-disk repo: writes UI metadata
        *  (id/color/label) and injects a pinned live `git worktree list` so the
@@ -213,6 +217,13 @@ export function installE2EHarness(): void {
 
   const selectWorkspace = async (id: string): Promise<void> => {
     await useAppStore.getState().selectWorkspace(id)
+  }
+
+  const panelTypes = (wsId?: string): string[] => {
+    const state = useAppStore.getState()
+    const id = wsId ?? state.selectedWorkspaceId
+    const ws = state.workspaces.find((w) => w.id === id)
+    return Object.values(ws?.panels ?? {}).map((p) => p.type)
   }
 
   const seedWorktrees = (
@@ -369,6 +380,7 @@ export function installE2EHarness(): void {
     clearCanvas,
     addWorkspace,
     selectWorkspace,
+    panelTypes,
     seedWorktrees,
     tagNodeWorktree,
     worktreeDebug,

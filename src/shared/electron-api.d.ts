@@ -552,6 +552,18 @@ export interface ElectronAPI {
   recentProjectsRemove(projectPath: string): Promise<void>
 
   // ---------------------------------------------------------------------------
+  // Workspace trust (GHSA-8769-jp52-985f)
+  // ---------------------------------------------------------------------------
+
+  /** Locators the user has explicitly trusted to auto-restore process-bearing
+   *  panels (agent/terminal/browser/extension) and load project MCP config.
+   *  Machine-local — a repo can never vouch for itself. */
+  projectTrustGet(): Promise<string[]>
+
+  /** Record or revoke a trust decision. Returns the updated list. */
+  projectTrustSet(locator: string, trusted: boolean): Promise<string[]>
+
+  // ---------------------------------------------------------------------------
   // Browser history + bookmarks (global, shared across all workspaces/windows)
   // ---------------------------------------------------------------------------
 
