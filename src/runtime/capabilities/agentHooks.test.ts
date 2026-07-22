@@ -37,6 +37,7 @@ function tmpDir(sub: string): string {
 function makeCap(
   deps: {
     hooksDir?: string
+    nodePath?: string
     interruptPollMs?: number
     onPost?: (post: { terminalId: string; agentId: string; pid?: number }) => void | Promise<void>
   } = {},
@@ -252,6 +253,30 @@ describe('agentHooks capability', () => {
     // production it is the agent CLI (or its sh hook-command layer), which is
     // what the presence tracker walks up from.
     expect(posts).toEqual([{ terminalId: 'rpty-bridge', agentId: 'codex', pid: process.pid }])
+  })
+
+  test.skipIf(!posix)('the wrapper exits silently when its node binary is gone', async () => {
+    // A hook failure must never surface into the user's agent turn. The wrapper
+    // embeds an absolute node path, and that path CAN go missing — a runtime
+    // re-provision used to delete and re-extract the very tree it points into,
+    // and the raw exec error landed in the agent transcript as
+    // "cannot execute: No such file or directory".
+    const cap = makeCap({ nodePath: path.join(tmpDir('no-node'), 'runtime', 'bin', 'node') })
+    const events = collect(cap)
+    const { dir } = await cap.endpoint()
+    const env = await cap.envForPty('rpty-nonode', { PATH: '/usr/bin:/bin' })
+
+    const { code, stderr } = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
+      let err = ''
+      const child = execFile(path.join(dir, 'cate-hook-bridge-claude-code'), [], { env, timeout: 15_000 })
+      child.stderr!.on('data', (chunk) => { err += String(chunk) })
+      child.on('close', (c) => resolve({ code: c, stderr: err }))
+      child.stdin!.end(JSON.stringify({ hook_event_name: 'SessionStart', cwd: '/w' }))
+    })
+
+    expect(code, 'a missing node must not fail the hook').toBe(0)
+    expect(stderr, 'and must not print anything the agent would show the user').toBe('')
+    expect(events).toEqual([])
   })
 
   // Cross-vendor guard. grok scans .claude/settings.local.json (and

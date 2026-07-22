@@ -100,6 +100,10 @@ export interface AgentHooksCapability {
 export interface AgentHooksDeps {
   /** Override the stable hooks dir (tests). Default: ~/.cate/agent-hooks. */
   hooksDir?: string
+  /** The node binary the bridge wrappers exec. Default: this daemon's own
+   *  (process.execPath). Tests point it at a missing path to exercise the
+   *  wrapper's fail-soft guard. */
+  nodePath?: string
   /** Poll cadence (ms) of the interrupt transcript tail-watch. Default 600 —
    *  well under the "a moment after the user hit Esc" tolerance, and it only
    *  ticks while a false-on-interrupt turn is actually in flight. Tests lower
@@ -422,6 +426,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
 
     const secret = randomBytes(32).toString('hex')
     const contexts = new Map<AgentId, HookInjectionContext>()
+    const nodePath = deps.nodePath ?? process.execPath
 
     for (const agent of AGENTS) {
       // Per-agent bridge wrapper: hook configs get ONE command path with no
@@ -432,11 +437,19 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       // + packaged app) flip-flop it between their node paths. Benign: both
       // are working node binaries, and codex's hook trust keys on the wrapper
       // PATH (via hooks.json), which never changes.
+      //
+      // The exec is GUARDED on the binary still being there. That path lives
+      // in a provisioned runtime install, and an install can be replaced under
+      // a running daemon; without the guard, sh reports "cannot execute: No
+      // such file or directory" straight into the user's agent transcript. A
+      // hook that cannot run must degrade to a silent no-op, like BRIDGE_JS's
+      // always-exit-0 contract.
       const wrapper = path.join(dir, `cate-hook-bridge-${agent.id}${process.platform === 'win32' ? '.cmd' : ''}`)
       if (process.platform === 'win32') {
-        await writeFile(wrapper, `@echo off\r\n"${process.execPath}" "${bridgeJs}" "${agent.id}" %*\r\n`)
+        await writeFile(wrapper, `@echo off\r\nif not exist "${nodePath}" exit /b 0\r\n"${nodePath}" "${bridgeJs}" "${agent.id}" %*\r\n`)
       } else {
-        await writeFile(wrapper, `#!/bin/sh\nexec ${shQuote(process.execPath)} ${shQuote(bridgeJs)} ${shQuote(agent.id)} "$@"\n`)
+        const q = shQuote(nodePath)
+        await writeFile(wrapper, `#!/bin/sh\n[ -x ${q} ] || exit 0\nexec ${q} ${shQuote(bridgeJs)} ${shQuote(agent.id)} "$@"\n`)
         await chmod(wrapper, 0o755)
       }
 
