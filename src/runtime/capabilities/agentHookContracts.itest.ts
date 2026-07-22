@@ -649,6 +649,18 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     expect(normalizedKinds('claude-code', after)).not.toContain('turn-end')
     expect(AGENT_HOOK_SPECS['claude-code'].reportsTurnEndOnInterrupt, 'declared gap matches reality').toBe(false)
 
+    // ...but the interrupt IS recoverable from the TRANSCRIPT: claude persists
+    // its "[Request interrupted by user]" marker there, and that is the
+    // file-based signal the runtime's tail-watch maps to a synthetic turn-end
+    // (interrupt recovery, agentHooks capability). Pin interruptRecovery.marker
+    // against the real transcript so a wrong regex fails HERE, with the file's
+    // own tail in the failure message.
+    const claudeTranscript = byName(events(), 'SessionStart')[0].payload.transcript_path as string
+    const claudeTail = readFileSync(claudeTranscript, 'utf8').slice(-8000)
+    expect(claudeTail, 'claude persists its interrupt marker to the transcript').toMatch(
+      AGENT_HOOK_SPECS['claude-code'].interruptRecovery!.marker,
+    )
+
     // The turn is over as far as claude is concerned: a fresh prompt runs
     // normally, proving the session is idle and healthy, not wedged.
     await tui.send(PROMPT)
@@ -958,6 +970,16 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     ).toEqual([])
     expect(normalizedKinds('codex', after)).not.toContain('turn-end')
     expect(AGENT_HOOK_SPECS.codex.reportsTurnEndOnInterrupt, 'declared gap matches reality').toBe(false)
+
+    // ...but recoverable from the ROLLOUT: codex records a turn_aborted event
+    // there, which the runtime's tail-watch maps to a synthetic turn-end
+    // (interrupt recovery, agentHooks capability). Pin interruptRecovery.marker
+    // against the real rollout so a wrong regex fails HERE, with its tail shown.
+    const codexRollout = events()[0].payload.transcript_path as string
+    const codexTail = readFileSync(codexRollout, 'utf8').slice(-8000)
+    expect(codexTail, 'codex persists a turn_aborted record to the rollout').toMatch(
+      AGENT_HOOK_SPECS.codex.interruptRecovery!.marker,
+    )
     expectEcho(events(), tid)
     tui.kill()
   })

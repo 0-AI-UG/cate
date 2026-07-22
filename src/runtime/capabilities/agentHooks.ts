@@ -45,7 +45,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 import http from 'http'
 import os from 'os'
 import path from 'path'
-import { chmod, mkdir, readFile, stat, unlink, writeFile } from 'fs/promises'
+import { chmod, mkdir, open, readFile, stat, unlink, writeFile } from 'fs/promises'
 import { AGENTS, type AgentId } from '../../shared/agents'
 import {
   AGENT_HOOK_SPECS,
@@ -100,6 +100,11 @@ export interface AgentHooksCapability {
 export interface AgentHooksDeps {
   /** Override the stable hooks dir (tests). Default: ~/.cate/agent-hooks. */
   hooksDir?: string
+  /** Poll cadence (ms) of the interrupt transcript tail-watch. Default 600 —
+   *  well under the "a moment after the user hit Esc" tolerance, and it only
+   *  ticks while a false-on-interrupt turn is actually in flight. Tests lower
+   *  it for speed. */
+  interruptPollMs?: number
   /** Called on every AUTHENTICATED post for a known agent — including ones
    *  whose payload normalizes to null — with the poster's lineage claim
    *  (`pid`: the bridge's parent / the in-process agent itself; undefined
@@ -200,6 +205,121 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Interrupt recovery — the compensating channel for the CLIs that push NO
+  // hook on a user interrupt (claude, codex; see AgentHookSpec.interruptRecovery
+  // in shared/agentHooks.ts). While such an agent's turn is in flight we tail
+  // its transcript; the instant its interrupt MARKER lands we synthesize the
+  // turn-end the CLI never pushed, so the FSM idles just like it does for the
+  // self-healing agents. Deterministic and file-based on purpose: no keystroke
+  // sniffing, no screen scraping, no settle timer that GUESSES idle from
+  // silence — this fires only on a definite marker in the transcript.
+  // -------------------------------------------------------------------------
+  interface InterruptWatch {
+    agentId: AgentId
+    sessionId: string | null
+    cwd?: string
+    transcriptPath: string
+    marker: RegExp
+    /** Transcript size at turn-start. Only bytes appended after it belong to
+     *  the aborted turn, so a marker from an EARLIER turn in the same file is
+     *  never re-detected. */
+    baseline: number
+  }
+  const interruptWatches = new Map<string, InterruptWatch>()
+  let interruptTimer: ReturnType<typeof setInterval> | null = null
+  const INTERRUPT_TAIL_BYTES = 64 * 1024
+
+  const fileSize = async (file: string): Promise<number> => {
+    try { return (await stat(file)).size } catch { return 0 }
+  }
+
+  /** Read at most the last INTERRUPT_TAIL_BYTES of `file`, never before `from`.
+   *  The marker is the last thing the CLI writes on abort, so a bounded tail
+   *  read catches it however large the turn's output was. */
+  const readTail = async (file: string, from: number): Promise<string> => {
+    let fh: Awaited<ReturnType<typeof open>>
+    try { fh = await open(file, 'r') } catch { return '' }
+    try {
+      const { size } = await fh.stat()
+      const start = Math.max(from, size - INTERRUPT_TAIL_BYTES, 0)
+      const len = size - start
+      if (len <= 0) return ''
+      const buf = Buffer.allocUnsafe(len)
+      await fh.read(buf, 0, len, start)
+      return buf.toString('utf8')
+    } catch {
+      return ''
+    } finally {
+      try { await fh.close() } catch { /* already gone */ }
+    }
+  }
+
+  const stopInterruptTimerIfIdle = (): void => {
+    if (interruptWatches.size === 0 && interruptTimer) {
+      clearInterval(interruptTimer)
+      interruptTimer = null
+    }
+  }
+
+  const scanInterruptWatches = async (): Promise<void> => {
+    for (const [terminalId, w] of [...interruptWatches]) {
+      const tail = await readTail(w.transcriptPath, w.baseline)
+      if (!tail || !w.marker.test(tail)) continue
+      // Interrupted: the CLI pushed no hook, so emit the turn-end its
+      // transcript now proves. sessionId/cwd carry through from turn-start so
+      // the session-stamp tracker re-stamps the same (correct) session; the
+      // raw marker lets a consumer tell this apart from a real hook turn-end.
+      interruptWatches.delete(terminalId)
+      emit({
+        terminalId,
+        agentId: w.agentId,
+        kind: 'turn-end',
+        sessionId: w.sessionId,
+        cwd: w.cwd,
+        transcriptPath: w.transcriptPath,
+        raw: { __cateInterruptRecovery: true },
+      })
+    }
+    stopInterruptTimerIfIdle()
+  }
+
+  const ensureInterruptTimer = (): void => {
+    if (interruptTimer || disposed) return
+    interruptTimer = setInterval(() => { void scanInterruptWatches() }, deps.interruptPollMs ?? 600)
+    interruptTimer.unref?.()
+  }
+
+  /** Arm/disarm the transcript watch off the normalized event stream. A
+   *  turn-start for a false-on-interrupt agent arms it (baselined at the
+   *  current transcript size); a real turn-end/session-end disarms it (the
+   *  turn ended through a hook — no recovery needed). turn-resume and
+   *  permission-wait leave it armed: the turn is still in flight and still
+   *  interruptible. */
+  const updateInterruptWatch = async (event: AgentHookEvent): Promise<void> => {
+    const rec = AGENT_HOOK_SPECS[event.agentId]?.interruptRecovery
+    if (!rec) return
+    switch (event.kind) {
+      case 'turn-start':
+        if (!event.transcriptPath) return
+        interruptWatches.set(event.terminalId, {
+          agentId: event.agentId,
+          sessionId: event.sessionId,
+          cwd: event.cwd,
+          transcriptPath: event.transcriptPath,
+          marker: rec.marker,
+          baseline: await fileSize(event.transcriptPath),
+        })
+        ensureInterruptTimer()
+        break
+      case 'turn-end':
+      case 'session-end':
+        interruptWatches.delete(event.terminalId)
+        stopInterruptTimerIfIdle()
+        break
+    }
+  }
+
   /** Constant-time check of the presented bearer against the terminal's
    *  derived token. Length equality is checked first (timingSafeEqual throws
    *  on mismatched lengths; the expected length is public anyway). */
@@ -258,7 +378,13 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
               } catch { /* presence tracking must never fail the hook */ }
             }
             const event = normalizeAgentHookPayload(body.agentId, body.terminalId, body.payload as Record<string, unknown>)
-            if (event) emit(event)
+            if (event) {
+              emit(event)
+              // Awaited (a cheap local stat) so the watch is armed by the time
+              // the bridge's post resolves — no window where the interrupt
+              // marker could land before the baseline is taken.
+              await updateInterruptWatch(event)
+            }
           }
           res.statusCode = 204
           res.end()
@@ -448,6 +574,11 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     dispose() {
       disposed = true
       listeners.clear()
+      interruptWatches.clear()
+      if (interruptTimer) {
+        clearInterval(interruptTimer)
+        interruptTimer = null
+      }
       const pending = ready
       ready = null
       // The stable hooks dir is deliberately NOT removed: repo hook files

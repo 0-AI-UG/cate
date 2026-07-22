@@ -136,14 +136,34 @@ export interface AgentHookSpec {
    *    control turn that DID fire Stop). Cate's running indicator therefore
    *    stays stuck until the next prompt.
    *
-   * Cate injects NO compensating signal for the false agents on purpose: every
-   * channel that could observe an interrupt (a keystroke, CLI stdout, a settle
-   * timer) lives OUTSIDE the hook stream this system deliberately relies on.
-   * The gap is left honest and pinned: the "a user interrupt pushes NO hook
-   * event" tests fail the day claude/codex ship an interrupt event — the
-   * signal to flip this flag true (they would then self-heal like the rest).
+   * For the false agents Cate recovers the turn-end out-of-band, from the one
+   * interrupt channel that is still deterministic and file-based (not a
+   * keystroke, not screen scraping, not a settle timer): the CLI writes an
+   * interrupt MARKER into its own transcript, and `interruptRecovery.marker`
+   * below matches it. The runtime arms a transcript tail-watch at turn-start
+   * and synthesizes a turn-end the moment the marker lands (see
+   * runtime/capabilities/agentHooks.ts) — so the FSM idles like it does for the
+   * self-healing agents, just via the transcript rather than a hook.
+   *
+   * The flag itself stays a truthful statement about the CLI: it still pushes
+   * no hook, so the "a user interrupt pushes NO hook event" tests keep guarding
+   * the day claude/codex ship a real interrupt event — the signal to flip this
+   * flag true (they would then self-heal via the hook and the transcript watch
+   * is no longer armed).
    */
   reportsTurnEndOnInterrupt: boolean
+  /**
+   * For an agent that pushes NO hook on interrupt (reportsTurnEndOnInterrupt
+   * false), how the runtime recovers the turn-end from the transcript instead.
+   * `marker` matches the transcript's newly-appended tail once the CLI has
+   * written its interrupt marker for the just-aborted turn (claude's
+   * "[Request interrupted by user]", codex's rollout abort record) — both
+   * pinned live against the real transcript in agentHookContracts.itest.ts.
+   * Undefined for the self-healing agents (they get a real hook turn-end and
+   * never need this) and for any false agent whose transcript carries no
+   * distinguishable marker (then the gap simply stays open, honestly).
+   */
+  interruptRecovery?: { marker: RegExp }
   /**
    * Workspace-scoped hook files (claude's .claude/settings.local.json,
    * codex's .codex/hooks.json, pi's .pi/extensions/cate-hook.ts,
@@ -328,6 +348,10 @@ const CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'Post
 const claudeSpec: AgentHookSpec = {
   // No hook fires on a user interrupt — pinned live (see the field doc).
   reportsTurnEndOnInterrupt: false,
+  // Recovered from the transcript: claude appends a user-role message whose
+  // content is exactly "[Request interrupted by user]" (also the "…for tool
+  // use" variant) when a turn is aborted. Pinned live in agentHookContracts.
+  interruptRecovery: { marker: /\[Request interrupted by user/ },
   projectFiles: [
     {
       relPath: '.claude/settings.local.json',
@@ -402,6 +426,12 @@ const codexSpec: AgentHookSpec = {
   // Identically silent on interrupt (Ctrl+C) — pinned live against a control
   // turn that DID fire Stop, so it is a real gap, not a wiring failure.
   reportsTurnEndOnInterrupt: false,
+  // Recovered from the rollout: codex records a turn_aborted event_msg when a
+  // running turn is cancelled. The marker is deliberately the record TYPE, not
+  // free text, so ordinary assistant output can't trip it. Pinned live against
+  // the real rollout in agentHookContracts.itest.ts (the interrupt test reads
+  // the rollout tail and asserts this marker matches it).
+  interruptRecovery: { marker: /"turn_aborted"/ },
   projectFiles: [
     {
       relPath: '.codex/hooks.json',
