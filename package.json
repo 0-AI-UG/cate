@@ -87,7 +87,7 @@
     "electron-updater": "^6.8.3",
     "mammoth": "^1.12.0",
     "monaco-editor": "^0.52.0",
-    "pdfjs-dist": "^5.7.284",
+    "pdfjs-dist": "^6.1.200",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-markdown": "^10.1.0",
