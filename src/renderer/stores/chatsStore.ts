@@ -19,6 +19,14 @@ export function chatMode(chat: Chat): ChatMode {
   return chat.mode ?? 'loop'
 }
 
+/** The status dot colour a chat's run carries in the sidebar/tab lists. */
+export function chatDotColor(chat: Chat): string {
+  if (chat.run?.status === 'running') return '#4ade80'
+  if (chat.run?.interrupted || chat.run?.status === 'review') return '#fbbf24'
+  if (chat.run?.status === 'failed') return '#f87171'
+  return 'var(--surface-5)'
+}
+
 /** Fields a coding chat is born with. Its transcript is NOT stored here — the pi
  *  turns live in useAgentStore, reloaded from `sessionFile`; `messages` stays []. */
 export interface CreateCodingChatInput {
@@ -52,6 +60,9 @@ interface ChatsStoreActions {
   /** Patch a coding chat's reference fields (sessionFile/model/worktree/title/
    *  agentKey) and persist. Bumps updatedAt so recents order by activity. */
   updateCodingChat: (rootPath: string, id: string, patch: Partial<Pick<Chat, 'sessionFile' | 'model' | 'worktreeId' | 'title' | 'agentKey'>>) => void
+  /** Set a chat's per-chat model override (either mode) and persist. null clears
+   *  it, falling the chat back to the global default. */
+  setChatModel: (rootPath: string, id: string, model: AgentModelRef | null) => void
   /** Remove a chat (either mode) and persist. */
   removeChat: (rootPath: string, id: string) => void
   /** Append one typed message to a chat and persist. */
@@ -143,6 +154,14 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
     const current = get().chatsByRoot[rootPath]
     if (!current) return
     const next = withChat(current, id, (c) => ({ ...c, ...patch }))
+    set((s) => ({ chatsByRoot: { ...s.chatsByRoot, [rootPath]: next } }))
+    persist(rootPath, next)
+  },
+
+  setChatModel(rootPath, id, model) {
+    const current = get().chatsByRoot[rootPath]
+    if (!current) return
+    const next = withChat(current, id, (c) => ({ ...c, model: model ?? undefined }))
     set((s) => ({ chatsByRoot: { ...s.chatsByRoot, [rootPath]: next } }))
     persist(rootPath, next)
   },

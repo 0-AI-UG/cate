@@ -8,9 +8,10 @@
 // card, send/stop. Images, slash commands, thinking level, plan mode, compaction
 // and the stats chip stay unwired, so those controls don't render.
 //
-// The model pref is real (feeds cateAgentModel()); Stop routes to
-// cateAgentController.stop. The draft is shared with the toolbar card via the same
-// per-workspace key, so an unsent message follows you.
+// The model picker writes the active chat's own model override (falling back to
+// the global default when unset); Stop routes to cateAgentController.stop. The
+// draft is shared with the sidebar card via the same per-workspace key, so an
+// unsent message follows you.
 // =============================================================================
 
 import React from 'react'
@@ -19,14 +20,14 @@ import { sendCateAgentMessage } from './cateAgentSend'
 import { cateAgentController } from './cateAgentController'
 import { useCateAgentWs } from './cateAgentStore'
 import { useChatsStore } from '../stores/chatsStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { useWorktrees } from '../stores/useWorktrees'
 import { useWorktreeActions } from '../stores/useWorktreeActions'
 import { getTargetWorktree, setTargetWorktree } from './cateAgentWorktreeTarget'
-import { loadCateAgentModel, saveCateAgentModel, loadDefaultModel } from '../../agent/renderer/agentModelPrefs'
-import type { AgentModelRef } from '../../shared/types'
+import { saveDefaultModel } from '../../agent/renderer/agentModelPrefs'
 
-// --- shared draft (same key the toolbar bar uses, so a draft follows you) -----
+// --- draft (per-workspace key, so an unsent message follows you across chats) --
 const draftKey = (wsId: string): string => `cate.agentDraft.${wsId}`
 const loadDraft = (wsId: string): string => {
   try {
@@ -54,7 +55,9 @@ export const CateAgentComposer: React.FC<{ wsId: string; rootPath: string }> = (
   const [text, setText] = React.useState(() => loadDraft(wsId))
 
   const [models, setModels] = React.useState<ModelOption[]>([])
-  const [model, setModel] = React.useState<AgentModelRef | null>(() => loadCateAgentModel())
+  // The global default a chat with no override inherits — reactive so a change in
+  // Settings (or a front-door pick) re-renders the pill.
+  const defaultModel = useSettingsStore((s) => s.agentDefaultModel)
   // The worktree the active chat works against (null = whatever is checked out).
   // Re-read whenever the chat changes — each chat remembers its own.
   const [targetId, setTargetId] = React.useState<string | null>(() => getTargetWorktree(cateAgent.activeChatId ?? ''))
@@ -102,10 +105,10 @@ export const CateAgentComposer: React.FC<{ wsId: string; rootPath: string }> = (
     if (cateAgent.activeChatId) setTargetWorktree(cateAgent.activeChatId, id)
   }
 
-  // With no Cate Agent pref the session falls back to the global default model, so
-  // show THAT rather than a "Default model" row — the fallback stays implicit, the
-  // pill and the checkmark always name a real model (same as the agent panel).
-  const effectiveModel = model ?? loadDefaultModel()
+  // A chat's own model override, else the global default — so the pill and its
+  // checkmark always name a real model (the fallback stays implicit), same as the
+  // agent panel. At the front door (no active chat) only the default shows.
+  const effectiveModel = activeChat?.model ?? defaultModel
 
   return (
     <ChatComposer
@@ -125,8 +128,10 @@ export const CateAgentComposer: React.FC<{ wsId: string; rootPath: string }> = (
       onModelMenuOpen={refreshModels}
       onPickModel={(m) => {
         const next = { provider: m.provider, model: m.model }
-        setModel(next)
-        saveCateAgentModel(next)
+        // A pick overrides just the active chat; at the front door (no chat yet)
+        // it sets the global default the next new chat will inherit.
+        if (activeChat) useChatsStore.getState().setChatModel(rootPath, activeChat.id, next)
+        else saveDefaultModel(next)
       }}
       onManageModels={() => useUIStore.getState().openSettings('providers')}
       worktrees={worktrees}

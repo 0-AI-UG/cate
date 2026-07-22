@@ -1,7 +1,7 @@
 // =============================================================================
 // cateAgentStore — renderer runtime state for the Cate Agent, keyed by workspace id.
 //
-// Pure observable state for the UI (Tasks header, toolbar button). The imperative
+// Pure observable state for the UI (Tasks header, sidebar). The imperative
 // brain (sessions, timers, loops) lives in cateAgentController.ts; it writes here
 // so the UI reflects what the Cate Agent is doing. autoObserve is persisted to
 // .cate/cateAgent.json by the controller — this store is the live mirror.
@@ -11,7 +11,7 @@ import { create } from 'zustand'
 import type { CateAgentActivity, Point } from '../../shared/types'
 
 /** One entry in the Cate Agent's persistent-per-session feedback log (rendered in
- *  the feedback panel above the toolbar). Feed items stay until the feed is
+ *  the sidebar feed panel). Feed items stay until the feed is
  *  cleared or rolls past the cap. */
 export type CateAgentFeedKind = 'user' | 'agent' | 'status' | 'error'
 
@@ -47,7 +47,7 @@ export interface CateAgentWsState {
   activity: CateAgentActivity
   /** Short status-bubble text, e.g. "Running tests…" or "Proposing: update docs". */
   status: string
-  /** Whether the toolbar is showing the prompt input bar (and the chat panel is
+  /** Whether the sidebar is showing the prompt input bar (and the chat panel is
    *  forced visible). */
   inputOpen: boolean
   /** The chat the input composes into and the transcript shows. Empty string means
@@ -58,7 +58,7 @@ export interface CateAgentWsState {
    *  what the observer has watched. Picking a chat (or sending a first message)
    *  turns it off and grows the window into that chat. */
   observerView: boolean
-  /** Persistent-per-session feedback log shown above the toolbar, newest last. */
+  /** Persistent-per-session feedback log shown in the sidebar feed, newest last. */
   feed: CateAgentFeedItem[]
   /** Terminals the orchestrator is actively driving → their pulsing glow color, keyed
    *  by panelId. The color is the job's worktree color, or the theme accent
@@ -70,8 +70,8 @@ export interface CateAgentWsState {
    *  as it looks THEN (see cateAgentTerminals.terminalPosition). */
   runAnchors: Record<string, Point>
   /** Agent activity has arrived (a remark, proposal, review, or error) that the
-   *  user hasn't seen because the feedback panel was closed. Drives the toolbar
-   *  button's attention glow + notification dot. Cleared when the panel opens. */
+   *  user hasn't seen because the feed panel was closed. Drives the sidebar's
+   *  attention indicator + notification dot. Cleared when the panel opens. */
   unseen: boolean
 }
 
@@ -105,7 +105,7 @@ interface CateAgentStore {
    *  but its button + dismiss are spent — idempotent, so it can't resolve twice. */
   resolveFeedAction: (wsId: string, id: number, resolution: 'approved' | 'dismissed') => void
   clearFeed: (wsId: string) => void
-  /** Flag/clear unseen agent activity (drives the toolbar attention indicator). */
+  /** Flag/clear unseen agent activity (drives the sidebar attention indicator). */
   setUnseen: (wsId: string, value: boolean) => void
   addControlledTerminal: (wsId: string, panelId: string, color: string) => void
   removeControlledTerminal: (wsId: string, panelId: string) => void
@@ -163,7 +163,7 @@ export const useCateAgentStore = create<CateAgentStore>((set, getStore) => ({
       const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
       const item: CateAgentFeedItem = { id: ++feedSeq, kind, text, ts: Date.now(), action }
       // Agent output (anything but the user's own line) arriving while the panel
-      // is closed becomes unseen activity → toolbar attention indicator.
+      // is closed becomes unseen activity → sidebar attention indicator.
       const unseen = prev.unseen || (kind !== 'user' && !prev.inputOpen)
       return { byWs: { ...s.byWs, [wsId]: { ...prev, feed: [...prev.feed, item].slice(-MAX_FEED), unseen } } }
     })
@@ -200,7 +200,7 @@ export const useCateAgentStore = create<CateAgentStore>((set, getStore) => ({
   clearFeed(wsId) {
     set((s) => {
       const prev = s.byWs[wsId] ?? DEFAULT_CATE_AGENT_WS
-      // No feed means nothing for the eye to show, so the toolbar dot must go dark too.
+      // No feed means nothing for the eye to show, so the sidebar dot must go dark too.
       return { byWs: { ...s.byWs, [wsId]: { ...prev, feed: [], unseen: false } } }
     })
   },

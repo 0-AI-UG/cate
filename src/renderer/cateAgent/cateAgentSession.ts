@@ -10,7 +10,7 @@
 // =============================================================================
 
 import type { AgentModelRef, CateAgentRole } from '../../shared/types'
-import { loadDefaultModel, loadCateAgentModel } from '../../agent/renderer/agentModelPrefs'
+import { loadDefaultModel } from '../../agent/renderer/agentModelPrefs'
 import log from '../lib/logger'
 import { agentClient } from '../../agent/renderer/agentClient'
 
@@ -47,12 +47,6 @@ export function isCateAgentPanelId(panelId: string): boolean {
   )
 }
 
-/** Resolve the Cate Agent model from settings, falling back to the global default.
- *  null ⇒ undefined so pi picks its own first-available model. Both roles share it. */
-function cateAgentModel(): AgentModelRef | undefined {
-  return loadCateAgentModel() ?? loadDefaultModel() ?? undefined
-}
-
 // Role framing (system prompt) + read-only tool gating are injected by the
 // cate-agent-tools extension via its `before_agent_start` handler, keyed off
 // CATE_AGENT_ROLE — that's the only place the role's behavior is defined, and the
@@ -66,6 +60,9 @@ export interface CreateCateAgentSessionOpts {
   role: CateAgentRole
   /** cwd override — the verifier runs in its target worktree, not the root. */
   cwd?: string
+  /** The chat's per-chat model override. Falls back to the global default when
+   *  absent; null ⇒ undefined so pi picks its own first-available model. */
+  model?: AgentModelRef
 }
 
 /** Start a headless Cate Agent session. Returns false if creation failed. */
@@ -75,7 +72,7 @@ export async function createCateAgentSession(opts: CreateCateAgentSessionOpts): 
       panelId: opts.panelId,
       workspaceId: opts.workspaceId,
       cwd: opts.cwd ?? opts.rootPath,
-      model: cateAgentModel(),
+      model: opts.model ?? loadDefaultModel() ?? undefined,
       env: { CATE_AGENT_ROLE: opts.role },
       // Isolate Cate Agent transcripts in .cate/pi-agent-cate-agent so the agent
       // panel's session list never shows or resumes them.

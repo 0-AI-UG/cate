@@ -1,6 +1,6 @@
 // =============================================================================
 // sendCateAgentMessage — the single entry point for composing a Cate Agent
-// message, shared by the toolbar input and the sidebar footer. From the observer
+// message, shared by the sidebar tabs and the sidebar footer. From the observer
 // front door (or with no active chat) it mints a NEW chat titled from the prompt;
 // otherwise it composes into the selected chat. Always selects the target chat
 // (clearing the observer view) so the surface grows into that transcript.

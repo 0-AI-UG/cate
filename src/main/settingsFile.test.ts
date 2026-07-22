@@ -117,6 +117,28 @@ describe('settingsFile', () => {
     expect(fs.readFileSync(path.join(dirRef.current, backups[0]), 'utf-8')).toContain('not valid json')
   })
 
+  it('migrates a legacy cateAgentModel into agentDefaultModel when the default is unset', async () => {
+    const legacy = { provider: 'anthropic', model: 'claude-x' }
+    fs.writeFileSync(settingsPath(), JSON.stringify({ cateAgentModel: legacy }))
+    const m = await freshModule()
+    m.loadSettingsSync()
+    // The old loop-model pick becomes the shared default.
+    expect(m.getSetting('agentDefaultModel')).toEqual(legacy)
+    // cateAgentModel is no longer a known key.
+    expect(m.isSettingsKey('cateAgentModel')).toBe(false)
+  })
+
+  it('does not overwrite an existing agentDefaultModel during the loop-model migration', async () => {
+    const def = { provider: 'openai', model: 'gpt-x' }
+    fs.writeFileSync(
+      settingsPath(),
+      JSON.stringify({ agentDefaultModel: def, cateAgentModel: { provider: 'anthropic', model: 'claude-x' } }),
+    )
+    const m = await freshModule()
+    m.loadSettingsSync()
+    expect(m.getSetting('agentDefaultModel')).toEqual(def)
+  })
+
   it('round-trips the beta-updates opt-in (defaults off)', async () => {
     const m = await freshModule()
     m.loadSettingsSync()

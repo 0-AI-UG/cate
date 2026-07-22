@@ -214,13 +214,12 @@ export function deriveCateAgentGate(
   return candidates.some((id) => !broken(id)) ? 'ok' : 'needsReauth'
 }
 
-/** The gate for the Cate Agent's own configured model (Settings → Cate Agent),
- *  falling back to the global default. Reactive to both settings keys. */
+/** The gate for the Cate Agent, keyed on the shared default model (Settings →
+ *  Providers). Per-chat model overrides don't affect readiness — this only asks
+ *  whether some usable provider is connected. Reactive to the default key. */
 export function useCateAgentReady(): CateAgentGate {
-  const cateModel = useSettingsStore((s) => s.cateAgentModel)
   const defaultModel = useSettingsStore((s) => s.agentDefaultModel)
-  const preferred = normalizeModel(cateModel) ?? normalizeModel(defaultModel)
-  return useCateAgentGate(preferred)
+  return useCateAgentGate(normalizeModel(defaultModel))
 }
 
 /** Pure mapping from state → what to show. Exported for tests. Optimistic: a

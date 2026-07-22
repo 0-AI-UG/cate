@@ -4,7 +4,7 @@
 // Owns the headless sessions and their loops:
 //   - Observer: an always-on session per workspace. A 60s tick consults the trigger
 //     gate; when it passes the observer takes ONE turn and may remark into the
-//     toolbar feed. It never mints a chat and never acts.
+//     sidebar feed. It never mints a chat and never acts.
 //   - Chat agent (the `orchestrator` role): ONE persistent session per chat, keyed by
 //     chat id and retained across turns so it accumulates conversation history. You
 //     type into a chat; its agent decides — answer inline (a `text` message), run a
@@ -287,7 +287,7 @@ class CateAgentController implements CateAgentBridgeHost {
     if (!r.sessions.has(chatId) || !hasContext(panelId)) {
       const ctx: CateAgentContext = { panelId, workspaceId: wsId, rootPath, role: 'orchestrator', chatId, epoch: ++this.epochSeq, canvasPanelId }
       setContext(panelId, ctx)
-      const ok = await createCateAgentSession({ panelId, rootPath, workspaceId: wsId, role: 'orchestrator' })
+      const ok = await createCateAgentSession({ panelId, rootPath, workspaceId: wsId, role: 'orchestrator', model: chat.model })
       if (!ok) {
         deleteContext(panelId)
         r.sessions.delete(chatId)
@@ -324,7 +324,13 @@ class CateAgentController implements CateAgentBridgeHost {
     if (!r.sessions.has(chatId) || !hasContext(panelId)) {
       const ctx: CateAgentContext = { panelId, workspaceId: wsId, rootPath, role: 'orchestrator', chatId, epoch: ++this.epochSeq, canvasPanelId }
       setContext(panelId, ctx)
-      const ok = await createCateAgentSession({ panelId, rootPath, workspaceId: wsId, role: 'orchestrator' })
+      const ok = await createCateAgentSession({
+        panelId,
+        rootPath,
+        workspaceId: wsId,
+        role: 'orchestrator',
+        model: useChatsStore.getState().getChat(rootPath, chatId)?.model,
+      })
       if (!ok) {
         deleteContext(panelId)
         useChatsStore.getState().patchRun(rootPath, chatId, { status: 'failed', note: 'Could not restart the agent (check provider sign-in).' })

@@ -96,7 +96,7 @@ export interface CodingChatSession {
    *  failure message is already appended to the chat's slice via appendSystem).
    *  A host that tracks per-chat readiness (the agent panel's readyByKey) awaits
    *  this to flip it + fetch slash commands; a host that treats an existing slice
-   *  as ready (ChatView) can ignore it. */
+   *  as ready (the Cate Agent sidebar's coding body) can ignore it. */
   ready: Promise<boolean>
 }
 

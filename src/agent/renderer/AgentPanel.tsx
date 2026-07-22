@@ -17,10 +17,12 @@
 // (custom agents/prompts/extensions) were removed — the agent is opinionated;
 // provider sign-in lives in the main Cate Settings → Providers.
 //
-// Chats are pi's own session files on disk (<cwd>/.cate/pi-agent/sessions/<cwd>/*.jsonl).
-// The sidebar reads them via AGENT_LIST_SESSIONS; opening a row resumes that
-// session by spawning pi with `--session <path>`. New chat = dispose + create
-// without a session file, then pick up pi's freshly-written file from getState.
+// Chats are durable, workspace-owned records in chatsStore (.cate/chats.json),
+// not the panel's own state — they outlive the panel and are the draggable unit
+// of work. Each record carries a `mode`: a 'coding' chat references a pi session
+// (agentKey + sessionFile) rendered by CodingChatView; a 'loop' (Cate Agent) chat
+// is hosted through an additive branch that renders LoopChatView instead. The
+// sidebar lists both, opening a coding row re-adopts its pi session by key.
 // =============================================================================
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'

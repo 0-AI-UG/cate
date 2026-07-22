@@ -4,15 +4,15 @@
 // The loop counterpart to CodingChatView: given a chatId it renders that chat's
 // typed transcript + run controls (via LoopTranscript) and the loop composer
 // (CateAgentComposer), reading the chat from chatsStore by id rather than from
-// cateAgentStore.activeChatId. It is the per-chat leaf the generic ChatView host
-// dispatches to for `mode: 'loop'`.
+// cateAgentStore.activeChatId. It is the per-chat leaf the AgentPanel's loop-chat
+// branch renders for a `mode: 'loop'` chat.
 //
 // The OBSERVER feed is per-workspace, not per-chat, so it deliberately lives
 // elsewhere (CateAgentThread) — this view is one chat only.
 //
 // This module transitively pulls the loop runtime (cateAgentController → xterm)
-// via CateAgentComposer, so hosts that must stay coding-only (ChatView) import it
-// lazily.
+// via CateAgentComposer, so the coding AgentPanel imports it lazily to keep xterm
+// off its static bundle.
 // =============================================================================
 
 import React from 'react'
@@ -20,7 +20,7 @@ import { useChatsStore } from '../stores/chatsStore'
 import { LoopTranscript } from './CateAgentThread'
 import { CateAgentComposer } from './CateAgentComposer'
 
-export const LoopChatView: React.FC<{ wsId: string; rootPath: string; chatId: string }> = ({ wsId, rootPath, chatId }) => {
+const LoopChatView: React.FC<{ wsId: string; rootPath: string; chatId: string }> = ({ wsId, rootPath, chatId }) => {
   const chat = useChatsStore((s) => (s.chatsByRoot[rootPath] ?? []).find((c) => c.id === chatId))
   if (!chat) return null
   return (

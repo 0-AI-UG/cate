@@ -19,15 +19,7 @@ import {
 import type { AgentSessionListEntry, Chat } from '../../shared/types'
 import { Tooltip } from '../../renderer/ui/Tooltip'
 import { setChatDrag } from '../../renderer/drag/fileDragPayload'
-import { useChatsStore } from '../../renderer/stores/chatsStore'
-
-// The status colour a loop chat's dot carries (mirrors CateAgentChatTabs).
-const chatDotColor = (chat: Chat): string => {
-  if (chat.run?.status === 'running') return '#4ade80'
-  if (chat.run?.interrupted || chat.run?.status === 'review') return '#fbbf24'
-  if (chat.run?.status === 'failed') return '#f87171'
-  return 'var(--surface-5)'
-}
+import { useChatsStore, chatDotColor } from '../../renderer/stores/chatsStore'
 
 export function AgentSidebar({
   chats,

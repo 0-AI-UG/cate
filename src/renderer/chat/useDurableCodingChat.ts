@@ -2,15 +2,15 @@
 // useDurableCodingChat — gather the read-only-surface composer data a coding chat
 // needs, then drive it via useCodingChat.
 //
-// This is the shared gathering path (extracted from ChatView's old CodingChatHost)
-// for surfaces that render a durable coding chat WITHOUT owning its pi lifecycle:
-// the worktree pill is READ-ONLY (a switch reinitialises pi, which only the
-// AgentPanel drives), while models, slash commands, send/steer/stop, images,
-// thinking, plan, compaction and fork all work off the chat's live agentKey slice.
+// This is the gathering path for a surface that renders a durable coding chat
+// WITHOUT owning its pi lifecycle: the worktree pill is READ-ONLY (a switch
+// reinitialises pi, which only the AgentPanel drives), while models, slash
+// commands, send/steer/stop, images, thinking, plan, compaction and fork all work
+// off the chat's live agentKey slice.
 //
-// It returns the useCodingChat result verbatim, so a host can render either the
-// BUNDLED layout (ChatView) or a SPLIT transcript + floating composer (the Cate
-// Agent sidebar) from one subscription.
+// It returns the useCodingChat result verbatim, so its host — the Cate Agent
+// sidebar's SPLIT transcript + floating composer — drives a coding chat from one
+// subscription without duplicating the AgentPanel's plumbing.
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useState } from 'react'

@@ -1567,10 +1567,8 @@ export interface AppSettings {
    *  folder already exists in the repo). Sparse: only real overrides stored. */
   agentHookInjection: Record<string, Partial<Record<AgentId, AgentHookMode>>>
 
-  // Cate Agent — the model both headless Cate Agent brains (observer + orchestrator) run on.
-  // null falls back to agentDefaultModel, then pi's first-available. Chosen by the
-  // user in Settings → Cate Agent.
-  cateAgentModel: AgentModelRef | null
+  // Cate Agent — the loop model is the shared `agentDefaultModel` (above), with a
+  // per-chat override on the Chat record; there is no separate global loop model.
   /** The coding-agent CLI each iteration's driver launches in a terminal to do the
    *  actual work — an AgentId from src/shared/agents.ts. Empty ⇒ the driver picks
    *  an installed one itself. */
@@ -1684,7 +1682,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   agentHookInjection: {},
 
   // Cate Agent
-  cateAgentModel: null,
   cateAgentOrchestratorAgentId: '',
   cateAgentObserveCooldownMin: 1,
   cateAgentMaxParallelIterations: 3,

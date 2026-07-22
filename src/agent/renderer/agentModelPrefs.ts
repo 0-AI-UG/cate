@@ -18,28 +18,11 @@ export function saveDefaultModel(model: AgentModelRef | null): void {
   useSettingsStore.getState().setSetting('agentDefaultModel', model)
 }
 
-/** Drop every saved model preference that points at a provider the user just
- *  disconnected, so a stale pick doesn't resurface as a "reconnect" prompt. */
+/** Drop the saved default model if it points at a provider the user just
+ *  disconnected, so a stale pick doesn't resurface as a "reconnect" prompt.
+ *  Per-chat model overrides live on their own chat records and are left alone. */
 export function clearModelPrefsForProvider(providerId: string): void {
   if (loadDefaultModel()?.provider === providerId) saveDefaultModel(null)
-  if (loadCateAgentModel()?.provider === providerId) saveCateAgentModel(null)
-}
-
-// --- Cate Agent model -------------------------------------------------------
-// Both headless Cate Agent brains (observer + orchestrator) run on this single
-// user-chosen model (Settings → Cate Agent). null means "fall back to a default".
-
-function readModel(value: AgentModelRef | null): AgentModelRef | null {
-  if (value && typeof value.provider === 'string' && typeof value.model === 'string') return value
-  return null
-}
-
-export function loadCateAgentModel(): AgentModelRef | null {
-  return readModel(useSettingsStore.getState().cateAgentModel)
-}
-
-export function saveCateAgentModel(model: AgentModelRef | null): void {
-  useSettingsStore.getState().setSetting('cateAgentModel', model)
 }
 
 /** The CLI command each iteration's driver launches, resolved from the AgentId

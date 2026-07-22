@@ -4,20 +4,16 @@
 // The Cate Agent is always on; what's configurable is how it behaves:
 //   - Automatic observations are per-workspace (.cate/cateAgent.json), so that
 //     toggle acts on the selected workspace.
-//   - Everything else (observation frequency, model, coding agent, parallel
-//     attempts) is a global pref (settings.json) shared across workspaces.
+//   - Everything else (observation frequency, coding agent, parallel attempts) is
+//     a global pref (settings.json) shared across workspaces.
 //
-// The model picker reuses ModelPrefRow from the agent ProvidersView so it looks
-// identical to the global Default-model control; every other control is the
-// shared settings kit (SettingRow / Toggle / Select / NumberInput).
+// The model is the shared default (Settings → Providers) with a per-chat override
+// in the composer, so there's no model control here. Every control is the shared
+// settings kit (SettingRow / Toggle / Select / NumberInput).
 // =============================================================================
 
-import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ModelPrefRow, type PickModels } from '../../agent/renderer/ProvidersView'
-import { loadCateAgentModel, saveCateAgentModel } from '../../agent/renderer/agentModelPrefs'
 import { AGENTS } from '../../shared/agents'
-import type { AgentModelRef } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
@@ -25,7 +21,6 @@ import { useCateAgentReady } from '../stores/providerReadinessStore'
 import { useCateAgentWs } from '../cateAgent/cateAgentStore'
 import { cateAgentController } from '../cateAgent/cateAgentController'
 import { SettingRow, Toggle, Select, NumberInput, SearchableBlock } from './SettingsComponents'
-import log from '../lib/logger'
 
 export function CanvasCateAgentSettings() {
   const gate = useCateAgentReady()
@@ -35,9 +30,9 @@ export function CanvasCateAgentSettings() {
       {gate === 'noProvider' && <NoProviderNotice />}
       {gate === 'needsReauth' && <ReauthNotice />}
       <CateAgentObservations />
-      {/* Model/job controls resolve nothing without a usable provider — dim them. */}
+      {/* Job controls resolve nothing without a usable provider — dim them. The
+          model is the shared default, configured in Settings → Providers. */}
       <Gated disabled={!ready}>
-        <CateAgentModels />
         <CateAgentJobs />
       </Gated>
     </div>
@@ -140,56 +135,6 @@ function CateAgentObservations() {
         </Gated>
       </SettingRow>
     </>
-  )
-}
-
-// --- model (global) -----------------------------------------------------------
-
-function CateAgentModels() {
-  // Selectable models, derived from the connected providers in auth.json (same
-  // source the global Default-model picker uses).
-  const [models, setModels] = useState<PickModels>([])
-  const [model, setModel] = useState<AgentModelRef | null>(() => loadCateAgentModel())
-  const [open, setOpen] = useState(false)
-
-  const refresh = useCallback(async () => {
-    try {
-      const mList = await window.electronAPI.agentListModels()
-      setModels(mList.map((m) => ({ provider: m.provider, model: m.id, label: m.label })))
-    } catch (err) {
-      log.warn('[CanvasCateAgentSettings] model list refresh failed', err)
-    }
-  }, [])
-
-  useEffect(() => { void refresh() }, [refresh])
-
-  // Connecting/disconnecting a provider in another view changes which models are
-  // pickable — re-pull when the main process broadcasts an auth change.
-  useEffect(() => {
-    if (!window.electronAPI?.onAuthChanged) return
-    return window.electronAPI.onAuthChanged(() => { void refresh() })
-  }, [refresh])
-
-  const handlePick = (m: { provider: string; model: string } | null) => {
-    const next = m ? { provider: m.provider, model: m.model } : null
-    saveCateAgentModel(next)
-    setModel(next)
-    setOpen(false)
-  }
-
-  return (
-    <SearchableBlock keywords="cate agent model">
-      <ModelPrefRow
-        label="Cate Agent model"
-        sublabel="The model the Cate Agent uses to observe, suggest, and run tasks."
-        models={models}
-        current={model}
-        open={open}
-        setOpen={setOpen}
-        onPick={handlePick}
-        noneLabel="Default model"
-      />
-    </SearchableBlock>
   )
 }
 

@@ -10,21 +10,13 @@
 
 import React from 'react'
 import { Plus, X, Eye, ChatCircle } from '@phosphor-icons/react'
-import { useChatsStore, chatMode } from '../stores/chatsStore'
+import { useChatsStore, chatMode, chatDotColor } from '../stores/chatsStore'
 import { useCateAgentStore, useCateAgentWs } from './cateAgentStore'
 import { cateAgentController } from './cateAgentController'
 import { createCodingChatSession, disposeCodingChat } from '../../agent/renderer/agentSessionRegistry'
 import { loadDefaultModel } from '../../agent/renderer/agentModelPrefs'
 import { setChatDrag } from '../drag/fileDragPayload'
 import type { Chat } from '../../shared/types'
-
-// The status colour a loop chat's dot carries (mirrors the old picker).
-const chatDotColor = (chat: Chat): string => {
-  if (chat.run?.status === 'running') return '#4ade80'
-  if (chat.run?.interrupted || chat.run?.status === 'review') return '#fbbf24'
-  if (chat.run?.status === 'failed') return '#f87171'
-  return 'var(--surface-5)'
-}
 
 const Tab: React.FC<{
   active: boolean
