@@ -70,11 +70,11 @@
     "node-gyp": "^12.4.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.80.6",
-    "@earendil-works/pi-ai": "^0.80.6",
+    "@earendil-works/pi-agent-core": "0.80.6",
+    "@earendil-works/pi-ai": "0.80.6",
     "@parcel/watcher": "^2.5.1",
     "@phosphor-icons/react": "^2.1.10",
-    "@sentry/electron": "^5.11.0",
+    "@sentry/electron": "^7.15.0",
     "@types/ssh2": "^1.15.5",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
@@ -98,7 +98,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.6",
+    "@earendil-works/pi-coding-agent": "0.80.6",
     "@electron/rebuild": "^4.0.3",
     "@eslint/js": "^9.39.0",
     "@playwright/test": "^1.60.0",
@@ -118,7 +118,7 @@
     "playwright": "^1.60.0",
     "png-to-ico": "^3.0.1",
     "postcss": "^8.4.0",
-    "sharp": "^0.33.0",
+    "sharp": "^0.35.3",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.60.0",
