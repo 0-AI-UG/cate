@@ -112,9 +112,21 @@ function isShellProcess(name: string): boolean {
  *  under a launcher (grok's npm wrapper execs a versioned binary, etc.), so it
  *  isn't always the direct child. This is the process-scan detection the tab
  *  title and the "hooks off" nudge key on — complementary to the hook-anchored
- *  presence (agentPresence.ts), which still owns running/finished STATE and
- *  survives tmux/setsid detaching the agent from this tree. Falls back to the
- *  first non-shell direct child for the generic indicator (dev servers, vim). */
+ *  presence (agentPresence.ts), which still owns running/finished STATE.
+ *
+ *  BLIND SPOT (deliberate, see #480 / agentPresence.ts header): this is a
+ *  DOWNWARD walk of the pty's OWN tree, so it is structurally blind wherever the
+ *  agent is detached from that tree — tmux/screen panes hang off the
+ *  multiplexer server, setsid/nohup daemonize. That is exactly why presence and
+ *  STATE are hook-anchored, not scan-anchored: hooks don't care about topology.
+ *  The two features that key on this scan (clean tab title, "hooks off" nudge)
+ *  therefore degrade to "no clean name / no nudge" under tmux — never a wrong
+ *  state, and the hook path still delivers the tab name + full state there. The
+ *  nudge additionally gates on hook-anchored presence so it can't fire when
+ *  hooks ARE working (see useMissingAgentHookNotice).
+ *
+ *  Falls back to the first non-shell direct child for the generic indicator
+ *  (dev servers, vim). */
 function activityForPid(shellPid: number, tree: ProcTree): TerminalActivity {
   for (const pid of descendantsOf(shellPid, tree)) {
     const name = tree.nameByPid.get(pid)
