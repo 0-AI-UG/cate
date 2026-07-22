@@ -63,10 +63,10 @@ vi.mock('../../lib/terminal/terminalRegistry', () => ({
 
 // Agent pi sessions are out of scope here (they have no PTY); stub the module
 // so importing the appStore graph doesn't pull in the agent store.
-vi.mock('../../../agent/renderer/agentSessionRegistry', () => ({
-  disposeAgentPanel: vi.fn(),
-  getAgentPanelSession: vi.fn(),
-  saveAgentPanelSession: vi.fn(),
+vi.mock('../../../cateAgent/renderer/codingSessionRegistry', () => ({
+  disposeCateAgentPanel: vi.fn(),
+  getCateAgentPanelSession: vi.fn(),
+  saveCateAgentPanelSession: vi.fn(),
 }))
 
 // Minimal electronAPI so the fire-and-forget workspace sync calls resolve.

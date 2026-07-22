@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
-  createAgent: vi.fn(() => 'panel-new'),
+  createCateAgent: vi.fn(() => 'panel-new'),
   setPanelInitialChat: vi.fn(),
   setPanelWorktreeId: vi.fn(),
   getChatsByMode: vi.fn(() => [] as Array<{ id: string; sessionFile: string | null }>),
@@ -20,7 +20,7 @@ vi.mock('../stores/appStore', () => ({
   useAppStore: {
     getState: () => ({
       selectedWorkspaceId: 'ws-1',
-      createAgent: h.createAgent,
+      createCateAgent: h.createCateAgent,
       setPanelInitialChat: h.setPanelInitialChat,
       setPanelWorktreeId: h.setPanelWorktreeId,
     }),
@@ -53,7 +53,7 @@ describe('createSeededChatPanel', () => {
     )
 
     expect(panelId).toBe('panel-new')
-    expect(h.createAgent).toHaveBeenCalledWith('ws-1', { x: 10, y: 20 }, { target: 'canvas', canvasPanelId: 'cv-1' })
+    expect(h.createCateAgent).toHaveBeenCalledWith('ws-1', { x: 10, y: 20 }, { target: 'canvas', canvasPanelId: 'cv-1' })
     expect(h.setPanelInitialChat).toHaveBeenCalledWith('ws-1', 'panel-new', 'chat-7')
     expect(h.setPanelWorktreeId).toHaveBeenCalledWith('ws-1', 'panel-new', 'wt-3')
     expect(h.createCodingChat).not.toHaveBeenCalled()

@@ -172,7 +172,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
       if (!p.worktreeId) continue
       const c = counts[p.worktreeId] ?? (counts[p.worktreeId] = { terminals: 0, agents: 0 })
       if (p.type === 'terminal') c.terminals += 1
-      else if (p.type === 'agent') c.agents += 1
+      else if (p.type === 'cateAgent') c.agents += 1
     }
     return counts
   }, [panels])
@@ -209,7 +209,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
   useEffect(() => () => setHoveredWorktree(null), [setHoveredWorktree])
 
   const launch = useCallback(
-    (wt: JoinedWorktree, type: 'terminal' | 'agent') => {
+    (wt: JoinedWorktree, type: 'terminal' | 'cateAgent') => {
       launchInWorktree(wt, type, { target: 'canvas', canvasPanelId })
       onClose()
     },
@@ -379,7 +379,7 @@ const PrPill: React.FC<{ pr: PrStatus; onClick: () => void }> = ({ pr, onClick }
 const SpawnButton: React.FC<{
   icon: React.ReactNode
   title: string
-  panelType: 'terminal' | 'agent'
+  panelType: 'terminal' | 'cateAgent'
   cwd: string
   worktreeId: string
   onClick: () => void
@@ -417,7 +417,7 @@ const WorktreeRow: React.FC<{
   cb: CardCallbacks
   onFocus: () => void
   onHover: (on: boolean) => void
-  onLaunch: (type: 'terminal' | 'agent') => void
+  onLaunch: (type: 'terminal' | 'cateAgent') => void
 }> = ({ wt, primaryLabel, focused, status, pr, panels, busy, cb, onFocus, onHover, onLaunch }) => {
   const isPrimary = !!wt.isPrimary
   const label = wt.label || wt.branch || (isPrimary ? 'main' : '(detached)')
@@ -521,11 +521,11 @@ const WorktreeRow: React.FC<{
             />
             <SpawnButton
               icon={<ChatCircle size={12} />}
-              title="Agent"
-              panelType="agent"
+              title="Cate Agent"
+              panelType="cateAgent"
               cwd={wt.path}
               worktreeId={wt.id}
-              onClick={() => onLaunch('agent')}
+              onClick={() => onLaunch('cateAgent')}
             />
             <Tooltip label="More actions">
               <button

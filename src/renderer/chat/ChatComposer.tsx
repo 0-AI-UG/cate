@@ -33,21 +33,21 @@ import {
 import { useAutoGrowingTextarea } from '../lib/hooks/useAutoGrowingTextarea'
 import { Tooltip } from '../ui/Tooltip'
 import { CreateWorktreeForm, type PrListItem } from '../sidebar/CreateWorktreeForm'
-import { ModelPickerDropdown } from '../../agent/renderer/ModelPicker'
+import { ModelPickerDropdown } from '../../cateAgent/renderer/ModelPicker'
 import {
   ImageAttachButton,
   ImageChips,
   ThinkingLevelPicker,
   NodePopover,
   useNodePopover,
-} from '../../agent/renderer/AgentPanelChrome'
+} from '../../cateAgent/renderer/CateAgentPanelChrome'
 import type { JoinedWorktree } from '../stores/useWorktrees'
 import type {
-  AgentImageAttachment,
-  AgentModelRef,
-  AgentSessionStats,
-  AgentSlashCommand,
-  AgentThinkingLevel,
+  CodingImageAttachment,
+  CateAgentModelRef,
+  CodingSessionStats,
+  CodingSlashCommand,
+  CodingThinkingLevel,
 } from '../../shared/types'
 
 const MAX_HEIGHT = 160
@@ -136,7 +136,7 @@ export interface ChatComposerProps {
 
   // model pill — rendered iff onPickModel is supplied
   models?: ModelOption[]
-  selectedModel?: AgentModelRef | null
+  selectedModel?: CateAgentModelRef | null
   onPickModel?: (m: ModelOption) => void
   onManageModels?: () => void
   /** Fired when the model menu opens, so the call site can refresh the list. */
@@ -165,25 +165,25 @@ export interface ChatComposerProps {
   onCheckoutPr?: (pr: PrListItem) => Promise<string | null>
 
   // optional capabilities — each rendered iff its handler is supplied
-  images?: AgentImageAttachment[]
-  onAddImage?: (img: AgentImageAttachment) => void
+  images?: CodingImageAttachment[]
+  onAddImage?: (img: CodingImageAttachment) => void
   onRemoveImage?: (idx: number) => void
   onPaste?: (e: React.ClipboardEvent) => void
   onDrop?: (e: React.DragEvent) => void
-  commands?: AgentSlashCommand[]
+  commands?: CodingSlashCommand[]
   /** Fired when the slash-command popup opens (draft starts a `/command`), so the
    *  parent can refresh the command list — picks up newly-installed skills
    *  without reopening the panel. */
   onSlashOpen?: () => void
-  thinkingLevel?: AgentThinkingLevel | null
-  onPickThinkingLevel?: (level: AgentThinkingLevel) => void
+  thinkingLevel?: CodingThinkingLevel | null
+  onPickThinkingLevel?: (level: CodingThinkingLevel) => void
   planModeActive?: boolean
   onTogglePlanMode?: () => void
   autoCompactionEnabled?: boolean
   onManualCompact?: () => void
   onToggleAutoCompaction?: () => void
   compactionActive?: boolean
-  stats?: AgentSessionStats | null
+  stats?: CodingSessionStats | null
 }
 
 export const ChatComposer: React.FC<ChatComposerProps> = ({
@@ -275,7 +275,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   const [selectedIdx, setSelectedIdx] = React.useState(0)
   React.useEffect(() => { setSelectedIdx(0) }, [slashMatch])
 
-  const acceptCommand = (cmd: AgentSlashCommand): void => {
+  const acceptCommand = (cmd: CodingSlashCommand): void => {
     // Insert "/<name> " so the user can immediately type the argument.
     onChange(`/${cmd.name} `)
     // Refocus textarea so they can keep typing.
@@ -696,7 +696,7 @@ function ContextRing({ percent, size = 14, stroke = 1.5 }: { percent: number; si
 function StatsChip({
   stats,
 }: {
-  stats: AgentSessionStats | null
+  stats: CodingSessionStats | null
 }) {
   const btnRef = React.useRef<HTMLButtonElement>(null)
   const { open, setOpen, popoverRef, pos, portalTarget } = useNodePopover(
@@ -799,13 +799,13 @@ function formatTokensShort(n: number): string {
 // Slash command popup
 // -----------------------------------------------------------------------------
 
-const SOURCE_LABEL: Record<AgentSlashCommand['source'], string> = {
+const SOURCE_LABEL: Record<CodingSlashCommand['source'], string> = {
   skill: 'Skill',
   prompt: 'Prompt',
   extension: 'Command',
 }
 
-const SOURCE_COLOR: Record<AgentSlashCommand['source'], string> = {
+const SOURCE_COLOR: Record<CodingSlashCommand['source'], string> = {
   skill: 'text-agent-light bg-agent/10',
   prompt: 'text-muted bg-hover',
   extension: 'text-muted bg-hover',
@@ -817,9 +817,9 @@ function SlashPopup({
   onPick,
   onHover,
 }: {
-  commands: AgentSlashCommand[]
+  commands: CodingSlashCommand[]
   selectedIdx: number
-  onPick: (cmd: AgentSlashCommand) => void
+  onPick: (cmd: CodingSlashCommand) => void
   onHover: (idx: number) => void
 }) {
   return (

@@ -392,9 +392,9 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     const spawnData = e.dataTransfer.getData('application/cate-spawn')
     if (spawnData) {
       e.preventDefault()
-      let spec: { panelType?: 'terminal' | 'agent'; cwd?: string; worktreeId?: string } = {}
+      let spec: { panelType?: 'terminal' | 'cateAgent'; cwd?: string; worktreeId?: string } = {}
       try { spec = JSON.parse(spawnData) } catch { return }
-      if (spec.panelType !== 'terminal' && spec.panelType !== 'agent') return
+      if (spec.panelType !== 'terminal' && spec.panelType !== 'cateAgent') return
       const rect = canvasRef.current?.getBoundingClientRect()
       if (!rect) return
       const viewPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top }
@@ -405,7 +405,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       const panelId =
         spec.panelType === 'terminal'
           ? store.createTerminal(wsId, undefined, pos, here(), spec.cwd)
-          : store.createAgent(wsId, pos, here())
+          : store.createCateAgent(wsId, pos, here())
       if (panelId && spec.worktreeId) {
         store.setPanelWorktreeId(wsId, panelId, spec.worktreeId)
       }
@@ -560,7 +560,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
           break
         case 'new-editor': onCreateAtPoint?.('editor', point); break
         case 'new-browser': onCreateAtPoint?.('browser', point); break
-        case 'new-agent': onCreateAtPoint?.('agent', point); break
+        case 'new-agent': onCreateAtPoint?.('cateAgent', point); break
         case 'new-canvas': onCreateAtPoint?.('canvas', point); break
         case 'auto-layout':
           canvasApi.getState().autoLayout()

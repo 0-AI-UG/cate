@@ -5,6 +5,7 @@ import {
   CATE_FILES_MIME,
   CHAT_DRAG_MIME,
   hasCateFileDrag,
+  hasChatDrag,
   readCateFileLocation,
   readCateFilePaths,
   readChatDrag,
@@ -64,7 +65,7 @@ describe('Chat drag payload', () => {
       mode: 'coding',
       rootPath: '/repo',
       agentKey: 'agent-x',
-      sessionFile: '/repo/.cate/pi-agent/sessions/s.jsonl',
+      sessionFile: '/repo/.cate/cate-agent/sessions/s.jsonl',
       worktreeId: 'wt-2',
     })
 
@@ -74,7 +75,7 @@ describe('Chat drag payload', () => {
       mode: 'coding',
       rootPath: '/repo',
       agentKey: 'agent-x',
-      sessionFile: '/repo/.cate/pi-agent/sessions/s.jsonl',
+      sessionFile: '/repo/.cate/cate-agent/sessions/s.jsonl',
       worktreeId: 'wt-2',
     })
   })
@@ -83,6 +84,14 @@ describe('Chat drag payload', () => {
     const dt = transfer()
     setChatDrag(dt, { chatId: 'c9', mode: 'loop', rootPath: '/repo' })
     expect(readChatDrag(dt)).toEqual({ chatId: 'c9', mode: 'loop', rootPath: '/repo' })
+  })
+
+  it('detects a chat drag by type (the terminal-panel drop guard)', () => {
+    // TerminalPanel.handleDrop guards on this so a dropped chat bubbles to the
+    // canvas / dock zone instead of being swallowed as a (non-existent) file path.
+    expect(hasChatDrag({ types: [CHAT_DRAG_MIME] })).toBe(true)
+    expect(hasChatDrag({ types: [CATE_FILE_MIME] })).toBe(false)
+    expect(hasChatDrag(null)).toBe(false)
   })
 
   it('returns null for absent, malformed, or invalid payloads', () => {

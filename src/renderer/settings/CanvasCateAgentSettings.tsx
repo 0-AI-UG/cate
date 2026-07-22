@@ -18,8 +18,8 @@ import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { useCateAgentReady } from '../stores/providerReadinessStore'
-import { useCateAgentWs } from '../cateAgent/cateAgentStore'
-import { cateAgentController } from '../cateAgent/cateAgentController'
+import { useCateAgentWs } from '../../cateAgent/renderer/cateAgentStore'
+import { cateAgentController } from '../../cateAgent/renderer/cateAgentController'
 import { SettingRow, Toggle, Select, NumberInput, SearchableBlock } from './SettingsComponents'
 
 export function CanvasCateAgentSettings() {

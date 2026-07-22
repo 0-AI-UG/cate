@@ -21,7 +21,7 @@ import log from '../logger'
 import { LOCAL_RUNTIME_ID } from '../runtime/locator'
 import type { Runtime } from '../runtime/types'
 import { uploadEntriesToRuntime } from '../runtime/uploadEntries'
-import { hostJoin } from '../../agent/main/agentDir'
+import { hostJoin } from '../../cateAgent/main/codingDir'
 import { stageArtifact, stagedTgzPath } from './download'
 import type { CatalogEntry } from './catalog'
 

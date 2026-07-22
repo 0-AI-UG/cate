@@ -78,7 +78,7 @@ export interface AppStoreActions {
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
-  createAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
+  createCateAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
   /** Open an extension-hosted panel on the canvas. `extensionPanelId` selects
    *  which panel from the extension's manifest. `title` defaults to the panel

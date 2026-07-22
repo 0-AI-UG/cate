@@ -330,40 +330,40 @@ export const WEBVIEW_SCREENSHOT = 'webview:screenshot'
 export const NATIVE_FILE_DRAG = 'native:fileDrag'
 
 // Pi agent (renderer <-> main)
-export const AGENT_CREATE = 'agent:create'           // renderer -> main
-export const AGENT_PROMPT = 'agent:prompt'           // renderer -> main
-export const AGENT_INTERRUPT = 'agent:interrupt'     // renderer -> main
-export const AGENT_DISPOSE = 'agent:dispose'         // renderer -> main
-export const AGENT_SET_MODEL = 'agent:setModel'      // renderer -> main
-export const AGENT_GET_COMMANDS = 'agent:getCommands' // renderer -> main (skills + prompts + extension cmds)
-export const AGENT_EVENT = 'agent:event'             // main -> renderer (forwarded pi event)
-export const AGENT_OPEN_SKILLS_FOLDER = 'agent:openSkillsFolder' // renderer -> main
-export const AGENT_OPEN_SKILL_FILE = 'agent:openSkillFile' // renderer -> main
-export const AGENT_DELETE_SKILL_FILE = 'agent:deleteSkillFile' // renderer -> main
-export const AGENT_CREATE_SKILL = 'agent:createSkill' // renderer -> main
-export const AGENT_LIST_SKILL_FILES = 'agent:listSkillFiles' // renderer -> main
+export const CODING_CREATE = 'coding:create'           // renderer -> main
+export const CODING_PROMPT = 'coding:prompt'           // renderer -> main
+export const CODING_INTERRUPT = 'coding:interrupt'     // renderer -> main
+export const CODING_DISPOSE = 'coding:dispose'         // renderer -> main
+export const CODING_SET_MODEL = 'coding:setModel'      // renderer -> main
+export const CODING_GET_COMMANDS = 'coding:getCommands' // renderer -> main (skills + prompts + extension cmds)
+export const CODING_EVENT = 'coding:event'             // main -> renderer (forwarded pi event)
+export const CODING_OPEN_SKILLS_FOLDER = 'coding:openSkillsFolder' // renderer -> main
+export const CODING_OPEN_SKILL_FILE = 'coding:openSkillFile' // renderer -> main
+export const CODING_DELETE_SKILL_FILE = 'coding:deleteSkillFile' // renderer -> main
+export const CODING_CREATE_SKILL = 'coding:createSkill' // renderer -> main
+export const CODING_LIST_SKILL_FILES = 'coding:listSkillFiles' // renderer -> main
 
 // Pi agent — extended RPC surface
-export const AGENT_STEER = 'agent:steer'                       // renderer -> main
-export const AGENT_SET_THINKING_LEVEL = 'agent:setThinkingLevel' // renderer -> main
-export const AGENT_COMPACT = 'agent:compact'                   // renderer -> main
-export const AGENT_SET_AUTO_COMPACTION = 'agent:setAutoCompaction'
-export const AGENT_ABORT_RETRY = 'agent:abortRetry'
-export const AGENT_GET_SESSION_STATS = 'agent:getSessionStats'
-export const AGENT_GET_STATE = 'agent:getState'
-export const AGENT_FORK = 'agent:fork'
-export const AGENT_GET_FORK_MESSAGES = 'agent:getForkMessages'
-export const AGENT_LIST_MODELS = 'agent:listModels'
-export const AGENT_UI_RESPONSE = 'agent:uiResponse'            // renderer -> main (reply to extension_ui_request)
+export const CODING_STEER = 'coding:steer'                       // renderer -> main
+export const CODING_SET_THINKING_LEVEL = 'coding:setThinkingLevel' // renderer -> main
+export const CODING_COMPACT = 'coding:compact'                   // renderer -> main
+export const CODING_SET_AUTO_COMPACTION = 'coding:setAutoCompaction'
+export const CODING_ABORT_RETRY = 'coding:abortRetry'
+export const CODING_GET_SESSION_STATS = 'coding:getSessionStats'
+export const CODING_GET_STATE = 'coding:getState'
+export const CODING_FORK = 'coding:fork'
+export const CODING_GET_FORK_MESSAGES = 'coding:getForkMessages'
+export const CODING_LIST_MODELS = 'coding:listModels'
+export const CODING_UI_RESPONSE = 'coding:uiResponse'            // renderer -> main (reply to extension_ui_request)
 
 // Disk-backed pi sessions (~/.pi/agent/sessions/<encoded-cwd>/*.jsonl)
-export const AGENT_LIST_SESSIONS = 'agent:listSessions'         // renderer -> main
-export const AGENT_LOAD_SESSION_MESSAGES = 'agent:loadSessionMessages' // renderer -> main
-export const AGENT_DELETE_SESSION = 'agent:deleteSession'       // renderer -> main
+export const CODING_LIST_SESSIONS = 'coding:listSessions'         // renderer -> main
+export const CODING_LOAD_SESSION_MESSAGES = 'coding:loadSessionMessages' // renderer -> main
+export const CODING_DELETE_SESSION = 'coding:deleteSession'       // renderer -> main
 
 // Custom OpenAI-compatible provider (pi models.json)
-export const AGENT_CUSTOM_MODELS_GET = 'agent:customModelsGet'   // renderer -> main
-export const AGENT_CUSTOM_MODELS_SAVE = 'agent:customModelsSave' // renderer -> main
+export const CODING_CUSTOM_MODELS_GET = 'coding:customModelsGet'   // renderer -> main
+export const CODING_CUSTOM_MODELS_SAVE = 'coding:customModelsSave' // renderer -> main
 
 // Skills (cross-agent skill manager)
 export const SKILLS_GET_INDEX = 'skills:getIndex'             // renderer -> main (merged catalog)

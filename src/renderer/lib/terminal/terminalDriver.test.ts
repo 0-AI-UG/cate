@@ -55,7 +55,7 @@ vi.mock('./registryState', () => ({
   getEntry: (panelId: string) => h.entries.get(panelId),
 }))
 
-vi.mock('../../cateAgent/cateAgentStore', () => ({
+vi.mock('../../../cateAgent/renderer/cateAgentStore', () => ({
   useCateAgentStore: {
     getState: () => ({ byWs: { [WS]: { controlledTerminals: h.controlledTerminals } } }),
   },

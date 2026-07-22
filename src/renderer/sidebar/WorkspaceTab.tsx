@@ -581,7 +581,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       void window.electronAPI.focusWindowPanel(p.panelId)
     }
     const titleHint = `${p.title} — in another window`
-    if (p.type === 'terminal' || p.type === 'agent') {
+    if (p.type === 'terminal' || p.type === 'cateAgent') {
       return (
         <TerminalPanelRow
           key={p.panelId}
@@ -669,7 +669,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       onBeginRename: () => beginPanelRename(p.id, label),
       onContextMenu: (e) => handlePanelContextMenu(e, p.id, label),
     }
-    if (p.type === 'terminal' || p.type === 'agent') {
+    if (p.type === 'terminal' || p.type === 'cateAgent') {
       const info = agentInfoByPanel[p.id]
       return (
         <TerminalPanelRow

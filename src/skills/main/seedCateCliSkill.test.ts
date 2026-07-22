@@ -22,7 +22,7 @@ import { seedCateCliSkill } from './seedCateCliSkill'
 
 const WS = '/ws'
 const MANIFEST = `${WS}/.cate/skills.json`
-const CATE_AGENT_SKILL = `${WS}/.cate/pi-agent/skills/cate-cli/SKILL.md`
+const CATE_AGENT_SKILL = `${WS}/.cate/cate-agent/skills/cate-cli/SKILL.md`
 const CLAUDE_SKILL = `${WS}/.claude/skills/cate-cli/SKILL.md`
 /** Versioned seed marker for a target: `<skillId>:<target>@<12-hex hash>`. */
 const markerFor = (target: string) => new RegExp(`^cate/cate-cli:${target}@[0-9a-f]{12}$`)

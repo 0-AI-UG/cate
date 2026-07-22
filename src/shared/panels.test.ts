@@ -22,7 +22,7 @@ describe('keepsMountedWhenTabHidden', () => {
   it('is false for panels whose state is cheap to rehydrate or lives in main', () => {
     expect(keepsMountedWhenTabHidden('terminal')).toBe(false)
     expect(keepsMountedWhenTabHidden('editor')).toBe(false)
-    expect(keepsMountedWhenTabHidden('agent')).toBe(false)
+    expect(keepsMountedWhenTabHidden('cateAgent')).toBe(false)
     expect(keepsMountedWhenTabHidden('canvas')).toBe(false)
   })
 

@@ -1,0 +1,1036 @@
+// =============================================================================
+// Agent Store — per-panel state for Pi coding-agent panels.
+//
+// Subscribes once to window.electronAPI.onAgentEvent and routes events to the
+// matching panel's slice. Each panel owns:
+//   • a list of UI messages (user / assistant / tool / system)
+//   • current model + running flag
+//   • session stats (tokens / cost / context usage)
+//   • transient compaction / auto-retry state
+//   • pending extension-UI dialog requests
+//
+// The renderer narrows pi's event shape defensively — unknown event types are
+// ignored silently.
+// =============================================================================
+
+import { create } from 'zustand'
+import log from '../../renderer/lib/logger'
+import { isCateAgentPanelId } from './cateAgentSession'
+import type {
+  CodingExtensionUIRequest,
+  CodingImageAttachment,
+  CateAgentModelRef,
+  CodingSessionStats,
+  CodingThinkingLevel,
+} from '../../shared/types'
+
+// -----------------------------------------------------------------------------
+// Message types — local to the renderer
+// -----------------------------------------------------------------------------
+
+export interface DiffInfo {
+  path: string
+  before?: string
+  after?: string
+  oldString?: string
+  newString?: string
+  /** Multi-edit shape — one entry per find/replace block in the same file. */
+  edits?: Array<{ oldString: string; newString: string }>
+}
+
+/** Tool names whose argument shape we know how to render as a diff. */
+const EDIT_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'edit', 'write', 'multi_edit', 'multiedit', 'multiEdit', 'MultiEdit',
+  'str_replace', 'str_replace_based_edit_tool', 'str_replace_editor',
+  'apply_patch', 'edit_file', 'editFile',
+])
+
+export function isEditToolName(name: string): boolean {
+  return EDIT_TOOL_NAMES.has(name)
+}
+
+export type ToolStatus = 'pending' | 'running' | 'success' | 'error' | 'denied'
+
+export interface UserMessage {
+  type: 'user'
+  id: string
+  text: string
+  /** Pi entryId — populated when the message comes from pi's session, used
+   *  for fork operations. Absent for messages we synthesized locally before
+   *  pi has assigned one. */
+  entryId?: string
+  /** Wall-clock ms when the message was sent. */
+  createdAt?: number
+}
+
+export interface AssistantMessage {
+  type: 'assistant'
+  id: string
+  text: string
+  thinking?: string
+  streaming: boolean
+  /** Model id that generated this message (captured when the turn started). */
+  model?: string
+  /** Wall-clock ms when the turn started. */
+  createdAt?: number
+  /** Per-turn usage attached on message_end. */
+  usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; total?: number }
+  stopReason?: 'stop' | 'length' | 'toolUse' | 'error' | 'aborted'
+}
+
+export interface ToolMessage {
+  type: 'tool'
+  id: string
+  toolCallId: string
+  name: string
+  args: unknown
+  status: ToolStatus
+  /** Streaming/final result content. We render the live `partialText` while
+   *  status === 'running' and the `result` once it lands. */
+  partialText?: string
+  result?: string
+  error?: string
+  diff?: DiffInfo
+  /** Structured details for tools that emit them (currently: subagent). */
+  subagent?: SubagentDetails
+}
+
+/** Mirrors the SubagentDetails shape emitted by pi's subagent extension —
+ *  see ~/.pi/agent/extensions/subagent/index.ts. We narrow defensively. */
+export interface SubagentUsage {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  cost: number
+  contextTokens?: number
+  turns?: number
+}
+
+export interface SubagentToolCall {
+  name: string
+  args: Record<string, unknown>
+}
+
+export interface SubagentMessagePart {
+  type: 'text' | 'toolCall'
+  text?: string
+  toolCall?: SubagentToolCall
+}
+
+export interface SubagentResult {
+  agent: string
+  agentSource?: 'user' | 'project' | 'unknown'
+  task: string
+  /** -1 = still running, 0 = success, >0 = error. */
+  exitCode: number
+  parts: SubagentMessagePart[]
+  finalText?: string
+  stderr?: string
+  errorMessage?: string
+  stopReason?: string
+  usage?: SubagentUsage
+  model?: string
+  step?: number
+}
+
+export interface SubagentDetails {
+  mode: 'single' | 'parallel' | 'chain'
+  results: SubagentResult[]
+}
+
+export interface SystemMessage {
+  type: 'system'
+  id: string
+  text: string
+  /** Sub-kind so the UI can style differently. */
+  kind?: 'info' | 'warning' | 'error'
+}
+
+export type CodingMessage = UserMessage | AssistantMessage | ToolMessage | SystemMessage
+
+// -----------------------------------------------------------------------------
+// Transient state — compaction + auto-retry banners, status/widget/notify
+// payloads emitted by extensions, and pending dialog UI requests.
+// -----------------------------------------------------------------------------
+
+export interface CompactionState {
+  active: boolean
+  reason?: 'manual' | 'threshold' | 'overflow'
+  lastResult?: { summary?: string; tokensBefore?: number }
+  lastErrorMessage?: string
+}
+
+export interface RetryState {
+  active: boolean
+  attempt?: number
+  maxAttempts?: number
+  delayMs?: number
+  errorMessage?: string
+  finalError?: string
+  succeededOnAttempt?: number
+}
+
+export interface ExtensionStatusEntry {
+  key: string
+  text: string
+}
+
+export interface ExtensionWidgetEntry {
+  key: string
+  lines: string[]
+  placement: 'aboveEditor' | 'belowEditor'
+}
+
+
+// -----------------------------------------------------------------------------
+// Per-panel state
+// -----------------------------------------------------------------------------
+
+export interface PanelCateAgentState {
+  messages: CodingMessage[]
+  running: boolean
+  model: CateAgentModelRef | null
+  stats: CodingSessionStats | null
+  thinkingLevel: CodingThinkingLevel | null
+  autoCompactionEnabled: boolean
+  autoRetryEnabled: boolean
+  compaction: CompactionState
+  retry: RetryState
+  steeringQueue: string[]
+  followUpQueue: string[]
+  extensionStatuses: ExtensionStatusEntry[]
+  extensionWidgets: ExtensionWidgetEntry[]
+
+  /** Pending dialog requests from pi extensions — rendered as in-panel UI. */
+  uiRequests: CodingExtensionUIRequest[]
+  /** Optional session display name (mirrors pi's `set_session_name`). */
+  sessionName?: string
+  sessionFile?: string
+
+  /** Unsent composer contents for this chat. Kept per-slice so switching
+   *  between open chats preserves each chat's in-progress message + images
+   *  rather than sharing one draft across all of them. */
+  draft: string
+  draftImages: CodingImageAttachment[]
+}
+
+interface CodingStoreState {
+  panels: Record<string, PanelCateAgentState>
+}
+
+interface CodingStoreActions {
+  init: (panelId: string) => void
+  dispose: (panelId: string) => void
+  appendUser: (panelId: string, text: string) => void
+  beginAssistant: (panelId: string) => void
+  appendAssistantDelta: (panelId: string, delta: string) => void
+  appendAssistantThinking: (panelId: string, delta: string) => void
+  endAssistant: (
+    panelId: string,
+    extras?: { usage?: AssistantMessage['usage']; stopReason?: AssistantMessage['stopReason'] },
+  ) => void
+  addToolCall: (panelId: string, toolCallId: string, name: string, args: unknown) => void
+  updateToolCall: (panelId: string, toolCallId: string, patch: Partial<Omit<ToolMessage, 'type' | 'id' | 'toolCallId'>>) => void
+  setRunning: (panelId: string, running: boolean) => void
+  setModel: (panelId: string, model: CateAgentModelRef | null) => void
+  appendSystem: (panelId: string, text: string, kind?: SystemMessage['kind']) => void
+  loadMessages: (panelId: string, messages: CodingMessage[]) => void
+  clearMessages: (panelId: string) => void
+  setStats: (panelId: string, stats: CodingSessionStats | null) => void
+  setThinkingLevel: (panelId: string, level: CodingThinkingLevel) => void
+  setAutoCompactionEnabled: (panelId: string, enabled: boolean) => void
+  setAutoRetryEnabled: (panelId: string, enabled: boolean) => void
+  setSessionMeta: (panelId: string, meta: { sessionName?: string; sessionFile?: string }) => void
+  setDraft: (panelId: string, draft: string) => void
+  setDraftImages: (panelId: string, images: CodingImageAttachment[]) => void
+  setCompaction: (panelId: string, next: Partial<CompactionState>) => void
+  setRetry: (panelId: string, next: Partial<RetryState>) => void
+  setQueues: (panelId: string, steering: string[], followUp: string[]) => void
+  setExtensionStatus: (panelId: string, key: string, text?: string) => void
+  setExtensionWidget: (
+    panelId: string,
+    key: string,
+    lines: string[] | undefined,
+    placement: 'aboveEditor' | 'belowEditor',
+  ) => void
+
+  addUiRequest: (panelId: string, req: CodingExtensionUIRequest) => void
+  resolveUiRequest: (panelId: string, id: string) => void
+}
+
+export type CodingStore = CodingStoreState & CodingStoreActions
+
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
+
+let msgIdCounter = 0
+function nextMsgId(): string {
+  msgIdCounter += 1
+  return `m${msgIdCounter}`
+}
+
+/** Build a fresh empty streaming assistant message for the given panel. */
+function makeStreamingAssistant(p: PanelCateAgentState): AssistantMessage {
+  return { type: 'assistant', id: nextMsgId(), text: '', streaming: true, model: p.model?.model, createdAt: Date.now() }
+}
+
+/**
+ * Append a streaming delta onto the trailing streaming-assistant message's
+ * `text` or `thinking` field, creating a fresh streaming message first if the
+ * last message isn't one. The chosen field defaults to '' so both the
+ * non-optional `text` and the optional `thinking` accumulate correctly.
+ */
+function appendAssistantField(
+  state: CodingStoreState,
+  panelId: string,
+  field: 'text' | 'thinking',
+  delta: string,
+): CodingStoreState {
+  return withPanel(state, panelId, (p) => {
+    const msgs = p.messages.slice()
+    let last = msgs[msgs.length - 1]
+    if (!last || last.type !== 'assistant' || !last.streaming) {
+      last = makeStreamingAssistant(p)
+      msgs.push(last)
+    }
+    const cur = last as AssistantMessage
+    msgs[msgs.length - 1] = { ...cur, [field]: (cur[field] ?? '') + delta }
+    return { ...p, messages: msgs }
+  })
+}
+
+function emptyPanel(): PanelCateAgentState {
+  return {
+    messages: [],
+    running: false,
+    model: null,
+    stats: null,
+    thinkingLevel: null,
+    autoCompactionEnabled: true,
+    autoRetryEnabled: true,
+    compaction: { active: false },
+    retry: { active: false },
+    steeringQueue: [],
+    followUpQueue: [],
+    extensionStatuses: [],
+    extensionWidgets: [],
+    uiRequests: [],
+    draft: '',
+    draftImages: [],
+  }
+}
+
+function withPanel(
+  state: CodingStoreState,
+  panelId: string,
+  mutate: (p: PanelCateAgentState) => PanelCateAgentState,
+): CodingStoreState {
+  const current = state.panels[panelId]
+  if (!current) return state
+  const next = mutate(current)
+  if (next === current) return state
+  return { panels: { ...state.panels, [panelId]: next } }
+}
+
+// -----------------------------------------------------------------------------
+// Store
+// -----------------------------------------------------------------------------
+
+export const useCodingStore = create<CodingStore>((set) => ({
+  panels: {},
+
+  init(panelId) {
+    set((state) => {
+      if (state.panels[panelId]) return state
+      return { panels: { ...state.panels, [panelId]: emptyPanel() } }
+    })
+  },
+
+  dispose(panelId) {
+    set((state) => {
+      if (!state.panels[panelId]) return state
+      const next = { ...state.panels }
+      delete next[panelId]
+      return { panels: next }
+    })
+  },
+
+  appendUser(panelId, text) {
+    set((state) =>
+      withPanel(state, panelId, (p) => ({
+        ...p,
+        messages: [...p.messages, { type: 'user', id: nextMsgId(), text, createdAt: Date.now() }],
+      })),
+    )
+  },
+
+  appendSystem(panelId, text, kind = 'info') {
+    set((state) =>
+      withPanel(state, panelId, (p) => ({
+        ...p,
+        messages: [...p.messages, { type: 'system', id: nextMsgId(), text, kind }],
+      })),
+    )
+  },
+
+  beginAssistant(panelId) {
+    set((state) =>
+      withPanel(state, panelId, (p) => {
+        const last = p.messages[p.messages.length - 1]
+        if (last && last.type === 'assistant' && last.streaming) return p
+        return {
+          ...p,
+          messages: [...p.messages, makeStreamingAssistant(p)],
+        }
+      }),
+    )
+  },
+
+  appendAssistantDelta(panelId, delta) {
+    if (!delta) return
+    set((state) => appendAssistantField(state, panelId, 'text', delta))
+  },
+
+  appendAssistantThinking(panelId, delta) {
+    if (!delta) return
+    set((state) => appendAssistantField(state, panelId, 'thinking', delta))
+  },
+
+  endAssistant(panelId, extras) {
+    set((state) =>
+      withPanel(state, panelId, (p) => {
+        const msgs = p.messages.slice()
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          const m = msgs[i]
+          if (m.type === 'assistant' && m.streaming) {
+            msgs[i] = {
+              ...m,
+              streaming: false,
+              ...(extras?.usage ? { usage: extras.usage } : {}),
+              ...(extras?.stopReason ? { stopReason: extras.stopReason } : {}),
+            }
+            break
+          }
+        }
+        return { ...p, messages: msgs }
+      }),
+    )
+  },
+
+  addToolCall(panelId, toolCallId, name, args) {
+    set((state) =>
+      withPanel(state, panelId, (p) => {
+        if (p.messages.some((m) => m.type === 'tool' && m.toolCallId === toolCallId)) return p
+        const msg: ToolMessage = {
+          type: 'tool',
+          id: nextMsgId(),
+          toolCallId,
+          name,
+          args,
+          status: 'pending',
+        }
+        return { ...p, messages: [...p.messages, msg] }
+      }),
+    )
+  },
+
+  updateToolCall(panelId, toolCallId, patch) {
+    set((state) =>
+      withPanel(state, panelId, (p) => {
+        const idx = p.messages.findIndex(
+          (m) => m.type === 'tool' && m.toolCallId === toolCallId,
+        )
+        if (idx < 0) return p
+        const msgs = p.messages.slice()
+        const existing = msgs[idx] as ToolMessage
+        msgs[idx] = { ...existing, ...patch }
+        return { ...p, messages: msgs }
+      }),
+    )
+  },
+
+  setRunning(panelId, running) {
+    set((state) => withPanel(state, panelId, (p) => (p.running === running ? p : { ...p, running })))
+  },
+
+  setModel(panelId, model) {
+    set((state) => withPanel(state, panelId, (p) => ({ ...p, model })))
+  },
+
+  loadMessages(panelId, messages) {
+    set((state) =>
+      withPanel(state, panelId, (p) => ({ ...p, messages: messages.slice() })),
+    )
+  },
+
+  clearMessages(panelId) {
+    set((state) =>
+      withPanel(state, panelId, (p) => ({
+        ...p,
+        messages: [],
+        stats: null,
+        compaction: { active: false },
+        retry: { active: false },
+        steeringQueue: [],
+        followUpQueue: [],
+        extensionStatuses: [],
+        extensionWidgets: [],
+        uiRequests: [],
+      })),
+    )
+  },
+
+  setStats(panelId, stats) {
+    set((state) => withPanel(state, panelId, (p) => ({ ...p, stats })))
+  },
+
+  setThinkingLevel(panelId, level) {
+    set((state) => withPanel(state, panelId, (p) => ({ ...p, thinkingLevel: level })))
+  },
+
+  setAutoCompactionEnabled(panelId, enabled) {
+    set((state) =>
+      withPanel(state, panelId, (p) =>
+        p.autoCompactionEnabled === enabled ? p : { ...p, autoCompactionEnabled: enabled },
+      ),
+    )
+  },
+
+  setAutoRetryEnabled(panelId, enabled) {
+    set((state) =>
+      withPanel(state, panelId, (p) =>
+        p.autoRetryEnabled === enabled ? p : { ...p, autoRetryEnabled: enabled },
+      ),
+    )
+  },
+
+  setSessionMeta(panelId, meta) {
+    set((state) =>
+      withPanel(state, panelId, (p) => ({
+        ...p,
+        sessionName: meta.sessionName ?? p.sessionName,
+        sessionFile: meta.sessionFile ?? p.sessionFile,
+      })),
+    )
+  },
+
+  setDraft(panelId, draft) {
+    set((state) =>
+      withPanel(state, panelId, (p) => (p.draft === draft ? p : { ...p, draft })),
+    )
+  },
+
+  setDraftImages(panelId, images) {
+    set((state) => withPanel(state, panelId, (p) => ({ ...p, draftImages: images })))
+  },
+
+  setCompaction(panelId, next) {
+    set((state) =>
+      withPanel(state, panelId, (p) => ({ ...p, compaction: { ...p.compaction, ...next } })),
+    )
+  },
+
+  setRetry(panelId, next) {
+    set((state) => withPanel(state, panelId, (p) => ({ ...p, retry: { ...p.retry, ...next } })))
+  },
+
+  setQueues(panelId, steering, followUp) {
+    set((state) =>
+      withPanel(state, panelId, (p) => ({
+        ...p,
+        steeringQueue: steering.slice(),
+        followUpQueue: followUp.slice(),
+      })),
+    )
+  },
+
+  setExtensionStatus(panelId, key, text) {
+    set((state) =>
+      withPanel(state, panelId, (p) => {
+        const filtered = p.extensionStatuses.filter((s) => s.key !== key)
+        if (!text) return { ...p, extensionStatuses: filtered }
+        return { ...p, extensionStatuses: [...filtered, { key, text }] }
+      }),
+    )
+  },
+
+  setExtensionWidget(panelId, key, lines, placement) {
+    set((state) =>
+      withPanel(state, panelId, (p) => {
+        const filtered = p.extensionWidgets.filter((w) => w.key !== key)
+        if (!lines) return { ...p, extensionWidgets: filtered }
+        return { ...p, extensionWidgets: [...filtered, { key, lines, placement }] }
+      }),
+    )
+  },
+
+
+  addUiRequest(panelId, req) {
+    set((state) =>
+      withPanel(state, panelId, (p) => {
+        if (p.uiRequests.some((r) => r.id === req.id)) return p
+        return { ...p, uiRequests: [...p.uiRequests, req] }
+      }),
+    )
+  },
+
+  resolveUiRequest(panelId, id) {
+    set((state) =>
+      withPanel(state, panelId, (p) => ({
+        ...p,
+        uiRequests: p.uiRequests.filter((r) => r.id !== id),
+      })),
+    )
+  },
+
+}))
+
+// -----------------------------------------------------------------------------
+// Module-level event subscription — wired once on first store use.
+// -----------------------------------------------------------------------------
+
+let eventSubscribed = false
+
+function asString(v: unknown): string | undefined {
+  return typeof v === 'string' ? v : undefined
+}
+function asNumber(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
+/** Pi tool-execution `partialResult` / `result` use a `{ content: [{type, text}] }` shape.
+ *  Pull text out of the array, joining if there are multiple blocks. */
+function extractContentText(v: unknown): string | undefined {
+  if (v == null) return undefined
+  if (typeof v === 'string') return v
+  if (typeof v !== 'object') return undefined
+  const obj = v as Record<string, unknown>
+  const content = obj.content
+  if (Array.isArray(content)) {
+    const parts: string[] = []
+    for (const block of content) {
+      if (!block || typeof block !== 'object') continue
+      const b = block as Record<string, unknown>
+      const text = asString(b.text)
+      if (text) parts.push(text)
+    }
+    if (parts.length > 0) return parts.join('')
+  }
+  // Some shapes are { text: '…' } directly
+  const direct = asString(obj.text)
+  if (direct) return direct
+  return undefined
+}
+
+function extractSubagentDetails(v: unknown): SubagentDetails | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  const root = v as Record<string, unknown>
+  const details = root.details
+  if (!details || typeof details !== 'object') return undefined
+  const d = details as Record<string, unknown>
+  const modeRaw = asString(d.mode)
+  const mode: SubagentDetails['mode'] =
+    modeRaw === 'parallel' || modeRaw === 'chain' ? modeRaw : 'single'
+  const rawResults = Array.isArray(d.results) ? (d.results as unknown[]) : []
+  const results: SubagentResult[] = []
+  for (const item of rawResults) {
+    if (!item || typeof item !== 'object') continue
+    const r = item as Record<string, unknown>
+    const agent = asString(r.agent) ?? '(unknown)'
+    const task = asString(r.task) ?? ''
+    const exitCode = asNumber(r.exitCode) ?? -1
+    const messages = Array.isArray(r.messages) ? (r.messages as unknown[]) : []
+    const parts: SubagentMessagePart[] = []
+    let finalText: string | undefined
+    for (const m of messages) {
+      if (!m || typeof m !== 'object') continue
+      const mObj = m as Record<string, unknown>
+      if (asString(mObj.role) !== 'assistant') continue
+      const content = Array.isArray(mObj.content) ? (mObj.content as unknown[]) : []
+      for (const part of content) {
+        if (!part || typeof part !== 'object') continue
+        const p = part as Record<string, unknown>
+        const t = asString(p.type)
+        if (t === 'text') {
+          const text = asString(p.text) ?? ''
+          if (text) {
+            parts.push({ type: 'text', text })
+            finalText = text
+          }
+        } else if (t === 'toolCall') {
+          const name = asString(p.name) ?? 'tool'
+          const args = (p.arguments && typeof p.arguments === 'object'
+            ? (p.arguments as Record<string, unknown>)
+            : {}) as Record<string, unknown>
+          parts.push({ type: 'toolCall', toolCall: { name, args } })
+        }
+      }
+    }
+    const usageRaw = r.usage as Record<string, unknown> | undefined
+    const usage: SubagentUsage | undefined = usageRaw
+      ? {
+          input: asNumber(usageRaw.input) ?? 0,
+          output: asNumber(usageRaw.output) ?? 0,
+          cacheRead: asNumber(usageRaw.cacheRead) ?? 0,
+          cacheWrite: asNumber(usageRaw.cacheWrite) ?? 0,
+          cost: asNumber(usageRaw.cost) ?? 0,
+          contextTokens: asNumber(usageRaw.contextTokens),
+          turns: asNumber(usageRaw.turns),
+        }
+      : undefined
+    const agentSourceRaw = asString(r.agentSource)
+    const agentSource: SubagentResult['agentSource'] =
+      agentSourceRaw === 'user' || agentSourceRaw === 'project' || agentSourceRaw === 'unknown'
+        ? agentSourceRaw
+        : undefined
+    results.push({
+      agent,
+      agentSource,
+      task,
+      exitCode,
+      parts,
+      finalText,
+      stderr: asString(r.stderr),
+      errorMessage: asString(r.errorMessage),
+      stopReason: asString(r.stopReason),
+      usage,
+      model: asString(r.model),
+      step: asNumber(r.step),
+    })
+  }
+  return { mode, results }
+}
+
+/** Best-effort parse of a tool's args — pi normally hands us objects but the
+ *  occasional code path passes a JSON-encoded string. */
+function coerceArgs(args: unknown): Record<string, unknown> {
+  if (args == null) return {}
+  if (typeof args === 'string') {
+    try { return JSON.parse(args) as Record<string, unknown> } catch { return {} }
+  }
+  if (typeof args === 'object') return args as Record<string, unknown>
+  return {}
+}
+
+export function deriveDiff(name: string, args: unknown, result?: string): DiffInfo | undefined {
+  if (!isEditToolName(name)) return undefined
+  const a = coerceArgs(args)
+  const path = asString(a.path) ?? asString(a.file_path) ?? asString(a.file) ?? '(unknown)'
+  if (name === 'write') {
+    return { path, after: asString(a.content) ?? asString(a.text) ?? result ?? '' }
+  }
+  // Multi-edit shape: { edits: [{ oldText/old_string, newText/new_string }, …] }
+  if (Array.isArray(a.edits)) {
+    const edits: Array<{ oldString: string; newString: string }> = []
+    for (const e of a.edits) {
+      if (!e || typeof e !== 'object') continue
+      const r = e as Record<string, unknown>
+      const oldString =
+        asString(r.oldText) ?? asString(r.old_string) ?? asString(r.oldString) ?? asString(r.search) ?? ''
+      const newString =
+        asString(r.newText) ?? asString(r.new_string) ?? asString(r.newString) ?? asString(r.replace) ?? ''
+      if (oldString || newString) edits.push({ oldString, newString })
+    }
+    if (edits.length > 0) return { path, edits }
+  }
+  // Single-edit shape
+  const oldString =
+    asString(a.old_string) ?? asString(a.oldString) ?? asString(a.oldText) ?? asString(a.search)
+  const newString =
+    asString(a.new_string) ?? asString(a.newString) ?? asString(a.newText) ?? asString(a.replace)
+  if (oldString != null || newString != null) {
+    return { path, oldString, newString }
+  }
+  return undefined
+}
+
+function handleEvent(panelId: string, event: { type: string; [key: string]: unknown }): void {
+  const store = useCodingStore.getState()
+  if (!store.panels[panelId]) {
+    useCodingStore.setState((state) => ({ panels: { ...state.panels, [panelId]: emptyPanel() } }))
+  }
+
+  if (typeof event.type !== 'string') return
+
+  try {
+    switch (event.type) {
+      case 'agent_start':
+      case 'turn_start': {
+        useCodingStore.getState().setRunning(panelId, true)
+        return
+      }
+      case 'agent_end':
+      case 'turn_end': {
+        useCodingStore.getState().endAssistant(panelId)
+        useCodingStore.getState().setRunning(panelId, false)
+        return
+      }
+      case 'message_start': {
+        const msg = (event.message ?? {}) as Record<string, unknown>
+        const role = asString(msg.role)
+        if (role === 'assistant') {
+          useCodingStore.getState().beginAssistant(panelId)
+        }
+        return
+      }
+      case 'message_update': {
+        const ame = event.assistantMessageEvent as Record<string, unknown> | undefined
+        if (ame) {
+          const t = asString(ame.type)
+          if (t === 'text_delta' || t === 'output_text_delta') {
+            const delta = asString(ame.delta) ?? asString(ame.text) ?? ''
+            useCodingStore.getState().appendAssistantDelta(panelId, delta)
+            return
+          }
+          if (t === 'thinking_delta' || t === 'reasoning_delta') {
+            const delta = asString(ame.delta) ?? asString(ame.text) ?? ''
+            useCodingStore.getState().appendAssistantThinking(panelId, delta)
+            return
+          }
+          // text_start/end, thinking_start/end, toolcall_start/delta/end, done, error
+          // are all handled implicitly via tool_execution_* and message_end.
+        }
+        // Anthropic-style fallback
+        const delta = (event.delta as Record<string, unknown> | undefined) ?? undefined
+        if (delta) {
+          const text = asString(delta.text)
+          if (text) useCodingStore.getState().appendAssistantDelta(panelId, text)
+        }
+        return
+      }
+      case 'message_end': {
+        const msg = (event.message ?? {}) as Record<string, unknown>
+        const usageRaw = msg.usage as Record<string, unknown> | undefined
+        const usage = usageRaw
+          ? {
+              input: asNumber(usageRaw.input) ?? 0,
+              output: asNumber(usageRaw.output) ?? 0,
+              cacheRead: asNumber(usageRaw.cacheRead) ?? 0,
+              cacheWrite: asNumber(usageRaw.cacheWrite) ?? 0,
+              total: asNumber((usageRaw.cost as Record<string, unknown> | undefined)?.total),
+            }
+          : undefined
+        const stopReasonRaw = asString(msg.stopReason)
+        const stopReason =
+          stopReasonRaw === 'stop' ||
+          stopReasonRaw === 'length' ||
+          stopReasonRaw === 'toolUse' ||
+          stopReasonRaw === 'error' ||
+          stopReasonRaw === 'aborted'
+            ? stopReasonRaw
+            : undefined
+        useCodingStore.getState().endAssistant(panelId, { usage, stopReason })
+        return
+      }
+      case 'tool_execution_start': {
+        const toolCallId = asString(event.toolCallId) ?? asString(event.id) ?? ''
+        const name = asString(event.toolName) ?? asString(event.name) ?? 'tool'
+        const args = event.args ?? event.input ?? {}
+        if (!toolCallId) return
+        useCodingStore.getState().addToolCall(panelId, toolCallId, name, args)
+        useCodingStore.getState().updateToolCall(panelId, toolCallId, { status: 'running' })
+        return
+      }
+      case 'tool_execution_update': {
+        const toolCallId = asString(event.toolCallId) ?? asString(event.id) ?? ''
+        if (!toolCallId) return
+        const slice = useCodingStore.getState().panels[panelId]
+        const toolMsg = slice?.messages.find(
+          (m) => m.type === 'tool' && m.toolCallId === toolCallId,
+        ) as ToolMessage | undefined
+        const patch: Partial<ToolMessage> = {}
+        const partial = extractContentText(event.partialResult)
+        if (partial !== undefined) patch.partialText = partial
+        if (toolMsg?.name === 'subagent') {
+          const sub = extractSubagentDetails(event.partialResult)
+          if (sub) patch.subagent = sub
+        }
+        if (Object.keys(patch).length > 0) {
+          useCodingStore.getState().updateToolCall(panelId, toolCallId, patch)
+        }
+        return
+      }
+      case 'tool_execution_end': {
+        const toolCallId = asString(event.toolCallId) ?? asString(event.id) ?? ''
+        if (!toolCallId) return
+        const error = asString(event.error)
+        const isError = event.isError === true || !!error
+        const result =
+          extractContentText(event.result) ??
+          (isError ? undefined : JSON.stringify(event.result ?? null))
+        const slice = useCodingStore.getState().panels[panelId]
+        const toolMsg = slice?.messages.find(
+          (m) => m.type === 'tool' && m.toolCallId === toolCallId,
+        ) as ToolMessage | undefined
+        const diff = toolMsg && !isError ? deriveDiff(toolMsg.name, toolMsg.args, result) : undefined
+        const sub = toolMsg?.name === 'subagent' ? extractSubagentDetails(event.result) : undefined
+        useCodingStore.getState().updateToolCall(panelId, toolCallId, {
+          status: isError ? 'error' : 'success',
+          result,
+          partialText: undefined,
+          error: error ?? (isError ? 'Tool reported an error' : undefined),
+          ...(diff ? { diff } : {}),
+          ...(sub ? { subagent: sub } : {}),
+        })
+        return
+      }
+      case 'queue_update': {
+        const steering = Array.isArray(event.steering) ? (event.steering as string[]) : []
+        const followUp = Array.isArray(event.followUp) ? (event.followUp as string[]) : []
+        useCodingStore.getState().setQueues(panelId, steering, followUp)
+        return
+      }
+      case 'compaction_start': {
+        const reason = asString(event.reason) as CompactionState['reason']
+        useCodingStore.getState().setCompaction(panelId, { active: true, reason })
+        return
+      }
+      case 'compaction_end': {
+        const reason = asString(event.reason) as CompactionState['reason']
+        const result = event.result as Record<string, unknown> | null
+        const errorMessage = asString(event.errorMessage)
+        useCodingStore.getState().setCompaction(panelId, {
+          active: false,
+          reason,
+          lastResult: result
+            ? {
+                summary: asString(result.summary),
+                tokensBefore: asNumber(result.tokensBefore),
+              }
+            : undefined,
+          lastErrorMessage: errorMessage,
+        })
+        return
+      }
+      case 'auto_retry_start': {
+        useCodingStore.getState().setRetry(panelId, {
+          active: true,
+          attempt: asNumber(event.attempt),
+          maxAttempts: asNumber(event.maxAttempts),
+          delayMs: asNumber(event.delayMs),
+          errorMessage: asString(event.errorMessage),
+          finalError: undefined,
+          succeededOnAttempt: undefined,
+        })
+        return
+      }
+      case 'auto_retry_end': {
+        const success = event.success === true
+        useCodingStore.getState().setRetry(panelId, {
+          active: false,
+          succeededOnAttempt: success ? asNumber(event.attempt) : undefined,
+          finalError: success ? undefined : asString(event.finalError),
+        })
+        return
+      }
+      case 'extension_error': {
+        const extensionPath = asString(event.extensionPath) ?? '(unknown extension)'
+        const ev = asString(event.event) ?? 'event'
+        const errMsg = asString(event.error) ?? 'unknown error'
+        useCodingStore
+          .getState()
+          .appendSystem(panelId, `Extension error (${extensionPath} during ${ev}): ${errMsg}`, 'error')
+        return
+      }
+      case 'extension_ui_request': {
+        const id = asString(event.id)
+        const method = asString(event.method)
+        if (!id || !method) return
+        const req: CodingExtensionUIRequest = {
+          id,
+          method: method as CodingExtensionUIRequest['method'],
+          ...event,
+        }
+        // Fire-and-forget methods don't expect a response — render them as
+        // panel chrome (statuses / widgets / title) instead of putting them
+        // in the dialog queue.
+        if (method === 'notify') return
+        if (method === 'setStatus') {
+          const key = asString(event.statusKey) ?? 'default'
+          const text = asString(event.statusText)
+          useCodingStore.getState().setExtensionStatus(panelId, key, text)
+          return
+        }
+        if (method === 'setWidget') {
+          const key = asString(event.widgetKey) ?? 'default'
+          const lines = Array.isArray(event.widgetLines)
+            ? (event.widgetLines as string[]).filter((l) => typeof l === 'string')
+            : undefined
+          const placement =
+            asString(event.widgetPlacement) === 'belowEditor' ? 'belowEditor' : 'aboveEditor'
+          useCodingStore.getState().setExtensionWidget(panelId, key, lines, placement)
+          return
+        }
+        if (method === 'setTitle' || method === 'set_editor_text') {
+          // These are TUI-specific affordances we don't surface in the panel.
+          // (set_editor_text is consumed via the CateAgentPanel's draft-set side
+          // channel — see CateAgentPanel.)
+          return
+        }
+        // Dialog methods (select / confirm / input / editor) — enqueue for the
+        // panel renderer to handle inline.
+        useCodingStore.getState().addUiRequest(panelId, req)
+        return
+      }
+      case 'error': {
+        const message = asString(event.message) ?? 'Agent error'
+        useCodingStore.getState().appendSystem(panelId, message, 'error')
+        useCodingStore.getState().setRunning(panelId, false)
+        return
+      }
+      default:
+        return
+    }
+  } catch (err) {
+    log.warn('[agentStore] handleEvent error for %s:', event.type, err)
+  }
+}
+
+// Lazy bridge loader — by the time any Cate Agent event arrives,
+// cateAgentController.start() has already imported the bridge module, so this
+// resolves immediately. Kept out of the static import graph so agentStore doesn't
+// pull in xterm/terminalRegistry.
+let cateAgentHandler: ((panelId: string, event: { type: string; [k: string]: unknown }) => void) | null = null
+let cateAgentHandlerLoading = false
+function routeCateAgentEvent(panelId: string, event: { type: string; [key: string]: unknown }): void {
+  if (cateAgentHandler) {
+    cateAgentHandler(panelId, event)
+    return
+  }
+  if (!cateAgentHandlerLoading) {
+    cateAgentHandlerLoading = true
+    void import('./cateAgentBridge')
+      .then((m) => {
+        cateAgentHandler = m.handleCateAgentEvent
+        cateAgentHandler(panelId, event)
+      })
+      .catch((err) => log.warn('[agentStore] failed to load Cate Agent bridge', err))
+  }
+}
+
+function ensureSubscribed(): void {
+  if (eventSubscribed) return
+  if (typeof window === 'undefined' || !window.electronAPI) return
+  eventSubscribed = true
+  try {
+    window.electronAPI.onAgentEvent((envelope) => {
+      if (!envelope?.panelId || !envelope.event) return
+      // Cate Agent sessions (cate-agent-observer:/cate-agent-orchestrator:) have no
+      // CateAgentPanel — route their events to the Cate Agent bridge instead of the
+      // normal panel handling, which would otherwise spawn a phantom empty panel
+      // for them. The bridge is lazy-loaded so agentStore stays free of the Cate
+      // Agent's terminal/xterm imports (keeps unrelated node-env tests light).
+      if (isCateAgentPanelId(envelope.panelId)) {
+        routeCateAgentEvent(envelope.panelId, envelope.event)
+        return
+      }
+      handleEvent(envelope.panelId, envelope.event)
+    })
+  } catch (err) {
+    log.warn('[agentStore] failed to subscribe to agent events', err)
+  }
+}
+
+ensureSubscribed()

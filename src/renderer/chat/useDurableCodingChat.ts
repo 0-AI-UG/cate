@@ -4,25 +4,26 @@
 //
 // This is the gathering path for a surface that renders a durable coding chat
 // WITHOUT owning its pi lifecycle: the worktree pill is READ-ONLY (a switch
-// reinitialises pi, which only the AgentPanel drives), while models, slash
+// reinitialises pi, which only the CateAgentPanel drives), while models, slash
 // commands, send/steer/stop, images, thinking, plan, compaction and fork all work
 // off the chat's live agentKey slice.
 //
 // It returns the useCodingChat result verbatim, so its host — the Cate Agent
 // sidebar's SPLIT transcript + floating composer — drives a coding chat from one
-// subscription without duplicating the AgentPanel's plumbing.
+// subscription without duplicating the CateAgentPanel's plumbing.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChatsStore } from '../stores/chatsStore'
-import { useAgentStore } from '../../agent/renderer/agentStore'
-import { useCodingChat, type CodingChatComposerExtras } from '../../agent/renderer/useCodingChat'
-import type { ModelOption } from './ChatComposer'
-import { useWorktrees } from '../stores/useWorktrees'
-import { useWorktreeActions } from '../stores/useWorktreeActions'
+import { useCodingStore } from '../../cateAgent/renderer/codingStore'
+import { resumeCodingChat } from '../../cateAgent/renderer/codingSessionRegistry'
+import { useCodingChat, type CodingChatComposerExtras } from '../../cateAgent/renderer/useCodingChat'
+import { useComposerModels } from './useComposerModels'
+import { useComposerWorktrees } from './useComposerWorktrees'
+import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
-import type { PrListItem } from '../sidebar/CreateWorktreeForm'
-import type { AgentSlashCommand } from '../../shared/types'
+import { resolveWorktree } from '../../shared/worktrees'
+import type { CodingSlashCommand } from '../../shared/types'
 
 export interface UseDurableCodingChatParams {
   /** The durable chatsStore record this hook drives. */
@@ -46,26 +47,41 @@ export function useDurableCodingChat({
   // An adopted live coding chat is ready as soon as its slice exists (its pi is
   // already running); readyTick bumps once when that becomes true so the polling
   // effects re-run.
-  const sliceExists = useAgentStore((s) => (agentKey ? !!s.panels[agentKey] : false))
+  const sliceExists = useCodingStore((s) => (agentKey ? !!s.panels[agentKey] : false))
   const [readyTick, setReadyTick] = useState(0)
   useEffect(() => {
     if (sliceExists) setReadyTick((n) => n + 1)
   }, [sliceExists])
 
-  const [availableModels, setAvailableModels] = useState<ModelOption[]>([])
-  const refreshModels = useCallback(async () => {
-    try {
-      const list = await window.electronAPI.agentListModels()
-      setAvailableModels(list.map((m) => ({ provider: m.provider, model: m.id, label: m.label })))
-    } catch {
-      /* provider list unavailable — leave the last known set */
-    }
-  }, [])
+  // Resume a DEAD coding chat's pi. Today a live slice is adopted by reference, but
+  // a chat whose pi died (app restart, or it only ever ran in a now-closed panel)
+  // has an agentKey with no slice, so the sidebar would show an empty transcript
+  // and never respawn pi. Bring it back through the SAME primitive the panel uses:
+  // init the slice, replay the transcript, respawn pi under its existing key.
+  //
+  // The cwd is the chat's checkout path — resolved from the workspace's persisted
+  // worktree metadata (available on mount, unlike the live git snapshot), mirroring
+  // how CateAgentPanel derives its cwd. Read via a ref so a late worktree-list hydrate
+  // doesn't re-key the effect. Keyed on the chat identity only, so
+  // resumeCodingChat's synchronous init() flipping sliceExists can't re-fire it (or
+  // cancel the in-flight resume); the guard below re-checks liveness at run time.
+  const worktreeMetas = useAppStore(
+    (s) => s.workspaces.find((w) => w.id === workspaceId)?.worktrees,
+  )
+  const worktreeMetasRef = useRef(worktreeMetas)
+  worktreeMetasRef.current = worktreeMetas
   useEffect(() => {
-    void refreshModels()
-  }, [refreshModels])
+    if (!agentKey) return
+    if (useCodingStore.getState().panels[agentKey]) return // already live → adopt by ref
+    const cwd = resolveWorktree(worktreeId ?? undefined, worktreeMetasRef.current)?.path ?? rootPath
+    const signal = { cancelled: false }
+    void resumeCodingChat(rootPath, chatId, cwd, workspaceId, signal)
+    return () => { signal.cancelled = true }
+  }, [chatId, agentKey, worktreeId, rootPath, workspaceId])
 
-  const [commands, setCommands] = useState<AgentSlashCommand[]>([])
+  const { models: availableModels, refreshModels } = useComposerModels()
+
+  const [commands, setCommands] = useState<CodingSlashCommand[]>([])
   const refreshCommands = useCallback(async () => {
     if (!agentKey) return
     try {
@@ -80,9 +96,7 @@ export function useDurableCodingChat({
 
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
 
-  const joined = useWorktrees(rootPath, workspaceId)
-  const worktrees = useMemo(() => joined.filter((w) => !w.isOrphan), [joined])
-  const { createWorktree, checkoutPr } = useWorktreeActions(rootPath, workspaceId)
+  const { worktrees, onCreateWorktree, onCheckoutPr } = useComposerWorktrees({ rootPath, workspaceId })
 
   const onSessionFile = useCallback(
     (_key: string, file: string) => {
@@ -93,15 +107,15 @@ export function useDurableCodingChat({
 
   const composerExtras: CodingChatComposerExtras = {
     availableModels,
-    refreshModels: () => { void refreshModels() },
+    refreshModels,
     openProviderSettings: () => useUIStore.getState().openSettings('providers'),
     worktrees,
     // Read-only worktree pill: show the chat's checkout, but a pick is a no-op
     // here (a switch reinitialises pi, which only the panel host drives).
     selectedWorktreeId: worktreeId,
     onPickWorktree: () => {},
-    onCreateWorktree: async (name, baseRef) => (await createWorktree(name, baseRef))?.id ?? null,
-    onCheckoutPr: async (pr: PrListItem) => (await checkoutPr(pr))?.id ?? null,
+    onCreateWorktree,
+    onCheckoutPr,
   }
 
   return useCodingChat({

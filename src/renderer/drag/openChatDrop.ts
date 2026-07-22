@@ -48,7 +48,7 @@ export function createSeededChatPanel(
   if (!wsId) return null
   const chatId = resolveSeedChatId(payload)
   const store = useAppStore.getState()
-  const panelId = store.createAgent(wsId, position, placement)
+  const panelId = store.createCateAgent(wsId, position, placement)
   if (!panelId) return null
   if (chatId) store.setPanelInitialChat(wsId, panelId, chatId)
   // A coding chat's worktree is its checkout — spawn pi there. Loop chats manage

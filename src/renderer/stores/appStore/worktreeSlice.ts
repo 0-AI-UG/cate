@@ -82,7 +82,7 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
       if (useSettingsStore.getState().closeWorktreePanelsOnDelete) {
         const ws = get().workspaces.find((w) => w.id === wsId)
         const doomed = Object.values(ws?.panels ?? {}).filter(
-          (p) => p.worktreeId === worktreeId && (p.type === 'terminal' || p.type === 'agent'),
+          (p) => p.worktreeId === worktreeId && (p.type === 'terminal' || p.type === 'cateAgent'),
         )
         for (const p of doomed) get().closePanel(wsId, p.id)
       }

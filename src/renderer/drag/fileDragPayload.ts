@@ -53,6 +53,13 @@ export function hasCateFileDrag(dataTransfer: Pick<DataTransfer, 'types'> | null
     (dataTransfer.types.includes(CATE_FILE_MIME) || dataTransfer.types.includes(CATE_FILES_MIME))
 }
 
+/** True when the drag carries a Cate chat payload. A type-only check (getData is
+ *  unavailable during dragover) for the panel drop guards that must let a chat
+ *  bubble to the canvas / dock zone instead of swallowing it as a file drop. */
+export function hasChatDrag(dataTransfer: Pick<DataTransfer, 'types'> | null): boolean {
+  return !!dataTransfer && dataTransfer.types.includes(CHAT_DRAG_MIME)
+}
+
 export function writeCateFileDrag(
   dataTransfer: Pick<DataTransfer, 'setData'>,
   paths: string[],

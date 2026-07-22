@@ -9,14 +9,14 @@
 // the move" and "user's process is killed" — never pick it at a call site.
 //
 // Agent coding chats are workspace-owned (chatsStore) and outlive their panel, so
-// closing a panel only drops the panel's REFERENCES (disposeAgentPanel) — it never
+// closing a panel only drops the panel's REFERENCES (disposeCateAgentPanel) — it never
 // disposes the pi session. The receiver/re-mount re-adopts the live chats (or
 // resumes from disk); explicit chat delete is the only disposer.
 // =============================================================================
 
 import type { PanelType } from '../../../shared/types'
 import { terminalRegistry } from '../terminal/terminalRegistry'
-import { disposeAgentPanel } from '../../../agent/renderer/agentSessionRegistry'
+import { disposeCateAgentPanel } from '../../../cateAgent/renderer/codingSessionRegistry'
 
 export type PanelRemovalReason = 'close' | 'transfer'
 
@@ -33,5 +33,5 @@ export function teardownPanelContent(
   } else {
     terminalRegistry.release(panelId)
   }
-  if (panelType === 'agent') disposeAgentPanel(panelId)
+  if (panelType === 'cateAgent') disposeCateAgentPanel(panelId)
 }

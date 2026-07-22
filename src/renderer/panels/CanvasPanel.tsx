@@ -17,7 +17,7 @@ import { NodeErrorBoundary } from '../ui/NodeErrorBoundary'
 import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, type PanelPlacement } from '../stores/appStore'
-import { useCateAgentStore } from '../cateAgent/cateAgentStore'
+import { useCateAgentStore } from '../../cateAgent/renderer/cateAgentStore'
 import type { StoreApi } from 'zustand'
 import { useKeepMountedPanelIds } from './keepMountedPanels'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
@@ -274,7 +274,7 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     if (!wsId) return
     const app = useAppStore.getState()
     const wt = inheritedWorktreeFromSelection(store.getState(), app.getWorkspace(wsId)?.panels)
-    const newId = app.createAgent(wsId, undefined, here())
+    const newId = app.createCateAgent(wsId, undefined, here())
     if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
   }, [workspaceId, here, store])
 

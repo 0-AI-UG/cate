@@ -9,7 +9,7 @@
 // =============================================================================
 
 import { create } from 'zustand'
-import type { AgentModelRef, Chat, ChatMessage, ChatMode, ChatRun } from '../../shared/types'
+import type { CateAgentModelRef, Chat, ChatMessage, ChatMode, ChatRun } from '../../shared/types'
 import { generateId } from './canvas/helpers'
 
 /** A chat's engine, defaulting a legacy (mode-less) record to 'loop'. The single
@@ -28,12 +28,12 @@ export function chatDotColor(chat: Chat): string {
 }
 
 /** Fields a coding chat is born with. Its transcript is NOT stored here — the pi
- *  turns live in useAgentStore, reloaded from `sessionFile`; `messages` stays []. */
+ *  turns live in useCodingStore, reloaded from `sessionFile`; `messages` stays []. */
 export interface CreateCodingChatInput {
   agentKey: string
   sessionFile: string | null
   worktreeId?: string
-  model?: AgentModelRef
+  model?: CateAgentModelRef
   title: string
 }
 
@@ -62,7 +62,7 @@ interface ChatsStoreActions {
   updateCodingChat: (rootPath: string, id: string, patch: Partial<Pick<Chat, 'sessionFile' | 'model' | 'worktreeId' | 'title' | 'agentKey'>>) => void
   /** Set a chat's per-chat model override (either mode) and persist. null clears
    *  it, falling the chat back to the global default. */
-  setChatModel: (rootPath: string, id: string, model: AgentModelRef | null) => void
+  setChatModel: (rootPath: string, id: string, model: CateAgentModelRef | null) => void
   /** Remove a chat (either mode) and persist. */
   removeChat: (rootPath: string, id: string) => void
   /** Append one typed message to a chat and persist. */

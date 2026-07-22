@@ -33,8 +33,8 @@ const { openForExtension, sendForExtension, disposeForExtension, cancelForExtens
     disposeForExtension: vi.fn(async () => {}),
     cancelForExtension: vi.fn(async () => {}),
   }))
-vi.mock('../../agent/main/agentManager', () => ({
-  agentManager: { openForExtension, sendForExtension, disposeForExtension, cancelForExtension },
+vi.mock('../../cateAgent/main/codingManager', () => ({
+  codingManager: { openForExtension, sendForExtension, disposeForExtension, cancelForExtension },
 }))
 
 // cate.ui.notify reuses the shared OS-notification path; spy on it + the setting.
@@ -416,8 +416,8 @@ describe('dispatchCateInvoke — cate.agent.* (open/send/dispose; run is gone)',
     activeWindow.value = fakeWin
     const s = agentScope()
     // A valid resume handle is a session-jsonl path inside this workspace's
-    // .cate/pi-agent dir (getWorkspaceInfo → rootPath '/ws/root').
-    const validResume = '/ws/root/.cate/pi-agent/sessions/-ws-root--/abc.jsonl'
+    // .cate/cate-agent dir (getWorkspaceInfo → rootPath '/ws/root').
+    const validResume = '/ws/root/.cate/cate-agent/sessions/-ws-root--/abc.jsonl'
     const res = await dispatchCateInvoke(s, 'cate.agent.open', { resume: validResume })
     expect(res).toEqual({ sessionId: 'sess-1' })
     expect(showMessageBox).toHaveBeenCalledTimes(1) // first-use consent
@@ -444,12 +444,12 @@ describe('dispatchCateInvoke — cate.agent.* (open/send/dispose; run is gone)',
   })
 
   it.each([
-    ['a parent-traversal resume', '/ws/root/.cate/pi-agent/../../../etc/passwd'],
+    ['a parent-traversal resume', '/ws/root/.cate/cate-agent/../../../etc/passwd'],
     ['an absolute resume outside the workspace', '/etc/x'],
-    ['another workspace\'s session', '/other/project/.cate/pi-agent/sessions/s/x.jsonl'],
+    ['another workspace\'s session', '/other/project/.cate/cate-agent/sessions/s/x.jsonl'],
     ['a relative resume (not an absolute session path)', '../../other/session.jsonl'],
-    ['a bare basename (agentManager needs a full path)', 'abc.jsonl'],
-  ])('rejects %s before reaching agentManager', async (_label, resume) => {
+    ['a bare basename (codingManager needs a full path)', 'abc.jsonl'],
+  ])('rejects %s before reaching codingManager', async (_label, resume) => {
     state.scopes = ['agent']
     activeWindow.value = fakeWin
     const res = await dispatchCateInvoke(agentScope(), 'cate.agent.open', { resume })

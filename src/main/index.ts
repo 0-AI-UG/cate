@@ -18,12 +18,12 @@ import { registerProjectCateAgentHandlers } from './projectCateAgentStore'
 import { registerProjectChatsHandlers } from './projectChatsStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
-import { registerAgentHandlers } from '../agent/main/ipcAgent'
+import { registerCodingHandlers } from '../cateAgent/main/ipcCoding'
 import { registerSkillHandlers } from '../skills/main/ipcSkills'
-import { registerAuthHandlers } from '../agent/main/ipcAuth'
-import { authManager } from '../agent/main/authManager'
+import { registerAuthHandlers } from '../cateAgent/main/ipcAuth'
+import { authManager } from '../cateAgent/main/authManager'
 // Shared singletons for pi agent + auth (constructed at module load).
-import { agentManager } from '../agent/main/agentManager'
+import { codingManager } from '../cateAgent/main/codingManager'
 import { registerWorkspaceHandlers } from './workspaceManager'
 import { buildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv, getShellEnv } from './shellEnv'
@@ -119,7 +119,7 @@ function registerDeferredHandlers(): void {
   registerGitMonitorHandlers()
   registerNotificationHandlers()
   registerAuthHandlers(authManager)
-  registerAgentHandlers(authManager, agentManager)
+  registerCodingHandlers(authManager, codingManager)
   registerSkillHandlers()
   registerRuntimeHandlers()
   registerExtensionHandlers()

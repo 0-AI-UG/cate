@@ -287,7 +287,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       <ToolbarButton onClick={onNewEditor} title={`Editor (${newEditorKey})`} size="panel" placement={place}>
         <FileText size={18} />
       </ToolbarButton>
-      <ToolbarButton onClick={onNewAgent} title="Agent" size="panel" placement={place}>
+      <ToolbarButton onClick={onNewAgent} title="Cate Agent" size="panel" placement={place}>
         <ChatCircle size={18} />
       </ToolbarButton>
       <ExtensionToolbarMenu

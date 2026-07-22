@@ -20,7 +20,7 @@ vi.mock('electron', () => ({
 }))
 
 import { provisionCatalogToRuntime, provisionSideloadToRuntime } from './install'
-import { hostJoin } from '../../agent/main/agentDir'
+import { hostJoin } from '../../cateAgent/main/codingDir'
 import { buildDaemonRuntime } from '../../runtime/capabilities'
 import { loopbackRuntime } from '../runtime/testHarness'
 import type { CatalogEntry } from './catalog'

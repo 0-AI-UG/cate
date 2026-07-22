@@ -23,7 +23,7 @@ describe('ensureCateGitignore', () => {
     expect(content).toContain('\n*\n')
     expect(content).toContain('!.gitignore')
     expect(content).toContain('!workspace.json')
-    // session.json, *.bak, the pi-agent dir and worktrees are all covered by `*`.
+    // session.json, *.bak, the cate-agent dir and worktrees are all covered by `*`.
     expect(content).not.toContain('session.json')
   })
 

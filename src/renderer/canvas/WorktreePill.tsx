@@ -6,7 +6,7 @@
 //   • Click  → menu: focus the worktree on canvas, or switch this panel to
 //              another worktree. Switching a TERMINAL opens a fresh PTY in the
 //              new checkout (a terminal IS a checkout); switching an AGENT
-//              re-tags it and respawns pi in the new checkout (AgentPanel
+//              re-tags it and respawns pi in the new checkout (CateAgentPanel
 //              reacts to the changed cwd).
 //
 // Hidden unless the workspace has 2+ worktrees — otherwise it's just chrome
@@ -81,7 +81,7 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
       if (!ok) return
       useAppStore.getState().respawnPanelTerminal(workspaceId, panel.id, target.path, target.id)
     } else {
-      // Agent panels: re-tag the panel. AgentPanel derives its cwd from the
+      // Agent panels: re-tag the panel. CateAgentPanel derives its cwd from the
       // worktree tag and reacts to the change by disposing the old checkout's
       // chats and reopening pi in the new one, so the agent moves with the pill.
       setPanelWorktreeId(workspaceId, panel.id, target.id)
@@ -89,7 +89,7 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
   }, [worktrees, current, focusedWorktreeId, panel, workspaceId, setPanelWorktreeId, focusWorktree])
 
   // Only relevant for terminal/agent panels in workspaces with 2+ worktrees.
-  if (panel.type !== 'terminal' && panel.type !== 'agent') return null
+  if (panel.type !== 'terminal' && panel.type !== 'cateAgent') return null
   if (worktrees.length < 2 || !current) return null
 
   const isFocused = focusedWorktreeId === currentId

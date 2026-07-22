@@ -393,7 +393,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   // — mirroring the WorktreePill + tab-title fallback. Non-terminal panels stay
   // untagged (no territory).
   const primaryWorktree = worktrees.find((w) => w.path === currentWorkspace?.rootPath)
-  const isWorktreePanel = activePanel?.type === 'terminal' || activePanel?.type === 'agent'
+  const isWorktreePanel = activePanel?.type === 'terminal' || activePanel?.type === 'cateAgent'
   const activeWorktree = wtEnabled
     ? worktrees.find((w) => w.id === activePanel?.worktreeId) ?? (isWorktreePanel ? primaryWorktree : undefined)
     : undefined
