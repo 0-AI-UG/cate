@@ -46,14 +46,14 @@ const EXT_VERSION = '2.0.0'
 
 describe.skipIf(!hasTarball)('extension install/serve over a real daemon subprocess', () => {
   let mgr: RuntimeManager
-  let installDir: string
+  let installRoot: string
   let workspace: string
   let hostExtRoot: string
   let entry: CatalogEntry
   let runtime: Runtime
 
   beforeAll(async () => {
-    installDir = await fs.mkdtemp(path.join(process.cwd(), 'cate-exte2e-install-'))
+    installRoot = await fs.mkdtemp(path.join(process.cwd(), 'cate-exte2e-install-'))
     workspace = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-exte2e-ws-')))
     // The daemon resolves its extensions root from CATE_EXTENSIONS_ROOT (env),
     // pointed at a temp dir so the test never touches the real ~/.cate.
@@ -82,7 +82,8 @@ describe.skipIf(!hasTarball)('extension install/serve over a real daemon subproc
       root: workspace,
       id: 'srv_e2e',
       tarballPath,
-      installDir,
+      installRoot,
+      target: target!,
       env: { ...process.env, CATE_EXTENSIONS_ROOT: hostExtRoot },
     })
     // install=true extracts the tarball before launch; the daemon then runs from
@@ -92,7 +93,7 @@ describe.skipIf(!hasTarball)('extension install/serve over a real daemon subproc
 
   afterAll(async () => {
     await mgr?.disposeAll()
-    for (const dir of [installDir, workspace, hostExtRoot, h.userData]) {
+    for (const dir of [installRoot, workspace, hostExtRoot, h.userData]) {
       await fs.rm(dir, { recursive: true, force: true }).catch(() => {})
     }
     await fs.rm(path.join(process.cwd(), `cate.e2e-${EXT_VERSION}.tgz`), { force: true }).catch(() => {})
