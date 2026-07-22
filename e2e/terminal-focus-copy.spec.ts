@@ -192,7 +192,7 @@ test('clicking a split sibling leaves focus in the clicked pane', async () => {
 
 test('rearranging the node keeps copy on the pane holding the selection', async () => {
   const nodeId = await splitTerminalNode(page)
-  const [left, right] = await panes(page, nodeId)
+  const [left] = await panes(page, nodeId)
 
   // Select in the LEFT pane.
   await clickPane(page, left)
