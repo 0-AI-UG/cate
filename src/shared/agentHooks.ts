@@ -426,11 +426,14 @@ const codexSpec: AgentHookSpec = {
   // Identically silent on interrupt (Ctrl+C) — pinned live against a control
   // turn that DID fire Stop, so it is a real gap, not a wiring failure.
   reportsTurnEndOnInterrupt: false,
-  // Recovered from the rollout: codex records a turn_aborted event_msg when a
-  // running turn is cancelled. The marker is deliberately the record TYPE, not
-  // free text, so ordinary assistant output can't trip it. Pinned live against
-  // the real rollout in agentHookContracts.itest.ts (the interrupt test reads
-  // the rollout tail and asserts this marker matches it).
+  // Recovered from the rollout: codex writes an event_msg whose payload type is
+  // `turn_aborted` (reason "interrupted") when a running turn is cancelled —
+  // confirmed against real rollouts and the 0.145.0 binary's EventMsg enum. The
+  // marker is deliberately the serialized record TYPE, not free text, so
+  // ordinary assistant output can't trip it; it also serializes for the other
+  // abort reasons (budget/context exceeded), which is correct — any aborted
+  // turn has ended. Pinned live against the real rollout tail in
+  // agentHookContracts.itest.ts.
   interruptRecovery: { marker: /"turn_aborted"/ },
   projectFiles: [
     {
