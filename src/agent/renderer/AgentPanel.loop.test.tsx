@@ -26,7 +26,7 @@ vi.mock('../../renderer/cateAgent/LoopChatView', () => ({
 // The loop delete path dynamic-imports the controller (which transitively pulls
 // the loop runtime); mock it so the test stays hermetic.
 vi.mock('../../renderer/cateAgent/cateAgentController', () => ({
-  cateAgentController: { closeChat: vi.fn().mockResolvedValue(undefined) },
+  cateAgentController: { closeChat: vi.fn().mockResolvedValue(true) },
 }))
 
 // The composer's worktree menu data comes from these hooks; inert stubs keep the

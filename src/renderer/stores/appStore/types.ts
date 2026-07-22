@@ -109,6 +109,7 @@ export interface AppStoreActions {
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
+  setPanelInitialChat: (workspaceId: string, panelId: string, chatId: string) => void
   setPanelAgentSession: (workspaceId: string, panelId: string, session: TerminalAgentSession | null) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
   removePanelRecord: (workspaceId: string, panelId: string) => void

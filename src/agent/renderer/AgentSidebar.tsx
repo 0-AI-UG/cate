@@ -18,6 +18,8 @@ import {
 } from '@phosphor-icons/react'
 import type { AgentSessionListEntry, Chat } from '../../shared/types'
 import { Tooltip } from '../../renderer/ui/Tooltip'
+import { setChatDrag } from '../../renderer/drag/fileDragPayload'
+import { useChatsStore } from '../../renderer/stores/chatsStore'
 
 // The status colour a loop chat's dot carries (mirrors CateAgentChatTabs).
 const chatDotColor = (chat: Chat): string => {
@@ -29,6 +31,7 @@ const chatDotColor = (chat: Chat): string => {
 
 export function AgentSidebar({
   chats,
+  rootPath,
   currentSessionFile,
   openSessionFiles,
   loopChats,
@@ -47,6 +50,7 @@ export function AgentSidebar({
   settingsActive,
 }: {
   chats: AgentSessionListEntry[]
+  rootPath: string
   currentSessionFile: string | null
   openSessionFiles: Set<string>
   loopChats: Chat[]
@@ -148,6 +152,7 @@ export function AgentSidebar({
               <LoopRow
                 key={chat.id}
                 chat={chat}
+                rootPath={rootPath}
                 active={chat.id === activeLoopChatId}
                 onOpen={() => onOpenLoopChat(chat.id)}
                 onDelete={() => onDeleteLoopChat(chat.id)}
@@ -169,6 +174,7 @@ export function AgentSidebar({
                 <ChatRow
                   key={c.path}
                   chat={c}
+                  rootPath={rootPath}
                   active={!activeLoopChatId && c.path === currentSessionFile}
                   live={openSessionFiles.has(c.path)}
                   onOpen={() => onOpenChat(c.path)}
@@ -200,6 +206,7 @@ export function AgentSidebar({
 
 function ChatRow({
   chat,
+  rootPath,
   active,
   live,
   onOpen,
@@ -207,6 +214,7 @@ function ChatRow({
   onClose,
 }: {
   chat: AgentSessionListEntry
+  rootPath: string
   active: boolean
   live: boolean
   onOpen: () => void
@@ -215,6 +223,27 @@ function ChatRow({
 }) {
   return (
     <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'copy'
+        // A recents row is a pi session on disk, not a durable chat. Resolve the
+        // durable coding chat by its session file so the drop adopts the live one;
+        // fall back to a session-file-only payload (the drop resumes it) otherwise.
+        const durable = useChatsStore
+          .getState()
+          .getChatsByMode(rootPath, 'coding')
+          .find((c) => c.sessionFile === chat.path)
+        setChatDrag(e.dataTransfer, durable
+          ? {
+              chatId: durable.id,
+              mode: 'coding',
+              rootPath,
+              ...(durable.agentKey ? { agentKey: durable.agentKey } : {}),
+              ...(durable.sessionFile ? { sessionFile: durable.sessionFile } : {}),
+              ...(durable.worktreeId ? { worktreeId: durable.worktreeId } : {}),
+            }
+          : { mode: 'coding', rootPath, sessionFile: chat.path })
+      }}
       className={`group flex items-center gap-1 px-1 rounded-md ${
         active ? 'bg-hover-strong' : 'hover:bg-hover'
       }`}
@@ -259,17 +288,24 @@ function ChatRow({
 
 function LoopRow({
   chat,
+  rootPath,
   active,
   onOpen,
   onDelete,
 }: {
   chat: Chat
+  rootPath: string
   active: boolean
   onOpen: () => void
   onDelete: () => void
 }) {
   return (
     <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'copy'
+        setChatDrag(e.dataTransfer, { chatId: chat.id, mode: 'loop', rootPath })
+      }}
       className={`group flex items-center gap-1 px-1 rounded-md ${
         active ? 'bg-hover-strong' : 'hover:bg-hover'
       }`}

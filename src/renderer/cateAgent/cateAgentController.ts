@@ -375,18 +375,32 @@ class CateAgentController implements CateAgentBridgeHost {
     this.syncActivity(wsId)
   }
 
-  /** Close a chat: dispose its session, tear down any run work, and remove it. */
-  async closeChat(wsId: string, rootPath: string, chatId: string): Promise<void> {
+  /** Close a chat: dispose its session, tear down any run work, and remove it.
+   *  When the chat has unmerged work (a worktree, a review awaiting a decision, or
+   *  live iterations), prompt first so the user doesn't silently lose it — Cancel
+   *  aborts the delete and leaves the chat (its in-transcript Merge/PR/Discard
+   *  actions stay usable). Returns whether the chat was actually deleted. */
+  async closeChat(wsId: string, rootPath: string, chatId: string): Promise<boolean> {
+    const run = getRun(rootPath, chatId)
+    const hasUnmergedWork =
+      !!run && (!!run.worktreeId || run.status === 'review' || (run.iterations?.length ?? 0) > 0)
+    if (hasUnmergedWork) {
+      const choice = await window.electronAPI?.confirmDiscardJob?.({
+        hasWorktree: !!run.worktreeId,
+        terminalCount: run.terminalNodeIds?.length ?? 0,
+      })
+      if (choice === 'cancel') return false
+    }
     const r = this.rt(wsId, rootPath)
     r.runs.delete(chatId)
     r.sessions.delete(chatId)
     this.disposeDriverSessions(chatId)
-    const run = getRun(rootPath, chatId)
     if (run) await teardownRunWork(wsId, rootPath, run, { deleteBranch: true })
     await disposeCateAgent(orchestratorPanelId(chatId))
     deleteContext(orchestratorPanelId(chatId))
     useChatsStore.getState().removeChat(rootPath, chatId)
     this.syncActivity(wsId)
+    return true
   }
 
   /** Dispose the per-iteration DRIVER sessions for this chat (not the persistent chat

@@ -133,6 +133,11 @@ export interface PanelState {
    *  panels this instance renders. */
   extensionId?: string
   extensionPanelId?: string
+  /** Agent panels only: a durable chatsStore chat id to open when the panel first
+   *  mounts (set when a chat is dragged onto the canvas / a dock zone). The mode
+   *  is resolved from the chat record. After the panel adopts it, its own state
+   *  owns the active chat; re-seeding on reload is idempotent. */
+  initialChatId?: string
 }
 
 // -----------------------------------------------------------------------------

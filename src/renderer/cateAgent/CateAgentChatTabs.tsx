@@ -15,6 +15,7 @@ import { useCateAgentStore, useCateAgentWs } from './cateAgentStore'
 import { cateAgentController } from './cateAgentController'
 import { createCodingChatSession, disposeCodingChat } from '../../agent/renderer/agentSessionRegistry'
 import { loadDefaultModel } from '../../agent/renderer/agentModelPrefs'
+import { setChatDrag } from '../drag/fileDragPayload'
 import type { Chat } from '../../shared/types'
 
 // The status colour a loop chat's dot carries (mirrors the old picker).
@@ -29,11 +30,14 @@ const Tab: React.FC<{
   active: boolean
   onClick: () => void
   onClose?: () => void
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void
   children: React.ReactNode
-}> = ({ active, onClick, onClose, children }) => (
+}> = ({ active, onClick, onClose, onDragStart, children }) => (
   <div
     role="tab"
     aria-selected={active}
+    draggable={!!onDragStart}
+    onDragStart={onDragStart}
     onClick={onClick}
     className={`group/tab relative flex flex-shrink-0 items-center gap-1.5 h-7 max-w-[168px] pl-2.5 ${
       onClose ? 'pr-1' : 'pr-2.5'
@@ -117,6 +121,17 @@ export const CateAgentChatTabs: React.FC<{ wsId: string; rootPath: string }> = (
           active={!observer && chat.id === activeId}
           onClick={() => setActiveChat(wsId, chat.id)}
           onClose={() => closeChat(chat)}
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = 'copy'
+            setChatDrag(e.dataTransfer, {
+              chatId: chat.id,
+              mode: chatMode(chat),
+              rootPath,
+              ...(chat.agentKey ? { agentKey: chat.agentKey } : {}),
+              ...(chat.sessionFile ? { sessionFile: chat.sessionFile } : {}),
+              ...(chat.worktreeId ? { worktreeId: chat.worktreeId } : {}),
+            })
+          }}
         >
           <TabGlyph chat={chat} />
           <span className="truncate">{chat.title}</span>

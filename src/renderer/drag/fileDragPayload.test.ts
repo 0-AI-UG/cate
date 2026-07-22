@@ -3,9 +3,12 @@ import {
   CATE_FILE_LINE_MIME,
   CATE_FILE_MIME,
   CATE_FILES_MIME,
+  CHAT_DRAG_MIME,
   hasCateFileDrag,
   readCateFileLocation,
   readCateFilePaths,
+  readChatDrag,
+  setChatDrag,
   writeCateFileDrag,
 } from './fileDragPayload'
 
@@ -50,5 +53,43 @@ describe('Cate file drag payload', () => {
     const dt = transfer()
     writeCateFileDrag(dt, [])
     expect(dt.setData).not.toHaveBeenCalled()
+  })
+})
+
+describe('Chat drag payload', () => {
+  it('round-trips a full coding-chat payload', () => {
+    const dt = transfer()
+    setChatDrag(dt, {
+      chatId: 'chat-1',
+      mode: 'coding',
+      rootPath: '/repo',
+      agentKey: 'agent-x',
+      sessionFile: '/repo/.cate/pi-agent/sessions/s.jsonl',
+      worktreeId: 'wt-2',
+    })
+
+    expect(dt.data.get(CHAT_DRAG_MIME)).toBeTruthy()
+    expect(readChatDrag(dt)).toEqual({
+      chatId: 'chat-1',
+      mode: 'coding',
+      rootPath: '/repo',
+      agentKey: 'agent-x',
+      sessionFile: '/repo/.cate/pi-agent/sessions/s.jsonl',
+      worktreeId: 'wt-2',
+    })
+  })
+
+  it('round-trips a minimal loop-chat payload and drops absent optionals', () => {
+    const dt = transfer()
+    setChatDrag(dt, { chatId: 'c9', mode: 'loop', rootPath: '/repo' })
+    expect(readChatDrag(dt)).toEqual({ chatId: 'c9', mode: 'loop', rootPath: '/repo' })
+  })
+
+  it('returns null for absent, malformed, or invalid payloads', () => {
+    expect(readChatDrag(transfer())).toBeNull()
+    expect(readChatDrag(transfer({ [CHAT_DRAG_MIME]: '{broken' }))).toBeNull()
+    // Wrong mode / missing rootPath are rejected.
+    expect(readChatDrag(transfer({ [CHAT_DRAG_MIME]: JSON.stringify({ mode: 'nope', rootPath: '/r' }) }))).toBeNull()
+    expect(readChatDrag(transfer({ [CHAT_DRAG_MIME]: JSON.stringify({ mode: 'loop' }) }))).toBeNull()
   })
 })

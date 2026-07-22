@@ -52,6 +52,7 @@ type PanelSliceActions = Pick<
   | 'setPanelDirty'
   | 'setPanelMarkdownPreview'
   | 'setPanelUnsavedContent'
+  | 'setPanelInitialChat'
   | 'setPanelAgentSession'
   | 'addPanel'
   | 'removePanelRecord'
@@ -302,6 +303,10 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     setPanelUnsavedContent(workspaceId, panelId, content) {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, unsavedContent: content }))
+    },
+
+    setPanelInitialChat(workspaceId, panelId, chatId) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, initialChatId: chatId }))
     },
 
     setPanelAgentSession(workspaceId, panelId, session) {

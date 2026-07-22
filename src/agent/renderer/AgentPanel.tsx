@@ -455,7 +455,19 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     // reference and resuming dead ones under their recorded agentKey — or opens a
     // fresh chat when the checkout has none.
     const signal = { cancelled: false }
-    void openInitialChat(signal)
+    // Seeded panel (a chat dragged onto the canvas / a dock zone): after the
+    // checkout's chats are resolved, make the dragged chat the active one. A loop
+    // chat flips the body; a coding chat is already adopted by openInitialChat
+    // (its worktree is this panel's), so we just re-point the active key. A
+    // now-deleted seed id falls through to the default openInitialChat left open.
+    const seedChatId = panelState?.initialChatId
+    void openInitialChat(signal).then(() => {
+      if (signal.cancelled || !seedChatId) return
+      const chat = useChatsStore.getState().getChat(rootPath, seedChatId)
+      if (!chat) return
+      if (chatMode(chat) === 'loop') setActiveLoopChatId(seedChatId)
+      else if (chat.agentKey) setActiveAgentKey(chat.agentKey)
+    })
 
     return () => {
       // Cancel any in-flight startup; do NOT dispose pi/store here — the panel
@@ -710,14 +722,15 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   }, [])
 
   const handleDeleteLoopChat = useCallback((chatId: string) => {
-    if (activeLoopChatId === chatId) setActiveLoopChatId(null)
     // cateAgentController transitively pulls the loop runtime (xterm); import it
     // lazily so the coding panel's static bundle stays terminal-free. closeChat is
-    // the loop delete path — tears down the orchestrator + run work and drops the
-    // durable record.
-    void import('../../renderer/cateAgent/cateAgentController').then(({ cateAgentController }) =>
-      cateAgentController.closeChat(workspaceId, rootPath, chatId),
-    )
+    // the loop delete path — it prompts when there's unmerged work, tears down the
+    // orchestrator + run work, and drops the durable record. Only drop the panel's
+    // active-loop view if the delete actually happened (Cancel keeps the chat).
+    void import('../../renderer/cateAgent/cateAgentController').then(async ({ cateAgentController }) => {
+      const deleted = await cateAgentController.closeChat(workspaceId, rootPath, chatId)
+      if (deleted && activeLoopChatId === chatId) setActiveLoopChatId(null)
+    })
   }, [activeLoopChatId, workspaceId, rootPath])
 
   // ---------------------------------------------------------------------------
@@ -807,6 +820,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       {sidebarOpen && (
         <AgentSidebar
           chats={filteredChats}
+          rootPath={rootPath}
           currentSessionFile={currentSessionFile}
           openSessionFiles={openSessionFiles}
           loopChats={loopChats}
