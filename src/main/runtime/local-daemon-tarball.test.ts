@@ -22,18 +22,19 @@ const hasTarball = !!tarballPath && existsSync(tarballPath)
 
 describe.skipIf(!hasTarball)('local daemon from the real tarball', () => {
   let mgr: RuntimeManager
+  let installRoot: string
   let installDir: string
   let workspace: string
 
   beforeAll(async () => {
-    installDir = await fs.mkdtemp(path.join(process.cwd(), 'cate-local-install-'))
+    installRoot = await fs.mkdtemp(path.join(process.cwd(), 'cate-local-install-'))
     workspace = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-local-ws-')))
     await fs.writeFile(path.join(workspace, 'hello.ts'), 'export const x = 1\n')
   }, 60_000)
 
   afterAll(async () => {
     await mgr?.disposeAll()
-    await fs.rm(installDir, { recursive: true, force: true })
+    await fs.rm(installRoot, { recursive: true, force: true })
     await fs.rm(workspace, { recursive: true, force: true })
   })
 
@@ -43,11 +44,16 @@ describe.skipIf(!hasTarball)('local daemon from the real tarball', () => {
       root: workspace,
       id: 'srv_localtarball',
       tarballPath,
-      installDir,
+      installRoot,
+      target: target!,
     })
 
     // install=true so connect() runs bootstrap (extracts the tarball) before launch.
     const runtime = await mgr.connect('srv_localtarball', transport, { install: true })
+
+    // The install landed in a content-keyed dir under the root.
+    installDir = (await transport.installDir())!
+    expect(path.dirname(installDir)).toBe(installRoot)
 
     // The daemon ran from the extracted tarball's own node.
     expect(existsSync(path.join(installDir, 'runtime.cjs'))).toBe(true)
