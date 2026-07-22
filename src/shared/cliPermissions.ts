@@ -75,7 +75,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Control',
       code: 'browser-control-disabled',
       detail:
-        '`cate browser open / reload / click / type / press` — act on the page in the built-in browser panel, using your live logged-in sessions.',
+        '`cate browser open / reload / click / fill / type / press` — act on the page in the built-in browser panel, using your live logged-in sessions.',
     },
   },
   {

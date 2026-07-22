@@ -100,14 +100,11 @@ const api: CateHost = {
       invoke('cate.browser.screenshot', opts) as Promise<{ path: string }>,
     snapshot: (opts?: { panelId?: string }) =>
       invoke('cate.browser.snapshot', opts) as Promise<CateBrowserSnapshot>,
-    click: (opts: { ref: string; panelId?: string }) =>
-      invoke('cate.browser.click', opts) as Promise<{ ok: true }>,
-    type: (opts: { ref: string; text: string; panelId?: string }) =>
-      invoke('cate.browser.type', opts) as Promise<{ ok: true }>,
-    wait: (opts?: { panelId?: string; timeoutMs?: number }) =>
-      invoke('cate.browser.wait', opts) as Promise<{ url: string; title: string; loading: false }>,
-    press: (opts: { key: string; ref?: string; panelId?: string }) =>
-      invoke('cate.browser.press', opts) as Promise<{ ok: true }>,
+    click: (opts) => invoke('cate.browser.click', opts) as ReturnType<CateHost['browser']['click']>,
+    fill: (opts) => invoke('cate.browser.fill', opts) as ReturnType<CateHost['browser']['fill']>,
+    type: (opts) => invoke('cate.browser.type', opts) as ReturnType<CateHost['browser']['type']>,
+    wait: (opts) => invoke('cate.browser.wait', opts) as ReturnType<CateHost['browser']['wait']>,
+    press: (opts) => invoke('cate.browser.press', opts) as ReturnType<CateHost['browser']['press']>,
   },
 
   files: {
