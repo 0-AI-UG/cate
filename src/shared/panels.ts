@@ -185,6 +185,39 @@ export function keepsMountedWhenTabHidden(type: PanelType | string | undefined):
 }
 
 // -----------------------------------------------------------------------------
+// Workspace trust — process-bearing panel types
+// -----------------------------------------------------------------------------
+
+/**
+ * Panel types that start something on mount: a PTY, an agent (pi) session, a
+ * `<webview>` that loads a URL, or an extension server. Mounting one of these
+ * from a layout file the USER did not author is the trust boundary crossed by
+ * GHSA-8769-jp52-985f: `.cate/workspace.json` is deliberately shareable (see
+ * `main/cateGitignore.ts`), so a cloned repo could ship an `agent` panel that
+ * auto-started pi — and with it the project's MCP servers — on open.
+ *
+ * `editor`, `canvas` and `document` are passive: they render workspace-local
+ * content and spawn nothing, so they restore from any layout file.
+ *
+ * Keep this a per-TYPE answer with no exceptions. Refining it per instance
+ * ("this browser tab is only a localhost URL") re-introduces exactly the
+ * attacker-controlled reasoning the boundary exists to avoid.
+ */
+export const PROCESS_BEARING_PANEL_TYPES: readonly PanelType[] = [
+  'terminal',
+  'browser',
+  'agent',
+  'extension',
+]
+
+/** True when restoring a panel of this type starts a process, loads a URL, or
+ *  otherwise acts on its own. Such panels are withheld from an untrusted
+ *  project's layout until the user explicitly trusts it. */
+export function isProcessBearingPanelType(type: PanelType | string | undefined): boolean {
+  return !!type && (PROCESS_BEARING_PANEL_TYPES as readonly string[]).includes(type)
+}
+
+// -----------------------------------------------------------------------------
 // Default panel size resolution
 // -----------------------------------------------------------------------------
 

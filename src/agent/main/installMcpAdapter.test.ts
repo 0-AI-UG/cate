@@ -8,17 +8,20 @@ import path from 'node:path'
 vi.mock('electron', () => ({}))
 vi.mock('../../main/logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
 
-import { withMcpAdapter, installMcpAdapter, MCP_ADAPTER_PACKAGE } from './installMcpAdapter'
+import { withMcpAdapter, installMcpAdapter, MCP_ADAPTER_PACKAGE, MCP_ADAPTER_SPEC } from './installMcpAdapter'
 import type { Runtime } from '../../main/runtime/types'
 
 describe('withMcpAdapter', () => {
   it('adds the package to empty settings', () => {
-    expect(withMcpAdapter({})).toEqual({ packages: [MCP_ADAPTER_PACKAGE] })
+    // Writes the PINNED spec — the adapter parses repo-controlled MCP config and
+    // spawns what it finds, so the version it runs must not be npm's choice.
+    expect(withMcpAdapter({})).toEqual({ packages: [MCP_ADAPTER_SPEC] })
+    expect(MCP_ADAPTER_SPEC).toMatch(/^npm:pi-mcp-adapter@\d+\.\d+\.\d+$/)
   })
 
   it('appends without dropping existing packages or other keys', () => {
     const out = withMcpAdapter({ theme: 'dark', packages: ['npm:pi-skills'] })
-    expect(out).toEqual({ theme: 'dark', packages: ['npm:pi-skills', MCP_ADAPTER_PACKAGE] })
+    expect(out).toEqual({ theme: 'dark', packages: ['npm:pi-skills', MCP_ADAPTER_SPEC] })
   })
 
   it('returns null when the bare spec is already present (idempotent)', () => {
@@ -36,7 +39,7 @@ describe('withMcpAdapter', () => {
   it('coerces a non-array packages value rather than crashing', () => {
     // A malformed packages field is replaced with a fresh array holding the adapter.
     expect(withMcpAdapter({ packages: 'oops' as unknown as [] })).toEqual({
-      packages: [MCP_ADAPTER_PACKAGE],
+      packages: [MCP_ADAPTER_SPEC],
     })
   })
 })
@@ -66,7 +69,7 @@ describe('installMcpAdapter', () => {
     await installMcpAdapter(runtime, cwd)
 
     const written = JSON.parse(store[settingsPath(cwd)])
-    expect(written).toEqual({ packages: [MCP_ADAPTER_PACKAGE] })
+    expect(written).toEqual({ packages: [MCP_ADAPTER_SPEC] })
   })
 
   it('merges into an existing settings.json, preserving user keys', async () => {
@@ -89,7 +92,7 @@ describe('installMcpAdapter', () => {
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(JSON.parse(store[settingsPath(cwd)])).toEqual({
       theme: 'light',
-      packages: ['npm:pi-skills', MCP_ADAPTER_PACKAGE],
+      packages: ['npm:pi-skills', MCP_ADAPTER_SPEC],
     })
   })
 

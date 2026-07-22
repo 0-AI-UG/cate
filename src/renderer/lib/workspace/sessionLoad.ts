@@ -7,6 +7,7 @@ import log from '../logger'
 import { isLocalLocator } from '../../../main/runtime/locator'
 import { applySidebarSession, dedupeSnapshotsByRoot } from './sidebarSession'
 import { projectFilesToSnapshot } from './sessionSerialize'
+import { gateProjectFiles } from './projectTrustGate'
 import type {
   SessionSnapshot,
   MultiWorkspaceSession,
@@ -58,8 +59,12 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
       } | null
       if (!projectState?.workspace) continue
 
-      const ws = projectState.workspace
-      const sess = projectState.session
+      // Untrusted projects restore passive layout only. A project in
+      // recentProjects has been OPENED before, which is not the same as trusted
+      // — the drive-by open is exactly what put it on this list.
+      const { workspace: ws, session: sess } = gateProjectFiles(
+        projectState.workspace, projectState.session, rootPath,
+      )
 
       snapshots.push(projectFilesToSnapshot(ws, sess, rootPath))
 

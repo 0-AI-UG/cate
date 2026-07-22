@@ -12,6 +12,7 @@ import { getOrCreateWorkspaceDockStore } from './lib/workspace/dockRegistry'
 import { useStore } from 'zustand'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStateStore } from './stores/uiStateStore'
+import { useWorkspaceTrustStore } from './stores/workspaceTrustStore'
 import { useBrowserStore } from './stores/browserStore'
 import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
@@ -227,6 +228,11 @@ function MainApp() {
       await useSettingsStore.getState().loadSettings()
       await useUIStateStore.getState().loadUIState()
       log.info('Settings loaded')
+
+      // Workspace trust must be mirrored BEFORE any project layout is read:
+      // the gate in sessionLoad fails closed, so loading a layout first would
+      // withhold panels from projects the user has already trusted.
+      await useWorkspaceTrustStore.getState().hydrate()
 
       // The sidebar layout lives solely in settingsStore now; components read it
       // via useSidebarLayout, so there's no uiStore copy to re-seed here.

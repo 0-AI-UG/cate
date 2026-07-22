@@ -106,6 +106,8 @@ import {
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   RECENT_PROJECTS_REMOVE,
+  PROJECT_TRUST_GET,
+  PROJECT_TRUST_SET,
   SIDEBAR_SESSION_GET,
   SIDEBAR_SESSION_SET,
   REMOTE_PROJECTS_GET,
@@ -438,6 +440,10 @@ const invokeForwarders = {
   recentProjectsGet: makeInvoker<'recentProjectsGet'>(RECENT_PROJECTS_GET),
   recentProjectsAdd: makeInvoker<'recentProjectsAdd'>(RECENT_PROJECTS_ADD),
   recentProjectsRemove: makeInvoker<'recentProjectsRemove'>(RECENT_PROJECTS_REMOVE),
+
+  // Workspace trust
+  projectTrustGet: makeInvoker<'projectTrustGet'>(PROJECT_TRUST_GET),
+  projectTrustSet: makeInvoker<'projectTrustSet'>(PROJECT_TRUST_SET),
 
   // Browser history + bookmarks (global)
   browserHistoryRecord: makeInvoker<'browserHistoryRecord'>(BROWSER_HISTORY_RECORD),

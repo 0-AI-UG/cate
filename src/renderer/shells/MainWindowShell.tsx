@@ -7,6 +7,7 @@
 import React, { useCallback, useEffect, useRef } from 'react'
 import { useDockStoreContext, useDockStoreApi } from '../stores/DockStoreContext'
 import { useSelectedWorkspace } from '../stores/appStore'
+import { WorkspaceTrustBanner } from '../ui/WorkspaceTrustBanner'
 import type { DockZonePosition } from '../../shared/types'
 import DockZone from '../docking/DockZone'
 import DockResizeHandle from '../docking/DockResizeHandle'
@@ -161,7 +162,8 @@ export default function MainWindowShell({
     { zone: 'bottom', hidden: !bottomVisible, style: { left: 0, right: 0, bottom: 0, height: EDGE_ZONE_SIZE } },
   ]
 
-  const workspaceAccent = useSelectedWorkspace()?.color || undefined
+  const selectedWorkspace = useSelectedWorkspace()
+  const workspaceAccent = selectedWorkspace?.color || undefined
 
   return (
     <div
@@ -231,6 +233,10 @@ export default function MainWindowShell({
           </Tooltip>
         </div>
       )}
+      {/* Workspace trust notice — sits above the dock zones so it reads as a
+          statement about the whole restored layout, not about one panel. Renders
+          nothing unless this project's layout was filtered. */}
+      {selectedWorkspace && <WorkspaceTrustBanner workspaceId={selectedWorkspace.id} />}
       {/* Top row: left dock | center dock | right dock */}
       <div className="flex flex-1 min-h-0 min-w-0">
         {/* Left dock zone */}

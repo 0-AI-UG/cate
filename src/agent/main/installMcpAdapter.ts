@@ -34,8 +34,19 @@ import { hostAgentDir, hostJoin } from './agentDir'
 import { createIdempotencyTracker } from './extensionInstall'
 import type { Runtime } from '../../main/runtime/types'
 
-/** pi package spec for the MCP adapter (unscoped npm package). */
+/** Bare package name, without a version — the identity we match on when
+ *  deciding whether settings.json already references the adapter. */
 export const MCP_ADAPTER_PACKAGE = 'npm:pi-mcp-adapter'
+
+/** The exact version Cate installs. PINNED deliberately: this package parses
+ *  repo-controlled MCP config and spawns the commands it finds, so an
+ *  unversioned spec would pull whatever npm serves at first run into a
+ *  security-sensitive position with no review (GHSA-8769-jp52-985f,
+ *  remediation 5). Bump only alongside an audit of the new version. */
+export const MCP_ADAPTER_VERSION = '2.11.0'
+
+/** Version-pinned spec actually written to pi settings. */
+export const MCP_ADAPTER_SPEC = `${MCP_ADAPTER_PACKAGE}@${MCP_ADAPTER_VERSION}`
 
 type PiSettings = Record<string, unknown>
 
@@ -59,7 +70,7 @@ function referencesAdapter(entry: unknown): boolean {
 export function withMcpAdapter(settings: PiSettings): PiSettings | null {
   const packages = Array.isArray(settings.packages) ? settings.packages : []
   if (packages.some(referencesAdapter)) return null
-  return { ...settings, packages: [...packages, MCP_ADAPTER_PACKAGE] }
+  return { ...settings, packages: [...packages, MCP_ADAPTER_SPEC] }
 }
 
 // Keyed on runtimeId + host path so the same host path on different runtimes
@@ -103,7 +114,7 @@ export async function installMcpAdapter(runtime: Runtime, cwd: string): Promise<
     if (!next) return // already registered — nothing to write
     await runtime.file.mkdir(home)
     await runtime.file.writeFile(settingsPath, JSON.stringify(next, null, 2) + '\n')
-    log.info('[installMcpAdapter] registered %s in %s', MCP_ADAPTER_PACKAGE, settingsPath)
+    log.info('[installMcpAdapter] registered %s in %s', MCP_ADAPTER_SPEC, settingsPath)
   } catch (err) {
     log.warn('[installMcpAdapter] install failed: %O', err)
   }

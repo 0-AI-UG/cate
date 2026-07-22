@@ -226,6 +226,11 @@ export const RECENT_PROJECTS_GET = 'recent-projects:get'
 export const RECENT_PROJECTS_ADD = 'recent-projects:add'
 export const RECENT_PROJECTS_REMOVE = 'recent-projects:remove'
 
+// Workspace trust (machine-local: which projects may auto-restore process-bearing
+// panels and load project MCP config). See shared/panels.ts.
+export const PROJECT_TRUST_GET = 'project-trust:get'
+export const PROJECT_TRUST_SET = 'project-trust:set'
+
 // Sidebar session (persisted workspace order + active workspace, by root path)
 export const SIDEBAR_SESSION_GET = 'sidebar-session:get'
 export const SIDEBAR_SESSION_SET = 'sidebar-session:set'
