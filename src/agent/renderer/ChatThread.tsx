@@ -44,9 +44,13 @@ interface ChatThreadProps {
   /** Stable per-conversation key — used to remember/restore scroll position
    *  across the dock-tab unmount/remount cycle. */
   scrollKey: string
+  /** Extra classes for the inner scroll area — e.g. a host whose composer floats
+   *  over the transcript passes bottom padding so the last message clears the pill
+   *  (padding lives INSIDE this scroll area, so it adds no second scrollbar). */
+  contentClassName?: string
 }
 
-export function ChatThread({ messages, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement, retry, onAbortRetry, scrollKey }: ChatThreadProps) {
+export function ChatThread({ messages, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement, retry, onAbortRetry, scrollKey, contentClassName }: ChatThreadProps) {
   useRenderCount('ChatThread')
   const scrollRef = useRef<HTMLDivElement>(null)
   // Button visibility — init true so it never flashes before the first measure.
@@ -168,7 +172,7 @@ export function ChatThread({ messages, running, forkMap, onFork, onEditResend, o
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0"
+      className={`flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0${contentClassName ? ` ${contentClassName}` : ''}`}
     >
       {messages.map((m, idx) => {
         // Don't render empty assistant stubs (no text, no thinking) — they add
