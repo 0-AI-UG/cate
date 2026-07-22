@@ -39,6 +39,7 @@ import { installPlanModeExtension } from './installPlanMode'
 import { installAskUserExtension } from './installAskUser'
 import { installCateAgentToolsExtension } from './installCateAgentTools'
 import { installMcpAdapter } from './installMcpAdapter'
+import { isProjectTrusted } from '../../main/workspaceStateStore'
 import { hostAgentDir, prepareAgentDir, watchWorkspaceAuth, pushSharedToWorkspace, type AgentDirVariant } from './agentDir'
 import { mirrorModelsToWorkspace } from './customModels'
 import { authManager, type AuthManager } from './authManager'
@@ -173,7 +174,19 @@ export class AgentManager {
         await installAskUserExtension(runtime, cwd)
         // Register pi-mcp-adapter in <cwd>/.cate/pi-agent/settings.json so pi
         // auto-installs + loads it on session start (MCP driven by <cwd>/.pi/mcp.json).
-        await installMcpAdapter(runtime, cwd)
+        //
+        // ONLY for a project the user explicitly trusted. The adapter honours
+        // repo-controlled `.mcp.json` / `.pi/mcp.json`, and an `"lifecycle":
+        // "eager"` server there starts its command during adapter init — so
+        // installing it unconditionally let a cloned repo run code as soon as an
+        // agent session existed (GHSA-8769-jp52-985f). The workspace locator is
+        // the trust key; a bare `cwd` (worktree path) is not, and absent ⇒
+        // untrusted.
+        if (isProjectTrusted(opts.workspaceRoot ?? '')) {
+          await installMcpAdapter(runtime, cwd)
+        } else {
+          log.info('[agent] project MCP disabled for untrusted workspace %s', opts.workspaceRoot ?? cwd)
+        }
       }
 
 

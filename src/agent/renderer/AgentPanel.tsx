@@ -77,6 +77,10 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   const panelState = workspace?.panels[panelId]
   const taggedWorktree = resolveWorktree(panelState?.worktreeId, workspace?.worktrees)
   const cwd = taggedWorktree?.path ?? workspace?.rootPath ?? ''
+  // The workspace locator, which differs from `cwd` above when the panel is
+  // pinned to a worktree. Main resolves project-MCP trust from THIS (trust is
+  // recorded per project, not per checkout) — see GHSA-8769-jp52-985f.
+  const workspaceRoot = workspace?.rootPath ?? ''
 
   // ---------------------------------------------------------------------------
   // Multi-chat session bookkeeping.
@@ -296,6 +300,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
         cwd,
         model: model ?? undefined,
         sessionFile,
+        workspaceRoot,
       })
       if (!res.ok) {
         markReady(key, false)
@@ -314,7 +319,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       markReady(key, false)
       log.warn('[AgentPanel] createAgent failed', err)
     }
-  }, [workspaceId, cwd, refreshCommands, markReady])
+  }, [workspaceId, cwd, workspaceRoot, refreshCommands, markReady])
 
   // Open the most-recent on-disk session for the current cwd as the panel's sole
   // chat (or a fresh chat if the checkout has none). Shared by the mount effect

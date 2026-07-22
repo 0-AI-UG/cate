@@ -43,11 +43,15 @@ beforeEach(() => {
     projectStateLoad,
   }
   projectStateLoad.mockReset()
+  // These tests are about the hydrate path, not the gate: trust the fixture root
+  // so hydrate gets past it. The trust suite at the bottom clears this.
+  useWorkspaceTrustStore.setState({ trusted: [ROOT], hydrated: true, queue: [] })
 })
 
 import { useAppStore, awaitWorkspaceSync } from '../../stores/appStore'
 import { hydrateWorkspaceFromDiskIfEmpty } from './session'
 import { deferredSnapshots } from './deferredRestore'
+import { useWorkspaceTrustStore } from '../../stores/workspaceTrustStore'
 import type { ProjectWorkspaceFile, ProjectSessionFile } from '../../../shared/types'
 
 const ROOT = '/repo'
@@ -146,5 +150,81 @@ describe('hydrateWorkspaceFromDiskIfEmpty — restore', () => {
     // ...a second hydrate must see live content and bail without reloading.
     await hydrateWorkspaceFromDiskIfEmpty(id)
     expect(projectStateLoad).not.toHaveBeenCalled()
+  })
+})
+
+// -----------------------------------------------------------------------------
+// GHSA-8769-jp52-985f — this is THE function that runs when a user opens a
+// cloned repo, so it is the backstop for the trust boundary: the gate proper is
+// on the open path (nothing untrusted gets this far), and these pin that an
+// untrusted rootPath still restores nothing and reads nothing. The fixture is
+// the advisory's proof-of-concept workspace.json.
+// -----------------------------------------------------------------------------
+
+/** The advisory PoC: an agent panel docked so that restoring it mounts pi,
+ *  which loads the MCP adapter, which starts the repo's eager .pi/mcp.json. */
+function hostileDiskState(): { workspace: ProjectWorkspaceFile; session: ProjectSessionFile | null } {
+  return {
+    workspace: {
+      version: 1,
+      name: 'Cate MCP PoC',
+      color: '',
+      panels: { 'agent-poc': { type: 'agent', title: 'Agent' } },
+      dockState: {
+        zones: {
+          left: { position: 'left', visible: false, size: 0, layout: null },
+          right: { position: 'right', visible: false, size: 0, layout: null },
+          bottom: { position: 'bottom', visible: false, size: 0, layout: null },
+          center: {
+            position: 'center', visible: true, size: 0,
+            layout: { type: 'tabs', id: 'agent-poc-tabs', panelIds: ['agent-poc'], activeIndex: 0 },
+          },
+        },
+      },
+    },
+    session: { version: 1, panels: {} },
+  } as unknown as { workspace: ProjectWorkspaceFile; session: ProjectSessionFile | null }
+}
+
+describe('hydrateWorkspaceFromDiskIfEmpty — workspace trust', () => {
+  beforeEach(() => {
+    useWorkspaceTrustStore.setState({ trusted: [], hydrated: true, queue: [] })
+  })
+
+  it('does not restore a repo-supplied agent panel from an untrusted project', async () => {
+    const id = await freshWorkspace('ws-hostile', '/hostile')
+    projectStateLoad.mockResolvedValue(hostileDiskState())
+
+    await hydrateWorkspaceFromDiskIfEmpty(id)
+
+    // No panel record ⇒ AgentPanel never mounts ⇒ pi never starts ⇒ the MCP
+    // adapter never reads .pi/mcp.json. The chain is cut at the first link.
+    const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
+    expect(ws.panels['agent-poc']).toBeUndefined()
+    expect(Object.values(ws.panels).some((p) => p.type === 'agent')).toBe(false)
+  })
+
+  it('does not even read the project files of an untrusted project', async () => {
+    const id = await freshWorkspace('ws-hostile-noread', '/hostile2')
+    projectStateLoad.mockResolvedValue(hostileDiskState())
+
+    await hydrateWorkspaceFromDiskIfEmpty(id)
+
+    // Nothing is filtered, because nothing is loaded: an untrusted project is
+    // not opened at all, so its `.cate/` files are never touched.
+    expect(projectStateLoad).not.toHaveBeenCalled()
+  })
+
+  it('restores the same layout once the user trusts the project', async () => {
+    const id = await freshWorkspace('ws-trusted', '/trusted-repo')
+    useWorkspaceTrustStore.setState({ trusted: ['/trusted-repo'], hydrated: true, queue: [] })
+    projectStateLoad.mockResolvedValue(hostileDiskState())
+
+    await hydrateWorkspaceFromDiskIfEmpty(id)
+
+    // Trust is the ONLY thing that changed between this and the first test.
+    const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
+    expect(ws.panels['agent-poc']).toBeDefined()
+    expect(ws.panels['agent-poc'].type).toBe('agent')
   })
 })

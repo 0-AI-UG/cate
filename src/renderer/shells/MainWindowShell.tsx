@@ -161,7 +161,8 @@ export default function MainWindowShell({
     { zone: 'bottom', hidden: !bottomVisible, style: { left: 0, right: 0, bottom: 0, height: EDGE_ZONE_SIZE } },
   ]
 
-  const workspaceAccent = useSelectedWorkspace()?.color || undefined
+  const selectedWorkspace = useSelectedWorkspace()
+  const workspaceAccent = selectedWorkspace?.color || undefined
 
   return (
     <div

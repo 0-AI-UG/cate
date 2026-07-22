@@ -44,9 +44,13 @@ beforeEach(() => {
     runtimeConnect,
     runtimeEnsure: vi.fn(async () => ({ ok: true })),
   }
+  // Trust isn't what's under test here — auto-accept so the open path runs.
+  // (Its own gate is covered in the trust suites.)
+  useWorkspaceTrustStore.setState({ requestTrust: () => Promise.resolve(true) })
 })
 
 import { awaitWorkspaceSync, useAppStore } from './appStore'
+import { useWorkspaceTrustStore } from './workspaceTrustStore'
 
 function reset() {
   for (const w of [...useAppStore.getState().workspaces]) {

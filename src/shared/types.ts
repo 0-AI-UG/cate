@@ -1845,6 +1845,12 @@ export interface AgentCreateOptions {
    *  Agent's headless sessions in `.cate/pi-agent-cate-agent` so their transcripts never
    *  appear in the agent panel's session list. Defaults to `'default'`. */
   agentDir?: 'default' | 'cateAgent'
+  /** Locator of the WORKSPACE this session belongs to, which may differ from
+   *  `cwd` when the panel is pinned to a worktree. Main resolves the workspace's
+   *  trust state from this to decide whether project MCP config (`.mcp.json` /
+   *  `.pi/mcp.json`) may be honoured — those files are repo-controlled and can
+   *  start local commands (GHSA-8769-jp52-985f). Absent ⇒ treated as untrusted. */
+  workspaceRoot?: string
 }
 
 /** Pi agent events forwarded from main to renderer. We keep the shape loose
