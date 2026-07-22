@@ -12,9 +12,10 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { PuzzlePiece, CaretRight, ChatCircle } from '@phosphor-icons/react'
+import { PuzzlePiece, CaretRight } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
+import { CateLogo } from '../ui/CateLogo'
 import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { SKILL_TARGETS, type SkillTargetId } from '../../shared/skills'
 import { agentForSkillTarget, type AgentId } from '../../shared/agents'
@@ -30,14 +31,14 @@ const TARGET_LABEL: Record<string, string> = Object.fromEntries(
 
 // Skill target → agent id for the logo lookup, resolved through the canonical
 // registry so a newly declared target picks up its agent's logo automatically.
-// cate-agent is Cate's built-in Agent panel — it has no AgentDef and no bundled
-// SVG, and uses the panel's chat-bubble mark instead.
+// cate-agent is Cate's built-in agent — it has no AgentDef and no bundled SVG,
+// and uses the Cate wordmark instead.
 const targetLogoId = (targetId: SkillTargetId): AgentId | null =>
   agentForSkillTarget(targetId)?.id ?? null
 
 const AgentIcon: React.FC<{ targetId: SkillTargetId }> = ({ targetId }) => {
   if (targetId === 'cate-agent') {
-    return <ChatCircle size={11} className="flex-shrink-0 text-[rgb(var(--agent-rgb))]" style={{ opacity: 0.9 }} />
+    return <CateLogo size={11} className="flex-shrink-0 text-[rgb(var(--agent-rgb))]" style={{ opacity: 0.9 }} />
   }
   const logo = getAgentLogoById(targetLogoId(targetId))
   if (logo) {

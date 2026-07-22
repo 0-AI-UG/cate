@@ -58,32 +58,12 @@ describe('Cate file drag payload', () => {
 })
 
 describe('Chat drag payload', () => {
-  it('round-trips a full coding-chat payload', () => {
+  it('round-trips a durable Cate Agent chat', () => {
     const dt = transfer()
-    setChatDrag(dt, {
-      chatId: 'chat-1',
-      mode: 'coding',
-      rootPath: '/repo',
-      agentKey: 'agent-x',
-      sessionFile: '/repo/.cate/cate-agent/sessions/s.jsonl',
-      worktreeId: 'wt-2',
-    })
+    setChatDrag(dt, { chatId: 'chat-1', rootPath: '/repo' })
 
     expect(dt.data.get(CHAT_DRAG_MIME)).toBeTruthy()
-    expect(readChatDrag(dt)).toEqual({
-      chatId: 'chat-1',
-      mode: 'coding',
-      rootPath: '/repo',
-      agentKey: 'agent-x',
-      sessionFile: '/repo/.cate/cate-agent/sessions/s.jsonl',
-      worktreeId: 'wt-2',
-    })
-  })
-
-  it('round-trips a minimal loop-chat payload and drops absent optionals', () => {
-    const dt = transfer()
-    setChatDrag(dt, { chatId: 'c9', mode: 'loop', rootPath: '/repo' })
-    expect(readChatDrag(dt)).toEqual({ chatId: 'c9', mode: 'loop', rootPath: '/repo' })
+    expect(readChatDrag(dt)).toEqual({ chatId: 'chat-1', rootPath: '/repo' })
   })
 
   it('detects a chat drag by type (the terminal-panel drop guard)', () => {
@@ -97,8 +77,7 @@ describe('Chat drag payload', () => {
   it('returns null for absent, malformed, or invalid payloads', () => {
     expect(readChatDrag(transfer())).toBeNull()
     expect(readChatDrag(transfer({ [CHAT_DRAG_MIME]: '{broken' }))).toBeNull()
-    // Wrong mode / missing rootPath are rejected.
-    expect(readChatDrag(transfer({ [CHAT_DRAG_MIME]: JSON.stringify({ mode: 'nope', rootPath: '/r' }) }))).toBeNull()
-    expect(readChatDrag(transfer({ [CHAT_DRAG_MIME]: JSON.stringify({ mode: 'loop' }) }))).toBeNull()
+    expect(readChatDrag(transfer({ [CHAT_DRAG_MIME]: JSON.stringify({ rootPath: '/r' }) }))).toBeNull()
+    expect(readChatDrag(transfer({ [CHAT_DRAG_MIME]: JSON.stringify({ chatId: 'c1' }) }))).toBeNull()
   })
 })

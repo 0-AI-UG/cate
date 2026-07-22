@@ -48,9 +48,12 @@ interface ChatThreadProps {
    *  over the transcript passes bottom padding so the last message clears the pill
    *  (padding lives INSIDE this scroll area, so it adds no second scrollbar). */
   contentClassName?: string
+  /** Content owned by the same durable thread but rendered by another engine
+   *  after a handoff (the iteration-engineering transcript). */
+  tail?: React.ReactNode
 }
 
-export function ChatThread({ messages, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement, retry, onAbortRetry, scrollKey, contentClassName }: ChatThreadProps) {
+export function ChatThread({ messages, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement, retry, onAbortRetry, scrollKey, contentClassName, tail }: ChatThreadProps) {
   useRenderCount('ChatThread')
   const scrollRef = useRef<HTMLDivElement>(null)
   // Button visibility — init true so it never flashes before the first measure.
@@ -144,7 +147,7 @@ export function ChatThread({ messages, running, forkMap, onFork, onEditResend, o
       setAtBottom(true)
       scrollMemory.set(scrollKey, { top: el.scrollHeight, atBottom: true })
     }
-  }, [messages.length, last, scrollKey])
+  }, [messages.length, last, scrollKey, tail])
 
   // Find the last message that actually renders visible content — skip empty
   // streaming assistant stubs so the *previous* real item gets the shimmer.
@@ -209,6 +212,7 @@ export function ChatThread({ messages, running, forkMap, onFork, onEditResend, o
           />
         )
       })}
+      {tail}
       {showLoading && <LoadingIndicator />}
       {retry && (retry.active || retry.finalError) && (
         <RetryIndicator state={retry} onAbort={onAbortRetry} />

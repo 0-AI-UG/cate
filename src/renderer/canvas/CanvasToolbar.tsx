@@ -15,8 +15,8 @@ import {
   Cursor,
   Hand,
   X,
-  ChatCircle,
 } from '@phosphor-icons/react'
+import { CateLogo } from '../ui/CateLogo'
 import Minimap from './Minimap'
 import WorktreeToolbarMenu from './WorktreeToolbarMenu'
 import ExtensionToolbarMenu from './ExtensionToolbarMenu'
@@ -288,7 +288,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         <FileText size={18} />
       </ToolbarButton>
       <ToolbarButton onClick={onNewAgent} title="Cate Agent" size="panel" placement={place}>
-        <ChatCircle size={18} />
+        <CateLogo size={18} />
       </ToolbarButton>
       <ExtensionToolbarMenu
         canvasPanelId={canvasPanelId}

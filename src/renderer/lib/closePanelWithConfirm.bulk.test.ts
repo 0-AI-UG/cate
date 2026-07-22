@@ -46,13 +46,6 @@ vi.mock('./terminal/terminalRegistry', () => ({
   },
 }))
 
-// Agent pi sessions are out of scope; stub so the appStore graph stays light.
-vi.mock('../../cateAgent/renderer/codingSessionRegistry', () => ({
-  disposeCateAgentPanel: vi.fn(),
-  getCateAgentPanelSession: vi.fn(),
-  saveCateAgentPanelSession: vi.fn(),
-}))
-
 import { useAppStore } from '../stores/appStore'
 import { useStatusStore } from '../stores/statusStore'
 import { releaseWorkspaceDockStore } from './workspace/dockRegistry'

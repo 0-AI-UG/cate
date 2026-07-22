@@ -11,6 +11,26 @@ import { deriveDiff } from './codingStore'
 import { EDIT_NAMES, prettyArgs } from './chatShared'
 import { DiffView } from './ChatDiffView'
 
+interface EngineeringTaskArgs {
+  goal?: string
+  check?: string
+  overview?: string
+}
+
+function parseEngineeringTaskArgs(raw: unknown): EngineeringTaskArgs {
+  let value = raw
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value) } catch { return {} }
+  }
+  if (!value || typeof value !== 'object') return {}
+  const args = value as Record<string, unknown>
+  return {
+    goal: typeof args.goal === 'string' && args.goal.trim() ? args.goal : undefined,
+    check: typeof args.check === 'string' && args.check.trim() ? args.check : undefined,
+    overview: typeof args.overview === 'string' && args.overview.trim() ? args.overview : undefined,
+  }
+}
+
 function toolSummary(msg: ToolMessage): string {
   const a = (msg.args ?? {}) as Record<string, unknown>
   if (EDIT_NAMES.has(msg.name)) {
@@ -29,7 +49,38 @@ function toolSummary(msg: ToolMessage): string {
     if (path && offset != null) return `${path}:${offset}`
     return path || msg.name
   }
+  if (msg.name === 'engineering_task') {
+    return parseEngineeringTaskArgs(msg.args).goal ?? 'engineering task'
+  }
   return msg.name
+}
+
+function EngineeringTaskDetails({ args }: { args: unknown }) {
+  const task = parseEngineeringTaskArgs(args)
+  const sections = [
+    ['Goal', task.goal],
+    ['Verification', task.check],
+    ['Context', task.overview],
+  ].filter((section): section is [string, string] => !!section[1])
+
+  if (sections.length === 0) {
+    return (
+      <div className="text-[11px] text-muted">Task details unavailable.</div>
+    )
+  }
+
+  return (
+    <div className="space-y-2.5 max-h-[280px] overflow-auto">
+      {sections.map(([label, value]) => (
+        <div key={label} className="space-y-0.5">
+          <div className="text-[10.5px] text-muted font-medium">{label}</div>
+          <div className="text-[11.5px] text-primary/85 whitespace-pre-wrap break-words leading-relaxed">
+            {value}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // `read` tool results often come back in `cat -n` form: `   123\tcontent`.
@@ -128,6 +179,7 @@ export function AskUserToolView({ msg, shimmer }: { msg: ToolMessage; shimmer?: 
 }
 
 function toolVerb(msg: ToolMessage): string {
+  if (msg.name === 'engineering_task') return 'Delegated task'
   if (msg.name === 'write') return 'Wrote'
   if (EDIT_NAMES.has(msg.name)) return 'Edited'
   switch (msg.name) {
@@ -149,6 +201,7 @@ export function ToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean
   const isBash = msg.name === 'bash' || msg.name === 'shell'
   const isRead = msg.name === 'read' || msg.name === 'view'
   const isWrite = msg.name === 'write'
+  const isEngineeringTask = msg.name === 'engineering_task'
   const diff = useMemo(
     () => (isWrite ? undefined : msg.diff ?? deriveDiff(msg.name, msg.args, msg.result)),
     [isWrite, msg.diff, msg.name, msg.args, msg.result],
@@ -223,7 +276,8 @@ export function ToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean
           {isRead && readBody && (
             <CodePreview text={readBody} startLine={readStartLine} />
           )}
-          {!isEditish && !isWrite && !isRead && (
+          {isEngineeringTask && <EngineeringTaskDetails args={msg.args} />}
+          {!isEditish && !isWrite && !isRead && !isEngineeringTask && (
             <pre className="text-[11px] text-muted whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
               {prettyArgs(msg.args)}
             </pre>

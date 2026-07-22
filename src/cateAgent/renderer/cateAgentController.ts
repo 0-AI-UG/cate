@@ -25,7 +25,13 @@
 // restore() marks their orphaned runs `interrupted` so the block offers Continue.
 // =============================================================================
 
-import type { CateAgentActivity, ChatMessage, ChatRun } from '../../shared/types'
+import type {
+  CateAgentActivity,
+  ChatMessage,
+  ChatRun,
+  CodingImageAttachment,
+  CodingThinkingLevel,
+} from '../../shared/types'
 import type { CateAgentBridgeHost, CateAgentContext } from './cateAgentTypes'
 import { setCateAgentBridgeHost } from './cateAgentBridge'
 import {
@@ -55,6 +61,8 @@ import { generateId } from '../../renderer/stores/canvas/helpers'
 import { workspaceIdForTerminal } from '../../renderer/stores/statusStore'
 import { gitStatusStore } from '../../renderer/stores/gitStatusStore'
 import log from '../../renderer/lib/logger'
+import type { EngineeringTaskHandoff } from './engineeringTaskHandoff'
+import { disposeDirectChatSession } from './directChatSession'
 
 /** Per-run state (wake bounding). One entry per chat with a turn/loop in flight —
  *  its presence in WsRuntime.runs means that chat's agent is active. */
@@ -67,6 +75,14 @@ interface RunState {
    *  stopped + continued reusing the same chatId/panelId; the epoch lets an in-flight
    *  reconcile from the old run detect it was superseded and bail. */
   epoch: number
+}
+
+export interface CateAgentTurnOptions {
+  images?: CodingImageAttachment[]
+  thinkingLevel?: CodingThinkingLevel
+  autoCompactionEnabled?: boolean
+  /** Desired initial plan state. Applied only when this call creates the session. */
+  planMode?: boolean
 }
 
 interface WsRuntime {
@@ -270,32 +286,45 @@ class CateAgentController implements CateAgentBridgeHost {
   /** Send a user message into a chat — append it to the transcript and run the chat's
    *  persistent agent (creating its session on the first message, continuing the same
    *  history-bearing session after). The agent decides how to respond. */
-  async sendMessage(wsId: string, rootPath: string, chatId: string, text: string): Promise<void> {
+  async sendMessage(
+    wsId: string,
+    rootPath: string,
+    chatId: string,
+    text: string,
+    options: CateAgentTurnOptions = {},
+  ): Promise<void> {
     if (!this.providersReady) return
     const trimmed = text.trim()
-    if (!trimmed) return
+    if (!trimmed && !options.images?.length) return
     this.start()
-    const r = this.rt(wsId, rootPath)
     await useChatsStore.getState().loadChats(rootPath)
-    if (!r.observerPanelId) await this.summon(wsId, rootPath)
     const chat = useChatsStore.getState().getChat(rootPath, chatId)
     if (!chat) return
-    useChatsStore.getState().appendMessage(rootPath, chatId, textMessage('user', trimmed))
-
-    const panelId = orchestratorPanelId(chatId)
-    const canvasPanelId = chat.run?.canvasPanelId ?? getWorkspaceCanvasPanelId(wsId) ?? undefined
-    if (!r.sessions.has(chatId) || !hasContext(panelId)) {
-      const ctx: CateAgentContext = { panelId, workspaceId: wsId, rootPath, role: 'orchestrator', chatId, epoch: ++this.epochSeq, canvasPanelId }
-      setContext(panelId, ctx)
-      const ok = await createCateAgentSession({ panelId, rootPath, workspaceId: wsId, role: 'orchestrator', model: chat.model })
-      if (!ok) {
-        deleteContext(panelId)
-        r.sessions.delete(chatId)
-        useChatsStore.getState().appendMessage(rootPath, chatId, textMessage('agent', 'Could not start the agent (check provider sign-in).'))
-        return
-      }
-      r.sessions.add(chatId)
+    if (trimmed === '/plan') {
+      await this.togglePlanMode(wsId, rootPath, chatId)
+      return
     }
+    useChatsStore.getState().appendMessage(rootPath, chatId, textMessage('user', trimmed || 'Attached image'))
+
+    const session = await this.ensureOrchestratorSession(wsId, rootPath, chatId)
+    if (!session) {
+      useChatsStore.getState().appendMessage(rootPath, chatId, textMessage('agent', 'Could not start the agent (check provider sign-in).'))
+      return
+    }
+    const { panelId, created } = session
+    const controlUpdates: Promise<unknown>[] = []
+    if (options.thinkingLevel) {
+      controlUpdates.push(window.electronAPI.agentSetThinkingLevel(panelId, options.thinkingLevel))
+    }
+    if (options.autoCompactionEnabled != null) {
+      controlUpdates.push(window.electronAPI.agentSetAutoCompaction(panelId, options.autoCompactionEnabled))
+    }
+    // A stale/unsupported chrome preference must never eat the actual user turn.
+    await Promise.allSettled(controlUpdates)
+    if (created && options.planMode) await promptCateAgent(panelId, '/plan')
+
+    const r = this.rt(wsId, rootPath)
+    const canvasPanelId = chat.run?.canvasPanelId ?? getWorkspaceCanvasPanelId(wsId) ?? undefined
     // Refresh the run token for this turn (resets the wake budget) and mirror it onto
     // the persistent ctx so reconciles/wakes for this turn match.
     const ctx = getContext(panelId)!
@@ -304,7 +333,112 @@ class CateAgentController implements CateAgentBridgeHost {
     if (canvasPanelId && !ctx.canvasPanelId) ctx.canvasPanelId = canvasPanelId
     r.runs.set(chatId, { wakes: 0, busy: false, epoch })
     useCateAgentStore.getState().patch(wsId, { activity: 'working', status: pick(WORKING_STATUSES)(chat.title) })
-    void promptCateAgent(panelId, trimmed)
+    void promptCateAgent(panelId, trimmed || 'Inspect the attached image.', options.images)
+  }
+
+  /** Ensure the selected chat has a live headless orchestrator. Composer controls
+   *  use this after a restart, before issuing session-scoped RPCs. */
+  async ensureChatSession(wsId: string, rootPath: string, chatId: string): Promise<boolean> {
+    return !!(await this.ensureOrchestratorSession(wsId, rootPath, chatId))
+  }
+
+  hasChatSession(wsId: string, chatId: string): boolean {
+    return !!this.ws.get(wsId)?.sessions.has(chatId) && hasContext(orchestratorPanelId(chatId))
+  }
+
+  /** Toggle the real plan-mode extension. Slash commands do not create a visible
+   *  transcript message; the extension status event drives the composer button. */
+  async togglePlanMode(wsId: string, rootPath: string, chatId: string): Promise<void> {
+    const session = await this.ensureOrchestratorSession(wsId, rootPath, chatId)
+    if (session) await promptCateAgent(session.panelId, '/plan')
+  }
+
+  /** Apply a structured plan. The extension injects the approved plan as a hidden
+   *  turn, then the ordinary Cate iterate/verify reconciler takes over. */
+  async applyPlan(wsId: string, rootPath: string, chatId: string, fresh = false): Promise<void> {
+    const session = await this.ensureOrchestratorSession(wsId, rootPath, chatId)
+    if (!session) return
+    if (fresh) await window.electronAPI.agentCompact(session.panelId)
+    this.beginChatTurn(wsId, rootPath, chatId, session.panelId)
+    await promptCateAgent(session.panelId, fresh ? '/apply-plan fresh' : '/apply-plan')
+  }
+
+  /** The direct coding agent requested iteration engineering and the user
+   *  approved it. Start the orchestrator without synthesizing another visible
+   *  user message; the original request and approval already live above this
+   *  continuation in the same transcript. */
+  async takeOverEngineeringTask(
+    wsId: string,
+    rootPath: string,
+    chatId: string,
+    task: EngineeringTaskHandoff,
+  ): Promise<void> {
+    const session = await this.ensureOrchestratorSession(wsId, rootPath, chatId)
+    if (!session) return
+    this.beginChatTurn(wsId, rootPath, chatId, session.panelId)
+    const check = task.check?.trim() || 'Run the relevant tests/build and inspect the resulting diff against the goal.'
+    const prompt = [
+      'Take over this user-approved engineering task.',
+      `Goal: ${task.goal}`,
+      `Check: ${check}`,
+      task.overview ? `Conversation handoff: ${task.overview}` : '',
+      'Use set_goal with the goal and check above, then run one or more isolated iterations. Do not merely answer with a plan.',
+    ].filter(Boolean).join('\n\n')
+    await promptCateAgent(session.panelId, prompt)
+  }
+
+  private async ensureOrchestratorSession(
+    wsId: string,
+    rootPath: string,
+    chatId: string,
+  ): Promise<{ panelId: string; created: boolean } | null> {
+    if (!this.providersReady) return null
+    this.start()
+    const r = this.rt(wsId, rootPath)
+    await useChatsStore.getState().loadChats(rootPath)
+    if (!r.observerPanelId) await this.summon(wsId, rootPath)
+    const chat = useChatsStore.getState().getChat(rootPath, chatId)
+    if (!chat) return null
+    const panelId = orchestratorPanelId(chatId)
+    if (r.sessions.has(chatId) && hasContext(panelId)) return { panelId, created: false }
+    const canvasPanelId = chat.run?.canvasPanelId ?? getWorkspaceCanvasPanelId(wsId) ?? undefined
+    const ctx: CateAgentContext = {
+      panelId,
+      workspaceId: wsId,
+      rootPath,
+      role: 'orchestrator',
+      chatId,
+      epoch: ++this.epochSeq,
+      canvasPanelId,
+    }
+    setContext(panelId, ctx)
+    const ok = await createCateAgentSession({
+      panelId,
+      rootPath,
+      workspaceId: wsId,
+      role: 'orchestrator',
+      model: chat.model,
+    })
+    if (!ok) {
+      deleteContext(panelId)
+      r.sessions.delete(chatId)
+      return null
+    }
+    r.sessions.add(chatId)
+    return { panelId, created: true }
+  }
+
+  private beginChatTurn(wsId: string, rootPath: string, chatId: string, panelId: string): void {
+    const r = this.rt(wsId, rootPath)
+    const ctx = getContext(panelId)
+    if (!ctx) return
+    const epoch = ++this.epochSeq
+    ctx.epoch = epoch
+    r.runs.set(chatId, { wakes: 0, busy: false, epoch })
+    useCateAgentStore.getState().patch(wsId, {
+      activity: 'working',
+      status: pick(WORKING_STATUSES)(chatTitle(rootPath, chatId)),
+    })
   }
 
   /** Continue an interrupted run (the Continue block action): wipe the dead
@@ -403,6 +537,7 @@ class CateAgentController implements CateAgentBridgeHost {
     this.disposeDriverSessions(chatId)
     if (run) await teardownRunWork(wsId, rootPath, run, { deleteBranch: true })
     await disposeCateAgent(orchestratorPanelId(chatId))
+    disposeDirectChatSession(chatId)
     deleteContext(orchestratorPanelId(chatId))
     useChatsStore.getState().removeChat(rootPath, chatId)
     this.syncActivity(wsId)

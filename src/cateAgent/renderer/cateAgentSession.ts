@@ -9,7 +9,7 @@
 // cate-agent-tools extension registers the right tools.
 // =============================================================================
 
-import type { CateAgentModelRef, CateAgentRole } from '../../shared/types'
+import type { CateAgentModelRef, CateAgentRole, CodingImageAttachment } from '../../shared/types'
 import { loadDefaultModel } from './codingModelPrefs'
 import log from '../../renderer/lib/logger'
 import { codingClient } from './codingClient'
@@ -91,9 +91,13 @@ export async function createCateAgentSession(opts: CreateCateAgentSessionOpts): 
   }
 }
 
-export async function promptCateAgent(panelId: string, text: string): Promise<void> {
+export async function promptCateAgent(
+  panelId: string,
+  text: string,
+  images?: CodingImageAttachment[],
+): Promise<void> {
   try {
-    await codingClient.prompt(panelId, text)
+    await codingClient.prompt(panelId, text, images)
   } catch (err) {
     log.warn('[cateAgentSession] prompt failed for %s: %O', panelId, err)
   }

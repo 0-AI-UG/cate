@@ -3,17 +3,10 @@ export const CATE_FILES_MIME = 'application/cate-files'
 export const CATE_FILE_LINE_MIME = 'application/cate-file-line'
 export const CHAT_DRAG_MIME = 'application/cate-chat'
 
-/** A chat dragged from the sidebar tab strip or a panel's recents. `chatId` is
- *  the durable chatsStore record; it is absent only for a coding session that has
- *  no durable record yet (dragged from the recents list) — that case carries a
- *  `sessionFile` so the drop can resume it. */
+/** A durable Cate Agent chat dragged from a chat list. */
 export interface ChatDragPayload {
-  chatId?: string
-  mode: 'coding' | 'loop'
+  chatId: string
   rootPath: string
-  agentKey?: string
-  sessionFile?: string
-  worktreeId?: string
 }
 
 export function setChatDrag(
@@ -28,14 +21,10 @@ export function readChatDrag(dataTransfer: Pick<DataTransfer, 'getData'>): ChatD
   if (!encoded) return null
   try {
     const value = JSON.parse(encoded) as Partial<ChatDragPayload>
-    if ((value.mode !== 'coding' && value.mode !== 'loop') || typeof value.rootPath !== 'string') return null
+    if (typeof value.chatId !== 'string' || typeof value.rootPath !== 'string') return null
     return {
-      mode: value.mode,
+      chatId: value.chatId,
       rootPath: value.rootPath,
-      ...(typeof value.chatId === 'string' ? { chatId: value.chatId } : {}),
-      ...(typeof value.agentKey === 'string' ? { agentKey: value.agentKey } : {}),
-      ...(typeof value.sessionFile === 'string' ? { sessionFile: value.sessionFile } : {}),
-      ...(typeof value.worktreeId === 'string' ? { worktreeId: value.worktreeId } : {}),
     }
   } catch {
     return null

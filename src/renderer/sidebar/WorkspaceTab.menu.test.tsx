@@ -53,12 +53,6 @@ vi.mock('../lib/terminal/terminalRegistry', () => ({
     getEntry: () => undefined,
   },
 }))
-vi.mock('../../cateAgent/renderer/codingSessionRegistry', () => ({
-  disposeCateAgentPanel: vi.fn(),
-  getCateAgentPanelSession: vi.fn(),
-  saveCateAgentPanelSession: vi.fn(),
-}))
-
 import { WorkspaceTab } from './WorkspaceTab'
 import { useAppStore } from '../stores/appStore'
 import { useStatusStore } from '../stores/statusStore'

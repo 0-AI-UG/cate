@@ -3,11 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 
-// Provider gate: pretend a provider is connected so the body renders. The coding
-// path also reads the agent readiness selectors, so stub them 'ok' too.
+;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+Element.prototype.scrollTo = vi.fn()
+globalThis.IntersectionObserver = class IntersectionObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+  takeRecords(): IntersectionObserverEntry[] { return [] }
+  root = null
+  rootMargin = '0px'
+  thresholds = [0]
+} as unknown as typeof IntersectionObserver
+
 vi.mock('../../renderer/stores/providerReadinessStore', () => ({
   useCateAgentReady: () => 'ok',
-  useCodingReadiness: () => ({ kind: 'ok' }),
+  useCodingReadiness: () => ({ kind: 'ok', message: '' }),
   useProvidersLoaded: () => true,
 }))
 
@@ -15,9 +25,11 @@ import { CateAgentSidebarView } from './CateAgentSidebarView'
 import { useChatsStore } from '../../renderer/stores/chatsStore'
 import { useCateAgentStore } from './cateAgentStore'
 import { useCodingStore } from './codingStore'
+import { orchestratorPanelId } from './cateAgentSession'
+import { useAppStore } from '../../renderer/stores/appStore'
+import { useStatusStore } from '../../renderer/stores/statusStore'
 
 const ROOT = '/root'
-
 let host: HTMLDivElement
 let root: Root
 
@@ -25,28 +37,6 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
-  // ChatThread (coding transcript) uses scrollTo + IntersectionObserver; the loop
-  // scroll rail uses CSS.escape — both missing in this environment.
-  if (!Element.prototype.scrollTo) Element.prototype.scrollTo = vi.fn()
-  if (typeof CSS === 'undefined') {
-    ;(globalThis as unknown as { CSS: { escape: (s: string) => string } }).CSS = { escape: (s) => s }
-  } else if (!CSS.escape) {
-    CSS.escape = (s) => s
-  }
-  if (!('IntersectionObserver' in globalThis)) {
-    ;(globalThis as unknown as { IntersectionObserver: unknown }).IntersectionObserver = class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-      takeRecords(): [] {
-        return []
-      }
-    }
-  }
-  // chatsStore.loadChats fires an IPC call on mount (projectChatsLoad); the
-  // git-status join behind CateAgentThread/useWorktrees also touches the git +
-  // fs-watch IPC surface on mount, and the coding path polls pi — stub the whole
-  // surface the render path touches to avoid throwing on an undefined method.
   ;(window as unknown as { electronAPI: Record<string, unknown> }).electronAPI = {
     projectChatsLoad: vi.fn().mockResolvedValue([]),
     projectChatsSave: vi.fn(),
@@ -54,21 +44,30 @@ beforeEach(() => {
     gitLsFiles: vi.fn().mockResolvedValue([]),
     gitStatus: vi.fn().mockResolvedValue({ files: [], current: '', ahead: 0, behind: 0 }),
     gitWorktreeList: vi.fn().mockResolvedValue([]),
+    gitBranchList: vi.fn().mockResolvedValue({ current: '', branches: [] }),
     onFsWatchEvent: vi.fn().mockReturnValue(() => {}),
     onGitBranchUpdate: vi.fn().mockReturnValue(() => {}),
     fsWatchStart: vi.fn().mockResolvedValue(undefined),
     fsWatchStop: vi.fn().mockResolvedValue(undefined),
-    // The composer fetches the model list and branch list on mount.
     agentListModels: vi.fn().mockResolvedValue([]),
-    gitBranchList: vi.fn().mockResolvedValue({ current: '', branches: [] }),
-    // Coding host data + pi polling.
+    agentCreate: vi.fn().mockResolvedValue({ ok: true }),
     agentGetCommands: vi.fn().mockResolvedValue([]),
-    agentGetSessionStats: vi.fn().mockResolvedValue(null),
-    agentGetState: vi.fn().mockResolvedValue(null),
+    agentGetSessionStats: vi.fn().mockResolvedValue({
+      userMessages: 0, assistantMessages: 0, toolCalls: 0, toolResults: 0, totalMessages: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+    }),
+    agentGetState: vi.fn().mockResolvedValue({
+      model: null, thinkingLevel: 'medium', isStreaming: false, isCompacting: false,
+      steeringMode: 'all', followUpMode: 'all', autoCompactionEnabled: true,
+      messageCount: 0, pendingMessageCount: 0,
+    }),
     agentGetForkMessages: vi.fn().mockResolvedValue([]),
   }
-  useChatsStore.setState({ chatsByRoot: {}, loadedRoots: {} })
+  useChatsStore.setState({ chatsByRoot: { [ROOT]: [] }, loadedRoots: { [ROOT]: true } })
   useCateAgentStore.setState({ byWs: {} })
+  useCodingStore.setState({ panels: {} })
+  useAppStore.setState({ workspaces: [], selectedWorkspaceId: undefined } as never)
+  useStatusStore.setState({ workspaces: {} })
 })
 
 afterEach(() => {
@@ -76,105 +75,114 @@ afterEach(() => {
   host.remove()
   useChatsStore.setState({ chatsByRoot: {}, loadedRoots: {} })
   useCateAgentStore.setState({ byWs: {} })
+  useCodingStore.setState({ panels: {} })
+  useAppStore.setState({ workspaces: [], selectedWorkspaceId: undefined } as never)
+  useStatusStore.setState({ workspaces: {} })
   vi.clearAllMocks()
 })
 
 describe('CateAgentSidebarView', () => {
-  it('mounts with an empty feed without throwing', () => {
-    act(() => {
-      root.render(<CateAgentSidebarView wsId="ws1" rootPath="/root" />)
-    })
-    // The default ws1 state has observerView: false, activeChatId: '', so
-    // CateAgentThread falls through to the sidebar's own logo empty state.
-    expect(host.textContent).toContain('Cate Agent')
-    expect(host.textContent).toContain('Runs parallel loops')
-  })
-
-  it('renders the coding body (ChatThread + ChatComposer) for a coding active chat', () => {
-    // Seed a live coding chat: durable record + its useCodingStore slice.
-    const AGENT_KEY = 'agent-sidebar-coding'
-    useCodingStore.getState().init(AGENT_KEY)
-    useCodingStore.getState().setModel(AGENT_KEY, { provider: 'anthropic', model: 'claude' })
-    useCodingStore.getState().appendUser(AGENT_KEY, 'hello from a coding chat')
-    const chat = useChatsStore.getState().createCodingChat(ROOT, {
-      agentKey: AGENT_KEY,
-      sessionFile: null,
-      title: 'Coding',
-    })
-    useCateAgentStore.getState().setActiveChat('ws1', chat.id)
-
-    act(() => {
-      root.render(<CateAgentSidebarView wsId="ws1" rootPath={ROOT} />)
-    })
-
-    // The coding transcript (ChatThread) rendered the seeded pi message and a
-    // composer textarea — and the loop empty state did NOT render.
-    expect(host.textContent).toContain('hello from a coding chat')
-    expect(host.querySelector('textarea')).toBeTruthy()
-    expect(host.textContent).not.toContain('Runs parallel loops')
-
-    useCodingStore.getState().dispose(AGENT_KEY)
-  })
-
-  it('renders the loop body for a loop active chat', () => {
-    const chat = useChatsStore.getState().createChat(ROOT, 'Loop')
+  it('renders one shared Cate Agent transcript for the active chat', () => {
+    const chat = useChatsStore.getState().createChat(ROOT, 'Chat')
     useChatsStore.getState().appendMessage(ROOT, chat.id, {
-      id: 'm1',
-      role: 'user',
-      ts: Date.now(),
-      kind: 'text',
-      text: 'a loop message',
+      id: 'm1', role: 'user', ts: Date.now(), kind: 'text', text: 'one agent transcript',
     })
     useCateAgentStore.getState().setActiveChat('ws1', chat.id)
-
-    act(() => {
-      root.render(<CateAgentSidebarView wsId="ws1" rootPath={ROOT} />)
+    const panelId = orchestratorPanelId(chat.id)
+    useCodingStore.getState().init(panelId)
+    useCodingStore.getState().setStats(panelId, {
+      userMessages: 1,
+      assistantMessages: 1,
+      toolCalls: 0,
+      toolResults: 0,
+      totalMessages: 2,
+      tokens: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, total: 150 },
+      cost: 0.01,
+      contextUsage: { tokens: 150, contextWindow: 1_000, percent: 15 },
     })
 
-    // The loop transcript (CateAgentThread → LoopTranscript) rendered the loop
-    // message + the loop composer.
-    expect(host.textContent).toContain('a loop message')
+    act(() => root.render(<CateAgentSidebarView wsId="ws1" rootPath={ROOT} />))
+
+    expect(host.textContent).toContain('one agent transcript')
     expect(host.querySelector('textarea')).toBeTruthy()
+    expect(host.querySelector('button[aria-label="Attach image"]')).toBeTruthy()
+    expect(host.querySelector('button[aria-label^="Reasoning effort:"]')).toBeTruthy()
+    expect(host.querySelector('button[aria-label="Toggle plan mode"]')).toBeTruthy()
+    expect(host.querySelector('button[aria-label="Compact context"]')).toBeTruthy()
+    expect(host.querySelector('button[aria-label="Conversation stats"]')).toBeTruthy()
   })
 
-  it('offers a Coding / Loop chooser on the new-chat control', () => {
-    act(() => {
-      root.render(<CateAgentSidebarView wsId="ws1" rootPath={ROOT} />)
-    })
+  it('creates the single chat type directly from the new-chat button', () => {
+    act(() => root.render(<CateAgentSidebarView wsId="ws1" rootPath={ROOT} />))
+    const plus = host.querySelector('button[title="New chat"]') as HTMLButtonElement
+    act(() => plus.click())
 
-    const plus = host.querySelector('button[title="New chat"]') as HTMLButtonElement | null
-    expect(plus).toBeTruthy()
-    act(() => {
-      plus!.click()
-    })
-
-    // The chooser is portalled to <body> (see the overflow-clip test below), so
-    // assert against the document rather than just the mount host.
-    expect(document.body.textContent).toContain('New coding chat')
-    expect(document.body.textContent).toContain('New loop chat')
+    expect(useChatsStore.getState().getChats(ROOT)).toHaveLength(1)
+    expect(document.body.textContent).not.toContain('New coding chat')
+    expect(document.body.textContent).not.toContain('New loop chat')
   })
 
-  it('renders the chooser menu outside the overflow-clipping tab strip', () => {
-    act(() => {
-      root.render(<CateAgentSidebarView wsId="ws1" rootPath={ROOT} />)
+  it('hides the duplicate plan/iteration heading and shimmers running terminal chips', () => {
+    const chat = useChatsStore.getState().createChat(ROOT, 'Engineering task')
+    useChatsStore.getState().appendMessage(ROOT, chat.id, {
+      id: 'plan-1',
+      role: 'agent',
+      ts: Date.now(),
+      kind: 'plan',
+      goal: 'duplicate plan should stay hidden',
+      check: 'duplicate check should stay hidden',
+    })
+    useChatsStore.getState().appendMessage(ROOT, chat.id, {
+      id: 'attempts-1',
+      role: 'agent',
+      ts: Date.now(),
+      kind: 'attempts',
+      round: 1,
+      iterations: [{
+        id: 'iteration-1',
+        todoId: chat.id,
+        round: 1,
+        worktreeId: 'worktree-1',
+        branch: 'cate/iteration-1',
+        status: 'running',
+        createdAt: Date.now(),
+        agents: [{ agent: 'coding agent', terminalId: 'terminal-1', kind: 'work' }],
+      }],
+    })
+    useCateAgentStore.getState().setActiveChat('ws1', chat.id)
+    useAppStore.setState({
+      workspaces: [{
+        id: 'ws1',
+        rootPath: ROOT,
+        panels: { 'terminal-1': { id: 'terminal-1', type: 'terminal', title: 'README agent' } },
+        worktrees: [],
+      }],
+      selectedWorkspaceId: 'ws1',
+    } as never)
+    useStatusStore.setState({
+      workspaces: {
+        ws1: {
+          terminals: {
+            'terminal-1': {
+              activity: { type: 'running', processName: 'codex' },
+              agentState: 'running',
+              agentName: 'Codex',
+              agentPresent: true,
+              listeningPorts: [],
+              cwd: ROOT,
+            },
+          },
+        },
+      },
     })
 
-    const plus = host.querySelector('button[title="New chat"]') as HTMLButtonElement | null
-    expect(plus).toBeTruthy()
-    act(() => {
-      plus!.click()
-    })
+    act(() => root.render(<CateAgentSidebarView wsId="ws1" rootPath={ROOT} />))
 
-    // The chooser must escape the tab strip's overflow clip: find the menu (by its
-    // "New coding chat" item) and the strip (the .overflow-x-auto element), then
-    // assert the menu is NOT nested inside the strip. Without the portal fix the
-    // menu is a strip descendant and this fails; the layout itself is untestable
-    // in jsdom, so we pin the DOM-structure contract instead.
-    const menus = Array.from(document.body.querySelectorAll('[role="menu"]'))
-    const menu = menus.find((m) => m.textContent?.includes('New coding chat')) ?? null
-    expect(menu).toBeTruthy()
-    const strip = document.body.querySelector('.overflow-x-auto')
-    expect(strip).toBeTruthy()
-    expect(strip!.contains(menu)).toBe(false)
+    expect(host.textContent).not.toContain('Iterating')
+    expect(host.textContent).not.toContain('Loop')
+    expect(host.textContent).not.toContain('duplicate plan should stay hidden')
+    expect(host.querySelector('.animate-spin')).toBeNull()
+    const chip = host.querySelector('button[title="Jump to README agent"]')
+    expect(chip?.querySelector('.cate-notif-pulse')).toBeTruthy()
   })
 })

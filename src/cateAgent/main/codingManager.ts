@@ -39,6 +39,7 @@ import { installPlanModeExtension } from './installPlanMode'
 import { installAskUserExtension } from './installAskUser'
 import { installCateAgentToolsExtension } from './installCateAgentTools'
 import { installMcpAdapter } from './installMcpAdapter'
+import { installEngineeringTaskExtension } from './installEngineeringTask'
 import { hostCodingDir, prepareCodingDir, watchWorkspaceAuth, pushSharedToWorkspace, type CodingDirVariant } from './codingDir'
 import { mirrorModelsToWorkspace } from './customModels'
 import { authManager, type AuthManager } from './authManager'
@@ -145,10 +146,9 @@ export class CodingManager {
   async create(opts: CodingCreateOptions, sender: WebContents): Promise<void> {
     return this.locks.run(opts.panelId, async () => {
       if (this.sessions.has(opts.panelId)) {
-        // Idempotent per agentKey: a second create for a key that already has a
-        // live pi (two panels resolving the same durable coding chat, or a create
-        // racing an in-flight one) is a no-op ADOPTION — never kill and respawn.
-        // Respawning here would strand the first panel's freshly-started pi and
+        // Idempotent per session key: a second create for a live headless Cate
+        // Agent session (or a create racing an in-flight one) is a no-op adoption.
+        // Respawning here would strand the first freshly-started pi process and
         // interrupt any in-flight turn. serialized by locks.run, so this check is
         // race-free against a concurrent create for the same key.
         log.info('[codingManager] adopting existing session for %s (create is a no-op)', opts.panelId)
@@ -170,13 +170,17 @@ export class CodingManager {
       await prepareCodingDir(runtime, cwd, variant)
       await mirrorModelsToWorkspace(runtime, cwd, variant)
       if (variant === 'cateAgent') {
-        // The Cate Agent only needs its own tool surface — not the user-facing
-        // subagent / plan-mode / ask-user extensions.
+        // The unified Cate Agent keeps its orchestration tool surface and the
+        // user-facing plan workflow. Plan mode gates orchestration until the
+        // user approves the proposed plan; the other panel-only extensions are
+        // still intentionally omitted.
         await installCateAgentToolsExtension(runtime, cwd, 'cateAgent')
+        await installPlanModeExtension(runtime, cwd, 'cateAgent')
       } else {
         await installSubagentExtension(runtime, cwd)
         await installPlanModeExtension(runtime, cwd)
         await installAskUserExtension(runtime, cwd)
+        await installEngineeringTaskExtension(runtime, cwd)
         // Register pi-mcp-adapter in <cwd>/.cate/cate-agent/settings.json so pi
         // auto-installs + loads it on session start (MCP driven by <cwd>/.pi/mcp.json).
         await installMcpAdapter(runtime, cwd)

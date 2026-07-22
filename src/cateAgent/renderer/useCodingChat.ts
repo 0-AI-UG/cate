@@ -36,6 +36,7 @@ import type {
   CodingThinkingLevel,
 } from '../../shared/types'
 import { loadDefaultModel, clearModelPrefsForProvider } from './codingModelPrefs'
+import { directAgentKey } from './directChatSession'
 import { useCodingReadiness, useProvidersLoaded } from '../../renderer/stores/providerReadinessStore'
 
 // Host-owned composer menu data + handlers, threaded through so the shared
@@ -65,10 +66,10 @@ export function writeBackSessionTitle(
   if (typeof sessionName !== 'string' || sessionName.length === 0) return
   const chat = useChatsStore
     .getState()
-    .getChatsByMode(rootPath, 'coding')
-    .find((c) => c.agentKey === agentKey)
+    .getChats(rootPath)
+    .find((candidate) => directAgentKey(candidate.id) === agentKey)
   if (chat && chat.title !== sessionName) {
-    useChatsStore.getState().updateCodingChat(rootPath, chat.id, { title: sessionName })
+    useChatsStore.getState().patchChat(rootPath, chat.id, { title: sessionName })
   }
 }
 
@@ -234,8 +235,8 @@ export function useCodingChat({
     const ref: CateAgentModelRef = { provider: m.provider, model: m.model }
     useCodingStore.getState().setModel(agentKey, ref)
     // Remember the pick on the durable chat so a re-adopting mount resumes with it.
-    const entry = useChatsStore.getState().getChatsByMode(rootPath, 'coding').find((c) => c.agentKey === agentKey)
-    if (entry) useChatsStore.getState().updateCodingChat(rootPath, entry.id, { model: ref })
+    const entry = useChatsStore.getState().getChats(rootPath).find((candidate) => directAgentKey(candidate.id) === agentKey)
+    if (entry) useChatsStore.getState().setChatModel(rootPath, entry.id, ref)
     try { await window.electronAPI.agentSetModel(agentKey, ref) }
     catch (err) { log.warn('[CateAgentPanel] setModel failed', err) }
   }, [agentKey, rootPath])

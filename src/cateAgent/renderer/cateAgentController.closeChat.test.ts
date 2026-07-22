@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// Deleting a loop chat with unmerged work must PROMPT (never silently discard).
-// closeChat is the single delete path (sidebar tab close + panel handleDeleteLoopChat
-// both route through it). These pin the gate: a chat with a run that has a worktree /
+// Deleting a Cate Agent chat with unmerged work must PROMPT (never silently discard).
+// closeChat is the single delete path for every chat list. These pin the gate: a
+// chat with a run that has a worktree /
 // review / iterations calls confirmDiscardJob and aborts on Cancel; a chat with no
 // such work is removed straight through.
 

@@ -37,12 +37,6 @@ vi.mock('../terminal/terminalRegistry', () => ({
   },
 }))
 
-vi.mock('../../../cateAgent/renderer/codingSessionRegistry', () => ({
-  disposeCateAgentPanel: vi.fn(),
-  getCateAgentPanelSession: vi.fn(),
-  saveCateAgentPanelSession: vi.fn(),
-}))
-
 import { useAppStore } from '../../stores/appStore'
 import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../../stores/canvasStore'
 import { createDockStore } from '../../stores/dockStore'

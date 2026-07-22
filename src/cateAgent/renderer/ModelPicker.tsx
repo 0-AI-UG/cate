@@ -5,7 +5,7 @@
 // "First available" none row). Each call site overrides size via className.
 // =============================================================================
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { MagnifyingGlass, CaretRight, CaretDown, CheckCircle } from '@phosphor-icons/react'
 import type { CateAgentModelRef } from '../../shared/types'
 
@@ -21,6 +21,10 @@ type ModelPickerDropdownProps = {
   className?: string
   /** Footer action (renders a "Manage providers…" button when provided). */
   onManage?: () => void
+  /** The button that toggles this dropdown. A mousedown on it is not treated as
+   *  an outside click, so the trigger's own onClick can toggle the dropdown
+   *  closed instead of the outside-handler closing it and the click reopening it. */
+  triggerRef?: RefObject<HTMLElement | null>
 } & (
   | {
       /** When true, render a top "none" row that calls onPick(null). */
@@ -44,16 +48,22 @@ export function ModelPickerDropdown({
   allowNone = false,
   noneLabel,
   onManage,
+  triggerRef,
 }: ModelPickerDropdownProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!wrapRef.current) return
-      if (!wrapRef.current.contains(e.target as Node)) onClose()
+      const target = e.target as Node
+      if (wrapRef.current.contains(target)) return
+      if (triggerRef?.current?.contains(target)) return
+      onClose()
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
+    // Dismiss after the target's own click handler has run. Closing on
+    // mousedown races toggle buttons: mousedown closes, then click reopens.
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [onClose, triggerRef])
 
   const [search, setSearch] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)

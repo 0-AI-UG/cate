@@ -4,7 +4,6 @@ const removePanelRecord = vi.fn()
 const releaseCanvasStoreForPanel = vi.fn()
 const release = vi.fn()
 const dispose = vi.fn()
-const disposeCateAgentPanel = vi.fn()
 const canvasNodes: Record<string, { id: string; dockLayout: { type: 'tabs'; id: string; panelIds: string[]; activeIndex: number } }> = {}
 // Per-id panel types resolved by the child agent-dispose lookup.
 const panelTypes: Record<string, string> = {}
@@ -23,10 +22,6 @@ vi.mock('../../stores/appStore', () => ({
       ],
     }),
   },
-}))
-
-vi.mock('../../../cateAgent/renderer/codingSessionRegistry', () => ({
-  disposeCateAgentPanel: (id: string) => disposeCateAgentPanel(id),
 }))
 
 vi.mock('../../stores/canvasStore', () => ({
@@ -75,7 +70,6 @@ describe('removePanelFromWindow', () => {
     releaseCanvasStoreForPanel.mockReset()
     release.mockReset()
     dispose.mockReset()
-    disposeCateAgentPanel.mockReset()
     setCanvasNodes([])
     setPanelTypes({})
   })
@@ -103,15 +97,13 @@ describe('removePanelFromWindow', () => {
     expect(releaseCanvasStoreForPanel).toHaveBeenCalledWith('canvasA')
   })
 
-  it('transfer: disposes an agent child so its pi does not leak into the detached window', () => {
+  it('transfer: treats a Cate Agent child as panel-only state', () => {
     setCanvasNodes(['term1', 'agent1'])
     setPanelTypes({ term1: 'terminal', agent1: 'cateAgent' })
     removePanelFromWindow('ws-1', 'canvasA', 'canvas', 'transfer')
 
-    // Only the agent child gets its pi chats disposed; the terminal is just
-    // released (PTY survives the transfer).
-    expect(disposeCateAgentPanel).toHaveBeenCalledTimes(1)
-    expect(disposeCateAgentPanel).toHaveBeenCalledWith('agent1')
+    // Cate Agent sessions are workspace-owned, so moving a view has no agent
+    // teardown beyond the registry's harmless non-terminal release.
     expect(release).toHaveBeenCalledWith('term1')
     expect(release).toHaveBeenCalledWith('agent1')
     expect(removePanelRecord).toHaveBeenCalledWith('ws-1', 'agent1')
@@ -126,7 +118,6 @@ describe('removePanelFromWindow', () => {
     expect(dispose).toHaveBeenCalledWith('agent1') // no-op for non-terminals
     expect(dispose).toHaveBeenCalledWith('canvasA')
     expect(release).not.toHaveBeenCalled()
-    expect(disposeCateAgentPanel).toHaveBeenCalledWith('agent1')
     expect(removePanelRecord).toHaveBeenCalledWith('ws-1', 'term1')
     expect(removePanelRecord).toHaveBeenCalledWith('ws-1', 'agent1')
     expect(removePanelRecord).toHaveBeenCalledWith('ws-1', 'canvasA')

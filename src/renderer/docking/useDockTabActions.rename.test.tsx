@@ -17,12 +17,6 @@ vi.mock('../lib/logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error
 vi.mock('../lib/terminal/terminalRegistry', () => ({
   terminalRegistry: { entries: () => [], panelIdForPty: () => null, ptyIdForPanel: () => null, has: () => false, getEntry: () => undefined, dispose: vi.fn(), release: vi.fn(), disposeWorkspace: vi.fn() },
 }))
-vi.mock('../../cateAgent/renderer/codingSessionRegistry', () => ({
-  disposeCateAgentPanel: vi.fn(),
-  getCateAgentPanelSession: vi.fn(),
-  saveCateAgentPanelSession: vi.fn(),
-}))
-
 import { useDockTabActions } from './useDockTabActions'
 import { CanvasStoreProvider } from '../stores/CanvasStoreContext'
 import { useAppStore } from '../stores/appStore'

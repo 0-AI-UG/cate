@@ -58,25 +58,37 @@ const worktreeLabel = (wt: JoinedWorktree | undefined): string =>
   wt?.label || wt?.branch || (wt?.isPrimary ? 'main' : 'worktree')
 
 // --- an upward-opening portal menu anchored above a trigger --------------------
-const UpwardMenu: React.FC<{ anchor: DOMRect; width: number; onClose: () => void; children: React.ReactNode }> = ({
+const UpwardMenu: React.FC<{
+  anchor: DOMRect
+  width: number
+  onClose: () => void
+  triggerRef?: React.RefObject<HTMLElement | null>
+  children: React.ReactNode
+}> = ({
   anchor,
   width,
   onClose,
+  triggerRef,
   children,
 }) => {
   const ref = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose()
+      const target = e.target as Node
+      if (ref.current?.contains(target)) return
+      if (triggerRef?.current?.contains(target)) return
+      onClose()
     }
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('mousedown', onDown)
+    // Let the selector's own click toggle run before outside dismissal. Using
+    // mousedown here closes first, so the later click immediately reopens it.
+    window.addEventListener('click', onDown)
     window.addEventListener('keydown', onKey)
     return () => {
-      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('click', onDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [onClose])
+  }, [onClose, triggerRef])
   return createPortal(
     <div
       ref={ref}
@@ -243,6 +255,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     setInnerModelOpen(open)
     onModelMenuOpenChange?.(open)
   }
+  const modelPillRef = React.useRef<HTMLButtonElement>(null)
   const [wtAnchor, setWtAnchor] = React.useState<DOMRect | null>(null)
   const [creating, setCreating] = React.useState(false)
   const wtBtn = React.useRef<HTMLButtonElement>(null)
@@ -430,6 +443,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           {onPickModel && (
             <>
               <PillButton
+                ref={modelPillRef}
                 open={modelOpen}
                 title={modelTitle}
                 onClick={() => {
@@ -445,7 +459,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                 <ModelPickerDropdown
                   models={models}
                   selected={selectedModel}
-                  className="bottom-full mb-2 left-0 right-0 max-h-[320px]"
+                  triggerRef={modelPillRef}
+                  className="bottom-full mb-2 left-0 w-[280px] max-w-full max-h-[320px]"
                   onPick={(m) => {
                     onPickModel(m)
                     setModelOpen(false)
@@ -552,7 +567,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       )}
 
       {onPickWorktree && wtAnchor && (
-        <UpwardMenu anchor={wtAnchor} width={260} onClose={closeWorktreeMenu}>
+        <UpwardMenu anchor={wtAnchor} width={260} onClose={closeWorktreeMenu} triggerRef={wtBtn}>
           {creating && onCreateWorktree ? (
             <CreateWorktreeForm
               defaultBaseBranch={current?.branch ?? ''}

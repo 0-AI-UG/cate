@@ -8,15 +8,13 @@
 // The dispose-vs-release choice is the difference between "terminal survives
 // the move" and "user's process is killed" — never pick it at a call site.
 //
-// Agent coding chats are workspace-owned (chatsStore) and outlive their panel, so
-// closing a panel only drops the panel's REFERENCES (disposeCateAgentPanel) — it never
-// disposes the pi session. The receiver/re-mount re-adopts the live chats (or
-// resumes from disk); explicit chat delete is the only disposer.
+// Cate Agent chats are workspace-owned and outlive panels. Their headless
+// sessions are owned by cateAgentController, so a panel has no local agent
+// process to dispose or transfer.
 // =============================================================================
 
 import type { PanelType } from '../../../shared/types'
 import { terminalRegistry } from '../terminal/terminalRegistry'
-import { disposeCateAgentPanel } from '../../../cateAgent/renderer/codingSessionRegistry'
 
 export type PanelRemovalReason = 'close' | 'transfer'
 
@@ -33,5 +31,4 @@ export function teardownPanelContent(
   } else {
     terminalRegistry.release(panelId)
   }
-  if (panelType === 'cateAgent') disposeCateAgentPanel(panelId)
 }

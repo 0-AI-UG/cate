@@ -1,9 +1,8 @@
 // =============================================================================
 // cateAgentWorktreeTarget — the WORKTREE a chat works against, picked in the
-// composer's worktree pill. It answers both halves of a run's git story with one
-// choice: the run's ephemeral worktrees branch OFF this worktree's branch, and the
-// winner merges back INTO it. Stored as the worktree's stable id (never a branch
-// name or a path, both of which move) so it survives a rename.
+// composer's worktree pill. The direct agent uses it as its cwd. If the chat is
+// transferred, iteration worktrees branch OFF it and the winner merges back INTO
+// it. Stored as the worktree's stable id (never a branch name or path).
 //
 // Kept per-chat in localStorage, like the composer draft — ephemeral across
 // restarts, which is fine: the review card is where you land, and the target is

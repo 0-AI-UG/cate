@@ -16,6 +16,7 @@
 import { create } from 'zustand'
 import log from '../../renderer/lib/logger'
 import { isCateAgentPanelId } from './cateAgentSession'
+import { emitEngineeringTaskHandoff } from './engineeringTaskHandoff'
 import type {
   CodingExtensionUIRequest,
   CodingImageAttachment,
@@ -746,7 +747,7 @@ export function deriveDiff(name: string, args: unknown, result?: string): DiffIn
   return undefined
 }
 
-function handleEvent(panelId: string, event: { type: string; [key: string]: unknown }): void {
+export function handleCodingEvent(panelId: string, event: { type: string; [key: string]: unknown }): void {
   const store = useCodingStore.getState()
   if (!store.panels[panelId]) {
     useCodingStore.setState((state) => ({ panels: { ...state.panels, [panelId]: emptyPanel() } }))
@@ -874,6 +875,9 @@ function handleEvent(panelId: string, event: { type: string; [key: string]: unkn
           ...(diff ? { diff } : {}),
           ...(sub ? { subagent: sub } : {}),
         })
+        if (toolMsg?.name === 'engineering_task' && !isError) {
+          emitEngineeringTaskHandoff(panelId, toolCallId, event.result, toolMsg.args)
+        }
         return
       }
       case 'queue_update': {
@@ -1010,6 +1014,34 @@ function routeCateAgentEvent(panelId: string, event: { type: string; [key: strin
   }
 }
 
+/** The unified transcript is persisted by chatsStore, so headless events must
+ *  not build a second hidden transcript here. Retain only composer chrome plus
+ *  the structured plan tool payload the unified transcript renders. */
+function isCateAgentChromeEvent(panelId: string, event: { type: string; [key: string]: unknown }): boolean {
+  switch (event.type) {
+    case 'agent_start':
+    case 'agent_end':
+    case 'compaction_start':
+    case 'compaction_end':
+      return true
+    case 'extension_ui_request':
+      return event.method === 'setStatus'
+    case 'tool_execution_start':
+      return event.toolName === 'plan_complete' || event.name === 'plan_complete'
+    case 'tool_execution_update':
+    case 'tool_execution_end': {
+      const toolCallId = typeof event.toolCallId === 'string'
+        ? event.toolCallId
+        : typeof event.id === 'string' ? event.id : ''
+      return !!useCodingStore.getState().panels[panelId]?.messages.some(
+        (message) => message.type === 'tool' && message.toolCallId === toolCallId && message.name === 'plan_complete',
+      )
+    }
+    default:
+      return false
+  }
+}
+
 function ensureSubscribed(): void {
   if (eventSubscribed) return
   if (typeof window === 'undefined' || !window.electronAPI) return
@@ -1024,9 +1056,19 @@ function ensureSubscribed(): void {
       // Agent's terminal/xterm imports (keeps unrelated node-env tests light).
       if (isCateAgentPanelId(envelope.panelId)) {
         routeCateAgentEvent(envelope.panelId, envelope.event)
+        // The unified chat still needs the normal session chrome state (plan
+        // status, compaction, stats lifecycle and plan_complete tool payloads).
+        // Keep it only for user-facing orchestrators; observer/driver sessions
+        // remain headless and never allocate phantom panel state.
+        if (
+          envelope.panelId.startsWith('cate-agent-orchestrator:') &&
+          isCateAgentChromeEvent(envelope.panelId, envelope.event)
+        ) {
+          handleCodingEvent(envelope.panelId, envelope.event)
+        }
         return
       }
-      handleEvent(envelope.panelId, envelope.event)
+      handleCodingEvent(envelope.panelId, envelope.event)
     })
   } catch (err) {
     log.warn('[agentStore] failed to subscribe to agent events', err)

@@ -55,6 +55,13 @@ describe('projectChatsStore', () => {
       title: 'update readme',
       createdAt: 1,
       updatedAt: 2,
+      sessionFile: '/tmp/direct-chat.jsonl',
+      engineeringTask: {
+        goal: 'Refresh README.md',
+        check: 'readme mentions the widget API',
+        overview: 'Keep the existing structure.',
+        acceptedAt: 8,
+      },
       messages: [
         { id: 'm1', role: 'user', ts: 3, kind: 'text', text: 'update the readme' },
         { id: 'm2', role: 'agent', ts: 4, kind: 'plan', goal: 'Refresh README.md', check: 'readme mentions the widget API' },

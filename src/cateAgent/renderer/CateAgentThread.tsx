@@ -39,13 +39,15 @@ import type {
   ChatMessage,
   ChatAttemptsMessage,
   ChatCanvasMessage,
-  ChatPlanMessage,
   ChatResultMessage,
   ChatTextMessage,
   Iteration,
   IterationStatus,
 } from '../../shared/types'
-import { sendCateAgentMessage } from './cateAgentSend'
+import { sendCateAgentMessage, sendDirectAgentMessage } from './cateAgentSend'
+import { useCodingStore, type ToolMessage } from './codingStore'
+import { orchestratorPanelId } from './cateAgentSession'
+import { PlanReadyCard } from './ChatPlanCard'
 
 // How many observer feed lines to keep visible (a transient FYI, not a transcript).
 // Exported so the card's height-measuring signature slices the same window this
@@ -69,7 +71,7 @@ const wtTitle = (wt: JoinedWorktree): string => wt.label || wt.branch || wt.path
 const IterationStatusGlyph: React.FC<{ status: IterationStatus }> = ({ status }) => {
   switch (status) {
     case 'running':
-      return <span className="flex-shrink-0 mt-[3px] w-2 h-2 rounded-full bg-green-400" />
+      return null
     case 'verifying':
       return <MagnifyingGlass size={12} className="flex-shrink-0 text-blue-400" />
     case 'passed':
@@ -111,6 +113,7 @@ const TerminalChip: React.FC<{ wsId: string; panelId: string }> = ({ wsId, panel
   )
   const info = useAgentInfoByPanel(ownerWsId)[panelId]
   if (!ownerWsId || !label) return null
+  const isRunning = info?.state === 'running'
   return (
     <button
       onClick={() => void revealPanel(ownerWsId, panelId, { retry: true })}
@@ -121,8 +124,8 @@ const TerminalChip: React.FC<{ wsId: string; panelId: string }> = ({ wsId, panel
         <TabIcon type={type} size={11} logo={info?.logo} agentName={info?.name} />
       </span>
       <span
-        className="text-[10px] font-mono text-secondary truncate max-w-[160px]"
-        style={worktreeTitleStyle(color, false)}
+        className={`text-[10px] font-mono text-secondary truncate max-w-[160px] ${isRunning ? 'cate-notif-pulse' : ''}`}
+        style={worktreeTitleStyle(color, isRunning)}
       >
         {label}
       </span>
@@ -229,16 +232,6 @@ const TextBlock: React.FC<{ msg: ChatTextMessage }> = ({ msg }) => {
   )
 }
 
-const PlanBlock: React.FC<{ msg: ChatPlanMessage }> = ({ msg }) => (
-  <div className="flex flex-col gap-1.5">
-    <div className="flex items-center gap-1.5">
-      <span className={LBL}>Plan</span>
-    </div>
-    <div className="text-[12.5px] leading-snug text-primary break-words">{msg.goal}</div>
-    <div className="text-[11px] leading-snug text-muted break-words">Check: {msg.check}</div>
-  </div>
-)
-
 const AttemptsBlock: React.FC<{ chat: Chat; msg: ChatAttemptsMessage; wsId: string }> = ({ chat, msg, wsId }) => {
   // Live while this is the run's active grid; else the frozen snapshot on the message.
   const live = chat.run?.attemptsMessageId === msg.id
@@ -254,10 +247,6 @@ const AttemptsBlock: React.FC<{ chat: Chat; msg: ChatAttemptsMessage; wsId: stri
     const bad = it.verify && !it.verify.met
     return (
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-1.5">
-          <span className={LBL}>Loop</span>
-          <IterationStatusGlyph status={it.status} />
-        </div>
         <div className={`text-[12.5px] leading-snug break-words ${bad ? 'text-red-400/80' : 'text-secondary'}`}>
           {it.verify ? it.verify.reason : <span className={it.status === 'running' || it.status === 'verifying' ? 'cate-notif-pulse' : 'text-muted'}>Working</span>}
         </div>
@@ -277,7 +266,6 @@ const AttemptsBlock: React.FC<{ chat: Chat; msg: ChatAttemptsMessage; wsId: stri
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-1.5">
-        <span className={LBL}>Loops</span>
         <span className="text-[10px] text-muted">{passed}/{iters.length} passed</span>
       </div>
       <div className="flex flex-col gap-1.5">
@@ -390,7 +378,9 @@ const MessageBlock: React.FC<{ chat: Chat; msg: ChatMessage; wsId: string; rootP
     case 'text':
       return <TextBlock msg={msg} />
     case 'plan':
-      return <PlanBlock msg={msg} />
+      // set_goal remains durable run state, but the approved engineering_task
+      // row already carries the plan summary in the direct transcript.
+      return null
     case 'attempts':
       return <AttemptsBlock chat={chat} msg={msg} wsId={wsId} />
     case 'result':
@@ -568,8 +558,8 @@ const RunControls: React.FC<{ chat: Chat; wsId: string; rootPath: string; workin
 
 // --- empty state -------------------------------------------------------------
 
-// A fresh chat has a tall blank body; spend it explaining the loop so a first-time
-// user knows Cate runs and verifies work rather than just chatting back.
+// A fresh chat has a tall blank body; explain iteration engineering so a first-time
+// user knows Cate can run and verify isolated work rather than just chatting back.
 const EmptyRow: React.FC<{ icon: React.ReactNode; title: string; sub: string }> = ({ icon, title, sub }) => (
   <div className="flex items-center gap-3 py-2">
     <span className="flex-shrink-0 flex h-[30px] w-[30px] items-center justify-center rounded-[9px] bg-surface-2">{icon}</span>
@@ -580,12 +570,12 @@ const EmptyRow: React.FC<{ icon: React.ReactNode; title: string; sub: string }> 
   </div>
 )
 
-const EmptyState: React.FC = () => (
+export const EmptyState: React.FC = () => (
   <div className="flex h-full flex-col items-center justify-center px-6 py-6">
     <div className="flex max-w-[320px] flex-col gap-1">
       <EmptyRow
         icon={<ArrowsSplit size={16} className="text-muted" />}
-        title="Runs parallel loops"
+        title="Runs isolated attempts"
         sub="each in its own worktree"
       />
       <EmptyRow
@@ -603,16 +593,27 @@ const EmptyState: React.FC = () => (
 )
 
 // =============================================================================
-// LoopTranscript — ONE loop chat's typed transcript (the run-blocks:
+// CateAgentTranscript — one Cate Agent chat's typed transcript (the run-blocks:
 // text/plan/attempts/result/canvas) + its run controls (Continue/Stop/Working).
 // Reads only the given chat (never activeChatId), so any host can render a
 // specific chat. Owns NO composer and NO scroll container. Shared by
-// CateAgentThread's chat case and by LoopChatView.
+// CateAgentThread's chat case and by CateAgentChatView.
 // =============================================================================
 
-export const LoopTranscript: React.FC<{ wsId: string; rootPath: string; chat: Chat }> = ({ wsId, rootPath, chat }) => {
+export const CateAgentTranscript: React.FC<{ wsId: string; rootPath: string; chat: Chat }> = ({ wsId, rootPath, chat }) => {
   const cateAgent = useCateAgentWs(wsId)
   const worktrees = useWorktrees(rootPath, wsId)
+  const session = useCodingStore((s) => s.panels[orchestratorPanelId(chat.id)])
+  const planActive = session?.extensionStatuses.some((status) => status.key === 'plan-mode') ?? false
+  const latestPlan = React.useMemo(() => {
+    if (!planActive) return undefined
+    const messages = session?.messages ?? []
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]
+      if (message.type === 'tool' && message.name === 'plan_complete') return message as ToolMessage
+    }
+    return undefined
+  }, [planActive, session?.messages])
 
   const working = cateAgent.activity === 'working' && !chat.run
 
@@ -626,6 +627,14 @@ export const LoopTranscript: React.FC<{ wsId: string; rootPath: string; chat: Ch
       {chat.messages.map((msg) => (
         <MessageBlock key={msg.id} chat={chat} msg={msg} wsId={wsId} rootPath={rootPath} worktrees={worktrees} />
       ))}
+      {latestPlan && (
+        <PlanReadyCard
+          msg={latestPlan}
+          onImplement={() => void cateAgentController.applyPlan(wsId, rootPath, chat.id)}
+          onRefine={(text) => sendCateAgentMessage(wsId, rootPath, text, undefined, chat.id)}
+          onClearAndImplement={() => void cateAgentController.applyPlan(wsId, rootPath, chat.id, true)}
+        />
+      )}
       <RunControls chat={chat} wsId={wsId} rootPath={rootPath} working={working} activeWork={hasActiveWork} />
     </div>
   )
@@ -658,8 +667,8 @@ export const CateAgentThread: React.FC<{ wsId: string; rootPath: string; emptySt
   const visibleFeed = (lastUserIdx >= 0 ? feed.slice(lastUserIdx) : feed).slice(-MAX_VISIBLE_FEED)
 
   if (cateAgent.observerView) {
-    return <ObserverTimeline wsId={wsId} items={visibleFeed} onRun={(prompt) => sendCateAgentMessage(wsId, rootPath, prompt)} />
+    return <ObserverTimeline wsId={wsId} items={visibleFeed} onRun={(prompt) => sendDirectAgentMessage(wsId, rootPath, prompt)} />
   }
   if (!activeChat) return <>{emptyState ?? <EmptyState />}</>
-  return <LoopTranscript wsId={wsId} rootPath={rootPath} chat={activeChat} />
+  return <CateAgentTranscript wsId={wsId} rootPath={rootPath} chat={activeChat} />
 }

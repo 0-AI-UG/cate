@@ -21,7 +21,7 @@
 import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
-import { hostCodingDir, hostJoin } from './codingDir'
+import { hostCodingDir, hostJoin, type CodingDirVariant } from './codingDir'
 import { copyFileToHost, createIdempotencyTracker, findSourceDir } from './extensionInstall'
 import type { Runtime } from '../../main/runtime/types'
 
@@ -55,8 +55,12 @@ const installed = createIdempotencyTracker()
 /** Idempotent — safe to call from CodingManager.create() on every session.
  *  `cwd` is the HOST path on whichever machine pi runs (local fs path for the
  *  local runtime, POSIX path on a remote host). */
-export async function installPlanModeExtension(runtime: Runtime, cwd: string): Promise<void> {
-  const home = hostCodingDir(runtime.id, cwd)
+export async function installPlanModeExtension(
+  runtime: Runtime,
+  cwd: string,
+  variant: CodingDirVariant = 'default',
+): Promise<void> {
+  const home = hostCodingDir(runtime.id, cwd, variant)
   const key = runtime.id + '\0' + home
   if (!installed.shouldInstall(key)) return
   installed.markInstalled(key)

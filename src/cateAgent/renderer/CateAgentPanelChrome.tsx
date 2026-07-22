@@ -97,6 +97,7 @@ export function ExtensionWidget({
 // `title` with this marker immediately followed by a JSON envelope (no
 // surrounding whitespace — pi trims the title).
 const ASK_USER_MARKER = 'cate-ask-user:'
+const ENGINEERING_TASK_MARKER = 'cate-engineering-task:'
 
 interface AskUserOption { label: string; description?: string }
 interface AskUserQuestion {
@@ -126,6 +127,72 @@ function decodeAskUser(request: CodingExtensionUIRequest): AskUserQuestion[] | n
     }
   } catch { /* malformed — fall back to generic */ }
   return null
+}
+
+interface EngineeringTaskRequest {
+  goal: string
+  check?: string
+  overview?: string
+}
+
+function decodeEngineeringTask(request: CodingExtensionUIRequest): EngineeringTaskRequest | null {
+  if (request.method !== 'confirm') return null
+  const title = typeof request.title === 'string' ? request.title.trim() : ''
+  if (!title.startsWith(ENGINEERING_TASK_MARKER)) return null
+  try {
+    const value = JSON.parse(title.slice(ENGINEERING_TASK_MARKER.length)) as Partial<EngineeringTaskRequest>
+    if (typeof value.goal !== 'string' || !value.goal.trim()) return null
+    return {
+      goal: value.goal,
+      check: typeof value.check === 'string' ? value.check : undefined,
+      overview: typeof value.overview === 'string' ? value.overview : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+function EngineeringTaskApprovalCard({
+  request,
+  task,
+  onRespond,
+}: {
+  request: CodingExtensionUIRequest
+  task: EngineeringTaskRequest
+  onRespond: (response: { id: string; confirmed?: boolean }) => void
+}) {
+  return (
+    <div className="rounded-lg border border-agent/40 bg-surface-3/90 px-3 py-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <div className="w-5 h-5 rounded-md bg-agent/15 flex items-center justify-center">
+          <Sparkle size={12} className="text-agent-light" />
+        </div>
+        <div>
+          <div className="text-[12px] font-medium text-primary">Use iteration engineering?</div>
+          <div className="text-[10.5px] text-muted">Isolated attempts · independent verification · winner selection</div>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <div className="text-[12.5px] leading-snug text-primary whitespace-pre-wrap">{task.goal}</div>
+        {task.check && <div className="text-[11px] text-muted whitespace-pre-wrap">Check: {task.check}</div>}
+        {task.overview && <div className="text-[11px] text-secondary whitespace-pre-wrap">{task.overview}</div>}
+      </div>
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={() => onRespond({ id: request.id, confirmed: false })}
+          className="px-2.5 py-1 rounded-md bg-hover hover:bg-hover-strong text-primary text-[12px]"
+        >
+          Keep working here
+        </button>
+        <button
+          onClick={() => onRespond({ id: request.id, confirmed: true })}
+          className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[12px] font-medium"
+        >
+          Delegate
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function AskUserCard({
@@ -316,6 +383,10 @@ export function ExtensionDialog({
   const askUser = decodeAskUser(request)
   if (askUser) {
     return <AskUserCard key={request.id} request={request} questions={askUser} onRespond={onRespond} />
+  }
+  const engineeringTask = decodeEngineeringTask(request)
+  if (engineeringTask) {
+    return <EngineeringTaskApprovalCard request={request} task={engineeringTask} onRespond={onRespond} />
   }
 
   const title = String(request.title ?? '')
