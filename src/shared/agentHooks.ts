@@ -121,6 +121,30 @@ export interface AgentHookAgentState {
 
 export interface AgentHookSpec {
   /**
+   * Whether this CLI pushes a mapped turn-end when the USER INTERRUPTS a
+   * running turn (Esc / Ctrl+C), the one turn boundary that is NOT a normal
+   * completion.
+   *
+   *  - true: the CLI's interrupt path fires an event that normalize() turns
+   *    into 'turn-end' (cursor's stop{status:aborted}, pi's agent_end,
+   *    opencode's session.idle — each verified live and pinned in
+   *    agentHookContracts.itest.ts). Cate's FSM idles correctly, unaided.
+   *  - false: the CLI pushes NOTHING on interrupt. claude and codex both do
+   *    this — verified live with EVERY one of their hook events registered
+   *    (claude's Stop emitter runs at end-turn, through the very abort signal
+   *    the interrupt trips; codex is identically silent, proven against a
+   *    control turn that DID fire Stop). Cate's running indicator therefore
+   *    stays stuck until the next prompt.
+   *
+   * Cate injects NO compensating signal for the false agents on purpose: every
+   * channel that could observe an interrupt (a keystroke, CLI stdout, a settle
+   * timer) lives OUTSIDE the hook stream this system deliberately relies on.
+   * The gap is left honest and pinned: the "a user interrupt pushes NO hook
+   * event" tests fail the day claude/codex ship an interrupt event — the
+   * signal to flip this flag true (they would then self-heal like the rest).
+   */
+  reportsTurnEndOnInterrupt: boolean
+  /**
    * Workspace-scoped hook files (claude's .claude/settings.local.json,
    * codex's .codex/hooks.json, pi's .pi/extensions/cate-hook.ts,
    * opencode's .opencode/plugin/cate-hook.js) — the ONLY injection channel:
@@ -302,6 +326,8 @@ export function agentHookFolder(agentId: AgentId): string | null {
 const CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
 
 const claudeSpec: AgentHookSpec = {
+  // No hook fires on a user interrupt — pinned live (see the field doc).
+  reportsTurnEndOnInterrupt: false,
   projectFiles: [
     {
       relPath: '.claude/settings.local.json',
@@ -373,6 +399,9 @@ const CODEX_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', '
 const CODEX_HOOK_TIMEOUT = 60
 
 const codexSpec: AgentHookSpec = {
+  // Identically silent on interrupt (Ctrl+C) — pinned live against a control
+  // turn that DID fire Stop, so it is a real gap, not a wiring failure.
+  reportsTurnEndOnInterrupt: false,
   projectFiles: [
     {
       relPath: '.codex/hooks.json',
@@ -438,6 +467,8 @@ interface CursorHooksJson {
 }
 
 const cursorSpec: AgentHookSpec = {
+  // Interrupt (Esc) pushes stop{status:aborted} ~100ms later → turn-end.
+  reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
       relPath: '.cursor/hooks.json',
@@ -568,6 +599,9 @@ export default function (pi: any) {
 `
 
 const piSpec: AgentHookSpec = {
+  // Interrupt (Esc) aborts the provider stream; pi then fires agent_end
+  // ~130ms later → turn-end.
+  reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
       relPath: '.pi/extensions/cate-hook.ts',
@@ -626,6 +660,12 @@ const GROK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostTo
 const GROK_HOOK_TIMEOUT = 60
 
 const grokSpec: AgentHookSpec = {
+  // Ctrl+C on an in-flight turn fires Stop → turn-end, pinned live on the
+  // approval-parked turn in agentHookContracts.itest.ts (a free-streaming turn
+  // could not be tested — the account's grok-4.5-build quota was exhausted —
+  // but the cancel mechanism is the same, and grok's docs list Stop as firing
+  // on a "cancelled" turn).
+  reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
       // `cate.json` is ours alone — grok merges every file in the dir, so a
@@ -717,6 +757,9 @@ export const CateHookBridge = async () => {
 `
 
 const opencodeSpec: AgentHookSpec = {
+  // Interrupt (Ctrl+C) aborts the turn and fires session.idle ~45ms later →
+  // turn-end.
+  reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
       // `.js`, not `.mjs`: opencode's scan glob is `*.{ts,js}` only.
