@@ -9,8 +9,25 @@
 // =============================================================================
 
 import { create } from 'zustand'
-import type { Chat, ChatMessage, ChatRun } from '../../shared/types'
+import type { AgentModelRef, Chat, ChatMessage, ChatMode, ChatRun } from '../../shared/types'
 import { generateId } from './canvas/helpers'
+
+/** A chat's engine, defaulting a legacy (mode-less) record to 'loop'. The single
+ *  place the missing-mode back-compat rule is applied; every read site goes
+ *  through here or getChatsByMode. */
+export function chatMode(chat: Chat): ChatMode {
+  return chat.mode ?? 'loop'
+}
+
+/** Fields a coding chat is born with. Its transcript is NOT stored here — the pi
+ *  turns live in useAgentStore, reloaded from `sessionFile`; `messages` stays []. */
+export interface CreateCodingChatInput {
+  agentKey: string
+  sessionFile: string | null
+  worktreeId?: string
+  model?: AgentModelRef
+  title: string
+}
 
 interface ChatsStoreState {
   /** Chats per project rootPath, oldest first. */
@@ -24,11 +41,18 @@ interface ChatsStoreActions {
   loadChats: (rootPath: string, force?: boolean) => Promise<void>
   /** Read the current list for a root (already-loaded; [] otherwise). */
   getChats: (rootPath: string) => Chat[]
+  /** Read the current list for a root filtered to one engine (mode-less → 'loop'). */
+  getChatsByMode: (rootPath: string, mode: ChatMode) => Chat[]
   /** Find one chat by id (undefined if absent). */
   getChat: (rootPath: string, id: string) => Chat | undefined
-  /** Create a fresh empty chat with the given title and persist it. */
+  /** Create a fresh empty loop chat with the given title and persist it. */
   createChat: (rootPath: string, title: string) => Chat
-  /** Remove a chat and persist. */
+  /** Create a durable coding chat (references a pi session) and persist it. */
+  createCodingChat: (rootPath: string, input: CreateCodingChatInput) => Chat
+  /** Patch a coding chat's reference fields (sessionFile/model/worktree/title/
+   *  agentKey) and persist. Bumps updatedAt so recents order by activity. */
+  updateCodingChat: (rootPath: string, id: string, patch: Partial<Pick<Chat, 'sessionFile' | 'model' | 'worktreeId' | 'title' | 'agentKey'>>) => void
+  /** Remove a chat (either mode) and persist. */
   removeChat: (rootPath: string, id: string) => void
   /** Append one typed message to a chat and persist. */
   appendMessage: (rootPath: string, id: string, message: ChatMessage) => void
@@ -72,13 +96,17 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
     return get().chatsByRoot[rootPath] ?? []
   },
 
+  getChatsByMode(rootPath, mode) {
+    return (get().chatsByRoot[rootPath] ?? []).filter((c) => chatMode(c) === mode)
+  },
+
   getChat(rootPath, id) {
     return (get().chatsByRoot[rootPath] ?? []).find((c) => c.id === id)
   },
 
   createChat(rootPath, title) {
     const now = Date.now()
-    const chat: Chat = { id: generateId(), title: title.slice(0, 80) || 'New chat', createdAt: now, updatedAt: now, messages: [] }
+    const chat: Chat = { id: generateId(), title: title.slice(0, 80) || 'New chat', createdAt: now, updatedAt: now, messages: [], mode: 'loop' }
     const next = [...(get().chatsByRoot[rootPath] ?? []), chat]
     set((s) => ({
       chatsByRoot: { ...s.chatsByRoot, [rootPath]: next },
@@ -86,6 +114,37 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
     }))
     persist(rootPath, next)
     return chat
+  },
+
+  createCodingChat(rootPath, input) {
+    const now = Date.now()
+    const chat: Chat = {
+      id: generateId(),
+      title: input.title.slice(0, 80) || 'New chat',
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+      mode: 'coding',
+      agentKey: input.agentKey,
+      sessionFile: input.sessionFile,
+      ...(input.worktreeId ? { worktreeId: input.worktreeId } : {}),
+      ...(input.model ? { model: input.model } : {}),
+    }
+    const next = [...(get().chatsByRoot[rootPath] ?? []), chat]
+    set((s) => ({
+      chatsByRoot: { ...s.chatsByRoot, [rootPath]: next },
+      loadedRoots: { ...s.loadedRoots, [rootPath]: true },
+    }))
+    persist(rootPath, next)
+    return chat
+  },
+
+  updateCodingChat(rootPath, id, patch) {
+    const current = get().chatsByRoot[rootPath]
+    if (!current) return
+    const next = withChat(current, id, (c) => ({ ...c, ...patch }))
+    set((s) => ({ chatsByRoot: { ...s.chatsByRoot, [rootPath]: next } }))
+    persist(rootPath, next)
   },
 
   removeChat(rootPath, id) {

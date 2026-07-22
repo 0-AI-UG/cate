@@ -8,8 +8,10 @@
 // The dispose-vs-release choice is the difference between "terminal survives
 // the move" and "user's process is killed" — never pick it at a call site.
 //
-// Agent pi sessions are renderer-local and can never follow a panel to another
-// window, so BOTH reasons dispose them (the receiver resumes from disk).
+// Agent coding chats are workspace-owned (chatsStore) and outlive their panel, so
+// closing a panel only drops the panel's REFERENCES (disposeAgentPanel) — it never
+// disposes the pi session. The receiver/re-mount re-adopts the live chats (or
+// resumes from disk); explicit chat delete is the only disposer.
 // =============================================================================
 
 import type { PanelType } from '../../../shared/types'

@@ -41,8 +41,13 @@ import {
   getAgentPanelSession,
   saveAgentPanelSession,
   disposeAgentChats,
+  disposeCodingChat,
+  resolvePanelChats,
+  beginAgentCreate,
+  endAgentCreate,
   type OpenChat,
 } from './agentSessionRegistry'
+import { useChatsStore } from '../../renderer/stores/chatsStore'
 import { buildFileMentions, type LineRef } from './agentDrop'
 import { ChatThread } from './ChatThread'
 import { AgentSidebar } from './AgentSidebar'
@@ -235,6 +240,12 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   }, [])
 
   const updateChatSessionFile = useCallback((key: string, file: string) => {
+    // Pi just reported this chat's on-disk file — persist it onto the durable
+    // coding chat so a later mount can resume it after a restart.
+    const entry = openChatsRef.current.find((c) => c.agentKey === key)
+    if (entry && entry.sessionFile !== file) {
+      useChatsStore.getState().updateCodingChat(rootPath, entry.chatId, { sessionFile: file })
+    }
     setOpenChats((prev) => {
       const idx = prev.findIndex((c) => c.agentKey === key)
       if (idx < 0) return prev
@@ -243,7 +254,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       next[idx] = { ...next[idx], sessionFile: file }
       return next
     })
-  }, [])
+  }, [rootPath])
 
   // Draft setters that target the active chat's slice. Accept the same value /
   // updater-function forms as a React state setter so call sites read unchanged.
@@ -345,6 +356,10 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     model: AgentModelRef | null,
     sessionFile?: string,
   ) => {
+    // Dedup: if a create for this key is already in flight (a sibling panel
+    // resolving the same durable chat), skip — the in-flight one brings the
+    // shared slice to ready. Main is idempotent per key too (belt and suspenders).
+    if (!beginAgentCreate(key)) return
     markReady(key, false)
     try {
       const res = await agentClient.create({
@@ -370,6 +385,8 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       // startup failures surface via the `if (!res.ok)` branch above.
       markReady(key, false)
       log.warn('[AgentPanel] createAgent failed', err)
+    } finally {
+      endAgentCreate(key)
     }
   }, [workspaceId, cwd, refreshCommands, markReady])
 
@@ -379,6 +396,49 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
   // the in-flight startup if the panel unmounts or the cwd changes again.
   const openInitialChat = useCallback(async (signal: { cancelled: boolean }) => {
     const myGen = ++openGenRef.current
+    // The workspace durably owns coding chats — load them before resolving so we
+    // adopt existing records rather than minting rivals that clobber them.
+    if (rootPath) await useChatsStore.getState().loadChats(rootPath)
+    if (signal.cancelled || myGen !== openGenRef.current) return
+
+    // Resolve the durable coding chats this checkout owns. Live ones (pi + slice
+    // survived a panel close, or a sibling panel started them) are adopted by
+    // reference; dead ones are resumed under their EXISTING agentKey so two panels
+    // resolving the same session converge on ONE pi instead of stranding rivals.
+    const plan = resolvePanelChats(rootPath, panelState?.worktreeId)
+    if (plan.refs.length > 0) {
+      const chatsSt = useChatsStore.getState()
+      // Prime each dead chat's slice (model + transcript) before its pi starts.
+      for (const ref of plan.toResume) {
+        const rec = chatsSt.getChat(rootPath, ref.chatId)
+        useAgentStore.getState().init(ref.agentKey)
+        if (rec?.model) useAgentStore.getState().setModel(ref.agentKey, rec.model)
+        if (ref.sessionFile) {
+          try {
+            const transcript = await window.electronAPI.agentLoadSessionMessages(ref.sessionFile)
+            if (signal.cancelled || myGen !== openGenRef.current) return
+            useAgentStore.getState().loadMessages(ref.agentKey, transcript as StoreMessage[])
+          } catch (err) { log.warn('[AgentPanel] load transcript failed', err) }
+        }
+      }
+      if (signal.cancelled || myGen !== openGenRef.current) return
+      setOpenChats(plan.refs)
+      const activeKey = plan.refs[plan.refs.length - 1].agentKey
+      setActiveAgentKey(activeKey)
+      // Resume the dead ones under their recorded agentKey (createAgent is deduped
+      // + main-idempotent, so racing a sibling panel on the same key is a no-op).
+      for (const ref of plan.toResume) {
+        if (signal.cancelled || myGen !== openGenRef.current) return
+        const rec = chatsSt.getChat(rootPath, ref.chatId)
+        await createAgent(ref.agentKey, rec?.model ?? null, ref.sessionFile ?? undefined)
+      }
+      void refreshCommands(activeKey)
+      return
+    }
+
+    // No durable coding chat for this checkout. Fall back to pi's on-disk session
+    // list and adopt the most recent (or open a fresh chat), MINTING a new agentKey
+    // and registering a durable record so it outlives the panel.
     let resume: AgentSessionListEntry | null = null
     try {
       if (cwd) {
@@ -407,12 +467,19 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       } catch (err) { log.warn('[AgentPanel] load transcript failed', err) }
     }
     if (signal.cancelled || myGen !== openGenRef.current) return
+    const chatId = useChatsStore.getState().createCodingChat(rootPath, {
+      agentKey: key,
+      sessionFile: resume?.path ?? null,
+      worktreeId: panelState?.worktreeId,
+      model: initialModel ?? undefined,
+      title: resume?.title ?? 'New chat',
+    }).id
     // Set state BEFORE creating pi so this key is recorded in openChats (and
     // mirrored to the session registry) before any teardown could run.
-    setOpenChats([{ agentKey: key, sessionFile: resume?.path ?? null }])
+    setOpenChats([{ agentKey: key, sessionFile: resume?.path ?? null, chatId }])
     setActiveAgentKey(key)
     await createAgent(key, initialModel, resume?.path)
-  }, [cwd, newAgentKey, createAgent])
+  }, [cwd, rootPath, panelState?.worktreeId, newAgentKey, createAgent, refreshCommands])
 
   // Mount: re-adopt this panel's live chats if a prior mount left them in the
   // session registry (e.g. the panel was dragged between a canvas node and a
@@ -438,6 +505,10 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       return
     }
 
+    // No registry entry (fresh panel, or reopened after a close). openInitialChat
+    // resolves the durable coding chats this checkout owns — adopting live ones by
+    // reference and resuming dead ones under their recorded agentKey — or opens a
+    // fresh chat when the checkout has none.
     const signal = { cancelled: false }
     void openInitialChat(signal)
 
@@ -470,7 +541,13 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     chatsCwdRef.current = cwd
 
     // Tear down every chat bound to the old checkout, then reopen for the new.
-    disposeAgentChats(openChatsRef.current)
+    // disposeAgentChats drops the pi + slice; we also drop the durable records so
+    // .cate/chats.json doesn't accumulate stale coding chats (dead agentKey, old
+    // worktreeId) on every switch. The on-disk pi .jsonl survives for manual
+    // resume via the recents list, so no history is lost.
+    const leaving = openChatsRef.current
+    disposeAgentChats(leaving)
+    for (const c of leaving) useChatsStore.getState().removeChat(rootPath, c.chatId)
     readyByKey.current = {}
     setOpenChats([])
     setActiveAgentKey(null)
@@ -479,7 +556,7 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     const signal = { cancelled: false }
     void openInitialChat(signal)
     return () => { signal.cancelled = true }
-  }, [cwd, openInitialChat])
+  }, [cwd, rootPath, openInitialChat])
 
   // Mirror the live chat bookkeeping into the session registry so a remount
   // (canvas<->dock move) can re-adopt the same chats. Synced on every change so
@@ -549,9 +626,12 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     if (!activeAgentKey) return
     const ref: AgentModelRef = { provider: m.provider, model: m.model }
     useAgentStore.getState().setModel(activeAgentKey, ref)
+    // Remember the pick on the durable chat so a re-adopting mount resumes with it.
+    const entry = openChatsRef.current.find((c) => c.agentKey === activeAgentKey)
+    if (entry) useChatsStore.getState().updateCodingChat(rootPath, entry.chatId, { model: ref })
     try { await window.electronAPI.agentSetModel(activeAgentKey, ref) }
     catch (err) { log.warn('[AgentPanel] setModel failed', err) }
-  }, [activeAgentKey])
+  }, [activeAgentKey, rootPath])
 
   // Re-tag this panel's worktree — i.e. move the agent's working directory. The
   // cwd effect below does the rest (dispose the old checkout's chats, reopen in
@@ -588,14 +668,22 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     // is set, fall through to the default-pick effect (first available).
     const model = loadDefaultModel()
     if (model) useAgentStore.getState().setModel(key, model)
-    setOpenChats((prev) => [...prev, { agentKey: key, sessionFile: null }])
+    if (rootPath) await useChatsStore.getState().loadChats(rootPath)
+    const chatId = useChatsStore.getState().createCodingChat(rootPath, {
+      agentKey: key,
+      sessionFile: null,
+      worktreeId: panelState?.worktreeId,
+      model: model ?? undefined,
+      title: 'New chat',
+    }).id
+    setOpenChats((prev) => [...prev, { agentKey: key, sessionFile: null, chatId }])
     setActiveAgentKey(key)
     setView('chat')
     if (myGen !== openGenRef.current) return
     await createAgent(key, model)
     if (myGen !== openGenRef.current) return
     void refreshChats()
-  }, [createAgent, refreshChats, newAgentKey])
+  }, [createAgent, refreshChats, newAgentKey, rootPath, panelState?.worktreeId])
 
   const handleOpenChat = useCallback(async (sessionFile: string) => {
     // Already open in this panel? Switch to it — its pi keeps running, state
@@ -627,17 +715,36 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
       log.warn('[AgentPanel] load transcript failed', err)
     }
     if (myGen !== openGenRef.current) return
-    setOpenChats((prev) => [...prev, { agentKey: key, sessionFile }])
+    // Register (or reuse, deduped by sessionFile) the durable coding chat.
+    const chatsSt = useChatsStore.getState()
+    const existingChat = chatsSt.getChatsByMode(rootPath, 'coding').find((c) => c.sessionFile === sessionFile)
+    let chatId: string
+    if (existingChat) {
+      chatId = existingChat.id
+      chatsSt.updateCodingChat(rootPath, chatId, { agentKey: key, ...(model ? { model } : {}) })
+    } else {
+      chatId = chatsSt.createCodingChat(rootPath, {
+        agentKey: key,
+        sessionFile,
+        worktreeId: panelState?.worktreeId,
+        model: model ?? undefined,
+        title: entry?.title ?? 'New chat',
+      }).id
+    }
+    setOpenChats((prev) => [...prev, { agentKey: key, sessionFile, chatId }])
     setActiveAgentKey(key)
     await createAgent(key, model, sessionFile)
-  }, [openChats, chats, createAgent, newAgentKey])
+  }, [openChats, chats, createAgent, newAgentKey, rootPath, panelState?.worktreeId])
 
   const handleCloseChat = useCallback((key: string) => {
-    // Dispose pi for this chat without deleting its on-disk session file.
-    // Used by the sidebar's "close" affordance on currently-open chats.
+    // Per-tab close. Under the shared/worktree-scoped model a panel shows EVERY
+    // durable coding chat for its checkout, so a reference-only close would just
+    // reappear on the next resolve. Closing therefore removes the durable record
+    // and disposes its pi + slice (disposeCodingChat) — but keeps pi's on-disk
+    // .jsonl, so the thread stays resumable from the recents list. Deleting the
+    // file too is handleDeleteChat's job.
+    const entry = openChatsRef.current.find((c) => c.agentKey === key)
     readyByKey.current[key] = false
-    agentClient.dispose(key).catch(() => { /* */ })
-    useAgentStore.getState().dispose(key)
     const remaining = openChatsRef.current.filter((c) => c.agentKey !== key)
     setOpenChats(remaining)
     if (activeAgentKey === key) {
@@ -648,7 +755,14 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
         void handleNewChat()
       }
     }
-  }, [activeAgentKey, handleNewChat])
+    if (entry) disposeCodingChat(rootPath, entry.chatId)
+    else {
+      // No durable record for this key (shouldn't happen) — still tear down the
+      // pi + slice so nothing is stranded.
+      agentClient.dispose(key).catch(() => { /* */ })
+      useAgentStore.getState().dispose(key)
+    }
+  }, [activeAgentKey, handleNewChat, rootPath])
 
   const handleDeleteChat = useCallback(async (sessionFile: string) => {
     // If this chat is currently open in the panel, dispose its pi session and
@@ -656,13 +770,17 @@ export default function AgentPanel({ panelId, workspaceId }: PanelProps) {
     // open chat — or auto-spawn a fresh one so the panel is never empty.
     const open = openChatsRef.current.find((c) => c.sessionFile === sessionFile)
     if (open) handleCloseChat(open.agentKey)
+    // Explicit delete is the ONLY disposer: drop the durable coding chat (disposes
+    // its pi + store slice if still live) alongside deleting pi's on-disk session.
+    const durable = useChatsStore.getState().getChatsByMode(rootPath, 'coding').find((c) => c.sessionFile === sessionFile)
+    if (durable) disposeCodingChat(rootPath, durable.id)
     try {
       await window.electronAPI.agentDeleteSession(sessionFile)
     } catch (err) {
       log.warn('[AgentPanel] deleteSession failed', err)
     }
     await refreshChats()
-  }, [refreshChats, handleCloseChat])
+  }, [refreshChats, handleCloseChat, rootPath])
 
   // ---------------------------------------------------------------------------
   // Derived state

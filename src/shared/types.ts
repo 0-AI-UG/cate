@@ -1233,6 +1233,13 @@ export interface ChatRun {
   attemptsMessageId?: string
 }
 
+/** Which engine drives a chat thread. Missing on legacy on-disk records is
+ *  treated as 'loop' everywhere (back-compat) — see chatMode() / getChatsByMode.
+ *  - loop: the Cate Agent's iterate/verify run (messages + run live in chats.json).
+ *  - coding: a pi coding-agent session; its transcript lives in useAgentStore
+ *    (reloaded from `sessionFile`), NOT in `messages`. */
+export type ChatMode = 'coding' | 'loop'
+
 export interface Chat {
   id: string
   title: string
@@ -1240,6 +1247,18 @@ export interface Chat {
   updatedAt: number
   messages: ChatMessage[]
   run?: ChatRun
+  /** Engine driving this thread. Absent on legacy records → treat as 'loop'. */
+  mode?: ChatMode
+  // ---- Coding-chat only (mode==='coding'); absent/ignored for loop chats. ----
+  /** Pi IPC session key — the slice key in useAgentStore and the `panelId` passed
+   *  to AGENT_* IPC. Stable for the chat's life; the durable link to its live pi. */
+  agentKey?: string
+  /** Pi's on-disk session file (jsonl). Null until pi reports one after turn one. */
+  sessionFile?: string | null
+  /** The chat's working-directory tag (which worktree/checkout it runs in). */
+  worktreeId?: string
+  /** Last model used, so a re-adopting mount resumes with the same one. */
+  model?: AgentModelRef
 }
 
 export interface ProjectChatsFile {

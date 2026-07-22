@@ -9,7 +9,7 @@
 
 import React from 'react'
 import { Plus, X, Eye } from '@phosphor-icons/react'
-import { useChatsStore } from '../stores/chatsStore'
+import { useChatsStore, chatMode } from '../stores/chatsStore'
 import { useCateAgentStore, useCateAgentWs } from './cateAgentStore'
 import { cateAgentController } from './cateAgentController'
 import type { Chat } from '../../shared/types'
@@ -65,8 +65,10 @@ export const CateAgentChatTabs: React.FC<{ wsId: string; rootPath: string }> = (
 
   const observer = cateAgent.observerView
   const activeId = cateAgent.activeChatId
+  // This strip is the Cate Agent (loop) front door — coding chats live in the
+  // AgentPanel, so keep them out even though both modes share chats.json.
   // Newest chats first, matching the drop-up order they replace.
-  const ordered = [...chats].reverse()
+  const ordered = [...chats].filter((c) => chatMode(c) === 'loop').reverse()
 
   return (
     <div className="flex items-center gap-1 overflow-x-auto no-scrollbar w-full">

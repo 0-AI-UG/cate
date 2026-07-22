@@ -145,8 +145,14 @@ export class AgentManager {
   async create(opts: AgentCreateOptions, sender: WebContents): Promise<void> {
     return this.locks.run(opts.panelId, async () => {
       if (this.sessions.has(opts.panelId)) {
-        log.info('[agentManager] disposing existing session for %s before re-create', opts.panelId)
-        await this.disposeInternal(opts.panelId)
+        // Idempotent per agentKey: a second create for a key that already has a
+        // live pi (two panels resolving the same durable coding chat, or a create
+        // racing an in-flight one) is a no-op ADOPTION — never kill and respawn.
+        // Respawning here would strand the first panel's freshly-started pi and
+        // interrupt any in-flight turn. serialized by locks.run, so this check is
+        // race-free against a concurrent create for the same key.
+        log.info('[agentManager] adopting existing session for %s (create is a no-op)', opts.panelId)
+        return
       }
 
       // Resolve the workspace's runtime from its locator (throws if a remote

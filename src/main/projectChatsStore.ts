@@ -177,6 +177,18 @@ function normalizeChat(raw: unknown): Chat | null {
   }
   const run = normalizeRun(o.run)
   if (run) chat.run = run
+  // mode + coding-chat fields. A legacy record has no `mode` — leave it unset so
+  // read sites default it to 'loop'. Coding fields are preserved verbatim so the
+  // panel can re-adopt (or resume-from-disk) its pi session after a restart; a
+  // rebuild-from-scratch normalizer like this would otherwise strip them.
+  if (o.mode === 'coding' || o.mode === 'loop') chat.mode = o.mode
+  if (typeof o.agentKey === 'string') chat.agentKey = o.agentKey
+  if (o.sessionFile === null || typeof o.sessionFile === 'string') chat.sessionFile = o.sessionFile
+  if (typeof o.worktreeId === 'string') chat.worktreeId = o.worktreeId
+  const m = o.model
+  if (m && typeof m === 'object' && typeof (m as Record<string, unknown>).provider === 'string' && typeof (m as Record<string, unknown>).model === 'string') {
+    chat.model = { provider: (m as { provider: string }).provider, model: (m as { model: string }).model }
+  }
   return chat
 }
 
