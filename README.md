@@ -41,6 +41,12 @@ Download a prebuilt release. Don't build from source for daily use.
 | Windows | NSIS installer, ZIP (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
 | Linux | AppImage, DEB, `tar.gz` (`x64`) | [Latest release](https://github.com/0-AI-UG/cate/releases/latest) |
 
+On macOS you can also install with Homebrew:
+
+```sh
+brew install --cask cate
+```
+
 ## What's inside
 
 - **Agent-aware terminals.** Cate hooks the agent CLIs it supports (Claude Code, Codex, Cursor, Grok, OpenCode, Pi), so the agent itself reports turn start, turn end, and permission prompts. That drives the panel's running / waiting / finished state and the notification you get when one needs an answer. An agent that posts no hooks shows no status.

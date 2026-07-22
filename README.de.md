@@ -43,6 +43,12 @@ Laden Sie eine vorgefertigte Version herunter. Bauen Sie für den täglichen Geb
 | Windows | NSIS-Installer, ZIP (`x64`) | [Neueste Version](https://github.com/0-AI-UG/cate/releases/latest) |
 | Linux | AppImage, DEB, `tar.gz` (`x64`) | [Neueste Version](https://github.com/0-AI-UG/cate/releases/latest) |
 
+Unter macOS geht auch Homebrew:
+
+```sh
+brew install --cask cate
+```
+
 ## Was drinsteckt
 
 - **Agenten-bewusste Terminals:** Cate klinkt sich per Hooks in die unterstützten Agenten-CLIs ein (Claude Code, Codex, Cursor, Grok, OpenCode, Pi), sodass der Agent selbst Turn-Beginn, Turn-Ende und Berechtigungsabfragen meldet. Das steuert den Panel-Zustand (läuft, wartet, fertig) und die Benachrichtigung, wenn einer eine Antwort braucht. Ein Agent, der keine Hooks sendet, zeigt keinen Status.

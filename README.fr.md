@@ -43,6 +43,12 @@ Téléchargez une version précompilée. Ne compilez pas depuis les sources pour
 | Windows | Installeur NSIS, ZIP (`x64`) | [Dernière version](https://github.com/0-AI-UG/cate/releases/latest) |
 | Linux | AppImage, DEB, `tar.gz` (`x64`) | [Dernière version](https://github.com/0-AI-UG/cate/releases/latest) |
 
+Sur macOS, Homebrew fonctionne aussi :
+
+```sh
+brew install --cask cate
+```
+
 ## Ce qu'il contient
 
 - **Terminaux conscients des agents :** Cate installe ses hooks dans les CLI d'agents prises en charge (Claude Code, Codex, Cursor, Grok, OpenCode, Pi) : l'agent signale lui-même le début et la fin d'un tour ainsi que les demandes d'autorisation. C'est ce qui alimente l'état du panneau (en cours, en attente, terminé) et la notification quand un agent attend votre réponse. Un agent qui n'envoie aucun hook n'affiche aucun état.
