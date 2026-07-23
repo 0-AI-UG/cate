@@ -192,7 +192,7 @@ beforeEach(() => {
 
 describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
   it('reports the API version for feature detection', async () => {
-    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(3)
+    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(4)
   })
 
   it('resolves the workspace root from the locator', async () => {
@@ -258,6 +258,26 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
     expect(res).toEqual({ panelId: 'new' })
   })
 
+  it('registers a created panel immediately for a follow-up targeted command', async () => {
+    activeWindow.value = { id: 9, isDestroyed: () => false, webContents: { send: vi.fn() } }
+    const forward = vi.fn(async () => ({ panelId: 'fresh-browser' }))
+
+    expect(await dispatchCateInvoke(
+      scope(forward),
+      'cate.canvas.createPanel',
+      { type: 'browser', url: 'https://example.test' },
+    )).toEqual({ panelId: 'fresh-browser' })
+
+    expect(upsertWindowPanel).toHaveBeenCalledWith(9, {
+      panelId: 'fresh-browser',
+      type: 'browser',
+      title: 'https://example.test',
+      workspaceId: WS,
+      url: 'https://example.test',
+      focused: false,
+    })
+  })
+
   it('rejects unknown methods as unsupported', async () => {
     expect(await dispatchCateInvoke(scope(), 'cate.bogus.method', undefined)).toEqual({ error: 'unsupported', method: 'cate.bogus.method' })
   })
@@ -308,7 +328,7 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
     // panel.* stay allowed (feature detection + panel self-control).
     state.scopes = undefined
     const forward = vi.fn()
-    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(3)
+    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(4)
     expect(await dispatchCateInvoke(scope(forward), 'cate.storage.get', { key: 'k' })).toEqual({ error: 'scope-denied', method: 'cate.storage.get' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.editor.openFile', { path: 'x' })).toEqual({ error: 'scope-denied', method: 'cate.editor.openFile' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.theme.get', undefined)).toEqual({ error: 'scope-denied', method: 'cate.theme.get' })

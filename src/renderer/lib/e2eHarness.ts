@@ -91,6 +91,8 @@ declare global {
       terminalPtyId(nodeId: string): string | null
       /** Write raw data to a terminal node's PTY (e.g. a flooding command). */
       writeTerminal(nodeId: string, data: string): boolean
+      /** Plain text currently held by a terminal's active xterm buffer. */
+      terminalText(nodeId: string): string | null
       /** Point the selected workspace at a real directory (registers it as an
        *  allowed root) so content search has files to scan. */
       setWorkspaceRoot(rootPath: string): Promise<boolean>
@@ -303,6 +305,25 @@ export function installE2EHarness(): void {
     return true
   }
 
+  const terminalText = (nodeId: string): string | null => {
+    const cs = activeCanvasStore()
+    if (!cs) return null
+    const node = cs.getState().nodes[nodeId]
+    const panelId = activeDockPanelId(node?.dockLayout) ?? nodeId
+    const terminal = terminalRegistry.getEntry(panelId)?.terminal
+    if (!terminal) return null
+    const buffer = terminal.buffer.active
+    const lines: string[] = []
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i)
+      const text = line?.translateToString(true) ?? ''
+      if (line?.isWrapped && lines.length > 0) lines[lines.length - 1] += text
+      else lines.push(text)
+    }
+    while (lines.at(-1) === '') lines.pop()
+    return lines.join('\n')
+  }
+
   const setWorkspaceRoot = (rootPath: string): Promise<boolean> => {
     const wsId = useAppStore.getState().selectedWorkspaceId
     return useAppStore.getState().setWorkspaceRootPath(wsId, rootPath)
@@ -386,6 +407,7 @@ export function installE2EHarness(): void {
     worktreeDebug,
     terminalPtyId,
     writeTerminal,
+    terminalText,
     setWorkspaceRoot,
     openSidebarView,
     setActiveLeftSidebarView,
