@@ -11,7 +11,7 @@
 // UI metadata (id/color/label) keyed by path. This hook joins the two so every
 // consumer derives the same view from one source.
 //
-// appStore.worktrees persists ONLY UI metadata (id/color/label) keyed by path;
+// appStore.worktrees persists ONLY managed metadata (id/color/label/PR identity) keyed by path;
 // the live git facts (branch/isPrimary/isCurrent) come from gitStatusStore and
 // are joined on here at read time, so they can never drift from the repo.
 // =============================================================================
@@ -38,6 +38,8 @@ export interface JoinedWorktree {
   color?: string
   /** Friendly label from persisted metadata, if any. */
   label?: string
+  /** Pull request this worktree was created from, if any. */
+  prNumber?: number
   /** True when there is persisted metadata but no live git worktree (orphan). */
   isOrphan: boolean
 }
@@ -68,6 +70,7 @@ export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorkt
         isCurrent: g.isCurrent,
         color: m?.color,
         label: m?.label,
+        prNumber: m?.prNumber,
         isOrphan: false,
       }
     })
@@ -85,6 +88,7 @@ export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorkt
         isCurrent: false,
         color: m.color,
         label: m.label,
+        prNumber: m.prNumber,
         isOrphan: true,
       })
     }

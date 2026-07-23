@@ -30,6 +30,7 @@ import {
 } from '@phosphor-icons/react'
 import { Tooltip } from '../ui/Tooltip'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
+import { errorMessage } from '../lib/errorMessage'
 import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useUIStore } from '../stores/uiStore'
@@ -222,8 +223,8 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
     try {
       await window.electronAPI.gitInit(rootPath, workspaceId)
       gitStatusStore.refresh(rootPath)
-    } catch (err: any) {
-      setError(`Could not initialize git: ${err?.message || err}`)
+    } catch (err: unknown) {
+      setError(`Couldn’t initialize git: ${errorMessage(err, 'The operation failed.')}`)
     }
   }, [rootPath, workspaceId])
 
@@ -438,14 +439,14 @@ const WorktreeRow: React.FC<{
     () =>
       runWorktreeContextMenu({
         isPrimary,
-        hasPr: !!pr,
+        hasPr: !!pr || !!wt.prNumber,
         prUrl: pr?.url,
         primaryLabel,
         cb,
         beginRename: () => { setRenameValue(label); setRenaming(true) },
         beginRecolor: () => setRecoloring((v) => !v),
       }),
-    [isPrimary, pr, primaryLabel, cb, label],
+    [isPrimary, pr, primaryLabel, cb, label, wt.prNumber],
   )
 
   return (

@@ -84,7 +84,10 @@ export function useWorktreeStatuses(rootPath: string, live: JoinedWorktree[]): U
   // PR status — only for non-primary branches, refetched when the branch set
   // changes or after a PR action (each lookup shells out to `gh`).
   const prKey = useMemo(
-    () => live.filter((w) => !w.isPrimary && w.branch).map((w) => `${w.path}:${w.branch}`).join('|'),
+    () => live
+      .filter((w) => !w.isPrimary && w.branch)
+      .map((w) => `${w.path}:${w.prNumber ?? w.branch}`)
+      .join('|'),
     [live],
   )
   useEffect(() => {
@@ -95,7 +98,8 @@ export function useWorktreeStatuses(rootPath: string, live: JoinedWorktree[]): U
       const entries = await Promise.all(
         targets.map(async (w) => {
           try {
-            const pr = await window.electronAPI.gitPrStatus(w.path, w.branch, workspaceIdForRoot(rootPath))
+            const prRef = w.prNumber ? String(w.prNumber) : w.branch
+            const pr = await window.electronAPI.gitPrStatus(w.path, prRef, workspaceIdForRoot(rootPath))
             return pr ? ([w.path, pr] as const) : null
           } catch {
             return null

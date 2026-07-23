@@ -28,6 +28,27 @@ describe('errorMessage', () => {
     )
   })
 
+  it('turns a diverged git checkout into an actionable message', () => {
+    const raw =
+      `Error invoking remote method 'git:worktreeAddFromPr': Error: Command failed: gh pr checkout 525\n` +
+      `hint: Diverging branches can't be fast-forwarded\nfatal: Not possible to fast-forward, aborting.`
+    expect(errorMessage(new Error(raw))).toBe(
+      'That branch already exists locally and has diverged. Preserve or rename it, then try again.',
+    )
+  })
+
+  it('maps common worktree action failures', () => {
+    expect(errorMessage('fatal: a branch named feature already exists')).toBe(
+      'A branch with that name already exists.',
+    )
+    expect(errorMessage('fatal: feat@{x is not a valid branch name')).toBe(
+      'That isn’t a valid Git branch name.',
+    )
+    expect(errorMessage('! [rejected] feature -> feature (non-fast-forward)\nerror: failed to push some refs')).toBe(
+      'The remote branch has newer commits. Update this worktree, then try publishing again.',
+    )
+  })
+
   it('accepts strings, plain objects, and Error instances', () => {
     expect(errorMessage('plain string')).toBe('plain string')
     expect(errorMessage({ message: 'object message' })).toBe('object message')
