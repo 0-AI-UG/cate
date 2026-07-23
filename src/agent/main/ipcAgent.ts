@@ -33,12 +33,17 @@ import {
   AGENT_DELETE_SESSION,
   AGENT_CUSTOM_MODELS_GET,
   AGENT_CUSTOM_MODELS_SAVE,
+  AGENT_CUSTOM_MODELS_DELETE,
 } from '../../shared/ipc-channels'
 import { deleteSession, listSessions, loadSessionTranscript } from './sessionFiles'
 import { hostAgentDir, hostJoin } from './agentDir'
 import { parseLocator, formatLocator, LOCAL_RUNTIME_ID } from '../../main/runtime/locator'
 import { runtimes } from '../../main/runtime/runtimeManager'
-import { readCustomOpenAI, saveCustomOpenAI } from './customModels'
+import {
+  deleteCustomOpenAIProvider,
+  readCustomOpenAIProviders,
+  saveCustomOpenAIProvider,
+} from './customModels'
 import log from '../../main/logger'
 import { sendEvent } from '../../main/analytics'
 import type {
@@ -335,15 +340,20 @@ export function registerAgentHandlers(authManager: AuthManager, agentManager: Ag
 
   ipcMain.handle(AGENT_CUSTOM_MODELS_GET, async () => {
     try {
-      return await readCustomOpenAI()
+      return await readCustomOpenAIProviders()
     } catch (err) {
       log.warn('[ipc.agent] customModelsGet failed: %O', err)
-      return null
+      return []
     }
   })
 
-  ipcMain.handle(AGENT_CUSTOM_MODELS_SAVE, async (_event, cfg: CustomOpenAIProvider | null) => {
-    await saveCustomOpenAI(cfg)
+  ipcMain.handle(AGENT_CUSTOM_MODELS_SAVE, async (_event, cfg: CustomOpenAIProvider) => {
+    await saveCustomOpenAIProvider(cfg)
+    await agentManager.syncCustomModelsToOpenSessions()
+  })
+
+  ipcMain.handle(AGENT_CUSTOM_MODELS_DELETE, async (_event, providerId: string) => {
+    await deleteCustomOpenAIProvider(providerId)
     await agentManager.syncCustomModelsToOpenSessions()
   })
 }

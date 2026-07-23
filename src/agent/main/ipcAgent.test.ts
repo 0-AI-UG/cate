@@ -15,6 +15,9 @@ const h = vi.hoisted(() => ({
   listSessions: vi.fn(),
   loadSessionTranscript: vi.fn(),
   deleteSession: vi.fn(),
+  readCustomOpenAIProviders: vi.fn(),
+  saveCustomOpenAIProvider: vi.fn(),
+  deleteCustomOpenAIProvider: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
@@ -35,13 +38,17 @@ vi.mock('../../main/runtime/runtimeManager', () => ({
   runtimes: { resolve: vi.fn() },
 }))
 vi.mock('./customModels', () => ({
-  readCustomOpenAI: vi.fn(),
-  saveCustomOpenAI: vi.fn(),
+  readCustomOpenAIProviders: h.readCustomOpenAIProviders,
+  saveCustomOpenAIProvider: h.saveCustomOpenAIProvider,
+  deleteCustomOpenAIProvider: h.deleteCustomOpenAIProvider,
 }))
 
 import { registerAgentHandlers } from './ipcAgent'
 import {
   AGENT_CREATE,
+  AGENT_CUSTOM_MODELS_DELETE,
+  AGENT_CUSTOM_MODELS_GET,
+  AGENT_CUSTOM_MODELS_SAVE,
   AGENT_DELETE_SESSION,
   AGENT_LIST_SESSIONS,
   AGENT_LOAD_SESSION_MESSAGES,
@@ -82,6 +89,9 @@ beforeEach(() => {
   h.listSessions.mockReset()
   h.loadSessionTranscript.mockReset()
   h.deleteSession.mockReset()
+  h.readCustomOpenAIProviders.mockReset()
+  h.saveCustomOpenAIProvider.mockReset()
+  h.deleteCustomOpenAIProvider.mockReset()
 })
 
 describe('agent IPC ownership and session routing', () => {
@@ -169,5 +179,28 @@ describe('agent IPC ownership and session routing', () => {
     })
     expect(JSON.stringify(h.sendEvent.mock.calls)).not.toContain('do not log this prompt')
     expect(JSON.stringify(h.sendEvent.mock.calls)).not.toContain('secret-image-data')
+  })
+
+  it('lists, saves, and deletes custom providers through IPC', async () => {
+    const manager = makeManager()
+    manager.syncCustomModelsToOpenSessions = vi.fn(async () => {})
+    registerAgentHandlers({} as AuthManager, manager)
+    const owner = makeSender(1).sender
+    const provider = {
+      id: 'custom-openai-team',
+      name: 'Team Proxy',
+      baseUrl: 'https://team.example/v1',
+      apiKey: 'secret',
+      models: ['team-model'],
+    }
+    h.readCustomOpenAIProviders.mockResolvedValue([provider])
+
+    await expect(invoke(AGENT_CUSTOM_MODELS_GET, owner)).resolves.toEqual([provider])
+    await invoke(AGENT_CUSTOM_MODELS_SAVE, owner, provider)
+    await invoke(AGENT_CUSTOM_MODELS_DELETE, owner, provider.id)
+
+    expect(h.saveCustomOpenAIProvider).toHaveBeenCalledWith(provider)
+    expect(h.deleteCustomOpenAIProvider).toHaveBeenCalledWith(provider.id)
+    expect(manager.syncCustomModelsToOpenSessions).toHaveBeenCalledTimes(2)
   })
 })

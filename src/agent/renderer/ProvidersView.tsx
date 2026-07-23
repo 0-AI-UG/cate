@@ -5,10 +5,9 @@
 // its sign-in / API-key form inline beneath it (at most one open at a time).
 // When embedded in Settings the parent owns the surrounding chrome.
 //
-// Built-in providers sign in / store an API key. A final "Custom OpenAI
-// endpoint" section lets the user point the agent at any OpenAI-compatible
-// server (Ollama, LM Studio, vLLM, a proxy); it is persisted to pi's
-// models.json via agentCustomModels* IPC.
+// Built-in providers sign in / store an API key. A final custom section manages
+// OpenAI-compatible servers (Ollama, LM Studio, vLLM, proxies), persisted to
+// pi's models.json via agentCustomModels* IPC.
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -25,6 +24,7 @@ import {
   CaretRight,
   CaretDown,
   Sparkle,
+  Plus,
 } from '@phosphor-icons/react'
 import { ModelPickerDropdown } from './ModelPicker'
 import log from '../../renderer/lib/logger'
@@ -55,6 +55,7 @@ interface ProvidersViewProps {
 export function ProvidersView({ onBack, scopedProviderId, embedded = false }: ProvidersViewProps) {
   const [providers, setProviders] = useState<AuthProviderDescriptor[]>([])
   const [statuses, setStatuses] = useState<AuthProviderStatus[]>([])
+  const [customProviders, setCustomProviders] = useState<CustomOpenAIProvider[]>([])
   // Selectable models for the default-model picker — derived from the connected
   // providers in auth.json, so it works here without an agent session running.
   const [models, setModels] = useState<Array<{ provider: string; model: string; label?: string }>>([])
@@ -64,14 +65,16 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false }: Pr
 
   const refresh = useCallback(async () => {
     try {
-      const [pList, sList, mList] = await Promise.all([
+      const [pList, sList, mList, customList] = await Promise.all([
         window.electronAPI.authListProviders(),
         window.electronAPI.authStatus(),
         window.electronAPI.agentListModels(),
+        window.electronAPI.agentCustomModelsGet(),
       ])
       setProviders(pList)
       setStatuses(sList)
       setModels(mList.map((m) => ({ provider: m.provider, model: m.id, label: m.label })))
+      setCustomProviders(customList)
     } catch (err) {
       log.warn('[ProvidersView] refresh failed', err)
     }
@@ -95,8 +98,12 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false }: Pr
     const match =
       providers.find((p) => p.kind === 'oauth' && p.id === scopedProviderId) ??
       providers.find((p) => p.id === scopedProviderId)
-    if (match) setExpandedKey(`${match.kind}-${match.id}`)
-  }, [scopedProviderId, providers])
+    if (match) {
+      setExpandedKey(`${match.kind}-${match.id}`)
+    } else if (customProviders.some((provider) => provider.id === scopedProviderId)) {
+      setExpandedKey(`custom-${scopedProviderId}`)
+    }
+  }, [scopedProviderId, providers, customProviders])
 
   const statusFor = useCallback(
     (id: string): AuthProviderStatus | undefined => statuses.find((s) => s.id === id),
@@ -151,9 +158,32 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false }: Pr
         })}
       </Section>
       <Section label="Custom">
+        {customProviders.map((provider) => {
+          const key = `custom-${provider.id}`
+          return (
+            <CustomOpenAIRow
+              key={provider.id}
+              cfg={provider}
+              expanded={expandedKey === key}
+              onToggle={() => toggle(key)}
+              onSaved={refresh}
+              onDeleted={async () => {
+                setExpandedKey(null)
+                await refresh()
+              }}
+            />
+          )
+        })}
         <CustomOpenAIRow
-          expanded={expandedKey === 'custom-openai'}
-          onToggle={() => toggle('custom-openai')}
+          cfg={null}
+          existingIds={customProviders.map((provider) => provider.id)}
+          expanded={expandedKey === 'custom-new'}
+          onToggle={() => toggle('custom-new')}
+          onSaved={async (provider) => {
+            await refresh()
+            setExpandedKey(`custom-${provider.id}`)
+          }}
+          onDeleted={refresh}
         />
       </Section>
     </>
@@ -189,25 +219,25 @@ export function ProvidersView({ onBack, scopedProviderId, embedded = false }: Pr
 }
 
 // -----------------------------------------------------------------------------
-// Custom OpenAI-compatible endpoint — one user-defined provider written to pi's
-// models.json. Connects the agent to Ollama, LM Studio, vLLM, a proxy, etc.
+// Custom OpenAI-compatible endpoints written to pi's models.json. Connects the
+// agent to Ollama, LM Studio, vLLM, proxies, etc.
 // -----------------------------------------------------------------------------
 
 function CustomOpenAIRow({
+  cfg,
+  existingIds = [],
   expanded,
   onToggle,
+  onSaved,
+  onDeleted,
 }: {
+  cfg: CustomOpenAIProvider | null
+  existingIds?: string[]
   expanded: boolean
   onToggle: () => void
+  onSaved: (cfg: CustomOpenAIProvider) => Promise<void>
+  onDeleted: () => Promise<void>
 }) {
-  const [cfg, setCfg] = useState<CustomOpenAIProvider | null>(null)
-
-  useEffect(() => {
-    window.electronAPI.agentCustomModelsGet()
-      .then((c) => setCfg(c))
-      .catch((err) => log.warn('[CustomOpenAIRow] load failed', err))
-  }, [])
-
   const configured = !!cfg && !!cfg.baseUrl && cfg.models.length > 0
   return (
     <div className="border-b border-subtle last:border-0">
@@ -216,21 +246,29 @@ function CustomOpenAIRow({
         aria-expanded={expanded}
         className="w-full flex items-center gap-2 px-2.5 py-2 text-left hover:bg-hover"
       >
-        <span className="flex-1 truncate text-[12.5px] text-primary">Custom OpenAI endpoint</span>
+        {!cfg && <Plus size={11} className="text-muted/70" />}
+        <span className="flex-1 truncate text-[12.5px] text-primary">
+          {cfg?.name ?? 'Add custom provider'}
+        </span>
         {configured ? (
           <span className="inline-flex items-center gap-1 text-[10px] text-agent-light/90">
             <CheckCircle size={10} weight="fill" /> Configured
           </span>
-        ) : (
+        ) : cfg ? (
           <CircleDashed size={11} className="text-muted/60" />
-        )}
+        ) : null}
         {expanded
           ? <CaretDown size={10} className="text-muted/60" />
           : <CaretRight size={10} className="text-muted/60" />}
       </button>
       {expanded && (
         <div className="p-2.5 border-t border-subtle bg-surface-0">
-          <CustomOpenAIForm cfg={cfg} onSaved={setCfg} />
+          <CustomOpenAIForm
+            cfg={cfg}
+            existingIds={existingIds}
+            onSaved={onSaved}
+            onDeleted={onDeleted}
+          />
         </div>
       )}
     </div>
@@ -239,53 +277,106 @@ function CustomOpenAIRow({
 
 function CustomOpenAIForm({
   cfg,
+  existingIds,
   onSaved,
+  onDeleted,
 }: {
   cfg: CustomOpenAIProvider | null
-  onSaved: (cfg: CustomOpenAIProvider | null) => void
+  existingIds: string[]
+  onSaved: (cfg: CustomOpenAIProvider) => Promise<void>
+  onDeleted: () => Promise<void>
 }) {
+  const [id, setId] = useState(cfg?.id ?? 'custom-openai-')
+  const [name, setName] = useState(cfg?.name ?? '')
   const [baseUrl, setBaseUrl] = useState(cfg?.baseUrl ?? '')
   const [apiKey, setApiKey] = useState(cfg?.apiKey ?? '')
   const [models, setModels] = useState((cfg?.models ?? []).join(', '))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<number | null>(null)
+  const [verification, setVerification] = useState<string | null>(null)
 
   const handleSave = useCallback(async () => {
+    const providerId = id.trim()
+    const friendlyName = name.trim()
     const url = baseUrl.trim()
     const modelIds = models.split(',').map((m) => m.trim()).filter(Boolean)
+    if (!/^custom-openai(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$/.test(providerId)) {
+      setError('Id must be custom-openai or custom-openai-name')
+      return
+    }
+    if (!cfg && existingIds.includes(providerId)) { setError('Provider id already exists'); return }
+    if (!friendlyName) { setError('Name is required'); return }
     if (!url) { setError('Base URL is required'); return }
     if (modelIds.length === 0) { setError('Add at least one model id'); return }
     setSaving(true); setError(null)
-    const next: CustomOpenAIProvider = { baseUrl: url, apiKey: apiKey.trim(), models: modelIds }
+    const next: CustomOpenAIProvider = {
+      id: providerId,
+      name: friendlyName,
+      baseUrl: url,
+      apiKey: apiKey.trim(),
+      models: modelIds,
+    }
     try {
       await window.electronAPI.agentCustomModelsSave(next)
-      onSaved(next)
+      await onSaved(next)
       setSavedAt(Date.now())
+      setVerification(null)
     } catch (err) {
       setError(toErrorMessage(err))
     } finally {
       setSaving(false)
     }
-  }, [baseUrl, apiKey, models, onSaved])
+  }, [id, name, baseUrl, apiKey, models, cfg, existingIds, onSaved])
 
   const handleRemove = useCallback(async () => {
+    if (!cfg) return
     setSaving(true); setError(null)
     try {
-      await window.electronAPI.agentCustomModelsSave(null)
-      clearModelPrefsForProvider('custom-openai')
-      onSaved(null)
-      setBaseUrl(''); setApiKey(''); setModels(''); setSavedAt(null)
+      await window.electronAPI.agentCustomModelsDelete(cfg.id)
+      clearModelPrefsForProvider(cfg.id)
+      await onDeleted()
     } catch (err) {
       setError(toErrorMessage(err))
     } finally {
       setSaving(false)
     }
-  }, [onSaved])
+  }, [cfg, onDeleted])
 
-  const configured = !!cfg && !!cfg.baseUrl && cfg.models.length > 0
+  const handleVerify = useCallback(async () => {
+    if (!cfg) return
+    setSaving(true); setError(null); setVerification(null)
+    try {
+      const result = await window.electronAPI.authVerify(cfg.id)
+      if (result.health === 'ok') setVerification('Configuration is ready.')
+      else setError(result.error ?? 'Configuration is incomplete')
+    } catch (err) {
+      setError(toErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }, [cfg])
+
   return (
     <div className="space-y-2">
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        autoComplete="off"
+        placeholder="Name (e.g. Local Ollama)"
+        className="w-full bg-surface-3 border border-strong rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60"
+      />
+      <input
+        type="text"
+        value={id}
+        disabled={!!cfg}
+        onChange={(e) => setId(e.target.value.toLowerCase())}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="Provider id (e.g. custom-openai-ollama)"
+        className="w-full bg-surface-3 border border-strong rounded-md px-2 py-1.5 text-[13px] text-primary outline-none focus:border-agent/60 font-mono disabled:opacity-60"
+      />
       <input
         type="text"
         value={baseUrl}
@@ -321,7 +412,16 @@ function CustomOpenAIForm({
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
-        {configured && (
+        {cfg && (
+          <button
+            disabled={saving}
+            onClick={handleVerify}
+            className="text-[11px] text-muted hover:text-primary"
+          >
+            Verify
+          </button>
+        )}
+        {cfg && (
           <button
             disabled={saving}
             onClick={handleRemove}
@@ -333,6 +433,11 @@ function CustomOpenAIForm({
       </div>
 
       <SaveFeedback error={error} savedAt={savedAt} />
+      {verification && !error && (
+        <div className="flex items-center gap-1 text-[11px] text-agent-light">
+          <CheckCircle size={12} weight="fill" /> {verification}
+        </div>
+      )}
     </div>
   )
 }
@@ -909,4 +1014,3 @@ export function ModelPrefRow({
     </div>
   )
 }
-
