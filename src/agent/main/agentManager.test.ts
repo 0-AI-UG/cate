@@ -11,7 +11,8 @@ vi.mock('../../main/windowRegistry', () => ({ broadcastToAll: vi.fn() }))
 vi.mock('../../main/windowPanels', () => ({ getWindowPanels: () => [] }))
 vi.mock('../../main/runtime/runtimeManager', () => ({ runtimes: { resolve: vi.fn() } }))
 vi.mock('../../main/runtime/locator', () => ({
-  parseLocator: vi.fn(() => ({ runtimeId: 'local', path: '/ws' })),
+  parseLocator: vi.fn((path: string) => ({ runtimeId: 'local', path })),
+  formatLocator: vi.fn(({ path }: { path: string }) => path),
 }))
 vi.mock('./piRpcClient', () => ({ PiRpcClient: vi.fn() }))
 vi.mock('./installSubagents', () => ({ installSubagentExtension: vi.fn() }))
@@ -28,11 +29,59 @@ vi.mock('./agentDir', () => ({
   hostJoin: vi.fn((_rt: string, ...segs: string[]) => segs.join('/')),
 }))
 vi.mock('./customModels', () => ({ mirrorModelsToWorkspace: vi.fn() }))
+vi.mock('../../skills/main/skillsMirror', () => ({ syncWorkspaceSkills: vi.fn() }))
+vi.mock('../../main/extensions/workspaceCateApi', () => ({
+  workspaceCateApi: { ensureEndpoint: vi.fn().mockResolvedValue(null) },
+}))
+vi.mock('../../main/workspaceStateStore', () => ({ isProjectTrusted: vi.fn(() => false) }))
 
 import { AgentManager } from './agentManager'
 import type { AuthManager } from './authManager'
+import { runtimes } from '../../main/runtime/runtimeManager'
+import { PiRpcClient } from './piRpcClient'
+import { prepareAgentDir } from './agentDir'
+import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
 
 const fakeAuthManager = { setOnChange: vi.fn() } as unknown as AuthManager
+
+describe('AgentManager worktree skill preparation', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('mirrors base-workspace skills before preparing and starting a worktree agent', async () => {
+    const runtime = { agent: { ensurePi: vi.fn().mockResolvedValue(undefined) } }
+    vi.mocked(runtimes.resolve).mockReturnValue(runtime as never)
+    const client = {
+      start: vi.fn().mockResolvedValue(undefined),
+      onEvent: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+    }
+    vi.mocked(PiRpcClient).mockImplementation(() => client as never)
+    vi.mocked(syncWorkspaceSkills).mockResolvedValue({
+      copied: [],
+      updated: [],
+      removed: [],
+      preserved: [],
+      warnings: [],
+    })
+
+    const manager = new AgentManager(fakeAuthManager)
+    await manager.create(
+      {
+        panelId: 'panel-worktree',
+        workspaceId: 'workspace-1',
+        workspaceRoot: '/repo/base',
+        cwd: '/repo/worktree',
+      },
+      { id: 4, isDestroyed: () => false, send: vi.fn() } as never,
+    )
+
+    expect(syncWorkspaceSkills).toHaveBeenCalledWith('/repo/base', '/repo/worktree')
+    expect(vi.mocked(syncWorkspaceSkills).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(prepareAgentDir).mock.invocationCallOrder[0],
+    )
+    expect(client.start).toHaveBeenCalledOnce()
+  })
+})
 
 function makeManager() {
   const mgr = new AgentManager(fakeAuthManager)

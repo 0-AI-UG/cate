@@ -76,16 +76,29 @@ const cateApi = vi.hoisted(() => ({ ensureEndpoint: vi.fn() }))
 vi.mock('../extensions/workspaceCateApi', () => ({
   workspaceCateApi: { ensureEndpoint: cateApi.ensureEndpoint },
 }))
+const workspaceInfo = vi.hoisted(() => ({
+  get: vi.fn<(id: string) => { rootPath: string } | undefined>(() => undefined),
+}))
+vi.mock('../workspaceManager', () => ({ getWorkspaceInfo: workspaceInfo.get }))
+const skillsSync = vi.hoisted(() => ({ run: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../../skills/main/skillsMirror', () => ({ syncWorkspaceSkills: skillsSync.run }))
 
 // A fake runtime whose process.create is the hoisted spy, so the instant-exit
 // tests can drive onData/onExit deterministically through the real spawnTerminal.
 vi.mock('../runtime/runtimeManager', () => ({
   runtimes: {
-    resolve: () => ({ validateCwd: (p: string) => p, process: { create: diag.ptyCreate } }),
+    resolve: () => ({
+      validateCwd: (p: string) => p,
+      validatePathStrict: (p: string) => Promise.resolve(p),
+      process: { create: diag.ptyCreate },
+    }),
     disposeAll: () => Promise.resolve(),
   },
 }))
-vi.mock('../runtime/locator', () => ({ parseLocator: (cwd: string) => ({ runtimeId: 'local', path: cwd }) }))
+vi.mock('../runtime/locator', () => ({
+  parseLocator: (cwd: string) => ({ runtimeId: 'local', path: cwd }),
+  formatLocator: ({ path }: { path: string }) => path,
+}))
 
 // --- terminalLifecycle (renderer) deps, stubbed so getOrCreate/dispose run
 //     without a real xterm/DOM/store stack. registryState is left REAL so the
@@ -474,6 +487,27 @@ describe('CATE_API env injection into spawned terminals', () => {
 
     expect(cateApi.ensureEndpoint).toHaveBeenCalledWith('ws-1')
     expect(env).toEqual({ CATE_API: 'http://127.0.0.1:9876', CATE_TOKEN: 'tok-abc' })
+  })
+
+  it('passes the base workspace cwd as the agent hook auto reference', async () => {
+    cateApi.ensureEndpoint.mockResolvedValue(null)
+    workspaceInfo.get.mockReturnValueOnce({ rootPath: '/repo/base' })
+    diag.ptyCreate.mockResolvedValue({ id: 'pty-hooks', pid: 123, shell: '/bin/zsh' })
+    const mod = await import('./terminal')
+    mod.registerHandlers()
+
+    await handlers.get('terminal:create')!(
+      {},
+      { cols: 80, rows: 24, cwd: '/repo/worktree', workspaceId: 'ws-1' },
+    )
+
+    expect(workspaceInfo.get).toHaveBeenCalledWith('ws-1')
+    expect(skillsSync.run).toHaveBeenCalledWith('/repo/base', '/repo/worktree')
+    expect(diag.ptyCreate.mock.calls[0][0]).toMatchObject({
+      cwd: '/repo/worktree',
+      scopeId: 'ws-1',
+      workspaceBaseCwd: '/repo/base',
+    })
   })
 
   it('injects CATE_PANEL_ID when the PTY belongs to a Cate terminal panel', async () => {

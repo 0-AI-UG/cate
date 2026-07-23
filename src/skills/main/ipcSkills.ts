@@ -26,6 +26,35 @@ import * as installer from './skillsInstaller'
 import * as savedSkills from './savedSkills'
 import * as sources from './skillSources'
 import type { SkillEntry, SkillTargetId } from '../../shared/skills'
+import { parseLocator } from '../../main/runtime/locator'
+import { runtimes } from '../../main/runtime/runtimeManager'
+import { windowFromEvent } from '../../main/windowRegistry'
+import { syncWorkspaceSkills } from './skillsMirror'
+import { listWorktreeCheckouts } from '../../main/worktreeContext'
+
+async function syncOpenWorktrees(
+  baseCwd: string,
+  workspaceId: string | undefined,
+  ownerWindowId: number | undefined,
+): Promise<string[]> {
+  if (!workspaceId) return []
+  const { runtimeId, path } = parseLocator(baseCwd)
+  if (!path) return []
+  try {
+    const runtime = runtimes.resolve(runtimeId)
+    const worktrees = await listWorktreeCheckouts(baseCwd, runtime, {
+      ownerWindowId,
+      scopeId: workspaceId,
+    })
+    const results = await Promise.all(
+      worktrees.map((worktree) => syncWorkspaceSkills(baseCwd, worktree)),
+    )
+    return results.flatMap((result) => result.warnings)
+  } catch (err) {
+    log.warn('[ipc.skills] worktree sync failed: %O', err)
+    return []
+  }
+}
 
 export function registerSkillHandlers(): void {
   ipcMain.handle(SKILLS_GET_INDEX, async () => {
@@ -51,18 +80,28 @@ export function registerSkillHandlers(): void {
     }
   })
 
-  ipcMain.handle(SKILLS_INSTALL, async (_e, entry: SkillEntry, targetId: SkillTargetId, cwd: string) => {
+  ipcMain.handle(SKILLS_INSTALL, async (event, entry: SkillEntry, targetId: SkillTargetId, cwd: string, workspaceId?: string) => {
     try {
       const res = await installer.install(entry, targetId, cwd)
-      return { ok: true as const, warnings: res.warnings, installed: res.installed }
+      const mirrorWarnings = await syncOpenWorktrees(
+        cwd,
+        workspaceId,
+        windowFromEvent(event)?.id,
+      )
+      return {
+        ok: true as const,
+        warnings: [...res.warnings, ...mirrorWarnings],
+        installed: res.installed,
+      }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }
   })
 
-  ipcMain.handle(SKILLS_UNINSTALL, async (_e, skillId: string, name: string, targetId: SkillTargetId, cwd: string) => {
+  ipcMain.handle(SKILLS_UNINSTALL, async (event, skillId: string, name: string, targetId: SkillTargetId, cwd: string, workspaceId?: string) => {
     try {
       await installer.uninstall(skillId, name, targetId, cwd)
+      await syncOpenWorktrees(cwd, workspaceId, windowFromEvent(event)?.id)
       return { ok: true as const }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }

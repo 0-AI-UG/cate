@@ -1047,9 +1047,9 @@ export interface ElectronAPI {
   skillsGetPreview(entry: SkillEntry): Promise<string>
   /** Install/update a skill from its source. Existing workspace/library bytes
    *  are used only as an offline fallback (reported in warnings). */
-  skillsInstall(entry: SkillEntry, targetId: SkillTargetId, cwd: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; installed?: InstalledSkill }>
+  skillsInstall(entry: SkillEntry, targetId: SkillTargetId, cwd: string, workspaceId?: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; installed?: InstalledSkill }>
   /** Uninstall a skill from a workspace agent. */
-  skillsUninstall(skillId: string, name: string, targetId: SkillTargetId, cwd: string): Promise<{ ok: boolean; error?: string }>
+  skillsUninstall(skillId: string, name: string, targetId: SkillTargetId, cwd: string, workspaceId?: string): Promise<{ ok: boolean; error?: string }>
   /** Installs recorded in this workspace's .cate/skills.json. */
   skillsListInstalled(cwd: string): Promise<InstalledSkill[]>
   /** Skills saved to the user's Cate library (cached in userData). */

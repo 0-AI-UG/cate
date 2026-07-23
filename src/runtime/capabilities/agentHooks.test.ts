@@ -465,6 +465,23 @@ describe('agentHooks capability', () => {
     expect(existsSync(path.join(cwd, '.pi'))).toBe(false)
   })
 
+  test('auto also uses the base workspace folder signal but writes only in the linked worktree', async () => {
+    const cap = makeCap()
+    const baseCwd = tmpDir('ws-auto-base')
+    const worktreeCwd = tmpDir('ws-auto-worktree')
+    mkdirSync(path.join(baseCwd, '.claude'))
+    mkdirSync(path.join(worktreeCwd, '.git'))
+
+    await cap.prepareWorkspace(worktreeCwd, undefined, baseCwd)
+
+    expect(existsSync(path.join(worktreeCwd, '.claude', 'settings.local.json'))).toBe(true)
+    expect(existsSync(path.join(baseCwd, '.claude', 'settings.local.json'))).toBe(false)
+    // Other agents remain gated when their folder is absent in both checkouts.
+    expect(existsSync(path.join(worktreeCwd, '.codex'))).toBe(false)
+    expect(existsSync(path.join(worktreeCwd, '.cursor'))).toBe(false)
+    expect(existsSync(path.join(worktreeCwd, '.pi'))).toBe(false)
+  })
+
   test("'on' injects with no pre-existing folder; 'off' strips our entries but keeps the user's", async () => {
     const cap = makeCap()
     const cwd = tmpDir('ws-onoff')
