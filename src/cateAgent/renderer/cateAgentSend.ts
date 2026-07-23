@@ -22,11 +22,14 @@ export function sendDirectAgentMessage(
   worktreeId?: string,
   options?: CateAgentTurnOptions,
   cwd?: string,
+  hostPanelId?: string,
 ): string {
   const chats = useChatsStore.getState()
-  const chat = chats.createChat(rootPath, deriveTopic(text))
+  const chat = hostPanelId
+    ? chats.createChat(rootPath, deriveTopic(text), hostPanelId)
+    : chats.createChat(rootPath, deriveTopic(text))
   if (worktreeId) setTargetWorktree(chat.id, worktreeId)
-  useCateAgentStore.getState().setActiveChat(wsId, chat.id)
+  if (!hostPanelId) useCateAgentStore.getState().setActiveChat(wsId, chat.id)
   void promptDirectChat(chat, wsId, rootPath, text, options, cwd)
   return chat.id
 }
@@ -57,7 +60,7 @@ export function sendCateAgentMessage(
   // run branches off — and lands back into — that worktree even when the pick
   // predated the chat.
   if (worktreeId) setTargetWorktree(chatId, worktreeId)
-  cate.setActiveChat(wsId, chatId)
+  if (selectedChatId === undefined) cate.setActiveChat(wsId, chatId)
   const chat = targetChat
   // Keep the architectural boundary enforced at the send primitive too: an
   // untransferred (or newly created) chat always goes through the direct agent.

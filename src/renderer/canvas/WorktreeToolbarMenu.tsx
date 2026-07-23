@@ -25,10 +25,10 @@ import {
   Warning,
   X,
   GitPullRequest,
-  ChatCircle,
   CircleNotch,
 } from '@phosphor-icons/react'
 import { Tooltip } from '../ui/Tooltip'
+import { CateLogo } from '../ui/CateLogo'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
 import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
 import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
@@ -520,7 +520,7 @@ const WorktreeRow: React.FC<{
               onClick={() => onLaunch('terminal')}
             />
             <SpawnButton
-              icon={<ChatCircle size={12} />}
+              icon={<CateLogo size={12} />}
               title="Cate Agent"
               panelType="cateAgent"
               cwd={wt.path}
@@ -556,7 +556,7 @@ const WorktreeRow: React.FC<{
               )}
               {openAgents > 0 && (
                 <span className="flex items-center gap-0.5">
-                  <ChatCircle size={10} />
+                  <CateLogo size={10} />
                   {openAgents}
                 </span>
               )}

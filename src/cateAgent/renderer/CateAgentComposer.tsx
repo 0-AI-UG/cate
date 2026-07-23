@@ -1,15 +1,14 @@
 // =============================================================================
 // CateAgentComposer — the sidebar's message composer. The markup is the shared
 // ChatComposer (stacked card: textarea + control row, worktree card tucked
-// under, upward-opening menus); this file owns the DATA: the shared draft, the
+// under, upward-opening menus); this file owns the DATA: the host-scoped draft, the
 // model pref, the per-chat worktree target, send/stop, attachments and the
 // headless session controls. Both the floating panel and sidebar render this
 // component, so the unified agent has one capability-complete composer.
 //
 // The model picker writes the active chat's own model override (falling back to
 // the global default when unset); Stop routes to cateAgentController.stop. The
-// draft is shared with the sidebar card via the same per-workspace key, so an
-// unsent message follows you.
+// draft is scoped to the sidebar or one Agent panel, matching chat ownership.
 // =============================================================================
 
 import React from 'react'
@@ -22,7 +21,8 @@ import { useCateAgentWs } from './cateAgentStore'
 import { useChatsStore } from '../../renderer/stores/chatsStore'
 import { useSettingsStore } from '../../renderer/stores/settingsStore'
 import { useUIStore } from '../../renderer/stores/uiStore'
-import { getTargetWorktree, setTargetWorktree } from './cateAgentWorktreeTarget'
+import { useAppStore } from '../../renderer/stores/appStore'
+import { resolveTargetWorktree, setTargetWorktree } from './cateAgentWorktreeTarget'
 import { saveDefaultModel } from './codingModelPrefs'
 import { useCodingStore } from './codingStore'
 import { orchestratorPanelId } from './cateAgentSession'
@@ -35,20 +35,23 @@ import {
 import { readCateFileLocation, readCateFilePaths } from '../../renderer/drag/fileDragPayload'
 import type { CodingImageAttachment, CodingSlashCommand, CodingThinkingLevel } from '../../shared/types'
 
-// --- draft (per-workspace key, so an unsent message follows you across chats) --
-const draftKey = (wsId: string): string => `cate.cateAgentDraft.${wsId}`
-const loadDraft = (wsId: string): string => {
+// --- draft (per workspace + host, so panels do not mirror unsent messages) ----
+const draftKey = (wsId: string, hostPanelId?: string): string =>
+  hostPanelId
+    ? `cate.cateAgentDraft.${wsId}.${hostPanelId}`
+    : `cate.cateAgentDraft.${wsId}`
+const loadDraft = (wsId: string, hostPanelId?: string): string => {
   try {
-    return wsId ? localStorage.getItem(draftKey(wsId)) ?? '' : ''
+    return wsId ? localStorage.getItem(draftKey(wsId, hostPanelId)) ?? '' : ''
   } catch {
     return ''
   }
 }
-const saveDraft = (wsId: string, value: string): void => {
+const saveDraft = (wsId: string, hostPanelId: string | undefined, value: string): void => {
   try {
     if (!wsId) return
-    if (value) localStorage.setItem(draftKey(wsId), value)
-    else localStorage.removeItem(draftKey(wsId))
+    if (value) localStorage.setItem(draftKey(wsId, hostPanelId), value)
+    else localStorage.removeItem(draftKey(wsId, hostPanelId))
   } catch {
     /* best-effort */
   }
@@ -60,7 +63,11 @@ export const CateAgentComposer: React.FC<{
   /** undefined follows the workspace selection; null is an explicit new-chat surface. */
   chatId?: string | null
   onChatCreated?: (chatId: string) => void
-}> = ({ wsId, rootPath, chatId, onChatCreated }) => {
+  /** New chats and drafts belong to this panel; absent means the sidebar. */
+  hostPanelId?: string
+  /** Worktree assigned when this Agent panel was launched from Parallel Work. */
+  defaultWorktreeId?: string
+}> = ({ wsId, rootPath, chatId, onChatCreated, hostPanelId, defaultWorktreeId }) => {
   const cateAgent = useCateAgentWs(wsId)
   const chats = useChatsStore((s) => s.chatsByRoot[rootPath]) ?? []
   const selectedChatId = chatId === undefined ? cateAgent.activeChatId : chatId ?? ''
@@ -69,7 +76,7 @@ export const CateAgentComposer: React.FC<{
   const session = useCodingStore((s) => panelId ? s.panels[panelId] : undefined)
   const running = activeChat?.run?.status === 'running' || !!session?.running
 
-  const [text, setText] = React.useState(() => loadDraft(wsId))
+  const [text, setText] = React.useState(() => loadDraft(wsId, hostPanelId))
   const [images, setImages] = React.useState<CodingImageAttachment[]>([])
   const [commands, setCommands] = React.useState<CodingSlashCommand[]>([])
   const [pendingThinking, setPendingThinking] = React.useState<CodingThinkingLevel | null>(null)
@@ -85,7 +92,9 @@ export const CateAgentComposer: React.FC<{
   const defaultModel = useSettingsStore((s) => s.agentDefaultModel)
   // The worktree the active chat works against (null = whatever is checked out).
   // Re-read whenever the chat changes — each chat remembers its own.
-  const [targetId, setTargetId] = React.useState<string | null>(() => getTargetWorktree(selectedChatId))
+  const [targetId, setTargetId] = React.useState<string | null>(
+    () => resolveTargetWorktree(selectedChatId, defaultWorktreeId),
+  )
 
   // The workspace's worktrees + create/checkout adapters, shared with every other
   // chat composer. Orphans (metadata whose checkout is gone) are not pickable.
@@ -93,8 +102,10 @@ export const CateAgentComposer: React.FC<{
 
   // Follow the active chat: each chat remembers its own worktree.
   React.useEffect(() => {
-    setTargetId(getTargetWorktree(selectedChatId))
-  }, [selectedChatId])
+    const next = resolveTargetWorktree(selectedChatId, defaultWorktreeId)
+    setTargetId(next)
+    if (selectedChatId && next && defaultWorktreeId) setTargetWorktree(selectedChatId, next)
+  }, [defaultWorktreeId, selectedChatId])
 
   React.useEffect(() => {
     if (panelId) useCodingStore.getState().init(panelId)
@@ -126,7 +137,7 @@ export const CateAgentComposer: React.FC<{
   const update = (value: string): void => {
     const normalized = value.replace(/\r\n?/g, '\n').replace(/^\n+/, '')
     setText(normalized)
-    saveDraft(wsId, normalized)
+    saveDraft(wsId, hostPanelId, normalized)
   }
   const send = (): void => {
     const t = text.trim()
@@ -140,7 +151,7 @@ export const CateAgentComposer: React.FC<{
     const directCwd = worktrees.find((worktree) => worktree.id === targetId)?.path
     const nextChatId = chatId
       ? sendCateAgentMessage(wsId, rootPath, t, targetId ?? undefined, chatId, options)
-      : sendDirectAgentMessage(wsId, rootPath, t, targetId ?? undefined, options, directCwd)
+      : sendDirectAgentMessage(wsId, rootPath, t, targetId ?? undefined, options, directCwd, hostPanelId)
     if (!activeChat) onChatCreated?.(nextChatId)
     update('')
     setImages([])
@@ -244,6 +255,7 @@ export const CateAgentComposer: React.FC<{
   const pickWorktree = (id: string): void => {
     setTargetId(id)
     if (selectedChatId) setTargetWorktree(selectedChatId, id)
+    if (hostPanelId) useAppStore.getState().setPanelWorktreeId(wsId, hostPanelId, id)
   }
 
   // A chat's own model override, else the global default — so the pill and its

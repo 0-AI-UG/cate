@@ -111,8 +111,8 @@ export interface PanelState {
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
   /** Id of the WorktreeMeta in the parent workspace that this panel is
-   *  associated with. Drives the per-panel color accent and the title-bar
-   *  "switch worktree" pill. Applies to terminal + agent panels. */
+   *  associated with. Drives the per-panel color accent for terminal + agent
+   *  panels; terminals also expose the title-bar "switch worktree" pill. */
   worktreeId?: string
   /** Terminal panels only. Set to true the first time the user renames the
    *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
@@ -1244,6 +1244,9 @@ export interface Chat {
   createdAt: number
   updatedAt: number
   messages: ChatMessage[]
+  /** The Agent panel that owns this chat. Absence means the workspace Cate
+   *  sidebar owns it. A chat is rendered by exactly one of those hosts. */
+  hostPanelId?: string
   run?: ChatRun
   /** Per-chat model override. The Cate Agent otherwise uses the global default. */
   model?: CateAgentModelRef

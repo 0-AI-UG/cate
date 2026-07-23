@@ -36,7 +36,6 @@ export function isFileDrag(e: DragEvent): boolean {
   return (
     types.includes(CATE_FILE_MIME) ||
     types.includes(CATE_FILES_MIME) ||
-    types.includes(CHAT_DRAG_MIME) ||
     types.includes('Files')
   )
 }
@@ -46,6 +45,13 @@ export function isFileDrag(e: DragEvent): boolean {
 export function useFileDropTracker(): void {
   useEffect(() => {
     const onDragOver = (e: DragEvent): void => {
+      // Chats have a destination-list ghost of their own. Never paint the
+      // generic whole-panel/file/canvas overlay for them.
+      if (e.dataTransfer?.types.includes(CHAT_DRAG_MIME)) {
+        const store = useFileDropStore.getState()
+        if (store.target) store.set(null)
+        return
+      }
       if (!isFileDrag(e)) return
       e.preventDefault() // allow dropping anywhere a [data-filedrop] target exists
       const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null

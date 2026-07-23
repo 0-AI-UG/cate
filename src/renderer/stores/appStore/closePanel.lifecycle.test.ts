@@ -80,6 +80,8 @@ beforeEach(() => {
     recentProjectsAdd: vi.fn(),
     recentProjectsRemove: vi.fn(async () => undefined),
     agentDispose: vi.fn(async () => undefined),
+    projectChatsLoad: vi.fn(async () => []),
+    projectChatsSave: vi.fn(async () => undefined),
   }
 })
 
@@ -91,6 +93,7 @@ import {
 import { removePanelFromWindow } from '../../lib/panels/removePanelFromWindow'
 import { setActivePanel, getActivePanelId } from '../../lib/activePanel'
 import type { DockLayoutNode, PanelState } from '../../../shared/types'
+import { useChatsStore } from '../chatsStore'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -173,6 +176,7 @@ beforeEach(() => {
   h.disposeSpy.mockClear()
   h.releaseSpy.mockClear()
   setActivePanel(null)
+  useChatsStore.setState({ chatsByRoot: {}, loadedRoots: {} })
   testSeq += 1
 })
 
@@ -252,6 +256,26 @@ describe('closePanel — happy path', () => {
     expect(h.ptyKill).not.toHaveBeenCalled()
     expect(h.entries.has(termId)).toBe(true)
     expect(panelsOf(wsId)[termId]).toBeDefined()
+  })
+
+  it('closing an Agent panel returns its chats to the sidebar', () => {
+    const { wsId } = makeWorkspace(`agent-${testSeq}`)
+    const rootPath = useAppStore.getState().workspaces.find((workspace) => workspace.id === wsId)!.rootPath
+    const agentId = useAppStore.getState().createCateAgent(wsId, { x: 0, y: 0 })
+    useChatsStore.setState({
+      chatsByRoot: {
+        [rootPath]: [
+          { id: 'owned', title: 'Owned', createdAt: 1, updatedAt: 1, messages: [], hostPanelId: agentId },
+          { id: 'other', title: 'Other', createdAt: 1, updatedAt: 1, messages: [], hostPanelId: 'another-agent' },
+        ],
+      },
+      loadedRoots: { [rootPath]: true },
+    })
+
+    useAppStore.getState().closePanel(wsId, agentId)
+
+    expect(useChatsStore.getState().getChat(rootPath, 'owned')?.hostPanelId).toBeUndefined()
+    expect(useChatsStore.getState().getChat(rootPath, 'other')?.hostPanelId).toBe('another-agent')
   })
 })
 
@@ -360,6 +384,24 @@ describe('closePanel — detached-window interactions', () => {
     expect(h.releaseSpy).toHaveBeenCalledWith(termId)
     expect(h.ptyKill).not.toHaveBeenCalled() // PTY survives the move
     expect(panelsOf(wsId)[termId]).toBeUndefined() // record now lives in the other window
+  })
+
+  it('transferring an Agent panel preserves its chat ownership', () => {
+    const { wsId } = makeWorkspace(`agent-transfer-${testSeq}`)
+    const rootPath = useAppStore.getState().workspaces.find((workspace) => workspace.id === wsId)!.rootPath
+    const agentId = useAppStore.getState().createCateAgent(wsId, { x: 0, y: 0 })
+    useChatsStore.setState({
+      chatsByRoot: {
+        [rootPath]: [
+          { id: 'owned', title: 'Owned', createdAt: 1, updatedAt: 1, messages: [], hostPanelId: agentId },
+        ],
+      },
+      loadedRoots: { [rootPath]: true },
+    })
+
+    removePanelFromWindow(wsId, agentId, 'cateAgent', 'transfer')
+
+    expect(useChatsStore.getState().getChat(rootPath, 'owned')?.hostPanelId).toBe(agentId)
   })
 
   it('closePanel on an already-transferred panel is inert: it cannot reach the moved PTY', () => {

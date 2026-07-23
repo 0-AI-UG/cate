@@ -1,13 +1,11 @@
 // =============================================================================
-// WorktreePill — the title-bar "worktree chip": shows which parallel branch a
-// terminal or agent panel belongs to, color-filled in the worktree's color.
+// WorktreePill — the terminal title-bar "worktree chip": shows which parallel
+// branch a terminal belongs to, color-filled in the worktree's color.
 //
 //   • Hover  → highlights every node in that worktree (ring + sludge boost).
 //   • Click  → menu: focus the worktree on canvas, or switch this panel to
-//              another worktree. Switching a TERMINAL opens a fresh PTY in the
-//              new checkout (a terminal IS a checkout); switching an AGENT
-//              re-tags it and respawns pi in the new checkout (CateAgentPanel
-//              reacts to the changed cwd).
+//              another worktree. Switching opens a fresh PTY in the new
+//              checkout because a terminal is bound to its checkout.
 //
 // Hidden unless the workspace has 2+ worktrees — otherwise it's just chrome
 // noise on the common single-branch flow.
@@ -33,7 +31,6 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
   // (color/label), the single source shared with the Parallel Work tab.
   const rootPath = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.rootPath ?? '')
   const worktrees = useWorktrees(rootPath, workspaceId)
-  const setPanelWorktreeId = useAppStore((s) => s.setPanelWorktreeId)
   const setHoveredWorktree = useUIStore((s) => s.setHoveredWorktree)
   const focusWorktree = useUIStore((s) => s.focusWorktree)
   const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
@@ -74,22 +71,16 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
     const target = worktrees.find((w) => w.id === choice)
     if (!target) return
 
-    if (panel.type === 'terminal') {
-      // A terminal is bound to a checkout — switching means a fresh shell in the
-      // new path. Warn first if a foreground process is running.
-      const ok = await confirmCloseRunningTerminals([panel])
-      if (!ok) return
-      useAppStore.getState().respawnPanelTerminal(workspaceId, panel.id, target.path, target.id)
-    } else {
-      // Agent panels: re-tag the panel. CateAgentPanel derives its cwd from the
-      // worktree tag and reacts to the change by disposing the old checkout's
-      // chats and reopening pi in the new one, so the agent moves with the pill.
-      setPanelWorktreeId(workspaceId, panel.id, target.id)
-    }
-  }, [worktrees, current, focusedWorktreeId, panel, workspaceId, setPanelWorktreeId, focusWorktree])
+    // A terminal is bound to a checkout — switching means a fresh shell in the
+    // new path. Warn first if a foreground process is running.
+    const ok = await confirmCloseRunningTerminals([panel])
+    if (!ok) return
+    useAppStore.getState().respawnPanelTerminal(workspaceId, panel.id, target.path, target.id)
+  }, [worktrees, current, focusedWorktreeId, panel, workspaceId, focusWorktree])
 
-  // Only relevant for terminal/agent panels in workspaces with 2+ worktrees.
-  if (panel.type !== 'terminal' && panel.type !== 'cateAgent') return null
+  // The chip is terminal chrome only. Agent worktree selection lives below its
+  // composer while panel.worktreeId still records its worktree association.
+  if (panel.type !== 'terminal') return null
   if (worktrees.length < 2 || !current) return null
 
   const isFocused = focusedWorktreeId === currentId

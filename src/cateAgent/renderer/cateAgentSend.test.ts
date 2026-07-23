@@ -51,6 +51,25 @@ describe('sendCateAgentMessage', () => {
     expect(h.sendMessage).not.toHaveBeenCalled()
   })
 
+  it('pins a new panel chat without changing the sidebar selection', () => {
+    const chat = { id: 'new-chat', title: 'topic:hell', messages: [], hostPanelId: 'agent-panel' }
+    h.createChat.mockReturnValue(chat)
+
+    sendDirectAgentMessage(
+      'ws1',
+      '/root',
+      'hello world',
+      undefined,
+      undefined,
+      undefined,
+      'agent-panel',
+    )
+
+    expect(h.createChat).toHaveBeenCalledWith('/root', 'topic:hell', 'agent-panel')
+    expect(h.setActiveChat).not.toHaveBeenCalled()
+    expect(h.promptDirectChat).toHaveBeenCalledWith(chat, 'ws1', '/root', 'hello world', undefined, undefined)
+  })
+
   it('always mints a new chat from the observer front door', () => {
     h.wsState = { observerView: true, activeChatId: 'existing' }
     h.getChat.mockReturnValue({ id: 'existing', engineeringTask: { goal: 'x' } })
@@ -79,6 +98,7 @@ describe('sendCateAgentMessage', () => {
 
     expect(chatId).toBe('panel-chat')
     expect(h.createChat).not.toHaveBeenCalled()
+    expect(h.setActiveChat).not.toHaveBeenCalled()
     expect(h.sendMessage).toHaveBeenCalledWith('ws1', '/root', 'panel-chat', 'from panel')
   })
 

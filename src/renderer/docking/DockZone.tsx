@@ -15,6 +15,7 @@ import { setPendingReveal } from '../lib/editor/editorReveal'
 import { useAppStore } from '../stores/appStore'
 import { CHAT_DRAG_MIME, readChatDrag } from '../drag/fileDragPayload'
 import { createSeededChatPanel } from '../drag/openChatDrop'
+import { endChatDrag } from '../drag/chatDragState'
 
 interface DockZoneProps {
   position: DockZonePosition
@@ -53,21 +54,21 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
       e.dataTransfer.types.includes('Files')
     ) {
       e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
+      e.dataTransfer.dropEffect = e.dataTransfer.types.includes(CHAT_DRAG_MIME) ? 'move' : 'copy'
     }
   }, [])
 
   const handleFileDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
-      // Chat drop from the sidebar tab strip / a panel's recents — open the chat
-      // as an agent tab in this zone (a live mirror when the chat is already open
-      // elsewhere).
+      // Chat drop from the sidebar tab strip / a panel's recents — move the chat
+      // into a newly-created Agent tab in this zone.
       const chatDrag = readChatDrag(e.dataTransfer)
       if (chatDrag) {
         e.preventDefault()
         e.stopPropagation()
         const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
         if (wsId) createSeededChatPanel(wsId, chatDrag, undefined, { target: 'dock', zone: position })
+        endChatDrag()
         return
       }
 

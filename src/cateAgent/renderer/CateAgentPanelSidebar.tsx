@@ -4,13 +4,19 @@ import { useMemo } from 'react'
 import { Plus, Sidebar as SidebarIcon, Gear, Trash } from '@phosphor-icons/react'
 import type { Chat } from '../../shared/types'
 import { Tooltip } from '../../renderer/ui/Tooltip'
-import { setChatDrag } from '../../renderer/drag/fileDragPayload'
-import { chatDragPayload, ChatStatusGlyph } from './chatListPrimitives'
+import {
+  beginChatDrag,
+  endChatDrag,
+  showChatDropGhost,
+  useChatDragState,
+} from '../../renderer/drag/chatDragState'
+import { ChatDropGhost, ChatStatusGlyph } from './chatListPrimitives'
 
 export function CateAgentPanelSidebar({
   chats,
   activeChatId,
   rootPath,
+  panelId,
   onNewChat,
   onOpenChat,
   onDeleteChat,
@@ -21,6 +27,7 @@ export function CateAgentPanelSidebar({
   chats: Chat[]
   activeChatId: string | null
   rootPath: string
+  panelId: string
   onNewChat: () => void
   onOpenChat: (chatId: string) => void
   onDeleteChat: (chatId: string) => void
@@ -29,6 +36,15 @@ export function CateAgentPanelSidebar({
   settingsActive: boolean
 }) {
   const ordered = useMemo(() => [...chats].reverse(), [chats])
+  const drag = useChatDragState((state) => state.active)
+  const dragDestination = useChatDragState((state) => state.destinationHostPanelId)
+  const showGhost = showChatDropGhost(drag, dragDestination, rootPath, panelId)
+  const previewItems = useMemo(
+    () => showGhost && drag
+      ? [...ordered, drag.chat].sort((a, b) => b.createdAt - a.createdAt)
+      : ordered,
+    [drag, ordered, showGhost],
+  )
 
   return (
     <div className="flex min-h-0 w-[200px] shrink-0 flex-col border-r border-subtle bg-surface-0">
@@ -55,16 +71,19 @@ export function CateAgentPanelSidebar({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2">
-        {ordered.length === 0 ? (
+        {previewItems.length === 0 ? (
           <div className="px-3 py-6 text-center text-[11px] text-muted">No chats yet.</div>
-        ) : ordered.map((chat) => (
+        ) : previewItems.map((chat) => chat.id === drag?.chat.id && showGhost ? (
+          <ChatDropGhost key={`ghost-${chat.id}`} chat={chat} />
+        ) : (
           <div
             key={chat.id}
             draggable
             onDragStart={(e) => {
-              e.dataTransfer.effectAllowed = 'copy'
-              setChatDrag(e.dataTransfer, chatDragPayload(chat, rootPath))
+              e.dataTransfer.effectAllowed = 'move'
+              beginChatDrag(e.dataTransfer, { chat, rootPath, sourceHostPanelId: panelId })
             }}
+            onDragEnd={endChatDrag}
             className={`group flex items-center gap-1 rounded-md px-1 ${
               chat.id === activeChatId ? 'bg-hover-strong' : 'hover:bg-hover'
             }`}

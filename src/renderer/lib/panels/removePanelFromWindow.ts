@@ -21,6 +21,7 @@ import type { PanelType } from '../../../shared/types'
 import { useAppStore } from '../../stores/appStore'
 import type { PanelRemovalReason } from './panelTeardown'
 import { teardownPanelFamily } from './panelLifecycle'
+import { releasePanelChatsToSidebar } from '../../stores/chatsStore'
 
 export function removePanelFromWindow(
   workspaceId: string,
@@ -32,6 +33,15 @@ export function removePanelFromWindow(
 
   const ws = app.workspaces?.find((w) => w.id === workspaceId)
   const childIds = teardownPanelFamily(panelId, panelType, reason, (id) => ws?.panels[id]?.type)
+  if (reason === 'close') {
+    releasePanelChatsToSidebar(
+      ws?.rootPath ?? '',
+      [
+        ...(panelType === 'cateAgent' ? [panelId] : []),
+        ...[...childIds].filter((id) => ws?.panels[id]?.type === 'cateAgent'),
+      ],
+    )
+  }
   for (const id of childIds) app.removePanelRecord(workspaceId, id)
   app.removePanelRecord(workspaceId, panelId)
 }

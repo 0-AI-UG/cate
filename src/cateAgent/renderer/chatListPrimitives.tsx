@@ -18,3 +18,16 @@ export const ChatStatusGlyph: React.FC<{ chat: Chat }> = ({ chat }) => (
     style={{ backgroundColor: chatDotColor(chat) }}
   />
 )
+
+export const ChatDropGhost: React.FC<{ chat: Chat; compact?: boolean }> = ({ chat, compact = false }) => (
+  <div
+    data-chat-drop-ghost
+    aria-hidden
+    className={`pointer-events-none flex min-w-0 items-center gap-1.5 rounded-md border border-dashed border-agent/60 bg-agent/10 text-primary opacity-70 ${
+      compact ? 'h-7 max-w-[168px] flex-shrink-0 px-2.5 text-[12px]' : 'mx-1 px-2 py-1 text-[11.5px]'
+    }`}
+  >
+    <ChatStatusGlyph chat={chat} />
+    <span className="truncate">{chat.title}</span>
+  </div>
+)

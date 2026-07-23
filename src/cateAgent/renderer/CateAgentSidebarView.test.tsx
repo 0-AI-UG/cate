@@ -28,6 +28,7 @@ import { useCodingStore } from './codingStore'
 import { orchestratorPanelId } from './cateAgentSession'
 import { useAppStore } from '../../renderer/stores/appStore'
 import { useStatusStore } from '../../renderer/stores/statusStore'
+import { endChatDrag, useChatDragState } from '../../renderer/drag/chatDragState'
 
 const ROOT = '/root'
 let host: HTMLDivElement
@@ -68,6 +69,7 @@ beforeEach(() => {
   useCodingStore.setState({ panels: {} })
   useAppStore.setState({ workspaces: [], selectedWorkspaceId: undefined } as never)
   useStatusStore.setState({ workspaces: {} })
+  endChatDrag()
 })
 
 afterEach(() => {
@@ -78,6 +80,7 @@ afterEach(() => {
   useCodingStore.setState({ panels: {} })
   useAppStore.setState({ workspaces: [], selectedWorkspaceId: undefined } as never)
   useStatusStore.setState({ workspaces: {} })
+  endChatDrag()
   vi.clearAllMocks()
 })
 
@@ -120,6 +123,40 @@ describe('CateAgentSidebarView', () => {
     expect(useChatsStore.getState().getChats(ROOT)).toHaveLength(1)
     expect(document.body.textContent).not.toContain('New coding chat')
     expect(document.body.textContent).not.toContain('New loop chat')
+  })
+
+  it('renders only sidebar-owned chats when a panel owns another chat', () => {
+    const sidebarChat = useChatsStore.getState().createChat(ROOT, 'Sidebar only')
+    const panelChat = useChatsStore.getState().createChat(ROOT, 'Panel only', 'agent-panel-1')
+    useChatsStore.getState().appendMessage(ROOT, panelChat.id, {
+      id: 'panel-message',
+      role: 'user',
+      ts: Date.now(),
+      kind: 'text',
+      text: 'must not mirror into the sidebar',
+    })
+    useCateAgentStore.getState().setActiveChat('ws1', panelChat.id)
+
+    act(() => root.render(<CateAgentSidebarView wsId="ws1" rootPath={ROOT} />))
+
+    expect(host.textContent).toContain(sidebarChat.title)
+    expect(host.textContent).not.toContain(panelChat.title)
+    expect(host.textContent).not.toContain('must not mirror into the sidebar')
+    expect(useCateAgentStore.getState().get('ws1').activeChatId).toBe(sidebarChat.id)
+  })
+
+  it('previews a panel chat as a ghost tab when it is dragged over the sidebar', () => {
+    const panelChat = useChatsStore.getState().createChat(ROOT, 'Move me here', 'agent-panel-1')
+    useChatDragState.setState({
+      active: { chat: panelChat, rootPath: ROOT, sourceHostPanelId: 'agent-panel-1' },
+      destinationHostPanelId: null,
+    })
+
+    act(() => root.render(<CateAgentSidebarView wsId="ws1" rootPath={ROOT} />))
+
+    const ghost = host.querySelector('[data-chat-drop-ghost]')
+    expect(ghost?.textContent).toContain('Move me here')
+    expect(host.querySelectorAll('[data-chat-drop-ghost]')).toHaveLength(1)
   })
 
   it('hides the duplicate plan/iteration heading and shimmers running terminal chips', () => {

@@ -1,17 +1,19 @@
-// Workspace-sidebar home for the observer feed and the same Cate Agent chat view
-// used by floating panels. Conversation and autonomous loops share one transcript.
+// Workspace-sidebar home for the observer feed and chats pinned to the sidebar.
+// Floating panels use the same chat view but own disjoint chat sets.
 
 import React from 'react'
-import { useCateAgentWs } from './cateAgentStore'
+import { useCateAgentStore, useCateAgentWs } from './cateAgentStore'
 import { CateAgentThread } from './CateAgentThread'
 import { CateAgentChatTabs } from './CateAgentChatTabs'
 import { CateAgentComposer } from './CateAgentComposer'
 import { CateAgentChatView } from './CateAgentChatView'
 import { useStickToBottom } from './useStickToBottom'
-import { useChatsStore } from '../../renderer/stores/chatsStore'
+import { isSidebarChat, useChatsStore } from '../../renderer/stores/chatsStore'
 import { useCateAgentReady } from '../../renderer/stores/providerReadinessStore'
 import { useUIStore } from '../../renderer/stores/uiStore'
 import { CateLogo } from '../../renderer/ui/CateLogo'
+import { readChatDrag, CHAT_DRAG_MIME } from '../../renderer/drag/fileDragPayload'
+import { endChatDrag, useChatDragState } from '../../renderer/drag/chatDragState'
 
 const PATTERN: React.CSSProperties = {
   backgroundImage:
@@ -91,7 +93,8 @@ const ObserverBody: React.FC<{ wsId: string; rootPath: string }> = ({ wsId, root
 export const CateAgentSidebarView: React.FC<{ wsId: string; rootPath: string }> = ({ wsId, rootPath }) => {
   const ready = useCateAgentReady() === 'ok'
   const cateAgent = useCateAgentWs(wsId)
-  const chats = useChatsStore((s) => s.chatsByRoot[rootPath]) ?? []
+  const chats = (useChatsStore((s) => s.chatsByRoot[rootPath]) ?? [])
+    .filter(isSidebarChat)
   const chatsLoaded = useChatsStore((s) => !!s.loadedRoots[rootPath])
   const loadChats = useChatsStore((s) => s.loadChats)
   const activeChat = cateAgent.activeChatId
@@ -104,6 +107,35 @@ export const CateAgentSidebarView: React.FC<{ wsId: string; rootPath: string }> 
   React.useEffect(() => {
     void loadChats(rootPath)
   }, [loadChats, rootPath])
+
+  React.useEffect(() => {
+    if (!cateAgent.activeChatId || chats.some((chat) => chat.id === cateAgent.activeChatId)) return
+    useCateAgentStore.getState().setActiveChat(wsId, chats[chats.length - 1]?.id ?? '')
+  }, [cateAgent.activeChatId, chats, wsId])
+
+  const handleChatDragOver = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (!event.dataTransfer.types.includes(CHAT_DRAG_MIME)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    useChatDragState.getState().setDestination(null)
+  }
+
+  const handleChatDrop = (event: React.DragEvent<HTMLDivElement>): void => {
+    const payload = readChatDrag(event.dataTransfer)
+    if (!payload || payload.rootPath !== rootPath) return
+    event.preventDefault()
+    event.stopPropagation()
+    useChatsStore.getState().moveChat(rootPath, payload.chatId, null)
+    useCateAgentStore.getState().setActiveChat(wsId, payload.chatId)
+    endChatDrag()
+  }
+
+  const handleChatDragLeave = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    if (useChatDragState.getState().destinationHostPanelId === null) {
+      useChatDragState.getState().setDestination(undefined)
+    }
+  }
 
   if (!rootPath) {
     return <div className="flex h-full items-center justify-center px-6 text-center text-xs text-muted">No folder open</div>
@@ -124,7 +156,13 @@ export const CateAgentSidebarView: React.FC<{ wsId: string; rootPath: string }> 
   if (!chatsLoaded) return null
 
   return (
-    <div className="relative isolate flex h-full flex-col" style={{ backgroundColor: 'var(--canvas-bg)' }}>
+    <div
+      className="relative isolate flex h-full flex-col"
+      style={{ backgroundColor: 'var(--canvas-bg)' }}
+      onDragOver={handleChatDragOver}
+      onDragLeave={handleChatDragLeave}
+      onDrop={handleChatDrop}
+    >
       <PatternLayer empty={empty} />
       <div className="flex flex-shrink-0 items-center px-2 py-1.5">
         <CateAgentChatTabs wsId={wsId} rootPath={rootPath} />

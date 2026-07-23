@@ -20,7 +20,7 @@ import {
   ensureDirectChatSession,
   persistDirectSessionFile,
 } from './directChatSession'
-import { getTargetWorktree, setTargetWorktree } from './cateAgentWorktreeTarget'
+import { resolveTargetWorktree, setTargetWorktree } from './cateAgentWorktreeTarget'
 import { onEngineeringTaskHandoff } from './engineeringTaskHandoff'
 import { codingClient } from './codingClient'
 import { cateAgentController } from './cateAgentController'
@@ -30,31 +30,56 @@ export const CateAgentChatView: React.FC<{
   rootPath: string
   chatId: string | null
   onChatCreated?: (chatId: string) => void
-}> = ({ wsId, rootPath, chatId, onChatCreated }) => {
+  /** Set only when rendered inside an Agent panel; absent means sidebar. */
+  hostPanelId?: string
+  /** Worktree assigned when this Agent panel was launched from Parallel Work. */
+  defaultWorktreeId?: string
+}> = ({ wsId, rootPath, chatId, onChatCreated, hostPanelId, defaultWorktreeId }) => {
   const chat = useChatsStore((state) => chatId
     ? (state.chatsByRoot[rootPath] ?? []).find((candidate) => candidate.id === chatId)
     : undefined)
-
-  React.useEffect(() => {
-    if (chat || chatId || !onChatCreated) return
-    const created = useChatsStore.getState().createChat(rootPath, 'New chat')
-    onChatCreated(created.id)
-  }, [chat, chatId, onChatCreated, rootPath])
 
   // A front-door surface without a chat keeps the unified composer; its first
   // send mints the durable record. Once the record exists, the direct pi agent
   // owns the thread until an approved engineering handoff.
   if (!chat) {
-    return <div className="min-h-0 flex-1" />
+    return (
+      <div className="flex min-h-0 flex-1 flex-col justify-end p-3">
+        <CateAgentComposer
+          wsId={wsId}
+          rootPath={rootPath}
+          chatId={null}
+          onChatCreated={onChatCreated}
+          hostPanelId={hostPanelId}
+          defaultWorktreeId={defaultWorktreeId}
+        />
+      </div>
+    )
   }
 
-  return <DirectCateChatView wsId={wsId} rootPath={rootPath} chatId={chat.id} />
+  return (
+    <DirectCateChatView
+      wsId={wsId}
+      rootPath={rootPath}
+      chatId={chat.id}
+      hostPanelId={hostPanelId}
+      defaultWorktreeId={defaultWorktreeId}
+    />
+  )
 }
 
-const DirectCateChatView: React.FC<{ wsId: string; rootPath: string; chatId: string }> = ({
+const DirectCateChatView: React.FC<{
+  wsId: string
+  rootPath: string
+  chatId: string
+  hostPanelId?: string
+  defaultWorktreeId?: string
+}> = ({
   wsId,
   rootPath,
   chatId,
+  hostPanelId,
+  defaultWorktreeId,
 }) => {
   const chat = useChatsStore((state) => (state.chatsByRoot[rootPath] ?? []).find((candidate) => candidate.id === chatId))
   const agentKey = directAgentKey(chatId)
@@ -63,11 +88,22 @@ const DirectCateChatView: React.FC<{ wsId: string; rootPath: string; chatId: str
   const [readyTick, setReadyTick] = React.useState(0)
   const [commands, setCommands] = React.useState<CodingSlashCommand[]>([])
   const [modelPickerOpen, setModelPickerOpen] = React.useState(false)
-  const [targetId, setTargetId] = React.useState<string | null>(() => getTargetWorktree(chatId))
+  const [targetId, setTargetId] = React.useState<string | null>(
+    () => resolveTargetWorktree(chatId, defaultWorktreeId),
+  )
   const { models, refreshModels } = useComposerModels()
   const { worktrees, onCreateWorktree, onCheckoutPr } = useComposerWorktrees({ rootPath, workspaceId: wsId })
   const worktreeMetas = useAppStore((state) => state.workspaces.find((workspace) => workspace.id === wsId)?.worktrees)
   const directCwd = resolveWorktree(targetId ?? undefined, worktreeMetas)?.path ?? rootPath
+
+  React.useEffect(() => {
+    const next = resolveTargetWorktree(chatId, defaultWorktreeId)
+    setTargetId(next)
+    if (next && defaultWorktreeId) setTargetWorktree(chatId, next)
+    if (hostPanelId && next) {
+      useAppStore.getState().setPanelWorktreeId(wsId, hostPanelId, next)
+    }
+  }, [chatId, defaultWorktreeId, hostPanelId, wsId])
 
   React.useEffect(() => {
     if (!chat) return
@@ -85,6 +121,7 @@ const DirectCateChatView: React.FC<{ wsId: string; rootPath: string; chatId: str
     const cwd = resolveWorktree(id, worktreeMetas)?.path ?? worktrees.find((worktree) => worktree.id === id)?.path ?? rootPath
     setTargetId(id)
     setTargetWorktree(chatId, id)
+    if (hostPanelId) useAppStore.getState().setPanelWorktreeId(wsId, hostPanelId, id)
     setReady(false)
     try {
       // Pi may have learned its session path since the last stats refresh. Save
@@ -106,7 +143,7 @@ const DirectCateChatView: React.FC<{ wsId: string; rootPath: string; chatId: str
     } catch {
       setReady(false)
     }
-  }, [agentKey, chat, chatId, rootPath, worktreeMetas, worktrees, wsId])
+  }, [agentKey, chat, chatId, hostPanelId, rootPath, worktreeMetas, worktrees, wsId])
 
   const refreshCommands = React.useCallback(async () => {
     if (!ready && !sliceExists) return
@@ -161,7 +198,15 @@ const DirectCateChatView: React.FC<{ wsId: string; rootPath: string; chatId: str
       }}
       tail={engineering ? <CateAgentTranscript wsId={wsId} rootPath={rootPath} chat={chat} /> : undefined}
       composerOverride={engineering
-        ? <CateAgentComposer wsId={wsId} rootPath={rootPath} chatId={chatId} />
+        ? (
+          <CateAgentComposer
+            wsId={wsId}
+            rootPath={rootPath}
+            chatId={chatId}
+            hostPanelId={hostPanelId}
+            defaultWorktreeId={defaultWorktreeId}
+          />
+        )
         : undefined}
     />
   )

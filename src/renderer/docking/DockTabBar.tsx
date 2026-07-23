@@ -19,10 +19,10 @@ import { isMiddleClick } from '../lib/mouse'
 const AWAIT_COLOR = '#c08a5a'
 
 // Lookup: panelId → worktree color. Only returns a color when the panel's
-// workspace has 2+ worktrees (matches WorktreePill's visibility rule, so the
-// tab title tint and the title-bar pill appear together or not at all). The
-// color is applied to the tab's title text, not its icon — the icon may be an
-// agent logo (an <img>, which ignores `color`), and tinting it would clash
+// workspace has 2+ worktrees. Both terminal and Agent tabs retain this light
+// association tint; the interactive title-bar worktree chip is terminal-only.
+// The color is applied to the tab's title text, not its icon — the icon may be
+// an agent logo (an <img>, which ignores `color`), and tinting it would clash
 // with the per-agent icon swap.
 function useWorktreeColorByPanel(): Record<string, string> {
   return useAppStore(useShallow((s) => {

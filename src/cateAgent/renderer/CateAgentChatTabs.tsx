@@ -2,24 +2,31 @@
 
 import React from 'react'
 import { Plus, X, Eye } from '@phosphor-icons/react'
-import { useChatsStore } from '../../renderer/stores/chatsStore'
+import { isSidebarChat, useChatsStore } from '../../renderer/stores/chatsStore'
 import { useCateAgentStore, useCateAgentWs } from './cateAgentStore'
 import { cateAgentController } from './cateAgentController'
-import { setChatDrag } from '../../renderer/drag/fileDragPayload'
-import { chatDragPayload, ChatStatusGlyph } from './chatListPrimitives'
+import {
+  beginChatDrag,
+  endChatDrag,
+  showChatDropGhost,
+  useChatDragState,
+} from '../../renderer/drag/chatDragState'
+import { ChatDropGhost, ChatStatusGlyph } from './chatListPrimitives'
 
 const Tab: React.FC<{
   active: boolean
   onClick: () => void
   onClose?: () => void
   onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDragEnd?: () => void
   children: React.ReactNode
-}> = ({ active, onClick, onClose, onDragStart, children }) => (
+}> = ({ active, onClick, onClose, onDragStart, onDragEnd, children }) => (
   <div
     role="tab"
     aria-selected={active}
     draggable={!!onDragStart}
     onDragStart={onDragStart}
+    onDragEnd={onDragEnd}
     onClick={onClick}
     className={`group/tab relative flex h-7 max-w-[168px] flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-[10px] pl-2.5 ${
       onClose ? 'pr-1' : 'pr-2.5'
@@ -45,9 +52,17 @@ const Tab: React.FC<{
 
 export const CateAgentChatTabs: React.FC<{ wsId: string; rootPath: string }> = ({ wsId, rootPath }) => {
   const cateAgent = useCateAgentWs(wsId)
-  const chats = useChatsStore((s) => s.chatsByRoot[rootPath]) ?? []
+  const chats = (useChatsStore((s) => s.chatsByRoot[rootPath]) ?? [])
+    .filter(isSidebarChat)
   const setObserverView = useCateAgentStore((s) => s.setObserverView)
   const setActiveChat = useCateAgentStore((s) => s.setActiveChat)
+  const drag = useChatDragState((state) => state.active)
+  const dragDestination = useChatDragState((state) => state.destinationHostPanelId)
+  const showGhost = showChatDropGhost(drag, dragDestination, rootPath, null)
+  const ordered = [...chats].reverse()
+  const previewItems = showGhost
+    ? [...ordered, drag.chat].sort((a, b) => b.createdAt - a.createdAt)
+    : ordered
 
   const newChat = (): void => {
     const chat = useChatsStore.getState().createChat(rootPath, 'New chat')
@@ -60,7 +75,9 @@ export const CateAgentChatTabs: React.FC<{ wsId: string; rootPath: string }> = (
         <Eye size={12} weight={cateAgent.observerView ? 'fill' : 'regular'} style={{ color: 'rgb(var(--agent-rgb))' }} />
         <span className="truncate">Feed</span>
       </Tab>
-      {[...chats].reverse().map((chat) => (
+      {previewItems.map((chat) => chat.id === drag?.chat.id && showGhost ? (
+        <ChatDropGhost key={`ghost-${chat.id}`} chat={chat} compact />
+      ) : (
         <Tab
           key={chat.id}
           active={!cateAgent.observerView && chat.id === cateAgent.activeChatId}
@@ -68,14 +85,15 @@ export const CateAgentChatTabs: React.FC<{ wsId: string; rootPath: string }> = (
           onClose={() => {
             void cateAgentController.closeChat(wsId, rootPath, chat.id).then((deleted) => {
               if (!deleted || chat.id !== cateAgent.activeChatId) return
-              const remaining = useChatsStore.getState().getChats(rootPath)
+              const remaining = useChatsStore.getState().getChats(rootPath).filter(isSidebarChat)
               setActiveChat(wsId, remaining[remaining.length - 1]?.id ?? '')
             })
           }}
           onDragStart={(e) => {
-            e.dataTransfer.effectAllowed = 'copy'
-            setChatDrag(e.dataTransfer, chatDragPayload(chat, rootPath))
+            e.dataTransfer.effectAllowed = 'move'
+            beginChatDrag(e.dataTransfer, { chat, rootPath, sourceHostPanelId: null })
           }}
+          onDragEnd={endChatDrag}
         >
           <ChatStatusGlyph chat={chat} />
           <span className="truncate">{chat.title}</span>

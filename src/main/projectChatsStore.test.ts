@@ -55,6 +55,7 @@ describe('projectChatsStore', () => {
       title: 'update readme',
       createdAt: 1,
       updatedAt: 2,
+      hostPanelId: 'agent-panel-1',
       sessionFile: '/tmp/direct-chat.jsonl',
       engineeringTask: {
         goal: 'Refresh README.md',

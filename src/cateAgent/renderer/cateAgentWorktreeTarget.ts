@@ -19,6 +19,13 @@ export const getTargetWorktree = (chatId: string): string | null => {
   }
 }
 
+/** A chat's explicit target wins; a newly-created Agent panel falls back to
+ * the worktree it was launched from until the chat records its own choice. */
+export const resolveTargetWorktree = (
+  chatId: string,
+  defaultWorktreeId?: string,
+): string | null => getTargetWorktree(chatId) ?? defaultWorktreeId ?? null
+
 export const setTargetWorktree = (chatId: string, worktreeId: string | null): void => {
   try {
     if (!chatId) return

@@ -175,6 +175,7 @@ function normalizeChat(raw: unknown): Chat | null {
     updatedAt: typeof o.updatedAt === 'number' ? o.updatedAt : 0,
     messages: Array.isArray(o.messages) ? o.messages.map(normalizeMessage).filter((m): m is ChatMessage => m !== null) : [],
   }
+  if (typeof o.hostPanelId === 'string') chat.hostPanelId = o.hostPanelId
   const run = normalizeRun(o.run)
   if (run) chat.run = run
   if (typeof o.sessionFile === 'string') chat.sessionFile = o.sessionFile

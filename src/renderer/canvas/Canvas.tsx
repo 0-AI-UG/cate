@@ -23,6 +23,7 @@ import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
 import { CHAT_DRAG_MIME, readChatDrag } from '../drag/fileDragPayload'
 import { createSeededChatPanel } from '../drag/openChatDrop'
+import { endChatDrag } from '../drag/chatDragState'
 
 // Module-level style injection — shared across all Canvas instances
 let canvasStyleInjected = false
@@ -382,7 +383,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       e.dataTransfer.types.includes('Files')
     ) {
       e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
+      e.dataTransfer.dropEffect = e.dataTransfer.types.includes(CHAT_DRAG_MIME) ? 'move' : 'copy'
     }
   }, [])
 
@@ -412,18 +413,19 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       return
     }
 
-    // Chat drop from the sidebar tab strip / a panel's recents — open the chat as
-    // an agent panel node at the cursor. Dropping the same chat again makes a live
-    // mirror (both panels adopt the same durable chat / session).
+    // Chat drop from the sidebar tab strip / a panel's recents — move the chat
+    // into a newly-created Agent panel node at the cursor.
     const chatDrag = readChatDrag(e.dataTransfer)
     if (chatDrag) {
       e.preventDefault()
+      e.stopPropagation()
       const rect = canvasRef.current?.getBoundingClientRect()
       if (!rect) return
       const viewPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top }
       const { zoomLevel, viewportOffset } = canvasApi.getState()
       const pos = viewToCanvas(viewPoint, zoomLevel, viewportOffset)
       createSeededChatPanel(useAppStore.getState().selectedWorkspaceId, chatDrag, pos, here())
+      endChatDrag()
       return
     }
 
