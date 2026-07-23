@@ -25,6 +25,8 @@ import { useUIStore } from '../stores/uiStore'
 import { useMissingAgentHookNotice } from '../hooks/useMissingAgentHookNotice'
 import { Warning } from '@phosphor-icons/react'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
+import { useActivePanelStore, getActivePanelId } from '../lib/activePanel'
+import { collectPanelIds } from '../../shared/collectPanelIds'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
 import { shouldAdjustTerminalCoords } from '../lib/terminal/terminalCoordAdjust'
 import { useTerminalGlow } from '../cateAgent/cateAgentStore'
@@ -408,6 +410,27 @@ export default function TerminalPanel({
   useEffect(() => {
     let cancelled = false
 
+    /**
+     * False when a SIBLING panel of this node owns the active panel — i.e. this
+     * node's mini-dock is split and the user is working in the other pane.
+     *
+     * Node focus is per-NODE, so every pane of a split sees isFocused === true.
+     * Without this gate all of them re-assert `textarea.focus()` on the same
+     * 25 ms tick and the last one to fire wins, which is how a click (and the
+     * Cmd+C that follows it — Electron's `role: 'copy'` copies from whatever
+     * holds DOM focus) lands on the wrong terminal. Deliberately permissive: an
+     * unset or out-of-node active panel still focuses, so a single-terminal node
+     * behaves exactly as before.
+     */
+    const ownsNodeFocus = (): boolean => {
+      const active = getActivePanelId()
+      if (!active || active === panelId) return true
+      const layout = nodeId ? canvasApi?.getState().nodes[nodeId]?.dockLayout : null
+      if (!layout) return true
+      const siblings = collectPanelIds(layout)
+      return !(siblings.includes(active) && siblings.includes(panelId))
+    }
+
     const runFocus = () => {
       let waitAttempts = 0
       let recheckAttempts = 0
@@ -415,6 +438,7 @@ export default function TerminalPanel({
       let myCancelled = false
       const tick = () => {
         if (cancelled || myCancelled) return
+        if (!ownsNodeFocus()) return
         const entry = terminalRegistry.getEntry(panelId)
         const el = entry?.terminal.element
         // Skip when xterm DOM is not attached: IntersectionObserver can briefly
@@ -456,10 +480,23 @@ export default function TerminalPanel({
       stopRun = runFocus()
     })
 
+    // Becoming the active pane of a focused split node: take DOM focus. Covers
+    // a press that lands on pane chrome rather than the xterm element itself
+    // (xterm focuses its own textarea on a direct mousedown).
+    const unsubscribeActive = useActivePanelStore.subscribe((s, prev) => {
+      if (s.activePanelId === prev.activePanelId) return
+      if (s.activePanelId !== panelId) return
+      const state = canvasApi?.getState()
+      if (state && nodeId && focusedNodeId(state) !== nodeId) return
+      stopRun?.()
+      stopRun = runFocus()
+    })
+
     return () => {
       cancelled = true
       stopRun?.()
       unsubscribe?.()
+      unsubscribeActive()
     }
   }, [isFocused, panelId, nodeId, canvasApi])
 

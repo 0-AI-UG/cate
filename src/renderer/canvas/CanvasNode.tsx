@@ -25,6 +25,7 @@ import type { DockStore } from '../stores/dockStore'
 import { DockStoreProvider } from '../stores/DockStoreContext'
 import DockTabStack from '../docking/DockTabStack'
 import { activeLeafPanelId } from '../panels/nodeDockRegistry'
+import { findTabStack } from '../stores/dockTreeUtils'
 import { setActivePanel } from '../lib/activePanel'
 import { Tooltip } from '../ui/Tooltip'
 import DockLayoutRenderer from '../docking/DockLayoutRenderer'
@@ -469,16 +470,53 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   // --- Event handlers --------------------------------------------------------
 
+  // The leaf the user last pressed inside this node's mini-dock. A split node
+  // has several visible leaves at once, and activeLeafPanelId() always answers
+  // with the FIRST one — so without this every press on the right-hand pane
+  // would still point the active panel (and therefore DOM focus) at the left
+  // one. Recorded on pointer-down, below.
+  const pressedLeafRef = useRef<string | null>(null)
+
+  /** The leaf that should own focus: the one the user last pressed, as long as
+   *  it's still in the layout; otherwise the layout's active leaf. */
+  const preferredLeaf = useCallback((): string | null => {
+    const layoutNow = dockStoreApi.getState().zones.center.layout
+    const pressed = pressedLeafRef.current
+    if (pressed && collectPanelIds(layoutNow).includes(pressed)) return pressed
+    pressedLeafRef.current = null
+    return activeLeafPanelId(layoutNow)
+  }, [dockStoreApi])
+
   // Focus this node AND point the canonical active-panel pointer at its active
-  // leaf (the visible dock tab). This is the bridge
-  // that makes terminal-focus detection (and Cmd+T placement) correct for a node
-  // whose mini-dock holds several panels. The subscription below re-asserts it on
-  // every tab switch while focused; this covers the initial focus.
+  // leaf (the pane the user pressed, else the visible dock tab). This is the
+  // bridge that makes terminal-focus detection (and Cmd+T placement) correct for
+  // a node whose mini-dock holds several panels. The subscription below
+  // re-asserts it on every tab switch while focused; this covers the initial focus.
   const focusThisNode = useCallback(() => {
     focusNode(nodeId)
-    const leaf = activeLeafPanelId(dockStoreApi.getState().zones.center.layout)
-    setActivePanel(leaf)
-  }, [focusNode, nodeId, dockStoreApi])
+    setActivePanel(preferredLeaf())
+  }, [focusNode, nodeId, preferredLeaf])
+
+  /** Pointer-down anywhere in the node body: remember which split pane it landed
+   *  in and make that the active panel. Runs on every press (not just the one
+   *  that focuses the node) so clicking between panes of an already-focused node
+   *  moves the active panel too. */
+  const recordPressedLeaf = useCallback(
+    (target: EventTarget | null) => {
+      const targetEl = target as HTMLElement | null
+      const stackEl = targetEl?.closest?.('[data-dock-stack-id]')
+      const stackId = (stackEl as HTMLElement | null)?.dataset.dockStackId
+      if (!stackId) return
+      const stack = findTabStack(dockStoreApi.getState().zones.center.layout, stackId)
+      const clickedTab = (targetEl?.closest?.('[data-tab-panel-id]') as HTMLElement | null)
+        ?.dataset.tabPanelId
+      const leaf = clickedTab ?? stack?.panelIds[stack.activeIndex] ?? stack?.panelIds[0]
+      if (!leaf) return
+      pressedLeafRef.current = leaf
+      setActivePanel(leaf)
+    },
+    [dockStoreApi],
+  )
 
   // Authoritative writer for the active panel while this node is focused: any
   // center-layout change (tab switch, split, close) re-points activePanelId at
@@ -492,7 +530,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     // Re-assert on becoming focused (the click path already did, but a focus
     // change via keyboard nav goes through focusNode without focusThisNode).
     if (isFocused) {
-      const leaf = activeLeafPanelId(dockStoreApi.getState().zones.center.layout)
+      const leaf = preferredLeaf()
       if (leaf) setActivePanel(leaf)
     }
     let prevLeaf = activeLeafPanelId(dockStoreApi.getState().zones.center.layout)
@@ -500,10 +538,13 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       const leaf = activeLeafPanelId(s.zones.center.layout)
       if (leaf === prevLeaf) return
       prevLeaf = leaf
+      // A layout change (tab switch, split, close) retires the remembered pane:
+      // the user's last press may no longer be what's visible.
+      pressedLeafRef.current = null
       if (isFocusedRef.current && leaf) setActivePanel(leaf)
     })
     return unsub
-  }, [dockStoreApi, isFocused])
+  }, [dockStoreApi, isFocused, preferredLeaf])
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -718,7 +759,12 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           <div
             style={{ position: 'relative', zIndex: 0, width: '100%', height: '100%' }}
             onMouseDownCapture={(e) => {
-              if (e.button !== 0 || isFocused) return
+              if (e.button !== 0) return
+              // Which pane of a split did this land in? Recorded before the
+              // focus bail-outs below, so switching panes inside an
+              // already-focused node still re-points the active panel.
+              recordPressedLeaf(e.target)
+              if (isFocused) return
               // When this node is part of a live multi-selection, a press on it
               // starts a GROUP drag (the bubble-phase handlers call handleDragStart,
               // which carries the selection). Focusing here would run first
