@@ -81,7 +81,7 @@ Windows: %APPDATA%/cate/config.json
 
 All optional — anything you omit inherits the base for the theme's `type`.
 `surface-0..6` (layered backgrounds, 0 = base), `titlebar-bg`, `canvas-bg`,
-`canvas-bg-alt`, `grid-dot`, `grid-line`, `border-subtle`, `border-strong`,
+`canvas-bg-alt`, `canvas-backdrop-scrim`, `grid-dot`, `grid-line`, `border-subtle`, `border-strong`,
 `border-focus`, `text-primary`, `text-secondary`, `text-muted`, `text-inverse`,
 `focus-blue`, `activity-green`, `activity-orange`, `shadow-node`,
 `shadow-node-focused`, `node-bg-active`, `node-dim-overlay`, `scrollbar-thumb`,

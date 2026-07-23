@@ -29,6 +29,7 @@
   --titlebar-bg: #232220;
   --canvas-bg: #161513;
   --canvas-bg-alt: #1c1b19;
+  --canvas-backdrop-scrim: rgba(0, 0, 0, 0.35);
   --grid-dot: rgba(255, 255, 255, 0.077);
   --grid-line: rgba(255, 255, 255, 0.03);
   --border-subtle: rgba(255, 255, 255, 0.035);

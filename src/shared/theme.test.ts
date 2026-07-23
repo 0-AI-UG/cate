@@ -171,6 +171,20 @@ describe('validateTheme', () => {
     }
   })
 
+  it('keeps a custom canvas wallpaper scrim override', () => {
+    const current = BUILT_IN_THEMES[0]
+    const res = validateTheme({
+      ...current,
+      id: 'custom-wallpaper',
+      app: { 'canvas-backdrop-scrim': 'rgba(255, 255, 255, 0)' },
+    })
+
+    expect(res.ok).toBe(true)
+    if (res.ok) {
+      expect(res.theme.app['canvas-backdrop-scrim']).toBe('rgba(255, 255, 255, 0)')
+    }
+  })
+
   it('rejects imports without the current schema version', () => {
     const current = BUILT_IN_THEMES[0]
     expect(validateTheme({ ...current, version: undefined }).ok).toBe(false)
