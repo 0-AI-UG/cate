@@ -138,7 +138,7 @@ export interface PanelState {
 // -----------------------------------------------------------------------------
 // Worktree metadata — per-workspace registry of UI-owned facts about the git
 // worktrees Cate manages, keyed by worktree path. This persists ONLY the UI
-// metadata (id/color/label). The live facts (branch / isPrimary / isCurrent)
+// metadata (id/color/label/PR identity). The live facts (branch / isPrimary / isCurrent)
 // are authoritative from `git worktree list` (owned by gitStatusStore) and are
 // joined onto this metadata at read time by useWorktrees — they are never
 // persisted here, so they can't drift out of sync with the repo.
@@ -153,6 +153,8 @@ export interface WorktreeMeta {
   color: string
   /** Optional friendly label shown in the sidebar in place of the branch. */
   label?: string
+  /** Pull request this worktree was created from, if any. */
+  prNumber?: number
 }
 
 // -----------------------------------------------------------------------------

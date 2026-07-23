@@ -97,6 +97,7 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
         id: newWorktreeId(),
         path: res.path,
         label: `#${pr.number} ${pr.headRefName}`,
+        prNumber: pr.number,
         color: pickWorktreeColor(ws?.worktrees ?? []),
       }
       upsertWorktree(workspaceId, meta)

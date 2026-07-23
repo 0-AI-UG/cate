@@ -159,6 +159,7 @@ describe('useWorktreeActions', () => {
         id: 'wt-test',
         path: '/runtime/repo/.cate/worktrees/pr-42-fork-feature',
         label: '#42 fork/feature',
+        prNumber: 42,
       }),
     ]))
     expect(workspace().additionalRoots).toContain('/runtime/repo/.cate/worktrees/pr-42-fork-feature')
