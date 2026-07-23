@@ -96,6 +96,7 @@ import {
   getOrCreateCanvasStoreForPanel,
   peekCanvasStoreForPanel,
 } from '../canvasStore'
+import { closePanelWithConfirm } from '../../lib/closePanelWithConfirm'
 import { removePanelFromWindow } from '../../lib/panels/removePanelFromWindow'
 import { setActivePanel, getActivePanelId } from '../../lib/activePanel'
 import type { DockLayoutNode, PanelState } from '../../../shared/types'
@@ -268,6 +269,29 @@ describe('closePanel — happy path', () => {
 // ---------------------------------------------------------------------------
 
 describe('closePanel — canvas with children', () => {
+  it('keeps a moved child panel and PTY alive when its source canvas closes', async () => {
+    const { wsId, canvasId: targetCanvas } = makeWorkspace(`move-${testSeq}`)
+    const sourceCanvas = useAppStore.getState().createCanvas(wsId)
+    const childTerm = useAppStore.getState().createTerminal(
+      wsId, undefined, undefined,
+      { target: 'canvas', canvasPanelId: sourceCanvas, position: { x: 20, y: 30 } },
+    )
+    spawnPty(childTerm, wsId)
+    const confirmCloseCanvas = vi.fn(async () => 'move' as const)
+    Object.assign(window.electronAPI, { confirmCloseCanvas })
+
+    await closePanelWithConfirm(wsId, sourceCanvas)
+
+    expect(confirmCloseCanvas).toHaveBeenCalledWith({ panelCount: 1, isLast: false })
+    expect(panelsOf(wsId)[sourceCanvas]).toBeUndefined()
+    expect(panelsOf(wsId)[childTerm]).toBeDefined()
+    expect(h.entries.has(childTerm)).toBe(true)
+    expect(h.ptyKill).not.toHaveBeenCalled()
+    expect(
+      getOrCreateCanvasStoreForPanel(targetCanvas).getState().nodeForPanel(childTerm),
+    ).toBeTruthy()
+  })
+
   it('recursively disposes child node panels AND mini-dock tab panels, then releases the canvas store', () => {
     const { wsId } = makeWorkspace(`cv-${testSeq}`)
     const canvas2 = useAppStore.getState().createCanvas(wsId)
