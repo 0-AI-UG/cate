@@ -11,8 +11,8 @@
 // backdrop, relying on --text-primary + a text shadow. To keep them legible
 // over an arbitrary photo we (1) let the layer's opacity blend it toward the
 // solid themed canvas background — which dims it on dark themes and lightens it
-// on light themes for free — and (2) lay a theme-tuned scrim on top as a
-// contrast floor regardless of the chosen opacity.
+// on light themes for free — and (2) lay the theme's backdrop scrim on top as
+// a contrast floor regardless of the chosen opacity.
 // =============================================================================
 
 import React, { useEffect, useState } from 'react'
@@ -21,8 +21,8 @@ import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
 import { getBuiltinWallpaper } from '../lib/builtinWallpapers'
 
 const READABILITY = {
-  dark: { filter: 'brightness(0.6) saturate(0.9)', scrim: 'rgba(0, 0, 0, 0.35)' },
-  light: { filter: 'brightness(1.05) saturate(0.95)', scrim: 'rgba(255, 255, 255, 0.4)' },
+  dark: { filter: 'brightness(0.6) saturate(0.9)' },
+  light: { filter: 'brightness(1.05) saturate(0.95)' },
 } as const
 
 const CanvasBackgroundImage: React.FC = () => {
@@ -93,7 +93,7 @@ const CanvasBackgroundImage: React.FC = () => {
         style={{
           position: 'absolute',
           inset: 0,
-          backgroundColor: treatment.scrim,
+          backgroundColor: 'var(--canvas-backdrop-scrim)',
         }}
       />
     </div>
