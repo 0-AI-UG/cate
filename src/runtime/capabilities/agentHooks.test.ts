@@ -266,11 +266,14 @@ describe('agentHooks capability', () => {
     const { dir } = await cap.endpoint()
     const env = await cap.envForPty('rpty-nonode', { PATH: '/usr/bin:/bin' })
 
-    const { code, stderr } = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
+    const { code, stderr } = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
       let err = ''
       const child = execFile(path.join(dir, 'cate-hook-bridge-claude-code'), [], { env, timeout: 15_000 })
       child.stderr!.on('data', (chunk) => { err += String(chunk) })
       child.on('close', (c) => resolve({ code: c, stderr: err }))
+      child.stdin!.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EPIPE') reject(error)
+      })
       child.stdin!.end(JSON.stringify({ hook_event_name: 'SessionStart', cwd: '/w' }))
     })
 
