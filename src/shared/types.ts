@@ -1449,11 +1449,11 @@ export interface AppSettings {
    *  the cell. cliEnabled above is the master switch — off, no endpoint exists
    *  and these never come into play. The rows and the method → cell mapping live
    *  in shared/cliPermissions.ts. */
-  /** Read half of `cate browser *` — screenshot, snapshot, list, current, wait.
+  /** Read half of `cate browser *` — screenshot, snapshot and conditional wait.
    *  Sees whatever the user's live logged-in session is showing. On by default. */
   cliBrowserReadEnabled: boolean
-  /** Control half of `cate browser *` — open/back/forward/reload plus click,
-   *  type and press, which act on the user's live logged-in session.
+  /** Control half of `cate browser *` — open/reload plus click, fill, type and
+   *  press, which act on the user's live logged-in session.
    *  On by default (the CLI's original core feature). */
   cliBrowserControlEnabled: boolean
   /** `cate terminal read` — read other terminal panels' screens/scrollback,
