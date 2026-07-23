@@ -1045,8 +1045,8 @@ export interface ElectronAPI {
   skillsRefresh(): Promise<SkillEntry[]>
   /** Fetch a skill's SKILL.md body for the detail preview. */
   skillsGetPreview(entry: SkillEntry): Promise<string>
-  /** Install a skill into a workspace agent. Reuses an existing local install of
-   *  the same skill, then the saved-library cache, else fetches from GitHub. */
+  /** Install/update a skill from its source. Existing workspace/library bytes
+   *  are used only as an offline fallback (reported in warnings). */
   skillsInstall(entry: SkillEntry, targetId: SkillTargetId, cwd: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; installed?: InstalledSkill }>
   /** Uninstall a skill from a workspace agent. */
   skillsUninstall(skillId: string, name: string, targetId: SkillTargetId, cwd: string): Promise<{ ok: boolean; error?: string }>

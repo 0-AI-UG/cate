@@ -7,10 +7,8 @@
 // `dom-ready` fires (which is when getWebContentsId() returns a stable id),
 // and unregisters on unmount.
 //
-// Note: refs (the @e1/@e2 mapping returned by `portal snapshot`) live in main
-// rather than here — main injects `data-cate-ref` attributes onto the DOM
-// during the snapshot and looks them up directly via executeJavaScript() on
-// subsequent commands.
+// Snapshot refs are generation-scoped tokens (for example @s2e4) injected into
+// the guest DOM and resolved by browserDriver on subsequent commands.
 // =============================================================================
 
 /** Minimal subset of the Electron <webview> tag interface we depend on.
@@ -25,9 +23,22 @@ export interface PortalWebview {
   reload(): void
   isLoading(): boolean
   executeJavaScript(code: string): Promise<unknown>
-  /** Real (isTrusted) input delivered to the guest webContents — unlike the
-   *  synthetic DOM events click/type dispatch. Used by `browser press`. */
-  sendInputEvent(event: { type: 'keyDown' | 'char' | 'keyUp'; keyCode: string }): Promise<void> | void
+  /** Real (isTrusted) input delivered to the guest webContents. Browser actions
+   *  use this instead of synthetic DOM click/input events. */
+  sendInputEvent(event:
+    | {
+      type: 'keyDown' | 'char' | 'keyUp'
+      keyCode: string
+      modifiers?: Array<'shift' | 'control' | 'alt' | 'meta'>
+    }
+    | {
+      type: 'mouseMove' | 'mouseDown' | 'mouseUp'
+      x: number
+      y: number
+      button?: 'left'
+      clickCount?: number
+    }
+  ): Promise<void> | void
 }
 
 interface Entry {
