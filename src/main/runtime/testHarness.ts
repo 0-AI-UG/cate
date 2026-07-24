@@ -2,7 +2,7 @@ import { buildDaemonRuntime } from '../../runtime/capabilities'
 import { RpcServer } from '../../runtime/rpcServer'
 import { RuntimeRpcClient } from './rpcClient'
 import { RemoteRuntime } from './RemoteRuntime'
-import { LOCAL_RUNTIME_ID, type RuntimeId } from './locator'
+import { LOCAL_RUNTIME_ID, type RuntimeId } from '../../shared/runtimeLocator'
 import type { Runtime } from './types'
 import { runtimes } from './runtimeManager'
 

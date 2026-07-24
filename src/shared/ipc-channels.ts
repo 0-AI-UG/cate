@@ -360,6 +360,7 @@ export const CODING_DELETE_SESSION = 'coding:deleteSession'       // renderer ->
 // Custom OpenAI-compatible provider (pi models.json)
 export const CODING_CUSTOM_MODELS_GET = 'coding:customModelsGet'   // renderer -> main
 export const CODING_CUSTOM_MODELS_SAVE = 'coding:customModelsSave' // renderer -> main
+export const CODING_CUSTOM_MODELS_DELETE = 'coding:customModelsDelete' // renderer -> main
 
 // Skills (cross-agent skill manager)
 export const SKILLS_GET_INDEX = 'skills:getIndex'             // renderer -> main (merged catalog)

@@ -95,7 +95,7 @@ vi.mock('../runtime/runtimeManager', () => ({
     disposeAll: () => Promise.resolve(),
   },
 }))
-vi.mock('../runtime/locator', () => ({
+vi.mock('../../shared/runtimeLocator', () => ({
   parseLocator: (cwd: string) => ({ runtimeId: 'local', path: cwd }),
   formatLocator: ({ path }: { path: string }) => path,
 }))

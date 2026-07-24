@@ -224,6 +224,7 @@ import {
   CODING_DELETE_SESSION,
   CODING_CUSTOM_MODELS_GET,
   CODING_CUSTOM_MODELS_SAVE,
+  CODING_CUSTOM_MODELS_DELETE,
   SKILLS_GET_INDEX,
   SKILLS_REFRESH,
   SKILLS_GET_PREVIEW,
@@ -559,6 +560,7 @@ const invokeForwarders = {
   agentGetCommands: makeInvoker<'agentGetCommands'>(CODING_GET_COMMANDS),
   agentCustomModelsGet: makeInvoker<'agentCustomModelsGet'>(CODING_CUSTOM_MODELS_GET),
   agentCustomModelsSave: makeInvoker<'agentCustomModelsSave'>(CODING_CUSTOM_MODELS_SAVE),
+  agentCustomModelsDelete: makeInvoker<'agentCustomModelsDelete'>(CODING_CUSTOM_MODELS_DELETE),
 
   // Cross-agent skills
   skillsGetIndex: makeInvoker<'skillsGetIndex'>(SKILLS_GET_INDEX),

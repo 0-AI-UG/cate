@@ -38,6 +38,7 @@ import {
 import { useFileSync } from '../lib/editor/useFileSync'
 import EditorConflictBanner from './EditorConflictBanner'
 import { Tooltip } from '../ui/Tooltip'
+import { isRuntimeLocator } from '../../shared/runtimeLocator'
 
 // -----------------------------------------------------------------------------
 // Editor font
@@ -511,7 +512,7 @@ export default function EditorPanel({
       // monaco.Uri.file() would mangle it, so parse the URI directly. Bare
       // local paths keep using .file(). The LRU cache key is the raw filePath
       // string, which already distinguishes runtimes, so no cache change.
-      const fileUri = filePath.startsWith('cate-runtime://')
+      const fileUri = isRuntimeLocator(filePath)
         ? monaco.Uri.parse(filePath)
         : monaco.Uri.file(filePath)
       let cached = getCachedModel(filePath) as monaco.editor.ITextModel | undefined

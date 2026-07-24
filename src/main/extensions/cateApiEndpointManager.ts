@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto'
 import log from '../logger'
 import { KeyedLock } from '../keyedLock'
-import { parseLocator } from '../runtime/locator'
+import { parseLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../runtime/runtimeManager'
 import type { Runtime } from '../runtime/types'
 import { getWorkspaceInfo } from '../workspaceManager'

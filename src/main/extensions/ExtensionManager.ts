@@ -44,7 +44,7 @@ import {
 import { disposeStoresForRuntime } from './storage'
 import { runtimes } from '../runtime/runtimeManager'
 import type { Runtime } from '../runtime/types'
-import type { RuntimeId } from '../runtime/locator'
+import type { RuntimeId } from '../../shared/runtimeLocator'
 import type { ExtensionListEntry, ExtensionManifest } from '../../shared/extensions'
 
 interface KnownExtension {

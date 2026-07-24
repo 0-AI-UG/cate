@@ -22,7 +22,7 @@ import { getWorkspaceDockSnapshot } from './canvasAccess'
 import { collectPanelIds } from '../../../shared/collectPanelIds'
 import { panelRowLabel } from '../panelTitle'
 import { useActivePanelStore } from '../activePanel'
-import { parseLocator } from '../../../main/runtime/locator'
+import { parseLocator } from '../../../shared/runtimeLocator'
 import { browserPanelUrl, isStartPageUrl, type WindowPanelReport } from '../../../shared/types'
 
 let cleanup: (() => void) | null = null

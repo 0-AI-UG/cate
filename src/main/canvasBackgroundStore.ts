@@ -19,10 +19,13 @@ import path from 'path'
 import crypto from 'crypto'
 import log from './logger'
 import { writeTextAtomic } from './writeJsonAtomic'
+import {
+  CANVAS_WALLPAPER_MAX_BYTES,
+  canvasWallpaperExtension,
+  isCanvasWallpaperPath,
+} from '../shared/canvasWallpaper'
 
 const DIR_NAME = 'canvas-backgrounds'
-const MAX_BYTES = 40 * 1024 * 1024 // 40 MB — matches the reader's data-URL ceiling.
-const ALLOWED_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.avif'])
 
 function backgroundsDir(): string {
   return path.join(app.getPath('userData'), DIR_NAME)
@@ -36,10 +39,10 @@ function backgroundsDir(): string {
  */
 export async function importCanvasBackgroundImage(sourcePath: string): Promise<string> {
   try {
-    const ext = path.extname(sourcePath).toLowerCase()
-    if (!ALLOWED_EXTS.has(ext)) return sourcePath
+    const ext = canvasWallpaperExtension(sourcePath)
+    if (!isCanvasWallpaperPath(sourcePath)) return sourcePath
     const stat = await fs.promises.stat(sourcePath)
-    if (!stat.isFile() || stat.size > MAX_BYTES) return sourcePath
+    if (!stat.isFile() || stat.size > CANVAS_WALLPAPER_MAX_BYTES) return sourcePath
 
     const buf = await fs.promises.readFile(sourcePath)
     const hash = crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16)

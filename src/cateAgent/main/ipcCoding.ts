@@ -26,9 +26,14 @@ import {
   CODING_DELETE_SESSION,
   CODING_CUSTOM_MODELS_GET,
   CODING_CUSTOM_MODELS_SAVE,
+  CODING_CUSTOM_MODELS_DELETE,
 } from '../../shared/ipc-channels'
 import { deleteSession, listSessions, loadSessionTranscript } from './sessionFiles'
-import { readCustomOpenAI, saveCustomOpenAI } from './customModels'
+import {
+  deleteCustomOpenAIProvider,
+  readCustomOpenAIProviders,
+  saveCustomOpenAIProvider,
+} from './customModels'
 import log from '../../main/logger'
 import { sendEvent } from '../../main/analytics'
 import type {
@@ -212,15 +217,20 @@ export function registerCodingHandlers(authManager: AuthManager, codingManager: 
 
   ipcMain.handle(CODING_CUSTOM_MODELS_GET, async () => {
     try {
-      return await readCustomOpenAI()
+      return await readCustomOpenAIProviders()
     } catch (err) {
       log.warn('[ipc.agent] customModelsGet failed: %O', err)
-      return null
+      return []
     }
   })
 
-  ipcMain.handle(CODING_CUSTOM_MODELS_SAVE, async (_event, cfg: CustomOpenAIProvider | null) => {
-    await saveCustomOpenAI(cfg)
+  ipcMain.handle(CODING_CUSTOM_MODELS_SAVE, async (_event, cfg: CustomOpenAIProvider) => {
+    await saveCustomOpenAIProvider(cfg)
+    await codingManager.syncCustomModelsToOpenSessions()
+  })
+
+  ipcMain.handle(CODING_CUSTOM_MODELS_DELETE, async (_event, providerId: string) => {
+    await deleteCustomOpenAIProvider(providerId)
     await codingManager.syncCustomModelsToOpenSessions()
   })
 }

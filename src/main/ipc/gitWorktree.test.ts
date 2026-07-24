@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { worktreeTargetPath } from './git'
-import { formatLocator, LOCAL_RUNTIME_ID } from '../runtime/locator'
+import { formatLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 
 describe('worktreeTargetPath', () => {
   test('remote target on the same runtime decodes to the bare path', () => {

@@ -16,7 +16,7 @@ import { getClipboard, hasClipboard } from './fileClipboard'
 import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { pathDisplayName, workspaceDisplayName } from '../lib/fs/displayPath'
-import { isLocalLocator } from '../../main/runtime/locator'
+import { isLocalLocator } from '../../shared/runtimeLocator'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 

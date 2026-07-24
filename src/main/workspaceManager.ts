@@ -19,7 +19,7 @@ import { broadcastToAll, windowFromEvent, closeWindowsForWorkspace } from './win
 import { addAllowedRoot, removeAllowedRoot } from './ipc/pathValidation'
 import { resolveTrustedWorkspaceRoot } from './workspaceRoots'
 import { acquireProjectLock, releaseProjectLock } from './projectLock'
-import { isLocalLocator, parseLocator } from './runtime/locator'
+import { isLocalLocator, parseLocator } from '../shared/runtimeLocator'
 import { runtimes } from './runtime/runtimeManager'
 import { workspaceCateApi } from './extensions/workspaceCateApi'
 import { seedCateCliSkill } from '../skills/main/seedCateCliSkill'

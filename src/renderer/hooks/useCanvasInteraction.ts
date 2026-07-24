@@ -77,6 +77,11 @@ export function useCanvasInteraction(
   // We add the class when a wheel pan starts and remove it after the wheel goes quiet.
   const wheelPanActive = useRef(false)
   const wheelPanEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelMarqueeRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    return () => cancelMarqueeRef.current?.()
+  }, [])
 
   const [canvasContextMenu, setCanvasContextMenu] =
     useState<CanvasContextMenuState | null>(null)
@@ -412,6 +417,7 @@ export function useCanvasInteraction(
     return () => {
       window.removeEventListener('mouseup', onWindowMouseUp)
       window.removeEventListener('blur', onWindowBlur)
+      endPanDrag()
     }
   }, [endPanDrag])
 
@@ -525,6 +531,9 @@ export function useCanvasInteraction(
             window.removeEventListener('mousemove', handleMarqueeMove)
             window.removeEventListener('mouseup', handleMarqueeUp)
             window.removeEventListener('blur', handleMarqueeBlur)
+            if (cancelMarqueeRef.current === handleMarqueeBlur) {
+              cancelMarqueeRef.current = null
+            }
             if (acquiredInteracting) {
               releaseBodyClass('canvas-interacting')
               acquiredInteracting = false
@@ -575,6 +584,7 @@ export function useCanvasInteraction(
             canvasStoreApi.getState().selectNodes(hitNodeIds, true)
           }
 
+          cancelMarqueeRef.current = handleMarqueeBlur
           window.addEventListener('mousemove', handleMarqueeMove)
           window.addEventListener('mouseup', handleMarqueeUp)
           window.addEventListener('blur', handleMarqueeBlur)

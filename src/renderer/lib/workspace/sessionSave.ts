@@ -14,7 +14,8 @@ import {
 import { captureAndSaveScrollback } from '../terminal/captureAndSaveScrollback'
 import { deferredSnapshots } from './deferredRestore'
 import { terminalRegistry } from '../terminal/terminalRegistry'
-import { isLocalLocator } from '../../../main/runtime/locator'
+import { isLocalLocator } from '../../../shared/runtimeLocator'
+import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
 import { deriveSidebarSession } from './sidebarSession'
 import { isProjectTrusted } from '../../stores/workspaceTrustStore'
 import { buildWorkspaceFile, buildSessionFile, collectPanelIdsFromDockState } from './sessionSerialize'
@@ -176,7 +177,7 @@ export async function saveSession(): Promise<void> {
   const remoteEntries: RemoteProjectEntry[] = []
   for (const snapshot of snapshots) {
     if (!snapshot.rootPath || isLocalLocator(snapshot.rootPath)) continue
-    if (!snapshot.connection || snapshot.connection.kind === 'local') continue
+    if (!isRemoteRuntimeConnection(snapshot.connection)) continue
     if (workspacesByRoot.get(snapshot.rootPath)?.id !== snapshot.workspaceId) continue
     remoteEntries.push({
       locator: snapshot.rootPath,

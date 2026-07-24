@@ -156,7 +156,7 @@ describe('ChatComposer popovers', () => {
       .find((candidate) => candidate.textContent === 'Thinking level')
     const popover = heading?.parentElement
     expect(popover).toBeTruthy()
-    expect(host.contains(popover)).toBe(false)
+    expect(host.contains(popover ?? null)).toBe(false)
     expect(popover?.classList.contains('fixed')).toBe(true)
     expect(popover?.style.top).toBe('296px')
     expect(popover?.style.left).toBe('260px')

@@ -4,7 +4,7 @@
 // resizes both simultaneously.
 // =============================================================================
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useAppStore } from '../stores/appStore'
@@ -72,6 +72,11 @@ export function useNodeResize(
   const currentEdgeRef = useRef<ResizeEdge | null>(null)
   const rafId = useRef<number>(0)
   const pendingResize = useRef<PendingResize | null>(null)
+  const cancelResizeRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    return () => cancelResizeRef.current?.()
+  }, [])
 
   // Shared border state
   const sharedBordersRef = useRef<SharedBorder[]>([])
@@ -408,6 +413,9 @@ export function useNodeResize(
         window.removeEventListener('mousemove', handleMouseMove)
         window.removeEventListener('mouseup', handleMouseUp)
         window.removeEventListener('blur', handleBlur)
+        if (cancelResizeRef.current === handleBlur) {
+          cancelResizeRef.current = null
+        }
         document.body.style.cursor = previousBodyCursor
         unpinCursor()
       }
@@ -471,6 +479,7 @@ export function useNodeResize(
         pendingResize.current = null
       }
 
+      cancelResizeRef.current = handleBlur
       window.addEventListener('mousemove', handleMouseMove)
       window.addEventListener('mouseup', handleMouseUp)
       window.addEventListener('blur', handleBlur)

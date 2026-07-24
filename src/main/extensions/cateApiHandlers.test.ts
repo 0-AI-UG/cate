@@ -99,7 +99,7 @@ vi.mock('../windowPanels', () => ({
   upsertWindowPanel,
   removeWindowPanel,
 }))
-vi.mock('../runtime/locator', () => ({
+vi.mock('../../shared/runtimeLocator', () => ({
   LOCAL_RUNTIME_ID: 'local',
   parseLocator: (raw: string) => ({ runtimeId: 'local', path: raw }),
 }))

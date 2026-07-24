@@ -10,7 +10,7 @@ vi.mock('../../main/runtime/runtimeManager', () => ({
 }))
 
 import { deleteSession, listSessions, loadSessionTranscript } from './sessionFiles'
-import { formatLocator } from '../../main/runtime/locator'
+import { formatLocator } from '../../shared/runtimeLocator'
 import type { Runtime } from '../../main/runtime/types'
 
 const norm = (value: string): string => value.replace(/\\/g, '/')

@@ -17,7 +17,7 @@
 //     RemoteRuntime does for its own async start.
 // =============================================================================
 
-import type { RuntimeId } from './locator'
+import type { RuntimeId } from '../../shared/runtimeLocator'
 import type {
   Runtime,
   FileHost,

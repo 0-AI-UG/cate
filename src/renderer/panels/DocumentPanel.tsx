@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Minus, Plus } from '@phosphor-icons/react'
 import { errorMessage } from '../lib/errorMessage'
 import { viewedArrayBuffer } from './documentBytes'
 import { pathDisplayName } from '../lib/fs/displayPath'
-import { isLocalLocator } from '../../main/runtime/locator'
+import { isLocalLocator } from '../../shared/runtimeLocator'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',

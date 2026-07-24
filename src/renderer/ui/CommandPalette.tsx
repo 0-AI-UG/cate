@@ -33,6 +33,8 @@ import {
 } from '@phosphor-icons/react'
 import { CateLogo } from './CateLogo'
 import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
+import { isNavigablePanelType } from '../../shared/panels'
+import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
 import { PaletteDialogShell } from './Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
@@ -109,9 +111,6 @@ type FlatItem =
   | { kind: 'panel'; panel: PanelResult }
   | { kind: 'file'; file: FileResult }
 
-// Panel types worth surfacing as navigable destinations.
-const NAVIGABLE_PANEL_TYPES: PanelType[] = ['terminal', 'editor', 'browser', 'cateAgent', 'document']
-
 // -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
@@ -127,7 +126,7 @@ export const CommandPalette: React.FC = () => {
   // The reinstall command is only meaningful for a remote (ssh/wsl) workspace.
   const isRemoteWorkspace = useAppStore((s) => {
     const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
-    return !!ws?.connection && ws.connection.kind !== 'local'
+    return isRemoteRuntimeConnection(ws?.connection)
   })
   const deleteRuntime = useAppStore((s) => s.deleteRuntime)
 
@@ -241,7 +240,7 @@ export const CommandPalette: React.FC = () => {
   const filteredPanels = useMemo<PanelResult[]>(() => {
     const results: PanelResult[] = []
     for (const panel of orderedPanels) {
-      if (!NAVIGABLE_PANEL_TYPES.includes(panel.type)) continue
+      if (!isNavigablePanelType(panel.type)) continue
       const title = panel.title ?? panel.type
       if (query && !title.toLowerCase().includes(query)) continue
       results.push({
@@ -252,7 +251,7 @@ export const CommandPalette: React.FC = () => {
       })
     }
     for (const panel of otherWindowPanels) {
-      if (!NAVIGABLE_PANEL_TYPES.includes(panel.type)) continue
+      if (!isNavigablePanelType(panel.type)) continue
       if (query && !panel.title.toLowerCase().includes(query)) continue
       results.push({
         panelId: panel.panelId,

@@ -32,6 +32,7 @@ import { useSettingsStore } from '../settingsStore'
 import type { AppSet, AppGet, PanelPlacement } from './types'
 import { collectPanelIds } from '../../../shared/collectPanelIds'
 import { recommendPlacementFromSource } from '../../canvas/placement'
+import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -69,7 +70,7 @@ export function createDefaultWorkspace(
     rootPath: rootPath ?? '',
     // Carry remote reconnect info through restore so ensureWorkspaceRuntime
     // can reconnect the runtime before any fs/git/terminal op (Finding 2).
-    ...(connection && connection.kind !== 'local' ? { connection } : {}),
+    ...(isRemoteRuntimeConnection(connection) ? { connection } : {}),
     rootPathError: null,
     isRootPathPending: false,
     panels: {},
@@ -122,7 +123,7 @@ export function syncCreateToMain(ws: WorkspaceState): Promise<WorkspaceMutationR
       id: ws.id,
       // Pass remote reconnect info so WorkspaceInfo.connection survives on the
       // main side (Finding 2) — main skips local realpath/lock for a locator.
-      ...(ws.connection && ws.connection.kind !== 'local' ? { connection: ws.connection } : {}),
+      ...(isRemoteRuntimeConnection(ws.connection) ? { connection: ws.connection } : {}),
     }),
   )
 }

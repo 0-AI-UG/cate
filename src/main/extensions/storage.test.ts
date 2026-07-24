@@ -18,7 +18,7 @@ const getWorkspaceInfo = vi.hoisted(() => vi.fn())
 vi.mock('../workspaceManager', () => ({ getWorkspaceInfo }))
 
 import { runtimes } from '../runtime/runtimeManager'
-import { LOCAL_RUNTIME_ID } from '../runtime/locator'
+import { LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import type { Runtime } from '../runtime/types'
 import { getExtensionStorage, disposeStoresForRuntime, flushAllPendingWritesSync } from './storage'
 
