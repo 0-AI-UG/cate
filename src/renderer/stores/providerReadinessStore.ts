@@ -17,14 +17,14 @@
 
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import type { AgentModelRef, AuthProviderStatus, ProviderVerification } from '../../shared/types'
+import type { CateAgentModelRef, AuthProviderStatus, ProviderVerification } from '../../shared/types'
 import { useSettingsStore } from './settingsStore'
 import log from '../lib/logger'
 
 /** What a consumer should show for a given selected model. */
 export type ReadinessKind = 'loading' | 'noProvider' | 'noModel' | 'needsReauth' | 'error' | 'ok'
 
-export interface AgentReadiness {
+export interface CodingReadiness {
   kind: ReadinessKind
   /** Provider whose health is in question (for needsReauth / error). */
   providerId?: string
@@ -119,7 +119,7 @@ export function useProvidersLoaded(): boolean {
 
 /** The rich per-consumer readiness for a selected model. Triggers a live
  *  verification of that model's provider and reflects the result. */
-export function useAgentReadiness(model: AgentModelRef | null): AgentReadiness {
+export function useCodingReadiness(model: CateAgentModelRef | null): CodingReadiness {
   useEnsureStarted()
   const loaded = useProviderReadinessStore((s) => s.loaded)
   const anyConnected = useProviderReadinessStore((s) => s.statuses.some((p) => p.connected))
@@ -161,7 +161,7 @@ function useEnsureStarted(): void {
  *  sign-in counts as unusable (`needsReauth`), same as no provider at all. */
 export type CateAgentGate = 'ok' | 'noProvider' | 'needsReauth'
 
-function normalizeModel(value: AgentModelRef | null | undefined): AgentModelRef | null {
+function normalizeModel(value: CateAgentModelRef | null | undefined): CateAgentModelRef | null {
   return value && typeof value.provider === 'string' && typeof value.model === 'string'
     ? { provider: value.provider, model: value.model }
     : null
@@ -170,7 +170,7 @@ function normalizeModel(value: AgentModelRef | null | undefined): AgentModelRef 
 /** Gate for a specific effective model. Verifies the relevant provider(s) so an
  *  expired OAuth token flips the gate to `needsReauth`. Optimistic: an unverified
  *  provider counts as usable, so nothing flashes hidden while a probe is in flight. */
-export function useCateAgentGate(preferredModel: AgentModelRef | null): CateAgentGate {
+export function useCateAgentGate(preferredModel: CateAgentModelRef | null): CateAgentGate {
   useEnsureStarted()
   const loaded = useProviderReadinessStore((s) => s.loaded)
   const connectedIds = useProviderReadinessStore((s) =>
@@ -214,13 +214,12 @@ export function deriveCateAgentGate(
   return candidates.some((id) => !broken(id)) ? 'ok' : 'needsReauth'
 }
 
-/** The gate for the Cate Agent's own configured model (Settings → Cate Agent),
- *  falling back to the global default. Reactive to both settings keys. */
+/** The gate for the Cate Agent, keyed on the shared default model (Settings →
+ *  Providers). Per-chat model overrides don't affect readiness — this only asks
+ *  whether some usable provider is connected. Reactive to the default key. */
 export function useCateAgentReady(): CateAgentGate {
-  const cateModel = useSettingsStore((s) => s.cateAgentModel)
   const defaultModel = useSettingsStore((s) => s.agentDefaultModel)
-  const preferred = normalizeModel(cateModel) ?? normalizeModel(defaultModel)
-  return useCateAgentGate(preferred)
+  return useCateAgentGate(normalizeModel(defaultModel))
 }
 
 /** Pure mapping from state → what to show. Exported for tests. Optimistic: a
@@ -233,7 +232,7 @@ export function deriveReadiness(
   providerConnected: boolean,
   providerId: string | undefined,
   verification: ProviderVerification | undefined,
-): AgentReadiness {
+): CodingReadiness {
   if (!loaded) return { kind: 'loading', message: '' }
   if (!anyConnected) {
     return { kind: 'noProvider', message: 'No AI provider is connected.' }

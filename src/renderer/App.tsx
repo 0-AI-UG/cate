@@ -18,9 +18,7 @@ import { useBrowserStore } from './stores/browserStore'
 import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
-import { cateAgentController } from './cateAgent/cateAgentController'
 import { useCateHostActionResponder } from './hooks/useCateHostActionResponder'
-import { useCateAgentReady } from './stores/providerReadinessStore'
 import { Sidebar, RightSidebar } from './sidebar/Sidebar'
 import { PanelHost } from './panels/PanelHost'
 import { RuntimeLockOverlay } from './ui/RuntimeLockOverlay'
@@ -148,29 +146,6 @@ function MainApp() {
 
   // Main-only: terminal/agent activity → status bar + worktree sync.
   useProcessMonitor(selectedWorkspaceId)
-
-  // Tracks which workspace folders have had their Cate Agent restored this session.
-  const cateAgentRestoredRef = useRef<Set<string>>(new Set())
-
-  // Cate Agent — start the controller and restore each workspace's Cate Agent
-  // (re-summon if it was enabled in .cate/cateAgent.json) once its folder path is
-  // known. Guarded per rootPath so a re-render never re-summons. Main window only
-  // (this MainApp path is gated to the primary window, like useProcessMonitor above).
-  //
-  // Gated on provider readiness: with no usable provider (none connected, or its
-  // OAuth sign-in expired) the agent can't reach a model, so we don't bring up its
-  // observer session. When a usable provider connects (gate flips to 'ok') this
-  // effect re-runs and restore() summons it then.
-  const cateAgentReady = useCateAgentReady() === 'ok'
-  useEffect(() => {
-    cateAgentController.setEnabled(cateAgentReady)
-    const rootPath = currentWorkspace?.rootPath
-    if (!cateAgentReady || !rootPath || !selectedWorkspaceId) return
-    cateAgentController.start()
-    if (cateAgentRestoredRef.current.has(rootPath)) return
-    cateAgentRestoredRef.current.add(rootPath)
-    void cateAgentController.restore(selectedWorkspaceId, rootPath)
-  }, [cateAgentReady, currentWorkspace?.rootPath, selectedWorkspaceId])
 
   // Extension reverse-API: execute cate.* host actions forwarded from extension
   // webviews (open file / create panel / set title). Mounted once here.

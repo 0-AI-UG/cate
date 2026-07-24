@@ -4,7 +4,7 @@ import { CATE_GITIGNORE_CONTENT } from '../../main/cateGitignore'
 import { parseLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import type { Runtime } from '../../main/runtime/types'
-import { hostJoin } from '../../agent/main/agentDir'
+import { hostJoin } from '../../cateAgent/main/codingDir'
 import {
   isKnownSkillTarget,
   slugifySkillName,
@@ -13,7 +13,7 @@ import {
 } from '../../shared/skills'
 import { pathKey } from '../../shared/pathUtils'
 import { skillPathSegments } from './skillPath'
-import { skillsRootDir, targetInfo } from './targets'
+import { skillsRootDir, skillsRootDirs, targetInfo } from './targets'
 
 const MIRROR_VERSION = 1
 
@@ -192,9 +192,9 @@ function installedPath(
   runtimeId: string,
   hostCwd: string,
   entry: Pick<MirrorEntry, 'name' | 'targetId'>,
+  root = skillsRootDir(entry.targetId, runtimeId, hostCwd),
 ): string {
   const slug = slugifySkillName(entry.name)
-  const root = skillsRootDir(entry.targetId, runtimeId, hostCwd)
   return targetInfo(entry.targetId).layout === 'folder'
     ? hostJoin(runtimeId, root, slug)
     : hostJoin(runtimeId, root, `${slug}.md`)
@@ -205,8 +205,9 @@ async function readInstalledBundle(
   runtimeId: string,
   hostCwd: string,
   entry: Pick<MirrorEntry, 'name' | 'targetId'>,
+  root?: string,
 ): Promise<InstalledBundle | null> {
-  const path = installedPath(runtimeId, hostCwd, entry)
+  const path = installedPath(runtimeId, hostCwd, entry, root)
   let stat
   try {
     stat = await runtime.file.stat(path)
@@ -231,9 +232,9 @@ async function materializeBundle(
   entry: Pick<MirrorEntry, 'name' | 'targetId'>,
   files: BundleFile[],
   replace: boolean,
+  root = skillsRootDir(entry.targetId, runtimeId, hostCwd),
 ): Promise<boolean> {
-  const root = skillsRootDir(entry.targetId, runtimeId, hostCwd)
-  const destination = installedPath(runtimeId, hostCwd, entry)
+  const destination = installedPath(runtimeId, hostCwd, entry, root)
   const slug = slugifySkillName(entry.name)
   const layout = targetInfo(entry.targetId).layout
   const transactionId = randomUUID()
@@ -358,12 +359,27 @@ export async function syncWorkspaceSkills(
 
   const sourceByKey = new Map<string, InstalledSkill>()
   for (const entry of installed) sourceByKey.set(entryKey(entry), entry)
+  const initiallyOwned = new Map(owned)
 
   // First retire ownership whose source disappeared or moved to another slug.
   for (const [key, prior] of [...owned]) {
     const source = sourceByKey.get(key)
     if (source?.name === prior.name) continue
     try {
+      // Transparent consumer roots share the canonical entry's ownership. Retire
+      // each unedited copy before dropping that single ownership record.
+      for (const root of skillsRootDirs(prior.targetId, target.runtimeId, target.path).slice(1)) {
+        const mirrored = await readInstalledBundle(
+          targetRuntime,
+          target.runtimeId,
+          target.path,
+          prior,
+          root,
+        )
+        if (mirrored?.contentHash === prior.contentHash) {
+          await targetRuntime.file.remove(mirrored.path)
+        }
+      }
       const current = await readInstalledBundle(targetRuntime, target.runtimeId, target.path, prior)
       if (!current) {
         owned.delete(key)
@@ -449,6 +465,57 @@ export async function syncWorkspaceSkills(
       }
     } catch (error) {
       warn(result, `Could not synchronize skill ${key}`, error)
+    }
+  }
+
+  // A target may declare extra consumer roots (for example an isolated agent
+  // process that reads the same target). Reconcile those from the same source
+  // bundle and ownership record; they are deliberately not separate manifest
+  // rows or UI targets.
+  for (const [key] of owned) {
+    const source = sourceByKey.get(key)
+    if (!source) continue
+    try {
+      const sourceBundle = await readInstalledBundle(baseRuntime, base.runtimeId, base.path, source)
+      if (!sourceBundle) continue
+      const previous = initiallyOwned.get(key)
+      for (const root of skillsRootDirs(source.targetId, target.runtimeId, target.path).slice(1)) {
+        const current = await readInstalledBundle(
+          targetRuntime,
+          target.runtimeId,
+          target.path,
+          source,
+          root,
+        )
+        if (current?.contentHash === sourceBundle.contentHash) continue
+        if (!current) {
+          await materializeBundle(
+            targetRuntime,
+            target.runtimeId,
+            target.path,
+            source,
+            sourceBundle.files,
+            false,
+            root,
+          )
+          continue
+        }
+        if (previous && current.contentHash === previous.contentHash) {
+          await materializeBundle(
+            targetRuntime,
+            target.runtimeId,
+            target.path,
+            source,
+            sourceBundle.files,
+            true,
+            root,
+          )
+          continue
+        }
+        if (!result.preserved.includes(key)) result.preserved.push(key)
+      }
+    } catch (error) {
+      warn(result, `Could not synchronize consumer copies for ${key}`, error)
     }
   }
 

@@ -119,7 +119,7 @@ describe('windowPanelSync — canvas child parentCanvasId', () => {
       workspaces: [{
         id: ws, name: 'W', color: '', rootPath: '/x', rootPathError: null,
         isRootPathPending: false, worktrees: [],
-        panels: { a1: panel('a1', 'agent'), t2: panel('t2', 'terminal') },
+        panels: { a1: panel('a1', 'cateAgent'), t2: panel('t2', 'terminal') },
       } as any],
       selectedWorkspaceId: ws,
     } as any)

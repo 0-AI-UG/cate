@@ -128,7 +128,7 @@ function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
  * Resolve a path to its real (symlink-free) form, tolerating a target that
  * does not exist yet. `fs.realpath` throws ENOENT for a missing path, but
  * several callers legitimately validate before creation: a fresh
- * `pi-agent/sessions/<cwd>` dir that `readDir` should report as empty, or a
+ * `cate-agent/sessions/<cwd>` dir that `readDir` should report as empty, or a
  * `mkdir` destination whose parent chain doesn't exist yet. For those we
  * realpath the nearest EXISTING ancestor and re-append the missing tail.
  *

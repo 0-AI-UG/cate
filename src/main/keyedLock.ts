@@ -1,7 +1,7 @@
 // =============================================================================
 // KeyedLock — serialize async work per string key. Extracted from the identical
 // per-key lock that ExtensionServerManager, WorkspaceCateApiManager, and
-// AgentManager each carried, so lifecycle transitions for one key never
+// CodingManager each carried, so lifecycle transitions for one key never
 // interleave (e.g. two concurrent spawns both minting a listener).
 // =============================================================================
 

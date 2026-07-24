@@ -127,7 +127,7 @@ describe('loadLayoutIntoCanvas', () => {
 
   it('recreates agent panels instead of dropping them', async () => {
     mockLayout(
-      snapshot([{ panelType: 'agent', origin: { x: 200, y: 200 }, size: { width: 400, height: 300 } }]),
+      snapshot([{ panelType: 'cateAgent', origin: { x: 200, y: 200 }, size: { width: 400, height: 300 } }]),
     )
     const targetStore = ensureCanvasOpsForPanel(TARGET).storeApi
 
@@ -137,7 +137,7 @@ describe('loadLayoutIntoCanvas', () => {
     expect(nodes).toHaveLength(1)
     const panelId = nodes[0].dockLayout.type === 'tabs' ? nodes[0].dockLayout.panelIds[0] : ''
     const ws = useAppStore.getState().workspaces.find((w) => w.id === WS)
-    expect(ws?.panels[panelId]?.type).toBe('agent')
+    expect(ws?.panels[panelId]?.type).toBe('cateAgent')
   })
 
   it('clears the target canvas (and its panel records) before applying', async () => {

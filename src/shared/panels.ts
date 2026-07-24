@@ -128,9 +128,9 @@ export const PANEL_DEFINITIONS = {
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
   },
-  agent: {
-    type: 'agent',
-    label: 'Agent',
+  cateAgent: {
+    type: 'cateAgent',
+    label: 'Cate Agent',
     brandColor: '#4A9EFF',
     mutedColor: '#3a7acc',
     tintClass: 'text-blue-400',

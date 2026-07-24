@@ -2,11 +2,10 @@
 // terminalDriver — renderer executor for the `cate.terminal.*` reverse API.
 //
 // Drives handleTerminalMethod against a mocked app store + terminal registry +
-// cateAgent store + terminalWrite IPC, covering: target resolution (explicit
+// terminalWrite IPC, covering: target resolution (explicit
 // panelId for everything, focused-terminal default for read ONLY), reading the
 // alt vs normal xterm buffer, type writing verbatim text (no newline), press
-// key sequences incl. computed ctrl-<letter> chords, the agent-owned-terminal
-// input rejection, and the stable error vocabulary.
+// key sequences incl. computed ctrl-<letter> chords and the stable error vocabulary.
 // =============================================================================
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -39,7 +38,6 @@ const h = vi.hoisted(() => ({
   workspaces: [] as Array<{ id: string; panels: Record<string, { id: string; type: string; title: string }> }>,
   activePanelId: null as string | null,
   entries: new Map<string, unknown>(),
-  controlledTerminals: {} as Record<string, string>,
   terminalWrite: vi.fn(async (_ptyId: string, _data: string) => {}),
 }))
 
@@ -55,12 +53,6 @@ vi.mock('./registryState', () => ({
   getEntry: (panelId: string) => h.entries.get(panelId),
 }))
 
-vi.mock('../../cateAgent/cateAgentStore', () => ({
-  useCateAgentStore: {
-    getState: () => ({ byWs: { [WS]: { controlledTerminals: h.controlledTerminals } } }),
-  },
-}))
-
 import { handleTerminalMethod, sequenceForKey } from './terminalDriver'
 
 const M = (name: string) => `cate.terminal.${name}`
@@ -69,7 +61,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.activePanelId = null
   h.entries = new Map()
-  h.controlledTerminals = {}
   h.workspaces = [
     {
       id: WS,
@@ -220,31 +211,5 @@ describe('press', () => {
     expect(await handleTerminalMethod(WS, M('press'), { panelId: 't1', key: 'ctrl-1' })).toEqual({ ok: false, error: 'unsupported-key' })
     expect(await handleTerminalMethod(WS, M('press'), { panelId: 't1' })).toEqual({ ok: false, error: 'unsupported-key' })
     expect(h.terminalWrite).not.toHaveBeenCalled()
-  })
-})
-
-describe('agent-owned terminals', () => {
-  it('rejects type/press into a terminal the Cate Agent is driving', async () => {
-    h.entries.set('t1', makeEntry(['agent output']))
-    h.controlledTerminals = { t1: 'rgb(1,2,3)' }
-    expect(await handleTerminalMethod(WS, M('type'), { panelId: 't1', text: 'ls' })).toEqual({ ok: false, error: 'agent-owned-terminal' })
-    expect(await handleTerminalMethod(WS, M('press'), { panelId: 't1', key: 'enter' })).toEqual({ ok: false, error: 'agent-owned-terminal' })
-    expect(h.terminalWrite).not.toHaveBeenCalled()
-  })
-
-  it('still allows read on an agent-driven terminal', async () => {
-    h.entries.set('t1', makeEntry(['agent output']))
-    h.controlledTerminals = { t1: 'rgb(1,2,3)' }
-    expect(await handleTerminalMethod(WS, M('read'), { panelId: 't1' })).toEqual({
-      ok: true,
-      result: { panelId: 't1', alt: false, text: 'agent output' },
-    })
-  })
-
-  it('another terminal in the same workspace stays writable', async () => {
-    h.entries.set('t2', makeEntry([], { ptyId: 'pty-2' }))
-    h.controlledTerminals = { t1: 'rgb(1,2,3)' }
-    expect(await handleTerminalMethod(WS, M('type'), { panelId: 't2', text: 'ls' })).toEqual({ ok: true })
-    expect(h.terminalWrite).toHaveBeenCalledWith('pty-2', 'ls')
   })
 })

@@ -33,11 +33,14 @@ import type { PanelPlacement } from '../stores/appStore'
 // selection/focus, or move the user's camera. An explicit { position } still
 // chooses the canvas point while preserving those background semantics.
 function placementFromArgs(workspaceId: string, args: Record<string, unknown>): PanelPlacement | undefined {
+  const placementGroupId = typeof args.placementGroupId === 'string' && args.placementGroupId
+    ? args.placementGroupId
+    : undefined
   const p = args.position
   if (p && typeof p === 'object' && typeof (p as Point).x === 'number' && typeof (p as Point).y === 'number') {
-    return { ...placementForBackgroundPanel(workspaceId), position: p as Point }
+    return { ...placementForBackgroundPanel(workspaceId, placementGroupId), position: p as Point }
   }
-  return placementForBackgroundPanel(workspaceId)
+  return placementForBackgroundPanel(workspaceId, placementGroupId)
 }
 
 interface HostActionPayload {
@@ -153,7 +156,12 @@ export function useCateHostActionResponder(): void {
             } catch {
               return reply(false, { error: 'file-not-found' })
             }
-            const newPanelId = openFileAsPanel(workspaceId, resolved, undefined, placementForBackgroundPanel(workspaceId))
+            const newPanelId = openFileAsPanel(
+              workspaceId,
+              resolved,
+              undefined,
+              placementFromArgs(workspaceId, args),
+            )
             if (!newPanelId) return reply(false, { error: 'open failed' })
             // Honor an optional { line } (and column) by stashing a one-shot
             // editor reveal — the SAME path search results and terminal file

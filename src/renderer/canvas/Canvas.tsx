@@ -22,6 +22,9 @@ import type { Point, PanelType } from '../../shared/types'
 import { isWorktreePanelType, type WorktreePanelType } from '../../shared/panels'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
+import { CHAT_DRAG_MIME, readChatDrag } from '../drag/fileDragPayload'
+import { createSeededChatPanel } from '../drag/openChatDrop'
+import { endChatDrag } from '../drag/chatDragState'
 
 // Module-level style injection — shared across all Canvas instances
 let canvasStyleInjected = false
@@ -377,10 +380,11 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     if (
       e.dataTransfer.types.includes('application/cate-file') ||
       e.dataTransfer.types.includes('application/cate-spawn') ||
+      e.dataTransfer.types.includes(CHAT_DRAG_MIME) ||
       e.dataTransfer.types.includes('Files')
     ) {
       e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
+      e.dataTransfer.dropEffect = e.dataTransfer.types.includes(CHAT_DRAG_MIME) ? 'move' : 'copy'
     }
   }, [])
 
@@ -403,10 +407,26 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       const panelId =
         spec.panelType === 'terminal'
           ? store.createTerminal(wsId, undefined, pos, here(), spec.cwd)
-          : store.createAgent(wsId, pos, here())
+          : store.createCateAgent(wsId, pos, here())
       if (panelId && spec.worktreeId) {
         store.setPanelWorktreeId(wsId, panelId, spec.worktreeId)
       }
+      return
+    }
+
+    // Chat drop from the sidebar tab strip / a panel's recents — move the chat
+    // into a newly-created Agent panel node at the cursor.
+    const chatDrag = readChatDrag(e.dataTransfer)
+    if (chatDrag) {
+      e.preventDefault()
+      e.stopPropagation()
+      const rect = canvasRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const viewPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      const { zoomLevel, viewportOffset } = canvasApi.getState()
+      const pos = viewToCanvas(viewPoint, zoomLevel, viewportOffset)
+      createSeededChatPanel(useAppStore.getState().selectedWorkspaceId, chatDrag, pos, here())
+      endChatDrag()
       return
     }
 
@@ -543,7 +563,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
           break
         case 'new-editor': onCreateAtPoint?.('editor', point); break
         case 'new-browser': onCreateAtPoint?.('browser', point); break
-        case 'new-agent': onCreateAtPoint?.('agent', point); break
+        case 'new-agent': onCreateAtPoint?.('cateAgent', point); break
         case 'new-canvas': onCreateAtPoint?.('canvas', point); break
         case 'auto-layout':
           canvasApi.getState().autoLayout()

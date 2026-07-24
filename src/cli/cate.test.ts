@@ -270,6 +270,41 @@ describe('run — exit codes', () => {
     expect(body).toEqual({ method: 'cate.browser.open', args: { url: 'https://x.com' } })
   })
 
+  it('forwards an opaque placement group from the shell environment', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ result: { url: 'https://x.com' } }))
+    const deps = makeDeps({
+      fetch: fetchMock as unknown as typeof fetch,
+      env: {
+        CATE_API: 'http://127.0.0.1:1234',
+        CATE_TOKEN: 'tok',
+        CATE_PLACEMENT_GROUP: 'group-1',
+      },
+    })
+
+    expect(await run(['browser', 'open', 'https://x.com'], deps)).toBe(0)
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body)
+    expect(body.args).toEqual({ url: 'https://x.com', placementGroupId: 'group-1' })
+  })
+
+  it('uses the current terminal panel as the group source when none was inherited', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ result: { url: 'https://x.com' } }))
+    const deps = makeDeps({
+      fetch: fetchMock as unknown as typeof fetch,
+      env: {
+        CATE_API: 'http://127.0.0.1:1234',
+        CATE_TOKEN: 'tok',
+        CATE_PANEL_ID: 'terminal-source',
+      },
+    })
+
+    expect(await run(['browser', 'open', 'https://x.com'], deps)).toBe(0)
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body)
+    expect(body.args).toEqual({
+      url: 'https://x.com',
+      placementGroupId: 'terminal-source',
+    })
+  })
+
   it('--json prints one JSON line of the unwrapped result', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ result: [{ id: 'p1' }] }))
     const deps = makeDeps({ fetch: fetchMock as unknown as typeof fetch })

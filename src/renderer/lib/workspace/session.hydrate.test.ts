@@ -161,7 +161,7 @@ describe('hydrateWorkspaceFromDiskIfEmpty — restore', () => {
 // the advisory's proof-of-concept workspace.json.
 // -----------------------------------------------------------------------------
 
-/** The advisory PoC: an agent panel docked so that restoring it mounts pi,
+/** The advisory PoC: a Cate Agent panel docked so that restoring it mounts pi,
  *  which loads the MCP adapter, which starts the repo's eager .pi/mcp.json. */
 function hostileDiskState(): { workspace: ProjectWorkspaceFile; session: ProjectSessionFile | null } {
   return {
@@ -169,7 +169,7 @@ function hostileDiskState(): { workspace: ProjectWorkspaceFile; session: Project
       version: 1,
       name: 'Cate MCP PoC',
       color: '',
-      panels: { 'agent-poc': { type: 'agent', title: 'Agent' } },
+      panels: { 'agent-poc': { type: 'cateAgent', title: 'Agent' } },
       dockState: {
         zones: {
           left: { position: 'left', visible: false, size: 0, layout: null },
@@ -197,11 +197,11 @@ describe('hydrateWorkspaceFromDiskIfEmpty — workspace trust', () => {
 
     await hydrateWorkspaceFromDiskIfEmpty(id)
 
-    // No panel record ⇒ AgentPanel never mounts ⇒ pi never starts ⇒ the MCP
+    // No panel record ⇒ CateAgentPanel never mounts ⇒ pi never starts ⇒ the MCP
     // adapter never reads .pi/mcp.json. The chain is cut at the first link.
     const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
     expect(ws.panels['agent-poc']).toBeUndefined()
-    expect(Object.values(ws.panels).some((p) => p.type === 'agent')).toBe(false)
+    expect(Object.values(ws.panels).some((p) => p.type === 'cateAgent')).toBe(false)
   })
 
   it('does not even read the project files of an untrusted project', async () => {
@@ -225,6 +225,6 @@ describe('hydrateWorkspaceFromDiskIfEmpty — workspace trust', () => {
     // Trust is the ONLY thing that changed between this and the first test.
     const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
     expect(ws.panels['agent-poc']).toBeDefined()
-    expect(ws.panels['agent-poc'].type).toBe('agent')
+    expect(ws.panels['agent-poc'].type).toBe('cateAgent')
   })
 })

@@ -42,7 +42,7 @@ describe('inheritedWorktreeFromSelection', () => {
 
   it('inherits the worktreeId from a selected agent (agents carry no cwd)', () => {
     const state = canvasState(['n1'], true, { n1: node('a1') })
-    const ps = panels([{ id: 'a1', type: 'agent', title: 'Agent 1', isDirty: false, worktreeId: 'wt-b' }])
+    const ps = panels([{ id: 'a1', type: 'cateAgent', title: 'Agent 1', isDirty: false, worktreeId: 'wt-b' }])
     expect(inheritedWorktreeFromSelection(state, ps)).toEqual({ cwd: undefined, worktreeId: 'wt-b' })
   })
 

@@ -21,12 +21,13 @@ import { useAppStore } from '../../stores/appStore'
 
 const PRIMARY = 'canvas-primary'
 const SECONDARY = 'canvas-secondary'
+const SOURCE = 'terminal-source'
 
 afterEach(() => {
   releaseCanvasStoreForPanel(PRIMARY)
   releaseCanvasStoreForPanel(SECONDARY)
   setActivePanel(null)
-  useAppStore.setState({ selectedWorkspaceId: '' })
+  useAppStore.setState({ selectedWorkspaceId: '', workspaces: [] })
 })
 
 describe('placementForActivePanel with multiple canvases', () => {
@@ -85,6 +86,39 @@ describe('placementForActivePanel with multiple canvases', () => {
     expect(placementForBackgroundPanel('ws-background')).toEqual({
       target: 'canvas',
       focus: false,
+    })
+  })
+
+  it('pins a new group to the canvas containing its source panel id', () => {
+    const canvas = getOrCreateCanvasStoreForPanel(PRIMARY)
+    canvas.setState({
+      nodes: {
+        'source-node': {
+          id: 'source-node',
+          origin: { x: 100, y: 100 },
+          size: { width: 640, height: 400 },
+          zOrder: 0,
+          creationIndex: 0,
+          dockLayout: { id: 'source-tabs', type: 'tabs', panelIds: [SOURCE], activeIndex: 0 },
+        },
+      },
+    })
+    useAppStore.setState({
+      selectedWorkspaceId: 'another-workspace',
+      workspaces: [{
+        id: 'ws-source',
+        panels: {
+          [PRIMARY]: { id: PRIMARY, type: 'canvas', title: 'Canvas', isDirty: false },
+          [SOURCE]: { id: SOURCE, type: 'terminal', title: 'Terminal', isDirty: false },
+        },
+      }],
+    } as any)
+
+    expect(placementForBackgroundPanel('ws-source', SOURCE)).toEqual({
+      target: 'canvas',
+      canvasPanelId: PRIMARY,
+      focus: false,
+      placementGroupId: SOURCE,
     })
   })
 })

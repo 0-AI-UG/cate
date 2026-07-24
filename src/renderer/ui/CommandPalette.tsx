@@ -28,11 +28,10 @@ import {
   Selection,
   ArrowUUpLeft,
   ArrowUUpRight,
-  ChatCircle,
-  Eye,
   CaretLeft,
   CaretRight,
 } from '@phosphor-icons/react'
+import { CateLogo } from './CateLogo'
 import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { isNavigablePanelType } from '../../shared/panels'
 import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
@@ -49,7 +48,6 @@ import { revealPanel } from '../lib/workspace/panelReveal'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { getRecentFiles } from '../lib/fs/recentFiles'
 import { pathDisplayName, relativeDisplayPath } from '../lib/fs/displayPath'
-import { cateAgentController } from '../cateAgent/cateAgentController'
 
 // -----------------------------------------------------------------------------
 // Command definitions
@@ -80,8 +78,7 @@ const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
 const DeleteRuntimeIcon = () => <Trash size={ICON_SIZE} />
 const TutorialIcon = () => <GraduationCap size={ICON_SIZE} />
 const SkillsIcon = () => <PuzzlePiece size={ICON_SIZE} />
-const AgentIcon = () => <ChatCircle size={ICON_SIZE} />
-const ObserveIcon = () => <Eye size={ICON_SIZE} />
+const AgentIcon = () => <CateLogo size={ICON_SIZE} />
 const CloseIcon = () => <X size={ICON_SIZE} />
 const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
 const RedoIcon = () => <ArrowUUpRight size={ICON_SIZE} />
@@ -164,20 +161,6 @@ export const CommandPalette: React.FC = () => {
       { id: 'newBrowser', title: shortcutTitle('newBrowser'), icon: <GlobeIcon />, action: run('newBrowser') },
       { id: 'newEditor', title: shortcutTitle('newEditor'), icon: <FileTextIcon />, action: run('newEditor') },
       { id: 'newAgent', title: shortcutTitle('newAgent'), icon: <AgentIcon />, action: run('newAgent') },
-      {
-        id: 'observeNow',
-        title: 'Run Cate Agent Observer',
-        icon: <ObserveIcon />,
-        // Ensure the observer session is running (summon is idempotent — starts it
-        // if needed, returns early otherwise) then force one observe turn now.
-        action: () => {
-          const app = useAppStore.getState()
-          const wsId = app.selectedWorkspaceId
-          const ws = app.workspaces.find((w) => w.id === wsId)
-          if (!ws?.rootPath) return
-          void cateAgentController.summon(wsId, ws.rootPath).then(() => cateAgentController.observeNow(wsId))
-        },
-      },
       { id: 'newCanvas', title: shortcutTitle('newCanvas'), icon: <LayoutIcon />, action: run('newCanvas') },
       { id: 'closePanel', title: shortcutTitle('closePanel'), icon: <CloseIcon />, action: run('closePanel') },
       { id: 'saveFile', title: shortcutTitle('saveFile'), icon: <SaveIcon />, action: run('saveFile') },
@@ -584,6 +567,6 @@ function PanelIcon({ type }: { type: PanelType }) {
   if (type === 'terminal') return <span className={`${cls} text-emerald-400`}><Terminal size={ICON_SIZE} /></span>
   if (type === 'browser')  return <span className={`${cls} text-sky-400`}><Globe size={ICON_SIZE} /></span>
   if (type === 'editor' || type === 'document') return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
-  if (type === 'agent')    return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><ChatCircle size={ICON_SIZE} /></span>
+  if (type === 'cateAgent') return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><CateLogo size={ICON_SIZE} /></span>
   return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
 }

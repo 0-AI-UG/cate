@@ -19,14 +19,12 @@
 // (window.electronAPI.terminalWrite — the same path terminal.onData uses) but
 // never appends a newline, so text lands in the input line without executing.
 // Input additionally requires the cliTerminalInputEnabled setting, enforced
-// main-side before the call ever reaches this driver. Terminals the Cate Agent
-// orchestrator is actively driving reject input with `agent-owned-terminal`.
+// main-side before the call ever reaches this driver.
 // =============================================================================
 
 import { useAppStore } from '../../stores/appStore'
 import { getActivePanelId } from '../activePanel'
 import { getEntry } from './registryState'
-import { useCateAgentStore } from '../../cateAgent/cateAgentStore'
 import type { Terminal } from '@xterm/xterm'
 
 export type TerminalOutcome = { ok: true; result?: unknown } | { ok: false; error: string }
@@ -129,10 +127,6 @@ export async function handleTerminalMethod(
     return { ok: true, result: { panelId: target.panelId, ...screen } }
   }
 
-  // Input (`type`/`press`). A terminal the Cate Agent orchestrator is actively
-  // driving is off limits — CLI keystrokes would interleave with the agent's.
-  const controlled = useCateAgentStore.getState().byWs[workspaceId]?.controlledTerminals?.[target.panelId]
-  if (controlled) return { ok: false, error: 'agent-owned-terminal' }
   if (!entry.ptyId || entry.alive === false) return { ok: false, error: 'terminal-not-ready' }
 
   let data: string

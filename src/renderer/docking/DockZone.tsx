@@ -13,6 +13,9 @@ import { registerDropZone } from '../drag'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
 import { useAppStore } from '../stores/appStore'
+import { CHAT_DRAG_MIME, readChatDrag } from '../drag/fileDragPayload'
+import { createSeededChatPanel } from '../drag/openChatDrop'
+import { endChatDrag } from '../drag/chatDragState'
 
 interface DockZoneProps {
   position: DockZonePosition
@@ -45,14 +48,30 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
   // The canvas handles its own area and stops propagation, so canvas drops
   // still open floating nodes.
   const handleFileDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer.types.includes('application/cate-file') || e.dataTransfer.types.includes('Files')) {
+    if (
+      e.dataTransfer.types.includes('application/cate-file') ||
+      e.dataTransfer.types.includes(CHAT_DRAG_MIME) ||
+      e.dataTransfer.types.includes('Files')
+    ) {
       e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
+      e.dataTransfer.dropEffect = e.dataTransfer.types.includes(CHAT_DRAG_MIME) ? 'move' : 'copy'
     }
   }, [])
 
   const handleFileDrop = useCallback(
     async (e: React.DragEvent<HTMLDivElement>) => {
+      // Chat drop from the sidebar tab strip / a panel's recents — move the chat
+      // into a newly-created Agent tab in this zone.
+      const chatDrag = readChatDrag(e.dataTransfer)
+      if (chatDrag) {
+        e.preventDefault()
+        e.stopPropagation()
+        const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
+        if (wsId) createSeededChatPanel(wsId, chatDrag, undefined, { target: 'dock', zone: position })
+        endChatDrag()
+        return
+      }
+
       const multiData = e.dataTransfer.getData('application/cate-files')
       const singlePath = e.dataTransfer.getData('application/cate-file')
       let paths: string[] = []

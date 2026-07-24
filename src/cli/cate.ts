@@ -418,11 +418,25 @@ export async function send(method: string, args: Record<string, unknown>, deps: 
   }
 
   let res: Response
+  // A host may scope this shell to an opaque canvas affinity. Forward it on
+  // panel-creating calls and the full multi-step browser flow. The CLI does not
+  // know what the value represents.
+  // A terminal without an inherited group becomes the source of its own group.
+  // Descendant terminals inherit that group through their panel state, so every
+  // panel opened by one coding-agent flow keeps using the original source.
+  const placementGroupId = deps.env.CATE_PLACEMENT_GROUP ?? deps.env.CATE_PANEL_ID
+  const usesPlacementGroup =
+    method.startsWith('cate.browser.') ||
+    method === 'cate.editor.openFile' ||
+    method === 'cate.canvas.createPanel'
+  const requestArgs = usesPlacementGroup && placementGroupId && args.placementGroupId === undefined
+    ? { ...args, placementGroupId }
+    : args
   try {
     res = await deps.fetch(api, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ method, args }),
+      body: JSON.stringify({ method, args: requestArgs }),
       signal: AbortSignal.timeout(deps.timeout),
     })
   } catch (err) {

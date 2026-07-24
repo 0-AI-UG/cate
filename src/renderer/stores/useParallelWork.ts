@@ -165,7 +165,7 @@ export function useParallelWork(
       const panelId =
         type === 'terminal'
           ? s.createTerminal(workspaceId, undefined, undefined, placement, wt.path)
-          : s.createAgent(workspaceId, undefined, placement)
+          : s.createCateAgent(workspaceId, undefined, placement)
       if (panelId) s.setPanelWorktreeId(workspaceId, panelId, wt.id)
     },
     [workspaceId],

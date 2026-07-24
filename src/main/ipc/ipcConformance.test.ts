@@ -83,7 +83,7 @@ function read(relFromSrc: string): string {
  * registrations/sends across the whole main process, not which file owns them.
  */
 function readMainSources(): string {
-  const dirs = ['main', 'agent/main', 'skills/main']
+  const dirs = ['main', 'cateAgent/main', 'skills/main']
   const files = dirs.flatMap((d) =>
     readdirSync(join(SRC, d), { recursive: true, encoding: 'utf8' })
       .filter((f) => f.endsWith('.ts'))

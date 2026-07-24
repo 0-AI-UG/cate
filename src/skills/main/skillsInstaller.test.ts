@@ -90,6 +90,28 @@ beforeEach(() => {
 })
 
 describe('skillsInstaller workspace manifest', () => {
+  it('materializes and removes the target root', async () => {
+    await writeSkillToWorkspace({
+      skillId: entry().id,
+      name: entry().name,
+      targetId: 'cate-agent',
+      cwd: WS,
+      origin: 'local',
+      files: [{ relPath: 'SKILL.md', text: 'body' }],
+    })
+
+    expect(files.get(`${WS}/.cate/cate-agent/skills/demo-skill/SKILL.md`)).toContain('body')
+    expect(manifest().skills).toHaveLength(1)
+    expect(norm(manifest().skills[0].path)).toBe(
+      `${WS}/.cate/cate-agent/skills/demo-skill/SKILL.md`,
+    )
+
+    await uninstall(entry().id, entry().name, 'cate-agent', WS)
+    expect(removed).toEqual([
+      `${WS}/.cate/cate-agent/skills/demo-skill`,
+    ])
+  })
+
   it('replaces only the matching target entry and preserves seed markers', async () => {
     files.set(MANIFEST, JSON.stringify({
       skills: [

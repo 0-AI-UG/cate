@@ -7,10 +7,9 @@
 // opened workspace (each agent's per-target dir) or in Cate's own userData — never
 // in another agent's user-home dir.
 //
-// The per-agent half of this file is DERIVED from the canonical agent registry
-// (src/shared/agents.ts): each AgentDef declares its own skills dir + layout,
-// and SKILL_TARGETS projects them. Adding an agent CLI target means editing
-// agents.ts, not this file (beyond widening SkillTargetId).
+// This table is DERIVED from the canonical agent integration registry
+// (src/shared/agents.ts): external CLIs and Cate's embedded agent each declare
+// their skills dir + layout, and SKILL_TARGETS projects them.
 //
 // Two homes for a skill:
 //   - saved:     cached in Cate's userData library (skillStore bytes + a
@@ -21,16 +20,14 @@
 // user installs / adds it there.
 // =============================================================================
 
-import { AGENTS } from './agents'
+import { AGENT_INTEGRATIONS } from './agents'
 
 /** Stable, PERSISTED target ids (recorded per install in a workspace's
  *  `.cate/skills.json`) — renaming one orphans existing installs.
  *
- *  Every id except `cate-agent` belongs to an agent CLI and is declared on that
- *  agent in src/shared/agents.ts (AgentDef.skills), which is where a NEW target
- *  is added: SKILL_TARGETS below is derived from AGENTS, so the only thing to
- *  do here is widen this union. `cate-agent` is Cate's own agent panel, not a
- *  CLI, so it has no AgentDef and is defined here. */
+ *  Every id belongs to an external or embedded agent integration declared in
+ *  src/shared/agents.ts. A new target is added there; the only manual change
+ *  here is widening this persisted union. */
 export type SkillTargetId =
   | 'claude-code'
   | 'cate-agent'
@@ -115,23 +112,12 @@ export interface SkillTargetInfo {
   beta?: boolean
 }
 
-/** Cate's own agent panel — the one target with no agent CLI behind it, so it
- *  is the one target not derived from AGENTS. Its skills root needs the main
- *  process's PI_AGENT_DIR, so that path lives in `src/skills/main/targets.ts`. */
-const CATE_AGENT_TARGET: SkillTargetInfo = {
-  id: 'cate-agent',
-  label: 'Agent',
-  layout: 'folder',
-  bundledResources: true,
-  nameMatchesDir: false,
-}
-
 /** Static target metadata, shared by main (path/write logic) and renderer (the
- *  install matrix). DERIVED from the agent registry — to add a target, declare
- *  `skills` on the agent in src/shared/agents.ts; nothing here changes.
+ *  install matrix). DERIVED from the agent integration registry — to add a
+ *  target, declare `skills` on the integration in src/shared/agents.ts.
  *  Workspace-relative base dirs live in `src/skills/main/targets.ts`. */
 export const SKILL_TARGETS: readonly SkillTargetInfo[] = [
-  ...AGENTS.flatMap((a) =>
+  ...AGENT_INTEGRATIONS.flatMap((a) =>
     a.skills
       ? [{
           id: a.skills.targetId,
@@ -143,7 +129,6 @@ export const SKILL_TARGETS: readonly SkillTargetInfo[] = [
         }]
       : [],
   ),
-  CATE_AGENT_TARGET,
 ]
 
 const SKILL_TARGET_IDS: ReadonlySet<string> = new Set(SKILL_TARGETS.map((t) => t.id))

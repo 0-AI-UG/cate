@@ -61,14 +61,6 @@ vi.mock('../../lib/terminal/terminalRegistry', () => ({
   },
 }))
 
-// Agent pi sessions are out of scope here (they have no PTY); stub the module
-// so importing the appStore graph doesn't pull in the agent store.
-vi.mock('../../../agent/renderer/agentSessionRegistry', () => ({
-  disposeAgentPanel: vi.fn(),
-  getAgentPanelSession: vi.fn(),
-  saveAgentPanelSession: vi.fn(),
-}))
-
 // Minimal electronAPI so the fire-and-forget workspace sync calls resolve.
 beforeEach(() => {
   const g = globalThis as unknown as { window?: { electronAPI?: unknown } }
@@ -88,6 +80,8 @@ beforeEach(() => {
     recentProjectsAdd: vi.fn(),
     recentProjectsRemove: vi.fn(async () => undefined),
     agentDispose: vi.fn(async () => undefined),
+    projectChatsLoad: vi.fn(async () => []),
+    projectChatsSave: vi.fn(async () => undefined),
   }
 })
 
@@ -100,6 +94,7 @@ import { closePanelWithConfirm } from '../../lib/closePanelWithConfirm'
 import { removePanelFromWindow } from '../../lib/panels/removePanelFromWindow'
 import { setActivePanel, getActivePanelId } from '../../lib/activePanel'
 import type { DockLayoutNode, PanelState } from '../../../shared/types'
+import { useChatsStore } from '../chatsStore'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -182,6 +177,7 @@ beforeEach(() => {
   h.disposeSpy.mockClear()
   h.releaseSpy.mockClear()
   setActivePanel(null)
+  useChatsStore.setState({ chatsByRoot: {}, loadedRoots: {} })
   testSeq += 1
 })
 
@@ -234,9 +230,8 @@ describe('closePanel — happy path', () => {
     const canvasStore = getOrCreateCanvasStoreForPanel(canvasId)
     const nodeId = canvasStore.getState().nodeForPanel(termId)!
 
-    // Call closePanel directly, the way cateAgentTools close_terminal and the
-    // runAction 'closePanel' shortcut do — with the node's seeded mini-dock
-    // layout (every addNode seeds dockLayout = [its own panel]) untouched.
+    // Call closePanel directly with the node's seeded mini-dock layout
+    // (every addNode seeds dockLayout = [its own panel]) untouched.
     useAppStore.getState().closePanel(wsId, termId)
 
     // Disposal and record removal still happen correctly...
@@ -261,6 +256,26 @@ describe('closePanel — happy path', () => {
     expect(h.ptyKill).not.toHaveBeenCalled()
     expect(h.entries.has(termId)).toBe(true)
     expect(panelsOf(wsId)[termId]).toBeDefined()
+  })
+
+  it('closing an Agent panel returns its chats to the sidebar', () => {
+    const { wsId } = makeWorkspace(`agent-${testSeq}`)
+    const rootPath = useAppStore.getState().workspaces.find((workspace) => workspace.id === wsId)!.rootPath
+    const agentId = useAppStore.getState().createCateAgent(wsId, { x: 0, y: 0 })
+    useChatsStore.setState({
+      chatsByRoot: {
+        [rootPath]: [
+          { id: 'owned', title: 'Owned', createdAt: 1, updatedAt: 1, hostPanelId: agentId },
+          { id: 'other', title: 'Other', createdAt: 1, updatedAt: 1, hostPanelId: 'another-agent' },
+        ],
+      },
+      loadedRoots: { [rootPath]: true },
+    })
+
+    useAppStore.getState().closePanel(wsId, agentId)
+
+    expect(useChatsStore.getState().getChat(rootPath, 'owned')?.hostPanelId).toBeUndefined()
+    expect(useChatsStore.getState().getChat(rootPath, 'other')?.hostPanelId).toBe('another-agent')
   })
 })
 
@@ -392,6 +407,24 @@ describe('closePanel — detached-window interactions', () => {
     expect(h.releaseSpy).toHaveBeenCalledWith(termId)
     expect(h.ptyKill).not.toHaveBeenCalled() // PTY survives the move
     expect(panelsOf(wsId)[termId]).toBeUndefined() // record now lives in the other window
+  })
+
+  it('transferring an Agent panel preserves its chat ownership', () => {
+    const { wsId } = makeWorkspace(`agent-transfer-${testSeq}`)
+    const rootPath = useAppStore.getState().workspaces.find((workspace) => workspace.id === wsId)!.rootPath
+    const agentId = useAppStore.getState().createCateAgent(wsId, { x: 0, y: 0 })
+    useChatsStore.setState({
+      chatsByRoot: {
+        [rootPath]: [
+          { id: 'owned', title: 'Owned', createdAt: 1, updatedAt: 1, hostPanelId: agentId },
+        ],
+      },
+      loadedRoots: { [rootPath]: true },
+    })
+
+    removePanelFromWindow(wsId, agentId, 'cateAgent', 'transfer')
+
+    expect(useChatsStore.getState().getChat(rootPath, 'owned')?.hostPanelId).toBe(agentId)
   })
 
   it('closePanel on an already-transferred panel is inert: it cannot reach the moved PTY', () => {

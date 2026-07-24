@@ -33,7 +33,7 @@ interface Connection {
 export class RuntimeManager {
   private readonly runtimes = new Map<RuntimeId, Runtime>()
   private readonly connections = new Map<RuntimeId, Connection>()
-  /** Dedupe concurrent connects to the same id (mirrors AgentManager.withLock). */
+  /** Dedupe concurrent connects to the same id (mirrors CodingManager.withLock). */
   private readonly connecting = new Map<RuntimeId, Promise<Runtime>>()
   private statusListener: ((id: RuntimeId, state: RuntimePhase, message?: string) => void) | null = null
   /** Fired when a runtime reaches the fully-`connected` step (a live

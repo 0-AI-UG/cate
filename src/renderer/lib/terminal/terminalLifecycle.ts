@@ -44,6 +44,7 @@ interface CreateOpts {
   workspaceId: string
   cwd?: string
   initialInput?: string
+  placementGroupId?: string
   /** Terminal session-restore: a full agent resume command (e.g.
    *  `claude --resume <id>`) typed into the fresh shell right after spawn, via
    *  the real PTY input path. One-shot — the persisted stamp it came from is
@@ -311,6 +312,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
       shell: (shell as string) || undefined,
       workspaceId: opts.workspaceId,
       panelId,
+      placementGroupId: opts.placementGroupId,
     })
 
     // If the entry was disposed while we were waiting, dispose() couldn't kill

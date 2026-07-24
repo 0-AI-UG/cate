@@ -19,7 +19,6 @@ import {
   FileText,
   SquaresFour,
   FileDoc,
-  ChatCircle,
   PuzzlePiece,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
@@ -27,6 +26,7 @@ import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
 import { PANEL_DEFINITIONS, type SharedPanelDefinition } from '../../shared/panels'
+import { CateLogo } from '../ui/CateLogo'
 import { PanelErrorBoundary } from '../ui/PanelErrorBoundary'
 import type { PanelProps } from './types'
 
@@ -40,7 +40,7 @@ const TerminalPanel = React.lazy(() => import('./TerminalPanel'))
 const EditorPanel = React.lazy(() => import('./EditorPanel'))
 const BrowserPanel = React.lazy(() => import('./BrowserPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
-const AgentPanel = React.lazy(() => import('../../agent/renderer/AgentPanel'))
+const CateAgentPanel = React.lazy(() => import('../../cateAgent/renderer/CateAgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
 const ExtensionPanel = React.lazy(() => import('./ExtensionPanel'))
 
@@ -69,7 +69,7 @@ export interface PanelCreateArgs {
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
-  icon: PhosphorIcon
+  icon: PhosphorIcon | ComponentType<{ size?: number; className?: string }>
   /** React.lazy() wrapped panel component. Accepts the standard PanelProps
    *  plus optional per-type extras (filePath/url/zoomLevel) — the dispatcher
    *  reads those off the PanelState. */
@@ -137,12 +137,12 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
       trackCreated('canvas', useAppStore.getState().createCanvas(workspaceId, canvasPoint, placement) || null),
     props: (panel, ctx) => ({ ...baseProps(panel, ctx), renderPanelContent: ctx.renderPanelContent }),
   },
-  agent: {
-    ...PANEL_DEFINITIONS.agent,
-    icon: ChatCircle,
-    Component: AgentPanel,
+  cateAgent: {
+    ...PANEL_DEFINITIONS.cateAgent,
+    icon: CateLogo,
+    Component: CateAgentPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
-      trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null),
+      trackCreated('cateAgent', useAppStore.getState().createCateAgent(workspaceId, canvasPoint, placement) || null),
     props: baseProps,
   },
   document: {

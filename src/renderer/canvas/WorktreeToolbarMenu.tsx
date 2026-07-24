@@ -25,10 +25,10 @@ import {
   Warning,
   X,
   GitPullRequest,
-  ChatCircle,
   CircleNotch,
 } from '@phosphor-icons/react'
 import { Tooltip } from '../ui/Tooltip'
+import { CateLogo } from '../ui/CateLogo'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
 import { errorMessage } from '../lib/errorMessage'
 import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
@@ -174,7 +174,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
       if (!p.worktreeId) continue
       const c = counts[p.worktreeId] ?? (counts[p.worktreeId] = { terminals: 0, agents: 0 })
       if (p.type === 'terminal') c.terminals += 1
-      else if (p.type === 'agent') c.agents += 1
+      else if (p.type === 'cateAgent') c.agents += 1
     }
     return counts
   }, [panels])
@@ -522,12 +522,12 @@ const WorktreeRow: React.FC<{
               onClick={() => onLaunch('terminal')}
             />
             <SpawnButton
-              icon={<ChatCircle size={12} />}
-              title="Agent"
-              panelType="agent"
+              icon={<CateLogo size={12} />}
+              title="Cate Agent"
+              panelType="cateAgent"
               cwd={wt.path}
               worktreeId={wt.id}
-              onClick={() => onLaunch('agent')}
+              onClick={() => onLaunch('cateAgent')}
             />
             <Tooltip label="More actions">
               <button
@@ -558,7 +558,7 @@ const WorktreeRow: React.FC<{
               )}
               {openAgents > 0 && (
                 <span className="flex items-center gap-0.5">
-                  <ChatCircle size={10} />
+                  <CateLogo size={10} />
                   {openAgents}
                 </span>
               )}

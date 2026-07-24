@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 // touched, and not by the path helpers under test).
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
 
-import { skillsRootDir } from './targets'
+import { skillsRootDir, skillsRootDirs } from './targets'
 
 describe('skillsRootDir', () => {
   const cwd = '/home/u/proj'
@@ -14,7 +14,7 @@ describe('skillsRootDir', () => {
     // Local paths use native separators, so build the expected value with
     // path.join to keep this assertion correct on Windows too.
     expect(skillsRootDir('claude-code', 'local', cwd)).toBe(path.join(cwd, '.claude', 'skills'))
-    expect(skillsRootDir('cate-agent', 'local', cwd)).toBe(path.join(cwd, '.cate', 'pi-agent', 'skills'))
+    expect(skillsRootDir('cate-agent', 'local', cwd)).toBe(path.join(cwd, '.cate', 'cate-agent', 'skills'))
     expect(skillsRootDir('pi-native', 'local', cwd)).toBe(path.join(cwd, '.agents', 'skills'))
     expect(skillsRootDir('opencode', 'local', cwd)).toBe(path.join(cwd, '.opencode', 'skills'))
     expect(skillsRootDir('codex', 'local', cwd)).toBe(path.join(cwd, '.codex', 'skills'))
@@ -22,5 +22,14 @@ describe('skillsRootDir', () => {
 
   it('uses POSIX joins for a remote runtime', () => {
     expect(skillsRootDir('claude-code', 'srv_1', '/srv/work')).toBe('/srv/work/.claude/skills')
+  })
+
+  it('exposes one consumer root per target', () => {
+    expect(skillsRootDirs('cate-agent', 'local', cwd)).toEqual([
+      path.join(cwd, '.cate', 'cate-agent', 'skills'),
+    ])
+    expect(skillsRootDirs('codex', 'local', cwd)).toEqual([
+      path.join(cwd, '.codex', 'skills'),
+    ])
   })
 })

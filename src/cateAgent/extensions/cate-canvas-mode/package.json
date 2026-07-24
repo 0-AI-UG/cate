@@ -1,0 +1,8 @@
+{
+  "name": "cate-canvas-mode",
+  "description": "Canvas prompt mode for Cate's direct agent. Toggle with /canvas to use the bundled cate CLI skill.",
+  "private": true,
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
