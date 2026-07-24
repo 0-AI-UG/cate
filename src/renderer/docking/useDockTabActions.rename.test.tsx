@@ -13,9 +13,11 @@ import { act } from 'react'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+const resetRendering = vi.hoisted(() => vi.fn())
+
 vi.mock('../lib/logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 vi.mock('../lib/terminal/terminalRegistry', () => ({
-  terminalRegistry: { entries: () => [], panelIdForPty: () => null, ptyIdForPanel: () => null, has: () => false, getEntry: () => undefined, dispose: vi.fn(), release: vi.fn(), disposeWorkspace: vi.fn() },
+  terminalRegistry: { entries: () => [], panelIdForPty: () => null, ptyIdForPanel: () => null, has: () => false, getEntry: () => undefined, dispose: vi.fn(), release: vi.fn(), disposeWorkspace: vi.fn(), resetRendering },
 }))
 vi.mock('../../agent/renderer/agentSessionRegistry', () => ({
   disposeAgentPanel: vi.fn(),
@@ -43,6 +45,7 @@ const Harness: React.FC = () => {
     zone: 'center',
     dockStoreApi: dockStore,
     workspaceId: 'ws-rename',
+    getPanelProp: () => ({ id: 'p1', type: 'terminal', title: 'Agent · foo' }) as never,
   })
   return null
 }
@@ -54,6 +57,7 @@ const initialAppState = useAppStore.getState()
 
 beforeEach(() => {
   renamePanelByUser.mockClear()
+  resetRendering.mockClear()
   useAppStore.setState({ renamePanelByUser } as never)
   host = document.createElement('div')
   document.body.appendChild(host)
@@ -107,5 +111,30 @@ describe('useDockTabActions — commitRename seed regression', () => {
     act(() => { api.current!.beginRename('p1', 'Custom') })
     act(() => { api.current!.commitRename('p1') })
     expect(renamePanelByUser).not.toHaveBeenCalled()
+  })
+
+  it('offers terminal rendering recovery and resets only the selected panel', async () => {
+    const showContextMenu = vi.fn(
+      async (items: import('../../shared/electron-api').NativeContextMenuItem[]) => {
+        expect(items).toContainEqual({
+          id: 'reset-terminal-rendering',
+          label: 'Reset Terminal Rendering',
+        })
+        return 'reset-terminal-rendering'
+      },
+    )
+    Object.defineProperty(window.electronAPI, 'showContextMenu', {
+      configurable: true,
+      value: showContextMenu,
+    })
+
+    await act(async () => {
+      await api.current!.handleTabContextMenu({
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      } as never, 'p1')
+    })
+
+    expect(resetRendering).toHaveBeenCalledWith('p1')
   })
 })

@@ -270,6 +270,7 @@ describe('agentHooks capability', () => {
       let err = ''
       const child = execFile(path.join(dir, 'cate-hook-bridge-claude-code'), [], { env, timeout: 15_000 })
       child.stderr!.on('data', (chunk) => { err += String(chunk) })
+      child.stdin!.on('error', () => { /* wrapper may exit before reading stdin */ })
       child.on('close', (c) => resolve({ code: c, stderr: err }))
       child.stdin!.end(JSON.stringify({ hook_event_name: 'SessionStart', cwd: '/w' }))
     })
