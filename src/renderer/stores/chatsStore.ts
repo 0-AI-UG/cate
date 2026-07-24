@@ -1,22 +1,15 @@
 // =============================================================================
 // chatsStore — renderer-side authority for per-workspace Cate Agent chats.
 //
-// Holds the live chat list keyed by project rootPath, and mirrors every mutation
-// to `.cate/chats.json` via IPC. Keyed by root (not the single selected workspace)
-// so multiple open workspaces keep independent threads and a re-select doesn't
-// reload. A chat is a persistent thread of typed messages plus the live/last `run`
-// state for a code/canvas task; the controller drives the run, this store persists.
+// Holds main-agent session metadata keyed by project rootPath and mirrors every
+// mutation to `.cate/chats.json` via IPC.
 // =============================================================================
 
 import { create } from 'zustand'
-import type { CateAgentModelRef, Chat, ChatMessage, ChatRun } from '../../shared/types'
+import type { CateAgentModelRef, Chat } from '../../shared/types'
 import { generateId } from './canvas/helpers'
 
-/** The status dot colour a chat's run carries in the sidebar/tab lists. */
-export function chatDotColor(chat: Chat): string {
-  if (chat.run?.status === 'running') return '#4ade80'
-  if (chat.run?.interrupted || chat.run?.status === 'review') return '#fbbf24'
-  if (chat.run?.status === 'failed') return '#f87171'
+export function chatDotColor(_chat: Chat): string {
   return 'var(--surface-5)'
 }
 
@@ -53,20 +46,10 @@ interface ChatsStoreActions {
   /** Set a chat's per-chat model override and persist. null clears
    *  it, falling the chat back to the global default. */
   setChatModel: (rootPath: string, id: string, model: CateAgentModelRef | null) => void
-  /** Patch durable chat metadata (direct-session file, title, engineering handoff). */
+  /** Patch durable chat metadata (session file or title). */
   patchChat: (rootPath: string, id: string, patch: Partial<Chat>) => void
   /** Remove a chat and persist. */
   removeChat: (rootPath: string, id: string) => void
-  /** Append one typed message to a chat and persist. */
-  appendMessage: (rootPath: string, id: string, message: ChatMessage) => void
-  /** Patch one message by id (merge) and persist. */
-  patchMessage: (rootPath: string, id: string, messageId: string, patch: Partial<ChatMessage>) => void
-  /** Read a chat's run (undefined if none). */
-  getRun: (rootPath: string, id: string) => ChatRun | undefined
-  /** Patch a chat's run (creating it if absent) and persist. */
-  patchRun: (rootPath: string, id: string, patch: Partial<ChatRun>) => void
-  /** Drop a chat's run entirely (a question turn / after landing) and persist. */
-  clearRun: (rootPath: string, id: string) => void
 }
 
 export type ChatsStore = ChatsStoreState & ChatsStoreActions
@@ -124,7 +107,6 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
       title: title.slice(0, 80) || 'New chat',
       createdAt: now,
       updatedAt: now,
-      messages: [],
       ...(hostPanelId ? { hostPanelId } : {}),
     }
     const next = [...(get().chatsByRoot[rootPath] ?? []), chat]
@@ -184,45 +166,6 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
     const current = get().chatsByRoot[rootPath]
     if (!current) return
     const next = current.filter((c) => c.id !== id)
-    set((s) => ({ chatsByRoot: { ...s.chatsByRoot, [rootPath]: next } }))
-    persist(rootPath, next)
-  },
-
-  appendMessage(rootPath, id, message) {
-    const current = get().chatsByRoot[rootPath]
-    if (!current) return
-    const next = withChat(current, id, (c) => ({ ...c, messages: [...c.messages, message] }))
-    set((s) => ({ chatsByRoot: { ...s.chatsByRoot, [rootPath]: next } }))
-    persist(rootPath, next)
-  },
-
-  patchMessage(rootPath, id, messageId, patch) {
-    const current = get().chatsByRoot[rootPath]
-    if (!current) return
-    const next = withChat(current, id, (c) => ({
-      ...c,
-      messages: c.messages.map((m) => (m.id === messageId ? ({ ...m, ...patch } as ChatMessage) : m)),
-    }))
-    set((s) => ({ chatsByRoot: { ...s.chatsByRoot, [rootPath]: next } }))
-    persist(rootPath, next)
-  },
-
-  getRun(rootPath, id) {
-    return get().getChat(rootPath, id)?.run
-  },
-
-  patchRun(rootPath, id, patch) {
-    const current = get().chatsByRoot[rootPath]
-    if (!current) return
-    const next = withChat(current, id, (c) => ({ ...c, run: { status: 'running', ...c.run, ...patch } }))
-    set((s) => ({ chatsByRoot: { ...s.chatsByRoot, [rootPath]: next } }))
-    persist(rootPath, next)
-  },
-
-  clearRun(rootPath, id) {
-    const current = get().chatsByRoot[rootPath]
-    if (!current) return
-    const next = withChat(current, id, (c) => ({ ...c, run: undefined }))
     set((s) => ({ chatsByRoot: { ...s.chatsByRoot, [rootPath]: next } }))
     persist(rootPath, next)
   },

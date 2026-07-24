@@ -17,7 +17,6 @@ import { NodeErrorBoundary } from '../ui/NodeErrorBoundary'
 import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, WindowDockState } from '../../shared/types'
 import { useAppStore, useSelectedWorkspace, type PanelPlacement } from '../stores/appStore'
-import { useCateAgentStore } from '../../cateAgent/renderer/cateAgentStore'
 import type { StoreApi } from 'zustand'
 import { useKeepMountedPanelIds } from './keepMountedPanels'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
@@ -213,21 +212,7 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
   // re-runs the cull.
   const nodeIds = useNodeIds(store)
   const keepMountedPanelIds = useKeepMountedPanelIds(workspaceId)
-  // Terminals the Cate Agent is driving must also stay mounted off-view: they're
-  // placed beside the user's content without moving the camera, and an unmounted
-  // terminal can't boot its pty or render the screen the agent reads. Fold them
-  // into the same keep-mounted set the cull consults. Both inputs are
-  // identity-stable across pan/zoom, so the merged set is too (and when there are
-  // no controlled terminals we pass keepMountedPanelIds through unchanged, fully
-  // preserving the cull's identity-keyed keep-alive cache).
-  const controlledTerminals = useCateAgentStore((s) => s.byWs[workspaceId]?.controlledTerminals)
-  const mountedPanelIds = useMemo(() => {
-    if (!controlledTerminals || Object.keys(controlledTerminals).length === 0) return keepMountedPanelIds
-    const merged = new Set(keepMountedPanelIds)
-    for (const id of Object.keys(controlledTerminals)) merged.add(id)
-    return merged
-  }, [keepMountedPanelIds, controlledTerminals])
-  const visibleNodeIds = useVisibleNodeIds(store, mountedPanelIds)
+  const visibleNodeIds = useVisibleNodeIds(store, keepMountedPanelIds)
   // Welcome page only shows on a brand-new workspace (no rootPath chosen yet).
   // After a folder is picked, deleting all panels leaves a blank canvas.
   const workspaceRootPath = useAppStore(

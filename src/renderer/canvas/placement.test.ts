@@ -13,6 +13,7 @@ import {
   recommendPlacements,
   findFreePosition,
   nudgeToFree,
+  recommendPlacementFromSource,
   deriveGuides,
   matchedNeighborSize,
   snapAxis,
@@ -410,6 +411,43 @@ describe('nudgeToFree', () => {
     // overlaps, rather than refusing the placement.
     expect(p).toEqual({ x: 0, y: 0 })
     expect(rectsOverlap({ origin: p, size }, { origin: { x: -2000, y: -2000 }, size: { width: 4000, height: 4000 } })).toBe(true)
+  })
+})
+
+describe('recommendPlacementFromSource', () => {
+  it('chooses the first picker recommendation as if the source panel were focused', () => {
+    const source = node('source', 2000, 100, 640, 400)
+    const obstacle = node('obstacle', 2680, 100, 640, 400)
+    const nodes = nodeMap(source, obstacle)
+    const viewport = {
+      offset: { x: 9000, y: 9000 },
+      zoom: 1,
+      containerSize: { width: 1200, height: 800 },
+    }
+    const centredViewport = {
+      ...viewport,
+      offset: {
+        x: viewport.containerSize.width / 2 - (source.origin.x + source.size.width / 2),
+        y: viewport.containerSize.height / 2 - (source.origin.y + source.size.height / 2),
+      },
+    }
+    const expected = recommendPlacements(
+      nodes,
+      source.id,
+      'browser',
+      centredViewport,
+      null,
+      6,
+      PANEL_DEFAULT_SIZES.browser,
+    )[0]
+
+    expect(recommendPlacementFromSource(
+      nodes,
+      source.id,
+      'browser',
+      viewport,
+      PANEL_DEFAULT_SIZES.browser,
+    )).toEqual(expected)
   })
 })
 

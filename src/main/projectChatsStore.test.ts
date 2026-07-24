@@ -47,9 +47,7 @@ afterEach(async () => {
 })
 
 describe('projectChatsStore', () => {
-  it('round-trips a chat with typed messages + the run loop layer', async () => {
-    // The transcript blocks + the run's iteration layer (whose chips key off
-    // agents[].terminalId) must all survive the disk round-trip.
+  it('round-trips main-agent session metadata', async () => {
     const chat: Chat = {
       id: 'c1',
       title: 'update readme',
@@ -57,57 +55,14 @@ describe('projectChatsStore', () => {
       updatedAt: 2,
       hostPanelId: 'agent-panel-1',
       sessionFile: '/tmp/direct-chat.jsonl',
-      engineeringTask: {
-        goal: 'Refresh README.md',
-        check: 'readme mentions the widget API',
-        overview: 'Keep the existing structure.',
-        acceptedAt: 8,
-      },
-      messages: [
-        { id: 'm1', role: 'user', ts: 3, kind: 'text', text: 'update the readme' },
-        { id: 'm2', role: 'agent', ts: 4, kind: 'plan', goal: 'Refresh README.md', check: 'readme mentions the widget API' },
-        { id: 'm3', role: 'agent', ts: 5, kind: 'attempts', round: 1, recommendedIterationId: 'it-1', iterations: [] },
-        { id: 'm4', role: 'agent', ts: 6, kind: 'result', iterationId: 'it-1', met: true, reason: 'looks good', worktreeId: 'wt-1', branch: 'cate/readme', outcome: 'merged', note: 'Merged into main' },
-        { id: 'm5', role: 'agent', ts: 7, kind: 'canvas', request: 'open the readme', working: false, panels: [{ id: 'abc', type: 'editor', title: 'README.md' }], canvasPanelId: 'cv-1' },
-      ],
-      run: {
-        status: 'review',
-        goal: 'Refresh README.md',
-        check: 'readme mentions the widget API',
-        round: 1,
-        recommendedIterationId: 'it-1',
-        worktreeId: 'wt-1',
-        branch: 'cate/readme',
-        terminalNodeIds: ['390d9ec7'],
-        canvasPanelId: 'cv-1',
-        attemptsMessageId: 'm3',
-        iterations: [
-          {
-            id: 'it-1',
-            todoId: 'c1',
-            round: 1,
-            worktreeId: 'wt-1',
-            branch: 'cate/readme',
-            status: 'passed',
-            createdAt: 5,
-            agents: [
-              { agent: 'coding agent', terminalId: '390d9ec7', scope: 'docs', kind: 'work' },
-              { agent: 'verifier', terminalId: '7c0ffee0', kind: 'verify' },
-            ],
-            verify: { met: true, reason: 'looks good', at: 9 },
-          },
-        ],
-      },
+      model: { provider: 'anthropic', model: 'claude-sonnet' },
     }
 
     await saveChats(root, [chat])
-    const [loaded] = await loadChats(root)
-
-    expect(loaded).toEqual(chat)
-    expect(loaded.run?.iterations?.[0].agents[0].terminalId).toBe('390d9ec7')
+    expect(await loadChats(root)).toEqual([chat])
   })
 
-  it('drops unknown message kinds + malformed iterations, the chat survives', async () => {
+  it('drops legacy loop data while keeping the chat metadata', async () => {
     await fs.mkdir(path.join(root, '.cate'), { recursive: true })
     await fs.writeFile(
       path.join(root, '.cate', 'chats.json'),
@@ -116,17 +71,21 @@ describe('projectChatsStore', () => {
         chats: [
           {
             id: 'c1', title: 'x', createdAt: 1, updatedAt: 1,
-            messages: [{ id: 'ok', role: 'agent', ts: 1, kind: 'text', text: 'hi' }, { id: 'bad', kind: 'bogus' }, null, 7],
+            messages: [{ id: 'legacy', role: 'agent', ts: 1, kind: 'text', text: 'hi' }],
             run: { status: 'running', iterations: [{ nope: true }, null] },
+            legacyState: { goal: 'legacy', startedAt: 1 },
           },
         ],
       }),
       'utf-8',
     )
     const [loaded] = await loadChats(root)
-    expect(loaded.id).toBe('c1')
-    expect(loaded.messages.map((m) => m.id)).toEqual(['ok'])
-    expect(loaded.run?.iterations).toEqual([])
+    expect(loaded).toEqual({
+      id: 'c1',
+      title: 'x',
+      createdAt: 1,
+      updatedAt: 1,
+    })
   })
 
   it('quarantines an unparseable chats.json and starts empty', async () => {
@@ -149,7 +108,6 @@ describe('projectChatsStore — remote roots (through the runtime)', () => {
     title: 'remote chat',
     createdAt: 1,
     updatedAt: 2,
-    messages: [{ id: 'm1', role: 'user', ts: 3, kind: 'text', text: 'hello from afar' }],
   }
 
   beforeEach(() => hostFiles.clear())

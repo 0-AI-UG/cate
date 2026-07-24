@@ -230,7 +230,15 @@ function cleanupTerminal(id: string): void {
 }
 
 async function spawnTerminal(
-  options: { cols: number; rows: number; cwd?: string; shell?: string; workspaceId?: string; panelId?: string },
+  options: {
+    cols: number
+    rows: number
+    cwd?: string
+    shell?: string
+    workspaceId?: string
+    panelId?: string
+    placementGroupId?: string
+  },
   ownerWindowId: number,
 ): Promise<string> {
   const { runtimeId, path: cwdPath } = parseLocator(options.cwd ?? '')
@@ -254,6 +262,7 @@ async function spawnTerminal(
         CATE_API: `http://127.0.0.1:${endpoint.port}`,
         CATE_TOKEN: endpoint.token,
         ...(options.panelId ? { CATE_PANEL_ID: options.panelId } : {}),
+        ...(options.placementGroupId ? { CATE_PLACEMENT_GROUP: options.placementGroupId } : {}),
       }
     }
   }
@@ -416,7 +425,15 @@ export function registerHandlers(): void {
 
   ipcMain.handle(
     TERMINAL_CREATE,
-    async (event, options: { cols: number; rows: number; cwd?: string; shell?: string; workspaceId?: string }): Promise<string> => {
+    async (event, options: {
+      cols: number
+      rows: number
+      cwd?: string
+      shell?: string
+      workspaceId?: string
+      panelId?: string
+      placementGroupId?: string
+    }): Promise<string> => {
       const win = windowFromEvent(event)
       const windowId = win?.id ?? -1
       return spawnTerminal(options, windowId)

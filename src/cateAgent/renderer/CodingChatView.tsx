@@ -51,10 +51,6 @@ export interface CodingChatViewProps {
   modelPickerOpen: boolean
   onModelPickerOpenChange: (open: boolean) => void
   composerExtras: CodingChatComposerExtras
-  /** The iteration-engineering continuation of this same thread, if handed off. */
-  tail?: React.ReactNode
-  /** Replaces the direct agent composer after engineering takes ownership. */
-  composerOverride?: React.ReactNode
 }
 
 export function CodingChatView({
@@ -70,8 +66,6 @@ export function CodingChatView({
   modelPickerOpen,
   onModelPickerOpenChange,
   composerExtras,
-  tail,
-  composerOverride,
 }: CodingChatViewProps) {
   const { refreshModels, openProviderSettings } = composerExtras
 
@@ -152,7 +146,7 @@ export function CodingChatView({
       <ExtensionWidget widgets={extensionWidgets} placement="aboveEditor" />
       <QueueBadges steering={steeringQueue} followUp={followUpQueue} />
 
-      {messages.length === 0 && !tail ? (
+      {messages.length === 0 ? (
         <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-8 min-h-0">
           <div className="w-full max-w-[520px] flex flex-col items-center">
             <div className="w-12 h-12 rounded-2xl bg-agent/15 flex items-center justify-center mb-4">
@@ -183,7 +177,6 @@ export function CodingChatView({
             onClearAndImplement={onClearAndImplement}
             retry={retry}
             onAbortRetry={onAbortRetry}
-            tail={tail}
           />
           <ExtensionWidget widgets={extensionWidgets} placement="belowEditor" />
           {currentUiRequest && (
@@ -192,7 +185,7 @@ export function CodingChatView({
             </div>
           )}
           <div className="px-3 py-2 shrink-0">
-            {composerOverride ?? <ChatComposer {...composerProps} placeholder={composerPlaceholder} />}
+            <ChatComposer {...composerProps} placeholder={composerPlaceholder} />
           </div>
         </>
       )}

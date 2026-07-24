@@ -18,6 +18,15 @@
 
 import { createHash } from 'crypto'
 import type { AgentId } from './agents'
+import {
+  resolveAgentHookMode,
+  type AgentHookConfig,
+} from './agentHookModes'
+export {
+  resolveAgentHookMode,
+  type AgentHookConfig,
+  type AgentHookMode,
+} from './agentHookModes'
 
 // ---------------------------------------------------------------------------
 // Env contract — planted on every PTY by the daemon; echoed back by hooks
@@ -91,16 +100,6 @@ export interface HookInjectionContext {
  * PTY regardless — it leaves no repo trace, and a hook file that never gets
  * written simply never reads it.
  */
-export type AgentHookMode = 'auto' | 'on' | 'off'
-
-/** Sparse per-agent overrides; any agent absent resolves to 'auto'. */
-export type AgentHookConfig = Partial<Record<AgentId, AgentHookMode>>
-
-/** The effective mode for one agent (missing → 'auto'). */
-export function resolveAgentHookMode(config: AgentHookConfig | undefined, agentId: AgentId): AgentHookMode {
-  return config?.[agentId] ?? 'auto'
-}
-
 /** Result of a projectFile's `strip`: leave it (null), delete an owned file,
  *  or rewrite a shared file without our entries. */
 export type AgentHookStrip = null | { delete: true } | { content: string }

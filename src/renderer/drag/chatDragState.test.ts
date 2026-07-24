@@ -13,7 +13,6 @@ const chat: Chat = {
   title: 'Dragged chat',
   createdAt: 1,
   updatedAt: 1,
-  messages: [],
   hostPanelId: 'agent-1',
 }
 

@@ -4,8 +4,7 @@
 // One place for the read-time worktree join (orphans dropped, they aren't
 // pickable) plus the two id-returning adapters the ChatComposer's create/checkout
 // menus expect. Editability (onPickWorktree / selectedWorktreeId) is NOT baked in
-// here: the sidebar coding path makes the pill read-only while the panel and loop
-// make it editable, so each surface still owns that pair.
+// here, so each surface still owns that pair.
 // =============================================================================
 
 import { useCallback, useMemo } from 'react'

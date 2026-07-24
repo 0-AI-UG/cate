@@ -566,3 +566,37 @@ export function nudgeToFree(
   }
   return start // give up — allow the overlap rather than refuse the placement
 }
+
+/** Choose the first normal picker recommendation around a specific source node
+ *  without changing the live canvas focus or camera. */
+export function recommendPlacementFromSource(
+  nodes: Record<CanvasNodeId, CanvasNodeState>,
+  sourceNodeId: CanvasNodeId,
+  panelType: PanelType,
+  viewport: { offset: Point; zoom: number; containerSize: Size },
+  sizeOverride?: Size,
+): PlacementCandidate | undefined {
+  const source = nodes[sourceNodeId]
+  if (!source) return undefined
+
+  // This is the viewport the interactive picker would have immediately after
+  // the user focused the source panel. It lets a background caller reuse those
+  // exact recommendations without moving the user's real camera.
+  const { zoom, containerSize } = viewport
+  const offset = containerSize.width > 0 && containerSize.height > 0
+    ? {
+        x: containerSize.width / 2 - (source.origin.x + source.size.width / 2) * zoom,
+        y: containerSize.height / 2 - (source.origin.y + source.size.height / 2) * zoom,
+      }
+    : viewport.offset
+
+  return recommendPlacements(
+    nodes,
+    sourceNodeId,
+    panelType,
+    { offset, zoom, containerSize },
+    null,
+    6,
+    sizeOverride,
+  )[0]
+}

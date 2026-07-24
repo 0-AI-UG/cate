@@ -48,12 +48,58 @@ interface ChatThreadProps {
    *  over the transcript passes bottom padding so the last message clears the pill
    *  (padding lives INSIDE this scroll area, so it adds no second scrollbar). */
   contentClassName?: string
-  /** Content owned by the same durable thread but rendered by another engine
-   *  after a handoff (the iteration-engineering transcript). */
-  tail?: React.ReactNode
 }
 
-export function ChatThread({ messages, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement, retry, onAbortRetry, scrollKey, contentClassName, tail }: ChatThreadProps) {
+/** The single loading-state policy used by every Pi transcript surface.
+ *  A turn with no visible output gets one loader; otherwise the last visible
+ *  message (or trailing parallel tool group) owns the shimmer until Pi stops. */
+export function getChatActivityState(messages: CodingMessage[], running: boolean) {
+  const last = messages[messages.length - 1]
+  const streamingVisibleText =
+    last?.type === 'assistant' && last.streaming && !!last.text
+
+  let hasVisibleContent = false
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message.type === 'user') break
+    if (
+      message.type === 'tool' ||
+      (message.type === 'assistant' && (message.text || message.thinking))
+    ) {
+      hasVisibleContent = true
+      break
+    }
+  }
+
+  const showLoading = running && !hasVisibleContent
+  const shimmerLast = running && !streamingVisibleText && !showLoading
+
+  let lastVisibleIdx = messages.length - 1
+  while (lastVisibleIdx >= 0) {
+    const message = messages[lastVisibleIdx]
+    if (message.type === 'assistant' && !message.text && !message.thinking) {
+      lastVisibleIdx -= 1
+    } else {
+      break
+    }
+  }
+
+  let shimmerGroupStart = lastVisibleIdx
+  if (lastVisibleIdx >= 0 && messages[lastVisibleIdx].type === 'tool') {
+    while (shimmerGroupStart > 0 && messages[shimmerGroupStart - 1].type === 'tool') {
+      shimmerGroupStart -= 1
+    }
+  }
+
+  return {
+    showLoading,
+    shimmerLast,
+    lastVisibleIdx,
+    shimmerGroupStart,
+  }
+}
+
+export function ChatThread({ messages, running, forkMap, onFork, onEditResend, onImplementPlan, onRefinePlan, onClearAndImplement, retry, onAbortRetry, scrollKey, contentClassName }: ChatThreadProps) {
   useRenderCount('ChatThread')
   const scrollRef = useRef<HTMLDivElement>(null)
   // Button visibility — init true so it never flashes before the first measure.
@@ -114,27 +160,12 @@ export function ChatThread({ messages, running, forkMap, onFork, onEditResend, o
   }
 
   const last = messages[messages.length - 1]
-
-  // Is the agent actively streaming text the user can see?
-  const streamingVisibleText =
-    last?.type === 'assistant' && last.streaming && !!last.text
-
-  // Has the current turn (after the last user message) produced any visible content?
-  let hasVisibleContent = false
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.type === 'user') break
-    if (m.type === 'tool' || (m.type === 'assistant' && (m.text || m.thinking))) {
-      hasVisibleContent = true
-      break
-    }
-  }
-
-  // "Loading" for the very first wait; shimmer on the last rendered item for
-  // every other gap. The only time nothing extra shows is when assistant text
-  // is actively streaming on screen.
-  const showLoading = running && !hasVisibleContent
-  const shimmerLast = running && !streamingVisibleText && !showLoading
+  const {
+    showLoading,
+    shimmerLast,
+    lastVisibleIdx,
+    shimmerGroupStart,
+  } = getChatActivityState(messages, running)
 
   // Auto-scroll on new content unless the user has scrolled away from the
   // bottom — feels less like fighting the scroll position during long output.
@@ -147,28 +178,7 @@ export function ChatThread({ messages, running, forkMap, onFork, onEditResend, o
       setAtBottom(true)
       scrollMemory.set(scrollKey, { top: el.scrollHeight, atBottom: true })
     }
-  }, [messages.length, last, scrollKey, tail])
-
-  // Find the last message that actually renders visible content — skip empty
-  // streaming assistant stubs so the *previous* real item gets the shimmer.
-  let lastVisibleIdx = messages.length - 1
-  while (lastVisibleIdx >= 0) {
-    const m = messages[lastVisibleIdx]
-    if (m.type === 'assistant' && !m.text && !m.thinking) {
-      lastVisibleIdx--
-    } else {
-      break
-    }
-  }
-
-  // When the trailing visible messages are consecutive tool calls (parallel
-  // group), all of them should shimmer — not just the very last one.
-  let shimmerGroupStart = lastVisibleIdx
-  if (lastVisibleIdx >= 0 && messages[lastVisibleIdx].type === 'tool') {
-    while (shimmerGroupStart > 0 && messages[shimmerGroupStart - 1].type === 'tool') {
-      shimmerGroupStart--
-    }
-  }
+  }, [messages.length, last, scrollKey])
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
@@ -212,7 +222,6 @@ export function ChatThread({ messages, running, forkMap, onFork, onEditResend, o
           />
         )
       })}
-      {tail}
       {showLoading && <LoadingIndicator />}
       {retry && (retry.active || retry.finalError) && (
         <RetryIndicator state={retry} onAbort={onAbortRetry} />

@@ -89,9 +89,6 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   // renderer consumers, which validate hand-edited partial shapes.
   agentDefaultModel: 'object',
   agentHookInjection: 'object',
-  cateAgentOrchestratorAgentId: 'string',
-  cateAgentObserveCooldownMin: 'number',
-  cateAgentMaxParallelIterations: 'number',
   sidebarLayout: 'object',
   customShortcuts: 'object',
   enabledExtensions: 'array',
@@ -143,21 +140,8 @@ function normalizeSettings(parsed: unknown, defaults: AppSettings): AppSettings 
   const next: AppSettings = { ...defaults }
   if (isPlainObject(parsed)) {
     mergeValidatedSettings(next, parsed)
-    migrateLoopModel(next, parsed)
   }
   return next
-}
-
-/** One-time migration: the loop (Cate Agent) model used to have its own key
- *  `cateAgentModel`; it's now folded into the single shared `agentDefaultModel`.
- *  If a user set a loop model but never a default, carry it over so their pick
- *  isn't lost. The now-unknown `cateAgentModel` key is dropped on the next write. */
-function migrateLoopModel(next: AppSettings, parsed: Record<string, unknown>): void {
-  if (next.agentDefaultModel != null) return
-  const legacy = parsed.cateAgentModel
-  if (isPlainObject(legacy) && typeof legacy.provider === 'string' && typeof legacy.model === 'string') {
-    next.agentDefaultModel = { provider: legacy.provider, model: legacy.model }
-  }
 }
 
 export function isSettingsKey(key: string): key is keyof AppSettings {

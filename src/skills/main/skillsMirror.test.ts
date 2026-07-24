@@ -156,6 +156,25 @@ function setCanonicalSkill(contents: string): void {
   }))
 }
 
+function setCanonicalCateSkill(contents: string): void {
+  const source = `${BASE}/.cate/cate-agent/skills/cate-cli`
+  fs.dirs.add(BASE)
+  fs.dirs.add(`${BASE}/.cate`)
+  fs.dirs.add(`${BASE}/.cate/cate-agent`)
+  fs.dirs.add(`${BASE}/.cate/cate-agent/skills`)
+  fs.dirs.add(source)
+  setText(`${source}/SKILL.md`, contents)
+  setText(`${BASE}/.cate/skills.json`, JSON.stringify({
+    skills: [{
+      skillId: 'cate/cate-cli',
+      name: 'cate-cli',
+      targetId: 'cate-agent',
+      path: `${source}/SKILL.md`,
+      origin: 'local',
+    }],
+  }))
+}
+
 function clearCanonicalManifest(): void {
   setText(`${BASE}/.cate/skills.json`, JSON.stringify({ skills: [] }))
 }
@@ -170,6 +189,15 @@ beforeEach(() => {
 })
 
 describe('syncWorkspaceSkills', () => {
+  it('mirrors one target into its canonical root', async () => {
+    setCanonicalCateSkill('cli')
+
+    await syncWorkspaceSkills(BASE, TARGET)
+
+    expect(text(`${TARGET}/.cate/cate-agent/skills/cate-cli/SKILL.md`)).toBe('cli')
+    expect(text(`${TARGET}/.cate/skills-mirror.json`)).toContain('"targetId": "cate-agent"')
+  })
+
   it('initially mirrors managed files and writes only ownership metadata', async () => {
     setCanonicalSkill('v1')
 

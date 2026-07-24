@@ -13,14 +13,18 @@
 // params, exactly as CodingChatView received them.
 // =============================================================================
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import log from '../../renderer/lib/logger'
 import { errorMessage as toErrorMessage } from '../../renderer/lib/errorMessage'
 import { useCodingStore } from './codingStore'
 import { codingClient } from './codingClient'
 import { useChatsStore } from '../../renderer/stores/chatsStore'
 import { buildFileMentions, type LineRef } from './codingDrop'
-import { type ChatComposerProps, type ModelOption } from '../../renderer/chat/ChatComposer'
+import {
+  type ChatComposerProps,
+  type ComposerPromptMode,
+  type ModelOption,
+} from '../../renderer/chat/ChatComposer'
 import type { JoinedWorktree } from '../../renderer/stores/useWorktrees'
 import type { PrListItem } from '../../renderer/sidebar/CreateWorktreeForm'
 import {
@@ -35,6 +39,7 @@ import type {
   CodingSlashCommand,
   CodingThinkingLevel,
 } from '../../shared/types'
+import { resolveEffectiveAgentModel } from '../../shared/agentModels'
 import { loadDefaultModel, clearModelPrefsForProvider } from './codingModelPrefs'
 import { directAgentKey } from './directChatSession'
 import { useCodingReadiness, useProvidersLoaded } from '../../renderer/stores/providerReadinessStore'
@@ -136,6 +141,10 @@ export function useCodingChat({
   const followUpQueue = slice?.followUpQueue ?? []
   const extensionStatuses = slice?.extensionStatuses ?? []
   const extensionWidgets = slice?.extensionWidgets ?? []
+  const planModeActive = extensionStatuses.some((status) => status.key === 'plan-mode')
+  const canvasModeActive = extensionStatuses.some((status) => status.key === 'canvas-mode')
+  const activePromptMode: ComposerPromptMode | null =
+    planModeActive ? 'plan' : canvasModeActive ? 'canvas' : null
   // Composer draft lives in the active chat's slice so switching chats keeps
   // each chat's own in-progress message + image attachments.
   const draft = slice?.draft ?? ''
@@ -156,8 +165,17 @@ export function useCodingChat({
    *  so the hover "fork from here" button can find an entryId for messages we
    *  appended before pi assigned one. */
   const [forkMap, setForkMap] = useState<Record<string, string>>({})
+  const [pendingPromptMode, setPendingPromptMode] = useState<ComposerPromptMode | null>(null)
+  const promptMode: ComposerPromptMode | null = activePromptMode ?? pendingPromptMode
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const promptModeChangeInFlight = useRef(false)
+  useEffect(() => {
+    setPendingPromptMode(null)
+  }, [agentKey])
+  useEffect(() => {
+    if (activePromptMode && pendingPromptMode === activePromptMode) setPendingPromptMode(null)
+  }, [activePromptMode, pendingPromptMode])
 
   // Draft setters that target the active chat's slice. Accept the same value /
   // updater-function forms as a React state setter so call sites read unchanged.
@@ -188,11 +206,12 @@ export function useCodingChat({
     if (!agentKey) return
     if (selectedModel) return
     if (availableModels.length === 0) return
-    const def = loadDefaultModel()
-    const pick = def && availableModels.some((m) => m.provider === def.provider && m.model === def.model)
-      ? def
-      : { provider: availableModels[0].provider, model: availableModels[0].model }
-    useCodingStore.getState().setModel(agentKey, pick)
+    const pick = resolveEffectiveAgentModel(
+      undefined,
+      loadDefaultModel(),
+      availableModels.map(({ provider, model }) => ({ provider, model })),
+    )
+    if (pick) useCodingStore.getState().setModel(agentKey, pick)
   }, [availableModels, selectedModel, agentKey])
 
   // ---------------------------------------------------------------------------
@@ -429,19 +448,25 @@ export function useCodingChat({
   }, [agentKey, forkMap, refreshStatsAndState, setDraft])
 
   // ---------------------------------------------------------------------------
-  // Plan mode (cate-plan-mode extension)
+  // Prompt modes (cate-plan-mode / cate-canvas-mode extensions)
   // ---------------------------------------------------------------------------
 
-  const planModeActive = useMemo(
-    () => extensionStatuses.some((s) => s.key === 'plan-mode'),
-    [extensionStatuses],
-  )
-
-  const handleTogglePlanMode = useCallback(async () => {
-    if (!agentKey) return
-    try { await codingClient.prompt(agentKey, '/plan') }
-    catch (err) { log.warn('[CateAgentPanel] toggle plan mode failed', err) }
-  }, [agentKey])
+  const handlePromptModeChange = useCallback(async (mode: ComposerPromptMode | null) => {
+    if (promptModeChangeInFlight.current) return
+    setPendingPromptMode(mode)
+    if (!agentKey || activePromptMode === mode) return
+    promptModeChangeInFlight.current = true
+    try {
+      if (activePromptMode) await codingClient.prompt(agentKey, `/${activePromptMode}`)
+      if (mode) await codingClient.prompt(agentKey, `/${mode}`)
+    }
+    catch (err) {
+      setPendingPromptMode(null)
+      log.warn('[CateAgentPanel] set prompt mode failed', err)
+    } finally {
+      promptModeChangeInFlight.current = false
+    }
+  }, [activePromptMode, agentKey])
 
   const handleImplementPlan = useCallback(async () => {
     if (!agentKey) return
@@ -608,8 +633,8 @@ export function useCodingChat({
     onManualCompact: handleManualCompact,
     onToggleAutoCompaction: handleToggleAutoCompaction,
     compactionActive: compaction.active,
-    planModeActive,
-    onTogglePlanMode: handleTogglePlanMode,
+    promptMode,
+    onPromptModeChange: handlePromptModeChange,
     onSlashOpen,
     // Model is per-chat: the pick targets the active chat's slice only and
     // never writes the persisted default.

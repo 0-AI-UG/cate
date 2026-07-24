@@ -188,8 +188,7 @@ own cell in the Settings → CLI permission matrix: `read` needs Terminal → Re
 (on by default), `type`/`press` need Terminal → Control, which is **off by
 default** — while off they fail with `terminal-input-disabled` (or
 `terminal-read-disabled`) and
-how to enable it. Terminals the Cate Agent is actively driving refuse input
-(`agent-owned-terminal`).
+explain how to enable it.
 
 Each group maps to a host scope that a Cate terminal is granted. Two host scopes
 are **not** available from a terminal: `agent` (a terminal must not drive the

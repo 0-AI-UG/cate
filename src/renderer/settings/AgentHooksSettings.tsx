@@ -10,12 +10,18 @@
 // The live state readout is inspected from the workspace's files on open.
 // =============================================================================
 
+import { Warning } from '@phosphor-icons/react'
 import { useEffect, useState } from 'react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSelectedWorkspace } from '../stores/appStore'
 import { SearchableBlock } from './SettingsComponents'
 import type { AgentId } from '../../shared/agents'
-import type { AgentHookAgentState, AgentHookMode } from '../../shared/agentHooks'
+import type { AgentHookMode } from '../../shared/agentHooks'
+import {
+  evaluateAgentCliHooks,
+  inspectAgentCliHooks,
+  type AgentCliHookState,
+} from '../lib/agent/agentCliHooks'
 
 const MODE_OPTIONS = [
   { value: 'auto', label: 'Auto' },
@@ -26,7 +32,7 @@ const MODE_OPTIONS = [
 export function AgentHooksSettings() {
   const store = useSettingsStore()
   const workspace = useSelectedWorkspace()
-  const [agents, setAgents] = useState<AgentHookAgentState[] | null>(null)
+  const [agents, setAgents] = useState<AgentCliHookState[] | null>(null)
 
   const locator = workspace?.rootPath
   useEffect(() => {
@@ -36,9 +42,13 @@ export function AgentHooksSettings() {
     }
     let live = true
     setAgents(null)
-    void window.electronAPI.agentHooksInspect(locator).then((r) => {
-      if (live) setAgents(r)
-    })
+    void inspectAgentCliHooks(locator)
+      .then((r) => {
+        if (live) setAgents(r)
+      })
+      .catch(() => {
+        if (live) setAgents([])
+      })
     return () => {
       live = false
     }
@@ -74,22 +84,27 @@ export function AgentHooksSettings() {
 
       <div className="flex flex-col">
         {(agents ?? []).map((a) => {
-          const mode: AgentHookMode = overrides[a.agentId] ?? 'auto'
-          // The one "looks on but does nothing" state we can detect: Auto with
-          // no config folder present, so Auto silently skips injection here.
-          const dormant = mode === 'auto' && !a.folderPresent
+          const evaluation = evaluateAgentCliHooks(a, overrides)
+          const mode: AgentHookMode = evaluation.mode
           return (
-            <div key={a.agentId} className="flex items-center gap-3 py-2.5 border-b border-subtle">
+            <div
+              key={a.agent.id}
+              data-agent-hook-id={a.agent.id}
+              className="flex items-center gap-3 py-2.5 border-b border-subtle"
+            >
               <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-sm text-primary truncate">{a.displayName}</span>
-                {dormant && (
-                  <span className="text-xs text-muted mt-0.5">Auto skips here: no config folder yet.</span>
+                <span className="text-sm text-primary truncate">{a.agent.displayName}</span>
+                {evaluation.autoSkipped && (
+                  <span className="flex items-center gap-1 text-[11px] text-amber-400 mt-1">
+                    <Warning size={12} weight="fill" className="shrink-0" />
+                    Hooks aren&apos;t installed. Auto waits for this agent&apos;s config folder; choose On to install them.
+                  </span>
                 )}
               </div>
               <Segmented
                 value={mode}
                 options={MODE_OPTIONS}
-                onChange={(v) => setMode(a.agentId, v as AgentHookMode)}
+                onChange={(v) => setMode(a.agent.id, v as AgentHookMode)}
               />
             </div>
           )

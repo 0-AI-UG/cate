@@ -12,9 +12,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const WS = 'ws-1'
 
-function browserPanel(id: string, title: string, url: string) {
+function browserPanel(id: string, title: string, url: string, placementGroupId?: string) {
   const activeTabId = `${id}-tab`
-  return { id, type: 'browser', title, tabs: [{ id: activeTabId, url, title: '' }], activeTabId }
+  return {
+    id,
+    type: 'browser',
+    title,
+    tabs: [{ id: activeTabId, url, title: '' }],
+    activeTabId,
+    ...(placementGroupId ? { placementGroupId } : {}),
+  }
 }
 
 // A live <webview> stand-in. Each test tweaks the nav predicates it needs.
@@ -33,7 +40,7 @@ function makeWebview(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 const h = vi.hoisted(() => ({
-  workspaces: [] as Array<{ id: string; panels: Record<string, { id: string; type: string; title: string; tabs?: Array<{ id: string; url: string; title: string }>; activeTabId?: string }> }>,
+  workspaces: [] as Array<{ id: string; panels: Record<string, { id: string; type: string; title: string; tabs?: Array<{ id: string; url: string; title: string }>; activeTabId?: string; placementGroupId?: string }> }>,
   activePanelId: null as string | null,
   createBrowser: vi.fn(() => 'created-browser-id'),
   updateBrowserActiveTabUrl: vi.fn(),
@@ -58,7 +65,10 @@ vi.mock('../activePanel', () => ({
 
 const BACKGROUND_PLACEMENT = { target: 'canvas', canvasPanelId: 'canvas-1', focus: false }
 vi.mock('../workspace/canvasAccess', () => ({
-  placementForBackgroundPanel: () => BACKGROUND_PLACEMENT,
+  placementForBackgroundPanel: (_workspaceId: string, placementGroupId?: string) => ({
+    ...BACKGROUND_PLACEMENT,
+    ...(placementGroupId ? { placementGroupId } : {}),
+  }),
 }))
 
 vi.mock('../portalRegistry', () => ({
@@ -149,6 +159,38 @@ describe('target resolution', () => {
 })
 
 describe('open', () => {
+  it('uses only a browser from the same placement group', async () => {
+    h.workspaces[0].panels.grouped = browserPanel('grouped', 'Grouped', 'https://old/', 'group-1')
+    const globalWebview = makeWebview()
+    const groupedWebview = makeWebview()
+    h.webviews.set('b1', globalWebview)
+    h.webviews.set('grouped', groupedWebview)
+
+    await handleBrowserMethod(WS, M('open'), {
+      url: 'https://grouped/',
+      placementGroupId: 'group-1',
+    })
+
+    expect(groupedWebview.loadURL).toHaveBeenCalledWith('https://grouped/')
+    expect(globalWebview.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('creates a browser for a new group instead of reusing another group', async () => {
+    h.workspaces[0].panels.b1 = browserPanel('b1', 'Other iteration', 'https://old/', 'group-1')
+    const webview = makeWebview()
+    setTimeout(() => h.webviews.set('created-browser-id', webview), 10)
+
+    await handleBrowserMethod(WS, M('open'), {
+      url: 'https://grouped/',
+      placementGroupId: 'group-2',
+    })
+
+    expect(h.createBrowser).toHaveBeenCalledWith(WS, 'https://grouped/', undefined, {
+      ...BACKGROUND_PLACEMENT,
+      placementGroupId: 'group-2',
+    })
+  })
+
   it('creates a browser panel when the workspace has none', async () => {
     h.workspaces[0].panels = { term: { id: 'term', type: 'terminal', title: 'Term' } }
     const webview = makeWebview()

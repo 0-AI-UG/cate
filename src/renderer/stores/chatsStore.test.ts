@@ -16,7 +16,6 @@ function chat(id: string, hostPanelId?: string): Chat {
     title: id,
     createdAt: 1,
     updatedAt: 1,
-    messages: [],
     ...(hostPanelId ? { hostPanelId } : {}),
   }
 }

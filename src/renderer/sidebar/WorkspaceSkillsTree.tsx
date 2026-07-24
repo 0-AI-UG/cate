@@ -31,10 +31,12 @@ const TARGET_LABEL: Record<string, string> = Object.fromEntries(
 
 // Skill target → agent id for the logo lookup, resolved through the canonical
 // registry so a newly declared target picks up its agent's logo automatically.
-// cate-agent is Cate's built-in agent — it has no AgentDef and no bundled SVG,
-// and uses the Cate wordmark instead.
-const targetLogoId = (targetId: SkillTargetId): AgentId | null =>
-  agentForSkillTarget(targetId)?.id ?? null
+// cate-agent is Cate's embedded integration and uses the Cate wordmark instead
+// of an external CLI logo.
+const targetLogoId = (targetId: SkillTargetId): AgentId | null => {
+  const integration = agentForSkillTarget(targetId)
+  return integration?.id === 'cate-agent' ? null : integration?.id ?? null
+}
 
 const AgentIcon: React.FC<{ targetId: SkillTargetId }> = ({ targetId }) => {
   if (targetId === 'cate-agent') {

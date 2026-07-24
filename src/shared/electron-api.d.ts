@@ -59,6 +59,8 @@ export interface ElectronAPI {
     workspaceId?: string
     /** Owning Cate panel, exposed to the spawned shell as CATE_PANEL_ID. */
     panelId?: string
+    /** Opaque canvas affinity, exposed to the shell for host-API creates. */
+    placementGroupId?: string
   }): Promise<string>
 
   /** Write data (keystrokes) to a terminal. */
@@ -457,12 +459,6 @@ export interface ElectronAPI {
     workspace: import('./types').ProjectWorkspaceFile
     session: import('./types').ProjectSessionFile | null
   } | null>
-
-  /** Load per-workspace Cate Agent enablement from .cate/cateAgent.json. */
-  projectCateAgentLoad(rootPath: string): Promise<import('./types').ProjectCateAgentFile>
-
-  /** Persist per-workspace Cate Agent enablement to .cate/cateAgent.json. */
-  projectCateAgentSave(rootPath: string, state: import('./types').ProjectCateAgentFile): Promise<void>
 
   /** Load the per-workspace Cate Agent chats from .cate/chats.json (empty if absent). */
   projectChatsLoad(rootPath: string): Promise<import('./types').Chat[]>
@@ -1024,21 +1020,6 @@ export interface ElectronAPI {
 
   /** Available slash commands (skills, prompt templates, extension commands). */
   agentGetCommands(panelId: string): Promise<CodingSlashCommand[]>
-
-  /** Open <cwd>/.cate/cate-agent/{agents|prompts} in the OS file manager. */
-  agentOpenSkillsFolder(cwd: string, kind: 'agents' | 'prompts'): Promise<void>
-
-  /** Open a single agent/prompt file in the OS default editor. */
-  agentOpenSkillFile(filePath: string): Promise<void>
-
-  /** Delete an agent/prompt file. Only allowed under the workspace's cate-agent dir. */
-  agentDeleteSkillFile(cwd: string, filePath: string): Promise<void>
-
-  /** Create a new agent/prompt file from a template, then open it. */
-  agentCreateSkill(cwd: string, kind: 'agents' | 'prompts', name: string): Promise<string>
-
-  /** List user files under <cwd>/.cate/cate-agent/{agents|prompts}. */
-  agentListSkillFiles(cwd: string, kind: 'agents' | 'prompts'): Promise<Array<{ name: string; description?: string; path: string }>>
 
   // ---------------------------------------------------------------------------
   // Cross-agent skills

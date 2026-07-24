@@ -131,10 +131,6 @@ export const WORKSPACE_EXTERNAL_EDIT = 'project:externalEdit' // main -> rendere
 // the current in-app layout overwrites the external edit.
 export const WORKSPACE_EXTERNAL_EDIT_DISMISS = 'project:externalEditDismiss' // renderer -> main
 
-// Per-workspace Cate Agent enablement (.cate/cateAgent.json).
-export const PROJECT_CATE_AGENT_LOAD = 'project:cateAgentLoad' // renderer -> main
-export const PROJECT_CATE_AGENT_SAVE = 'project:cateAgentSave' // renderer -> main
-
 // Per-workspace Cate Agent chats (.cate/chats.json) — the agent's front door.
 export const PROJECT_CHATS_LOAD = 'project:chatsLoad' // renderer -> main
 export const PROJECT_CHATS_SAVE = 'project:chatsSave' // renderer -> main
@@ -342,11 +338,6 @@ export const CODING_DISPOSE = 'coding:dispose'         // renderer -> main
 export const CODING_SET_MODEL = 'coding:setModel'      // renderer -> main
 export const CODING_GET_COMMANDS = 'coding:getCommands' // renderer -> main (skills + prompts + extension cmds)
 export const CODING_EVENT = 'coding:event'             // main -> renderer (forwarded pi event)
-export const CODING_OPEN_SKILLS_FOLDER = 'coding:openSkillsFolder' // renderer -> main
-export const CODING_OPEN_SKILL_FILE = 'coding:openSkillFile' // renderer -> main
-export const CODING_DELETE_SKILL_FILE = 'coding:deleteSkillFile' // renderer -> main
-export const CODING_CREATE_SKILL = 'coding:createSkill' // renderer -> main
-export const CODING_LIST_SKILL_FILES = 'coding:listSkillFiles' // renderer -> main
 
 // Pi agent — extended RPC surface
 export const CODING_STEER = 'coding:steer'                       // renderer -> main

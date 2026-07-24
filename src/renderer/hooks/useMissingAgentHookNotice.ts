@@ -3,7 +3,7 @@ import { useStatusStore } from '../stores/statusStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { matchAgentDef } from '../../shared/agents'
-import type { AgentHookAgentState } from '../../shared/agentHooks'
+import { inspectAgentCliHooks } from '../lib/agent/agentCliHooks'
 
 // Detector for "a supported agent CLI is running in this terminal, but Cate's
 // hooks aren't installed for it here." Agent state/name now come exclusively
@@ -63,9 +63,13 @@ export function useMissingAgentHookNotice(
   useEffect(() => {
     if (!agent || !rootPath) return
     let live = true
-    void window.electronAPI.agentHooksInspect(rootPath).then((states: AgentHookAgentState[]) => {
-      if (live) setInjectedById(Object.fromEntries(states.map((a) => [a.agentId, a.injected])))
-    })
+    void inspectAgentCliHooks(rootPath)
+      .then((states) => {
+        if (live) setInjectedById(Object.fromEntries(states.map((a) => [a.agent.id, a.injected])))
+      })
+      .catch(() => {
+        // Unknown is deliberately not rendered as missing.
+      })
     return () => {
       live = false
     }

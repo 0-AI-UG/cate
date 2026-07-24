@@ -183,9 +183,7 @@ export interface RendererAssistantMessage {
 export interface RendererToolMessage {
   type: 'tool'; id: string; toolCallId: string; name: string; args: unknown
   status: 'success' | 'error'; result?: string; error?: string
-  /** Structured subagent payload preserved from pi's `details` field. Shape
-   *  mirrors `SubagentDetails` in the renderer store; serialized as-is. */
-  subagent?: unknown
+  createdAt?: number
 }
 export interface RendererSystemMessage { type: 'system'; id: string; text: string; kind?: 'info' | 'warning' | 'error' }
 export type RendererMessage =
@@ -298,6 +296,7 @@ export async function loadSessionTranscript(sessionFile: string): Promise<Render
           name: tc.name,
           args: tc.arguments,
           status: 'success', // overwritten when toolResult arrives
+          ...(createdAt ? { createdAt } : {}),
         })
         if (tc.id) toolIndex.set(tc.id, idx)
       }
@@ -310,13 +309,11 @@ export async function loadSessionTranscript(sessionFile: string): Promise<Render
       const tool = out[idx] as RendererToolMessage
       const isError = msg.isError === true
       const text = extractText(msg.content) ?? ''
-      const subagent = tool.name === 'subagent' ? normalizeSubagent(msg.details) : undefined
       out[idx] = {
         ...tool,
         status: isError ? 'error' : 'success',
         result: isError ? undefined : text,
         error: isError ? text || 'Tool reported an error' : undefined,
-        ...(subagent ? { subagent } : {}),
       }
       continue
     }
@@ -349,73 +346,6 @@ function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}…` : s
 }
 
-function numberOr<T>(v: unknown, fallback: T): number | T {
-  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
-}
-
-/** Reshape pi's persisted `details` for the subagent tool into the structure
- *  the renderer's SubagentCard expects (mirrors extractSubagentDetails in the
- *  renderer store; the live and replayed shapes must match). */
-function normalizeSubagent(details: unknown): unknown {
-  if (!details || typeof details !== 'object') return undefined
-  const d = details as Record<string, unknown>
-  const modeRaw = typeof d.mode === 'string' ? d.mode : undefined
-  const mode = modeRaw === 'parallel' || modeRaw === 'chain' ? modeRaw : 'single'
-  const rawResults = Array.isArray(d.results) ? (d.results as unknown[]) : []
-  const results = rawResults.flatMap((item) => {
-    if (!item || typeof item !== 'object') return []
-    const r = item as Record<string, unknown>
-    const messages = Array.isArray(r.messages) ? (r.messages as unknown[]) : []
-    const parts: Array<{ type: 'text' | 'toolCall'; text?: string; toolCall?: { name: string; args: unknown } }> = []
-    let finalText: string | undefined
-    for (const m of messages) {
-      if (!m || typeof m !== 'object') continue
-      const mObj = m as Record<string, unknown>
-      if (mObj.role !== 'assistant') continue
-      const content = Array.isArray(mObj.content) ? (mObj.content as unknown[]) : []
-      for (const part of content) {
-        if (!part || typeof part !== 'object') continue
-        const p = part as Record<string, unknown>
-        if (p.type === 'text' && typeof p.text === 'string' && p.text) {
-          parts.push({ type: 'text', text: p.text })
-          finalText = p.text
-        } else if (p.type === 'toolCall') {
-          parts.push({
-            type: 'toolCall',
-            toolCall: {
-              name: typeof p.name === 'string' ? p.name : 'tool',
-              args: p.arguments ?? {},
-            },
-          })
-        }
-      }
-    }
-    const u = r.usage as Record<string, unknown> | undefined
-    const usage = u
-      ? {
-          input: numberOr(u.input, 0) as number,
-          output: numberOr(u.output, 0) as number,
-          cacheRead: numberOr(u.cacheRead, 0) as number,
-          cacheWrite: numberOr(u.cacheWrite, 0) as number,
-          cost: numberOr(u.cost, 0) as number,
-          contextTokens: numberOr(u.contextTokens, undefined),
-          turns: numberOr(u.turns, undefined),
-        }
-      : undefined
-    return [{
-      agent: typeof r.agent === 'string' ? r.agent : '(unknown)',
-      agentSource: r.agentSource,
-      task: typeof r.task === 'string' ? r.task : '',
-      exitCode: numberOr(r.exitCode, -1) as number,
-      parts,
-      finalText,
-      stderr: typeof r.stderr === 'string' ? r.stderr : undefined,
-      errorMessage: typeof r.errorMessage === 'string' ? r.errorMessage : undefined,
-      stopReason: typeof r.stopReason === 'string' ? r.stopReason : undefined,
-      usage,
-      model: typeof r.model === 'string' ? r.model : undefined,
-      step: numberOr(r.step, undefined),
-    }]
-  })
-  return { mode, results }
+function numberOr<T>(value: unknown, fallback: T): number | T {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }

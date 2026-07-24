@@ -97,7 +97,6 @@ export function ExtensionWidget({
 // `title` with this marker immediately followed by a JSON envelope (no
 // surrounding whitespace — pi trims the title).
 const ASK_USER_MARKER = 'cate-ask-user:'
-const ENGINEERING_TASK_MARKER = 'cate-engineering-task:'
 
 interface AskUserOption { label: string; description?: string }
 interface AskUserQuestion {
@@ -127,72 +126,6 @@ function decodeAskUser(request: CodingExtensionUIRequest): AskUserQuestion[] | n
     }
   } catch { /* malformed — fall back to generic */ }
   return null
-}
-
-interface EngineeringTaskRequest {
-  goal: string
-  check?: string
-  overview?: string
-}
-
-function decodeEngineeringTask(request: CodingExtensionUIRequest): EngineeringTaskRequest | null {
-  if (request.method !== 'confirm') return null
-  const title = typeof request.title === 'string' ? request.title.trim() : ''
-  if (!title.startsWith(ENGINEERING_TASK_MARKER)) return null
-  try {
-    const value = JSON.parse(title.slice(ENGINEERING_TASK_MARKER.length)) as Partial<EngineeringTaskRequest>
-    if (typeof value.goal !== 'string' || !value.goal.trim()) return null
-    return {
-      goal: value.goal,
-      check: typeof value.check === 'string' ? value.check : undefined,
-      overview: typeof value.overview === 'string' ? value.overview : undefined,
-    }
-  } catch {
-    return null
-  }
-}
-
-function EngineeringTaskApprovalCard({
-  request,
-  task,
-  onRespond,
-}: {
-  request: CodingExtensionUIRequest
-  task: EngineeringTaskRequest
-  onRespond: (response: { id: string; confirmed?: boolean }) => void
-}) {
-  return (
-    <div className="rounded-lg border border-agent/40 bg-surface-3/90 px-3 py-3 space-y-3">
-      <div className="flex items-center gap-2">
-        <div className="w-5 h-5 rounded-md bg-agent/15 flex items-center justify-center">
-          <Sparkle size={12} className="text-agent-light" />
-        </div>
-        <div>
-          <div className="text-[12px] font-medium text-primary">Use iteration engineering?</div>
-          <div className="text-[10.5px] text-muted">Isolated attempts · independent verification · winner selection</div>
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <div className="text-[12.5px] leading-snug text-primary whitespace-pre-wrap">{task.goal}</div>
-        {task.check && <div className="text-[11px] text-muted whitespace-pre-wrap">Check: {task.check}</div>}
-        {task.overview && <div className="text-[11px] text-secondary whitespace-pre-wrap">{task.overview}</div>}
-      </div>
-      <div className="flex justify-end gap-2">
-        <button
-          onClick={() => onRespond({ id: request.id, confirmed: false })}
-          className="px-2.5 py-1 rounded-md bg-hover hover:bg-hover-strong text-primary text-[12px]"
-        >
-          Keep working here
-        </button>
-        <button
-          onClick={() => onRespond({ id: request.id, confirmed: true })}
-          className="px-2.5 py-1 rounded-md bg-agent hover:bg-agent-light text-white text-[12px] font-medium"
-        >
-          Delegate
-        </button>
-      </div>
-    </div>
-  )
 }
 
 function AskUserCard({
@@ -384,11 +317,6 @@ export function ExtensionDialog({
   if (askUser) {
     return <AskUserCard key={request.id} request={request} questions={askUser} onRespond={onRespond} />
   }
-  const engineeringTask = decodeEngineeringTask(request)
-  if (engineeringTask) {
-    return <EngineeringTaskApprovalCard request={request} task={engineeringTask} onRespond={onRespond} />
-  }
-
   const title = String(request.title ?? '')
   const message = String(request.message ?? '')
 
@@ -692,72 +620,82 @@ function ThinkingBars({ count, size = 10 }: { count: number; size?: number }) {
   )
 }
 
-// Resolve the canvas-node element this popover lives inside, so portalled
-// content can be positioned relative to it (the node, not the viewport, is
-// the scroll/zoom frame of reference). Shared by the chat-input popovers too.
-export function useNodePortalTarget(ref: React.RefObject<Element | null>) {
-  const getTarget = useCallback(
-    () => ref.current?.closest('[data-node-id]') as HTMLElement | null,
-    [ref],
-  )
-  const toLocal = useCallback(
-    (viewport: { top: number; left: number }) => {
-      const target = getTarget()
-      if (!target) return viewport
-      const tr = target.getBoundingClientRect()
-      // The node lives inside the zoom-scaled canvas world, so a child
-      // positioned with absolute top/left has those values multiplied by the
-      // canvas zoom on screen. getBoundingClientRect is in screen space, so
-      // divide the screen-space delta by the node's effective scale to land
-      // the popover exactly on its anchor at any zoom. (Detached panel/dock
-      // windows aren't scaled, so scale is 1 and this is a no-op there.)
-      const scale = target.offsetWidth > 0 ? tr.width / target.offsetWidth : 1
-      return {
-        top: (viewport.top - tr.top) / scale,
-        left: (viewport.left - tr.left) / scale,
-      }
-    },
-    [getTarget],
-  )
-  return { getTarget, toLocal }
+export const COMPOSER_POPOVER_SURFACE =
+  'rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)]'
+
+// Keep anchored popovers in viewport space. Portalling into a transformed
+// canvas node makes CSS widths and offsets inherit the canvas zoom; it also
+// leaves sidebar/dock composers without a portal target at all.
+export function useViewportPopoverPosition(
+  btnRef: React.RefObject<Element | null>,
+  open: boolean,
+  layout: (rect: DOMRect) => { top: number; left: number },
+) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const layoutRef = useRef(layout)
+  useLayoutEffect(() => {
+    layoutRef.current = layout
+  }, [layout])
+  const updatePosition = useCallback(() => {
+    if (!open || !btnRef.current) return
+    const next = layoutRef.current(btnRef.current.getBoundingClientRect())
+    setPos((current) => (
+      current?.top === next.top && current.left === next.left ? current : next
+    ))
+  }, [btnRef, open])
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null)
+      return
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    // Capture scrolls from any composer ancestor as well as document scrolling.
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open, updatePosition])
+
+  return {
+    pos,
+    portalTarget: typeof document === 'undefined' ? null : document.body,
+  }
 }
 
-// Shared scaffold for the node-anchored popovers on the chat-input control row
-// (compact button, stats chip, thinking-level picker). Owns the open state, the
-// outside-click-to-close handler, the portal target, and the position. The
-// per-call `layout` maps the trigger's screen rect to a viewport {top,left};
-// the hook runs that through `toLocal` so the popover lands on its anchor at any
-// canvas zoom.
+// Shared scaffold for the anchored popovers on the chat-input control row.
+// Owns open state, outside-click dismissal, and viewport-relative positioning.
 export function useNodePopover(
   btnRef: React.RefObject<HTMLButtonElement>,
   layout: (rect: DOMRect) => { top: number; left: number },
 ) {
   const [open, setOpen] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)
-  const { getTarget, toLocal } = useNodePortalTarget(btnRef)
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
-  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
+  const { pos, portalTarget } = useViewportPopoverPosition(btnRef, open, layout)
   useEffect(() => {
     if (!open) return
-    setPortalTarget(getTarget())
     const handler = (e: MouseEvent) => {
       if (btnRef.current?.contains(e.target as Node)) return
       if (popoverRef.current?.contains(e.target as Node)) return
       setOpen(false)
     }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open, getTarget])
-  useLayoutEffect(() => {
-    if (!open || !btnRef.current) return
-    setPos(toLocal(layout(btnRef.current.getBoundingClientRect())))
-  }, [open, toLocal])
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [btnRef, open])
   return { open, setOpen, popoverRef, pos, portalTarget }
 }
 
-// Shared shell for the node-anchored popovers: a blurred, bordered card portalled
-// into the canvas node and pinned above its trigger (translateY(-100%)). Callers
-// supply the distinct width and any extra body classes; behaviour is identical.
+// Shared shell for composer popovers: a blurred, bordered card portalled to the
+// document body and pinned above its trigger (translateY(-100%)).
 export function NodePopover({
   popoverRef,
   pos,
@@ -777,7 +715,7 @@ export function NodePopover({
   return createPortal(
     <div
       ref={popoverRef}
-      className={`absolute rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-[9999]${bodyClassName ? ` ${bodyClassName}` : ''}`}
+      className={`fixed ${COMPOSER_POPOVER_SURFACE} z-[9999]${bodyClassName ? ` ${bodyClassName}` : ''}`}
       style={{ top: pos.top, left: pos.left, width, transform: 'translateY(-100%)' }}
     >
       {children}

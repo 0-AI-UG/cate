@@ -207,7 +207,7 @@ export class AuthManager {
    *  state — connected providers in auth.json (or env keys) crossed with pi's
    *  static model catalog, plus the custom OpenAI endpoint's models from
    *  models.json. No running pi session required, so the same list backs the
-   *  agent panel's picker and the Settings → Providers default-model dropdown. */
+   *  chat model picker and the Settings → Cate Agent default-model dropdown. */
   async listAvailableModels(): Promise<CodingModelDescriptor[]> {
     const statuses = await this.status()
     const connected = new Set(statuses.filter((s) => s.connected).map((s) => s.id))

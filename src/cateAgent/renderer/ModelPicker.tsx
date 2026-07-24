@@ -5,7 +5,7 @@
 // "First available" none row). Each call site overrides size via className.
 // =============================================================================
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { MagnifyingGlass, CaretRight, CaretDown, CheckCircle } from '@phosphor-icons/react'
 import type { CateAgentModelRef } from '../../shared/types'
 
@@ -19,6 +19,7 @@ type ModelPickerDropdownProps = {
    *  w-[280px] max-h-[360px]`). Carries the vertical anchor too, so a call site
    *  at the bottom of its panel can open upward with `bottom-full mb-1`. */
   className?: string
+  style?: CSSProperties
   /** Footer action (renders a "Manage providers…" button when provided). */
   onManage?: () => void
   /** The button that toggles this dropdown. A mousedown on it is not treated as
@@ -45,6 +46,7 @@ export function ModelPickerDropdown({
   onPick,
   onClose,
   className = 'top-full mt-1 left-0 w-[280px] max-h-[360px]',
+  style,
   allowNone = false,
   noneLabel,
   onManage,
@@ -59,10 +61,17 @@ export function ModelPickerDropdown({
       if (triggerRef?.current?.contains(target)) return
       onClose()
     }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
     // Dismiss after the target's own click handler has run. Closing on
     // mousedown races toggle buttons: mousedown closes, then click reopens.
     document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('click', handler)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [onClose, triggerRef])
 
   const [search, setSearch] = useState('')
@@ -110,6 +119,7 @@ export function ModelPickerDropdown({
   return (
     <div
       ref={wrapRef}
+      style={style}
       className={`absolute ${className} flex flex-col rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-20`}
     >
       <div className="px-2 py-2 border-b border-strong shrink-0">

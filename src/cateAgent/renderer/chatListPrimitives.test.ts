@@ -9,7 +9,6 @@ describe('chatDragPayload', () => {
       title: 'T',
       createdAt: 1,
       updatedAt: 1,
-      messages: [],
     }
     expect(chatDragPayload(chat, '/root')).toEqual({ chatId: 'c1', rootPath: '/root' })
   })

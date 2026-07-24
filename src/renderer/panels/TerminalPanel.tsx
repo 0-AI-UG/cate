@@ -29,7 +29,6 @@ import { useActivePanelStore, getActivePanelId } from '../lib/activePanel'
 import { collectPanelIds } from '../../shared/collectPanelIds'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
 import { shouldAdjustTerminalCoords } from '../lib/terminal/terminalCoordAdjust'
-import { useTerminalGlow } from '../../cateAgent/renderer/cateAgentStore'
 import { resolveWorktree } from '../../shared/worktrees'
 import { resumeCommandForAgent } from '../../shared/agents'
 import { CATE_FILE_MIME, hasChatDrag, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
@@ -71,7 +70,6 @@ export default function TerminalPanel({
   const containerRef = useRef<HTMLDivElement>(null)
   const renderBoxRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
-  const glowColor = useTerminalGlow(workspaceId, panelId)
   const fitRafRef = useRef<number | null>(null)
   const fitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFitSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 })
@@ -122,6 +120,9 @@ export default function TerminalPanel({
   const workspaces = useAppStore((state) => state.workspaces)
   const panelCwd = useAppStore(
     (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.cwd,
+  )
+  const placementGroupId = useAppStore(
+    (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.placementGroupId,
   )
   // The worktree this terminal is tagged to (the title-bar pill), resolved to its
   // checkout path. This is the AUTHORITATIVE cwd for a tagged terminal — same as
@@ -356,6 +357,7 @@ export default function TerminalPanel({
         cwd: rootPathRef.current || undefined,
         initialInput,
         resumeCommand,
+        placementGroupId,
       })
       .then((entry) => {
         if (cancelled) return
@@ -401,7 +403,7 @@ export default function TerminalPanel({
 
       detachAndDisconnect()
     }
-  }, [panelId, workspaceId, nodeId, initialInput, retryKey, ptyEpoch])
+  }, [panelId, workspaceId, nodeId, initialInput, placementGroupId, retryKey, ptyEpoch])
 
   // -------------------------------------------------------------------------
   // Focus xterm when this node becomes the focused node
@@ -748,13 +750,6 @@ export default function TerminalPanel({
 
   return (
     <div className="relative w-full h-full flex flex-col" style={{ padding: 0 }}>
-      {glowColor && (
-        <div
-          className="cate-agent-terminal-glow absolute inset-0 z-20"
-          style={{ ['--cate-glow' as string]: glowColor }}
-          aria-hidden
-        />
-      )}
       {showSearch && (
         <div className="flex items-center gap-1 px-2 py-1 bg-surface-3 border-b border-subtle shrink-0">
           <input

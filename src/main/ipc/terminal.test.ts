@@ -470,7 +470,15 @@ describe('CATE_API env injection into spawned terminals', () => {
   // Spawn through the real TERMINAL_CREATE handler and return the env object
   // that spawnTerminal passed down to runtime.process.create (the PTY env).
   async function spawnAndGetEnv(
-    options: { cols: number; rows: number; cwd?: string; shell?: string; workspaceId?: string; panelId?: string },
+    options: {
+      cols: number
+      rows: number
+      cwd?: string
+      shell?: string
+      workspaceId?: string
+      panelId?: string
+      placementGroupId?: string
+    },
   ): Promise<Record<string, string> | undefined> {
     diag.ptyCreate.mockResolvedValue({ id: 'pty-env', pid: 123, shell: '/bin/zsh' })
     const mod = await import('./terminal')
@@ -519,6 +527,23 @@ describe('CATE_API env injection into spawned terminals', () => {
       CATE_API: 'http://127.0.0.1:9876',
       CATE_TOKEN: 'tok-abc',
       CATE_PANEL_ID: 'panel-123',
+    })
+  })
+
+  it('passes an opaque panel placement group into the spawned shell', async () => {
+    cateApi.ensureEndpoint.mockResolvedValue({ port: 9876, token: 'tok-abc' })
+
+    const env = await spawnAndGetEnv({
+      cols: 80,
+      rows: 24,
+      workspaceId: 'ws-1',
+      placementGroupId: 'group-1',
+    })
+
+    expect(env).toEqual({
+      CATE_API: 'http://127.0.0.1:9876',
+      CATE_TOKEN: 'tok-abc',
+      CATE_PLACEMENT_GROUP: 'group-1',
     })
   })
 

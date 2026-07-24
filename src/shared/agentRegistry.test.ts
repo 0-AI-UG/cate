@@ -17,7 +17,7 @@
 // =============================================================================
 
 import { describe, expect, test } from 'vitest'
-import { AGENTS, agentForSkillTarget, type AgentId } from './agents'
+import { AGENTS, AGENT_INTEGRATIONS, agentForSkillTarget, type AgentId } from './agents'
 import { AGENT_HOOK_SPECS } from './agentHooks'
 import { SKILL_TARGETS, type SkillTargetId } from './skills'
 
@@ -46,15 +46,11 @@ describe('agent registry coverage', () => {
     }
   })
 
-  test('SKILL_TARGETS is exactly cate-agent plus every agent-declared target', () => {
-    const declared = AGENTS.flatMap((a) => (a.skills ? [a.skills.targetId] : []))
-    expect([...SKILL_TARGETS].map((t) => t.id).sort()).toEqual([...declared, 'cate-agent'].sort())
-    // Every target resolves back to its agent (or is Cate's own).
+  test('SKILL_TARGETS is exactly every integration-declared target', () => {
+    const declared = AGENT_INTEGRATIONS.flatMap((a) => (a.skills ? [a.skills.targetId] : []))
+    expect([...SKILL_TARGETS].map((t) => t.id).sort()).toEqual(declared.sort())
+    // Every target resolves back to its external or embedded agent integration.
     for (const t of SKILL_TARGETS) {
-      if (t.id === 'cate-agent') {
-        expect(agentForSkillTarget(t.id)).toBeNull()
-        continue
-      }
       expect(agentForSkillTarget(t.id)?.skills?.targetId, `${t.id} resolves to its agent`).toBe(t.id)
       expect(t.label, `${t.id} has a label`).toBeTruthy()
     }

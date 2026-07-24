@@ -32,18 +32,17 @@ import type {
   CodingSlashCommand,
   CodingThinkingLevel,
 } from '../../shared/types'
+import { resolveEffectiveAgentModel } from '../../shared/agentModels'
 import { CODING_EVENT, AUTH_CHANGED } from '../../shared/ipc-channels'
 import { broadcastToAll } from '../../main/windowRegistry'
-import { installSubagentExtension } from './installSubagents'
 import { installPlanModeExtension } from './installPlanMode'
+import { installCanvasModeExtension } from './installCanvasMode'
 import { installAskUserExtension } from './installAskUser'
-import { installCateAgentToolsExtension } from './installCateAgentTools'
 import { installMcpAdapter } from './installMcpAdapter'
-import { installEngineeringTaskExtension } from './installEngineeringTask'
 import { isProjectTrusted } from '../../main/workspaceStateStore'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
 import { resolveWorktreeContext } from '../../main/worktreeContext'
-import { hostCodingDir, prepareCodingDir, watchWorkspaceAuth, pushSharedToWorkspace, type CodingDirVariant } from './codingDir'
+import { hostCodingDir, prepareCodingDir, watchWorkspaceAuth, pushSharedToWorkspace } from './codingDir'
 import { mirrorModelsToWorkspace } from './customModels'
 import { authManager, type AuthManager } from './authManager'
 import { getSetting } from '../../main/settingsFile'
@@ -57,8 +56,6 @@ interface AgentSession {
   runtime: Runtime
   /** Runtime-absolute workspace path (the locator's path part). */
   cwd: string
-  /** Which per-workspace pi dir this session lives in (default vs isolated Cate Agent). */
-  variant: CodingDirVariant
   client: PiRpcClient
   sender: WebContents
   unsubscribeEvents: () => void
@@ -118,7 +115,7 @@ export class CodingManager {
     // Mirror FIRST so a renderer re-querying available models sees pi pick up
     // the fresh credentials, then broadcast.
     await this.syncConfigToOpenSessions('auth', (session) =>
-      pushSharedToWorkspace(session.runtime, session.cwd, session.variant),
+      pushSharedToWorkspace(session.runtime, session.cwd),
     )
     broadcastToAll(AUTH_CHANGED)
   }
@@ -141,7 +138,7 @@ export class CodingManager {
    *  on their next model-list fetch). */
   async syncCustomModelsToOpenSessions(): Promise<void> {
     await this.syncConfigToOpenSessions('models', (session) =>
-      mirrorModelsToWorkspace(session.runtime, session.cwd, session.variant),
+      mirrorModelsToWorkspace(session.runtime, session.cwd),
     )
     broadcastToAll(AUTH_CHANGED)
   }
@@ -174,53 +171,29 @@ export class CodingManager {
         log.warn('[codingManager] worktree skill sync failed for %s: %O', opts.panelId, err)
       }
 
-      // The Cate Agent's headless sessions live in an ISOLATED per-workspace pi
-      // dir (.cate/cate-agent-loop) so their transcripts never show up in — or get
-      // resumed by — the agent panel's session list. Normal panels use the
-      // default dir. Either way auth.json + models.json are seeded via the
-      // runtime (so it lands on a remote host too) and PI_CODING_AGENT_DIR
-      // points pi at the chosen dir.
-      const variant: CodingDirVariant = opts.agentDir === 'cateAgent' ? 'cateAgent' : 'default'
-      await prepareCodingDir(runtime, cwd, variant)
-      await mirrorModelsToWorkspace(runtime, cwd, variant)
-      if (variant === 'cateAgent') {
-        // The unified Cate Agent keeps its orchestration tool surface and the
-        // user-facing plan workflow. Plan mode gates orchestration until the
-        // user approves the proposed plan; the other panel-only extensions are
-        // still intentionally omitted.
-        await installCateAgentToolsExtension(runtime, cwd, 'cateAgent')
-        await installPlanModeExtension(runtime, cwd, 'cateAgent')
+      // Cate uses the same direct agent home and extension set for every chat.
+      await prepareCodingDir(runtime, cwd)
+      await mirrorModelsToWorkspace(runtime, cwd)
+      await installPlanModeExtension(runtime, cwd)
+      await installCanvasModeExtension(runtime, cwd)
+      await installAskUserExtension(runtime, cwd)
+      // Register pi-mcp-adapter in <cwd>/.cate/cate-agent/settings.json so pi
+      // auto-installs + loads it on session start (MCP driven by <cwd>/.pi/mcp.json).
+      //
+      // ONLY for a project the user explicitly trusted. The adapter honours
+      // repo-controlled `.mcp.json` / `.pi/mcp.json`, and an `"lifecycle":
+      // "eager"` server there starts its command during adapter init.
+      if (isProjectTrusted(opts.workspaceRoot ?? '')) {
+        await installMcpAdapter(runtime, cwd)
       } else {
-        await installSubagentExtension(runtime, cwd)
-        await installPlanModeExtension(runtime, cwd)
-        await installAskUserExtension(runtime, cwd)
-        await installEngineeringTaskExtension(runtime, cwd)
-        // Register pi-mcp-adapter in <cwd>/.cate/cate-agent/settings.json so pi
-        // auto-installs + loads it on session start (MCP driven by <cwd>/.pi/mcp.json).
-        //
-        // ONLY for a project the user explicitly trusted. The adapter honours
-        // repo-controlled `.mcp.json` / `.pi/mcp.json`, and an `"lifecycle":
-        // "eager"` server there starts its command during adapter init — so
-        // installing it unconditionally let a cloned repo run code as soon as an
-        // agent session existed (GHSA-8769-jp52-985f). The workspace locator is
-        // the trust key; a bare `cwd` (worktree path) is not, and absent ⇒
-        // untrusted.
-        if (isProjectTrusted(opts.workspaceRoot ?? '')) {
-          await installMcpAdapter(runtime, cwd)
-        } else {
-          log.info('[agent] project MCP disabled for untrusted workspace %s', opts.workspaceRoot ?? cwd)
-        }
+        log.info('[agent] project MCP disabled for untrusted workspace %s', opts.workspaceRoot ?? cwd)
       }
-
 
       const extraArgs: string[] = []
       if (opts.sessionFile) extraArgs.push('--session', opts.sessionFile)
 
-      // opts.env (e.g. CATE_AGENT_ROLE) is merged first but must never clobber
-      // PI_CODING_AGENT_DIR, which points pi at the workspace agent dir.
       const env: Record<string, string> = {
-        ...(opts.env ?? {}),
-        PI_CODING_AGENT_DIR: hostCodingDir(runtimeId, cwd, variant),
+        PI_CODING_AGENT_DIR: hostCodingDir(runtimeId, cwd),
       }
 
       // First-party CATE_API endpoint: give pi CATE_API/CATE_TOKEN so a `cate`
@@ -278,13 +251,12 @@ export class CodingManager {
 
       // Watch the host's auth.json so OAuth token refreshes written by pi
       // propagate back to the shared file.
-      const disposeAuthWatcher = watchWorkspaceAuth(runtime, cwd, variant)
+      const disposeAuthWatcher = watchWorkspaceAuth(runtime, cwd)
 
       this.sessions.set(opts.panelId, {
         panelId: opts.panelId,
         runtime,
         cwd,
-        variant,
         client,
         sender,
         unsubscribeEvents,
@@ -341,6 +313,7 @@ export class CodingManager {
       const message = err instanceof Error ? err.message : String(err)
       log.warn('[codingManager] prompt failed for %s: %s', panelId, message)
       this.sendErrorEvent(session.sender, panelId, message)
+      throw err
     }
   }
 
@@ -352,8 +325,12 @@ export class CodingManager {
   async interrupt(panelId: string): Promise<void> {
     const session = this.sessions.get(panelId)
     if (!session) return
-    try { await session.client.abort() }
-    catch (err) { log.warn('[codingManager] interrupt failed for %s: %O', panelId, err) }
+    try {
+      await session.client.abort()
+    } catch (err) {
+      log.warn('[codingManager] interrupt failed for %s: %O', panelId, err)
+      throw err
+    }
   }
 
   async dispose(panelId: string): Promise<void> {
@@ -514,10 +491,13 @@ export class CodingManager {
    *  null when no provider is connected (pi then falls back to its own default). */
   private async resolveDefaultModel(): Promise<CateAgentModelRef | null> {
     const pref = getSetting('agentDefaultModel')
-    if (pref && pref.provider && pref.model) return pref
     try {
       const models = await this.authManager.listAvailableModels()
-      if (models.length > 0) return { provider: models[0].provider, model: models[0].id }
+      return resolveEffectiveAgentModel(
+        undefined,
+        pref,
+        models.map((model) => ({ provider: model.provider, model: model.id })),
+      )
     } catch { /* fall through to null */ }
     return null
   }

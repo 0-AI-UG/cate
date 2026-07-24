@@ -84,6 +84,10 @@ export interface PanelState {
   type: PanelType
   title: string
   isDirty: boolean
+  /** Opaque, ephemeral affinity used by generic canvas placement. New members
+   *  reuse the canvas recommendations around the group's source panel; the
+   *  subsystem assigning the value owns its meaning. */
+  placementGroupId?: string
   filePath?: string
   /** Browser panels only: open tabs (light model). This is the sole persisted
    *  navigation state; the current URL is derived through browserPanelUrl. */
@@ -1048,252 +1052,29 @@ export interface ProjectSessionPanel {
 }
 
 // -----------------------------------------------------------------------------
-// Cate Agent — the iterate/verify loop layer (shared by a chat's `run`)
+// Cate Agent — durable main-agent chats (.cate/chats.json)
 //
-// A code task runs as a loop: the chat agent sets a goal + check, then spawns
-// parallel ITERATIONS (each its own fresh worktree + coding agents). When an
-// iteration's agents park, an independent verifier driver runs the check in its
-// worktree and writes a verdict; the chat agent picks a winner or runs another round.
-// This state lives on the chat's `run` (see ChatRun above).
+// Pi owns each chat's transcript in its session JSONL. Cate persists only the
+// metadata needed to reopen that one session and place it in the UI.
 // -----------------------------------------------------------------------------
-
-/** One atomic check inside a verdict. `observed` is pasted from output the verifier
- *  actually produced (test run, build, diff inspection) — or "unknown" when the check
- *  could not be run — so a failed attempt's cause travels with its verdict as ground
- *  truth, not judge prose. */
-export interface VerdictCheck {
-  /** What was checked, e.g. "vitest suite" or "shift-resize keeps aspect". */
-  check: string
-  met: boolean
-  /** Verbatim outcome (command output excerpt, exit code, what the diff shows). */
-  observed: string
-  /** What a pass would have looked like — set on failed checks. */
-  expected?: string
-}
-
-/** A single verification verdict for one iteration — produced by a checker coding
- *  agent that ran the check in the iteration's worktree and wrote the verdict file.
- *  `met` is the conjunction over `checks` when they're present. */
-export interface VerifyResult {
-  met: boolean
-  reason: string
-  /** Unix ms when verification completed. */
-  at: number
-  /** Per-check results backing the verdict, when the verifier provided them. */
-  checks?: VerdictCheck[]
-  /** The verifier's advisory next step for a failed attempt. */
-  suggestion?: string
-}
-
-export type IterationStatus =
-  | 'running' // coding agents working in the worktree
-  | 'finished' // agents parked — work done, awaiting the check
-  | 'verifying' // a checker coding agent is judging the result
-  | 'passed' // verification met
-  | 'failed' // verification not met
-  | 'error' // could not run / crashed
-  | 'cancelled' // round discarded or superseded
-
-/** One coding agent inside an iteration, DISCOVERED as the iteration's driver opens
- *  terminals (the orchestrator no longer pre-assigns agents or scopes). Several can
- *  run in one iteration's shared worktree at once (e.g. claude + codex). */
-export interface IterationAgent {
-  /** AgentId (e.g. 'claude-code', 'codex') or a free label. */
-  agent: string
-  /** Canvas panel id of the terminal running this agent. */
-  terminalId: string
-  /** The disjoint slice of the work this agent owns, if the driver partitioned. */
-  scope?: string
-  /** Which phase opened this terminal: `work` does the task, `verify` checks it.
-   *  Both get a job-card chip and stay open. The orchestrator context and winner
-   *  note are scoped to the work agents. */
-  kind: 'work' | 'verify'
-}
-
-export interface Iteration {
-  id: string
-  /** Back-reference to the owning chat id (the chat whose `run` holds this iteration). */
-  todoId: string
-  /** Which round spawned it (1-based). */
-  round: number
-  /** Its own fresh worktree (never shared with another iteration). */
-  worktreeId?: string
-  branch?: string
-  /** The agents the driver launched (empty until create_terminal records them). */
-  agents: IterationAgent[]
-  status: IterationStatus
-  /** The verifier's verdict, once judged. */
-  verify?: VerifyResult
-  createdAt: number
-}
-
-// -----------------------------------------------------------------------------
-// Cate Agent — per-workspace CHATS (.cate/chats.json)
-//
-// The chat is the Cate Agent's front door: a persistent thread you type into. Its
-// agent (the former orchestrator, now one persistent session per chat that keeps
-// its conversation history) answers a question inline, or runs a code task as the
-// iterate/verify LOOP, or delegates a canvas task. Each agent action renders as a
-// purpose-built typed block in the transcript — not a text bubble — so the thread
-// still means something after a reload. The loop machinery (iterations, drivers,
-// verifiers, worktrees) is unchanged; its state now lives on the chat's `run`
-// instead of a global todo.
-// -----------------------------------------------------------------------------
-
-export type ChatMessageRole = 'user' | 'agent'
-
-/** A plain markdown message — the user's prompt, or the agent's inline answer. */
-export interface ChatTextMessage {
-  id: string
-  role: ChatMessageRole
-  ts: number
-  kind: 'text'
-  text: string
-}
-
-/** The agent's plan for a code task: the goal + how it will be checked (set_goal). */
-export interface ChatPlanMessage {
-  id: string
-  role: 'agent'
-  ts: number
-  kind: 'plan'
-  goal: string
-  check: string
-}
-
-/** The parallel-attempts grid for a code task (iterate). While the run is live the
- *  UI reads iterations off `chat.run`; the fields here are the frozen snapshot
- *  written when the run settles so the transcript survives a reload. */
-export interface ChatAttemptsMessage {
-  id: string
-  role: 'agent'
-  ts: number
-  kind: 'attempts'
-  iterations?: Iteration[]
-  round?: number
-  recommendedIterationId?: string
-}
-
-/** The outcome of a code task (select_winner / fail): the winning verdict + the
- *  land actions. `outcome` records the user's land decision once they act. */
-export interface ChatResultMessage {
-  id: string
-  role: 'agent'
-  ts: number
-  kind: 'result'
-  iterationId?: string
-  met: boolean
-  reason: string
-  worktreeId?: string
-  branch?: string
-  outcome?: 'merged' | 'pr' | 'discarded'
-  note?: string
-}
-
-/** A delegated canvas task (canvas): a working indicator while the canvas subagent
- *  runs, then the panels it left on the canvas + a jump-to-canvas target. */
-export interface ChatCanvasMessage {
-  id: string
-  role: 'agent'
-  ts: number
-  kind: 'canvas'
-  request: string
-  working: boolean
-  panels?: Array<{ id: string; type: string; title: string }>
-  canvasPanelId?: string
-}
-
-export type ChatMessage =
-  | ChatTextMessage
-  | ChatPlanMessage
-  | ChatAttemptsMessage
-  | ChatResultMessage
-  | ChatCanvasMessage
-
-/** The live (or last) run state for one chat's active code/canvas task — the
- *  iterate/verify loop layer that used to live on a Todo. Absent when the chat has
- *  only ever answered questions. */
-export interface ChatRun {
-  status: 'running' | 'review' | 'done' | 'failed'
-  /** The goal the loop iterates toward (set_goal). */
-  goal?: string
-  /** How an iteration is verified (set_goal). */
-  check?: string
-  /** Parallel attempts across rounds (the current round's are live). */
-  iterations?: Iteration[]
-  /** Current round number (1-based); bumped each time the agent iterates. */
-  round?: number
-  /** The iteration selected to land (select_winner). */
-  recommendedIterationId?: string
-  /** The winning iteration's worktree/branch, copied on at review (what lands). */
-  worktreeId?: string
-  branch?: string
-  /** Canvas node ids of every terminal spawned across this run's iterations. */
-  terminalNodeIds?: string[]
-  /** The canvas this run is pinned to (captured when the chat's session starts). */
-  canvasPanelId?: string
-  /** Failure reason / land note. */
-  note?: string
-  /** Set when a run was cut off by an app restart; the block offers Continue. */
-  interrupted?: boolean
-  /** The attempts message this run's live iteration grid binds to. */
-  attemptsMessageId?: string
-}
 
 export interface Chat {
   id: string
   title: string
   createdAt: number
   updatedAt: number
-  messages: ChatMessage[]
   /** The Agent panel that owns this chat. Absence means the workspace Cate
    *  sidebar owns it. A chat is rendered by exactly one of those hosts. */
   hostPanelId?: string
-  run?: ChatRun
   /** Per-chat model override. The Cate Agent otherwise uses the global default. */
   model?: CateAgentModelRef
-  /** On-disk pi transcript for the direct, full-capability front agent. */
+  /** On-disk Pi transcript for this chat's sole main-agent session. */
   sessionFile?: string | null
-  /** Set once the user approves transferring this thread to iteration engineering. */
-  engineeringTask?: {
-    goal: string
-    check?: string
-    overview?: string
-    acceptedAt: number
-  }
 }
 
 export interface ProjectChatsFile {
   version: 1
   chats: Chat[]
-}
-
-/** Which headless brain a Cate Agent session drives. Passed to the cate-agent-tools
- *  extension via `CATE_AGENT_ROLE` so it registers the matching tool subset.
- *  - observer: watches, proposes todos.
- *  - orchestrator: sets a goal + check, spawns iterations from an overview, never
- *    chooses agents or touches files itself. Each iteration is checked by an
- *    independent verifier driver.
- *  - driver: ONE per iteration. Seeded with the overview + worktree cwd, it opens
- *    terminals, launches coding-agent CLIs, answers startup/permission prompts, and
- *    submits the task; a backgrounded send_keys re-prompts it as each terminal
- *    finishes. create_terminal + read_terminal + send_keys. */
-export type CateAgentRole = 'observer' | 'orchestrator' | 'driver' | 'canvas'
-
-/** The Cate Agent's coarse runtime state, surfaced in the toolbar button + feedback panel. */
-export type CateAgentActivity =
-  | 'off' // not started yet (workspace still restoring, or the session failed to start)
-  | 'resting' // running, nothing to do
-  | 'observing' // observer taking a look at user activity
-  | 'working' // orchestrator running a todo
-
-/** Persisted per-workspace Cate Agent preferences (.cate/cateAgent.json). Machine-local.
- *  The Cate Agent is always on for a workspace — only automatic observations toggle. */
-export interface ProjectCateAgentFile {
-  version: 1
-  /** Whether the observer runs automatically on a timer. When false, observe
-   *  turns happen only when the user clicks the idle Cate Agent. Defaults to true. */
-  autoObserve: boolean
 }
 
 // -----------------------------------------------------------------------------
@@ -1564,19 +1345,6 @@ export interface AppSettings {
    *  folder already exists in the repo). Sparse: only real overrides stored. */
   agentHookInjection: Record<string, Partial<Record<AgentId, AgentHookMode>>>
 
-  // Cate Agent uses the shared `agentDefaultModel` (above), with a per-chat
-  // override on the Chat record.
-  /** The coding-agent CLI each iteration's driver launches in a terminal to do the
-   *  actual work — an AgentId from src/shared/agents.ts. Empty ⇒ the driver picks
-   *  an installed one itself. */
-  cateAgentOrchestratorAgentId: string
-  /** How often the observer may take an automatic look, in minutes. Applies only
-   *  when a workspace has automatic observations on. */
-  cateAgentObserveCooldownMin: number
-  /** Most iterations (each a fresh worktree running its own coding agents) a job
-   *  may have active at once in a round. Enforced by the `iterate` tool. */
-  cateAgentMaxParallelIterations: number
-
   // Layout
   /** Which sidebar views live in the left vs. right rail. Was renderer
    *  localStorage (cate.sidebarLayout.v3) before. */
@@ -1677,11 +1445,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Agent
   agentDefaultModel: null,
   agentHookInjection: {},
-
-  // Cate Agent
-  cateAgentOrchestratorAgentId: '',
-  cateAgentObserveCooldownMin: 1,
-  cateAgentMaxParallelIterations: 3,
 
   // Layout — keep in sync with the sidebar's default arrangement.
   sidebarLayout: {
@@ -1855,14 +1618,6 @@ export interface CodingCreateOptions {
   /** Resume an existing pi session file (jsonl). When set, pi will load it
    *  on start instead of creating a fresh session. */
   sessionFile?: string
-  /** Extra environment variables merged into the pi process env. Used by the
-   *  Cate Agent to pass `CATE_AGENT_ROLE` so the cate-agent-tools extension knows
-   *  which tool subset to register for this (headless) session. */
-  env?: Record<string, string>
-  /** Which per-workspace pi dir this session uses. `'cateAgent'` isolates the Cate
-   *  Agent's headless sessions in `.cate/cate-agent-loop` so their transcripts never
-   *  appear in the agent panel's session list. Defaults to `'default'`. */
-  agentDir?: 'default' | 'cateAgent'
   /** Locator of the WORKSPACE this session belongs to, which may differ from
    *  `cwd` when the panel is pinned to a worktree. Main resolves the workspace's
    *  trust state from this to decide whether project MCP config (`.mcp.json` /

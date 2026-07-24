@@ -16,7 +16,7 @@ import { parseLocator, formatLocator } from '../../main/runtime/locator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import { hostJoin } from '../../cateAgent/main/codingDir'
 import type { Runtime } from '../../main/runtime/types'
-import { skillsRootDir, targetInfo } from './targets'
+import { skillsRootDir, skillsRootDirs, targetInfo } from './targets'
 import { ensureSkillName } from './frontmatter'
 import * as skillStore from './skillStore'
 import * as savedSkills from './savedSkills'
@@ -146,7 +146,8 @@ export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<Write
   const runtime = runtimes.resolve(runtimeId)
   const info = targetInfo(targetId)
   const slug = slugifySkillName(name)
-  const root = skillsRootDir(targetId, runtimeId, hostCwd)
+  const roots = skillsRootDirs(targetId, runtimeId, hostCwd)
+  const root = roots[0]
 
   const warnings: string[] = []
   let installedHostPath: string
@@ -155,16 +156,18 @@ export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<Write
     // Validate the complete bundle before creating directories or writing files,
     // so a malformed source cannot escape (or partially modify) the skill root.
     const bundle = files.map((file) => ({ file, segments: skillPathSegments(file.relPath) }))
-    const dir = hostJoin(runtimeId, root, slug)
-    await mkdirp(runtime, runtimeId, hostCwd, dir)
-    for (const { file: f, segments: segs } of bundle) {
-      const target = hostJoin(runtimeId, dir, ...segs)
-      if (segs.length > 1) {
-        await mkdirp(runtime, runtimeId, hostCwd, hostJoin(runtimeId, dir, ...segs.slice(0, -1)))
+    for (const destinationRoot of roots) {
+      const dir = hostJoin(runtimeId, destinationRoot, slug)
+      await mkdirp(runtime, runtimeId, hostCwd, dir)
+      for (const { file: f, segments: segs } of bundle) {
+        const target = hostJoin(runtimeId, dir, ...segs)
+        if (segs.length > 1) {
+          await mkdirp(runtime, runtimeId, hostCwd, hostJoin(runtimeId, dir, ...segs.slice(0, -1)))
+        }
+        await writeFile(runtime, target, f, slug)
       }
-      await writeFile(runtime, target, f, slug)
     }
-    installedHostPath = hostJoin(runtimeId, dir, 'SKILL.md')
+    installedHostPath = hostJoin(runtimeId, root, slug, 'SKILL.md')
   } else {
     const skillMd = files.find((f) => f.relPath === 'SKILL.md')
     if (!skillMd?.text) throw new Error('Skill is missing SKILL.md')
@@ -172,10 +175,14 @@ export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<Write
     if (extras.length) {
       warnings.push(`${info.label} supports single-file skills only; ${extras.length} bundled file(s) were not installed.`)
     }
-    await mkdirp(runtime, runtimeId, hostCwd, root)
-    const file = hostJoin(runtimeId, root, `${slug}.md`)
-    await runtime.file.writeFile(file, ensureSkillName(skillMd.text, slug))
-    installedHostPath = file
+    for (const destinationRoot of roots) {
+      await mkdirp(runtime, runtimeId, hostCwd, destinationRoot)
+      await runtime.file.writeFile(
+        hostJoin(runtimeId, destinationRoot, `${slug}.md`),
+        ensureSkillName(skillMd.text, slug),
+      )
+    }
+    installedHostPath = hostJoin(runtimeId, root, `${slug}.md`)
   }
 
   const installed: InstalledSkill = {
@@ -295,14 +302,15 @@ export async function uninstall(
   const runtime = runtimes.resolve(runtimeId)
   const info = targetInfo(targetId)
   const slug = slugifySkillName(name)
-  const root = skillsRootDir(targetId, runtimeId, hostCwd)
-  const target = info.layout === 'folder'
-    ? hostJoin(runtimeId, root, slug)
-    : hostJoin(runtimeId, root, `${slug}.md`)
-  try {
-    await runtime.file.remove(target)
-  } catch (err) {
-    log.warn('[skills] remove failed for %s: %O', target, err)
+  for (const root of skillsRootDirs(targetId, runtimeId, hostCwd)) {
+    const target = info.layout === 'folder'
+      ? hostJoin(runtimeId, root, slug)
+      : hostJoin(runtimeId, root, `${slug}.md`)
+    try {
+      await runtime.file.remove(target)
+    } catch (err) {
+      log.warn('[skills] remove failed for %s: %O', target, err)
+    }
   }
   const manifest = await readManifestData(runtime, runtimeId, hostCwd)
   await writeManifest(runtime, runtimeId, hostCwd, {

@@ -40,6 +40,11 @@ export type AgentId =
   | 'opencode'
   | 'pi'
 
+/** Every agent integration Cate exposes. External CLIs are AgentId; Cate's
+ * embedded agent participates in shared integrations such as skills without
+ * pretending to have a shell command, process, or workspace hook. */
+export type AgentIntegrationId = AgentId | 'cate-agent'
+
 /** Where one agent reads project skills from, and how they are written.
  *  Cate follows the open Agent Skills standard (a `SKILL.md` folder), so an
  *  agent's whole skills integration is its base dir plus a layout flag. */
@@ -52,6 +57,10 @@ export interface AgentSkillTarget {
    *  The FIRST segment doubles as the agent's tool dir — its presence in a repo
    *  is the "this agent is used here" signal the install matrix reads. */
   baseSegments: readonly string[]
+  /** Additional roots that consume the same installed bundle. They are an
+   *  implementation detail of one integration, not separate install targets:
+   *  the manifest and UI continue to expose only `targetId`. */
+  mirrorBaseSegments?: readonly (readonly string[])[]
   /** `folder` = `<base>/<name>/SKILL.md` (+ bundled files); `flat` = `<base>/<name>.md`. */
   layout: 'folder' | 'flat'
   bundledResources: boolean
@@ -69,7 +78,7 @@ export interface AgentDef {
   /** Label shown in panel titles / tooltips. */
   displayName: string
   /** The CLI command that launches this agent in a terminal — usually the same
-   *  as the detected process name. Used by the Cate Agent orchestrator. */
+   *  as the detected process name. */
   command: string
   /** True when a shell child process with this (already-lowercased) name means
    *  this agent is the one running in that terminal. */
@@ -82,6 +91,14 @@ export interface AgentDef {
    *  agent. Verified against each CLI's own docs — see the per-agent notes. */
   skills: AgentSkillTarget | null
 }
+
+export interface EmbeddedAgentDef {
+  id: 'cate-agent'
+  displayName: string
+  skills: AgentSkillTarget
+}
+
+export type AgentIntegrationDef = AgentDef | EmbeddedAgentDef
 
 /** Shared shape of every agent's skills dir: `<base>/<name>/SKILL.md` with
  *  bundled scripts/references alongside. Only the base dir actually differs. */
@@ -171,15 +188,44 @@ export const AGENTS: readonly AgentDef[] = [
   },
 ]
 
+/** Cate's embedded agent belongs to the same integration registry as external
+ * agent CLIs. Consumers that need a command/process use AGENTS; consumers that
+ * need shared capabilities such as skills use AGENT_INTEGRATIONS. */
+export const CATE_AGENT: EmbeddedAgentDef = {
+  id: 'cate-agent',
+  displayName: 'Cate Agent',
+  skills: folderSkills('cate-agent', ['.cate', 'cate-agent', 'skills']),
+}
+
+export const AGENT_INTEGRATIONS: readonly AgentIntegrationDef[] = [
+  ...AGENTS,
+  CATE_AGENT,
+]
+
 /** The agent whose skills target this is, or null for a non-agent target
- *  (Cate's own `cate-agent`). */
-export function agentForSkillTarget(targetId: SkillTargetId): AgentDef | null {
-  return AGENTS.find((a) => a.skills?.targetId === targetId) ?? null
+ *  retained in persisted data from an older version. */
+export function agentForSkillTarget(targetId: SkillTargetId): AgentIntegrationDef | null {
+  return AGENT_INTEGRATIONS.find((a) => a.skills?.targetId === targetId) ?? null
 }
 
 /** The launch command for an agent id, or null if the id is unknown/empty. */
 export function launchCommandForAgent(id: string): string | null {
   return AGENTS.find((a) => a.id === id)?.command ?? null
+}
+
+/** Recognize the bare coding-agent command at the start of a shell line. Driver
+ * terminals deliberately launch agents this way, before sending the task in a
+ * later call. Paths are accepted (`/opt/bin/codex`); compound shell programs
+ * are not guessed at, so an unrecognized command falls back to process detection. */
+export function agentForLaunchCommand(commandLine: string): AgentDef | null {
+  const first = commandLine.trim().match(/^("[^"]+"|'[^']+'|[^\s]+)/)?.[1]
+  if (!first) return null
+  const quoted =
+    (first.startsWith('"') && first.endsWith('"')) ||
+    (first.startsWith("'") && first.endsWith("'"))
+  const unquoted = quoted ? first.slice(1, -1) : first
+  const command = unquoted.replace(/\\/g, '/').split('/').pop() ?? ''
+  return AGENTS.find((agent) => agent.command === command) ?? null
 }
 
 /** The agent whose process name matches, or null if none. Matching is

@@ -10,7 +10,7 @@
 // at its panel's bottom edge).
 //
 // Capabilities (from the agent panel composer): image attachments, thinking
-// level, plan mode, context compaction, the stats chip, the slash-command
+// level, prompt modes, context compaction, the stats chip, the slash-command
 // popup and file drag-and-drop.
 //
 // PRESENTATIONAL ONLY — no stores, no IPC, no persistence. Every value and
@@ -27,6 +27,8 @@ import {
   ArrowUp,
   Plus,
   ClipboardText,
+  BoundingBox,
+  X,
   Spinner,
   ArrowsClockwise,
 } from '@phosphor-icons/react'
@@ -40,6 +42,8 @@ import {
   ThinkingLevelPicker,
   NodePopover,
   useNodePopover,
+  useViewportPopoverPosition,
+  COMPOSER_POPOVER_SURFACE,
 } from '../../cateAgent/renderer/CateAgentPanelChrome'
 import type { JoinedWorktree } from '../stores/useWorktrees'
 import type {
@@ -53,6 +57,10 @@ import type {
 const MAX_HEIGHT = 160
 
 export type ModelOption = { provider: string; model: string; label?: string }
+export type ComposerPromptMode = 'plan' | 'canvas'
+
+const promptModeLabel = (mode: ComposerPromptMode): string =>
+  mode === 'plan' ? 'Create plan' : 'Manage canvas'
 
 const worktreeLabel = (wt: JoinedWorktree | undefined): string =>
   wt?.label || wt?.branch || (wt?.isPrimary ? 'main' : 'worktree')
@@ -93,7 +101,7 @@ const UpwardMenu: React.FC<{
     <div
       ref={ref}
       role="listbox"
-      className="fixed z-[60] max-h-[340px] overflow-y-auto no-scrollbar p-1.5 rounded-xl border border-strong bg-surface-4 shadow-[0_12px_32px_var(--shadow-node)]"
+      className={`fixed z-[9999] max-h-[340px] overflow-y-auto no-scrollbar p-1.5 ${COMPOSER_POPOVER_SURFACE}`}
       style={{ left: anchor.left, bottom: window.innerHeight - anchor.top + 6, width }}
     >
       {children}
@@ -189,8 +197,8 @@ export interface ChatComposerProps {
   onSlashOpen?: () => void
   thinkingLevel?: CodingThinkingLevel | null
   onPickThinkingLevel?: (level: CodingThinkingLevel) => void
-  planModeActive?: boolean
-  onTogglePlanMode?: () => void
+  promptMode?: ComposerPromptMode | null
+  onPromptModeChange?: (mode: ComposerPromptMode | null) => void
   autoCompactionEnabled?: boolean
   onManualCompact?: () => void
   onToggleAutoCompaction?: () => void
@@ -233,8 +241,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   onSlashOpen,
   thinkingLevel = null,
   onPickThinkingLevel,
-  planModeActive = false,
-  onTogglePlanMode,
+  promptMode = null,
+  onPromptModeChange,
   autoCompactionEnabled = false,
   onManualCompact,
   onToggleAutoCompaction,
@@ -256,10 +264,32 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     onModelMenuOpenChange?.(open)
   }
   const modelPillRef = React.useRef<HTMLButtonElement>(null)
+  const { pos: modelPos, portalTarget: modelPortalTarget } = useViewportPopoverPosition(
+    modelPillRef,
+    modelOpen,
+    (rect) => ({
+      top: rect.top - 8,
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 288)),
+    }),
+  )
   const [wtAnchor, setWtAnchor] = React.useState<DOMRect | null>(null)
   const [creating, setCreating] = React.useState(false)
   const wtBtn = React.useRef<HTMLButtonElement>(null)
   const [dragOver, setDragOver] = React.useState(false)
+  const promptModeBtn = React.useRef<HTMLButtonElement>(null)
+  const {
+    open: promptModeOpen,
+    setOpen: setPromptModeOpen,
+    popoverRef: promptModeMenu,
+    pos: promptModePos,
+    portalTarget: promptModePortalTarget,
+  } = useNodePopover(
+    promptModeBtn,
+    (rect) => ({
+      top: rect.top - 8,
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 228)),
+    }),
+  )
 
   // Slash popup is active when the draft starts with "/" and has no spaces
   // before the cursor — i.e. the user is still picking a command name.
@@ -391,54 +421,73 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           />
         )}
         {onRemoveImage && <ImageChips images={images} onRemove={onRemoveImage} />}
-        <textarea
-          ref={taRef}
-          rows={1}
-          value={draft}
-          onChange={(e) => onChange(e.target.value)}
-          onPaste={onPaste}
-          onKeyDown={(e) => {
-            if (popupOpen) {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault()
-                setSelectedIdx((i) => Math.min(i + 1, filteredCommands.length - 1))
-                return
+        <div className="flex items-start gap-2 px-3 pt-2.5 pb-1">
+          {promptMode && onPromptModeChange && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onPromptModeChange(null)
+                taRef.current?.focus()
+              }}
+              className="flex h-6 flex-shrink-0 items-center gap-1.5 rounded-md bg-hover px-2 text-[11px] text-secondary hover:bg-hover-strong hover:text-primary"
+              aria-label={`Remove ${promptModeLabel(promptMode)} mode`}
+              title="Remove prompt mode"
+            >
+              {promptMode === 'plan' ? <ClipboardText size={12} /> : <BoundingBox size={12} />}
+              <span>{promptModeLabel(promptMode)}</span>
+              <X size={10} className="text-muted" />
+            </button>
+          )}
+          <textarea
+            ref={taRef}
+            rows={1}
+            value={draft}
+            onChange={(e) => onChange(e.target.value)}
+            onPaste={onPaste}
+            onKeyDown={(e) => {
+              if (popupOpen) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setSelectedIdx((i) => Math.min(i + 1, filteredCommands.length - 1))
+                  return
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setSelectedIdx((i) => Math.max(i - 1, 0))
+                  return
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault()
+                  acceptCommand(filteredCommands[selectedIdx])
+                  return
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  onChange('')
+                  return
+                }
               }
-              if (e.key === 'ArrowUp') {
+              if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
-                setSelectedIdx((i) => Math.max(i - 1, 0))
-                return
+                if (canSend) onSubmit()
+              } else if (e.key === 'Escape') {
+                // With no slash popup open, Escape releases focus — the sidebar
+                // composer holds focus across the whole view, so there has to be a
+                // way out that isn't a mouse click.
+                taRef.current?.blur()
               }
-              if (e.key === 'Enter' || e.key === 'Tab') {
-                e.preventDefault()
-                acceptCommand(filteredCommands[selectedIdx])
-                return
-              }
-              if (e.key === 'Escape') {
-                e.preventDefault()
-                onChange('')
-                return
-              }
+            }}
+            disabled={disabled || compactionActive}
+            placeholder={
+              compactionActive
+                ? 'Compacting context…'
+                : placeholderOverride ?? (running ? 'Steer the agent…' : 'Message the agent…')
             }
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              if (canSend) onSubmit()
-            } else if (e.key === 'Escape') {
-              // With no slash popup open, Escape releases focus — the sidebar
-              // composer holds focus across the whole view, so there has to be a
-              // way out that isn't a mouse click.
-              taRef.current?.blur()
-            }
-          }}
-          disabled={disabled || compactionActive}
-          placeholder={
-            compactionActive
-              ? 'Compacting context…'
-              : placeholderOverride ?? (running ? 'Steer the agent…' : 'Message the agent…')
-          }
-          className="block w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-sm leading-snug text-primary outline-none placeholder:text-muted disabled:opacity-50 no-scrollbar"
-          style={{ maxHeight: MAX_HEIGHT }}
-        />
+            className="block min-w-0 flex-1 resize-none bg-transparent p-0 text-sm leading-snug text-primary outline-none placeholder:text-muted disabled:opacity-50 no-scrollbar"
+            style={{ maxHeight: MAX_HEIGHT }}
+          />
+        </div>
         <div className="relative flex items-center gap-1 px-1.5 pb-1.5">
           {onPickModel && (
             <>
@@ -455,12 +504,20 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               >
                 <span className="truncate">{modelLabel}</span>
               </PillButton>
-              {modelOpen && (
+              {modelOpen && modelPos && modelPortalTarget && createPortal(
                 <ModelPickerDropdown
                   models={models}
                   selected={selectedModel}
                   triggerRef={modelPillRef}
-                  className="bottom-full mb-2 left-0 w-[280px] max-w-full max-h-[320px]"
+                  className="w-[280px] max-h-[320px]"
+                  style={{
+                    position: 'fixed',
+                    top: modelPos.top,
+                    left: modelPos.left,
+                    width: 280,
+                    transform: 'translateY(-100%)',
+                    zIndex: 9999,
+                  }}
                   onPick={(m) => {
                     onPickModel(m)
                     setModelOpen(false)
@@ -474,26 +531,69 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                         }
                       : undefined
                   }
-                />
+                />,
+                modelPortalTarget,
               )}
             </>
           )}
           {onAddImage && <ImageAttachButton onPick={onAddImage} />}
           {onPickThinkingLevel && <ThinkingLevelPicker level={thinkingLevel} onChange={onPickThinkingLevel} />}
-          {onTogglePlanMode && (
-            <Tooltip label="Plan mode: agent investigates with parallel scouts, proposes a plan, then waits for your approval." placement="top">
-              <button
-                onClick={onTogglePlanMode}
-                className={`p-1.5 rounded-md ${
-                  planModeActive
-                    ? 'bg-agent/25 text-primary'
-                    : 'text-primary/80 hover:bg-hover'
-                }`}
-                aria-label="Toggle plan mode"
-              >
-                <ClipboardText size={12} weight={planModeActive ? 'fill' : 'regular'} />
-              </button>
-            </Tooltip>
+          {onPromptModeChange && (
+            <div className="relative flex items-center">
+              <Tooltip label="Add a prompt mode" placement="top">
+                <button
+                  ref={promptModeBtn}
+                  type="button"
+                  onClick={() => setPromptModeOpen((open) => !open)}
+                  className={`p-1.5 rounded-md transition-colors ${
+                    promptModeOpen ? 'bg-hover text-primary' : 'text-primary/80 hover:bg-hover'
+                  }`}
+                  aria-label="Add prompt mode"
+                  aria-expanded={promptModeOpen}
+                >
+                  <Plus size={13} />
+                </button>
+              </Tooltip>
+              {promptModeOpen && (
+                <NodePopover
+                  popoverRef={promptModeMenu}
+                  pos={promptModePos}
+                  portalTarget={promptModePortalTarget}
+                  width={220}
+                  bodyClassName="max-h-[340px] overflow-y-auto no-scrollbar p-1.5"
+                >
+                  <div role="listbox">
+                    <div className="px-2 pt-1 pb-1.5 text-[10px] leading-tight text-muted">How should Cate handle this prompt?</div>
+                    <MenuRow
+                      selected={promptMode === 'plan'}
+                      onClick={() => {
+                        onPromptModeChange(promptMode === 'plan' ? null : 'plan')
+                        setPromptModeOpen(false)
+                      }}
+                    >
+                      <ClipboardText size={13} className="flex-shrink-0 text-muted" />
+                      <span className="flex-1">
+                        <span className="block text-[12px]">Create plan</span>
+                        <span className="block text-[10px] text-muted">Investigate first, then wait for approval</span>
+                      </span>
+                    </MenuRow>
+                    <MenuRow
+                      selected={promptMode === 'canvas'}
+                      onClick={() => {
+                        onPromptModeChange(promptMode === 'canvas' ? null : 'canvas')
+                        setPromptModeOpen(false)
+                      }}
+                    >
+                      <BoundingBox size={13} className="flex-shrink-0 text-muted" />
+                      <span className="flex-1">
+                        <span className="block text-[12px]">Manage canvas</span>
+                        <span className="block text-[10px] text-muted">Control Cate panels with the Cate CLI</span>
+                      </span>
+                    </MenuRow>
+                  </div>
+                </NodePopover>
+              )}
+            </div>
           )}
           {onManualCompact && onToggleAutoCompaction && (
             <CompactButton

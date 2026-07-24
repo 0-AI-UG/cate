@@ -230,9 +230,8 @@ describe('closePanel — happy path', () => {
     const canvasStore = getOrCreateCanvasStoreForPanel(canvasId)
     const nodeId = canvasStore.getState().nodeForPanel(termId)!
 
-    // Call closePanel directly, the way cateAgentTools close_terminal and the
-    // runAction 'closePanel' shortcut do — with the node's seeded mini-dock
-    // layout (every addNode seeds dockLayout = [its own panel]) untouched.
+    // Call closePanel directly with the node's seeded mini-dock layout
+    // (every addNode seeds dockLayout = [its own panel]) untouched.
     useAppStore.getState().closePanel(wsId, termId)
 
     // Disposal and record removal still happen correctly...
@@ -266,8 +265,8 @@ describe('closePanel — happy path', () => {
     useChatsStore.setState({
       chatsByRoot: {
         [rootPath]: [
-          { id: 'owned', title: 'Owned', createdAt: 1, updatedAt: 1, messages: [], hostPanelId: agentId },
-          { id: 'other', title: 'Other', createdAt: 1, updatedAt: 1, messages: [], hostPanelId: 'another-agent' },
+          { id: 'owned', title: 'Owned', createdAt: 1, updatedAt: 1, hostPanelId: agentId },
+          { id: 'other', title: 'Other', createdAt: 1, updatedAt: 1, hostPanelId: 'another-agent' },
         ],
       },
       loadedRoots: { [rootPath]: true },
@@ -417,7 +416,7 @@ describe('closePanel — detached-window interactions', () => {
     useChatsStore.setState({
       chatsByRoot: {
         [rootPath]: [
-          { id: 'owned', title: 'Owned', createdAt: 1, updatedAt: 1, messages: [], hostPanelId: agentId },
+          { id: 'owned', title: 'Owned', createdAt: 1, updatedAt: 1, hostPanelId: agentId },
         ],
       },
       loadedRoots: { [rootPath]: true },

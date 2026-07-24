@@ -1,10 +1,21 @@
-import type { Chat } from '../../shared/types'
+import type {
+  Chat,
+  CodingImageAttachment,
+  CodingThinkingLevel,
+} from '../../shared/types'
 import { useChatsStore } from '../../renderer/stores/chatsStore'
 import { useCodingStore, type CodingMessage } from './codingStore'
 import { codingClient } from './codingClient'
-import { loadDefaultModel } from './codingModelPrefs'
+import { resolveSessionModel } from './codingModelPrefs'
 import log from '../../renderer/lib/logger'
-import type { CateAgentTurnOptions } from './cateAgentController'
+import type { ComposerPromptMode } from '../../renderer/chat/ChatComposer'
+
+export interface DirectChatTurnOptions {
+  images?: CodingImageAttachment[]
+  thinkingLevel?: CodingThinkingLevel
+  autoCompactionEnabled?: boolean
+  promptMode?: ComposerPromptMode
+}
 
 const creating = new Map<string, Promise<boolean>>()
 
@@ -26,7 +37,7 @@ export async function ensureDirectChatSession(
   const promise = (async () => {
     const store = useCodingStore.getState()
     store.init(panelId)
-    const model = chat.model ?? loadDefaultModel() ?? undefined
+    const model = (await resolveSessionModel(chat.model)) ?? undefined
     if (model) store.setModel(panelId, model)
     if (chat.sessionFile) {
       try {
@@ -60,15 +71,13 @@ export async function ensureDirectChatSession(
   return promise
 }
 
-/** Send the first or a later user turn through the normal direct agent. The
- * iteration orchestrator is deliberately absent from this path; it can only be
- * entered through an accepted engineering_task tool call. */
+/** Send the first or a later turn through the chat's sole main-agent session. */
 export async function promptDirectChat(
   chat: Chat,
   workspaceId: string,
   rootPath: string,
   text: string,
-  options: CateAgentTurnOptions = {},
+  options: DirectChatTurnOptions = {},
   cwd = rootPath,
 ): Promise<boolean> {
   const panelId = directAgentKey(chat.id)
@@ -87,7 +96,7 @@ export async function promptDirectChat(
 
   try {
     await Promise.all(controlUpdates)
-    if (options.planMode) await codingClient.prompt(panelId, '/plan')
+    if (options.promptMode) await codingClient.prompt(panelId, `/${options.promptMode}`)
     store.appendUser(panelId, text)
     await codingClient.prompt(panelId, text, options.images)
     return true

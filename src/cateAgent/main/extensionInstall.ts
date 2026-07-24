@@ -1,6 +1,6 @@
 // =============================================================================
 // extensionInstall — shared utilities for seeding bundled extensions into a
-// workspace's cate-agent dir. Both installPlanMode and installSubagents use these.
+// workspace's cate-agent dir.
 //
 // The SOURCE bundle is always read locally with node fs (it ships inside the
 // app). Each DESTINATION is written THROUGH the runtime (local fs for the
@@ -14,8 +14,7 @@ import log from '../../main/logger'
 import { hostJoin } from './codingDir'
 import type { Runtime } from '../../main/runtime/types'
 
-/** Install-once gate keyed on an arbitrary string. Each installer holds its own
- *  tracker instance, so installPlanMode and installSubagents don't share state. */
+/** Install-once gate keyed on an arbitrary string. */
 export interface IdempotencyTracker {
   /** True when `key` has not been installed yet (and should be installed now). */
   shouldInstall(key: string): boolean

@@ -119,9 +119,9 @@ describe('pathValidation', () => {
     })
 
     test('validatePathForCreation allows a target whose parent chain is missing (the extensions case)', async () => {
-      const dest = path.join(rootDir, '.cate', 'cate-agent', 'extensions', 'subagent')
+      const dest = path.join(rootDir, '.cate', 'cate-agent', 'extensions', 'example')
       await expect(validatePathForCreation(dest, undefined, SCOPE)).resolves.toContain(
-        path.join('.cate', 'cate-agent', 'extensions', 'subagent'),
+        path.join('.cate', 'cate-agent', 'extensions', 'example'),
       )
     })
 

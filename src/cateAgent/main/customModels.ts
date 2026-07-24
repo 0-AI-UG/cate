@@ -15,7 +15,7 @@
 import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
-import { hostCodingDir, hostJoin, CODING_AGENT_DIR, type CodingDirVariant } from './codingDir'
+import { hostCodingDir, hostJoin, CODING_AGENT_DIR } from './codingDir'
 import type { Runtime } from '../../main/runtime/types'
 import type { CustomOpenAIProvider } from '../../shared/types'
 import { readCodingConfigFile, updateCodingConfigFile } from './codingConfigLock'
@@ -67,10 +67,10 @@ export async function saveCustomOpenAI(cfg: CustomOpenAIProvider | null): Promis
 
 /** Mirror the shared models.json into the host's cate-agent dir via the runtime
  *  (works local + remote). No-op when the shared file doesn't exist. */
-export async function mirrorModelsToWorkspace(runtime: Runtime, hostCwd: string, variant: CodingDirVariant = 'default'): Promise<void> {
+export async function mirrorModelsToWorkspace(runtime: Runtime, hostCwd: string): Promise<void> {
   const data = await readCodingConfigFile(sharedModelsPath())
   if (data == null) return
-  const dir = hostCodingDir(runtime.id, hostCwd, variant)
+  const dir = hostCodingDir(runtime.id, hostCwd)
   const dest = hostJoin(runtime.id, dir, 'models.json')
   try {
     await runtime.file.mkdir(dir)

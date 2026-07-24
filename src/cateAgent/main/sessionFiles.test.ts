@@ -91,13 +91,13 @@ describe('loadSessionTranscript', () => {
     expect(messages[3]).toMatchObject({ type: 'system', text: 'bash: npm test', kind: 'info' })
   })
 
-  it('merges tool results and normalizes persisted subagent details for renderer replay', async () => {
+  it('merges persisted tool results into the matching call', async () => {
     const transcript = [
       JSON.stringify({
         type: 'message',
         message: {
           role: 'assistant',
-          content: [{ type: 'toolCall', id: 'call-1', name: 'subagent', arguments: { task: 'inspect' } }],
+          content: [{ type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: 'a.ts' } }],
         },
       }),
       JSON.stringify({
@@ -106,29 +106,6 @@ describe('loadSessionTranscript', () => {
           role: 'toolResult',
           toolCallId: 'call-1',
           content: [{ type: 'text', text: 'completed' }],
-          details: {
-            mode: 'parallel',
-            results: [
-              null,
-              {
-                agent: 'reviewer',
-                agentSource: 'project',
-                task: 'inspect',
-                exitCode: 0,
-                messages: [{
-                  role: 'assistant',
-                  content: [
-                    { type: 'toolCall', name: 'read', arguments: { path: 'a.ts' } },
-                    { type: 'text', text: 'first' },
-                    { type: 'text', text: 'final' },
-                  ],
-                }],
-                usage: { input: 4, output: 5, cacheRead: 1, cacheWrite: 2, cost: 0.01, turns: 3 },
-                model: 'test-model',
-                step: 2,
-              },
-            ],
-          },
         },
       }),
     ].join('\n')
@@ -140,28 +117,10 @@ describe('loadSessionTranscript', () => {
     expect(messages[0]).toMatchObject({
       type: 'tool',
       toolCallId: 'call-1',
-      name: 'subagent',
-      args: { task: 'inspect' },
+      name: 'read',
+      args: { path: 'a.ts' },
       status: 'success',
       result: 'completed',
-      subagent: {
-        mode: 'parallel',
-        results: [{
-          agent: 'reviewer',
-          agentSource: 'project',
-          task: 'inspect',
-          exitCode: 0,
-          parts: [
-            { type: 'toolCall', toolCall: { name: 'read', args: { path: 'a.ts' } } },
-            { type: 'text', text: 'first' },
-            { type: 'text', text: 'final' },
-          ],
-          finalText: 'final',
-          usage: { input: 4, output: 5, cacheRead: 1, cacheWrite: 2, cost: 0.01, turns: 3 },
-          model: 'test-model',
-          step: 2,
-        }],
-      },
     })
   })
 

@@ -25,8 +25,6 @@ import { Type } from "typebox"
 
 const STATUS_KEY = "plan-mode"
 
-const cateOrchestrator = process.env.CATE_AGENT_ROLE === "orchestrator"
-
 const PLAN_PROMPT = `
 <plan_mode>
 Plan mode is ACTIVE. Your job this turn is to investigate the user's task and
@@ -42,14 +40,8 @@ Constraints (strict):
 - Reading, grepping, listing, and inspecting are encouraged. Be thorough.
 
 Investigation strategy:
-- For any non-trivial task, dispatch MULTIPLE \`scout\` subagents IN PARALLEL
-  via the \`task\` tool (subagent_type: "scout"). Scouts run concurrently with
-  isolated context windows and return condensed findings — use them
-  aggressively to explore different aspects of the codebase at once (call
-  sites, related modules, tests, configs, prior art). Prefer launching a
-  handful of scouts in one assistant turn over sequential reads.
-- Read key files yourself only after scouts have narrowed the search space, or
-  for surgical follow-up.
+- Inspect the relevant files, call sites, tests, and configuration directly.
+- Keep the investigation focused on evidence needed for an executable plan.
 
 Output:
 - When (and only when) the plan is concrete and you have enough context, call
@@ -61,19 +53,6 @@ Output:
   UI renders its arguments as a structured card with Implement / Refine /
   Clear-and-implement actions; prose plans are invisible to that UI.
 - After calling plan_complete, stop. The user will decide what to do next.
-</plan_mode>
-`.trim()
-
-const CATE_PLAN_PROMPT = `
-<plan_mode>
-Plan mode is ACTIVE. Investigate the user's task and produce a concrete plan;
-do not start or execute a Cate iteration loop yet.
-
-Constraints (strict):
-- Read-only. Do not call set_goal, iterate, select_winner, fail, or canvas.
-- Inspect the workspace with the read-only tools available to you.
-- When the plan is concrete, call plan_complete with a one-paragraph summary
-  and an ordered list of steps, then stop and wait for the user's decision.
 </plan_mode>
 `.trim()
 
@@ -89,11 +68,6 @@ const BLOCKED_TOOL_NAMES = new Set([
   "notebook_edit",
   "str_replace",
   "str_replace_based_edit_tool",
-  "set_goal",
-  "iterate",
-  "select_winner",
-  "fail",
-  "canvas",
 ])
 
 // Bash deny-list. Kept conservative; the system prompt already steers the
@@ -158,11 +132,6 @@ const EXECUTE_PREAMBLE =
   "approved the plan. Implement it now — make the actual code changes, do not " +
   "just describe them."
 
-const CATE_EXECUTE_PREAMBLE =
-  "Plan mode is now OFF. The user reviewed and approved the plan. Execute it " +
-  "through the normal Cate Agent workflow: set a visible goal and check, run " +
-  "isolated iterations, verify them, and select a winner."
-
 export default function (pi: ExtensionAPI) {
   // Per-process module state. Pi reloads extensions per session, so this is
   // session-scoped — exactly what we want for the toggle.
@@ -200,11 +169,10 @@ export default function (pi: ExtensionAPI) {
       // "Clear context & implement" compacts first, then calls `/apply-plan fresh`.
       // The original plan_complete call is gone from context, so inline the plan.
       const fresh = args.trim() === "fresh"
-      const preamble = cateOrchestrator ? CATE_EXECUTE_PREAMBLE : EXECUTE_PREAMBLE
       const content =
         fresh && lastPlan
-          ? `${preamble} The prior conversation was compacted, so the approved plan is restated here in full:\n\n${formatPlanText(lastPlan)}`
-          : `${preamble} The plan you proposed is above; follow it.`
+          ? `${EXECUTE_PREAMBLE} The prior conversation was compacted, so the approved plan is restated here in full:\n\n${formatPlanText(lastPlan)}`
+          : `${EXECUTE_PREAMBLE} The plan you proposed is above; follow it.`
       // Drive the implement turn from the extension as a custom (non-user)
       // message. Cate renders only user/assistant/tool roles, so this carries the
       // instruction to the model without showing up as a user message — and the
@@ -219,7 +187,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
     if (!active) return
     return {
-      systemPrompt: event.systemPrompt + "\n\n" + (cateOrchestrator ? CATE_PLAN_PROMPT : PLAN_PROMPT),
+      systemPrompt: event.systemPrompt + "\n\n" + PLAN_PROMPT,
     }
   })
 

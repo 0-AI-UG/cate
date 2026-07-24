@@ -93,13 +93,29 @@ export function placementForActivePanel(): PanelPlacement | undefined {
  * panels to the canvas, but must not steal the user's focus/selection or move
  * the camera. Pin to the canvas currently on screen when possible; otherwise
  * the normal placement fallback resolves the workspace's primary canvas. */
-export function placementForBackgroundPanel(workspaceId: string): Extract<PanelPlacement, { target: 'canvas' }> {
-  const canvasPanelId = useAppStore.getState().selectedWorkspaceId === workspaceId
-    ? getActiveCanvasPanelId()
+export function placementForBackgroundPanel(
+  workspaceId: string,
+  placementGroupId?: string,
+): Extract<PanelPlacement, { target: 'canvas' }> {
+  const state = useAppStore.getState()
+  const groupedPanel = placementGroupId
+    ? Object.values(state.workspaces.find((ws) => ws.id === workspaceId)?.panels ?? {})
+        .find((panel) =>
+          panel.id === placementGroupId || panel.placementGroupId === placementGroupId,
+        )
+    : undefined
+  const groupedLocation = groupedPanel
+    ? resolvePanelLocation(workspaceId, groupedPanel.id)
     : null
+  const canvasPanelId = groupedLocation?.kind === 'canvas'
+    ? groupedLocation.canvasPanelId
+    : state.selectedWorkspaceId === workspaceId
+      ? getActiveCanvasPanelId()
+      : null
   return {
     target: 'canvas',
     focus: false,
+    ...(placementGroupId ? { placementGroupId } : {}),
     ...(canvasPanelId ? { canvasPanelId } : {}),
   }
 }

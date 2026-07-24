@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { matchAgentDef, matchAgentProcess, resumeCommandForAgent } from './agents'
+import { agentForLaunchCommand, matchAgentDef, matchAgentProcess, resumeCommandForAgent } from './agents'
+
+describe('agentForLaunchCommand', () => {
+  it('recognizes a bare driver launch command, including an absolute path', () => {
+    expect(agentForLaunchCommand('claude')?.id).toBe('claude-code')
+    expect(agentForLaunchCommand('/usr/local/bin/codex --some-flag')?.id).toBe('codex')
+    expect(agentForLaunchCommand('"C:\\tools\\cursor-agent"')?.id).toBe('cursor')
+  })
+
+  it('does not guess through compound shell syntax', () => {
+    expect(agentForLaunchCommand('FOO=1 claude')).toBeNull()
+    expect(agentForLaunchCommand('npm test')).toBeNull()
+  })
+})
 
 describe('matchAgentDef', () => {
   it('resolves the AgentDef for a detected process name, case-insensitively', () => {

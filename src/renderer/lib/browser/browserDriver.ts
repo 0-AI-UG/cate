@@ -51,6 +51,15 @@ function resolveTargetPanelId(
     if (!panel || panel.type !== 'browser') return { error: 'panel-not-in-window' }
     return { panelId: explicit }
   }
+  const placementGroupId = typeof args.placementGroupId === 'string' && args.placementGroupId
+    ? args.placementGroupId
+    : undefined
+  if (placementGroupId) {
+    const grouped = Object.values(ws?.panels ?? {}).find(
+      (panel) => panel.type === 'browser' && panel.placementGroupId === placementGroupId,
+    )
+    return grouped ? { panelId: grouped.id } : { error: 'no-browser' }
+  }
   const active = getActivePanelId()
   if (active && ws?.panels?.[active]?.type === 'browser') return { panelId: active }
   const first = findBrowserPanelId(workspaceId)
@@ -414,7 +423,10 @@ export async function handleBrowserMethod(
           workspaceId,
           url,
           undefined,
-          placementForBackgroundPanel(workspaceId),
+          placementForBackgroundPanel(
+            workspaceId,
+            typeof args.placementGroupId === 'string' ? args.placementGroupId : undefined,
+          ),
         )
       } else {
         return { ok: false, error: target.error }

@@ -126,10 +126,18 @@ export class PiRpcClient {
 
   // ---- Command methods (1:1 with pi's RpcClient) --------------------------
 
-  async prompt(message: string, images?: PiImageContent[]): Promise<void> { await this.send({ type: 'prompt', message, images }) }
-  async steer(message: string, images?: PiImageContent[]): Promise<void> { await this.send({ type: 'steer', message, images }) }
-  async followUp(message: string, images?: PiImageContent[]): Promise<void> { await this.send({ type: 'follow_up', message, images }) }
-  async abort(): Promise<void> { await this.send({ type: 'abort' }) }
+  async prompt(message: string, images?: PiImageContent[]): Promise<void> {
+    this.data<void>(await this.send({ type: 'prompt', message, images }))
+  }
+  async steer(message: string, images?: PiImageContent[]): Promise<void> {
+    this.data<void>(await this.send({ type: 'steer', message, images }))
+  }
+  async followUp(message: string, images?: PiImageContent[]): Promise<void> {
+    this.data<void>(await this.send({ type: 'follow_up', message, images }))
+  }
+  async abort(): Promise<void> {
+    this.data<void>(await this.send({ type: 'abort' }))
+  }
 
   async newSession(parentSession?: string): Promise<{ cancelled: boolean }> {
     return this.data(await this.send({ type: 'new_session', parentSession }))

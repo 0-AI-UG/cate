@@ -1,97 +1,36 @@
-// =============================================================================
-// ChatToolCard — collapsed-by-default card for a single tool call. Shows a
-// one-line verb + summary; expands to reveal bash output, file diffs, read
-// bodies, or generic args/result. Subagent and plan_complete tools have their
-// own dedicated cards (see ChatSubagentCard / ChatPlanCard).
-// =============================================================================
-
 import { useMemo, useState } from 'react'
 import type { ToolMessage } from './codingStore'
 import { deriveDiff } from './codingStore'
 import { EDIT_NAMES, prettyArgs } from './chatShared'
 import { DiffView } from './ChatDiffView'
 
-interface EngineeringTaskArgs {
-  goal?: string
-  check?: string
-  overview?: string
-}
-
-function parseEngineeringTaskArgs(raw: unknown): EngineeringTaskArgs {
-  let value = raw
-  if (typeof value === 'string') {
-    try { value = JSON.parse(value) } catch { return {} }
-  }
-  if (!value || typeof value !== 'object') return {}
-  const args = value as Record<string, unknown>
-  return {
-    goal: typeof args.goal === 'string' && args.goal.trim() ? args.goal : undefined,
-    check: typeof args.check === 'string' && args.check.trim() ? args.check : undefined,
-    overview: typeof args.overview === 'string' && args.overview.trim() ? args.overview : undefined,
-  }
-}
-
 function toolSummary(msg: ToolMessage): string {
-  const a = (msg.args ?? {}) as Record<string, unknown>
-  if (EDIT_NAMES.has(msg.name)) {
-    const path = (a.path as string) ?? (a.file_path as string) ?? (a.file as string) ?? ''
-    return path || msg.name
+  const args = (msg.args ?? {}) as Record<string, unknown>
+  const name = msg.name.toLowerCase()
+  if (EDIT_NAMES.has(msg.name) || EDIT_NAMES.has(name)) {
+    return (args.path as string) ?? (args.file_path as string) ?? (args.file as string) ?? msg.name
   }
-  if (msg.name === 'bash' || msg.name === 'shell') {
-    const cmd = (a.command as string) ?? (a.cmd as string) ?? ''
-    return cmd || msg.name
+  if (name === 'bash' || name === 'shell' || name === 'run_terminal_command') {
+    return (args.command as string) ?? (args.cmd as string) ?? msg.name
   }
-  if (msg.name === 'read' || msg.name === 'view') {
-    const path = (a.path as string) ?? (a.file_path as string) ?? ''
-    const offset = typeof a.offset === 'number' ? (a.offset as number) : undefined
-    const limit = typeof a.limit === 'number' ? (a.limit as number) : undefined
+  if (name === 'read' || name === 'view') {
+    const path = (args.path as string) ?? (args.file_path as string) ?? ''
+    const offset = typeof args.offset === 'number' ? args.offset : undefined
+    const limit = typeof args.limit === 'number' ? args.limit : undefined
     if (path && offset != null && limit != null) return `${path}:${offset}-${offset + limit}`
     if (path && offset != null) return `${path}:${offset}`
     return path || msg.name
   }
-  if (msg.name === 'engineering_task') {
-    return parseEngineeringTaskArgs(msg.args).goal ?? 'engineering task'
+  if (name === 'grep' || name === 'search') {
+    return (args.pattern as string) ?? (args.query as string) ?? msg.name
   }
   return msg.name
 }
 
-function EngineeringTaskDetails({ args }: { args: unknown }) {
-  const task = parseEngineeringTaskArgs(args)
-  const sections = [
-    ['Goal', task.goal],
-    ['Verification', task.check],
-    ['Context', task.overview],
-  ].filter((section): section is [string, string] => !!section[1])
-
-  if (sections.length === 0) {
-    return (
-      <div className="text-[11px] text-muted">Task details unavailable.</div>
-    )
-  }
-
-  return (
-    <div className="space-y-2.5 max-h-[280px] overflow-auto">
-      {sections.map(([label, value]) => (
-        <div key={label} className="space-y-0.5">
-          <div className="text-[10.5px] text-muted font-medium">{label}</div>
-          <div className="text-[11.5px] text-primary/85 whitespace-pre-wrap break-words leading-relaxed">
-            {value}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// `read` tool results often come back in `cat -n` form: `   123\tcontent`.
-// Strip that prefix so our own gutter doesn't double up.
 function stripCatN(text: string): string {
   return text
     .split('\n')
-    .map((l) => {
-      const m = l.match(/^\s*\d+\t(.*)$/)
-      return m ? m[1] : l
-    })
+    .map((line) => line.match(/^\s*\d+\t(.*)$/)?.[1] ?? line)
     .join('\n')
 }
 
@@ -105,72 +44,70 @@ function CodePreview({
   maxLines?: number
 }) {
   const lines = text.split('\n')
-  const truncated = lines.length > maxLines
-  const shown = truncated ? lines.slice(0, maxLines) : lines
+  const shown = lines.slice(0, maxLines)
   return (
-    <div className="font-mono text-[11px] leading-snug max-h-[280px] overflow-auto select-text cursor-text">
-      {shown.map((l, i) => (
-        <div key={i} className="flex">
-          <span className="text-muted/40 select-none w-5 text-right pr-1.5 shrink-0">{startLine + i}</span>
-          <span className="whitespace-pre-wrap break-words text-primary/85 flex-1">{l || ' '}</span>
+    <div className="max-h-[280px] overflow-auto font-mono text-[11px] leading-snug select-text cursor-text">
+      {shown.map((line, index) => (
+        <div key={index} className="flex">
+          <span className="w-5 shrink-0 select-none pr-1.5 text-right text-muted/40">
+            {startLine + index}
+          </span>
+          <span className="flex-1 whitespace-pre-wrap break-words text-primary/85">
+            {line || ' '}
+          </span>
         </div>
       ))}
-      {truncated && (
-        <div className="text-muted text-[10.5px] mt-1 pl-5">
-          … {lines.length - maxLines} more line{lines.length - maxLines === 1 ? '' : 's'}
+      {lines.length > maxLines && (
+        <div className="mt-1 pl-5 text-[10.5px] text-muted">
+          … {lines.length - maxLines} more lines
         </div>
       )}
     </div>
   )
 }
 
-// ask_user (cate-ask-user) renders as a normal collapsible tool row like every
-// other tool — a one-line summary that expands — but the expanded body is nice
-// readable text (the questions, and the answer once given) instead of raw JSON.
-export function AskUserToolView({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
+export function AskUserToolView({
+  msg,
+  shimmer,
+}: {
+  msg: ToolMessage
+  shimmer?: boolean
+}) {
   const args = (msg.args ?? {}) as {
-    questions?: Array<{ question: string; options?: { label: string }[] }>
+    questions?: Array<{ question: string }>
     question?: string
-    options?: { label: string }[]
   }
-  const questions =
-    args.questions ?? (args.question ? [{ question: args.question, options: args.options }] : [])
+  const questions = args.questions ?? (args.question ? [{ question: args.question }] : [])
   const [expanded, setExpanded] = useState(false)
-  const isRunning = msg.status === 'running' || msg.status === 'pending'
-  const summary = questions[0]?.question ?? 'the user'
-  const hasExtras = questions.length > 0 || !!msg.result || !!msg.error
+  const running = msg.status === 'running' || msg.status === 'pending'
+  const hasDetails = questions.length > 0 || !!msg.result || !!msg.error
 
   return (
     <div className="text-[12px] cate-fade-in">
       <button
-        onClick={() => hasExtras && setExpanded((v) => !v)}
-        className={`w-full flex items-center gap-1.5 text-left ${isRunning || shimmer ? 'cate-notif-pulse' : ''} ${hasExtras ? 'hover:text-primary' : 'cursor-default'}`}
+        onClick={() => hasDetails && setExpanded((value) => !value)}
+        className={`flex w-full items-center gap-1.5 text-left ${
+          running || shimmer ? 'cate-notif-pulse' : ''
+        } ${hasDetails ? 'hover:text-primary' : 'cursor-default'}`}
       >
-        <span className="text-muted shrink-0">Asked</span>
-        <span className="truncate text-primary/90 flex-1">{summary}</span>
+        <span className="shrink-0 text-muted">Asked</span>
+        <span className="flex-1 truncate text-primary/90">
+          {questions[0]?.question ?? 'the user'}
+        </span>
       </button>
-      {expanded && hasExtras && (
-        <div className="mt-1 pl-4 space-y-1.5 select-text cursor-text">
-          {/* Once answered, show just the answer — drop the "The user answered:"
-              framing and the option lists. While pending, list the questions so
-              the user knows what's being asked. */}
+      {expanded && hasDetails && (
+        <div className="mt-1 space-y-1.5 pl-4 text-[11px] select-text cursor-text">
           {msg.result ? (
-            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-sans leading-snug">
+            <pre className="whitespace-pre-wrap break-words font-sans text-primary/80">
               {msg.result.replace(/^The user answered:\n?/, '')}
             </pre>
-          ) : (
-            questions.length > 0 && (
-              <div className="space-y-1">
-                {questions.map((q, i) => (
-                  <div key={i} className="text-primary/85 whitespace-pre-wrap break-words">{q.question}</div>
-                ))}
-              </div>
-            )
-          )}
+          ) : questions.map((question, index) => (
+            <div key={index} className="whitespace-pre-wrap break-words text-primary/85">
+              {question.question}
+            </div>
+          ))}
           {msg.error && (
-            <pre className="text-[11px] text-danger whitespace-pre-wrap break-words leading-snug">
-              {msg.error}
-            </pre>
+            <pre className="whitespace-pre-wrap break-words text-danger">{msg.error}</pre>
           )}
         </div>
       )}
@@ -179,79 +116,59 @@ export function AskUserToolView({ msg, shimmer }: { msg: ToolMessage; shimmer?: 
 }
 
 function toolVerb(msg: ToolMessage): string {
-  if (msg.name === 'engineering_task') return 'Delegated task'
-  if (msg.name === 'write') return 'Wrote'
-  if (EDIT_NAMES.has(msg.name)) return 'Edited'
-  switch (msg.name) {
-    case 'bash':
-    case 'shell':
-      return 'Ran'
-    case 'read':
-    case 'view':
-      return 'Read'
-    case 'grep':
-    case 'search':
-      return 'Searched'
-    default:
-      return 'Used'
-  }
+  const name = msg.name.toLowerCase()
+  if (name === 'write') return 'Wrote'
+  if (EDIT_NAMES.has(msg.name) || EDIT_NAMES.has(name)) return 'Edited'
+  if (name === 'bash' || name === 'shell' || name === 'run_terminal_command') return 'Ran'
+  if (name === 'read' || name === 'view') return 'Read'
+  if (name === 'grep' || name === 'search') return 'Searched'
+  return 'Used'
 }
 
 export function ToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean }) {
-  const isBash = msg.name === 'bash' || msg.name === 'shell'
-  const isRead = msg.name === 'read' || msg.name === 'view'
-  const isWrite = msg.name === 'write'
-  const isEngineeringTask = msg.name === 'engineering_task'
+  const name = msg.name.toLowerCase()
+  const isBash = name === 'bash' || name === 'shell' || name === 'run_terminal_command'
+  const isRead = name === 'read' || name === 'view'
+  const isWrite = name === 'write'
   const diff = useMemo(
     () => (isWrite ? undefined : msg.diff ?? deriveDiff(msg.name, msg.args, msg.result)),
-    [isWrite, msg.diff, msg.name, msg.args, msg.result],
+    [isWrite, msg.args, msg.diff, msg.name, msg.result],
   )
-  const isEditish = !!diff
   const [expanded, setExpanded] = useState(false)
   const liveOutput = msg.status === 'running' ? msg.partialText : undefined
-  const verb = toolVerb(msg)
-  const summary = toolSummary(msg)
-
-  const a = (msg.args ?? {}) as Record<string, unknown>
+  const running = msg.status === 'running' || msg.status === 'pending'
+  const args = (msg.args ?? {}) as Record<string, unknown>
   const writeContent = isWrite
-    ? ((a.content as string) ?? (a.text as string) ?? '')
+    ? ((args.content as string) ?? (args.text as string) ?? '')
     : ''
   const readBody = isRead && msg.result ? stripCatN(msg.result) : ''
-  const readStartLine =
-    isRead && typeof a.offset === 'number' ? (a.offset as number) : 1
-
-  const hasExtras =
-    isEditish ||
-    (isWrite && writeContent.length > 0) ||
-    (isRead && readBody.length > 0) ||
-    !!msg.result || !!liveOutput || !!msg.error || msg.args != null
-
-  const isRunning = msg.status === 'running' || msg.status === 'pending'
+  const hasDetails =
+    !!diff ||
+    !!writeContent ||
+    !!readBody ||
+    !!msg.result ||
+    !!liveOutput ||
+    !!msg.error ||
+    msg.args != null
 
   if (isBash) {
-    const cmd = (a.command as string) ?? (a.cmd as string) ?? ''
     const output = liveOutput ?? msg.result ?? ''
     const hasOutput = !!output || !!msg.error
     return (
-      <div className="text-[12px] cate-fade-in">
+      <div className="text-[12px] cate-fade-in" data-tool-name={name}>
         <button
-          onClick={() => hasOutput && setExpanded((v) => !v)}
-          className={`w-full flex items-center gap-1.5 text-left ${isRunning || shimmer ? 'cate-notif-pulse' : ''} ${hasOutput ? 'hover:text-primary' : 'cursor-default'}`}
+          onClick={() => hasOutput && setExpanded((value) => !value)}
+          className={`flex w-full items-center gap-1.5 text-left ${
+            running || shimmer ? 'cate-notif-pulse' : ''
+          } ${hasOutput ? 'hover:text-primary' : 'cursor-default'}`}
         >
-          <span className="text-muted shrink-0">{verb}</span>
-          <span className="truncate text-primary/90 font-mono flex-1">{cmd}</span>
+          <span className="shrink-0 text-muted">Ran</span>
+          <span className="flex-1 truncate font-mono text-primary/90">{toolSummary(msg)}</span>
         </button>
         {expanded && hasOutput && (
-          <div className="mt-1 pl-4 max-h-[280px] overflow-auto font-mono text-[11px] leading-snug select-text cursor-text">
-            <pre className="text-primary/80 whitespace-pre-wrap break-words">
-              {output}
-              {isRunning && <span className="inline-block w-[2px] h-[1em] align-middle bg-primary/80 ml-0.5 animate-pulse" />}
-            </pre>
-            {msg.error && (
-              <pre className="text-danger whitespace-pre-wrap break-words">
-                {msg.error}
-              </pre>
-            )}
+          <div className="mt-1 max-h-[280px] overflow-auto pl-4 font-mono text-[11px] leading-snug select-text cursor-text">
+            <pre className="whitespace-pre-wrap break-words text-primary/80">{output}</pre>
+            {msg.error && <pre className="whitespace-pre-wrap break-words text-danger">{msg.error}</pre>}
           </div>
         )}
       </div>
@@ -259,42 +176,43 @@ export function ToolCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: boolean
   }
 
   return (
-    <div className="text-[12px] cate-fade-in">
+    <div className="text-[12px] cate-fade-in" data-tool-name={name}>
       <button
-        onClick={() => hasExtras && setExpanded((v) => !v)}
-        className={`w-full flex items-center gap-1.5 text-left ${isRunning || shimmer ? 'cate-notif-pulse' : ''} ${hasExtras ? 'hover:text-primary' : 'cursor-default'}`}
+        onClick={() => hasDetails && setExpanded((value) => !value)}
+        className={`flex w-full items-center gap-1.5 text-left ${
+          running || shimmer ? 'cate-notif-pulse' : ''
+        } ${hasDetails ? 'hover:text-primary' : 'cursor-default'}`}
       >
-        <span className="text-muted shrink-0">{verb}</span>
-        <span className="truncate text-primary/90 font-mono flex-1">{summary}</span>
+        <span className="shrink-0 text-muted">{toolVerb(msg)}</span>
+        <span className="flex-1 truncate font-mono text-primary/90">{toolSummary(msg)}</span>
       </button>
-      {expanded && hasExtras && (
-        <div className="mt-1 pl-4 space-y-1.5 select-text cursor-text">
-          {isEditish && diff && <DiffView diff={diff} />}
-          {isWrite && writeContent && (
-            <CodePreview text={writeContent} />
-          )}
+      {expanded && hasDetails && (
+        <div className="mt-1 space-y-1.5 pl-4 select-text cursor-text">
+          {diff && <DiffView diff={diff} />}
+          {isWrite && writeContent && <CodePreview text={writeContent} />}
           {isRead && readBody && (
-            <CodePreview text={readBody} startLine={readStartLine} />
+            <CodePreview
+              text={readBody}
+              startLine={typeof args.offset === 'number' ? args.offset : 1}
+            />
           )}
-          {isEngineeringTask && <EngineeringTaskDetails args={msg.args} />}
-          {!isEditish && !isWrite && !isRead && !isEngineeringTask && (
-            <pre className="text-[11px] text-muted whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
+          {!diff && !isWrite && !isRead && (
+            <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-muted">
               {prettyArgs(msg.args)}
             </pre>
           )}
           {liveOutput && (
-            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
+            <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-primary/80">
               {liveOutput}
-              <span className="inline-block w-[2px] h-[1em] align-middle bg-primary/80 ml-0.5 animate-pulse" />
             </pre>
           )}
-          {!isRead && !isEditish && msg.result && (
-            <pre className="text-[11px] text-primary/80 whitespace-pre-wrap break-words font-mono leading-snug max-h-[280px] overflow-auto">
+          {!isRead && !diff && msg.result && (
+            <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-primary/80">
               {msg.result}
             </pre>
           )}
           {msg.error && (
-            <pre className="text-[11px] text-danger whitespace-pre-wrap break-words font-mono leading-snug">
+            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-danger">
               {msg.error}
             </pre>
           )}

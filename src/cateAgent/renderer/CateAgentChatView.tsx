@@ -1,7 +1,4 @@
-// One durable chat with two layers of ownership:
-//   1. a full-capability direct coding agent (the default),
-//   2. iteration engineering, mounted into the SAME transcript only after the
-//      direct agent proposes engineering_task and the user approves it.
+// One durable chat backed by one main-agent Pi session.
 
 import React from 'react'
 import { useChatsStore } from '../../renderer/stores/chatsStore'
@@ -13,7 +10,6 @@ import { useAppStore } from '../../renderer/stores/appStore'
 import type { CodingSlashCommand } from '../../shared/types'
 import { resolveWorktree } from '../../shared/worktrees'
 import { CodingChatView } from './CodingChatView'
-import { CateAgentTranscript } from './CateAgentThread'
 import { CateAgentComposer } from './CateAgentComposer'
 import {
   directAgentKey,
@@ -21,9 +17,7 @@ import {
   persistDirectSessionFile,
 } from './directChatSession'
 import { resolveTargetWorktree, setTargetWorktree } from './cateAgentWorktreeTarget'
-import { onEngineeringTaskHandoff } from './engineeringTaskHandoff'
 import { codingClient } from './codingClient'
-import { cateAgentController } from './cateAgentController'
 
 export const CateAgentChatView: React.FC<{
   wsId: string
@@ -39,9 +33,7 @@ export const CateAgentChatView: React.FC<{
     ? (state.chatsByRoot[rootPath] ?? []).find((candidate) => candidate.id === chatId)
     : undefined)
 
-  // A front-door surface without a chat keeps the unified composer; its first
-  // send mints the durable record. Once the record exists, the direct pi agent
-  // owns the thread until an approved engineering handoff.
+  // The first send mints a durable record; every later turn uses that session.
   if (!chat) {
     return (
       <div className="flex min-h-0 flex-1 flex-col justify-end p-3">
@@ -158,21 +150,7 @@ const DirectCateChatView: React.FC<{
     void refreshCommands()
   }, [refreshCommands])
 
-  React.useEffect(() => onEngineeringTaskHandoff(agentKey, (task) => {
-    const current = useChatsStore.getState().getChat(rootPath, chatId)
-    if (!current || current.engineeringTask) return
-    useChatsStore.getState().patchChat(rootPath, chatId, {
-      engineeringTask: { ...task, acceptedAt: Date.now() },
-    })
-    void codingClient.interrupt(agentKey)
-    void cateAgentController.takeOverEngineeringTask(wsId, rootPath, chatId, task)
-  }), [agentKey, chatId, rootPath, wsId])
-
   if (!chat) return null
-  // Records created by the earlier loop-first build have typed run messages but
-  // no explicit handoff flag. Keep those readable as engineering continuations.
-  const engineering = !!chat.engineeringTask || chat.messages.length > 0 || !!chat.run
-
   return (
     <CodingChatView
       agentKey={agentKey}
@@ -189,25 +167,13 @@ const DirectCateChatView: React.FC<{
       composerExtras={{
         availableModels: models,
         refreshModels,
-        openProviderSettings: () => useUIStore.getState().openSettings('providers'),
+        openProviderSettings: () => useUIStore.getState().openSettings('cate agent'),
         worktrees,
         selectedWorktreeId: targetId,
         onPickWorktree: (id) => { void pickWorktree(id) },
         onCreateWorktree,
         onCheckoutPr,
       }}
-      tail={engineering ? <CateAgentTranscript wsId={wsId} rootPath={rootPath} chat={chat} /> : undefined}
-      composerOverride={engineering
-        ? (
-          <CateAgentComposer
-            wsId={wsId}
-            rootPath={rootPath}
-            chatId={chatId}
-            hostPanelId={hostPanelId}
-            defaultWorktreeId={defaultWorktreeId}
-          />
-        )
-        : undefined}
     />
   )
 }

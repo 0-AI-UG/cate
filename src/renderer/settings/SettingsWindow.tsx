@@ -27,7 +27,6 @@ import { WorktreeSettings } from './WorktreeSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { UpdatesSettings } from './UpdatesSettings'
-import { ProvidersSettings } from './ProvidersSettings'
 import { AgentHooksSettings } from './AgentHooksSettings'
 import { CanvasCateAgentSettings } from './CanvasCateAgentSettings'
 import { SkillsSettings } from './SkillsSettings'
@@ -37,6 +36,7 @@ import { TextInput } from './SettingsComponents'
 
 const SECTIONS = [
   { title: 'General', component: GeneralSettings },
+  { title: 'Agent Hooks', component: AgentHooksSettings },
   { title: 'Appearance', component: AppearanceSettings },
   { title: 'Canvas', component: CanvasSettings },
   { title: 'Terminal', component: TerminalSettings },
@@ -46,8 +46,6 @@ const SECTIONS = [
   { title: 'File Explorer', component: FileExplorerSettings },
   { title: 'Worktrees', component: WorktreeSettings },
   { title: 'Notifications', component: NotificationSettings },
-  { title: 'Providers', component: ProvidersSettings },
-  { title: 'Agent Hooks', component: AgentHooksSettings },
   { title: 'Cate Agent', component: CanvasCateAgentSettings },
   { title: 'Skills', component: SkillsSettings },
   { title: 'Extensions', component: ExtensionsSettings },
@@ -80,7 +78,9 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
   useEffect(() => {
     if (!isOpen) return
     setRawQuery('')
-    const target = (initialTab ?? SECTIONS[0].title).toLowerCase()
+    // Keep old deep links working after Providers moved under Cate Agent.
+    const requested = (initialTab ?? SECTIONS[0].title).toLowerCase()
+    const target = requested === 'providers' ? 'cate agent' : requested
     setActiveId(target)
     requestAnimationFrame(() => {
       scrollRef.current?.querySelector(`#${sectionId(target)}`)?.scrollIntoView({ block: 'start', behavior: 'auto' })
@@ -271,4 +271,3 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
     </Modal>
   )
 }
-

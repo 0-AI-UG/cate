@@ -1,10 +1,10 @@
-// Horizontal switcher for the observer feed and durable Cate Agent chats.
+// Horizontal switcher for durable main-agent chats.
 
 import React from 'react'
-import { Plus, X, Eye } from '@phosphor-icons/react'
+import { Plus, X } from '@phosphor-icons/react'
 import { isSidebarChat, useChatsStore } from '../../renderer/stores/chatsStore'
 import { useCateAgentStore, useCateAgentWs } from './cateAgentStore'
-import { cateAgentController } from './cateAgentController'
+import { disposeDirectChatSession } from './directChatSession'
 import {
   beginChatDrag,
   endChatDrag,
@@ -54,7 +54,6 @@ export const CateAgentChatTabs: React.FC<{ wsId: string; rootPath: string }> = (
   const cateAgent = useCateAgentWs(wsId)
   const chats = (useChatsStore((s) => s.chatsByRoot[rootPath]) ?? [])
     .filter(isSidebarChat)
-  const setObserverView = useCateAgentStore((s) => s.setObserverView)
   const setActiveChat = useCateAgentStore((s) => s.setActiveChat)
   const drag = useChatDragState((state) => state.active)
   const dragDestination = useChatDragState((state) => state.destinationHostPanelId)
@@ -71,23 +70,19 @@ export const CateAgentChatTabs: React.FC<{ wsId: string; rootPath: string }> = (
 
   return (
     <div className="flex w-full items-center gap-1 overflow-x-auto no-scrollbar">
-      <Tab active={cateAgent.observerView} onClick={() => setObserverView(wsId, true)}>
-        <Eye size={12} weight={cateAgent.observerView ? 'fill' : 'regular'} style={{ color: 'rgb(var(--agent-rgb))' }} />
-        <span className="truncate">Feed</span>
-      </Tab>
       {previewItems.map((chat) => chat.id === drag?.chat.id && showGhost ? (
         <ChatDropGhost key={`ghost-${chat.id}`} chat={chat} compact />
       ) : (
         <Tab
           key={chat.id}
-          active={!cateAgent.observerView && chat.id === cateAgent.activeChatId}
+          active={chat.id === cateAgent.activeChatId}
           onClick={() => setActiveChat(wsId, chat.id)}
           onClose={() => {
-            void cateAgentController.closeChat(wsId, rootPath, chat.id).then((deleted) => {
-              if (!deleted || chat.id !== cateAgent.activeChatId) return
-              const remaining = useChatsStore.getState().getChats(rootPath).filter(isSidebarChat)
-              setActiveChat(wsId, remaining[remaining.length - 1]?.id ?? '')
-            })
+            disposeDirectChatSession(chat.id)
+            useChatsStore.getState().removeChat(rootPath, chat.id)
+            if (chat.id !== cateAgent.activeChatId) return
+            const remaining = useChatsStore.getState().getChats(rootPath).filter(isSidebarChat)
+            setActiveChat(wsId, remaining[remaining.length - 1]?.id ?? '')
           }}
           onDragStart={(e) => {
             e.dataTransfer.effectAllowed = 'move'

@@ -15,8 +15,8 @@ vi.mock('../../main/runtime/locator', () => ({
   formatLocator: vi.fn(({ path }: { path: string }) => path),
 }))
 vi.mock('./piRpcClient', () => ({ PiRpcClient: vi.fn() }))
-vi.mock('./installSubagents', () => ({ installSubagentExtension: vi.fn() }))
 vi.mock('./installPlanMode', () => ({ installPlanModeExtension: vi.fn() }))
+vi.mock('./installCanvasMode', () => ({ installCanvasModeExtension: vi.fn() }))
 vi.mock('./installAskUser', () => ({ installAskUserExtension: vi.fn() }))
 vi.mock('./installMcpAdapter', () => ({ installMcpAdapter: vi.fn() }))
 vi.mock('./codingDir', () => ({
@@ -39,12 +39,12 @@ import { CodingManager } from './codingManager'
 import type { AuthManager } from './authManager'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import { PiRpcClient } from './piRpcClient'
-import { prepareAgentDir } from './agentDir'
+import { prepareCodingDir } from './codingDir'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
 
 const fakeAuthManager = { setOnChange: vi.fn() } as unknown as AuthManager
 
-describe('AgentManager worktree skill preparation', () => {
+describe('CodingManager worktree skill preparation', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('mirrors base-workspace skills before preparing and starting a worktree agent', async () => {
@@ -64,7 +64,7 @@ describe('AgentManager worktree skill preparation', () => {
       warnings: [],
     })
 
-    const manager = new AgentManager(fakeAuthManager)
+    const manager = new CodingManager(fakeAuthManager)
     await manager.create(
       {
         panelId: 'panel-worktree',
@@ -77,7 +77,7 @@ describe('AgentManager worktree skill preparation', () => {
 
     expect(syncWorkspaceSkills).toHaveBeenCalledWith('/repo/base', '/repo/worktree')
     expect(vi.mocked(syncWorkspaceSkills).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(prepareAgentDir).mock.invocationCallOrder[0],
+      vi.mocked(prepareCodingDir).mock.invocationCallOrder[0],
     )
     expect(client.start).toHaveBeenCalledOnce()
   })

@@ -22,7 +22,6 @@ export function CateAgentPanelSidebar({
   onDeleteChat,
   onOpenSettings,
   onCollapse,
-  settingsActive,
 }: {
   chats: Chat[]
   activeChatId: string | null
@@ -33,7 +32,6 @@ export function CateAgentPanelSidebar({
   onDeleteChat: (chatId: string) => void
   onOpenSettings: () => void
   onCollapse: () => void
-  settingsActive: boolean
 }) {
   const ordered = useMemo(() => [...chats].reverse(), [chats])
   const drag = useChatDragState((state) => state.active)
@@ -112,9 +110,7 @@ export function CateAgentPanelSidebar({
       <div className="shrink-0 p-2">
         <button
           onClick={onOpenSettings}
-          className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] ${
-            settingsActive ? 'bg-hover-strong text-primary' : 'text-muted hover:bg-hover hover:text-primary'
-          }`}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-muted hover:bg-hover hover:text-primary"
         >
           <Gear size={12} />
           Settings
