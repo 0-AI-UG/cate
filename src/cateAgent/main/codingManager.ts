@@ -41,6 +41,8 @@ import { installCateAgentToolsExtension } from './installCateAgentTools'
 import { installMcpAdapter } from './installMcpAdapter'
 import { installEngineeringTaskExtension } from './installEngineeringTask'
 import { isProjectTrusted } from '../../main/workspaceStateStore'
+import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
+import { resolveWorktreeContext } from '../../main/worktreeContext'
 import { hostCodingDir, prepareCodingDir, watchWorkspaceAuth, pushSharedToWorkspace, type CodingDirVariant } from './codingDir'
 import { mirrorModelsToWorkspace } from './customModels'
 import { authManager, type AuthManager } from './authManager'
@@ -160,6 +162,17 @@ export class CodingManager {
       // runtime isn't connected — surfaced as a start error).
       const { runtimeId, path: cwd } = parseLocator(opts.cwd)
       const runtime = runtimes.resolve(runtimeId)
+
+      // The workspace manifest is canonical; materialize its managed skills in
+      // this checkout before pi discovers project skills on startup.
+      try {
+        const worktree = resolveWorktreeContext(opts.workspaceRoot ?? opts.cwd, opts.cwd)
+        if (worktree) {
+          await syncWorkspaceSkills(worktree.base.locator, worktree.checkout.locator)
+        }
+      } catch (err) {
+        log.warn('[codingManager] worktree skill sync failed for %s: %O', opts.panelId, err)
+      }
 
       // The Cate Agent's headless sessions live in an ISOLATED per-workspace pi
       // dir (.cate/cate-agent-loop) so their transcripts never show up in — or get

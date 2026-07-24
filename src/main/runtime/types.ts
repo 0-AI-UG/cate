@@ -54,6 +54,10 @@ export interface PtyCreateOptions {
    *  agentHooks; gates the workspace FILE writes, not the ambient env. Rides
    *  the same opts pass-through as `env`, so it reaches a remote host. */
   agentHookConfig?: AgentHookConfig
+  /** Runtime-absolute canonical workspace checkout for a linked-worktree cwd.
+   *  Runtime features may read it as shared workspace context, but writes stay
+   *  scoped to `cwd`. The daemon validates it against `scopeId` before spawn. */
+  workspaceBaseCwd?: string
 }
 
 export interface PtyHandle {

@@ -45,6 +45,9 @@ import { runtimes } from '../runtime/runtimeManager'
 import type { Runtime } from '../runtime/types'
 import { createStringDispatcher } from './batchedDispatcher'
 import { workspaceCateApi } from '../extensions/workspaceCateApi'
+import { getWorkspaceInfo } from '../workspaceManager'
+import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
+import { resolveWorktreeContext, validateWorktreeContext } from '../worktreeContext'
 
 // Set true during app shutdown so PTY data/exit callbacks no-op instead of
 // calling into a torn-down JS environment.
@@ -323,6 +326,24 @@ async function spawnTerminal(
   const agentHookConfig = options.workspaceId
     ? getSetting('agentHookInjection')[options.workspaceId]
     : undefined
+  const workspaceRoot = options.workspaceId
+    ? getWorkspaceInfo(options.workspaceId)?.rootPath
+    : undefined
+  const unresolvedWorktree = workspaceRoot && options.cwd
+    ? resolveWorktreeContext(workspaceRoot, options.cwd)
+    : undefined
+  const worktree = unresolvedWorktree && options.workspaceId
+    ? await validateWorktreeContext(unresolvedWorktree, runtime, ownerWindowId, options.workspaceId)
+    : undefined
+  // Existing or externally-created worktrees may predate Cate's eager mirror
+  // triggers. Hydrate managed skills before the shell can launch an agent.
+  if (worktree) {
+    try {
+      await syncWorkspaceSkills(worktree.base.locator, worktree.checkout.locator)
+    } catch (err) {
+      log.warn('[terminal] worktree skill sync failed: %O', err)
+    }
+  }
   const handle = await runtime.process.create(
     {
       cols: options.cols,
@@ -332,6 +353,7 @@ async function spawnTerminal(
       env: cateApiEnv,
       agentHooks: true,
       agentHookConfig,
+      workspaceBaseCwd: worktree?.base.path,
       // The workspace whose root this cwd lives under — the daemon validates
       // against this scope, so a project outside the daemon's own root still
       // gets a terminal.

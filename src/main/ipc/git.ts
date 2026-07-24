@@ -13,6 +13,10 @@ import { parseLocator, formatLocator } from '../runtime/locator'
 import type { FileAccessContext, VcsHost } from '../runtime/types'
 import { resolveLocator } from '../runtime/runtimeManager'
 import { windowFromEvent } from '../windowRegistry'
+import log from '../logger'
+import { getWorkspaceInfo } from '../workspaceManager'
+import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
+import { resolveWorktreeContext } from '../worktreeContext'
 import {
   GIT_IS_REPO,
   GIT_FIND_REPOS,
@@ -58,6 +62,22 @@ import {
 function vcsFor(locator: string): { vcs: VcsHost; path: string; runtimeId: string } {
   const { runtime, path, runtimeId } = resolveLocator(locator)
   return { vcs: runtime.vcs, path, runtimeId }
+}
+
+async function syncNewWorktreeSkills(
+  workspaceId: string | undefined,
+  fallbackBaseCwd: string,
+  targetCwd: string,
+): Promise<void> {
+  const baseCwd = (workspaceId && getWorkspaceInfo(workspaceId)?.rootPath) || fallbackBaseCwd
+  const worktree = resolveWorktreeContext(baseCwd, targetCwd)
+  if (!worktree) return
+  try {
+    await syncWorkspaceSkills(worktree.base.locator, worktree.checkout.locator)
+  } catch (err) {
+    // Worktree creation succeeded; a later terminal/agent launch retries.
+    log.warn('[git] new worktree skill sync failed: %O', err)
+  }
 }
 
 /** Decode a worktree-path argument (a locator built by the renderer from the
@@ -160,7 +180,9 @@ export function registerHandlers(): void {
       const { vcs, path, runtimeId } = vcsFor(repoCwd)
       const target = worktreeTargetPath(runtimeId, targetPath)
       const res = await vcs.worktreeAdd(path, branch, target, options, { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId })
-      return { ...res, path: formatLocator({ runtimeId, path: res.path }) }
+      const locator = formatLocator({ runtimeId, path: res.path })
+      await syncNewWorktreeSkills(workspaceId, repoCwd, locator)
+      return { ...res, path: locator }
     },
   )
 
@@ -177,7 +199,9 @@ export function registerHandlers(): void {
       const { vcs, path, runtimeId } = vcsFor(repoCwd)
       const target = worktreeTargetPath(runtimeId, targetPath)
       const res = await vcs.worktreeAddFromPr(path, prNumber, target, options, { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId })
-      return { ...res, path: formatLocator({ runtimeId, path: res.path }) }
+      const locator = formatLocator({ runtimeId, path: res.path })
+      await syncNewWorktreeSkills(workspaceId, repoCwd, locator)
+      return { ...res, path: locator }
     },
   )
 

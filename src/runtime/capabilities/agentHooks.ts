@@ -76,12 +76,13 @@ export interface AgentHooksCapability {
   /** Write (or, for 'off', remove) workspace-scoped hook files for the PTY's
    *  cwd and keep the ones we wrote out of git status via .git/info/exclude.
    *  `config` carries per-agent tri-state overrides: 'auto' (default) injects
-   *  only when the agent's own config folder already exists in the repo, 'on'
-   *  always injects, 'off' strips any entries Cate previously wrote.
+   *  only when the agent's own config folder exists in the cwd or optional
+   *  base-workspace `baseCwd`, 'on' always injects, and 'off' strips any
+   *  entries Cate previously wrote.
    *  Best-effort and idempotent; never touches the user's home dir (~/.codex,
    *  ~/.claude etc. are the CLIs' USER-GLOBAL config dirs — injection stays
    *  repo-local). */
-  prepareWorkspace(cwd: string, config?: AgentHookConfig): Promise<void>
+  prepareWorkspace(cwd: string, config?: AgentHookConfig, baseCwd?: string): Promise<void>
   /** Inspect a workspace's per-agent hook-file injection state (for the
    *  Settings UI): which agents write repo files, whether each one's config
    *  folder is already in the repo (the 'auto' signal), and whether Cate has
@@ -481,11 +482,14 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       return out
     },
 
-    async prepareWorkspace(cwd, config) {
+    async prepareWorkspace(cwd, config, baseCwd) {
       if (disposed) return
       // Never plant (or strip) agent files in the user's home dir or against a
       // non-absolute cwd — see isRepoLocalCwd.
       if (!isRepoLocalCwd(cwd, os.homedir())) return
+      const autoBaseCwd = baseCwd && isRepoLocalCwd(baseCwd, os.homedir())
+        ? baseCwd
+        : undefined
       let state: HookState
       try {
         state = await ensureReady()
@@ -513,11 +517,18 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
           }
           continue
         }
-        // 'auto': inject only when the agent's config folder is already in the
-        // repo (a "used here" signal). 'on': always inject.
+        // 'auto': inject when the agent's config folder exists in this checkout
+        // or the base workspace checkout (a "used here" signal shared by linked
+        // worktrees). 'on': always inject.
         if (mode === 'auto') {
           const folder = agentHookFolder(agent.id)
-          if (folder && !(await dirExists(path.join(cwd, folder)))) continue
+          if (folder) {
+            const presentHere = await dirExists(path.join(cwd, folder))
+            const presentAtBase = !presentHere && autoBaseCwd
+              ? await dirExists(path.join(autoBaseCwd, folder))
+              : false
+            if (!presentHere && !presentAtBase) continue
+          }
         }
         const ctx = state.contexts.get(agent.id)!
         for (const pf of spec.projectFiles) {

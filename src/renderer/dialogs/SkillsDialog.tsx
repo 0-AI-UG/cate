@@ -232,6 +232,7 @@ export function SkillsDialog() {
       installed={installedRow}
       saved={savedIds.has(entry.id)}
       rootPath={rootPath}
+      workspaceId={currentWs?.id}
       installedKeys={installedKeys}
       onChanged={onChanged}
       onError={setError}
@@ -345,6 +346,7 @@ function SkillRow({
   installed,
   saved,
   rootPath,
+  workspaceId,
   installedKeys,
   onChanged,
   onError,
@@ -353,6 +355,7 @@ function SkillRow({
   installed: boolean
   saved: boolean
   rootPath: string
+  workspaceId?: string
   installedKeys: Set<string>
   onChanged: () => void
   onError: (m: string | null) => void
@@ -486,6 +489,7 @@ function SkillRow({
           anchor={menuAnchor}
           triggerRef={installRef}
           rootPath={rootPath}
+          workspaceId={workspaceId}
           installedKeys={installedKeys}
           onChanged={onChanged}
           onError={onError}
@@ -506,6 +510,7 @@ function AgentMenu({
   anchor,
   triggerRef,
   rootPath,
+  workspaceId,
   installedKeys,
   onChanged,
   onError,
@@ -515,6 +520,7 @@ function AgentMenu({
   anchor: { top: number; left: number }
   triggerRef: React.RefObject<HTMLButtonElement>
   rootPath: string
+  workspaceId?: string
   installedKeys: Set<string>
   onChanged: () => void
   onError: (m: string | null) => void
@@ -541,10 +547,10 @@ function AgentMenu({
     setBusy(targetId)
     try {
       if (on) {
-        const res = await api().skillsUninstall(entry.id, entry.name, targetId, rootPath)
+        const res = await api().skillsUninstall(entry.id, entry.name, targetId, rootPath, workspaceId)
         if (!res.ok) onError(errorMessage(res.error, 'Could not remove skill.'))
       } else {
-        const res = await api().skillsInstall(entry, targetId, rootPath)
+        const res = await api().skillsInstall(entry, targetId, rootPath, workspaceId)
         if (!res.ok) onError(errorMessage(res.error, 'Could not install skill.'))
         else if (res.warnings?.length) onError(res.warnings.join('\n'))
       }

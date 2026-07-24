@@ -728,6 +728,35 @@ describe('WebGL glyph-atlas resync on a shared-config change', () => {
   })
 })
 
+describe('manual terminal rendering recovery', () => {
+  it('falls back to the DOM renderer without replacing the terminal or its PTY', async () => {
+    const { registry } = await import('./registryState')
+    const { terminalRegistry } = await import('./terminalRegistry')
+    const disposeWebgl = vi.fn()
+    const refresh = vi.fn()
+    const terminal = { rows: 24, refresh }
+    const entry = {
+      terminal,
+      webglAddon: { dispose: disposeWebgl, clearTextureAtlas: vi.fn() },
+      ptyId: 'pty-recovery',
+    }
+    registry.set('panel-recovery', entry as never)
+
+    try {
+      terminalRegistry.resetRendering('panel-recovery')
+
+      expect(disposeWebgl).toHaveBeenCalledTimes(1)
+      expect(entry.webglAddon).toBeNull()
+      expect(registry.get('panel-recovery')?.terminal).toBe(terminal)
+      expect(registry.get('panel-recovery')?.ptyId).toBe('pty-recovery')
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(window.electronAPI.terminalKill).not.toHaveBeenCalled()
+    } finally {
+      registry.delete('panel-recovery')
+    }
+  })
+})
+
 describe('process-wide WebGL context grant lifecycle', () => {
   async function mountAndAttach(panelId: string): Promise<{
     terminalRegistry: typeof import('./terminalRegistry').terminalRegistry
@@ -778,5 +807,17 @@ describe('process-wide WebGL context grant lifecycle', () => {
     terminalRegistry.dispose('panel-release')
 
     expect(webglReleaseGrant).toHaveBeenCalledWith('panel-release')
+  })
+
+  it('releases the grant and stays on the DOM renderer after a manual reset', async () => {
+    const { terminalRegistry, container } = await mountAndAttach('panel-reset')
+
+    terminalRegistry.resetRendering('panel-reset')
+
+    expect(terminalRegistry.getEntry('panel-reset')?.webglAddon).toBeNull()
+    expect(webglReleaseGrant).toHaveBeenCalledWith('panel-reset')
+
+    document.body.removeChild(container)
+    terminalRegistry.dispose('panel-reset')
   })
 })
