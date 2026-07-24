@@ -29,7 +29,7 @@ const fakeRuntime = {
 
 vi.mock('electron', () => ({}))
 vi.mock('../runtime/runtimeManager', () => ({ runtimes: { resolve: () => fakeRuntime } }))
-vi.mock('../runtime/locator', () => ({
+vi.mock('../../shared/runtimeLocator', () => ({
   parseLocator: () => ({ runtimeId: 'local', path: '/ws' }),
 }))
 vi.mock('../workspaceManager', () => ({

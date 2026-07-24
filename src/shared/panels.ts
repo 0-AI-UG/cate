@@ -39,6 +39,14 @@ export interface SharedPanelDefinition {
   /** Whether a panel of this type can be placed as a canvas node. Canvas
    *  panels themselves live only in dock zones. */
   canLiveOnCanvas: boolean
+  /** Whether this panel participates in the git-worktree UI and can carry a
+   *  `worktreeId`/working-directory binding. */
+  worktreeBinding: boolean
+  /** Whether this panel is exposed as a destination in the command palette. */
+  navigable: boolean
+  /** Display order in the dock's "Split with…" menu. Omitted when the panel
+   *  cannot be created from that generic, argument-free surface. */
+  splitMenuOrder?: number
   /** When true, a canvas node hosting this panel is exempt from viewport
    *  culling — it stays mounted even when scrolled off-screen. Set for panels
    *  whose live state lives in an isolated `<webview>` guest process and cannot
@@ -69,7 +77,7 @@ function ghost(stroke: string, body: string): string {
 // Definitions
 // -----------------------------------------------------------------------------
 
-export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
+export const PANEL_DEFINITIONS = {
   terminal: {
     type: 'terminal',
     label: 'Terminal',
@@ -80,6 +88,9 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     minimumSize: { width: 320, height: 200 },
     ghostSvg: ghost('rgb(77,217,100)', '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'),
     canLiveOnCanvas: true,
+    worktreeBinding: true,
+    navigable: true,
+    splitMenuOrder: 1,
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
   },
@@ -93,6 +104,9 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     minimumSize: { width: 400, height: 300 },
     ghostSvg: ghost('rgb(74,158,255)', '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'),
     canLiveOnCanvas: true,
+    worktreeBinding: false,
+    navigable: true,
+    splitMenuOrder: 2,
     // Browser automation must remain usable when an API caller creates the
     // panel in the background without moving the user's camera.
     keepMountedOffscreen: true,
@@ -108,6 +122,9 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     minimumSize: { width: 300, height: 250 },
     ghostSvg: ghost('rgb(255,159,10)', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'),
     canLiveOnCanvas: true,
+    worktreeBinding: false,
+    navigable: true,
+    splitMenuOrder: 0,
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
   },
@@ -121,6 +138,8 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     minimumSize: { width: 360, height: 320 },
     ghostSvg: ghost('rgb(74,158,255)', '<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z"/><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"/>'),
     canLiveOnCanvas: true,
+    worktreeBinding: true,
+    navigable: true,
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
   },
@@ -134,6 +153,8 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     minimumSize: { width: 300, height: 250 },
     ghostSvg: ghost('rgb(175,82,222)', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="12" cy="15" r="3"/>'),
     canLiveOnCanvas: true,
+    worktreeBinding: false,
+    navigable: true,
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
   },
@@ -147,6 +168,9 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     minimumSize: { width: 400, height: 300 },
     ghostSvg: ghost('rgb(191,90,242)', '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>'),
     canLiveOnCanvas: false,
+    worktreeBinding: false,
+    navigable: false,
+    splitMenuOrder: 3,
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
   },
@@ -160,10 +184,12 @@ export const PANEL_DEFINITIONS: Record<PanelType, SharedPanelDefinition> = {
     minimumSize: { width: 320, height: 200 },
     ghostSvg: ghost('rgb(142,142,147)', '<path d="M16 4h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 0 0 4 2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2 2 2 0 0 0-4 0 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2 2 2 0 0 0 0-4 2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2 2 2 0 0 0 4 0 2 2 0 0 1 2-2z"/>'),
     canLiveOnCanvas: true,
+    worktreeBinding: false,
+    navigable: false,
     keepMountedOffscreen: true,
     keepMountedWhenTabHidden: true,
   },
-}
+} satisfies Record<PanelType, SharedPanelDefinition>
 
 /** Lookup helper. Falls back to the editor definition (matches the previous
  *  drag-ghost behaviour). */
@@ -187,6 +213,34 @@ export function keepsMountedOffscreen(type: PanelType | string | undefined): boo
 export function keepsMountedWhenTabHidden(type: PanelType | string | undefined): boolean {
   return !!type && getSharedPanelDef(type).keepMountedWhenTabHidden
 }
+
+/** Panel types whose records carry a worktree/cwd binding, derived from the
+ *  definitions so runtime policy and the narrow launch type cannot drift. */
+export type WorktreePanelType = {
+  [Type in PanelType]: (typeof PANEL_DEFINITIONS)[Type]['worktreeBinding'] extends true
+    ? Type
+    : never
+}[PanelType]
+
+export const WORKTREE_PANEL_TYPES = Object.values(PANEL_DEFINITIONS)
+  .filter((definition) => definition.worktreeBinding)
+  .map((definition) => definition.type) as WorktreePanelType[]
+
+export function isWorktreePanelType(type: PanelType | string | undefined): type is WorktreePanelType {
+  return !!type && !!PANEL_DEFINITIONS[type as PanelType]?.worktreeBinding
+}
+
+export function isNavigablePanelType(type: PanelType | string | undefined): type is PanelType {
+  return !!type && !!PANEL_DEFINITIONS[type as PanelType]?.navigable
+}
+
+/** Generic panel types offered by the dock split menu, in display order. */
+export const SPLIT_MENU_PANEL_TYPES: readonly PanelType[] = (
+  (Object.values(PANEL_DEFINITIONS) as SharedPanelDefinition[])
+    .filter((definition) => definition.splitMenuOrder != null)
+    .sort((a, b) => a.splitMenuOrder! - b.splitMenuOrder!)
+    .map((definition) => definition.type)
+)
 
 // -----------------------------------------------------------------------------
 // Default panel size resolution

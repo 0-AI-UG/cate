@@ -31,7 +31,7 @@ import { fetchCatalog } from './catalog'
 import { provisionCatalogToRuntime } from './install'
 import { buildDaemonRuntime } from '../../runtime/capabilities'
 import { loopbackRuntime } from '../runtime/testHarness'
-import { LOCAL_RUNTIME_ID } from '../runtime/locator'
+import { LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import type { Runtime } from '../runtime/types'
 
 // Repo root = three levels up from src/main/extensions/.

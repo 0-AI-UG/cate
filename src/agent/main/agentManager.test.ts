@@ -10,7 +10,7 @@ vi.mock('electron', () => ({}))
 vi.mock('../../main/windowRegistry', () => ({ broadcastToAll: vi.fn() }))
 vi.mock('../../main/windowPanels', () => ({ getWindowPanels: () => [] }))
 vi.mock('../../main/runtime/runtimeManager', () => ({ runtimes: { resolve: vi.fn() } }))
-vi.mock('../../main/runtime/locator', () => ({
+vi.mock('../../shared/runtimeLocator', () => ({
   parseLocator: vi.fn((path: string) => ({ runtimeId: 'local', path })),
   formatLocator: vi.fn(({ path }: { path: string }) => path),
 }))

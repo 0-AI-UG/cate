@@ -7,16 +7,18 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import type { PanelType } from '../../shared/types'
-import { Terminal as TerminalIcon, Globe, FileText, SquaresFour } from '@phosphor-icons/react'
+import { SPLIT_MENU_PANEL_TYPES } from '../../shared/panels'
+import { PANEL_REGISTRY } from '../panels/registry'
 
 export type SplitMenuItem = { type: PanelType; label: string; Icon: React.ComponentType<any> }
 
 // Items shown in the long-press split menu (order = display order).
 export const SPLIT_MENU_ITEMS: SplitMenuItem[] = [
-  { type: 'editor', label: 'Editor', Icon: FileText },
-  { type: 'terminal', label: 'Terminal', Icon: TerminalIcon },
-  { type: 'browser', label: 'Browser', Icon: Globe },
-  { type: 'canvas', label: 'Canvas', Icon: SquaresFour },
+  ...SPLIT_MENU_PANEL_TYPES.map((type) => ({
+    type,
+    label: PANEL_REGISTRY[type].label,
+    Icon: PANEL_REGISTRY[type].icon,
+  })),
 ]
 
 export interface DockTabContextMenuProps {

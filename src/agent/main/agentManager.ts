@@ -15,7 +15,7 @@
 import path from 'path'
 import { type WebContents } from 'electron'
 import log from '../../main/logger'
-import { parseLocator } from '../../main/runtime/locator'
+import { parseLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import type { Runtime } from '../../main/runtime/types'
 import { PiRpcClient } from './piRpcClient'

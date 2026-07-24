@@ -10,7 +10,7 @@ import {
   GIT_MONITOR_STOP,
 } from '../../shared/ipc-channels'
 import { sendToWindow, windowFromEvent, isAnyWindowFocused } from '../windowRegistry'
-import { parseLocator } from '../runtime/locator'
+import { parseLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../runtime/runtimeManager'
 import type { Runtime } from '../runtime/types'
 

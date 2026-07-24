@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { formatLocator } from './runtime/locator'
+import { formatLocator } from '../shared/runtimeLocator'
 import {
   listWorktreeCheckouts,
   resolveWorktreeContext,

@@ -16,7 +16,7 @@
 
 import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity } from '../../shared/types'
 import type { AgentHookAgentState, AgentHookConfig, AgentHookEvent } from '../../shared/agentHooks'
-import type { RuntimeId } from './locator'
+import type { RuntimeId } from '../../shared/runtimeLocator'
 
 // ---------------------------------------------------------------------------
 // Process host (terminals / node-pty)

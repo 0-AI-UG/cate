@@ -5,6 +5,7 @@
 import log from '../../lib/logger'
 import { ALL_ZONES } from '../../../shared/types'
 import type { AppSet, AppGet, AppStoreActions } from './types'
+import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
 import {
   createDefaultWorkspace,
   syncCreateToMain,
@@ -127,7 +128,7 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
         // connect here so the restore's awaited selectWorkspace still resolves
         // only once the runtime is live.
         const current = state.workspaces.find((w) => w.id === id)
-        if (current?.connection && current.connection.kind !== 'local' && !current.runtime) {
+        if (isRemoteRuntimeConnection(current?.connection) && !current.runtime) {
           await get().ensureWorkspaceRuntime(id)
         }
         // A startup-deferred snapshot restores here too: addWorkspace auto-selects
@@ -180,7 +181,7 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
       // that route through the runtime — racing the async reconnect would hit
       // an unregistered runtime and throw. Local workspaces stay synchronous.
       const incoming = get().workspaces.find((w) => w.id === id)
-      if (incoming?.connection && incoming.connection.kind !== 'local') {
+      if (isRemoteRuntimeConnection(incoming?.connection)) {
         const ok = await get().ensureWorkspaceRuntime(id)
         if (!ok) {
           log.warn('[runtime] reconnect failed for workspace %s; restore will surface the error', id)

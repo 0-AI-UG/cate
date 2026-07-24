@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { runtimes } from './runtimeManager'
-import { parseLocator, LOCAL_RUNTIME_ID } from './locator'
+import { parseLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import type { Runtime, FileHost, VcsHost, ProcessHost, AgentHost, ServerHost, TunnelHost } from './types'
 
 // Prove the decode-and-dispatch layer routes a `cate-runtime://` URI to a
