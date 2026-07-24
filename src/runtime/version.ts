@@ -6,4 +6,4 @@
 // matching runtime tarballs (see runtimeArtifacts.ts).
 // =============================================================================
 
-export const RUNTIME_VERSION = '1.5.3'
+export const RUNTIME_VERSION = '1.6.0-beta.1'
