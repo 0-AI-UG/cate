@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({ shell: { openExternal: vi.fn(async () => {}) } }))
 vi.mock('./agentDir', () => ({ sharedAuthPath: () => '/virtual/auth.json' }))
-vi.mock('./customModels', () => ({ readCustomOpenAI: vi.fn(async () => null) }))
+vi.mock('./customModels', () => ({ readCustomOpenAIProviders: vi.fn(async () => []) }))
 vi.mock('@earendil-works/pi-ai/compat', () => ({
   findEnvKeys: vi.fn(),
   getEnvApiKey: vi.fn(),

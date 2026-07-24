@@ -27,7 +27,7 @@ import { getBuiltinModels, getBuiltinProviders } from '@earendil-works/pi-ai/pro
 import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from '@earendil-works/pi-ai/oauth'
 import { sharedAuthPath } from './agentDir'
 import { readAgentConfigFile, updateAgentConfigFile } from './agentConfigLock'
-import { readCustomOpenAI } from './customModels'
+import { readCustomOpenAIProviders } from './customModels'
 import log from '../../main/logger'
 import type {
   AgentModelDescriptor,
@@ -188,17 +188,17 @@ export class AuthManager {
       })
     }
 
-    // Custom OpenAI-compatible endpoint (lives in models.json, not auth.json).
-    // Connected once a baseUrl and at least one model are configured — the key
-    // is optional since local servers (Ollama, LM Studio, vLLM) ignore it.
-    const custom = await readCustomOpenAI()
-    const customConnected = !!custom && !!custom.baseUrl && custom.models.length > 0
-    result.push({
-      id: 'custom-openai',
-      connected: customConnected,
-      source: customConnected ? 'config' : undefined,
-      connectedAt: customConnected ? this.connectedAt.get('custom-openai') : undefined,
-    })
+    // Custom OpenAI-compatible endpoints live in models.json, not auth.json.
+    // Keys are optional since local servers (Ollama, LM Studio, vLLM) ignore them.
+    for (const custom of await readCustomOpenAIProviders()) {
+      const connected = !!custom.baseUrl && custom.models.length > 0
+      result.push({
+        id: custom.id,
+        connected,
+        source: connected ? 'config' : undefined,
+        connectedAt: connected ? this.connectedAt.get(custom.id) : undefined,
+      })
+    }
 
     return result
   }
@@ -211,12 +211,14 @@ export class AuthManager {
   async listAvailableModels(): Promise<AgentModelDescriptor[]> {
     const statuses = await this.status()
     const connected = new Set(statuses.filter((s) => s.connected).map((s) => s.id))
+    const customProviders = await readCustomOpenAIProviders()
+    const customIds = new Set(customProviders.map((provider) => provider.id))
 
     const out: AgentModelDescriptor[] = []
     const seen = new Set<string>() // `${provider}:${id}` — OAuth + API-key share ids
 
     for (const providerId of connected) {
-      if (providerId === 'custom-openai') continue
+      if (customIds.has(providerId)) continue
       // getBuiltinModels indexes a static catalog and returns [] for unknown
       // ids, so calling it with any provider string is safe. pi's KnownProvider
       // union can drift ahead of that catalog (0.80.7 widened the union past the
@@ -236,13 +238,13 @@ export class AuthManager {
       }
     }
 
-    if (connected.has('custom-openai')) {
-      const custom = await readCustomOpenAI()
-      for (const id of custom?.models ?? []) {
-        const key = `custom-openai:${id}`
+    for (const custom of customProviders) {
+      if (!connected.has(custom.id)) continue
+      for (const id of custom.models) {
+        const key = `${custom.id}:${id}`
         if (seen.has(key)) continue
         seen.add(key)
-        out.push({ provider: 'custom-openai', id, label: id, contextWindow: 0, reasoning: false })
+        out.push({ provider: custom.id, id, label: id, contextWindow: 0, reasoning: false })
       }
     }
 
@@ -292,9 +294,10 @@ export class AuthManager {
       }
     }
 
-    // custom-openai lives in models.json, not auth.json — presence only.
-    if (providerId === 'custom-openai') {
-      const custom = await readCustomOpenAI()
+    // Cate-managed custom providers live in models.json, not auth.json —
+    // verification is presence-only.
+    if (providerId === 'custom-openai' || providerId.startsWith('custom-openai-')) {
+      const custom = (await readCustomOpenAIProviders()).find((provider) => provider.id === providerId)
       const connected = !!custom && !!custom.baseUrl && custom.models.length > 0
       return { id: providerId, health: connected ? 'ok' : 'error' }
     }

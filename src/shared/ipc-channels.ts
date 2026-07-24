@@ -368,6 +368,7 @@ export const AGENT_DELETE_SESSION = 'agent:deleteSession'       // renderer -> m
 // Custom OpenAI-compatible provider (pi models.json)
 export const AGENT_CUSTOM_MODELS_GET = 'agent:customModelsGet'   // renderer -> main
 export const AGENT_CUSTOM_MODELS_SAVE = 'agent:customModelsSave' // renderer -> main
+export const AGENT_CUSTOM_MODELS_DELETE = 'agent:customModelsDelete' // renderer -> main
 
 // Skills (cross-agent skill manager)
 export const SKILLS_GET_INDEX = 'skills:getIndex'             // renderer -> main (merged catalog)

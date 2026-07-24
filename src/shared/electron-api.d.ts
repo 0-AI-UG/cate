@@ -977,11 +977,14 @@ export interface ElectronAPI {
   /** Get token + cost + context-usage stats for the current session. */
   agentGetSessionStats(panelId: string): Promise<AgentSessionStats>
 
-  /** Read the user-defined custom OpenAI-compatible provider config. */
-  agentCustomModelsGet(): Promise<CustomOpenAIProvider | null>
+  /** Read Cate-managed custom OpenAI-compatible provider configs. */
+  agentCustomModelsGet(): Promise<CustomOpenAIProvider[]>
 
-  /** Save (or clear, with null) the custom OpenAI-compatible provider config. */
-  agentCustomModelsSave(cfg: CustomOpenAIProvider | null): Promise<void>
+  /** Add or update a Cate-managed custom OpenAI-compatible provider. */
+  agentCustomModelsSave(cfg: CustomOpenAIProvider): Promise<void>
+
+  /** Delete one Cate-managed custom OpenAI-compatible provider. */
+  agentCustomModelsDelete(providerId: string): Promise<void>
 
   /** Get pi's RPC session state snapshot. */
   agentGetState(panelId: string): Promise<AgentRpcState>

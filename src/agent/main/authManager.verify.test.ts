@@ -21,12 +21,14 @@ const h = vi.hoisted(() => ({
   getModels: vi.fn(),
   getProviders: vi.fn(),
   findEnvKeys: vi.fn(),
-  readCustomOpenAI: vi.fn(),
+  readCustomOpenAIProviders: vi.fn(),
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => h.userData }, shell: {} }))
 vi.mock('./agentDir', () => ({ sharedAuthPath: () => h.authJsonPath }))
-vi.mock('./customModels', () => ({ readCustomOpenAI: () => h.readCustomOpenAI() }))
+vi.mock('./customModels', () => ({
+  readCustomOpenAIProviders: () => h.readCustomOpenAIProviders(),
+}))
 vi.mock('@earendil-works/pi-ai/compat', () => ({
   findEnvKeys: (...args: unknown[]) => h.findEnvKeys(...args),
   getEnvApiKey: () => undefined,
@@ -68,7 +70,7 @@ beforeEach(() => {
     'xiaomi-token-plan-ams', 'xiaomi-token-plan-cn', 'xiaomi-token-plan-sgp', 'zai',
   ])
   h.findEnvKeys.mockReset().mockReturnValue(undefined)
-  h.readCustomOpenAI.mockReset().mockResolvedValue(null)
+  h.readCustomOpenAIProviders.mockReset().mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -161,16 +163,69 @@ describe('AuthManager.listProviders — curated API-key catalog', () => {
   })
 })
 
-describe('AuthManager.verify — custom-openai', () => {
-  it('is ok when a baseUrl and models are configured', async () => {
-    h.readCustomOpenAI.mockResolvedValue({ baseUrl: 'http://localhost:11434/v1', apiKey: '', models: ['llama3'] })
-    const res = await authManager.verify('custom-openai')
-    expect(res).toEqual({ id: 'custom-openai', health: 'ok' })
+describe('AuthManager — custom OpenAI providers', () => {
+  it('reports status and selectable models for every configured provider', async () => {
+    h.readCustomOpenAIProviders.mockResolvedValue([
+      {
+        id: 'custom-openai',
+        name: 'Legacy',
+        baseUrl: 'http://legacy/v1',
+        apiKey: '',
+        models: ['legacy-model'],
+      },
+      {
+        id: 'custom-openai-team',
+        name: 'Team Proxy',
+        baseUrl: 'https://team.example/v1',
+        apiKey: 'secret',
+        models: ['team-a', 'team-b'],
+      },
+    ])
+
+    expect(await authManager.status()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'custom-openai', connected: true }),
+      expect.objectContaining({ id: 'custom-openai-team', connected: true }),
+    ]))
+    expect(await authManager.listAvailableModels()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'custom-openai', id: 'legacy-model' }),
+      expect.objectContaining({ provider: 'custom-openai-team', id: 'team-a' }),
+      expect.objectContaining({ provider: 'custom-openai-team', id: 'team-b' }),
+    ]))
   })
 
-  it('is error when not configured', async () => {
-    h.readCustomOpenAI.mockResolvedValue(null)
-    const res = await authManager.verify('custom-openai')
-    expect(res).toEqual({ id: 'custom-openai', health: 'error' })
+  it('verifies each managed provider independently', async () => {
+    h.readCustomOpenAIProviders.mockResolvedValue([
+      {
+        id: 'custom-openai-team',
+        name: 'Team Proxy',
+        baseUrl: 'https://team.example/v1',
+        apiKey: 'secret',
+        models: ['team-model'],
+      },
+    ])
+
+    expect(await authManager.verify('custom-openai-team')).toEqual({
+      id: 'custom-openai-team',
+      health: 'ok',
+    })
+    expect(await authManager.verify('custom-openai-missing')).toEqual({
+      id: 'custom-openai-missing',
+      health: 'error',
+    })
+  })
+
+  it('reports an incomplete provider as disconnected', async () => {
+    h.readCustomOpenAIProviders.mockResolvedValue([{
+      id: 'custom-openai',
+      name: 'Legacy',
+      baseUrl: '',
+      apiKey: '',
+      models: [],
+    }])
+
+    expect(await authManager.verify('custom-openai')).toEqual({
+      id: 'custom-openai',
+      health: 'error',
+    })
   })
 })
