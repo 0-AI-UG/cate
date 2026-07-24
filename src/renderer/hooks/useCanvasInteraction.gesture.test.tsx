@@ -535,6 +535,19 @@ describe('marquee selection', () => {
     act(() => window.dispatchEvent(new Event('blur')))
     expect(document.body.classList.contains('canvas-interacting')).toBe(false)
   })
+
+  it('releases canvas-interacting if the canvas unmounts mid-marquee', () => {
+    const { el } = setupScene()
+
+    leftDown(el, 100, 100)
+    winMove(140, 140)
+    expect(document.body.classList.contains('canvas-interacting')).toBe(true)
+
+    act(() => root.render(<></>))
+
+    expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+    expect(useUIStore.getState().marquee).toBeNull()
+  })
 })
 
 // =============================================================================
