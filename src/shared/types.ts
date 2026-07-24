@@ -1788,10 +1788,13 @@ export interface ProviderVerification {
   error?: string
 }
 
-/** A user-defined OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, a
- *  proxy, ...). Surfaced as one extra provider in the agent provider list and
- *  written to pi's models.json. */
+/** A Cate-managed OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, a
+ *  proxy, ...), written to pi's models.json. */
 export interface CustomOpenAIProvider {
+  /** Stable pi provider id. `custom-openai` is retained for legacy configs. */
+  id: string
+  /** Friendly name shown in provider settings. */
+  name: string
   baseUrl: string
   /** Empty for local servers that ignore auth; pi gets a placeholder. */
   apiKey: string
