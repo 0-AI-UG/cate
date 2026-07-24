@@ -11,6 +11,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip } from '../ui/Tooltip'
 import { workspaceIdForRoot } from '../stores/gitStatusStore'
+import { errorMessage } from '../lib/errorMessage'
 import {
   GitBranch,
   Check,
@@ -67,6 +68,7 @@ export const CreateWorktreeForm: React.FC<{
   const [remoteExpanded, setRemoteExpanded] = useState(false)
   const [prsExpanded, setPrsExpanded] = useState(true)
   const [filter, setFilter] = useState('')
+  const busyRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const filterRef = useRef<HTMLInputElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -123,7 +125,8 @@ export const CreateWorktreeForm: React.FC<{
   const canSubmit = selectedPr ? true : !!name.trim()
 
   const submit = useCallback(async () => {
-    if (busy || !canSubmit) return
+    if (busyRef.current || !canSubmit) return
+    busyRef.current = true
     setBusy(true)
     setError(null)
     try {
@@ -132,12 +135,13 @@ export const CreateWorktreeForm: React.FC<{
       } else {
         await onSubmit(name.trim(), baseRef || undefined)
       }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to create')
+    } catch (err: unknown) {
+      setError(errorMessage(err, selectedPr ? 'Couldn’t check out that pull request.' : 'Couldn’t create that worktree.'))
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
-  }, [busy, canSubmit, selectedPr, name, baseRef, onSubmit, onCheckoutPr])
+  }, [canSubmit, selectedPr, name, baseRef, onSubmit, onCheckoutPr])
 
   return (
     <div className="px-1 pt-1">

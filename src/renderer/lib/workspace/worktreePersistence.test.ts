@@ -53,10 +53,10 @@ function reset() {
 }
 
 const ROOT = '/tmp/wt'
-// worktrees persist only UI metadata (id/path/color/label); branch/isPrimary are
+// worktrees persist only managed metadata (id/path/color/label/PR identity); branch/isPrimary are
 // live git facts joined in at read time (see useWorktrees), never persisted.
 const WT_X: WorktreeMeta = {
-  id: 'wt-x', path: `${ROOT}/.cate/worktrees/x`, color: '#11aa55', label: 'X work',
+  id: 'wt-x', path: `${ROOT}/.cate/worktrees/x`, color: '#11aa55', label: 'X work', prNumber: 42,
 }
 const WT_PRIMARY: WorktreeMeta = {
   id: 'wt-primary-ws', path: ROOT, color: '#3366ff',
@@ -97,6 +97,7 @@ describe('worktree session persistence', () => {
     const x = worktrees.find((w) => w.path === WT_X.path)
     expect(x?.color).toBe('#11aa55')
     expect(x?.label).toBe('X work')
+    expect(x?.prNumber).toBe(42)
     // The primary worktree is the one keyed by the workspace root path.
     expect(worktrees.find((w) => w.path === ROOT)?.color).toBe('#3366ff')
   })

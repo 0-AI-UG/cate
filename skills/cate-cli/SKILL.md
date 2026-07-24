@@ -1,6 +1,6 @@
 ---
 name: cate-cli
-description: Drive the Cate IDE from inside a Cate terminal with the `cate` CLI — control the built-in browser panel (open URLs, navigate, screenshot, read an accessibility snapshot, click/type/press by ref), read and drive terminal panels (read the rendered screen, send keystrokes), and reach the granted cate.* host scopes (panels, editor, notifications) through named verbs. Use when an agent or user working in a Cate terminal needs to see or steer a web page, capture a screenshot, read another terminal, or reach Cate's host API from the shell.
+description: Drive the Cate IDE from inside a Cate terminal with the `cate` CLI — control the built-in browser panel (open URLs, navigate, screenshot, read an accessibility snapshot, click/fill/press by ref), read and drive terminal panels (read the rendered screen, send keystrokes), and reach the granted cate.* host scopes (panels, editor, notifications) through named verbs. Use when an agent or user working in a Cate terminal needs to see or steer a web page, capture a screenshot, read another terminal, or reach Cate's host API from the shell.
 user-invocable: true
 ---
 
@@ -36,17 +36,22 @@ cate browser open https://x.com   # navigate; prints the resulting url
 cate browser wait                 # until the page settles; prints the url
                                   #   (instant when idle — also "where am I")
 cate browser wait 8000            # same, custom deadline in ms (capped at 8s)
+cate browser wait text Saved      # wait for SPA text to appear
+cate browser wait gone Loading    # wait for text to disappear
+cate browser wait url '**/done'   # wait for a URL glob
 cate browser reload               # reload
 cate browser screenshot           # prints ONLY a file path (see below)
 cate browser snapshot             # accessibility tree with refs (see below)
-cate browser click @e12           # click the element with ref @e12
-cate browser type @e7 hello world # type text into the element with ref @e7
-cate browser press @e7 Enter      # focus @e7, then press Enter (submits forms)
+cate browser click @s1e12         # auto-wait, then trusted click
+cate browser fill @s1e7 hello world # replace a field using trusted input
+cate browser type @s1e7 hello world # compatibility alias for fill
+cate browser press @s1e7 Enter    # focus @s1e7, then press Enter (submits forms)
 cate browser press PageDown       # press a key with no target (scroll, Escape...)
 ```
 
-`press` sends **trusted** key input (unlike `click`/`type`, which synthesise DOM
-events), so Enter genuinely submits a form. Supported keys: Enter, Tab, Escape,
+`click`, `fill`/`type`, and `press` send **trusted browser input**. Click/fill
+auto-wait for the target to be visible, stable, enabled, and unobscured.
+Supported keys: Enter, Tab, Escape,
 Backspace, Delete, Space, the arrows (Up/Down/Left/Right), PageUp, PageDown,
 Home, End — case-insensitive.
 
@@ -71,9 +76,10 @@ value after `=`:
 ```
 url: https://example.com
 title: Example
-[@e12] link "Home"
-[@e13] input:submit "Sign in"
-[@e14] input:search "Search" = "mechanical keyboards"
+snapshot: s1
+[@s1e12] link "Home"
+[@s1e13] input:submit "Sign in"
+[@s1e14] input:search "Search" = "mechanical keyboards"
 ```
 
 Bare `<input>` elements expose their type (`input:search` vs `input:submit`) so
@@ -81,29 +87,35 @@ a field and its submit button never read alike; names come from the aria-label,
 an associated `<label>`, visible text, or the placeholder — whichever exists
 first.
 
-The bracketed token (`@e12`) is the element's **ref**. Feed it back to `click`,
-`type`, or `press`:
+The bracketed token (`@s1e12`) is the element's **generation-scoped ref**. Feed
+it back to `click`, `fill`/`type`, or `press`:
 
 ```bash
-cate browser click @e13           # click "Sign in"
-cate browser type @e14 mechanical keyboards
-cate browser press @e14 Enter     # submit
+cate browser click @s1e13           # click "Sign in"
+cate browser fill @s1e14 mechanical keyboards
+cate browser press @s1e14 Enter     # submit
 ```
+
+A newer snapshot gets a new generation (`s2`, `s3`, ...). Old refs fail with
+`stale-ref`; they never silently address an element from the newer snapshot.
+Password values are always masked. State flags such as `[disabled]`, `[checked]`,
+`[expanded]`, and `[focused]` appear when relevant.
 
 Very large pages are truncated to 150 ref lines with a trailing `(+N more refs)`
 note; pass `--max <n>` to change the cap (`--max 0` prints everything).
 
-Typical loop: `snapshot` to find a ref → `click`/`type`/`press` → `wait` →
-`snapshot` again (or `screenshot`) to confirm the result. Refs don't survive a
-navigation; re-snapshot after one. There is no back/forward/current: navigate
+Typical loop: `snapshot` to find a ref → `click`/`fill`/`press` → conditional
+`wait` → `snapshot` again (or `screenshot`) to confirm the result. Add
+`--snapshot` to click/fill/type/press/wait to return a compact post-action
+snapshot in the same round trip. Refs become stale after a newer snapshot or
+navigation. There is no back/forward/current: navigate
 by URL with `open`, and `wait` doubles as "where am I" since it returns the
 url instantly when the page is idle.
 
-One timing caveat: `wait` polls the page's loading flag, so calling it right
-after an action that *triggers* a navigation (`press Enter`, a `click` on a
-link) can return before loading has even started. When you expect a navigation,
-confirm it from the url `wait` prints (or re-snapshot) instead of treating a
-fast return as "already loaded".
+Use `wait text <text...>`, `wait gone <text...>`, `wait url <glob>`, or
+`wait ref <ref> [visible|hidden|attached|detached]` for SPA transitions; set the
+condition deadline with `--wait-timeout <ms>` (capped at 8 seconds). Plain
+`wait` retains the original page-loading behavior.
 
 ## Host API groups
 

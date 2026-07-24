@@ -24,7 +24,7 @@ import {
   type SendDeps,
 } from './cate'
 
-const noFlags: Flags = { json: false, help: false, version: false }
+const noFlags: Flags = { json: false, snapshot: false, help: false, version: false }
 
 describe('buildRequest — browser group', () => {
   it('open -> cate.browser.open {url}', () => {
@@ -53,6 +53,13 @@ describe('buildRequest — browser group', () => {
     expect(buildRequest(['browser', 'type', 'e7', 'hello', 'world'], noFlags)).toEqual({
       method: 'cate.browser.type',
       args: { ref: 'e7', text: 'hello world' },
+    })
+  })
+
+  it('fill maps to trusted field replacement', () => {
+    expect(buildRequest(['browser', 'fill', 's2e7', 'hello', 'world'], noFlags)).toEqual({
+      method: 'cate.browser.fill',
+      args: { ref: 's2e7', text: 'hello world' },
     })
   })
 
@@ -473,6 +480,34 @@ describe('buildRequest — new verbs', () => {
     expect(() => buildRequest(['browser', 'wait', 'soon'], noFlags)).toThrow(UsageError)
   })
 
+  it('browser wait supports agent conditions and an explicit condition timeout', () => {
+    expect(buildRequest(['browser', 'wait', 'text', 'Build', 'finished'], noFlags).args).toEqual({
+      condition: { kind: 'text', value: 'Build finished' },
+    })
+    expect(buildRequest(['browser', 'wait', 'gone', 'Loading'], noFlags).args).toEqual({
+      condition: { kind: 'textGone', value: 'Loading' },
+    })
+    expect(buildRequest(['browser', 'wait', 'url', '**/done'], noFlags).args).toEqual({
+      condition: { kind: 'url', value: '**/done' },
+    })
+    expect(buildRequest(['browser', 'wait', 'ref', '@s1e3', 'hidden'], {
+      ...noFlags,
+      waitTimeout: '7000',
+    }).args).toEqual({
+      condition: { kind: 'ref', ref: '@s1e3', state: 'hidden' },
+      timeoutMs: 7000,
+    })
+    expect(() => buildRequest(['browser', 'wait', 'ref', '@s1e3', 'ready'], noFlags)).toThrow(/invalid <state>/)
+  })
+
+  it('--snapshot requests a post-action observation', () => {
+    expect(buildRequest(['browser', 'click', '@s1e2'], { ...noFlags, snapshot: true }).args).toEqual({
+      ref: '@s1e2',
+      includeSnapshot: true,
+    })
+    expect(() => buildRequest(['browser', 'reload'], { ...noFlags, snapshot: true })).toThrow(/--snapshot/)
+  })
+
   it('browser press: one positional is the key, two are ref + key', () => {
     expect(buildRequest(['browser', 'press', 'Enter'], noFlags)).toEqual({
       method: 'cate.browser.press',
@@ -541,6 +576,26 @@ describe('formatHuman — new output shapes', () => {
     expect(out).toContain('[@e1] textbox "Search" = "query"')
     expect(out).toContain('[@e2] button "Go"')
     expect(out).not.toContain('[@e2] button "Go" =')
+  })
+
+  it('snapshot shows its generation and useful element state', () => {
+    const out = formatHuman('cate.browser.snapshot', {
+      snapshotId: 's4',
+      url: 'u',
+      title: 't',
+      refs: [{ ref: '@s4e1', role: 'button', name: 'Pay', disabled: true, focused: true }],
+    })
+    expect(out).toContain('snapshot: s4')
+    expect(out).toContain('[@s4e1] button "Pay" [disabled] [focused]')
+  })
+
+  it('an action with --snapshot prints the returned observation', () => {
+    const out = formatHuman('cate.browser.click', {
+      ok: true,
+      snapshot: { snapshotId: 's2', url: 'u', title: 'Done', refs: [] },
+    })
+    expect(out).toContain('title: Done')
+    expect(out).toContain('snapshot: s2')
   })
 
   it('snapshot caps ref lines at --max and says how many were dropped', () => {

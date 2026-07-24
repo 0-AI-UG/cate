@@ -11,6 +11,7 @@ import {
   hydrateWorkspaceFromDisk,
 } from './helpers'
 import { workspaceDisplayName } from '../../lib/fs/displayPath'
+import { ensureProjectTrusted } from '../workspaceTrustStore'
 
 type RemoteSliceActions = Pick<
   AppStoreActions,
@@ -26,9 +27,9 @@ type RemoteSliceActions = Pick<
 
 export function createRemoteSlice(set: AppSet, get: AppGet): RemoteSliceActions {
   return {
-    setWorkspaceRootPath(wsId, rootPath) {
+    async setWorkspaceRootPath(wsId, rootPath) {
       const ws = get().workspaces.find((w) => w.id === wsId)
-      if (!ws) return Promise.resolve(false)
+      if (!ws) return false
 
       // Don't open the same folder twice in this instance. Two tabs on one root
       // would share its .cate/workspace.json + session.json and clobber each
@@ -42,8 +43,15 @@ export function createRemoteSlice(set: AppSet, get: AppGet): RemoteSliceActions 
         // never-rooted outgoing tab on switch, so the empty workspace we were
         // about to fill is cleaned up; an already-rooted one is left untouched.
         get().selectWorkspace(duplicate.id)
-        return Promise.resolve(false)
+        return false
       }
+
+      // The trust gate, on the one path that turns a folder into an open local
+      // workspace. Declining means the workspace stays where it was — nothing in
+      // the folder is read and no panel from its layout is restored.
+      // (Checked after the duplicate redirect: an already-open folder is one the
+      // user has already vouched for, so re-asking would be noise.)
+      if (!(await ensureProjectTrusted(rootPath))) return false
 
       const folderName = workspaceDisplayName(rootPath) || rootPath
       const desiredName = ws.name === 'Workspace' ? folderName : ws.name
@@ -127,6 +135,11 @@ export function createRemoteSlice(set: AppSet, get: AppGet): RemoteSliceActions 
         log.warn('[runtime] connect failed:', res?.error ?? 'unknown')
         return false
       }
+
+      // Same gate as the local open. The locator only exists once the runtime
+      // has answered, so this is the earliest point we can ask — but it is still
+      // before anything is read out of the remote repo's `.cate/`.
+      if (!(await ensureProjectTrusted(res.rootPath))) return false
 
       const label = spec.kind === 'wsl' ? `${spec.distro}` : `${spec.user}@${spec.host}`
       const desiredName = ws.name === 'Workspace' ? label : ws.name

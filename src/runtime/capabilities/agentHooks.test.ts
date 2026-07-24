@@ -8,7 +8,7 @@
 // =============================================================================
 
 import { execFile } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, existsSync } from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
@@ -37,6 +37,8 @@ function tmpDir(sub: string): string {
 function makeCap(
   deps: {
     hooksDir?: string
+    nodePath?: string
+    interruptPollMs?: number
     onPost?: (post: { terminalId: string; agentId: string; pid?: number }) => void | Promise<void>
   } = {},
 ): AgentHooksCapability {
@@ -251,6 +253,30 @@ describe('agentHooks capability', () => {
     // production it is the agent CLI (or its sh hook-command layer), which is
     // what the presence tracker walks up from.
     expect(posts).toEqual([{ terminalId: 'rpty-bridge', agentId: 'codex', pid: process.pid }])
+  })
+
+  test.skipIf(!posix)('the wrapper exits silently when its node binary is gone', async () => {
+    // A hook failure must never surface into the user's agent turn. The wrapper
+    // embeds an absolute node path, and that path CAN go missing — a runtime
+    // re-provision used to delete and re-extract the very tree it points into,
+    // and the raw exec error landed in the agent transcript as
+    // "cannot execute: No such file or directory".
+    const cap = makeCap({ nodePath: path.join(tmpDir('no-node'), 'runtime', 'bin', 'node') })
+    const events = collect(cap)
+    const { dir } = await cap.endpoint()
+    const env = await cap.envForPty('rpty-nonode', { PATH: '/usr/bin:/bin' })
+
+    const { code, stderr } = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
+      let err = ''
+      const child = execFile(path.join(dir, 'cate-hook-bridge-claude-code'), [], { env, timeout: 15_000 })
+      child.stderr!.on('data', (chunk) => { err += String(chunk) })
+      child.on('close', (c) => resolve({ code: c, stderr: err }))
+      child.stdin!.end(JSON.stringify({ hook_event_name: 'SessionStart', cwd: '/w' }))
+    })
+
+    expect(code, 'a missing node must not fail the hook').toBe(0)
+    expect(stderr, 'and must not print anything the agent would show the user').toBe('')
+    expect(events).toEqual([])
   })
 
   // Cross-vendor guard. grok scans .claude/settings.local.json (and
@@ -584,5 +610,138 @@ describe('ensureGitExcluded', () => {
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
     await expect(ensureGitExcluded(dir, ['.claude/settings.local.json'])).resolves.toBeUndefined()
     expect(existsSync(path.join(dir, '.git'))).toBe(false)
+  })
+})
+
+// The offline half of the interrupt-recovery contract: the live half (that the
+// real transcript actually carries these markers on abort) is pinned in
+// agentHookContracts.itest.ts. Here we drive the FSM plumbing with a fake
+// transcript, no CLI: turn-start arms a tail-watch, and a marker appended to
+// the transcript synthesizes the turn-end the CLI never pushed.
+describe('agentHooks interrupt recovery', () => {
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+  const CLAUDE_INTERRUPT =
+    '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}\n'
+  const CODEX_INTERRUPT = '{"type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}\n'
+  const synthEnds = (events: AgentHookEvent[]): AgentHookEvent[] =>
+    events.filter((e) => e.kind === 'turn-end' && (e.raw as { __cateInterruptRecovery?: unknown }).__cateInterruptRecovery)
+
+  function transcriptFile(seed: string): string {
+    const dir = tmpDir('transcript')
+    const file = path.join(dir, 'transcript.jsonl')
+    writeFileSync(file, seed)
+    return file
+  }
+
+  test('claude: a transcript interrupt marker synthesizes turn-end', async () => {
+    const cap = makeCap({ interruptPollMs: 20 })
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    const transcript = transcriptFile('{"type":"summary"}\n') // a non-empty baseline
+    const sid = '11111111-2222-4333-8444-555555555555'
+
+    // Turn-start arms the watch, baselined at the current transcript size.
+    await post(url, tokenFor('t-int'), {
+      agentId: 'claude-code',
+      terminalId: 't-int',
+      payload: { hook_event_name: 'UserPromptSubmit', session_id: sid, cwd: '/w', transcript_path: transcript },
+    })
+    await waitFor(() => events.some((e) => e.kind === 'turn-start'))
+
+    // Ordinary streamed output must NOT trip it — only the marker does.
+    appendFileSync(transcript, '{"type":"assistant","message":{"content":[{"type":"text","text":"1\\n2\\n3"}]}}\n')
+    await sleep(120)
+    expect(synthEnds(events)).toHaveLength(0)
+
+    // The interrupt marker lands → the turn-end the CLI never pushed.
+    appendFileSync(transcript, CLAUDE_INTERRUPT)
+    await waitFor(() => synthEnds(events).length > 0)
+    const end = synthEnds(events)[0]
+    expect(end.agentId).toBe('claude-code')
+    expect(end.sessionId).toBe(sid) // carried from turn-start for the stamp
+    expect(end.cwd).toBe('/w')
+    expect(end.transcriptPath).toBe(transcript)
+  })
+
+  test('a real hook turn-end disarms the watch — no synthetic double', async () => {
+    const cap = makeCap({ interruptPollMs: 20 })
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    const transcript = transcriptFile('')
+    const sid = '22222222-3333-4444-8555-666666666666'
+
+    await post(url, tokenFor('t-norm'), {
+      agentId: 'claude-code',
+      terminalId: 't-norm',
+      payload: { hook_event_name: 'UserPromptSubmit', session_id: sid, cwd: '/w', transcript_path: transcript },
+    })
+    await waitFor(() => events.some((e) => e.kind === 'turn-start'))
+    // The turn ends through its real Stop hook — the watch disarms.
+    await post(url, tokenFor('t-norm'), {
+      agentId: 'claude-code',
+      terminalId: 't-norm',
+      payload: { hook_event_name: 'Stop', session_id: sid, cwd: '/w', transcript_path: transcript },
+    })
+    await waitFor(() => events.some((e) => e.kind === 'turn-end'))
+
+    // A marker written AFTER the turn already ended must not resurrect it.
+    appendFileSync(transcript, CLAUDE_INTERRUPT)
+    await sleep(120)
+    expect(synthEnds(events)).toHaveLength(0)
+  })
+
+  test('the baseline ignores an interrupt marker from an earlier turn', async () => {
+    const cap = makeCap({ interruptPollMs: 20 })
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    // The transcript already carries a PRIOR turn's interrupt marker.
+    const transcript = transcriptFile(CLAUDE_INTERRUPT)
+
+    await post(url, tokenFor('t-base'), {
+      agentId: 'claude-code',
+      terminalId: 't-base',
+      payload: { hook_event_name: 'UserPromptSubmit', session_id: 's', cwd: '/w', transcript_path: transcript },
+    })
+    await waitFor(() => events.some((e) => e.kind === 'turn-start'))
+    // Only fresh, non-marker output for this turn → no synthetic turn-end.
+    appendFileSync(transcript, '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}\n')
+    await sleep(120)
+    expect(synthEnds(events)).toHaveLength(0)
+  })
+
+  test('codex: a rollout turn_aborted record synthesizes turn-end', async () => {
+    const cap = makeCap({ interruptPollMs: 20 })
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    const rollout = transcriptFile('{"type":"session_meta"}\n')
+
+    await post(url, tokenFor('t-codex'), {
+      agentId: 'codex',
+      terminalId: 't-codex',
+      payload: { hook_event_name: 'UserPromptSubmit', session_id: 'c1', cwd: '/w', transcript_path: rollout },
+    })
+    await waitFor(() => events.some((e) => e.kind === 'turn-start'))
+    appendFileSync(rollout, CODEX_INTERRUPT)
+    await waitFor(() => synthEnds(events).length > 0)
+    expect(synthEnds(events)[0].agentId).toBe('codex')
+  })
+
+  test('a self-healing agent (cursor) arms no watch', async () => {
+    const cap = makeCap({ interruptPollMs: 20 })
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    const transcript = transcriptFile('')
+
+    await post(url, tokenFor('t-cur'), {
+      agentId: 'cursor',
+      terminalId: 't-cur',
+      payload: { hook_event_name: 'beforeSubmitPrompt', conversation_id: 'x', workspace_roots: ['/w'] },
+    })
+    await waitFor(() => events.some((e) => e.kind === 'turn-start'))
+    // cursor self-heals via a real stop hook, so its transcript is never
+    // watched — even a marker in it does nothing.
+    appendFileSync(transcript, CLAUDE_INTERRUPT)
+    await sleep(120)
+    expect(synthEnds(events)).toHaveLength(0)
   })
 })

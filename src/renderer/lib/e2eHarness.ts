@@ -64,6 +64,10 @@ declare global {
       clearCanvas(): void
       addWorkspace(name?: string, rootPath?: string, id?: string): string
       selectWorkspace(id: string): Promise<void>
+      /** Panel types present in a workspace (defaults to the selected one). Used
+       *  by the workspace-trust spec to assert that a repo-supplied
+       *  process-bearing panel never materializes. */
+      panelTypes(wsId?: string): string[]
       /** Seed N worktrees on the selected workspace (index 0 = primary, keyed by
        *  the workspace root) WITHOUT a real on-disk repo: writes UI metadata
        *  (id/color/label) and injects a pinned live `git worktree list` so the
@@ -87,6 +91,8 @@ declare global {
       terminalPtyId(nodeId: string): string | null
       /** Write raw data to a terminal node's PTY (e.g. a flooding command). */
       writeTerminal(nodeId: string, data: string): boolean
+      /** Plain text currently held by a terminal's active xterm buffer. */
+      terminalText(nodeId: string): string | null
       /** Point the selected workspace at a real directory (registers it as an
        *  allowed root) so content search has files to scan. */
       setWorkspaceRoot(rootPath: string): Promise<boolean>
@@ -215,6 +221,13 @@ export function installE2EHarness(): void {
     await useAppStore.getState().selectWorkspace(id)
   }
 
+  const panelTypes = (wsId?: string): string[] => {
+    const state = useAppStore.getState()
+    const id = wsId ?? state.selectedWorkspaceId
+    const ws = state.workspaces.find((w) => w.id === id)
+    return Object.values(ws?.panels ?? {}).map((p) => p.type)
+  }
+
   const seedWorktrees = (
     specs: { color: string; label?: string }[],
   ): { id: string; path: string; color: string }[] => {
@@ -290,6 +303,25 @@ export function installE2EHarness(): void {
     if (!ptyId) return false
     void window.electronAPI?.terminalWrite(ptyId, data)
     return true
+  }
+
+  const terminalText = (nodeId: string): string | null => {
+    const cs = activeCanvasStore()
+    if (!cs) return null
+    const node = cs.getState().nodes[nodeId]
+    const panelId = activeDockPanelId(node?.dockLayout) ?? nodeId
+    const terminal = terminalRegistry.getEntry(panelId)?.terminal
+    if (!terminal) return null
+    const buffer = terminal.buffer.active
+    const lines: string[] = []
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i)
+      const text = line?.translateToString(true) ?? ''
+      if (line?.isWrapped && lines.length > 0) lines[lines.length - 1] += text
+      else lines.push(text)
+    }
+    while (lines.at(-1) === '') lines.pop()
+    return lines.join('\n')
   }
 
   const setWorkspaceRoot = (rootPath: string): Promise<boolean> => {
@@ -369,11 +401,13 @@ export function installE2EHarness(): void {
     clearCanvas,
     addWorkspace,
     selectWorkspace,
+    panelTypes,
     seedWorktrees,
     tagNodeWorktree,
     worktreeDebug,
     terminalPtyId,
     writeTerminal,
+    terminalText,
     setWorkspaceRoot,
     openSidebarView,
     setActiveLeftSidebarView,

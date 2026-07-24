@@ -78,6 +78,32 @@ describe('cateHost preload — invoke wire contract', () => {
     expect(cate.browser.current).toBeUndefined()
     expect(cate.editor.active).toBeUndefined()
   })
+
+  it('browser fill and conditional wait preserve agent protocol options', async () => {
+    await cate.browser.fill({ ref: '@s2e4', text: 'Anton', panelId: 'browser-1', includeSnapshot: true })
+    expect(invoke).toHaveBeenLastCalledWith('cate:invoke', {
+      ...IDENTITY,
+      method: 'cate.browser.fill',
+      args: { ref: '@s2e4', text: 'Anton', panelId: 'browser-1', includeSnapshot: true },
+    })
+
+    await cate.browser.wait({
+      panelId: 'browser-1',
+      condition: { kind: 'text', value: 'Saved' },
+      timeoutMs: 8000,
+      includeSnapshot: true,
+    })
+    expect(invoke).toHaveBeenLastCalledWith('cate:invoke', {
+      ...IDENTITY,
+      method: 'cate.browser.wait',
+      args: {
+        panelId: 'browser-1',
+        condition: { kind: 'text', value: 'Saved' },
+        timeoutMs: 8000,
+        includeSnapshot: true,
+      },
+    })
+  })
 })
 
 describe('cateHost preload — files.onDrop', () => {

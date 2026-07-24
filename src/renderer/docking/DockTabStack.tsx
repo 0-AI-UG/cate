@@ -228,6 +228,10 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
   return (
     <div
       ref={stackRef}
+      // Lets an ancestor map a pointer target back to the leaf stack it landed
+      // in — CanvasNode uses it to learn WHICH pane of a split mini-dock the
+      // user pressed, so focus goes to that pane and not the first leaf.
+      data-dock-stack-id={stack.id}
       className="flex flex-col h-full min-h-0 relative"
       // Mark this stack's active tab as the active panel on any pointer-down
       // inside it (tab bar OR content), so a panel-create shortcut lands here —

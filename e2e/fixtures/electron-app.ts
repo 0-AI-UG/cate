@@ -15,18 +15,23 @@ export interface LaunchResult {
 const REPO_ROOT = path.resolve(__dirname, '..', '..')
 
 export async function launchApp(opts: { perf?: boolean } = {}): Promise<LaunchResult> {
+  const env = {
+    ...process.env,
+    CATE_E2E: '1',
+    NODE_ENV: 'production',
+    // Activate the resource profiler (main getAppMetrics sampler + counters,
+    // renderer FPS/long-task/render counters, window.__catePerf) for the
+    // perf-stress spec. Harmless no-op for other specs that don't set it.
+    ...(opts.perf ? { CATE_PERF: '1' } : {}),
+  }
+  // Playwright forces colored reporter output while some hosts also export
+  // NO_COLOR. Passing both into a real terminal makes every bundled Node CLI
+  // print a warning before its own stdout, which is not a Cate behavior.
+  delete env.NO_COLOR
   const electronApp = await electron.launch({
     args: ['.'],
     cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      CATE_E2E: '1',
-      NODE_ENV: 'production',
-      // Activate the resource profiler (main getAppMetrics sampler + counters,
-      // renderer FPS/long-task/render counters, window.__catePerf) for the
-      // perf-stress spec. Harmless no-op for other specs that don't set it.
-      ...(opts.perf ? { CATE_PERF: '1' } : {}),
-    },
+    env,
   })
   const mainWindow = await electronApp.firstWindow()
   await mainWindow.waitForLoadState('domcontentloaded')
@@ -41,10 +46,22 @@ export async function launchApp(opts: { perf?: boolean } = {}): Promise<LaunchRe
 }
 
 export async function closeApp(electronApp: ElectronApplication): Promise<void> {
+  const child = electronApp.process()
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    await electronApp.close()
+    await Promise.race([
+      electronApp.close(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Electron close timed out')), 10_000)
+      }),
+    ])
   } catch {
-    /* best-effort */
+    // A wedged runtime/PTY must not hold the entire Playwright worker open after
+    // the assertions have completed. This child belongs exclusively to the
+    // current isolated E2E app instance.
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 

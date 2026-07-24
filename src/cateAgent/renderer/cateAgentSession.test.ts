@@ -24,6 +24,7 @@ const BASE = { panelId: 'cate-agent-orchestrator:c1', rootPath: '/repo', workspa
 
 beforeEach(() => {
   create.mockClear()
+  create.mockResolvedValue({ ok: true })
   loadDefaultModel.mockReturnValue(null)
 })
 
@@ -32,7 +33,7 @@ describe('createCateAgentSession model resolution', () => {
     loadDefaultModel.mockReturnValue({ provider: 'openai', model: 'gpt-x' })
     const chatModel = { provider: 'anthropic', model: 'claude-x' }
     await createCateAgentSession({ ...BASE, model: chatModel })
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ model: chatModel }))
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ model: chatModel, workspaceRoot: '/repo' }))
   })
 
   it('falls back to the global default when the chat has no model', async () => {

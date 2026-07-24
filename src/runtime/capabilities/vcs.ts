@@ -172,6 +172,33 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
     }
   }
 
+  async function availablePrBranch(git: ReturnType<typeof simpleGit>, prNumber: number): Promise<string> {
+    const base = `cate-pr-${prNumber}`
+    const existing = new Set((await git.branchLocal()).all)
+    const conflicts = (candidate: string) =>
+      existing.has(candidate) || [...existing].some((branch) => branch.startsWith(`${candidate}/`))
+    let branch = base
+    for (let suffix = 2; conflicts(branch); suffix += 1) branch = `${base}-${suffix}`
+    return branch
+  }
+
+  function prCheckoutError(prNumber: number, error: unknown): Error {
+    const detail = [
+      error instanceof Error ? error.message : String(error),
+      typeof error === 'object' && error && 'stderr' in error ? String(error.stderr) : '',
+    ].join('\n')
+    if (/authentication|not authenticated|auth login|not logged|HTTP 401|HTTP 403/i.test(detail)) {
+      return new Error(`GitHub CLI isn’t authenticated. Run “gh auth login”, then try PR #${prNumber} again.`)
+    }
+    if (/could not resolve to a pull request|no pull requests found|pull request.*not found/i.test(detail)) {
+      return new Error(`Pull request #${prNumber} could not be found. It may have been closed or removed.`)
+    }
+    if (/ETIMEDOUT|timed out|network|ENOTFOUND|ECONNRESET|could not resolve host/i.test(detail)) {
+      return new Error(`Couldn’t reach GitHub while checking out PR #${prNumber}. Check your connection and try again.`)
+    }
+    return new Error(`Couldn’t check out PR #${prNumber}. Check that GitHub CLI can access this repository, then try again.`)
+  }
+
   async function ensureContainingDir(targetPath: string): Promise<void> {
     const containingDir = path.dirname(targetPath)
     await fsp.mkdir(containingDir, { recursive: true })
@@ -358,17 +385,32 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       const git = simpleGit(validRepo)
       if (!(await ghAvailable(validRepo))) throw new Error('GitHub CLI (gh) is required to check out pull requests.')
       await ensureContainingDir(targetPath)
-      await git.raw(['worktree', 'add', '--detach', targetPath])
+      const branch = await availablePrBranch(git, prNumber)
+      try {
+        await git.raw(['worktree', 'add', '--detach', targetPath])
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        if (/already exists|already checked out|already registered/i.test(detail)) {
+          throw new Error(`A worktree for PR #${prNumber} already exists. Remove it or run Clean up, then try again.`)
+        }
+        throw new Error(`Couldn’t create a worktree for PR #${prNumber}. Check that the repository is writable and try again.`)
+      }
       addWorktreeRoot(targetPath, repoCwd)
       try {
-        await execFileP('gh', ['pr', 'checkout', String(prNumber)], { cwd: targetPath, timeout: 120000, env: env() })
+        // Never let gh reuse the contributor's local branch: it may have
+        // diverged, be checked out elsewhere, or contain unpublished work.
+        await execFileP('gh', ['pr', 'checkout', String(prNumber), '--branch', branch], {
+          cwd: targetPath,
+          timeout: 120000,
+          env: env(),
+        })
       } catch (error) {
         await git.raw(['worktree', 'remove', '--force', targetPath]).catch(() => {})
+        await git.branch(['-D', branch]).catch(() => {})
         await fsp.rm(targetPath, { recursive: true, force: true }).catch(() => {})
         removeAllowedRootFromAllScopes(targetPath)
-        throw new Error(`Could not check out PR #${prNumber}: ${error instanceof Error ? error.message : String(error)}`)
+        throw prCheckoutError(prNumber, error)
       }
-      const branch = (await simpleGit(targetPath).raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
       await linkWorktreePaths(validRepo, targetPath, options?.symlinkPaths)
       return { path: targetPath, branch }
     },
@@ -415,26 +457,67 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       }
     },
     async worktreeMergeTo(repoCwd, fromBranch, toBranch, access) {
+      const git = simpleGit(validateCwd(repoCwd, access))
       try {
-        const git = simpleGit(validateCwd(repoCwd, access))
-        await git.fetch()
+        if ((await git.status()).files.length > 0) {
+          return {
+            ok: false,
+            conflict: false,
+            message: `Commit or stash changes in ${toBranch} before merging into it.`,
+          }
+        }
         await git.checkout(toBranch)
         const result = await git.merge([fromBranch, '--no-edit'])
         return { ok: true, result }
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error)
-        return { ok: false, conflict: /CONFLICT|conflict/.test(msg), message: msg }
+        const mergeInProgress = await git.raw(['rev-parse', '-q', '--verify', 'MERGE_HEAD']).then(
+          () => true,
+          () => false,
+        )
+        if (/CONFLICT|conflict/.test(msg) || mergeInProgress) {
+          const aborted = await git.raw(['merge', '--abort']).then(
+            () => true,
+            () => false,
+          )
+          return {
+            ok: false,
+            conflict: true,
+            message: aborted
+              ? 'The branches have conflicting changes. The merge was aborted.'
+              : `The branches have conflicting changes. Open a terminal in ${toBranch} to resolve or abort the merge.`,
+          }
+        }
+        return {
+          ok: false,
+          conflict: false,
+          message: `Couldn’t merge ${fromBranch} into ${toBranch}. Make sure both branches still exist.`,
+        }
       }
     },
     async worktreeUpdateFrom(worktreePath, fromBranch, access) {
       try {
         const git = simpleGit(validateCwd(worktreePath, access))
+        if ((await git.status()).files.length > 0) {
+          return {
+            ok: false,
+            conflict: false,
+            message: `Commit or stash changes before updating from ${fromBranch}.`,
+          }
+        }
         await git.fetch().catch(() => {})
         const result = await git.merge([fromBranch, '--no-edit'])
         return { ok: true, result }
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error)
-        return { ok: false, conflict: /CONFLICT|conflict/.test(msg), message: msg }
+        const conflict = /CONFLICT|conflict/.test(msg)
+        return {
+          ok: false,
+          conflict,
+          message: conflict
+            ? 'The branches have conflicting changes.'
+            : `Couldn’t update from ${fromBranch}. Make sure the branch still exists.`,
+        }
       }
     },
     async createPr(worktreePath, branch, access) {

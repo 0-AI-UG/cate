@@ -143,7 +143,7 @@ export interface PanelState {
 // -----------------------------------------------------------------------------
 // Worktree metadata — per-workspace registry of UI-owned facts about the git
 // worktrees Cate manages, keyed by worktree path. This persists ONLY the UI
-// metadata (id/color/label). The live facts (branch / isPrimary / isCurrent)
+// metadata (id/color/label/PR identity). The live facts (branch / isPrimary / isCurrent)
 // are authoritative from `git worktree list` (owned by gitStatusStore) and are
 // joined onto this metadata at read time by useWorktrees — they are never
 // persisted here, so they can't drift out of sync with the repo.
@@ -158,6 +158,8 @@ export interface WorktreeMeta {
   color: string
   /** Optional friendly label shown in the sidebar in place of the branch. */
   label?: string
+  /** Pull request this worktree was created from, if any. */
+  prNumber?: number
 }
 
 // -----------------------------------------------------------------------------
@@ -1468,11 +1470,11 @@ export interface AppSettings {
    *  the cell. cliEnabled above is the master switch — off, no endpoint exists
    *  and these never come into play. The rows and the method → cell mapping live
    *  in shared/cliPermissions.ts. */
-  /** Read half of `cate browser *` — screenshot, snapshot, list, current, wait.
+  /** Read half of `cate browser *` — screenshot, snapshot and conditional wait.
    *  Sees whatever the user's live logged-in session is showing. On by default. */
   cliBrowserReadEnabled: boolean
-  /** Control half of `cate browser *` — open/back/forward/reload plus click,
-   *  type and press, which act on the user's live logged-in session.
+  /** Control half of `cate browser *` — open/reload plus click, fill, type and
+   *  press, which act on the user's live logged-in session.
    *  On by default (the CLI's original core feature). */
   cliBrowserControlEnabled: boolean
   /** `cate terminal read` — read other terminal panels' screens/scrollback,
@@ -1861,6 +1863,12 @@ export interface CodingCreateOptions {
    *  Agent's headless sessions in `.cate/cate-agent-loop` so their transcripts never
    *  appear in the agent panel's session list. Defaults to `'default'`. */
   agentDir?: 'default' | 'cateAgent'
+  /** Locator of the WORKSPACE this session belongs to, which may differ from
+   *  `cwd` when the panel is pinned to a worktree. Main resolves the workspace's
+   *  trust state from this to decide whether project MCP config (`.mcp.json` /
+   *  `.pi/mcp.json`) may be honoured — those files are repo-controlled and can
+   *  start local commands (GHSA-8769-jp52-985f). Absent ⇒ treated as untrusted. */
+  workspaceRoot?: string
 }
 
 /** Pi agent events forwarded from main to renderer. We keep the shape loose

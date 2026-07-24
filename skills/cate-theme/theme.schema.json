@@ -45,6 +45,7 @@
         "titlebar-bg": { "$ref": "#/definitions/cssColor" },
         "canvas-bg": { "$ref": "#/definitions/cssColor" },
         "canvas-bg-alt": { "$ref": "#/definitions/cssColor" },
+        "canvas-backdrop-scrim": { "$ref": "#/definitions/cssColor" },
         "grid-dot": { "$ref": "#/definitions/cssColor" },
         "grid-line": { "$ref": "#/definitions/cssColor" },
         "border-subtle": { "$ref": "#/definitions/cssColor" },

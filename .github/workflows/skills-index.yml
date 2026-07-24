@@ -22,8 +22,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '20'
       - name: Crawl sources and rebuild index
@@ -34,7 +34,7 @@ jobs:
       # rebuilt index directly. Open/refresh a PR instead; an admin or auto-merge
       # lands it. No-op when the crawl produced no diff.
       - name: Open PR with updated index
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           add-paths: registry/skills-index.json
           branch: skills-index-update

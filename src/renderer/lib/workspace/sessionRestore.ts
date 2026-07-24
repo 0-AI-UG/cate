@@ -24,6 +24,7 @@ import { terminalRegistry } from '../terminal/terminalRegistry'
 import { pendingTerminalStarts } from '../terminal/registryState'
 import { collectPanelIdsFromDockState, projectFilesToSnapshot } from './sessionSerialize'
 import { dockWindowsFromSession } from './sessionLoad'
+import { isProjectTrusted } from '../../stores/workspaceTrustStore'
 import type {
   SessionSnapshot,
   ProjectWorkspaceFile,
@@ -82,10 +83,17 @@ function resolveSnapshotCanvasPanelId(snapshot: SessionSnapshot): string | null 
  * snapshot through the same restore path used at launch.
  */
 export async function reloadActiveWorkspaceFromDisk(): Promise<void> {
+  await reloadWorkspaceFromDisk(useAppStore.getState().selectedWorkspaceId)
+}
+
+/** Same rebuild, for a specific workspace. */
+export async function reloadWorkspaceFromDisk(wsId: string): Promise<void> {
   const appStore = useAppStore.getState()
-  const wsId = appStore.selectedWorkspaceId
   const ws = appStore.workspaces.find((w) => w.id === wsId)
   if (!ws?.rootPath) return
+  // Backstop: an open workspace is a trusted one (the gate is on the open path),
+  // so this can only fire if trust was revoked under a live workspace.
+  if (!isProjectTrusted(ws.rootPath)) return
   // projectStateLoad is locator-aware: a local rootPath reads local .cate/, a
   // remote cate-runtime:// locator reads .cate/ on the runtime next to the
   // remote repo. Both paths round-trip through the same restore below.
@@ -166,6 +174,12 @@ export async function hydrateWorkspaceFromDiskIfEmpty(wsId: string): Promise<voi
   // ensureCenterCanvas), which still counts as empty so the disk layout loads.
   if (deferredSnapshots.has(wsId)) return
   if (!isWorkspaceEffectivelyEmpty(wsId)) return
+  // This is the drive-by path from the advisory: opening a cloned repo restores
+  // whatever its committed workspace.json names (GHSA-8769-jp52-985f). The user
+  // was asked before the workspace was pointed at this folder, so a trusted
+  // rootPath is the invariant here — this backstops it, and keeps the repo's
+  // files unread if trust was revoked under a live workspace.
+  if (!isProjectTrusted(ws.rootPath)) return
 
   const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath)) as {
     workspace: ProjectWorkspaceFile

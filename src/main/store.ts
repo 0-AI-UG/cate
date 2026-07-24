@@ -23,6 +23,8 @@ import {
   RECENT_PROJECTS_GET,
   RECENT_PROJECTS_ADD,
   RECENT_PROJECTS_REMOVE,
+  PROJECT_TRUST_GET,
+  PROJECT_TRUST_SET,
   SIDEBAR_SESSION_GET,
   SIDEBAR_SESSION_SET,
   REMOTE_PROJECTS_GET,
@@ -59,6 +61,8 @@ import {
   getRecentProjects,
   addRecentProject,
   removeRecentProject,
+  getTrustedProjects,
+  setProjectTrusted,
   getSidebarSession,
   setSidebarSession,
   getRemoteProjects,
@@ -421,6 +425,17 @@ export function registerHandlers(): void {
 
   ipcMain.handle(RECENT_PROJECTS_ADD, async (_event, projectPath: string) => {
     addRecentProject(projectPath)
+  })
+
+  // Workspace trust. Read as a whole list (the renderer caches it once at
+  // startup); writes are one explicit user decision at a time.
+  ipcMain.handle(PROJECT_TRUST_GET, async () => {
+    return getTrustedProjects()
+  })
+
+  ipcMain.handle(PROJECT_TRUST_SET, async (_event, locator: string, trusted: boolean) => {
+    setProjectTrusted(locator, trusted)
+    return getTrustedProjects()
   })
 
   // Drop a project from the recent list (issue #220): closing a workspace should

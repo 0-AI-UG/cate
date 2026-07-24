@@ -33,6 +33,14 @@ Autour de ce cœur, un IDE complet : éditeurs Monaco, navigateurs intégrés, v
 
 **Démarrage :** ouvrez un dossier et il devient un espace de travail. Cliquez droit pour ajouter des panneaux, appuyez sur `Cmd+K` pour la palette de commandes, glissez des panneaux sur le dock pour créer onglets et divisions. Aucun fichier de configuration.
 
+<p align="center">
+  <em>Psst. Hé, toi, rejoins nos stargazers :)</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/0-AI-UG/cate"><img src="https://img.shields.io/github/stars/0-AI-UG/cate?style=social" alt="Star Cate on GitHub" /></a>
+</p>
+
 ## Installation
 
 Téléchargez une version précompilée. Ne compilez pas depuis les sources pour un usage quotidien.
@@ -42,6 +50,12 @@ Téléchargez une version précompilée. Ne compilez pas depuis les sources pour
 | macOS | DMG, ZIP (`arm64`, `x64`) | [Dernière version](https://github.com/0-AI-UG/cate/releases/latest) |
 | Windows | Installeur NSIS, ZIP (`x64`) | [Dernière version](https://github.com/0-AI-UG/cate/releases/latest) |
 | Linux | AppImage, DEB, `tar.gz` (`x64`) | [Dernière version](https://github.com/0-AI-UG/cate/releases/latest) |
+
+Sur macOS, Homebrew fonctionne aussi :
+
+```sh
+brew install --cask cate
+```
 
 ## Ce qu'il contient
 

@@ -20,6 +20,8 @@ import type { WorktreeMeta } from '../../shared/types'
 import type { PrListItem } from '../sidebar/CreateWorktreeForm'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { isLocalLocator } from '../../main/runtime/locator'
+import { errorMessage } from '../lib/errorMessage'
+import { pathKey } from '../../shared/pathUtils'
 
 /** Apply a color/label change to a worktree's UI metadata, creating the metadata
  *  record when none exists yet (a worktree discovered only from git has its path
@@ -39,6 +41,7 @@ function upsertWorktreeMeta(
     path: wt.path,
     color: patch.color ?? existing?.color ?? wt.color ?? '#888888',
     label: 'label' in patch ? patch.label : existing?.label ?? wt.label,
+    prNumber: existing?.prNumber ?? wt.prNumber,
   })
 }
 
@@ -66,7 +69,8 @@ export interface CardCallbacks {
   onReveal: () => void
   onRename: (label: string | undefined) => void
   onRecolor: (color: string) => void
-  onOpenPr: (url: string) => void
+  onOpenPr: (url?: string) => void
+  onError: (message: string) => void
 }
 
 /** Build + run the native "more actions" menu shared by the sidebar card and the
@@ -97,10 +101,16 @@ export async function runWorktreeContextMenu(opts: {
     items.push({ type: 'separator' })
     items.push({ id: 'delete', label: 'Discard this work…' })
   }
-  const choice = await window.electronAPI.showContextMenu(items)
+  let choice: string | null
+  try {
+    choice = await window.electronAPI.showContextMenu(items)
+  } catch (err: unknown) {
+    opts.cb.onError(`Couldn’t open worktree actions: ${errorMessage(err, 'The menu is unavailable.')}`)
+    return
+  }
   switch (choice) {
     case 'publish': opts.cb.onPublish(); break
-    case 'pr': if (opts.hasPr && opts.prUrl) opts.cb.onOpenPr(opts.prUrl); else opts.cb.onCreatePR(); break
+    case 'pr': if (opts.hasPr) opts.cb.onOpenPr(opts.prUrl); else opts.cb.onCreatePR(); break
     case 'update': opts.cb.onUpdateFromMain(); break
     case 'merge': opts.cb.onMerge(); break
     case 'reveal': opts.cb.onReveal(); break
@@ -168,8 +178,8 @@ export function useParallelWork(
       try {
         await window.electronAPI.gitPush(wt.path, 'origin', wt.branch, workspaceId ?? '')
         reconcile()
-      } catch (err: any) {
-        setError(`Publish failed: ${err?.message || err}`)
+      } catch (err: unknown) {
+        setError(`Publish failed: ${errorMessage(err, 'Couldn’t publish this branch.')}`)
       } finally {
         setBusy?.(null)
       }
@@ -180,6 +190,10 @@ export function useParallelWork(
   const handleCreatePR = useCallback(
     async (wt: JoinedWorktree) => {
       if (!wt.branch) return
+      if (wt.prNumber) {
+        setError(`This worktree already belongs to PR #${wt.prNumber}. Open that pull request instead.`)
+        return
+      }
       setError(null)
       setBusy?.(wt.id)
       try {
@@ -188,10 +202,10 @@ export function useParallelWork(
           window.electronAPI.openExternalUrl(res.url)
           onPrCreated?.()
         } else {
-          setError(res.message)
+          setError(errorMessage(res.message, 'Couldn’t create the pull request.'))
         }
-      } catch (err: any) {
-        setError(`Could not create pull request: ${err?.message || err}`)
+      } catch (err: unknown) {
+        setError(`Couldn’t create pull request: ${errorMessage(err, 'The operation failed.')}`)
       } finally {
         setBusy?.(null)
       }
@@ -210,14 +224,14 @@ export function useParallelWork(
           setError(
             result.conflict
               ? `Conflicts updating from ${target} — open a terminal here to resolve them.`
-              : `Update from ${target}: ${result.message}`,
+              : `Update from ${target}: ${errorMessage(result.message, 'The update failed.')}`,
           )
         } else {
           setError(null)
           reconcile()
         }
-      } catch (err: any) {
-        setError(err?.message || 'Update failed')
+      } catch (err: unknown) {
+        setError(`Update failed: ${errorMessage(err, 'The operation failed.')}`)
       } finally {
         setBusy?.(null)
       }
@@ -239,13 +253,13 @@ export function useParallelWork(
       try {
         const result = await window.electronAPI.gitWorktreeMergeTo(rootPath, wt.branch, target, workspaceId ?? '')
         if (!result.ok) {
-          setError(`Merge ${wt.branch} → ${target}: ${result.message}`)
+          setError(`Merge ${wt.branch} → ${target}: ${errorMessage(result.message, 'The merge failed.')}`)
         } else {
           setError(null)
           reconcile()
         }
-      } catch (err: any) {
-        setError(err?.message || 'Merge failed')
+      } catch (err: unknown) {
+        setError(`Merge failed: ${errorMessage(err, 'The operation failed.')}`)
       } finally {
         setBusy?.(null)
       }
@@ -262,8 +276,13 @@ export function useParallelWork(
       let status: WorktreeStatus | null = null
       try {
         status = await window.electronAPI.gitWorktreeStatus(wt.path, workspaceId)
-      } catch {
-        status = null
+      } catch (err: unknown) {
+        setError(`Couldn’t verify this worktree before discarding it: ${errorMessage(err, 'Status is unavailable.')}`)
+        return
+      }
+      if (!status) {
+        setError('Couldn’t verify this worktree before discarding it. No files were removed.')
+        return
       }
       const dirty = !!status?.dirty
       const branchAhead = (status?.ahead ?? 0) > 0
@@ -293,14 +312,14 @@ export function useParallelWork(
         if (wt.branch) {
           try {
             await window.electronAPI.gitBranchDelete(rootPath, wt.branch, true, workspaceId)
-          } catch (err: any) {
-            setError(`Removed, but branch ${wt.branch} could not be deleted: ${err?.message || err}`)
+          } catch (err: unknown) {
+            setError(`Removed, but branch ${wt.branch} could not be deleted: ${errorMessage(err, 'Branch deletion failed.')}`)
           }
         }
         removeWorktree(workspaceId, wt.id)
         reconcile()
-      } catch (err: any) {
-        setError(err?.message || 'Discard failed')
+      } catch (err: unknown) {
+        setError(`Discard failed: ${errorMessage(err, 'The worktree was not removed.')}`)
       } finally {
         setBusy?.(null)
       }
@@ -317,16 +336,22 @@ export function useParallelWork(
       // prune is a no-op for them — drop those stale entries from the store
       // explicitly, otherwise "Clean up" appears to do nothing.
       const list = await window.electronAPI.gitWorktreeList(rootPath, workspaceId)
-      const livePaths = new Set(list.map((g) => g.path))
+      if (!list.some((worktree) => pathKey(worktree.path) === pathKey(rootPath))) {
+        setError('Couldn’t verify the live worktrees after cleanup. No saved entries were removed.')
+        return
+      }
+      const livePaths = new Set(list.map((g) => pathKey(g.path)))
+      const rootKey = pathKey(rootPath)
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       for (const w of ws?.worktrees ?? []) {
-        if (w.path !== rootPath && !livePaths.has(w.path)) removeWorktree(workspaceId, w.id)
+        const worktreeKey = pathKey(w.path)
+        if (worktreeKey !== rootKey && !livePaths.has(worktreeKey)) removeWorktree(workspaceId, w.id)
       }
       reconcile()
-    } catch (err: any) {
-      setError(err?.message || 'Cleanup failed')
+    } catch (err: unknown) {
+      setError(`Cleanup failed: ${errorMessage(err, 'No saved entries were removed.')}`)
     }
-  }, [rootPath, workspaceId, removeWorktree, reconcile])
+  }, [rootPath, workspaceId, removeWorktree, reconcile, setError])
 
   const makeCallbacks = useCallback(
     (wt: JoinedWorktree): CardCallbacks => ({
@@ -337,12 +362,23 @@ export function useParallelWork(
       onMerge: () => handleMerge(wt),
       onDelete: () => handleDelete(wt),
       canReveal: isLocalLocator(wt.path),
-      onReveal: () => window.electronAPI.shellShowInFolder(wt.path, workspaceId ?? undefined),
+      onReveal: () => {
+        void window.electronAPI.shellShowInFolder(wt.path, workspaceId ?? undefined).catch((err: unknown) => {
+          setError(`Couldn’t reveal this worktree: ${errorMessage(err, 'The folder is unavailable.')}`)
+        })
+      },
       onRename: (label) => workspaceId && upsertWorktreeMeta(workspaceId, wt, { label: label?.trim() || undefined }),
       onRecolor: (color) => workspaceId && upsertWorktreeMeta(workspaceId, wt, { color }),
-      onOpenPr: (url) => window.electronAPI.openExternalUrl(url),
+      onOpenPr: (url) => {
+        if (url) window.electronAPI.openExternalUrl(url)
+        else {
+          const prLabel = wt.prNumber ? `PR #${wt.prNumber}` : 'the pull request'
+          setError(`Couldn’t load ${prLabel}. Check your GitHub connection and try again.`)
+        }
+      },
+      onError: setError,
     }),
-    [launchInWorktree, handlePublish, handleCreatePR, handleUpdateFromMain, handleMerge, handleDelete, workspaceId],
+    [launchInWorktree, handlePublish, handleCreatePR, handleUpdateFromMain, handleMerge, handleDelete, workspaceId, setError],
   )
 
   return {

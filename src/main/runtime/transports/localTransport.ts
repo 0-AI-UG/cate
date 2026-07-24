@@ -12,7 +12,7 @@
 
 import { spawn, execFile, type ChildProcess } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
-import { mkdir, rm, writeFile } from 'fs/promises'
+import { mkdir, rename, rm, writeFile } from 'fs/promises'
 import { promisify } from 'util'
 import os from 'os'
 import path from 'path'
@@ -34,9 +34,12 @@ export interface LocalSubprocessOptions {
   /** Direct mode: explicit node + bundle, no provisioning (tests). */
   nodePath?: string
   bundlePath?: string
-  /** Provisioned mode: extract this tarball into installDir, then run its node. */
+  /** Provisioned mode: extract this tarball into a content-keyed dir under
+   *  `installRoot` (see localInstallRoot / installDir), then run its node. */
   tarballPath?: string
-  installDir?: string
+  installRoot?: string
+  /** The tarball's target — the readable half of the install dir's name. */
+  target?: RuntimeTarget
 }
 
 /** node binary inside an extracted tarball. Unified layout: runtime/bin/node on
@@ -48,15 +51,27 @@ function tarballNode(installDir: string): string {
     : path.join(installDir, 'runtime', 'bin', 'node')
 }
 
-/** Where the local host's runtime tarball is extracted, keyed by version +
- *  target (mirrors the remote `~/.cate/runtime/<ver>/<target>` layout). */
-export function localInstallDir(target: RuntimeTarget): string {
-  return path.join(os.homedir(), '.cate', 'runtime', RUNTIME_VERSION, target)
+/** Where this version's local installs live: `~/.cate/runtime/<ver>` (mirrors
+ *  the remote layout one level up). The install dirs INSIDE it are content-keyed
+ *  — see `installDir`. */
+export function localInstallRoot(): string {
+  return path.join(os.homedir(), '.cate', 'runtime', RUNTIME_VERSION)
+}
+
+/** Best-effort cleanup of a staging/retired tree. A retired tree can still be
+ *  open in a running daemon — on POSIX unlinking it is fine, on Windows it can
+ *  fail with EBUSY. Either way the leftover is inert and the NEXT bootstrap
+ *  clears it, so a failure here must not fail provisioning. */
+async function discard(dir: string): Promise<void> {
+  try {
+    await rm(dir, { recursive: true, force: true })
+  } catch { /* still in use (win32) — harmless, retried on the next bootstrap */ }
 }
 
 export class LocalSubprocessTransport implements RuntimeTransport {
   readonly kind = 'local'
   private child: ChildProcess | null = null
+  private tarballHashPromise: Promise<string> | null = null
 
   constructor(private readonly opts: LocalSubprocessOptions) {}
 
@@ -79,22 +94,47 @@ export class LocalSubprocessTransport implements RuntimeTransport {
       ...opts,
       id: opts.id ?? 'local',
       tarballPath,
-      installDir: localInstallDir(target),
+      installRoot: localInstallRoot(),
+      target,
     })
   }
 
-  /** Freshness marker stored in `.ok`: version + the tarball's content hash, so a
-   *  rebuilt daemon at the SAME version (dev iteration: `npm run runtime:tarball`
-   *  with new runtime.cjs/rg/pi) re-provisions instead of running stale bytes.
+  /** Short content hash of our tarball, computed once. */
+  private async hash(): Promise<string> {
+    this.tarballHashPromise ??= tarballHash(this.opts.tarballPath!)
+    return this.tarballHashPromise
+  }
+
+  /**
+   * Where this transport's tarball installs to: `<installRoot>/<target>-<hash>`.
+   * Null in direct mode.
+   *
+   * CONTENT-KEYED on purpose. Keying by version alone put a packaged Cate and a
+   * dev build — same RUNTIME_VERSION, different daemon bytes — in one directory,
+   * where each read the other's `.ok` as stale and `rm -rf`d a tree the other
+   * app's daemon was running from. Every agent hook bridge wrapper embeds
+   * `<installDir>/runtime/bin/node`, so hooks fired during the re-extract died
+   * with "no such file or directory". Distinct builds now install side by side
+   * and nothing ever deletes a live install.
+   */
+  async installDir(): Promise<string | null> {
+    const { installRoot, tarballPath, target } = this.opts
+    if (!installRoot || !tarballPath || !target) return null
+    return path.join(installRoot, `${target}-${await this.hash()}`)
+  }
+
+  /** Freshness marker stored in `.ok`: version + the tarball's content hash.
+   *  Now that the dir name carries the hash this is a COMPLETION marker (the
+   *  last thing written before the swap) plus a self-describing breadcrumb.
    *  Mirrors SshTransport's `version:hash` marker. */
   private async marker(version: string): Promise<string> {
-    return `${version}:${await tarballHash(this.opts.tarballPath!)}`
+    return `${version}:${await this.hash()}`
   }
 
   /** Provisioned mode only: true when the install dir holds THIS tarball's bytes. */
   async isInstalled(version: string): Promise<boolean> {
-    const { installDir, tarballPath } = this.opts
-    if (!installDir || !tarballPath) return true // direct mode: nothing to install
+    const installDir = await this.installDir()
+    if (!installDir) return true // direct mode: nothing to install
     const ok = path.join(installDir, '.ok')
     if (
       !existsSync(tarballNode(installDir)) ||
@@ -106,20 +146,46 @@ export class LocalSubprocessTransport implements RuntimeTransport {
     return readFileSync(ok, 'utf-8').trim() === (await this.marker(version))
   }
 
-  /** Provisioned mode only: extract the tarball into the install dir. */
+  /**
+   * Provisioned mode only: extract the tarball into the install dir.
+   *
+   * Extraction goes to a staging sibling and is swapped in with rename(2), so
+   * the install dir is either the old complete tree or the new one — never a
+   * half-extracted one. A daemon already running out of the old tree keeps its
+   * inodes across the swap, and anything resolving the path (agent hook
+   * bridges) finds a complete install at every instant. A failed extract leaves
+   * the previous install untouched.
+   */
   async bootstrap(version: string, force?: boolean): Promise<void> {
-    const { installDir, tarballPath } = this.opts
+    const { tarballPath } = this.opts
+    const installDir = await this.installDir()
     if (!installDir || !tarballPath) return // direct mode: bundle ships with the app
     if (!force && (await this.isInstalled(version))) return
-    await rm(installDir, { recursive: true, force: true })
-    await mkdir(installDir, { recursive: true })
-    await execFileP('tar', ['-xzf', tarballPath, '-C', installDir])
-    await writeFile(path.join(installDir, '.ok'), await this.marker(version))
+
+    const staging = `${installDir}.staging-${process.pid}`
+    const retired = `${installDir}.retired-${process.pid}`
+    await mkdir(path.dirname(installDir), { recursive: true })
+    await rm(staging, { recursive: true, force: true })
+    await mkdir(staging, { recursive: true })
+    try {
+      await execFileP('tar', ['-xzf', tarballPath, '-C', staging])
+      await writeFile(path.join(staging, '.ok'), await this.marker(version))
+      // Two renames, not one: POSIX has no atomic directory swap. The gap where
+      // installDir is absent is a single syscall wide (vs. the minutes a full
+      // re-extract took), and only opens when a tree is already there — the
+      // common fresh-hash path is one rename with no gap at all.
+      if (existsSync(installDir)) await rename(installDir, retired)
+      await rename(staging, installDir)
+    } finally {
+      await discard(staging)
+      await discard(retired)
+    }
   }
 
   async launch(): Promise<RuntimeChannel> {
-    const nodePath = this.opts.nodePath ?? tarballNode(this.opts.installDir!)
-    const bundlePath = this.opts.bundlePath ?? path.join(this.opts.installDir!, 'runtime.cjs')
+    const installDir = await this.installDir()
+    const nodePath = this.opts.nodePath ?? tarballNode(installDir!)
+    const bundlePath = this.opts.bundlePath ?? path.join(installDir!, 'runtime.cjs')
     const args = [bundlePath, '--root', this.opts.root, '--id', this.opts.id]
     if (this.opts.exclusions?.length) args.push('--exclude', this.opts.exclusions.join(','))
     if (this.opts.idleSuspend) args.push('--idle-suspend')

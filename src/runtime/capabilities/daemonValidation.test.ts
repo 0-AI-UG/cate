@@ -139,4 +139,30 @@ describe('buildDaemonRuntime FileHost path validation', () => {
       ),
     ).rejects.toThrow(/Access denied|outside allowed/)
   })
+
+  // A workspace root registered under its OWN scope (what workspaceManager does
+  // for every opened workspace) must admit a terminal, even though it sits
+  // outside the daemon's own root — otherwise a project on another drive than
+  // the daemon root (which is the user's home dir for the local daemon) could
+  // never start a terminal.
+  test('process.create accepts a cwd in the calling workspace scope', async () => {
+    const wsRoot = path.join(os.homedir(), 'cate-ws-scope-root')
+    addAllowedRoot(wsRoot, 'ws-1')
+    try {
+      // Without the scope it is denied — the daemon's own root is `root`.
+      await expect(
+        runtime.process.create({ cols: 80, rows: 24, cwd: wsRoot, shell: '/bin/sh' }, () => {}, () => {}),
+      ).rejects.toThrow(/Access denied|outside allowed/)
+
+      // With the scope, validation passes. The spawn itself may still fail (the
+      // directory doesn't exist on disk), so assert only that the failure is no
+      // longer an access-denied one.
+      const outcome = await runtime.process
+        .create({ cols: 80, rows: 24, cwd: wsRoot, shell: '/bin/sh', scopeId: 'ws-1' }, () => {}, () => {})
+        .then((handle) => { runtime.process.kill(handle.id); return null }, (err: unknown) => err)
+      expect(String(outcome ?? '')).not.toMatch(/outside allowed/)
+    } finally {
+      removeAllowedRoot(wsRoot, 'ws-1')
+    }
+  })
 })

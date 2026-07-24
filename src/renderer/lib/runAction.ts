@@ -26,7 +26,7 @@ import { activeDockPanelId } from '../../shared/collectPanelIds'
 /**
  * Ensures the workspace has a rootPath before proceeding.
  * If no rootPath is set, opens the folder dialog first.
- * Returns the workspaceId if ready, or null if the user cancelled.
+ * Returns the workspaceId if ready, or null if the folder didn't open.
  */
 export async function ensureWorkspaceFolder(workspaceId: string): Promise<string | null> {
   const ws = useAppStore.getState().getWorkspace(workspaceId)
@@ -35,8 +35,11 @@ export async function ensureWorkspaceFolder(workspaceId: string): Promise<string
   const folderPath = await window.electronAPI.openFolderDialog()
   if (!folderPath) return null
 
-  useAppStore.getState().setWorkspaceRootPath(workspaceId, folderPath)
-  return workspaceId
+  // Awaited, and its answer respected: the user can still decline to trust the
+  // folder they just picked. The caller must not then create a panel in a
+  // workspace that never got a root — it would land in $HOME.
+  const opened = await useAppStore.getState().setWorkspaceRootPath(workspaceId, folderPath)
+  return opened ? workspaceId : null
 }
 
 /**

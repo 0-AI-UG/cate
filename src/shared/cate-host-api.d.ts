@@ -91,18 +91,24 @@ export interface CateDroppedFile {
   truncated?: boolean
 }
 
-/** One interactable element in an accessibility `snapshot()`. `ref` is an opaque
- *  handle to pass back to `click`/`type`; it is only valid for the snapshot it
- *  came from (re-snapshot after a navigation or mutation). */
+/** One interactable element in an accessibility `snapshot()`. `ref` is an opaque,
+ *  generation-scoped handle to pass back to browser actions. */
 export interface CateBrowserRef {
   ref: string
   role: string
   name: string
   value?: string
+  disabled?: boolean
+  checked?: boolean
+  expanded?: boolean
+  selected?: boolean
+  focused?: boolean
 }
 
 /** Accessibility snapshot of a browser panel, from `cate.browser.snapshot()`. */
 export interface CateBrowserSnapshot {
+  /** Generation id embedded into every ref; a ref from an older generation is stale. */
+  snapshotId: string
   url: string
   title: string
   refs: CateBrowserRef[]
@@ -187,19 +193,27 @@ export interface CateHost {
     screenshot(opts?: { panelId?: string }): Promise<{ path: string }>
     /** Accessibility snapshot with interactable element refs. */
     snapshot(opts?: { panelId?: string }): Promise<CateBrowserSnapshot>
-    /** Click the element identified by `ref` (from a recent `snapshot`). */
-    click(opts: { ref: string; panelId?: string }): Promise<{ ok: true }>
-    /** Type `text` into the element identified by `ref`. */
-    type(opts: { ref: string; text: string; panelId?: string }): Promise<{ ok: true }>
-    /** Resolve once the panel stops loading (poll-based; `timeoutMs` defaults to
-     *  5000 and is capped at 8000). Rejects in-band with `still-loading`. */
-    wait(opts?: { panelId?: string; timeoutMs?: number }): Promise<{ url: string; title: string; loading: false }>
+    /** Auto-wait for actionability, then click with trusted pointer input. */
+    click(opts: { ref: string; panelId?: string; includeSnapshot?: boolean }): Promise<{ ok: true; snapshot?: CateBrowserSnapshot }>
+    /** Fill with trusted keyboard input. `type` is retained as an alias. */
+    fill(opts: { ref: string; text: string; panelId?: string; includeSnapshot?: boolean }): Promise<{ ok: true; snapshot?: CateBrowserSnapshot }>
+    type(opts: { ref: string; text: string; panelId?: string; includeSnapshot?: boolean }): Promise<{ ok: true; snapshot?: CateBrowserSnapshot }>
+    /** Wait for load, text, text disappearance, URL glob, or ref state. */
+    wait(opts?: {
+      panelId?: string
+      timeoutMs?: number
+      includeSnapshot?: boolean
+      condition?:
+        | { kind: 'load' }
+        | { kind: 'text' | 'textGone' | 'url'; value: string }
+        | { kind: 'ref'; ref: string; state: 'visible' | 'hidden' | 'attached' | 'detached' }
+    }): Promise<{ url: string; title: string; loading: boolean; snapshot?: CateBrowserSnapshot }>
     /** Press a named key (Enter, Tab, Escape, Backspace, Delete, Space, arrows,
      *  PageUp/PageDown, Home, End) as TRUSTED input — unlike `click`/`type`,
      *  which synthesise untrusted DOM events — so Enter submits forms. With
      *  `ref` the element is focused first; without it the key goes to the
      *  guest's current focus. */
-    press(opts: { key: string; ref?: string; panelId?: string }): Promise<{ ok: true }>
+    press(opts: { key: string; ref?: string; panelId?: string; includeSnapshot?: boolean }): Promise<{ ok: true; snapshot?: CateBrowserSnapshot }>
   }
   storage: CateHostStorage
 }

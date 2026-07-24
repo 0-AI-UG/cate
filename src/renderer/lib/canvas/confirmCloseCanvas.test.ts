@@ -6,6 +6,7 @@ const state = {
 }
 const closePanel = vi.fn()
 const addNode = vi.fn()
+const finalizeRemoveNode = vi.fn()
 const canvasNodes: Record<string, {
   id: string
   origin: { x: number; y: number }
@@ -18,7 +19,7 @@ vi.mock('../../stores/appStore', () => ({
 
 vi.mock('../../stores/canvasStore', () => ({
   getOrCreateCanvasStoreForPanel: () => ({
-    getState: () => ({ nodes: canvasNodes, addNode }),
+    getState: () => ({ nodes: canvasNodes, addNode, finalizeRemoveNode }),
   }),
 }))
 
@@ -52,6 +53,8 @@ describe('confirmCloseCanvas', () => {
   beforeEach(() => {
     closePanel.mockReset()
     addNode.mockReset()
+    addNode.mockReturnValue('target-node')
+    finalizeRemoveNode.mockReset()
     confirmCloseCanvasDialog.mockReset()
     ;(globalThis as unknown as { window: { electronAPI: unknown } }).window = {
       electronAPI: { confirmCloseCanvas: confirmCloseCanvasDialog },
@@ -108,6 +111,7 @@ describe('confirmCloseCanvas', () => {
 
     expect(proceed).toBe(true)
     expect(addNode).toHaveBeenCalledWith('term1', 'terminal', { x: 0, y: 0 })
+    expect(finalizeRemoveNode).toHaveBeenCalledWith('n0')
     expect(closePanel).not.toHaveBeenCalled()
   })
 

@@ -273,20 +273,27 @@ describe('snapshot / click / type', () => {
   })
 
   it('click passes the ref via JSON.stringify (never interpolated raw)', async () => {
-    const exec = vi.fn(async (_code: string) => ({ ok: true }))
-    h.webviews.set('b1', makeWebview({ executeJavaScript: exec }))
+    const exec = vi.fn(async (_code: string) => ({ ok: true, x: 5, y: 5, rect: '0:0:10:10' }))
+    const wv = makeWebview({ executeJavaScript: exec })
+    h.webviews.set('b1', wv)
     await handleBrowserMethod(WS, M('click'), { ref: '@e2' })
     const code = exec.mock.calls[0][0] as string
     expect(code).toContain('"@e2"')
+    expect(wv.sendInputEvent.mock.calls.map((call) => call[0].type)).toEqual(['mouseMove', 'mouseDown', 'mouseUp'])
   })
 
-  it('type dispatches with the given text and succeeds', async () => {
-    const exec = vi.fn(async (_code: string) => ({ ok: true }))
-    h.webviews.set('b1', makeWebview({ executeJavaScript: exec }))
+  it('type uses trusted keyboard input and succeeds', async () => {
+    const exec = vi.fn(async (_code: string) => ({ ok: true, x: 5, y: 5, rect: '0:0:10:10' }))
+    const wv = makeWebview({ executeJavaScript: exec })
+    h.webviews.set('b1', wv)
     const out = await handleBrowserMethod(WS, M('type'), { ref: '@e1', text: 'hi "there"' })
     expect(out).toEqual({ ok: true })
-    const code = exec.mock.calls[0][0] as string
-    expect(code).toContain(JSON.stringify('hi "there"'))
+    const chars = wv.sendInputEvent.mock.calls
+      .map((call) => call[0])
+      .filter((event) => event.type === 'char')
+      .map((event) => event.keyCode)
+      .join('')
+    expect(chars).toBe('hi "there"')
   })
 })
 
@@ -354,6 +361,9 @@ describe('injected page JS (jsdom)', () => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
       width: 10, height: 10, top: 0, left: 0, right: 10, bottom: 10, x: 0, y: 0, toJSON: () => ({}),
     } as DOMRect)
+    vi.spyOn(document, 'elementFromPoint').mockImplementation(
+      () => document.querySelector('[data-cate-ref]'),
+    )
     // jsdom doesn't implement scrollIntoView at all — the injected click/type JS
     // calls it, so provide an inert one.
     ;(Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {}
@@ -368,18 +378,21 @@ describe('injected page JS (jsdom)', () => {
 
     const out = await handleBrowserMethod(WS, M('snapshot'), {})
     expect(out.ok).toBe(true)
-    const result = (out as { ok: true; result: { url: string; title: string; refs: unknown[] } }).result
+    const result = (out as {
+      ok: true; result: { snapshotId: string; url: string; title: string; refs: unknown[] }
+    }).result
     expect(result.url).toBe(location.href)
     expect(result.title).toBe('Fixture')
+    expect(result.snapshotId).toBe('s1')
     expect(result.refs).toEqual([
-      { ref: '@e1', role: 'button', name: 'Save', value: '' },
-      { ref: '@e2', role: 'input:text', name: 'Email', value: '' },
-      { ref: '@e3', role: 'a', name: 'Home', value: undefined },
+      { ref: '@s1e1', role: 'button', name: 'Save', value: '' },
+      { ref: '@s1e2', role: 'input:text', name: 'Email', value: '' },
+      { ref: '@s1e3', role: 'a', name: 'Home', value: undefined },
     ])
     // The refs are written back onto the live DOM as data-cate-ref attributes.
-    expect(document.querySelector('button')?.getAttribute('data-cate-ref')).toBe('@e1')
-    expect(document.querySelector('input')?.getAttribute('data-cate-ref')).toBe('@e2')
-    expect(document.querySelector('a')?.getAttribute('data-cate-ref')).toBe('@e3')
+    expect(document.querySelector('button')?.getAttribute('data-cate-ref')).toBe('@s1e1')
+    expect(document.querySelector('input')?.getAttribute('data-cate-ref')).toBe('@s1e2')
+    expect(document.querySelector('a')?.getAttribute('data-cate-ref')).toBe('@s1e3')
   })
 
   it('reads all geometry/style before writing any data-cate-ref (no layout thrash)', async () => {
@@ -429,23 +442,23 @@ describe('injected page JS (jsdom)', () => {
 
     await handleBrowserMethod(WS, M('snapshot'), {})
     expect(stale.hasAttribute('data-cate-ref')).toBe(false)
-    // The button is re-numbered from @e1 on every run (no drift).
-    expect(document.querySelector('button')?.getAttribute('data-cate-ref')).toBe('@e1')
+    // Element indexes restart, but the generation changes so an old ref can
+    // never silently address the new @e1.
+    expect(document.querySelector('button')?.getAttribute('data-cate-ref')).toBe('@s1e1')
     await handleBrowserMethod(WS, M('snapshot'), {})
-    expect(document.querySelector('button')?.getAttribute('data-cate-ref')).toBe('@e1')
+    expect(document.querySelector('button')?.getAttribute('data-cate-ref')).toBe('@s2e1')
+    expect(await handleBrowserMethod(WS, M('click'), { ref: '@s1e1' })).toEqual({ ok: false, error: 'stale-ref' })
   })
 
-  it('click activates the element addressed by a live ref', async () => {
+  it('click sends trusted pointer input to the element addressed by a live ref', async () => {
     document.body.innerHTML = '<button aria-label="Go">Go</button>'
     const wv = evalWebview()
     h.webviews.set('b1', wv)
-    await handleBrowserMethod(WS, M('snapshot'), {}) // assigns @e1
-    const clicked = vi.fn()
-    document.querySelector('button')!.addEventListener('click', clicked)
+    await handleBrowserMethod(WS, M('snapshot'), {}) // assigns @s1e1
 
-    const out = await handleBrowserMethod(WS, M('click'), { ref: '@e1' })
+    const out = await handleBrowserMethod(WS, M('click'), { ref: '@s1e1' })
     expect(out).toEqual({ ok: true })
-    expect(clicked).toHaveBeenCalledTimes(1)
+    expect(wv.sendInputEvent.mock.calls.map((call) => call[0].type)).toEqual(['mouseMove', 'mouseDown', 'mouseUp'])
   })
 
   it('click on a well-formed but unknown ref returns stale-ref', async () => {
@@ -456,16 +469,14 @@ describe('injected page JS (jsdom)', () => {
     expect(out).toEqual({ ok: false, error: 'stale-ref' })
   })
 
-  it('click accepts a bare e<n> ref (normalized to @e<n>)', async () => {
+  it('click accepts a bare generation-scoped ref', async () => {
     document.body.innerHTML = '<button>Go</button>'
     const wv = evalWebview()
     h.webviews.set('b1', wv)
-    await handleBrowserMethod(WS, M('snapshot'), {}) // assigns @e1
-    const clicked = vi.fn()
-    document.querySelector('button')!.addEventListener('click', clicked)
-    const out = await handleBrowserMethod(WS, M('click'), { ref: 'e1' })
+    await handleBrowserMethod(WS, M('snapshot'), {}) // assigns @s1e1
+    const out = await handleBrowserMethod(WS, M('click'), { ref: 's1e1' })
     expect(out).toEqual({ ok: true })
-    expect(clicked).toHaveBeenCalledTimes(1)
+    expect(wv.sendInputEvent).toHaveBeenCalled()
   })
 
   it('click on a malformed ref reports bad-ref, not stale-ref', async () => {
@@ -475,7 +486,7 @@ describe('injected page JS (jsdom)', () => {
     h.webviews.set('b1', evalWebview())
     await handleBrowserMethod(WS, M('snapshot'), {})
     const out = await handleBrowserMethod(WS, M('click'), { ref: '@nope' })
-    expect(out).toEqual({ ok: false, error: 'bad-ref: expected a snapshot ref like @e12' })
+    expect(out).toEqual({ ok: false, error: 'bad-ref: expected a snapshot ref like @s12e7' })
   })
 
   it('snapshot surfaces input types, label names, select names, and collapsed whitespace', async () => {
@@ -492,27 +503,43 @@ describe('injected page JS (jsdom)', () => {
     // field is named from its associated <label> (whitespace collapsed), and
     // the <select> does NOT dump every option's text as its name.
     expect(refs).toEqual([
-      expect.objectContaining({ ref: '@e1', role: 'input:search', name: 'Search the web' }),
-      expect.objectContaining({ ref: '@e2', role: 'input:submit', name: '' }),
-      expect.objectContaining({ ref: '@e3', role: 'select', name: '' }),
+      expect.objectContaining({ ref: '@s1e1', role: 'input:search', name: 'Search the web' }),
+      expect.objectContaining({ ref: '@s1e2', role: 'input:submit', name: '' }),
+      expect.objectContaining({ ref: '@s1e3', role: 'select', name: '' }),
     ])
   })
 
-  it('type sets the value and dispatches input on a live ref', async () => {
+  it('snapshot masks passwords and reports useful control state', async () => {
+    document.body.innerHTML =
+      '<input type="password" aria-label="Password" value="top-secret" />' +
+      '<input type="checkbox" aria-label="Remember" checked />' +
+      '<button aria-label="Pay" disabled>Pay</button>'
+    h.webviews.set('b1', evalWebview())
+
+    const out = await handleBrowserMethod(WS, M('snapshot'), {})
+    const refs = (out as { ok: true; result: { refs: Array<Record<string, unknown>> } }).result.refs
+    expect(refs[0]).toMatchObject({ role: 'input:password', value: '••••••••' })
+    expect(refs[1]).toMatchObject({ role: 'input:checkbox', checked: true })
+    expect(refs[2]).toMatchObject({ role: 'button', disabled: true })
+    expect(JSON.stringify(out)).not.toContain('top-secret')
+  })
+
+  it('type focuses a live ref and sends replacement text as trusted char input', async () => {
     document.body.innerHTML = '<input type="text" />'
     const wv = evalWebview()
     h.webviews.set('b1', wv)
-    await handleBrowserMethod(WS, M('snapshot'), {}) // assigns @e1
-    const input = document.querySelector('input')!
-    const onInput = vi.fn()
-    input.addEventListener('input', onInput)
+    await handleBrowserMethod(WS, M('snapshot'), {}) // assigns @s1e1
 
     // Quotes + backslash: JSON-embedded (not interpolated), so must survive verbatim.
     const text = 'a "b" \\c/ \'d\''
-    const out = await handleBrowserMethod(WS, M('type'), { ref: '@e1', text })
+    const out = await handleBrowserMethod(WS, M('type'), { ref: '@s1e1', text })
     expect(out).toEqual({ ok: true })
-    expect(input.value).toBe(text)
-    expect(onInput).toHaveBeenCalledTimes(1)
+    const chars = wv.sendInputEvent.mock.calls
+      .map((call) => call[0])
+      .filter((event) => event.type === 'char')
+      .map((event) => event.keyCode)
+      .join('')
+    expect(chars).toBe(text)
   })
 
   it('type on a well-formed but unknown ref returns stale-ref', async () => {
@@ -543,6 +570,58 @@ describe('wait', () => {
     h.webviews.set('b1', makeWebview({ isLoading: vi.fn(() => true) }))
     const out = await handleBrowserMethod(WS, M('wait'), { timeoutMs: 1 })
     expect(out).toEqual({ ok: false, error: 'still-loading' })
+  })
+
+  it('waits on text, disappearance, URL globs, and ref visibility', async () => {
+    document.body.innerHTML = '<button>Saved</button>'
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 10, height: 10, top: 0, left: 0, right: 10, bottom: 10, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect)
+    const wv = makeWebview({
+      getURL: vi.fn(() => 'https://app.test/jobs/42/done'),
+      executeJavaScript: vi.fn(async (code: string) => eval(code)),
+    })
+    h.webviews.set('b1', wv)
+
+    expect(await handleBrowserMethod(WS, M('wait'), {
+      condition: { kind: 'text', value: 'Saved' },
+    })).toMatchObject({ ok: true })
+    expect(await handleBrowserMethod(WS, M('wait'), {
+      condition: { kind: 'textGone', value: 'Loading' },
+    })).toMatchObject({ ok: true })
+
+    // executeJavaScript observes jsdom's URL, while getURL is the webview URL.
+    const hrefPattern = `${location.origin}/**`
+    expect(await handleBrowserMethod(WS, M('wait'), {
+      condition: { kind: 'url', value: hrefPattern },
+    })).toMatchObject({ ok: true })
+
+    const snap = await handleBrowserMethod(WS, M('snapshot'), {}) as {
+      ok: true; result: { refs: Array<{ ref: string }> }
+    }
+    expect(await handleBrowserMethod(WS, M('wait'), {
+      condition: { kind: 'ref', ref: snap.result.refs[0].ref, state: 'visible' },
+    })).toMatchObject({ ok: true })
+  })
+
+  it('returns a stable condition timeout and can include the next snapshot', async () => {
+    document.body.innerHTML = '<button>Ready</button>'
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 10, height: 10, top: 0, left: 0, right: 10, bottom: 10, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect)
+    const wv = makeWebview({ executeJavaScript: vi.fn(async (code: string) => eval(code)) })
+    h.webviews.set('b1', wv)
+
+    expect(await handleBrowserMethod(WS, M('wait'), {
+      condition: { kind: 'text', value: 'Never' },
+      timeoutMs: 1,
+    })).toEqual({ ok: false, error: 'wait-timeout:text' })
+
+    const observed = await handleBrowserMethod(WS, M('wait'), {
+      condition: { kind: 'text', value: 'Ready' },
+      includeSnapshot: true,
+    }) as { ok: true; result: { snapshot: { snapshotId: string } } }
+    expect(observed.result.snapshot.snapshotId).toBe('s1')
   })
 })
 

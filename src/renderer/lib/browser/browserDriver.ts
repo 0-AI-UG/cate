@@ -12,12 +12,9 @@
 //   2. the focused browser (active panel is a browser of this workspace)
 //   3. the first browser panel in the workspace (matches terminalUrlOpen)
 //
-// SECURITY / FIDELITY NOTE: click/type synthesise DOM events (Event with
-// isTrusted=false). Pages that gate on trusted events (some drag/paste flows,
-// certain <input type=file> pickers) won't react. This is an accepted v1
-// limitation — documented so callers don't treat a synthetic click as a full
-// user gesture. `press` is the exception: it delivers REAL input through
-// webContents.sendInputEvent (isTrusted=true), so Enter submits forms.
+// Actions resolve a generation-scoped snapshot ref, auto-wait for an actionable
+// target, then deliver real input through webContents.sendInputEvent. Refs from
+// an older snapshot cannot silently address a different element.
 // =============================================================================
 
 import { useAppStore } from '../../stores/appStore'
@@ -87,7 +84,13 @@ async function waitForWebview(panelId: string, timeoutMs = 3_000): Promise<Porta
 // as function arguments via JSON.stringify so a malicious value can't break out
 // of a string literal into executable code.
 
-const SNAPSHOT_JS = `(function () {
+const snapshotGeneration = new WeakMap<PortalWebview, number>()
+
+function snapshotJs(webview: PortalWebview): string {
+  const generation = (snapshotGeneration.get(webview) ?? 0) + 1
+  snapshotGeneration.set(webview, generation)
+  const snapshotId = `s${generation}`
+  return `(function (snapshotId) {
   document.querySelectorAll('[data-cate-ref]').forEach(function (el) { el.removeAttribute('data-cate-ref') })
   var sel = 'a[href],button,input,textarea,select,[role],[contenteditable],h1,h2,h3,h4,h5,h6'
   // Two passes to avoid layout thrash: a DOM write (setAttribute) invalidates
@@ -106,7 +109,7 @@ const SNAPSHOT_JS = `(function () {
   var refs = []
   for (var i = 0; i < visible.length; i++) {
     var el = visible[i]
-    var ref = '@e' + (i + 1)
+    var ref = '@' + snapshotId + 'e' + (i + 1)
     el.setAttribute('data-cate-ref', ref)
     // Bare <input> tags all read alike, so expose the type (input:search vs
     // input:submit) — it is what disambiguates a field from its submit button.
@@ -121,19 +124,39 @@ const SNAPSHOT_JS = `(function () {
     if (!name) name = el.getAttribute('placeholder') || el.getAttribute('value') || ''
     name = name.replace(/\\s+/g, ' ').trim().slice(0, 200)
     var value = 'value' in el ? el.value : undefined
-    refs.push({ ref: ref, role: role, name: name, value: value })
+    // Never expose a password through the agent observation channel.
+    if (el.tagName === 'INPUT' && String(el.type).toLowerCase() === 'password') {
+      value = value ? '••••••••' : ''
+    }
+    var disabled = Boolean(el.disabled) || el.getAttribute('aria-disabled') === 'true'
+    var inputType = el.tagName === 'INPUT' ? String(el.type).toLowerCase() : ''
+    var checked = inputType === 'checkbox' || inputType === 'radio' ? Boolean(el.checked) : undefined
+    var expandedAttr = el.getAttribute('aria-expanded')
+    var expanded = expandedAttr === null ? undefined : expandedAttr === 'true'
+    var selectedAttr = el.getAttribute('aria-selected')
+    var selected = selectedAttr === null ? undefined : selectedAttr === 'true'
+    var item = { ref: ref, role: role, name: name, value: value }
+    if (disabled) item.disabled = true
+    if (checked !== undefined) item.checked = checked
+    if (expanded !== undefined) item.expanded = expanded
+    if (selected !== undefined) item.selected = selected
+    if (document.activeElement === el) item.focused = true
+    refs.push(item)
   }
-  return { url: location.href, title: document.title, refs: refs }
-})()`
+  return { snapshotId: snapshotId, url: location.href, title: document.title, refs: refs }
+})(${JSON.stringify(snapshotId)})`
+}
 
-/** Canonical refs are the `@e<n>` tokens SNAPSHOT_JS mints. Accept the bare
- *  `e<n>` a caller is likely to strip the sigil from, and reject anything else
- *  up front — a malformed ref would otherwise come back as `stale-ref`, telling
- *  the caller to re-snapshot when the fix is the argument itself. */
+async function takeSnapshot(webview: PortalWebview): Promise<unknown> {
+  return webview.executeJavaScript(snapshotJs(webview))
+}
+
+/** Canonical refs are generation-scoped `@s<n>e<n>` tokens. Legacy `@e<n>` and
+ *  bare forms remain accepted as input, but new snapshots never emit them. */
 function normalizeRef(raw: unknown): { ref: string } | { error: string } {
   if (typeof raw !== 'string' || raw === '') return { error: 'ref-required' }
-  const ref = /^e\d+$/.test(raw) ? `@${raw}` : raw
-  if (!/^@e\d+$/.test(ref)) return { error: 'bad-ref: expected a snapshot ref like @e12' }
+  const ref = /^(?:s\d+)?e\d+$/.test(raw) ? `@${raw}` : raw
+  if (!/^@(?:s\d+)?e\d+$/.test(ref)) return { error: 'bad-ref: expected a snapshot ref like @s12e7' }
   return { ref }
 }
 
@@ -145,28 +168,29 @@ function elementByRefBody(): string {
   for (var i = 0; i < all.length; i++) { if (all[i].getAttribute('data-cate-ref') === ref) { el = all[i]; break } }`
 }
 
-function clickJs(ref: string): string {
-  return `(function (ref) {
+function actionabilityJs(ref: string, mode: 'click' | 'fill'): string {
+  return `(function (ref, mode) {
   ${elementByRefBody()}
   if (!el) return { error: 'stale-ref' }
+  if (!el.isConnected) return { error: 'detached' }
   el.scrollIntoView({ block: 'center' })
-  el.focus()
-  el.click()
-  return { ok: true }
-})(${JSON.stringify(ref)})`
-}
-
-function typeJs(ref: string, text: string): string {
-  return `(function (ref, text) {
-  ${elementByRefBody()}
-  if (!el) return { error: 'stale-ref' }
-  el.scrollIntoView({ block: 'center' })
-  el.focus()
-  if ('value' in el) { el.value = text } else { el.textContent = text }
-  el.dispatchEvent(new Event('input', { bubbles: true }))
-  el.dispatchEvent(new Event('change', { bubbles: true }))
-  return { ok: true }
-})(${JSON.stringify(ref)}, ${JSON.stringify(text)})`
+  var rect = el.getBoundingClientRect()
+  var style = getComputedStyle(el)
+  if (rect.width <= 0 || rect.height <= 0 || style.visibility === 'hidden' || style.display === 'none') {
+    return { error: 'not-visible' }
+  }
+  if (el.disabled || el.getAttribute('aria-disabled') === 'true') return { error: 'disabled' }
+  if (mode === 'fill') {
+    var editable = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable
+    if (!editable) return { error: 'not-editable' }
+    if (el.readOnly || el.getAttribute('aria-readonly') === 'true') return { error: 'readonly' }
+  }
+  var x = Math.max(0, Math.floor(rect.left + rect.width / 2))
+  var y = Math.max(0, Math.floor(rect.top + rect.height / 2))
+  var hit = document.elementFromPoint ? document.elementFromPoint(x, y) : el
+  if (!hit || !(hit === el || el.contains(hit))) return { error: 'obscured' }
+  return { ok: true, x: x, y: y, rect: [rect.left, rect.top, rect.width, rect.height].join(':') }
+})(${JSON.stringify(ref)}, ${JSON.stringify(mode)})`
 }
 
 function focusJs(ref: string): string {
@@ -177,6 +201,75 @@ function focusJs(ref: string): string {
   el.focus()
   return { ok: true }
 })(${JSON.stringify(ref)})`
+}
+
+function focusForFillJs(ref: string): string {
+  return `(function (ref) {
+  ${elementByRefBody()}
+  if (!el) return { error: 'stale-ref' }
+  el.scrollIntoView({ block: 'center' })
+  el.focus()
+  if (typeof el.select === 'function') {
+    el.select()
+  } else if (el.isContentEditable) {
+    var selection = getSelection()
+    var range = document.createRange()
+    range.selectNodeContents(el)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+  return { ok: true }
+})(${JSON.stringify(ref)})`
+}
+
+const ACTION_TIMEOUT_MS = 3_000
+const ACTION_POLL_MS = 50
+
+interface ActionablePoint { x: number; y: number }
+
+async function waitForActionable(
+  webview: PortalWebview,
+  ref: string,
+  mode: 'click' | 'fill',
+): Promise<{ point: ActionablePoint } | { error: string }> {
+  const deadline = Date.now() + ACTION_TIMEOUT_MS
+  let previousRect = ''
+  let lastError = 'not-actionable'
+  for (;;) {
+    const result = await webview.executeJavaScript(actionabilityJs(ref, mode)) as {
+      ok?: true; error?: string; x?: number; y?: number; rect?: string
+    }
+    if (result.error === 'stale-ref') return { error: result.error }
+    if (result.ok && typeof result.x === 'number' && typeof result.y === 'number') {
+      if (result.rect && result.rect === previousRect) return { point: { x: result.x, y: result.y } }
+      previousRect = result.rect ?? ''
+      lastError = 'not-stable'
+    } else {
+      previousRect = ''
+      lastError = result.error ?? 'not-actionable'
+    }
+    if (Date.now() >= deadline) return { error: `action-timeout:${lastError}` }
+    await new Promise((resolve) => setTimeout(resolve, ACTION_POLL_MS))
+  }
+}
+
+async function postActionOutcome(webview: PortalWebview, args: Record<string, unknown>): Promise<BrowserOutcome> {
+  if (args.includeSnapshot !== true) return { ok: true }
+  return {
+    ok: true,
+    result: {
+      ok: true,
+      url: webview.getURL(),
+      title: webview.getTitle(),
+      snapshot: await takeSnapshot(webview),
+    },
+  }
+}
+
+async function sendNativeFill(webview: PortalWebview, text: string): Promise<void> {
+  await webview.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' })
+  await webview.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' })
+  for (const char of text) await webview.sendInputEvent({ type: 'char', keyCode: char })
 }
 
 // --- press key map -------------------------------------------------------------
@@ -213,13 +306,84 @@ const WAIT_DEFAULT_MS = 5_000
 const WAIT_MAX_MS = 8_000
 const WAIT_POLL_MS = 100
 
-async function waitForLoad(webview: PortalWebview, timeoutMs: number): Promise<BrowserOutcome> {
+type WaitCondition =
+  | { kind: 'load' }
+  | { kind: 'text' | 'textGone' | 'url'; value: string }
+  | { kind: 'ref'; ref: string; state: 'visible' | 'hidden' | 'attached' | 'detached' }
+
+function waitConditionJs(condition: Exclude<WaitCondition, { kind: 'load' }>): string {
+  return `(function (condition) {
+    if (condition.kind === 'text' || condition.kind === 'textGone') {
+      var text = document.body ? (document.body.innerText || document.body.textContent || '') : ''
+      var found = text.indexOf(condition.value) !== -1
+      return condition.kind === 'text' ? found : !found
+    }
+    if (condition.kind === 'url') {
+      var escaped = condition.value.replace(/[.+?^\${}()|[\\]\\\\]/g, '\\$&').split('*').join('.*')
+      return new RegExp('^' + escaped + '$').test(location.href)
+    }
+    var target = null
+    var nodes = document.querySelectorAll('[data-cate-ref]')
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute('data-cate-ref') === condition.ref) { target = nodes[i]; break }
+    }
+    var attached = Boolean(target && target.isConnected)
+    var visible = false
+    if (attached) {
+      var rect = target.getBoundingClientRect()
+      var style = getComputedStyle(target)
+      visible = rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    if (condition.state === 'attached') return attached
+    if (condition.state === 'detached') return !attached
+    if (condition.state === 'visible') return visible
+    return !visible
+  })(${JSON.stringify(condition)})`
+}
+
+function parseWaitCondition(raw: unknown): WaitCondition | { error: string } {
+  if (raw === undefined) return { kind: 'load' }
+  if (!raw || typeof raw !== 'object') return { error: 'bad-wait-condition' }
+  const value = raw as Record<string, unknown>
+  if (value.kind === 'load') return { kind: 'load' }
+  if ((value.kind === 'text' || value.kind === 'textGone' || value.kind === 'url') && typeof value.value === 'string') {
+    return { kind: value.kind, value: value.value }
+  }
+  if (value.kind === 'ref' && typeof value.ref === 'string' &&
+      ['visible', 'hidden', 'attached', 'detached'].includes(String(value.state))) {
+    const ref = normalizeRef(value.ref)
+    if ('error' in ref) return ref
+    const state = value.state as 'visible' | 'hidden' | 'attached' | 'detached'
+    return { kind: 'ref', ref: ref.ref, state }
+  }
+  return { error: 'bad-wait-condition' }
+}
+
+async function waitForCondition(
+  webview: PortalWebview,
+  timeoutMs: number,
+  condition: WaitCondition,
+  includeSnapshot: boolean,
+): Promise<BrowserOutcome> {
   const deadline = Date.now() + Math.min(Math.max(timeoutMs, 0) || WAIT_DEFAULT_MS, WAIT_MAX_MS)
   for (;;) {
-    if (!webview.isLoading()) {
-      return { ok: true, result: { url: webview.getURL(), title: webview.getTitle(), loading: false } }
+    const matched = condition.kind === 'load'
+      ? !webview.isLoading()
+      : await webview.executeJavaScript(waitConditionJs(condition)) === true
+    if (matched) {
+      return {
+        ok: true,
+        result: {
+          url: webview.getURL(),
+          title: webview.getTitle(),
+          loading: webview.isLoading(),
+          ...(includeSnapshot ? { snapshot: await takeSnapshot(webview) } : {}),
+        },
+      }
     }
-    if (Date.now() >= deadline) return { ok: false, error: 'still-loading' }
+    if (Date.now() >= deadline) {
+      return { ok: false, error: condition.kind === 'load' ? 'still-loading' : `wait-timeout:${condition.kind}` }
+    }
     await new Promise((r) => setTimeout(r, WAIT_POLL_MS))
   }
 }
@@ -317,27 +481,37 @@ export async function handleBrowserMethod(
         return { ok: true, result: { path: result.filePath } }
       }
       case 'snapshot': {
-        const snap = await webview.executeJavaScript(SNAPSHOT_JS)
+        const snap = await takeSnapshot(webview)
         return { ok: true, result: snap }
       }
       case 'click': {
         const ref = normalizeRef(args.ref)
         if ('error' in ref) return { ok: false, error: ref.error }
-        const res = (await webview.executeJavaScript(clickJs(ref.ref))) as { ok?: true; error?: string }
-        if (res?.error) return { ok: false, error: res.error }
-        return { ok: true }
+        const actionable = await waitForActionable(webview, ref.ref, 'click')
+        if ('error' in actionable) return { ok: false, error: actionable.error }
+        const { x, y } = actionable.point
+        await webview.sendInputEvent({ type: 'mouseMove', x, y })
+        await webview.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+        await webview.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+        return postActionOutcome(webview, args)
       }
+      case 'fill':
       case 'type': {
         const ref = normalizeRef(args.ref)
         if ('error' in ref) return { ok: false, error: ref.error }
         const text = typeof args.text === 'string' ? args.text : ''
-        const res = (await webview.executeJavaScript(typeJs(ref.ref, text))) as { ok?: true; error?: string }
-        if (res?.error) return { ok: false, error: res.error }
-        return { ok: true }
+        const actionable = await waitForActionable(webview, ref.ref, 'fill')
+        if ('error' in actionable) return { ok: false, error: actionable.error }
+        const focused = await webview.executeJavaScript(focusForFillJs(ref.ref)) as { error?: string }
+        if (focused?.error) return { ok: false, error: focused.error }
+        await sendNativeFill(webview, text)
+        return postActionOutcome(webview, args)
       }
       case 'wait': {
         const timeoutMs = typeof args.timeoutMs === 'number' ? args.timeoutMs : WAIT_DEFAULT_MS
-        return await waitForLoad(webview, timeoutMs)
+        const condition = parseWaitCondition(args.condition)
+        if ('error' in condition) return { ok: false, error: condition.error }
+        return await waitForCondition(webview, timeoutMs, condition, args.includeSnapshot === true)
       }
       case 'press': {
         const key = typeof args.key === 'string' ? PRESS_KEYS[args.key.toLowerCase()] : undefined
@@ -358,7 +532,7 @@ export async function handleBrowserMethod(
           await webview.sendInputEvent({ type: 'char', keyCode: key })
         }
         await webview.sendInputEvent({ type: 'keyUp', keyCode: key })
-        return { ok: true }
+        return postActionOutcome(webview, args)
       }
       default:
         return { ok: false, error: 'unsupported' }

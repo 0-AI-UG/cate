@@ -14,6 +14,7 @@ vi.mock('../logger', () => ({
 }))
 
 import { useAppStore } from '../../stores/appStore'
+import { useWorkspaceTrustStore } from '../../stores/workspaceTrustStore'
 import { saveSession } from './sessionSave'
 import type { PanelState } from '../../../shared/types'
 
@@ -30,6 +31,9 @@ let ROOT = ''
 
 beforeEach(() => {
   ROOT = `/tmp/dup-root-${rootSeq++}`
+  // Untrusted projects are never written to (see sessionSave), so this
+  // ownership test has to trust its root to exercise the write path at all.
+  useWorkspaceTrustStore.setState({ trusted: [ROOT], hydrated: true, queue: [] })
   projectStateSave = vi.fn(async () => {})
   const g = globalThis as unknown as { window?: { electronAPI?: unknown } }
   g.window = g.window ?? {}

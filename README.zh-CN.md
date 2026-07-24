@@ -33,6 +33,14 @@ Cate 是一款基于无限画布的桌面 IDE，为同时运行大量终端和�
 
 **快速开始：** 打开一个文件夹，它就成为一个工作区。右键添加面板，按 `Cmd+K` 打开命令面板，把面板拖到停靠区即可创建标签和分屏。无需任何配置文件。
 
+<p align="center">
+  <em>嘿，说你呢，来加入我们的 stargazers 吧 :)</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/0-AI-UG/cate"><img src="https://img.shields.io/github/stars/0-AI-UG/cate?style=social" alt="Star Cate on GitHub" /></a>
+</p>
+
 ## 安装
 
 下载预构建版本。日常使用请勿从源码构建。
@@ -42,6 +50,12 @@ Cate 是一款基于无限画布的桌面 IDE，为同时运行大量终端和�
 | macOS | DMG、ZIP（`arm64`、`x64`） | [最新版本](https://github.com/0-AI-UG/cate/releases/latest) |
 | Windows | NSIS 安装器、ZIP（`x64`） | [最新版本](https://github.com/0-AI-UG/cate/releases/latest) |
 | Linux | AppImage、DEB、`tar.gz`（`x64`） | [最新版本](https://github.com/0-AI-UG/cate/releases/latest) |
+
+macOS 也可以用 Homebrew 安装：
+
+```sh
+brew install --cask cate
+```
 
 ## 包含什么
 

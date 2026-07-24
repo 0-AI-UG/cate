@@ -557,6 +557,18 @@ export interface ElectronAPI {
   recentProjectsRemove(projectPath: string): Promise<void>
 
   // ---------------------------------------------------------------------------
+  // Workspace trust (GHSA-8769-jp52-985f)
+  // ---------------------------------------------------------------------------
+
+  /** Locators the user has explicitly trusted to auto-restore process-bearing
+   *  panels (agent/terminal/browser/extension) and load project MCP config.
+   *  Machine-local — a repo can never vouch for itself. */
+  projectTrustGet(): Promise<string[]>
+
+  /** Record or revoke a trust decision. Returns the updated list. */
+  projectTrustSet(locator: string, trusted: boolean): Promise<string[]>
+
+  // ---------------------------------------------------------------------------
   // Browser history + bookmarks (global, shared across all workspaces/windows)
   // ---------------------------------------------------------------------------
 
@@ -1038,8 +1050,8 @@ export interface ElectronAPI {
   skillsRefresh(): Promise<SkillEntry[]>
   /** Fetch a skill's SKILL.md body for the detail preview. */
   skillsGetPreview(entry: SkillEntry): Promise<string>
-  /** Install a skill into a workspace agent. Reuses an existing local install of
-   *  the same skill, then the saved-library cache, else fetches from GitHub. */
+  /** Install/update a skill from its source. Existing workspace/library bytes
+   *  are used only as an offline fallback (reported in warnings). */
   skillsInstall(entry: SkillEntry, targetId: SkillTargetId, cwd: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; installed?: InstalledSkill }>
   /** Uninstall a skill from a workspace agent. */
   skillsUninstall(skillId: string, name: string, targetId: SkillTargetId, cwd: string): Promise<{ ok: boolean; error?: string }>

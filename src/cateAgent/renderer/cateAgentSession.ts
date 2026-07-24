@@ -72,6 +72,7 @@ export async function createCateAgentSession(opts: CreateCateAgentSessionOpts): 
       panelId: opts.panelId,
       workspaceId: opts.workspaceId,
       cwd: opts.cwd ?? opts.rootPath,
+      workspaceRoot: opts.rootPath,
       model: opts.model ?? loadDefaultModel() ?? undefined,
       env: { CATE_AGENT_ROLE: opts.role },
       // Isolate Cate Agent transcripts in .cate/cate-agent-loop so the agent

@@ -20,7 +20,8 @@
 // deliberately NO raw method passthrough: every reachable host method has a
 // named verb, so the CLI's help is the complete, honest surface.
 //
-// Flags: --panel <id> --json --max <n> --timeout <ms> --help/-h --version.
+// Flags: --panel <id> --json --max <n> --snapshot --wait-timeout <ms>
+// --timeout <ms> --help/-h --version.
 //
 // Bundled to cate/dist/cli.cjs by scripts/build-runtime-tarball.mjs and run via
 // the bundled Node from the cate/bin/ shims. Node built-ins + global fetch ONLY.
@@ -30,7 +31,7 @@ import { parseArgs } from 'node:util'
 
 /** Version of the CLI tool itself (printed by --version). The API's own version
  *  is reachable via `cate version`. */
-export const CLI_VERSION = '4'
+export const CLI_VERSION = '5'
 
 /** Default request timeout (ms) when --timeout is not given. */
 export const DEFAULT_TIMEOUT_MS = 30_000
@@ -63,6 +64,8 @@ export interface Flags {
   json: boolean
   timeout?: string
   max?: string
+  snapshot: boolean
+  waitTimeout?: string
   help: boolean
   version: boolean
 }
@@ -134,15 +137,63 @@ export const GROUPS: Record<string, Group> = {
     screenshot: (a) => ({ method: 'cate.browser.screenshot', args: noArgs(a) }),
     snapshot: (a) => ({ method: 'cate.browser.snapshot', args: noArgs(a) }),
     click: (a) => ({ method: 'cate.browser.click', args: { ref: need(exact(a, 1)[0], 'ref') } }),
+    fill: (a) => ({
+      method: 'cate.browser.fill',
+      args: { ref: need(a[0], 'ref'), text: need(a.slice(1).join(' ') || undefined, 'text') },
+    }),
     type: (a) => ({
       method: 'cate.browser.type',
       // Join the remaining positionals so multi-word text needs no quoting.
       args: { ref: need(a[0], 'ref'), text: need(a.slice(1).join(' ') || undefined, 'text') },
     }),
-    wait: (a) => ({
-      method: 'cate.browser.wait',
-      args: exact(a, 1)[0] !== undefined ? { timeoutMs: needPositiveInt(a[0], 'ms') } : {},
-    }),
+    wait: (a, f) => {
+      const timeoutMs = f.waitTimeout !== undefined ? needPositiveInt(f.waitTimeout, 'wait-timeout') : undefined
+      if (a.length === 0) return { method: 'cate.browser.wait', args: { ...(timeoutMs ? { timeoutMs } : {}) } }
+      if (/^\d+$/.test(a[0])) {
+        exact(a, 1)
+        if (timeoutMs !== undefined) throw new UsageError('use either wait <ms> or --wait-timeout, not both')
+        return { method: 'cate.browser.wait', args: { timeoutMs: needPositiveInt(a[0], 'ms') } }
+      }
+
+      const kind = a[0]
+      if (kind === 'load') {
+        exact(a, 1)
+        return { method: 'cate.browser.wait', args: { condition: { kind: 'load' }, ...(timeoutMs ? { timeoutMs } : {}) } }
+      }
+      if (kind === 'text' || kind === 'gone') {
+        return {
+          method: 'cate.browser.wait',
+          args: {
+            condition: { kind: kind === 'text' ? 'text' : 'textGone', value: needRest(a.slice(1), 'text') },
+            ...(timeoutMs ? { timeoutMs } : {}),
+          },
+        }
+      }
+      if (kind === 'url') {
+        return {
+          method: 'cate.browser.wait',
+          args: {
+            condition: { kind: 'url', value: need(exact(a, 2)[1], 'pattern') },
+            ...(timeoutMs ? { timeoutMs } : {}),
+          },
+        }
+      }
+      if (kind === 'ref') {
+        const values = exact(a, 3)
+        const state = values[2] ?? 'visible'
+        if (!['visible', 'hidden', 'attached', 'detached'].includes(state)) {
+          throw new UsageError(`invalid <state>: ${state}`)
+        }
+        return {
+          method: 'cate.browser.wait',
+          args: {
+            condition: { kind: 'ref', ref: need(values[1], 'ref'), state },
+            ...(timeoutMs ? { timeoutMs } : {}),
+          },
+        }
+      }
+      throw new UsageError(`unknown browser wait condition: ${kind}`)
+    },
     // `press <key>` sends to whatever the guest has focused; `press <ref> <key>`
     // focuses the element first.
     press: (a) =>
@@ -223,6 +274,8 @@ const OPTIONS = {
   json: { type: 'boolean', default: false },
   timeout: { type: 'string' },
   max: { type: 'string' },
+  snapshot: { type: 'boolean', default: false },
+  'wait-timeout': { type: 'string' },
   help: { type: 'boolean', short: 'h', default: false },
   version: { type: 'boolean', default: false },
 } as const
@@ -248,6 +301,8 @@ export function parseCli(argv: string[]): Parsed {
       json: Boolean(values.json),
       timeout: values.timeout as string | undefined,
       max: values.max as string | undefined,
+      snapshot: Boolean(values.snapshot),
+      waitTimeout: values['wait-timeout'] as string | undefined,
       help: Boolean(values.help),
       version: Boolean(values.version),
     },
@@ -289,6 +344,20 @@ export function buildRequest(positionals: string[], flags: Flags): Request {
   if (flags.max !== undefined && req.method !== 'cate.browser.snapshot' && req.method !== 'cate.terminal.read') {
     throw new UsageError('--max is only valid for browser snapshot and terminal read')
   }
+  const snapshotMethods = new Set([
+    'cate.browser.click',
+    'cate.browser.fill',
+    'cate.browser.type',
+    'cate.browser.press',
+    'cate.browser.wait',
+  ])
+  if (flags.snapshot && !snapshotMethods.has(req.method)) {
+    throw new UsageError('--snapshot is only valid for browser click/fill/type/press/wait')
+  }
+  if (flags.waitTimeout !== undefined && req.method !== 'cate.browser.wait') {
+    throw new UsageError('--wait-timeout is only valid for browser wait')
+  }
+  if (flags.snapshot) req.args.includeSnapshot = true
 
   // --panel addresses a specific target panel (args.panelId). Browser/terminal
   // targets resolve only against rows of their type; set-title accepts every
@@ -455,6 +524,7 @@ function formatSnapshot(v: unknown, max: number): string {
   const url = pickUrl(v)
   if (url) lines.push(`url: ${url}`)
   if (o && typeof o.title === 'string') lines.push(`title: ${o.title}`)
+  if (o && typeof o.snapshotId === 'string') lines.push(`snapshot: ${o.snapshotId}`)
 
   const refs = Array.isArray(o?.refs) ? o.refs : []
   const shown = max > 0 ? refs.slice(0, max) : refs
@@ -466,6 +536,9 @@ function formatSnapshot(v: unknown, max: number): string {
     parts.push(JSON.stringify(String(e.name ?? '')))
     // Current input value — what a verify-after-type loop needs to read back.
     if (typeof e.value === 'string' && e.value !== '') parts.push(`= ${JSON.stringify(e.value)}`)
+    for (const state of ['disabled', 'checked', 'expanded', 'selected', 'focused']) {
+      if (e[state] === true) parts.push(`[${state}]`)
+    }
     lines.push(parts.join(' '))
   }
   if (shown.length < refs.length) {
@@ -517,13 +590,19 @@ export function formatHuman(method: string, value: unknown, opts?: { max?: numbe
       return pickUrl(value) ?? 'ok'
     case 'cate.browser.wait':
       // wait resolves to { url, title, loading: false }.
-      return pickUrl(value) ?? 'ok'
+      return asObj(value)?.snapshot
+        ? formatSnapshot(asObj(value)?.snapshot, opts?.max ?? SNAPSHOT_MAX_DEFAULT)
+        : pickUrl(value) ?? 'ok'
     case 'cate.browser.reload':
     case 'cate.browser.click':
+    case 'cate.browser.fill':
     case 'cate.browser.type':
     case 'cate.browser.press':
-      // These resolve to { ok: true } — nothing to print.
-      return 'ok'
+      // Agent actions can opt into a compact post-action observation, avoiding
+      // a second CLI round trip. Preserve the terse legacy output otherwise.
+      return asObj(value)?.snapshot
+        ? formatSnapshot(asObj(value)?.snapshot, opts?.max ?? SNAPSHOT_MAX_DEFAULT)
+        : 'ok'
     case 'cate.ui.notify':
     case 'cate.panel.focus':
     case 'cate.panel.setTitle':
@@ -559,8 +638,9 @@ Usage:
   cate version                      print the host API version
 
 Groups:
-  browser    open <url> | wait [ms] | reload
-             | screenshot | snapshot | click <ref> | type <ref> <text...>
+  browser    open <url> | wait [ms|load|text|gone|url|ref] | reload
+             | screenshot | snapshot | click <ref> | fill <ref> <text...>
+             | type <ref> <text...>
              | press [ref] <key>       (Enter, Tab, Escape, arrows, PageDown, ...)
   ui         notify <message...>
   editor     open <path[:line[:col]]>
@@ -577,6 +657,8 @@ Flags:
   --json           print the raw result as one JSON line
   --max <n>        snapshot: max ref lines (default ${SNAPSHOT_MAX_DEFAULT}; 0 = all)
                    terminal read: max tail lines (default ${TERMINAL_READ_MAX_DEFAULT}; 0 = all)
+  --snapshot       return a post-action snapshot (click/fill/type/press/wait)
+  --wait-timeout <ms> condition timeout for browser wait (default 5000, max 8000)
   --timeout <ms>   request timeout (default ${DEFAULT_TIMEOUT_MS})
   -h, --help       show this help
   --version        print the CLI version (distinct from host API version)
@@ -586,8 +668,9 @@ terminals while "Command-line control (cate CLI)" is enabled (Settings → CLI,
 where per-feature toggles for browser control and terminal read/input live too).`
 
 const GROUP_USAGE: Record<string, string> = {
-  browser: `Usage: cate browser open <url> | wait [ms] | reload | screenshot | snapshot\n` +
-    `       cate browser click <ref> | type <ref> <text...> | press [ref] <key>`,
+  browser: `Usage: cate browser open <url> | wait [ms|load|text|gone|url|ref] | reload | screenshot | snapshot\n` +
+    `       cate browser click <ref> | fill <ref> <text...> | type <ref> <text...> | press [ref] <key>\n` +
+    `       wait text <text...> | gone <text...> | url <glob> | ref <ref> [visible|hidden|attached|detached]`,
   ui: 'Usage: cate ui notify <message...>',
   editor: 'Usage: cate editor open <path[:line[:col]]>',
   panel: `Usage: cate panel list | create <type> [url] | focus <id> | close <id> | set-title <title...>\n` +

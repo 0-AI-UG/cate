@@ -41,6 +41,7 @@ export async function ensureDirectChatSession(
         panelId,
         workspaceId,
         cwd,
+        workspaceRoot: rootPath,
         model,
         sessionFile: chat.sessionFile ?? undefined,
       })

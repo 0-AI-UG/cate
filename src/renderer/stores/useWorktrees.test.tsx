@@ -39,7 +39,7 @@ import { useAppStore } from './appStore'
 const WS = 'ws-1'
 const ROOT = '/repo'
 
-function setWorkspace(worktrees: Array<{ id: string; path: string; color?: string; label?: string }>) {
+function setWorkspace(worktrees: Array<{ id: string; path: string; color?: string; label?: string; prNumber?: number }>) {
   useAppStore.setState({
     workspaces: [{ id: WS, rootPath: ROOT, worktrees } as any],
   } as any)
@@ -98,7 +98,7 @@ afterEach(() => {
 describe('useWorktrees', () => {
   it('joins live git facts with persisted UI metadata and mounts without a loop', () => {
     setWorkspace([
-      { id: 'meta-feat', path: '/repo/.cate/worktrees/feat', color: '#f00', label: 'Feature' },
+      { id: 'meta-feat', path: '/repo/.cate/worktrees/feat', color: '#f00', label: 'Feature', prNumber: 42 },
     ])
     mount()
     expect(renderCount).toBeLessThanOrEqual(2)
@@ -112,6 +112,7 @@ describe('useWorktrees', () => {
     expect(feat.id).toBe('meta-feat')
     expect(feat.color).toBe('#f00')
     expect(feat.label).toBe('Feature')
+    expect(feat.prNumber).toBe(42)
     expect(feat.isOrphan).toBe(false)
   })
 

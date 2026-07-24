@@ -19,7 +19,7 @@ export const THEME_SCHEMA_VERSION = 1
  *  src/shared/themes/base.ts. */
 export const APP_COLOR_KEYS = [
   'surface-0', 'surface-1', 'surface-2', 'surface-3', 'surface-4', 'surface-5', 'surface-6',
-  'titlebar-bg', 'canvas-bg', 'canvas-bg-alt',
+  'titlebar-bg', 'canvas-bg', 'canvas-bg-alt', 'canvas-backdrop-scrim',
   'grid-dot', 'grid-line',
   'border-subtle', 'border-strong', 'border-focus',
   'text-primary', 'text-secondary', 'text-muted', 'text-inverse',

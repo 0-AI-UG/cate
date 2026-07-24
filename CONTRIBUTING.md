@@ -40,15 +40,36 @@ We would rather say "not yet" in a one paragraph issue than decline a polished P
 
 ## Development Setup
 
-1. Fork and clone the repo
-2. Install dependencies: `npm install`
-3. Start the dev server: `npm run dev`
-
 ### Prerequisites
 
-- Node.js >= 18
-- npm >= 9
-- Python 3 + C++ compiler (for `node-pty` native module)
+- [Bun](https://bun.sh): package manager and script runner.
+- [Node.js](https://nodejs.org/) 20 or 22 LTS (see `.nvmrc`) on your PATH. The build scripts run under it; the runtime daemon bundles its own Node 22.
+- **Linux only:** `node-pty` ships prebuilt binaries for macOS and Windows, but not Linux, so it compiles from source there. Install Python 3 and a C++ toolchain:
+  - Debian/Ubuntu: `sudo apt install build-essential python3`
+  - Fedora/RHEL: `sudo dnf install @development-tools gcc-c++ make python3`
+  - Arch: `sudo pacman -S base-devel python`
+
+Fork and clone the repo, then one command installs dependencies and builds the local runtime daemon:
+
+```bash
+git clone https://github.com/<you>/cate.git
+cd cate
+bun run setup
+```
+
+### Scripts
+
+```bash
+bun run dev          # dev server with hot reload
+bun run typecheck
+bun run lint
+bun run test         # unit tests (vitest)
+bun run test:e2e     # Playwright integration tests
+bun run build        # production build
+bun run package      # package for distribution (:mac, :win, :linux)
+```
+
+Packaged binaries land in `release/`. The runtime daemon is rebuilt by `bun run runtime:tarball` (re-run it after changing anything under `src/runtime/`).
 
 ## Making Changes
 
@@ -59,11 +80,10 @@ We would rather say "not yet" in a one paragraph issue than decline a polished P
 2. Make your changes
 3. Run the checks before you push:
    ```bash
-   npm run typecheck
-   npm run test:unit
-   npm run build
-   npm run typecheck
-   npm run lint
+   bun run typecheck
+   bun run lint
+   bun run test
+   bun run build
    ```
 4. Commit with a clear message following [Conventional Commits](https://www.conventionalcommits.org/):
    ```
@@ -77,7 +97,7 @@ We would rather say "not yet" in a one paragraph issue than decline a polished P
 - **Link the issue** the PR resolves (`Closes #123`).
 - **Describe what changed and why.** The "why" matters more than the "what".
 - **Include screenshots or a short clip for any UI change.**
-- **Make sure `npm run typecheck`, `npm run test:unit`, `npm run build`, and `npm run lint` all pass.**
+- **Make sure `bun run typecheck`, `bun run lint`, `bun run test`, and `bun run build` all pass.**
 - **Add or update tests** when you change behavior.
 - **Don't bundle unrelated changes.** No drive-by reformatting, dependency bumps, or refactors mixed into a feature PR.
 - Expect review feedback. A few rounds of back and forth is normal and is not a sign anything is wrong.
@@ -90,7 +110,7 @@ We would rather say "not yet" in a one paragraph issue than decline a polished P
 
 ## Project Structure
 
-See the [Architecture section](README.md#architecture) in the README and [`CLAUDE.md`](CLAUDE.md) for detailed guidance on the codebase.
+See [`docs/architecture.md`](docs/architecture.md) and [`CLAUDE.md`](CLAUDE.md) for detailed guidance on the codebase.
 
 ## Code Style
 

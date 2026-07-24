@@ -70,15 +70,18 @@ import { parseLocator, LOCAL_RUNTIME_ID } from '../runtime/locator'
 import { getAllSettings, getSetting } from '../settingsFile'
 import { resolveActiveTheme } from '../themeBootCache'
 import { showOsNotification } from '../ipc/notifications'
+import type { PanelType } from '../../shared/types'
 
 /** Bumped when the cateHost API surface changes incompatibly. Guests use
- *  `cate.version` for feature detection. v3 removals: browser.list and
+ *  `cate.version` for feature detection. v4 adds generation-scoped browser
+ *  refs, native fill/click actions, conditional waits, and action snapshots.
+ *  v3 removals: browser.list and
  *  editor.active (cate.panel.list is the single enumeration surface — browser
  *  panels carry `url`, the focused entry answers "what is the user looking
  *  at"); browser.back/forward/current (navigate by URL; `wait` reads the
  *  settled url/title instantly when idle); agent.run (compose open -> send ->
  *  dispose). */
-const CATE_API_VERSION = 3
+const CATE_API_VERSION = 4
 
 const FORWARD_TIMEOUT_MS = 10_000
 
@@ -652,7 +655,33 @@ export async function dispatchCateInvoke(
     default:
       // Forward state-mutating methods (strip the leading `cate.`) to the owner.
       if (FORWARDED_METHODS.has(method.replace(/^cate\./, ''))) {
-        return scope.forward({ extensionId, workspaceId, panelId: panelId ?? '', method, args })
+        const result = await scope.forward({ extensionId, workspaceId, panelId: panelId ?? '', method, args })
+        // A create result is meant to be used immediately by the next CLI
+        // command. The renderer's full panel report is debounced, so register a
+        // provisional row now; otherwise `panel create browser` followed by
+        // `browser open --panel <returned-id>` (and the terminal equivalent)
+        // races the owner lookup and returns no-such-browser/terminal. The next
+        // normal report replaces this row with the complete panel metadata.
+        if (method === 'cate.canvas.createPanel' && result && typeof result === 'object') {
+          const created = result as { panelId?: unknown }
+          const a = (args ?? {}) as { type?: unknown; url?: unknown }
+          const win = getActiveMainWindow()
+          if (
+            typeof created.panelId === 'string' &&
+            typeof a.type === 'string' &&
+            win && !win.isDestroyed()
+          ) {
+            upsertWindowPanel(win.id, {
+              panelId: created.panelId,
+              type: a.type as PanelType,
+              title: typeof a.url === 'string' ? a.url : a.type,
+              workspaceId,
+              ...(a.type === 'browser' && typeof a.url === 'string' ? { url: a.url } : {}),
+              focused: false,
+            })
+          }
+        }
+        return result
       }
       return unsupported(method)
   }
