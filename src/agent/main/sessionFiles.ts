@@ -16,7 +16,7 @@
 
 import log from '../../main/logger'
 import { hostSessionsDir, hostJoin } from './agentDir'
-import { parseLocator, formatLocator } from '../../main/runtime/locator'
+import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import type { Runtime } from '../../main/runtime/types'
 import type { AgentSessionListEntry } from '../../shared/types'

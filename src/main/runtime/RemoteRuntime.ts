@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { Methods } from '../../runtime/protocol'
-import type { RuntimeId } from './locator'
+import type { RuntimeId } from '../../shared/runtimeLocator'
 import type {
   Runtime,
   FileHost,

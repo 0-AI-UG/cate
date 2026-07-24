@@ -1,7 +1,7 @@
 import os from 'node:os'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { RuntimeManager } from './runtimeManager'
-import { LOCAL_RUNTIME_ID } from './locator'
+import { LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import { buildDaemonRuntime } from '../../runtime/capabilities'
 import { RpcServer, type RpcServerOptions } from '../../runtime/rpcServer'
 import type { Runtime } from './types'

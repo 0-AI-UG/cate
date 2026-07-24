@@ -37,7 +37,13 @@ import type {
   SshHostEntry,
 } from '../../shared/types'
 import { broadcastToAll } from '../windowRegistry'
-import { formatLocator } from '../runtime/locator'
+import { formatLocator } from '../../shared/runtimeLocator'
+import {
+  isRemoteRuntimeConnection,
+  remoteConnectSpecFromConnection,
+  runtimeConnectionFromSpec,
+  runtimeConnectionPath,
+} from '../../shared/runtimeConnection'
 // settingsFile, not ../store: getSettingSync is a re-export of this getSetting,
 // and store.ts's side-effect graph (analytics, menu, auto-updater) would bloat
 // every bundle of the buildTransport graph (see buildTransport.interop.test.ts).
@@ -208,20 +214,6 @@ export async function buildTransport(runtimeId: string, spec: RemoteConnectSpec)
   })
 }
 
-function connectionRecord(runtimeId: string, spec: RemoteConnectSpec): RuntimeConnection {
-  return spec.kind === 'server'
-    ? { kind: 'server', runtimeId, host: spec.host, user: spec.user, port: spec.port, remotePath: spec.remotePath }
-    : { kind: 'wsl', runtimeId, distro: spec.distro, distroPath: spec.distroPath }
-}
-
-/** Inverse of connectionRecord: a stored connection back to a transport spec
- *  (auth is re-read from the encrypted secret store by buildTransport). */
-function specFromConnection(connection: Exclude<RuntimeConnection, { kind: 'local' }>): RemoteConnectSpec {
-  return connection.kind === 'server'
-    ? { kind: 'server', host: connection.host, user: connection.user, port: connection.port, remotePath: connection.remotePath }
-    : { kind: 'wsl', distro: connection.distro, distroPath: connection.distroPath }
-}
-
 export function registerRuntimeHandlers(): void {
   // Forward connection-state changes (incl. async drops) to the renderer.
   runtimes.setStatusListener((runtimeId, phase, message) => {
@@ -244,9 +236,10 @@ export function registerRuntimeHandlers(): void {
           useAgent: spec.auth.useAgent,
         })
       }
-      const remotePath = spec.kind === 'server' ? spec.remotePath : spec.distroPath
+      const connection = runtimeConnectionFromSpec(runtimeId, spec)
+      const remotePath = runtimeConnectionPath(connection)
       const rootPath = formatLocator({ runtimeId, path: remotePath })
-      return { ok: true, runtimeId, rootPath, connection: connectionRecord(runtimeId, spec) }
+      return { ok: true, runtimeId, rootPath, connection }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.warn('[runtime:connect] %s failed: %s', runtimeId, message)
@@ -258,9 +251,9 @@ export function registerRuntimeHandlers(): void {
   // install=false: if the host is reachable but the daemon isn't installed the
   // probe stops at `missing` (emitted to the renderer); installing is explicit.
   ipcMain.handle(RUNTIME_ENSURE, async (_event, connection: RuntimeConnection): Promise<RuntimeConnectResult> => {
-    if (connection.kind === 'local') return { ok: false, error: 'local connection needs no runtime' }
+    if (!isRemoteRuntimeConnection(connection)) return { ok: false, error: 'local connection needs no runtime' }
     const { runtimeId } = connection
-    const remotePath = connection.kind === 'server' ? connection.remotePath : connection.distroPath
+    const remotePath = runtimeConnectionPath(connection)
     const rootPath = formatLocator({ runtimeId, path: remotePath })
     // isConnected (not has): connect() now registers a DeferredRuntime
     // synchronously while connecting, so has() would be true mid-connect too. Only
@@ -276,7 +269,7 @@ export function registerRuntimeHandlers(): void {
     // so the lock overlay shows it instead of a bare "failed to connect".
     let transport: RuntimeTransport
     try {
-      transport = await buildTransport(runtimeId, specFromConnection(connection))
+      transport = await buildTransport(runtimeId, remoteConnectSpecFromConnection(connection))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       runtimes.report(runtimeId, 'unreachable', message)
@@ -303,14 +296,14 @@ export function registerRuntimeHandlers(): void {
   // a clean wipe + re-pull/push of the bundle, then connect. The only path that
   // installs anything; everything else only probes.
   ipcMain.handle(RUNTIME_INSTALL, async (_event, connection: RuntimeConnection): Promise<RuntimeConnectResult> => {
-    if (connection.kind === 'local') return { ok: false, error: 'the local runtime has nothing to install' }
+    if (!isRemoteRuntimeConnection(connection)) return { ok: false, error: 'the local runtime has nothing to install' }
     const { runtimeId } = connection
-    const remotePath = connection.kind === 'server' ? connection.remotePath : connection.distroPath
+    const remotePath = runtimeConnectionPath(connection)
     const rootPath = formatLocator({ runtimeId, path: remotePath })
     await runtimes.disposeConnection(runtimeId)
     let transport: RuntimeTransport
     try {
-      transport = await buildTransport(runtimeId, specFromConnection(connection))
+      transport = await buildTransport(runtimeId, remoteConnectSpecFromConnection(connection))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       runtimes.report(runtimeId, 'unreachable', message)
@@ -332,10 +325,10 @@ export function registerRuntimeHandlers(): void {
   // the workspace to `missing` (emitted by deleteInstall); the user recovers
   // through the normal Install — no special client state-setting.
   ipcMain.handle(RUNTIME_DELETE, async (_event, connection: RuntimeConnection): Promise<{ ok: boolean; error?: string }> => {
-    if (connection.kind === 'local') return { ok: false, error: 'the local runtime cannot be deleted' }
+    if (!isRemoteRuntimeConnection(connection)) return { ok: false, error: 'the local runtime cannot be deleted' }
     const { runtimeId } = connection
     try {
-      const transport = await buildTransport(runtimeId, specFromConnection(connection))
+      const transport = await buildTransport(runtimeId, remoteConnectSpecFromConnection(connection))
       await runtimes.deleteInstall(runtimeId, transport)
       // Forget the pinned host key so a later reconnect re-accepts on first use —
       // the user's recovery path when a server's SSH key has legitimately changed.

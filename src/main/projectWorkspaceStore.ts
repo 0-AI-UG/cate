@@ -18,7 +18,7 @@ import { quarantineCorruptFile } from './quarantineCorruptFile'
 import type { ProjectWorkspaceFile, ProjectSessionFile } from '../shared/types'
 import { broadcastToAll } from './windowRegistry'
 import { ensureCateGitignore, CATE_GITIGNORE_CONTENT } from './cateGitignore'
-import { parseLocator, isLocalLocator } from './runtime/locator'
+import { parseLocator, isLocalLocator } from '../shared/runtimeLocator'
 import { runtimes } from './runtime/runtimeManager'
 
 const CATE_DIR = '.cate'

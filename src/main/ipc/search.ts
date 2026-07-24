@@ -13,7 +13,7 @@ import { ipcMain } from 'electron'
 import { SEARCH_START, SEARCH_CANCEL, SEARCH_RESULT, SEARCH_DONE } from '../../shared/ipc-channels'
 import type { SearchOptions } from '../../shared/types'
 import type { SearchHandle } from '../../runtime/search/engine'
-import { parseLocator, formatLocator } from '../runtime/locator'
+import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../runtime/runtimeManager'
 import { windowFromEvent } from '../windowRegistry'
 

@@ -33,6 +33,7 @@ import log from '../logger'
 import { useAppStore } from '../../stores/appStore'
 import { watchFsRoot } from '../fs/fsWatchManager'
 import { pathDisplayName } from '../fs/displayPath'
+import { isRuntimeLocator } from '../../../shared/runtimeLocator'
 import { isLoadFailed, getBaseline, rememberBaseline } from './modelCache'
 import { classifyExternalEvent, shouldBlockOverwrite } from './externalConflict'
 import { threeWayMerge } from './threeWayMerge'
@@ -352,7 +353,7 @@ export function useFileSync({
   //   • disk unchanged            → leave the buffer, just restore the dirty dot
   const resyncFromDisk = useCallback(async () => {
     const path = filePathRef.current
-    if (!path || diffMode || path.startsWith('cate-runtime://')) return
+    if (!path || diffMode || isRuntimeLocator(path)) return
     const model = getModel()
     if (!model || model.isDisposed()) return
     const baseline = getBaseline(path)
@@ -387,7 +388,7 @@ export function useFileSync({
     if (!filePath || !rootPath || diffMode) return
     // Remote/runtime files live behind a locator the local root watcher can't
     // match; their changes aren't covered here (the save guard still applies).
-    if (filePath.startsWith('cate-runtime://')) return
+    if (isRuntimeLocator(filePath)) return
 
     const targetPosix = filePath.replace(/\\/g, '/')
     let disposed = false

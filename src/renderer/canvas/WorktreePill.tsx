@@ -21,6 +21,7 @@ import { useWorktrees } from '../stores/useWorktrees'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { resolveWorktree } from '../../shared/worktrees'
 import type { PanelState } from '../../shared/types'
+import { isWorktreePanelType } from '../../shared/panels'
 
 interface WorktreePillProps {
   panel: PanelState
@@ -89,7 +90,7 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
   }, [worktrees, current, focusedWorktreeId, panel, workspaceId, setPanelWorktreeId, focusWorktree])
 
   // Only relevant for terminal/agent panels in workspaces with 2+ worktrees.
-  if (panel.type !== 'terminal' && panel.type !== 'agent') return null
+  if (!isWorktreePanelType(panel.type)) return null
   if (worktrees.length < 2 || !current) return null
 
   const isFocused = focusedWorktreeId === currentId

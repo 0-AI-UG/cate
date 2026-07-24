@@ -34,7 +34,7 @@ vi.mock('electron', () => ({
 
 // Neighbor modules pull in heavy electron surfaces at import; stub them out.
 vi.mock('../browserProxy', () => ({ configureBrowserProxy: vi.fn() }))
-vi.mock('../runtime/locator', () => ({ isLocalLocator: () => true }))
+vi.mock('../../shared/runtimeLocator', () => ({ isLocalLocator: () => true }))
 vi.mock('../windowRegistry', () => ({ windowFromEvent: vi.fn() }))
 vi.mock('./pathValidation', () => ({
   validatePath: (p: string) => p,
