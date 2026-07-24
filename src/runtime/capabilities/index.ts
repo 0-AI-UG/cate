@@ -216,7 +216,7 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     idleSuspend: config.idleSuspend,
     hooks: {
       envForPty: (ptyId, env) => agentHooks.envForPty(ptyId, env),
-      prepareWorkspace: (cwd, config) => agentHooks.prepareWorkspace(cwd, config),
+      prepareWorkspace: (cwd, config, baseCwd) => agentHooks.prepareWorkspace(cwd, config, baseCwd),
     },
     agentPresence,
   })
@@ -251,6 +251,10 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     ...innerProc,
     create: async (opts, onData, onExit) => {
       if (opts.cwd) validatePtyCwd(opts.cwd, opts.scopeId) // throws -> rejects create, matching local
+      if (opts.workspaceBaseCwd) {
+        if (!opts.scopeId) throw new Error('A path scope is required for the workspace base cwd')
+        validateCwd(opts.workspaceBaseCwd, undefined, opts.scopeId)
+      }
       return innerProc.create(opts, onData, onExit)
     },
   }

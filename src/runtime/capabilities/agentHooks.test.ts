@@ -266,12 +266,15 @@ describe('agentHooks capability', () => {
     const { dir } = await cap.endpoint()
     const env = await cap.envForPty('rpty-nonode', { PATH: '/usr/bin:/bin' })
 
-    const { code, stderr } = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
+    const { code, stderr } = await new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
       let err = ''
       const child = execFile(path.join(dir, 'cate-hook-bridge-claude-code'), [], { env, timeout: 15_000 })
       child.stderr!.on('data', (chunk) => { err += String(chunk) })
       child.stdin!.on('error', () => { /* wrapper may exit before reading stdin */ })
       child.on('close', (c) => resolve({ code: c, stderr: err }))
+      child.stdin!.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.code !== 'EPIPE') reject(error)
+      })
       child.stdin!.end(JSON.stringify({ hook_event_name: 'SessionStart', cwd: '/w' }))
     })
 
@@ -464,6 +467,23 @@ describe('agentHooks capability', () => {
     expect(existsSync(path.join(cwd, '.claude'))).toBe(false)
     expect(existsSync(path.join(cwd, '.cursor'))).toBe(false)
     expect(existsSync(path.join(cwd, '.pi'))).toBe(false)
+  })
+
+  test('auto also uses the base workspace folder signal but writes only in the linked worktree', async () => {
+    const cap = makeCap()
+    const baseCwd = tmpDir('ws-auto-base')
+    const worktreeCwd = tmpDir('ws-auto-worktree')
+    mkdirSync(path.join(baseCwd, '.claude'))
+    mkdirSync(path.join(worktreeCwd, '.git'))
+
+    await cap.prepareWorkspace(worktreeCwd, undefined, baseCwd)
+
+    expect(existsSync(path.join(worktreeCwd, '.claude', 'settings.local.json'))).toBe(true)
+    expect(existsSync(path.join(baseCwd, '.claude', 'settings.local.json'))).toBe(false)
+    // Other agents remain gated when their folder is absent in both checkouts.
+    expect(existsSync(path.join(worktreeCwd, '.codex'))).toBe(false)
+    expect(existsSync(path.join(worktreeCwd, '.cursor'))).toBe(false)
+    expect(existsSync(path.join(worktreeCwd, '.pi'))).toBe(false)
   })
 
   test("'on' injects with no pre-existing folder; 'off' strips our entries but keeps the user's", async () => {

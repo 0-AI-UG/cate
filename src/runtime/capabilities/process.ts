@@ -184,7 +184,7 @@ export interface ProcessDeps {
    */
   hooks?: {
     envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
-    prepareWorkspace(cwd: string, config?: AgentHookConfig): Promise<void>
+    prepareWorkspace(cwd: string, config?: AgentHookConfig, baseCwd?: string): Promise<void>
   }
   /**
    * Hook-anchored agent presence (agentPresence.ts): scanActivity reads each
@@ -286,7 +286,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       if (deps.hooks && opts.agentHooks) {
         try {
           env = await deps.hooks.envForPty(id, env)
-          await deps.hooks.prepareWorkspace(cwd, opts.agentHookConfig)
+          await deps.hooks.prepareWorkspace(cwd, opts.agentHookConfig, opts.workspaceBaseCwd)
         } catch { /* hook injection unavailable */ }
       }
       const pty = ptySpawn(shell.path, shell.args, {

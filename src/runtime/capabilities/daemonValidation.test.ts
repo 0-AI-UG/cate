@@ -140,6 +140,24 @@ describe('buildDaemonRuntime FileHost path validation', () => {
     ).rejects.toThrow(/Access denied|outside allowed/)
   })
 
+  test('process.create rejects a workspace base cwd outside the calling workspace scope', async () => {
+    const outside = path.join(os.homedir(), 'cate-workspace-base-nope')
+    await expect(
+      runtime.process.create(
+        {
+          cols: 80,
+          rows: 24,
+          cwd: root,
+          shell: '/bin/sh',
+          scopeId: 'test',
+          workspaceBaseCwd: outside,
+        },
+        () => {},
+        () => {},
+      ),
+    ).rejects.toThrow(/Access denied|outside allowed/)
+  })
+
   // A workspace root registered under its OWN scope (what workspaceManager does
   // for every opened workspace) must admit a terminal, even though it sits
   // outside the daemon's own root — otherwise a project on another drive than
