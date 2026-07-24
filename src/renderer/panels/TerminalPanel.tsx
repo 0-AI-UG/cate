@@ -33,7 +33,7 @@ import { useTerminalGlow } from '../cateAgent/cateAgentStore'
 import { resolveWorktree } from '../../shared/worktrees'
 import { resumeCommandForAgent } from '../../shared/agents'
 import { CATE_FILE_MIME, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
-import { parseLocator } from '../../main/runtime/locator'
+import { parseLocator } from '../../shared/runtimeLocator'
 
 // ---------------------------------------------------------------------------
 // Component

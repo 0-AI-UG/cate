@@ -81,3 +81,8 @@ export function formatLocator(loc: ResourceLocator): string {
 export function isLocalLocator(raw: string): boolean {
   return parseLocator(raw).runtimeId === LOCAL_RUNTIME_ID
 }
+
+/** True when a value is explicitly encoded as a non-local runtime locator. */
+export function isRuntimeLocator(raw: unknown): boolean {
+  return typeof raw === 'string' && raw.startsWith(SCHEME)
+}

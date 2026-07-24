@@ -18,7 +18,7 @@
 
 import { readFile } from 'fs/promises'
 import log from '../logger'
-import { LOCAL_RUNTIME_ID } from '../runtime/locator'
+import { LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import type { Runtime } from '../runtime/types'
 import { uploadEntriesToRuntime } from '../runtime/uploadEntries'
 import { hostJoin } from '../../agent/main/agentDir'

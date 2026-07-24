@@ -12,7 +12,7 @@
 // =============================================================================
 
 import log from '../../main/logger'
-import { parseLocator, formatLocator } from '../../main/runtime/locator'
+import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import { hostJoin } from '../../agent/main/agentDir'
 import type { Runtime } from '../../main/runtime/types'

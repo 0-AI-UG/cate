@@ -4,8 +4,9 @@ import {
   parseLocator,
   formatLocator,
   isLocalLocator,
+  isRuntimeLocator,
   type ResourceLocator,
-} from './locator'
+} from './runtimeLocator'
 
 describe('locator', () => {
   describe('parseLocator', () => {
@@ -92,6 +93,14 @@ describe('locator', () => {
 
     test('remote URIs are not local', () => {
       expect(isLocalLocator('cate-runtime://srv_x/home/me')).toBe(false)
+    })
+  })
+
+  describe('isRuntimeLocator', () => {
+    test('recognizes only explicitly encoded runtime locators', () => {
+      expect(isRuntimeLocator('cate-runtime://srv_x/home/me')).toBe(true)
+      expect(isRuntimeLocator('/Users/anton/proj')).toBe(false)
+      expect(isRuntimeLocator(undefined)).toBe(false)
     })
   })
 })

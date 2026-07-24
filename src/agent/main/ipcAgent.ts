@@ -36,7 +36,7 @@ import {
 } from '../../shared/ipc-channels'
 import { deleteSession, listSessions, loadSessionTranscript } from './sessionFiles'
 import { hostAgentDir, hostJoin } from './agentDir'
-import { parseLocator, formatLocator, LOCAL_RUNTIME_ID } from '../../main/runtime/locator'
+import { parseLocator, formatLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import { readCustomOpenAI, saveCustomOpenAI } from './customModels'
 import log from '../../main/logger'

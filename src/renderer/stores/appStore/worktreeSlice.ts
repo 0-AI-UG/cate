@@ -8,6 +8,7 @@ import type { AppSet, AppGet, AppStoreActions } from './types'
 import { pickWorktreeColor, setPanelField } from './helpers'
 import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
 import { useSettingsStore } from '../settingsStore'
+import { isWorktreePanelType } from '../../../shared/panels'
 
 type WorktreeSliceActions = Pick<
   AppStoreActions,
@@ -82,7 +83,7 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
       if (useSettingsStore.getState().closeWorktreePanelsOnDelete) {
         const ws = get().workspaces.find((w) => w.id === wsId)
         const doomed = Object.values(ws?.panels ?? {}).filter(
-          (p) => p.worktreeId === worktreeId && (p.type === 'terminal' || p.type === 'agent'),
+          (p) => p.worktreeId === worktreeId && isWorktreePanelType(p.type),
         )
         for (const p of doomed) get().closePanel(wsId, p.id)
       }

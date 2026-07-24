@@ -15,6 +15,7 @@ import { useAppStore } from '../stores/appStore'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 import { isMiddleClick } from '../lib/mouse'
+import { isWorktreePanelType } from '../../shared/panels'
 
 const AWAIT_COLOR = '#c08a5a'
 
@@ -34,7 +35,7 @@ function useWorktreeColorByPanel(): Record<string, string> {
       // the one keyed by the workspace's own rootPath.
       const primary = worktrees.find((w) => w.path === ws.rootPath)
       for (const panel of Object.values(ws.panels)) {
-        if (panel.type !== 'terminal' && panel.type !== 'agent') continue
+        if (!isWorktreePanelType(panel.type)) continue
         const wt = worktrees.find((w) => w.id === panel.worktreeId) ?? primary
         if (wt?.color) out[panel.id] = wt.color
       }

@@ -6,6 +6,8 @@
 // environment.
 // =============================================================================
 
+import { isRuntimeLocator } from '../../shared/runtimeLocator'
+
 /** Check if input looks like a URL rather than a search query. */
 export function isUrl(input: string): boolean {
   const trimmed = input.trim()
@@ -18,7 +20,7 @@ export function isUrl(input: string): boolean {
   }
   // A remote-workspace locator is URL-shaped, not a search query — treating it
   // as a search would leak the path to the search engine.
-  if (trimmed.startsWith('cate-runtime://')) return true
+  if (isRuntimeLocator(trimmed)) return true
   // Has spaces — definitely a search query
   if (trimmed.includes(' ')) {
     return false
@@ -81,7 +83,7 @@ export function normalizeUrl(input: string): string {
   // never read a remote host's file. Pass it through untouched so the load
   // fails visibly (unknown scheme) instead of being rewritten into a local
   // file:// path or an https:// guess that points somewhere else entirely.
-  if (trimmed.startsWith('cate-runtime://')) return trimmed
+  if (isRuntimeLocator(trimmed)) return trimmed
   // Absolute POSIX path → file URL
   if (trimmed.startsWith('/')) return `file://${escapeFilePath(trimmed)}`
   // Absolute Windows path (e.g. C:\foo or C:/foo) → file URL with forward slashes

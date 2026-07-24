@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto'
 import log from '../../main/logger'
 import { CATE_GITIGNORE_CONTENT } from '../../main/cateGitignore'
-import { parseLocator } from '../../main/runtime/locator'
+import { parseLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import type { Runtime } from '../../main/runtime/types'
 import { hostJoin } from '../../agent/main/agentDir'

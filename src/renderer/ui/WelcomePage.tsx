@@ -11,7 +11,7 @@ import {
   CloudArrowUp,
 } from '@phosphor-icons/react'
 import { abbreviateLocalPath, workspaceDisplayName } from '../lib/fs/displayPath'
-import { parseLocator, LOCAL_RUNTIME_ID } from '../../main/runtime/locator'
+import { parseLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { isWorkspaceEffectivelyEmpty } from '../lib/workspace/session'

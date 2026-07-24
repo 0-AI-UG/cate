@@ -25,7 +25,7 @@ import { Tooltip } from '../ui/Tooltip'
 import { useGitStatusSnapshot, gitStatusStore, workspaceIdForRoot } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
 import { errorMessage } from '../lib/errorMessage'
-import { parseLocator, formatLocator } from '../../main/runtime/locator'
+import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 
 // ---------------------------------------------------------------------------
 // Types

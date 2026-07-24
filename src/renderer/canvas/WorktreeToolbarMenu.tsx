@@ -37,6 +37,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useAppStore, getWorktreeColorPalette } from '../stores/appStore'
 import { useParallelWork, runWorktreeContextMenu, type CardCallbacks } from '../stores/useParallelWork'
 import { useWorktreeStatuses, humanStatus, type PrStatus } from '../stores/useWorktreeStatuses'
+import type { WorktreePanelType } from '../../shared/panels'
 
 interface WorktreeToolbarMenuProps {
   canvasPanelId: string
@@ -210,7 +211,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
   useEffect(() => () => setHoveredWorktree(null), [setHoveredWorktree])
 
   const launch = useCallback(
-    (wt: JoinedWorktree, type: 'terminal' | 'agent') => {
+    (wt: JoinedWorktree, type: WorktreePanelType) => {
       launchInWorktree(wt, type, { target: 'canvas', canvasPanelId })
       onClose()
     },
@@ -380,7 +381,7 @@ const PrPill: React.FC<{ pr: PrStatus; onClick: () => void }> = ({ pr, onClick }
 const SpawnButton: React.FC<{
   icon: React.ReactNode
   title: string
-  panelType: 'terminal' | 'agent'
+  panelType: WorktreePanelType
   cwd: string
   worktreeId: string
   onClick: () => void
@@ -418,7 +419,7 @@ const WorktreeRow: React.FC<{
   cb: CardCallbacks
   onFocus: () => void
   onHover: (on: boolean) => void
-  onLaunch: (type: 'terminal' | 'agent') => void
+  onLaunch: (type: WorktreePanelType) => void
 }> = ({ wt, primaryLabel, focused, status, pr, panels, busy, cb, onFocus, onHover, onLaunch }) => {
   const isPrimary = !!wt.isPrimary
   const label = wt.label || wt.branch || (isPrimary ? 'main' : '(detached)')

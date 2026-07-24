@@ -4,7 +4,8 @@
 // =============================================================================
 
 import log from '../logger'
-import { isLocalLocator } from '../../../main/runtime/locator'
+import { isLocalLocator } from '../../../shared/runtimeLocator'
+import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
 import { applySidebarSession, dedupeSnapshotsByRoot } from './sidebarSession'
 import { projectFilesToSnapshot } from './sessionSerialize'
 import { ensureProjectTrusted } from '../../stores/workspaceTrustStore'
@@ -93,7 +94,7 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
   let declinedRemote = false
   for (const entry of remoteEntries) {
     const snap = entry?.snapshot
-    if (!snap?.connection || snap.connection.kind === 'local') {
+    if (!isRemoteRuntimeConnection(snap?.connection)) {
       keptRemote.push(entry)
       continue
     }

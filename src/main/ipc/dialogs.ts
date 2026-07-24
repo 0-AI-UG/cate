@@ -1,10 +1,9 @@
 import { ipcMain, dialog, shell } from 'electron'
 import fs from 'fs'
-import path from 'path'
 import log from '../logger'
 import { wrapHandler } from './handlerError'
 import { validatePath, grantFileAccess } from './pathValidation'
-import { isLocalLocator } from '../runtime/locator'
+import { isLocalLocator } from '../../shared/runtimeLocator'
 import { forwardFileGrant } from '../runtime/runtimeManager'
 import { recordPersistentGrant } from '../grantedPathStore'
 import { importCanvasBackgroundImage } from '../canvasBackgroundStore'
@@ -23,6 +22,11 @@ import {
   DIALOG_TERMINAL_LINK_OPEN,
   CANVAS_READ_BACKGROUND_IMAGE,
 } from '../../shared/ipc-channels'
+import {
+  CANVAS_WALLPAPER_MAX_BYTES,
+  CANVAS_WALLPAPER_PICKER_EXTENSIONS,
+  canvasWallpaperMime,
+} from '../../shared/canvasWallpaper'
 
 export function registerDialogHandlers(): void {
   // Shell: Reveal in Finder
@@ -60,7 +64,7 @@ export function registerDialogHandlers(): void {
       title: 'Choose Canvas Background Image',
       properties: ['openFile'],
       filters: [
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'] },
+        { name: 'Images', extensions: [...CANVAS_WALLPAPER_PICKER_EXTENSIONS] },
       ],
     })
     if (result.canceled || result.filePaths.length === 0) return null
@@ -73,22 +77,11 @@ export function registerDialogHandlers(): void {
   // arbitrary file-to-data-URL exfiltration primitive.
   ipcMain.handle(CANVAS_READ_BACKGROUND_IMAGE, async (_event, filePath: unknown) => {
     if (typeof filePath !== 'string' || filePath === '') return null
-    const MIME_BY_EXT: Record<string, string> = {
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif': 'image/gif',
-      '.webp': 'image/webp',
-      '.bmp': 'image/bmp',
-      '.avif': 'image/avif',
-    }
-    const ext = path.extname(filePath).toLowerCase()
-    const mime = MIME_BY_EXT[ext]
+    const mime = canvasWallpaperMime(filePath)
     if (!mime) return null
     try {
       const stat = await fs.promises.stat(filePath)
-      const MAX_BYTES = 40 * 1024 * 1024 // 40 MB ceiling — keeps a data URL sane.
-      if (!stat.isFile() || stat.size > MAX_BYTES) return null
+      if (!stat.isFile() || stat.size > CANVAS_WALLPAPER_MAX_BYTES) return null
       const buf = await fs.promises.readFile(filePath)
       return `data:${mime};base64,${buf.toString('base64')}`
     } catch (err) {

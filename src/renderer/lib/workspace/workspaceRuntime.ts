@@ -1,4 +1,5 @@
 import type { RuntimePhase, WorkspaceState } from '../../../shared/types'
+import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
 
 // =============================================================================
 // The ONE place that turns a workspace's stored state (connection record +
@@ -35,10 +36,10 @@ export interface WorkspaceRuntime {
 export function workspaceRuntime(ws: WorkspaceState | undefined): WorkspaceRuntime {
   const conn = ws?.connection
   const runtime = ws?.runtime
-  const isRemote = (!!conn && conn.kind !== 'local') || !!runtime
+  const isRemote = isRemoteRuntimeConnection(conn) || !!runtime
   if (!isRemote) return { status: 'local', editable: true, hasConnection: false }
 
-  const hasConnection = !!conn && conn.kind !== 'local'
+  const hasConnection = isRemoteRuntimeConnection(conn)
   const error = runtime?.error
   // No phase yet on a remote workspace (e.g. session restore in progress) reads
   // as still connecting, so the canvas stays blocked until it resolves.

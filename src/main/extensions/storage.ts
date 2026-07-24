@@ -26,7 +26,7 @@
 // =============================================================================
 
 import log from '../logger'
-import { LOCAL_RUNTIME_ID, parseLocator, type RuntimeId } from '../runtime/locator'
+import { LOCAL_RUNTIME_ID, parseLocator, type RuntimeId } from '../../shared/runtimeLocator'
 import { runtimes } from '../runtime/runtimeManager'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { hostJoin } from '../../agent/main/agentDir'

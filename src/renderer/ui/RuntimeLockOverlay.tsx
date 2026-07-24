@@ -5,6 +5,10 @@ import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
 import { BACKDROP, CARD_SURFACE, btn } from './Modal'
 import type { RuntimeConnection, RemoteConnectSpec } from '../../shared/types'
+import {
+  isRemoteRuntimeConnection,
+  runtimeConnectionLabel,
+} from '../../shared/runtimeConnection'
 
 // Full-cover lock for the main canvas while the selected remote workspace's
 // runtime isn't usable. It blocks interaction with the dead panels beneath and
@@ -15,16 +19,9 @@ import type { RuntimeConnection, RemoteConnectSpec } from '../../shared/types'
 // workspace it renders nothing. The single source of truth is
 // workspaceRuntime(workspace) plus the global LOCAL runtime phase.
 
-/** Human label for the remote target (distro or user@host) when easy to derive. */
-function connectionLabel(connection: RuntimeConnection | undefined): string | null {
-  if (!connection || connection.kind === 'local') return null
-  if (connection.kind === 'wsl') return connection.distro
-  return `${connection.user}@${connection.host}`
-}
-
 /** Pre-fill values for the edit-connection form from a stored connection. */
 function connectionInitial(connection: RuntimeConnection | undefined) {
-  if (!connection || connection.kind === 'local') return undefined
+  if (!isRemoteRuntimeConnection(connection)) return undefined
   if (connection.kind === 'wsl') {
     return { kind: 'wsl' as const, distro: connection.distro, distroPath: connection.distroPath }
   }
@@ -86,7 +83,7 @@ export function RuntimeLockOverlay(): JSX.Element | null {
   if (!workspace || runtime.editable) return null
 
   const connection = workspace.connection
-  const label = connectionLabel(connection)
+  const label = isRemoteRuntimeConnection(connection) ? runtimeConnectionLabel(connection) : null
   const isBusy = runtime.status === 'installing' || runtime.status === 'connecting'
 
   // Per-phase title + actions. The phase is whatever main's probe reported; the

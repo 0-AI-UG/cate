@@ -33,7 +33,7 @@ import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { collectPanelIds } from '../../shared/collectPanelIds'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
-import { PANEL_DEFINITIONS } from '../../shared/panels'
+import { isWorktreePanelType, PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
 
 // Node ids already reported for missing geometry, so a bad node that keeps
@@ -72,7 +72,9 @@ export interface CanvasNodeProps {
 const GRAB_STRIP_HEIGHT = 22
 /** Canvas-inside-canvas isn't supported — tab + split menus and drag-and-drop
  *  for canvas-node mini-docks all reject this type. */
-const CANVAS_EXCLUDED_TYPES: PanelType[] = ['canvas']
+const CANVAS_EXCLUDED_TYPES = (Object.values(PANEL_DEFINITIONS)
+  .filter((definition) => !definition.canLiveOnCanvas)
+  .map((definition) => definition.type)) satisfies PanelType[]
 
 // -----------------------------------------------------------------------------
 // Pulse animation keyframes (injected once)
@@ -394,7 +396,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   // — mirroring the WorktreePill + tab-title fallback. Non-terminal panels stay
   // untagged (no territory).
   const primaryWorktree = worktrees.find((w) => w.path === currentWorkspace?.rootPath)
-  const isWorktreePanel = activePanel?.type === 'terminal' || activePanel?.type === 'agent'
+  const isWorktreePanel = isWorktreePanelType(activePanel?.type)
   const activeWorktree = wtEnabled
     ? worktrees.find((w) => w.id === activePanel?.worktreeId) ?? (isWorktreePanel ? primaryWorktree : undefined)
     : undefined

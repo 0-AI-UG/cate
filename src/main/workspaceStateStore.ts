@@ -15,6 +15,8 @@
 import { createJsonStateFile } from './jsonStateFile'
 import { isPlainObject } from './jsonUtils'
 import type { SidebarSession, RemoteProjectEntry } from '../shared/types'
+import { isRuntimeLocator } from '../shared/runtimeLocator'
+import { isRemoteRuntimeConnection } from '../shared/runtimeConnection'
 
 const MAX_RECENT_PROJECTS = 10
 
@@ -22,9 +24,8 @@ function isRemoteProjectEntry(value: unknown): value is RemoteProjectEntry {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const entry = value as Partial<RemoteProjectEntry>
   return typeof entry.locator === 'string'
-    && entry.locator.startsWith('cate-runtime://')
-    && !!entry.connection
-    && entry.connection.kind !== 'local'
+    && isRuntimeLocator(entry.locator)
+    && isRemoteRuntimeConnection(entry.connection)
     && !!entry.snapshot
     && typeof entry.snapshot === 'object'
 }

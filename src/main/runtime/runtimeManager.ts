@@ -12,7 +12,7 @@
 // =============================================================================
 
 import log from '../logger'
-import { LOCAL_RUNTIME_ID, parseLocator, type RuntimeId } from './locator'
+import { LOCAL_RUNTIME_ID, parseLocator, type RuntimeId } from '../../shared/runtimeLocator'
 import type { Runtime } from './types'
 import { RuntimeRpcClient } from './rpcClient'
 import { RemoteRuntime } from './RemoteRuntime'

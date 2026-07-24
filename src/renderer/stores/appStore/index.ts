@@ -15,7 +15,8 @@ import { shallow } from 'zustand/shallow'
 import { arrayEqualBy } from '../selectorUtils'
 import type { WorkspaceState, PanelState, RuntimePhase } from '../../../shared/types'
 import type { CanvasOperations } from '../../lib/canvas/canvasBridge'
-import { LOCAL_RUNTIME_ID } from '../../../main/runtime/locator'
+import { LOCAL_RUNTIME_ID } from '../../../shared/runtimeLocator'
+import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
 
 import type { AppStore } from './types'
 import { createWorkspaceSlice } from './workspaceSlice'
@@ -95,7 +96,7 @@ export function setupWorkspaceSync(): () => void {
       return
     }
     const target = store.workspaces.find(
-      (ws) => ws.connection && ws.connection.kind !== 'local' && ws.connection.runtimeId === evt.runtimeId,
+      (ws) => isRemoteRuntimeConnection(ws.connection) && ws.connection.runtimeId === evt.runtimeId,
     )
     if (target) store.setWorkspaceRuntimePhase(target.id, evt.phase, evt.message ?? null)
   })

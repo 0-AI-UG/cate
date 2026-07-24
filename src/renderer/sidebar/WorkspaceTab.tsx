@@ -2,6 +2,7 @@ import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
 import { browserPanelUrl, type WorkspaceState, type PanelType, type PanelState, type WindowPanelInfo } from '../../shared/types'
+import { isWorktreePanelType } from '../../shared/panels'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
@@ -581,7 +582,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       void window.electronAPI.focusWindowPanel(p.panelId)
     }
     const titleHint = `${p.title} — in another window`
-    if (p.type === 'terminal' || p.type === 'agent') {
+    if (isWorktreePanelType(p.type)) {
       return (
         <TerminalPanelRow
           key={p.panelId}
@@ -669,7 +670,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       onBeginRename: () => beginPanelRename(p.id, label),
       onContextMenu: (e) => handlePanelContextMenu(e, p.id, label),
     }
-    if (p.type === 'terminal' || p.type === 'agent') {
+    if (isWorktreePanelType(p.type)) {
       const info = agentInfoByPanel[p.id]
       return (
         <TerminalPanelRow

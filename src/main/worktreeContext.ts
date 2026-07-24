@@ -1,4 +1,4 @@
-import { formatLocator, parseLocator } from './runtime/locator'
+import { formatLocator, parseLocator } from '../shared/runtimeLocator'
 import type { FileAccessContext, Runtime } from './runtime/types'
 
 interface WorktreeLocation {

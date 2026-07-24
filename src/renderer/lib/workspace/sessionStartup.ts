@@ -17,6 +17,7 @@ import type {
   PanelTransferSnapshot,
   PanelState,
 } from '../../../shared/types'
+import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
 
 // ---------------------------------------------------------------------------
 // Session-aware panel chunk prefetch — kicks off dynamic imports for only the
@@ -69,7 +70,7 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
     wsIds.push(wsId)
 
     if (i === selectedIdx) {
-      const isRemote = !!snapshot.connection && snapshot.connection.kind !== 'local'
+      const isRemote = isRemoteRuntimeConnection(snapshot.connection)
       if (isRemote) {
         // Remote workspace: do NOT block app startup on the runtime connect.
         // selectWorkspace sets the selection + 'connecting' phase synchronously

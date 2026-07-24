@@ -20,7 +20,7 @@ vi.mock('../logger', () => ({
 vi.mock('../workspaceManager', () => ({
   getWorkspaceInfo: (workspaceId: string) => ({ rootPath: workspaceId }),
 }))
-vi.mock('../runtime/locator', () => ({
+vi.mock('../../shared/runtimeLocator', () => ({
   parseLocator: (rootPath: string) => ({ runtimeId: rootPath, path: `/work/${rootPath}` }),
 }))
 vi.mock('../runtime/runtimeManager', () => ({

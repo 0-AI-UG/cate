@@ -11,6 +11,7 @@
 // =============================================================================
 
 import type { PanelState } from '../../shared/types'
+import { isWorktreePanelType } from '../../shared/panels'
 import type { CanvasStoreState } from '../stores/canvas/storeTypes'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
@@ -36,6 +37,6 @@ export function inheritedWorktreeFromSelection(
   if (!nodeId || !panels) return {}
   const panelId = activeDockPanelId(canvasState.nodes[nodeId]?.dockLayout)
   const panel = panelId ? panels[panelId] : undefined
-  if (!panel || (panel.type !== 'terminal' && panel.type !== 'agent')) return {}
+  if (!panel || !isWorktreePanelType(panel.type)) return {}
   return { cwd: panel.cwd, worktreeId: panel.worktreeId }
 }

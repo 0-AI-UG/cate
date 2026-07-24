@@ -193,7 +193,7 @@ export interface WorkspaceInfo {
   name: string
   color: string
   /** Locator string: a bare absolute path for local, a `cate-runtime://`
-   *  URI otherwise. See src/main/runtime/locator.ts. */
+   *  URI otherwise. See src/shared/runtimeLocator.ts. */
   rootPath: string
   /** Absent is the canonical local-workspace representation. */
   connection?: RuntimeConnection

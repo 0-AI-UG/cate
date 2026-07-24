@@ -20,7 +20,7 @@ import { writeJsonAtomic } from './writeJsonAtomic'
 import { quarantineCorruptFile } from './quarantineCorruptFile'
 import { isPlainObject } from './jsonUtils'
 import { ensureCateGitignore, CATE_GITIGNORE_CONTENT } from './cateGitignore'
-import { isLocalLocator, parseLocator } from './runtime/locator'
+import { isLocalLocator, parseLocator } from '../shared/runtimeLocator'
 import { runtimes } from './runtime/runtimeManager'
 
 const CATE_DIR = '.cate'

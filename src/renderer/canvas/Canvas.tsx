@@ -19,6 +19,7 @@ import GhostPlacementLayer from './GhostPlacementLayer'
 import PlacementVizOverlay from './placementViz/PlacementVizOverlay'
 import { WorktreeTerritoryLayer } from './worktree'
 import type { Point, PanelType } from '../../shared/types'
+import { isWorktreePanelType, type WorktreePanelType } from '../../shared/panels'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
 
@@ -389,9 +390,9 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     const spawnData = e.dataTransfer.getData('application/cate-spawn')
     if (spawnData) {
       e.preventDefault()
-      let spec: { panelType?: 'terminal' | 'agent'; cwd?: string; worktreeId?: string } = {}
+      let spec: { panelType?: WorktreePanelType; cwd?: string; worktreeId?: string } = {}
       try { spec = JSON.parse(spawnData) } catch { return }
-      if (spec.panelType !== 'terminal' && spec.panelType !== 'agent') return
+      if (!isWorktreePanelType(spec.panelType)) return
       const rect = canvasRef.current?.getBoundingClientRect()
       if (!rect) return
       const viewPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top }

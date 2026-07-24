@@ -9,7 +9,7 @@
 // =============================================================================
 
 import { ipcMain } from 'electron'
-import { parseLocator, formatLocator } from '../runtime/locator'
+import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import type { FileAccessContext, VcsHost } from '../runtime/types'
 import { resolveLocator } from '../runtime/runtimeManager'
 import { windowFromEvent } from '../windowRegistry'
