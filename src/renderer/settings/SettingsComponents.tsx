@@ -127,6 +127,7 @@ interface TextInputProps {
   /** Defaults to 'text'. Use 'password' for secrets. */
   type?: 'text' | 'password'
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
+  onBlur?: () => void
   disabled?: boolean
   /**
    * Replaces the default width + horizontal padding (`w-48 px-2`). Use to widen
@@ -144,6 +145,7 @@ export function TextInput({
   placeholder,
   type = 'text',
   onKeyDown,
+  onBlur,
   disabled,
   layoutClassName = TEXT_INPUT_LAYOUT,
   className,
@@ -154,6 +156,7 @@ export function TextInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={onKeyDown}
+      onBlur={onBlur}
       placeholder={placeholder}
       disabled={disabled}
       className={`${layoutClassName} ${TEXT_INPUT_BASE}${className ? ` ${className}` : ''}`}

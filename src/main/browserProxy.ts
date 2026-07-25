@@ -1,16 +1,17 @@
 // =============================================================================
-// browserProxy — per-panel HTTP/HTTPS/SOCKS5/PAC proxy for Browser nodes
+// browserProxy — HTTP/HTTPS/SOCKS5/PAC proxy for Browser panels
 // (issue #241)
 //
-// Each browser panel that has a proxy configured runs in its own proxy-derived
-// persistent session (see BrowserPanel.tsx `partitionFor`). This module applies
-// the proxy to that session and answers Chromium's proxy auth challenge for
-// credentialed proxies (`user:pass@host`), since the credentials cannot be
-// carried in the proxy rules string itself.
+// Browser panels using the proxy configured in Cate settings share a
+// proxy-derived persistent session (see BrowserPanel.tsx `partitionFor`). This
+// module applies the proxy to that session and answers Chromium's proxy auth
+// challenge for credentialed proxies (`user:pass@host`), since the credentials
+// cannot be carried in the proxy rules string itself.
 // =============================================================================
 
 import { app, session, type Session } from 'electron'
 import log from './logger'
+import { watchDownloadsForSession } from './ipc/browserControl'
 
 interface ProxyCredentials {
   username: string
@@ -28,6 +29,11 @@ const PAC_PREFIX = 'pac://'
  *  safe to call again when the panel's proxy changes. */
 export async function configureBrowserProxy(partition: string, proxyUrl?: string): Promise<void> {
   const ses = session.fromPartition(partition)
+  // Browser panels call this before mounting their <webview>, which makes it the
+  // one place guaranteed to see each browser session — so it is where the
+  // download observer that backs `cate browser downloads` is attached.
+  // Attaching later (on first query) would miss the download that prompted it.
+  watchDownloadsForSession(ses)
 
   const trimmed = proxyUrl?.trim()
   if (!trimmed) {

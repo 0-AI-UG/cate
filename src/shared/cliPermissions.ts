@@ -56,26 +56,39 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
   {
     label: 'Browser',
     prefixes: ['cate.browser.'],
+    // Observation only. Anything that can change the page, the guest's
+    // environment, or the machine's clipboard is control — including
+    // `evaluate`, which cannot be proven read-only from its text.
     readMethods: [
       'cate.browser.current',
       'cate.browser.list',
       'cate.browser.screenshot',
       'cate.browser.snapshot',
       'cate.browser.wait',
+      'cate.browser.find',
+      'cate.browser.text',
+      'cate.browser.attrs',
+      'cate.browser.state',
+      'cate.browser.assets',
+      'cate.browser.console',
+      'cate.browser.tabs',
+      'cate.browser.frames',
+      'cate.browser.downloads',
+      'cate.browser.dialogs',
     ],
     read: {
       key: 'cliBrowserReadEnabled',
       access: 'Read',
       code: 'browser-read-disabled',
       detail:
-        '`cate browser screenshot / snapshot / wait` — see the page in the built-in browser panel, which shows your live logged-in sessions.',
+        '`cate browser snapshot / find / text / state / console / screenshot / wait` — see the page in the built-in browser panel, which shows your live logged-in sessions.',
     },
     control: {
       key: 'cliBrowserControlEnabled',
       access: 'Control',
       code: 'browser-control-disabled',
       detail:
-        '`cate browser open / reload / click / fill / type / press` — act on the page in the built-in browser panel, using your live logged-in sessions.',
+        '`cate browser open / click / fill / type / press / eval / clipboard / viewport` — act on the page in the built-in browser panel, using your live logged-in sessions.',
     },
   },
   {

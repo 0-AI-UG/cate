@@ -72,6 +72,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   cliNotifyEnabled: 'boolean',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
+  browserProxyUrl: 'string',
   browserShowBookmarksBar: 'boolean',
   browserShowTabSidebar: 'boolean',
   browserNewTabBehavior: 'string',

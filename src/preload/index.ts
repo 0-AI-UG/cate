@@ -188,7 +188,16 @@ import {
   RUNTIME_RETRY_LOCAL,
   RUNTIME_PICK_SSH_KEY,
   WEBVIEW_SCREENSHOT,
+  BROWSER_CONTROL,
   BROWSER_SET_PROXY,
+  BROWSER_CREDENTIAL_PROFILES,
+  BROWSER_CREDENTIAL_LIST,
+  BROWSER_CREDENTIAL_IMPORT,
+  BROWSER_CREDENTIAL_IMPORT_FILE,
+  BROWSER_CREDENTIAL_REMOVE,
+  BROWSER_CREDENTIAL_SUGGESTIONS,
+  BROWSER_CREDENTIAL_FILL,
+  BROWSER_CREDENTIAL_CLEAR,
   NATIVE_FILE_DRAG,
   UPDATE_STATUS,
   UPDATE_QUIT_AND_INSTALL,
@@ -467,7 +476,16 @@ const invokeForwarders = {
 
   // Capture / browser
   webviewScreenshot: makeInvoker<'webviewScreenshot'>(WEBVIEW_SCREENSHOT),
+  browserControl: makeInvoker<'browserControl'>(BROWSER_CONTROL),
   browserSetProxy: makeInvoker<'browserSetProxy'>(BROWSER_SET_PROXY),
+  browserCredentialProfiles: makeInvoker<'browserCredentialProfiles'>(BROWSER_CREDENTIAL_PROFILES),
+  browserCredentialList: makeInvoker<'browserCredentialList'>(BROWSER_CREDENTIAL_LIST),
+  browserCredentialImport: makeInvoker<'browserCredentialImport'>(BROWSER_CREDENTIAL_IMPORT),
+  browserCredentialImportFile: makeInvoker<'browserCredentialImportFile'>(BROWSER_CREDENTIAL_IMPORT_FILE),
+  browserCredentialRemove: makeInvoker<'browserCredentialRemove'>(BROWSER_CREDENTIAL_REMOVE),
+  browserCredentialSuggestions: makeInvoker<'browserCredentialSuggestions'>(BROWSER_CREDENTIAL_SUGGESTIONS),
+  browserCredentialFill: makeInvoker<'browserCredentialFill'>(BROWSER_CREDENTIAL_FILL),
+  browserCredentialClear: makeInvoker<'browserCredentialClear'>(BROWSER_CREDENTIAL_CLEAR),
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
 
   // Shell utilities

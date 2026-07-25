@@ -203,13 +203,10 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
   // `visibleNodeIds` is viewport-culled: we only mount CanvasNodeWrapper for
   // nodes whose bbox overlaps the visible canvas rect (plus a 1-screen margin),
   // so off-screen terminals/editors don't hold live xterm/Monaco instances.
-  // `keepMountedPanelIds` lets the cull exempt webview-backed nodes (local
-  // extensions) so panning them off-screen doesn't unmount the guest and reset its
-  // session state. url-mode extensions are deliberately NOT exempt: they're remote
-  // SaaS pages whose login survives in the persistent session partition, so they
-  // reload rather than lose state. It's a stable, membership-keyed set (see
-  // useKeepMountedPanelIds) so unrelated panel churn (titles, dirty flags) never
-  // re-runs the cull.
+  // `keepMountedPanelIds` lets the cull exempt webview-backed nodes (extensions)
+  // so panning them off-screen doesn't unmount the guest and reset its session
+  // state. It's a stable, membership-keyed set (see useKeepMountedPanelIds) so
+  // unrelated panel churn (titles, dirty flags) never re-runs the cull.
   const nodeIds = useNodeIds(store)
   const keepMountedPanelIds = useKeepMountedPanelIds(workspaceId)
   const visibleNodeIds = useVisibleNodeIds(store, keepMountedPanelIds)

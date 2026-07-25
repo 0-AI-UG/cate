@@ -53,7 +53,20 @@ function attachListeners() {
   window.addEventListener('blur', onBlur, false)
   session.listenersAttached = true
   // Refcounted body marker for the in-flight drag, balanced by detachListeners.
-  acquireBodyClass('canvas-dragging')
+  acquireBodyClass('canvas-dragging', 'drag-op-listeners')
+}
+
+/** Clear the post-drag click-suppression flag on the next tick. `wasDragged`
+ *  exists so the click that TERMINATES a drag doesn't also focus the node; it
+ *  must not outlive that click. It used to be reset only at the start of the
+ *  next drag, so any state that blocked `handleDragStart` (a stranded gesture
+ *  lock, a stuck session) left it latched `true` for the rest of the session
+ *  and every subsequent click-to-focus was swallowed. */
+function clearWasDraggedAfterClick() {
+  const session = getDefaultSession()
+  setTimeout(() => {
+    if (!session.active) session.wasDragged.current = false
+  }, 0)
 }
 
 function detachListeners() {
@@ -461,6 +474,7 @@ function onMouseUp(_ev: MouseEvent) {
   session.active = null
   detachListeners()
   step(active, { type: 'END' })
+  clearWasDraggedAfterClick()
 }
 
 function onBlur() {
@@ -470,6 +484,7 @@ function onBlur() {
   session.active = null
   detachListeners()
   step(active, { type: 'CANCEL' })
+  clearWasDraggedAfterClick()
 }
 
 function onKeyDown(ev: KeyboardEvent) {
@@ -486,6 +501,7 @@ function onKeyDown(ev: KeyboardEvent) {
   session.active = null
   detachListeners()
   step(active, { type: 'CANCEL' })
+  clearWasDraggedAfterClick()
 }
 
 // -----------------------------------------------------------------------------

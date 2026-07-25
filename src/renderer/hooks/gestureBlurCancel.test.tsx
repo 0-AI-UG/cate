@@ -206,6 +206,25 @@ describe('pan — window-level cleanup', () => {
     expect(bodyClassRefCount('canvas-interacting')).toBe(0)
     expect(document.body.classList.contains('canvas-interacting')).toBe(false)
   })
+
+  it('takes only ONE reference when a second pan button presses mid-pan', () => {
+    const store = freshStore()
+    const el = renderPanProbe(store)
+
+    // Right button starts the pan, then the middle button goes down before it
+    // is released. endPanDrag is idempotent and releases exactly once, so a
+    // second acquire here would strand the lock for the rest of the session —
+    // no remount or workspace switch can clear a reference whose owner is gone.
+    mouseDownOn(el, 2, 100, 100)
+    mouseDownOn(el, 1, 120, 120)
+    expect(bodyClassRefCount('canvas-interacting')).toBe(1)
+
+    act(() => {
+      window.dispatchEvent(new MouseEvent('mouseup', { button: 1, bubbles: true }))
+    })
+    expect(bodyClassRefCount('canvas-interacting')).toBe(0)
+    expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+  })
 })
 
 // =============================================================================

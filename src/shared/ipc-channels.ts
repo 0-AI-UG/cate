@@ -197,6 +197,18 @@ export const BROWSER_SHORTCUT = 'browser:shortcut'
  *  first request already goes through the proxy. */
 export const BROWSER_SET_PROXY = 'browser:setProxy'
 
+// Browser password import/autofill. Password plaintext never crosses these
+// renderer IPC channels: profile import and suggestion lookup return metadata,
+// while fill resolves/decrypts/injects entirely in the main process.
+export const BROWSER_CREDENTIAL_PROFILES = 'browserCredentials:profiles'
+export const BROWSER_CREDENTIAL_LIST = 'browserCredentials:list'
+export const BROWSER_CREDENTIAL_IMPORT = 'browserCredentials:import'
+export const BROWSER_CREDENTIAL_IMPORT_FILE = 'browserCredentials:importFile'
+export const BROWSER_CREDENTIAL_REMOVE = 'browserCredentials:remove'
+export const BROWSER_CREDENTIAL_SUGGESTIONS = 'browserCredentials:suggestions'
+export const BROWSER_CREDENTIAL_FILL = 'browserCredentials:fill'
+export const BROWSER_CREDENTIAL_CLEAR = 'browserCredentials:clear'
+
 // Native context menu (renderer -> main)
 export const MENU_SHOW_CONTEXT = 'menu:showContext'
 
@@ -328,6 +340,7 @@ export const CROSS_WINDOW_DRAG_RESOLVE = 'crossDrag:resolve'   // renderer -> ma
 
 // Webview
 export const WEBVIEW_SCREENSHOT = 'webview:screenshot'
+export const BROWSER_CONTROL = 'browser:control'   // renderer -> main (agent browser ops needing a real webContents)
 export const NATIVE_FILE_DRAG = 'native:fileDrag'
 
 // Pi agent (renderer <-> main)

@@ -111,15 +111,6 @@ describe('ExtensionPanel', () => {
     const webview = container.querySelector('webview') as HTMLElement
     expect(webview.getAttribute('preload')).toBe('file:///p/cateHost.js')
   })
-
-  it('omits the preload for a url-mode guest (no host API on a remote origin)', async () => {
-    proxyUrl.mockResolvedValueOnce({ url: 'https://discord.com/app', preloadPath: '' })
-    mount({ workspaceId: 'ws-real-123' })
-    await act(async () => { await Promise.resolve() })
-    const webview = container.querySelector('webview') as HTMLElement
-    expect(webview.getAttribute('src')).toBe('https://discord.com/app')
-    expect(webview.hasAttribute('preload')).toBe(false)
-  })
 })
 
 describe('guestScrollbarCss', () => {

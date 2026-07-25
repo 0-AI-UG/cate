@@ -31,6 +31,10 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
+          // Minimal preload for ordinary browser guests. It reports only the
+          // focused password field's position/opaque marker to the host so
+          // Cate can render autofill suggestions outside untrusted page DOM.
+          browserGuest: resolve(__dirname, 'src/preload/browserGuest.ts'),
           // Second preload injected into extension webview guests (the `cate`
           // reverse-API bridge). Emitted alongside index.js in dist/preload/.
           cateHost: resolve(__dirname, 'src/preload/cateHost.ts')

@@ -23,7 +23,7 @@ export const DEFAULT_PORT_ENV = 'PORT'
  * The functional categories an extension can declare, in display order.
  *
  * Deliberately few and broad: a category answers "what do I use this for?", not
- * "how is it built" (url / frontend / server — that is an implementation detail
+ * "how is it built" (frontend / server — that is an implementation detail
  * the user never sees). Keeping the list short is the point — a catalog with 20
  * categories filters no better than one with none. Anything that doesn't fit
  * falls back to `other` rather than growing the list.
@@ -82,9 +82,8 @@ export interface ExtensionManifest {
   version?: string
   category?: ExtensionCategory  // functional grouping in the catalog UI
   panels: ExtensionPanelDef[]
-  frontend?: string             // entry html for frontend-only (ignored when server/url present)
+  frontend?: string             // entry html for frontend-only (ignored when server present)
   server?: ExtensionServerSpec
-  url?: string                  // remote https page the panel points at (see normalizeUrl)
   cateApi?: string[]            // declared cate.* scopes
 }
 
@@ -185,28 +184,6 @@ function normalizeServer(parsed: unknown): ExtensionServerSpec | undefined {
 }
 
 /**
- * Normalize the optional remote-page URL (url mode), or undefined if unusable.
- *
- * Only `https:` is accepted. A manifest is untrusted input that ends up as a
- * top-level webview `src`, so anything else is a foot-gun or an escalation:
- * `file:`/`javascript:`/`data:` would run attacker-chosen content in the
- * extension's persistent session partition, and plain `http:` (localhost
- * included — a url extension is meant for hosted SaaS, and a local dev server is
- * what `server` mode is for) would be a cleartext page inside the app.
- */
-function normalizeUrl(value: unknown): string | undefined {
-  if (!nonEmptyString(value)) return undefined
-  let parsed: URL
-  try {
-    parsed = new URL(value)
-  } catch {
-    return undefined
-  }
-  if (parsed.protocol !== 'https:') return undefined
-  return value
-}
-
-/**
  * Validate untrusted parsed JSON into a manifest, or null if unusable
  * (missing id, missing/empty panels, panel without id/label). Never throws.
  */
@@ -241,13 +218,6 @@ export function normalizeManifest(parsed: unknown): ExtensionManifest | null {
 
   const server = normalizeServer(parsed.server)
   if (server) manifest.server = server
-
-  // Mode precedence when a manifest declares more than one backend:
-  // `server` > `url` > `frontend`. A mixed manifest is kept (rather than
-  // rejected) so a badly-written one still loads; the resolver in
-  // main/extensions/proxyServer.ts picks the winner by this order.
-  const url = normalizeUrl(parsed.url)
-  if (url) manifest.url = url
 
   if (Array.isArray(parsed.cateApi)) {
     const scopes = parsed.cateApi.filter((s): s is string => typeof s === 'string')

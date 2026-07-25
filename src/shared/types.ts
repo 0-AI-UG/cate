@@ -688,8 +688,27 @@ export interface BrowserBookmark {
   addedAt: number // epoch ms
 }
 
-/** One open tab in a browser panel (light model: a single <webview> re-navigates
- *  on switch, so a background tab is just its saved url/title). */
+export interface BrowserCredentialProfile {
+  id: string
+  appName: 'Google Chrome'
+  profileName: string
+}
+
+export interface BrowserCredentialSuggestion {
+  id: string
+  username: string
+  origin: string
+}
+
+export interface BrowserCredentialProfilesResult {
+  directImportSupported: boolean
+  secureStorageAvailable: boolean
+  profiles: BrowserCredentialProfile[]
+  importedCount: number
+}
+
+/** One open tab in a browser panel. Every non-start-page tab owns a live guest
+ *  while mounted; this record is the persisted restore state. */
 export interface BrowserTab {
   id: string
   url: string
@@ -1282,6 +1301,8 @@ export interface AppSettings {
   // Browser
   browserHomepage: string
   browserSearchEngine: BrowserSearchEngine
+  /** Proxy used by browser panels. Empty means a direct connection. */
+  browserProxyUrl: string
   /** Show the horizontal bookmarks bar (favorite chips) under the URL bar. */
   browserShowBookmarksBar: boolean
   /** Show the vertical tab sidebar (Arc/Edge-style) on the left of the panel. */
@@ -1414,6 +1435,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Browser
   browserHomepage: '',
   browserSearchEngine: 'google',
+  browserProxyUrl: '',
   browserShowBookmarksBar: true,
   browserShowTabSidebar: true,
   browserNewTabBehavior: 'startPage',

@@ -1,25 +1,40 @@
 // =============================================================================
-// BrowserMenu — the URL-bar overflow (⋮) dropdown for a browser panel: new tab,
-// toggle the bookmarks sidebar, and open the in-panel browser settings popover.
+// BrowserMenu — the URL-bar overflow (⋮) dropdown for a browser panel.
 // =============================================================================
-import { useEffect, useRef } from 'react'
-import { Plus, BookmarkSimple, Gear, Check } from '@phosphor-icons/react'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useEffect, useRef, useState, type RefObject } from 'react'
+import { BookmarkSimple, CaretLeft, Plus, Gear, Key } from '@phosphor-icons/react'
+import { useBrowserStore } from '../stores/browserStore'
+import { useUIStore } from '../stores/uiStore'
+import { BrowserFavicon } from './BrowserFavicon'
+import { faviconForUrl } from './browserUrl'
 
 interface Props {
   onNewTab: () => void
-  onOpenSettings: () => void
+  onNavigate: (url: string) => void
+  onOpenPasswordManager: () => void
   onClose: () => void
+  triggerRef: RefObject<HTMLElement | null>
 }
 
-export function BrowserMenu({ onNewTab, onOpenSettings, onClose }: Props): JSX.Element {
-  const showBookmarks = useSettingsStore((s) => s.browserShowTabSidebar)
-  const setSetting = useSettingsStore((s) => s.setSetting)
+export function BrowserMenu({
+  onNewTab,
+  onNavigate,
+  onOpenPasswordManager,
+  onClose,
+  triggerRef,
+}: Props): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
+  const [bookmarksOpen, setBookmarksOpen] = useState(false)
+  const bookmarks = useBrowserStore((s) => s.bookmarks)
 
   useEffect(() => {
     const onDown = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+      const target = e.target as Node
+      if (
+        ref.current
+        && !ref.current.contains(target)
+        && !triggerRef.current?.contains(target)
+      ) onClose()
     }
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
     document.addEventListener('mousedown', onDown)
@@ -28,29 +43,76 @@ export function BrowserMenu({ onNewTab, onOpenSettings, onClose }: Props): JSX.E
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [onClose])
+  }, [onClose, triggerRef])
 
   const item = 'w-full flex items-center gap-2.5 px-3 h-8 text-sm text-secondary hover:bg-hover transition-colors text-left'
 
   return (
     <div
       ref={ref}
-      className="absolute right-2 top-12 z-40 w-56 rounded-lg border border-subtle bg-surface-2 shadow-2xl py-1"
+      className="absolute right-2 top-[5.5rem] z-40 w-56 rounded-lg border border-subtle bg-surface-2 shadow-2xl py-1"
       onMouseDown={(e) => e.stopPropagation()}
     >
       <button className={item} onClick={() => { onClose(); onNewTab() }}>
         <Plus size={14} className="text-muted" /> New tab
       </button>
-      <button
-        className={item}
-        onClick={() => setSetting('browserShowTabSidebar', !showBookmarks)}
+      <div
+        className="relative"
+        onMouseEnter={() => setBookmarksOpen(true)}
+        onMouseLeave={() => setBookmarksOpen(false)}
+        onFocus={() => setBookmarksOpen(true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setBookmarksOpen(false)
+          }
+        }}
       >
-        <BookmarkSimple size={14} className="text-muted" />
-        <span className="flex-1">Show bookmarks</span>
-        {showBookmarks && <Check size={14} className="text-agent" />}
+        <button
+          className={item}
+          aria-haspopup="menu"
+          aria-expanded={bookmarksOpen}
+        >
+          <BookmarkSimple size={14} className="text-muted" />
+          <span className="flex-1">Bookmarks</span>
+          <CaretLeft size={12} className="text-muted" />
+        </button>
+        {bookmarksOpen && (
+          <div
+            role="menu"
+            aria-label="Bookmarks"
+            className="absolute right-[calc(100%-4px)] top-0 z-50 max-h-80 w-64 overflow-y-auto rounded-lg border border-subtle bg-surface-2 py-1 shadow-2xl"
+          >
+            {bookmarks.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-muted">No bookmarks yet</div>
+            ) : bookmarks.map((bookmark) => (
+              <button
+                key={bookmark.url}
+                role="menuitem"
+                title={bookmark.url}
+                className="flex h-8 w-full items-center gap-2.5 px-3 text-left text-sm text-secondary transition-colors hover:bg-hover"
+                onClick={() => {
+                  onClose()
+                  onNavigate(bookmark.url)
+                }}
+              >
+                <BrowserFavicon src={faviconForUrl(bookmark.url)} size={13} />
+                <span className="min-w-0 flex-1 truncate">{bookmark.title || bookmark.url}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <button className={item} onClick={() => { onClose(); onOpenPasswordManager() }}>
+        <Key size={14} className="text-muted" /> Passwords and autofill
       </button>
       <div className="my-1 border-t border-subtle" />
-      <button className={item} onClick={() => { onClose(); onOpenSettings() }}>
+      <button
+        className={item}
+        onClick={() => {
+          onClose()
+          useUIStore.getState().openSettings('browser')
+        }}
+      >
         <Gear size={14} className="text-muted" /> Browser settings…
       </button>
     </div>

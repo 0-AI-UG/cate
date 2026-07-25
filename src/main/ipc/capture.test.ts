@@ -1,8 +1,6 @@
-// Regression: WEBVIEW_SCREENSHOT must not pay a full-page base64 encode when the
-// caller only wants the file. The CLI/agent screenshot path (browserDriver) uses
-// only `filePath` and discards `dataUrl`, so it passes `{ wantDataUrl: false }`
-// and the handler must skip `image.toDataURL()` entirely. The manual UI button
-// (BrowserPanel) still consumes `dataUrl`, so the default keeps producing it.
+// Regression: WEBVIEW_SCREENSHOT must not pay a base64 encode when the caller
+// only wants the file. The CLI/agent screenshot path uses only `filePath`; the
+// manual UI button still receives a data URL made from the flattened PNG.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -34,6 +32,9 @@ vi.mock('electron', () => ({
 
 // Neighbor modules pull in heavy electron surfaces at import; stub them out.
 vi.mock('../browserProxy', () => ({ configureBrowserProxy: vi.fn() }))
+vi.mock('../browser/screenshotPng', () => ({
+  flattenScreenshotPng: vi.fn(async (png: Buffer) => png),
+}))
 vi.mock('../../shared/runtimeLocator', () => ({ isLocalLocator: () => true }))
 vi.mock('../windowRegistry', () => ({ windowFromEvent: vi.fn() }))
 vi.mock('./pathValidation', () => ({
@@ -75,8 +76,8 @@ describe('WEBVIEW_SCREENSHOT dataUrl opt-out', () => {
   it('produces dataUrl by default (manual UI button path)', async () => {
     const handler = handlers.get(WEBVIEW_SCREENSHOT)!
     const result = (await handler(event, 7)) as { filePath: string; dataUrl?: string }
-    expect(toDataURL).toHaveBeenCalledTimes(1)
-    expect(result.dataUrl).toBe('data:image/png;base64,ZmFrZQ==')
+    expect(toDataURL).not.toHaveBeenCalled()
+    expect(result.dataUrl).toBe('data:image/png;base64,cG5nLWJ5dGVz')
     expect(result.filePath).toContain('screenshot-')
   })
 

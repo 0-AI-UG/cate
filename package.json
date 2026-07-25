@@ -88,6 +88,7 @@
     "mammoth": "^1.12.0",
     "monaco-editor": "^0.52.0",
     "pdfjs-dist": "^5.7.284",
+    "playwright-core": "^1.60.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-markdown": "^10.1.0",
@@ -95,6 +96,7 @@
     "simple-git": "^3.27.0",
     "ssh2": "^1.17.0",
     "use-sync-external-store": "^1.6.0",
+    "ws": "^8.18.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
