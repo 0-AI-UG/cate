@@ -1,6 +1,6 @@
 ---
 name: cate-cli
-description: Drive the Cate IDE from inside a Cate terminal with the `cate` CLI — control the built-in browser panel (open URLs, navigate, screenshot, read an accessibility snapshot, click/fill/press by ref), read and drive terminal panels (read the rendered screen, send keystrokes), and reach the granted cate.* host scopes (panels, editor, notifications) through named verbs. Use when an agent or user working in a Cate terminal needs to see or steer a web page, capture a screenshot, read another terminal, or reach Cate's host API from the shell.
+description: Drive the Cate IDE from inside a Cate terminal with the `cate` CLI — fully control the built-in browser panel (navigate, tabs, accessibility snapshots, role/text/css locators, trusted click/fill/type/press/drag/scroll/coordinate input, evaluate, console, dialogs, frames, viewport emulation, clipboard, full-page and element screenshots), read and drive terminal panels, and reach the granted cate.* host scopes (panels, editor, notifications) through named verbs. Use when an agent or user working in a Cate terminal needs to see or steer a web page, fill in a form, capture a screenshot, read another terminal, or reach Cate's host API from the shell.
 user-invocable: true
 ---
 
@@ -31,29 +31,146 @@ A Cate window can host browser panels. These verbs act on the **active** browser
 panel by default; target a specific one with `--panel <id>` (get ids from
 `cate panel list` — browser rows show their url).
 
+Everything you do is **visible to the user**: Cate draws a ghost cursor, a
+highlight around the element you are acting on, and a label naming the action,
+so a person watching the panel can see what you targeted and why.
+
+### Navigating
+
 ```bash
 cate browser open https://x.com   # navigate; prints the resulting url
-cate browser wait                 # until the page settles; prints the url
-                                  #   (instant when idle — also "where am I")
-cate browser wait 8000            # same, custom deadline in ms (capped at 8s)
-cate browser wait text Saved      # wait for SPA text to appear
-cate browser wait gone Loading    # wait for text to disappear
-cate browser wait url '**/done'   # wait for a URL glob
-cate browser reload               # reload
-cate browser screenshot           # prints ONLY a file path (see below)
-cate browser snapshot             # accessibility tree with refs (see below)
-cate browser click @s1e12         # auto-wait, then trusted click
-cate browser fill @s1e7 hello world # replace a field using trusted input
-cate browser type @s1e7 hello world # compatibility alias for fill
-cate browser press @s1e7 Enter    # focus @s1e7, then press Enter (submits forms)
-cate browser press PageDown       # press a key with no target (scroll, Escape...)
+cate browser current              # url, title, loading/history state
+cate browser back                 # history back (fails no-history at the start)
+cate browser forward
+cate browser reload
 ```
 
-`click`, `fill`/`type`, and `press` send **trusted browser input**. Click/fill
-auto-wait for the target to be visible, stable, enabled, and unobscured.
-Supported keys: Enter, Tab, Escape,
-Backspace, Delete, Space, the arrows (Up/Down/Left/Right), PageUp, PageDown,
-Home, End — case-insensitive.
+### Tabs
+
+A browser panel holds several tabs; these list and switch them.
+
+```bash
+cate browser tabs                 # "* <id>  <url>" per tab; * = active
+cate browser tab new              # open a tab; prints its short id
+cate browser tab new https://x.com
+cate browser tab select 3f2a1b0c
+cate browser tab close 3f2a1b0c
+```
+
+### Finding things: refs and locators
+
+Anywhere a `<target>` is accepted you may pass either a **snapshot ref**
+(`@s1e12`) or a **locator**:
+
+| locator | matches |
+| --- | --- |
+| `role=button` | ARIA role, else tag name |
+| `text=Sign in` | element most tightly wrapping that text |
+| `label=Email` | aria-label or an associated `<label>` |
+| `placeholder=Search` | placeholder attribute |
+| `testid=submit` | `data-testid` / `data-test-id` / `data-test` |
+| `css=.btn > span` | any CSS selector |
+| `alt=Logo` / `title=Close` | alt / title attribute |
+
+Matching is a case-insensitive substring; add `--exact` for the whole string.
+If a locator matches several elements, an **action refuses to run** and reports
+`ambiguous:<n>` — pass `--nth <i>` (0-based) to choose. This is deliberate:
+silently acting on the first of twelve matches is how automation clicks the
+wrong button.
+
+```bash
+cate browser find role=button       # list matches as ref lines
+cate browser find text=Sign in --exact
+cate browser click text=Sign in     # act via locator, no snapshot needed
+cate browser click role=button --nth 2
+```
+
+### Reading the page
+
+```bash
+cate browser snapshot               # accessibility tree with refs (see below)
+cate browser snapshot --selector main   # only that subtree
+cate browser text                   # visible text of the page
+cate browser text @s1e4             # ...or of one element
+cate browser attrs @s1e4            # every attribute of an element
+cate browser state @s1e4            # visible/enabled/checked/focused/value/box
+cate browser assets                 # links, images, scripts, stylesheets
+cate browser eval document.title    # evaluate an expression, print the value
+cate browser console --level error  # buffered guest console output
+cate browser console clear
+cate browser screenshot             # prints ONLY a file path (see below)
+cate browser screenshot --full-page # whole scrollable page, not just the viewport
+cate browser screenshot --ref @s1e4 # crop to one element
+```
+
+`console` is captured from the moment the panel mounts, so it includes errors
+thrown during page load — the ones worth debugging. `eval` returns the value
+bare, so `title=$(cate browser eval document.title)` works.
+
+### Acting on the page
+
+```bash
+cate browser click <target>         # auto-wait, then trusted click
+cate browser click <target> --button right --modifiers cmd,shift
+cate browser dblclick <target>
+cate browser hover <target>
+cate browser fill <target> hello world    # replace a field's contents
+cate browser type <target> hello world    # append keystrokes instead
+cate browser press <target> Enter   # focus, then press
+cate browser press cmd+a            # combo, to whatever has focus
+cate browser select <target> Germany      # <select> option by value or label
+cate browser check <target>         # idempotent — check/uncheck SET, never toggle
+cate browser uncheck <target>
+cate browser drag @s1e4 @s1e9       # press, move in steps, release
+cate browser scroll 0 400           # wheel by delta
+cate browser scroll bottom          # ...or to an edge
+cate browser scroll 0 400 @s1e4     # scroll one container
+cate browser mouse click 320 180    # raw coordinates, for canvases and maps
+cate browser mouse drag 10 10 200 90
+```
+
+All input is **trusted** (`isTrusted` browser input, not synthetic DOM events),
+so it works on drag handles, rich editors and anything gating on real input.
+Click/fill auto-wait for the target to be visible, stable, enabled and
+unobscured.
+
+Keys: `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Space`, the arrows,
+`PageUp`, `PageDown`, `Home`, `End`, `F1`–`F12`, or any single character —
+case-insensitive, and combinable with `cmd`/`ctrl`/`alt`/`shift`
+(`cmd+shift+k`).
+
+### Waiting
+
+```bash
+cate browser wait                   # until the page settles (instant when idle)
+cate browser wait 8000              # custom deadline in ms (capped at 8s)
+cate browser wait text Saved        # SPA text appears
+cate browser wait gone Loading      # ...or disappears
+cate browser wait url '**/done'     # URL glob
+cate browser wait ref @s1e4 hidden  # ref state: visible|hidden|attached|detached
+cate browser wait selector .toast visible
+```
+
+Set the condition deadline with `--wait-timeout <ms>` (capped at 8 seconds).
+
+### Environment
+
+```bash
+cate browser viewport 390 844 --mobile   # emulate a device viewport
+cate browser viewport reset
+cate browser frames                      # frame tree: "routingId:processId  url"
+cate browser frame-eval 3 9 location.href # evaluate inside a cross-origin frame
+cate browser downloads                   # downloads this panel has started
+cate browser dialog accept               # auto-answer alert/confirm/prompt
+cate browser dialog accept my answer     # ...with prompt text
+cate browser dialogs                     # what the handler has caught
+cate browser clipboard read
+cate browser clipboard write some text
+```
+
+`dialog` installs handlers in the **current document** — Chromium owns guest
+dialogs, so a dialog that fires before you set a policy cannot be observed.
+Re-run it after navigating.
 
 ### Reading a screenshot
 
@@ -87,8 +204,7 @@ a field and its submit button never read alike; names come from the aria-label,
 an associated `<label>`, visible text, or the placeholder — whichever exists
 first.
 
-The bracketed token (`@s1e12`) is the element's **generation-scoped ref**. Feed
-it back to `click`, `fill`/`type`, or `press`:
+The bracketed token (`@s1e12`) is the element's **generation-scoped ref**:
 
 ```bash
 cate browser click @s1e13           # click "Sign in"
@@ -98,24 +214,17 @@ cate browser press @s1e14 Enter     # submit
 
 A newer snapshot gets a new generation (`s2`, `s3`, ...). Old refs fail with
 `stale-ref`; they never silently address an element from the newer snapshot.
-Password values are always masked. State flags such as `[disabled]`, `[checked]`,
-`[expanded]`, and `[focused]` appear when relevant.
+`find` adds to the *current* generation, so refs from a snapshot stay valid
+after a find. Password values are always masked. State flags such as
+`[disabled]`, `[checked]`, `[expanded]`, and `[focused]` appear when relevant.
 
 Very large pages are truncated to 150 ref lines with a trailing `(+N more refs)`
 note; pass `--max <n>` to change the cap (`--max 0` prints everything).
 
-Typical loop: `snapshot` to find a ref → `click`/`fill`/`press` → conditional
-`wait` → `snapshot` again (or `screenshot`) to confirm the result. Add
-`--snapshot` to click/fill/type/press/wait to return a compact post-action
-snapshot in the same round trip. Refs become stale after a newer snapshot or
-navigation. There is no back/forward/current: navigate
-by URL with `open`, and `wait` doubles as "where am I" since it returns the
-url instantly when the page is idle.
-
-Use `wait text <text...>`, `wait gone <text...>`, `wait url <glob>`, or
-`wait ref <ref> [visible|hidden|attached|detached]` for SPA transitions; set the
-condition deadline with `--wait-timeout <ms>` (capped at 8 seconds). Plain
-`wait` retains the original page-loading behavior.
+Typical loop: `snapshot` or `find` → `click`/`fill`/`press` → conditional
+`wait` → `snapshot` again (or `screenshot`) to confirm. Add `--snapshot` to any
+acting verb (and to `wait`) to get a compact post-action snapshot in the same
+round trip, saving a second call.
 
 ## Host API groups
 

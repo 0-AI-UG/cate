@@ -11,8 +11,8 @@
 
 import { acquireBodyClass, releaseBodyClass } from './bodyClassRefcount'
 
-export function pinDocumentCursor(cursor: string): () => void {
-  acquireBodyClass('canvas-interacting')
+export function pinDocumentCursor(cursor: string, owner = 'pin-document-cursor'): () => void {
+  acquireBodyClass('canvas-interacting', owner)
   const cursorStyleEl = document.createElement('style')
   cursorStyleEl.textContent = `*, *::before, *::after { cursor: ${cursor} !important; }`
   document.head.appendChild(cursorStyleEl)

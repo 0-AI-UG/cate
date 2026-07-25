@@ -15,6 +15,7 @@ import type {
 } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
 import type { DockStore } from '../stores/dockStore'
+import { acquireBodyClass, releaseBodyClass } from '../lib/dom/bodyClassRefcount'
 
 // -----------------------------------------------------------------------------
 // Source / target unions
@@ -220,10 +221,19 @@ export type DragEffect =
     }
 
 /** Apply a 'set-body-class' drag effect — shared by the local and remote
- *  effect runners (useDragOp, crossWindow) so the add/remove logic lives once. */
+ *  effect runners (useDragOp, crossWindow) so the add/remove logic lives once.
+ *
+ *  Goes through the refcount, NOT raw classList: every other owner of
+ *  `canvas-interacting` (wheel-pan, pan-drag, marquee, edge/dock resize)
+ *  refcounts, and a raw add/remove here desyncs the DOM class from the count in
+ *  both directions — a drag END would strip the class out from under a live
+ *  resize, and a drag START would leave it on <body> at count 0 where no
+ *  release can ever reach it. The runtime pairs START with exactly one
+ *  cleanup effect (see `cleanupEffects`, gated on `armed`), so acquire and
+ *  release stay balanced. */
 export function applyBodyClassEffect(eff: { cls: string; on: boolean }): void {
-  if (eff.on) document.body.classList.add(eff.cls)
-  else document.body.classList.remove(eff.cls)
+  if (eff.on) acquireBodyClass(eff.cls, 'drag-runtime')
+  else releaseBodyClass(eff.cls)
 }
 
 export interface RuntimeState {

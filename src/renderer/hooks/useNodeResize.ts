@@ -93,6 +93,11 @@ export function useNodeResize(
       const node = state.nodes[nodeId]
       if (!node || node.isPinned) return
 
+      // A press landing while a previous resize is still live would pin the
+      // cursor a second time; cancel the old gesture first so its reference on
+      // `canvas-interacting` is released rather than orphaned.
+      cancelResizeRef.current?.()
+
       // Snapshot canvas state so this resize can be undone (Cmd+Z).
       state.pushHistory()
 
@@ -115,7 +120,7 @@ export function useNodeResize(
       const previousBodyCursor = document.body.style.cursor
       const resizeCursor = getCursorForEdge(edge)
       document.body.style.cursor = resizeCursor
-      const unpinCursor = pinDocumentCursor(resizeCursor)
+      const unpinCursor = pinDocumentCursor(resizeCursor, 'node-edge-resize')
 
       // Detect shared borders for cardinal edges
       if (isCardinalEdge(edge)) {

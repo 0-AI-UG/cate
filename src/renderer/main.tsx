@@ -6,11 +6,16 @@ import { mark } from './lib/perfMarks'
 import { initRendererSentry, captureRendererException } from './lib/sentry'
 import App from './App'
 import { subscribeToOsNotificationClicks } from './lib/notifications/osNotifications'
+import { installGestureLockWatchdog } from './lib/dom/gestureLockWatchdog'
 import './styles/globals.css'
 import '@xterm/xterm/css/xterm.css'
 
 // Listen for OS notification clicks (focus the originating terminal).
 subscribeToOsNotificationClicks()
+
+// Recovery net for a stranded `canvas-interacting` hold — see the module header.
+// Every window (main and detached dock) gets one; it only ever fires on a leak.
+installGestureLockWatchdog()
 
 // Phase 0 perf marker — first executable statement in the renderer bundle.
 mark('renderer-script-start')

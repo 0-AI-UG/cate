@@ -35,6 +35,12 @@ export default function DockResizeHandle({ direction, onResize, onDoubleClick }:
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
+      // A second press before the first gesture's mouseup (its listeners are
+      // aborted below, so its `endDrag` would never run) must not orphan the
+      // previous pin: that leaks a `canvas-interacting` reference no one can
+      // release, wedging canvas input until the app restarts.
+      unpinCursorRef.current?.()
+      unpinCursorRef.current = null
       dragging.current = true
       lastPos.current = direction === 'horizontal' ? e.clientX : e.clientY
       const resizeCursor = direction === 'horizontal' ? 'col-resize' : 'row-resize'
@@ -48,7 +54,7 @@ export default function DockResizeHandle({ direction, onResize, onDoubleClick }:
       // runs away from the cursor on a zoomed canvas. The class also force-pins
       // xterm to `grabbing`, so inject a high-specificity cursor override (same
       // trick as useNodeResize) to keep the resize cursor. Cleaned up on mouseup.
-      const unpinCursor = pinDocumentCursor(resizeCursor)
+      const unpinCursor = pinDocumentCursor(resizeCursor, 'dock-resize-handle')
       unpinCursorRef.current = unpinCursor
 
       const onMouseMove = (ev: MouseEvent) => {

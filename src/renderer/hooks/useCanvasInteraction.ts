@@ -337,7 +337,7 @@ export function useCanvasInteraction(
       e.stopPropagation()
       if (!wheelPanActive.current) {
         wheelPanActive.current = true
-        acquireBodyClass('canvas-interacting')
+        acquireBodyClass('canvas-interacting', 'canvas-wheel-pan')
       }
       if (wheelPanEndTimer.current) clearTimeout(wheelPanEndTimer.current)
       wheelPanEndTimer.current = setTimeout(() => {
@@ -377,13 +377,23 @@ export function useCanvasInteraction(
         cancelInertia.current()
         cancelInertia.current = null
       }
+      // A second pan press while one is already running (right button then
+      // middle, or a nested canvas whose mousedown also bubbles to its parent
+      // canvas) must not take a SECOND reference: endPanDrag is idempotent and
+      // releases exactly once, so the extra reference would strand the lock for
+      // the rest of the session. Re-aim the existing pan instead.
+      if (isPanning.current) {
+        panButton.current = button
+        lastPanPos.current = { x: clientX, y: clientY }
+        return
+      }
       isPanning.current = true
       panButton.current = button
       lastPanPos.current = { x: clientX, y: clientY }
       if (canvasRef.current) {
         canvasRef.current.style.cursor = 'grabbing'
       }
-      acquireBodyClass('canvas-interacting')
+      acquireBodyClass('canvas-interacting', 'canvas-pan-drag')
     },
     [canvasRef],
   )
@@ -499,7 +509,7 @@ export function useCanvasInteraction(
               // its webview/terminal/editor content swallows the window-level
               // mousemove/mouseup and the marquee freezes + mis-selects the moment
               // the cursor crosses onto the focused panel.
-              acquireBodyClass('canvas-interacting')
+              acquireBodyClass('canvas-interacting', 'canvas-marquee')
               acquiredInteracting = true
               // Drop DOM focus from any panel (e.g. a Monaco textarea) so the
               // window-level keyboard shortcuts — Delete/Backspace over the new

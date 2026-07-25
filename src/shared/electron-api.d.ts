@@ -636,9 +636,84 @@ export interface ElectronAPI {
   webviewScreenshot(webContentsId: number, options: { wantDataUrl: false; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string } | null>
   webviewScreenshot(webContentsId: number, options?: { wantDataUrl?: boolean; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string; dataUrl: string } | null>
 
+  /** Agent browser ops that need a real webContents in the main process:
+   *  full-page / element screenshots, viewport emulation, cross-origin frame
+   *  evaluation, the guest's downloads, and the system clipboard. The target
+   *  must be a webview guest of the calling window. See main/ipc/browserControl. */
+  browserControl(request: {
+    op:
+      | 'screenshot'
+      | 'setViewport'
+      | 'frames'
+      | 'frameEval'
+      | 'downloads'
+      | 'clipboardRead'
+      | 'clipboardWrite'
+      | 'registerPlaywright'
+      | 'playwright'
+      | 'input'
+    webContentsId: number
+    mode?: 'viewport' | 'fullPage' | 'rect'
+    rect?: { x: number; y: number; width: number; height: number }
+    viewport?: { width: number; height: number; deviceScaleFactor?: number; mobile?: boolean } | null
+    frameRoutingId?: number
+    frameProcessId?: number
+    code?: string
+    text?: string
+    panelId?: string
+    tabId?: string
+    action?: 'click' | 'dblclick' | 'hover' | 'fill' | 'type' | 'press' | 'select' | 'check' | 'uncheck' | 'drag'
+    ref?: string
+    targetRef?: string
+    key?: string
+    values?: string[]
+    button?: 'left' | 'right' | 'middle'
+    modifiers?: Array<'Alt' | 'Control' | 'Meta' | 'Shift'>
+    delay?: number
+    input?: 'insertText' | 'replaceText' | 'key'
+  }): Promise<{
+    error?: string
+    filePath?: string
+    ok?: boolean
+    cleared?: boolean
+    width?: number
+    height?: number
+    frames?: Array<{ routingId: number; processId: number; url: string; name: string; top: boolean }>
+    value?: unknown
+    downloads?: Array<{ url: string; filePath: string; state: string; at: number }>
+    text?: string
+  }>
+
   /** Configure the proxy for a browser panel's session partition (issue #241).
    *  Pass an empty/undefined proxyUrl to use a direct connection. */
   browserSetProxy(partition: string, proxyUrl?: string): Promise<void>
+
+  /** Chrome profile metadata and imported-password count. Never includes a password. */
+  browserCredentialProfiles(): Promise<import('./types').BrowserCredentialProfilesResult>
+  /** All saved credential metadata for the in-browser password manager. */
+  browserCredentialList(): Promise<import('./types').BrowserCredentialSuggestion[]>
+  /** Explicitly import one discovered Chrome profile into Cate's encrypted store. */
+  browserCredentialImport(profileId: string): Promise<{ imported: number; skipped: number; total: number }>
+  /** Import Chrome's portable CSV export selected through Cate's native file picker. */
+  browserCredentialImportFile(): Promise<{
+    canceled: boolean
+    imported: number
+    skipped: number
+    total: number
+  }>
+  browserCredentialRemove(credentialId: string): Promise<void>
+  /** Matching usernames for the current URL of an owned browser guest. */
+  browserCredentialSuggestions(webContentsId: number): Promise<{
+    suggestions?: import('./types').BrowserCredentialSuggestion[]
+    error?: string
+  }>
+  /** Main-process-only decrypt + Playwright fill; password never returns over IPC. */
+  browserCredentialFill(request: {
+    webContentsId: number
+    credentialId: string
+    targetId: string
+  }): Promise<{ ok?: true; error?: string }>
+  browserCredentialClear(): Promise<void>
 
   /** Initiate a native OS file drag from the renderer. */
   nativeFileDrag(filePath: string): Promise<void>

@@ -73,15 +73,22 @@ import { showOsNotification } from '../ipc/notifications'
 import type { PanelType } from '../../shared/types'
 
 /** Bumped when the cateHost API surface changes incompatibly. Guests use
- *  `cate.version` for feature detection. v4 adds generation-scoped browser
- *  refs, native fill/click actions, conditional waits, and action snapshots.
- *  v3 removals: browser.list and
- *  editor.active (cate.panel.list is the single enumeration surface — browser
- *  panels carry `url`, the focused entry answers "what is the user looking
- *  at"); browser.back/forward/current (navigate by URL; `wait` reads the
- *  settled url/title instantly when idle); agent.run (compose open -> send ->
- *  dispose). */
-const CATE_API_VERSION = 4
+ *  `cate.version` for feature detection.
+ *
+ *  v5 makes the browser surface agent-complete: locators (find, and locator
+ *  targets on every acting verb), per-panel tabs, back/forward/current
+ *  (restored — an agent that can only navigate by URL cannot follow a flow it
+ *  did not construct), dblclick/hover/check/uncheck/select/drag/scroll and raw
+ *  coordinate mouse input, evaluate, text/attrs/state/assets, guest console
+ *  history, JS-dialog policy, cross-origin frame evaluation, viewport
+ *  emulation, downloads, clipboard, and full-page/element screenshots.
+ *
+ *  v4 added generation-scoped browser refs, native fill/click actions,
+ *  conditional waits, and action snapshots. v3 removed browser.list and
+ *  editor.active (cate.panel.list is the single PANEL enumeration surface —
+ *  browser panels carry `url`, the focused entry answers "what is the user
+ *  looking at") and agent.run (compose open -> send -> dispose). */
+const CATE_API_VERSION = 5
 
 const FORWARD_TIMEOUT_MS = 10_000
 

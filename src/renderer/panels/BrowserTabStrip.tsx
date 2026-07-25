@@ -1,15 +1,12 @@
 // =============================================================================
-// BrowserTabStrip — a horizontal Safari-style tab bar rendered directly under
+// BrowserTabStrip — a horizontal Safari-style tab bar rendered directly above
 // the URL bar. Pinned tabs come first as compact favicon-only chips; the rest
 // render as favicon + title, with the active tab lifted onto a lighter surface.
 // A trailing "+" opens a new tab. Middle-click closes a tab; right-click toggles
 // its pinned state (keeping the gestures the old vertical sidebar used).
-//
-// Shown only when there is more than one tab or any pinned tab, so single-tab
-// browsing stays chrome-free.
 // =============================================================================
 import { Plus, X } from '@phosphor-icons/react'
-import type { BrowserTab } from '../../shared/types'
+import { isStartPageUrl, type BrowserTab } from '../../shared/types'
 import { BrowserFavicon } from './BrowserFavicon'
 import { faviconForUrl } from './browserUrl'
 import { Tooltip } from '../ui/Tooltip'
@@ -26,25 +23,27 @@ interface Props {
 export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab, onTogglePin }: Props): JSX.Element | null {
   const pinned = tabs.filter((t) => t.pinned)
   const unpinned = tabs.filter((t) => !t.pinned)
-
-  // Chrome-free single-tab browsing: nothing to strip until there are choices.
-  if (tabs.length <= 1 && pinned.length === 0) return null
+  const labelFor = (tab: BrowserTab): string =>
+    tab.title || (isStartPageUrl(tab.url) ? 'New Tab' : tab.url) || 'New Tab'
 
   return (
-    <div className="flex items-stretch gap-1 px-2 h-9 border-b border-subtle bg-surface-1 overflow-x-auto no-scrollbar shrink-0">
+    <div
+      className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto bg-surface-1 px-3 no-scrollbar"
+      aria-label="Browser tabs"
+    >
       {/* Pinned — favicon-only chips */}
       {pinned.map((tab) => {
         const isActive = tab.id === activeTabId
         return (
-          <Tooltip key={tab.id} label={`${tab.title || tab.url} · right-click to unpin`}>
+          <Tooltip key={tab.id} label={`${labelFor(tab)} · right-click to unpin`}>
             <button
               onClick={() => onSelect(tab.id)}
               onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onClose(tab.id) } }}
               onContextMenu={(e) => { e.preventDefault(); onTogglePin(tab.id) }}
-              className={`my-1 w-8 flex items-center justify-center rounded-[10px] transition-colors ${
+              className={`flex h-7 w-8 shrink-0 items-center justify-center rounded-xl transition-colors ${
                 isActive ? 'bg-surface-4 text-primary' : 'text-muted hover:bg-hover'
               }`}
-              aria-label={tab.title || tab.url}
+              aria-label={labelFor(tab)}
             >
               <BrowserFavicon src={tab.favicon ?? faviconForUrl(tab.url)} size={15} />
             </button>
@@ -54,7 +53,7 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
 
       {/* Divider between pinned chips and the regular tabs */}
       {pinned.length > 0 && unpinned.length > 0 && (
-        <div className="my-2 w-px bg-subtle shrink-0" />
+        <div className="h-4 w-px shrink-0 bg-subtle" />
       )}
 
       {/* Regular tabs — favicon + title */}
@@ -66,21 +65,21 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
             onClick={() => onSelect(tab.id)}
             onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onClose(tab.id) } }}
             onContextMenu={(e) => { e.preventDefault(); onTogglePin(tab.id) }}
-            title={`${tab.title || tab.url || 'New tab'} · right-click to pin`}
-            className={`group my-1 flex items-center gap-1.5 pl-2 pr-1.5 min-w-[100px] max-w-[200px] rounded-[10px] cursor-pointer select-none transition-colors ${
+            title={`${labelFor(tab)} · right-click to pin`}
+            className={`group flex h-7 min-w-[112px] max-w-[220px] cursor-pointer select-none items-center gap-2 rounded-xl pl-2.5 pr-1.5 transition-colors ${
               isActive ? 'bg-surface-4 text-primary' : 'text-muted hover:text-secondary hover:bg-hover'
             }`}
           >
-            <BrowserFavicon src={tab.favicon ?? faviconForUrl(tab.url)} size={14} />
-            <span className="truncate flex-1 min-w-0 text-xs">{tab.title || tab.url || 'New tab'}</span>
+            <BrowserFavicon src={tab.favicon ?? faviconForUrl(tab.url)} size={15} />
+            <span className="min-w-0 flex-1 truncate text-sm">{labelFor(tab)}</span>
             <button
               onClick={(e) => { e.stopPropagation(); onClose(tab.id) }}
-              className={`shrink-0 w-4 h-4 flex items-center justify-center rounded text-muted hover:text-red-400 hover:bg-hover transition-opacity ${
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted transition-opacity hover:bg-hover hover:text-primary ${
                 isActive ? 'opacity-70' : 'opacity-0 group-hover:opacity-100'
               }`}
               aria-label="Close tab"
             >
-              <X size={11} />
+              <X size={13} />
             </button>
           </div>
         )
@@ -90,10 +89,10 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
       <Tooltip label="New tab">
         <button
           onClick={onNewTab}
-          className="my-1 w-8 flex items-center justify-center rounded-[10px] text-muted hover:text-secondary hover:bg-hover transition-colors shrink-0"
+          className="flex h-7 w-8 shrink-0 items-center justify-center rounded-xl text-muted transition-colors hover:bg-hover hover:text-secondary"
           aria-label="New tab"
         >
-          <Plus size={14} />
+          <Plus size={16} />
         </button>
       </Tooltip>
     </div>

@@ -24,7 +24,10 @@ import {
   type SendDeps,
 } from './cate'
 
-const noFlags: Flags = { json: false, snapshot: false, help: false, version: false }
+const noFlags: Flags = {
+  json: false, snapshot: false, help: false, version: false,
+  exact: false, fullPage: false, mobile: false,
+}
 
 describe('buildRequest — browser group', () => {
   it('open -> cate.browser.open {url}', () => {
@@ -34,12 +37,14 @@ describe('buildRequest — browser group', () => {
     })
   })
 
-  it('reload takes no args; removed verbs are unknown (panel list / open / wait cover them)', () => {
+  it('reload/current/back/forward take no args; only list stays unknown', () => {
     expect(buildRequest(['browser', 'reload'], noFlags).args).toEqual({})
+    expect(buildRequest(['browser', 'current'], noFlags).method).toBe('cate.browser.current')
+    expect(buildRequest(['browser', 'back'], noFlags).method).toBe('cate.browser.back')
+    expect(buildRequest(['browser', 'forward'], noFlags).method).toBe('cate.browser.forward')
+    // `cate panel list` is the one panel-enumeration surface; `browser tabs`
+    // lists tabs within a panel. `browser list` remains deliberately absent.
     expect(() => buildRequest(['browser', 'list'], noFlags)).toThrow(/unknown browser verb/)
-    expect(() => buildRequest(['browser', 'current'], noFlags)).toThrow(/unknown browser verb/)
-    expect(() => buildRequest(['browser', 'back'], noFlags)).toThrow(/unknown browser verb/)
-    expect(() => buildRequest(['browser', 'forward'], noFlags)).toThrow(/unknown browser verb/)
   })
 
   it('click -> {ref}', () => {
@@ -834,5 +839,124 @@ describe('human-facing output and help', () => {
     expect(await run(['browser', '--help'], deps)).toBe(0)
     expect(deps.out.join('\n')).toMatch(/^Usage: cate browser/)
     expect(deps.out.join('\n')).not.toContain('Groups:')
+  })
+})
+
+// =============================================================================
+// The v6 browser grammar: locator targets, tabs, and the flags that shape an
+// action. These are the parts an agent types most often, so a silent mis-parse
+// (a locator read as a ref, a modifier dropped) is the expensive failure.
+// =============================================================================
+
+describe('buildRequest — browser locators and targets', () => {
+  it('treats a known prefix as a locator and anything else as a ref', () => {
+    expect(buildRequest(['browser', 'click', 'role=button'], noFlags).args).toEqual({ by: 'role', value: 'button' })
+    expect(buildRequest(['browser', 'click', '@s1e7'], noFlags).args).toEqual({ ref: '@s1e7' })
+    // An unknown prefix is NOT a locator — it stays a ref, and the host rejects
+    // it as a bad ref rather than silently querying something unintended.
+    expect(buildRequest(['browser', 'click', 'weird=thing'], noFlags).args).toEqual({ ref: 'weird=thing' })
+  })
+
+  it('keeps the whole value after the first = (css selectors contain =)', () => {
+    expect(buildRequest(['browser', 'click', 'css=[data-id=42]'], noFlags).args)
+      .toEqual({ by: 'css', value: '[data-id=42]' })
+  })
+
+  it('joins multi-word locator values so quoting is optional', () => {
+    expect(buildRequest(['browser', 'click', 'text=Sign', 'in', 'now'], noFlags).args)
+      .toEqual({ by: 'text', value: 'Sign in now' })
+  })
+
+  it('maps alt to the host key altText', () => {
+    expect(buildRequest(['browser', 'find', 'alt=Logo'], noFlags).args).toEqual({ by: 'altText', value: 'Logo' })
+  })
+
+  it('carries --nth and --exact into the locator', () => {
+    const flags = { ...noFlags, nth: '2', exact: true }
+    expect(buildRequest(['browser', 'click', 'text=Go'], flags).args)
+      .toEqual({ by: 'text', value: 'Go', nth: 2, exact: true })
+  })
+
+  it('rejects a bare ref for find, which needs a locator', () => {
+    expect(() => buildRequest(['browser', 'find', '@s1e1'], noFlags)).toThrow(/find needs a locator/)
+  })
+
+  it('normalizes --modifiers aliases and rejects junk', () => {
+    expect(buildRequest(['browser', 'click', '@s1e1'], { ...noFlags, modifiers: 'cmd,shift' }).args)
+      .toEqual({ ref: '@s1e1', modifiers: ['meta', 'shift'] })
+    expect(() => buildRequest(['browser', 'click', '@s1e1'], { ...noFlags, modifiers: 'hyper' })).toThrow(/invalid --modifiers/)
+  })
+
+  it('validates --button', () => {
+    expect(buildRequest(['browser', 'click', '@s1e1'], { ...noFlags, button: 'right' }).args)
+      .toEqual({ ref: '@s1e1', button: 'right' })
+    expect(() => buildRequest(['browser', 'click', '@s1e1'], { ...noFlags, button: 'thumb' })).toThrow(/invalid --button/)
+  })
+})
+
+describe('buildRequest — browser tabs, mouse, scroll, env', () => {
+  it('maps the tab verbs', () => {
+    expect(buildRequest(['browser', 'tabs'], noFlags).method).toBe('cate.browser.tabs')
+    expect(buildRequest(['browser', 'tab', 'new'], noFlags)).toEqual({ method: 'cate.browser.tabNew', args: {} })
+    expect(buildRequest(['browser', 'tab', 'new', 'https://a/'], noFlags).args).toEqual({ url: 'https://a/' })
+    expect(buildRequest(['browser', 'tab', 'select', 't1'], noFlags))
+      .toEqual({ method: 'cate.browser.tabSelect', args: { tabId: 't1' } })
+    expect(buildRequest(['browser', 'tab', 'close', 't1'], noFlags).method).toBe('cate.browser.tabClose')
+    expect(() => buildRequest(['browser', 'tab', 'wat'], noFlags)).toThrow(/unknown browser tab action/)
+  })
+
+  it('maps mouse actions and enforces their arity', () => {
+    expect(buildRequest(['browser', 'mouse', 'click', '10', '20'], noFlags).args)
+      .toEqual({ action: 'click', x: 10, y: 20 })
+    expect(buildRequest(['browser', 'mouse', 'drag', '1', '2', '3', '4'], noFlags).args)
+      .toEqual({ action: 'drag', x: 1, y: 2, toX: 3, toY: 4 })
+    expect(() => buildRequest(['browser', 'mouse', 'click', '10'], noFlags)).toThrow(/needs <x> <y>/)
+    expect(() => buildRequest(['browser', 'mouse', 'spin', '1', '2'], noFlags)).toThrow(/unknown browser mouse action/)
+  })
+
+  it('maps both scroll forms', () => {
+    expect(buildRequest(['browser', 'scroll', 'bottom'], noFlags).args).toEqual({ to: 'bottom' })
+    expect(buildRequest(['browser', 'scroll', '0', '400'], noFlags).args).toEqual({ dx: 0, dy: 400 })
+    expect(buildRequest(['browser', 'scroll', '0', '400', '@s1e1'], noFlags).args)
+      .toEqual({ dx: 0, dy: 400, ref: '@s1e1' })
+  })
+
+  it('maps viewport, clipboard, dialog and frame-eval', () => {
+    expect(buildRequest(['browser', 'viewport', '390', '844'], { ...noFlags, mobile: true }).args)
+      .toEqual({ width: 390, height: 844, mobile: true })
+    expect(buildRequest(['browser', 'viewport', 'reset'], noFlags).args).toEqual({ reset: true })
+    expect(buildRequest(['browser', 'clipboard', 'write', 'hello', 'there'], noFlags))
+      .toEqual({ method: 'cate.browser.clipboardWrite', args: { text: 'hello there' } })
+    expect(buildRequest(['browser', 'dialog', 'accept', 'my', 'answer'], noFlags).args)
+      .toEqual({ policy: 'accept', promptText: 'my answer' })
+    expect(() => buildRequest(['browser', 'dialog', 'maybe'], noFlags)).toThrow(/unknown dialog policy/)
+    expect(buildRequest(['browser', 'frame-eval', '3', '9', 'location.href'], noFlags).args)
+      .toEqual({ frameRoutingId: 3, frameProcessId: 9, expression: 'location.href' })
+  })
+
+  it('adds a selector wait condition alongside the ref one', () => {
+    expect(buildRequest(['browser', 'wait', 'selector', '.done', 'visible'], noFlags).args)
+      .toEqual({ condition: { kind: 'selector', value: '.done', state: 'visible' } })
+  })
+})
+
+describe('buildRequest — flag scoping', () => {
+  it('rejects flags on verbs that cannot use them', () => {
+    expect(() => buildRequest(['browser', 'snapshot'], { ...noFlags, button: 'left' })).toThrow(/--button/)
+    expect(() => buildRequest(['browser', 'reload'], { ...noFlags, fullPage: true })).toThrow(/--full-page/)
+    expect(() => buildRequest(['browser', 'snapshot'], { ...noFlags, level: 'error' })).toThrow(/--level/)
+    expect(() => buildRequest(['panel', 'list'], { ...noFlags, mobile: true })).toThrow(/--mobile/)
+    expect(() => buildRequest(['browser', 'snapshot'], { ...noFlags, nth: '1' })).toThrow(/--nth/)
+  })
+
+  it('accepts --snapshot on every acting verb', () => {
+    for (const verb of [['click', '@s1e1'], ['hover', '@s1e1'], ['select', '@s1e1', 'x'], ['scroll', 'bottom']]) {
+      expect(buildRequest(['browser', ...verb], { ...noFlags, snapshot: true }).args.includeSnapshot).toBe(true)
+    }
+  })
+
+  it('rejects --full-page together with --ref', () => {
+    expect(() => buildRequest(['browser', 'screenshot'], { ...noFlags, fullPage: true, ref: '@s1e1' }))
+      .toThrow(/not both/)
   })
 })

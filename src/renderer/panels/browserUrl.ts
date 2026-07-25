@@ -11,6 +11,9 @@ import { isRuntimeLocator } from '../../shared/runtimeLocator'
 /** Check if input looks like a URL rather than a search query. */
 export function isUrl(input: string): boolean {
   const trimmed = input.trim()
+  if (trimmed.startsWith('data:')) {
+    return true
+  }
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return true
   }
@@ -75,6 +78,7 @@ function escapeFilePath(path: string): string {
 export function normalizeUrl(input: string): string {
   const trimmed = input.trim()
   if (trimmed.startsWith('about:')) return trimmed
+  if (trimmed.startsWith('data:')) return trimmed
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed
   }

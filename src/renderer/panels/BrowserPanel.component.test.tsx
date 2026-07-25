@@ -15,17 +15,25 @@ vi.hoisted(() => {
 const portalMocks = vi.hoisted(() => ({
   register: vi.fn(),
   unregister: vi.fn(),
-  registerNavigator: vi.fn(),
-  unregisterNavigator: vi.fn(),
+  registerController: vi.fn(),
+  unregisterController: vi.fn(),
 }))
 
 vi.mock('../lib/portalRegistry', () => ({ portalRegistry: portalMocks }))
 vi.mock('../ui/Tooltip', () => ({ Tooltip: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('./UrlSuggestions', () => ({ UrlSuggestions: () => null }))
 vi.mock('./StartPage', () => ({ StartPage: () => <div>Start page</div> }))
-vi.mock('./BrowserMenu', () => ({ BrowserMenu: () => null }))
-vi.mock('./BrowserSettingsPopover', () => ({ BrowserSettingsPopover: () => null }))
-vi.mock('./BrowserTabStrip', () => ({ BrowserTabStrip: () => null }))
+vi.mock('./BrowserMenu', () => ({
+  BrowserMenu: ({ onOpenPasswordManager }: { onOpenPasswordManager: () => void }) => (
+    <button onClick={onOpenPasswordManager}>Open password manager</button>
+  ),
+}))
+vi.mock('./BrowserPasswordManagerPage', () => ({
+  BrowserPasswordManagerPage: () => <div>Password manager page</div>,
+}))
+vi.mock('./BrowserTabStrip', () => ({
+  BrowserTabStrip: () => <div data-testid="browser-tab-strip" />,
+}))
 vi.mock('./BrowserBookmarksSidebar', () => ({ BrowserBookmarksSidebar: () => null }))
 
 import BrowserPanel from './BrowserPanel'
@@ -41,11 +49,15 @@ const initialSettingsState = useSettingsStore.getState()
 const updatePanelTitle = vi.fn()
 const updateBrowserActiveTabUrl = vi.fn()
 const updatePanelTabs = vi.fn()
-const updatePanelProxy = vi.fn()
 const recordVisit = vi.fn()
 const unsubscribeShortcut = vi.fn()
 const onBrowserShortcut = vi.fn(() => unsubscribeShortcut)
 const browserSetProxy = vi.fn<(partition: string, proxyUrl: string) => Promise<void>>(async () => undefined)
+const browserControl = vi.fn(async () => ({ ok: true }))
+const browserCredentialSuggestions = vi.fn(async () => ({
+  suggestions: [{ id: 'credential-1', username: 'person@example.com', origin: 'https://initial.example' }],
+}))
+const browserCredentialFill = vi.fn(async () => ({ ok: true }))
 
 let host: HTMLDivElement
 let root: Root
@@ -102,7 +114,6 @@ beforeEach(() => {
     updatePanelTitle,
     updateBrowserActiveTabUrl,
     updatePanelTabs,
-    updatePanelProxy,
   })
   useBrowserStore.setState({
     bookmarks: [],
@@ -113,6 +124,7 @@ beforeEach(() => {
   useSettingsStore.setState({
     browserHomepage: 'https://home.example',
     browserSearchEngine: 'google',
+    browserProxyUrl: '',
     browserNewTabBehavior: 'startPage',
     browserShowTabSidebar: false,
     setSetting: vi.fn(),
@@ -120,6 +132,16 @@ beforeEach(() => {
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     onBrowserShortcut,
     browserSetProxy,
+    browserControl,
+    browserCredentialSuggestions,
+    browserCredentialFill,
+    browserCredentialProfiles: vi.fn(async () => ({
+      directImportSupported: false,
+      secureStorageAvailable: true,
+      profiles: [],
+      importedCount: 0,
+    })),
+    browserCredentialList: vi.fn(async () => []),
     webviewScreenshot: vi.fn(async () => null),
     browserClearData: vi.fn(async () => undefined),
     showContextMenu: vi.fn(async () => null),
@@ -135,6 +157,51 @@ afterEach(() => {
 })
 
 describe('BrowserPanel component', () => {
+  it('keeps the tab strip above a blank new-tab address bar', () => {
+    mount({
+      tabs: [{ id: 'tab-1', url: 'cate://newtab', title: '' }],
+    })
+
+    const tabStrip = host.querySelector('[data-testid="browser-tab-strip"]') as HTMLElement
+    const toolbar = host.querySelector('[data-browser-toolbar]') as HTMLElement
+    const input = host.querySelector('input') as HTMLInputElement
+
+    expect(tabStrip.compareDocumentPosition(toolbar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(input.value).toBe('')
+    expect(input.placeholder).toBe('Enter a URL')
+    expect(host.textContent).toContain('Start page')
+    expect(host.querySelector('button[aria-label="Open address"]')).toBeTruthy()
+    const webview = host.querySelector('webview')
+    expect(webview).toBeTruthy()
+    expect(webview?.getAttribute('src')).toBe('about:blank')
+    expect(webview?.classList.contains('invisible')).toBe(true)
+  })
+
+  it('opens password management as an internal browser tab', () => {
+    mount()
+
+    act(() => {
+      ;(host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click()
+    })
+    act(() => {
+      ;([...host.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Open password manager') as HTMLButtonElement).click()
+    })
+
+    expect(host.textContent).toContain('Password manager page')
+    expect(updatePanelTabs).toHaveBeenLastCalledWith(
+      'ws-1',
+      'browser-1',
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: 'chrome://password-manager/passwords',
+          title: 'Password manager',
+        }),
+      ]),
+      expect.any(String),
+    )
+  })
+
   it('persists a completed navigation, records history, and updates navigation controls', () => {
     mount()
     const webview = host.querySelector('webview') as HTMLElement
@@ -194,13 +261,14 @@ describe('BrowserPanel component', () => {
   it('waits for proxy configuration before attaching the webview', async () => {
     let releaseProxy!: () => void
     browserSetProxy.mockReturnValueOnce(new Promise<void>((resolve) => { releaseProxy = resolve }))
+    useSettingsStore.setState({ browserProxyUrl: ' http://proxy.example:8080 ' })
 
-    mount({ proxyUrl: ' http://proxy.example:8080 ' })
+    mount()
 
     expect(host.querySelector('webview')).toBeNull()
     expect(browserSetProxy).toHaveBeenCalledTimes(1)
     expect(browserSetProxy.mock.calls[0][0]).toMatch(/^persist:browser-proxy-/)
-    expect(browserSetProxy.mock.calls[0][1]).toBe(' http://proxy.example:8080 ')
+    expect(browserSetProxy.mock.calls[0][1]).toBe('http://proxy.example:8080')
 
     await act(async () => {
       releaseProxy()
@@ -219,11 +287,11 @@ describe('BrowserPanel component', () => {
     expect(portalMocks.register).toHaveBeenCalledWith('browser-1', webview)
     // The navigator registers at mount (not dom-ready): it is how the reverse
     // API reaches a panel sitting on its start page, which has no webview.
-    expect(portalMocks.registerNavigator).toHaveBeenCalledWith('browser-1', expect.any(Function))
+    expect(portalMocks.registerController).toHaveBeenCalledWith('browser-1', expect.any(Object))
 
     act(() => root.unmount())
     expect(portalMocks.unregister).toHaveBeenCalledWith('browser-1')
-    expect(portalMocks.unregisterNavigator).toHaveBeenCalledWith('browser-1')
+    expect(portalMocks.unregisterController).toHaveBeenCalledWith('browser-1')
     expect(unsubscribeShortcut).toHaveBeenCalledTimes(1)
 
     const persistedCalls = updateBrowserActiveTabUrl.mock.calls.length
@@ -232,5 +300,79 @@ describe('BrowserPanel component', () => {
 
     root = createRoot(host)
     await flush()
+  })
+
+  it('keeps one live webview per tab and registers the active tab with Playwright', async () => {
+    mount({
+      tabs: [
+        { id: 'tab-1', url: 'https://one.example', title: 'One' },
+        { id: 'tab-2', url: 'https://two.example', title: 'Two' },
+      ],
+      activeTabId: 'tab-1',
+    })
+    const webviews = Array.from(host.querySelectorAll('webview')) as HTMLElement[]
+    expect(webviews).toHaveLength(2)
+    const first = installWebviewMethods(webviews[0])
+    const second = installWebviewMethods(webviews[1])
+    first.getWebContentsId.mockReturnValue(41)
+    second.getWebContentsId.mockReturnValue(42)
+
+    act(() => webviews[0].dispatchEvent(event('dom-ready')))
+    await flush()
+    expect(browserControl).toHaveBeenCalledWith({
+      op: 'registerPlaywright',
+      webContentsId: 41,
+      panelId: 'browser-1',
+      tabId: 'tab-1',
+    })
+
+    const controller = portalMocks.registerController.mock.calls[0][1] as {
+      selectTab(id: string): boolean
+    }
+    act(() => { expect(controller.selectTab('tab-2')).toBe(true) })
+    await flush()
+
+    expect(webviews[0].style.display).toBe('none')
+    expect(webviews[1].style.display).toBe('flex')
+    expect(first.loadURL).not.toHaveBeenCalled()
+    expect(second.loadURL).not.toHaveBeenCalled()
+    expect(browserControl).toHaveBeenCalledWith({
+      op: 'registerPlaywright',
+      webContentsId: 42,
+      panelId: 'browser-1',
+      tabId: 'tab-2',
+    })
+  })
+
+  it('shows only username metadata and delegates password filling to main', async () => {
+    mount()
+    const webview = host.querySelector('webview') as HTMLElement
+    installWebviewMethods(webview)
+
+    act(() => {
+      webview.dispatchEvent(event('ipc-message', {
+        channel: 'cate-browser-password-focus',
+        args: [{
+          targetId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          rect: { left: 20, bottom: 80, width: 200, height: 30 },
+        }],
+      }))
+    })
+    await flush()
+
+    expect(browserCredentialSuggestions).toHaveBeenCalledWith(42)
+    expect(host.textContent).toContain('person@example.com')
+    expect(host.textContent).not.toContain('password-value')
+
+    const choice = Array.from(host.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('person@example.com'))
+    expect(choice).toBeTruthy()
+    act(() => choice!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    await flush()
+    expect(browserCredentialFill).toHaveBeenCalledWith({
+      webContentsId: 42,
+      credentialId: 'credential-1',
+      targetId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    })
   })
 })

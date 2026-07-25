@@ -56,6 +56,12 @@ describe('normalizeUrl', () => {
     expect(normalizeUrl('about:blank')).toBe('about:blank')
   })
 
+  it('passes data URLs through unchanged', () => {
+    const url = 'data:text/html,<h1>Hello world</h1>'
+    expect(isUrl(url)).toBe(true)
+    expect(normalizeUrl(url)).toBe(url)
+  })
+
   it('passes file:// URLs through unchanged', () => {
     expect(normalizeUrl('file:///Users/foo/index.html')).toBe('file:///Users/foo/index.html')
   })
