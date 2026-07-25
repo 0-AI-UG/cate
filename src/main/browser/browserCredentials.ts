@@ -11,7 +11,6 @@ import fsp from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
-import { DatabaseSync } from 'node:sqlite'
 import { app, safeStorage } from 'electron'
 import type {
   BrowserCredentialProfile,
@@ -239,8 +238,9 @@ export function decryptChromePassword(encrypted: Uint8Array, keychainPassword: s
   }
 }
 
-function readLoginRows(databasePath: string): ChromeLoginRow[] {
-  let db: DatabaseSync | null = null
+async function readLoginRows(databasePath: string): Promise<ChromeLoginRow[]> {
+  const { DatabaseSync } = await import('node:sqlite')
+  let db: InstanceType<typeof DatabaseSync> | null = null
   try {
     db = new DatabaseSync(databasePath, { readOnly: true })
     return db.prepare(`
@@ -414,7 +414,7 @@ export async function importChromePasswords(
 
     let rows: ChromeLoginRow[]
     try {
-      rows = readLoginRows(databasePath)
+      rows = await readLoginRows(databasePath)
     } catch {
       skipped += 1
       continue

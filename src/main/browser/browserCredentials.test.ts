@@ -3,9 +3,10 @@ import { createCipheriv, pbkdf2Sync } from 'crypto'
 import fsp from 'fs/promises'
 import os from 'os'
 import path from 'path'
-import { DatabaseSync } from 'node:sqlite'
 
 const state = vi.hoisted(() => ({ userData: '' }))
+const nodeSqliteAvailable = typeof process.getBuiltinModule === 'function'
+  && process.getBuiltinModule('node:sqlite') !== undefined
 
 vi.mock('electron', () => ({
   app: { getPath: () => state.userData },
@@ -42,6 +43,7 @@ function encryptChromePassword(password: string, keychainPassword: string): Buff
 }
 
 async function createChromeProfile(password = 'correct horse battery staple'): Promise<void> {
+  const { DatabaseSync } = await import('node:sqlite')
   chromeRoot = path.join(root, 'Chrome')
   const profile = path.join(chromeRoot, 'Default')
   await fsp.mkdir(profile, { recursive: true })
@@ -94,7 +96,7 @@ describe('Chrome password import', () => {
     expect(decryptChromePassword(encrypted, 'wrong-value')).toBeNull()
   })
 
-  it.runIf(process.platform === 'darwin')(
+  it.runIf(process.platform === 'darwin' && nodeSqliteAvailable)(
     'discovers profiles, re-encrypts imported passwords, and exposes only matching usernames',
     async () => {
       await createChromeProfile()
@@ -134,13 +136,16 @@ describe('Chrome password import', () => {
     },
   )
 
-  it.runIf(process.platform === 'darwin')('rejects renderer-supplied profile paths', async () => {
-    await createChromeProfile()
-    await expect(importChromePasswords('chrome:../Default', {
-      chromeRoot,
-      keychainPassword: 'chrome-key',
-    })).rejects.toThrow('no longer importable')
-  })
+  it.runIf(process.platform === 'darwin' && nodeSqliteAvailable)(
+    'rejects renderer-supplied profile paths',
+    async () => {
+      await createChromeProfile()
+      await expect(importChromePasswords('chrome:../Default', {
+        chromeRoot,
+        keychainPassword: 'chrome-key',
+      })).rejects.toThrow('no longer importable')
+    },
+  )
 
   it('imports Chrome CSV exports with quoted fields on every platform', async () => {
     const csvPath = path.join(root, 'chrome-passwords.csv')
