@@ -1288,8 +1288,8 @@ export interface AppSettings {
   /** `cate panel list` — enumerate open panels across windows (browser rows
    *  carry their url). On by default. */
   cliPanelReadEnabled: boolean
-  /** `cate panel create / focus / close / set-title` — add, focus, close and
-   *  rename panels. On by default. */
+  /** `cate panel create / close / set-title` — add, close and rename panels.
+   *  On by default. */
   cliPanelControlEnabled: boolean
   /** Read the active editor panel's file. On by default. */
   cliEditorReadEnabled: boolean

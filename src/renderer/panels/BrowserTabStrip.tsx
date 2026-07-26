@@ -5,6 +5,7 @@
 // A trailing "+" opens a new tab. Middle-click closes a tab; right-click toggles
 // its pinned state (keeping the gestures the old vertical sidebar used).
 // =============================================================================
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Plus, X } from '@phosphor-icons/react'
 import { isStartPageUrl, type BrowserTab } from '../../shared/types'
 import { BrowserFavicon } from './BrowserFavicon'
@@ -23,13 +24,76 @@ interface Props {
 export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab, onTogglePin }: Props): JSX.Element | null {
   const pinned = tabs.filter((t) => t.pinned)
   const unpinned = tabs.filter((t) => !t.pinned)
+  const dragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    startScrollLeft: number
+    moved: boolean
+  } | null>(null)
+  const suppressNextClickRef = useRef(false)
+  const [isDragging, setIsDragging] = useState(false)
   const labelFor = (tab: BrowserTab): string =>
     tab.title || (isStartPageUrl(tab.url) ? 'New Tab' : tab.url) || 'New Tab'
 
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0) return
+    // If a previous drag ended without Chromium emitting its compatibility
+    // click, a new press is unambiguously a fresh interaction.
+    suppressNextClickRef.current = false
+    if (event.currentTarget.scrollWidth <= event.currentTarget.clientWidth) return
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startScrollLeft: event.currentTarget.scrollLeft,
+      moved: false,
+    }
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* unsupported */ }
+  }
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const deltaX = event.clientX - drag.startX
+    const deltaY = event.clientY - drag.startY
+    if (!drag.moved) {
+      if (Math.abs(deltaX) < 4 || Math.abs(deltaX) <= Math.abs(deltaY)) return
+      drag.moved = true
+      setIsDragging(true)
+    }
+    event.preventDefault()
+    event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX
+  }
+
+  const finishPointerDrag = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    suppressClick = true,
+  ): void => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    suppressNextClickRef.current = suppressClick && drag.moved
+    dragRef.current = null
+    setIsDragging(false)
+    try { event.currentTarget.releasePointerCapture(event.pointerId) } catch { /* unsupported */ }
+  }
+
   return (
     <div
-      className="flex h-11 shrink-0 items-center gap-1 overflow-x-auto bg-surface-1 px-3 no-scrollbar"
+      className={`flex h-11 shrink-0 touch-pan-y items-center gap-1 overflow-x-auto bg-surface-1 px-3 no-scrollbar ${
+        isDragging ? 'cursor-grabbing select-none' : ''
+      }`}
       aria-label="Browser tabs"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishPointerDrag}
+      onPointerCancel={(event) => finishPointerDrag(event, false)}
+      onClickCapture={(event) => {
+        if (!suppressNextClickRef.current) return
+        suppressNextClickRef.current = false
+        event.preventDefault()
+        event.stopPropagation()
+      }}
     >
       {/* Pinned — favicon-only chips */}
       {pinned.map((tab) => {

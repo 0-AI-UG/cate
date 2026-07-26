@@ -2,8 +2,8 @@
 // Extension manifest contract — shared between main and renderer.
 //
 // Pure and dependency-free (except ./types). Defines the manifest shape an
-// extension ships (see docs/extensions.md) plus defensive helpers that turn
-// untrusted parsed JSON into a usable manifest without ever throwing.
+// extension ships plus defensive helpers that turn untrusted parsed JSON into
+// a usable manifest without ever throwing.
 // =============================================================================
 
 // -----------------------------------------------------------------------------

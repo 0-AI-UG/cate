@@ -22,8 +22,9 @@
 //             -p and TUI.
 //             Permission-wait: Notification hook, notification_type
 //             "permission_prompt" (and "idle_prompt" once idle nags kick in).
-//             Approval resolution: PostToolUse fires once the approved tool
-//             ran (denial produces no PostToolUse — the turn just Stops).
+//             PostToolUse fires once the approved tool FINISHES (denial
+//             produces none). Cate therefore resumes earlier from the user's
+//             terminal submission.
 //   codex   · JSON-on-stdin hooks configured in <project root>/.codex/
 //             hooks.json (repo scope, discovered by codex itself —
 //             launch-method independent, unlike the six per-invocation -c
@@ -46,8 +47,8 @@
 //             Permission-wait: PermissionRequest hook (session_id, turn_id,
 //             tool_name, tool_input) — fires in exec mode too, where the
 //             unanswerable approval is then auto-rejected and the turn Stops.
-//             Approval resolution: PostToolUse (label post_tool_use) fires
-//             after an executed command, same payload family.
+//             PostToolUse (label post_tool_use) fires only after an executed
+//             command finishes; Cate resumes earlier from terminal input.
 //   cursor  · JSON-on-stdin hooks configured in <workspace>/.cursor/hooks.json
 //             (project scope, discovered by the CLI itself; hooks landed in
 //             the CLI ~2026.07 — pinned live 2026-07-19 against
@@ -114,6 +115,15 @@ import { createAgentPresenceTracker } from './agentPresence'
 import { snapshotProcessTree } from './process'
 import { AGENT_HOOK_SPECS, normalizeAgentHookPayload, type AgentHookEventKind } from '../../shared/agentHooks'
 import type { AgentId } from '../../shared/agents'
+import type { AgentState } from '../../shared/types'
+import {
+  noteAgentHookEvent,
+  noteAgentInputSubmitted,
+  noteAgentPresence,
+  startAgentScreenDetector,
+  stopAgentScreenDetector,
+} from '../../renderer/lib/agent/agentScreenDetector'
+import { setTerminalWorkspaceResolver, useStatusStore } from '../../renderer/stores/statusStore'
 
 // --- the interrupt contract, shared by every CLI ----------------------------
 // A USER INTERRUPT (Esc / Ctrl+C on a running turn) leaves the CLI back at its
@@ -273,6 +283,44 @@ function readJsonl<T>(file: string): T[] {
 function expectEcho(events: { terminalId?: unknown; cateTerminalId?: unknown }[], tid: string): void {
   expect(events.length).toBeGreaterThan(0)
   for (const e of events) expect(e.terminalId ?? e.cateTerminalId, 'CATE_TERMINAL_ID echo').toBe(tid)
+}
+
+/** Replay REAL captured CLI hook posts through the same normalizer,
+ *  coordinator, and status store the workspace overview uses. This closes the
+ *  old contract-test gap where an event could be present and correctly shaped
+ *  while still producing the wrong visible state. */
+function replayAgentState(
+  agentId: AgentId,
+  terminalId: string,
+  events: BridgeEvent[],
+  opts: { permissionAnswered?: boolean } = {},
+): AgentState | undefined {
+  const workspaceId = `live-status-${terminalId}`
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { electronAPI: { shellReportAgentScreenState: () => {}, notifyOS: () => {} } },
+  })
+  stopAgentScreenDetector()
+  useStatusStore.setState({ workspaces: {} })
+  setTerminalWorkspaceResolver((id) => (id === terminalId ? workspaceId : undefined))
+  useStatusStore.getState().registerTerminal(terminalId, workspaceId)
+  useStatusStore.getState().setAgentName(workspaceId, terminalId, agentId)
+  startAgentScreenDetector()
+  noteAgentPresence(terminalId, true)
+  for (const captured of events) {
+    const event = normalizeAgentHookPayload(agentId, terminalId, captured.payload)
+    if (event) noteAgentHookEvent(event)
+  }
+  if (opts.permissionAnswered) noteAgentInputSubmitted(terminalId)
+  const state = useStatusStore.getState().workspaces[workspaceId]?.terminals[terminalId]?.agentState
+  stopAgentScreenDetector()
+  return state
+}
+
+function throughFirst(events: BridgeEvent[], predicate: (event: BridgeEvent) => boolean): BridgeEvent[] {
+  const index = events.findIndex(predicate)
+  expect(index, 'status checkpoint event exists').toBeGreaterThanOrEqual(0)
+  return events.slice(0, index + 1)
 }
 
 // --- tiny TUI driver (for the CLIs whose hooks need a live TUI) --------------
@@ -439,8 +487,18 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     await tui.send(PROMPT)
     await tui.waitFor(() => byName(events(), 'UserPromptSubmit').length > 0, 120_000, 'UserPromptSubmit')
     expect(byName(events(), 'UserPromptSubmit')[0].payload.session_id).toBe(id1)
+    expect(
+      replayAgentState(
+        'claude-code',
+        tid,
+        throughFirst(events(), (event) => event.payload.hook_event_name === 'UserPromptSubmit'),
+      ),
+      'the workspace overview is running after Claude accepts the prompt',
+    ).toBe('running')
     await tui.waitFor(() => byName(events(), 'Stop').length > 0, 120_000, 'Stop')
     expect(byName(events(), 'Stop')[0].payload.session_id).toBe(id1)
+    expect(replayAgentState('claude-code', tid, events()), 'the workspace overview awaits after Claude stops')
+      .toBe('waitingForInput')
 
     // transcript_path points at a real transcript once the first prompt ran —
     // the moment the RESUMABLE_FROM_SESSION_START gating counts on.
@@ -566,10 +624,16 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     expect(perm?.message, 'human-readable permission message').toContain('permission')
     // The turn is still in flight — the wait signal precedes any Stop.
     expect(byName(events(), 'Stop').length, 'no Stop while blocked on approval').toBe(0)
+    expect(replayAgentState('claude-code', tid, events()), 'the workspace overview shows Claude awaiting approval')
+      .toBe('waitingForInput')
 
     // Approve (Enter accepts the highlighted "Yes"): the tool runs, PostToolUse
     // pushes the back-in-flight signal, then the turn completes with Stop.
     await tui.send('')
+    expect(
+      replayAgentState('claude-code', tid, events(), { permissionAnswered: true }),
+      'submitting the approval resumes the overview before PostToolUse',
+    ).toBe('running')
     await tui.waitFor(() => byName(events(), 'PostToolUse').length > 0, 120_000, 'PostToolUse after approval')
     expect(byName(events(), 'PostToolUse')[0].payload.session_id).toBe(id)
     expect(byName(events(), 'PostToolUse')[0].payload.tool_name).toBe('Bash')
@@ -917,6 +981,20 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     cleanups.push(() => rmSync(start?.transcript_path as string, { force: true }))
     const perm = events().find((e) => e.payload.hook_event_name === 'PermissionRequest')?.payload
     expect(perm?.session_id).toBe(start?.session_id)
+    expect(
+      replayAgentState(
+        'codex',
+        tid,
+        throughFirst(events(), (event) => event.payload.hook_event_name === 'UserPromptSubmit'),
+      ),
+      'deferred SessionStart/UserPromptSubmit order resolves to running',
+    ).toBe('running')
+    expect(replayAgentState('codex', tid, events()), 'the workspace overview shows Codex awaiting approval')
+      .toBe('waitingForInput')
+    expect(
+      replayAgentState('codex', tid, events(), { permissionAnswered: true }),
+      'submitting the approval resumes Codex before PostToolUse',
+    ).toBe('running')
     expectEcho(events(), tid)
     tui.kill()
   })
@@ -1006,6 +1084,8 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     const stop = events().find((e) => e.payload.hook_event_name === 'Stop')!.payload
     expect(stop.turn_id, 'Stop carries the turn it ends').toEqual(expect.any(String))
     expect(normalizedKinds('codex', [{ terminalId: tid, payload: stop }])).toEqual(['turn-end'])
+    expect(replayAgentState('codex', tid, events()), 'the workspace overview awaits after Codex stops')
+      .toBe('waitingForInput')
     cleanups.push(() => rmSync(events()[0].payload.transcript_path as string, { force: true }))
     tui.kill()
   })
@@ -1110,10 +1190,20 @@ describe.skipIf(!LIVE || !hasBin('cursor-agent'))('cursor hook contract', () => 
     await tui.send(PROMPT)
     await tui.waitFor(() => byName(events(), 'beforeSubmitPrompt').length > 0, 120_000, 'beforeSubmitPrompt')
     expect(byName(events(), 'beforeSubmitPrompt')[0].payload.session_id).toBe(id)
+    expect(
+      replayAgentState(
+        'cursor',
+        tid,
+        throughFirst(events(), (event) => event.payload.hook_event_name === 'beforeSubmitPrompt'),
+      ),
+      'the workspace overview is running after Cursor accepts the prompt',
+    ).toBe('running')
     await tui.waitFor(() => byName(events(), 'stop').length > 0, 180_000, 'stop')
     const stop = byName(events(), 'stop')[0].payload
     expect(stop.session_id).toBe(id)
     expect(stop.status).toBe('completed')
+    expect(replayAgentState('cursor', tid, events()), 'the workspace overview awaits after Cursor stops')
+      .toBe('waitingForInput')
 
     // transcript_path materializes with the turn and points at a real file.
     const transcript = byName(events(), 'stop')[0].payload.transcript_path as string
@@ -1397,6 +1487,16 @@ export default function (pi: ExtensionAPI) {
       expect(hit, `${name} fired`).toBeTruthy()
       expect(hit?.sessionId, `${name} carries the session id`).toBe(id)
     }
+    const statusEvents: BridgeEvent[] = events.map((event) => ({
+      terminalId: event.cateTerminalId,
+      payload: event as unknown as Record<string, unknown>,
+    }))
+    expect(
+      replayAgentState('pi', tid, throughFirst(statusEvents, (event) => event.payload.event === 'agent_start')),
+      'the workspace overview is running after Pi starts the turn',
+    ).toBe('running')
+    expect(replayAgentState('pi', tid, statusEvents), 'the workspace overview awaits after Pi ends the turn')
+      .toBe('waitingForInput')
     const sessionFile = events[0].sessionFile as string
     expect(sessionFile).toContain(id)
     cleanups.push(() => rmSync(dirname(sessionFile), { recursive: true, force: true }))
@@ -1615,6 +1715,24 @@ export const CateEventLogger = async ({ directory }) => {
       'session.status busy',
     ).toBe(true)
     expect(events.some((e) => e.type === 'session.idle' && e.sessionID === id), 'session.idle').toBe(true)
+    const statusEvents: BridgeEvent[] = events.map((event) => ({
+      terminalId: event.cate_terminal_id,
+      payload: event as unknown as Record<string, unknown>,
+    }))
+    expect(
+      replayAgentState(
+        'opencode',
+        tid,
+        throughFirst(
+          statusEvents,
+          (event) => event.payload.type === 'session.status' &&
+            (event.payload.status as { type?: string } | null)?.type === 'busy',
+        ),
+      ),
+      'the workspace overview is running while OpenCode is busy',
+    ).toBe('running')
+    expect(replayAgentState('opencode', tid, statusEvents), 'the workspace overview awaits after OpenCode idles')
+      .toBe('waitingForInput')
     expectEcho(events.map((e) => ({ cateTerminalId: e.cate_terminal_id })), tid)
 
     // Resume identifies by the first sessionID-bearing event — session.created
@@ -1742,6 +1860,17 @@ export const CatePermLogger = async () => ({
     expect(asked?.metadata?.command).toContain('touch')
     // The turn is still busy while parked on approval — idle has not fired.
     expect(events().some((e) => e.type === 'session.idle' && e.sessionID === id)).toBe(false)
+    const asStatusEvents = (): BridgeEvent[] => events().map((event) => ({
+      terminalId: event.cate_terminal_id,
+      payload: {
+        type: event.type,
+        sessionID: event.sessionID,
+        permission: event.properties?.permission,
+        metadata: event.properties?.metadata,
+      },
+    }))
+    expect(replayAgentState('opencode', tid, asStatusEvents()), 'the workspace overview awaits OpenCode approval')
+      .toBe('waitingForInput')
 
     // Approve (Enter accepts the highlighted "allow once"): permission.replied
     // resolves the SAME request, then the turn runs on to completion.
@@ -1751,6 +1880,14 @@ export const CatePermLogger = async () => ({
     expect(replied?.sessionID).toBe(id)
     expect(replied?.requestID, 'resolution references the asked request').toBe(asked?.id)
     expect(replied?.reply).toBeTruthy()
+    expect(
+      replayAgentState(
+        'opencode',
+        tid,
+        throughFirst(asStatusEvents(), (event) => event.payload.type === 'permission.replied'),
+      ),
+      'the workspace overview resumes when OpenCode reports the reply',
+    ).toBe('running')
     await tui.waitFor(
       () => events().some((e) => e.type === 'session.idle' && e.sessionID === id),
       120_000,
@@ -2019,6 +2156,16 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
     const order = events.map((e) => e.payload.hookEventName)
     expect(order.indexOf('stop')).toBeGreaterThan(order.indexOf('user_prompt_submit'))
     expect(order.indexOf('user_prompt_submit')).toBeGreaterThan(order.indexOf('session_start'))
+    expect(
+      replayAgentState(
+        'grok',
+        tid,
+        throughFirst(events, (event) => event.payload.hookEventName === 'user_prompt_submit'),
+      ),
+      'the workspace overview is running after Grok accepts the prompt',
+    ).toBe('running')
+    expect(replayAgentState('grok', tid, events), 'the workspace overview awaits after Grok stops')
+      .toBe('waitingForInput')
 
     // The reserved runner env — the deterministic "grok spawned me" marker.
     const first = events[0]
@@ -2199,6 +2346,14 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
     // opened for.
     await tui.waitFor(() => byName(events(), 'user_prompt_submit').length > 0, 60_000, 'UserPromptSubmit')
     expect(byName(events(), 'user_prompt_submit')[0].payload.sessionId).toBe(start.sessionId)
+    expect(
+      replayAgentState(
+        'grok',
+        tid,
+        throughFirst(events(), (event) => event.payload.hookEventName === 'user_prompt_submit'),
+      ),
+      'the workspace overview is running through Grok deferred session startup',
+    ).toBe('running')
 
     const lineage = events().find((e) => typeof e.ppid === 'number')
     expect(lineage, 'bridge recorded its parent pid').toBeTruthy()
@@ -2211,6 +2366,8 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
 
     await tui.waitFor(() => byName(events(), 'stop').length > 0, 180_000, 'Stop')
     expect(byName(events(), 'stop')[0].payload.sessionId).toBe(start.sessionId)
+    expect(replayAgentState('grok', tid, events()), 'the workspace overview awaits after Grok stops')
+      .toBe('waitingForInput')
     expectEcho(events(), tid)
     tui.kill()
   })

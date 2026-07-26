@@ -417,7 +417,7 @@ export class ExtensionServerManager {
         // Force the server to bind loopback only (security hygiene: extension
         // servers must never be reachable from the network — the proxy reaches
         // them over a tunnel, not a public socket). HOST is the conventional bind
-        // var; servers honoring it stay on 127.0.0.1. See docs/extensions.md.
+        // var; servers honoring it stay on 127.0.0.1.
         HOST: '127.0.0.1',
         // Phase 3C: the loopback URL (on the daemon host) the server uses to call
         // back into Cate's reverse API; the listener tunnels it back to main.

@@ -63,7 +63,7 @@ brew install --cask cate
 - **A CLI agents can call.** In a Cate terminal, `cate` drives a browser panel, reads another terminal, opens files, manages panels.
 - **Local and remote are the same path.** Point Cate at a host over SSH or WSL and terminals, git, search, and agents run there; editors, browser, and canvas stay local.
 
-Press `Cmd+K` for everything else. All shortcuts are listed in [docs/shortcuts.md](docs/shortcuts.md) and rebindable in Settings.
+Press `Cmd+K` for everything else. Shortcuts are rebindable in Settings.
 
 ## Extensions
 
@@ -71,7 +71,7 @@ Cate has an extension system for third-party panels (MCP servers, diagrams, and 
 
 ## Contributing
 
-Build-from-source instructions and the contribution workflow are in [CONTRIBUTING.md](CONTRIBUTING.md). Codebase layout and stack in [docs/architecture.md](docs/architecture.md). Release history in the [CHANGELOG](CHANGELOG.md).
+Build-from-source instructions and the contribution workflow are in [CONTRIBUTING.md](CONTRIBUTING.md). Release history is in the [CHANGELOG](CHANGELOG.md).
 
 ## Star history
 

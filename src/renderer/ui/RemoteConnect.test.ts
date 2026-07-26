@@ -42,6 +42,19 @@ describe('buildConnectSpec', () => {
     const spec = buildConnectSpec('wsl', { ...base, host: 'ignored', distro: ' Ubuntu-22.04 ', distroPath: ' /home/me/proj ' })
     expect(spec).toEqual({ kind: 'wsl', distro: 'Ubuntu-22.04', distroPath: '/home/me/proj' })
   })
+
+  test.each(['~/project', 'home/user/project', 'cwd'])(
+    'rejects a relative WSL path (%s)',
+    (distroPath) => {
+      expect(() => buildConnectSpec('wsl', { ...base, distro: 'Ubuntu', distroPath }))
+        .toThrow('Remote workspace path must be an absolute POSIX path')
+    },
+  )
+
+  test('rejects a relative SSH path', () => {
+    expect(() => buildConnectSpec('server', { ...base, host: 'h', user: 'u', remotePath: 'project' }))
+      .toThrow('Remote workspace path must be an absolute POSIX path')
+  })
 })
 
 describe('parseSshTarget', () => {

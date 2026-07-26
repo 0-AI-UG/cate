@@ -9,9 +9,10 @@
 // running after /clear). permission-wait (the CLI is blocked on tool approval)
 // flips to 'waitingForInput' immediately with a "needs permission"
 // notification whose body carries the blocked command; turn-resume (the
-// approval ran the tool — also re-fired on every ordinary tool call) flips
-// back to 'running' silently. The events are authoritative, so no settle
-// timer is involved.
+// CLI reported a permission reply or a tool completed) flips back to 'running'
+// silently. For CLIs with no approval-reply hook, terminal Enter supplies the
+// earlier resume edge. The signals are authoritative, so no settle timer is
+// involved.
 //
 // Presence (noteAgentPresence, fed 1 Hz from main's activity scan) stays
 // authoritative for EXISTENCE — but it is itself hook-anchored now: the
@@ -59,6 +60,10 @@ export function resolveAgentState(s: DetectorSignals): AgentState {
 interface Tracker {
   present: boolean
   wasPresent: boolean
+  /** Current CLI session identity. Used to make a deferred/replayed
+   *  session-start idempotent instead of letting it overwrite a turn event
+   *  from the same session that already arrived. */
+  sessionId: string | null
   /** turn-start seen more recently than turn-end/session-end. */
   hookTurnActive: boolean
   /** The in-flight turn is parked on a permission prompt (permission-wait seen
@@ -78,6 +83,7 @@ function trackerFor(terminalId: string): Tracker {
     t = {
       present: false,
       wasPresent: false,
+      sessionId: null,
       hookTurnActive: false,
       hookPermissionWait: false,
       state: 'notRunning',
@@ -163,13 +169,14 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
   const t = trackerFor(event.terminalId)
   switch (event.kind) {
     case 'turn-start':
+      t.sessionId = event.sessionId
       t.hookTurnActive = true
       t.hookPermissionWait = false
       recompute(event.terminalId)
       break
     case 'turn-resume':
-      // The blocked tool call resolved (or an ordinary tool call completed) —
-      // the turn is in flight again. Idempotent and silent.
+      // A permission reply arrived or a tool completed — either way the turn
+      // is in flight. Idempotent and silent.
       t.hookTurnActive = true
       t.hookPermissionWait = false
       recompute(event.terminalId)
@@ -189,7 +196,14 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
       recompute(event.terminalId)
       break
     case 'session-start':
-      // A fresh session starts idle; no turn is in flight yet.
+      // Codex defers SessionStart until the first prompt and delivers it on a
+      // separate hook post from UserPromptSubmit. If the prompt event won that
+      // race, a SessionStart for the SAME session is only identity
+      // confirmation; resetting it would flicker a running turn back to
+      // waitingForInput. A genuinely new session (e.g. /clear) still starts
+      // idle.
+      if (t.sessionId === event.sessionId && t.hookTurnActive) break
+      t.sessionId = event.sessionId
       t.hookTurnActive = false
       t.hookPermissionWait = false
       recompute(event.terminalId)
@@ -204,6 +218,19 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
       recompute(event.terminalId, true, permissionBodyFor(event))
       break
   }
+}
+
+/** The user submitted a response while the CLI was parked on a permission
+ *  prompt. Claude, Codex, and Grok do not expose an "approval answered" hook:
+ *  their next hook is PostToolUse, after the approved tool has FINISHED. The
+ *  terminal Enter is therefore the earliest truthful resume edge. A denial
+ *  also resumes the agent while it processes that answer, before its Stop. */
+export function noteAgentInputSubmitted(terminalId: string): void {
+  const t = trackers.get(terminalId)
+  if (!t?.hookPermissionWait) return
+  t.hookTurnActive = true
+  t.hookPermissionWait = false
+  recompute(terminalId)
 }
 
 /** Main's scan reported whether the hook-registered agent pid is alive. The
