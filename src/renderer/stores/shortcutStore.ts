@@ -1,6 +1,12 @@
 import { useMemo } from 'react'
 import type { ShortcutAction, StoredShortcut } from '../../shared/types'
-import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, resolveShortcuts, storedShortcut } from '../../shared/types'
+import {
+  DEFAULT_SHORTCUTS,
+  SHORTCUT_ACTIONS,
+  normaliseShortcutKey,
+  resolveShortcuts,
+  storedShortcut,
+} from '../../shared/types'
 import { useSettingsStore } from './settingsStore'
 
 interface ModifierState {
@@ -11,18 +17,7 @@ interface ModifierState {
 }
 
 function normaliseKey(event: KeyboardEvent): string {
-  switch (event.key) {
-    case 'Tab': return '\t'
-    case 'Enter': return '\r'
-    case ' ': return ' '
-    case 'Backspace': return 'Backspace'
-    case 'Escape': return 'Escape'
-    case 'ArrowLeft': return '\u2190'
-    case 'ArrowRight': return '\u2192'
-    case 'ArrowDown': return '\u2193'
-    case 'ArrowUp': return '\u2191'
-    default: return event.key.toLowerCase()
-  }
+  return normaliseShortcutKey(event.key)
 }
 
 function sameShortcut(a: StoredShortcut, b: StoredShortcut): boolean {

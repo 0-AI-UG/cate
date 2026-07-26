@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { StoredShortcut } from '../../shared/types'
-import { displayString } from '../../shared/types'
+import { displayString, normaliseShortcutKey, type StoredShortcut } from '../../shared/types'
 
 interface ShortcutRecorderProps {
   currentShortcut: StoredShortcut
@@ -30,7 +29,7 @@ export function ShortcutRecorder({ currentShortcut, onRecord }: ShortcutRecorder
       if (!e.metaKey && !e.ctrlKey && !e.altKey) return
 
       const shortcut: StoredShortcut = {
-        key: e.key.length === 1 ? e.key.toLowerCase() : e.key,
+        key: normaliseShortcutKey(e.key),
         command: e.metaKey,
         shift: e.shiftKey,
         option: e.altKey,

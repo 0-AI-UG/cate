@@ -85,6 +85,32 @@ function rowWithText(text: string): HTMLElement | undefined {
 }
 
 describe('CommandPalette in the main window', () => {
+  it('lists workspaces and switches to the selected one', () => {
+    useAppStore.setState({
+      workspaces: [
+        { id: 'ws-A', name: 'Proj', color: '#4a8ad0', rootPath: '/tmp/p', panels: {} } as never,
+        { id: 'ws-B', name: 'Other Project', color: '#d05c5c', rootPath: '/tmp/other', panels: {} } as never,
+      ],
+      selectedWorkspaceId: 'ws-A',
+    })
+    const selectWorkspace = vi.spyOn(useAppStore.getState(), 'selectWorkspace').mockResolvedValue(undefined)
+
+    renderPalette('main')
+
+    expect(host.textContent).toContain('Workspaces')
+    expect(host.textContent).toContain('Proj')
+    expect(host.textContent).toContain('Other Project')
+    expect(host.textContent).toContain('Current')
+
+    const row = rowWithText('Other Project')
+    expect(row).toBeTruthy()
+    act(() => { row!.click() })
+
+    expect(selectWorkspace).toHaveBeenCalledWith('ws-B')
+    expect(useUIStore.getState().showCommandPalette).toBe(false)
+    selectWorkspace.mockRestore()
+  })
+
   it('lists panels living in other windows and reveals them via main', () => {
     renderPalette('main')
 

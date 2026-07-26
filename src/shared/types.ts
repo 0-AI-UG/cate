@@ -592,6 +592,22 @@ export function storedShortcut(
   }
 }
 
+/** Convert DOM KeyboardEvent key names to Cate's persisted shortcut keys. */
+export function normaliseShortcutKey(key: string): string {
+  switch (key) {
+    case 'Tab': return '\t'
+    case 'Enter': return '\r'
+    case ' ': return ' '
+    case 'Backspace': return 'Backspace'
+    case 'Escape': return 'Escape'
+    case 'ArrowLeft': return '\u2190'
+    case 'ArrowRight': return '\u2192'
+    case 'ArrowDown': return '\u2193'
+    case 'ArrowUp': return '\u2191'
+    default: return key.toLowerCase()
+  }
+}
+
 /** Mirrors StoredShortcut.displayString from Swift. */
 export function displayString(s: StoredShortcut): string {
   // An empty key means the binding is disabled (see clearShortcut).

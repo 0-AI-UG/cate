@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { DEFAULT_SHORTCUTS, storedShortcut } from '../../shared/types'
+import { DEFAULT_SHORTCUTS, normaliseShortcutKey, storedShortcut } from '../../shared/types'
 
 async function loadStores() {
   vi.resetModules()
@@ -35,6 +35,21 @@ describe('shortcutStore', () => {
     expect(matchShortcutEvent(keyEvent('ArrowLeft', { meta: true, alt: true }))).toBe('previousWorkspace')
     // Plain Cmd+Arrow stays panel navigation, not workspace switching.
     expect(matchShortcutEvent(keyEvent('ArrowRight', { meta: true }))).not.toBe('nextWorkspace')
+  })
+
+  it('normalizes recorded arrow keys before matching custom workspace shortcuts', async () => {
+    const { useSettingsStore, getResolvedShortcuts, matchShortcutEvent } = await loadStores()
+    useSettingsStore.setState({
+      customShortcuts: {
+        nextWorkspace: storedShortcut(normaliseShortcutKey('ArrowRight'), { command: true, shift: true }),
+        previousWorkspace: storedShortcut(normaliseShortcutKey('ArrowLeft'), { command: true, shift: true }),
+      },
+    })
+
+    expect(getResolvedShortcuts().nextWorkspace.key).toBe('→')
+    expect(getResolvedShortcuts().previousWorkspace.key).toBe('←')
+    expect(matchShortcutEvent(keyEvent('ArrowRight', { meta: true, shift: true }))).toBe('nextWorkspace')
+    expect(matchShortcutEvent(keyEvent('ArrowLeft', { meta: true, shift: true }))).toBe('previousWorkspace')
   })
 
   it('clearShortcut disables a binding so it never matches (#372)', async () => {
