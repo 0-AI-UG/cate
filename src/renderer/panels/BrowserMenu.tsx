@@ -2,7 +2,7 @@
 // BrowserMenu — the URL-bar overflow (⋮) dropdown for a browser panel.
 // =============================================================================
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { BookmarkSimple, CaretLeft, Plus, Gear, Key } from '@phosphor-icons/react'
+import { BookmarkSimple, CaretLeft, Minus, Plus, Gear, Key } from '@phosphor-icons/react'
 import { useBrowserStore } from '../stores/browserStore'
 import { useUIStore } from '../stores/uiStore'
 import { BrowserFavicon } from './BrowserFavicon'
@@ -12,6 +12,10 @@ interface Props {
   onNewTab: () => void
   onNavigate: (url: string) => void
   onOpenPasswordManager: () => void
+  zoomPercent: number
+  onZoomOut: () => void
+  onZoomIn: () => void
+  onZoomReset: () => void
   onClose: () => void
   triggerRef: RefObject<HTMLElement | null>
 }
@@ -20,6 +24,10 @@ export function BrowserMenu({
   onNewTab,
   onNavigate,
   onOpenPasswordManager,
+  zoomPercent,
+  onZoomOut,
+  onZoomIn,
+  onZoomReset,
   onClose,
   triggerRef,
 }: Props): JSX.Element {
@@ -105,6 +113,36 @@ export function BrowserMenu({
       <button className={item} onClick={() => { onClose(); onOpenPasswordManager() }}>
         <Key size={14} className="text-muted" /> Passwords and autofill
       </button>
+      <div className="my-1 border-t border-subtle" />
+      <div className="flex h-9 items-center gap-1 px-3 text-sm text-secondary">
+        <span className="flex-1">Zoom</span>
+        <button
+          type="button"
+          onClick={onZoomOut}
+          disabled={zoomPercent <= 25}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-hover hover:text-primary disabled:opacity-30"
+          aria-label="Zoom out"
+        >
+          <Minus size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={onZoomReset}
+          className="h-7 min-w-12 rounded-md px-1 text-center text-xs tabular-nums text-secondary transition-colors hover:bg-hover hover:text-primary"
+          aria-label="Reset zoom"
+        >
+          {zoomPercent}%
+        </button>
+        <button
+          type="button"
+          onClick={onZoomIn}
+          disabled={zoomPercent >= 500}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-hover hover:text-primary disabled:opacity-30"
+          aria-label="Zoom in"
+        >
+          <Plus size={13} />
+        </button>
+      </div>
       <div className="my-1 border-t border-subtle" />
       <button
         className={item}

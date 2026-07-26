@@ -128,7 +128,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Control',
       code: 'panel-control-disabled',
       detail:
-        '`cate panel create / focus / close / set-title` — add panels to the canvas, focus, close and rename them.',
+        '`cate panel create / close / set-title` — add panels to the canvas, close and rename them.',
     },
   },
   {

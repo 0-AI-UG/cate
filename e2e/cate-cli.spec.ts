@@ -173,7 +173,6 @@ test('every cate CLI command works from a real Cate terminal', async () => {
   // Editor + panel verbs.
   const editorId = await runCate(controlNode, 'editor', 'open', `${path.join(workspace, 'cli-fixture.ts')}:1:8`)
   expect(editorId).toMatch(/^[a-z0-9-]{8}$/i)
-  expect(await runCate(controlNode, 'panel', 'focus', editorId)).toBe('ok')
   expect(await runCate(controlNode, 'panel', 'list')).toContain('cli-fixture.ts')
 
   // Browser verbs against a real Electron webview and local HTTP page.

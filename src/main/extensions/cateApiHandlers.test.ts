@@ -963,6 +963,22 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
     expect(showOsNotification).not.toHaveBeenCalled()
   })
 
+  it('does not let first-party callers change the user view with panel.focus', async () => {
+    const forward = vi.fn()
+    windowPanelList.value = [{ panelId: 'p1', type: 'editor', ownerWindowId: 1 }]
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward,
+      caller: 'first-party', grantedScopes: [...GRANTED_SCOPES],
+    }
+
+    expect(await dispatchCateInvoke(s, 'cate.panel.focus', { panelId: 'p1' })).toEqual({
+      error: 'unsupported',
+      method: 'cate.panel.focus',
+    })
+    expect(revealWindowPanel).not.toHaveBeenCalled()
+    expect(forward).not.toHaveBeenCalled()
+  })
+
   it('an unlisted verb in a covered namespace falls into that surface\'s Control cell', () => {
     // New verbs must fail into the stricter half rather than escaping the matrix.
     expect(cliPermissionForMethod('cate.browser.somethingNew')?.key).toBe('cliBrowserControlEnabled')

@@ -116,10 +116,11 @@ Panel creation through this API is deliberately non-disruptive for both
 extensions and `CATE_API` callers: `editor.openFile`, `canvas.createPanel`, and
 the create branch of `browser.open` use automatic background placement. They do
 not open the placement picker, switch tabs, change canvas selection/focus, or
-move the camera. `panel.focus` is the explicit opt-in operation for changing the
-user's view. A newly created browser stays mounted off-screen, and `browser.open`
-does not resolve until its webview is registered, so an automation loop can
-immediately continue with `wait` and `snapshot`.
+move the camera. Scoped extensions can explicitly opt into changing the user's
+view with `panel.focus`; the first-party terminal/agent `CATE_API` endpoint does
+not expose that operation. A newly created browser stays mounted off-screen, and
+`browser.open` does not resolve until its webview is registered, so an automation
+loop can immediately continue with `wait` and `snapshot`.
 
 `cateApi` scopes in the manifest declare which namespaces an extension uses; the host enforces them (default-deny) and Cate surfaces them as the extension's permissions in Settings → Extensions.
 

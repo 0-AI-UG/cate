@@ -420,6 +420,12 @@ export async function dispatchCateInvoke(
     return { error: 'not-enabled', method }
   }
 
+  // The terminal/agent endpoint must never move the user's window, panel focus,
+  // or canvas camera. Extensions retain panel.focus behind their panel scope.
+  if (scope.caller === 'first-party' && method === 'cate.panel.focus') {
+    return unsupported(method)
+  }
+
   // Security: enforce the caller's declared scopes. First-party callers carry
   // their own `grantedScopes`; extensions use their manifest's `cateApi`.
   // version + the panel.* self-control methods are always allowed; an unknown

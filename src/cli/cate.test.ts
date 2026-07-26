@@ -584,12 +584,8 @@ describe('buildRequest — new verbs', () => {
     expect(() => buildRequest(['editor', 'active'], noFlags)).toThrow(/unknown editor verb/)
   })
 
-  it('panel focus resolves its positional id against panel.list', () => {
-    expect(buildRequest(['panel', 'focus', 'abcd1234'], noFlags)).toEqual({
-      method: 'cate.panel.focus',
-      args: { panelId: 'abcd1234' },
-      resolvePanel: 'panel',
-    })
+  it('panel focus is not exposed', () => {
+    expect(() => buildRequest(['panel', 'focus', 'abcd1234'], noFlags)).toThrow(/unknown panel verb/)
   })
 
   it('`cate version` maps to cate.version (the host API version)', () => {
@@ -663,19 +659,12 @@ describe('formatHuman — new output shapes', () => {
   })
 })
 
-describe('run resolves a short `panel focus` id against panel.list', () => {
-  it('lists panels, matches the prefix, then sends the full panelId', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ result: [{ panelId: 'abcd1234ef56' }, { panelId: 'ff00aa11' }] }))
-      .mockResolvedValueOnce(jsonResponse({ result: undefined }))
+describe('run rejects `panel focus`', () => {
+  it('returns a usage error without contacting the host', async () => {
+    const fetchMock = vi.fn()
     const deps = makeDeps({ fetch: fetchMock as unknown as typeof fetch })
-    const code = await run(['panel', 'focus', 'abcd1234'], deps)
-    expect(code).toBe(0)
-    const firstBody = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
-    expect(firstBody.method).toBe('cate.panel.list')
-    const secondBody = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)
-    expect(secondBody).toEqual({ method: 'cate.panel.focus', args: { panelId: 'abcd1234ef56' } })
+    expect(await run(['panel', 'focus', 'abcd1234'], deps)).toBe(2)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 
@@ -684,6 +673,19 @@ describe('--max validation', () => {
     const deps = makeDeps()
     expect(await run(['browser', 'snapshot', '--max', 'lots'], deps)).toBe(2)
     expect(deps.err.join('\n')).toMatch(/invalid --max/)
+  })
+
+  it('forwards a positive browser result limit to text, assets, and console', () => {
+    expect(buildRequest(['browser', 'text'], { ...noFlags, max: '25' }).args).toEqual({ max: 25 })
+    expect(buildRequest(['browser', 'assets'], { ...noFlags, max: '25' }).args).toEqual({ max: 25 })
+    expect(buildRequest(['browser', 'console'], { ...noFlags, max: '25', level: 'error' }).args)
+      .toEqual({ level: 'error', max: 25 })
+  })
+
+  it('reserves --max 0 for uncapped snapshot/find/terminal output', () => {
+    expect(() => buildRequest(['browser', 'text'], { ...noFlags, max: '0' })).toThrow(/invalid <max>/)
+    expect(() => buildRequest(['browser', 'assets'], { ...noFlags, max: '0' })).toThrow(/invalid <max>/)
+    expect(() => buildRequest(['browser', 'console'], { ...noFlags, max: '0' })).toThrow(/invalid <max>/)
   })
 })
 
@@ -839,6 +841,15 @@ describe('human-facing output and help', () => {
     expect(await run(['browser', '--help'], deps)).toBe(0)
     expect(deps.out.join('\n')).toMatch(/^Usage: cate browser/)
     expect(deps.out.join('\n')).not.toContain('Groups:')
+  })
+
+  it('top-level help explains placement-group targeting and the no-focus boundary', async () => {
+    const deps = makeDeps()
+    expect(await run(['--help'], deps)).toBe(0)
+    const help = deps.out.join('\n')
+    expect(help).toContain('placement group')
+    expect(help).toContain('cannot focus panels')
+    expect(help).not.toContain('panel focus')
   })
 })
 

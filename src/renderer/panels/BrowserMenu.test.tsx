@@ -28,6 +28,37 @@ afterEach(() => {
 })
 
 describe('BrowserMenu', () => {
+  it('shows the current page zoom and invokes all zoom controls', () => {
+    const onZoomOut = vi.fn()
+    const onZoomIn = vi.fn()
+    const onZoomReset = vi.fn()
+    act(() => {
+      root.render(
+        <BrowserMenu
+          onNewTab={vi.fn()}
+          onNavigate={vi.fn()}
+          onOpenPasswordManager={vi.fn()}
+          zoomPercent={67}
+          onZoomOut={onZoomOut}
+          onZoomIn={onZoomIn}
+          onZoomReset={onZoomReset}
+          onClose={vi.fn()}
+          triggerRef={{ current: null }}
+        />,
+      )
+    })
+
+    expect(host.textContent).toContain('67%')
+    act(() => {
+      ;(host.querySelector('button[aria-label="Zoom out"]') as HTMLButtonElement).click()
+      ;(host.querySelector('button[aria-label="Reset zoom"]') as HTMLButtonElement).click()
+      ;(host.querySelector('button[aria-label="Zoom in"]') as HTMLButtonElement).click()
+    })
+    expect(onZoomOut).toHaveBeenCalledOnce()
+    expect(onZoomReset).toHaveBeenCalledOnce()
+    expect(onZoomIn).toHaveBeenCalledOnce()
+  })
+
   it('opens Cate settings at the Browser section', () => {
     const onClose = vi.fn()
     act(() => {
@@ -36,6 +67,10 @@ describe('BrowserMenu', () => {
           onNewTab={vi.fn()}
           onNavigate={vi.fn()}
           onOpenPasswordManager={vi.fn()}
+          zoomPercent={100}
+          onZoomOut={vi.fn()}
+          onZoomIn={vi.fn()}
+          onZoomReset={vi.fn()}
           onClose={onClose}
           triggerRef={{ current: null }}
         />,
@@ -60,6 +95,10 @@ describe('BrowserMenu', () => {
           onNewTab={vi.fn()}
           onNavigate={vi.fn()}
           onOpenPasswordManager={vi.fn()}
+          zoomPercent={100}
+          onZoomOut={vi.fn()}
+          onZoomIn={vi.fn()}
+          onZoomReset={vi.fn()}
           onClose={vi.fn()}
           triggerRef={{ current: null }}
         />,
@@ -77,6 +116,10 @@ describe('BrowserMenu', () => {
           onNewTab={vi.fn()}
           onNavigate={vi.fn()}
           onOpenPasswordManager={onOpenPasswordManager}
+          zoomPercent={100}
+          onZoomOut={vi.fn()}
+          onZoomIn={vi.fn()}
+          onZoomReset={vi.fn()}
           onClose={vi.fn()}
           triggerRef={{ current: null }}
         />,
@@ -106,6 +149,10 @@ describe('BrowserMenu', () => {
           onNewTab={vi.fn()}
           onNavigate={onNavigate}
           onOpenPasswordManager={vi.fn()}
+          zoomPercent={100}
+          onZoomOut={vi.fn()}
+          onZoomIn={vi.fn()}
+          onZoomReset={vi.fn()}
           onClose={onClose}
           triggerRef={{ current: null }}
         />,
@@ -139,6 +186,10 @@ describe('BrowserMenu', () => {
               onNewTab={vi.fn()}
               onNavigate={vi.fn()}
               onOpenPasswordManager={vi.fn()}
+              zoomPercent={100}
+              onZoomOut={vi.fn()}
+              onZoomIn={vi.fn()}
+              onZoomReset={vi.fn()}
               onClose={() => setOpen(false)}
               triggerRef={triggerRef}
             />

@@ -94,9 +94,32 @@ interface WebviewElement extends HTMLElement {
   getURL(): string
   getTitle(): string
   getWebContentsId(): number
+  getZoomFactor(): number
+  insertCSS(css: string): Promise<string>
+  setZoomFactor(factor: number): void
   executeJavaScript(code: string): Promise<any>
   addEventListener(type: string, listener: (event: any) => void): void
   removeEventListener(type: string, listener: (event: any) => void): void
+}
+
+const BROWSER_ZOOM_FACTORS = [
+  0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5,
+] as const
+
+// Browser guests are isolated documents, so the renderer's global scrollbar
+// styles do not reach them. Inject a visible horizontal thumb using the current
+// Cate theme; this leaves each page's overflow behavior intact.
+export function browserGuestScrollbarCss(): string {
+  const vars = getComputedStyle(document.documentElement)
+  const thumb = vars.getPropertyValue('--scrollbar-thumb').trim() || 'rgba(255,255,255,0.15)'
+  const hover = vars.getPropertyValue('--scrollbar-thumb-hover').trim() || 'rgba(255,255,255,0.25)'
+  return (
+    '::-webkit-scrollbar{width:8px;height:8px}' +
+    '::-webkit-scrollbar-track{background:transparent}' +
+    `::-webkit-scrollbar-thumb{background:${thumb};border-radius:9999px}` +
+    `::-webkit-scrollbar-thumb:hover{background:${hover}}` +
+    '::-webkit-scrollbar-corner{background:transparent}'
+  )
 }
 
 interface AutofillPopup {
@@ -211,6 +234,7 @@ export default function BrowserPanel({
     seededPartitionRef.current = partition
   }
   const webviewsByTabRef = useRef(new Map<string, WebviewElement>())
+  const zoomInitializedWebviewsRef = useRef(new WeakSet<WebviewElement>())
   const webviewRef = useRef<WebviewElement | null>(null)
   const [webviewEl, setWebviewEl] = useState<WebviewElement | null>(null)
   const [autofillPopup, setAutofillPopup] = useState<AutofillPopup | null>(null)
@@ -243,6 +267,8 @@ export default function BrowserPanel({
   const [canGoForward, setCanGoForward] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [browserZoomFactor, setBrowserZoomFactor] = useState(1)
+  const browserZoomFactorRef = useRef(1)
   // Distinct from loadError: the guest *renderer process* died (OOM / GPU
   // fault / native crash), not merely a failed navigation. Needs a reload to
   // respawn the renderer, so it gets its own overlay + recovery affordance.
@@ -402,6 +428,22 @@ export default function BrowserPanel({
     webviewRef.current?.reload()
   }, [])
 
+  const applyBrowserZoom = useCallback((factor: number) => {
+    browserZoomFactorRef.current = factor
+    setBrowserZoomFactor(factor)
+    for (const webview of webviewsByTabRef.current.values()) {
+      try { webview.setZoomFactor(factor) } catch { /* guest not ready */ }
+    }
+  }, [])
+
+  const adjustBrowserZoom = useCallback((direction: -1 | 1) => {
+    const current = browserZoomFactorRef.current
+    const next = direction > 0
+      ? BROWSER_ZOOM_FACTORS.find((factor) => factor > current)
+      : [...BROWSER_ZOOM_FACTORS].reverse().find((factor) => factor < current)
+    if (next !== undefined) applyBrowserZoom(next)
+  }, [applyBrowserZoom])
+
   const handleScreenshot = useCallback(async () => {
     const webview = webviewRef.current
     if (!webview) return
@@ -467,6 +509,18 @@ export default function BrowserPanel({
   // Chrome-like chrome: tabs, address bar and overflow menu.
   const [menuOpen, setMenuOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const toggleBrowserMenu = useCallback(() => {
+    if (!menuOpen) {
+      try {
+        const liveFactor = webviewRef.current?.getZoomFactor()
+        if (liveFactor && Number.isFinite(liveFactor)) {
+          browserZoomFactorRef.current = liveFactor
+          setBrowserZoomFactor(liveFactor)
+        }
+      } catch { /* guest not ready */ }
+    }
+    setMenuOpen((open) => !open)
+  }, [menuOpen])
 
   // "New tab" → a new browser panel on the canvas (opens the start page).
   const handleNewTab = addTab
@@ -756,6 +810,17 @@ export default function BrowserPanel({
       let webContentsId: number
       try { webContentsId = webview.getWebContentsId() } catch { return }
       try { portalRegistry.register(panelId, webview as any) } catch { /* ignore */ }
+      // Initialize a newly attached guest once. Reapplying on every navigation
+      // would overwrite zoom changes made with the browser's native shortcuts.
+      if (!zoomInitializedWebviewsRef.current.has(webview)) {
+        try {
+          webview.setZoomFactor(browserZoomFactorRef.current)
+          zoomInitializedWebviewsRef.current.add(webview)
+        } catch { /* detached */ }
+      }
+      try {
+        void webview.insertCSS(browserGuestScrollbarCss()).catch(() => { /* guest gone */ })
+      } catch { /* detached */ }
       void window.electronAPI.browserControl({
         op: 'registerPlaywright',
         webContentsId,
@@ -984,7 +1049,7 @@ export default function BrowserPanel({
         <Tooltip label="Menu">
           <button
             ref={menuButtonRef}
-            onClick={() => setMenuOpen((o) => !o)}
+            onClick={toggleBrowserMenu}
             className="w-7 h-7 flex items-center justify-center rounded-[10px] hover:bg-hover text-secondary hover:text-primary transition-colors"
             aria-label="Browser menu"
             aria-expanded={menuOpen}
@@ -1000,6 +1065,10 @@ export default function BrowserPanel({
           onNewTab={handleNewTab}
           onNavigate={navigateTo}
           onOpenPasswordManager={() => openTab(BROWSER_PASSWORD_MANAGER_URL)}
+          zoomPercent={Math.round(browserZoomFactor * 100)}
+          onZoomOut={() => adjustBrowserZoom(-1)}
+          onZoomIn={() => adjustBrowserZoom(1)}
+          onZoomReset={() => applyBrowserZoom(1)}
           onClose={() => setMenuOpen(false)}
           triggerRef={menuButtonRef}
         />

@@ -32,7 +32,7 @@ import { parseArgs } from 'node:util'
 
 /** Version of the CLI tool itself (printed by --version). The API's own version
  *  is reachable via `cate version`. */
-export const CLI_VERSION = '6'
+export const CLI_VERSION = '7'
 
 /** Default request timeout (ms) when --timeout is not given. */
 export const DEFAULT_TIMEOUT_MS = 30_000
@@ -259,7 +259,13 @@ export const GROUPS: Record<string, Group> = {
     }),
     attrs: (a) => ({ method: 'cate.browser.attrs', args: { ref: need(exact(a, 1)[0], 'ref') } }),
     state: (a) => ({ method: 'cate.browser.state', args: { ref: need(exact(a, 1)[0], 'ref') } }),
-    assets: (a) => ({ method: 'cate.browser.assets', args: noArgs(a) }),
+    assets: (a, f) => ({
+      method: 'cate.browser.assets',
+      args: {
+        ...noArgs(a),
+        ...(f.max !== undefined ? { max: needPositiveInt(f.max, 'max') } : {}),
+      },
+    }),
     eval: (a) => ({ method: 'cate.browser.evaluate', args: { expression: needRest(a, 'expression') } }),
     console: (a, f) => {
       const sub = a[0]
@@ -269,7 +275,13 @@ export const GROUPS: Record<string, Group> = {
       if (level !== undefined && !['verbose', 'info', 'warning', 'error'].includes(level)) {
         throw new UsageError(`invalid --level: ${level} (verbose|info|warning|error)`)
       }
-      return { method: 'cate.browser.console', args: level !== undefined ? { level } : {} }
+      return {
+        method: 'cate.browser.console',
+        args: {
+          ...(level !== undefined ? { level } : {}),
+          ...(f.max !== undefined ? { max: needPositiveInt(f.max, 'max') } : {}),
+        },
+      }
     },
 
     // --- Dialogs ------------------------------------------------------------
@@ -473,11 +485,6 @@ export const GROUPS: Record<string, Group> = {
       }
       return { method: 'cate.canvas.createPanel', args: { type, ...(a[1] !== undefined ? { url: a[1] } : {}) } }
     },
-    focus: (a) => ({
-      method: 'cate.panel.focus',
-      args: { panelId: need(exact(a, 1)[0], 'panelId') },
-      resolvePanel: 'panel',
-    }),
     close: (a) => ({
       method: 'cate.panel.close',
       args: { panelId: need(exact(a, 1)[0], 'panelId') },
@@ -1013,7 +1020,6 @@ export function formatHuman(method: string, value: unknown, opts?: { max?: numbe
         ? formatSnapshot(asObj(value)?.snapshot, opts?.max ?? SNAPSHOT_MAX_DEFAULT)
         : 'ok'
     case 'cate.ui.notify':
-    case 'cate.panel.focus':
     case 'cate.panel.setTitle':
     case 'cate.panel.close':
     case 'cate.terminal.type':
@@ -1027,7 +1033,7 @@ export function formatHuman(method: string, value: unknown, opts?: { max?: numbe
     case 'cate.editor.openFile':
     case 'cate.canvas.createPanel': {
       // Both resolve to { panelId } — print the (short) handle for reuse with
-      // `panel focus` / `--panel`.
+      // `--panel`.
       const id = asObj(value)?.panelId
       return typeof id === 'string' ? shortId(id) : renderGeneric(value)
     }
@@ -1063,14 +1069,18 @@ Groups:
                        clipboard read | clipboard write <text...>
   ui         notify <message...>
   editor     open <path[:line[:col]]>
-  panel      list | create <type> [url] | focus <id> | close <id>
+  panel      list | create <type> [url] | close <id>
              | set-title <title...>    (create url: browser panels only)
   terminal   read [--max n] | type <text...> | press <key>
              (type/press require --panel; input must be enabled in Settings)
 
 \`panel list\` enumerates every panel (editors with file paths, browsers with
-urls); its short ids feed \`panel focus\` and \`--panel\`. \`browser tabs\` lists the
+urls); its short ids feed \`--panel\`. \`browser tabs\` lists the
 tabs inside one browser panel.
+
+Without \`--panel\`, browser and panel-creating calls stay in the calling
+shell's placement group; \`browser open\` creates a background browser when that
+group has none. The CLI cannot focus panels or move the user's view.
 
 A <target> is either a snapshot ref (@s1e7) or a locator: role=button,
 text=Sign in, label=Email, placeholder=Search, testid=submit, css=.btn,
@@ -1080,8 +1090,8 @@ alt=Logo, title=Close. A locator matching several elements is rejected unless
 Flags:
   --panel <id>     target a specific panel (sets args.panelId; short ids ok)
   --json           print the raw result as one JSON line
-  --max <n>        snapshot: max ref lines (default ${SNAPSHOT_MAX_DEFAULT}; 0 = all)
-                   terminal read: max tail lines (default ${TERMINAL_READ_MAX_DEFAULT}; 0 = all)
+  --max <n>        limit snapshot/find/text/assets/console or terminal read
+                   (snapshot default ${SNAPSHOT_MAX_DEFAULT}; terminal default ${TERMINAL_READ_MAX_DEFAULT})
   --snapshot       return a post-action snapshot (any acting verb, and wait)
   --wait-timeout <ms> condition timeout for browser wait (default 5000, max 8000)
   --nth <n>        which match of a locator to act on (0-based)
@@ -1122,7 +1132,7 @@ const GROUP_USAGE: Record<string, string> = {
     `       <target> = @s1e7 (snapshot ref) or role=|text=|label=|placeholder=|testid=|css=|alt=|title=`,
   ui: 'Usage: cate ui notify <message...>',
   editor: 'Usage: cate editor open <path[:line[:col]]>',
-  panel: `Usage: cate panel list | create <type> [url] | focus <id> | close <id> | set-title <title...>\n` +
+  panel: `Usage: cate panel list | create <type> [url] | close <id> | set-title <title...>\n` +
     `       (create url: browser panels only)`,
   terminal: `Usage: cate terminal read [--max n] | type <text...> | press <key>\n` +
     `       (type/press require --panel <id>; keys: enter, tab, esc, arrows, ctrl-<letter>, ...)`,

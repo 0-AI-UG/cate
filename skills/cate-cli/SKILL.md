@@ -25,11 +25,63 @@ with a stable error naming the cell (e.g. `panel-control-disabled: enable Panels
 → Control in Cate Settings → CLI`); Terminal → Control is the only cell off by
 default.
 
+## Start here: the reliable workflow
+
+Orient before acting:
+
+```bash
+cate panel list
+```
+
+This is the one list of every open panel. It shows short ids, panel types, useful
+paths/urls, and marks the focused panel with `*`.
+
+Then choose one targeting mode and keep it for the whole flow:
+
+- To drive an existing browser, copy its id and pass `--panel <id>` on every
+  browser command. This is the most explicit option when several browsers exist.
+- Without `--panel`, Cate normally keeps browser and newly created panel calls
+  inside the calling terminal/agent's placement group. `cate browser open <url>`
+  reuses that group's browser or creates a background browser when the group has
+  none. On shells without placement affinity, Cate falls back to the focused
+  browser and then the first browser in the workspace.
+
+A complete browser loop is **orient → open → inspect → act → wait → verify**:
+
+```bash
+cate panel list
+cate browser open https://example.com
+cate browser snapshot
+cate browser fill label=Email user@example.com
+cate browser click text=Continue --exact --snapshot
+cate browser wait url '**/dashboard' --snapshot
+```
+
+Prefer a condition such as `wait text`, `wait gone`, or `wait url` over a fixed
+delay. `--snapshot` combines an action and its immediate observation, but still
+use a conditional wait when the page updates asynchronously. After navigation,
+take a new snapshot before reusing refs.
+
+For an existing browser, keep the explicit id throughout:
+
+```bash
+browser=1a2b3c4d
+cate browser snapshot --panel "$browser"
+cate browser click text=Continue --exact --snapshot --panel "$browser"
+cate browser wait text=Done --snapshot --panel "$browser"
+```
+
+Panel and file creation is intentionally background-only. The first-party CLI
+cannot focus panels, move the canvas camera, or otherwise change the user's
+view. If a human needs to inspect the result, identify the panel from
+`cate panel list` and tell them which one to open; `cate ui notify <message>` can
+also announce that a flow finished.
+
 ## Browser control
 
-A Cate window can host browser panels. These verbs act on the **active** browser
-panel by default; target a specific one with `--panel <id>` (get ids from
-`cate panel list` — browser rows show their url).
+A Cate window can host browser panels. An explicit `--panel <id>` always wins.
+Without it, commands follow the placement-group targeting described above.
+Browser rows from `cate panel list` show their current url.
 
 Everything you do is **visible to the user**: Cate draws a ghost cursor, a
 highlight around the element you are acting on, and a label naming the action,
@@ -236,7 +288,6 @@ cate ui notify build finished     # OS notification; trailing words are the mess
 cate editor open src/app.ts       # open a file; prints the new panel's short id
 cate editor open src/app.ts:42    # ...and jump to line 42 (or :42:7 for a column)
 cate panel list                   # ALL panels: id, type, path/url/title; * = focused
-cate panel focus 1a2b3c4d         # reveal/focus a panel (short ids from `list` ok)
 cate panel close 1a2b3c4d         # close a panel without revealing it first
 cate panel create terminal        # auto-place a new panel in the background
 cate panel create browser https://x.com  # browser panels can seed a url
@@ -247,7 +298,7 @@ cate version                      # host API version (for feature detection)
 
 `panel list` is the single enumeration surface and the way to orient yourself:
 one line per panel — editors show their file path, browsers their url — with
-the focused panel marked `*`. Its short ids feed `panel focus` and `--panel`.
+the focused panel marked `*`. Its short ids feed `--panel`.
 So "what is the user looking at?" is the `*` row, and there is no separate
 browser or editor list. To open a file (any type — a PDF becomes a document
 panel), use `cate editor open`; the file must exist (`file-not-found`
@@ -257,15 +308,31 @@ one the panel sits on its start page until a `browser open` navigates it).
 
 Panel/file/browser creation is deliberately non-disruptive: it uses automatic
 background placement and does not open the placement picker, change focus or
-selection, switch tabs, or move the canvas camera. `panel focus` is the explicit
-opt-in command for changing the user's view. A new browser is kept mounted even
-off-screen, and `browser open` waits for its webview before returning, so the
-next `wait`/`snapshot` is safe to run immediately.
+selection, switch tabs, or move the canvas camera. The CLI cannot focus panels
+or otherwise move the user's view. A new browser is kept mounted even off-screen,
+and `browser open` waits for its webview before returning, so the next
+`wait`/`snapshot` is safe to run immediately.
 
 ## Terminal control
 
 Read another terminal panel's screen and (optionally) send keystrokes to it.
 Target terminals by id from `cate panel list`:
+
+```bash
+cate panel list
+terminal=1a2b3c4d
+cate terminal read --panel "$terminal"
+cate terminal type npm test --panel "$terminal"   # stage input; does not run
+cate terminal read --panel "$terminal"            # verify the staged command
+cate terminal press enter --panel "$terminal"     # execute only after verifying
+cate terminal read --panel "$terminal"            # inspect the result
+```
+
+Terminal → Control is off by default. Never send input until the target id and
+current screen are verified: a foreground TUI receives the same keys that a
+shell would.
+
+Individual commands:
 
 ```bash
 cate terminal read --panel 1a2b3c4d   # the rendered screen text
@@ -306,14 +373,40 @@ shared terminal has no extension identity). They exist only for extensions, so
 this CLI has no `agent`/`storage` group — and no raw method passthrough: the
 verbs above are the complete surface.
 
+## Common failures
+
+| error | recovery |
+| --- | --- |
+| `no-browser` | Run `cate panel list`; pass an existing browser with `--panel`, or use `cate browser open <url>` to create one for the current placement group. |
+| `ambiguous:<n>` | Refine the locator, add `--exact`, inspect matches with `find`, or deliberately choose one with `--nth <i>`. |
+| `stale-ref` | The page or snapshot generation changed. Take a new `snapshot` or `find`, then use the new ref. |
+| `no-terminal-focused` | Get a terminal id from `panel list` and retry `terminal read --panel <id>`. |
+| `*-read-disabled` / `*-control-disabled` | Enable the named Read or Control cell in Settings → CLI. |
+| exit `3` with unset `CATE_API` / `CATE_TOKEN` | Enable command-line control, then open a new terminal so it receives the endpoint variables. |
+
+For every other failure, keep the method and stable error text from stderr in
+the report. Do not retry an acting command blindly: inspect the current panel or
+page state first.
+
 ## Flags
 
 - `--panel <id>` — target a specific panel (sets `args.panelId`; the short
   8-char ids printed by `panel list` are accepted).
 - `--json` — print the raw unwrapped result as one JSON line (nothing else on
   stdout). Use this when you want to parse the output.
-- `--max <n>` — `browser snapshot`: max ref lines to print (default 150;
-  0 = all). `terminal read`: max tail lines to print (default 200; 0 = all).
+- `--max <n>` — limit `browser snapshot`/`find` refs, `browser text` characters,
+  `browser assets`, `browser console`, or `terminal read` lines. `0 = all` is
+  supported by snapshot/find/terminal read.
+- `--snapshot` — include a compact post-action snapshot on browser acting verbs
+  and `wait`.
+- `--wait-timeout <ms>` — conditional browser-wait deadline (maximum 8000).
+- `--nth <n>` / `--exact` — disambiguate locator matches.
+- `--button <b>` / `--modifiers <m>` — mouse button and held modifiers for
+  supported pointer actions.
+- `--selector <css>` — restrict `browser snapshot` to one subtree.
+- `--level <l>` — minimum `browser console` level.
+- `--full-page` / `--ref <ref>` — choose full-page or element screenshot mode.
+- `--mobile` — enable mobile emulation with `browser viewport`.
 - `--timeout <ms>` — request timeout (default 30000).
 - `-h`, `--help` — usage.
 - `--version` — the CLI's own version (prints `cate cli <version>`).
