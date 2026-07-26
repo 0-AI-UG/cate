@@ -192,7 +192,7 @@ beforeEach(() => {
 
 describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
   it('reports the API version for feature detection', async () => {
-    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(5)
+    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(6)
   })
 
   it('resolves the workspace root from the locator', async () => {
@@ -328,7 +328,7 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
     // panel.* stay allowed (feature detection + panel self-control).
     state.scopes = undefined
     const forward = vi.fn()
-    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(5)
+    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(6)
     expect(await dispatchCateInvoke(scope(forward), 'cate.storage.get', { key: 'k' })).toEqual({ error: 'scope-denied', method: 'cate.storage.get' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.editor.openFile', { path: 'x' })).toEqual({ error: 'scope-denied', method: 'cate.editor.openFile' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.theme.get', undefined)).toEqual({ error: 'scope-denied', method: 'cate.theme.get' })
@@ -920,6 +920,10 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
     expect(await dispatchCateInvoke(s, 'cate.browser.snapshot', {})).toEqual({
       error: BROWSER_READ_DISABLED,
       method: 'cate.browser.snapshot',
+    })
+    expect(await dispatchCateInvoke(s, 'cate.browser.inspect', { ref: '@s1e1' })).toEqual({
+      error: BROWSER_READ_DISABLED,
+      method: 'cate.browser.inspect',
     })
     expect(send).not.toHaveBeenCalled()
     expect(BROWSER_READ_DISABLED).toMatch(/Settings → CLI/)

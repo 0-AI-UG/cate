@@ -233,6 +233,20 @@ describe('open', () => {
     expect(out).toEqual({ ok: true, result: { panelId: 'created-browser-id', url: 'https://new/' } })
   })
 
+  it('creates a new browser when requested even if the group already has one', async () => {
+    const existing = makeWebview()
+    const created = makeWebview()
+    h.webviews.set('b1', existing)
+    setTimeout(() => h.webviews.set('created-browser-id', created), 10)
+
+    const out = await handleBrowserMethod(WS, M('open'), { url: 'https://new/', newPanel: true })
+
+    expect(h.createBrowser).toHaveBeenCalledWith(WS, 'https://new/', undefined, BACKGROUND_PLACEMENT)
+    expect(existing.loadURL).not.toHaveBeenCalled()
+    expect(created.loadURL).toHaveBeenCalledWith('https://new/')
+    expect(out).toEqual({ ok: true, result: { panelId: 'created-browser-id', url: 'https://new/' } })
+  })
+
   it('loads the URL into the existing browser and updates the active tab', async () => {
     const wv = makeWebview()
     h.webviews.set('b1', wv)
@@ -633,6 +647,21 @@ describe('injected page JS (jsdom)', () => {
     expect(wv.sendInputEvent.mock.calls.map((call) => call[0].type)).toEqual(['mouseMove', 'mouseDown', 'mouseUp'])
   })
 
+  it('click count 2 sends the second click needed for a dblclick', async () => {
+    document.body.innerHTML = '<button aria-label="Go">Go</button>'
+    const wv = evalWebview()
+    h.webviews.set('b1', wv)
+    await handleBrowserMethod(WS, M('snapshot'), {})
+
+    const out = await handleBrowserMethod(WS, M('click'), { ref: '@s1e1', count: 2 })
+
+    expect(out).toEqual({ ok: true, result: { ref: '@s1e1' } })
+    expect(wv.sendInputEvent.mock.calls.map((call) => call[0].type)).toEqual([
+      'mouseMove', 'mouseDown', 'mouseUp',
+      'mouseMove', 'mouseDown', 'mouseUp',
+    ])
+  })
+
   it('click on a well-formed but unknown ref returns stale-ref', async () => {
     document.body.innerHTML = '<button>Go</button>'
     h.webviews.set('b1', evalWebview())
@@ -902,6 +931,24 @@ describe('locators', () => {
     const refs = (out as { ok: true; result: { refs: Array<{ ref: string; name: string }> } }).result.refs
     expect(refs.map((r) => r.name)).toEqual(['Save', 'Cancel'])
     expect(document.querySelectorAll('[data-cate-ref]')).toHaveLength(2)
+  })
+
+  it('inspects text, attributes, and state through one locator', async () => {
+    document.body.innerHTML = '<button aria-label="Save" disabled>Save now</button>'
+    h.webviews.set('b1', evalWebview())
+
+    const out = await handleBrowserMethod(WS, M('inspect'), { by: 'role', value: 'button' })
+
+    expect(out).toEqual({
+      ok: true,
+      result: expect.objectContaining({
+        ref: '@s1e1',
+        text: 'Save now',
+        tag: 'button',
+        attributes: expect.objectContaining({ 'aria-label': 'Save' }),
+        enabled: false,
+      }),
+    })
   })
 
   it('finds by text on the tightest wrapping element, not every ancestor', async () => {

@@ -14,15 +14,14 @@
 // and an in-band `{result:{error}}` are failures.
 //
 // Command surface (extensible — new verbs are one GROUPS entry, mapping
-// positionals to a {method, args} pair). Each granted cate.* scope has its own
-// group — browser | ui | editor | panel | terminal (see USAGE at the bottom of
-// the file) — plus `cate version` for the host API version. There is
-// deliberately NO raw method passthrough: every reachable host method has a
-// named verb, so the CLI's help is the complete, honest surface.
+// positionals to a {method, args} pair): browser | editor | panel | terminal
+// (see USAGE at the bottom of the file), plus `cate version` for the host API
+// version. There is deliberately NO raw method passthrough: the CLI's help is
+// the complete, honest surface.
 //
-// Flags: --panel <id> --json --max <n> --snapshot --wait-timeout <ms>
+// Flags: --panel <id> --json --max <n> --new --count <1|2> --snapshot --wait-timeout <ms>
 // --timeout <ms> --nth <n> --exact --button <b> --modifiers <m> --selector <css>
-// --level <l> --full-page --ref <ref> --mobile --help/-h --version.
+// --level <l> --full-page --ref <ref> --help/-h --version.
 //
 // Bundled to cate/dist/cli.cjs by scripts/build-runtime-tarball.mjs and run via
 // the bundled Node from the cate/bin/ shims. Node built-ins + global fetch ONLY.
@@ -32,7 +31,7 @@ import { parseArgs } from 'node:util'
 
 /** Version of the CLI tool itself (printed by --version). The API's own version
  *  is reachable via `cate version`. */
-export const CLI_VERSION = '7'
+export const CLI_VERSION = '8'
 
 /** Default request timeout (ms) when --timeout is not given. */
 export const DEFAULT_TIMEOUT_MS = 30_000
@@ -65,6 +64,8 @@ export interface Flags {
   json: boolean
   timeout?: string
   max?: string
+  newPanel: boolean
+  count?: string
   snapshot: boolean
   waitTimeout?: string
   help: boolean
@@ -81,8 +82,6 @@ export interface Flags {
   /** screenshot: whole scrollable page, or just one element. */
   fullPage: boolean
   ref?: string
-  /** viewport: emulate a mobile device. */
-  mobile: boolean
 }
 
 export interface Request {
@@ -118,8 +117,7 @@ function needPositiveInt(value: string, name: string): number {
 }
 
 /** Enforce exact positional arity for fixed-shape verbs. Variadic verbs
- * (notify, type, set-title) validate their own minimum and deliberately skip
- * this helper. */
+ * validate their own minimum and deliberately skip this helper. */
 function exact(args: string[], count: number): string[] {
   if (args.length > count) throw new UsageError(`unexpected argument: ${args[count]}`)
   return args
@@ -209,17 +207,22 @@ function interactionArgs(flags: Flags): Record<string, unknown> {
 export const GROUPS: Record<string, Group> = {
   browser: {
     // No `list` — `cate panel list` is the single PANEL enumeration surface.
-    // `tabs` below lists the tabs inside one browser panel, a different thing.
-    open: (a) => ({ method: 'cate.browser.open', args: { url: need(exact(a, 1)[0], 'url') } }),
-    current: (a) => ({ method: 'cate.browser.current', args: noArgs(a) }),
+    // `tab list` below lists tabs inside one browser panel, a different thing.
+    open: (a, f) => ({
+      method: 'cate.browser.open',
+      args: { url: need(exact(a, 1)[0], 'url'), ...(f.newPanel ? { newPanel: true } : {}) },
+    }),
     back: (a) => ({ method: 'cate.browser.back', args: noArgs(a) }),
     forward: (a) => ({ method: 'cate.browser.forward', args: noArgs(a) }),
     reload: (a) => ({ method: 'cate.browser.reload', args: noArgs(a) }),
 
     // --- Tabs --------------------------------------------------------------
-    tabs: (a) => ({ method: 'cate.browser.tabs', args: noArgs(a) }),
     tab: (a) => {
-      const action = need(a[0], 'new|select|close')
+      const action = need(a[0], 'list|new|select|close')
+      if (action === 'list') {
+        exact(a, 1)
+        return { method: 'cate.browser.tabs', args: {} }
+      }
       if (action === 'new') {
         const url = exact(a, 2)[1]
         return { method: 'cate.browser.tabNew', args: url ? { url } : {} }
@@ -245,24 +248,10 @@ export const GROUPS: Record<string, Group> = {
       method: 'cate.browser.snapshot',
       args: { ...noArgs(a), ...(f.selector !== undefined ? { selector: f.selector } : {}) },
     }),
-    find: (a, f) => {
-      const token = need(a.join(' ') || undefined, 'by=value')
-      const args = targetArgs(token, f)
-      if (args.ref !== undefined) {
-        throw new UsageError(`find needs a locator (one of ${Object.keys(LOCATORS).join('|')}), got: ${token}`)
-      }
-      return { method: 'cate.browser.find', args }
-    },
-    text: (a, f) => ({
-      method: 'cate.browser.text',
-      args: { ...(a[0] ? { ref: exact(a, 1)[0] } : {}), ...(f.max !== undefined ? { max: needPositiveInt(f.max, 'max') } : {}) },
-    }),
-    attrs: (a) => ({ method: 'cate.browser.attrs', args: { ref: need(exact(a, 1)[0], 'ref') } }),
-    state: (a) => ({ method: 'cate.browser.state', args: { ref: need(exact(a, 1)[0], 'ref') } }),
-    assets: (a, f) => ({
-      method: 'cate.browser.assets',
+    inspect: (a, f) => ({
+      method: 'cate.browser.inspect',
       args: {
-        ...noArgs(a),
+        ...targetArgs(need(a.join(' ') || undefined, 'ref|by=value'), f),
         ...(f.max !== undefined ? { max: needPositiveInt(f.max, 'max') } : {}),
       },
     }),
@@ -285,40 +274,44 @@ export const GROUPS: Record<string, Group> = {
     },
 
     // --- Dialogs ------------------------------------------------------------
-    // Installs auto-responders in the CURRENT document; `dialogs` reports what
-    // they caught. Chromium owns guest dialogs, so nothing can observe one that
-    // fires before the policy is set.
+    // Installs auto-responders in the CURRENT document; `dialog list` reports
+    // what they caught. Chromium owns guest dialogs, so nothing can observe one
+    // that fires before the policy is set.
     dialog: (a) => {
-      const policy = need(a[0], 'accept|dismiss')
-      if (policy !== 'accept' && policy !== 'dismiss') {
-        throw new UsageError(`unknown dialog policy: ${policy} (accept|dismiss)`)
+      const action = need(a[0], 'list|accept|dismiss')
+      if (action === 'list') {
+        exact(a, 1)
+        return { method: 'cate.browser.dialogs', args: {} }
+      }
+      if (action !== 'accept' && action !== 'dismiss') {
+        throw new UsageError(`unknown browser dialog action: ${action} (list|accept|dismiss)`)
       }
       const promptText = a.slice(1).join(' ')
-      return { method: 'cate.browser.dialogPolicy', args: { policy, ...(promptText ? { promptText } : {}) } }
+      return { method: 'cate.browser.dialogPolicy', args: { policy: action, ...(promptText ? { promptText } : {}) } }
     },
-    dialogs: (a) => ({ method: 'cate.browser.dialogs', args: noArgs(a) }),
 
     // --- Acting on the page -------------------------------------------------
     click: (a, f) => ({
       method: 'cate.browser.click',
-      args: { ...targetArgs(need(a.join(' ') || undefined, 'ref|by=value'), f), ...interactionArgs(f) },
-    }),
-    dblclick: (a, f) => ({
-      method: 'cate.browser.dblclick',
-      args: { ...targetArgs(need(a.join(' ') || undefined, 'ref|by=value'), f), ...interactionArgs(f) },
+      args: {
+        ...targetArgs(need(a.join(' ') || undefined, 'ref|by=value'), f),
+        ...interactionArgs(f),
+        ...(f.count !== undefined ? { count: needPositiveInt(f.count, 'count') } : {}),
+      },
     }),
     hover: (a, f) => ({
       method: 'cate.browser.hover',
       args: targetArgs(need(a.join(' ') || undefined, 'ref|by=value'), f),
     }),
-    check: (a, f) => ({
-      method: 'cate.browser.check',
-      args: targetArgs(need(a.join(' ') || undefined, 'ref|by=value'), f),
-    }),
-    uncheck: (a, f) => ({
-      method: 'cate.browser.uncheck',
-      args: targetArgs(need(a.join(' ') || undefined, 'ref|by=value'), f),
-    }),
+    check: (a, f) => {
+      const state = need(a.at(-1), 'on|off')
+      if (state !== 'on' && state !== 'off') throw new UsageError('check state must be on or off')
+      const target = need(a.slice(0, -1).join(' ') || undefined, 'ref|by=value')
+      return {
+        method: state === 'on' ? 'cate.browser.check' : 'cate.browser.uncheck',
+        args: targetArgs(target, f),
+      }
+    },
     select: (a, f) => ({
       method: 'cate.browser.select',
       args: { ...targetArgs(need(a[0], 'ref|by=value'), f), values: [needRest(a.slice(1), 'value')] },
@@ -377,32 +370,6 @@ export const GROUPS: Record<string, Group> = {
       args: { ...targetArgs(need(a[0], 'ref|by=value'), f), text: need(a.slice(1).join(' ') || undefined, 'text') },
     }),
 
-    // --- Environment --------------------------------------------------------
-    viewport: (a, f) => {
-      if (a[0] === 'reset') { exact(a, 1); return { method: 'cate.browser.viewport', args: { reset: true } } }
-      const values = exact(a, 2)
-      const width = needPositiveInt(need(values[0], 'width'), 'width')
-      const height = needPositiveInt(need(values[1], 'height'), 'height')
-      return { method: 'cate.browser.viewport', args: { width, height, ...(f.mobile ? { mobile: true } : {}) } }
-    },
-    frames: (a) => ({ method: 'cate.browser.frames', args: noArgs(a) }),
-    'frame-eval': (a) => ({
-      method: 'cate.browser.frameEval',
-      args: {
-        frameRoutingId: needPositiveInt(need(a[0], 'routingId'), 'routingId'),
-        frameProcessId: needPositiveInt(need(a[1], 'processId'), 'processId'),
-        expression: needRest(a.slice(2), 'expression'),
-      },
-    }),
-    downloads: (a) => ({ method: 'cate.browser.downloads', args: noArgs(a) }),
-    clipboard: (a) => {
-      const action = need(a[0], 'read|write')
-      if (action === 'read') { exact(a, 1); return { method: 'cate.browser.clipboardRead', args: {} } }
-      if (action === 'write') {
-        return { method: 'cate.browser.clipboardWrite', args: { text: needRest(a.slice(1), 'text') } }
-      }
-      throw new UsageError(`unknown browser clipboard action: ${action}`)
-    },
     wait: (a, f) => {
       const timeoutMs = f.waitTimeout !== undefined ? needPositiveInt(f.waitTimeout, 'wait-timeout') : undefined
       if (a.length === 0) return { method: 'cate.browser.wait', args: { ...(timeoutMs ? { timeoutMs } : {}) } }
@@ -463,9 +430,6 @@ export const GROUPS: Record<string, Group> = {
   // worktree) root and git knows the branch, and nothing shell-side consumes
   // theme tokens. Both host methods still exist for extensions, whose webviews
   // have no filesystem.
-  ui: {
-    notify: (a) => ({ method: 'cate.ui.notify', args: { message: needRest(a, 'message') } }),
-  },
   editor: {
     // openFileAsPanel routes by file type (a PDF opens a document panel), so
     // this one verb covers every file-backed panel — no `panel create --file`.
@@ -473,26 +437,17 @@ export const GROUPS: Record<string, Group> = {
   },
   panel: {
     list: (a) => ({ method: 'cate.panel.list', args: noArgs(a) }),
-    // `create browser <url>` seeds the new panel with a page. Without one a
-    // browser panel sits on its start page, which `browser open` can still
-    // navigate later — but seeding up front saves that round trip. (Still the
-    // cate.canvas.createPanel host method — only the CLI surface moved; panels
-    // are what it creates, so the verb lives in the panel group.)
     create: (a) => {
-      const type = need(exact(a, 2)[0], 'type')
-      if (a[1] !== undefined && type !== 'browser') {
-        throw new UsageError(`unexpected argument: ${a[1]} (only 'panel create browser' takes a url)`)
+      const type = need(exact(a, 1)[0], 'terminal|canvas')
+      if (type !== 'terminal' && type !== 'canvas') {
+        throw new UsageError(`panel create supports terminal or canvas, got: ${type}`)
       }
-      return { method: 'cate.canvas.createPanel', args: { type, ...(a[1] !== undefined ? { url: a[1] } : {}) } }
+      return { method: 'cate.canvas.createPanel', args: { type } }
     },
     close: (a) => ({
       method: 'cate.panel.close',
       args: { panelId: need(exact(a, 1)[0], 'panelId') },
       resolvePanel: 'panel',
-    }),
-    'set-title': (a) => ({
-      method: 'cate.panel.setTitle',
-      args: { title: needRest(a, 'title') },
     }),
   },
   terminal: {
@@ -527,6 +482,8 @@ const OPTIONS = {
   json: { type: 'boolean', default: false },
   timeout: { type: 'string' },
   max: { type: 'string' },
+  new: { type: 'boolean', default: false },
+  count: { type: 'string' },
   snapshot: { type: 'boolean', default: false },
   'wait-timeout': { type: 'string' },
   help: { type: 'boolean', short: 'h', default: false },
@@ -539,7 +496,6 @@ const OPTIONS = {
   level: { type: 'string' },
   'full-page': { type: 'boolean', default: false },
   ref: { type: 'string' },
-  mobile: { type: 'boolean', default: false },
 } as const
 
 export interface Parsed {
@@ -563,6 +519,8 @@ export function parseCli(argv: string[]): Parsed {
       json: Boolean(values.json),
       timeout: values.timeout as string | undefined,
       max: values.max as string | undefined,
+      newPanel: Boolean(values.new),
+      count: values.count as string | undefined,
       snapshot: Boolean(values.snapshot),
       waitTimeout: values['wait-timeout'] as string | undefined,
       help: Boolean(values.help),
@@ -575,7 +533,6 @@ export function parseCli(argv: string[]): Parsed {
       level: values.level as string | undefined,
       fullPage: Boolean(values['full-page']),
       ref: values.ref as string | undefined,
-      mobile: Boolean(values.mobile),
     },
   }
 }
@@ -607,27 +564,23 @@ export function buildRequest(positionals: string[], flags: Flags): Request {
 
   const panelFlagAllowed =
     req.method.startsWith('cate.browser.') ||
-    req.method.startsWith('cate.terminal.') ||
-    req.method === 'cate.panel.setTitle'
+    req.method.startsWith('cate.terminal.')
   if (flags.panel !== undefined && !panelFlagAllowed) {
     throw new UsageError(`--panel is not valid for ${positionals.slice(0, 2).join(' ')}`)
   }
   const maxMethods = new Set([
     'cate.browser.snapshot',
-    'cate.browser.find',
-    'cate.browser.text',
-    'cate.browser.assets',
+    'cate.browser.inspect',
     'cate.browser.console',
     'cate.terminal.read',
   ])
   if (flags.max !== undefined && !maxMethods.has(req.method)) {
-    throw new UsageError('--max is only valid for browser snapshot/find/text/assets/console and terminal read')
+    throw new UsageError('--max is only valid for browser snapshot/inspect/console and terminal read')
   }
   // Every ACTING verb can hand back a post-action observation, so an agent
   // sees the result of what it just did without a second round trip.
   const snapshotMethods = new Set([
     'cate.browser.click',
-    'cate.browser.dblclick',
     'cate.browser.hover',
     'cate.browser.fill',
     'cate.browser.type',
@@ -645,18 +598,18 @@ export function buildRequest(positionals: string[], flags: Flags): Request {
   }
   const targetingMethods = new Set([
     ...snapshotMethods,
-    'cate.browser.find',
+    'cate.browser.inspect',
     'cate.browser.screenshot',
   ])
   if ((flags.nth !== undefined || flags.exact) && !targetingMethods.has(req.method)) {
     throw new UsageError('--nth/--exact are only valid where a locator is accepted')
   }
   const clickingMethods = new Set([
-    'cate.browser.click', 'cate.browser.dblclick', 'cate.browser.check',
+    'cate.browser.click', 'cate.browser.check',
     'cate.browser.uncheck', 'cate.browser.mouse',
   ])
   if ((flags.button !== undefined || flags.modifiers !== undefined) && !clickingMethods.has(req.method)) {
-    throw new UsageError('--button/--modifiers are only valid for browser click/dblclick/check/uncheck/mouse')
+    throw new UsageError('--button/--modifiers are only valid for browser click/check/mouse')
   }
   if (flags.selector !== undefined && req.method !== 'cate.browser.snapshot') {
     throw new UsageError('--selector is only valid for browser snapshot')
@@ -667,8 +620,17 @@ export function buildRequest(positionals: string[], flags: Flags): Request {
   if ((flags.fullPage || flags.ref !== undefined) && req.method !== 'cate.browser.screenshot') {
     throw new UsageError('--full-page/--ref are only valid for browser screenshot')
   }
-  if (flags.mobile && req.method !== 'cate.browser.viewport') {
-    throw new UsageError('--mobile is only valid for browser viewport')
+  if (flags.newPanel && req.method !== 'cate.browser.open') {
+    throw new UsageError('--new is only valid for browser open')
+  }
+  if (flags.newPanel && flags.panel !== undefined) {
+    throw new UsageError('use either --new or --panel, not both')
+  }
+  if (flags.count !== undefined && req.method !== 'cate.browser.click') {
+    throw new UsageError('--count is only valid for browser click')
+  }
+  if (flags.count !== undefined && flags.count !== '1' && flags.count !== '2') {
+    throw new UsageError('--count must be 1 or 2')
   }
   if (flags.waitTimeout !== undefined && req.method !== 'cate.browser.wait') {
     throw new UsageError('--wait-timeout is only valid for browser wait')
@@ -676,8 +638,7 @@ export function buildRequest(positionals: string[], flags: Flags): Request {
   if (flags.snapshot) req.args.includeSnapshot = true
 
   // --panel addresses a specific target panel (args.panelId). Browser/terminal
-  // targets resolve only against rows of their type; set-title accepts every
-  // panel type.
+  // targets resolve only against rows of their type.
   if (flags.panel !== undefined) {
     req.args.panelId = flags.panel
     req.resolvePanel = req.method.startsWith('cate.browser.')
@@ -937,37 +898,17 @@ function formatConsole(v: unknown): string {
     .join('\n') || '(no console output)'
 }
 
-function formatFrames(v: unknown): string {
-  const frames = Array.isArray(asObj(v)?.frames) ? (asObj(v)!.frames as unknown[]) : []
-  return frames
-    .map((item) => {
-      const o = asObj(item)
-      if (!o) return String(item)
-      return `${o.top ? '*' : ' '} ${o.routingId}:${o.processId}\t${String(o.url ?? '')}`
-    })
-    .join('\n') || '(no frames)'
-}
-
 export function formatHuman(method: string, value: unknown, opts?: { max?: number }): string {
   switch (method) {
     case 'cate.browser.screenshot':
       return pickPath(value)
     case 'cate.browser.snapshot':
-    case 'cate.browser.find':
       return formatSnapshot(value, opts?.max ?? SNAPSHOT_MAX_DEFAULT)
+    case 'cate.browser.inspect':
+      return JSON.stringify(value, null, 2)
     case 'cate.browser.open':
       // open resolves to { panelId, url }.
       return pickUrl(value) ?? 'ok'
-    case 'cate.browser.current': {
-      const o = asObj(value)
-      if (!o) return renderGeneric(value)
-      const flags = [o.loading ? 'loading' : '', o.canGoBack ? 'can-back' : '', o.canGoForward ? 'can-forward' : '']
-        .filter(Boolean)
-        .join(' ')
-      return [`url: ${o.url ?? ''}`, `title: ${o.title ?? ''}`, flags && `state: ${flags}`]
-        .filter(Boolean)
-        .join('\n')
-    }
     case 'cate.browser.back':
     case 'cate.browser.forward':
       return pickUrl(value) ?? 'ok'
@@ -979,18 +920,7 @@ export function formatHuman(method: string, value: unknown, opts?: { max?: numbe
     }
     case 'cate.browser.console':
       return formatConsole(value)
-    case 'cate.browser.frames':
-      return formatFrames(value)
-    case 'cate.browser.text': {
-      const text = asObj(value)?.text
-      return typeof text === 'string' ? text : renderGeneric(value)
-    }
-    case 'cate.browser.clipboardRead': {
-      const text = asObj(value)?.text
-      return typeof text === 'string' ? text : renderGeneric(value)
-    }
-    case 'cate.browser.evaluate':
-    case 'cate.browser.frameEval': {
+    case 'cate.browser.evaluate': {
       // The VALUE is the whole point — print it bare so `$(cate browser eval …)`
       // is directly usable, not a JSON envelope the caller has to unwrap.
       const inner = asObj(value)?.value
@@ -1003,7 +933,6 @@ export function formatHuman(method: string, value: unknown, opts?: { max?: numbe
         : pickUrl(value) ?? 'ok'
     case 'cate.browser.reload':
     case 'cate.browser.click':
-    case 'cate.browser.dblclick':
     case 'cate.browser.hover':
     case 'cate.browser.fill':
     case 'cate.browser.type':
@@ -1019,8 +948,6 @@ export function formatHuman(method: string, value: unknown, opts?: { max?: numbe
       return asObj(value)?.snapshot
         ? formatSnapshot(asObj(value)?.snapshot, opts?.max ?? SNAPSHOT_MAX_DEFAULT)
         : 'ok'
-    case 'cate.ui.notify':
-    case 'cate.panel.setTitle':
     case 'cate.panel.close':
     case 'cate.terminal.type':
     case 'cate.terminal.press':
@@ -1046,96 +973,48 @@ export function formatHuman(method: string, value: unknown, opts?: { max?: numbe
 // Top-level run loop
 // ---------------------------------------------------------------------------
 
-const USAGE = `cate — drive Cate from inside a Cate terminal
-
-Usage:
-  cate <group> <verb> [args]        run a grouped command (see below)
-  cate version                      print the host API version
+const USAGE = `Usage:
+  cate <group> <verb> [args] [flags]
+  cate <group> --help
+  cate version
+  cate --version
 
 Groups:
-  browser    navigate  open <url> | current | back | forward | reload
-             tabs      tabs | tab new [url] | tab select <id> | tab close <id>
-             read      snapshot [--selector css] | find <by>=<value> | text [ref]
-                       attrs <ref> | state <ref> | assets | eval <expr...>
-                       console [--level] | console clear | screenshot [--full-page|--ref]
-             act       click | dblclick | hover | check | uncheck <target>
-                       fill <target> <text...> | type <target> <text...>
-                       select <target> <value...> | press [target] <key>
-                       drag <ref> <ref> | scroll [top|bottom|<dx> <dy>] [target]
-                       mouse move|click|down|up <x> <y> | mouse drag <x> <y> <x> <y>
-             wait      wait [ms|load|text|gone|url|ref|selector]
-             env       viewport <w> <h>|reset | frames | frame-eval <rid> <pid> <expr>
-                       downloads | dialog accept|dismiss [text] | dialogs
-                       clipboard read | clipboard write <text...>
-  ui         notify <message...>
-  editor     open <path[:line[:col]]>
-  panel      list | create <type> [url] | close <id>
-             | set-title <title...>    (create url: browser panels only)
-  terminal   read [--max n] | type <text...> | press <key>
-             (type/press require --panel; input must be enabled in Settings)
+  browser    control a browser panel
+  terminal   read or send input to a terminal panel
+  panel      list, create, or close panels
+  editor     open a file
 
-\`panel list\` enumerates every panel (editors with file paths, browsers with
-urls); its short ids feed \`--panel\`. \`browser tabs\` lists the
-tabs inside one browser panel.
+Start with \`cate panel list\`; use \`--panel <id>\` to keep a target explicit.
+Without it, browser and creation commands use the caller's placement group.
+Created panels stay in the background; the CLI cannot focus panels or move the view.
 
-Without \`--panel\`, browser and panel-creating calls stay in the calling
-shell's placement group; \`browser open\` creates a background browser when that
-group has none. The CLI cannot focus panels or move the user's view.
-
-A <target> is either a snapshot ref (@s1e7) or a locator: role=button,
-text=Sign in, label=Email, placeholder=Search, testid=submit, css=.btn,
-alt=Logo, title=Close. A locator matching several elements is rejected unless
---nth picks one, so an action never silently hits the wrong element.
-
-Flags:
-  --panel <id>     target a specific panel (sets args.panelId; short ids ok)
-  --json           print the raw result as one JSON line
-  --max <n>        limit snapshot/find/text/assets/console or terminal read
-                   (snapshot default ${SNAPSHOT_MAX_DEFAULT}; terminal default ${TERMINAL_READ_MAX_DEFAULT})
-  --snapshot       return a post-action snapshot (any acting verb, and wait)
-  --wait-timeout <ms> condition timeout for browser wait (default 5000, max 8000)
-  --nth <n>        which match of a locator to act on (0-based)
-  --exact          locator matches the whole string, not a substring
-  --button <b>     left|right|middle for click/dblclick/check/uncheck/mouse
-  --modifiers <m>  comma list held during a click: cmd,shift,alt,ctrl
-  --selector <css> limit browser snapshot to a subtree
-  --level <l>      minimum console level: verbose|info|warning|error
-  --full-page      screenshot the whole scrollable page, not just the viewport
-  --ref <ref>      screenshot only that element
-  --mobile         viewport emulates a mobile device
-  --timeout <ms>   request timeout (default ${DEFAULT_TIMEOUT_MS})
-  -h, --help       show this help
-  --version        print the CLI version (distinct from host API version)
-
-Requires CATE_API and CATE_TOKEN in the environment. Cate injects them into new
-terminals while "Command-line control (cate CLI)" is enabled (Settings → CLI,
-where per-feature toggles for browser control and terminal read/input live too).`
+Global flags: --panel <id> --json --timeout <ms> -h|--help --version
+Run \`cate <group> --help\` for commands and group flags.`
 
 const GROUP_USAGE: Record<string, string> = {
-  browser: `Usage: cate browser open <url> | current | back | forward | reload\n` +
-    `       cate browser tabs | tab new [url] | tab select <id> | tab close <id>\n` +
-    `       cate browser snapshot [--selector css] | find <by>=<value> [--nth n] [--exact]\n` +
-    `       cate browser text [ref] | attrs <ref> | state <ref> | assets | eval <expr...>\n` +
-    `       cate browser console [--level l] | console clear | screenshot [--full-page | --ref <ref>]\n` +
-    `       cate browser click|dblclick|hover|check|uncheck <target> [--button b] [--modifiers m]\n` +
-    `       cate browser fill|type <target> <text...> | select <target> <value...>\n` +
-    `       cate browser press [target] <key> | drag <ref> <ref>\n` +
-    `       cate browser scroll top|bottom [target] | scroll <dx> <dy> [target]\n` +
-    `       cate browser mouse move|click|down|up <x> <y> | mouse drag <x> <y> <toX> <toY>\n` +
-    `       cate browser wait text <text...> | gone <text...> | url <glob>\n` +
-    `                        | ref <ref> [visible|hidden|attached|detached]\n` +
-    `                        | selector <css> [visible|hidden|attached|detached]\n` +
-    `       cate browser viewport <w> <h> [--mobile] | viewport reset | frames\n` +
-    `       cate browser frame-eval <routingId> <processId> <expr...> | downloads\n` +
-    `       cate browser dialog accept|dismiss [text...] | dialogs\n` +
-    `       cate browser clipboard read | clipboard write <text...>\n` +
-    `       <target> = @s1e7 (snapshot ref) or role=|text=|label=|placeholder=|testid=|css=|alt=|title=`,
-  ui: 'Usage: cate ui notify <message...>',
+  browser: `Usage: cate browser <command> [args] [flags]
+
+  open <url> [--new] | back | forward | reload
+  tab list | tab new [url] | tab select|close <id>
+  snapshot | inspect <target> | eval <expr...> | console [clear] | screenshot
+  click <target> [--count 2] | hover <target> | check <target> on|off
+  fill|type <target> <text...> | select <target> <value...> | press [target] <key>
+  drag <ref> <ref> | scroll <dx> <dy> [target] | scroll top|bottom [target]
+  mouse move|click|down|up <x> <y> | mouse drag <x> <y> <toX> <toY>
+  wait [ms|load] | wait text|gone <text...> | wait url <glob>
+  wait ref <ref> [state] | wait selector <css> [state]
+  dialog list | dialog accept|dismiss [text...]
+
+Targets: @ref or role=|text=|label=|placeholder=|testid=|css=|alt=|title=
+Flags: --panel <id> --new --snapshot --max <n> --wait-timeout <ms> --nth <n> --exact
+       --button <b> --modifiers <m> --selector <css> --level <l>
+       --count <1|2> --full-page --ref <ref>`,
   editor: 'Usage: cate editor open <path[:line[:col]]>',
-  panel: `Usage: cate panel list | create <type> [url] | close <id> | set-title <title...>\n` +
-    `       (create url: browser panels only)`,
-  terminal: `Usage: cate terminal read [--max n] | type <text...> | press <key>\n` +
-    `       (type/press require --panel <id>; keys: enter, tab, esc, arrows, ctrl-<letter>, ...)`,
+  panel: 'Usage: cate panel list | create terminal|canvas | close <id>',
+  terminal: `Usage: cate terminal read [--panel <id>] [--max <n>]
+       cate terminal type <text...> --panel <id>
+       cate terminal press <key> --panel <id>`,
 }
 
 function helpFor(positionals: string[]): string {
@@ -1193,14 +1072,6 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
   const max = parsed.flags.max !== undefined ? Number(parsed.flags.max) : undefined
   if (max !== undefined && (!Number.isInteger(max) || max < 0)) {
     return writeUsageError(deps, `invalid --max: ${parsed.flags.max}`)
-  }
-
-  // A terminal knows its own panel id; an autonomous agent shell may not. The
-  // latter can still retitle explicitly with --panel <id> from `panel list`.
-  if (req.method === 'cate.panel.setTitle' && req.args.panelId === undefined) {
-    const panelId = deps.env.CATE_PANEL_ID
-    if (!panelId) return writeUsageError(deps, 'panel set-title requires --panel outside a Cate terminal panel')
-    req.args.panelId = panelId
   }
 
   const sendDeps: SendDeps = { fetch: deps.fetch, env: deps.env, timeout }
