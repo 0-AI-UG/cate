@@ -7,7 +7,7 @@
 //      the subscribe/unsubscribe handlers, plus the forward-reply handler that
 //      completes a request forwarded to the owning renderer.
 //
-// Dispatch policy for cate.* methods (see docs/extensions.md):
+// Dispatch policy for cate.* methods:
 //   - Handled in main: version, workspace.get, theme.get, ui.notify, storage.*
 //   - Forwarded to the owning renderer (they touch renderer state):
 //     editor.openFile, canvas.createPanel, panel.setTitle, panel.list,
@@ -248,7 +248,7 @@ function unsupported(method: string): InvokeResult {
 // Manifest scope enforcement — every cate.* method (except always-allowed
 // feature-detection / panel-identity ones) requires a declared `cateApi` scope.
 // Scopes are namespaced (e.g. `editor.write`); declaring the bare namespace
-// (`editor`) satisfies any method under it. See docs/extensions.md.
+// (`editor`) satisfies any method under it.
 // ---------------------------------------------------------------------------
 
 /** Maps a cate.* method to the scope it requires, or null when always allowed
