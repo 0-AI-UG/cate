@@ -74,7 +74,7 @@ describe('orchestration tool presentation', () => {
     })
   })
 
-  it('reveals the complete tool input and output from its collapsed summary', () => {
+  it('reveals structured tool input and output from its collapsed summary', () => {
     const msg = message(
       'inspect_coding_agent',
       { runId: 'run-1' },
@@ -90,8 +90,56 @@ describe('orchestration tool presentation', () => {
     })
 
     expect(host.textContent).toContain('Input')
-    expect(host.textContent).toContain('"runId": "run-1"')
+    expect(host.textContent).toContain('Run')
+    expect(host.textContent).toContain('run-1')
     expect(host.textContent).toContain('Output')
-    expect(host.textContent).toContain('"recentOutput": "All tests passed"')
+    expect(host.textContent).toContain('Codex')
+    expect(host.textContent).toContain('ready')
+    expect(host.textContent).toContain('Terminal output')
+    expect(host.textContent).toContain('All tests passed')
+    expect(host.textContent).not.toContain('"runId"')
+    expect(host.textContent).not.toContain('"recentOutput"')
+  })
+
+  it('renders legacy wait results without exposing their raw prompt payload', () => {
+    const msg = message(
+      'wait_for_coding_agents',
+      {
+        runIds: ['fae0053c-7710-43cf-8767-66304ab47e91'],
+        timeoutSeconds: 8,
+      },
+      {
+        timedOut: true,
+        runs: [{
+          id: 'fae0053c-7710-43cf-8767-66304ab47e91',
+          agentId: 'codex',
+          panelId: '16dbc81e-ad5b-4ae2-b373-7df2861b26ae',
+          prompt: 'Mission: noisy legacy prompt that should stay hidden',
+          createdAt: 1_786_000_000_000,
+          status: 'working',
+          agentName: 'Codex',
+          cwd: '/repo',
+          alive: true,
+          followUpSupported: true,
+          statusLine: 'Running tests',
+        }],
+      },
+    )
+    act(() => root.render(<OrchestrationToolCard msg={msg} />))
+
+    act(() => {
+      host.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(host.textContent).toContain('Targets')
+    expect(host.textContent).toContain('8 seconds')
+    expect(host.textContent).toContain('No meaningful state change before timeout')
+    expect(host.textContent).toContain('Codex')
+    expect(host.textContent).toContain('working')
+    expect(host.textContent).toContain('/repo')
+    expect(host.textContent).toContain('Running tests')
+    expect(host.textContent).not.toContain('Mission: noisy legacy prompt')
+    expect(host.textContent).not.toContain('"timedOut"')
+    expect(host.textContent).not.toContain('"prompt"')
   })
 })

@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import type { ToolMessage } from './codingStore'
-import { prettyArgs } from './chatShared'
+import {
+  codingAgentDisplayName,
+  parseCodingAgentId,
+} from '../../shared/codingAgentRuns'
 
 export const ORCHESTRATION_TOOL_NAMES: ReadonlySet<string> = new Set([
   'send_to_coding_agent',
@@ -28,6 +31,199 @@ function runLabel(args: Record<string, unknown>, result: Record<string, unknown>
   if (typeof result.agentName === 'string') return result.agentName
   const runId = typeof args.runId === 'string' ? args.runId : ''
   return runId ? `agent ${runId.slice(0, 8)}` : 'coding agent'
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function agentLabel(value: unknown): string {
+  const agentId = parseCodingAgentId(value)
+  return agentId ? codingAgentDisplayName(agentId) : text(value) || 'Coding agent'
+}
+
+function DetailField({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+}) {
+  if (!value) return null
+  return (
+    <div className="grid grid-cols-[68px_minmax(0,1fr)] gap-2 text-[11px] leading-snug">
+      <span className="text-muted/75">{label}</span>
+      <span className={`min-w-0 whitespace-pre-wrap break-words text-primary/80 ${
+        mono ? 'font-mono' : ''
+      }`}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
+function RunDetails({ run }: { run: Record<string, unknown> }) {
+  const agent = text(run.agentName) || agentLabel(run.agentId)
+  return (
+    <div className="rounded-md border border-strong/50 bg-surface-2/35 px-2 py-1.5">
+      <div className="mb-1 flex items-center gap-2">
+        <span className="font-medium text-primary/90">{agent}</span>
+        {typeof run.status === 'string' && (
+          <span className="rounded bg-hover-strong px-1.5 py-0.5 text-[9.5px] text-muted">
+            {run.status}
+          </span>
+        )}
+      </div>
+      <DetailField label="Run" value={text(run.id)} mono />
+      <DetailField label="Worktree" value={text(run.worktreeId)} mono />
+      <DetailField label="Directory" value={text(run.cwd)} mono />
+      <DetailField label="Status" value={text(run.statusLine)} mono />
+    </div>
+  )
+}
+
+function InputDetails({
+  name,
+  args,
+}: {
+  name: string
+  args: Record<string, unknown>
+}) {
+  if (name === 'create_coding_agent') {
+    return (
+      <>
+        <DetailField label="Agent" value={agentLabel(args.agentId)} />
+        <DetailField label="Task" value={text(args.prompt)} />
+        <DetailField
+          label="Worktree"
+          value={text(args.newWorktree) || text(args.worktreeId) || 'Current checkout'}
+          mono
+        />
+        <DetailField label="Base ref" value={text(args.baseRef)} mono />
+      </>
+    )
+  }
+  if (name === 'send_to_coding_agent') {
+    return (
+      <>
+        <DetailField label="Run" value={text(args.runId)} mono />
+        <DetailField label="Message" value={text(args.prompt)} />
+      </>
+    )
+  }
+  if (name === 'wait_for_coding_agents') {
+    const runIds = Array.isArray(args.runIds)
+      ? args.runIds.filter((id): id is string => typeof id === 'string')
+      : []
+    return (
+      <>
+        <DetailField
+          label="Targets"
+          value={runIds.length > 0 ? runIds.join('\n') : 'All active coding agents'}
+          mono={runIds.length > 0}
+        />
+        <DetailField
+          label="Timeout"
+          value={`${Number(args.timeoutSeconds ?? 60)} seconds`}
+        />
+      </>
+    )
+  }
+  return <DetailField label="Run" value={text(args.runId)} mono />
+}
+
+function OutputDetails({
+  name,
+  result,
+  rawResult,
+}: {
+  name: string
+  result: Record<string, unknown>
+  rawResult?: string
+}) {
+  if (name === 'wait_for_coding_agents') {
+    const runs = Array.isArray(result.runs)
+      ? result.runs.filter((run): run is Record<string, unknown> =>
+          !!run && typeof run === 'object')
+      : []
+    const changed = Array.isArray(result.changedRunIds)
+      ? result.changedRunIds.filter((id) => typeof id === 'string').length
+      : 0
+    return (
+      <>
+        <DetailField
+          label="Outcome"
+          value={
+            result.timedOut === true
+              ? 'No meaningful state change before timeout'
+              : changed > 0
+                ? `${changed} coding agent${changed === 1 ? '' : 's'} need attention`
+                : 'No active coding agents'
+          }
+        />
+        <div className="space-y-1.5">
+          {runs.map((run, index) => (
+            <RunDetails key={text(run.id) || index} run={run} />
+          ))}
+        </div>
+      </>
+    )
+  }
+  if (Object.keys(result).length > 0) {
+    return (
+      <>
+        <RunDetails run={result} />
+        {typeof result.recentOutput === 'string' && result.recentOutput && (
+          <div>
+            <div className="mb-0.5 text-muted/75">Terminal output</div>
+            <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-primary/80">
+              {result.recentOutput}
+            </pre>
+          </div>
+        )}
+      </>
+    )
+  }
+  return rawResult ? (
+    <div className="whitespace-pre-wrap break-words text-[11px] text-primary/80">
+      {rawResult}
+    </div>
+  ) : null
+}
+
+export function OrchestrationToolDetails({ msg }: { msg: ToolMessage }) {
+  const args = (msg.args ?? {}) as Record<string, unknown>
+  const result = resultObject(msg.result)
+  const parsed = Object.keys(result).length > 0
+  return (
+    <div className="space-y-2 select-text cursor-text">
+      <div>
+        <div className="mb-1 text-[9.5px] font-medium uppercase tracking-wide text-muted/70">
+          Input
+        </div>
+        <div className="space-y-1">
+          <InputDetails name={msg.name} args={args} />
+        </div>
+      </div>
+      {(msg.result || msg.error) && (
+        <div>
+          <div className="mb-1 text-[9.5px] font-medium uppercase tracking-wide text-muted/70">
+            Output
+          </div>
+          <div className="space-y-1.5">
+            <OutputDetails
+              name={msg.name}
+              result={result}
+              rawResult={parsed ? undefined : msg.result}
+            />
+            {msg.error && <div className="text-[11px] text-danger">{msg.error}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function orchestrationToolSummary(msg: ToolMessage): { verb: string; detail: string } {
@@ -96,10 +292,8 @@ export function OrchestrationToolCard({
 }) {
   const [expanded, setExpanded] = useState(false)
   const summary = useMemo(() => orchestrationToolSummary(msg), [msg])
-  const liveOutput = msg.status === 'running' ? msg.partialText : undefined
-  const output = liveOutput ?? msg.result
   const running = msg.status === 'running' || msg.status === 'pending'
-  const hasDetails = msg.args != null || !!output || !!msg.error
+  const hasDetails = msg.args != null || !!msg.result || !!msg.error
 
   return (
     <div className="text-[12px] cate-fade-in" data-tool-name={msg.name}>
@@ -113,32 +307,8 @@ export function OrchestrationToolCard({
         <span className="flex-1 truncate text-primary/90">{summary.detail}</span>
       </button>
       {expanded && hasDetails && (
-        <div className="mt-1 space-y-2 pl-4 select-text cursor-text">
-          {msg.args != null && (
-            <div>
-              <div className="mb-0.5 text-[9.5px] font-medium uppercase tracking-wide text-muted/70">
-                Input
-              </div>
-              <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-primary/75">
-                {prettyArgs(msg.args)}
-              </pre>
-            </div>
-          )}
-          {output && (
-            <div>
-              <div className="mb-0.5 text-[9.5px] font-medium uppercase tracking-wide text-muted/70">
-                Output
-              </div>
-              <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-primary/80">
-                {output}
-              </pre>
-            </div>
-          )}
-          {msg.error && (
-            <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-danger">
-              {msg.error}
-            </pre>
-          )}
+        <div className="mt-1 pl-4">
+          <OrchestrationToolDetails msg={msg} />
         </div>
       )}
     </div>
