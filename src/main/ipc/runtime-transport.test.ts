@@ -90,6 +90,15 @@ describe('listWslDistros', () => {
 })
 
 describe('buildTransport', () => {
+  test.each([
+    { kind: 'wsl' as const, distro: 'Ubuntu', distroPath: '~/project' },
+    { kind: 'server' as const, host: 'host', user: 'user', remotePath: 'project' },
+  ])('rejects a relative $kind workspace path', async (spec) => {
+    await expect(buildTransport('runtime_relative', spec)).rejects.toThrow(
+      'Remote workspace path must be an absolute POSIX path',
+    )
+  })
+
   test('rejects a WSL spec on a non-Windows host with a clear message', async () => {
     setPlatform('darwin')
     await expect(

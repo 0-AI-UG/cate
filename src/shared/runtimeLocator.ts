@@ -25,6 +25,9 @@ export type RuntimeId = string
 /** The id of the always-present in-process runtime (the local machine). */
 export const LOCAL_RUNTIME_ID = 'local'
 
+export const ABSOLUTE_RUNTIME_PATH_ERROR =
+  'Remote workspace path must be an absolute POSIX path starting with "/"'
+
 export interface ResourceLocator {
   /** Routing key. `LOCAL_RUNTIME_ID` for bare paths. */
   runtimeId: string
@@ -41,6 +44,15 @@ function encodePath(p: string): string {
 
 function decodePath(p: string): string {
   return p.split('/').map(decodeURIComponent).join('/')
+}
+
+/** Runtime hosts are POSIX; their workspace roots must be absolute. */
+export function isAbsoluteRuntimePath(path: string): boolean {
+  return path.startsWith('/')
+}
+
+export function assertAbsoluteRuntimePath(path: string): void {
+  if (!isAbsoluteRuntimePath(path)) throw new Error(ABSOLUTE_RUNTIME_PATH_ERROR)
 }
 
 /**
@@ -74,6 +86,9 @@ export function formatLocator(loc: ResourceLocator): string {
   if (loc.runtimeId === LOCAL_RUNTIME_ID) {
     return loc.path
   }
+  // An empty path is the existing authority-only representation. Real remote
+  // workspace locators carry a path and must keep the absolute-path invariant.
+  if (loc.path) assertAbsoluteRuntimePath(loc.path)
   return SCHEME + loc.runtimeId + encodePath(loc.path)
 }
 

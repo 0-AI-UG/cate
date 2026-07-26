@@ -37,7 +37,7 @@ import type {
   SshHostEntry,
 } from '../../shared/types'
 import { broadcastToAll } from '../windowRegistry'
-import { formatLocator } from '../../shared/runtimeLocator'
+import { assertAbsoluteRuntimePath, formatLocator } from '../../shared/runtimeLocator'
 import {
   isRemoteRuntimeConnection,
   remoteConnectSpecFromConnection,
@@ -157,6 +157,7 @@ export function mintRuntimeId(spec: RemoteConnectSpec): string {
  *  from the GitHub release, with a client-side SFTP/copy fallback — see
  *  runtimeArtifacts.ts), so nothing runtime-related ships with the app. */
 export async function buildTransport(runtimeId: string, spec: RemoteConnectSpec): Promise<RuntimeTransport> {
+  assertAbsoluteRuntimePath(spec.kind === 'server' ? spec.remotePath : spec.distroPath)
   if (spec.kind === 'wsl') {
     // Guard before we hand off to the transport so the failure is a clear
     // message rather than a raw wsl.exe ENOENT / "no distribution" error.
@@ -227,8 +228,10 @@ export function registerRuntimeHandlers(): void {
   // determined there and streamed back as phases. Keeps state purely
   // probe-driven instead of inferred from this call.
   ipcMain.handle(RUNTIME_CONNECT, async (_event, spec: RemoteConnectSpec): Promise<RuntimeConnectResult> => {
-    const runtimeId = mintRuntimeId(spec)
     try {
+      const remotePath = spec.kind === 'server' ? spec.remotePath : spec.distroPath
+      assertAbsoluteRuntimePath(remotePath)
+      const runtimeId = mintRuntimeId(spec)
       if (spec.kind === 'server' && spec.auth && (spec.auth.passphrase || spec.auth.keyPath || spec.auth.useAgent)) {
         await saveSshSecret(runtimeId, {
           passphrase: spec.auth.passphrase,
@@ -237,12 +240,11 @@ export function registerRuntimeHandlers(): void {
         })
       }
       const connection = runtimeConnectionFromSpec(runtimeId, spec)
-      const remotePath = runtimeConnectionPath(connection)
       const rootPath = formatLocator({ runtimeId, path: remotePath })
       return { ok: true, runtimeId, rootPath, connection }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      log.warn('[runtime:connect] %s failed: %s', runtimeId, message)
+      log.warn('[runtime:connect] failed: %s', message)
       return { ok: false, error: message }
     }
   })
@@ -254,7 +256,15 @@ export function registerRuntimeHandlers(): void {
     if (!isRemoteRuntimeConnection(connection)) return { ok: false, error: 'local connection needs no runtime' }
     const { runtimeId } = connection
     const remotePath = runtimeConnectionPath(connection)
-    const rootPath = formatLocator({ runtimeId, path: remotePath })
+    let rootPath: string
+    try {
+      rootPath = formatLocator({ runtimeId, path: remotePath })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      runtimes.report(runtimeId, 'unreachable', message)
+      log.warn('[runtime:ensure] %s rejected: %s', runtimeId, message)
+      return { ok: false, error: message }
+    }
     // isConnected (not has): connect() now registers a DeferredRuntime
     // synchronously while connecting, so has() would be true mid-connect too. Only
     // short-circuit when FULLY connected; an in-flight connect falls through to
@@ -299,7 +309,15 @@ export function registerRuntimeHandlers(): void {
     if (!isRemoteRuntimeConnection(connection)) return { ok: false, error: 'the local runtime has nothing to install' }
     const { runtimeId } = connection
     const remotePath = runtimeConnectionPath(connection)
-    const rootPath = formatLocator({ runtimeId, path: remotePath })
+    let rootPath: string
+    try {
+      rootPath = formatLocator({ runtimeId, path: remotePath })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      runtimes.report(runtimeId, 'unreachable', message)
+      log.warn('[runtime:install] %s rejected: %s', runtimeId, message)
+      return { ok: false, error: message }
+    }
     await runtimes.disposeConnection(runtimeId)
     let transport: RuntimeTransport
     try {

@@ -58,6 +58,19 @@ describe('locator', () => {
         'cate-runtime://srv_x/home/my%20proj/a%23b.ts',
       )
     })
+
+    test('preserves an authority-only locator', () => {
+      expect(formatLocator({ runtimeId: 'srv_x', path: '' })).toBe('cate-runtime://srv_x')
+    })
+
+    test.each(['~/project', 'home/user/project', 'cwd'])(
+      'rejects a relative remote path (%s)',
+      (path) => {
+        expect(() => formatLocator({ runtimeId: 'wsl_ubuntu', path })).toThrow(
+          'Remote workspace path must be an absolute POSIX path',
+        )
+      },
+    )
   })
 
   describe('round-trips', () => {
