@@ -143,8 +143,17 @@ export function useCodingChat({
   const extensionWidgets = slice?.extensionWidgets ?? []
   const planModeActive = extensionStatuses.some((status) => status.key === 'plan-mode')
   const canvasModeActive = extensionStatuses.some((status) => status.key === 'canvas-mode')
+  const orchestratorModeActive = extensionStatuses.some(
+    (status) => status.key === 'orchestrator-mode',
+  )
   const activePromptMode: ComposerPromptMode | null =
-    planModeActive ? 'plan' : canvasModeActive ? 'canvas' : null
+    planModeActive
+      ? 'plan'
+      : canvasModeActive
+        ? 'canvas'
+        : orchestratorModeActive
+          ? 'orchestrate'
+          : null
   // Composer draft lives in the active chat's slice so switching chats keeps
   // each chat's own in-progress message + image attachments.
   const draft = slice?.draft ?? ''
@@ -448,7 +457,7 @@ export function useCodingChat({
   }, [agentKey, forkMap, refreshStatsAndState, setDraft])
 
   // ---------------------------------------------------------------------------
-  // Prompt modes (cate-plan-mode / cate-canvas-mode extensions)
+  // Prompt modes (plan, canvas, and coding-agent orchestration extensions)
   // ---------------------------------------------------------------------------
 
   const handlePromptModeChange = useCallback(async (mode: ComposerPromptMode | null) => {

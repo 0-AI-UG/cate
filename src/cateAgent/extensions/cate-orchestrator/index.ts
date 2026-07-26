@@ -5,6 +5,26 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 
+const STATUS_KEY = "orchestrator-mode"
+const TOOL_NAMES = [
+  "create_coding_agent",
+  "send_to_coding_agent",
+  "wait_for_coding_agents",
+  "inspect_coding_agent",
+  "stop_coding_agent",
+] as const
+const TOOL_NAME_SET: ReadonlySet<string> = new Set(TOOL_NAMES)
+
+const ORCHESTRATOR_PROMPT = `
+<orchestration_mode>
+Orchestration mode is ACTIVE. Act as the mission lead for the user's coding
+task. Create coding agents only for bounded work that benefits from delegation,
+give each one a self-contained prompt and isolated worktree when appropriate,
+then supervise, steer, inspect, and verify their results. You retain ownership
+of architecture, integration, and the final answer.
+</orchestration_mode>
+`.trim()
+
 const AgentId = Type.Union([
   Type.Literal("claude-code"),
   Type.Literal("codex"),
@@ -52,6 +72,21 @@ export default function (pi: ExtensionAPI) {
   // asks again, keeping autonomous spend visible without interrupting every
   // individual worker in an approved mission.
   let delegationApproved: boolean | null = null
+  let active = false
+
+  const setMode = (
+    enabled: boolean,
+    ctx: { ui: { setStatus: (key: string, value: string | undefined) => void } },
+  ): void => {
+    active = enabled
+    const current = pi.getActiveTools()
+    pi.setActiveTools(
+      enabled
+        ? [...new Set([...current, ...TOOL_NAMES])]
+        : current.filter((name) => !TOOL_NAME_SET.has(name)),
+    )
+    ctx.ui.setStatus(STATUS_KEY, enabled ? "Orchestration mode" : undefined)
+  }
 
   pi.registerTool({
     name: "create_coding_agent",
@@ -146,4 +181,31 @@ export default function (pi: ExtensionAPI) {
       return toolResult(await invoke("cate.codingAgent.stop", params, signal))
     },
   })
+
+  pi.registerCommand("orchestrate", {
+    description: "Toggle coding-agent orchestration mode.",
+    handler: async (_args, ctx) => {
+      setMode(!active, ctx)
+    },
+  })
+
+  pi.on("before_agent_start", async (event) => {
+    if (!active) return
+    return { systemPrompt: `${event.systemPrompt}\n\n${ORCHESTRATOR_PROMPT}` }
+  })
+
+  // Inactive tools are absent from the provider payload. This hook is a
+  // defensive backstop for a stale tool call already emitted while mode changed.
+  pi.on("tool_call", async (event) => {
+    if (!active && TOOL_NAME_SET.has(event.toolName)) {
+      return {
+        block: true,
+        reason: "Coding-agent orchestration mode is not active.",
+      }
+    }
+  })
+
+  // registerTool activates extension tools by default. Keep them out of normal
+  // Cate conversations until the user chooses the mode from the composer.
+  pi.setActiveTools(pi.getActiveTools().filter((name) => !TOOL_NAME_SET.has(name)))
 }

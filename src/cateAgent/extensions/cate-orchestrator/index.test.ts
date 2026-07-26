@@ -1,12 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import registerOrchestrator from "./index"
 
-function registeredTools() {
+const TOOL_NAMES = [
+  "create_coding_agent",
+  "send_to_coding_agent",
+  "wait_for_coding_agents",
+  "inspect_coding_agent",
+  "stop_coding_agent",
+]
+
+function makeApi() {
   const tools = new Map<string, any>()
-  registerOrchestrator({
-    registerTool: (tool: any) => tools.set(tool.name, tool),
-  } as any)
-  return tools
+  const commands = new Map<string, any>()
+  const handlers = new Map<string, (event: any) => Promise<any>>()
+  let activeTools = ["read", "bash"]
+  const pi = {
+    registerTool: (tool: any) => {
+      tools.set(tool.name, tool)
+      activeTools = [...activeTools, tool.name]
+    },
+    registerCommand: (name: string, command: any) => commands.set(name, command),
+    on: (event: string, handler: (value: any) => Promise<any>) =>
+      handlers.set(event, handler),
+    getActiveTools: () => [...activeTools],
+    setActiveTools: (names: string[]) => { activeTools = [...names] },
+  }
+  registerOrchestrator(pi as any)
+  return { tools, commands, handlers, getActiveTools: () => [...activeTools] }
+}
+
+function registeredTools() {
+  return makeApi().tools
 }
 
 beforeEach(() => {
@@ -18,15 +42,41 @@ beforeEach(() => {
 describe("cate-orchestrator", () => {
   it("registers the complete worker lifecycle surface", () => {
     const tools = registeredTools()
-    expect([...tools.keys()]).toEqual([
-      "create_coding_agent",
-      "send_to_coding_agent",
-      "wait_for_coding_agents",
-      "inspect_coding_agent",
-      "stop_coding_agent",
-    ])
+    expect([...tools.keys()]).toEqual(TOOL_NAMES)
     expect(tools.get("wait_for_coding_agents").parameters.properties.timeoutSeconds)
       .toMatchObject({ minimum: 15, maximum: 120, default: 60 })
+  })
+
+  it("keeps orchestration tools inactive until orchestration mode is enabled", async () => {
+    const api = makeApi()
+    const setStatus = vi.fn()
+    const ctx = { ui: { setStatus } }
+
+    expect(api.getActiveTools()).toEqual(["read", "bash"])
+    expect(await api.handlers.get("before_agent_start")!({ systemPrompt: "base" }))
+      .toBeUndefined()
+    expect(await api.handlers.get("tool_call")!({ toolName: "create_coding_agent" }))
+      .toEqual({
+        block: true,
+        reason: "Coding-agent orchestration mode is not active.",
+      })
+
+    await api.commands.get("orchestrate").handler("", ctx)
+
+    expect(setStatus).toHaveBeenCalledWith("orchestrator-mode", "Orchestration mode")
+    expect(api.getActiveTools()).toEqual(["read", "bash", ...TOOL_NAMES])
+    const prompt = await api.handlers.get("before_agent_start")!({ systemPrompt: "base" })
+    expect(prompt.systemPrompt).toContain("Orchestration mode is ACTIVE")
+    expect(prompt.systemPrompt).toContain("Act as the mission lead")
+    expect(await api.handlers.get("tool_call")!({ toolName: "create_coding_agent" }))
+      .toBeUndefined()
+
+    await api.commands.get("orchestrate").handler("", ctx)
+
+    expect(setStatus).toHaveBeenLastCalledWith("orchestrator-mode", undefined)
+    expect(api.getActiveTools()).toEqual(["read", "bash"])
+    expect(await api.handlers.get("before_agent_start")!({ systemPrompt: "base" }))
+      .toBeUndefined()
   })
 
   it("asks once per session before creating workers and invokes the scoped API", async () => {

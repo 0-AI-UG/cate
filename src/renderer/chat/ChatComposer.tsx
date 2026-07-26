@@ -28,6 +28,7 @@ import {
   Plus,
   ClipboardText,
   BoundingBox,
+  GitBranch,
   X,
   Spinner,
   ArrowsClockwise,
@@ -57,10 +58,13 @@ import type {
 const MAX_HEIGHT = 160
 
 export type ModelOption = { provider: string; model: string; label?: string }
-export type ComposerPromptMode = 'plan' | 'canvas'
+export type ComposerPromptMode = 'plan' | 'canvas' | 'orchestrate'
 
-const promptModeLabel = (mode: ComposerPromptMode): string =>
-  mode === 'plan' ? 'Create plan' : 'Manage canvas'
+const promptModeLabel = (mode: ComposerPromptMode): string => {
+  if (mode === 'plan') return 'Create plan'
+  if (mode === 'canvas') return 'Manage canvas'
+  return 'Orchestrate agents'
+}
 
 const worktreeLabel = (wt: JoinedWorktree | undefined): string =>
   wt?.label || wt?.branch || (wt?.isPrimary ? 'main' : 'worktree')
@@ -434,7 +438,11 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               aria-label={`Remove ${promptModeLabel(promptMode)} mode`}
               title="Remove prompt mode"
             >
-              {promptMode === 'plan' ? <ClipboardText size={12} /> : <BoundingBox size={12} />}
+              {promptMode === 'plan'
+                ? <ClipboardText size={12} />
+                : promptMode === 'canvas'
+                  ? <BoundingBox size={12} />
+                  : <GitBranch size={12} />}
               <span>{promptModeLabel(promptMode)}</span>
               <X size={10} className="text-muted" />
             </button>
@@ -588,6 +596,19 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                       <span className="flex-1">
                         <span className="block text-[12px]">Manage canvas</span>
                         <span className="block text-[10px] text-muted">Control Cate panels with the Cate CLI</span>
+                      </span>
+                    </MenuRow>
+                    <MenuRow
+                      selected={promptMode === 'orchestrate'}
+                      onClick={() => {
+                        onPromptModeChange(promptMode === 'orchestrate' ? null : 'orchestrate')
+                        setPromptModeOpen(false)
+                      }}
+                    >
+                      <GitBranch size={13} className="flex-shrink-0 text-muted" />
+                      <span className="flex-1">
+                        <span className="block text-[12px]">Orchestrate agents</span>
+                        <span className="block text-[10px] text-muted">Create and supervise coding agents</span>
                       </span>
                     </MenuRow>
                   </div>

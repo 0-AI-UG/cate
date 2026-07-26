@@ -132,6 +132,23 @@ describe('ChatComposer send/stop', () => {
     expect(host.textContent).toContain('Manage canvas')
   })
 
+  it('selects orchestration mode from the plus menu and renders it inline', () => {
+    const onPromptModeChange = vi.fn()
+    renderComposer({ onPromptModeChange })
+
+    act(() => button('Add prompt mode')?.click())
+    const orchestrate = Array.from(document.body.querySelectorAll('button'))
+      .find((candidate) => candidate.textContent?.includes('Orchestrate agents')) as HTMLButtonElement
+    expect(orchestrate).toBeTruthy()
+
+    act(() => orchestrate.click())
+    expect(onPromptModeChange).toHaveBeenCalledWith('orchestrate')
+
+    renderComposer({ promptMode: 'orchestrate', onPromptModeChange })
+    expect(button('Remove Orchestrate agents mode')).toBeTruthy()
+    expect(host.textContent).toContain('Orchestrate agents')
+  })
+
 })
 
 describe('ChatComposer popovers', () => {
