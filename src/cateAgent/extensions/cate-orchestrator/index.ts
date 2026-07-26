@@ -213,7 +213,9 @@ export default function (pi: ExtensionAPI) {
     }
   })
 
-  // registerTool activates extension tools by default. Keep them out of normal
-  // Cate conversations until the user chooses the mode from the composer.
-  pi.setActiveTools(pi.getActiveTools().filter((name) => !TOOL_NAME_SET.has(name)))
+  // Extension loading happens before Pi's runtime action methods are available,
+  // so the initial gate belongs in session_start rather than module setup.
+  pi.on("session_start", async () => {
+    syncActiveTools()
+  })
 }

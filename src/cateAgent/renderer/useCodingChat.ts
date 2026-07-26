@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import log from '../../renderer/lib/logger'
-import { errorMessage as toErrorMessage } from '../../renderer/lib/errorMessage'
+import { agentErrorMessage as toErrorMessage } from '../../shared/agentErrorMessage'
 import { useCodingStore } from './codingStore'
 import { codingClient } from './codingClient'
 import { useChatsStore } from '../../renderer/stores/chatsStore'

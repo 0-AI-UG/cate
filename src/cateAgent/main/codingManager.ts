@@ -50,6 +50,7 @@ import { getSetting } from '../../main/settingsFile'
 import { workspaceCateApi } from '../../main/extensions/workspaceCateApi'
 import { KeyedLock } from '../../main/keyedLock'
 import { agentMessageText, lastAssistantMessage } from '../../shared/agentMessages'
+import { agentErrorMessage } from '../../shared/agentErrorMessage'
 
 interface AgentSession {
   panelId: string
@@ -226,7 +227,11 @@ export class CodingManager {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         log.warn('[codingManager] failed to start pi for %s: %s', opts.panelId, message)
-        this.sendErrorEvent(sender, opts.panelId, `Failed to start pi: ${message}`)
+        this.sendErrorEvent(
+          sender,
+          opts.panelId,
+          agentErrorMessage(message, 'Cate couldn’t start the agent. Start a new chat and try again.'),
+        )
         throw err
       }
 
@@ -249,7 +254,11 @@ export class CodingManager {
       const disposeExitWatcher = client.onExit((code, stderr) => {
         const reason = stderr ? `\n${stderr}` : ''
         log.warn('[codingManager] pi exited unexpectedly panel=%s code=%s%s', opts.panelId, code, reason)
-        this.sendErrorEvent(sender, opts.panelId, `Agent process exited (code ${code}).${reason}`)
+        this.sendErrorEvent(
+          sender,
+          opts.panelId,
+          agentErrorMessage(`Agent process exited (code ${code}).${reason}`),
+        )
       })
 
       // Watch the host's auth.json so OAuth token refreshes written by pi
@@ -316,7 +325,7 @@ export class CodingManager {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.warn('[codingManager] prompt failed for %s: %s', panelId, message)
-      this.sendErrorEvent(session.sender, panelId, message)
+      this.sendErrorEvent(session.sender, panelId, agentErrorMessage(message))
       throw err
     }
   }

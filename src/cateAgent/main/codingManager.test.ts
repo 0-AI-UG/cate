@@ -42,6 +42,7 @@ import { runtimes } from '../../main/runtime/runtimeManager'
 import { PiRpcClient } from './piRpcClient'
 import { prepareCodingDir } from './codingDir'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
+import { CODING_EVENT } from '../../shared/ipc-channels'
 
 const fakeAuthManager = { setOnChange: vi.fn() } as unknown as AuthManager
 
@@ -81,6 +82,55 @@ describe('CodingManager worktree skill preparation', () => {
       vi.mocked(prepareCodingDir).mock.invocationCallOrder[0],
     )
     expect(client.start).toHaveBeenCalledOnce()
+  })
+
+  it('logs process diagnostics but sends only a bounded error to the panel', async () => {
+    const runtime = { agent: { ensurePi: vi.fn().mockResolvedValue(undefined) } }
+    vi.mocked(runtimes.resolve).mockReturnValue(runtime as never)
+    let exitListener: ((code: number | null, stderr: string) => void) | undefined
+    const client = {
+      start: vi.fn().mockResolvedValue(undefined),
+      onEvent: vi.fn(() => vi.fn()),
+      onExit: vi.fn((listener: typeof exitListener) => {
+        exitListener = listener
+        return vi.fn()
+      }),
+    }
+    vi.mocked(PiRpcClient).mockImplementation(() => client as never)
+    vi.mocked(syncWorkspaceSkills).mockResolvedValue({
+      copied: [],
+      updated: [],
+      removed: [],
+      preserved: [],
+      warnings: [],
+    })
+    const send = vi.fn()
+    const manager = new CodingManager(fakeAuthManager)
+
+    await manager.create(
+      {
+        panelId: 'panel-crash',
+        workspaceId: 'workspace-1',
+        workspaceRoot: '/repo/base',
+        cwd: '/repo/worktree',
+      },
+      { id: 4, isDestroyed: () => false, send } as never,
+    )
+    exitListener?.(
+      1,
+      'Failed to load extension "/Users/anton/Dev/repo/private-extension.ts": ' +
+        'Extension runtime not initialized.',
+    )
+
+    expect(send).toHaveBeenCalledWith(CODING_EVENT, {
+      panelId: 'panel-crash',
+      event: {
+        type: 'error',
+        message: 'Cate couldn’t load its agent tools. Restart Cate and start a new chat.',
+      },
+    })
+    expect(JSON.stringify(send.mock.calls)).not.toContain('/Users/')
+    expect(JSON.stringify(send.mock.calls)).not.toContain('Extension runtime')
   })
 })
 

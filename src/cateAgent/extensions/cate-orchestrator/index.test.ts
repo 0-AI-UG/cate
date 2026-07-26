@@ -14,6 +14,7 @@ function makeApi() {
   const commands = new Map<string, any>()
   const handlers = new Map<string, (event: any) => Promise<any>>()
   let activeTools = ["read", "bash"]
+  let setActiveToolsCalls = 0
   const pi = {
     registerTool: (tool: any) => {
       tools.set(tool.name, tool)
@@ -23,10 +24,19 @@ function makeApi() {
     on: (event: string, handler: (value: any) => Promise<any>) =>
       handlers.set(event, handler),
     getActiveTools: () => [...activeTools],
-    setActiveTools: (names: string[]) => { activeTools = [...names] },
+    setActiveTools: (names: string[]) => {
+      setActiveToolsCalls += 1
+      activeTools = [...names]
+    },
   }
   registerOrchestrator(pi as any)
-  return { tools, commands, handlers, getActiveTools: () => [...activeTools] }
+  return {
+    tools,
+    commands,
+    handlers,
+    getActiveTools: () => [...activeTools],
+    getSetActiveToolsCalls: () => setActiveToolsCalls,
+  }
 }
 
 function registeredTools() {
@@ -52,7 +62,11 @@ describe("cate-orchestrator", () => {
     const setStatus = vi.fn()
     const ctx = { ui: { setStatus } }
 
+    expect(api.getSetActiveToolsCalls()).toBe(0)
+    expect(api.getActiveTools()).toEqual(["read", "bash", ...TOOL_NAMES])
+    await api.handlers.get("session_start")!({})
     expect(api.getActiveTools()).toEqual(["read", "bash"])
+    expect(api.getSetActiveToolsCalls()).toBe(1)
     expect(await api.handlers.get("before_agent_start")!({ systemPrompt: "base" }))
       .toBeUndefined()
     expect(await api.handlers.get("tool_call")!({ toolName: "create_coding_agent" }))

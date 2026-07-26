@@ -15,6 +15,7 @@
 
 import { create } from 'zustand'
 import log from '../../renderer/lib/logger'
+import { agentErrorMessage } from '../../shared/agentErrorMessage'
 import type {
   CodingExtensionUIRequest,
   CodingImageAttachment,
@@ -897,7 +898,7 @@ export function handleCodingEvent(panelId: string, event: { type: string; [key: 
       case 'compaction_end': {
         const reason = asString(event.reason) as CompactionState['reason']
         const result = event.result as Record<string, unknown> | null
-        const errorMessage = asString(event.errorMessage)
+        const rawError = asString(event.errorMessage)
         useCodingStore.getState().setCompaction(panelId, {
           active: false,
           reason,
@@ -907,7 +908,7 @@ export function handleCodingEvent(panelId: string, event: { type: string; [key: 
                 tokensBefore: asNumber(result.tokensBefore),
               }
             : undefined,
-          lastErrorMessage: errorMessage,
+          lastErrorMessage: rawError ? agentErrorMessage(rawError) : undefined,
         })
         return
       }
@@ -917,7 +918,7 @@ export function handleCodingEvent(panelId: string, event: { type: string; [key: 
           attempt: asNumber(event.attempt),
           maxAttempts: asNumber(event.maxAttempts),
           delayMs: asNumber(event.delayMs),
-          errorMessage: asString(event.errorMessage),
+          errorMessage: event.errorMessage ? agentErrorMessage(event.errorMessage) : undefined,
           finalError: undefined,
           succeededOnAttempt: undefined,
         })
@@ -928,7 +929,9 @@ export function handleCodingEvent(panelId: string, event: { type: string; [key: 
         useCodingStore.getState().setRetry(panelId, {
           active: false,
           succeededOnAttempt: success ? asNumber(event.attempt) : undefined,
-          finalError: success ? undefined : asString(event.finalError),
+          finalError: success || !event.finalError
+            ? undefined
+            : agentErrorMessage(event.finalError),
         })
         return
       }
@@ -936,9 +939,10 @@ export function handleCodingEvent(panelId: string, event: { type: string; [key: 
         const extensionPath = asString(event.extensionPath) ?? '(unknown extension)'
         const ev = asString(event.event) ?? 'event'
         const errMsg = asString(event.error) ?? 'unknown error'
+        log.warn('[agentStore] extension error (%s during %s): %s', extensionPath, ev, errMsg)
         useCodingStore
           .getState()
-          .appendSystem(panelId, `Extension error (${extensionPath} during ${ev}): ${errMsg}`, 'error')
+          .appendSystem(panelId, agentErrorMessage(`Extension error: ${errMsg}`), 'error')
         return
       }
       case 'extension_ui_request': {
@@ -982,7 +986,7 @@ export function handleCodingEvent(panelId: string, event: { type: string; [key: 
         return
       }
       case 'error': {
-        const message = asString(event.message) ?? 'Agent error'
+        const message = agentErrorMessage(event.message)
         useCodingStore.getState().appendSystem(panelId, message, 'error')
         useCodingStore.getState().setRunning(panelId, false)
         return

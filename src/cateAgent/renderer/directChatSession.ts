@@ -9,6 +9,7 @@ import { codingClient } from './codingClient'
 import { resolveSessionModel } from './codingModelPrefs'
 import log from '../../renderer/lib/logger'
 import type { ComposerPromptMode } from '../../renderer/chat/ChatComposer'
+import { agentErrorMessage } from '../../shared/agentErrorMessage'
 
 export interface DirectChatTurnOptions {
   images?: CodingImageAttachment[]
@@ -57,7 +58,14 @@ export async function ensureDirectChatSession(
         sessionFile: chat.sessionFile ?? undefined,
       })
       if (!result.ok) {
-        store.appendSystem(panelId, `Failed to start agent: ${result.error}`, 'error')
+        store.appendSystem(
+          panelId,
+          agentErrorMessage(
+            result.error,
+            'Cate couldn’t start the agent. Start a new chat and try again.',
+          ),
+          'error',
+        )
         return false
       }
       return true
