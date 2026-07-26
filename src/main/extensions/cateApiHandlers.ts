@@ -7,7 +7,7 @@
 //      the subscribe/unsubscribe handlers, plus the forward-reply handler that
 //      completes a request forwarded to the owning renderer.
 //
-// Dispatch policy for cate.* methods (see docs/extensions.md):
+// Dispatch policy for cate.* methods:
 //   - Handled in main: version, workspace.get, theme.get, ui.notify, storage.*
 //   - Forwarded to the owning renderer (they touch renderer state):
 //     editor.openFile, canvas.createPanel, panel.setTitle, panel.list,
@@ -75,6 +75,9 @@ import type { PanelType } from '../../shared/types'
 /** Bumped when the cateHost API surface changes incompatibly. Guests use
  *  `cate.version` for feature detection.
  *
+ *  v6 adds consolidated browser inspection and unconditional background
+ *  browser creation for the reduced terminal CLI.
+ *
  *  v5 makes the browser surface agent-complete: locators (find, and locator
  *  targets on every acting verb), per-panel tabs, back/forward/current
  *  (restored — an agent that can only navigate by URL cannot follow a flow it
@@ -88,7 +91,7 @@ import type { PanelType } from '../../shared/types'
  *  editor.active (cate.panel.list is the single PANEL enumeration surface —
  *  browser panels carry `url`, the focused entry answers "what is the user
  *  looking at") and agent.run (compose open -> send -> dispose). */
-const CATE_API_VERSION = 5
+const CATE_API_VERSION = 6
 
 const FORWARD_TIMEOUT_MS = 10_000
 
@@ -248,7 +251,7 @@ function unsupported(method: string): InvokeResult {
 // Manifest scope enforcement — every cate.* method (except always-allowed
 // feature-detection / panel-identity ones) requires a declared `cateApi` scope.
 // Scopes are namespaced (e.g. `editor.write`); declaring the bare namespace
-// (`editor`) satisfies any method under it. See docs/extensions.md.
+// (`editor`) satisfies any method under it.
 // ---------------------------------------------------------------------------
 
 /** Maps a cate.* method to the scope it requires, or null when always allowed
@@ -418,6 +421,12 @@ export async function dispatchCateInvoke(
   // (terminal/agent) callers are trusted and skip this gate.
   if (scope.caller !== 'first-party' && (!extensionManager.isKnown(extensionId) || !extensionManager.isEnabled(extensionId))) {
     return { error: 'not-enabled', method }
+  }
+
+  // The terminal/agent endpoint must never move the user's window, panel focus,
+  // or canvas camera. Extensions retain panel.focus behind their panel scope.
+  if (scope.caller === 'first-party' && method === 'cate.panel.focus') {
+    return unsupported(method)
   }
 
   // Security: enforce the caller's declared scopes. First-party callers carry

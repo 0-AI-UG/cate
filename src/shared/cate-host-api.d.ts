@@ -1,9 +1,9 @@
 // =============================================================================
 // Ambient typings for the `cate` global injected into extension webview guests
-// by src/preload/cateHost.ts. Mirrors the reverse-API surface in
-// docs/extensions.md. Methods not yet supported in Phase 1 still exist and
-// resolve/reject with a clear "unsupported" result so feature detection via
-// `cate.version` works.
+// by src/preload/cateHost.ts. Mirrors the reverse-API surface implemented by the
+// main-process extension handlers. Methods not yet supported in Phase 1 still
+// exist and resolve/reject with a clear "unsupported" result so feature
+// detection via `cate.version` works.
 // =============================================================================
 
 /** Theme tokens handed to a guest by `cate.theme.get()`. */
@@ -180,8 +180,8 @@ export interface CateHost {
    *  point an existing panel at a URL or spawn one. `snapshot` returns opaque
    *  element `ref`s to feed back to `click`/`type`; re-snapshot after any
    *  navigation because refs don't survive it. `screenshot` returns a host
-   *  filesystem `path` (see the note in docs/extensions.md — a webview guest can't
-   *  read it directly; a server-backed extension can). */
+   *  filesystem `path`; a webview guest can't read it directly, but a
+   *  server-backed extension can. */
   browser: {
     /** Point a panel at `url` (or auto-place a new background panel); resolves
      *  after the webview is mounted and returns the target panel + url.

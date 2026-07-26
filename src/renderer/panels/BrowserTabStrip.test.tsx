@@ -44,4 +44,47 @@ describe('BrowserTabStrip', () => {
     expect(host.textContent).toContain('New Tab')
     expect(host.querySelector('button[aria-label="New tab"]')).toBeTruthy()
   })
+
+  it('scrolls horizontally by dragging without selecting the dragged tab', () => {
+    const onSelect = vi.fn()
+    act(() => {
+      root.render(
+        <BrowserTabStrip
+          tabs={[
+            { id: 'tab-1', url: 'https://one.example', title: 'One' },
+            { id: 'tab-2', url: 'https://two.example', title: 'Two' },
+            { id: 'tab-3', url: 'https://three.example', title: 'Three' },
+          ]}
+          activeTabId="tab-1"
+          onSelect={onSelect}
+          onClose={vi.fn()}
+          onNewTab={vi.fn()}
+          onTogglePin={vi.fn()}
+        />,
+      )
+    })
+
+    const strip = host.querySelector('[aria-label="Browser tabs"]') as HTMLDivElement
+    const firstTab = host.querySelector('[title^="One"]') as HTMLDivElement
+    Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: 600 })
+    Object.defineProperty(strip, 'clientWidth', { configurable: true, value: 300 })
+    strip.scrollLeft = 40
+
+    const pointer = (type: string, clientX: number): Event => Object.assign(
+      new MouseEvent(type, { bubbles: true, button: 0, clientX }),
+      { pointerId: 1 },
+    )
+    act(() => {
+      firstTab.dispatchEvent(pointer('pointerdown', 120))
+      strip.dispatchEvent(pointer('pointermove', 70))
+      strip.dispatchEvent(pointer('pointerup', 70))
+      firstTab.click()
+    })
+
+    expect(strip.scrollLeft).toBe(90)
+    expect(onSelect).not.toHaveBeenCalled()
+
+    act(() => firstTab.click())
+    expect(onSelect).toHaveBeenCalledWith('tab-1')
+  })
 })

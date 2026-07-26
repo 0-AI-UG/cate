@@ -110,7 +110,7 @@ Packaged binaries land in `release/`. The runtime daemon is rebuilt by `bun run 
 
 ## Project Structure
 
-See [`docs/architecture.md`](docs/architecture.md) and [`CLAUDE.md`](CLAUDE.md) for detailed guidance on the codebase.
+See [`CLAUDE.md`](CLAUDE.md) for detailed guidance on the codebase.
 
 ## Code Style
 

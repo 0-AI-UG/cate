@@ -24,8 +24,25 @@ vi.mock('../ui/Tooltip', () => ({ Tooltip: ({ children }: { children: React.Reac
 vi.mock('./UrlSuggestions', () => ({ UrlSuggestions: () => null }))
 vi.mock('./StartPage', () => ({ StartPage: () => <div>Start page</div> }))
 vi.mock('./BrowserMenu', () => ({
-  BrowserMenu: ({ onOpenPasswordManager }: { onOpenPasswordManager: () => void }) => (
-    <button onClick={onOpenPasswordManager}>Open password manager</button>
+  BrowserMenu: ({
+    onOpenPasswordManager,
+    onZoomOut,
+    onZoomIn,
+    onZoomReset,
+    zoomPercent,
+  }: {
+    onOpenPasswordManager: () => void
+    onZoomOut: () => void
+    onZoomIn: () => void
+    onZoomReset: () => void
+    zoomPercent: number
+  }) => (
+    <>
+      <button onClick={onOpenPasswordManager}>Open password manager</button>
+      <button onClick={onZoomOut}>Zoom out</button>
+      <button onClick={onZoomIn}>Zoom in</button>
+      <button onClick={onZoomReset}>Reset zoom ({zoomPercent}%)</button>
+    </>
   ),
 }))
 vi.mock('./BrowserPasswordManagerPage', () => ({
@@ -95,6 +112,9 @@ function installWebviewMethods(webview: HTMLElement) {
     getURL: vi.fn(() => 'https://navigated.example/page'),
     getTitle: vi.fn(() => 'Navigated title'),
     getWebContentsId: vi.fn(() => 42),
+    getZoomFactor: vi.fn(() => 1),
+    insertCSS: vi.fn(async () => 'css-key'),
+    setZoomFactor: vi.fn(),
     executeJavaScript: vi.fn(async () => undefined),
   }
   Object.assign(webview, methods)
@@ -300,6 +320,38 @@ describe('BrowserPanel component', () => {
 
     root = createRoot(host)
     await flush()
+  })
+
+  it('shows horizontal guest scrollbars and scales browser content from the menu', async () => {
+    mount()
+    const webview = host.querySelector('webview') as HTMLElement
+    const methods = installWebviewMethods(webview)
+
+    act(() => webview.dispatchEvent(event('dom-ready')))
+    await flush()
+
+    expect(methods.insertCSS).toHaveBeenCalledWith(expect.stringContaining('height:8px'))
+    expect(methods.setZoomFactor).toHaveBeenLastCalledWith(1)
+    methods.setZoomFactor.mockClear()
+    act(() => webview.dispatchEvent(event('dom-ready')))
+    await flush()
+    expect(methods.insertCSS).toHaveBeenCalledTimes(2)
+    expect(methods.setZoomFactor).not.toHaveBeenCalled()
+
+    act(() => {
+      ;(host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click()
+    })
+    const zoomOut = [...host.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Zoom out') as HTMLButtonElement
+    act(() => zoomOut.click())
+
+    expect(methods.setZoomFactor).toHaveBeenLastCalledWith(0.9)
+    expect(host.textContent).toContain('Reset zoom (90%)')
+
+    const reset = [...host.querySelectorAll('button')]
+      .find((button) => button.textContent?.startsWith('Reset zoom')) as HTMLButtonElement
+    act(() => reset.click())
+    expect(methods.setZoomFactor).toHaveBeenLastCalledWith(1)
   })
 
   it('keeps one live webview per tab and registers the active tab with Playwright', async () => {

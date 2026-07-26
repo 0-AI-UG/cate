@@ -192,7 +192,7 @@ beforeEach(() => {
 
 describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
   it('reports the API version for feature detection', async () => {
-    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(5)
+    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(6)
   })
 
   it('resolves the workspace root from the locator', async () => {
@@ -328,7 +328,7 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
     // panel.* stay allowed (feature detection + panel self-control).
     state.scopes = undefined
     const forward = vi.fn()
-    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(5)
+    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(6)
     expect(await dispatchCateInvoke(scope(forward), 'cate.storage.get', { key: 'k' })).toEqual({ error: 'scope-denied', method: 'cate.storage.get' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.editor.openFile', { path: 'x' })).toEqual({ error: 'scope-denied', method: 'cate.editor.openFile' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.theme.get', undefined)).toEqual({ error: 'scope-denied', method: 'cate.theme.get' })
@@ -921,6 +921,10 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
       error: BROWSER_READ_DISABLED,
       method: 'cate.browser.snapshot',
     })
+    expect(await dispatchCateInvoke(s, 'cate.browser.inspect', { ref: '@s1e1' })).toEqual({
+      error: BROWSER_READ_DISABLED,
+      method: 'cate.browser.inspect',
+    })
     expect(send).not.toHaveBeenCalled()
     expect(BROWSER_READ_DISABLED).toMatch(/Settings → CLI/)
     // Control is a separate grant and still goes through.
@@ -961,6 +965,22 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
       method: 'cate.ui.notify',
     })
     expect(showOsNotification).not.toHaveBeenCalled()
+  })
+
+  it('does not let first-party callers change the user view with panel.focus', async () => {
+    const forward = vi.fn()
+    windowPanelList.value = [{ panelId: 'p1', type: 'editor', ownerWindowId: 1 }]
+    const s: InvokeScope = {
+      extensionId: 'cate.terminal', workspaceId: WS, panelId: '', forward,
+      caller: 'first-party', grantedScopes: [...GRANTED_SCOPES],
+    }
+
+    expect(await dispatchCateInvoke(s, 'cate.panel.focus', { panelId: 'p1' })).toEqual({
+      error: 'unsupported',
+      method: 'cate.panel.focus',
+    })
+    expect(revealWindowPanel).not.toHaveBeenCalled()
+    expect(forward).not.toHaveBeenCalled()
   })
 
   it('an unlisted verb in a covered namespace falls into that surface\'s Control cell', () => {

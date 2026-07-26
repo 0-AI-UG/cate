@@ -153,7 +153,7 @@ test.afterEach(async () => {
   rmSync(workspace, { recursive: true, force: true })
 })
 
-test('every cate CLI command works from a real Cate terminal', async () => {
+test('the core cate CLI workflow works from a real Cate terminal', async () => {
   test.setTimeout(180_000)
   const controlNode = await seedTerminal(page, { x: 120, y: 120 })
   await expect.poll(
@@ -163,31 +163,28 @@ test('every cate CLI command works from a real Cate terminal', async () => {
 
   // Process/transport basics.
   expect(await runCate(controlNode, '--version')).toMatch(/^cate cli \d+$/)
-  expect(await runCate(controlNode, '--help')).toContain('browser    navigate  open <url>')
-  expect(await runCate(controlNode, 'version')).toBe('5')
+  expect(await runCate(controlNode, '--help')).toContain('browser    control a browser panel')
+  expect(await runCate(controlNode, 'version')).toBe('6')
   expect(await runCate(controlNode, 'panel', 'list')).toContain('terminal')
-  expect(await runCate(controlNode, 'panel', 'set-title', 'CLI Control')).toBe('ok')
-  expect(await runCate(controlNode, 'panel', 'list')).toContain('CLI Control')
-  expect(await runCate(controlNode, 'ui', 'notify', 'CLI E2E notification')).toBe('ok')
 
   // Editor + panel verbs.
   const editorId = await runCate(controlNode, 'editor', 'open', `${path.join(workspace, 'cli-fixture.ts')}:1:8`)
   expect(editorId).toMatch(/^[a-z0-9-]{8}$/i)
-  expect(await runCate(controlNode, 'panel', 'focus', editorId)).toBe('ok')
   expect(await runCate(controlNode, 'panel', 'list')).toContain('cli-fixture.ts')
 
   // Browser verbs against a real Electron webview and local HTTP page.
-  const freshBrowserId = await runCate(controlNode, 'panel', 'create', 'browser')
   const freshDataOne = `data:text/html,${encodeURIComponent('<title>Fresh One</title>')}`
   const freshDataTwo = `data:text/html,${encodeURIComponent('<title>Fresh Two</title>')}`
-  expect(await runCate(controlNode, 'browser', 'open', freshDataOne, '--panel', freshBrowserId)).toBe(freshDataOne)
+  const freshOpen = JSON.parse(await runCate(controlNode, 'browser', 'open', freshDataOne, '--new', '--json'))
+  const freshBrowserId = freshOpen.panelId as string
   expect(await runCate(controlNode, 'browser', 'open', freshDataTwo, '--panel', freshBrowserId)).toBe(freshDataTwo)
   expect(await runCate(controlNode, 'browser', 'wait', '8000', '--panel', freshBrowserId)).toBe(freshDataTwo)
   expect(await runCate(controlNode, 'browser', 'back', '--panel', freshBrowserId)).toBe(freshDataOne)
   expect(await runCate(controlNode, 'panel', 'close', freshBrowserId)).toBe('ok')
 
-  const browserId = await runCate(controlNode, 'panel', 'create', 'browser', baseUrl)
-  expect(browserId).toMatch(/^[a-z0-9-]{8}$/i)
+  const opened = JSON.parse(await runCate(controlNode, 'browser', 'open', baseUrl, '--new', '--json'))
+  const browserId = opened.panelId as string
+  expect(browserId).toMatch(/^[a-z0-9-]+$/i)
   expect(await runCate(controlNode, 'browser', 'open', `${baseUrl}?opened=1`, '--panel', browserId)).toBe(`${baseUrl}?opened=1`)
   expect(await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)).toBe(`${baseUrl}?opened=1`)
 
@@ -196,7 +193,7 @@ test('every cate CLI command works from a real Cate terminal', async () => {
   expect(await runCate(controlNode, 'browser', 'open', firstDataUrl, '--panel', browserId)).toBe(firstDataUrl)
   expect(await runCate(controlNode, 'browser', 'open', secondDataUrl, '--panel', browserId)).toBe(secondDataUrl)
   expect(await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)).toBe(secondDataUrl)
-  expect(await runCate(controlNode, 'browser', 'current', '--panel', browserId)).toContain(`url: ${secondDataUrl}`)
+  expect(await runCate(controlNode, 'panel', 'list')).toContain(secondDataUrl)
   expect(await runCate(controlNode, 'browser', 'back', '--panel', browserId)).toBe(firstDataUrl)
   expect(await runCate(controlNode, 'browser', 'back', '--panel', browserId)).toBe(`${baseUrl}?opened=1`)
   expect(await runCate(controlNode, 'browser', 'forward', '--panel', browserId)).toBe(firstDataUrl)
@@ -212,6 +209,7 @@ test('every cate CLI command works from a real Cate terminal', async () => {
   const clickRef = snapshot.match(/\[(@s\d+e\d+)\] button "Click me"/)?.[1]
   expect(queryRef).toBeTruthy()
   expect(clickRef).toBeTruthy()
+  expect(await runCate(controlNode, 'browser', 'inspect', queryRef!, '--panel', browserId)).toContain('"tag": "input"')
 
   expect(await runCate(controlNode, 'browser', 'fill', queryRef!, 'hello', '--panel', browserId)).toBe('ok')
   expect(await runCate(controlNode, 'browser', 'type', queryRef!, ' cate', '--panel', browserId)).toBe('ok')

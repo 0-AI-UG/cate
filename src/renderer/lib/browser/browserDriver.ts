@@ -423,6 +423,25 @@ async function resolveActionTarget(
   return { ref, target: actionable.target }
 }
 
+/** Resolve an inspect target without requiring actionability. Hidden or disabled
+ * elements are valid inspection targets, but locator ambiguity is still an
+ * error unless the caller supplied --nth. */
+async function resolveInspectionRef(
+  webview: PortalWebview,
+  args: Record<string, unknown>,
+): Promise<{ ref: string } | { error: string }> {
+  if (args.ref !== undefined) return normalizeRef(args.ref)
+  if (args.by === undefined) return { error: 'ref-or-locator-required' }
+  const query = parseLocatorQuery(args)
+  if ('error' in query) return query
+  const found = await locate(webview, query) as { refs?: Array<{ ref: string }>; error?: string }
+  if (found?.error) return { error: found.error }
+  const refs = found?.refs ?? []
+  if (!refs.length) return { error: 'no-match' }
+  if (refs.length > 1 && query.nth === undefined) return { error: `ambiguous:${refs.length}` }
+  return { ref: refs[0].ref }
+}
+
 // --- Main-process control ----------------------------------------------------
 
 async function control(
@@ -475,21 +494,30 @@ export async function handleBrowserMethod(
   if (name === 'open') {
     const url = stringArg(args, 'url')
     if (!url) return { ok: false, error: 'url-required' }
-    const target = resolveTargetPanelId(workspaceId, args)
     let panelId: string
-    if ('error' in target) {
-      if (target.error === 'no-browser') {
-        panelId = useAppStore.getState().createBrowser(
-          workspaceId,
-          url,
-          undefined,
-          placementForBackgroundPanel(workspaceId, stringArg(args, 'placementGroupId')),
-        )
-      } else {
-        return { ok: false, error: target.error }
-      }
+    if (args.newPanel === true) {
+      panelId = useAppStore.getState().createBrowser(
+        workspaceId,
+        url,
+        undefined,
+        placementForBackgroundPanel(workspaceId, stringArg(args, 'placementGroupId')),
+      )
     } else {
-      panelId = target.panelId
+      const target = resolveTargetPanelId(workspaceId, args)
+      if ('error' in target) {
+        if (target.error === 'no-browser') {
+          panelId = useAppStore.getState().createBrowser(
+            workspaceId,
+            url,
+            undefined,
+            placementForBackgroundPanel(workspaceId, stringArg(args, 'placementGroupId')),
+          )
+        } else {
+          return { ok: false, error: target.error }
+        }
+      } else {
+        panelId = target.panelId
+      }
     }
 
     useAppStore.getState().updateBrowserActiveTabUrl(workspaceId, panelId, url)
@@ -622,6 +650,19 @@ export async function handleBrowserMethod(
         })
         return { ok: true, result: snap }
       }
+      case 'inspect': {
+        const resolved = await resolveInspectionRef(webview, args)
+        if ('error' in resolved) return { ok: false, error: resolved.error }
+        const text = await webview.executeJavaScript(
+          textJs(resolved.ref, numberArg(args, 'max', 20_000)),
+        ) as { error?: string }
+        if (text?.error) return { ok: false, error: text.error }
+        const attributes = await webview.executeJavaScript(attributesJs(resolved.ref)) as { error?: string }
+        if (attributes?.error) return { ok: false, error: attributes.error }
+        const state = await webview.executeJavaScript(stateJs(resolved.ref)) as { error?: string }
+        if (state?.error) return { ok: false, error: state.error }
+        return { ok: true, result: { ...state, ...attributes, ...text, ref: resolved.ref } }
+      }
       case 'find': {
         const query = parseLocatorQuery(args)
         if ('error' in query) return { ok: false, error: query.error }
@@ -695,6 +736,7 @@ export async function handleBrowserMethod(
       // --- Interaction -----------------------------------------------------
       case 'click':
       case 'dblclick': {
+        const doubleClick = name === 'dblclick' || numberArg(args, 'count', 1) === 2
         const resolved = await resolveActionTarget(webview, args, 'click')
         if ('error' in resolved) return { ok: false, error: resolved.error }
         const { x, y, box, name: label } = resolved.target
@@ -703,11 +745,11 @@ export async function handleBrowserMethod(
         // CDP adapter can expose a parallel page target whose Playwright
         // hit-test waits forever even though the visible guest is actionable.
         await sendClick(input, x, y, clickOptions(args, 1), {
-          kind: name === 'dblclick' ? 'dblclick' : 'click',
+          kind: doubleClick ? 'dblclick' : 'click',
           rect: box,
-          label: `${name === 'dblclick' ? 'double-click' : 'click'} ${cursorLabelText(label ?? '')}`.trim(),
+          label: `${doubleClick ? 'double-click' : 'click'} ${cursorLabelText(label ?? '')}`.trim(),
         })
-        if (name === 'dblclick') {
+        if (doubleClick) {
           // Electron delivers a double click as two events with clickCount 1
           // then 2; the first press is what focuses, the second is the dblclick.
           await sendClick(input, x, y, clickOptions(args, 2), {
