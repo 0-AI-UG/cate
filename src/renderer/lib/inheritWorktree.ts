@@ -15,6 +15,7 @@ import { isWorktreePanelType } from '../../shared/panels'
 import type { CanvasStoreState } from '../stores/canvas/storeTypes'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
+import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
 
 export interface InheritedWorktree {
   /** Explicit working directory of the selected terminal (a dropped folder or a
@@ -32,11 +33,15 @@ export interface InheritedWorktree {
 export function inheritedWorktreeFromSelection(
   canvasState: Pick<CanvasStoreState, 'selection' | 'selectionActive' | 'nodes'>,
   panels: Record<string, PanelState> | undefined,
+  agentWorktreeIdForPanel: (panelId: string) => string | undefined = activeChatWorktreeIdForPanel,
 ): InheritedWorktree {
   const nodeId = focusedNodeId(canvasState)
   if (!nodeId || !panels) return {}
   const panelId = activeDockPanelId(canvasState.nodes[nodeId]?.dockLayout)
   const panel = panelId ? panels[panelId] : undefined
   if (!panel || !isWorktreePanelType(panel.type)) return {}
+  if (panel.type === 'cateAgent') {
+    return { cwd: undefined, worktreeId: agentWorktreeIdForPanel(panel.id) }
+  }
   return { cwd: panel.cwd, worktreeId: panel.worktreeId }
 }

@@ -15,12 +15,12 @@
 // readyByKey ref, so it too arrives as a prop.
 // =============================================================================
 
-import { ChatCircle } from '@phosphor-icons/react'
 import { ChatThread } from './ChatThread'
 import { ChatComposer } from '../../renderer/chat/ChatComposer'
 import { ExtensionDialog, ExtensionWidget, QueueBadges } from './CateAgentPanelChrome'
 import { useCodingChat, type CodingChatComposerExtras } from './useCodingChat'
 import type { CodingSlashCommand } from '../../shared/types'
+import { CateAgentEmptyState } from './CateAgentEmptyState'
 
 export type { CodingChatComposerExtras }
 
@@ -147,22 +147,12 @@ export function CodingChatView({
       <QueueBadges steering={steeringQueue} followUp={followUpQueue} />
 
       {messages.length === 0 ? (
-        <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-8 min-h-0">
-          <div className="w-full max-w-[520px] flex flex-col items-center">
-            <div className="w-12 h-12 rounded-2xl bg-agent/15 flex items-center justify-center mb-4">
-              <ChatCircle size={22} className="text-agent-light" />
-            </div>
-            <div className="text-[16px] font-medium text-primary mb-3 text-center">
-              What should we work on?
-            </div>
-            <div className="w-full">
-              <ChatComposer
-                {...composerProps}
-                placeholder={composerPlaceholder ?? 'Ask the agent anything about this workspace…'}
-              />
-            </div>
-          </div>
-        </div>
+        <CateAgentEmptyState>
+          <ChatComposer
+            {...composerProps}
+            placeholder={composerPlaceholder ?? 'Ask the agent anything about this workspace…'}
+          />
+        </CateAgentEmptyState>
       ) : (
         <>
           <ChatThread

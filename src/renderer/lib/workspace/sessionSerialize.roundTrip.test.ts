@@ -335,6 +335,23 @@ describe('workspace.json + session.json round-trip', () => {
     expect(restored.terminalCwds).toEqual({ 'term-1': WORKTREE_PATH })
   })
 
+  it('drops legacy worktree tags from Cate Agent panel records', () => {
+    const { snapshot } = buildSnapshot()
+    snapshot.panels!['agent-1'] = panel({
+      id: 'agent-1',
+      type: 'cateAgent',
+      worktreeId: 'wt-residue',
+    })
+
+    const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+    const sessFile = throughDisk(buildSessionFile(snapshot))
+    expect(sessFile.panels['agent-1']).toBeUndefined()
+
+    sessFile.panels['agent-1'] = { panelId: 'agent-1', worktreeId: 'wt-residue' }
+    const restored = projectFilesToSnapshot(wsFile, sessFile, ROOT)
+    expect(restored.panels!['agent-1'].worktreeId).toBeUndefined()
+  })
+
   it('a Windows-style root round-trips editor paths with native separators', () => {
     const winRoot = 'C:\\Users\\dev\\repo'
     const { snapshot } = buildSnapshot()

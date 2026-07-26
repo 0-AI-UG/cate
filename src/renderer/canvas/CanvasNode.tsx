@@ -35,6 +35,8 @@ import { collectPanelIds } from '../../shared/collectPanelIds'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
 import { isWorktreePanelType, PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
+import { useCateAgentStore } from '../../cateAgent/renderer/cateAgentStore'
+import { useChatsStore } from '../stores/chatsStore'
 
 // Node ids already reported for missing geometry, so a bad node that keeps
 // re-rendering warns/reports once instead of spamming.
@@ -384,21 +386,34 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     if (!id) return primaryPanel
     return currentWorkspace?.panels[id] ?? primaryPanel
   }, [layout, currentWorkspace, primaryPanel])
+  const activeAgentChatId = useCateAgentStore((state) => (
+    activePanel?.type === 'cateAgent' ? state.activeChatByPanel[activePanel.id] : undefined
+  ))
+  const activeAgentChatWorktreeId = useChatsStore((state) => (
+    activeAgentChatId
+      ? (state.chatsByRoot[currentWorkspace?.rootPath ?? ''] ?? [])
+        .find((chat) => chat.id === activeAgentChatId)?.worktreeId
+      : undefined
+  ))
 
   // --- Worktree identity: follows the ACTIVE tab --------------------------
   // The node adopts whichever tab is open. Gated on 2+ worktrees (matching the
   // chip) so single-branch flows show no tint/sludge.
   const worktrees = currentWorkspace?.worktrees ?? []
   const wtEnabled = worktrees.length >= 2
-  // Resolve the active tab's worktree. A terminal/agent panel with no explicit
+  // Resolve the active tab's worktree. Terminals read their panel tag; Cate
+  // Agent panels read the active chat's tag. A worktree panel with no explicit
   // tag belongs to the PRIMARY worktree (the record keyed by the workspace root),
   // so the main checkout gets the same tint / terrace / focus-lens as the others
   // — mirroring the WorktreePill + tab-title fallback. Non-terminal panels stay
   // untagged (no territory).
   const primaryWorktree = worktrees.find((w) => w.path === currentWorkspace?.rootPath)
   const isWorktreePanel = isWorktreePanelType(activePanel?.type)
+  const explicitWorktreeId = activePanel?.type === 'cateAgent'
+    ? activeAgentChatWorktreeId
+    : activePanel?.worktreeId
   const activeWorktree = wtEnabled
-    ? worktrees.find((w) => w.id === activePanel?.worktreeId) ?? (isWorktreePanel ? primaryWorktree : undefined)
+    ? worktrees.find((w) => w.id === explicitWorktreeId) ?? (isWorktreePanel ? primaryWorktree : undefined)
     : undefined
   const activeWorktreeId = activeWorktree?.id ?? null
   const worktreeColor = activeWorktree?.color ?? null

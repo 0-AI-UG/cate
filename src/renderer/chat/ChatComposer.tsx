@@ -6,8 +6,9 @@
 // textarea with a control row beneath it — model picker on the left, the run
 // controls on the right, so the send button always sits at the bottom-right,
 // never floating mid-height. A second card tucks under the main one and sticks
-// out below: the worktree selector. Both menus open UPWARD (the composer lives
-// at its panel's bottom edge).
+// out below: the worktree selector. Menus choose above or below at runtime
+// because the composer can live either in an empty-state centre or at the
+// panel's bottom edge.
 //
 // Capabilities (from the agent panel composer): image attachments, thinking
 // level, prompt modes, context compaction, the stats chip, the slash-command
@@ -44,6 +45,8 @@ import {
   NodePopover,
   useNodePopover,
   useViewportPopoverPosition,
+  verticalPopoverPosition,
+  type ViewportPopoverPosition,
   COMPOSER_POPOVER_SURFACE,
 } from '../../cateAgent/renderer/CateAgentPanelChrome'
 import type { JoinedWorktree } from '../stores/useWorktrees'
@@ -69,15 +72,15 @@ const promptModeLabel = (mode: ComposerPromptMode): string => {
 const worktreeLabel = (wt: JoinedWorktree | undefined): string =>
   wt?.label || wt?.branch || (wt?.isPrimary ? 'main' : 'worktree')
 
-// --- an upward-opening portal menu anchored above a trigger --------------------
-const UpwardMenu: React.FC<{
-  anchor: DOMRect
+// --- a portal menu anchored on the roomier side of a trigger -------------------
+const AnchoredMenu: React.FC<{
+  pos: ViewportPopoverPosition
   width: number
   onClose: () => void
   triggerRef?: React.RefObject<HTMLElement | null>
   children: React.ReactNode
 }> = ({
-  anchor,
+  pos,
   width,
   onClose,
   triggerRef,
@@ -106,7 +109,13 @@ const UpwardMenu: React.FC<{
       ref={ref}
       role="listbox"
       className={`fixed z-[9999] max-h-[340px] overflow-y-auto no-scrollbar p-1.5 ${COMPOSER_POPOVER_SURFACE}`}
-      style={{ left: anchor.left, bottom: window.innerHeight - anchor.top + 6, width }}
+      data-placement={pos.placement}
+      style={{
+        top: pos.top,
+        left: pos.left,
+        width,
+        transform: pos.placement === 'above' ? 'translateY(-100%)' : undefined,
+      }}
     >
       {children}
     </div>,
@@ -272,8 +281,9 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     modelPillRef,
     modelOpen,
     (rect) => ({
-      top: rect.top - 8,
       left: Math.max(8, Math.min(rect.left, window.innerWidth - 288)),
+      gap: 8,
+      height: 320,
     }),
   )
   const [wtAnchor, setWtAnchor] = React.useState<DOMRect | null>(null)
@@ -290,10 +300,11 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   } = useNodePopover(
     promptModeBtn,
     (rect) => ({
-      top: rect.top - 8,
       left: Math.max(8, Math.min(rect.left, window.innerWidth - 228)),
+      gap: 8,
     }),
   )
+  const composerCardRef = React.useRef<HTMLDivElement>(null)
 
   // Slash popup is active when the draft starts with "/" and has no spaces
   // before the cursor — i.e. the user is still picking a command name.
@@ -372,6 +383,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     <div className="flex flex-col">
       {/* Main composer card */}
       <div
+        ref={composerCardRef}
         onDragEnter={
           onDrop
             ? (e) => {
@@ -422,6 +434,11 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
             selectedIdx={selectedIdx}
             onPick={acceptCommand}
             onHover={setSelectedIdx}
+            placement={
+              composerCardRef.current
+                ? verticalPopoverPosition(composerCardRef.current.getBoundingClientRect(), 6, 240).placement
+                : 'above'
+            }
           />
         )}
         {onRemoveImage && <ImageChips images={images} onRemove={onRemoveImage} />}
@@ -523,7 +540,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                     top: modelPos.top,
                     left: modelPos.left,
                     width: 280,
-                    transform: 'translateY(-100%)',
+                    transform: modelPos.placement === 'above' ? 'translateY(-100%)' : undefined,
                     zIndex: 9999,
                   }}
                   onPick={(m) => {
@@ -688,7 +705,15 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       )}
 
       {onPickWorktree && wtAnchor && (
-        <UpwardMenu anchor={wtAnchor} width={260} onClose={closeWorktreeMenu} triggerRef={wtBtn}>
+        <AnchoredMenu
+          pos={{
+            left: Math.max(8, Math.min(wtAnchor.left, window.innerWidth - 268)),
+            ...verticalPopoverPosition(wtAnchor, 6, 340),
+          }}
+          width={260}
+          onClose={closeWorktreeMenu}
+          triggerRef={wtBtn}
+        >
           {creating && onCreateWorktree ? (
             <CreateWorktreeForm
               defaultBaseBranch={current?.branch ?? ''}
@@ -732,7 +757,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               )}
             </>
           )}
-        </UpwardMenu>
+        </AnchoredMenu>
       )}
     </div>
   )
@@ -760,7 +785,7 @@ function CompactButton({
       const popW = 200
       let left = r.left
       if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8
-      return { top: r.top - 6, left }
+      return { left, gap: 6 }
     },
   )
   return (
@@ -837,7 +862,10 @@ function StatsChip({
   const btnRef = React.useRef<HTMLButtonElement>(null)
   const { open, setOpen, popoverRef, pos, portalTarget } = useNodePopover(
     btnRef,
-    (r) => ({ top: r.top - 6, left: r.left }),
+    (r) => ({
+      left: Math.max(8, Math.min(r.left, window.innerWidth - 268)),
+      gap: 6,
+    }),
   )
   if (!stats) return null
   const ctx = stats.contextUsage
@@ -952,14 +980,21 @@ function SlashPopup({
   selectedIdx,
   onPick,
   onHover,
+  placement,
 }: {
   commands: CodingSlashCommand[]
   selectedIdx: number
   onPick: (cmd: CodingSlashCommand) => void
   onHover: (idx: number) => void
+  placement: 'above' | 'below'
 }) {
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-1.5 max-h-[240px] overflow-y-auto rounded-xl border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-20">
+    <div
+      data-placement={placement}
+      className={`absolute left-0 right-0 max-h-[240px] overflow-y-auto rounded-xl border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-20 ${
+        placement === 'above' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+      }`}
+    >
       {commands.map((cmd, i) => {
         const active = i === selectedIdx
         return (

@@ -4,7 +4,6 @@ import { useComposerModels } from '../../renderer/chat/useComposerModels'
 import { useComposerWorktrees } from '../../renderer/chat/useComposerWorktrees'
 import { useSettingsStore } from '../../renderer/stores/settingsStore'
 import { useUIStore } from '../../renderer/stores/uiStore'
-import { useAppStore } from '../../renderer/stores/appStore'
 import { sendDirectAgentMessage } from './cateAgentSend'
 import { saveDefaultModel } from './codingModelPrefs'
 import { buildFileMentions } from './codingDrop'
@@ -50,20 +49,18 @@ export const CateAgentComposer: React.FC<{
   chatId?: string | null
   onChatCreated?: (chatId: string) => void
   hostPanelId?: string
-  defaultWorktreeId?: string
 }> = ({
   wsId,
   rootPath,
   onChatCreated,
   hostPanelId,
-  defaultWorktreeId,
 }) => {
   const [draft, setDraft] = React.useState(() => loadDraft(wsId, hostPanelId))
   const [images, setImages] = React.useState<CodingImageAttachment[]>([])
   const [thinkingLevel, setThinkingLevel] = React.useState<CodingThinkingLevel | null>(null)
   const [promptMode, setPromptMode] = React.useState<ComposerPromptMode | null>(null)
   const [autoCompactionEnabled, setAutoCompactionEnabled] = React.useState(true)
-  const [targetId, setTargetId] = React.useState<string | null>(defaultWorktreeId ?? null)
+  const [targetId, setTargetId] = React.useState<string | null>(null)
   const { models, refreshModels } = useComposerModels()
   const defaultModel = useSettingsStore((state) => state.agentDefaultModel)
   const { worktrees, onCreateWorktree, onCheckoutPr } = useComposerWorktrees({
@@ -151,7 +148,7 @@ export const CateAgentComposer: React.FC<{
       onStop={() => {}}
       disabled={false}
       running={false}
-      placeholder="Message Cate…"
+      placeholder="Ask the agent anything about this workspace…"
       images={images}
       onAddImage={addImage}
       onRemoveImage={(index) => setImages((current) => current.filter((_, i) => i !== index))}
@@ -170,10 +167,7 @@ export const CateAgentComposer: React.FC<{
       onManageModels={() => useUIStore.getState().openSettings('cate agent')}
       worktrees={worktrees}
       selectedWorktreeId={targetId}
-      onPickWorktree={(id) => {
-        setTargetId(id)
-        if (hostPanelId) useAppStore.getState().setPanelWorktreeId(wsId, hostPanelId, id)
-      }}
+      onPickWorktree={setTargetId}
       worktreeMenuHeading="Work in…"
       rootPath={rootPath}
       onCreateWorktree={onCreateWorktree}

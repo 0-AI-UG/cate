@@ -559,6 +559,26 @@ function teardownEntry(entry: RegistryEntry): void {
 }
 
 /**
+ * Kill a terminal's PTY while retaining its xterm instance and scrollback.
+ * Used when a process stops but its panel remains on the canvas; dispose()
+ * would remove the xterm DOM and leave the still-mounted panel blank.
+ */
+export function terminate(panelId: string): void {
+  const entry = registry.get(panelId)
+  if (!entry) return
+
+  const { ptyId, workspaceId } = entry
+  entry.alive = false
+  entry.ptyId = ''
+  if (ptyId) ptyToPanel.delete(ptyId)
+
+  if (ptyId) {
+    window.electronAPI.terminalKill(ptyId).catch((err) => log.warn('[terminal] Kill failed:', err))
+    useStatusStore.getState().unregisterTerminal(ptyId, workspaceId)
+  }
+}
+
+/**
  * Fully tears down a terminal: kills the PTY, disposes all xterm addons and
  * the Terminal instance, removes IPC listeners, and removes the entry from
  * the registry.

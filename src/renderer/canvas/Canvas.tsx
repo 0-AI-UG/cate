@@ -25,6 +25,7 @@ import { setPendingReveal } from '../lib/editor/editorReveal'
 import { CHAT_DRAG_MIME, readChatDrag } from '../drag/fileDragPayload'
 import { createSeededChatPanel } from '../drag/openChatDrop'
 import { endChatDrag } from '../drag/chatDragState'
+import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
 
 // Module-level style injection — shared across all Canvas instances
 let canvasStyleInjected = false
@@ -409,7 +410,14 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
           ? store.createTerminal(wsId, undefined, pos, here(), spec.cwd)
           : store.createCateAgent(wsId, pos, here())
       if (panelId && spec.worktreeId) {
-        store.setPanelWorktreeId(wsId, panelId, spec.worktreeId)
+        if (spec.panelType === 'terminal') {
+          store.setPanelWorktreeId(wsId, panelId, spec.worktreeId)
+        } else {
+          const rootPath = store.getWorkspace(wsId)?.rootPath
+          if (rootPath) {
+            await seedAgentPanelWithWorktreeChat(wsId, rootPath, panelId, spec.worktreeId)
+          }
+        }
       }
       return
     }

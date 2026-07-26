@@ -75,7 +75,7 @@ export const MessageRow = memo(function MessageRow({
   }
   if (msg.type === 'assistant') {
     return (
-      <div className={`text-[13.5px] text-primary leading-relaxed space-y-1.5 cate-fade-in ${shimmer ? 'cate-notif-pulse' : ''}`}>
+      <div className={`text-[13.5px] text-primary leading-relaxed space-y-1.5 cate-fade-in ${shimmer && !msg.thinking ? 'cate-notif-pulse' : ''}`}>
         {msg.thinking && <ThinkingBlock text={msg.thinking} streaming={msg.streaming && !msg.text} />}
         <div>
           <Markdown text={msg.text} />

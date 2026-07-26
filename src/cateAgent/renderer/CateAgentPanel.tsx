@@ -12,6 +12,7 @@ import { useUIStore } from '../../renderer/stores/uiStore'
 import { CateAgentPanelSidebar } from './CateAgentPanelSidebar'
 import { CateAgentChatView } from './CateAgentChatView'
 import { useCodingStore } from './codingStore'
+import { useCateAgentStore } from './cateAgentStore'
 import { directAgentKey, disposeDirectChatSession } from './directChatSession'
 import { CHAT_DRAG_MIME, readChatDrag } from '../../renderer/drag/fileDragPayload'
 import { endChatDrag, useChatDragState } from '../../renderer/drag/chatDragState'
@@ -30,6 +31,15 @@ export default function CateAgentPanel({ panelId, workspaceId }: PanelProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const activeChat = activeChatId ? chats.find((chat) => chat.id === activeChatId) : undefined
+  useEffect(() => {
+    if (panel?.worktreeId) {
+      useAppStore.getState().setPanelWorktreeId(workspaceId, panelId, undefined)
+    }
+  }, [panel?.worktreeId, panelId, workspaceId])
+  useEffect(() => {
+    useCateAgentStore.getState().setPanelActiveChat(panelId, activeChatId)
+    return () => useCateAgentStore.getState().setPanelActiveChat(panelId, null)
+  }, [activeChatId, panelId])
   const directRunning = useCodingStore((state) => activeChatId
     ? state.panels[directAgentKey(activeChatId)]?.running ?? false
     : false)
@@ -169,7 +179,6 @@ export default function CateAgentPanel({ panelId, workspaceId }: PanelProps) {
             chatId={activeChatId}
             onChatCreated={selectChat}
             hostPanelId={panelId}
-            defaultWorktreeId={panel?.worktreeId}
           />
         )}
       </div>

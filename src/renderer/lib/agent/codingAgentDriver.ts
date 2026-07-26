@@ -356,7 +356,7 @@ export async function handleCodingAgentMethod(
     const panel = runPanel(workspaceId, runId)
     const run = panel?.codingAgentRun
     if (!panel || !run) return { ok: false, error: 'coding-agent-not-found' }
-    terminalRegistry.dispose(panel.id)
+    terminalRegistry.terminate(panel.id)
     useAppStore.getState().setPanelCodingAgentRun(workspaceId, panel.id, {
       ...run,
       stoppedAt: Date.now(),

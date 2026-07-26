@@ -38,7 +38,7 @@ interface ChatsStoreActions {
   /** Find one chat by id (undefined if absent). */
   getChat: (rootPath: string, id: string) => Chat | undefined
   /** Create a fresh empty Cate Agent chat in the sidebar (default) or one panel. */
-  createChat: (rootPath: string, title: string, hostPanelId?: string) => Chat
+  createChat: (rootPath: string, title: string, hostPanelId?: string, worktreeId?: string) => Chat
   /** Move one chat to an Agent panel, or to the sidebar when panelId is null. */
   moveChat: (rootPath: string, id: string, panelId: string | null) => void
   /** Return every chat owned by any of these closing panels to the sidebar. */
@@ -100,7 +100,7 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
     return (get().chatsByRoot[rootPath] ?? []).find((c) => c.id === id)
   },
 
-  createChat(rootPath, title, hostPanelId) {
+  createChat(rootPath, title, hostPanelId, worktreeId) {
     const now = Date.now()
     const chat: Chat = {
       id: generateId(),
@@ -108,6 +108,7 @@ export const useChatsStore = create<ChatsStore>((set, get) => ({
       createdAt: now,
       updatedAt: now,
       ...(hostPanelId ? { hostPanelId } : {}),
+      ...(worktreeId ? { worktreeId } : {}),
     }
     const next = [...(get().chatsByRoot[rootPath] ?? []), chat]
     set((s) => ({

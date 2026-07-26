@@ -269,6 +269,32 @@ describe('spawn → wire → dispose happy path', () => {
     LC.dispose('panel-race')
   })
 
+  it('terminates the PTY without disposing the xterm kept by a stopped panel', async () => {
+    terminalCreate.mockResolvedValueOnce('pty-stopped')
+    const entry = await LC.getOrCreate('panel-stopped', { workspaceId: 'ws-1' })
+    const fake = terminalInstances[0]
+
+    LC.terminate('panel-stopped')
+
+    expect(terminalKill).toHaveBeenCalledTimes(1)
+    expect(terminalKill).toHaveBeenCalledWith('pty-stopped')
+    expect(statusUnregisterTerminal).toHaveBeenCalledWith('pty-stopped', 'ws-1')
+    expect(RS.has('panel-stopped')).toBe(true)
+    expect(RS.ptyIdForPanel('panel-stopped')).toBeNull()
+    expect(RS.panelIdForPty('pty-stopped')).toBeNull()
+    expect(entry.alive).toBe(false)
+    expect(fake.disposeCount).toBe(0)
+    expect(dataDisposers[0]).not.toHaveBeenCalled()
+
+    // Closing the panel still performs the final renderer teardown without
+    // trying to kill or unregister the already-terminated PTY again.
+    LC.dispose('panel-stopped')
+    expect(fake.disposeCount).toBe(1)
+    expect(dataDisposers[0]).toHaveBeenCalledTimes(1)
+    expect(terminalKill).toHaveBeenCalledTimes(1)
+    expect(statusUnregisterTerminal).toHaveBeenCalledTimes(1)
+  })
+
   it('writes initialInput into the terminal after spawn', async () => {
     await LC.getOrCreate('panel-input', { workspaceId: 'ws-1', initialInput: 'npm test\r' })
     expect(terminalInstances[0].writes).toContain('npm test\r')

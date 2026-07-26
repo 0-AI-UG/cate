@@ -1,6 +1,5 @@
 import { useChatsStore } from '../../renderer/stores/chatsStore'
 import { useCateAgentStore } from './cateAgentStore'
-import { setTargetWorktree } from './cateAgentWorktreeTarget'
 import {
   promptDirectChat,
   type DirectChatTurnOptions,
@@ -23,8 +22,7 @@ export function sendDirectAgentMessage(
   hostPanelId?: string,
 ): string {
   const chats = useChatsStore.getState()
-  const chat = chats.createChat(rootPath, deriveChatTitle(text), hostPanelId)
-  if (worktreeId) setTargetWorktree(chat.id, worktreeId)
+  const chat = chats.createChat(rootPath, deriveChatTitle(text), hostPanelId, worktreeId)
   if (!hostPanelId) useCateAgentStore.getState().setActiveChat(wsId, chat.id)
   void promptDirectChat(chat, wsId, rootPath, text, options, cwd)
   return chat.id

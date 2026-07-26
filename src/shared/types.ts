@@ -115,9 +115,8 @@ export interface PanelState {
   cwd?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
-  /** Id of the WorktreeMeta in the parent workspace that this panel is
-   *  associated with. Drives the per-panel color accent for terminal + agent
-   *  panels; terminals also expose the title-bar "switch worktree" pill. */
+  /** Terminal panels only: id of the WorktreeMeta in the parent workspace that
+   *  this terminal is associated with. Cate Agent worktrees live on Chat. */
   worktreeId?: string
   /** Terminal panels only. Set to true the first time the user renames the
    *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
@@ -1070,8 +1069,8 @@ export interface ProjectSessionPanel {
   ptyId?: string
   workingDirectory?: string
   unsavedContent?: string
-  /** Worktree this terminal/agent panel is tagged with. Machine-local (worktree
-   *  ids are runtime uuids), so it lives in session.json, not workspace.json. */
+  /** Worktree this terminal panel is tagged with. Machine-local (worktree ids
+   *  are runtime uuids), so it lives in session.json, not workspace.json. */
   worktreeId?: string
   /** Agent-CLI session running in this terminal at save time. Machine-local
    *  (session ids reference stores on this machine's runtime host). */
@@ -1097,6 +1096,8 @@ export interface Chat {
   /** The Agent panel that owns this chat. Absence means the workspace Cate
    *  sidebar owns it. A chat is rendered by exactly one of those hosts. */
   hostPanelId?: string
+  /** Worktree this chat's agent runs in. Follows the chat between hosts. */
+  worktreeId?: string
   /** Per-chat model override. The Cate Agent otherwise uses the global default. */
   model?: CateAgentModelRef
   /** On-disk Pi transcript for this chat's sole main-agent session. */

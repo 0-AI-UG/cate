@@ -89,9 +89,16 @@ export async function promptDirectChat(
   cwd = rootPath,
 ): Promise<boolean> {
   const panelId = directAgentKey(chat.id)
-  if (!(await ensureDirectChatSession(chat, workspaceId, rootPath, cwd))) return false
-
+  const session = ensureDirectChatSession(chat, workspaceId, rootPath, cwd)
   const store = useCodingStore.getState()
+  // A brand-new chat has no transcript to hydrate, so show its first message
+  // immediately while the agent session starts. Otherwise selecting the newly
+  // created chat briefly renders the empty-chat composer before this message
+  // arrives and makes the composer jump between layouts.
+  const appendedOptimistically = !chat.sessionFile
+  if (appendedOptimistically) store.appendUser(panelId, text)
+  if (!(await session)) return false
+
   const controlUpdates: Promise<unknown>[] = []
   if (options.thinkingLevel) {
     store.setThinkingLevel(panelId, options.thinkingLevel)
@@ -105,7 +112,7 @@ export async function promptDirectChat(
   try {
     await Promise.all(controlUpdates)
     if (options.promptMode) await codingClient.prompt(panelId, `/${options.promptMode}`)
-    store.appendUser(panelId, text)
+    if (!appendedOptimistically) store.appendUser(panelId, text)
     await codingClient.prompt(panelId, text, options.images)
     return true
   } catch (error) {

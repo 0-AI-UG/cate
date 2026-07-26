@@ -623,26 +623,70 @@ function ThinkingBars({ count, size = 10 }: { count: number; size?: number }) {
 export const COMPOSER_POPOVER_SURFACE =
   'rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)]'
 
+export type ViewportPopoverPosition = {
+  top: number
+  left: number
+  placement: 'above' | 'below'
+}
+
+export function verticalPopoverPosition(
+  rect: DOMRect,
+  gap: number,
+  popoverHeight?: number,
+): Pick<ViewportPopoverPosition, 'top' | 'placement'> {
+  const viewportMargin = 8
+  const above = rect.top - gap - viewportMargin
+  const below = window.innerHeight - rect.bottom - gap - viewportMargin
+  const placement =
+    popoverHeight != null && below >= popoverHeight
+      ? 'below'
+      : popoverHeight != null && above >= popoverHeight
+        ? 'above'
+        : below >= above
+          ? 'below'
+          : 'above'
+
+  return {
+    placement,
+    top: placement === 'below' ? rect.bottom + gap : rect.top - gap,
+  }
+}
+
 // Keep anchored popovers in viewport space. Portalling into a transformed
 // canvas node makes CSS widths and offsets inherit the canvas zoom; it also
 // leaves sidebar/dock composers without a portal target at all.
 export function useViewportPopoverPosition(
   btnRef: React.RefObject<Element | null>,
   open: boolean,
-  layout: (rect: DOMRect) => { top: number; left: number },
+  layout: (rect: DOMRect) => { left: number; gap: number; height?: number },
+  popoverRef?: React.RefObject<HTMLElement | null>,
 ) {
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [pos, setPos] = useState<ViewportPopoverPosition | null>(null)
   const layoutRef = useRef(layout)
   useLayoutEffect(() => {
     layoutRef.current = layout
   }, [layout])
   const updatePosition = useCallback(() => {
     if (!open || !btnRef.current) return
-    const next = layoutRef.current(btnRef.current.getBoundingClientRect())
+    const rect = btnRef.current.getBoundingClientRect()
+    const layoutResult = layoutRef.current(rect)
+    const measuredHeight = popoverRef?.current?.getBoundingClientRect().height
+    const next = {
+      left: layoutResult.left,
+      ...verticalPopoverPosition(
+        rect,
+        layoutResult.gap,
+        measuredHeight && measuredHeight > 0 ? measuredHeight : layoutResult.height,
+      ),
+    }
     setPos((current) => (
-      current?.top === next.top && current.left === next.left ? current : next
+      current?.top === next.top &&
+      current.left === next.left &&
+      current.placement === next.placement
+        ? current
+        : next
     ))
-  }, [btnRef, open])
+  }, [btnRef, open, popoverRef])
 
   useLayoutEffect(() => {
     if (!open) {
@@ -659,6 +703,12 @@ export function useViewportPopoverPosition(
     }
   }, [open, updatePosition])
 
+  // The first pass positions an unmounted popover from the available space.
+  // Once it has rendered, refine the choice with its real height before paint.
+  useLayoutEffect(() => {
+    if (open && pos) updatePosition()
+  })
+
   return {
     pos,
     portalTarget: typeof document === 'undefined' ? null : document.body,
@@ -669,11 +719,11 @@ export function useViewportPopoverPosition(
 // Owns open state, outside-click dismissal, and viewport-relative positioning.
 export function useNodePopover(
   btnRef: React.RefObject<HTMLButtonElement>,
-  layout: (rect: DOMRect) => { top: number; left: number },
+  layout: (rect: DOMRect) => { left: number; gap: number; height?: number },
 ) {
   const [open, setOpen] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)
-  const { pos, portalTarget } = useViewportPopoverPosition(btnRef, open, layout)
+  const { pos, portalTarget } = useViewportPopoverPosition(btnRef, open, layout, popoverRef)
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
@@ -695,7 +745,7 @@ export function useNodePopover(
 }
 
 // Shared shell for composer popovers: a blurred, bordered card portalled to the
-// document body and pinned above its trigger (translateY(-100%)).
+// document body and placed on whichever side of its trigger has room.
 export function NodePopover({
   popoverRef,
   pos,
@@ -705,7 +755,7 @@ export function NodePopover({
   children,
 }: {
   popoverRef: React.RefObject<HTMLDivElement>
-  pos: { top: number; left: number } | null
+  pos: ViewportPopoverPosition | null
   portalTarget: HTMLElement | null
   width: number
   bodyClassName?: string
@@ -716,7 +766,13 @@ export function NodePopover({
     <div
       ref={popoverRef}
       className={`fixed ${COMPOSER_POPOVER_SURFACE} z-[9999]${bodyClassName ? ` ${bodyClassName}` : ''}`}
-      style={{ top: pos.top, left: pos.left, width, transform: 'translateY(-100%)' }}
+      data-placement={pos.placement}
+      style={{
+        top: pos.top,
+        left: pos.left,
+        width,
+        transform: pos.placement === 'above' ? 'translateY(-100%)' : undefined,
+      }}
     >
       {children}
     </div>,
@@ -740,7 +796,7 @@ export function ThinkingLevelPicker({
       const popW = 160
       let left = r.right - popW
       if (left < 4) left = 4
-      return { top: r.top - 4, left }
+      return { left, gap: 4 }
     },
   )
   const current = level ?? 'medium'
