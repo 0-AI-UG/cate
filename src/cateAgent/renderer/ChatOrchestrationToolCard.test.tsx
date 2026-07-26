@@ -99,6 +99,7 @@ describe('orchestration tool presentation', () => {
     expect(host.textContent).toContain('All tests passed')
     expect(host.textContent).not.toContain('"runId"')
     expect(host.textContent).not.toContain('"recentOutput"')
+    expect(host.querySelector('.rounded-md')).toBeNull()
   })
 
   it('renders legacy wait results without exposing their raw prompt payload', () => {
@@ -141,5 +142,6 @@ describe('orchestration tool presentation', () => {
     expect(host.textContent).not.toContain('Mission: noisy legacy prompt')
     expect(host.textContent).not.toContain('"timedOut"')
     expect(host.textContent).not.toContain('"prompt"')
+    expect(host.querySelector('.rounded-md')).toBeNull()
   })
 })

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { ArrowSquareOut, Robot } from '@phosphor-icons/react'
 import type { ToolMessage } from './codingStore'
 import { useAppStore } from '../../renderer/stores/appStore'
 import { revealPanel } from '../../renderer/lib/workspace/panelReveal'
 import { useAgentTerminalStatus, agentStateLabel } from './useAgentTerminalStatus'
 import { codingAgentDisplayName, parseCodingAgentId } from '../../shared/codingAgentRuns'
+import { getAgentLogoById } from '../../renderer/lib/agent/agentLogos'
+import { CateLogo } from '../../renderer/ui/CateLogo'
 import { OrchestrationToolDetails } from './ChatOrchestrationToolCard'
 
 function resultObject(result: string | undefined): Record<string, unknown> {
@@ -24,6 +25,7 @@ export function CodingAgentCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: 
   const args = (msg.args ?? {}) as Record<string, unknown>
   const panelId = typeof result.panelId === 'string' ? result.panelId : ''
   const agentId = parseCodingAgentId(result.agentId ?? args.agentId)
+  const agentLogo = getAgentLogoById(agentId)
   const prompt = typeof args.prompt === 'string' ? args.prompt : 'Coding task'
   const workspaceId = useAppStore((state) =>
     state.workspaces.find((ws) => panelId && ws.panels[panelId])?.id ?? '',
@@ -35,39 +37,71 @@ export function CodingAgentCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: 
   const status = panelId
     ? agentStateLabel(terminalStatus.agentState)
     : running ? 'Starting…' : msg.error ? 'Failed' : 'Created'
+  const canOpenTerminal = Boolean(panelId && workspaceId)
+  const statusColor = msg.error
+    ? 'bg-danger'
+    : terminalStatus.agentState === 'waitingForInput'
+      ? 'bg-warning'
+      : terminalStatus.agentState === 'finished'
+        ? 'bg-[#34C759]'
+        : terminalStatus.agentState === 'running'
+          ? 'bg-accent'
+          : 'bg-muted'
 
   return (
     <div
-      className={`rounded-lg border border-strong/70 bg-surface-2/50 p-2.5 text-[12px] cate-fade-in ${
-        running || shimmer ? 'cate-notif-pulse' : ''
-      }`}
+      className="text-[12px] cate-fade-in"
       data-tool-name="create_coding_agent"
     >
-      <div className="flex items-center gap-2">
-        <Robot size={15} className="shrink-0 text-accent" />
+      <div className="flex min-w-0 items-center gap-2">
+        <CateLogo
+          size={15}
+          aria-label="Cate"
+          className="shrink-0 text-[rgb(var(--agent-rgb))]"
+        />
         <button
-          className="min-w-0 flex-1 text-left"
+          data-coding-agent-terminal-link
+          aria-label={`Open ${label} terminal`}
+          title={canOpenTerminal ? `Open terminal · ${status}` : status}
+          disabled={!canOpenTerminal}
+          className={`inline-flex h-6 max-w-[150px] shrink-0 items-center gap-1.5 rounded-[10px] bg-surface-2 px-2 text-[11px] text-primary transition-colors ${
+            canOpenTerminal ? 'hover:bg-hover-strong' : 'cursor-default'
+          }`}
+          onClick={() => { void revealPanel(workspaceId, panelId) }}
+        >
+          {agentLogo && (
+            <img
+              src={agentLogo}
+              alt=""
+              width={11}
+              height={11}
+              draggable={false}
+              className="shrink-0"
+            />
+          )}
+          <span className={
+            running || shimmer || terminalStatus.agentState === 'running'
+              ? 'cate-notif-pulse'
+              : ''
+          }>
+            {label}
+          </span>
+          <span
+            aria-label={status}
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusColor}`}
+          />
+        </button>
+        <button
+          aria-label="Show coding agent details"
+          aria-expanded={expanded}
+          className="min-w-0 flex-1 truncate text-left text-[11px] text-primary/75 hover:text-primary"
           onClick={() => setExpanded((value) => !value)}
         >
-          <div className="flex items-center gap-2">
-            <span className="truncate font-medium text-primary">{label}</span>
-            <span className="shrink-0 text-[10.5px] text-muted">{status}</span>
-          </div>
-          <div className="mt-0.5 truncate text-[11px] text-primary/75">{prompt}</div>
+          {prompt}
         </button>
-        {panelId && workspaceId && (
-          <button
-            aria-label="Open coding agent terminal"
-            title="Open coding agent terminal"
-            className="rounded p-1 text-muted hover:bg-hover-strong hover:text-primary"
-            onClick={() => { void revealPanel(workspaceId, panelId) }}
-          >
-            <ArrowSquareOut size={14} />
-          </button>
-        )}
       </div>
       {expanded && (
-        <div className="mt-2 space-y-2 border-t border-strong/50 pt-2">
+        <div className="mt-2 space-y-2 pl-[23px]">
           <OrchestrationToolDetails msg={msg} />
           {terminalStatus.line && (
             <div className="truncate font-mono text-[10.5px] text-muted">

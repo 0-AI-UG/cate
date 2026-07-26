@@ -67,19 +67,13 @@ function DetailField({
 function RunDetails({ run }: { run: Record<string, unknown> }) {
   const agent = text(run.agentName) || agentLabel(run.agentId)
   return (
-    <div className="rounded-md border border-strong/50 bg-surface-2/35 px-2 py-1.5">
-      <div className="mb-1 flex items-center gap-2">
-        <span className="font-medium text-primary/90">{agent}</span>
-        {typeof run.status === 'string' && (
-          <span className="rounded bg-hover-strong px-1.5 py-0.5 text-[9.5px] text-muted">
-            {run.status}
-          </span>
-        )}
-      </div>
+    <div className="space-y-1">
+      <DetailField label="Agent" value={agent} />
+      <DetailField label="State" value={text(run.status)} />
       <DetailField label="Run" value={text(run.id)} mono />
       <DetailField label="Worktree" value={text(run.worktreeId)} mono />
       <DetailField label="Directory" value={text(run.cwd)} mono />
-      <DetailField label="Status" value={text(run.statusLine)} mono />
+      <DetailField label="Activity" value={text(run.statusLine)} mono />
     </div>
   )
 }
@@ -163,9 +157,14 @@ function OutputDetails({
                 : 'No active coding agents'
           }
         />
-        <div className="space-y-1.5">
+        <div>
           {runs.map((run, index) => (
-            <RunDetails key={text(run.id) || index} run={run} />
+            <div
+              key={text(run.id) || index}
+              className={index > 0 ? 'mt-2 border-t border-strong/40 pt-2' : ''}
+            >
+              <RunDetails run={run} />
+            </div>
           ))}
         </div>
       </>
