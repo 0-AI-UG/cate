@@ -135,6 +135,7 @@ vi.mock('./storage', () => ({
 
 import {
   dispatchCateInvoke,
+  forwardTimeoutMs,
   requiredScopeFor,
   TERMINAL_INPUT_DISABLED,
   TERMINAL_READ_DISABLED,
@@ -353,6 +354,11 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
 })
 
 describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
+  it('allows a long monitor call without extending unrelated host actions', () => {
+    expect(forwardTimeoutMs('cate.codingAgent.wait')).toBe(125_000)
+    expect(forwardTimeoutMs('cate.editor.openFile')).toBe(10_000)
+  })
+
   it('maps every native coding-agent method to its dedicated scope', () => {
     for (const verb of ['create', 'send', 'wait', 'inspect', 'stop']) {
       expect(requiredScopeFor(`cate.codingAgent.${verb}`)).toBe('coding-agent')

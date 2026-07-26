@@ -13,6 +13,12 @@ import {
   type CodingAgentRunSnapshot,
   type CodingAgentRunStatus,
 } from '../../../shared/codingAgentRuns'
+import {
+  actionableCodingAgentRunIds,
+  changedCodingAgentRunIds,
+  codingAgentWaitMs,
+  compactCodingAgentSnapshot,
+} from './codingAgentWait'
 
 export type CodingAgentOutcome =
   | { ok: true; result: unknown }
@@ -144,6 +150,93 @@ function findRequestedRuns(
   return snapshots
 }
 
+async function waitForCodingAgentChange(
+  workspaceId: string,
+  rawRunIds: unknown,
+  timeoutMs: number,
+): Promise<CodingAgentOutcome> {
+  const initial = findRequestedRuns(workspaceId, rawRunIds)
+  if ('error' in initial) return { ok: false, error: initial.error }
+  // With no explicit target, monitor only live mission work. Historical ready
+  // runs must not make every future wait return immediately.
+  const watched = rawRunIds === undefined
+    ? initial.filter((run) =>
+        run.status === 'starting' || run.status === 'working' || run.status === 'waiting')
+    : initial
+  if (watched.length === 0) {
+    return { ok: true, result: { timedOut: false, changedRunIds: [], runs: [] } }
+  }
+  const actionable = actionableCodingAgentRunIds(watched)
+  if (actionable.length > 0) {
+    return {
+      ok: true,
+      result: {
+        timedOut: false,
+        changedRunIds: actionable,
+        runs: watched.map(compactCodingAgentSnapshot),
+      },
+    }
+  }
+  const ids = watched.map((run) => run.id)
+  const baseline = new Map(watched.map((run) => [run.id, run.status]))
+
+  return new Promise<CodingAgentOutcome>((resolve) => {
+    let settled = false
+    let unsubscribeApp = () => {}
+    let unsubscribeStatus = () => {}
+    let unsubscribeFailure = () => {}
+
+    const finish = (outcome: CodingAgentOutcome): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      unsubscribeApp()
+      unsubscribeStatus()
+      unsubscribeFailure()
+      resolve(outcome)
+    }
+    const current = (): CodingAgentRunSnapshot[] | { error: string } =>
+      findRequestedRuns(workspaceId, ids)
+    const check = (): void => {
+      const snapshots = current()
+      if ('error' in snapshots) {
+        finish({ ok: false, error: snapshots.error })
+        return
+      }
+      const changedRunIds = changedCodingAgentRunIds(baseline, snapshots)
+      if (changedRunIds.length > 0) {
+        finish({
+          ok: true,
+          result: {
+            timedOut: false,
+            changedRunIds,
+            runs: snapshots.map(compactCodingAgentSnapshot),
+          },
+        })
+      }
+    }
+
+    const timer = setTimeout(() => {
+      const snapshots = current()
+      finish('error' in snapshots
+        ? { ok: false, error: snapshots.error }
+        : {
+            ok: true,
+            result: {
+              timedOut: true,
+              changedRunIds: [],
+              runs: snapshots.map(compactCodingAgentSnapshot),
+            },
+          })
+    }, timeoutMs)
+    unsubscribeApp = useAppStore.subscribe(check)
+    unsubscribeStatus = useStatusStore.subscribe(check)
+    unsubscribeFailure = terminalRegistry.subscribeFailure(check)
+    // Close the gap between the initial snapshot and listener registration.
+    check()
+  })
+}
+
 export async function handleCodingAgentMethod(
   workspaceId: string,
   method: string,
@@ -212,9 +305,10 @@ export async function handleCodingAgentMethod(
     }
     const label = prompt.replace(/\s+/g, ' ').slice(0, 54)
     store.updatePanelTitle(workspaceId, panelId, `${codingAgentDisplayName(agentId)} · ${label}`)
+    const snapshot = codingAgentSnapshot(workspaceId, runId)
     return {
       ok: true,
-      result: codingAgentSnapshot(workspaceId, runId) ?? {
+      result: snapshot ? compactCodingAgentSnapshot(snapshot) : {
         id: runId,
         panelId,
         agentId,
@@ -231,7 +325,10 @@ export async function handleCodingAgentMethod(
     if (!snapshot) return { ok: false, error: 'coding-agent-not-found' }
     return {
       ok: true,
-      result: { ...snapshot, recentOutput: terminalText(snapshot.panelId) },
+      result: {
+        ...compactCodingAgentSnapshot(snapshot),
+        recentOutput: terminalText(snapshot.panelId),
+      },
     }
   }
 
@@ -251,7 +348,8 @@ export async function handleCodingAgentMethod(
       ...run,
       followUps: [...(run.followUps ?? []), { prompt, sentAt: Date.now() }],
     })
-    return { ok: true, result: codingAgentSnapshot(workspaceId, runId) }
+    const snapshot = codingAgentSnapshot(workspaceId, runId)
+    return { ok: true, result: snapshot ? compactCodingAgentSnapshot(snapshot) : null }
   }
 
   if (name === 'stop') {
@@ -263,24 +361,16 @@ export async function handleCodingAgentMethod(
       ...run,
       stoppedAt: Date.now(),
     })
-    return { ok: true, result: codingAgentSnapshot(workspaceId, runId) }
+    const snapshot = codingAgentSnapshot(workspaceId, runId)
+    return { ok: true, result: snapshot ? compactCodingAgentSnapshot(snapshot) : null }
   }
 
   if (name === 'wait') {
-    const timeout = Math.max(0, Math.min(8_000, Number(args.timeoutSeconds ?? 4) * 1_000))
-    const startedAt = Date.now()
-    while (true) {
-      const snapshots = findRequestedRuns(workspaceId, args.runIds)
-      if ('error' in snapshots) return { ok: false, error: snapshots.error }
-      const settled = snapshots.some((run) =>
-        run.status === 'ready' || run.status === 'waiting' ||
-        run.status === 'stopped' || run.status === 'failed',
-      )
-      if (settled || Date.now() - startedAt >= timeout) {
-        return { ok: true, result: { timedOut: !settled, runs: snapshots } }
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 200))
-    }
+    return waitForCodingAgentChange(
+      workspaceId,
+      args.runIds,
+      codingAgentWaitMs(args.timeoutSeconds),
+    )
   }
 
   return { ok: false, error: 'unsupported' }

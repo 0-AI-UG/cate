@@ -91,6 +91,13 @@ import type { PanelType } from '../../shared/types'
 const CATE_API_VERSION = 6
 
 const FORWARD_TIMEOUT_MS = 10_000
+const CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS = 125_000
+
+export function forwardTimeoutMs(method: string): number {
+  return method === 'cate.codingAgent.wait'
+    ? CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS
+    : FORWARD_TIMEOUT_MS
+}
 
 /** Stable errors for CLI permission cells (Settings → CLI) that are off. Each
  *  tells the caller how to get the feature enabled, not just that it is denied.
@@ -174,7 +181,7 @@ export function forwardToOwner(
     const timer = setTimeout(() => {
       pendingForwards.delete(requestId)
       resolve({ error: 'timeout', method: payload.method })
-    }, FORWARD_TIMEOUT_MS)
+    }, forwardTimeoutMs(payload.method))
     pendingForwards.set(requestId, { resolve, timer })
     try {
       owner.send(CATE_HOST_FORWARD, {

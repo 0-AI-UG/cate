@@ -63,7 +63,7 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Delegate bounded implementation or investigation tasks when parallel work materially helps; keep architectural ownership and final verification yourself.",
       "Give each worker a self-contained prompt with scope, constraints, and concrete success criteria. Never ask a worker to create more workers.",
-      "After delegation, use wait_for_coding_agents and inspect_coding_agent. Send targeted follow-ups when needed, then verify and integrate the results yourself.",
+      "After delegation, call wait_for_coding_agents once and let it block until worker state changes. Do not repeatedly inspect a worker that is still working; inspect after a change or timeout, then send a targeted follow-up only when needed.",
       "Never create more than five live workers. Reuse a run with send_to_coding_agent when follow-up belongs to the same task.",
       "OpenCode runs are one-shot; create a fresh OpenCode run instead of sending a follow-up after it exits.",
     ],
@@ -115,10 +115,10 @@ export default function (pi: ExtensionAPI) {
     name: "wait_for_coding_agents",
     label: "Wait for coding agents",
     description:
-      "Wait briefly for one or more Cate-owned coding agents to change state, then return fresh snapshots. Use in a loop when workers are still working.",
+      "Efficiently monitor one or more Cate-owned coding agents. Blocks for up to 60 seconds by default but returns immediately when a worker changes state or needs input. Prefer one long wait over repeated polling; inspect only after this reports a change or timeout.",
     parameters: Type.Object({
       runIds: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 5 })),
-      timeoutSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 8, default: 4 })),
+      timeoutSeconds: Type.Optional(Type.Number({ minimum: 15, maximum: 120, default: 60 })),
     }),
     async execute(_id, params, signal) {
       return toolResult(await invoke("cate.codingAgent.wait", params, signal))

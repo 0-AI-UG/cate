@@ -5,6 +5,7 @@ import { useAppStore } from '../../renderer/stores/appStore'
 import { revealPanel } from '../../renderer/lib/workspace/panelReveal'
 import { useAgentTerminalStatus, agentStateLabel } from './useAgentTerminalStatus'
 import { codingAgentDisplayName, parseCodingAgentId } from '../../shared/codingAgentRuns'
+import { prettyArgs } from './chatShared'
 
 function resultObject(result: string | undefined): Record<string, unknown> {
   if (!result) return {}
@@ -66,10 +67,27 @@ export function CodingAgentCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: 
         )}
       </div>
       {expanded && (
-        <div className="mt-2 border-t border-strong/50 pt-2">
-          <div className="whitespace-pre-wrap break-words text-[11px] text-primary/80">{prompt}</div>
+        <div className="mt-2 space-y-2 border-t border-strong/50 pt-2">
+          <div>
+            <div className="mb-0.5 text-[9.5px] font-medium uppercase tracking-wide text-muted/70">
+              Input
+            </div>
+            <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-primary/80">
+              {prettyArgs(msg.args)}
+            </pre>
+          </div>
+          {msg.result && (
+            <div>
+              <div className="mb-0.5 text-[9.5px] font-medium uppercase tracking-wide text-muted/70">
+                Output
+              </div>
+              <pre className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-primary/80">
+                {msg.result}
+              </pre>
+            </div>
+          )}
           {terminalStatus.line && (
-            <div className="mt-1.5 truncate font-mono text-[10.5px] text-muted">
+            <div className="truncate font-mono text-[10.5px] text-muted">
               {terminalStatus.line}
             </div>
           )}

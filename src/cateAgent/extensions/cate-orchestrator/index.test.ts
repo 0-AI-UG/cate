@@ -17,13 +17,16 @@ beforeEach(() => {
 
 describe("cate-orchestrator", () => {
   it("registers the complete worker lifecycle surface", () => {
-    expect([...registeredTools().keys()]).toEqual([
+    const tools = registeredTools()
+    expect([...tools.keys()]).toEqual([
       "create_coding_agent",
       "send_to_coding_agent",
       "wait_for_coding_agents",
       "inspect_coding_agent",
       "stop_coding_agent",
     ])
+    expect(tools.get("wait_for_coding_agents").parameters.properties.timeoutSeconds)
+      .toMatchObject({ minimum: 15, maximum: 120, default: 60 })
   })
 
   it("asks once per session before creating workers and invokes the scoped API", async () => {

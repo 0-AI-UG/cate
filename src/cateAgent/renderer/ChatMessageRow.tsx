@@ -17,6 +17,10 @@ import { ToolCard, AskUserToolView } from './ChatToolCard'
 import { SubagentCard } from './ChatSubagentCard'
 import { PlanReadyCard } from './ChatPlanCard'
 import { CodingAgentCard } from './ChatCodingAgentCard'
+import {
+  ORCHESTRATION_TOOL_NAMES,
+  OrchestrationToolCard,
+} from './ChatOrchestrationToolCard'
 import { formatTime } from './chatShared'
 
 interface MessageRowProps {
@@ -128,6 +132,9 @@ export const MessageRow = memo(function MessageRow({
   }
   if (msg.type === 'tool' && msg.name === 'create_coding_agent') {
     return <CodingAgentCard msg={msg} shimmer={shimmer} />
+  }
+  if (msg.type === 'tool' && ORCHESTRATION_TOOL_NAMES.has(msg.name)) {
+    return <OrchestrationToolCard msg={msg} shimmer={shimmer} />
   }
   return <ToolCard msg={msg} shimmer={shimmer} />
 })
