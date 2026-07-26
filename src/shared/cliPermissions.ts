@@ -64,6 +64,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       'cate.browser.list',
       'cate.browser.screenshot',
       'cate.browser.snapshot',
+      'cate.browser.inspect',
       'cate.browser.wait',
       'cate.browser.find',
       'cate.browser.text',
@@ -81,14 +82,14 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Read',
       code: 'browser-read-disabled',
       detail:
-        '`cate browser snapshot / find / text / state / console / screenshot / wait` — see the page in the built-in browser panel, which shows your live logged-in sessions.',
+        '`cate browser snapshot / inspect / console / screenshot / wait` — see the page in the built-in browser panel, which shows your live logged-in sessions.',
     },
     control: {
       key: 'cliBrowserControlEnabled',
       access: 'Control',
       code: 'browser-control-disabled',
       detail:
-        '`cate browser open / click / fill / type / press / eval / clipboard / viewport` — act on the page in the built-in browser panel, using your live logged-in sessions.',
+        '`cate browser open / click / fill / type / press / eval` — act on the page in the built-in browser panel, using your live logged-in sessions.',
     },
   },
   {
@@ -128,7 +129,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Control',
       code: 'panel-control-disabled',
       detail:
-        '`cate panel create / close / set-title` — add panels to the canvas, close and rename them.',
+        '`cate panel create / close` — add terminal or canvas panels and close panels.',
     },
   },
   {

@@ -25,8 +25,8 @@ import {
 } from './cate'
 
 const noFlags: Flags = {
-  json: false, snapshot: false, help: false, version: false,
-  exact: false, fullPage: false, mobile: false,
+  json: false, newPanel: false, snapshot: false, help: false, version: false,
+  exact: false, fullPage: false,
 }
 
 describe('buildRequest — browser group', () => {
@@ -37,14 +37,19 @@ describe('buildRequest — browser group', () => {
     })
   })
 
-  it('reload/current/back/forward take no args; only list stays unknown', () => {
+  it('keeps core navigation and removes redundant current/list verbs', () => {
     expect(buildRequest(['browser', 'reload'], noFlags).args).toEqual({})
-    expect(buildRequest(['browser', 'current'], noFlags).method).toBe('cate.browser.current')
     expect(buildRequest(['browser', 'back'], noFlags).method).toBe('cate.browser.back')
     expect(buildRequest(['browser', 'forward'], noFlags).method).toBe('cate.browser.forward')
-    // `cate panel list` is the one panel-enumeration surface; `browser tabs`
-    // lists tabs within a panel. `browser list` remains deliberately absent.
+    expect(() => buildRequest(['browser', 'current'], noFlags)).toThrow(/unknown browser verb/)
     expect(() => buildRequest(['browser', 'list'], noFlags)).toThrow(/unknown browser verb/)
+  })
+
+  it('open --new requests an unconditional browser panel', () => {
+    expect(buildRequest(['browser', 'open', 'https://a.com'], { ...noFlags, newPanel: true })).toEqual({
+      method: 'cate.browser.open',
+      args: { url: 'https://a.com', newPanel: true },
+    })
   })
 
   it('click -> {ref}', () => {
@@ -52,6 +57,17 @@ describe('buildRequest — browser group', () => {
       method: 'cate.browser.click',
       args: { ref: 'e12' },
     })
+  })
+
+  it('click count and check state replace separate action verbs', () => {
+    expect(buildRequest(['browser', 'click', 'e12'], { ...noFlags, count: '2' })).toEqual({
+      method: 'cate.browser.click',
+      args: { ref: 'e12', count: 2 },
+    })
+    expect(buildRequest(['browser', 'check', 'e12', 'on'], noFlags).method).toBe('cate.browser.check')
+    expect(buildRequest(['browser', 'check', 'e12', 'off'], noFlags).method).toBe('cate.browser.uncheck')
+    expect(() => buildRequest(['browser', 'dblclick', 'e12'], noFlags)).toThrow(/unknown browser verb/)
+    expect(() => buildRequest(['browser', 'uncheck', 'e12'], noFlags)).toThrow(/unknown browser verb/)
   })
 
   it('type joins trailing positionals into text', () => {
@@ -90,11 +106,8 @@ describe('buildRequest — per-scope groups', () => {
     expect(() => buildRequest(['theme', 'get'], noFlags)).toThrow(/unknown command/)
   })
 
-  it('ui notify joins trailing positionals into message', () => {
-    expect(buildRequest(['ui', 'notify', 'build', 'done'], noFlags)).toEqual({
-      method: 'cate.ui.notify',
-      args: { message: 'build done' },
-    })
+  it('ui is no longer a terminal CLI group', () => {
+    expect(() => buildRequest(['ui', 'notify', 'build', 'done'], noFlags)).toThrow(/unknown command/)
   })
 
   it('editor open -> {path}', () => {
@@ -111,15 +124,12 @@ describe('buildRequest — per-scope groups', () => {
     })
   })
 
-  it('panel create browser accepts an optional url', () => {
-    expect(buildRequest(['panel', 'create', 'browser', 'https://x.com'], noFlags)).toEqual({
-      method: 'cate.canvas.createPanel',
-      args: { type: 'browser', url: 'https://x.com' },
-    })
-  })
-
-  it('panel create rejects a url for non-browser types', () => {
-    expect(() => buildRequest(['panel', 'create', 'terminal', 'https://x.com'], noFlags)).toThrow(/browser/)
+  it('panel create is limited to terminal and canvas', () => {
+    expect(buildRequest(['panel', 'create', 'canvas'], noFlags).args).toEqual({ type: 'canvas' })
+    for (const type of ['browser', 'editor', 'document', 'cateAgent', 'extension']) {
+      expect(() => buildRequest(['panel', 'create', type], noFlags)).toThrow(/supports terminal or canvas/)
+    }
+    expect(() => buildRequest(['panel', 'create', 'terminal', 'extra'], noFlags)).toThrow(/unexpected argument/)
   })
 
   it('the canvas group is gone; its usage error points at panel create', () => {
@@ -127,15 +137,11 @@ describe('buildRequest — per-scope groups', () => {
     expect(() => buildRequest(['canvas', 'anything'], noFlags)).toThrow(UsageError)
   })
 
-  it('panel set-title joins the title', () => {
-    expect(buildRequest(['panel', 'set-title', 'My', 'Panel'], noFlags)).toEqual({
-      method: 'cate.panel.setTitle',
-      args: { title: 'My Panel' },
-    })
+  it('panel set-title is no longer exposed', () => {
+    expect(() => buildRequest(['panel', 'set-title', 'My', 'Panel'], noFlags)).toThrow(/unknown panel verb/)
   })
 
   it('missing required args are usage errors', () => {
-    expect(() => buildRequest(['ui', 'notify'], noFlags)).toThrow(/message/)
     expect(() => buildRequest(['editor', 'open'], noFlags)).toThrow(/path/)
   })
 })
@@ -675,16 +681,15 @@ describe('--max validation', () => {
     expect(deps.err.join('\n')).toMatch(/invalid --max/)
   })
 
-  it('forwards a positive browser result limit to text, assets, and console', () => {
-    expect(buildRequest(['browser', 'text'], { ...noFlags, max: '25' }).args).toEqual({ max: 25 })
-    expect(buildRequest(['browser', 'assets'], { ...noFlags, max: '25' }).args).toEqual({ max: 25 })
+  it('forwards a positive browser result limit to inspect and console', () => {
+    expect(buildRequest(['browser', 'inspect', '@s1e1'], { ...noFlags, max: '25' }).args)
+      .toEqual({ ref: '@s1e1', max: 25 })
     expect(buildRequest(['browser', 'console'], { ...noFlags, max: '25', level: 'error' }).args)
       .toEqual({ level: 'error', max: 25 })
   })
 
-  it('reserves --max 0 for uncapped snapshot/find/terminal output', () => {
-    expect(() => buildRequest(['browser', 'text'], { ...noFlags, max: '0' })).toThrow(/invalid <max>/)
-    expect(() => buildRequest(['browser', 'assets'], { ...noFlags, max: '0' })).toThrow(/invalid <max>/)
+  it('reserves --max 0 for uncapped snapshot/terminal output', () => {
+    expect(() => buildRequest(['browser', 'inspect', '@s1e1'], { ...noFlags, max: '0' })).toThrow(/invalid <max>/)
     expect(() => buildRequest(['browser', 'console'], { ...noFlags, max: '0' })).toThrow(/invalid <max>/)
   })
 })
@@ -709,12 +714,9 @@ describe('strict command contracts', () => {
     })
   })
 
-  it('resolves --panel for set-title against all panel types', () => {
-    expect(buildRequest(['panel', 'set-title', 'Renamed'], { ...noFlags, panel: 'abcd1234' })).toEqual({
-      method: 'cate.panel.setTitle',
-      args: { title: 'Renamed', panelId: 'abcd1234' },
-      resolvePanel: 'panel',
-    })
+  it('does not restore removed panel commands through --panel', () => {
+    expect(() => buildRequest(['panel', 'set-title', 'Renamed'], { ...noFlags, panel: 'abcd1234' }))
+      .toThrow(/unknown panel verb/)
   })
 })
 
@@ -809,31 +811,20 @@ describe('run resolves a short terminal --panel against terminal rows only', () 
   })
 })
 
-describe('terminal panel identity', () => {
-  it('uses CATE_PANEL_ID for an unaddressed set-title', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ result: null }))
-    const deps = makeDeps({
-      fetch: fetchMock as unknown as typeof fetch,
-      env: { CATE_API: 'http://127.0.0.1:1', CATE_TOKEN: 't', CATE_PANEL_ID: 'full-panel-id' },
-    })
-    expect(await run(['panel', 'set-title', 'My', 'Terminal'], deps)).toBe(0)
-    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
-    expect(body).toEqual({ method: 'cate.panel.setTitle', args: { title: 'My Terminal', panelId: 'full-panel-id' } })
-    expect(deps.out).toEqual(['ok'])
-  })
-
-  it('requires --panel when the shell has no panel identity', async () => {
+describe('removed CLI groups and verbs', () => {
+  it('rejects them before contacting the host', async () => {
     const fetchMock = vi.fn()
     const deps = makeDeps({ fetch: fetchMock as unknown as typeof fetch })
     expect(await run(['panel', 'set-title', 'x'], deps)).toBe(2)
-    expect(deps.err.join('\n')).toMatch(/requires --panel/)
+    expect(await run(['ui', 'notify', 'done'], deps)).toBe(2)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 
 describe('human-facing output and help', () => {
-  it('formats ui.notify as ok', () => {
-    expect(formatHuman('cate.ui.notify', { ok: true })).toBe('ok')
+  it('formats inspect as readable JSON', () => {
+    expect(formatHuman('cate.browser.inspect', { ref: '@s1e1', text: 'Hello' }))
+      .toBe('{\n  "ref": "@s1e1",\n  "text": "Hello"\n}')
   })
 
   it('shows group-specific help', async () => {
@@ -854,7 +845,7 @@ describe('human-facing output and help', () => {
 })
 
 // =============================================================================
-// The v6 browser grammar: locator targets, tabs, and the flags that shape an
+// The v8 browser grammar: locator targets, tabs, and the flags that shape an
 // action. These are the parts an agent types most often, so a silent mis-parse
 // (a locator read as a ref, a modifier dropped) is the expensive failure.
 // =============================================================================
@@ -879,7 +870,7 @@ describe('buildRequest — browser locators and targets', () => {
   })
 
   it('maps alt to the host key altText', () => {
-    expect(buildRequest(['browser', 'find', 'alt=Logo'], noFlags).args).toEqual({ by: 'altText', value: 'Logo' })
+    expect(buildRequest(['browser', 'inspect', 'alt=Logo'], noFlags).args).toEqual({ by: 'altText', value: 'Logo' })
   })
 
   it('carries --nth and --exact into the locator', () => {
@@ -888,8 +879,8 @@ describe('buildRequest — browser locators and targets', () => {
       .toEqual({ by: 'text', value: 'Go', nth: 2, exact: true })
   })
 
-  it('rejects a bare ref for find, which needs a locator', () => {
-    expect(() => buildRequest(['browser', 'find', '@s1e1'], noFlags)).toThrow(/find needs a locator/)
+  it('inspect accepts either a ref or locator', () => {
+    expect(buildRequest(['browser', 'inspect', '@s1e1'], noFlags).args).toEqual({ ref: '@s1e1' })
   })
 
   it('normalizes --modifiers aliases and rejects junk', () => {
@@ -907,7 +898,7 @@ describe('buildRequest — browser locators and targets', () => {
 
 describe('buildRequest — browser tabs, mouse, scroll, env', () => {
   it('maps the tab verbs', () => {
-    expect(buildRequest(['browser', 'tabs'], noFlags).method).toBe('cate.browser.tabs')
+    expect(buildRequest(['browser', 'tab', 'list'], noFlags).method).toBe('cate.browser.tabs')
     expect(buildRequest(['browser', 'tab', 'new'], noFlags)).toEqual({ method: 'cate.browser.tabNew', args: {} })
     expect(buildRequest(['browser', 'tab', 'new', 'https://a/'], noFlags).args).toEqual({ url: 'https://a/' })
     expect(buildRequest(['browser', 'tab', 'select', 't1'], noFlags))
@@ -932,17 +923,15 @@ describe('buildRequest — browser tabs, mouse, scroll, env', () => {
       .toEqual({ dx: 0, dy: 400, ref: '@s1e1' })
   })
 
-  it('maps viewport, clipboard, dialog and frame-eval', () => {
-    expect(buildRequest(['browser', 'viewport', '390', '844'], { ...noFlags, mobile: true }).args)
-      .toEqual({ width: 390, height: 844, mobile: true })
-    expect(buildRequest(['browser', 'viewport', 'reset'], noFlags).args).toEqual({ reset: true })
-    expect(buildRequest(['browser', 'clipboard', 'write', 'hello', 'there'], noFlags))
-      .toEqual({ method: 'cate.browser.clipboardWrite', args: { text: 'hello there' } })
+  it('consolidates dialog actions and removes environment tooling', () => {
+    expect(buildRequest(['browser', 'dialog', 'list'], noFlags))
+      .toEqual({ method: 'cate.browser.dialogs', args: {} })
     expect(buildRequest(['browser', 'dialog', 'accept', 'my', 'answer'], noFlags).args)
       .toEqual({ policy: 'accept', promptText: 'my answer' })
-    expect(() => buildRequest(['browser', 'dialog', 'maybe'], noFlags)).toThrow(/unknown dialog policy/)
-    expect(buildRequest(['browser', 'frame-eval', '3', '9', 'location.href'], noFlags).args)
-      .toEqual({ frameRoutingId: 3, frameProcessId: 9, expression: 'location.href' })
+    expect(() => buildRequest(['browser', 'dialog', 'maybe'], noFlags)).toThrow(/unknown browser dialog action/)
+    for (const verb of ['viewport', 'frames', 'frame-eval', 'downloads', 'clipboard', 'assets']) {
+      expect(() => buildRequest(['browser', verb], noFlags)).toThrow(/unknown browser verb/)
+    }
   })
 
   it('adds a selector wait condition alongside the ref one', () => {
@@ -956,7 +945,8 @@ describe('buildRequest — flag scoping', () => {
     expect(() => buildRequest(['browser', 'snapshot'], { ...noFlags, button: 'left' })).toThrow(/--button/)
     expect(() => buildRequest(['browser', 'reload'], { ...noFlags, fullPage: true })).toThrow(/--full-page/)
     expect(() => buildRequest(['browser', 'snapshot'], { ...noFlags, level: 'error' })).toThrow(/--level/)
-    expect(() => buildRequest(['panel', 'list'], { ...noFlags, mobile: true })).toThrow(/--mobile/)
+    expect(() => buildRequest(['panel', 'list'], { ...noFlags, newPanel: true })).toThrow(/--new/)
+    expect(() => buildRequest(['browser', 'reload'], { ...noFlags, count: '2' })).toThrow(/--count/)
     expect(() => buildRequest(['browser', 'snapshot'], { ...noFlags, nth: '1' })).toThrow(/--nth/)
   })
 

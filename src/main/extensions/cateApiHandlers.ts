@@ -75,6 +75,9 @@ import type { PanelType } from '../../shared/types'
 /** Bumped when the cateHost API surface changes incompatibly. Guests use
  *  `cate.version` for feature detection.
  *
+ *  v6 adds consolidated browser inspection and unconditional background
+ *  browser creation for the reduced terminal CLI.
+ *
  *  v5 makes the browser surface agent-complete: locators (find, and locator
  *  targets on every acting verb), per-panel tabs, back/forward/current
  *  (restored — an agent that can only navigate by URL cannot follow a flow it

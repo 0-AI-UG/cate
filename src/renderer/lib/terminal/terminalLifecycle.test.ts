@@ -20,6 +20,7 @@ interface FakeTerminalShape {
   options: Record<string, unknown>
   cols: number
   rows: number
+  emitData(data: string): void
 }
 const terminalInstances: FakeTerminalShape[] = []
 
@@ -32,6 +33,7 @@ vi.mock('@xterm/xterm', () => {
     public element: HTMLElement | undefined
     public cols = 80
     public rows = 24
+    private dataCallback?: (data: string) => void
     constructor(options: Record<string, unknown> = {}) {
       this.options = options
       terminalInstances.push(this as unknown as FakeTerminalShape)
@@ -42,7 +44,11 @@ vi.mock('@xterm/xterm', () => {
       container.appendChild(this.element)
     }
     write(s: string): void { this.writes.push(s) }
-    onData(): { dispose: () => void } { return { dispose: () => {} } }
+    onData(cb: (data: string) => void): { dispose: () => void } {
+      this.dataCallback = cb
+      return { dispose: () => { this.dataCallback = undefined } }
+    }
+    emitData(data: string): void { this.dataCallback?.(data) }
     onResize(): { dispose: () => void } { return { dispose: () => {} } }
     onTitleChange(): { dispose: () => void } { return { dispose: () => {} } }
     hasSelection(): boolean { return false }
@@ -114,9 +120,11 @@ vi.mock('./terminalFileLinkProvider', () => ({
   createFileLinkProvider: () => ({ provideLinks: (_y: number, cb: (l?: unknown[]) => void) => cb(undefined) }),
   resolveLinkRoot: () => undefined,
 }))
+const noteAgentInputSubmitted = vi.fn()
 vi.mock('../agent/agentScreenDetector', () => ({
   noteAgentPresence: vi.fn(),
   forgetAgentTracker: vi.fn(),
+  noteAgentInputSubmitted,
 }))
 vi.mock('../themeManager', () => ({
   getActiveTheme: () => ({ terminal: {} }),
@@ -213,6 +221,7 @@ beforeEach(() => {
   statusUnregisterTerminal.mockClear()
   replayTerminalLog.mockClear()
   replayTerminalLog.mockImplementation(async () => {})
+  noteAgentInputSubmitted.mockClear()
 })
 
 // ===========================================================================
@@ -257,6 +266,16 @@ describe('spawn → wire → dispose happy path', () => {
     expect(RS.panelIdForPty('pty-happy')).toBeNull()
     expect(fake.disposeCount).toBe(1)
     expect(dataDisposers[0]).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a submitted terminal line to the agent status coordinator', async () => {
+    terminalCreate.mockResolvedValueOnce('pty-input')
+    await LC.getOrCreate('panel-input', { workspaceId: 'ws-1' })
+
+    terminalInstances[0].emitData('\r')
+
+    expect(noteAgentInputSubmitted).toHaveBeenCalledWith('pty-input')
+    expect(terminalWrite).toHaveBeenCalledWith('pty-input', '\r')
   })
 
   it('returns the same in-flight entry for concurrent getOrCreate calls and spawns once', async () => {

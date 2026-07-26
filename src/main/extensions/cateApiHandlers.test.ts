@@ -977,6 +977,10 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
       error: BROWSER_READ_DISABLED,
       method: 'cate.browser.snapshot',
     })
+    expect(await dispatchCateInvoke(s, 'cate.browser.inspect', { ref: '@s1e1' })).toEqual({
+      error: BROWSER_READ_DISABLED,
+      method: 'cate.browser.inspect',
+    })
     expect(send).not.toHaveBeenCalled()
     expect(BROWSER_READ_DISABLED).toMatch(/Settings → CLI/)
     // Control is a separate grant and still goes through.
