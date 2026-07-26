@@ -64,8 +64,11 @@ describe("cate-orchestrator", () => {
     await api.commands.get("orchestrate").handler("", ctx)
 
     expect(setStatus).toHaveBeenCalledWith("orchestrator-mode", "Orchestration mode")
-    expect(api.getActiveTools()).toEqual(["read", "bash", ...TOOL_NAMES])
+    // The command only flips mode state. Tool changes happen at the next real
+    // prompt so selecting the mode cannot itself start the agent loop.
+    expect(api.getActiveTools()).toEqual(["read", "bash"])
     const prompt = await api.handlers.get("before_agent_start")!({ systemPrompt: "base" })
+    expect(api.getActiveTools()).toEqual(["read", "bash", ...TOOL_NAMES])
     expect(prompt.systemPrompt).toContain("Orchestration mode is ACTIVE")
     expect(prompt.systemPrompt).toContain("Act as the mission lead")
     expect(await api.handlers.get("tool_call")!({ toolName: "create_coding_agent" }))
@@ -74,9 +77,10 @@ describe("cate-orchestrator", () => {
     await api.commands.get("orchestrate").handler("", ctx)
 
     expect(setStatus).toHaveBeenLastCalledWith("orchestrator-mode", undefined)
-    expect(api.getActiveTools()).toEqual(["read", "bash"])
+    expect(api.getActiveTools()).toEqual(["read", "bash", ...TOOL_NAMES])
     expect(await api.handlers.get("before_agent_start")!({ systemPrompt: "base" }))
       .toBeUndefined()
+    expect(api.getActiveTools()).toEqual(["read", "bash"])
   })
 
   it("asks once per session before creating workers and invokes the scoped API", async () => {

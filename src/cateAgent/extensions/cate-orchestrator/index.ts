@@ -79,13 +79,18 @@ export default function (pi: ExtensionAPI) {
     ctx: { ui: { setStatus: (key: string, value: string | undefined) => void } },
   ): void => {
     active = enabled
-    const current = pi.getActiveTools()
-    pi.setActiveTools(
-      enabled
-        ? [...new Set([...current, ...TOOL_NAMES])]
-        : current.filter((name) => !TOOL_NAME_SET.has(name)),
-    )
     ctx.ui.setStatus(STATUS_KEY, enabled ? "Orchestration mode" : undefined)
+  }
+
+  const syncActiveTools = (): void => {
+    const current = pi.getActiveTools()
+    const next = active
+      ? [...new Set([...current, ...TOOL_NAMES])]
+      : current.filter((name) => !TOOL_NAME_SET.has(name))
+    if (next.length === current.length && next.every((name, index) => name === current[index])) {
+      return
+    }
+    pi.setActiveTools(next)
   }
 
   pi.registerTool({
@@ -190,6 +195,9 @@ export default function (pi: ExtensionAPI) {
   })
 
   pi.on("before_agent_start", async (event) => {
+    // Changing Pi's active tools inside the /orchestrate command can resume the
+    // agent loop. Defer that rebuild until a real user prompt is about to start.
+    syncActiveTools()
     if (!active) return
     return { systemPrompt: `${event.systemPrompt}\n\n${ORCHESTRATOR_PROMPT}` }
   })
