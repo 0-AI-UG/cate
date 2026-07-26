@@ -147,7 +147,7 @@ import {
   cliPermissionDenied,
   cliPermissionForMethod,
 } from '../../shared/cliPermissions'
-import { GRANTED_SCOPES } from './workspaceCateApi'
+import { CATE_AGENT_GRANTED_SCOPES, GRANTED_SCOPES } from './workspaceCateApi'
 
 const EXT = 'cate.kitchensink'
 const WS = 'ws-1'
@@ -192,7 +192,7 @@ beforeEach(() => {
 
 describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
   it('reports the API version for feature detection', async () => {
-    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(5)
+    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(6)
   })
 
   it('resolves the workspace root from the locator', async () => {
@@ -328,7 +328,7 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
     // panel.* stay allowed (feature detection + panel self-control).
     state.scopes = undefined
     const forward = vi.fn()
-    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(5)
+    expect(await dispatchCateInvoke(scope(forward), 'cate.version', undefined)).toBe(6)
     expect(await dispatchCateInvoke(scope(forward), 'cate.storage.get', { key: 'k' })).toEqual({ error: 'scope-denied', method: 'cate.storage.get' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.editor.openFile', { path: 'x' })).toEqual({ error: 'scope-denied', method: 'cate.editor.openFile' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.theme.get', undefined)).toEqual({ error: 'scope-denied', method: 'cate.theme.get' })
@@ -348,6 +348,56 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
     expect(await dispatchCateInvoke(scope(forward), 'cate.storage.get', { key: 'k' })).toEqual({ error: 'not-enabled', method: 'cate.storage.get' })
     expect(await dispatchCateInvoke(scope(forward), 'cate.editor.openFile', { path: 'x' })).toEqual({ error: 'not-enabled', method: 'cate.editor.openFile' })
     // The security gate fires before any forward to a renderer.
+    expect(forward).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
+  it('maps every native coding-agent method to its dedicated scope', () => {
+    for (const verb of ['create', 'send', 'wait', 'inspect', 'stop']) {
+      expect(requiredScopeFor(`cate.codingAgent.${verb}`)).toBe('coding-agent')
+    }
+  })
+
+  it('forwards orchestration only for the embedded Cate Agent and carries its cwd', async () => {
+    const forward = vi.fn(async () => ({ id: 'run-1' }))
+    const result = await dispatchCateInvoke({
+      extensionId: 'cate-agent',
+      workspaceId: WS,
+      panelId: 'cate-direct:chat-1',
+      caller: 'cate-agent',
+      originCwd: '/ws/worktrees/feature',
+      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      forward,
+    }, 'cate.codingAgent.create', { agentId: 'codex', prompt: 'Implement it' })
+
+    expect(result).toEqual({ id: 'run-1' })
+    expect(forward).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'cate.codingAgent.create',
+      panelId: 'cate-direct:chat-1',
+      args: {
+        agentId: 'codex',
+        prompt: 'Implement it',
+        _cateOriginCwd: '/ws/worktrees/feature',
+      },
+    }))
+  })
+
+  it('denies ordinary first-party terminals and extensions even with the scope', async () => {
+    const forward = vi.fn()
+    for (const caller of ['first-party', 'extension'] as const) {
+      expect(await dispatchCateInvoke({
+        extensionId: caller === 'extension' ? EXT : 'terminal',
+        workspaceId: WS,
+        panelId: undefined,
+        caller,
+        grantedScopes: ['coding-agent'],
+        forward,
+      }, 'cate.codingAgent.create', { agentId: 'codex', prompt: 'No' })).toEqual({
+        error: 'cate-agent-only',
+        method: 'cate.codingAgent.create',
+      })
+    }
     expect(forward).not.toHaveBeenCalled()
   })
 })

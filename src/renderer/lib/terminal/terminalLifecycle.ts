@@ -39,11 +39,13 @@ import { getActiveTheme } from '../themeManager'
 import { useStatusStore } from '../../stores/statusStore'
 import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
 import { replayTerminalLog } from '../workspace/session'
+import type { CodingAgentLaunch } from '../../../shared/codingAgentRuns'
 
 interface CreateOpts {
   workspaceId: string
   cwd?: string
   initialInput?: string
+  codingAgentLaunch?: CodingAgentLaunch
   placementGroupId?: string
   /** Terminal session-restore: a full agent resume command (e.g.
    *  `claude --resume <id>`) typed into the fresh shell right after spawn, via
@@ -189,6 +191,15 @@ export function wireTerminalListeners(args: {
     if (id === ptyId) {
       const e = registry.get(panelId)
       if (e) e.alive = false
+      const panel = useAppStore.getState().workspaces
+        .find((workspace) => workspace.id === opts.workspaceId)?.panels[panelId]
+      if (panel?.codingAgentRun && !panel.codingAgentRun.stoppedAt) {
+        useAppStore.getState().setPanelCodingAgentRun(opts.workspaceId, panelId, {
+          ...panel.codingAgentRun,
+          endedAt: Date.now(),
+          exitCode,
+        })
+      }
       terminal.write(
         `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`,
       )
@@ -313,6 +324,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
       workspaceId: opts.workspaceId,
       panelId,
       placementGroupId: opts.placementGroupId,
+      codingAgentLaunch: opts.codingAgentLaunch,
     })
 
     // If the entry was disposed while we were waiting, dispose() couldn't kill
@@ -325,6 +337,9 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     }
 
     setPtyForPanel(panelId, ptyId)
+    if (opts.codingAgentLaunch) {
+      useAppStore.getState().setPanelCodingAgentLaunch(opts.workspaceId, panelId, undefined)
+    }
 
     // 6. Wire PTY<->xterm listeners + shell registration (shared with
     //    reconnectTerminal via wireTerminalListeners). freshSpawn: this is a

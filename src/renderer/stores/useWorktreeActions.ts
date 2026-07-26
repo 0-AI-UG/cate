@@ -50,6 +50,38 @@ export interface WorktreeActions {
   checkoutPr: (pr: PrListItem) => Promise<WorktreeMeta | null>
 }
 
+/** Imperative core shared by the React hook and Cate Agent's orchestration
+ * driver. Keeping one path preserves branch sanitization, symlink settings,
+ * metadata colors, additional-root registration, and git refresh behavior. */
+export async function createWorktreeForWorkspace(
+  rootPath: string,
+  workspaceId: string,
+  rawName: string,
+  baseRef?: string,
+): Promise<WorktreeMeta> {
+  const branch = toBranchName(rawName)
+  if (!branch) throw new Error('Please enter a name')
+  const targetPath = worktreePathFor(rootPath, branch)
+  await window.electronAPI.gitWorktreeAdd(rootPath, branch, targetPath, {
+    createBranch: true,
+    baseRef,
+    symlinkPaths: configuredSymlinkPaths(),
+  }, workspaceId)
+
+  const store = useAppStore.getState()
+  const ws = store.workspaces.find((workspace) => workspace.id === workspaceId)
+  const meta: WorktreeMeta = {
+    id: newWorktreeId(),
+    path: targetPath,
+    label: rawName.trim() !== branch ? rawName.trim() : undefined,
+    color: pickWorktreeColor(ws?.worktrees ?? []),
+  }
+  store.upsertWorktree(workspaceId, meta)
+  store.addAdditionalRoot(workspaceId, targetPath)
+  gitStatusStore.refresh(rootPath)
+  return meta
+}
+
 export function useWorktreeActions(rootPath: string, workspaceId: string | null): WorktreeActions {
   const upsertWorktree = useAppStore((s) => s.upsertWorktree)
   const addAdditionalRoot = useAppStore((s) => s.addAdditionalRoot)
@@ -57,29 +89,9 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
   const createWorktree = useCallback(
     async (rawName: string, baseRef?: string) => {
       if (!rootPath || !workspaceId) return null
-      const branch = toBranchName(rawName)
-      if (!branch) throw new Error('Please enter a name')
-      const targetPath = worktreePathFor(rootPath, branch)
-      await window.electronAPI.gitWorktreeAdd(rootPath, branch, targetPath, {
-        createBranch: true,
-        baseRef,
-        symlinkPaths: configuredSymlinkPaths(),
-      }, workspaceId)
-
-      const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-      const meta: WorktreeMeta = {
-        id: newWorktreeId(),
-        path: targetPath,
-        // Keep the friendly name when it differs from the slugged branch.
-        label: rawName.trim() !== branch ? rawName.trim() : undefined,
-        color: pickWorktreeColor(ws?.worktrees ?? []),
-      }
-      upsertWorktree(workspaceId, meta)
-      addAdditionalRoot(workspaceId, targetPath)
-      gitStatusStore.refresh(rootPath)
-      return meta
+      return createWorktreeForWorkspace(rootPath, workspaceId, rawName, baseRef)
     },
-    [rootPath, workspaceId, upsertWorktree, addAdditionalRoot],
+    [rootPath, workspaceId],
   )
 
   const checkoutPr = useCallback(

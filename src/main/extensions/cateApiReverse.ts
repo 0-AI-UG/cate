@@ -31,7 +31,11 @@ export interface ReverseSession {
   /** First-party (terminal/agent) callers skip the extension-enabled gate and
    *  browser consent prompt. Absent for extension-server sessions (the default).
    *  `extensionId` may be a sentinel string for first-party sessions. */
-  caller?: 'first-party'
+  caller?: 'first-party' | 'cate-agent'
+  /** Owning Cate Agent session/panel for native worktree affinity. */
+  panelId?: string
+  /** Runtime-absolute cwd of the embedded supervisor session. */
+  originCwd?: string
   /** Scopes granted to a first-party caller (used instead of a manifest's
    *  `cateApi`). Absent for extension-server sessions. */
   grantedScopes?: string[]
@@ -100,7 +104,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
           workspaceId: session.workspaceId,
           // No owning panel/sender on the server side: panel-scoped storage and
           // forwarded methods target the workspace best-effort.
-          panelId: undefined,
+          panelId: session.panelId,
           // State-mutating methods (editor.openFile / canvas.createPanel /
           // panel.setTitle) need a renderer. The server has no sender, so we
           // forward to the active main window (best-effort — there's no
@@ -110,6 +114,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
           // gate + manifest scopes); set for first-party terminal/agent callers.
           caller: session.caller,
           grantedScopes: session.grantedScopes,
+          originCwd: session.originCwd,
         },
         method,
         parsed.args,

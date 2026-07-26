@@ -1,0 +1,8 @@
+{
+  "name": "cate-orchestrator",
+  "description": "Native tools for Cate Agent to create, prompt, inspect, wait for, and stop visible coding agents.",
+  "private": true,
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

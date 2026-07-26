@@ -3,6 +3,7 @@
 // =============================================================================
 
 import type { BrowserTab } from '../../shared/types'
+import type { CodingAgentLaunch } from '../../shared/codingAgentRuns'
 
 // -----------------------------------------------------------------------------
 // Base panel props
@@ -20,6 +21,7 @@ export interface PanelProps {
 
 export interface TerminalPanelProps extends PanelProps {
   initialInput?: string
+  codingAgentLaunch?: CodingAgentLaunch
 }
 
 export interface EditorPanelProps extends PanelProps {

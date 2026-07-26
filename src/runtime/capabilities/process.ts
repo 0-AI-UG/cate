@@ -275,6 +275,8 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       const id = opts.id ?? `pty-${Date.now()}-${Math.round(seq++ + Math.random() * 1e6).toString(36)}`
       const ptySpawn = await getPtySpawn()
       const shell = deps.resolveShell(opts.shell)
+      const executable = opts.command?.executable ?? shell.path
+      const args = opts.command?.args ?? shell.args
       const cwd = opts.cwd || os.homedir()
       // Merge caller env over the host env; when a CLI endpoint was injected
       // (CATE_API), also put the bundled `cate` on PATH so agents can run it.
@@ -289,7 +291,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
           await deps.hooks.prepareWorkspace(cwd, opts.agentHookConfig, opts.workspaceBaseCwd)
         } catch { /* hook injection unavailable */ }
       }
-      const pty = ptySpawn(shell.path, shell.args, {
+      const pty = ptySpawn(executable, args, {
         name: 'xterm-256color',
         cols: opts.cols,
         rows: opts.rows,
@@ -314,7 +316,12 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
         deps.agentPresence?.drop(id)
         onExit(id, exitCode)
       })
-      return { id, pid: pty.pid, notice: shell.notice, shell: shell.path }
+      return {
+        id,
+        pid: pty.pid,
+        notice: opts.command ? undefined : shell.notice,
+        shell: executable,
+      }
     },
 
     write(id: string, data: string): void {

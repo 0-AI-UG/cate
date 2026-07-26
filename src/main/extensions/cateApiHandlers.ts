@@ -88,7 +88,7 @@ import type { PanelType } from '../../shared/types'
  *  editor.active (cate.panel.list is the single PANEL enumeration surface —
  *  browser panels carry `url`, the focused entry answers "what is the user
  *  looking at") and agent.run (compose open -> send -> dispose). */
-const CATE_API_VERSION = 5
+const CATE_API_VERSION = 6
 
 const FORWARD_TIMEOUT_MS = 10_000
 
@@ -122,11 +122,13 @@ export interface InvokeScope {
   /** Who is calling. First-party (terminal/agent via the CLI/reverse endpoint)
    *  callers are trusted: they skip the extension-enabled gate and the browser
    *  consent prompt. Undefined is treated as 'extension'. */
-  caller?: 'extension' | 'first-party'
+  caller?: 'extension' | 'first-party' | 'cate-agent'
   /** Scopes the caller was granted. For first-party callers this is supplied by
    *  the env-manager instead of a manifest; when absent the extension manifest's
    *  `cateApi` is used. */
   grantedScopes?: string[]
+  /** Runtime-absolute cwd of an embedded supervisor session. */
+  originCwd?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +265,12 @@ export function requiredScopeFor(method: string): string | null | undefined {
       return 'theme'
     case 'cate.ui.notify':
       return 'ui'
+    case 'cate.codingAgent.create':
+    case 'cate.codingAgent.send':
+    case 'cate.codingAgent.wait':
+    case 'cate.codingAgent.inspect':
+    case 'cate.codingAgent.stop':
+      return 'coding-agent'
     case 'cate.editor.openFile':
       return 'editor.write'
     // Unlike the self-identity panel.* methods below, these read or steer OTHER
@@ -413,16 +421,24 @@ export async function dispatchCateInvoke(
   args: unknown,
 ): Promise<InvokeResult> {
   const { extensionId, workspaceId, panelId } = scope
+  const trustedCaller = scope.caller === 'first-party' || scope.caller === 'cate-agent'
 
   // Security: only enabled, known extensions may call the host. First-party
-  // (terminal/agent) callers are trusted and skip this gate.
-  if (scope.caller !== 'first-party' && (!extensionManager.isKnown(extensionId) || !extensionManager.isEnabled(extensionId))) {
+  // terminals and the embedded Cate Agent are trusted and skip this gate.
+  if (!trustedCaller && (!extensionManager.isKnown(extensionId) || !extensionManager.isEnabled(extensionId))) {
     return { error: 'not-enabled', method }
+  }
+
+  // Coding-agent orchestration is the embedded supervisor's privileged surface.
+  // Ordinary terminals, extension webviews, and spawned workers never receive
+  // its token, even if they self-declare a matching scope.
+  if (method.startsWith('cate.codingAgent.') && scope.caller !== 'cate-agent') {
+    return { error: 'cate-agent-only', method }
   }
 
   // The terminal/agent endpoint must never move the user's window, panel focus,
   // or canvas camera. Extensions retain panel.focus behind their panel scope.
-  if (scope.caller === 'first-party' && method === 'cate.panel.focus') {
+  if (trustedCaller && method === 'cate.panel.focus') {
     return unsupported(method)
   }
 
@@ -457,6 +473,20 @@ export async function dispatchCateInvoke(
     }
   }
 
+  if (method.startsWith('cate.codingAgent.')) {
+    const routedArgs = {
+      ...((args ?? {}) as Record<string, unknown>),
+      _cateOriginCwd: scope.originCwd,
+    }
+    return scope.forward({
+      extensionId,
+      workspaceId,
+      panelId: panelId ?? '',
+      method,
+      args: routedArgs,
+    })
+  }
+
   // Storage (handled in main, backed by storage.ts). Routed by prefix — mirrors
   // requiredScopeFor's storage.* branch — so dispatchStorage's switch is the sole
   // enumeration of the six storage methods.
@@ -474,7 +504,7 @@ export async function dispatchCateInvoke(
     // Two flavors of the same gate: extensions get a one-time-per-session
     // consent prompt (mirroring agent); the first-party CLI was already checked
     // against its Browser read/control cells above, so it needs no prompt.
-    if (scope.caller !== 'first-party' && !(await ensureConsent(extensionId, 'browser'))) {
+    if (!trustedCaller && !(await ensureConsent(extensionId, 'browser'))) {
       return { error: 'consent-denied', method }
     }
     const result = await forwardToOwner(target.wc, { extensionId, workspaceId, panelId: panelId ?? '', method, args })
@@ -504,7 +534,7 @@ export async function dispatchCateInvoke(
     // self-declared, and the terminal consent story (prompt vs toggle) is
     // deferred until a real extension consumer exists. Revisit alongside
     // ConsentCapability if one appears.
-    if (scope.caller !== 'first-party') {
+    if (!trustedCaller) {
       return { error: 'terminal-first-party-only', method }
     }
     const a = (args ?? {}) as { panelId?: string }

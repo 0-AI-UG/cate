@@ -16,6 +16,7 @@ import { Markdown, CursorBlink } from './ChatMarkdown'
 import { ToolCard, AskUserToolView } from './ChatToolCard'
 import { SubagentCard } from './ChatSubagentCard'
 import { PlanReadyCard } from './ChatPlanCard'
+import { CodingAgentCard } from './ChatCodingAgentCard'
 import { formatTime } from './chatShared'
 
 interface MessageRowProps {
@@ -124,6 +125,9 @@ export const MessageRow = memo(function MessageRow({
         stale={!isLast}
       />
     )
+  }
+  if (msg.type === 'tool' && msg.name === 'create_coding_agent') {
+    return <CodingAgentCard msg={msg} shimmer={shimmer} />
   }
   return <ToolCard msg={msg} shimmer={shimmer} />
 })

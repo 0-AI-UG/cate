@@ -29,6 +29,10 @@ export interface PtyCreateOptions {
   cwd: string
   /** Requested shell; the host resolves + falls back as today (resolveShell). */
   shell?: string
+  /** Optional exact process launch. Only main-process trusted code may set
+   *  this; renderer IPC accepts a closed CodingAgentLaunch instead and main
+   *  resolves it through the canonical agent registry. */
+  command?: { executable: string; args: string[] }
   /** Caller-provided id. Used over the wire so the client registers its data
    *  stream before the create round-trip resolves (no early-output race). */
   id?: string

@@ -18,6 +18,7 @@ vi.mock('./piRpcClient', () => ({ PiRpcClient: vi.fn() }))
 vi.mock('./installPlanMode', () => ({ installPlanModeExtension: vi.fn() }))
 vi.mock('./installCanvasMode', () => ({ installCanvasModeExtension: vi.fn() }))
 vi.mock('./installAskUser', () => ({ installAskUserExtension: vi.fn() }))
+vi.mock('./installOrchestrator', () => ({ installOrchestratorExtension: vi.fn() }))
 vi.mock('./installMcpAdapter', () => ({ installMcpAdapter: vi.fn() }))
 vi.mock('./codingDir', () => ({
   hostCodingDir: vi.fn(() => '/agent'),
@@ -31,7 +32,7 @@ vi.mock('./codingDir', () => ({
 vi.mock('./customModels', () => ({ mirrorModelsToWorkspace: vi.fn() }))
 vi.mock('../../skills/main/skillsMirror', () => ({ syncWorkspaceSkills: vi.fn() }))
 vi.mock('../../main/extensions/workspaceCateApi', () => ({
-  workspaceCateApi: { ensureEndpoint: vi.fn().mockResolvedValue(null) },
+  workspaceCateApi: { ensureCateAgentEndpoint: vi.fn().mockResolvedValue(null) },
 }))
 vi.mock('../../main/workspaceStateStore', () => ({ isProjectTrusted: vi.fn(() => false) }))
 

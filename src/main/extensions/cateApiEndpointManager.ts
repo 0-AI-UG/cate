@@ -7,7 +7,7 @@ import type { Runtime } from '../runtime/types'
 import { getWorkspaceInfo } from '../workspaceManager'
 import type { ReverseTunnelBinding } from './cateApiReverse'
 
-type CateApiEndpointOwner = 'extension' | 'first-party'
+type CateApiEndpointOwner = 'extension' | 'first-party' | 'cate-agent'
 
 interface CateApiEndpoint {
   runtime: Runtime
@@ -28,7 +28,9 @@ interface CateApiEndpointOptions {
   extensionId: string
   workspaceId: string
   listenerId: string
-  caller?: 'first-party'
+  caller?: 'first-party' | 'cate-agent'
+  panelId?: string
+  originCwd?: string
   grantedScopes?: string[]
 }
 
@@ -73,6 +75,8 @@ export class CateApiEndpointManager {
         token,
         runtime,
         caller: options.caller,
+        panelId: options.panelId,
+        originCwd: options.originCwd,
         grantedScopes: options.grantedScopes,
       })
       let binding: ReverseTunnelBinding

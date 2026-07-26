@@ -7,6 +7,7 @@ import type { Theme } from './theme'
 export type { Theme } from './theme'
 import type { AgentId } from './agents'
 import type { AgentHookMode } from './agentHooks'
+import type { CodingAgentLaunch, CodingAgentRun } from './codingAgentRuns'
 
 // -----------------------------------------------------------------------------
 // Geometry primitives
@@ -133,6 +134,13 @@ export interface PanelState {
    *  On restore, TerminalPanel types the agent's resume command into the
    *  fresh shell and clears this. */
   agentSession?: TerminalAgentSession
+  /** Terminal panels created by Cate Agent carry durable ownership metadata.
+   *  This is the native mission/run record; live status is derived from the
+   *  terminal registry and agent hooks rather than persisted stale state. */
+  codingAgentRun?: CodingAgentRun
+  /** One-shot direct-process launch. Cleared immediately after PTY creation so
+   *  restoring a workspace never repeats an already-started task. */
+  codingAgentLaunch?: CodingAgentLaunch
   /** Extension panels only: which installed extension + which of its declared
    *  panels this instance renders. */
   extensionId?: string
@@ -1068,6 +1076,10 @@ export interface ProjectSessionPanel {
   /** Agent-CLI session running in this terminal at save time. Machine-local
    *  (session ids reference stores on this machine's runtime host). */
   agentSession?: TerminalAgentSession
+  /** Cate-owned coding-agent mission metadata. The initial one-shot launch is
+   *  deliberately excluded; restoring may resume a stamped CLI session but
+   *  never repeats the original task. */
+  codingAgentRun?: CodingAgentRun
 }
 
 // -----------------------------------------------------------------------------

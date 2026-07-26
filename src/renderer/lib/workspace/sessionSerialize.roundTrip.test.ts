@@ -190,6 +190,36 @@ describe('workspace.json + session.json round-trip', () => {
     expect(JSON.stringify(wsFile)).not.toContain(agentSession.sessionId)
   })
 
+  it('round-trips Cate-owned run metadata but never its one-shot launch', () => {
+    const { snapshot } = buildSnapshot()
+    const codingAgentRun = {
+      id: 'run-1',
+      agentId: 'codex' as const,
+      panelId: 'term-1',
+      prompt: 'Implement the parser',
+      createdAt: 123,
+      worktreeId: 'wt-1',
+      followUps: [{ prompt: 'Add the edge-case test', sentAt: 456 }],
+    }
+    snapshot.panels!['term-1'] = {
+      ...snapshot.panels!['term-1'],
+      codingAgentRun,
+      codingAgentLaunch: {
+        runId: 'run-1',
+        agentId: 'codex',
+        prompt: 'Implement the parser',
+      },
+    }
+
+    const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT, ''))
+    const sessFile = throughDisk(buildSessionFile(snapshot))
+    const restored = projectFilesToSnapshot(wsFile, sessFile, ROOT)
+
+    expect(restored.panels!['term-1'].codingAgentRun).toEqual(codingAgentRun)
+    expect(restored.panels!['term-1'].codingAgentLaunch).toBeUndefined()
+    expect(JSON.stringify(wsFile)).not.toContain('Implement the parser')
+  })
+
   it('a file outside the workspace root keeps its absolute path through the round trip', () => {
     const { snapshot } = buildSnapshot()
     snapshot.panels!['ed-out'] = panel({

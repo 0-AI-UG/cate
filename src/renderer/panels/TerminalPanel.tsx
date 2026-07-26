@@ -66,6 +66,7 @@ export default function TerminalPanel({
   workspaceId,
   nodeId,
   initialInput,
+  codingAgentLaunch,
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const renderBoxRef = useRef<HTMLDivElement>(null)
@@ -356,6 +357,7 @@ export default function TerminalPanel({
         workspaceId,
         cwd: rootPathRef.current || undefined,
         initialInput,
+        codingAgentLaunch,
         resumeCommand,
         placementGroupId,
       })
@@ -403,7 +405,7 @@ export default function TerminalPanel({
 
       detachAndDisconnect()
     }
-  }, [panelId, workspaceId, nodeId, initialInput, placementGroupId, retryKey, ptyEpoch])
+  }, [panelId, workspaceId, nodeId, initialInput, codingAgentLaunch, placementGroupId, retryKey, ptyEpoch])
 
   // -------------------------------------------------------------------------
   // Focus xterm when this node becomes the focused node

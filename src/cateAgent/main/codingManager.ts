@@ -38,6 +38,7 @@ import { broadcastToAll } from '../../main/windowRegistry'
 import { installPlanModeExtension } from './installPlanMode'
 import { installCanvasModeExtension } from './installCanvasMode'
 import { installAskUserExtension } from './installAskUser'
+import { installOrchestratorExtension } from './installOrchestrator'
 import { installMcpAdapter } from './installMcpAdapter'
 import { isProjectTrusted } from '../../main/workspaceStateStore'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
@@ -52,6 +53,7 @@ import { agentMessageText, lastAssistantMessage } from '../../shared/agentMessag
 
 interface AgentSession {
   panelId: string
+  workspaceId: string
   /** The runtime hosting this session (local or remote). */
   runtime: Runtime
   /** Runtime-absolute workspace path (the locator's path part). */
@@ -177,6 +179,7 @@ export class CodingManager {
       await installPlanModeExtension(runtime, cwd)
       await installCanvasModeExtension(runtime, cwd)
       await installAskUserExtension(runtime, cwd)
+      await installOrchestratorExtension(runtime, cwd)
       // Register pi-mcp-adapter in <cwd>/.cate/cate-agent/settings.json so pi
       // auto-installs + loads it on session start (MCP driven by <cwd>/.pi/mcp.json).
       //
@@ -196,10 +199,10 @@ export class CodingManager {
         PI_CODING_AGENT_DIR: hostCodingDir(runtimeId, cwd),
       }
 
-      // First-party CATE_API endpoint: give pi CATE_API/CATE_TOKEN so a `cate`
-      // CLI run from a tool can reach the dispatch core. Null when the CLI
-      // setting is disabled (the gate) — then nothing is injected (fail closed).
-      const cateApi = await workspaceCateApi.ensureEndpoint(opts.workspaceId)
+      // The embedded supervisor gets a panel-bound endpoint with orchestration
+      // scope. Worker terminals receive the ordinary first-party endpoint and
+      // therefore cannot recursively spawn agents.
+      const cateApi = await workspaceCateApi.ensureCateAgentEndpoint(opts.workspaceId, opts.panelId, cwd)
       if (cateApi) {
         env.CATE_API = `http://127.0.0.1:${cateApi.port}`
         env.CATE_TOKEN = cateApi.token
@@ -255,6 +258,7 @@ export class CodingManager {
 
       this.sessions.set(opts.panelId, {
         panelId: opts.panelId,
+        workspaceId: opts.workspaceId,
         runtime,
         cwd,
         client,
@@ -512,6 +516,7 @@ export class CodingManager {
     try { session.client.rejectAllPending('Pi session disposed') } catch { /* noop */ }
     try { await session.client.stop() } catch { /* noop */ }
     this.sessions.delete(panelId)
+    workspaceCateApi.disposeCateAgentEndpoint(session.workspaceId, panelId)
     // Drop any extension handle that routed to this session (e.g. the owning
     // window went away) so a stale handle can't outlive its client.
     for (const [handle, ext] of this.extSessions) {
