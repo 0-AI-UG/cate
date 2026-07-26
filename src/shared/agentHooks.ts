@@ -47,10 +47,10 @@ export type AgentHookEventKind =
   | 'turn-start'
   | 'turn-end'
   | 'permission-wait'
-  /** A blocked permission-wait resolved and the turn is in flight again
-   *  (claude/codex PostToolUse, opencode permission.replied). Also fires on
-   *  every ordinary tool call for claude/codex — consumers treat it as an
-   *  idempotent "the turn is running" re-assertion. */
+  /** An idempotent "the turn is running" re-assertion. OpenCode emits it when
+   *  a permission reply arrives; other CLIs emit it after a tool completes.
+   *  Claude/Codex/Grok do not hook the actual approval reply, so renderer
+   *  terminal input supplies that earlier resume edge. */
   | 'turn-resume'
 
 export interface AgentHookEvent {
@@ -372,9 +372,9 @@ const claudeSpec: AgentHookSpec = {
     switch (p.hook_event_name) {
       case 'SessionStart': return { kind: 'session-start', ...base }
       case 'UserPromptSubmit': return { kind: 'turn-start', ...base }
-      // Fires after EVERY executed tool call; the one after a permission-wait
-      // is the approval resolution (denial produces no PostToolUse — the turn
-      // just Stops).
+      // Fires after EVERY executed tool call. This confirms the turn is still
+      // active, but is too late to represent approval resolution: an approved
+      // long-running tool fires it only after finishing.
       case 'PostToolUse': return { kind: 'turn-resume', ...base }
       case 'Stop': return { kind: 'turn-end', ...base }
       case 'SessionEnd': return { kind: 'session-end', ...base }
@@ -456,8 +456,9 @@ const codexSpec: AgentHookSpec = {
       case 'UserPromptSubmit': return { kind: 'turn-start', ...base }
       case 'Stop': return { kind: 'turn-end', ...base }
       case 'PermissionRequest': return { kind: 'permission-wait', ...base }
-      // Fires after EVERY executed tool call; the one after a PermissionRequest
-      // is the approval resolution (denial produces no PostToolUse).
+      // Fires after EVERY executed tool call. This confirms the turn is still
+      // active, but is too late to represent approval resolution: an approved
+      // long-running tool fires it only after finishing.
       case 'PostToolUse': return { kind: 'turn-resume', ...base }
       // SessionEnd never fires (pinned live) — no mapping on purpose.
       default: return null
@@ -721,8 +722,8 @@ const grokSpec: AgentHookSpec = {
     switch (p.hookEventName) {
       case 'session_start': return { kind: 'session-start', ...base }
       case 'user_prompt_submit': return { kind: 'turn-start', ...base }
-      // Fires after every executed tool call; the one following a
-      // permission_prompt is the approval resolution.
+      // Fires after every executed tool call. Terminal input supplies the
+      // earlier approval-answer edge for long-running approved tools.
       case 'post_tool_use': return { kind: 'turn-resume', ...base }
       case 'stop': return { kind: 'turn-end', ...base }
       case 'session_end': return { kind: 'session-end', ...base }

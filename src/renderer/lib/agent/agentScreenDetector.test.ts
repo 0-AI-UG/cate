@@ -6,6 +6,7 @@ import {
   stopAgentScreenDetector,
   noteAgentPresence,
   noteAgentHookEvent,
+  noteAgentInputSubmitted,
   forgetAgentTracker,
 } from './agentScreenDetector'
 import { sendOsNotification } from '../notifications/osNotificationSend'
@@ -117,12 +118,19 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     expect(sendOsNotification).not.toHaveBeenCalled()
   })
 
-  it('session-start resets to idle silently', () => {
+  it('a new session-start resets to idle silently', () => {
     noteAgentPresence(PTY, true)
     noteAgentHookEvent(hookEvent('turn-start'))
-    noteAgentHookEvent(hookEvent('session-start'))
+    noteAgentHookEvent({ ...hookEvent('session-start'), sessionId: 'session-2' })
     expect(state()).toBe('waitingForInput')
     expect(sendOsNotification).not.toHaveBeenCalled()
+  })
+
+  it('a deferred session-start for the active session cannot overwrite its running turn', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start', 'codex'))
+    noteAgentHookEvent(hookEvent('session-start', 'codex'))
+    expect(state()).toBe('running')
   })
 
   it('permission-wait mid-turn → waitingForInput + "needs permission" notification', () => {
@@ -175,6 +183,16 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     noteAgentHookEvent(hookEvent('permission-wait'))
     expect(state()).toBe('waitingForInput')
     expect(sendOsNotification).toHaveBeenCalledTimes(2) // a NEW approval is due
+  })
+
+  it('submitting a permission answer resumes immediately, before PostToolUse', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start', 'codex'))
+    noteAgentHookEvent(hookEvent('permission-wait', 'codex'))
+    expect(state()).toBe('waitingForInput')
+
+    noteAgentInputSubmitted(PTY)
+    expect(state()).toBe('running')
   })
 
   it('repeated permission-wait without a resume does not re-notify', () => {
