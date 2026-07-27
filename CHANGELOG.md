@@ -6,6 +6,244 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.6.0-beta.3] - 2026-07-26
+
+This beta sharpens browser automation, workspace navigation, remote safety, and agent status reporting.
+
+### Added
+
+- **Browser automation controls**: agents and the Cate CLI can inspect pages, manage tabs, enter trusted input, evaluate scripts, read console output, handle dialogs, and capture screenshots through a smaller, clearer command surface.
+- **Workspace navigation commands**: the command palette can switch directly between workspaces, backed by repaired workspace keyboard shortcuts.
+
+### Changed
+
+- **Clearer Cate CLI workflows**: the command set and skill guidance now focus on the supported browser, terminal, file, and panel workflows.
+- **More reliable agent status**: running and waiting states now follow the coding-agent lifecycle more consistently.
+
+### Fixed
+
+- **Remote workspace path validation**: relative remote paths are rejected before they can resolve against an unintended directory.
+
+## [1.6.0-beta.2] - 2026-07-25
+
+Browser panels gain agent-ready controls and secure credential profiles.
+
+### Added
+
+- **Browser control API**: automation can navigate, inspect, click, type, and capture browser panels without relying on page-specific integrations.
+- **Credential profiles**: saved browser credentials can be imported, selected, filled, and cleared through the host UI without exposing secrets to page scripts.
+
+### Fixed
+
+- **Portable browser storage**: SQLite-backed browser history and credential features load only on supported targets, preventing startup failures elsewhere.
+
+## [1.6.0-beta.1] - 2026-07-24
+
+Major agent, workspace, terminal, and security improvements for the 1.6 beta cycle.
+
+### Added
+
+- **Unified Cate Agent chats**: chats are workspace-owned, can be shared between sidebar and panel hosts, and survive moving between views.
+- **Multiple custom AI providers**: configure and choose more than one OpenAI-compatible provider.
+- **Worktree-aware agent setup**: agent configuration and hooks work consistently from the main checkout and linked worktrees.
+
+### Changed
+
+- **Safer workspace trust**: untrusted repositories cannot restore or autosave repo-controlled layouts until the user explicitly trusts them.
+- **Themeable wallpaper scrim**: themes can control the contrast layer above canvas backgrounds.
+
+### Fixed
+
+- **Terminal rendering and focus**: split terminals keep focus, and GPU rendering artifacts recover without manual resizing.
+- **Worktree actions**: failures are surfaced cleanly and closing a canvas preserves panels that were moved elsewhere.
+- **Canvas gestures**: input no longer remains stuck when a gesture target unmounts.
+
+## [1.5.3] - 2026-07-21
+
+### Added
+
+- **Browsable extension catalog**: extensions can be explored by category, searched, and paged instead of appearing as one flat list.
+
+### Changed
+
+- **Shared Cate Agent pickers**: the composer now reuses the standard model and worktree pickers for consistent selection behavior.
+
+## [1.5.2] - 2026-07-21
+
+Agent automation release centered on durable hook-driven status, explicit CLI permissions, extension URL mode, and cross-platform release reliability.
+
+### Added
+
+- **Unified agent hooks**: supported coding agents report lifecycle, permission, and needs-input events through one hook system, with state surviving app restarts.
+- **Cate CLI permission matrix**: read and control capabilities can be granted independently, with a dedicated terminal command group and per-feature settings.
+- **URL-mode extensions**: extension panels can load a declared URL and still participate in off-screen culling.
+- **Grok support and centralized agent registry**: Grok joins the supported agents, with shared metadata and detection policy.
+
+### Changed
+
+- **Non-disruptive Cate automation**: CLI-driven actions avoid stealing focus or disturbing the active workspace.
+- **Detached window chrome**: detached-window controls share the dock tab-bar row for a more compact layout.
+
+### Fixed
+
+- **Cross-platform release builds**: deterministic installs and a Windows runtime fix unblock builds with newer Visual Studio toolchains.
+
+## [1.5.1] - 2026-07-15
+
+### Fixed
+
+- **Workspace and input hardening**: workspace transitions, gesture cleanup, and related input edge cases are more defensive.
+
+## [1.5.0] - 2026-07-15
+
+Stable release of the 1.4 beta cycle, introducing the redesigned Cate Agent, extension platform, agent-facing Cate CLI, and major shell/navigation updates.
+
+### Fixed
+
+- **macOS fullscreen sidebar**: the traffic-light inset collapses correctly when the left sidebar enters fullscreen.
+
+## [1.4.0-beta.6] - 2026-07-15
+
+### Fixed
+
+- **Focus retention**: panels and dialogs keep keyboard focus through common click, drag, and overlay transitions.
+- **Canvas and docking polish**: corrected split rendering, tab-drop previews, sidebar chrome, and window-close quit guards.
+- **Agent model compatibility**: provider catalog changes no longer break the available-model list.
+
+### Changed
+
+- **Editor and terminal overlays**: the Markdown toggle floats over the editor, while terminal search no longer collides with the worktree chip.
+
+## [1.4.0-beta.5] - 2026-07-14
+
+### Added
+
+- **Three-state sidebar rail**: the left rail returns with collapsed, compact, and expanded states plus drag-and-drop between rails.
+- **Responsive canvas toolbar**: the toolbar collapses into a corner control when space is tight.
+- **Workspace navigation shortcuts**: next/previous workspace bindings are customizable.
+
+### Fixed
+
+- **Persistent browser tabs**: webview-backed tabs stay mounted when switching, avoiding unwanted page reloads.
+- **Detached macOS windows**: detached windows regain their header bar and controls.
+
+## [1.4.0-beta.4] - 2026-07-14
+
+### Changed
+
+- **Application chrome redesign**: window chrome, browser tabs, sidebars, and theme integration were reworked as one cohesive shell update.
+
+## [1.4.0-beta.3] - 2026-07-13
+
+### Added
+
+- **Cate Agent sidebar home**: dedicated composer, chat tabs, navigation rail, and merge-target controls.
+- **Agent-oriented Cate CLI**: the host API and CLI surface were reshaped around safe panel, terminal, browser, and workspace automation and enabled by default.
+- **Structured verifier results**: Cate Agent checks report individual verdicts instead of a single opaque outcome.
+
+### Changed
+
+- **Consolidated application state**: legacy migrations and duplicated application systems were removed.
+
+### Fixed
+
+- **Canvas undo**: undo restores deleted panels rather than leaving ghost nodes.
+- **Terminal GPU rendering**: glyph-atlas desynchronization and process-wide WebGL context overflow are contained.
+- **macOS notarization**: native pi-agent addons are signed before packaging.
+
+## [1.4.0-beta.2] - 2026-07-08
+
+### Changed
+
+- **Cate Agent chat motion**: the chat window now morphs cleanly into and out of the toolbar button with consolidated loading states.
+- **Observer chat front door**: observer sessions can be selected and opened through the same chat surface.
+
+## [1.4.0-beta.1] - 2026-07-07
+
+First public beta of the toolbar-driven Cate Agent and extension platform.
+
+### Added
+
+- **Always-on Cate Agent**: workspace chat can observe work, launch parallel attempts, control terminals, manage worktrees, and resume jobs through a toolbar-anchored interface.
+- **Extension system**: isolated, server-backed extension panels with permissions, storage, file-drop support, catalog provisioning, and agent conversation APIs.
+- **Agent-facing browser and CLI control**: terminal agents and extensions can drive browser panels and scoped `cate` command groups.
+- **Multi-repository Source Control**: repositories nested below a workspace root are discovered independently.
+- **Worktree-aware navigation**: sidebars and the minimap group or color panels by worktree.
+
+### Fixed
+
+- **Terminal renderer exhaustion**: WebGL contexts are budgeted process-wide and fall back to the DOM renderer instead of producing blank terminals.
+- **Canvas recovery**: corrupt saved geometry is ignored, selection/focus is unified, and group dragging remains stable.
+- **Windows path handling**: allowed roots use native real paths so extension and workspace operations work across platforms.
+
+## [1.3.2] - 2026-06-24
+
+### Added
+
+- **Grow-to-fill placement**: recommended panel placement can expand into available canvas space.
+
+### Fixed
+
+- **Worktree restore authority**: the saved worktree tag determines a panel's working directory after reload.
+
+## [1.3.2-beta.2] - 2026-06-21
+
+### Added
+
+- **GPU text rasterization toggle**: users can disable GPU text rasterization when a driver or display setup renders text poorly.
+
+### Fixed
+
+- **Runtime startup**: the packaged runtime includes the complete file-watcher dependency closure and retries failed local starts.
+- **Staged updates**: the updater stops rechecking once an update is downloaded, preserving the ready-to-install state.
+
+## [1.3.2-beta.1] - 2026-06-21
+
+### Added
+
+- **Unified browser experience**: browser panels gain history, bookmarks, tabs, settings, and a start page.
+- **OSC 52 clipboard support**: terminal applications can write to the system clipboard through OSC 52.
+- **Worktree panel cleanup**: worktree removal and symlink creation clean up associated panels and metadata.
+
+### Changed
+
+- **Native recursive file watching**: workspace watching moved to a pooled native watcher to avoid descriptor exhaustion on large projects.
+- **Canonical canvas selection**: focus, single selection, and group selection share one state model.
+
+### Fixed
+
+- **Terminal worktree restore**: restored terminals return to their worktree working directory.
+- **Updater prompts**: downloaded-update prompts appear once per version rather than every polling interval.
+- **Agent worktree switching**: a running agent moves with its selected worktree.
+
+## [1.3.1] - 2026-06-15
+
+Stability and editor release with hardened persistence, external-file conflict handling, refined shortcuts, and runtime packaging improvements.
+
+### Added
+
+- **External file-change handling**: editor panels detect disk changes and offer explicit reload/keep resolutions.
+- **Editor customization**: configurable editor font family and copy buttons on Markdown code blocks.
+- **Sidebar workspace controls**: expand or collapse all workspaces from the sidebar header.
+
+### Changed
+
+- **Runtime naming**: the remote companion was renamed and packaged consistently as the Cate runtime.
+- **Telemetry notice**: packaged builds use informational always-on telemetry with a one-time census for existing installs.
+
+### Fixed
+
+- **JSON state reliability**: atomic writes retry transient Windows rename failures, and session restore tolerates damaged state.
+- **Terminal redraw stability**: phantom resizes no longer duplicate full-screen TUI frames.
+- **Hidden-file synchronization**: hidden files remain watched and resync when reopened.
+- **Intel macOS runtime**: macOS packages include the x64 runtime built on the supported Intel runner.
+
+## [1.3.0] - 2026-06-09
+
+### Added
+
+- **Multi-node canvas selection**: marquee-select multiple panels, drag them as a group, and close the selection in one action.
+
 ## [1.2.7] - 2026-06-09
 
 ### Fixed
@@ -21,6 +259,202 @@ Bug-fix release for terminals detached into their own window.
 
 - **Detached terminals no longer render blank or grey**: the GPU renderer now rebuilds and repaints once the new window is actually shown, instead of staying empty until the next output.
 - **Detached terminal scrollback keeps its formatting**: replayed history is written with proper line breaks, so multi-column output (like `ls`) lines up again instead of cascading down the screen.
+
+## [1.2.5] - 2026-06-09
+
+### Changed
+
+- **Modular main process and renderer state**: sessions, terminals, panel windows, the app store, and IPC bridge were split into focused modules.
+- **Cross-window panels**: detached panel rows show live agent state, provider branding, ports, and worktree accents while keeping scrollback synchronized.
+
+### Added
+
+- **In-app update-ready modal**: downloaded updates offer restart-now or install-on-quit actions inside Cate.
+
+## [1.2.5-beta.4] - 2026-06-08
+
+Release-candidate rebuild of beta.3 with no additional user-facing changes.
+
+## [1.2.5-beta.3] - 2026-06-08
+
+### Fixed
+
+- **Reliable update archives**: differential downloads are disabled to avoid partially assembled macOS bundles.
+- **Lean native unpacking**: packaged native dependencies are limited to the required runtime floor.
+
+## [1.2.5-beta.2] - 2026-06-08
+
+### Fixed
+
+- **Install-loop recovery**: repeated failed update installs now reach the manual-download fallback instead of resetting their retry counter forever.
+- **Release availability**: macOS releases no longer wait on the end-to-end suite.
+
+## [1.2.5-beta.1] - 2026-06-08
+
+### Added
+
+- **Self-healing updater diagnostics**: failed installs are persisted, retried, and eventually routed to a clear manual fallback, with a development update harness for verification.
+- **Worktree identity on panels**: panel overlays expose the active worktree and apply its accent color.
+
+### Fixed
+
+- **Remote SSH parsing**: invalid key parser results no longer crash the connection flow.
+- **Windows/Linux menu access**: frameless windows regain an accessible title-bar menu.
+- **Canvas typing stability**: typing to the end of a line no longer shifts the canvas and exposes a background gap.
+- **Agent setup errors**: missing pi-agent directories are not mislabeled as permission failures.
+
+## [1.2.4] - 2026-06-08
+
+### Added
+
+- **Remote SSH key workflow**: choose a private key with a native picker, validate its format, and get clearer disconnect logging.
+
+### Changed
+
+- **Curated skills catalog**: catalog sources require descriptions, duplicate rows are removed, and GitHub source links stay visible.
+- **Command palette navigation**: keyboard navigation and action routing are unified across commands and overview panels.
+
+## [1.2.3] - 2026-06-07
+
+### Added
+
+- **Cross-agent skills manager**: discover and manage reusable skills for supported agents.
+- **Multi-canvas sessions**: project sessions can persist and restore more than one canvas.
+
+## [1.2.2] - 2026-06-07
+
+### Added
+
+- **Custom Windows/Linux chrome**: frameless windows receive native-feeling window controls and a consistent themed title bar.
+- **Themed placement picker**: placement previews and worktree colors follow the active theme.
+
+### Changed
+
+- **Stock updater path**: the custom updater UI was replaced with electron-updater's reliable install-on-quit flow and macOS recovery handling.
+
+### Fixed
+
+- **Saved layouts**: layouts apply to the active canvas rather than a stale/default canvas.
+- **Window and terminal titles**: display names derive from folder names instead of full filesystem paths.
+- **Dock tab sizing**: tab titles remain readable when no worktree pill is present.
+
+## [1.2.1] - 2026-06-06
+
+### Changed
+
+- **Theme-aware agent surfaces**: agent UI colors track the active theme.
+- **Snap-preview dragging**: drag previews show the eventual grid-snapped placement.
+
+### Fixed
+
+- **Update restart flow**: installing an update relaunches Cate, and the update affordance remains visible with an empty right sidebar.
+
+## [1.2.0] - 2026-06-06
+
+### Added
+
+- **Parallel-worktree toolbar**: create and manage worktrees directly from a canvas toolbar menu.
+- **Friendly application errors**: common failures are translated into actionable messages.
+
+### Changed
+
+- **Simpler canvas model**: canvas regions were removed in favor of shared modal and placement primitives.
+- **Spatial territories**: worktree territory outlines were slimmed down for a quieter canvas.
+
+### Fixed
+
+- **Cross-zoom dragging**: dock-to-canvas drag previews scale correctly for the destination canvas.
+
+## [1.2.0-beta.1] - 2026-06-06
+
+First beta of spatial worktrees and the hand-editable JSON persistence model.
+
+### Added
+
+- **Spatial worktree territories**: worktrees appear as live, colored canvas territories with tab pills and session persistence.
+- **Hand-editable application state**: Cate settings and UI state moved to readable JSON files with consolidated provider preferences.
+- **Hillside wallpaper**: a built-in canvas background joins custom background images.
+- **Worktree-aware minimap**: terminals running agents display the agent icon.
+
+### Changed
+
+- **Single-source panel state**: panel, dock, canvas, and window records were consolidated to reduce conflicting state.
+- **Cate Agent naming**: the former Pi Agent UI was renamed and its tooltips and shortcuts were cleaned up.
+- **Sidebar layout**: the sidebar pushes dock content instead of overlaying it.
+- **Update location**: update status moved to the right sidebar.
+
+### Fixed
+
+- **Panel creation shortcuts**: creation shortcuts work even when focus is outside the canvas.
+- **Spatial selection and panning**: territory shapes, panning locks, and active-row behavior were refined.
+
+## [1.1.1-beta.8] - 2026-06-05
+
+### Fixed
+
+- **macOS signing identity lookup**: the release keychain is added to the search list before codesigning.
+
+## [1.1.1-beta.7] - 2026-06-05
+
+### Fixed
+
+- **macOS runtime notarization**: native companion binaries are signed before the app is notarized.
+
+## [1.1.1-beta.6] - 2026-06-05
+
+### Fixed
+
+- **Release version consistency**: companion and pi-agent versions are synchronized before the application build begins.
+
+## [1.1.1-beta.5] - 2026-06-05
+
+### Fixed
+
+- **Portable Windows packaging**: archive paths work across drive letters, duplicate native builds are avoided, and unsupported Intel macOS packaging was temporarily removed.
+
+## [1.1.1-beta.4] - 2026-06-04
+
+### Fixed
+
+- **Windows archive naming**: release tarballs are created from a basename in their source directory rather than an absolute Windows path.
+
+## [1.1.1-beta.3] - 2026-06-04
+
+### Fixed
+
+- **Windows tar invocation**: release archives use local-path mode so drive-letter paths are not parsed as remote hosts.
+
+## [1.1.1-beta.2] - 2026-06-04
+
+### Fixed
+
+- **Windows binary staging**: packaged Node and ripgrep binaries are copied across filesystems instead of relying on a rename that can fail with `EXDEV`.
+
+## [1.1.1-beta.1] - 2026-06-04
+
+Large production-readiness beta introducing remote workspaces, saved layouts, content search, beta updates, and broad navigation polish.
+
+### Added
+
+- **Remote SSH and WSL workspaces**: connect to projects outside the local machine through the packaged runtime.
+- **Saved layouts**: save and apply layouts from a dedicated dialog, empty-canvas picker, sidebar action, or native menu.
+- **Content search view**: VS Code-style workspace search with keyboard navigation.
+- **Keyboard canvas navigation**: move between panels and pan the canvas without reaching for the mouse.
+- **Per-browser proxy**: each browser panel can use its own HTTP proxy.
+- **Editable settings file**: open `settings.json`, edit it by hand, and see supported changes reload live.
+- **Beta update channel and canvas backgrounds**: opt into prereleases and choose a theme-aware canvas image.
+
+### Changed
+
+- **Themed macOS title bar**: macOS consistently uses Cate's title bar instead of a separate native-tabs mode.
+- **Searchable settings**: settings use sidebar navigation, search, fixed sizing, and scroll-spy highlighting.
+
+### Fixed
+
+- **Notification focus**: clicking an OS notification reliably brings its Cate window forward.
+- **Command palette results**: file-name matches no longer starve content-search results.
+- **Shortcut routing**: commands target the active canvas store, including new-file and VS Code/browser parity bindings.
+- **Foreground terminal close protection**: closing a terminal with a running foreground process asks for confirmation.
 
 ## [1.1.1] - 2026-06-01
 
@@ -197,6 +631,12 @@ First major release. Stabilises the agent panel, introduces semantic color token
 ### Fixed
 
 - **Auto-update download fallback** — when electron-updater's initial check errors (e.g. provider mismatch), the fallback now broadcasts `available` instead of `manual`, so clicking Update attempts a native download first and only falls back to the release page if that fails.
+
+## [0.4.13] - 2026-05-24
+
+### Fixed
+
+- **Native update retry first**: a failed update check now attempts electron-updater's native download path before offering a manual installer.
 
 ## [0.4.12] - 2026-05-24
 
@@ -406,6 +846,257 @@ First minor release since the open-source drop. Major focus: unified **Spotlight
 
 - 13 PRs across the release (#3–#5, #7–#15). One commit per feature on main via squash-merge. All commits follow conventional-commits formatting with why-not-what bodies.
 - CI builds green across `ubuntu-latest`, `macos-latest`, `windows-latest` for every merged PR.
+
+## [0.2.18] - 2026-04-15
+
+Security and stability hardening release across workspace trust, filesystem boundaries, crash reporting, and continuous integration.
+
+### Added
+
+- **Workspace session trust**: restored sessions are checked before project-controlled state is applied.
+- **Crash-report archive**: renderer and main-process crashes are retained with a bounded history for later diagnosis.
+- **Electron smoke tests and unit coverage**: CI verifies application startup plus git, path-validation, and session-trust behavior.
+
+### Changed
+
+- **Tighter filesystem sandbox**: workspace roots, web security, feature flags, and preload IPC contracts were hardened together.
+
+### Fixed
+
+- **Release icon generation**: restored the Cate logo asset required by the packaging pipeline.
+
+## [0.2.17] - 2026-04-14
+
+### Fixed
+
+- **Clean application exit**: corrected the final quit/exit call and silenced the production console logger.
+- **Release asset publishing**: repaired the workflow that attaches platform builds to a release.
+
+## [0.2.16] - 2026-04-14
+
+### Added
+
+- **File explorer drag-and-drop moves**: move files and folders directly in the explorer and create new entries relative to the clicked folder.
+
+### Fixed
+
+- **Terminal lifecycle leaks**: PTYs and terminal resources are released on crashes and abnormal teardown.
+
+## [0.2.15] - 2026-04-13
+
+### Fixed
+
+- **Safe shutdown**: normal quits no longer trigger `SIGABRT`.
+- **Continuous session persistence**: active session state is saved throughout the run instead of relying only on final shutdown.
+
+## [0.2.14] - 2026-04-13
+
+### Fixed
+
+- **Long-session memory usage**: terminal loggers, usage watchers, and caches now release resources when their owners close.
+
+## [0.2.13] - 2026-04-12
+
+### Added
+
+- **Processes and ports overview**: the sidebar can show running workspace processes and listening ports in one popover.
+
+## [0.2.12] - 2026-04-12
+
+### Fixed
+
+- **Quit-time session restore**: workspace state is flushed reliably before exit.
+- **Zombie child processes**: terminals and other spawned processes are terminated when Cate closes.
+
+## [0.2.11] - 2026-04-08
+
+### Fixed
+
+- **Embedded browser loading**: the renderer content-security policy no longer blocks browser-panel objects required by Electron webviews.
+
+## [0.2.10] - 2026-04-08
+
+### Changed
+
+- **Canvas, docking, and workspace integration**: refined the in-progress multi-window layout and workspace state flow.
+
+## [0.2.9] - 2026-04-08
+
+### Changed
+
+- **Faster startup**: an inline splash paints before the renderer loads, panel-window restoration is deferred, panel chunks preload in parallel, and background scans wait until idle.
+
+### Fixed
+
+- **Usage scan scope**: usage watchers limit directory depth and ignore unrelated files.
+
+## [0.2.8] - 2026-04-08
+
+### Fixed
+
+- **Fullscreen event typing**: corrected Electron fullscreen listener signatures so the release builds typecheck cleanly.
+
+## [0.2.7] - 2026-04-08
+
+### Changed
+
+- **Electron 41.2.0**: updated the desktop runtime to the current 41.x patch release.
+
+## [0.2.6] - 2026-04-08
+
+Broad work-in-progress stabilization release across docking, the sidebar, updater UI, and usage tracking.
+
+### Added
+
+- **Usage view and model pricing**: inspect usage from the sidebar with model-cost metadata.
+- **Dirty-editor close confirmation**: editor buffers register save handlers and warn before being discarded.
+- **Visible-panel autofocus**: the largest visible canvas node can receive focus automatically.
+
+### Fixed
+
+- **Updater progress window**: install progress remains visible, closes reliably, and allows enough time for disk-image installation.
+
+## [0.2.5] - 2026-04-07
+
+### Changed
+
+- **Electron 41**: upgraded the desktop runtime and refreshed native packaging.
+- **Sidebar polish**: workspace naming and navigation received a visual cleanup.
+
+### Fixed
+
+- **Crisp terminal fitting**: resize work is coalesced and terminal rendering remains sharp at high canvas zoom.
+- **Workspace rename**: renamed workspaces persist and display correctly.
+- **macOS signing inputs**: the entitlements file is included, and icon generation handles the current `png-to-ico` export.
+
+## [0.2.4] - 2026-04-05
+
+### Added
+
+- **Fallback installer**: when the native updater fails, Cate can download and launch a platform installer directly.
+
+### Fixed
+
+- **Windows installer launch**: detached installers use `spawn` so they survive Cate exiting.
+- **Panel drag ghost**: the cross-window drag preview follows the cursor accurately.
+
+## [0.2.3] - 2026-04-04
+
+### Added
+
+- **Terminal scrollback restore**: terminal history is replayed when panels or sessions return.
+- **Canvas annotation colors**: annotations can carry distinct visual accents.
+- **Isolated development data**: local development no longer shares the packaged application's user data.
+
+### Fixed
+
+- **Terminal scrolling**: restored and focused terminals keep the intended viewport position.
+
+## [0.2.2] - 2026-04-03
+
+### Added
+
+- **File explorer background menu**: right-click empty explorer space to create a file or folder.
+
+### Fixed
+
+- **Terminal scroll retention**: focus changes no longer jump the terminal viewport.
+- **Deferred workspace notifications**: notification actions retry until a lazily restored workspace is ready.
+
+## [0.2.1] - 2026-04-03
+
+### Added
+
+- **Structured logging**: renderer and main-process events use a shared logging pipeline.
+- **Filesystem path validation**: file operations are constrained to registered workspace roots.
+
+### Changed
+
+- **Session reliability**: closing child windows flushes their state before teardown.
+
+### Fixed
+
+- **Notification error colors**: error notifications use the correct status-dot type.
+- **Terminal, browser, resize, and docking polish**: corrected several early multi-window lifecycle edge cases.
+
+## [0.2.0] - 2026-04-02
+
+Major architecture release introducing detachable windows and a VS Code-style docking model.
+
+### Added
+
+- **Multi-window shells**: main, panel, and dock windows share a registry and route to the correct renderer shell.
+- **Four-zone docking**: left, right, bottom, and center zones support split layouts and tab stacks.
+- **Cross-window panel transfer**: drag panels between windows while preserving terminal scrollback, browser state, and editor position.
+- **Canvas panels**: canvases became first-class panels that can live in a dock zone.
+- **Persisted window layouts**: dock layouts, detached windows, and multi-workspace state restore across launches.
+- **Shell environment resolution**: terminals inherit paths from common version managers and package-manager installations.
+
+### Changed
+
+- **Main-owned workspaces**: workspace records moved to the main process as the shared source of truth.
+
+## [0.1.5] - 2026-04-01
+
+### Added
+
+- **Notification center**: in-app toasts, OS notifications, a bell popover, and notification preferences.
+- **Generic coding-agent detection**: terminal activity recognizes Claude Code, Codex, Gemini CLI, Cursor, and OpenCode.
+- **Terminal file drops**: drop operating-system files or file-explorer entries into a terminal to insert their paths.
+
+### Fixed
+
+- **Browser panel interaction**: focus, saved URLs, and wheel-event passthrough work reliably.
+- **Terminal input and rendering**: Option-as-Meta, WebGL recovery, scroll retention, and shortcut isolation were corrected.
+- **Directory drops**: folders no longer create invalid editor panels on the canvas.
+
+## [0.1.4] - 2026-03-31
+
+### Fixed
+
+- **Updater outcomes**: update-available, up-to-date, and error results all produce clear feedback.
+- **Release publication order**: a release is published only after every platform build finishes.
+
+## [0.1.3] - 2026-03-31
+
+### Added
+
+- **Full Source Control panel**: push, pull, branch, stash, and diff workflows are available inside Cate.
+
+### Changed
+
+- **Canvas performance**: reduced unnecessary work during common canvas interactions.
+
+### Fixed
+
+- **Panel scrolling**: wheel input scrolls the focused editor, terminal, or browser instead of panning the canvas.
+- **Release reuse**: CI skips release creation when the target release already exists.
+
+## [0.1.2] - 2026-03-31
+
+### Changed
+
+- **Focused initial scope**: removed unfinished features and the early AI chat panel from the release build.
+
+### Fixed
+
+- **Panel switcher colors**: all supported panel types map to a valid color.
+- **Release assets**: the pipeline uploads packaged files instead of publishing an empty release.
+
+## [0.1.1] - 2026-03-30
+
+### Added
+
+- **Automatic updates**: packaged builds can discover and install newer Cate releases.
+- **Collapsible sidebar**: reclaim canvas space without closing sidebar tools.
+
+### Changed
+
+- **Browser URL handling**: entering and normalizing addresses is more forgiving.
+
+### Fixed
+
+- **macOS quarantine guidance**: documented the workaround for unsigned/quarantined early builds.
 
 ## [0.1.0] - 2026-03-29
 

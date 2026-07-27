@@ -17,7 +17,7 @@
 //   - update_install_clicked   : user clicked "Restart" to install
 //   - update_manual_open_clicked : user clicked through to GitHub release page
 //   - feedback_submitted       : 1-5 rating + optional free-text comment, post-update
-//   - feedback_dismissed       : user skipped/closed the post-update feedback dialog
+//   - feedback_dismissed       : user skipped/closed the post-update dialog
 //   - agent_message_sent       : user sent a message to an agent — kind (prompt/
 //                                steer/follow_up), char count, has_images. No text.
 //
@@ -53,7 +53,7 @@ const MAX_PENDING_BYTES = 256 * 1024 // cap the offline buffer so it can't grow 
 
 export interface AnalyticsState {
   lastSeenVersion?: string
-  /** When set, the renderer should show the post-update feedback modal once.
+  /** When set, the renderer should show the post-update changelog + feedback modal once.
    *  Cleared after the user submits or dismisses. */
   pendingFeedbackForVersion?: string
   /** Track previous version so the feedback event can include both. */
@@ -80,8 +80,7 @@ function writeState(state: AnalyticsState): void {
 
 /** Dev-only: seed the analytics state so the next launch looks like an update
  *  from a synthetic previous version one `level` below the current app version.
- *  Returns the synthesized "from" version. A major/minor delta triggers the
- *  post-update feedback dialog; a patch delta intentionally does not. */
+ *  Returns the synthesized "from" version. */
 export function devSimulateUpdateFrom(level: 'major' | 'minor' | 'patch'): string {
   const [maj = 0, min = 0, pat = 0] = app.getVersion().replace(/^v/, '').split('.').map(Number)
   const from =
@@ -341,7 +340,7 @@ export function initAnalytics(): void {
 
 export type UpdateAction =
   // First install emits app_install but does NOT queue a feedback prompt — the
-  // onboarding tour is the first-run welcome, so the promo/feedback dialog would
+  // onboarding tour is the first-run welcome, so the changelog/feedback dialog would
   // overlap it. The dialog is for updates only.
   | { kind: 'first_install'; emit: 'app_install'; nextState: AnalyticsState }
   | { kind: 'no_change'; nextState: AnalyticsState; prompt?: { from: string; to: string } }
@@ -382,12 +381,6 @@ export function decideCensusAction(state: AnalyticsState, installIdPreexistedFla
   }
 }
 
-function isMajorOrMinorBump(from: string, to: string): boolean {
-  const pa = from.replace(/^v/, '').split('.').map(Number)
-  const pb = to.replace(/^v/, '').split('.').map(Number)
-  return (pb[0] || 0) !== (pa[0] || 0) || (pb[1] || 0) !== (pa[1] || 0)
-}
-
 export function decideUpdateAction(current: string, state: AnalyticsState): UpdateAction {
   const previous = state.lastSeenVersion
 
@@ -396,7 +389,7 @@ export function decideUpdateAction(current: string, state: AnalyticsState): Upda
       kind: 'first_install',
       emit: 'app_install',
       // No pendingFeedback*: the first-run welcome is the onboarding tour, so we
-      // never surface the feedback/promo dialog on a brand-new install.
+      // never surface the changelog/feedback dialog on a brand-new install.
       nextState: { ...state, lastSeenVersion: current },
     }
   }
@@ -405,15 +398,11 @@ export function decideUpdateAction(current: string, state: AnalyticsState): Upda
     const action: UpdateAction = { kind: 'no_change', nextState: state }
     // Re-prompt if a previous launch queued feedback but the user killed the
     // app before answering. The pending flag is cleared on submit/dismiss.
-    // Only re-prompt for major/minor bumps.
-    if (state.pendingFeedbackForVersion === current &&
-        isMajorOrMinorBump(state.pendingFeedbackFromVersion ?? '0.0.0', current)) {
+    if (state.pendingFeedbackForVersion === current) {
       action.prompt = { from: state.pendingFeedbackFromVersion ?? previous, to: current }
     }
     return action
   }
-
-  const showPrompt = isMajorOrMinorBump(previous, current)
 
   return {
     kind: 'version_changed',
@@ -423,10 +412,10 @@ export function decideUpdateAction(current: string, state: AnalyticsState): Upda
     nextState: {
       ...state,
       lastSeenVersion: current,
-      pendingFeedbackForVersion: showPrompt ? current : undefined,
-      pendingFeedbackFromVersion: showPrompt ? previous : undefined,
+      pendingFeedbackForVersion: current,
+      pendingFeedbackFromVersion: previous,
     },
-    prompt: showPrompt ? { from: previous, to: current } : undefined,
+    prompt: { from: previous, to: current },
   }
 }
 
@@ -437,7 +426,7 @@ export function decideUpdateAction(current: string, state: AnalyticsState): Upda
  */
 export async function checkAndReportUpdate(mainWin: BrowserWindow): Promise<void> {
   // E2E profiles start from a fresh version state every run, which looks like a
-  // first install / version bump and would pop the post-update feedback modal.
+  // first install / version bump and would pop the post-update changelog modal.
   // That modal intercepts pointer events and flakes tests — never show it here.
   if (process.env.CATE_E2E === '1') return
 

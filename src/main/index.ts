@@ -168,8 +168,8 @@ if (!app.isPackaged && process.env.CATE_FRESH_USERDATA === '1') {
 // (already-onboarded) user, so the onboarding tour stays hidden — but the
 // telemetry notice still appears, because the simulated profile hasn't
 // acknowledged the current TELEMETRY_NOTICE_VERSION (exactly like a real user
-// updating into this release). On major/minor bumps the post-update feedback
-// dialog appears alongside it; a patch bump shows the notice only. See dev:update:*.
+// updating into this release). The post-update changelog/feedback dialog then
+// appears for every simulated version bump. See dev:update:*.
 if (!app.isPackaged && (process.env.CATE_SIMULATE_UPDATE === 'major' || process.env.CATE_SIMULATE_UPDATE === 'minor' || process.env.CATE_SIMULATE_UPDATE === 'patch')) {
   const level = process.env.CATE_SIMULATE_UPDATE
   const fs = require('fs') as typeof import('fs')
