@@ -23,6 +23,12 @@ npm test           # run vitest suite
 
 Tests use **Vitest** and live alongside the code they cover (`*.test.ts` / `*.test.tsx`). A few git-touching tests assume a clean working repo and may fail when the dev tree has a branch named `main` or local modifications — those failures are environmental, not regressions.
 
+## Release Process
+
+Before creating any beta or stable release, update `CHANGELOG.md` with the
+matching version, release date, summary, and categorized user-facing changes.
+The changelog entry must be complete before bumping or tagging the release.
+
 ## Dependencies
 
 Managed via npm (`package.json`):

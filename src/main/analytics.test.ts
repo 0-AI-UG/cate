@@ -130,16 +130,16 @@ describe('decideUpdateAction', () => {
     expect(action.nextState.pendingFeedbackFromVersion).toBe('1.5.0')
   })
 
-  test('patch-only update does NOT trigger the dialog prompt', () => {
+  test('patch-only update also triggers the changelog dialog prompt', () => {
     const action = decideUpdateAction('1.0.1', { lastSeenVersion: '1.0.0' })
     expect(action.kind).toBe('version_changed')
     if (action.kind !== 'version_changed') return
     expect(action.emit).toBe('app_updated')
     expect(action.from).toBe('1.0.0')
     expect(action.to).toBe('1.0.1')
-    expect(action.prompt).toBeUndefined()
-    expect(action.nextState.pendingFeedbackForVersion).toBeUndefined()
-    expect(action.nextState.pendingFeedbackFromVersion).toBeUndefined()
+    expect(action.prompt).toEqual({ from: '1.0.0', to: '1.0.1' })
+    expect(action.nextState.pendingFeedbackForVersion).toBe('1.0.1')
+    expect(action.nextState.pendingFeedbackFromVersion).toBe('1.0.0')
   })
 
   test('normal launch (same version, no pending) does NOT trigger dialog', () => {

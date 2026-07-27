@@ -4,14 +4,15 @@ import heroImg from '../assets/dialog-hero.jpg'
 import { useEscapeKey } from '../lib/hooks/useEscapeKey'
 import { useSettingsStore } from '../stores/settingsStore'
 import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
+import { findChangelogRelease, parseChangelog } from '../../shared/changelog'
+import changelogMarkdown from '../../../CHANGELOG.md?raw'
 
 type Payload = { fromVersion: string; toVersion: string }
 
 const GITHUB_REPO = 'https://github.com/0-AI-UG/cate'
-const GITHUB_API = 'https://api.github.com/repos/0-AI-UG/cate'
-const PRODUCT_HUNT_URL = 'https://www.producthunt.com/products/cate?embed=true&utm_source=embed&utm_medium=post_embed'
-const PRODUCT_HUNT_LOGO = 'https://ph-files.imgix.net/fd92bbb7-e106-43a8-93e2-a9e5b663e320.png?auto=format&fit=crop&w=80&h=80'
+const CHANGELOG_URL = `${GITHUB_REPO}/blob/main/CHANGELOG.md`
 const NEWSLETTER_URL = 'https://cate.cero-ai.com'
+const changelogReleases = parseChangelog(changelogMarkdown)
 
 function openLink(url: string, linkName: string) {
   window.electronAPI.trackLinkClick(linkName)
@@ -25,11 +26,10 @@ export function PostUpdateFeedbackDialog() {
   const [comment, setComment] = useState('')
   const [sending, setSending] = useState(false)
   const [resultMessage, setResultMessage] = useState<string | null>(null)
-  const [starCount, setStarCount] = useState<number | null>(null)
 
   // Gate on the telemetry notice (WelcomeDialog) the same way the onboarding
   // tour does: the notice goes first. Until it's acknowledged this dialog stays
-  // fully dormant — not rendered, and no GitHub fetch — so on an update it never
+  // fully dormant — not rendered — so on an update it never
   // mounts behind the opaque notice. The pending prompt is held in main and
   // re-pulled, so it surfaces here the moment the notice is dismissed.
   const loaded = useSettingsStore((s) => s._loaded)
@@ -64,16 +64,6 @@ export function PostUpdateFeedbackDialog() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!payload || !noticeReady) return
-    fetch(GITHUB_API, { headers: { Accept: 'application/vnd.github.v3+json' } })
-      .then((r) => r.json())
-      .then((data) => {
-        if (typeof data.stargazers_count === 'number') setStarCount(data.stargazers_count)
-      })
-      .catch(() => {})
-  }, [payload, noticeReady])
-
   const close = useCallback(() => {
     window.electronAPI.dismissFeedback('close')
     setPayload(null)
@@ -104,13 +94,14 @@ export function PostUpdateFeedbackDialog() {
   if (!payload || !noticeReady) return null
 
   const displayRating = hover || rating
+  const release = findChangelogRelease(changelogReleases, payload.toVersion)
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
     >
       <div
-        className="w-[460px] rounded-2xl flex flex-col bg-[#1a1a1e] border border-subtle shadow-[0_32px_80px_rgba(0,0,0,0.7)] overflow-hidden"
+        className="w-[520px] max-w-[92vw] max-h-[90vh] rounded-2xl flex flex-col bg-[#1a1a1e] border border-subtle shadow-[0_32px_80px_rgba(0,0,0,0.7)] overflow-hidden"
       >
         {resultMessage && !sending ? (
           <div className="px-6 py-12 text-center text-white text-sm">
@@ -132,60 +123,60 @@ export function PostUpdateFeedbackDialog() {
               </div>
             </div>
 
-            <div className="px-5 pb-5 pt-3 flex flex-col gap-3">
-              <p className="text-[#999] text-[12px] leading-relaxed">
-                {isFirstInstall
-                  ? 'An open canvas for development. Join the community!'
-                  : 'Thanks for updating. Support the project and stay connected.'}
-              </p>
-
-              {/* Product Hunt embed card */}
-              <button
-                onClick={() => openLink(PRODUCT_HUNT_URL, 'product_hunt')}
-                className="w-full rounded-xl bg-white/[0.97] p-3.5 flex flex-col gap-3 hover:shadow-[0_4px_20px_rgba(255,97,84,0.15)] transition-all group text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <img
-                    src={PRODUCT_HUNT_LOGO}
-                    alt="CATE"
-                    className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[#1a1a1a] text-[15px] font-semibold leading-tight">CATE</div>
-                    <div className="text-[#666] text-[12px] mt-0.5 leading-snug">Figma like open canvas for development</div>
-                  </div>
-                </div>
-                <span className="inline-flex items-center gap-1.5 self-start px-4 py-2 bg-[#ff6154] text-white text-[13px] font-semibold rounded-lg group-hover:brightness-110 transition-all">
-                  Check it out on Product Hunt
-                  <ArrowSquareOut size={13} />
-                </span>
-              </button>
-
-              {/* GitHub + Newsletter row */}
-              <div className="flex gap-1.5">
-                {/* GitHub Stars */}
-                <button
-                  onClick={() => openLink(GITHUB_REPO, 'github_star')}
-                  className="flex-1 flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-subtle transition-all group"
-                >
-                  <GithubLogo size={20} weight="fill" className="text-white" />
-                  <span className="text-white text-[12px] font-semibold">Star on GitHub</span>
-                  {starCount !== null && (
-                    <span className="flex items-center gap-1 text-[11px] text-yellow-400 font-medium">
-                      <Star size={10} weight="fill" /> {formatStars(starCount)}
-                    </span>
+            <div className="px-5 pb-5 pt-3 flex flex-col gap-3 overflow-y-auto">
+              {isFirstInstall ? (
+                <p className="text-[#999] text-[12px] leading-relaxed">
+                  An open canvas for development. Join the community!
+                </p>
+              ) : release ? (
+                <>
+                  {release.summary && (
+                    <p className="text-[#aaa] text-[12.5px] leading-relaxed">
+                      {release.summary}
+                    </p>
                   )}
-                </button>
+                  <div className="rounded-xl border border-white/[0.07] bg-black/15 px-4 py-3 max-h-[260px] overflow-y-auto">
+                    <div className="flex flex-col gap-4">
+                      {release.sections.map((section) => (
+                        <section key={section.title}>
+                          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                            {section.title}
+                          </h3>
+                          <ul className="flex flex-col gap-2">
+                            {section.items.map((item) => (
+                              <li key={item} className="flex gap-2 text-[12px] leading-relaxed text-[#aaa]">
+                                <span aria-hidden="true" className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-[#666]" />
+                                <span>{renderChangelogItem(item)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </section>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[#999] text-[12px] leading-relaxed">
+                  Cate has been updated. Detailed notes for this build are available in the full changelog.
+                </p>
+              )}
 
-                {/* Newsletter */}
+              {/* Changelog + community links */}
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => openLink(CHANGELOG_URL, 'full_changelog')}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-3 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-subtle text-white text-[12px] font-semibold transition-all"
+                >
+                  <GithubLogo size={16} weight="fill" />
+                  Full changelog
+                  <ArrowSquareOut size={12} />
+                </button>
                 <button
                   onClick={() => openLink(NEWSLETTER_URL, 'newsletter')}
-                  className="flex-1 flex flex-col items-center gap-1.5 px-3 py-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-subtle transition-all group"
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-3 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-subtle text-white text-[12px] font-semibold transition-all"
                 >
-                  <Envelope size={20} weight="fill" className="text-blue-400" />
-                  <span className="text-white text-[12px] font-semibold">Newsletter</span>
-                  <span className="text-[11px] text-[#777]">Stay updated</span>
+                  <Envelope size={16} weight="fill" className="text-blue-400" />
+                  Newsletter
                 </button>
               </div>
 
@@ -250,7 +241,21 @@ export function PostUpdateFeedbackDialog() {
   )
 }
 
-function formatStars(count: number): string {
-  if (count >= 1000) return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`
-  return String(count)
+function renderChangelogItem(item: string) {
+  const feature = item.match(/^\*\*(.+?)\*\*([:—-]?\s*)(.*)$/)
+  if (!feature) return stripInlineMarkdown(item)
+  return (
+    <>
+      <strong className="font-semibold text-[#ddd]">{stripInlineMarkdown(feature[1])}</strong>
+      {feature[2]}
+      {stripInlineMarkdown(feature[3])}
+    </>
+  )
+}
+
+function stripInlineMarkdown(value: string): string {
+  return value
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
 }
