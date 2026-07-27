@@ -29,6 +29,7 @@ import { useActivePanelStore, getActivePanelId } from '../lib/activePanel'
 import { collectPanelIds } from '../../shared/collectPanelIds'
 import { resolveTerminalFontSize } from '../lib/terminal/terminalSettings'
 import { shouldAdjustTerminalCoords } from '../lib/terminal/terminalCoordAdjust'
+import { snapRenderScale } from '../lib/terminal/renderScale'
 import { resolveWorktree } from '../../shared/worktrees'
 import { resumeCommandForAgent } from '../../shared/agents'
 import { CATE_FILE_MIME, hasChatDrag, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
@@ -37,29 +38,6 @@ import { parseLocator } from '../../shared/runtimeLocator'
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-
-// Discrete render-scale steps. We snap canvas zoom to one of these so a
-// continuous pinch only triggers a small number of expensive atlas rebuilds.
-// Capped at 2.5× — beyond that, atlas memory grows without perceptible gain.
-const RENDER_SCALE_STEPS: number[] = [1.0, 1.5, 2.0, 2.5]
-
-function snapRenderScale(zoom: number): number {
-  if (zoom <= 1.0) return 1.0
-  let best = RENDER_SCALE_STEPS[0]
-  let bestDist = Math.abs(zoom - best)
-  for (const step of RENDER_SCALE_STEPS) {
-    const d = Math.abs(zoom - step)
-    if (d < bestDist) {
-      best = step
-      bestDist = d
-    }
-  }
-  // For zoom above the top step, just use the top step.
-  if (zoom > RENDER_SCALE_STEPS[RENDER_SCALE_STEPS.length - 1]) {
-    return RENDER_SCALE_STEPS[RENDER_SCALE_STEPS.length - 1]
-  }
-  return best
-}
 
 export default function TerminalPanel({
   panelId,
@@ -74,9 +52,34 @@ export default function TerminalPanel({
   const fitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFitSizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 })
   const [renderScale, setRenderScale] = useState(1.0)
+  // xterm ceils its cell pixels, so bumping fontSize to base × renderScale does
+  // NOT grow the cell by exactly renderScale (cell(k·fs) ≠ k·cell(fs)) — it
+  // overshoots. Measured at 13px/DPR 1: renderScale 1.25 wants a 8.75px cell
+  // and gets 9 (+2.9%), 1.5 wants 10.5 and gets 11 (+4.8%).
+  //
+  // Sizing the render box by renderScale while the cell grew by more than that
+  // is what silently resized the terminal on every zoom step: the box grew
+  // 1.25× but the cell grew 1.286×, so 90 columns became 87. preserveGrid only
+  // absorbs ±1, so a 3-4 column jump went straight through to the PTY as a
+  // SIGWINCH and reflowed the shell/TUI.
+  //
+  // So drive the layout off the MEASURED cell instead. With
+  //   box = container × (cell / baseCell)
+  // the column count is container/baseCell — renderScale cancels out entirely,
+  // and the counter-scale below pins the on-screen cell to its base size.
+  // Width and height are tracked separately because the two ceil independently.
+  const baseCellRef = useRef<{ w: number; h: number } | null>(null)
+  const [cellScale, setCellScale] = useState({ w: 1, h: 1 })
   const terminalBaseFontSize = useSettingsStore((state) =>
     resolveTerminalFontSize(state.terminalFontSize),
   )
+
+  // A font-size change moves the baseline everything is measured against. Drop
+  // it so the next pass re-derives it instead of scaling toward a cell size
+  // that no longer exists.
+  useEffect(() => {
+    baseCellRef.current = null
+  }, [terminalBaseFontSize])
 
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -556,25 +559,81 @@ export default function TerminalPanel({
         ? Math.abs(viewport.scrollTop - (viewport.scrollHeight - viewport.clientHeight)) < 5
         : true
 
+      const screenEl = entry.terminal.element?.querySelector('.xterm-screen') as HTMLElement | null
+      const cols = entry.terminal.cols
+      const rows = entry.terminal.rows
+      const measurable = !!screenEl && cols > 0 && rows > 0
+
+      // The baseline is the cell at the UNSCALED font, and it can only be read
+      // at that font — a scaled cell cannot be divided back down, because the
+      // ceil already threw the remainder away (at 1.5 the cell is 11, and
+      // 11/1.5 = 7.33 for a cell that is really 7; that 4.8% error then shrank
+      // the box at every scale, including 1).
+      //
+      // So when a panel is first laid out already zoomed in, take the reading
+      // directly: drop to the base font, measure, and go straight back up. Both
+      // writes and the measurement happen in this one synchronous block, and
+      // reading offsetWidth forces the layout that makes the middle reading
+      // real, so the browser never paints the intermediate state. Costs one
+      // extra glyph-atlas rebuild, once per panel.
+      if (!baseCellRef.current && renderScale !== 1 && measurable) {
+        entry.terminal.options.fontSize = terminalBaseFontSize
+        if (screenEl!.offsetWidth > 0) {
+          baseCellRef.current = {
+            w: screenEl!.offsetWidth / cols,
+            h: screenEl!.offsetHeight / rows,
+          }
+        }
+      }
+
       // Mutating options.fontSize triggers xterm's internal renderer refresh,
-      // which rebuilds the WebGL glyph atlas at the new resolution.
+      // which rebuilds the WebGL glyph atlas at the new resolution. xterm
+      // relays out the cell synchronously, so the grid can be measured below.
       entry.terminal.options.fontSize = terminalBaseFontSize * renderScale
-      // preserveGrid: the box and the cell grew by the same factor, so the
-      // grid must not change — but ceil/parseInt quantization flips rows by
-      // ±1 across scale steps, and each phantom SIGWINCH makes a TUI like
-      // Claude Code stack a duplicate frame into scrollback (doubled content
-      // that only a large vertical resize clears).
-      terminalRegistry.fit(panelId, { preserveGrid: true })
-      // The render box's layout size legitimately changed by the scale factor;
-      // sync the ResizeObserver's last-fit size so its debounced plain fit()
-      // doesn't run right after this and un-pin the grid.
-      lastFitSizeRef.current = { w: renderBox.clientWidth, h: renderBox.clientHeight }
+
+      // No fit() here. Fitting against a box still sized for the PREVIOUS cell
+      // is exactly what dropped columns (see cellScale). Measure the new cell,
+      // resize the box to match it, and let the ResizeObserver's plain fit run
+      // against a box that is already in proportion — at which point it
+      // computes the same column count and never resizes the PTY at all.
+      if (measurable && screenEl!.offsetWidth > 0) {
+        const cellW = screenEl!.offsetWidth / cols
+        const cellH = screenEl!.offsetHeight / rows
+        // At renderScale 1 the target font IS the base font, so this reading is
+        // itself the baseline — no second pass needed.
+        if (renderScale === 1) baseCellRef.current = { w: cellW, h: cellH }
+        const base = baseCellRef.current
+        const next = base
+          ? { w: cellW / base.w, h: cellH / base.h }
+          : { w: renderScale, h: renderScale }
+        // Guard a mid-layout read: the scale tracks renderScale to within a few
+        // percent, so anything outside the step range is noise, not signal.
+        if (next.w > 0.5 && next.w < 3 && next.h > 0.5 && next.h < 3) setCellScale(next)
+      }
 
       if (wasAtBottom) entry.terminal.scrollToBottom()
     } catch {
       // Ignore — fit can throw on zero-size frames during layout transitions.
     }
   }, [renderScale, panelId, terminalBaseFontSize])
+
+  // The --cell-scale above has just changed the scrollbar's width, and xterm
+  // caches that width once at construction — so re-measure and write it back
+  // BEFORE anything fits against it, or FitAddon subtracts a stale track and
+  // returns a column count too wide for the viewport (clipped right-hand
+  // columns). This effect runs after the style is committed, and the sync
+  // itself flushes layout before reading, so the measurement is live.
+  //
+  // With both the box and the scrollbar scaling by the cell ratio, a plain
+  // fit() now computes the same column count it had before — the scale cancels
+  // out of (box - scrollbar) / cell. So the ResizeObserver is left alone to do
+  // its job; a genuine panel resize must still re-fit.
+  useEffect(() => {
+    const renderBox = renderBoxRef.current
+    if (!renderBox || renderBox.offsetParent === null) return
+    if (renderBox.clientWidth === 0 || renderBox.clientHeight === 0) return
+    terminalRegistry.syncScrollBarWidth(panelId)
+  }, [cellScale, panelId])
 
   // -------------------------------------------------------------------------
   // Repaint after the zoom settles
@@ -634,9 +693,11 @@ export default function TerminalPanel({
     if (!container) return
 
     // The full transform chain on .xterm-screen is:
-    //   inner render box: scale(1/renderScale)   (counter-scale, see effect above)
+    //   inner render box: scale(1/cellScale.w, 1/cellScale.h)  (see effect above)
     //   outer world div : scale(zoomLevel)
-    // so screen pixels = DOM pixels × (zoomLevel / renderScale).
+    // so screen pixels = DOM pixels × zoomLevel / cellScale, PER AXIS — the two
+    // differ by a couple of percent, which is enough to drift a selection by a
+    // row near the bottom of a tall terminal, so each axis converts by its own.
     // xterm computes hit-testing against its own DOM-space cell metrics, so we
     // must convert the incoming screen-space offset back into DOM space.
     const adjustCoords = (e: MouseEvent) => {
@@ -645,7 +706,8 @@ export default function TerminalPanel({
       // rewrite when a canvas gesture owns the pointer (canvas-interacting), for
       // every event in a non-left-button gesture, and when the canvas isn't
       // zoomed. See terminalCoordAdjust.ts for the full rationale.
-      const effective = zoomLevel / renderScale
+      const effective = zoomLevel / cellScale.w
+      const effectiveY = zoomLevel / cellScale.h
       if (
         !shouldAdjustTerminalCoords(
           e.type,
@@ -665,7 +727,7 @@ export default function TerminalPanel({
       const rect = screenEl.getBoundingClientRect()
       // Convert screen-space offset to local (DOM-space) offset
       const adjustedX = rect.left + (e.clientX - rect.left) / effective
-      const adjustedY = rect.top + (e.clientY - rect.top) / effective
+      const adjustedY = rect.top + (e.clientY - rect.top) / effectiveY
 
       Object.defineProperty(e, 'clientX', { value: adjustedX, configurable: true })
       Object.defineProperty(e, 'clientY', { value: adjustedY, configurable: true })
@@ -681,7 +743,7 @@ export default function TerminalPanel({
       container.removeEventListener('mousemove', adjustCoords, { capture: true })
       container.removeEventListener('mouseup', adjustCoords, { capture: true })
     }
-  }, [zoomLevel, renderScale])
+  }, [zoomLevel, cellScale])
 
   // -------------------------------------------------------------------------
   // Drag-and-drop: accept files from OS or internal file explorer
@@ -813,10 +875,22 @@ export default function TerminalPanel({
             position: 'absolute',
             top: 0,
             left: 0,
-            width: `${100 * renderScale}%`,
-            height: `${100 * renderScale}%`,
-            transform: `scale(${1 / renderScale})`,
+            width: `${100 * cellScale.w}%`,
+            height: `${100 * cellScale.h}%`,
+            // Per-axis, not uniform: width and height ceil independently, so the
+            // cell's aspect ratio shifts slightly per scale step (7:15 → 9:19 →
+            // 11:23). A uniform width-driven counter-scale therefore left the
+            // height 1.5-2.4% short depending on the step, which read as the
+            // terminal's vertical size wobbling on zoom. Undoing each axis by
+            // its own measured ratio lands the on-screen cell back on exactly
+            // baseCell × baseCell at every step. The glyph inside is then off
+            // its true aspect by the same ~2%, which is imperceptible — and far
+            // preferable to a grid that visibly resizes.
+            transform: `scale(${1 / cellScale.w}, ${1 / cellScale.h})`,
             transformOrigin: '0 0',
+            // Drives the scrollbar rule in globals.css so the track scales with
+            // the cell instead of thinning as the terminal zooms in.
+            ['--cell-scale' as string]: String(cellScale.w),
           }}
         />
         {/* Supported agent running without Cate hooks — nudge to Settings. */}

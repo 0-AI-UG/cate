@@ -23,7 +23,7 @@ import {
   setPendingTransfer,
   setPendingRestore,
 } from './terminalLifecycle'
-import { attach, detach, fit, resetRendering, restoreScroll } from './terminalDom'
+import { attach, detach, fit, resetRendering, restoreScroll, syncScrollBarWidth } from './terminalDom'
 import { findNext, findPrevious, clearSearch } from './terminalSearch'
 import { serializeTerminalState } from './scrollbackCapture'
 import {
@@ -57,6 +57,7 @@ export const terminalRegistry = {
   fit,
   resetRendering,
   restoreScroll,
+  syncScrollBarWidth,
   setPendingTransfer,
   setPendingRestore,
   getEntry,
