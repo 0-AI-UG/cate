@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { Plus, X } from '@phosphor-icons/react'
-import { isSidebarChat, useChatsStore } from '../../renderer/stores/chatsStore'
+import { isPanelChat, isSidebarChat, useChatsStore } from '../../renderer/stores/chatsStore'
 import { useCateAgentStore, useCateAgentWs } from './cateAgentStore'
 import { disposeDirectChatSession } from './directChatSession'
 import {
@@ -50,58 +50,83 @@ const Tab: React.FC<{
   </div>
 )
 
-export const CateAgentChatTabs: React.FC<{ wsId: string; rootPath: string }> = ({ wsId, rootPath }) => {
+type CateAgentChatTabsProps = {
+  wsId: string
+  rootPath: string
+} & ({
+  panelId: string
+  activeChatId: string | null
+  onActiveChatChange: (chatId: string | null) => void
+} | {
+  panelId?: undefined
+  activeChatId?: never
+  onActiveChatChange?: never
+})
+
+export const CateAgentChatTabs: React.FC<CateAgentChatTabsProps> = (props) => {
+  const { wsId, rootPath, panelId } = props
   const cateAgent = useCateAgentWs(wsId)
   const chats = (useChatsStore((s) => s.chatsByRoot[rootPath]) ?? [])
-    .filter(isSidebarChat)
-  const setActiveChat = useCateAgentStore((s) => s.setActiveChat)
+    .filter((chat) => panelId ? isPanelChat(chat, panelId) : isSidebarChat(chat))
+  const setSidebarActiveChat = useCateAgentStore((s) => s.setActiveChat)
   const drag = useChatDragState((state) => state.active)
   const dragDestination = useChatDragState((state) => state.destinationHostPanelId)
-  const showGhost = showChatDropGhost(drag, dragDestination, rootPath, null)
+  const activeChatId = panelId ? props.activeChatId : cateAgent.activeChatId
+  const showGhost = showChatDropGhost(drag, dragDestination, rootPath, panelId ?? null)
   const ordered = [...chats].reverse()
   const previewItems = showGhost
     ? [...ordered, drag.chat].sort((a, b) => b.createdAt - a.createdAt)
     : ordered
 
+  const setActiveChat = (chatId: string | null): void => {
+    if (panelId) props.onActiveChatChange(chatId)
+    else setSidebarActiveChat(wsId, chatId ?? '')
+  }
+
   const newChat = (): void => {
-    const chat = useChatsStore.getState().createChat(rootPath, 'New chat')
-    setActiveChat(wsId, chat.id)
+    const chat = useChatsStore.getState().createChat(rootPath, 'New chat', panelId)
+    setActiveChat(chat.id)
   }
 
   return (
-    <div className="flex w-full items-center gap-1 overflow-x-auto no-scrollbar">
-      {previewItems.map((chat) => chat.id === drag?.chat.id && showGhost ? (
-        <ChatDropGhost key={`ghost-${chat.id}`} chat={chat} compact />
-      ) : (
-        <Tab
-          key={chat.id}
-          active={chat.id === cateAgent.activeChatId}
-          onClick={() => setActiveChat(wsId, chat.id)}
-          onClose={() => {
-            disposeDirectChatSession(chat.id)
-            useChatsStore.getState().removeChat(rootPath, chat.id)
-            if (chat.id !== cateAgent.activeChatId) return
-            const remaining = useChatsStore.getState().getChats(rootPath).filter(isSidebarChat)
-            setActiveChat(wsId, remaining[remaining.length - 1]?.id ?? '')
-          }}
-          onDragStart={(e) => {
-            e.dataTransfer.effectAllowed = 'move'
-            beginChatDrag(e.dataTransfer, { chat, rootPath, sourceHostPanelId: null })
-          }}
-          onDragEnd={endChatDrag}
+    <div className="cate-agent-chat-tabs min-w-0 w-full">
+      <div className="cate-agent-chat-tabs-scroll flex w-full items-center gap-1 overflow-x-auto">
+        {previewItems.map((chat) => chat.id === drag?.chat.id && showGhost ? (
+          <ChatDropGhost key={`ghost-${chat.id}`} chat={chat} compact />
+        ) : (
+          <Tab
+            key={chat.id}
+            active={chat.id === activeChatId}
+            onClick={() => setActiveChat(chat.id)}
+            onClose={() => {
+              disposeDirectChatSession(chat.id)
+              useChatsStore.getState().removeChat(rootPath, chat.id)
+              if (chat.id !== activeChatId) return
+              const remaining = useChatsStore.getState().getChats(rootPath)
+                .filter((candidate) => panelId
+                  ? isPanelChat(candidate, panelId)
+                  : isSidebarChat(candidate))
+              setActiveChat(remaining[remaining.length - 1]?.id ?? null)
+            }}
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move'
+              beginChatDrag(e.dataTransfer, { chat, rootPath, sourceHostPanelId: panelId ?? null })
+            }}
+            onDragEnd={endChatDrag}
+          >
+            <ChatStatusGlyph chat={chat} />
+            <span className="truncate">{chat.title}</span>
+          </Tab>
+        ))}
+        <button
+          type="button"
+          onClick={newChat}
+          title="New chat"
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-hover hover:text-primary"
         >
-          <ChatStatusGlyph chat={chat} />
-          <span className="truncate">{chat.title}</span>
-        </Tab>
-      ))}
-      <button
-        type="button"
-        onClick={newChat}
-        title="New chat"
-        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-hover hover:text-primary"
-      >
-        <Plus size={14} />
-      </button>
+          <Plus size={14} />
+        </button>
+      </div>
     </div>
   )
 }

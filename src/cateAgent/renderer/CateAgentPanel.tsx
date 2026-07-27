@@ -2,18 +2,17 @@
 // panel, using the same chat view/capabilities as the workspace sidebar.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Sidebar as SidebarIcon } from '@phosphor-icons/react'
 import type { PanelProps } from '../../renderer/panels/types'
 import { useAppStore } from '../../renderer/stores/appStore'
 import { isPanelChat, useChatsStore } from '../../renderer/stores/chatsStore'
 import { useCateAgentReady } from '../../renderer/stores/providerReadinessStore'
 import { useStatusStore } from '../../renderer/stores/statusStore'
 import { useUIStore } from '../../renderer/stores/uiStore'
-import { CateAgentPanelSidebar } from './CateAgentPanelSidebar'
+import { CateAgentChatTabs } from './CateAgentChatTabs'
 import { CateAgentChatView } from './CateAgentChatView'
 import { useCodingStore } from './codingStore'
 import { useCateAgentStore } from './cateAgentStore'
-import { directAgentKey, disposeDirectChatSession } from './directChatSession'
+import { directAgentKey } from './directChatSession'
 import { CHAT_DRAG_MIME, readChatDrag } from '../../renderer/drag/fileDragPayload'
 import { endChatDrag, useChatDragState } from '../../renderer/drag/chatDragState'
 
@@ -28,9 +27,7 @@ export default function CateAgentPanel({ panelId, workspaceId }: PanelProps) {
   const ready = useCateAgentReady() === 'ok'
 
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
 
-  const activeChat = activeChatId ? chats.find((chat) => chat.id === activeChatId) : undefined
   useEffect(() => {
     if (panel?.worktreeId) {
       useAppStore.getState().setPanelWorktreeId(workspaceId, panelId, undefined)
@@ -84,28 +81,12 @@ export default function CateAgentPanel({ panelId, workspaceId }: PanelProps) {
     setActiveChatId(chatId)
   }, [])
 
-  const newChat = useCallback(async () => {
-    await loadChats(rootPath)
-    const chat = useChatsStore.getState().createChat(rootPath, 'New chat', panelId)
-    selectChat(chat.id)
-  }, [loadChats, panelId, rootPath, selectChat])
-
-  const deleteChat = useCallback((chatId: string) => {
-    disposeDirectChatSession(chatId)
-    useChatsStore.getState().removeChat(rootPath, chatId)
-    if (activeChatId !== chatId) return
-    const remaining = useChatsStore.getState().getChats(rootPath)
-      .filter((chat) => isPanelChat(chat, panelId))
-    setActiveChatId(remaining[remaining.length - 1]?.id ?? null)
-  }, [activeChatId, panelId, rootPath])
-
   const handleChatDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     if (!event.dataTransfer.types.includes(CHAT_DRAG_MIME)) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
     useChatDragState.getState().setDestination(panelId)
-    if (!sidebarOpen) setSidebarOpen(true)
-  }, [panelId, sidebarOpen])
+  }, [panelId])
 
   const handleChatDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const payload = readChatDrag(event.dataTransfer)
@@ -130,58 +111,42 @@ export default function CateAgentPanel({ panelId, workspaceId }: PanelProps) {
 
   return (
     <div
-      className="flex h-full min-h-0 bg-surface-1 text-primary"
+      className="relative isolate flex h-full min-h-0 flex-col bg-surface-1 text-primary"
       onDragOver={handleChatDragOver}
       onDragLeave={handleChatDragLeave}
       onDrop={handleChatDrop}
     >
-      {sidebarOpen && (
-        <CateAgentPanelSidebar
-          chats={chats}
-          activeChatId={activeChatId}
-          rootPath={rootPath}
-          panelId={panelId}
-          onNewChat={() => { void newChat() }}
-          onOpenChat={selectChat}
-          onDeleteChat={deleteChat}
-          onOpenSettings={() => useUIStore.getState().openSettings('cate agent')}
-          onCollapse={() => setSidebarOpen(false)}
-        />
-      )}
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {!sidebarOpen && (
-          <div className="flex h-10 shrink-0 items-center gap-1 px-2">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="rounded-md p-1.5 text-muted hover:bg-hover hover:text-primary"
-              title="Open sidebar"
-            >
-              <SidebarIcon size={14} />
-            </button>
-          </div>
-        )}
-
-        {!ready ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-            <span className="text-xs text-muted">Connect a provider to use the Cate Agent.</span>
-            <button
-              className="rounded bg-surface-5 px-3 py-1.5 text-xs text-secondary hover:bg-hover hover:text-primary"
-              onClick={() => useUIStore.getState().openSettings('cate agent')}
-            >
-              Open Settings
-            </button>
-          </div>
-        ) : !chatsLoaded ? null : (
-          <CateAgentChatView
+      {chatsLoaded && (
+        <div className="flex flex-shrink-0 items-center px-2 py-1.5">
+          <CateAgentChatTabs
             wsId={workspaceId}
             rootPath={rootPath}
-            chatId={activeChatId}
-            onChatCreated={selectChat}
-            hostPanelId={panelId}
+            panelId={panelId}
+            activeChatId={activeChatId}
+            onActiveChatChange={setActiveChatId}
           />
-        )}
-      </div>
+        </div>
+      )}
+
+      {!ready ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+          <span className="text-xs text-muted">Connect a provider to use the Cate Agent.</span>
+          <button
+            className="rounded bg-surface-5 px-3 py-1.5 text-xs text-secondary hover:bg-hover hover:text-primary"
+            onClick={() => useUIStore.getState().openSettings('cate agent')}
+          >
+            Open Settings
+          </button>
+        </div>
+      ) : !chatsLoaded ? null : (
+        <CateAgentChatView
+          wsId={workspaceId}
+          rootPath={rootPath}
+          chatId={activeChatId}
+          onChatCreated={selectChat}
+          hostPanelId={panelId}
+        />
+      )}
     </div>
   )
 }

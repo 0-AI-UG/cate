@@ -214,6 +214,19 @@
   background-color: var(--scrollbar-thumb-hover);
 }
 
+/* Chat tabs reserve their horizontal scrollbar lane, but reveal its thumb only
+   while the pointer is over the tab strip. */
+.cate-agent-chat-tabs .cate-agent-chat-tabs-scroll::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  transition: background-color 160ms ease;
+}
+.cate-agent-chat-tabs:hover .cate-agent-chat-tabs-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+.cate-agent-chat-tabs:hover .cate-agent-chat-tabs-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
 /* Terminal scrollbar: the same thin rounded floating pill as the base, but only
    visible while the pointer is over the terminal or the terminal is focused
    (xterm toggles `.focus` on its root element). The thumb is transparent until
