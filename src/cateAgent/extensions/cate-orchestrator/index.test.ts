@@ -46,6 +46,7 @@ function registeredTools() {
 beforeEach(() => {
   process.env.CATE_API = "http://127.0.0.1:1234"
   process.env.CATE_TOKEN = "supervisor-token"
+  process.env.CATE_CODING_AGENT_IDS = JSON.stringify(["codex", "pi"])
   vi.unstubAllGlobals()
 })
 
@@ -55,6 +56,9 @@ describe("cate-orchestrator", () => {
     expect([...tools.keys()]).toEqual(TOOL_NAMES)
     expect(tools.get("wait_for_coding_agents").parameters.properties.timeoutSeconds)
       .toMatchObject({ minimum: 15, maximum: 120, default: 60 })
+    expect(tools.get("create_coding_agent").parameters.properties.agentId.anyOf)
+      .toEqual([{ const: "codex", type: "string" }, { const: "pi", type: "string" }])
+    expect(tools.get("wait_for_coding_agents").parameters.required).toContain("runIds")
   })
 
   it("keeps orchestration tools inactive until orchestration mode is enabled", async () => {

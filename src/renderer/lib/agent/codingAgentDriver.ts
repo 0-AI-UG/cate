@@ -1,6 +1,9 @@
 import { useAppStore } from '../../stores/appStore'
 import { useStatusStore } from '../../stores/statusStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import { terminalRegistry } from '../terminal/terminalRegistry'
+import { terminalBufferTail } from '../terminal/terminalBuffer'
+import { submitTerminalText } from '../terminal/terminalDriver'
 import { placementForBackgroundPanel } from '../workspace/canvasAccess'
 import { parseLocator, formatLocator } from '../../../shared/runtimeLocator'
 import { pathKey } from '../../../shared/pathUtils'
@@ -8,11 +11,15 @@ import { createWorktreeForWorkspace } from '../../stores/useWorktreeActions'
 import {
   MAX_CONCURRENT_CODING_AGENTS,
   codingAgentDisplayName,
+  codingAgentSupportsFollowUp,
+  deriveCodingAgentRunStatus,
   parseCodingAgentId,
   type CodingAgentRun,
   type CodingAgentRunSnapshot,
   type CodingAgentRunStatus,
 } from '../../../shared/codingAgentRuns'
+import { resolveDriverAgentCli } from './agentCliHooks'
+import type { AgentId } from '../../../shared/agents'
 import {
   actionableCodingAgentRunIds,
   changedCodingAgentRunIds,
@@ -28,49 +35,40 @@ function workspace(workspaceId: string) {
   return useAppStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
 }
 
-function runPanel(workspaceId: string, runId: string) {
+function runPanel(workspaceId: string, ownerPanelId: string, runId: string) {
   const ws = workspace(workspaceId)
-  return Object.values(ws?.panels ?? {}).find((panel) => panel.codingAgentRun?.id === runId)
+  return Object.values(ws?.panels ?? {}).find((panel) =>
+    panel.codingAgentRun?.id === runId &&
+    panel.codingAgentRun.ownerPanelId === ownerPanelId,
+  )
 }
 
 function terminalText(panelId: string, maxChars = 4_000): string {
   const terminal = terminalRegistry.getEntry(panelId)?.terminal
-  if (!terminal) return ''
-  const buffer = terminal.buffer.active
-  const lines: string[] = []
-  for (let index = 0; index < buffer.length; index++) {
-    lines.push(buffer.getLine(index)?.translateToString(true) ?? '')
-  }
-  while (lines.length > 0 && !lines[lines.length - 1]) lines.pop()
-  return lines.join('\n').slice(-maxChars)
+  return terminal ? terminalBufferTail(terminal, maxChars) : ''
 }
 
 function runStatus(workspaceId: string, panelId: string, run: CodingAgentRun): CodingAgentRunStatus {
-  if (run.stoppedAt) return 'stopped'
-  if (run.endedAt) return run.exitCode === 0 ? 'ready' : 'failed'
   const failure = terminalRegistry.getFailure(panelId)
-  if (failure) return 'failed'
   const entry = terminalRegistry.getEntry(panelId)
-  if (!entry) return 'starting'
-  if (!entry.alive) return 'ready'
-  const runtime = entry.ptyId
+  const runtime = entry?.ptyId
     ? useStatusStore.getState().workspaces[workspaceId]?.terminals[entry.ptyId]
     : undefined
-  switch (runtime?.agentState) {
-    case 'running': return 'working'
-    case 'waitingForInput': return 'waiting'
-    case 'finished': return 'ready'
-    case 'notRunning':
-    default:
-      return runtime?.agentPresent || runtime?.agentName ? 'working' : 'starting'
-  }
+  return deriveCodingAgentRunStatus(run, {
+    terminalStarted: entry !== undefined,
+    terminalAlive: entry?.alive === true,
+    terminalFailed: failure !== undefined,
+    agentState: runtime?.agentState,
+    agentPresent: runtime?.agentPresent === true || Boolean(runtime?.agentName),
+  })
 }
 
 export function codingAgentSnapshot(
   workspaceId: string,
+  ownerPanelId: string,
   runId: string,
 ): CodingAgentRunSnapshot | null {
-  const panel = runPanel(workspaceId, runId)
+  const panel = runPanel(workspaceId, ownerPanelId, runId)
   const run = panel?.codingAgentRun
   if (!panel || !run) return null
   const entry = terminalRegistry.getEntry(panel.id)
@@ -82,16 +80,19 @@ export function codingAgentSnapshot(
     agentName: codingAgentDisplayName(run.agentId),
     cwd: panel.cwd ?? workspace(workspaceId)?.rootPath ?? '',
     alive: entry?.alive === true,
-    followUpSupported: run.agentId !== 'opencode',
+    followUpSupported: codingAgentSupportsFollowUp(run.agentId),
     ...(lastLine ? { statusLine: lastLine.slice(0, 200) } : {}),
+    ...(terminalRegistry.getFailure(panel.id)
+      ? { failureReason: terminalRegistry.getFailure(panel.id)!.slice(0, 500) }
+      : {}),
   }
 }
 
-function allSnapshots(workspaceId: string): CodingAgentRunSnapshot[] {
+function allSnapshots(workspaceId: string, ownerPanelId: string): CodingAgentRunSnapshot[] {
   const ws = workspace(workspaceId)
   return Object.values(ws?.panels ?? {})
-    .filter((panel) => panel.codingAgentRun)
-    .map((panel) => codingAgentSnapshot(workspaceId, panel.codingAgentRun!.id))
+    .filter((panel) => panel.codingAgentRun?.ownerPanelId === ownerPanelId)
+    .map((panel) => codingAgentSnapshot(workspaceId, ownerPanelId, panel.codingAgentRun!.id))
     .filter((snapshot): snapshot is CodingAgentRunSnapshot => snapshot !== null)
     .sort((a, b) => a.createdAt - b.createdAt)
 }
@@ -135,15 +136,16 @@ function resolveTarget(
 
 function findRequestedRuns(
   workspaceId: string,
+  ownerPanelId: string,
   raw: unknown,
 ): CodingAgentRunSnapshot[] | { error: string } {
   if (raw !== undefined && !Array.isArray(raw)) return { error: 'runIds-must-be-an-array' }
   const ids = raw as unknown[] | undefined
-  if (!ids) return allSnapshots(workspaceId)
+  if (!ids) return allSnapshots(workspaceId, ownerPanelId)
   const snapshots: CodingAgentRunSnapshot[] = []
   for (const value of ids) {
     if (typeof value !== 'string') return { error: 'invalid-run-id' }
-    const snapshot = codingAgentSnapshot(workspaceId, value)
+    const snapshot = codingAgentSnapshot(workspaceId, ownerPanelId, value)
     if (!snapshot) return { error: 'coding-agent-not-found' }
     snapshots.push(snapshot)
   }
@@ -152,10 +154,11 @@ function findRequestedRuns(
 
 async function waitForCodingAgentChange(
   workspaceId: string,
+  ownerPanelId: string,
   rawRunIds: unknown,
   timeoutMs: number,
 ): Promise<CodingAgentOutcome> {
-  const initial = findRequestedRuns(workspaceId, rawRunIds)
+  const initial = findRequestedRuns(workspaceId, ownerPanelId, rawRunIds)
   if ('error' in initial) return { ok: false, error: initial.error }
   // With no explicit target, monitor only live mission work. Historical ready
   // runs must not make every future wait return immediately.
@@ -196,7 +199,7 @@ async function waitForCodingAgentChange(
       resolve(outcome)
     }
     const current = (): CodingAgentRunSnapshot[] | { error: string } =>
-      findRequestedRuns(workspaceId, ids)
+      findRequestedRuns(workspaceId, ownerPanelId, ids)
     const check = (): void => {
       const snapshots = current()
       if ('error' in snapshots) {
@@ -239,19 +242,23 @@ async function waitForCodingAgentChange(
 
 export async function handleCodingAgentMethod(
   workspaceId: string,
+  ownerPanelId: string,
   method: string,
   args: Record<string, unknown>,
 ): Promise<CodingAgentOutcome> {
   const name = method.slice('cate.codingAgent.'.length)
+  if (!ownerPanelId) return { ok: false, error: 'mission-owner-required' }
 
   if (name === 'create') {
-    const agentId = parseCodingAgentId(args.agentId)
+    const requestedAgentId = args.agentId === undefined ? '' : parseCodingAgentId(args.agentId)
     const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
-    if (!agentId) return { ok: false, error: 'unsupported-agent' }
+    if (args.agentId !== undefined && !requestedAgentId) {
+      return { ok: false, error: 'unsupported-agent' }
+    }
     if (!prompt) return { ok: false, error: 'prompt-required' }
     if (prompt.includes('\0')) return { ok: false, error: 'invalid-prompt' }
     if (prompt.length > 50_000) return { ok: false, error: 'prompt-too-long' }
-    const active = allSnapshots(workspaceId).filter((run) =>
+    const active = allSnapshots(workspaceId, ownerPanelId).filter((run) =>
       run.status === 'starting' || run.status === 'working' || run.status === 'waiting',
     )
     if (active.length >= MAX_CONCURRENT_CODING_AGENTS) {
@@ -280,18 +287,35 @@ export async function handleCodingAgentMethod(
     }
     const target = resolveTarget(workspaceId, args)
     if ('error' in target) return { ok: false, error: target.error }
+    const ws = workspace(workspaceId)
+    let agentId: AgentId
+    try {
+      const agent = await resolveDriverAgentCli(target.cwd, requestedAgentId || '', {
+        fallbackLocator: ws?.rootPath,
+        hookConfig: useSettingsStore.getState().agentHookInjection[workspaceId],
+      })
+      agentId = agent.id
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error
+          ? `agent-hooks-not-ready: ${error.message}`
+          : 'agent-hooks-not-ready',
+      }
+    }
 
     const runId = crypto.randomUUID()
     const placementGroupId = target.worktreeId
       ? `coding-agent:${target.worktreeId}`
       : 'coding-agent:primary'
+    const launch = { runId, agentId, prompt, ownerPanelId }
     const panelId = useAppStore.getState().createTerminal(
       workspaceId,
       undefined,
       undefined,
       placementForBackgroundPanel(workspaceId, placementGroupId),
       target.cwd,
-      { runId, agentId, prompt },
+      launch,
     )
     if (!panelId) return { ok: false, error: 'panel-creation-failed' }
     const store = useAppStore.getState()
@@ -305,7 +329,17 @@ export async function handleCodingAgentMethod(
     }
     const label = prompt.replace(/\s+/g, ' ').slice(0, 54)
     store.updatePanelTitle(workspaceId, panelId, `${codingAgentDisplayName(agentId)} · ${label}`)
-    const snapshot = codingAgentSnapshot(workspaceId, runId)
+
+    // Mission workers are processes, not a React mount side effect. Starting
+    // the existing terminal lifecycle here keeps them alive in inactive
+    // workspaces/canvases; TerminalPanel later attaches to the same entry.
+    await terminalRegistry.getOrCreate(panelId, {
+      workspaceId,
+      cwd: target.cwd,
+      codingAgentLaunch: launch,
+      placementGroupId,
+    })
+    const snapshot = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
     return {
       ok: true,
       result: snapshot ? compactCodingAgentSnapshot(snapshot) : {
@@ -321,7 +355,7 @@ export async function handleCodingAgentMethod(
   if (name !== 'wait' && !runId) return { ok: false, error: 'runId-required' }
 
   if (name === 'inspect') {
-    const snapshot = codingAgentSnapshot(workspaceId, runId)
+    const snapshot = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
     if (!snapshot) return { ok: false, error: 'coding-agent-not-found' }
     return {
       ok: true,
@@ -333,27 +367,28 @@ export async function handleCodingAgentMethod(
   }
 
   if (name === 'send') {
-    const panel = runPanel(workspaceId, runId)
+    const panel = runPanel(workspaceId, ownerPanelId, runId)
     const run = panel?.codingAgentRun
     const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
     if (!panel || !run) return { ok: false, error: 'coding-agent-not-found' }
     if (!prompt) return { ok: false, error: 'prompt-required' }
     if (run.stoppedAt) return { ok: false, error: 'coding-agent-stopped' }
-    const entry = terminalRegistry.getEntry(panel.id)
-    if (!entry?.ptyId || !entry.alive) return { ok: false, error: 'coding-agent-not-ready' }
-    entry.terminal.paste(prompt)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    await window.electronAPI.terminalWrite(entry.ptyId, '\r')
+    if (!codingAgentSupportsFollowUp(run.agentId)) {
+      return { ok: false, error: 'coding-agent-follow-up-unsupported' }
+    }
+    if (!(await submitTerminalText(panel.id, prompt))) {
+      return { ok: false, error: 'coding-agent-not-ready' }
+    }
     useAppStore.getState().setPanelCodingAgentRun(workspaceId, panel.id, {
       ...run,
       followUps: [...(run.followUps ?? []), { prompt, sentAt: Date.now() }],
     })
-    const snapshot = codingAgentSnapshot(workspaceId, runId)
+    const snapshot = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
     return { ok: true, result: snapshot ? compactCodingAgentSnapshot(snapshot) : null }
   }
 
   if (name === 'stop') {
-    const panel = runPanel(workspaceId, runId)
+    const panel = runPanel(workspaceId, ownerPanelId, runId)
     const run = panel?.codingAgentRun
     if (!panel || !run) return { ok: false, error: 'coding-agent-not-found' }
     terminalRegistry.terminate(panel.id)
@@ -361,13 +396,14 @@ export async function handleCodingAgentMethod(
       ...run,
       stoppedAt: Date.now(),
     })
-    const snapshot = codingAgentSnapshot(workspaceId, runId)
+    const snapshot = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
     return { ok: true, result: snapshot ? compactCodingAgentSnapshot(snapshot) : null }
   }
 
   if (name === 'wait') {
     return waitForCodingAgentChange(
       workspaceId,
+      ownerPanelId,
       args.runIds,
       codingAgentWaitMs(args.timeoutSeconds),
     )

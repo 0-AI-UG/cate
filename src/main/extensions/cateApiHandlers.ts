@@ -65,12 +65,19 @@ import { codingManager } from '../../cateAgent/main/codingManager'
 import { getExtensionStorage } from './storage'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { getActiveMainWindow, getWindow } from '../windowRegistry'
-import { getWindowPanels, removeWindowPanel, revealWindowPanel, upsertWindowPanel } from '../windowPanels'
+import {
+  getWindowPanels,
+  removeWindowPanel,
+  revealWindowPanel,
+  subscribeWindowPanels,
+  upsertWindowPanel,
+} from '../windowPanels'
 import { parseLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import { getAllSettings, getSetting } from '../settingsFile'
 import { resolveActiveTheme } from '../themeBootCache'
 import { showOsNotification } from '../ipc/notifications'
-import type { PanelType } from '../../shared/types'
+import type { PanelType, WindowPanelInfo } from '../../shared/types'
+import type { CodingAgentRunStatus } from '../../shared/codingAgentRuns'
 
 /** Bumped when the cateHost API surface changes incompatibly. Guests use
  *  `cate.version` for feature detection.
@@ -241,6 +248,167 @@ function resolvePanelTargetWindow(
   const win = getActiveMainWindow()
   if (!win || win.isDestroyed()) return { error: 'no-host-window' }
   return { wc: win.webContents, ownerWindowId: win.id }
+}
+
+/** Resolve a mission worker to the renderer currently hosting its terminal.
+ * Window reports carry both the run and supervisor identities, preventing one
+ * Cate Agent session from using a guessed run id to reach another mission. */
+function resolveCodingAgentTargetWindow(
+  runIds: string[],
+  ownerPanelId: string,
+): { wc: WebContents } | { error: string } | null {
+  if (runIds.length === 0) return null
+  const reports = runIds.map((runId) =>
+    getWindowPanels().find((panel) =>
+      panel.type === 'terminal' &&
+      panel.codingAgentRunId === runId &&
+      panel.codingAgentOwnerPanelId === ownerPanelId,
+    ),
+  )
+  // A just-created panel may not have reached the debounced discovery report
+  // yet. The supervisor-bound forward remains exact in that common case.
+  if (reports.some((report) => !report)) return null
+  const ownerIds = new Set(reports.map((report) => report!.ownerWindowId))
+  if (ownerIds.size !== 1) return { error: 'coding-agent-runs-span-windows' }
+  const win = getWindow([...ownerIds][0])
+  if (!win || win.isDestroyed()) return { error: 'coding-agent-window-not-found' }
+  return { wc: win.webContents }
+}
+
+const ACTIONABLE_CODING_AGENT_STATUSES = new Set<CodingAgentRunStatus>([
+  'waiting',
+  'ready',
+  'stopped',
+  'failed',
+])
+
+function codingAgentReports(
+  runIds: string[],
+  ownerPanelId: string,
+): WindowPanelInfo[] | null {
+  const reports = runIds.map((runId) =>
+    getWindowPanels().find((panel) =>
+      panel.type === 'terminal' &&
+      panel.codingAgentRunId === runId &&
+      panel.codingAgentOwnerPanelId === ownerPanelId,
+    ),
+  )
+  return reports.some((report) => !report) ? null : reports as WindowPanelInfo[]
+}
+
+async function inspectCodingAgentReports(args: {
+  reports: WindowPanelInfo[]
+  extensionId: string
+  workspaceId: string
+  ownerPanelId: string
+  originCwd?: string
+}): Promise<unknown[]> {
+  return Promise.all(args.reports.map(async (report) => {
+    const win = getWindow(report.ownerWindowId)
+    if (!win || win.isDestroyed()) {
+      return {
+        id: report.codingAgentRunId,
+        panelId: report.panelId,
+        status: report.codingAgentStatus,
+      }
+    }
+    const result = await forwardToOwner(win.webContents, {
+      extensionId: args.extensionId,
+      workspaceId: args.workspaceId,
+      panelId: args.ownerPanelId,
+      method: 'cate.codingAgent.inspect',
+      args: {
+        runId: report.codingAgentRunId,
+        _cateOriginCwd: args.originCwd,
+      },
+    })
+    if (result && typeof result === 'object' && !('error' in result)) {
+      const { recentOutput: _recentOutput, ...compact } =
+        result as Record<string, unknown>
+      return compact
+    }
+    return {
+      id: report.codingAgentRunId,
+      panelId: report.panelId,
+      status: report.codingAgentStatus,
+    }
+  }))
+}
+
+/** Wait across workers hosted by different renderers using the existing
+ * cross-window discovery events. No renderer polling and no orphaned parallel
+ * wait requests: one main-process subscription observes all worker statuses. */
+function waitForCrossWindowCodingAgents(args: {
+  runIds: string[]
+  extensionId: string
+  workspaceId: string
+  ownerPanelId: string
+  originCwd?: string
+  timeoutSeconds: unknown
+}): Promise<InvokeResult> {
+  const initial = codingAgentReports(args.runIds, args.ownerPanelId)
+  if (!initial || initial.some((report) => !report.codingAgentStatus)) {
+    return Promise.resolve({
+      error: 'coding-agent-status-unavailable',
+      method: 'cate.codingAgent.wait',
+    })
+  }
+  const baseline = new Map(initial.map((report) => [
+    report.codingAgentRunId!,
+    report.codingAgentStatus!,
+  ]))
+  const requestedSeconds = Number(args.timeoutSeconds ?? 60)
+  const timeoutMs = (Number.isFinite(requestedSeconds)
+    ? Math.max(15, Math.min(120, requestedSeconds))
+    : 60) * 1_000
+
+  return new Promise((resolve) => {
+    let settled = false
+    let unsubscribe = () => {}
+    const finish = async (
+      timedOut: boolean,
+      changedRunIds: string[],
+      reports: WindowPanelInfo[],
+    ): Promise<void> => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      unsubscribe()
+      resolve({
+        timedOut,
+        changedRunIds,
+        runs: await inspectCodingAgentReports({ reports, ...args }),
+      })
+    }
+    const check = (): void => {
+      const reports = codingAgentReports(args.runIds, args.ownerPanelId)
+      if (!reports) {
+        void finish(false, args.runIds, initial)
+        return
+      }
+      const changedRunIds = reports
+        .filter((report) =>
+          report.codingAgentStatus !== baseline.get(report.codingAgentRunId!) &&
+          report.codingAgentStatus !== undefined &&
+          ACTIONABLE_CODING_AGENT_STATUSES.has(report.codingAgentStatus),
+        )
+        .map((report) => report.codingAgentRunId!)
+      if (changedRunIds.length > 0) void finish(false, changedRunIds, reports)
+    }
+    const initialActionable = initial
+      .filter((report) => ACTIONABLE_CODING_AGENT_STATUSES.has(report.codingAgentStatus!))
+      .map((report) => report.codingAgentRunId!)
+    const timer = setTimeout(() => {
+      const reports = codingAgentReports(args.runIds, args.ownerPanelId) ?? initial
+      void finish(true, [], reports)
+    }, timeoutMs)
+    unsubscribe = subscribeWindowPanels(check)
+    if (initialActionable.length > 0) {
+      void finish(false, initialActionable, initial)
+      return
+    }
+    check()
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -484,17 +652,40 @@ export async function dispatchCateInvoke(
   }
 
   if (method.startsWith('cate.codingAgent.')) {
-    const routedArgs = {
+    const routedArgs: Record<string, unknown> = {
       ...((args ?? {}) as Record<string, unknown>),
       _cateOriginCwd: scope.originCwd,
     }
-    return scope.forward({
+    const name = method.slice('cate.codingAgent.'.length)
+    const requestedRunIds = name === 'wait'
+      ? (Array.isArray(routedArgs.runIds)
+          ? routedArgs.runIds.filter((id: unknown): id is string => typeof id === 'string')
+          : [])
+      : typeof routedArgs.runId === 'string' ? [routedArgs.runId] : []
+    const target = name === 'create'
+      ? null
+      : resolveCodingAgentTargetWindow(requestedRunIds, panelId ?? '')
+    if (target && 'error' in target) {
+      if (name === 'wait' && target.error === 'coding-agent-runs-span-windows') {
+        return waitForCrossWindowCodingAgents({
+          runIds: requestedRunIds,
+          extensionId,
+          workspaceId,
+          ownerPanelId: panelId ?? '',
+          originCwd: scope.originCwd,
+          timeoutSeconds: routedArgs.timeoutSeconds,
+        })
+      }
+      return { error: target.error, method }
+    }
+    const payload = {
       extensionId,
       workspaceId,
       panelId: panelId ?? '',
       method,
       args: routedArgs,
-    })
+    }
+    return target ? forwardToOwner(target.wc, payload) : scope.forward(payload)
   }
 
   // Storage (handled in main, backed by storage.ts). Routed by prefix — mirrors

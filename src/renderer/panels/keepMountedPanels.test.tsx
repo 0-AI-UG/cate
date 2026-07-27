@@ -53,6 +53,7 @@ describe('keepMountedOffscreenPanelIds', () => {
         id: 'run-1',
         agentId: 'codex',
         panelId: 'worker',
+        ownerPanelId: 'agent-1',
         prompt: 'Implement it',
         createdAt: 1,
       },

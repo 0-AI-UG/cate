@@ -29,6 +29,7 @@ import {
   useCateAgentStore,
 } from '../../../cateAgent/renderer/cateAgentStore'
 import { useChatsStore } from '../../stores/chatsStore'
+import { deriveCodingAgentRunStatus } from '../../../shared/codingAgentRuns'
 
 let cleanup: (() => void) | null = null
 
@@ -125,6 +126,9 @@ export function setupWindowPanelSync(): () => void {
         ...freePanels,
       ]
       for (const p of placed) {
+        const terminalEntry = p.codingAgentRun ? terminalRegistry.getEntry(p.id) : undefined
+        const terminalFailure = p.codingAgentRun ? terminalRegistry.getFailure(p.id) : undefined
+        const workerAgent = agentInfo[p.id]
         report.push({
           panelId: p.id,
           type: p.type,
@@ -143,6 +147,17 @@ export function setupWindowPanelSync(): () => void {
             : p.type === 'terminal' ? p.worktreeId : undefined,
           agentState: agentInfo[p.id]?.state,
           agentName: agentInfo[p.id]?.name ?? null,
+          codingAgentRunId: p.codingAgentRun?.id,
+          codingAgentOwnerPanelId: p.codingAgentRun?.ownerPanelId,
+          codingAgentStatus: p.codingAgentRun
+            ? deriveCodingAgentRunStatus(p.codingAgentRun, {
+                terminalStarted: terminalEntry !== undefined,
+                terminalAlive: terminalEntry?.alive === true,
+                terminalFailed: terminalFailure !== undefined,
+                agentState: workerAgent?.state,
+                agentPresent: Boolean(workerAgent?.name),
+              })
+            : undefined,
           hasPorts: withPorts.has(p.id),
         })
       }
@@ -197,6 +212,7 @@ export function setupWindowPanelSync(): () => void {
     lastStatusSig = sig
     schedule()
   })
+  const unsubscribeTerminalFailure = terminalRegistry.subscribeFailure(schedule)
 
   cleanup = () => {
     unsubscribeApp()
@@ -204,6 +220,7 @@ export function setupWindowPanelSync(): () => void {
     unsubscribeActiveChats()
     unsubscribeChats()
     unsubscribeStatus()
+    unsubscribeTerminalFailure()
     for (const unsub of canvasSubs.values()) unsub()
     canvasSubs.clear()
     if (timer) clearTimeout(timer)

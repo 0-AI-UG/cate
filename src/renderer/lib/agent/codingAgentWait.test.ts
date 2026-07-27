@@ -14,6 +14,7 @@ function run(id: string, status: CodingAgentRunSnapshot['status']): CodingAgentR
     agentId: 'codex',
     agentName: 'Codex',
     panelId: `panel-${id}`,
+    ownerPanelId: 'owner-1',
     prompt: 'Test',
     createdAt: 1,
     cwd: '/repo',

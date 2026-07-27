@@ -72,7 +72,7 @@ vi.mock('./ExtensionManager', () => ({
 // importing cateApiHandlers doesn't drag in the proxy/server/IPC machinery.
 vi.mock('./proxyServer', () => ({ getProxyUrlFor: vi.fn() }))
 vi.mock('./ExtensionServerManager', () => ({ extensionServerManager: {} }))
-const { activeWindow, windowsById, windowPanelList, revealWindowPanel, upsertWindowPanel, removeWindowPanel } = vi.hoisted(() => ({
+const { activeWindow, windowsById, windowPanelList, windowPanelListener, revealWindowPanel, upsertWindowPanel, removeWindowPanel } = vi.hoisted(() => ({
   activeWindow: { value: undefined as unknown },
   windowsById: new Map<number, unknown>(),
   windowPanelList: { value: [] as Array<{
@@ -84,7 +84,11 @@ const { activeWindow, windowsById, windowPanelList, revealWindowPanel, upsertWin
     filePath?: string
     url?: string
     focused?: boolean
+    codingAgentRunId?: string
+    codingAgentOwnerPanelId?: string
+    codingAgentStatus?: 'starting' | 'working' | 'waiting' | 'ready' | 'stopped' | 'failed'
   }> },
+  windowPanelListener: { value: null as (() => void) | null },
   revealWindowPanel: vi.fn(() => true),
   upsertWindowPanel: vi.fn(),
   removeWindowPanel: vi.fn(),
@@ -95,6 +99,10 @@ vi.mock('../windowRegistry', () => ({
 }))
 vi.mock('../windowPanels', () => ({
   getWindowPanels: () => windowPanelList.value,
+  subscribeWindowPanels: vi.fn((listener: () => void) => {
+    windowPanelListener.value = listener
+    return () => { windowPanelListener.value = null }
+  }),
   revealWindowPanel,
   upsertWindowPanel,
   removeWindowPanel,
@@ -174,6 +182,7 @@ beforeEach(() => {
   activeWindow.value = undefined
   windowsById.clear()
   windowPanelList.value = []
+  windowPanelListener.value = null
   revealWindowPanel.mockClear()
   revealWindowPanel.mockReturnValue(true)
   removeWindowPanel.mockClear()
@@ -405,6 +414,119 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
       })
     }
     expect(forward).not.toHaveBeenCalled()
+  })
+
+  it('routes a transferred worker to its exact owner window', async () => {
+    const send = vi.fn(() => { throw new Error('closed for test') })
+    windowsById.set(7, { isDestroyed: () => false, webContents: { send } })
+    windowPanelList.value = [{
+      panelId: 'worker-panel',
+      type: 'terminal',
+      ownerWindowId: 7,
+      codingAgentRunId: 'run-1',
+      codingAgentOwnerPanelId: 'supervisor-1',
+    }]
+    const fallback = vi.fn()
+
+    const result = await dispatchCateInvoke({
+      extensionId: 'cate-agent',
+      workspaceId: WS,
+      panelId: 'supervisor-1',
+      caller: 'cate-agent',
+      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      forward: fallback,
+    }, 'cate.codingAgent.inspect', { runId: 'run-1' })
+
+    expect(result).toEqual({ error: 'no-owner', method: 'cate.codingAgent.inspect' })
+    expect(send).toHaveBeenCalledOnce()
+    expect(fallback).not.toHaveBeenCalled()
+  })
+
+  it('coordinates one event-driven wait across workers in different windows', async () => {
+    const sendA = vi.fn(() => { throw new Error('closed for test') })
+    const sendB = vi.fn(() => { throw new Error('closed for test') })
+    windowsById.set(7, { isDestroyed: () => false, webContents: { send: sendA } })
+    windowsById.set(8, { isDestroyed: () => false, webContents: { send: sendB } })
+    windowPanelList.value = [
+      {
+        panelId: 'worker-a',
+        type: 'terminal',
+        ownerWindowId: 7,
+        codingAgentRunId: 'run-a',
+        codingAgentOwnerPanelId: 'supervisor-1',
+        codingAgentStatus: 'ready',
+      },
+      {
+        panelId: 'worker-b',
+        type: 'terminal',
+        ownerWindowId: 8,
+        codingAgentRunId: 'run-b',
+        codingAgentOwnerPanelId: 'supervisor-1',
+        codingAgentStatus: 'waiting',
+      },
+    ]
+
+    const result = await dispatchCateInvoke({
+      extensionId: 'cate-agent',
+      workspaceId: WS,
+      panelId: 'supervisor-1',
+      caller: 'cate-agent',
+      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      forward: vi.fn(),
+    }, 'cate.codingAgent.wait', { runIds: ['run-a', 'run-b'] })
+
+    expect(result).toEqual({
+      timedOut: false,
+      changedRunIds: ['run-a', 'run-b'],
+      runs: [
+        { id: 'run-a', panelId: 'worker-a', status: 'ready' },
+        { id: 'run-b', panelId: 'worker-b', status: 'waiting' },
+      ],
+    })
+    expect(sendA).toHaveBeenCalledOnce()
+    expect(sendB).toHaveBeenCalledOnce()
+  })
+
+  it('wakes a cross-window wait from the shared window-panel event stream', async () => {
+    const send = vi.fn(() => { throw new Error('closed for test') })
+    windowsById.set(7, { isDestroyed: () => false, webContents: { send } })
+    windowsById.set(8, { isDestroyed: () => false, webContents: { send } })
+    windowPanelList.value = [
+      {
+        panelId: 'worker-a',
+        type: 'terminal',
+        ownerWindowId: 7,
+        codingAgentRunId: 'run-a',
+        codingAgentOwnerPanelId: 'supervisor-1',
+        codingAgentStatus: 'working',
+      },
+      {
+        panelId: 'worker-b',
+        type: 'terminal',
+        ownerWindowId: 8,
+        codingAgentRunId: 'run-b',
+        codingAgentOwnerPanelId: 'supervisor-1',
+        codingAgentStatus: 'working',
+      },
+    ]
+    const waiting = dispatchCateInvoke({
+      extensionId: 'cate-agent',
+      workspaceId: WS,
+      panelId: 'supervisor-1',
+      caller: 'cate-agent',
+      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      forward: vi.fn(),
+    }, 'cate.codingAgent.wait', { runIds: ['run-a', 'run-b'] })
+
+    expect(windowPanelListener.value).toBeTypeOf('function')
+    windowPanelList.value[1].codingAgentStatus = 'ready'
+    windowPanelListener.value!()
+
+    await expect(waiting).resolves.toMatchObject({
+      timedOut: false,
+      changedRunIds: ['run-b'],
+    })
+    expect(windowPanelListener.value).toBeNull()
   })
 })
 

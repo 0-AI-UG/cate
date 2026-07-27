@@ -141,7 +141,7 @@ export function useCateHostActionResponder(): void {
         }
 
         if (method.startsWith('cate.codingAgent.')) {
-          const outcome = await handleCodingAgentMethod(workspaceId, method, args)
+          const outcome = await handleCodingAgentMethod(workspaceId, payload.panelId, method, args)
           return outcome.ok
             ? reply(true, { result: outcome.result })
             : reply(false, { error: outcome.error })

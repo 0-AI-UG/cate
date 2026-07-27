@@ -24,6 +24,7 @@ import { broadcastToAll, focusWindow, getWindow, getWindowType, onWindowClosed, 
 
 /** The latest panel report from each window, keyed by Electron window id. */
 const windowPanels = new Map<number, WindowPanelInfo[]>()
+const windowPanelListeners = new Set<() => void>()
 
 /** Store a window's reported panels (stamped with its owner id + type) and
  *  rebroadcast the union. Ignored if the window isn't tracked (e.g. a late
@@ -48,6 +49,9 @@ export function setWindowPanels(windowId: number, report: WindowPanelReport[]): 
       agentState: p.agentState,
       agentName: p.agentName,
       hasPorts: p.hasPorts,
+      codingAgentRunId: p.codingAgentRunId,
+      codingAgentOwnerPanelId: p.codingAgentOwnerPanelId,
+      codingAgentStatus: p.codingAgentStatus,
     })),
   )
   broadcastWindowPanels()
@@ -76,6 +80,9 @@ export function upsertWindowPanel(windowId: number, panel: WindowPanelReport): v
     agentState: panel.agentState,
     agentName: panel.agentName,
     hasPorts: panel.hasPorts,
+    codingAgentRunId: panel.codingAgentRunId,
+    codingAgentOwnerPanelId: panel.codingAgentOwnerPanelId,
+    codingAgentStatus: panel.codingAgentStatus,
   }
   const index = panels.findIndex((candidate) => candidate.panelId === panel.panelId)
   windowPanels.set(windowId, index < 0
@@ -116,6 +123,13 @@ export function getWindowPanels(): WindowPanelInfo[] {
   return result
 }
 
+/** Observe real changes to the cross-window union. Mission waits use this same
+ * event-driven registry instead of polling renderer windows. */
+export function subscribeWindowPanels(listener: () => void): () => void {
+  windowPanelListeners.add(listener)
+  return () => windowPanelListeners.delete(listener)
+}
+
 // The union is rebroadcast on every window report, so guard on a cheap signature
 // to push only on real changes.
 let lastWindowPanelSignature = ''
@@ -125,12 +139,13 @@ let lastWindowPanelSignature = ''
 export function broadcastWindowPanels(): void {
   const panels = getWindowPanels()
   const signature = panels
-    .map((p) => `${p.ownerWindowId}:${p.panelId}:${p.type}:${p.title}:${p.workspaceId}:${p.filePath ?? ''}:${p.url ?? ''}:${p.focused ? 1 : 0}:${p.parentCanvasId ?? ''}:${p.worktreeId ?? ''}:${p.agentState ?? ''}:${p.agentName ?? ''}:${p.hasPorts ? 1 : 0}`)
+    .map((p) => `${p.ownerWindowId}:${p.panelId}:${p.type}:${p.title}:${p.workspaceId}:${p.filePath ?? ''}:${p.url ?? ''}:${p.focused ? 1 : 0}:${p.parentCanvasId ?? ''}:${p.worktreeId ?? ''}:${p.agentState ?? ''}:${p.agentName ?? ''}:${p.hasPorts ? 1 : 0}:${p.codingAgentRunId ?? ''}:${p.codingAgentOwnerPanelId ?? ''}:${p.codingAgentStatus ?? ''}`)
     .sort()
     .join('|')
   if (signature === lastWindowPanelSignature) return
   lastWindowPanelSignature = signature
   broadcastToAll(WINDOW_PANELS_CHANGED, panels)
+  for (const listener of windowPanelListeners) listener()
 }
 
 /** Focus the window that owns `panelId` and ask it to reveal the panel within

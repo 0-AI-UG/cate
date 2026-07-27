@@ -7,7 +7,7 @@ import type { Theme } from './theme'
 export type { Theme } from './theme'
 import type { AgentId } from './agents'
 import type { AgentHookMode } from './agentHooks'
-import type { CodingAgentLaunch, CodingAgentRun } from './codingAgentRuns'
+import type { CodingAgentLaunch, CodingAgentRun, CodingAgentRunStatus } from './codingAgentRuns'
 
 // -----------------------------------------------------------------------------
 // Geometry primitives
@@ -341,6 +341,11 @@ export interface WindowPanelReport {
   /** Whether the owner window's scan found listening ports for this panel, so a
    *  detached row shows the same port dot as a local one. */
   hasPorts?: boolean
+  /** Mission identity used only for exact owner-window routing of a live
+   * Cate-owned worker after cross-window terminal transfer. */
+  codingAgentRunId?: string
+  codingAgentOwnerPanelId?: string
+  codingAgentStatus?: CodingAgentRunStatus
 }
 
 export interface CateWindowParams {

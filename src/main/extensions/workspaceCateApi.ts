@@ -5,6 +5,7 @@
 import log from '../logger'
 import { getSetting } from '../settingsFile'
 import { CateApiEndpointManager, cateApiEndpointManager } from './cateApiEndpointManager'
+import type { WebContents } from 'electron'
 
 const FIRST_PARTY_ID = 'terminal'
 const endpointKey = (workspaceId: string): string => `first-party:${workspaceId}`
@@ -66,6 +67,7 @@ export class WorkspaceCateApiManager {
     workspaceId: string,
     panelId: string,
     originCwd: string,
+    ownerWebContents?: WebContents,
   ): Promise<WorkspaceCateApiEndpoint | null> {
     try {
       const endpoint = await this.endpoints.ensure({
@@ -78,6 +80,7 @@ export class WorkspaceCateApiManager {
         listenerId: `cateapi-agent-${workspaceId}-${panelId}`,
         caller: 'cate-agent',
         grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+        ownerWebContents,
       })
       const keys = this.cateAgentKeys.get(workspaceId) ?? new Set<string>()
       keys.add(cateAgentEndpointKey(workspaceId, panelId))

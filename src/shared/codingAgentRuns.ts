@@ -5,6 +5,8 @@ export interface CodingAgentRun {
   id: string
   agentId: AgentId
   panelId: string
+  /** Cate Agent panel/session that owns and may control this run. */
+  ownerPanelId: string
   prompt: string
   createdAt: number
   worktreeId?: string
@@ -21,6 +23,7 @@ export interface CodingAgentLaunch {
   runId: string
   agentId: AgentId
   prompt: string
+  ownerPanelId: string
 }
 
 export type CodingAgentRunStatus =
@@ -31,15 +34,45 @@ export type CodingAgentRunStatus =
   | 'stopped'
   | 'failed'
 
+export interface CodingAgentRuntimeState {
+  terminalStarted: boolean
+  terminalAlive: boolean
+  terminalFailed: boolean
+  agentState?: 'notRunning' | 'running' | 'waitingForInput' | 'finished'
+  agentPresent?: boolean
+}
+
+/** One status policy shared by the renderer supervisor and the cross-window
+ * discovery report. Keeping this pure prevents detached-worker waits from
+ * interpreting the same terminal differently. */
+export function deriveCodingAgentRunStatus(
+  run: CodingAgentRun,
+  runtime: CodingAgentRuntimeState,
+): CodingAgentRunStatus {
+  if (run.stoppedAt) return 'stopped'
+  if (run.endedAt) return run.exitCode === 0 ? 'ready' : 'failed'
+  if (runtime.terminalFailed) return 'failed'
+  if (!runtime.terminalStarted) return 'starting'
+  if (!runtime.terminalAlive) return 'ready'
+  switch (runtime.agentState) {
+    case 'running': return 'working'
+    case 'waitingForInput': return 'waiting'
+    case 'finished': return 'ready'
+    case 'notRunning':
+    default:
+      return runtime.agentPresent ? 'working' : 'starting'
+  }
+}
+
 export interface CodingAgentRunSnapshot extends CodingAgentRun {
   status: CodingAgentRunStatus
   agentName: string
   cwd: string
   alive: boolean
-  /** OpenCode's prompt-bearing `run` surface is one-shot; the other registered
-   *  interactive CLIs can accept follow-up prompts in the same terminal. */
+  /** Derived from the canonical agent capability registry. */
   followUpSupported: boolean
   statusLine?: string
+  failureReason?: string
 }
 
 export const MAX_CONCURRENT_CODING_AGENTS = 5
@@ -68,10 +101,14 @@ export function codingAgentCommand(
   if (prompt.includes('\0')) throw new Error('Coding-agent prompts cannot contain NUL bytes')
   return {
     executable: agent.command,
-    args: launch.agentId === 'opencode' ? ['run', prompt] : [prompt],
+    args: agent.codingAgentArgs(prompt),
   }
 }
 
 export function codingAgentDisplayName(agentId: AgentId): string {
   return AGENTS.find((agent) => agent.id === agentId)?.displayName ?? agentId
+}
+
+export function codingAgentSupportsFollowUp(agentId: AgentId): boolean {
+  return AGENTS.find((agent) => agent.id === agentId)?.codingAgentFollowUp ?? false
 }

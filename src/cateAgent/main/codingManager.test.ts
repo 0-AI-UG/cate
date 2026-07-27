@@ -43,6 +43,7 @@ import { PiRpcClient } from './piRpcClient'
 import { prepareCodingDir } from './codingDir'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
 import { CODING_EVENT } from '../../shared/ipc-channels'
+import { workspaceCateApi } from '../../main/extensions/workspaceCateApi'
 
 const fakeAuthManager = { setOnChange: vi.fn() } as unknown as AuthManager
 
@@ -67,6 +68,7 @@ describe('CodingManager worktree skill preparation', () => {
     })
 
     const manager = new CodingManager(fakeAuthManager)
+    const sender = { id: 4, isDestroyed: () => false, send: vi.fn() } as never
     await manager.create(
       {
         panelId: 'panel-worktree',
@@ -74,7 +76,7 @@ describe('CodingManager worktree skill preparation', () => {
         workspaceRoot: '/repo/base',
         cwd: '/repo/worktree',
       },
-      { id: 4, isDestroyed: () => false, send: vi.fn() } as never,
+      sender,
     )
 
     expect(syncWorkspaceSkills).toHaveBeenCalledWith('/repo/base', '/repo/worktree')
@@ -82,6 +84,24 @@ describe('CodingManager worktree skill preparation', () => {
       vi.mocked(prepareCodingDir).mock.invocationCallOrder[0],
     )
     expect(client.start).toHaveBeenCalledOnce()
+    expect(workspaceCateApi.ensureCateAgentEndpoint).toHaveBeenCalledWith(
+      'workspace-1',
+      'panel-worktree',
+      '/repo/worktree',
+      sender,
+    )
+    expect(PiRpcClient).toHaveBeenCalledWith(runtime, expect.objectContaining({
+      env: expect.objectContaining({
+        CATE_CODING_AGENT_IDS: JSON.stringify([
+          'claude-code',
+          'codex',
+          'cursor',
+          'grok',
+          'opencode',
+          'pi',
+        ]),
+      }),
+    }))
   })
 
   it('logs process diagnostics but sends only a bounded error to the panel', async () => {

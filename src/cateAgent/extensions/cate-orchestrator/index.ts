@@ -25,14 +25,21 @@ of architecture, integration, and the final answer.
 </orchestration_mode>
 `.trim()
 
-const AgentId = Type.Union([
-  Type.Literal("claude-code"),
-  Type.Literal("codex"),
-  Type.Literal("cursor"),
-  Type.Literal("grok"),
-  Type.Literal("opencode"),
-  Type.Literal("pi"),
-])
+function agentIdSchema() {
+  let ids: string[] = []
+  try {
+    const parsed = JSON.parse(process.env.CATE_CODING_AGENT_IDS || "[]")
+    if (Array.isArray(parsed)) {
+      ids = [...new Set(parsed.filter((id): id is string => typeof id === "string" && id.length > 0))]
+    }
+  } catch {
+    // Renderer validation remains authoritative if a hand-run extension has a
+    // malformed environment; Cate-managed sessions always provide this value.
+  }
+  return ids.length > 0
+    ? Type.Union(ids.map((id) => Type.Literal(id)) as [ReturnType<typeof Type.Literal>, ...ReturnType<typeof Type.Literal>[]])
+    : Type.String({ minLength: 1, description: "A coding agent registered by Cate." })
+}
 
 async function invoke(
   method: string,
@@ -97,18 +104,18 @@ export default function (pi: ExtensionAPI) {
     name: "create_coding_agent",
     label: "Create coding agent",
     description:
-      "Create a visible coding-agent terminal, bind it to a registered worktree, and give it an initial implementation task. Use this for bounded parallel work whose result you will inspect and integrate. Returns a runId and panelId.",
+      "Create a visible coding-agent terminal, bind it to a registered worktree, and give it an initial implementation task. Omit agentId to use Cate's first hook-ready registered agent. An explicit choice is accepted only when its hooks are ready in the target checkout. Returns a runId and panelId.",
     promptSnippet:
-      "create_coding_agent - start a visible Codex, Claude Code, Cursor, Grok, OpenCode, or Pi worker in a Cate worktree with an initial task.",
+      "create_coding_agent - start a visible, registered coding-agent worker in a Cate worktree with an initial task.",
     promptGuidelines: [
       "Delegate bounded implementation or investigation tasks when parallel work materially helps; keep architectural ownership and final verification yourself.",
       "Give each worker a self-contained prompt with scope, constraints, and concrete success criteria. Never ask a worker to create more workers.",
       "After delegation, call wait_for_coding_agents once and let it block until worker state changes. Do not repeatedly inspect a worker that is still working; inspect after a change or timeout, then send a targeted follow-up only when needed.",
       "Never create more than five live workers. Reuse a run with send_to_coding_agent when follow-up belongs to the same task.",
-      "OpenCode runs are one-shot; create a fresh OpenCode run instead of sending a follow-up after it exits.",
+      "Respect followUpSupported in each run result; create a fresh run when that capability is false.",
     ],
     parameters: Type.Object({
-      agentId: AgentId,
+      agentId: Type.Optional(agentIdSchema()),
       prompt: Type.String({ minLength: 1, description: "Self-contained task, constraints, and success criteria." }),
       worktreeId: Type.Optional(
         Type.String({ description: "Registered Cate worktree id. Omit to inherit this Cate Agent panel's worktree or use the primary checkout." }),
@@ -157,7 +164,7 @@ export default function (pi: ExtensionAPI) {
     description:
       "Efficiently monitor one or more Cate-owned coding agents. Blocks for up to 60 seconds by default but returns immediately when a worker changes state or needs input. Prefer one long wait over repeated polling; inspect only after this reports a change or timeout.",
     parameters: Type.Object({
-      runIds: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 5 })),
+      runIds: Type.Array(Type.String(), { minItems: 1, maxItems: 5 }),
       timeoutSeconds: Type.Optional(Type.Number({ minimum: 15, maximum: 120, default: 60 })),
     }),
     async execute(_id, params, signal) {

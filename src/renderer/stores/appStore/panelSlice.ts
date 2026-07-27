@@ -98,6 +98,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
             id: codingAgentLaunch.runId,
             agentId: codingAgentLaunch.agentId,
             panelId,
+            ownerPanelId: codingAgentLaunch.ownerPanelId,
             prompt: codingAgentLaunch.prompt,
             createdAt: Date.now(),
           },

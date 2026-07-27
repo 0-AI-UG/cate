@@ -18,7 +18,8 @@ import http from 'http'
 import { Duplex } from 'stream'
 import log from '../logger'
 import type { Runtime } from '../runtime/types'
-import { dispatchCateInvoke, forwardToActiveWindow } from './cateApiHandlers'
+import type { WebContents } from 'electron'
+import { dispatchCateInvoke, forwardToActiveWindow, forwardToOwner } from './cateApiHandlers'
 import { reverseDuplex } from './serverTunnel'
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024
@@ -39,6 +40,9 @@ export interface ReverseSession {
   /** Scopes granted to a first-party caller (used instead of a manifest's
    *  `cateApi`). Absent for extension-server sessions. */
   grantedScopes?: string[]
+  /** Exact renderer hosting the embedded Cate Agent. Server extensions do not
+   * have one and retain the active-window fallback. */
+  ownerWebContents?: WebContents
 }
 
 export interface CateApiReverseEndpoint {
@@ -109,7 +113,9 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
           // panel.setTitle) need a renderer. The server has no sender, so we
           // forward to the active main window (best-effort — there's no
           // authoritative workspace→window map for main windows).
-          forward: forwardToActiveWindow,
+          forward: session.ownerWebContents && !session.ownerWebContents.isDestroyed()
+            ? (payload) => forwardToOwner(session.ownerWebContents!, payload)
+            : forwardToActiveWindow,
           // Absent for extension-server sessions (undefined => 'extension'
           // gate + manifest scopes); set for first-party terminal/agent callers.
           caller: session.caller,

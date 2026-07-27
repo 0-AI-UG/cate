@@ -18,6 +18,7 @@ export function compactCodingAgentSnapshot(snapshot: CodingAgentRunSnapshot) {
     followUpSupported: snapshot.followUpSupported,
     ...(snapshot.worktreeId ? { worktreeId: snapshot.worktreeId } : {}),
     ...(snapshot.statusLine ? { statusLine: snapshot.statusLine } : {}),
+    ...(snapshot.failureReason ? { failureReason: snapshot.failureReason } : {}),
   }
 }
 

@@ -10,8 +10,10 @@
 
 import fs from 'fs'
 import fsp from 'fs/promises'
+import path from 'path'
+import { app } from 'electron'
 import log from '../../main/logger'
-import { hostJoin } from './codingDir'
+import { hostCodingDir, hostJoin } from './codingDir'
 import type { Runtime } from '../../main/runtime/types'
 
 /** Install-once gate keyed on an arbitrary string. */
@@ -39,6 +41,47 @@ export function findSourceDir(candidates: string[]): string | null {
     if (c && fs.existsSync(c)) return c
   }
   return null
+}
+
+/**
+ * Build an installer for a Cate-managed extension bundled as index.ts +
+ * package.json. Concurrent sessions share one in-flight copy, successful
+ * installs are skipped thereafter, and transient failures remain retryable.
+ */
+export function createBundledExtensionInstaller(
+  slug: string,
+  logLabel: string,
+): (runtime: Runtime, cwd: string) => Promise<void> {
+  const installed = new Set<string>()
+  const pending = new Map<string, Promise<void>>()
+
+  return async (runtime: Runtime, cwd: string): Promise<void> => {
+    const home = hostCodingDir(runtime.id, cwd)
+    const key = `${runtime.id}\0${home}`
+    if (installed.has(key)) return
+    const existing = pending.get(key)
+    if (existing) return existing
+
+    const install = (async () => {
+      const src = findSourceDir([
+        path.join(app.getAppPath(), 'src', 'cateAgent', 'extensions', slug),
+        path.join(process.resourcesPath ?? '', 'cate-extensions', slug),
+      ])
+      if (!src) throw new Error(`bundled source directory not found for ${slug}`)
+      const destDir = hostJoin(runtime.id, home, 'extensions', slug)
+      await copyFileToHost(runtime, path.join(src, 'index.ts'), destDir, 'index.ts', 'if-changed', logLabel)
+      await copyFileToHost(runtime, path.join(src, 'package.json'), destDir, 'package.json', 'if-changed', logLabel)
+      installed.add(key)
+    })()
+    pending.set(key, install)
+    try {
+      await install
+    } catch (err) {
+      log.warn('%s install failed: %O', logLabel, err)
+    } finally {
+      pending.delete(key)
+    }
+  }
 }
 
 /** True when the host already has a file/dir at `hostPath`. */

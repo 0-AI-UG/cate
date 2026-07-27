@@ -196,6 +196,7 @@ describe('workspace.json + session.json round-trip', () => {
       id: 'run-1',
       agentId: 'codex' as const,
       panelId: 'term-1',
+      ownerPanelId: 'agent-1',
       prompt: 'Implement the parser',
       createdAt: 123,
       worktreeId: 'wt-1',
@@ -208,6 +209,7 @@ describe('workspace.json + session.json round-trip', () => {
         runId: 'run-1',
         agentId: 'codex',
         prompt: 'Implement the parser',
+        ownerPanelId: 'agent-1',
       },
     }
 

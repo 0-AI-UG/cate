@@ -191,7 +191,8 @@ describe('WorkspaceCateApiManager.ensureCateAgentEndpoint', () => {
   it('mints a panel-bound endpoint even when the terminal CLI is disabled', async () => {
     settingsState.cliEnabled = false
     const mgr = new WorkspaceCateApiManager()
-    const endpoint = await mgr.ensureCateAgentEndpoint('ws1', 'chat-1', '/ws/worktree')
+    const owner = { id: 42 } as never
+    const endpoint = await mgr.ensureCateAgentEndpoint('ws1', 'chat-1', '/ws/worktree', owner)
 
     expect(endpoint).toEqual({ port: 54321, token: expect.any(String) })
     expect(reverseCalls).toHaveLength(1)
@@ -199,6 +200,7 @@ describe('WorkspaceCateApiManager.ensureCateAgentEndpoint', () => {
       caller: 'cate-agent',
       panelId: 'chat-1',
       originCwd: '/ws/worktree',
+      ownerWebContents: owner,
       grantedScopes: expect.arrayContaining(['coding-agent']),
     })
   })
