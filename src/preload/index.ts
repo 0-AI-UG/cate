@@ -951,7 +951,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // ---------------------------------------------------------------------------
-  // Analytics — post-update feedback prompt
+  // Post-update changelog + feedback prompt
   // ---------------------------------------------------------------------------
 
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void {

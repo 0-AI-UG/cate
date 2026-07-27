@@ -999,10 +999,10 @@ export interface ElectronAPI {
   quitAndInstallUpdate(): Promise<boolean>
 
   // -------------------------------------------------------------------------
-  // Analytics — post-update feedback prompt
+  // Post-update changelog + feedback prompt
   // -------------------------------------------------------------------------
 
-  /** Subscribe to the main-process request to show the feedback modal. */
+  /** Subscribe to the main-process request to show the changelog + feedback modal. */
   onFeedbackPrompt(
     callback: (payload: { fromVersion: string; toVersion: string }) => void,
   ): () => void
