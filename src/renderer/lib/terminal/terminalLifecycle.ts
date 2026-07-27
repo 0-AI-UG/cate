@@ -337,6 +337,22 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     //    brand-new PTY, so the instant-exit diagnostic applies.
     wireTerminalListeners({ panelId, ptyId, opts, terminal, cleanupListeners, freshSpawn: true })
 
+    // 6b. Push the terminal's ACTUAL size to the freshly spawned PTY.
+    //
+    // The entry is registered before the awaits above so concurrent callers
+    // share one object — which also means attach() can, and normally does, fit
+    // the xterm to its real container while we are still waiting for the spawn.
+    // Those fits call terminal.resize(), which fires onResize with no listener
+    // attached yet, so the new size never reaches the PTY: the grid is correct
+    // on screen while the PTY stays at the 80x24 it was created with. Nothing
+    // corrects it afterwards either, because fit() only resizes when the size
+    // CHANGES — so a terminal the user never happens to resize by hand keeps a
+    // shell wrapping at 80 columns for the rest of its life, and any TUI
+    // started in it draws its frame to 80.
+    if (terminal.cols !== cols || terminal.rows !== rows) {
+      electronAPI.terminalResize(ptyId, terminal.cols, terminal.rows)
+    }
+
     // 11. Write initialInput immediately — the PTY buffers writes until the
     //     shell is ready to consume them, so a fixed setTimeout was both
     //     fragile (slow systems) and unnecessary.
