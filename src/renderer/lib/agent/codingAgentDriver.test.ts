@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({
   app: {} as any,
   settings: { agentHookInjection: { ws: { codex: 'on' } } } as any,
-  failure: undefined as string | undefined,
+  failure: null as string | null,
+  terminalOutput: 'worker output',
 }))
 const resolveDriverAgentCli = vi.hoisted(() => vi.fn())
 const getOrCreate = vi.hoisted(() => vi.fn())
@@ -38,7 +39,7 @@ vi.mock('../terminal/terminalRegistry', () => ({
   },
 }))
 vi.mock('../terminal/terminalBuffer', () => ({
-  terminalBufferTail: () => 'worker output',
+  terminalBufferTail: () => state.terminalOutput,
 }))
 vi.mock('../terminal/terminalDriver', () => ({ submitTerminalText }))
 vi.mock('../workspace/canvasAccess', () => ({
@@ -57,7 +58,8 @@ import { codingAgentSnapshot, handleCodingAgentMethod } from './codingAgentDrive
 
 describe('codingAgentDriver mission integration', () => {
   beforeEach(() => {
-    state.failure = undefined
+    state.failure = null
+    state.terminalOutput = 'worker output'
     state.settings = { agentHookInjection: { ws: { codex: 'on' } } }
     const panels: Record<string, any> = {}
     state.app = {
@@ -115,6 +117,12 @@ describe('codingAgentDriver mission integration', () => {
     )
 
     expect(outcome.ok).toBe(true)
+    expect(outcome).toMatchObject({
+      result: {
+        status: 'starting',
+        alive: true,
+      },
+    })
     expect(resolveDriverAgentCli).toHaveBeenCalledWith('/repo', '', {
       fallbackLocator: '/repo',
       hookConfig: { codex: 'on' },
@@ -190,6 +198,45 @@ describe('codingAgentDriver mission integration', () => {
       result: {
         status: 'failed',
         failureReason: 'spawn codex ENOENT',
+      },
+    })
+  })
+
+  it('returns the useful CLI output when a worker exits unsuccessfully', async () => {
+    await handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.create',
+      { agentId: 'codex', prompt: 'Implement it' },
+    )
+    const run = state.app.workspaces[0].panels.worker.codingAgentRun
+    state.app.workspaces[0].panels.worker.codingAgentRun = {
+      ...run,
+      endedAt: 2,
+      exitCode: 1,
+    }
+    state.terminalOutput = [
+      'Error: You have no usage remaining for Codex.',
+      '[Process exited with code 1]',
+    ].join('\n')
+
+    const outcome = await handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.wait',
+      { runIds: [run.id] },
+    )
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      result: {
+        timedOut: false,
+        changedRunIds: [run.id],
+        runs: [{
+          id: run.id,
+          status: 'failed',
+          failureReason: 'Process exited with code 1: Error: You have no usage remaining for Codex.',
+        }],
       },
     })
   })

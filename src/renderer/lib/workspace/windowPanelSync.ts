@@ -127,7 +127,7 @@ export function setupWindowPanelSync(): () => void {
       ]
       for (const p of placed) {
         const terminalEntry = p.codingAgentRun ? terminalRegistry.getEntry(p.id) : undefined
-        const terminalFailure = p.codingAgentRun ? terminalRegistry.getFailure(p.id) : undefined
+        const terminalFailure = p.codingAgentRun ? terminalRegistry.getFailure(p.id) : null
         const workerAgent = agentInfo[p.id]
         report.push({
           panelId: p.id,
@@ -153,7 +153,7 @@ export function setupWindowPanelSync(): () => void {
             ? deriveCodingAgentRunStatus(p.codingAgentRun, {
                 terminalStarted: terminalEntry !== undefined,
                 terminalAlive: terminalEntry?.alive === true,
-                terminalFailed: terminalFailure !== undefined,
+                terminalFailed: terminalFailure !== null,
                 agentState: workerAgent?.state,
                 agentPresent: Boolean(workerAgent?.name),
               })

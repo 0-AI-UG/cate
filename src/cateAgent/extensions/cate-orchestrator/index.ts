@@ -75,10 +75,6 @@ function toolResult(result: unknown) {
 }
 
 export default function (pi: ExtensionAPI) {
-  // Approval is scoped to this live Cate Agent session. A restart or a new chat
-  // asks again, keeping autonomous spend visible without interrupting every
-  // individual worker in an approved mission.
-  let delegationApproved: boolean | null = null
   let active = false
 
   const setMode = (
@@ -113,6 +109,7 @@ export default function (pi: ExtensionAPI) {
       "After delegation, call wait_for_coding_agents once and let it block until worker state changes. Do not repeatedly inspect a worker that is still working; inspect after a change or timeout, then send a targeted follow-up only when needed.",
       "Never create more than five live workers. Reuse a run with send_to_coding_agent when follow-up belongs to the same task.",
       "Respect followUpSupported in each run result; create a fresh run when that capability is false.",
+      "When a run fails, use its failureReason or inspect it for full output. If the failure is specific to that CLI, such as quota, authentication, or service availability, create a fresh run with a different registered agentId.",
     ],
     parameters: Type.Object({
       agentId: Type.Optional(agentIdSchema()),
@@ -127,19 +124,7 @@ export default function (pi: ExtensionAPI) {
         Type.String({ description: "Optional git base ref for newWorktree. Omit to use the repository default." }),
       ),
     }),
-    async execute(_id, params, signal, _onUpdate, ctx) {
-      if (delegationApproved === null) {
-        delegationApproved = await ctx.ui.confirm(
-          "Start coding agents?",
-          "Cate wants to create visible coding-agent terminals for this mission. They can edit the selected checkouts and use your configured agent subscriptions. Allow up to five concurrent workers?",
-        )
-      }
-      if (!delegationApproved) {
-        return {
-          content: [{ type: "text" as const, text: "The user did not approve coding-agent delegation for this mission." }],
-          details: { approved: false },
-        }
-      }
+    async execute(_id, params, signal) {
       return toolResult(await invoke("cate.codingAgent.create", params, signal))
     },
   })

@@ -57,7 +57,7 @@ function runStatus(workspaceId: string, panelId: string, run: CodingAgentRun): C
   return deriveCodingAgentRunStatus(run, {
     terminalStarted: entry !== undefined,
     terminalAlive: entry?.alive === true,
-    terminalFailed: failure !== undefined,
+    terminalFailed: failure !== null,
     agentState: runtime?.agentState,
     agentPresent: runtime?.agentPresent === true || Boolean(runtime?.agentName),
   })
@@ -74,17 +74,29 @@ export function codingAgentSnapshot(
   const entry = terminalRegistry.getEntry(panel.id)
   const output = terminalText(panel.id)
   const lastLine = output.split('\n').reverse().find((line) => line.trim())?.trim()
+  const status = runStatus(workspaceId, panel.id, run)
+  const terminalFailure = terminalRegistry.getFailure(panel.id)
+  const failureDiagnostic = status === 'failed'
+    ? output
+        .split('\n')
+        .reverse()
+        .map((line) => line.trim())
+        .find((line) => line && !/^\[Process exited with code \d+\]$/.test(line))
+    : undefined
+  const failureReason = terminalFailure
+    ? terminalFailure.slice(0, 500)
+    : status === 'failed'
+      ? `Process exited with code ${run.exitCode ?? 'unknown'}${failureDiagnostic ? `: ${failureDiagnostic}` : ''}`.slice(0, 500)
+      : undefined
   return {
     ...run,
-    status: runStatus(workspaceId, panel.id, run),
+    status,
     agentName: codingAgentDisplayName(run.agentId),
     cwd: panel.cwd ?? workspace(workspaceId)?.rootPath ?? '',
     alive: entry?.alive === true,
     followUpSupported: codingAgentSupportsFollowUp(run.agentId),
     ...(lastLine ? { statusLine: lastLine.slice(0, 200) } : {}),
-    ...(terminalRegistry.getFailure(panel.id)
-      ? { failureReason: terminalRegistry.getFailure(panel.id)!.slice(0, 500) }
-      : {}),
+    ...(failureReason ? { failureReason } : {}),
   }
 }
 

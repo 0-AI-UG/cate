@@ -43,6 +43,44 @@ function panel(id: string, type: PanelState['type'], worktreeId?: string): Panel
 
 const tick = () => new Promise((r) => setTimeout(r, 50))
 
+describe('windowPanelSync — coding-agent status', () => {
+  it('does not mark a coding-agent run failed when the terminal has no failure', async () => {
+    const reports: WindowPanelReport[][] = []
+    ;(window as any).electronAPI = {
+      reportWindowPanels: vi.fn(async (r: WindowPanelReport[]) => { reports.push(r) }),
+    }
+
+    const ws = 'ws-coding-agent'
+    const worker = {
+      ...panel('worker', 'terminal'),
+      codingAgentRun: {
+        id: 'run-1',
+        agentId: 'codex',
+        panelId: 'worker',
+        ownerPanelId: 'supervisor-1',
+        prompt: 'Implement it',
+        createdAt: 1,
+      },
+    } as PanelState
+    useAppStore.setState({
+      workspaces: [{
+        id: ws, name: 'W', color: '', rootPath: '/x', rootPathError: null,
+        isRootPathPending: false, worktrees: [],
+        panels: { worker },
+      } as any],
+      selectedWorkspaceId: ws,
+    } as any)
+
+    const stop = setupWindowPanelSync()
+    await tick()
+
+    const report = reports[reports.length - 1].find((row) => row.panelId === 'worker')
+    expect(report?.codingAgentStatus).toBe('starting')
+
+    stop()
+  })
+})
+
 describe('windowPanelSync — canvas child parentCanvasId', () => {
   it('attributes a node whose panel lives only in the LIVE per-node dock (stale raw projection)', async () => {
     const reports: WindowPanelReport[][] = []

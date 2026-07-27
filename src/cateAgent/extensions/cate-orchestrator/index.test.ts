@@ -101,7 +101,7 @@ describe("cate-orchestrator", () => {
     expect(api.getActiveTools()).toEqual(["read", "bash"])
   })
 
-  it("asks once per session before creating workers and invokes the scoped API", async () => {
+  it("creates workers without another confirmation after orchestration mode is selected", async () => {
     const fetch = vi.fn(async (_url: string, init: RequestInit) => ({
       ok: true,
       status: 200,
@@ -109,14 +109,11 @@ describe("cate-orchestrator", () => {
       init,
     }))
     vi.stubGlobal("fetch", fetch)
-    const confirm = vi.fn(async () => true)
     const tool = registeredTools().get("create_coding_agent")
-    const ctx = { ui: { confirm } }
 
-    await tool.execute("call-1", { agentId: "codex", prompt: "Implement it" }, undefined, undefined, ctx)
-    await tool.execute("call-2", { agentId: "codex", prompt: "Test it" }, undefined, undefined, ctx)
+    await tool.execute("call-1", { agentId: "codex", prompt: "Implement it" })
+    await tool.execute("call-2", { agentId: "codex", prompt: "Test it" })
 
-    expect(confirm).toHaveBeenCalledTimes(1)
     expect(fetch).toHaveBeenCalledTimes(2)
     const [, init] = fetch.mock.calls[0]
     expect(init.headers).toMatchObject({ Authorization: "Bearer supervisor-token" })
@@ -126,19 +123,9 @@ describe("cate-orchestrator", () => {
     })
   })
 
-  it("remembers a denied mission and never reaches the API", async () => {
-    const fetch = vi.fn()
-    vi.stubGlobal("fetch", fetch)
-    const confirm = vi.fn(async () => false)
-    const tool = registeredTools().get("create_coding_agent")
-    const ctx = { ui: { confirm } }
-
-    const first = await tool.execute("call-1", { agentId: "codex", prompt: "No" }, undefined, undefined, ctx)
-    const second = await tool.execute("call-2", { agentId: "codex", prompt: "Still no" }, undefined, undefined, ctx)
-
-    expect(first.details).toEqual({ approved: false })
-    expect(second.details).toEqual({ approved: false })
-    expect(confirm).toHaveBeenCalledTimes(1)
-    expect(fetch).not.toHaveBeenCalled()
+  it("teaches the supervisor to switch CLIs for CLI-specific failures", () => {
+    const guidelines = registeredTools().get("create_coding_agent").promptGuidelines
+    expect(guidelines.join("\n")).toContain("failureReason")
+    expect(guidelines.join("\n")).toContain("different registered agentId")
   })
 })
