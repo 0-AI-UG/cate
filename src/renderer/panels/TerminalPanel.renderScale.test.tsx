@@ -48,16 +48,24 @@ beforeEach(() => {
 // declarations and reference these.
 const h = vi.hoisted(() => {
   const BASE_FONT = 13
-  const BASE_CELL_W = 7
-  const BASE_CELL_H = 15
+  // Deliberately fractional, like a real glyph advance. With whole numbers the
+  // DPR 1 and DPR 2 rounding grids would coincide and the DPR test below could
+  // not distinguish a stale baseline from a fresh one.
+  const BASE_CELL_W = 7.3
+  const BASE_CELL_H = 15.4
   return {
     BASE_FONT,
     BASE_CELL_W,
     BASE_CELL_H,
-    // xterm ceils cell pixels — the whole reason cellScale is measured rather
-    // than assumed. Model that so the effect sees realistic numbers.
-    cellW: (fontSize: number) => Math.ceil((fontSize * BASE_CELL_W) / BASE_FONT),
-    cellH: (fontSize: number) => Math.ceil((fontSize * BASE_CELL_H) / BASE_FONT),
+    // xterm rounds the cell to DEVICE pixels and reports CSS pixels back:
+    // css.cell = round(char × dpr) / dpr. So the rounding grid is 1/dpr — whole
+    // pixels at DPR 1, half pixels at DPR 2 — and the same font measures
+    // differently per display. Model that; it is the whole reason a baseline is
+    // only valid for the DPR it was taken at.
+    cellW: (fontSize: number, dpr = window.devicePixelRatio) =>
+      Math.round(((fontSize * BASE_CELL_W) / BASE_FONT) * dpr) / dpr,
+    cellH: (fontSize: number, dpr = window.devicePixelRatio) =>
+      Math.round(((fontSize * BASE_CELL_H) / BASE_FONT) * dpr) / dpr,
     fake: {
       cols: 80,
       rows: 24,
@@ -69,7 +77,7 @@ const h = vi.hoisted(() => {
     attachCalls: 0,
   }
 })
-const { BASE_FONT, BASE_CELL_W, cellW } = h
+const { BASE_FONT, cellW } = h
 
 vi.mock('../lib/terminal/terminalRegistry', () => {
   const entry = { terminal: h.fake, ptyId: 'pty-1', workspaceId: 'ws-1' }
@@ -163,6 +171,27 @@ vi.mock('../lib/logger', () => ({
 
 import TerminalPanel from './TerminalPanel'
 
+// jsdom has no display model: drive devicePixelRatio directly and fire the
+// resolution media query the panel arms, the way a real display change would.
+const dprListeners = new Set<() => void>()
+const setDpr = (dpr: number) => {
+  Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: dpr })
+}
+const moveToDisplay = (dpr: number) => {
+  setDpr(dpr)
+  for (const fn of [...dprListeners]) fn()
+}
+window.matchMedia = ((q: string) => ({
+  media: q,
+  matches: true,
+  addEventListener: (_: string, fn: () => void) => { dprListeners.add(fn) },
+  removeEventListener: (_: string, fn: () => void) => { dprListeners.delete(fn) },
+  addListener: () => {},
+  removeListener: () => {},
+  onchange: null,
+  dispatchEvent: () => false,
+})) as unknown as typeof window.matchMedia
+
 describe('render scale on a panel mounted while already zoomed', () => {
   let container: HTMLDivElement
   let root: Root
@@ -173,6 +202,7 @@ describe('render scale on a panel mounted while already zoomed', () => {
     h.releaseCreate = null
     h.attachCalls = 0
     canvasState.zoomLevel = 2.0
+    setDpr(1)
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -227,8 +257,36 @@ describe('render scale on a panel mounted while already zoomed', () => {
     // Font raised to base × renderScale, now that there is something to measure.
     expect(h.fake.options.fontSize).toBe(BASE_FONT * 2)
 
-    // And the box grew to match the MEASURED cell, not the intended ratio:
-    // ceil(26 * 7/13) = 14 against a 7px base → exactly 200%.
-    expect(renderBoxWidth()).toBe(`${(cellW(BASE_FONT * 2) / BASE_CELL_W) * 100}%`)
+    // And the box grew to match the MEASURED cell, not the intended ratio.
+    expect(renderBoxWidth()).toBe(`${(cellW(BASE_FONT * 2) / cellW(BASE_FONT)) * 100}%`)
+  })
+
+  // Moving the window to a display with a different pixel density re-rounds
+  // every cell (the grid is 1/dpr). A baseline captured on the old screen is
+  // wrong on the new one, and nothing else would notice: the render box keeps
+  // its CSS size so the ResizeObserver stays quiet, and renderScale is already
+  // at its target so the measuring effect has no reason to re-run. The grid
+  // would stay wrong until the user happened to zoom or resize by hand.
+  it('re-derives the baseline when the window changes display density', async () => {
+    await renderPanel()
+    await flushFrames()
+    await act(async () => {
+      h.releaseCreate!()
+      await Promise.resolve()
+    })
+    await flushFrames()
+
+    const atDpr1 = renderBoxWidth()
+    expect(atDpr1).toBe(`${(cellW(BASE_FONT * 2, 1) / cellW(BASE_FONT, 1)) * 100}%`)
+
+    await act(async () => { moveToDisplay(2) })
+    await flushFrames()
+
+    // At DPR 2 the cell rounds on a half-pixel grid, so both the baseline and
+    // the scaled cell differ from their DPR 1 values. The box must follow the
+    // NEW pair — reusing the stale DPR 1 baseline leaves it at the old width.
+    const base2 = cellW(BASE_FONT, 2)
+    const scaled2 = cellW(BASE_FONT * 2, 2)
+    expect(renderBoxWidth()).toBe(`${(scaled2 / base2) * 100}%`)
   })
 })

@@ -68,13 +68,19 @@ export default function TerminalPanel({
   // the column count is container/baseCell — renderScale cancels out entirely,
   // and the counter-scale below pins the on-screen cell to its base size.
   // Width and height are tracked separately because the two ceil independently.
-  const baseCellRef = useRef<{ w: number; h: number } | null>(null)
+  // The DPR the baseline was taken at is part of the baseline: xterm rounds the
+  // cell to DEVICE pixels and reports it back in CSS pixels
+  // (css.cell = round(char × dpr) / dpr), so the same font measures 7px on a
+  // DPR 1 display and can measure 6.5px on a DPR 2 one. A baseline captured on
+  // one screen is simply wrong on the other.
+  const baseCellRef = useRef<{ w: number; h: number; dpr: number } | null>(null)
   const [cellScale, setCellScale] = useState({ w: 1, h: 1 })
-  // Bumped by attach() so the measuring effect below re-runs once xterm has a
-  // DOM element to measure. Without it, a panel mounted at zoom > 1 would have
-  // run that effect before attach and then never again — renderScale is already
-  // at its target, so nothing else would invalidate it.
-  const [attachEpoch, setAttachEpoch] = useState(0)
+  // Bumped whenever something outside this component's own state makes the
+  // terminal measurable again, or makes an existing measurement invalid:
+  // attach() (xterm finally has a DOM element — without this a panel mounted at
+  // zoom > 1 would measure nothing and never retry, since renderScale has
+  // already settled) and a DPR change (see above).
+  const [measureEpoch, setMeasureEpoch] = useState(0)
   const terminalBaseFontSize = useSettingsStore((state) =>
     resolveTerminalFontSize(state.terminalFontSize),
   )
@@ -85,6 +91,37 @@ export default function TerminalPanel({
   useEffect(() => {
     baseCellRef.current = null
   }, [terminalBaseFontSize])
+
+  // Same for a DPR change — dragging the window to a display with a different
+  // pixel density re-rounds every cell. Nothing else would notice: the render
+  // box keeps its CSS size, so the ResizeObserver stays quiet, and renderScale
+  // is already at its target, so the measuring effect has no reason to re-run.
+  // The grid would stay wrong until the user happened to zoom or resize.
+  //
+  // A resolution media query only matches the DPR it was built with, so it has
+  // to be re-armed at the new value after each change.
+  useEffect(() => {
+    let query: MediaQueryList | null = null
+    let disposed = false
+
+    const onChange = (): void => {
+      baseCellRef.current = null
+      setMeasureEpoch((n) => n + 1)
+      arm()
+    }
+    function arm(): void {
+      if (disposed) return
+      query?.removeEventListener('change', onChange)
+      query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+      query.addEventListener('change', onChange)
+    }
+    arm()
+
+    return () => {
+      disposed = true
+      query?.removeEventListener('change', onChange)
+    }
+  }, [])
 
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -239,7 +276,7 @@ export default function TerminalPanel({
       terminalRegistry.attach(panelId, renderBox!)
       // xterm now has a DOM element, so the render-scale effect can measure the
       // cell. It may have already run and bailed (panel mounted at zoom > 1).
-      setAttachEpoch((n) => n + 1)
+      setMeasureEpoch((n) => n + 1)
 
       // ResizeObserver — keep xterm sized to the render box.
       //
@@ -579,7 +616,7 @@ export default function TerminalPanel({
       // cellScale stayed at 1, which is precisely the box/cell mismatch this
       // effect exists to prevent, and nothing would recompute it: renderScale
       // has already settled, so the effect would not run again on its own.
-      // attachEpoch below re-triggers it once xterm is measurable.
+      // measureEpoch below re-triggers it once xterm is measurable.
       if (!measurable) return
 
       // The baseline is the cell at the UNSCALED font, and it can only be read
@@ -600,6 +637,7 @@ export default function TerminalPanel({
           baseCellRef.current = {
             w: screenEl!.offsetWidth / cols,
             h: screenEl!.offsetHeight / rows,
+            dpr: window.devicePixelRatio,
           }
         }
       }
@@ -619,7 +657,9 @@ export default function TerminalPanel({
         const cellH = screenEl!.offsetHeight / rows
         // At renderScale 1 the target font IS the base font, so this reading is
         // itself the baseline — no second pass needed.
-        if (renderScale === 1) baseCellRef.current = { w: cellW, h: cellH }
+        if (renderScale === 1) {
+          baseCellRef.current = { w: cellW, h: cellH, dpr: window.devicePixelRatio }
+        }
         const base = baseCellRef.current
         const next = base
           ? { w: cellW / base.w, h: cellH / base.h }
@@ -633,7 +673,7 @@ export default function TerminalPanel({
     } catch {
       // Ignore — fit can throw on zero-size frames during layout transitions.
     }
-  }, [renderScale, panelId, terminalBaseFontSize, attachEpoch])
+  }, [renderScale, panelId, terminalBaseFontSize, measureEpoch])
 
   // The --cell-scale above has just changed the scrollbar's width, and xterm
   // caches that width once at construction — so re-measure and write it back
