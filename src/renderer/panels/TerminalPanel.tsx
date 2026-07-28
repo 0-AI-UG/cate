@@ -70,6 +70,11 @@ export default function TerminalPanel({
   // Width and height are tracked separately because the two ceil independently.
   const baseCellRef = useRef<{ w: number; h: number } | null>(null)
   const [cellScale, setCellScale] = useState({ w: 1, h: 1 })
+  // Bumped by attach() so the measuring effect below re-runs once xterm has a
+  // DOM element to measure. Without it, a panel mounted at zoom > 1 would have
+  // run that effect before attach and then never again — renderScale is already
+  // at its target, so nothing else would invalidate it.
+  const [attachEpoch, setAttachEpoch] = useState(0)
   const terminalBaseFontSize = useSettingsStore((state) =>
     resolveTerminalFontSize(state.terminalFontSize),
   )
@@ -232,6 +237,9 @@ export default function TerminalPanel({
 
       // Move the xterm DOM element into the render box and fit it
       terminalRegistry.attach(panelId, renderBox!)
+      // xterm now has a DOM element, so the render-scale effect can measure the
+      // cell. It may have already run and bailed (panel mounted at zoom > 1).
+      setAttachEpoch((n) => n + 1)
 
       // ResizeObserver — keep xterm sized to the render box.
       //
@@ -562,7 +570,17 @@ export default function TerminalPanel({
       const screenEl = entry.terminal.element?.querySelector('.xterm-screen') as HTMLElement | null
       const cols = entry.terminal.cols
       const rows = entry.terminal.rows
-      const measurable = !!screenEl && cols > 0 && rows > 0
+      const measurable = !!screenEl && cols > 0 && rows > 0 && screenEl.offsetWidth > 0
+
+      // Bail before touching fontSize, not after. terminal.element only exists
+      // once attach() has opened xterm into the render box, and getOrCreate is
+      // async — so on a panel mounted while the canvas is ALREADY zoomed, this
+      // effect can run first. Bumping the font here would grow the cell while
+      // cellScale stayed at 1, which is precisely the box/cell mismatch this
+      // effect exists to prevent, and nothing would recompute it: renderScale
+      // has already settled, so the effect would not run again on its own.
+      // attachEpoch below re-triggers it once xterm is measurable.
+      if (!measurable) return
 
       // The baseline is the cell at the UNSCALED font, and it can only be read
       // at that font — a scaled cell cannot be divided back down, because the
@@ -576,7 +594,7 @@ export default function TerminalPanel({
       // reading offsetWidth forces the layout that makes the middle reading
       // real, so the browser never paints the intermediate state. Costs one
       // extra glyph-atlas rebuild, once per panel.
-      if (!baseCellRef.current && renderScale !== 1 && measurable) {
+      if (!baseCellRef.current && renderScale !== 1) {
         entry.terminal.options.fontSize = terminalBaseFontSize
         if (screenEl!.offsetWidth > 0) {
           baseCellRef.current = {
@@ -596,7 +614,7 @@ export default function TerminalPanel({
       // resize the box to match it, and let the ResizeObserver's plain fit run
       // against a box that is already in proportion — at which point it
       // computes the same column count and never resizes the PTY at all.
-      if (measurable && screenEl!.offsetWidth > 0) {
+      {
         const cellW = screenEl!.offsetWidth / cols
         const cellH = screenEl!.offsetHeight / rows
         // At renderScale 1 the target font IS the base font, so this reading is
@@ -615,7 +633,7 @@ export default function TerminalPanel({
     } catch {
       // Ignore — fit can throw on zero-size frames during layout transitions.
     }
-  }, [renderScale, panelId, terminalBaseFontSize])
+  }, [renderScale, panelId, terminalBaseFontSize, attachEpoch])
 
   // The --cell-scale above has just changed the scrollbar's width, and xterm
   // caches that width once at construction — so re-measure and write it back
@@ -871,6 +889,7 @@ export default function TerminalPanel({
         */}
         <div
           ref={renderBoxRef}
+          data-terminal-render-box=""
           style={{
             position: 'absolute',
             top: 0,
