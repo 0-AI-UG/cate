@@ -157,6 +157,12 @@ async function dirExists(dir: string): Promise<boolean> {
 
 const shQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
 
+/** Hook runners may pass command strings through Bash even on Windows. Route
+ *  .cmd wrappers through cmd.exe so Bash does not consume path backslashes. */
+export function bridgeHookCommand(wrapper: string, platform: NodeJS.Platform): string {
+  return platform === 'win32' ? `cmd.exe /d /c "${wrapper}"` : wrapper
+}
+
 /** The generic stdin→HTTP bridge all stdin-JSON CLIs share (claude, codex).
  *  No stdout on purpose: every CLI accepts silent exit-0. Always exits 0 — a
  *  hook failure must never surface into the user's agent turn. */
@@ -454,7 +460,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
         await chmod(wrapper, 0o755)
       }
 
-      contexts.set(agent.id, { bridgeCommand: wrapper })
+      contexts.set(agent.id, { bridgeCommand: bridgeHookCommand(wrapper, process.platform) })
     }
 
     const server = http.createServer((req, res) => handleRequest(req, res, secret))

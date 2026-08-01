@@ -13,7 +13,13 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, test, vi } from 'vitest'
-import { createAgentHooksCapability, ensureGitExcluded, isRepoLocalCwd, type AgentHooksCapability } from './agentHooks'
+import {
+  bridgeHookCommand,
+  createAgentHooksCapability,
+  ensureGitExcluded,
+  isRepoLocalCwd,
+  type AgentHooksCapability,
+} from './agentHooks'
 import { CATE_HOOK_MARKER, agentHookFolder, type AgentHookEvent } from '../../shared/agentHooks'
 
 const posix = process.platform !== 'win32'
@@ -72,6 +78,15 @@ const post = (url: string, token: string | null, body: unknown): Promise<Respons
   })
 
 describe('agentHooks capability', () => {
+  test('Windows hook commands run .cmd wrappers through cmd.exe', () => {
+    const wrapper = 'C:\\Users\\N3231\\.cate\\agent-hooks\\cate-hook-bridge-claude-code.cmd'
+
+    expect(bridgeHookCommand(wrapper, 'win32')).toBe(`cmd.exe /d /c "${wrapper}"`)
+    expect(bridgeHookCommand('/home/u/.cate/agent-hooks/cate-hook-bridge-claude-code', 'linux')).toBe(
+      '/home/u/.cate/agent-hooks/cate-hook-bridge-claude-code',
+    )
+  })
+
   test('envForPty plants the hook env, agent-agnostic and non-clobbering', async () => {
     const cap = makeCap()
     const env = await cap.envForPty('rpty-1-local', { PATH: '/usr/bin:/bin', HOME: '/home/u' })
@@ -348,7 +363,10 @@ describe('agentHooks capability', () => {
     expect(Object.keys(codexHooks.hooks)).toContain('PermissionRequest')
     const { dir } = await cap.endpoint()
     expect(codexHooks.hooks.SessionStart[0].hooks[0]).toMatchObject({
-      command: path.join(dir, posix ? 'cate-hook-bridge-codex' : 'cate-hook-bridge-codex.cmd'),
+      command: bridgeHookCommand(
+        path.join(dir, posix ? 'cate-hook-bridge-codex' : 'cate-hook-bridge-codex.cmd'),
+        process.platform,
+      ),
       timeout: 60,
     })
 
@@ -360,7 +378,10 @@ describe('agentHooks capability', () => {
     }
     expect(cursorHooks.version).toBe(1)
     expect(cursorHooks.hooks.sessionStart[0].command).toBe(
-      path.join(dir, posix ? 'cate-hook-bridge-cursor' : 'cate-hook-bridge-cursor.cmd'),
+      bridgeHookCommand(
+        path.join(dir, posix ? 'cate-hook-bridge-cursor' : 'cate-hook-bridge-cursor.cmd'),
+        process.platform,
+      ),
     )
 
     // grok merges every *.json in <project>/.grok/hooks; Cate owns cate-hook.json
@@ -371,7 +392,10 @@ describe('agentHooks capability', () => {
     expect(Object.keys(grokHooks.hooks)).toContain('Notification')
     expect(grokHooks.hooks.PreToolUse).toBeUndefined()
     expect(grokHooks.hooks.SessionStart[0].hooks[0]).toMatchObject({
-      command: path.join(dir, posix ? 'cate-hook-bridge-grok' : 'cate-hook-bridge-grok.cmd'),
+      command: bridgeHookCommand(
+        path.join(dir, posix ? 'cate-hook-bridge-grok' : 'cate-hook-bridge-grok.cmd'),
+        process.platform,
+      ),
       timeout: 60,
     })
 
