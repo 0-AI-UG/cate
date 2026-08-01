@@ -37,7 +37,7 @@ import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvi
 import { clearWebglDisabled, releaseWebglGrant } from './terminalDom'
 import { getActiveTheme } from '../themeManager'
 import { useStatusStore } from '../../stores/statusStore'
-import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
+import { awaitWorkspaceSync } from '../../stores/appStore'
 import { replayTerminalLog } from '../workspace/session'
 import { noteAgentInputSubmitted } from '../agent/agentScreenDetector'
 
@@ -48,8 +48,8 @@ interface CreateOpts {
   placementGroupId?: string
   /** Terminal session-restore: a full agent resume command (e.g.
    *  `claude --resume <id>`) typed into the fresh shell right after spawn, via
-   *  the real PTY input path. One-shot — the persisted stamp it came from is
-   *  cleared as soon as it is written. */
+   *  the real PTY input path. One-shot per fresh PTY; the persisted stamp is
+   *  retained until agent evidence replaces or clears it. */
   resumeCommand?: string
 }
 
@@ -346,14 +346,16 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
 
     // 11b. Resume a persisted agent session: type the resume command into the
     //      PTY (kernel type-ahead — the shell reads it at its first prompt and
-    //      echoes it like user input). Clear the stamp immediately: if the
-    //      resume succeeds the process monitor re-probes and re-stamps; if the
-    //      id is stale the CLI errors visibly and the next restore is a plain
-    //      shell. Only fresh spawns reach this line, so a remount that reuses
-    //      a live registry entry never re-injects.
+    //      echoes it like user input). Keep the stamp until observed agent
+    //      evidence replaces or clears it: writing input only proves IPC
+    //      accepted the bytes, not that the shell consumed them or the CLI
+    //      resumed. Clearing here made a second restart restore a plain shell
+    //      whenever the first resumed CLI had not emitted a hook yet
+    //      (codex/cursor are silent until the next prompt). Only fresh spawns
+    //      reach this line, so a remount that reuses a live registry entry never
+    //      re-injects.
     if (opts.resumeCommand) {
       void electronAPI.terminalWrite(ptyId, opts.resumeCommand + '\r')
-      useAppStore.getState().setPanelAgentSession(opts.workspaceId, panelId, null)
     }
 
     // 12. Replay scrollback log if this terminal was restored from a session

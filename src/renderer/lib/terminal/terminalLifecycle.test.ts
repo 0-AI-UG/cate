@@ -81,6 +81,7 @@ vi.mock('@xterm/addon-web-links', () => ({
 
 const statusRegisterTerminal = vi.fn()
 const statusUnregisterTerminal = vi.fn()
+const setPanelAgentSession = vi.fn()
 vi.mock('../../stores/statusStore', () => ({
   useStatusStore: {
     getState: () => ({
@@ -108,7 +109,7 @@ vi.mock('../../stores/settingsStore', () => ({
 vi.mock('../../stores/appStore', () => ({
   awaitWorkspaceSync: async () => {},
   useAppStore: {
-    getState: () => ({ workspaces: [], updatePanelTitleFromAgent: vi.fn() }),
+    getState: () => ({ workspaces: [], updatePanelTitleFromAgent: vi.fn(), setPanelAgentSession }),
   },
 }))
 const replayTerminalLog = vi.fn(async () => {})
@@ -219,6 +220,7 @@ beforeEach(() => {
   onTerminalExit.mockImplementation(captureExitListener)
   statusRegisterTerminal.mockClear()
   statusUnregisterTerminal.mockClear()
+  setPanelAgentSession.mockClear()
   replayTerminalLog.mockClear()
   replayTerminalLog.mockImplementation(async () => {})
   noteAgentInputSubmitted.mockClear()
@@ -292,6 +294,25 @@ describe('spawn → wire → dispose happy path', () => {
     await LC.getOrCreate('panel-input', { workspaceId: 'ws-1', initialInput: 'npm test\r' })
     expect(terminalInstances[0].writes).toContain('npm test\r')
     LC.dispose('panel-input')
+  })
+
+  it('writes a restored agent resume command once and retains its stamp until the agent reports', async () => {
+    terminalCreate.mockResolvedValueOnce('pty-agent-restore')
+
+    const first = await LC.getOrCreate('panel-agent-restore', {
+      workspaceId: 'ws-1',
+      resumeCommand: 'codex resume session-1',
+    })
+    const reused = await LC.getOrCreate('panel-agent-restore', {
+      workspaceId: 'ws-1',
+      resumeCommand: 'codex resume session-1',
+    })
+
+    expect(reused).toBe(first)
+    expect(terminalWrite).toHaveBeenCalledTimes(1)
+    expect(terminalWrite).toHaveBeenCalledWith('pty-agent-restore', 'codex resume session-1\r')
+    expect(setPanelAgentSession).not.toHaveBeenCalled()
+    LC.dispose('panel-agent-restore')
   })
 
   it('uses the session-restore cwd and replays the scrollback log for restored terminals', async () => {
