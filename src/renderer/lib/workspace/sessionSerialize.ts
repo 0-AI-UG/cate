@@ -141,7 +141,8 @@ export function projectFilesToSnapshot(
         worktreeId: sp?.worktreeId,
         unsavedContent: sp?.unsavedContent,
         // The agent session to resume in this terminal — TerminalPanel types
-        // the resume command into the fresh shell and clears the field.
+        // the resume command into the fresh shell and retains the stamp until
+        // observed agent evidence replaces or clears it.
         agentSession: sp?.agentSession,
         // Restore the per-panel cwd (worktree path / dropped folder) so the
         // terminal respawns there. TerminalPanel reads panel.cwd directly. The
