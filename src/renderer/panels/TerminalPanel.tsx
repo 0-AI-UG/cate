@@ -102,11 +102,19 @@ export default function TerminalPanel({
   // to be re-armed at the new value after each change.
   useEffect(() => {
     let query: MediaQueryList | null = null
+    let measureRaf: number | null = null
     let disposed = false
 
     const onChange = (): void => {
       baseCellRef.current = null
-      setMeasureEpoch((n) => n + 1)
+      // xterm watches DPR through its own MediaQueryList. Defer our read until
+      // the next frame so every resolution-change listener has refreshed its
+      // cell geometry before we capture the new baseline.
+      if (measureRaf !== null) cancelAnimationFrame(measureRaf)
+      measureRaf = requestAnimationFrame(() => {
+        measureRaf = null
+        setMeasureEpoch((n) => n + 1)
+      })
       arm()
     }
     function arm(): void {
@@ -119,6 +127,7 @@ export default function TerminalPanel({
 
     return () => {
       disposed = true
+      if (measureRaf !== null) cancelAnimationFrame(measureRaf)
       query?.removeEventListener('change', onChange)
     }
   }, [])

@@ -75,6 +75,7 @@ const h = vi.hoisted(() => {
     // Resolved by the test to simulate a slow getOrCreate.
     releaseCreate: null as null | (() => void),
     attachCalls: 0,
+    renderedDpr: null as number | null,
   }
 })
 const { BASE_FONT, cellW } = h
@@ -95,10 +96,16 @@ vi.mock('../lib/terminal/terminalRegistry', () => {
         // jsdom does no layout: derive the box from the current font, the way a
         // real xterm would after re-rasterizing its atlas.
         Object.defineProperty(screen, 'offsetWidth', {
-          get: () => h.fake.cols * h.cellW(h.fake.options.fontSize),
+          get: () => h.fake.cols * h.cellW(
+            h.fake.options.fontSize,
+            h.renderedDpr ?? window.devicePixelRatio,
+          ),
         })
         Object.defineProperty(screen, 'offsetHeight', {
-          get: () => h.fake.rows * h.cellH(h.fake.options.fontSize),
+          get: () => h.fake.rows * h.cellH(
+            h.fake.options.fontSize,
+            h.renderedDpr ?? window.devicePixelRatio,
+          ),
         })
         const viewport = document.createElement('div')
         viewport.className = 'xterm-viewport'
@@ -201,6 +208,7 @@ describe('render scale on a panel mounted while already zoomed', () => {
     h.fake.element = null
     h.releaseCreate = null
     h.attachCalls = 0
+    h.renderedDpr = null
     canvasState.zoomLevel = 2.0
     setDpr(1)
     container = document.createElement('div')
@@ -285,6 +293,36 @@ describe('render scale on a panel mounted while already zoomed', () => {
     // At DPR 2 the cell rounds on a half-pixel grid, so both the baseline and
     // the scaled cell differ from their DPR 1 values. The box must follow the
     // NEW pair — reusing the stale DPR 1 baseline leaves it at the old width.
+    const base2 = cellW(BASE_FONT, 2)
+    const scaled2 = cellW(BASE_FONT * 2, 2)
+    expect(renderBoxWidth()).toBe(`${(scaled2 / base2) * 100}%`)
+  })
+
+  it('does not cache old geometry if DPR changes at render scale 1', async () => {
+    h.renderedDpr = 1
+    canvasState.zoomLevel = 1
+    await renderPanel()
+    await act(async () => {
+      h.releaseCreate!()
+      await Promise.resolve()
+    })
+    await flushFrames()
+
+    // TerminalPanel's media-query callback runs first. At scale 1 it writes the
+    // same font size, so xterm's option setter would not force a fresh measure.
+    await act(async () => { moveToDisplay(2) })
+
+    // xterm's own MediaQueryList listener runs after Cate's callback but before
+    // the next animation frame, updating the terminal's geometry.
+    h.renderedDpr = 2
+    await flushFrames()
+
+    canvasState.zoomLevel = 2
+    await act(async () => {
+      root.render(<TerminalPanel panelId="p1" workspaceId="ws-1" nodeId="n1" />)
+    })
+    await flushFrames()
+
     const base2 = cellW(BASE_FONT, 2)
     const scaled2 = cellW(BASE_FONT * 2, 2)
     expect(renderBoxWidth()).toBe(`${(scaled2 / base2) * 100}%`)
