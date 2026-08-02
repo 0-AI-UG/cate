@@ -209,7 +209,6 @@ function safeFit(
   terminal: Terminal,
   fitAddon: FitAddon,
   container: HTMLElement,
-  opts?: { preserveGrid?: boolean },
 ): void {
   // Coalesce into a single terminal.resize() call so the PTY only receives one
   // SIGWINCH per fit. Two rapid resizes confuse TUI agents (claude code, vim,
@@ -230,7 +229,7 @@ function safeFit(
   // Fractional rect heights, not offsetHeight: the integer rounding of
   // offsetHeight made this guard intermittently shave a row near exact
   // cell-multiple heights — a silent rows-change that leaks a duplicate TUI
-  // frame into scrollback (see preserveGrid below).
+  // frame into scrollback (anthropics/claude-code#46981).
   const xtermEl = (terminal as unknown as { element?: HTMLElement }).element
   if (xtermEl) {
     const xtermHeight = xtermEl.getBoundingClientRect().height
@@ -238,19 +237,6 @@ function safeFit(
     if (cellHeight > 0 && rows * cellHeight > container.getBoundingClientRect().height + 0.5) {
       rows = Math.max(1, rows - 1)
     }
-  }
-
-  // A renderScale/fontSize swap keeps the visual size constant by construction,
-  // so any ±1 delta here is ceil/parseInt quantization noise (the WebGL
-  // renderer ceils cell px, FitAddon truncates the box px — cell(k·fs) is not
-  // k·cell(fs)). Resizing would SIGWINCH the PTY, and Ink-style TUIs (Claude
-  // Code) leak a duplicate frame into scrollback on every rows change while
-  // their frame is taller than the viewport (anthropics/claude-code#46981).
-  // Pin the grid instead; a sub-cell box/grid mismatch is hidden by the
-  // container's overflow:hidden.
-  if (opts?.preserveGrid) {
-    if (Math.abs(rows - terminal.rows) === 1) rows = terminal.rows
-    if (Math.abs(cols - terminal.cols) === 1) cols = terminal.cols
   }
 
   if (cols !== terminal.cols || rows !== terminal.rows) {
@@ -432,14 +418,50 @@ export function attach(panelId: string, container: HTMLDivElement): void {
 }
 
 /**
+ * Re-measure the viewport's scrollbar track and write it back into xterm's
+ * cached `scrollBarWidth`.
+ *
+ * xterm measures that track exactly once, in the Viewport constructor, and
+ * never again. That is fine for a fixed-width scrollbar, but TerminalPanel
+ * scales the track with the terminal's render scale (see the `--cell-scale`
+ * rule in globals.css) so a 8px track becomes 10, 12, 17px… With the cached
+ * value stale, FitAddon — the ONLY reader of this field, xterm's own core never
+ * touches it — keeps subtracting 8 and hands back a column count whose grid is
+ * wider than the viewport that must hold it, clipping the right-hand columns.
+ *
+ * Writing the fresh measurement back is therefore data maintenance rather than
+ * a behaviour override, but it does reach into `_core`, so every hop is guarded:
+ * a future xterm that renames or removes the field simply leaves the scaling
+ * off instead of throwing.
+ */
+export function syncScrollBarWidth(panelId: string): void {
+  const entry = registry.get(panelId)
+  if (!entry) return
+
+  const el = (entry.terminal as unknown as { element?: HTMLElement }).element
+  const viewport = el?.querySelector('.xterm-viewport') as HTMLElement | null
+  if (!viewport) return
+
+  void viewport.offsetWidth // flush the pending CSS width change before reading
+  const measured = viewport.offsetWidth - viewport.clientWidth
+  // 0 means no track is being reserved right now (nothing to scroll). That is a
+  // real state, but caching it would tell FitAddon to claim the full width and
+  // then clip once a scrollbar reappears. Keep the last good value instead.
+  if (measured <= 0 || measured > 200) return
+
+  const core = (entry.terminal as unknown as {
+    _core?: { viewport?: { scrollBarWidth?: number } }
+  })._core
+  if (core?.viewport && typeof core.viewport.scrollBarWidth === 'number') {
+    core.viewport.scrollBarWidth = measured
+  }
+}
+
+/**
  * Safely fit the terminal to its current container, correcting for
  * sub-pixel overflow. No-op if the terminal is not attached to a container.
- *
- * `preserveGrid` is for fits where the on-screen size is unchanged by
- * construction (render-scale/fontSize swaps): ±1 col/row deltas are treated as
- * quantization noise and discarded so the PTY never sees a phantom SIGWINCH.
  */
-export function fit(panelId: string, opts?: { preserveGrid?: boolean }): void {
+export function fit(panelId: string): void {
   const entry = registry.get(panelId)
   if (!entry) return
 
@@ -448,7 +470,7 @@ export function fit(panelId: string, opts?: { preserveGrid?: boolean }): void {
   const container = el?.parentElement
   if (!el || !container) return
 
-  safeFit(terminal, fitAddon, container, opts)
+  safeFit(terminal, fitAddon, container)
 }
 
 /**

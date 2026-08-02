@@ -40,6 +40,9 @@ vi.mock('@xterm/xterm', () => {
     public element: HTMLElement | undefined
     public cols = 80
     public rows = 24
+    // Mirrors the one internal xterm touches: Viewport measures the scrollbar
+    // once at construction and never again, and FitAddon is its only reader.
+    public _core = { viewport: { scrollBarWidth: 8 } }
     constructor(options: Record<string, unknown> = {}) {
       this.options = options
     }
@@ -191,34 +194,58 @@ describe('terminal font settings', () => {
   })
 })
 
-describe('fit() preserveGrid', () => {
-  // Render-scale steps swap fontSize and counter-scale the box, so the visual
-  // size is unchanged — but cell-px rounding makes FitAddon propose ±1 row.
-  // That phantom SIGWINCH makes Ink TUIs (Claude Code) stack a duplicate frame
-  // into scrollback. preserveGrid must discard ±1 deltas and keep real ones.
-  it('discards ±1 quantization deltas but applies real grid changes', async () => {
+describe('syncScrollBarWidth', () => {
+  // TerminalPanel scales the scrollbar track with the terminal's render scale so
+  // it doesn't thin out as the canvas zooms in. xterm measures that track once in
+  // its Viewport constructor and never again, and FitAddon — its only reader —
+  // would go on subtracting the stale width, returning a column count whose grid
+  // is wider than the viewport and clipping the right-hand columns.
+  const openAt = async (panelId: string, offsetWidth: number, clientWidth: number) => {
     const { terminalRegistry } = await import('./terminalRegistry')
-    const entry = await terminalRegistry.getOrCreate('panel-grid', { workspaceId: 'ws-1' })
+    const entry = await terminalRegistry.getOrCreate(panelId, { workspaceId: 'ws-1' })
     const container = document.createElement('div')
     document.body.appendChild(container)
     ;(entry.terminal as unknown as { open: (c: HTMLElement) => void }).open(container)
-    expect(entry.terminal.rows).toBe(24)
+    const vp = entry.terminal.element!.querySelector('.xterm-viewport') as HTMLElement
+    // jsdom does no layout, so the track has to be described explicitly.
+    Object.defineProperty(vp, 'offsetWidth', { value: offsetWidth, configurable: true })
+    Object.defineProperty(vp, 'clientWidth', { value: clientWidth, configurable: true })
+    return { terminalRegistry, entry, container }
+  }
+  const cached = (entry: { terminal: unknown }) =>
+    (entry.terminal as { _core: { viewport: { scrollBarWidth: number } } })._core.viewport.scrollBarWidth
 
-    // ±1 proposal with preserveGrid: pinned, no resize.
-    fitProposal.rows = 23
-    terminalRegistry.fit('panel-grid', { preserveGrid: true })
-    expect(entry.terminal.rows).toBe(24)
+  it('writes the freshly measured track width into the cache', async () => {
+    const { terminalRegistry, entry, container } = await openAt('panel-sb', 117, 100)
+    expect(cached(entry)).toBe(8) // xterm's construction-time reading
 
-    // Same proposal via a plain fit (a real container resize): applied.
-    terminalRegistry.fit('panel-grid')
-    expect(entry.terminal.rows).toBe(23)
+    terminalRegistry.syncScrollBarWidth('panel-sb')
+    expect(cached(entry)).toBe(17)
 
-    // A multi-row change passes through even with preserveGrid.
-    fitProposal.rows = 30
-    terminalRegistry.fit('panel-grid', { preserveGrid: true })
-    expect(entry.terminal.rows).toBe(30)
+    terminalRegistry.dispose('panel-sb')
+    container.remove()
+  })
 
-    terminalRegistry.dispose('panel-grid')
+  it('keeps the last good value when no track is reserved', async () => {
+    // A terminal with nothing to scroll reports 0. Caching that would tell
+    // FitAddon it may claim the full width, then clip once a scrollbar returns.
+    const { terminalRegistry, entry, container } = await openAt('panel-sb-none', 100, 100)
+    terminalRegistry.syncScrollBarWidth('panel-sb-none')
+    expect(cached(entry)).toBe(8)
+
+    terminalRegistry.dispose('panel-sb-none')
+    container.remove()
+  })
+
+  it('does nothing when xterm no longer exposes the field', async () => {
+    // Guards the internal access: a future xterm that renames or drops
+    // _core.viewport must degrade to unscaled scrollbars, never throw.
+    const { terminalRegistry, entry, container } = await openAt('panel-sb-gone', 120, 100)
+    delete (entry.terminal as unknown as { _core?: unknown })._core
+
+    expect(() => terminalRegistry.syncScrollBarWidth('panel-sb-gone')).not.toThrow()
+
+    terminalRegistry.dispose('panel-sb-gone')
     container.remove()
   })
 })
