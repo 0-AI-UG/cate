@@ -122,6 +122,9 @@ vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: 
 // a pre-existing ptyId. The bug manifests when a leaked pending-transfer
 // causes a fresh getOrCreate to silently go down the reconnect path.
 const terminalCreate = vi.fn(async () => 'pty-fresh')
+// Every winsize pushed to the PTY. Used to pin that a terminal fitted while the
+// spawn was still in flight still gets its real size through.
+const terminalResize = vi.fn()
 const panelTransferAck = vi.fn(async (_id: string) => undefined as undefined)
 // Process-wide WebGL grant broker (main-side); default to granting so the
 // attach() upgrade path runs. Individual tests can override the resolved value.
@@ -139,6 +142,7 @@ beforeEach(() => {
   settingsState.terminalContrast = 4.5
   settingsState.terminalOptionIsMeta = true
   terminalCreate.mockClear()
+  terminalResize.mockClear()
   panelTransferAck.mockClear()
   webglRequestGrant.mockClear()
   webglRequestGrant.mockImplementation(async () => true)
@@ -152,7 +156,7 @@ beforeEach(() => {
     value: {
       terminalCreate,
       terminalWrite: vi.fn(),
-      terminalResize: vi.fn(),
+      terminalResize,
       terminalKill: vi.fn(async () => undefined),
       onTerminalData: vi.fn(() => () => {}),
       onTerminalExit: vi.fn(() => () => {}),
@@ -846,5 +850,61 @@ describe('process-wide WebGL context grant lifecycle', () => {
 
     document.body.removeChild(container)
     terminalRegistry.dispose('panel-reset')
+  })
+})
+
+// Regression: a terminal the user never resizes by hand keeps its PTY at the
+// 80x24 spawn default forever, so the shell wraps at 80 columns and any TUI
+// started in it draws its frame to 80 — while the on-screen grid looks correct.
+//
+// Root cause: getOrCreate registers the entry BEFORE awaiting the spawn (so
+// concurrent callers share one object), which lets attach() fit the xterm to its
+// real container while the spawn is still in flight. Those fits call
+// terminal.resize(), firing onResize before the listener that forwards it to the
+// PTY exists — the size is applied to xterm and dropped on the floor for the
+// PTY. Nothing corrects it later because fit() only resizes on a CHANGE.
+//
+// Contract: once the spawn resolves, the PTY must be told the terminal's actual
+// size.
+describe('PTY adopts a size the terminal reached during spawn', () => {
+  it('pushes the real size once the spawn resolves', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+
+    // Hold the spawn open so we can fit the terminal mid-flight, exactly as
+    // attach() does while getOrCreate is still awaiting.
+    let releaseSpawn!: (id: string) => void
+    terminalCreate.mockImplementationOnce(
+      () => new Promise<string>((resolve) => { releaseSpawn = resolve }),
+    )
+
+    const pending = terminalRegistry.getOrCreate('panel-race', { workspaceId: 'ws-1' })
+
+    // getOrCreate awaits settingsGet before terminalCreate; drain the queue so
+    // the spawn is genuinely in flight when we fit.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // The entry is already registered even though the spawn hasn't resolved.
+    const entry = terminalRegistry.getEntry('panel-race')!
+    expect(entry.terminal.cols).toBe(80)
+    entry.terminal.resize(120, 40) // what safeFit() does — no PTY listener yet
+
+    releaseSpawn('pty-fresh')
+    await pending
+
+    expect(terminalResize).toHaveBeenCalledWith('pty-fresh', 120, 40)
+
+    terminalRegistry.dispose('panel-race')
+  })
+
+  it('stays quiet when the terminal is still at the spawn size', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+
+    // Never fitted (panel not laid out yet): the PTY was created at 80x24 and
+    // is already correct, so re-sending it would be a pointless SIGWINCH.
+    await terminalRegistry.getOrCreate('panel-norace', { workspaceId: 'ws-1' })
+
+    expect(terminalResize).not.toHaveBeenCalled()
+
+    terminalRegistry.dispose('panel-norace')
   })
 })

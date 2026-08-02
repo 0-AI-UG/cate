@@ -878,6 +878,17 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     expect(resumeStart?.transcript_path).toBe(rollout)
     expect(resumeEvents.some((e) => e.payload.hook_event_name === 'Stop')).toBe(true)
     expectEcho(resumeEvents, tid)
+
+    // Exact interactive command Cate types into a restored terminal. Replaying
+    // the prior prompt proves `codex resume <id>` loaded this rollout rather
+    // than opening a fresh TUI. No harness-only argv are added here.
+    const tui = await driveTui(codexBin(), ['resume', id], cwd, cleanEnv(), { dismissUpdateBanner: false })
+    await tui.waitFor(
+      () => stripAnsi(tui.peek()).includes(PROMPT),
+      60_000,
+      'restored Codex conversation history',
+    )
+    tui.kill()
   })
 
   // Permission-wait is PUSHED: PermissionRequest fires the moment a tool call
@@ -1747,6 +1758,24 @@ export const CateEventLogger = async ({ directory }) => {
       'resume must not create a new session',
     ).toBe(false)
     expect(resumeEvents.some((e) => e.type === 'session.idle' && e.sessionID === id)).toBe(true)
+
+    // Exact interactive command Cate types into a restored terminal. Unlike
+    // `opencode run --session`, this covers the default TUI argument path.
+    const tuiEventsFile = join(cwd, 'events-resume-tui.jsonl')
+    const tui = await driveTui('opencode', ['--session', id], cwd, env(tuiEventsFile))
+    const tuiEvents = (): OcEvent[] => readJsonl<OcEvent>(tuiEventsFile)
+    await tui.settle(8_000)
+    await tui.send(PROMPT2)
+    await tui.waitFor(
+      () => tuiEvents().some((e) => e.type === 'session.idle' && e.sessionID === id),
+      180_000,
+      'session.idle on exact interactive resume command',
+    )
+    expect(
+      tuiEvents().some((e) => e.type === 'session.created' && e.sessionID !== id),
+      'interactive resume must not create a new session',
+    ).toBe(false)
+    tui.kill()
   })
 
   // Permission-wait is PUSHED: permission.asked fires on the bus when a gated

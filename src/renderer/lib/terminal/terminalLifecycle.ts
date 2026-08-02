@@ -37,7 +37,7 @@ import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvi
 import { clearWebglDisabled, releaseWebglGrant } from './terminalDom'
 import { getActiveTheme } from '../themeManager'
 import { useStatusStore } from '../../stores/statusStore'
-import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
+import { awaitWorkspaceSync } from '../../stores/appStore'
 import { replayTerminalLog } from '../workspace/session'
 import { noteAgentInputSubmitted } from '../agent/agentScreenDetector'
 
@@ -48,8 +48,8 @@ interface CreateOpts {
   placementGroupId?: string
   /** Terminal session-restore: a full agent resume command (e.g.
    *  `claude --resume <id>`) typed into the fresh shell right after spawn, via
-   *  the real PTY input path. One-shot — the persisted stamp it came from is
-   *  cleared as soon as it is written. */
+   *  the real PTY input path. One-shot per fresh PTY; the persisted stamp is
+   *  retained until agent evidence replaces or clears it. */
   resumeCommand?: string
 }
 
@@ -337,6 +337,22 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     //    brand-new PTY, so the instant-exit diagnostic applies.
     wireTerminalListeners({ panelId, ptyId, opts, terminal, cleanupListeners, freshSpawn: true })
 
+    // 6b. Push the terminal's ACTUAL size to the freshly spawned PTY.
+    //
+    // The entry is registered before the awaits above so concurrent callers
+    // share one object — which also means attach() can, and normally does, fit
+    // the xterm to its real container while we are still waiting for the spawn.
+    // Those fits call terminal.resize(), which fires onResize with no listener
+    // attached yet, so the new size never reaches the PTY: the grid is correct
+    // on screen while the PTY stays at the 80x24 it was created with. Nothing
+    // corrects it afterwards either, because fit() only resizes when the size
+    // CHANGES — so a terminal the user never happens to resize by hand keeps a
+    // shell wrapping at 80 columns for the rest of its life, and any TUI
+    // started in it draws its frame to 80.
+    if (terminal.cols !== cols || terminal.rows !== rows) {
+      electronAPI.terminalResize(ptyId, terminal.cols, terminal.rows)
+    }
+
     // 11. Write initialInput immediately — the PTY buffers writes until the
     //     shell is ready to consume them, so a fixed setTimeout was both
     //     fragile (slow systems) and unnecessary.
@@ -346,14 +362,16 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
 
     // 11b. Resume a persisted agent session: type the resume command into the
     //      PTY (kernel type-ahead — the shell reads it at its first prompt and
-    //      echoes it like user input). Clear the stamp immediately: if the
-    //      resume succeeds the process monitor re-probes and re-stamps; if the
-    //      id is stale the CLI errors visibly and the next restore is a plain
-    //      shell. Only fresh spawns reach this line, so a remount that reuses
-    //      a live registry entry never re-injects.
+    //      echoes it like user input). Keep the stamp until observed agent
+    //      evidence replaces or clears it: writing input only proves IPC
+    //      accepted the bytes, not that the shell consumed them or the CLI
+    //      resumed. Clearing here made a second restart restore a plain shell
+    //      whenever the first resumed CLI had not emitted a hook yet
+    //      (codex/cursor are silent until the next prompt). Only fresh spawns
+    //      reach this line, so a remount that reuses a live registry entry never
+    //      re-injects.
     if (opts.resumeCommand) {
       void electronAPI.terminalWrite(ptyId, opts.resumeCommand + '\r')
-      useAppStore.getState().setPanelAgentSession(opts.workspaceId, panelId, null)
     }
 
     // 12. Replay scrollback log if this terminal was restored from a session

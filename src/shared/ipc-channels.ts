@@ -157,7 +157,7 @@ export const UPDATE_QUIT_AND_INSTALL = 'update:quitAndInstall'
 // download-finished event already fired). Returns the cached UpdateStatus.
 export const UPDATE_GET_STATUS = 'update:getStatus'
 
-// Analytics — post-update feedback prompt
+// Post-update changelog + feedback prompt
 // Main -> renderer: show the modal. Payload: { fromVersion, toVersion }
 export const ANALYTICS_FEEDBACK_PROMPT = 'analytics:feedbackPrompt'
 // Renderer -> main: user submitted feedback. Payload: { rating: 1-5, comment? }
