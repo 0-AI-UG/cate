@@ -26,6 +26,9 @@ dev-app-update.yml
 .claude/
 .agents/
 
+# oh-my-claudecode agent state — per-machine scratch, never project state
+.omc/
+
 # Cate workspace + local session state
 .cate/
 

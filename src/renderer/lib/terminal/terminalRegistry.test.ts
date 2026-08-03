@@ -40,6 +40,9 @@ vi.mock('@xterm/xterm', () => {
     public element: HTMLElement | undefined
     public cols = 80
     public rows = 24
+    // Mirrors the one internal xterm touches: Viewport measures the scrollbar
+    // once at construction and never again, and FitAddon is its only reader.
+    public _core = { viewport: { scrollBarWidth: 8 } }
     constructor(options: Record<string, unknown> = {}) {
       this.options = options
     }
@@ -119,6 +122,9 @@ vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: 
 // a pre-existing ptyId. The bug manifests when a leaked pending-transfer
 // causes a fresh getOrCreate to silently go down the reconnect path.
 const terminalCreate = vi.fn(async () => 'pty-fresh')
+// Every winsize pushed to the PTY. Used to pin that a terminal fitted while the
+// spawn was still in flight still gets its real size through.
+const terminalResize = vi.fn()
 const panelTransferAck = vi.fn(async (_id: string) => undefined as undefined)
 // Process-wide WebGL grant broker (main-side); default to granting so the
 // attach() upgrade path runs. Individual tests can override the resolved value.
@@ -136,6 +142,7 @@ beforeEach(() => {
   settingsState.terminalContrast = 4.5
   settingsState.terminalOptionIsMeta = true
   terminalCreate.mockClear()
+  terminalResize.mockClear()
   panelTransferAck.mockClear()
   webglRequestGrant.mockClear()
   webglRequestGrant.mockImplementation(async () => true)
@@ -149,7 +156,7 @@ beforeEach(() => {
     value: {
       terminalCreate,
       terminalWrite: vi.fn(),
-      terminalResize: vi.fn(),
+      terminalResize,
       terminalKill: vi.fn(async () => undefined),
       onTerminalData: vi.fn(() => () => {}),
       onTerminalExit: vi.fn(() => () => {}),
@@ -187,34 +194,58 @@ describe('terminal font settings', () => {
   })
 })
 
-describe('fit() preserveGrid', () => {
-  // Render-scale steps swap fontSize and counter-scale the box, so the visual
-  // size is unchanged — but cell-px rounding makes FitAddon propose ±1 row.
-  // That phantom SIGWINCH makes Ink TUIs (Claude Code) stack a duplicate frame
-  // into scrollback. preserveGrid must discard ±1 deltas and keep real ones.
-  it('discards ±1 quantization deltas but applies real grid changes', async () => {
+describe('syncScrollBarWidth', () => {
+  // TerminalPanel scales the scrollbar track with the terminal's render scale so
+  // it doesn't thin out as the canvas zooms in. xterm measures that track once in
+  // its Viewport constructor and never again, and FitAddon — its only reader —
+  // would go on subtracting the stale width, returning a column count whose grid
+  // is wider than the viewport and clipping the right-hand columns.
+  const openAt = async (panelId: string, offsetWidth: number, clientWidth: number) => {
     const { terminalRegistry } = await import('./terminalRegistry')
-    const entry = await terminalRegistry.getOrCreate('panel-grid', { workspaceId: 'ws-1' })
+    const entry = await terminalRegistry.getOrCreate(panelId, { workspaceId: 'ws-1' })
     const container = document.createElement('div')
     document.body.appendChild(container)
     ;(entry.terminal as unknown as { open: (c: HTMLElement) => void }).open(container)
-    expect(entry.terminal.rows).toBe(24)
+    const vp = entry.terminal.element!.querySelector('.xterm-viewport') as HTMLElement
+    // jsdom does no layout, so the track has to be described explicitly.
+    Object.defineProperty(vp, 'offsetWidth', { value: offsetWidth, configurable: true })
+    Object.defineProperty(vp, 'clientWidth', { value: clientWidth, configurable: true })
+    return { terminalRegistry, entry, container }
+  }
+  const cached = (entry: { terminal: unknown }) =>
+    (entry.terminal as { _core: { viewport: { scrollBarWidth: number } } })._core.viewport.scrollBarWidth
 
-    // ±1 proposal with preserveGrid: pinned, no resize.
-    fitProposal.rows = 23
-    terminalRegistry.fit('panel-grid', { preserveGrid: true })
-    expect(entry.terminal.rows).toBe(24)
+  it('writes the freshly measured track width into the cache', async () => {
+    const { terminalRegistry, entry, container } = await openAt('panel-sb', 117, 100)
+    expect(cached(entry)).toBe(8) // xterm's construction-time reading
 
-    // Same proposal via a plain fit (a real container resize): applied.
-    terminalRegistry.fit('panel-grid')
-    expect(entry.terminal.rows).toBe(23)
+    terminalRegistry.syncScrollBarWidth('panel-sb')
+    expect(cached(entry)).toBe(17)
 
-    // A multi-row change passes through even with preserveGrid.
-    fitProposal.rows = 30
-    terminalRegistry.fit('panel-grid', { preserveGrid: true })
-    expect(entry.terminal.rows).toBe(30)
+    terminalRegistry.dispose('panel-sb')
+    container.remove()
+  })
 
-    terminalRegistry.dispose('panel-grid')
+  it('keeps the last good value when no track is reserved', async () => {
+    // A terminal with nothing to scroll reports 0. Caching that would tell
+    // FitAddon it may claim the full width, then clip once a scrollbar returns.
+    const { terminalRegistry, entry, container } = await openAt('panel-sb-none', 100, 100)
+    terminalRegistry.syncScrollBarWidth('panel-sb-none')
+    expect(cached(entry)).toBe(8)
+
+    terminalRegistry.dispose('panel-sb-none')
+    container.remove()
+  })
+
+  it('does nothing when xterm no longer exposes the field', async () => {
+    // Guards the internal access: a future xterm that renames or drops
+    // _core.viewport must degrade to unscaled scrollbars, never throw.
+    const { terminalRegistry, entry, container } = await openAt('panel-sb-gone', 120, 100)
+    delete (entry.terminal as unknown as { _core?: unknown })._core
+
+    expect(() => terminalRegistry.syncScrollBarWidth('panel-sb-gone')).not.toThrow()
+
+    terminalRegistry.dispose('panel-sb-gone')
     container.remove()
   })
 })
@@ -819,5 +850,61 @@ describe('process-wide WebGL context grant lifecycle', () => {
 
     document.body.removeChild(container)
     terminalRegistry.dispose('panel-reset')
+  })
+})
+
+// Regression: a terminal the user never resizes by hand keeps its PTY at the
+// 80x24 spawn default forever, so the shell wraps at 80 columns and any TUI
+// started in it draws its frame to 80 — while the on-screen grid looks correct.
+//
+// Root cause: getOrCreate registers the entry BEFORE awaiting the spawn (so
+// concurrent callers share one object), which lets attach() fit the xterm to its
+// real container while the spawn is still in flight. Those fits call
+// terminal.resize(), firing onResize before the listener that forwards it to the
+// PTY exists — the size is applied to xterm and dropped on the floor for the
+// PTY. Nothing corrects it later because fit() only resizes on a CHANGE.
+//
+// Contract: once the spawn resolves, the PTY must be told the terminal's actual
+// size.
+describe('PTY adopts a size the terminal reached during spawn', () => {
+  it('pushes the real size once the spawn resolves', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+
+    // Hold the spawn open so we can fit the terminal mid-flight, exactly as
+    // attach() does while getOrCreate is still awaiting.
+    let releaseSpawn!: (id: string) => void
+    terminalCreate.mockImplementationOnce(
+      () => new Promise<string>((resolve) => { releaseSpawn = resolve }),
+    )
+
+    const pending = terminalRegistry.getOrCreate('panel-race', { workspaceId: 'ws-1' })
+
+    // getOrCreate awaits settingsGet before terminalCreate; drain the queue so
+    // the spawn is genuinely in flight when we fit.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // The entry is already registered even though the spawn hasn't resolved.
+    const entry = terminalRegistry.getEntry('panel-race')!
+    expect(entry.terminal.cols).toBe(80)
+    entry.terminal.resize(120, 40) // what safeFit() does — no PTY listener yet
+
+    releaseSpawn('pty-fresh')
+    await pending
+
+    expect(terminalResize).toHaveBeenCalledWith('pty-fresh', 120, 40)
+
+    terminalRegistry.dispose('panel-race')
+  })
+
+  it('stays quiet when the terminal is still at the spawn size', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+
+    // Never fitted (panel not laid out yet): the PTY was created at 80x24 and
+    // is already correct, so re-sending it would be a pointless SIGWINCH.
+    await terminalRegistry.getOrCreate('panel-norace', { workspaceId: 'ws-1' })
+
+    expect(terminalResize).not.toHaveBeenCalled()
+
+    terminalRegistry.dispose('panel-norace')
   })
 })

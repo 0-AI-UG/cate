@@ -128,10 +128,11 @@ export interface PanelState {
    *  the new `cwd`. */
   ptyEpoch?: number
   /** Terminal panels only: the coding-agent session running in this terminal
-   *  at save time (pushed by the agent's own hook events, with a session-store
-   *  probe as fallback for hook-less agents; cleared when the agent exits).
+   *  at save time (pushed by the agent's own hook events and cleared after an
+   *  observed exit).
    *  On restore, TerminalPanel types the agent's resume command into the
-   *  fresh shell and clears this. */
+   *  fresh shell and retains this until newer agent evidence replaces or
+   *  clears it. */
   agentSession?: TerminalAgentSession
   /** Terminal panels created by Cate Agent carry durable ownership metadata.
    *  This is the native mission/run record; live status is derived from the

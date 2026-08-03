@@ -281,17 +281,6 @@ export function useCanvasInteraction(
         }
       }
 
-      // Sticky-note content scrolls natively when it can scroll in the wheel's
-      // primary direction (annotations aren't canvas nodes).
-      const annotationContent = target.closest?.('[data-annotation-content]') as HTMLElement | null
-      if (annotationContent) {
-        const isHorizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
-        const canScroll = isHorizontal
-          ? annotationContent.scrollWidth > annotationContent.clientWidth
-          : annotationContent.scrollHeight > annotationContent.clientHeight
-        if (canScroll) return
-      }
-
       const panelContent = target.closest?.('[data-panel-content]')
       if (panelContent) {
         const nodeEl = panelContent.closest('[data-node-id]')
@@ -647,7 +636,7 @@ export function useCanvasInteraction(
         // — but only if the click landed on empty canvas (not on a node).
         if (!rightClickDidDrag.current && rightClickStart.current) {
           const target = e.target as HTMLElement
-          const isOnInteractive = target.closest('[data-node-id]') !== null || target.closest('[data-annotation-id]') !== null
+          const isOnInteractive = target.closest('[data-node-id]') !== null
           if (!isOnInteractive) {
             const rect = canvasRef.current?.getBoundingClientRect()
             if (rect) {

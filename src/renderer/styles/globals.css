@@ -232,8 +232,23 @@
    (xterm toggles `.focus` on its root element). The thumb is transparent until
    then — its track space stays reserved, so revealing it doesn't reflow the
    terminal. Unlayered so it overrides the @layer base defaults above. */
+/* The scrollbar lives inside the render box, which is counter-scaled by
+   1/cellScale — so a fixed 8px track shrinks on screen as the terminal zooms in
+   (down to −36% at the top scale step, while every other scrollbar in the app
+   stays put). Scale the track and its insets with the cell so the pill keeps a
+   constant on-screen size and shape. `--cell-scale` is set on the render box;
+   the `1` fallback leaves docked and detached terminals untouched.
+   xterm caches this width at construction and never re-measures it, so
+   TerminalPanel writes the new value back — see syncScrollBarWidth(). */
+.xterm-viewport::-webkit-scrollbar {
+  width: calc(8px * var(--cell-scale, 1));
+}
 .xterm-viewport::-webkit-scrollbar-thumb {
   background-color: transparent;
+  border-top: calc(2px * var(--cell-scale, 1)) solid transparent;
+  border-bottom: calc(2px * var(--cell-scale, 1)) solid transparent;
+  border-left: calc(3px * var(--cell-scale, 1)) solid transparent;
+  border-right: calc(1px * var(--cell-scale, 1)) solid transparent;
   /* Fade the thumb in/out as the pointer enters/leaves or focus changes. */
   transition: background-color 280ms ease;
 }
