@@ -355,8 +355,12 @@ export class CodingManager {
     }
   }
 
-  async dispose(panelId: string): Promise<void> {
-    return this.locks.run(panelId, () => this.disposeInternal(panelId))
+  async dispose(
+    panelId: string,
+    options?: { stopCodingAgents?: boolean; workspaceId?: string },
+    cleanupSender?: WebContents,
+  ): Promise<void> {
+    return this.locks.run(panelId, () => this.disposeInternal(panelId, options, cleanupSender))
   }
 
   // ---------------------------------------------------------------------------
@@ -524,8 +528,26 @@ export class CodingManager {
     return null
   }
 
-  private async disposeInternal(panelId: string): Promise<void> {
+  private async disposeInternal(
+    panelId: string,
+    options?: { stopCodingAgents?: boolean; workspaceId?: string },
+    cleanupSender?: WebContents,
+  ): Promise<void> {
     const session = this.sessions.get(panelId)
+    const workspaceId = session?.workspaceId ?? options?.workspaceId
+    const sender = session?.sender ?? cleanupSender
+    if (options?.stopCodingAgents && workspaceId && sender) {
+      try {
+        const { stopCodingAgentsForMission } = await import('../../main/extensions/cateApiHandlers')
+        await stopCodingAgentsForMission(
+          workspaceId,
+          panelId,
+          sender,
+        )
+      } catch (err) {
+        log.warn('[codingManager] failed to stop mission workers for %s: %O', panelId, err)
+      }
+    }
     if (!session) return
     try { session.unsubscribeEvents() } catch { /* noop */ }
     try { session.disposeExitWatcher() } catch { /* noop */ }

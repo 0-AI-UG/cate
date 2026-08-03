@@ -129,10 +129,10 @@ export function persistDirectSessionFile(rootPath: string, chatId: string, file:
   }
 }
 
-export function disposeDirectChatSession(chatId: string): void {
+export function disposeDirectChatSession(chatId: string, workspaceId: string): void {
   const panelId = directAgentKey(chatId)
   if (typeof window.electronAPI?.agentDispose === 'function') {
-    void codingClient.dispose(panelId)
+    void codingClient.dispose(panelId, { stopCodingAgents: true, workspaceId })
   }
   useCodingStore.getState().dispose(panelId)
 }

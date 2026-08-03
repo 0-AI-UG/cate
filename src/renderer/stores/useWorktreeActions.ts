@@ -82,6 +82,34 @@ export async function createWorktreeForWorkspace(
   return meta
 }
 
+/** Roll back a worktree created for a worker that failed preflight before its
+ * terminal could start. The checkout must be removed before its branch can be
+ * deleted; renderer metadata is cleared once the checkout is gone even when
+ * branch deletion itself fails. */
+export async function discardCreatedWorktreeForWorkspace(
+  rootPath: string,
+  workspaceId: string,
+  rawName: string,
+  worktree: WorktreeMeta,
+): Promise<void> {
+  const branch = toBranchName(rawName)
+  await window.electronAPI.gitWorktreeRemove(
+    rootPath,
+    worktree.path,
+    { force: true },
+    workspaceId,
+  )
+
+  try {
+    await window.electronAPI.gitBranchDelete(rootPath, branch, true, workspaceId)
+  } finally {
+    const store = useAppStore.getState()
+    store.removeWorktree(workspaceId, worktree.id)
+    store.removeAdditionalRoot(workspaceId, worktree.path)
+    gitStatusStore.refresh(rootPath)
+  }
+}
+
 export function useWorktreeActions(rootPath: string, workspaceId: string | null): WorktreeActions {
   const upsertWorktree = useAppStore((s) => s.upsertWorktree)
   const addAdditionalRoot = useAppStore((s) => s.addAdditionalRoot)

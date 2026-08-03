@@ -1093,8 +1093,12 @@ export interface ElectronAPI {
   /** Interrupt the running agent (cancels current turn). */
   agentInterrupt(panelId: string): Promise<void>
 
-  /** Dispose the agent session for this panel. */
-  agentDispose(panelId: string): Promise<void>
+  /** Dispose the agent session for this panel. Deleting a durable mission chat
+   *  also stops the coding-agent workers owned by that session. */
+  agentDispose(panelId: string, options?: {
+    stopCodingAgents?: boolean
+    workspaceId?: string
+  }): Promise<void>
 
   /** Change the model used by an existing agent session. */
   agentSetModel(panelId: string, model: CateAgentModelRef): Promise<void>

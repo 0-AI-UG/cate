@@ -412,6 +412,41 @@ function waitForCrossWindowCodingAgents(args: {
   })
 }
 
+/** Stop every live worker owned by a mission before its durable chat is
+ * deleted. The supervisor renderer is always included to catch a worker whose
+ * discovery report has not landed yet; reported detached windows are added so
+ * transferred workers are stopped in their current owner renderer. This is an
+ * internal lifecycle command, not part of the public cate.codingAgent surface. */
+export async function stopCodingAgentsForMission(
+  workspaceId: string,
+  ownerPanelId: string,
+  supervisor: WebContents,
+): Promise<void> {
+  const targets = new Map<number, WebContents>()
+  if (!supervisor.isDestroyed()) targets.set(supervisor.id, supervisor)
+  for (const report of getWindowPanels()) {
+    if (
+      report.workspaceId !== workspaceId ||
+      report.type !== 'terminal' ||
+      report.codingAgentOwnerPanelId !== ownerPanelId
+    ) continue
+    const win = getWindow(report.ownerWindowId)
+    if (win && !win.isDestroyed()) targets.set(win.webContents.id, win.webContents)
+  }
+  await Promise.all([...targets.values()].map(async (target) => {
+    const result = await forwardToOwner(target, {
+      extensionId: 'cate-agent',
+      workspaceId,
+      panelId: ownerPanelId,
+      method: 'cate.codingAgent.stopAll',
+      args: {},
+    })
+    if (result && typeof result === 'object' && 'error' in result) {
+      log.warn('[coding-agent] mission cleanup failed owner=%s: %s', ownerPanelId, result.error)
+    }
+  }))
+}
+
 // ---------------------------------------------------------------------------
 // Method dispatch
 // ---------------------------------------------------------------------------

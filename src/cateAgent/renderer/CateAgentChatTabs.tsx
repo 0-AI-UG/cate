@@ -99,7 +99,7 @@ export const CateAgentChatTabs: React.FC<CateAgentChatTabsProps> = (props) => {
             active={chat.id === activeChatId}
             onClick={() => setActiveChat(chat.id)}
             onClose={() => {
-              disposeDirectChatSession(chat.id)
+              disposeDirectChatSession(chat.id, wsId)
               useChatsStore.getState().removeChat(rootPath, chat.id)
               if (chat.id !== activeChatId) return
               const remaining = useChatsStore.getState().getChats(rootPath)

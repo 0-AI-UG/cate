@@ -7,7 +7,10 @@ import { submitTerminalText } from '../terminal/terminalDriver'
 import { placementForBackgroundPanel } from '../workspace/canvasAccess'
 import { parseLocator, formatLocator } from '../../../shared/runtimeLocator'
 import { pathKey } from '../../../shared/pathUtils'
-import { createWorktreeForWorkspace } from '../../stores/useWorktreeActions'
+import {
+  createWorktreeForWorkspace,
+  discardCreatedWorktreeForWorkspace,
+} from '../../stores/useWorktreeActions'
 import {
   MAX_CONCURRENT_CODING_AGENTS,
   codingAgentDisplayName,
@@ -30,6 +33,12 @@ import {
 export type CodingAgentOutcome =
   | { ok: true; result: unknown }
   | { ok: false; error: string }
+
+const stoppedMissionOwners = new Set<string>()
+
+function missionOwnerKey(workspaceId: string, ownerPanelId: string): string {
+  return `${workspaceId}\0${ownerPanelId}`
+}
 
 function workspace(workspaceId: string) {
   return useAppStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
@@ -260,8 +269,30 @@ export async function handleCodingAgentMethod(
 ): Promise<CodingAgentOutcome> {
   const name = method.slice('cate.codingAgent.'.length)
   if (!ownerPanelId) return { ok: false, error: 'mission-owner-required' }
+  const ownerKey = missionOwnerKey(workspaceId, ownerPanelId)
+
+  if (name === 'stopAll') {
+    stoppedMissionOwners.add(ownerKey)
+    const ws = workspace(workspaceId)
+    let stopped = 0
+    for (const panel of Object.values(ws?.panels ?? {})) {
+      const run = panel.codingAgentRun
+      if (!run || run.ownerPanelId !== ownerPanelId || run.endedAt) continue
+      const terminalAlive = terminalRegistry.getEntry(panel.id)?.alive === true
+      if (terminalAlive) terminalRegistry.terminate(panel.id)
+      if (!run.stoppedAt) {
+        useAppStore.getState().setPanelCodingAgentRun(workspaceId, panel.id, {
+          ...run,
+          stoppedAt: Date.now(),
+        })
+      }
+      if (terminalAlive || !run.stoppedAt) stopped++
+    }
+    return { ok: true, result: { stopped } }
+  }
 
   if (name === 'create') {
+    if (stoppedMissionOwners.has(ownerKey)) return { ok: false, error: 'mission-deleted' }
     const requestedAgentId = args.agentId === undefined ? '' : parseCodingAgentId(args.agentId)
     const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
     if (args.agentId !== undefined && !requestedAgentId) {
@@ -279,17 +310,36 @@ export async function handleCodingAgentMethod(
     if (args.worktreeId && args.newWorktree) {
       return { ok: false, error: 'choose-worktreeId-or-newWorktree' }
     }
-    if (typeof args.newWorktree === 'string' && args.newWorktree.trim()) {
+    let createdWorktree: Awaited<ReturnType<typeof createWorktreeForWorkspace>> | undefined
+    let createdWorktreeRootPath: string | undefined
+    const newWorktreeName = typeof args.newWorktree === 'string' ? args.newWorktree : undefined
+    const rollbackCreatedWorktree = async (): Promise<string | undefined> => {
+      if (!createdWorktree || !newWorktreeName) return undefined
+      if (!createdWorktreeRootPath) return 'workspace-not-found'
+      try {
+        await discardCreatedWorktreeForWorkspace(
+          createdWorktreeRootPath,
+          workspaceId,
+          newWorktreeName,
+          createdWorktree,
+        )
+        return undefined
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+    }
+    if (newWorktreeName?.trim()) {
       const ws = workspace(workspaceId)
       if (!ws?.rootPath) return { ok: false, error: 'workspace-not-found' }
+      createdWorktreeRootPath = ws.rootPath
       try {
-        const created = await createWorktreeForWorkspace(
+        createdWorktree = await createWorktreeForWorkspace(
           ws.rootPath,
           workspaceId,
-          args.newWorktree,
+          newWorktreeName,
           typeof args.baseRef === 'string' ? args.baseRef : undefined,
         )
-        args = { ...args, worktreeId: created.id }
+        args = { ...args, worktreeId: createdWorktree.id }
       } catch (error) {
         return {
           ok: false,
@@ -297,8 +347,25 @@ export async function handleCodingAgentMethod(
         }
       }
     }
+    if (stoppedMissionOwners.has(ownerKey)) {
+      const cleanupError = await rollbackCreatedWorktree()
+      return {
+        ok: false,
+        error: cleanupError
+          ? `mission-deleted; worktree-cleanup-failed: ${cleanupError}`
+          : 'mission-deleted',
+      }
+    }
     const target = resolveTarget(workspaceId, args)
-    if ('error' in target) return { ok: false, error: target.error }
+    if ('error' in target) {
+      const cleanupError = await rollbackCreatedWorktree()
+      return {
+        ok: false,
+        error: cleanupError
+          ? `${target.error}; worktree-cleanup-failed: ${cleanupError}`
+          : target.error,
+      }
+    }
     const ws = workspace(workspaceId)
     let agentId: AgentId
     try {
@@ -308,11 +375,25 @@ export async function handleCodingAgentMethod(
       })
       agentId = agent.id
     } catch (error) {
+      const cleanupError = await rollbackCreatedWorktree()
+      const hookError = error instanceof Error
+        ? `agent-hooks-not-ready: ${error.message}`
+        : 'agent-hooks-not-ready'
       return {
         ok: false,
-        error: error instanceof Error
-          ? `agent-hooks-not-ready: ${error.message}`
-          : 'agent-hooks-not-ready',
+        error: cleanupError
+          ? `${hookError}; worktree-cleanup-failed: ${cleanupError}`
+          : hookError,
+      }
+    }
+
+    if (stoppedMissionOwners.has(ownerKey)) {
+      const cleanupError = await rollbackCreatedWorktree()
+      return {
+        ok: false,
+        error: cleanupError
+          ? `mission-deleted; worktree-cleanup-failed: ${cleanupError}`
+          : 'mission-deleted',
       }
     }
 

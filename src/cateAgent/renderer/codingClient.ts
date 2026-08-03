@@ -17,7 +17,7 @@ export const codingClient = {
   interrupt(panelId: string) {
     return window.electronAPI.agentInterrupt(panelId)
   },
-  dispose(panelId: string) {
-    return window.electronAPI.agentDispose(panelId)
+  dispose(panelId: string, options?: { stopCodingAgents?: boolean; workspaceId?: string }) {
+    return window.electronAPI.agentDispose(panelId, options)
   },
 } as const

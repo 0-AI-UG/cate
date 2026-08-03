@@ -16,6 +16,7 @@ const getOrCreate = vi.hoisted(() => vi.fn())
 const submitTerminalText = vi.hoisted(() => vi.fn(async () => true))
 const terminate = vi.hoisted(() => vi.fn())
 const createWorktreeForWorkspace = vi.hoisted(() => vi.fn())
+const discardCreatedWorktreeForWorkspace = vi.hoisted(() => vi.fn())
 
 vi.mock('../../stores/appStore', () => ({
   useAppStore: {
@@ -62,6 +63,7 @@ vi.mock('../workspace/canvasAccess', () => ({
 }))
 vi.mock('../../stores/useWorktreeActions', () => ({
   createWorktreeForWorkspace,
+  discardCreatedWorktreeForWorkspace,
 }))
 vi.mock('./agentCliHooks', () => ({ resolveDriverAgentCli }))
 
@@ -125,6 +127,8 @@ describe('codingAgentDriver mission integration', () => {
     submitTerminalText.mockClear()
     terminate.mockClear()
     createWorktreeForWorkspace.mockReset()
+    discardCreatedWorktreeForWorkspace.mockReset()
+    discardCreatedWorktreeForWorkspace.mockResolvedValue(undefined)
   })
 
   it('automatically selects a hook-ready canonical agent and starts its PTY headlessly', async () => {
@@ -181,6 +185,87 @@ describe('codingAgentDriver mission integration', () => {
     })
     expect(state.app.createTerminal).not.toHaveBeenCalled()
     expect(getOrCreate).not.toHaveBeenCalled()
+  })
+
+  it('removes a newly-created worktree when hook readiness fails', async () => {
+    const created = {
+      id: 'wt-new',
+      path: '/repo/.cate/worktrees/agent-test',
+      color: '#123456',
+    }
+    state.app.workspaces[0].worktrees = [created]
+    createWorktreeForWorkspace.mockResolvedValue(created)
+    resolveDriverAgentCli.mockRejectedValue(new Error('Codex hooks are disabled'))
+
+    await expect(handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.create',
+      { agentId: 'codex', prompt: 'Implement it', newWorktree: 'agent/test' },
+    )).resolves.toEqual({
+      ok: false,
+      error: 'agent-hooks-not-ready: Codex hooks are disabled',
+    })
+
+    expect(discardCreatedWorktreeForWorkspace).toHaveBeenCalledWith(
+      '/repo',
+      'ws',
+      'agent/test',
+      created,
+    )
+    expect(state.app.createTerminal).not.toHaveBeenCalled()
+  })
+
+  it('stops every live local worker owned by a deleted mission', async () => {
+    const activeRun = {
+      id: 'run-active', agentId: 'codex', panelId: 'active', ownerPanelId: 'supervisor-1',
+      prompt: 'Active', createdAt: 1,
+    }
+    const completedRun = {
+      id: 'run-complete', agentId: 'codex', panelId: 'complete', ownerPanelId: 'supervisor-1',
+      prompt: 'Complete', createdAt: 1, endedAt: 2,
+    }
+    const staleStoppedRun = {
+      id: 'run-stale', agentId: 'codex', panelId: 'stale', ownerPanelId: 'deleted-supervisor',
+      prompt: 'Stale', createdAt: 1, stoppedAt: 2,
+    }
+    activeRun.ownerPanelId = 'deleted-supervisor'
+    completedRun.ownerPanelId = 'deleted-supervisor'
+    state.app.workspaces[0].panels.active = { id: 'active', codingAgentRun: activeRun }
+    state.app.workspaces[0].panels.complete = { id: 'complete', codingAgentRun: completedRun }
+    state.app.workspaces[0].panels.stale = { id: 'stale', codingAgentRun: staleStoppedRun }
+
+    await expect(handleCodingAgentMethod(
+      'ws', 'deleted-supervisor', 'cate.codingAgent.stopAll', {},
+    )).resolves.toEqual({ ok: true, result: { stopped: 2 } })
+
+    expect(terminate).toHaveBeenCalledTimes(2)
+    expect(terminate).toHaveBeenCalledWith('active')
+    expect(terminate).toHaveBeenCalledWith('stale')
+    expect(state.app.workspaces[0].panels.active.codingAgentRun).toMatchObject({
+      id: 'run-active',
+      stoppedAt: expect.any(Number),
+    })
+    expect(state.app.workspaces[0].panels.complete.codingAgentRun).toBe(completedRun)
+  })
+
+  it('cancels an in-flight create when its mission is deleted during hook preflight', async () => {
+    let resolveHooks: (agent: unknown) => void = () => {}
+    resolveDriverAgentCli.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveHooks = resolve }),
+    )
+    const creating = handleCodingAgentMethod(
+      'ws', 'deleted-during-create', 'cate.codingAgent.create', { prompt: 'Implement it' },
+    )
+    await vi.waitFor(() => expect(resolveDriverAgentCli).toHaveBeenCalled())
+
+    await handleCodingAgentMethod(
+      'ws', 'deleted-during-create', 'cate.codingAgent.stopAll', {},
+    )
+    resolveHooks(AGENTS.find((agent) => agent.id === 'codex'))
+
+    await expect(creating).resolves.toEqual({ ok: false, error: 'mission-deleted' })
+    expect(state.app.createTerminal).not.toHaveBeenCalled()
   })
 
   it('isolates run lookup to the Cate Agent session that created it', async () => {

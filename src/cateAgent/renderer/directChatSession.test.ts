@@ -3,6 +3,7 @@ import type { Chat } from '../../shared/types'
 import { useCodingStore } from './codingStore'
 import {
   directAgentKey,
+  disposeDirectChatSession,
   promptDirectChat,
 } from './directChatSession'
 
@@ -21,6 +22,7 @@ beforeEach(() => {
     electronAPI: {
       agentCreate: vi.fn(async () => ({ ok: true })),
       agentPrompt: vi.fn(async () => {}),
+      agentDispose: vi.fn(async () => {}),
     },
   }
 })
@@ -34,5 +36,17 @@ describe('promptDirectChat', () => {
       { type: 'user', text: 'First message' },
     ])
     await expect(sending).resolves.toBe(true)
+  })
+})
+
+describe('disposeDirectChatSession', () => {
+  it('requests mission-worker cleanup before dropping the renderer session', () => {
+    disposeDirectChatSession(chat.id, 'workspace-1')
+
+    expect(window.electronAPI.agentDispose).toHaveBeenCalledWith(
+      directAgentKey(chat.id),
+      { stopCodingAgents: true, workspaceId: 'workspace-1' },
+    )
+    expect(useCodingStore.getState().panels[directAgentKey(chat.id)]).toBeUndefined()
   })
 })

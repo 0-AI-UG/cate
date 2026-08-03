@@ -146,6 +146,7 @@ import {
   dispatchCateInvoke,
   forwardTimeoutMs,
   requiredScopeFor,
+  stopCodingAgentsForMission,
   TERMINAL_INPUT_DISABLED,
   TERMINAL_READ_DISABLED,
   BROWSER_CONTROL_DISABLED,
@@ -365,6 +366,49 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
 })
 
 describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
+  it('stops mission workers in the supervisor and every detached owner window', async () => {
+    const supervisorSend = vi.fn(() => { throw new Error('closed for test') })
+    const detachedSend = vi.fn(() => { throw new Error('closed for test') })
+    const unrelatedSend = vi.fn(() => { throw new Error('closed for test') })
+    const supervisor = { id: 1, isDestroyed: () => false, send: supervisorSend }
+    windowsById.set(7, {
+      isDestroyed: () => false,
+      webContents: { id: 7, send: detachedSend },
+    })
+    windowsById.set(8, {
+      isDestroyed: () => false,
+      webContents: { id: 8, send: unrelatedSend },
+    })
+    windowPanelList.value = [
+      {
+        panelId: 'worker-panel',
+        type: 'terminal',
+        workspaceId: WS,
+        ownerWindowId: 7,
+        codingAgentOwnerPanelId: 'supervisor-1',
+      },
+      {
+        panelId: 'other-worker',
+        type: 'terminal',
+        workspaceId: 'other-workspace',
+        ownerWindowId: 8,
+        codingAgentOwnerPanelId: 'supervisor-1',
+      },
+    ]
+
+    await stopCodingAgentsForMission(WS, 'supervisor-1', supervisor as never)
+
+    for (const send of [supervisorSend, detachedSend]) {
+      expect(send).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+        workspaceId: WS,
+        panelId: 'supervisor-1',
+        method: 'cate.codingAgent.stopAll',
+        args: {},
+      }))
+    }
+    expect(unrelatedSend).not.toHaveBeenCalled()
+  })
+
   it('allows a long monitor call without extending unrelated host actions', () => {
     expect(forwardTimeoutMs('cate.codingAgent.wait')).toBe(125_000)
     expect(forwardTimeoutMs('cate.editor.openFile')).toBe(10_000)

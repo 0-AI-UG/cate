@@ -333,12 +333,13 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
       codingAgentLaunch: opts.codingAgentLaunch,
     })
 
-    // If the entry was disposed while we were waiting, dispose() couldn't kill
-    // the PTY (ptyId was still '') — kill the freshly-created one here so it
-    // doesn't leak, then bail out.
-    if (!registry.has(panelId)) {
+    // If the entry was disposed OR terminated while we were waiting, neither
+    // operation could kill the PTY (ptyId was still '') — kill the freshly
+    // created one here so a mission deleted during startup cannot leak a live
+    // worker. A terminated entry stays registered to retain its xterm panel.
+    if (!registry.has(panelId) || entry.alive === false) {
       electronAPI.terminalKill(ptyId).catch((err) => log.warn('[terminal] Kill failed:', err))
-      terminal.dispose()
+      if (!registry.has(panelId)) terminal.dispose()
       return entry
     }
 

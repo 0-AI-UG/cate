@@ -6,6 +6,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const stopCodingAgentsForMission = vi.hoisted(() => vi.fn(async () => {}))
+
 vi.mock('electron', () => ({}))
 vi.mock('../../main/windowRegistry', () => ({ broadcastToAll: vi.fn() }))
 vi.mock('../../main/windowPanels', () => ({ getWindowPanels: () => [] }))
@@ -34,6 +36,7 @@ vi.mock('../../skills/main/skillsMirror', () => ({ syncWorkspaceSkills: vi.fn() 
 vi.mock('../../main/extensions/workspaceCateApi', () => ({
   workspaceCateApi: { ensureCateAgentEndpoint: vi.fn().mockResolvedValue(null) },
 }))
+vi.mock('../../main/extensions/cateApiHandlers', () => ({ stopCodingAgentsForMission }))
 vi.mock('../../main/workspaceStateStore', () => ({ isProjectTrusted: vi.fn(() => false) }))
 
 import { CodingManager } from './codingManager'
@@ -46,6 +49,27 @@ import { CODING_EVENT } from '../../shared/ipc-channels'
 import { workspaceCateApi } from '../../main/extensions/workspaceCateApi'
 
 const fakeAuthManager = { setOnChange: vi.fn() } as unknown as AuthManager
+
+describe('CodingManager mission cleanup', () => {
+  beforeEach(() => stopCodingAgentsForMission.mockClear())
+
+  it('stops workers even when the deleted chat has no live main-agent session', async () => {
+    const manager = new CodingManager(fakeAuthManager)
+    const sender = { id: 4, isDestroyed: () => false, send: vi.fn() } as never
+
+    await manager.dispose(
+      'cate-direct:chat-1',
+      { stopCodingAgents: true, workspaceId: 'workspace-1' },
+      sender,
+    )
+
+    expect(stopCodingAgentsForMission).toHaveBeenCalledWith(
+      'workspace-1',
+      'cate-direct:chat-1',
+      sender,
+    )
+  })
+})
 
 describe('CodingManager worktree skill preparation', () => {
   beforeEach(() => vi.clearAllMocks())

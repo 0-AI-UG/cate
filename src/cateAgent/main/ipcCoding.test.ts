@@ -46,6 +46,7 @@ vi.mock('./customModels', () => ({
 import { registerCodingHandlers } from './ipcCoding'
 import {
   CODING_CREATE,
+  CODING_DISPOSE,
   CODING_CUSTOM_MODELS_DELETE,
   CODING_CUSTOM_MODELS_GET,
   CODING_CUSTOM_MODELS_SAVE,
@@ -60,6 +61,7 @@ import type { AuthManager } from './authManager'
 function makeManager(): CodingManager {
   return {
     create: vi.fn(async () => {}),
+    dispose: vi.fn(async () => {}),
     disposeForWebContents: vi.fn(),
     prompt: vi.fn(async () => {}),
   } as unknown as CodingManager
@@ -95,6 +97,17 @@ beforeEach(() => {
 })
 
 describe('agent IPC ownership and session routing', () => {
+  it('forwards mission cleanup context with the owning renderer', async () => {
+    const manager = makeManager()
+    registerCodingHandlers({} as AuthManager, manager)
+    const owner = makeSender(42).sender
+    const options = { stopCodingAgents: true, workspaceId: 'ws-1' }
+
+    await invoke(CODING_DISPOSE, owner, 'cate-direct:chat-1', options)
+
+    expect(manager.dispose).toHaveBeenCalledWith('cate-direct:chat-1', options, owner)
+  })
+
   it('hooks each owner window once and disposes all of its sessions when destroyed', async () => {
     const manager = makeManager()
     registerCodingHandlers({} as AuthManager, manager)
