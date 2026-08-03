@@ -2,8 +2,12 @@ import { useMemo, useState } from 'react'
 import type { ToolMessage } from './codingStore'
 import { useAppStore } from '../../renderer/stores/appStore'
 import { revealPanel } from '../../renderer/lib/workspace/panelReveal'
-import { useAgentTerminalStatus, agentStateLabel } from './useAgentTerminalStatus'
-import { codingAgentDisplayName, parseCodingAgentId } from '../../shared/codingAgentRuns'
+import { useAgentTerminalStatus, codingAgentStatusLabel } from './useAgentTerminalStatus'
+import {
+  codingAgentDisplayName,
+  parseCodingAgentId,
+  type CodingAgentRunStatus,
+} from '../../shared/codingAgentRuns'
 import { getAgentLogoById } from '../../renderer/lib/agent/agentLogos'
 import { CateLogo } from '../../renderer/ui/CateLogo'
 import { OrchestrationToolDetails } from './ChatOrchestrationToolCard'
@@ -16,6 +20,13 @@ function resultObject(result: string | undefined): Record<string, unknown> {
   } catch {
     return {}
   }
+}
+
+function resultStatus(value: unknown): CodingAgentRunStatus | null {
+  return value === 'starting' || value === 'working' || value === 'waiting'
+    || value === 'ready' || value === 'stopped' || value === 'failed'
+    ? value
+    : null
 }
 
 /** Native card for a worker created by Cate Agent. The terminal remains a real,
@@ -34,17 +45,20 @@ export function CodingAgentCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: 
   const [expanded, setExpanded] = useState(false)
   const running = msg.status === 'running' || msg.status === 'pending'
   const label = agentId ? codingAgentDisplayName(agentId) : 'Coding agent'
-  const status = panelId
-    ? agentStateLabel(terminalStatus.agentState)
-    : running ? 'Starting…' : msg.error ? 'Failed' : 'Created'
+  const canonicalStatus = terminalStatus.runStatus ?? resultStatus(result.status)
+  const status = msg.error
+    ? 'Failed'
+    : canonicalStatus
+      ? codingAgentStatusLabel(canonicalStatus)
+      : running ? 'Starting…' : 'Created'
   const canOpenTerminal = Boolean(panelId && workspaceId)
-  const statusColor = msg.error
+  const statusColor = msg.error || canonicalStatus === 'failed'
     ? 'bg-danger'
-    : terminalStatus.agentState === 'waitingForInput'
+    : canonicalStatus === 'waiting'
       ? 'bg-warning'
-      : terminalStatus.agentState === 'finished'
+      : canonicalStatus === 'ready'
         ? 'bg-[#34C759]'
-        : terminalStatus.agentState === 'running'
+        : canonicalStatus === 'working'
           ? 'bg-accent'
           : 'bg-muted'
 
@@ -80,7 +94,7 @@ export function CodingAgentCard({ msg, shimmer }: { msg: ToolMessage; shimmer?: 
             />
           )}
           <span className={
-            running || shimmer || terminalStatus.agentState === 'running'
+            running || shimmer || canonicalStatus === 'working'
               ? 'cate-notif-pulse'
               : ''
           }>

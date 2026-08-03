@@ -5,6 +5,7 @@
 import log from '../logger'
 import { getSetting } from '../settingsFile'
 import { CateApiEndpointManager, cateApiEndpointManager } from './cateApiEndpointManager'
+import { codingAgentAdmission } from './codingAgentAdmission'
 import type { WebContents } from 'electron'
 
 const FIRST_PARTY_ID = 'terminal'
@@ -99,6 +100,7 @@ export class WorkspaceCateApiManager {
     const keys = this.cateAgentKeys.get(workspaceId)
     keys?.delete(key)
     if (keys?.size === 0) this.cateAgentKeys.delete(workspaceId)
+    codingAgentAdmission.clearMission(workspaceId, panelId)
   }
 
   /** Tear down a single workspace's first-party endpoint. The local runtime never
@@ -110,6 +112,7 @@ export class WorkspaceCateApiManager {
       this.endpoints.dispose(key)
     }
     this.cateAgentKeys.delete(workspaceId)
+    codingAgentAdmission.clearWorkspace(workspaceId)
   }
 
   disposeForRuntime(runtimeId: string): void {
@@ -121,6 +124,7 @@ export class WorkspaceCateApiManager {
     this.endpoints.disposeAll('first-party')
     this.endpoints.disposeAll('cate-agent')
     this.cateAgentKeys.clear()
+    codingAgentAdmission.clearAll()
   }
 }
 

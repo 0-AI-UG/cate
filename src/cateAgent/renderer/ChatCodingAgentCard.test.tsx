@@ -46,6 +46,14 @@ describe('coding agent launch presentation', () => {
             id: 'panel-1',
             type: 'terminal',
             title: 'Codex 3',
+            codingAgentRun: {
+              id: 'run-1',
+              agentId: 'codex',
+              panelId: 'panel-1',
+              ownerPanelId: 'supervisor-1',
+              prompt: 'Make the default test command deterministic',
+              createdAt: 1,
+            },
           },
         },
       }],
@@ -84,5 +92,24 @@ describe('coding agent launch presentation', () => {
     expect(host.textContent).toContain('Input')
     expect(host.textContent).toContain('Output')
     expect(host.querySelector('.rounded-md')).toBeNull()
+  })
+
+  it('shows a non-zero worker exit as failed instead of finished', () => {
+    useAppStore.getState().setPanelCodingAgentRun('workspace-1', 'panel-1', {
+      id: 'run-1',
+      agentId: 'codex',
+      panelId: 'panel-1',
+      ownerPanelId: 'supervisor-1',
+      prompt: 'Make the default test command deterministic',
+      createdAt: 1,
+      endedAt: 2,
+      exitCode: 1,
+    })
+
+    act(() => root.render(<CodingAgentCard msg={message()} />))
+
+    const indicator = host.querySelector<HTMLElement>('[aria-label="Failed"]')
+    expect(indicator).not.toBeNull()
+    expect(indicator?.className).toContain('bg-danger')
   })
 })

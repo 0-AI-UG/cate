@@ -1,18 +1,22 @@
 // =============================================================================
 // useAgentTerminalStatus — a live read of one Cate-Agent-controlled terminal for
-// the job cards: the coding agent's turn-state (reactive, from statusStore) plus a
-// sampled "status line" peeked from the live xterm buffer. This is what makes a
-// card answer "is it working or stuck?" without opening the terminal.
+// the job cards: the canonical run status (derived from the run + terminal
+// lifecycle) plus a sampled "status line" peeked from the live xterm buffer.
+// This makes a card answer "is it working or stuck?" without opening it.
 //
 // The turn-state is the reliable signal; the sampled line is a best-effort peek of
 // whatever the TUI is currently showing (the spinner/progress line), refreshed on a
 // slow interval so it reads as a glance, not a transcript.
 // =============================================================================
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useAppStore } from '../../renderer/stores/appStore'
 import { useStatusStore } from '../../renderer/stores/statusStore'
 import { terminalRegistry } from '../../renderer/lib/terminal/terminalRegistry'
-import type { AgentState } from '../../shared/types'
+import {
+  deriveCodingAgentRunStatus,
+  type CodingAgentRunStatus,
+} from '../../shared/codingAgentRuns'
 
 // Lines that are pure box-drawing / prompt chrome carry no progress info — skip them
 // when hunting for the meaningful status line near the bottom of the screen.
@@ -36,14 +40,37 @@ function sampleStatusLine(panelId: string): string | null {
 }
 
 export interface AgentTerminalStatus {
-  agentState: AgentState | null
+  /** Canonical mission status shared with inspect/wait and window reports. */
+  runStatus: CodingAgentRunStatus | null
   /** A peek of the terminal's current status line, or null when unavailable. */
   line: string | null
 }
 
 export function useAgentTerminalStatus(wsId: string, panelId: string): AgentTerminalStatus {
-  const ptyId = terminalRegistry.ptyIdForPanel(panelId) ?? undefined
-  const agentState = useStatusStore((s) => (ptyId ? s.workspaces[wsId]?.terminals[ptyId]?.agentState ?? null : null))
+  const run = useAppStore((state) =>
+    state.workspaces.find((workspace) => workspace.id === wsId)?.panels[panelId]?.codingAgentRun,
+  )
+  const runtime = useStatusStore((state) => {
+    const ptyId = terminalRegistry.ptyIdForPanel(panelId)
+    return ptyId ? state.workspaces[wsId]?.terminals[ptyId] : undefined
+  })
+  const failure = useSyncExternalStore(
+    (onChange) => terminalRegistry.subscribeFailure((changedPanelId) => {
+      if (changedPanelId === panelId) onChange()
+    }),
+    () => terminalRegistry.getFailure(panelId),
+    () => null,
+  )
+  const entry = terminalRegistry.getEntry(panelId)
+  const runStatus = run
+    ? deriveCodingAgentRunStatus(run, {
+        terminalStarted: entry !== undefined,
+        terminalAlive: entry?.alive === true,
+        terminalFailed: failure !== null,
+        agentState: runtime?.agentState,
+        agentPresent: runtime?.agentPresent === true || Boolean(runtime?.agentName),
+      })
+    : null
   const [line, setLine] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
@@ -57,21 +84,16 @@ export function useAgentTerminalStatus(wsId: string, panelId: string): AgentTerm
       clearInterval(id)
     }
   }, [panelId])
-  return { agentState, line }
+  return { runStatus, line }
 }
 
-/** Short human label for a coding agent's turn-state. */
-export function agentStateLabel(state: AgentState | null): string {
-  switch (state) {
-    case 'running':
-      return 'Working…'
-    case 'waitingForInput':
-      return 'Waiting for input'
-    case 'finished':
-      return 'Finished'
-    case 'notRunning':
-      return 'Starting…'
-    default:
-      return 'Starting…'
+export function codingAgentStatusLabel(status: CodingAgentRunStatus): string {
+  switch (status) {
+    case 'starting': return 'Starting…'
+    case 'working': return 'Working…'
+    case 'waiting': return 'Waiting for input'
+    case 'ready': return 'Finished'
+    case 'stopped': return 'Stopped'
+    case 'failed': return 'Failed'
   }
 }

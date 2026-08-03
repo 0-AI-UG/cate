@@ -62,6 +62,7 @@ import { getCachedCatalog } from './catalog'
 import { getProxyUrlFor, identityForGuestUrl } from './proxyServer'
 import { extensionServerManager } from './ExtensionServerManager'
 import { codingManager } from '../../cateAgent/main/codingManager'
+import { codingAgentAdmission } from './codingAgentAdmission'
 import { getExtensionStorage } from './storage'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { getActiveMainWindow, getWindow } from '../windowRegistry'
@@ -640,11 +641,22 @@ export async function dispatchCateInvoke(
     }
   }
 
-  // Security: the first-party CLI permission matrix (Settings → CLI) — one
-  // read/control cell per surface, checked before anything is touched. A method
-  // no row covers is governed by scopes alone. Extensions never reach this:
-  // their gate is manifest scopes plus, for browser/agent, a consent prompt.
-  if (scope.caller === 'first-party') {
+  // Security: direct CLI calls and the embedded supervisor's non-orchestration
+  // calls share the Settings → CLI gates. The supervisor endpoint must stay
+  // alive when the master switch is off so its coding-agent orchestration can
+  // still work, but that privileged endpoint must not become a way around the
+  // user's CLI permissions for browser, terminal, panel, editor, or UI access.
+  // Extensions remain governed by manifest scopes plus capability consent.
+  const isCodingAgentOrchestration = method.startsWith('cate.codingAgent.')
+  const usesCliPermissions = scope.caller === 'first-party'
+    || (scope.caller === 'cate-agent' && !isCodingAgentOrchestration)
+  if (usesCliPermissions) {
+    if (getSetting('cliEnabled') !== true) {
+      return {
+        error: 'cli-disabled: enable Command-line control (cate CLI) in Cate Settings → CLI',
+        method,
+      }
+    }
     const cell = cliPermissionForMethod(method)
     if (cell && getSetting(cell.key) !== true) {
       return { error: cliPermissionDenied(cell), method }
@@ -685,7 +697,21 @@ export async function dispatchCateInvoke(
       method,
       args: routedArgs,
     }
-    return target ? forwardToOwner(target.wc, payload) : scope.forward(payload)
+    const forward = (): Promise<InvokeResult> => target
+      ? forwardToOwner(target.wc, payload)
+      : scope.forward(payload)
+    if (name === 'create') {
+      const admission = await codingAgentAdmission.admit({
+        workspaceId,
+        ownerPanelId: panelId ?? '',
+        panels: getWindowPanels,
+        create: forward,
+      })
+      return admission.admitted
+        ? admission.result
+        : { error: 'coding-agent-limit', method }
+    }
+    return forward()
   }
 
   // Storage (handled in main, backed by storage.ts). Routed by prefix — mirrors

@@ -76,6 +76,7 @@ export interface CodingAgentRunSnapshot extends CodingAgentRun {
 }
 
 export const MAX_CONCURRENT_CODING_AGENTS = 5
+const CODING_AGENT_TASK_PREFIX = 'Complete this coding task:\n\n'
 
 /** Resolve an untrusted tool argument to the closed, canonical agent registry. */
 export function parseCodingAgentId(value: unknown): AgentId | null {
@@ -86,10 +87,10 @@ export function parseCodingAgentId(value: unknown): AgentId | null {
 /**
  * Build the exact executable + argv for a Cate-owned coding-agent PTY.
  *
- * No shell is involved, so task text cannot become shell syntax. Every
- * executable comes from AGENTS; callers cannot provide a path or extra flags.
- * OpenCode's prompt-bearing surface is its `run` command. Other supported CLIs
- * accept the first positional prompt while remaining interactive.
+ * No shell is involved, so task text cannot become shell syntax. Prefixing the
+ * positional task also prevents option/subcommand injection into the CLI's own
+ * argv parser. Every executable comes from AGENTS; callers cannot provide a
+ * path or extra flags. OpenCode's prompt-bearing surface is its `run` command.
  */
 export function codingAgentCommand(
   launch: Pick<CodingAgentLaunch, 'agentId' | 'prompt'>,
@@ -101,7 +102,7 @@ export function codingAgentCommand(
   if (prompt.includes('\0')) throw new Error('Coding-agent prompts cannot contain NUL bytes')
   return {
     executable: agent.command,
-    args: agent.codingAgentArgs(prompt),
+    args: agent.codingAgentArgs(`${CODING_AGENT_TASK_PREFIX}${prompt}`),
   }
 }
 

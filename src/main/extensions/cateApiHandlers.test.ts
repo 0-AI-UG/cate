@@ -42,6 +42,7 @@ const { showOsNotification, settings } = vi.hoisted(() => ({
   showOsNotification: vi.fn(),
   settings: {
     notificationsEnabled: true,
+    cliEnabled: true,
     cliBrowserReadEnabled: true,
     cliBrowserControlEnabled: true,
     cliTerminalReadEnabled: true,
@@ -170,6 +171,7 @@ beforeEach(() => {
   state.enabled = true
   state.scopes = ['storage', 'editor', 'canvas', 'theme', 'ui', 'workspace.read', 'panel']
   settings.notificationsEnabled = true
+  settings.cliEnabled = true
   settings.cliBrowserReadEnabled = true
   settings.cliBrowserControlEnabled = true
   settings.cliTerminalReadEnabled = true
@@ -396,6 +398,59 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
         _cateOriginCwd: '/ws/worktrees/feature',
       },
     }))
+  })
+
+  it('keeps native orchestration available when command-line control is off', async () => {
+    settings.cliEnabled = false
+    const forward = vi.fn(async () => ({ id: 'run-cli-off' }))
+
+    expect(await dispatchCateInvoke({
+      extensionId: 'cate-agent',
+      workspaceId: WS,
+      panelId: 'supervisor-cli-off',
+      caller: 'cate-agent',
+      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      forward,
+    }, 'cate.codingAgent.create', { agentId: 'codex', prompt: 'Implement it' })).toEqual({
+      id: 'run-cli-off',
+    })
+    expect(forward).toHaveBeenCalledOnce()
+  })
+
+  it('applies the CLI master switch to Cate Agent host capabilities', async () => {
+    settings.cliEnabled = false
+    const forward = vi.fn()
+
+    expect(await dispatchCateInvoke({
+      extensionId: 'cate-agent',
+      workspaceId: WS,
+      panelId: 'supervisor-cli-gate',
+      caller: 'cate-agent',
+      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      forward,
+    }, 'cate.terminal.press', { key: 'enter' })).toEqual({
+      error: 'cli-disabled: enable Command-line control (cate CLI) in Cate Settings → CLI',
+      method: 'cate.terminal.press',
+    })
+    expect(forward).not.toHaveBeenCalled()
+  })
+
+  it('applies per-capability CLI permissions to Cate Agent host capabilities', async () => {
+    settings.cliTerminalInputEnabled = false
+    const forward = vi.fn()
+
+    expect(await dispatchCateInvoke({
+      extensionId: 'cate-agent',
+      workspaceId: WS,
+      panelId: 'supervisor-cell-gate',
+      caller: 'cate-agent',
+      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      forward,
+    }, 'cate.terminal.press', { key: 'enter' })).toEqual({
+      error: TERMINAL_INPUT_DISABLED,
+      method: 'cate.terminal.press',
+    })
+    expect(forward).not.toHaveBeenCalled()
   })
 
   it('denies ordinary first-party terminals and extensions even with the scope', async () => {
