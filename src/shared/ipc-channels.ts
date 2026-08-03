@@ -381,6 +381,7 @@ export const SKILLS_REFRESH = 'skills:refresh'               // renderer -> main
 export const SKILLS_GET_PREVIEW = 'skills:getPreview'         // renderer -> main (fetch SKILL.md body)
 export const SKILLS_INSTALL = 'skills:install'               // renderer -> main
 export const SKILLS_UNINSTALL = 'skills:uninstall'           // renderer -> main
+export const SKILLS_REINSTALL_CATE_CLI = 'skills:reinstallCateCli' // renderer -> main
 export const SKILLS_LIST_INSTALLED = 'skills:listInstalled'   // renderer -> main (workspace manifest)
 export const SKILLS_LIST_SAVED = 'skills:listSaved'           // renderer -> main (userData library)
 export const SKILLS_SAVE = 'skills:save'                     // renderer -> main (fetch + cache to library)

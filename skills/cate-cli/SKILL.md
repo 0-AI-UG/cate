@@ -1,69 +1,127 @@
 ---
 name: cate-cli
-description: Use the `cate` CLI inside Cate terminals to inspect or control browser and terminal panels, open files, and manage panels. Use when work must happen through Cate's visible UI or another Cate panel.
+description: Drive Cate browser, terminal, editor, and panel surfaces from a Cate terminal. Browser page automation uses native agent-browser command syntax.
 user-invocable: true
 ---
 
 # Cate CLI
 
-`cate` is available only inside Cate terminals and agent shells. It uses the
-current workspace automatically. Run `cate --help` or `cate <group> --help` for
-the command reference.
+`cate` is available inside Cate terminals and agent shells. It talks to the
+current workspace and requires the relevant Settings → CLI permission.
 
-If a command reports that command-line control or a permission is disabled, the
-user must enable the named setting under Settings → CLI. Terminal input is off
-by default.
-
-## Workflow
-
-Start by finding the panels and their short ids:
+Start by listing panels:
 
 ```bash
 cate panel list
 ```
 
-Pass `--panel <id>` on every command when operating an existing browser or
-terminal. Without it, browser and panel-creation commands use the caller's
-placement group; `browser open` creates a background browser if that group has
-none. Pass `--new` to always create another browser. `panel create` is limited
-to terminal and canvas panels. The CLI cannot focus panels or move the user's
-view.
-
-For browser work, inspect before acting and verify afterward:
+When working repeatedly with one panel, select it for the current agent or
+terminal session:
 
 ```bash
+cate panel set 1a2b3c4d
+cate panel current
+```
+
+The selection is isolated by a per-terminal CLI session, so other agents and
+terminals keep their own targets. Short ids from `panel list`
+are accepted. Use `--panel <id>` only as a one-command override. Clear the
+selection to return to Cate's automatic focused/grouped resolution:
+
+```bash
+cate panel clear
+```
+
+Selections can point to any native panel. Browser and terminal commands reject
+a selected panel of the wrong type instead of silently controlling another
+panel. If a selected panel was closed, select another panel before continuing.
+
+## Browser workflow
+
+Inspect, act, wait, then inspect again:
+
+```bash
+cate panel set 1a2b3c4d
 cate browser open https://example.com
-cate browser snapshot
-cate browser inspect label=Email
-cate browser fill label=Email user@example.com
-cate browser click text=Continue --exact
-cate browser wait url '**/dashboard' --snapshot
+cate browser snapshot -i
+cate browser fill @s1e2 user@example.com
+cate browser click @s1e3
+cate browser wait --url '**/dashboard'
+cate browser snapshot -i
 ```
 
-Prefer `wait text`, `wait gone`, `wait url`, `wait ref`, or `wait selector` to a
-fixed delay. `--snapshot` returns the post-action state but does not replace a
-conditional wait for asynchronous updates.
-
-Snapshot refs such as `@s1e4` expire after navigation or a newer snapshot. Take
-a new snapshot instead of retrying a stale ref. Locators use
-`role=`, `text=`, `label=`, `placeholder=`, `testid=`, `css=`, `alt=`, or
-`title=`. Ambiguous locators fail; refine them, add `--exact`, or deliberately
-choose a match with `--nth`.
-
-Browser actions are visible and use trusted input. A screenshot command prints
-only the temporary PNG path.
-
-## Terminal input
-
-Read the target first. `terminal type` stages text without Enter; verify it,
-then execute with `terminal press enter`:
+Page commands after `cate browser` use agent-browser's native argv directly:
 
 ```bash
-cate terminal read --panel 1a2b3c4d
-cate terminal type npm test --panel 1a2b3c4d
-cate terminal read --panel 1a2b3c4d
-cate terminal press enter --panel 1a2b3c4d
+cate browser snapshot -i --compact
+cate browser get text @s1e4
+cate browser find role button click
+cate browser fill '#email' user@example.com
+cate browser press Enter
+cate browser scroll down 600
+cate browser screenshot --full
+cate browser console
+cate browser errors
 ```
 
-Input goes to whatever currently owns the terminal, including a foreground TUI.
-Never send keys until the panel id and current screen are verified.
+Do not use agent-browser's `open` semantics by assumption: Cate defines
+`browser open` as opening a new tab. Use `navigate` only when replacing the
+active tab is intentional:
+
+```bash
+cate browser open https://second.example
+cate browser navigate https://replacement.example
+cate browser new-panel https://separate.example
+```
+
+Cate owns browser identity and presentation. Native session/CDP switching,
+native tab management, upload/download paths, batch, setup, servers, and browser
+startup flags are unavailable. Use Cate's lifecycle commands:
+
+```bash
+cate browser tabs
+cate browser new-tab [url]
+cate browser select-tab <id>
+cate browser close-tab <id>
+cate browser viewport desktop
+cate browser viewport mobile
+cate browser viewport 1024 768
+cate browser viewport compact
+cate browser resize 640 480
+```
+
+The default compact viewport renders at 75% scale. Responsive viewport size and
+canvas panel size are independent. `resize` applies only to canvas panels and
+has a 400×300 minimum.
+
+Snapshots come from agent-browser's accessibility tree. Cate wraps engine refs
+with an observation revision, for example `@s1e4`. A new snapshot invalidates
+older refs; take a fresh snapshot instead of retrying `stale-ref`.
+
+Agent actions display a persistent cursor/highlight in the browser panel. User
+input immediately takes control back. Screenshots are saved to a Cate-managed
+temporary path and the CLI prints that path.
+
+## Other surfaces
+
+```bash
+cate editor open src/app.tsx:42
+cate panel create terminal
+cate panel create canvas
+cate panel set <id>
+cate panel current
+cate panel clear
+cate panel close <id>
+```
+
+Read a terminal before sending input. `type` does not append Enter:
+
+```bash
+cate panel set 1a2b3c4d
+cate terminal read
+cate terminal type npm test
+cate terminal press enter
+```
+
+Terminal input goes to whatever currently owns that PTY, including foreground
+TUIs. Never send keys until the panel id and current screen are verified.

@@ -1,7 +1,9 @@
 import { Check } from '@phosphor-icons/react'
+import { useState } from 'react'
 import { CLI_PERMISSIONS, type CliPermissionCell } from '../../shared/cliPermissions'
+import { useSelectedWorkspace } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { SearchableBlock, SettingRow, Toggle } from './SettingsComponents'
+import { SearchableBlock, SecondaryButton, SettingRow, Toggle } from './SettingsComponents'
 
 // -----------------------------------------------------------------------------
 // Permission matrix — surface (row) × access level (column), rendered straight
@@ -36,7 +38,32 @@ function PermissionCheckbox({ checked, onChange, title, disabled }: CheckboxProp
 
 export function CliSettings() {
   const store = useSettingsStore()
+  const workspace = useSelectedWorkspace()
+  const [reinstalling, setReinstalling] = useState(false)
+  const [reinstallStatus, setReinstallStatus] = useState<{ ok: boolean; message: string } | null>(null)
   const off = !store.cliEnabled
+
+  const reinstallSkill = async () => {
+    if (!workspace?.rootPath || reinstalling) return
+    setReinstalling(true)
+    setReinstallStatus(null)
+    try {
+      const result = await window.electronAPI.skillsReinstallCateCli(workspace.rootPath, workspace.id)
+      setReinstallStatus(result.ok
+        ? {
+            ok: true,
+            message: `Reinstalled for ${result.installedTargets ?? 0} agent target${result.installedTargets === 1 ? '' : 's'}.`,
+          }
+        : { ok: false, message: result.error ?? 'Could not reinstall the skill.' })
+    } catch (error) {
+      setReinstallStatus({
+        ok: false,
+        message: error instanceof Error ? error.message : 'Could not reinstall the skill.',
+      })
+    } finally {
+      setReinstalling(false)
+    }
+  }
 
   const cell = (c: CliPermissionCell | undefined) =>
     c ? (
@@ -95,11 +122,25 @@ export function CliSettings() {
       <SettingRow
         label="Install cate CLI skill"
         description="Auto-install the cate-cli skill into each workspace so agents learn the `cate` command. Installs once, never overwrites edits; uninstalls stick."
+        hint={reinstallStatus && (
+          <span className={`text-xs ${reinstallStatus.ok ? 'text-success' : 'text-danger'}`}>
+            {reinstallStatus.message}
+          </span>
+        )}
       >
-        <Toggle
-          checked={store.cliSkillInstallEnabled}
-          onChange={(v) => store.setSetting('cliSkillInstallEnabled', v)}
-        />
+        <div className="flex items-center gap-2">
+          <SecondaryButton
+            onClick={() => void reinstallSkill()}
+            disabled={!workspace?.rootPath || reinstalling}
+            title={workspace?.rootPath ? 'Replace installed copies with the bundled skill' : 'Open a workspace first'}
+          >
+            {reinstalling ? 'Reinstalling...' : 'Reinstall skill'}
+          </SecondaryButton>
+          <Toggle
+            checked={store.cliSkillInstallEnabled}
+            onChange={(v) => store.setSetting('cliSkillInstallEnabled', v)}
+          />
+        </div>
       </SettingRow>
     </div>
   )

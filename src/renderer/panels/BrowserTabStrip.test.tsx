@@ -87,4 +87,41 @@ describe('BrowserTabStrip', () => {
     act(() => firstTab.click())
     expect(onSelect).toHaveBeenCalledWith('tab-1')
   })
+
+  it('does not capture close-button clicks when the strip overflows', () => {
+    const onClose = vi.fn()
+    act(() => {
+      root.render(
+        <BrowserTabStrip
+          tabs={[
+            { id: 'tab-1', url: 'https://one.example', title: 'One' },
+            { id: 'tab-2', url: 'https://two.example', title: 'Two' },
+          ]}
+          activeTabId="tab-1"
+          onSelect={vi.fn()}
+          onClose={onClose}
+          onNewTab={vi.fn()}
+          onTogglePin={vi.fn()}
+        />,
+      )
+    })
+
+    const strip = host.querySelector('[aria-label="Browser tabs"]') as HTMLDivElement
+    const close = host.querySelector('button[aria-label="Close tab"]') as HTMLButtonElement
+    const setPointerCapture = vi.fn()
+    Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: 600 })
+    Object.defineProperty(strip, 'clientWidth', { configurable: true, value: 300 })
+    Object.assign(strip, { setPointerCapture })
+
+    act(() => {
+      close.dispatchEvent(Object.assign(
+        new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
+        { pointerId: 1 },
+      ))
+      close.click()
+    })
+
+    expect(setPointerCapture).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledWith('tab-1')
+  })
 })

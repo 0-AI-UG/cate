@@ -1,7 +1,7 @@
 // Browser-guest preload — deliberately tiny and one-way. Remote pages receive
 // no API. The preload only tells the embedding BrowserPanel when a password
 // field is focused, using an opaque marker shared with the main-process
-// Playwright autofill path.
+// agent-browser autofill path.
 
 import { ipcRenderer, webFrame } from 'electron'
 

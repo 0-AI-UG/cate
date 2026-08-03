@@ -7,15 +7,14 @@
 // itself with no idea what the agent targeted or why it clicked there.
 //
 // The driver publishes one event per action here BEFORE performing it; the
-// overlay in BrowserPanel subscribes per panel and draws a ghost pointer, a
-// highlight around the target, and a label. This is a pure observation channel —
+// overlay in BrowserPanel subscribes per panel and draws a ghost pointer plus
+// action-specific motion. This is a pure observation channel —
 // dropping an event must never change what the browser actually does, so every
 // emit is fire-and-forget and failures are swallowed by the subscriber, not the
 // driver.
 //
-// Coordinates are GUEST viewport pixels (the same space sendInputEvent uses).
-// The overlay maps them to its own box, which is 1:1 as long as the webview is
-// unzoomed — see AgentCursorOverlay for the mapping.
+// Coordinates are GUEST viewport pixels. BrowserPanel supplies the page zoom
+// and fit-to-panel scale so AgentCursorOverlay maps them onto the rendered page.
 // =============================================================================
 
 export type AgentCursorKind =
@@ -41,8 +40,8 @@ export interface AgentCursorEvent {
   /** Drag/scroll destination, when the action moves from x,y to here. */
   toX?: number
   toY?: number
-  /** Short human label: 'click "Sign in"', 'type "hello"'. Shown next to the
-   *  pointer so the user can read the agent's intent, not just its effect. */
+  /** Diagnostic action label. The visual overlay intentionally does not render
+   *  it because native commands may contain refs, selectors or entered text. */
   label: string
 }
 
@@ -68,6 +67,12 @@ export function emitAgentCursor(panelId: string, event: AgentCursorEvent): void 
   for (const listener of set) {
     try { listener(event) } catch { /* an overlay error is not a driver error */ }
   }
+}
+
+/** User input immediately returns control of the panel and removes the agent
+ * indicator. The last pointer remains visible until this explicit handoff. */
+export function releaseAgentCursor(panelId: string): void {
+  emitAgentCursor(panelId, { kind: 'done', label: '' })
 }
 
 /** Trim a value for a cursor label — labels sit next to the pointer, and a long

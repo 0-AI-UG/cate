@@ -53,7 +53,7 @@ vi.mock('./BrowserTabStrip', () => ({
 }))
 vi.mock('./BrowserBookmarksSidebar', () => ({ BrowserBookmarksSidebar: () => null }))
 
-import BrowserPanel from './BrowserPanel'
+import BrowserPanel, { browserViewportScale } from './BrowserPanel'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -177,6 +177,32 @@ afterEach(() => {
 })
 
 describe('BrowserPanel component', () => {
+  it('renders a larger logical viewport at 75% scale by default', () => {
+    mount()
+
+    const webview = host.querySelector('webview') as HTMLElement
+    expect(webview.style.transform).toBe('scale(0.75)')
+    expect(webview.style.width).toBe(`${100 / 0.75}%`)
+    expect(browserViewportScale(
+      { preset: 'desktop', width: 1280, height: 800 },
+      { width: 800, height: 500 },
+    )).toBe(0.625)
+  })
+
+  it('lets the agent switch the live panel to a fixed mobile viewport', () => {
+    mount()
+    const controller = portalMocks.registerController.mock.calls.at(-1)?.[1]
+
+    act(() => {
+      controller.setViewport({ preset: 'mobile', width: 390, height: 844 })
+    })
+
+    const webview = host.querySelector('webview') as HTMLElement
+    expect(webview.style.width).toBe('390px')
+    expect(webview.style.height).toBe('844px')
+    expect(webview.style.transform).toBe('scale(0.5)')
+  })
+
   it('keeps the tab strip above a blank new-tab address bar', () => {
     mount({
       tabs: [{ id: 'tab-1', url: 'cate://newtab', title: '' }],
@@ -195,6 +221,23 @@ describe('BrowserPanel component', () => {
     expect(webview).toBeTruthy()
     expect(webview?.getAttribute('src')).toBe('about:blank')
     expect(webview?.classList.contains('invisible')).toBe(true)
+  })
+
+  it('never sends the start-page sentinel to the guest while navigating', async () => {
+    mount({
+      tabs: [{ id: 'tab-1', url: 'cate://newtab', title: '' }],
+    })
+    const webview = host.querySelector('webview') as HTMLElement
+    const methods = installWebviewMethods(webview)
+    const controller = portalMocks.registerController.mock.calls.at(-1)?.[1]
+
+    act(() => {
+      controller.navigate('https://destination.example')
+    })
+    await flush()
+
+    expect(methods.loadURL).toHaveBeenCalledWith('https://destination.example')
+    expect(webview.getAttribute('src')).toBe('about:blank')
   })
 
   it('opens password management as an internal browser tab', () => {
@@ -354,7 +397,7 @@ describe('BrowserPanel component', () => {
     expect(methods.setZoomFactor).toHaveBeenLastCalledWith(1)
   })
 
-  it('keeps one live webview per tab and registers the active tab with Playwright', async () => {
+  it('keeps only the active tab live and registers it with agent-browser', async () => {
     mount({
       tabs: [
         { id: 'tab-1', url: 'https://one.example', title: 'One' },
@@ -363,16 +406,14 @@ describe('BrowserPanel component', () => {
       activeTabId: 'tab-1',
     })
     const webviews = Array.from(host.querySelectorAll('webview')) as HTMLElement[]
-    expect(webviews).toHaveLength(2)
+    expect(webviews).toHaveLength(1)
     const first = installWebviewMethods(webviews[0])
-    const second = installWebviewMethods(webviews[1])
     first.getWebContentsId.mockReturnValue(41)
-    second.getWebContentsId.mockReturnValue(42)
 
     act(() => webviews[0].dispatchEvent(event('dom-ready')))
     await flush()
     expect(browserControl).toHaveBeenCalledWith({
-      op: 'registerPlaywright',
+      op: 'registerAgentBrowser',
       webContentsId: 41,
       panelId: 'browser-1',
       tabId: 'tab-1',
@@ -384,12 +425,17 @@ describe('BrowserPanel component', () => {
     act(() => { expect(controller.selectTab('tab-2')).toBe(true) })
     await flush()
 
-    expect(webviews[0].style.display).toBe('none')
-    expect(webviews[1].style.display).toBe('flex')
+    expect(host.contains(webviews[0])).toBe(false)
+    const secondWebview = host.querySelector('webview') as HTMLElement
+    expect(secondWebview).not.toBe(webviews[0])
+    const second = installWebviewMethods(secondWebview)
+    second.getWebContentsId.mockReturnValue(42)
+    act(() => secondWebview.dispatchEvent(event('dom-ready')))
+    await flush()
     expect(first.loadURL).not.toHaveBeenCalled()
     expect(second.loadURL).not.toHaveBeenCalled()
     expect(browserControl).toHaveBeenCalledWith({
-      op: 'registerPlaywright',
+      op: 'registerAgentBrowser',
       webContentsId: 42,
       panelId: 'browser-1',
       tabId: 'tab-2',

@@ -30,7 +30,7 @@ import log from '../logger'
 import {
   cliPermissionCellByKey,
   cliPermissionDenied,
-  cliPermissionForMethod,
+  cliPermissionForRequest,
   type CliPermissionKey,
 } from '../../shared/cliPermissions'
 import {
@@ -454,7 +454,7 @@ export async function dispatchCateInvoke(
   // no row covers is governed by scopes alone. Extensions never reach this:
   // their gate is manifest scopes plus, for browser/agent, a consent prompt.
   if (scope.caller === 'first-party') {
-    const cell = cliPermissionForMethod(method)
+    const cell = cliPermissionForRequest(method, args)
     if (cell && getSetting(cell.key) !== true) {
       return { error: cliPermissionDenied(cell), method }
     }

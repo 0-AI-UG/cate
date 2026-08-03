@@ -180,22 +180,24 @@ describe('cate CLI — real binary over a real socket', () => {
     expect(r.stdout.trim()).toBe('https://x.test')
     // Two calls over the wire: the resolution lookup, then the real open.
     expect(requests.map((q) => q.method)).toEqual(['cate.panel.list', 'cate.browser.open'])
-    expect(lastRequest?.args).toEqual({ url: 'https://x.test', panelId: fullId })
+    expect(lastRequest?.args).toEqual({ url: 'https://x.test', newTab: true, panelId: fullId })
   }, 20_000)
 
-  it('3. browser snapshot: human output lists refs; --json returns the raw object', async () => {
+  it('3. native browser snapshot: human output prints the tree; --json returns the raw object', async () => {
     const result = {
       url: 'https://x.test',
       title: 'Example',
-      refs: [{ ref: '@e1', role: 'link', name: 'Home' }],
+      snapshotId: 's1',
+      snapshot: '- link "Home" [ref=s1e1]',
     }
     nextResponse = { status: 200, body: { result } }
 
     const human = await runCli(['browser', 'snapshot'], connectedEnv())
     expect(human.code).toBe(0)
-    expect(human.stdout).toContain('@e1')
+    expect(human.stdout).toContain('[ref=s1e1]')
     expect(human.stdout).toContain('Home')
-    expect(lastRequest?.method).toBe('cate.browser.snapshot')
+    expect(lastRequest?.method).toBe('cate.browser.readCommand')
+    expect(lastRequest?.args).toEqual({ command: ['snapshot'] })
 
     const asJson = await runCli(['browser', 'snapshot', '--json'], connectedEnv())
     expect(asJson.code).toBe(0)
@@ -205,7 +207,7 @@ describe('cate CLI — real binary over a real socket', () => {
   it('4. in-band {result:{error}} (HTTP 200): exit 1, error on stderr, empty stdout', async () => {
     nextResponse = {
       status: 200,
-      body: { result: { error: 'no-browser', method: 'cate.browser.back' } },
+      body: { result: { error: 'no-browser', method: 'cate.browser.command' } },
     }
 
     const r = await runCli(['browser', 'reload'], connectedEnv())
@@ -237,6 +239,7 @@ describe('cate CLI — real binary over a real socket', () => {
     const r = await runCli(['browser', 'screenshot'], connectedEnv())
     expect(r.code).toBe(0)
     expect(r.stdout.trim()).toBe('/tmp/shot.png')
-    expect(lastRequest?.method).toBe('cate.browser.screenshot')
+    expect(lastRequest?.method).toBe('cate.browser.readCommand')
+    expect(lastRequest?.args).toEqual({ command: ['screenshot'] })
   }, 20_000)
 })

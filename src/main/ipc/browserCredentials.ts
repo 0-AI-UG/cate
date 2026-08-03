@@ -20,7 +20,7 @@ import {
   importChromePasswords,
   removeBrowserCredential,
 } from '../browser/browserCredentials'
-import { runPlaywrightCredentialAutofill } from '../browser/playwrightBrowser'
+import { agentBrowserService } from '../browser/agentBrowser'
 import { wrapHandler } from './handlerError'
 import { resolveBrowserGuest } from './browserControl'
 
@@ -86,7 +86,7 @@ export function registerBrowserCredentialHandlers(): void {
       if (!contents) return { error: 'no-guest' }
       const credential = await getCredentialForFill(request.credentialId, contents.getURL())
       if (!credential) return { error: 'credential-not-found' }
-      return runPlaywrightCredentialAutofill(contents.id, request.targetId, credential)
+      return agentBrowserService.fillCredential(contents.id, request.targetId, credential)
     }),
   )
 }

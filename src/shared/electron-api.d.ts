@@ -636,52 +636,30 @@ export interface ElectronAPI {
   webviewScreenshot(webContentsId: number, options: { wantDataUrl: false; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string } | null>
   webviewScreenshot(webContentsId: number, options?: { wantDataUrl?: boolean; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string; dataUrl: string } | null>
 
-  /** Agent browser ops that need a real webContents in the main process:
-   *  full-page / element screenshots, viewport emulation, cross-origin frame
-   *  evaluation, the guest's downloads, and the system clipboard. The target
-   *  must be a webview guest of the calling window. See main/ipc/browserControl. */
+  /** Main-process agent-browser control plane. The target must be a webview
+   *  guest of the calling window. See main/ipc/browserControl. */
   browserControl(request: {
     op:
-      | 'screenshot'
-      | 'setViewport'
-      | 'frames'
-      | 'frameEval'
+      | 'registerAgentBrowser'
+      | 'agentBrowser'
       | 'downloads'
-      | 'clipboardRead'
-      | 'clipboardWrite'
-      | 'registerPlaywright'
-      | 'playwright'
-      | 'input'
     webContentsId: number
-    mode?: 'viewport' | 'fullPage' | 'rect'
-    rect?: { x: number; y: number; width: number; height: number }
-    viewport?: { width: number; height: number; deviceScaleFactor?: number; mobile?: boolean } | null
-    frameRoutingId?: number
-    frameProcessId?: number
-    code?: string
-    text?: string
     panelId?: string
     tabId?: string
-    action?: 'click' | 'dblclick' | 'hover' | 'fill' | 'type' | 'press' | 'select' | 'check' | 'uncheck' | 'drag'
-    ref?: string
-    targetRef?: string
-    key?: string
-    values?: string[]
-    button?: 'left' | 'right' | 'middle'
-    modifiers?: Array<'Alt' | 'Control' | 'Meta' | 'Shift'>
-    delay?: number
-    input?: 'insertText' | 'replaceText' | 'key'
+    method?: string
+    args?: Record<string, unknown>
   }): Promise<{
     error?: string
-    filePath?: string
     ok?: boolean
-    cleared?: boolean
-    width?: number
-    height?: number
-    frames?: Array<{ routingId: number; processId: number; url: string; name: string; top: boolean }>
-    value?: unknown
+    result?: unknown
+    cursor?: {
+      kind: 'move' | 'click' | 'dblclick' | 'hover' | 'drag' | 'scroll' | 'type' | 'press'
+      x?: number
+      y?: number
+      rect?: [number, number, number, number]
+      label: string
+    }
     downloads?: Array<{ url: string; filePath: string; state: string; at: number }>
-    text?: string
   }>
 
   /** Configure the proxy for a browser panel's session partition (issue #241).
@@ -707,7 +685,7 @@ export interface ElectronAPI {
     suggestions?: import('./types').BrowserCredentialSuggestion[]
     error?: string
   }>
-  /** Main-process-only decrypt + Playwright fill; password never returns over IPC. */
+  /** Main-process-only decrypt + agent-browser fill; password never returns over IPC. */
   browserCredentialFill(request: {
     webContentsId: number
     credentialId: string
@@ -1114,6 +1092,8 @@ export interface ElectronAPI {
   skillsInstall(entry: SkillEntry, targetId: SkillTargetId, cwd: string, workspaceId?: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; installed?: InstalledSkill }>
   /** Uninstall a skill from a workspace agent. */
   skillsUninstall(skillId: string, name: string, targetId: SkillTargetId, cwd: string, workspaceId?: string): Promise<{ ok: boolean; error?: string }>
+  /** Replace installed cate-cli skill copies in a workspace with the bundled version. */
+  skillsReinstallCateCli(cwd: string, workspaceId?: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; installedTargets?: number }>
   /** Installs recorded in this workspace's .cate/skills.json. */
   skillsListInstalled(cwd: string): Promise<InstalledSkill[]>
   /** Skills saved to the user's Cate library (cached in userData). */

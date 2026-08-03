@@ -13,9 +13,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Dispatch core: an in-memory storage impl so the set->get round-trip is real.
 const store = vi.hoisted(() => new Map<string, unknown>())
 const dispatchCateInvoke = vi.hoisted(() => vi.fn())
+const windowPanels = vi.hoisted(() => [] as Array<{
+  panelId: string
+  type: string
+  workspaceId: string
+}>)
 vi.mock('./cateApiHandlers', () => ({
   dispatchCateInvoke,
   forwardToActiveWindow: vi.fn(async () => ({ error: 'no-host-window' })),
+}))
+vi.mock('../windowPanels', () => ({
+  getWindowPanels: () => windowPanels,
 }))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
@@ -88,6 +96,7 @@ function request(
 
 beforeEach(() => {
   store.clear()
+  windowPanels.length = 0
   dispatchCateInvoke.mockReset()
   // Mirror the real dispatch for the two storage methods the round-trip uses.
   dispatchCateInvoke.mockImplementation(async (_scope, method: string, args: { key?: string; value?: unknown }) => {
@@ -215,6 +224,58 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     expect(() => { unwrapped = unwrap('cate.panel.setTitle', res.status, res.body) }).not.toThrow(ApiError)
     expect(unwrapped).toBeNull()
     endpoint.dispose()
+  })
+
+  it('drops a stale selected panel instead of poisoning later browser calls', async () => {
+    windowPanels.push({ panelId: 'browser-1', type: 'browser', workspaceId: 'ws-1' })
+    const first = makeRuntime()
+    const endpoint = createCateApiReverse({
+      extensionId: 'first-party',
+      workspaceId: 'ws-1',
+      token: TOKEN,
+      runtime: first.runtime,
+      caller: 'first-party',
+      grantedScopes: ['browser', 'panel'],
+    })
+
+    const selected = await request(endpoint, first.output, {
+      json: {
+        method: 'cate.panel.target.set',
+        args: { panelId: 'browser-1' },
+        clientId: 'cli-session',
+      },
+    })
+    expect(selected.body).toEqual({
+      result: { panelId: 'browser-1', type: 'browser' },
+    })
+
+    windowPanels.length = 0
+    dispatchCateInvoke.mockResolvedValue({ snapshot: '- document' })
+    const second = makeRuntime()
+    const secondEndpoint = createCateApiReverse({
+      extensionId: 'first-party',
+      workspaceId: 'ws-1',
+      token: TOKEN,
+      runtime: second.runtime,
+      caller: 'first-party',
+      grantedScopes: ['browser', 'panel'],
+    })
+    const snapshot = await request(secondEndpoint, second.output, {
+      json: {
+        method: 'cate.browser.snapshot',
+        args: {},
+        clientId: 'cli-session',
+      },
+    })
+
+    expect(snapshot.body).toEqual({ result: { snapshot: '- document' } })
+    expect(dispatchCateInvoke).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      'cate.browser.snapshot',
+      {},
+    )
+    endpoint.dispose()
+    secondEndpoint.dispose()
   })
 
   it('400s when no method is supplied', async () => {

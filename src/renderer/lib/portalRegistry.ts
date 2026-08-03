@@ -88,7 +88,12 @@ export interface BrowserPanelController {
   newTab(url?: string): string
   selectTab(tabId: string): boolean
   closeTab(tabId: string): boolean
+  setViewport(viewport: BrowserViewport): void
 }
+
+export type BrowserViewport =
+  | { preset: 'compact' }
+  | { preset: 'desktop' | 'mobile' | 'custom'; width: number; height: number }
 
 const controllerByPanelId = new Map<string, BrowserPanelController>()
 
