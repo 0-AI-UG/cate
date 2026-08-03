@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 
 vi.mock('electron', () => ({
   app: { getAppPath: () => process.cwd() },
@@ -53,5 +54,29 @@ describe('createBundledExtensionInstaller', () => {
     await install(host, '/repo')
 
     expect(writeFile).toHaveBeenCalledTimes(3)
+  })
+
+  it('copies the real bundled orchestrator source and manifest into the host runtime', async () => {
+    const host = runtime()
+    const install = createBundledExtensionInstaller('cate-orchestrator', '[test-orchestrator]')
+
+    await install(host, '/repo')
+
+    expect(host.file.writeFile).toHaveBeenCalledTimes(2)
+    const writes = new Map(
+      host.file.writeFile.mock.calls.map((call: unknown[]) => [call[0], call[1]]),
+    )
+    expect(writes.get('/host/.cate/cate-agent/extensions/cate-orchestrator/index.ts'))
+      .toContain('create_coding_agent')
+    expect(JSON.parse(String(
+      writes.get('/host/.cate/cate-agent/extensions/cate-orchestrator/package.json'),
+    ))).toMatchObject({ name: 'cate-orchestrator' })
+  })
+
+  it('ships the extension source directory in packaged builds', () => {
+    const builderConfig = readFileSync('electron-builder.yml', 'utf8')
+    expect(builderConfig).toMatch(
+      /extraResources:[\s\S]*from: src\/cateAgent\/extensions\s+to: cate-extensions\s+filter:\s+- "\*\*\/\*"/,
+    )
   })
 })

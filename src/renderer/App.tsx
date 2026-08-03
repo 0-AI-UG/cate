@@ -72,6 +72,14 @@ const BOOT_BG = new URLSearchParams(window.location.search).get('bg') ?? undefin
 export default function App() {
   const windowParams = getWindowParams()
 
+  // E2E test harness — every renderer window needs it so Playwright can inspect
+  // a panel after a real cross-window transfer.
+  useEffect(() => {
+    if (window.electronAPI?.isE2E) {
+      import('./lib/e2eHarness').then((m) => m.installE2EHarness())
+    }
+  }, [])
+
   // Dock windows get a full docking shell with splits/tabs
   if (windowParams.type === 'dock') {
     return (
@@ -125,13 +133,6 @@ function MainApp() {
   // agent-screen detector, Cmd+, settings toggle, and the external-file-drop
   // guard. Every window type mounts this; main-only behavior stays below.
   useWindowRuntime(activeCanvasStore ?? undefined)
-
-  // E2E test harness — exposes window.__cateE2E only when launched by Playwright.
-  useEffect(() => {
-    if (window.electronAPI?.isE2E) {
-      import('./lib/e2eHarness').then((m) => m.installE2EHarness())
-    }
-  }, [])
 
   // Resource profiler — wires up FPS/long-task observers only under CATE_PERF=1.
   useEffect(() => {

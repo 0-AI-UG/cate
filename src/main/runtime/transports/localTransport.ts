@@ -88,7 +88,12 @@ export class LocalSubprocessTransport implements RuntimeTransport {
   }): LocalSubprocessTransport | null {
     const target = hostRuntimeTarget()
     if (!target) return null
-    const tarballPath = localTarballIfPresent(RUNTIME_VERSION, target) ?? shippedRuntimeTarball()
+    const e2eTarball = process.env.CATE_E2E === '1'
+      ? process.env.CATE_E2E_RUNTIME_TARBALL
+      : undefined
+    const tarballPath = e2eTarball && existsSync(e2eTarball)
+      ? e2eTarball
+      : localTarballIfPresent(RUNTIME_VERSION, target) ?? shippedRuntimeTarball()
     if (!tarballPath) return null
     return new LocalSubprocessTransport({
       ...opts,
@@ -185,7 +190,11 @@ export class LocalSubprocessTransport implements RuntimeTransport {
   async launch(): Promise<RuntimeChannel> {
     const installDir = await this.installDir()
     const nodePath = this.opts.nodePath ?? tarballNode(installDir!)
-    const bundlePath = this.opts.bundlePath ?? path.join(installDir!, 'runtime.cjs')
+    const e2eBundle = process.env.CATE_E2E === '1'
+      ? process.env.CATE_E2E_RUNTIME_BUNDLE
+      : undefined
+    const bundlePath = this.opts.bundlePath
+      ?? (e2eBundle && existsSync(e2eBundle) ? e2eBundle : path.join(installDir!, 'runtime.cjs'))
     const args = [bundlePath, '--root', this.opts.root, '--id', this.opts.id]
     if (this.opts.exclusions?.length) args.push('--exclude', this.opts.exclusions.join(','))
     if (this.opts.idleSuspend) args.push('--idle-suspend')

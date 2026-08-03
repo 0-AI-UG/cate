@@ -563,3 +563,52 @@ describe('CATE_API env injection into spawned terminals', () => {
     expect(env).toBeUndefined()
   })
 })
+
+describe('Cate-owned coding-agent process launch', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    handlers.clear()
+    diag.ptyCreate.mockReset()
+    cateApi.ensureEndpoint.mockReset().mockResolvedValue(null)
+    workspaceInfo.get.mockReset()
+  })
+
+  async function spawn(options: Record<string, unknown>): Promise<Record<string, unknown>> {
+    diag.ptyCreate.mockResolvedValue({ id: 'pty-worker', pid: 123, shell: 'codex' })
+    const mod = await import('./terminal')
+    mod.registerHandlers()
+    await handlers.get('terminal:create')!({}, { cols: 80, rows: 24, ...options })
+    return diag.ptyCreate.mock.calls[0][0] as Record<string, unknown>
+  }
+
+  it('turns a one-shot launch into an exact shell-free registered command', async () => {
+    const options = await spawn({
+      workspaceId: 'ws-1',
+      panelId: 'worker-panel',
+      cwd: '/repo',
+      codingAgentLaunch: {
+        runId: 'run-1',
+        agentId: 'codex',
+        ownerPanelId: 'supervisor-1',
+        prompt: '--dangerously-looking task; touch /tmp/nope',
+      },
+    })
+
+    expect(options.command).toEqual({
+      executable: 'codex',
+      args: ['Complete this coding task:\n\n--dangerously-looking task; touch /tmp/nope'],
+    })
+  })
+
+  it('starts a restored run as a normal shell when no one-shot launch is present', async () => {
+    const options = await spawn({
+      workspaceId: 'ws-1',
+      panelId: 'restored-worker-panel',
+      cwd: '/repo',
+      // Persisted codingAgentRun metadata deliberately is not a terminal-create
+      // option. Its absence here is the restart guarantee: no task is replayed.
+    })
+
+    expect(options.command).toBeUndefined()
+  })
+})

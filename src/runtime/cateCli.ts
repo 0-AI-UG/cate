@@ -44,7 +44,10 @@ export function catePathEnv(env: Record<string, string>): Record<string, string>
 let cachedBinDir: string | null | undefined
 function presentBinDir(): string | null {
   if (cachedBinDir === undefined) {
-    const binDir = cateBinDir()
+    const e2eBinDir = process.env.CATE_E2E === '1'
+      ? process.env.CATE_E2E_CATE_BIN
+      : undefined
+    const binDir = e2eBinDir && existsSync(e2eBinDir) ? e2eBinDir : cateBinDir()
     cachedBinDir = existsSync(binDir) ? binDir : null
   }
   return cachedBinDir

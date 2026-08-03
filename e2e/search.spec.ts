@@ -31,7 +31,10 @@ const snap = (page: Page): Promise<Snapshot> =>
 
 /** Open the Search view rooted at the repo; returns the query input locator. */
 async function openSearch(page: Page) {
-  await page.evaluate((root) => window.__cateE2E!.setWorkspaceRoot(root), REPO_ROOT)
+  const opened = page.evaluate((root) => window.__cateE2E!.setWorkspaceRoot(root), REPO_ROOT)
+  const trust = page.getByRole('button', { name: 'Trust and open' })
+  if (await trust.isVisible({ timeout: 2_000 }).catch(() => false)) await trust.click()
+  expect(await opened).toBe(true)
   await page.evaluate(() => window.__cateE2E!.openSidebarView('search'))
   const input = page.locator('input[aria-label="Search"]')
   await input.waitFor({ state: 'visible', timeout: 30_000 })

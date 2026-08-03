@@ -1,22 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { codingAgentCommand, parseCodingAgentId } from './codingAgentRuns'
+import { AGENTS } from './agents'
+import {
+  codingAgentCommand,
+  codingAgentSupportsFollowUp,
+  parseCodingAgentId,
+} from './codingAgentRuns'
 
 describe('codingAgentCommand', () => {
   it('resolves only canonical agent ids to exact argv without a shell', () => {
-    expect(codingAgentCommand({
-      agentId: 'codex',
-      prompt: 'Fix it; touch /tmp/pwned',
-    })).toEqual({
-      executable: 'codex',
-      args: ['Complete this coding task:\n\nFix it; touch /tmp/pwned'],
-    })
-    expect(codingAgentCommand({
-      agentId: 'opencode',
-      prompt: 'Implement the parser',
-    })).toEqual({
-      executable: 'opencode',
-      args: ['run', 'Complete this coding task:\n\nImplement the parser'],
-    })
+    const task = 'Fix it; touch /tmp/pwned'
+    const prefixed = `Complete this coding task:\n\n${task}`
+    expect(AGENTS.map((agent) => ({
+      id: agent.id,
+      command: codingAgentCommand({ agentId: agent.id, prompt: task }),
+      followUp: codingAgentSupportsFollowUp(agent.id),
+    }))).toEqual([
+      { id: 'claude-code', command: { executable: 'claude', args: [prefixed] }, followUp: true },
+      { id: 'codex', command: { executable: 'codex', args: [prefixed] }, followUp: true },
+      { id: 'cursor', command: { executable: 'cursor-agent', args: [prefixed] }, followUp: true },
+      { id: 'grok', command: { executable: 'grok', args: [prefixed] }, followUp: true },
+      { id: 'opencode', command: { executable: 'opencode', args: ['run', prefixed] }, followUp: false },
+      { id: 'pi', command: { executable: 'pi', args: [prefixed] }, followUp: true },
+    ])
   })
 
   it('keeps option-looking and subcommand-looking tasks positional', () => {
