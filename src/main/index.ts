@@ -43,6 +43,7 @@ import { IS_E2E } from './windows/reveal'
 import { registerDialogHandlers } from './ipc/dialogs'
 import { registerCaptureHandlers } from './ipc/capture'
 import { registerBrowserControlHandlers } from './ipc/browserControl'
+import { registerBrowserViewHandlers } from './ipc/browserViews'
 import { registerBrowserCredentialHandlers } from './ipc/browserCredentials'
 import { registerWindowControlHandlers } from './ipc/windowControls'
 import { registerDockWindowHandlers } from './ipc/dockWindows'
@@ -101,6 +102,7 @@ function registerCriticalHandlers(): void {
   registerDialogHandlers()
   registerCaptureHandlers()
   registerBrowserControlHandlers()
+  registerBrowserViewHandlers()
   registerBrowserCredentialHandlers()
   registerWindowControlHandlers()
   registerDockWindowHandlers({ createWindow })

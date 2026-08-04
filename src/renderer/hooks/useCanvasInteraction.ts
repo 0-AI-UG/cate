@@ -15,6 +15,7 @@ import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionMode
 import { isMouseWheel, type WheelLike } from '../lib/wheelIntent'
 import { acquireBodyClass, releaseBodyClass } from '../lib/dom/bodyClassRefcount'
 import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
+import { zoomEaseForElapsed } from '../lib/canvas/zoomAnimation'
 import type { Point } from '../../shared/types'
 
 // How many pixels the mouse must move before a right-click becomes a drag
@@ -25,6 +26,7 @@ const RIGHT_CLICK_DRAG_THRESHOLD = 4
 // at any zoom level; a discrete notch can't use the delta-proportional path the
 // trackpad pinch uses.
 const MOUSE_WHEEL_ZOOM_FACTOR = 0.15
+const FRAME_MS_60HZ = 1000 / 60
 
 // CSS cursor for the canvas when idle (not actively panning), per active tool.
 function idleCursorForTool(): string {
@@ -68,6 +70,8 @@ export function useCanvasInteraction(
   // Smooth zoom refs
   const targetZoom = useRef<number | null>(null)
   const zoomRafId = useRef<number>(0)
+  const lastZoomFrameAt = useRef<number | null>(null)
+  const zoomInteractionActive = useRef(false)
   const cursorViewPoint = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
   // Wheel-pan throttle refs
@@ -103,6 +107,11 @@ export function useCanvasInteraction(
       zoomRafId.current = 0
     }
     targetZoom.current = null
+    lastZoomFrameAt.current = null
+    if (zoomInteractionActive.current) {
+      releaseBodyClass('canvas-zooming')
+      zoomInteractionActive.current = false
+    }
     if (panRafId.current) {
       cancelAnimationFrame(panRafId.current)
       panRafId.current = 0
@@ -146,7 +155,7 @@ export function useCanvasInteraction(
   // Smooth zoom animation — interpolates zoomLevel toward targetZoom each frame
   // ---------------------------------------------------------------------------
 
-  const smoothZoomTick = useCallback(() => {
+  const smoothZoomTick = useCallback((now: number) => {
     if (targetZoom.current === null) return
 
     const state = canvasStoreApi.getState()
@@ -163,11 +172,22 @@ export function useCanvasInteraction(
       })
       targetZoom.current = null
       zoomRafId.current = 0
+      lastZoomFrameAt.current = null
+      if (zoomInteractionActive.current) {
+        releaseBodyClass('canvas-zooming')
+        zoomInteractionActive.current = false
+      }
       return
     }
 
-    // Lerp toward target (0.15 per 16.67ms frame equivalent)
-    const newZoom = current + diff * 0.15
+    // Preserve the 60 Hz feel while advancing by elapsed time. A busy browser
+    // guest can make Chromium skip compositor frames; a fixed per-frame lerp
+    // would then make the zoom itself take longer and feel sticky.
+    const previousAt = lastZoomFrameAt.current ?? now - FRAME_MS_60HZ
+    const elapsedMs = Math.max(0, now - previousAt)
+    lastZoomFrameAt.current = now
+    const ease = zoomEaseForElapsed(elapsedMs)
+    const newZoom = current + diff * ease
     const canvasPoint = viewToCanvas(cursorViewPoint.current, current, state.viewportOffset)
     canvasStoreApi.getState().setZoomAndOffset(newZoom, {
       x: cursorViewPoint.current.x - canvasPoint.x * newZoom,
@@ -218,6 +238,11 @@ export function useCanvasInteraction(
       targetZoom.current = Math.min(Math.max(next, ZOOM_MIN), ZOOM_MAX)
 
       if (!zoomRafId.current) {
+        if (!zoomInteractionActive.current) {
+          acquireBodyClass('canvas-zooming', 'canvas-wheel-zoom')
+          zoomInteractionActive.current = true
+        }
+        lastZoomFrameAt.current = performance.now()
         zoomRafId.current = requestAnimationFrame(smoothZoomTick)
       }
     },

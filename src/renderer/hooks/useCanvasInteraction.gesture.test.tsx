@@ -250,7 +250,7 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
-  document.body.classList.remove('canvas-interacting', 'canvas-dragging')
+  document.body.classList.remove('canvas-interacting', 'canvas-dragging', 'canvas-zooming')
   useUIStore.setState({ activeTool: 'select', marquee: null })
   useDragStore.setState({ isDragging: false })
   while (releaseStore.length) releaseStore.pop()!()
@@ -322,6 +322,16 @@ describe('wheel intent', () => {
     pumpUntilIdle()
 
     expect(store.getState().zoomLevel).toBeCloseTo(2.0, 6)
+  })
+
+  it('advances zoom by elapsed time so dropped frames do not slow the animation', () => {
+    const delayed = setupScene()
+    wheel(delayed.el, { deltaY: -100, metaKey: true, clientX: 300, clientY: 200 })
+    pumpFrame(64)
+
+    const elapsedFrames = 64 / (1000 / 60)
+    const expectedEase = 1 - Math.pow(1 - 0.15, elapsedFrames)
+    expect(delayed.store.getState().zoomLevel).toBeCloseTo(1 + expectedEase, 6)
   })
 
   it('plain trackpad two-finger scroll pans (rAF-throttled, deltas coalesced into one commit)', () => {

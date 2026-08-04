@@ -90,6 +90,11 @@ import {
   MENU_TRIGGER_ACTION,
   MENU_LOAD_LAYOUT,
   BROWSER_SHORTCUT,
+  BROWSER_VIEW_CREATE,
+  BROWSER_VIEW_COMMAND,
+  BROWSER_VIEW_BOUNDS,
+  BROWSER_VIEW_DESTROY,
+  BROWSER_VIEW_EVENT,
   MENU_SHOW_CONTEXT,
   MENU_GET_BAR_ITEMS,
   MENU_POPUP_BAR_ITEM,
@@ -477,6 +482,12 @@ const invokeForwarders = {
 
   // Capture / browser
   webviewScreenshot: makeInvoker<'webviewScreenshot'>(WEBVIEW_SCREENSHOT),
+  browserViewCreate: makeInvoker<'browserViewCreate'>(BROWSER_VIEW_CREATE),
+  browserViewCommand: makeInvoker<'browserViewCommand'>(BROWSER_VIEW_COMMAND),
+  browserViewDestroy: makeInvoker<'browserViewDestroy'>(BROWSER_VIEW_DESTROY),
+  browserViewSetBounds(panelId, webContentsId, layout) {
+    ipcRenderer.send(BROWSER_VIEW_BOUNDS, panelId, webContentsId, layout)
+  },
   browserControl: makeInvoker<'browserControl'>(BROWSER_CONTROL),
   browserSetProxy: makeInvoker<'browserSetProxy'>(BROWSER_SET_PROXY),
   browserCredentialProfiles: makeInvoker<'browserCredentialProfiles'>(BROWSER_CREDENTIAL_PROFILES),
@@ -942,6 +953,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onBrowserShortcut(callback: (action: string) => void): () => void {
     return createIpcListener(BROWSER_SHORTCUT, callback)
+  },
+  onBrowserViewEvent(callback: (payload: import('../shared/electron-api').BrowserViewEvent) => void) {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload as any)
+    ipcRenderer.on(BROWSER_VIEW_EVENT, listener)
+    return () => ipcRenderer.removeListener(BROWSER_VIEW_EVENT, listener)
   },
 
   onBrowserHistoryChanged(callback: () => void): () => void {

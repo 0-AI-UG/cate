@@ -31,9 +31,11 @@ interface Ripple { id: number; x: number; y: number; delay: number }
 export function AgentCursorOverlay({
   panelId,
   scale = 1,
+  onVisibilityChange,
 }: {
   panelId: string
   scale?: number
+  onVisibilityChange?: (visible: boolean) => void
 }): React.ReactElement | null {
   const [event, setEvent] = useState<AgentCursorEvent | null>(null)
   const [visible, setVisible] = useState(false)
@@ -42,7 +44,7 @@ export function AgentCursorOverlay({
   const rippleSerial = useRef(0)
 
   useEffect(() => {
-    return subscribeAgentCursor(panelId, (next) => {
+    const unsubscribe = subscribeAgentCursor(panelId, (next) => {
       setEvent((previous) => next.kind === 'done'
         ? next
         : {
@@ -50,7 +52,9 @@ export function AgentCursorOverlay({
             x: next.x ?? previous?.x,
             y: next.y ?? previous?.y,
           })
-      setVisible(next.kind !== 'done')
+      const nextVisible = next.kind !== 'done'
+      setVisible(nextVisible)
+      onVisibilityChange?.(nextVisible)
       setActivitySerial((serial) => serial + 1)
       if (next.kind === 'click' || next.kind === 'dblclick') {
         const { x, y } = next
@@ -68,7 +72,11 @@ export function AgentCursorOverlay({
         }
       }
     })
-  }, [panelId])
+    return () => {
+      unsubscribe()
+      onVisibilityChange?.(false)
+    }
+  }, [panelId, onVisibilityChange])
 
   if (!event) return null
 
