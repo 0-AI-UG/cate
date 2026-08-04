@@ -158,17 +158,14 @@ export function RemoteConnect({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Apply a ~/.ssh/config alias: fill the connection string + key, and reveal
-  // Advanced when the host carries an IdentityFile so the prefill is visible.
+  // Preserve the alias exactly. The main process passes it to system OpenSSH,
+  // which resolves User/HostName/Port, certificates, agents, and proxy rules
+  // from the complete configuration (including Include and Match blocks).
   const pickSavedHost = (alias: string): void => {
     setSavedAlias(alias)
     const h = sshHosts?.find((e) => e.alias === alias)
     if (!h) return
-    setTarget(formatTarget(h.user, h.host, h.port))
-    if (h.identityFile) {
-      setKeyPath(h.identityFile)
-      setAdvancedOpen(true)
-    }
+    setTarget(h.alias)
   }
 
   const parsed = parseSshTarget(target)
@@ -180,7 +177,7 @@ export function RemoteConnect({
     !pending &&
     !pathError &&
     (kind === 'server'
-      ? !!parsed.host && !!parsed.user && !!remotePath.trim()
+      ? !!parsed.host && !!remotePath.trim()
       : (distros?.length ?? 0) > 0 && distro.trim() && distroPath.trim())
 
   const submit = (): void => {
@@ -236,7 +233,7 @@ export function RemoteConnect({
               setTarget(e.target.value)
               setSavedAlias('')
             }}
-            placeholder="user@host:port"
+            placeholder="[user@]host[:port] or SSH alias"
             autoFocus
           />
 

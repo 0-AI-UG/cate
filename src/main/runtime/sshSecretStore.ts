@@ -51,7 +51,7 @@ export async function saveSshSecret(runtimeId: string, secret: SshSecret): Promi
     entry.passphrase = safeStorage.encryptString(secret.passphrase).toString('base64')
   }
   if (secret.keyPath) entry.keyPath = secret.keyPath
-  if (secret.useAgent) entry.useAgent = true
+  if (secret.useAgent !== undefined) entry.useAgent = secret.useAgent
   data[runtimeId] = entry
   await writeRaw(data)
 }

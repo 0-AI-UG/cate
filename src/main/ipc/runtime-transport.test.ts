@@ -11,12 +11,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 const { wslExec } = vi.hoisted(() => ({ wslExec: vi.fn() }))
 
-vi.mock('child_process', () => {
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>()
   // Minimal execFile whose promisified form delegates to our fixture. The real
   // listWslDistros() calls execFileP('wsl.exe', ['--list','--quiet'], {encoding:'buffer'}).
   const execFile = (() => {}) as unknown as { [k: symbol]: unknown }
   execFile[Symbol.for('nodejs.util.promisify.custom')] = (_cmd: string, args: string[]) => wslExec(args)
-  return { execFile }
+  return { ...actual, execFile }
 })
 
 // getSshSecret reads from Electron-backed storage; stub it so the SSH branch of
@@ -26,21 +27,18 @@ vi.mock('../runtime/sshSecretStore', () => ({
   saveSshSecret: vi.fn(async () => {}),
   deleteSshSecret: vi.fn(async () => {}),
 }))
+vi.mock('../shellEnv', () => ({
+  getShellEnv: () => ({ PATH: '/usr/bin', SSH_AUTH_SOCK: '/tmp/resolved-agent.sock' }),
+}))
 
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { generateKeyPairSync } from 'crypto'
 import { buildTransport, listWslDistros } from './runtime'
 import { SshTransport } from '../runtime/transports/sshTransport'
 import { WslTransport } from '../runtime/transports/wslTransport'
 
-// A supported (PEM RSA) private key for the key-reading branch of buildTransport.
-const rsaPem = generateKeyPairSync('rsa', {
-  modulusLength: 2048,
-  privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
-  publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
-}).privateKey
+const openSshKey = '-----BEGIN OPENSSH PRIVATE KEY-----\ntest fixture\n-----END OPENSSH PRIVATE KEY-----\n'
 
 const origPlatform = process.platform
 function setPlatform(p: NodeJS.Platform): void {
@@ -152,7 +150,7 @@ describe('buildTransport', () => {
     setPlatform('darwin')
     const dir = mkdtempSync(join(tmpdir(), 'cate-key-'))
     const keyFile = join(dir, 'id_rsa')
-    writeFileSync(keyFile, rsaPem)
+    writeFileSync(keyFile, openSshKey)
     const t = await buildTransport('srv_q', {
       kind: 'server',
       host: 'h',

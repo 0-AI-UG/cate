@@ -21,7 +21,7 @@ export interface RuntimeChannel {
 // -----------------------------------------------------------------------------
 // Shared remote-install helpers — SSH and WSL provision the SAME self-contained
 // tarball into the SAME `~/.cate/runtime/<ver>/<target>` layout with identical
-// markers, pull commands, and dev hot-swap flow; only the push mechanism (SFTP
+// markers, pull commands, and dev hot-swap flow; only the push mechanism (scp
 // vs /mnt copy) and the exec primitive differ. These keep that logic in one
 // place. localTransport keeps its own fs-based marker()/install (it never shells).
 // -----------------------------------------------------------------------------
@@ -105,7 +105,7 @@ export interface BootstrapDevDeps {
   /** Full-tarball provision into the install dir, writing the given `.ok` marker. */
   pushTarball(version: string, marker: string): Promise<void>
   /** Overlay just the freshest local runtime.cjs onto an already-provisioned
-   *  host and write `.cjs.ok = hash` (SFTP put / wslpath cp). `D` is shell-quoted. */
+   *  host and write `.cjs.ok = hash` (scp / wslpath cp). `D` is shell-quoted. */
   pushBundle(bundle: string, hash: string, quotedInstallDir: string): Promise<void>
 }
 
@@ -151,10 +151,10 @@ export interface BootstrapProdDeps {
   /** Run a shell command on the host (must not throw; returns code+output). */
   exec(cmd: string): Promise<RemoteExecResult>
   /** Full-tarball provision into the install dir, writing the given `.ok` marker
-   *  (SFTP push / /mnt copy). */
+   *  (scp / /mnt copy). */
   pushTarball(version: string, marker: string): Promise<void>
   /** Fallback log line when the host can't fetch its own tarball — wording
-   *  differs per transport (SFTP push vs /mnt copy), so it's passed in full. The
+   *  differs per transport (scp vs /mnt copy), so it's passed in full. The
    *  `%s` placeholder is filled with the pull failure reason. */
   pullFallbackLabel: string
 }
@@ -184,7 +184,7 @@ export async function isInstalledShared(
  * changed daemon at the same version re-installs, otherwise it's just the version.
  * Returns early if already installed and current. First tries a host-side
  * remote/in-distro pull from the release; if the host can't fetch, falls back to
- * a client-side push (SFTP / /mnt). `D` is the shell-quoted install dir.
+ * a client-side push (scp / /mnt). `D` is the shell-quoted install dir.
  */
 export async function bootstrapProdShared(version: string, D: string, deps: BootstrapProdDeps): Promise<void> {
   const localTar = localTarballIfPresent(version, deps.target)

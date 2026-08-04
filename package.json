@@ -37,6 +37,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:ssh:loopback": "CATE_LOCAL_SSH_E2E=1 vitest run --config vitest.live.config.ts sshLoopback",
     "test:agent-contracts": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts agentHookContracts",
     "test:e2e": "playwright test",
     "test:e2e:ci": "E2E_SKIP_PERF=1 playwright test",
@@ -75,7 +76,6 @@
     "@parcel/watcher": "^2.5.1",
     "@phosphor-icons/react": "^2.1.10",
     "@sentry/electron": "^7.15.0",
-    "@types/ssh2": "^1.15.5",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-serialize": "^0.13.0",
@@ -94,7 +94,6 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "simple-git": "^3.27.0",
-    "ssh2": "^1.17.0",
     "use-sync-external-store": "^1.6.0",
     "ws": "^8.18.0",
     "zustand": "^5.0.0"
