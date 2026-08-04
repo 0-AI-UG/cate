@@ -48,6 +48,7 @@ import { useBrowserStore } from '../stores/browserStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import type { BrowserViewEvent, BrowserViewState } from '../../shared/electron-api'
 import type { BrowserTab } from '../../shared/types'
+import { emitBrowserContentChanged } from '../lib/browser/agentCursor'
 
 const initialAppState = useAppStore.getState()
 const initialBrowserState = useBrowserStore.getState()
@@ -220,6 +221,11 @@ describe('BrowserPanel component', () => {
   })
 
   it('captures a preview only when renderer chrome must cover the native view', async () => {
+    browserViewCommand.mockImplementation(async (_panelId, _webContentsId, command) => {
+      if (command.op === 'getState') return { ...nativeState }
+      if (command.op === 'loadURL') nativeState.url = command.url
+      return command.op === 'capturePage' ? 'data:image/jpeg;base64,preview' : undefined
+    })
     mount()
     await flush()
     emit('did-stop-loading')
@@ -232,6 +238,12 @@ describe('BrowserPanel component', () => {
 
     act(() => { (host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click() })
     await flush()
+    expect(browserViewCommand).toHaveBeenCalledWith('browser-1', 41, { op: 'capturePage' })
+
+    browserViewCommand.mockClear()
+    act(() => emitBrowserContentChanged('browser-1'))
+    await flush()
+    expect(browserViewCommand).toHaveBeenCalledTimes(1)
     expect(browserViewCommand).toHaveBeenCalledWith('browser-1', 41, { op: 'capturePage' })
   })
 

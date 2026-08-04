@@ -22,7 +22,7 @@ import type { BrowserCredentialSuggestion, BrowserTab } from '../../shared/types
 import type { BrowserPanelProps } from './types'
 import type { BrowserShortcutAction } from '../../shared/types'
 import { portalRegistry, type BrowserViewport } from '../lib/portalRegistry'
-import { releaseAgentCursor } from '../lib/browser/agentCursor'
+import { releaseAgentCursor, subscribeBrowserContentChanged } from '../lib/browser/agentCursor'
 import { writeCateFileDrag } from '../drag/fileDragPayload'
 import { isUrl, normalizeUrl } from './browserUrl'
 import { pageLoadErrorFrom } from './browserLoadError'
@@ -162,8 +162,12 @@ function BrowserWebviewSlot({
   const [preview, setPreview] = useState<string | null>(null)
   const previewRef = useRef<string | null>(null)
   const previewCaptureInFlightRef = useRef(false)
+  const previewCaptureRequestedRef = useRef(false)
   const previewGenerationRef = useRef(0)
   const previewCapturedGenerationRef = useRef(-1)
+  const previewModeRef = useRef(false)
+  const nativeVisibleRef = useRef(false)
+  const capturePreviewRef = useRef<() => void>(() => {})
   const [view, setView] = useState<NativeBrowserView | null>(null)
   const scheduleLayoutRef = useRef<() => void>(() => {})
   const layoutInputsRef = useRef({
@@ -206,13 +210,14 @@ function BrowserWebviewSlot({
   }, [panelId, partition, tabId])
 
   const capturePreview = useCallback(() => {
-    if (
-      !view
-      || previewCaptureInFlightRef.current
-      || previewCapturedGenerationRef.current === previewGenerationRef.current
-    ) return
+    if (!view || previewCapturedGenerationRef.current === previewGenerationRef.current) return
+    if (previewCaptureInFlightRef.current) {
+      previewCaptureRequestedRef.current = true
+      return
+    }
     const generation = previewGenerationRef.current
     previewCaptureInFlightRef.current = true
+    previewCaptureRequestedRef.current = false
     void view.capturePage().then((dataUrl) => {
       if (dataUrl && generation === previewGenerationRef.current) {
         previewRef.current = dataUrl
@@ -221,8 +226,21 @@ function BrowserWebviewSlot({
       }
     }).catch(() => {}).finally(() => {
       previewCaptureInFlightRef.current = false
+      if (previewCaptureRequestedRef.current) {
+        previewCaptureRequestedRef.current = false
+        queueMicrotask(() => capturePreviewRef.current())
+      }
     })
   }, [view])
+  capturePreviewRef.current = capturePreview
+
+  useEffect(() => subscribeBrowserContentChanged(panelId, () => {
+    previewGenerationRef.current += 1
+    const inputs = layoutInputsRef.current
+    if (inputs.active && (inputs.hidden || (inputs.canvasBacked && !inputs.focused))) {
+      capturePreview()
+    }
+  }), [panelId, capturePreview])
 
   useEffect(() => {
     if (!view) return
@@ -261,6 +279,11 @@ function BrowserWebviewSlot({
       if (signature === last) return
       last = signature
       lastLayout = layout
+      if (nativeVisibleRef.current && !layout.visible && !previewModeRef.current) {
+        previewGenerationRef.current += 1
+        capturePreview()
+      }
+      nativeVisibleRef.current = layout.visible
       view.setLayout(layout)
     }
 
@@ -419,7 +442,10 @@ function BrowserWebviewSlot({
 
   useEffect(() => {
     scheduleLayoutRef.current()
-    if (active && (hidden || (canvasBacked && !focused))) capturePreview()
+    const previewMode = active && (hidden || (canvasBacked && !focused))
+    if (previewMode && !previewModeRef.current) previewGenerationRef.current += 1
+    previewModeRef.current = previewMode
+    if (previewMode) capturePreview()
   }, [active, hidden, displayScale, browserZoomFactor, canvasBacked, focused, capturePreview])
 
   const fixed = viewport.preset !== 'compact'

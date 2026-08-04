@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   },
   browserControl: vi.fn(),
   emitAgentCursor: vi.fn(),
+  emitBrowserContentChanged: vi.fn(),
   portalWebview: null as null | Record<string, unknown>,
   controller: null as null | {
     setViewport?: ReturnType<typeof vi.fn>
@@ -58,7 +59,10 @@ vi.mock('../workspace/canvasAccess', () => ({
     },
   }),
 }))
-vi.mock('./agentCursor', () => ({ emitAgentCursor: h.emitAgentCursor }))
+vi.mock('./agentCursor', () => ({
+  emitAgentCursor: h.emitAgentCursor,
+  emitBrowserContentChanged: h.emitBrowserContentChanged,
+}))
 
 import { handleBrowserMethod } from './browserDriver'
 
@@ -107,6 +111,7 @@ describe('browserDriver agent-browser boundary', () => {
       method: 'command',
       args: { command: ['click', '@s1e4'] },
     })
+    expect(h.emitBrowserContentChanged).toHaveBeenCalledWith('browser-1')
   })
 
   it('shows activity before the action and applies engine geometry afterward', async () => {
@@ -154,7 +159,11 @@ describe('browserDriver agent-browser boundary', () => {
   })
 
   it('opens a URL in a new tab instead of replacing the active tab', async () => {
-    const replacement = { ...h.webview, getWebContentsId: vi.fn(() => 100) }
+    const replacement = {
+      ...h.webview,
+      getWebContentsId: vi.fn(() => 100),
+      getURL: vi.fn(() => 'https://second.example/'),
+    }
     const newTab = vi.fn(() => {
       h.portalWebview = null
       queueMicrotask(() => { h.portalWebview = replacement })
@@ -176,6 +185,56 @@ describe('browserDriver agent-browser boundary', () => {
 
     expect(newTab).toHaveBeenCalledWith('https://second.example/')
     expect(h.webview.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('waits for a new tab to navigate and finish loading before returning', async () => {
+    let url = 'about:blank'
+    let loading = true
+    const listeners = new Map<string, Set<(event: { url?: string }) => void>>()
+    const replacement = {
+      ...h.webview,
+      getWebContentsId: vi.fn(() => 100),
+      getURL: vi.fn(() => url),
+      isLoading: vi.fn(() => loading),
+      addEventListener: vi.fn((type: string, listener: (event: { url?: string }) => void) => {
+        const set = listeners.get(type) ?? new Set()
+        set.add(listener)
+        listeners.set(type, set)
+      }),
+      removeEventListener: vi.fn((type: string, listener: (event: { url?: string }) => void) => {
+        listeners.get(type)?.delete(listener)
+      }),
+    }
+    h.controller = {
+      newTab: vi.fn(() => {
+        h.portalWebview = null
+        queueMicrotask(() => { h.portalWebview = replacement })
+        return 'tab-2'
+      }),
+    }
+
+    let settled = false
+    const opened = handleBrowserMethod('workspace-1', 'cate.browser.open', {
+      url: 'https://slow.example/',
+      newTab: true,
+    }).then((result) => {
+      settled = true
+      return result
+    })
+    await vi.waitFor(() => expect(replacement.addEventListener).toHaveBeenCalled())
+    expect(settled).toBe(false)
+
+    url = 'https://slow.example/'
+    for (const listener of listeners.get('did-navigate') ?? []) listener({ url })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    loading = false
+    for (const listener of listeners.get('did-stop-loading') ?? []) listener({})
+    await expect(opened).resolves.toEqual({
+      ok: true,
+      result: { panelId: 'browser-1', tabId: 'tab-2', url: 'https://slow.example/' },
+    })
   })
 
   it('waits for the selected tab guest before reporting success', async () => {

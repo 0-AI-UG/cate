@@ -19,7 +19,10 @@ const BIND_RETRY_MS = 75
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 const SESSION = 'cate'
 const NAMESPACE = 'cate'
+const AUTOFILL_USERNAME_MARKER = 'data-cate-autofill-username-target'
 type Runner = (args: string[]) => Promise<unknown>
+
+let runtimeSocketDir: string | null = null
 
 interface RegisteredTarget {
   contents: WebContents
@@ -127,10 +130,12 @@ function parseEnvelope(stdout: string): unknown {
 
 function defaultRunner(): Runner {
   return async (args) => new Promise((resolve, reject) => {
-    const socketDir = path.join(app.getPath('userData'), 'agent-browser')
-    fs.mkdirSync(socketDir, { recursive: true })
-    const configPath = path.join(socketDir, 'cate-config.json')
+    const configDir = path.join(app.getPath('userData'), 'agent-browser')
+    fs.mkdirSync(configDir, { recursive: true })
+    const configPath = path.join(configDir, 'cate-config.json')
     if (!fs.existsSync(configPath)) fs.writeFileSync(configPath, '{}\n', { mode: 0o600 })
+    runtimeSocketDir ??= fs.mkdtempSync(path.join(app.getPath('temp'), 'cate-ab-'))
+    const socketDir = runtimeSocketDir
     const env = { ...process.env }
     for (const key of Object.keys(env)) {
       if (key.startsWith('AGENT_BROWSER_')) delete env[key]
@@ -161,6 +166,79 @@ function defaultRunner(): Runner {
       },
     )
   })
+}
+
+function credentialTargetScript(targetId: string, usernameElement: string): string {
+  return `(() => {
+    const targetId = ${JSON.stringify(targetId)};
+    const usernameName = ${JSON.stringify(usernameElement)};
+    const password = [...document.querySelectorAll('[data-cate-autofill-target]')]
+      .find((element) => element.getAttribute('data-cate-autofill-target') === targetId);
+    if (!(password instanceof HTMLInputElement) || password.type.toLowerCase() !== 'password') {
+      return { password: false, username: false };
+    }
+    const visible = (element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return !element.disabled && style.display !== 'none' && style.visibility !== 'hidden'
+        && rect.width > 0 && rect.height > 0;
+    };
+    const scope = password.form ?? document.body;
+    let username = usernameName
+      ? [...document.querySelectorAll('input')].find((element) => element.name === usernameName && visible(element))
+      : undefined;
+    if (!username) {
+      username = [...scope.querySelectorAll(
+        'input[autocomplete="username"], input[autocomplete="email"], input[type="email"], input[type="text"]',
+      )].filter(visible).at(-1);
+    }
+    if (username) username.setAttribute(${JSON.stringify(AUTOFILL_USERNAME_MARKER)}, targetId);
+    return { password: true, username: Boolean(username) };
+  })()`
+}
+
+function clearCredentialTargetScript(targetId: string): string {
+  return `for (const element of document.querySelectorAll('[${AUTOFILL_USERNAME_MARKER}]')) {
+    if (element.getAttribute(${JSON.stringify(AUTOFILL_USERNAME_MARKER)}) === ${JSON.stringify(targetId)}) {
+      element.removeAttribute(${JSON.stringify(AUTOFILL_USERNAME_MARKER)});
+    }
+  }; true`
+}
+
+function fillElementScript(selector: string, text: string, append = false): string {
+  return `(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return { error: 'element-not-found' };
+    const text = ${JSON.stringify(text)};
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      const prototype = element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+      if (!setter) return { error: 'element-not-editable' };
+      setter.call(element, ${append ? 'element.value + text' : 'text'});
+    } else if (element.isContentEditable) {
+      element.textContent = ${append ? '(element.textContent ?? "") + text' : 'text'};
+    } else {
+      return { error: 'element-not-editable' };
+    }
+    element.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, data: text }));
+    element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    return { value: 'value' in element ? element.value : element.textContent ?? '' };
+  })()`
+}
+
+function elementActionScript(selector: string, action: 'click' | 'dblclick' | 'focus' | 'hover'): string {
+  return `(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return { error: 'element-not-found' };
+    ${action === 'focus'
+      ? 'element.focus();'
+      : action === 'hover'
+        ? "element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, composed: true }));"
+      : action === 'dblclick'
+        ? "element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, composed: true, cancelable: true }));"
+        : 'element.click();'}
+    return { ok: true };
+  })()`
 }
 
 function markerScript(token: string): string {
@@ -284,10 +362,25 @@ export class AgentBrowserService {
     try {
       await this.serial(async () => {
         await this.selectBound(target)
-        if (credential.username && credential.usernameElement) {
-          await this.run(['fill', `input[name=${JSON.stringify(credential.usernameElement)}]`, credential.username])
+        const prepared = objectValue(objectValue(await this.run([
+          'eval',
+          credentialTargetScript(targetId, credential.usernameElement),
+        ])).result)
+        if (prepared.password !== true) throw new Error('autofill-target-not-password')
+        try {
+          if (credential.username && prepared.username === true) {
+            await this.evaluatePage(fillElementScript(
+              `[${AUTOFILL_USERNAME_MARKER}=${JSON.stringify(targetId)}]`,
+              credential.username,
+            ))
+          }
+          await this.evaluatePage(fillElementScript(
+            `[data-cate-autofill-target=${JSON.stringify(targetId)}]`,
+            credential.password,
+          ))
+        } finally {
+          await this.run(['eval', clearCredentialTargetScript(targetId)]).catch(() => undefined)
         }
-        await this.run(['fill', `[data-cate-autofill-target=${JSON.stringify(targetId)}]`, credential.password])
       })
       return { ok: true }
     } catch (error) {
@@ -505,6 +598,15 @@ export class AgentBrowserService {
     return command.map((part) => /^@s\d+e\d+$/.test(part) ? this.translateRef(target, part) : part)
   }
 
+  private async actionSelector(target: RegisteredTarget, raw: unknown): Promise<string> {
+    const ref = this.translateRef(target, raw)
+    const attribute = objectValue(await this.run(['get', 'attr', ref, 'id']))
+    const id = attribute.value
+    return typeof id === 'string' && id
+      ? `[id=${JSON.stringify(id)}]`
+      : ref
+  }
+
   private pointer(cursor: AgentBrowserResult['cursor'] | undefined): { x: number; y: number } {
     if (!cursor || typeof cursor.x !== 'number' || typeof cursor.y !== 'number') {
       throw new Error('element-has-no-actionable-box')
@@ -526,41 +628,22 @@ export class AgentBrowserService {
     return this.run(['mouse', 'up', button])
   }
 
-  private async replaceFocusedText(text: string): Promise<unknown> {
-    await this.run(['press', process.platform === 'darwin' ? 'Meta+A' : 'Control+A'])
-    const cleared = await this.run(['press', 'Backspace'])
-    return text ? this.run(['keyboard', 'type', text]) : cleared
+  private async appendText(selector: string, text: string): Promise<unknown> {
+    return this.evaluatePage(fillElementScript(selector, text, true))
   }
 
-  private async setRefChecked(
-    target: RegisteredTarget,
-    raw: unknown,
-    cursor: AgentBrowserResult['cursor'] | undefined,
-    checked: boolean,
-  ): Promise<unknown> {
-    const state = objectValue(await this.run(['is', 'checked', this.translateRef(target, raw)]))
-    if (typeof state.checked !== 'boolean') throw new Error('element-is-not-checkable')
-    return state.checked === checked ? state : this.clickPointer(cursor)
+  private async fillSelector(selector: string, text: string): Promise<unknown> {
+    return this.evaluatePage(fillElementScript(selector, text))
   }
 
-  private async dragPointer(
-    from: AgentBrowserResult['cursor'] | undefined,
-    to: AgentBrowserResult['cursor'] | undefined,
-  ): Promise<unknown> {
-    await this.movePointer(from)
-    await this.run(['mouse', 'down', 'left'])
-    await this.movePointer(to)
-    return this.run(['mouse', 'up', 'left'])
+  private async actOnSelector(selector: string, action: 'click' | 'dblclick' | 'focus' | 'hover'): Promise<unknown> {
+    return this.evaluatePage(elementActionScript(selector, action))
   }
 
-  private semanticFill(command: string[]): { click: string[]; text: string } | null {
-    if (command[0] !== 'find') return null
-    const action = command[1] === 'nth' ? 4 : 3
-    if (command[action] !== 'fill' || command[action + 1] === undefined) return null
-    return {
-      click: [...command.slice(0, action), 'click', ...command.slice(action + 2)],
-      text: command[action + 1],
-    }
+  private async evaluatePage(script: string): Promise<Record<string, unknown>> {
+    const result = objectValue(objectValue(await this.run(['eval', script])).result)
+    if (typeof result.error === 'string') throw new Error(result.error)
+    return result
   }
 
   private async nativeCommand(
@@ -580,6 +663,24 @@ export class AgentBrowserService {
     const cursor = await this.cursorForCommand(target, command)
     let translated = this.translateCommandRefs(target, command)
 
+    // agent-browser 0.33 parses `--state visible` as its global storage-state
+    // file option even after `wait`. Visibility is the selector wait's default,
+    // so remove only that redundant spelling before invoking the native binary.
+    if (translated[0] === 'wait') {
+      if (typeof command[1] === 'string' && /^@s\d+e\d+$/.test(command[1])) {
+        translated[1] = await this.actionSelector(target, command[1])
+      }
+      const stateIndex = translated.findIndex((part) => part === '--state' || part.startsWith('--state='))
+      const state = stateIndex < 0
+        ? undefined
+        : translated[stateIndex] === '--state'
+          ? translated[stateIndex + 1]
+          : translated[stateIndex].slice('--state='.length)
+      if (state === 'visible') {
+        translated.splice(stateIndex, translated[stateIndex] === '--state' ? 2 : 1)
+      }
+    }
+
     if (translated[0] === 'screenshot') {
       const filePath = path.join(app.getPath('temp'), 'cate-screenshots', `screenshot-${Date.now()}.png`)
       await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
@@ -591,31 +692,21 @@ export class AgentBrowserService {
     }
 
     let result: unknown
-    const hasRefTarget = /^@s\d+e\d+$/.test(command[1] ?? '')
-    if (hasRefTarget && command[0] === 'click' && command.length === 2) {
-      result = await this.clickPointer(cursor)
-    } else if (hasRefTarget && command[0] === 'hover' && command.length === 2) {
-      result = await this.movePointer(cursor)
-    } else if (hasRefTarget && (command[0] === 'check' || command[0] === 'uncheck') && command.length === 2) {
-      result = await this.setRefChecked(target, command[1], cursor, command[0] === 'check')
-    } else if (
-      command[0] === 'drag' && command.length === 3 &&
-      /^@s\d+e\d+$/.test(command[1]) && /^@s\d+e\d+$/.test(command[2])
-    ) {
-      result = await this.dragPointer(cursor, await this.boxFor(target, command[2]))
-    } else if (hasRefTarget && (command[0] === 'fill' || command[0] === 'type') && command.length === 3) {
-      await this.clickPointer(cursor)
-      result = command[0] === 'fill'
-        ? await this.replaceFocusedText(command[2])
-        : command[2] ? await this.run(['keyboard', 'type', command[2]]) : {}
-    } else {
-      const semanticFill = this.semanticFill(translated)
-      if (semanticFill) {
-        await this.run(semanticFill.click)
-        result = await this.replaceFocusedText(semanticFill.text)
+    const action = command[0]
+    const revisionedRef = typeof command[1] === 'string' && /^@s\d+e\d+$/.test(command[1])
+    if (revisionedRef && ['click', 'dblclick', 'focus', 'hover', 'fill', 'type'].includes(action)) {
+      const selector = await this.actionSelector(target, command[1])
+      if (!selector.startsWith('@') && action === 'fill' && command.length === 3) {
+        result = await this.fillSelector(selector, command[2])
+      } else if (!selector.startsWith('@') && action === 'type' && command.length === 3) {
+        result = await this.appendText(selector, command[2])
+      } else if (!selector.startsWith('@') && (action === 'click' || action === 'dblclick' || action === 'focus' || action === 'hover')) {
+        result = await this.actOnSelector(selector, action)
       } else {
         result = await this.run(translated)
       }
+    } else {
+      result = await this.run(translated)
     }
     return {
       result,
@@ -631,7 +722,7 @@ export class AgentBrowserService {
     }
   }
 
-  private locatorCommand(args: BrowserArgs, action: 'click' | 'fill' | 'check' | 'hover' | 'text', text?: string): string[] {
+  private locatorCommand(args: BrowserArgs, action: 'click' | 'fill' | 'check' | 'focus' | 'hover' | 'text', text?: string): string[] {
     const by = stringArg(args, 'by')
     const value = stringArg(args, 'value')
     if (!by || !value) throw new Error('ref-or-locator-required')
@@ -659,7 +750,7 @@ export class AgentBrowserService {
   private async selectorOrLocator(
     target: RegisteredTarget,
     args: BrowserArgs,
-    action: 'click' | 'fill' | 'check' | 'hover' | 'text',
+    action: 'click' | 'fill' | 'check' | 'focus' | 'hover' | 'text',
     text?: string,
   ): Promise<string[]> {
     if (args.ref !== undefined) {
@@ -838,62 +929,79 @@ export class AgentBrowserService {
         return { error: 'double-click-requires-ref-or-css' }
       }
       if (args.ref !== undefined) {
-        if (action === 'hover') return complete(await this.movePointer(cursor))
-        if (action === 'dblclick') {
-          return finish(['dblclick', this.translateRef(target, args.ref)])
-        }
-        return complete(await this.clickPointer(cursor))
+        const selector = await this.actionSelector(target, args.ref)
+        return selector.startsWith('@')
+          ? finish([action, selector])
+          : complete(await this.actOnSelector(selector, action))
       }
       if (action === 'dblclick') {
-        return finish(['dblclick', stringArg(args, 'value')!])
+        return complete(await this.actOnSelector(stringArg(args, 'value')!, action))
+      }
+      if (stringArg(args, 'by') === 'css') {
+        return complete(await this.actOnSelector(stringArg(args, 'value')!, action))
       }
       return finish(await this.selectorOrLocator(target, args, action, undefined))
     }
     if (method === 'fill') {
       const text = stringArg(args, 'text') ?? ''
       if (args.ref !== undefined) {
-        await this.clickPointer(cursor)
-        return complete(await this.replaceFocusedText(text))
+        const selector = await this.actionSelector(target, args.ref)
+        return selector.startsWith('@')
+          ? finish(['fill', selector, text])
+          : complete(await this.fillSelector(selector, text))
       }
       const command = await this.selectorOrLocator(target, args, 'fill', text)
-      const semanticFill = this.semanticFill(command)
-      if (!semanticFill) return finish(command)
-      await this.run(semanticFill.click)
-      return complete(await this.replaceFocusedText(semanticFill.text))
+      if (stringArg(args, 'by') === 'css') {
+        return complete(await this.fillSelector(stringArg(args, 'value')!, text))
+      }
+      return finish(command)
     }
     if (method === 'type') {
       if (args.ref !== undefined || stringArg(args, 'by') === 'css') {
         const text = stringArg(args, 'text') ?? ''
         if (args.ref !== undefined) {
-          await this.clickPointer(cursor)
-          return complete(text ? await this.run(['keyboard', 'type', text]) : {})
+          const selector = await this.actionSelector(target, args.ref)
+          return selector.startsWith('@')
+            ? finish(['type', selector, text])
+            : complete(await this.appendText(selector, text))
         }
-        return finish(['type', stringArg(args, 'value')!, text])
+        return complete(await this.appendText(stringArg(args, 'value')!, text))
       }
       await this.run(this.locatorCommand(args, 'click'))
       return finish(['keyboard', 'type', stringArg(args, 'text') ?? ''])
     }
     if (method === 'press') {
       if (args.ref !== undefined || args.by !== undefined) {
-        if (args.ref !== undefined) await this.clickPointer(cursor)
+        if (args.ref !== undefined) await this.run(['focus', await this.actionSelector(target, args.ref)])
         else await this.run(await this.selectorOrLocator(target, args, 'click'))
       }
       const key = stringArg(args, 'key')
       if (!key) return { error: 'key-required' }
       return finish(['press', key.replace(/^cmd\+/i, 'Meta+')])
     }
+    if (method === 'focus') {
+      if (args.ref !== undefined) {
+        const selector = await this.actionSelector(target, args.ref)
+        return selector.startsWith('@')
+          ? finish(['focus', selector])
+          : complete(await this.actOnSelector(selector, 'focus'))
+      }
+      return stringArg(args, 'by') === 'css'
+          ? complete(await this.actOnSelector(stringArg(args, 'value')!, 'focus'))
+          : finish(await this.selectorOrLocator(target, args, 'focus'))
+    }
     if (method === 'select') {
       const values = Array.isArray(args.values) ? args.values.filter((value): value is string => typeof value === 'string') : []
       if (!values.length) return { error: 'value-required' }
       if (args.ref === undefined && stringArg(args, 'by') !== 'css') return { error: 'select-requires-ref-or-css' }
       const selector = args.ref !== undefined
-        ? this.translateRef(target, args.ref)
+        ? await this.actionSelector(target, args.ref)
         : stringArg(args, 'value')!
       return finish(['select', selector, ...values])
     }
     if (method === 'check' || method === 'uncheck') {
       if (args.ref !== undefined) {
-        return complete(await this.setRefChecked(target, args.ref, cursor, method === 'check'))
+        return finish([method, await this.actionSelector(target, args.ref)])
       }
       if (method === 'check') return finish(await this.selectorOrLocator(target, args, 'check'))
       if (args.ref === undefined && stringArg(args, 'by') !== 'css') return { error: 'uncheck-requires-ref-or-css' }
@@ -903,8 +1011,11 @@ export class AgentBrowserService {
       return finish(['uncheck', selector])
     }
     if (method === 'drag') {
-      const to = await this.boxFor(target, args.to)
-      return complete(await this.dragPointer(cursor, to))
+      return finish([
+        'drag',
+        await this.actionSelector(target, args.ref ?? args.from),
+        await this.actionSelector(target, args.to),
+      ])
     }
     if (method === 'scroll') {
       const to = stringArg(args, 'to')

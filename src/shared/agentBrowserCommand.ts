@@ -128,9 +128,12 @@ export function validateAgentBrowserCommand(command: unknown): string[] {
   if (!ALLOWED_COMMANDS.has(root)) {
     throw new Error(`unsupported-browser-command:${root}`)
   }
-  const forbidden = parts.find((part) => [...FORBIDDEN_OPTIONS].some(
-    (option) => part === option || part.startsWith(`${option}=`),
-  ))
+  const forbidden = parts.find((part) => [...FORBIDDEN_OPTIONS].some((option) => {
+    // `wait --state visible|hidden|...` is an element-state predicate, not
+    // agent-browser's global `--state <path>` session-file option.
+    if (root === 'wait' && option === '--state') return false
+    return part === option || part.startsWith(`${option}=`)
+  }))
   if (forbidden) throw new Error(`forbidden-browser-option:${forbidden}`)
   if (root === 'get' && parts[1] === 'cdp-url') {
     throw new Error('cdp-url-not-supported')
@@ -168,6 +171,9 @@ export function validateAgentBrowserCommand(command: unknown): string[] {
   if (root === 'network' && parts[1] === 'har') {
     throw new Error('network-har-path-not-supported')
   }
+  if (root === 'wait' && parts.some((part) => part === '--download' || part.startsWith('--download='))) {
+    throw new Error('wait-download-path-not-supported')
+  }
   return [...parts]
 }
 
@@ -175,6 +181,7 @@ export function isReadOnlyAgentBrowserCommand(command: readonly string[]): boole
   const root = command[0]
   if (!READ_COMMANDS.has(root)) return false
   if ((root === 'console' || root === 'errors') && command.includes('--clear')) return false
+  if (root === 'wait' && command.some((part) => part === '--fn' || part.startsWith('--fn='))) return false
   return true
 }
 

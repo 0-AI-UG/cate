@@ -54,11 +54,11 @@ export interface PortalWebview {
   canGoBack(): boolean
   canGoForward(): boolean
   addEventListener(
-    type: 'did-navigate' | 'did-navigate-in-page',
+    type: 'did-navigate' | 'did-navigate-in-page' | 'did-stop-loading',
     listener: (event: { url?: string }) => void,
   ): void
   removeEventListener(
-    type: 'did-navigate' | 'did-navigate-in-page',
+    type: 'did-navigate' | 'did-navigate-in-page' | 'did-stop-loading',
     listener: (event: { url?: string }) => void,
   ): void
   executeJavaScript(code: string): Promise<unknown>

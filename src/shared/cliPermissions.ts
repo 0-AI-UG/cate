@@ -103,7 +103,12 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
     // canvas.createPanel is the host method behind `cate panel create`, so the
     // canvas namespace belongs to this row too.
     prefixes: ['cate.panel.', 'cate.canvas.'],
-    readMethods: ['cate.panel.list'],
+    readMethods: [
+      'cate.panel.list',
+      'cate.panel.target.current',
+      'cate.panel.target.set',
+      'cate.panel.target.clear',
+    ],
     read: {
       key: 'cliPanelReadEnabled',
       access: 'Read',

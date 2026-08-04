@@ -19,7 +19,7 @@ import { Duplex } from 'stream'
 import log from '../logger'
 import type { Runtime } from '../runtime/types'
 import { getWindowPanels } from '../windowPanels'
-import { dispatchCateInvoke, forwardToActiveWindow } from './cateApiHandlers'
+import { authorizeCateInvoke, dispatchCateInvoke, forwardToActiveWindow } from './cateApiHandlers'
 import { reverseDuplex } from './serverTunnel'
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024
@@ -106,8 +106,21 @@ function panelTargetKey(workspaceId: string, clientId: string): string {
       const args = parsed.args && typeof parsed.args === 'object'
         ? parsed.args as Record<string, unknown>
         : {}
+      const invokeScope = {
+        extensionId: session.extensionId,
+        workspaceId: session.workspaceId,
+        panelId: undefined,
+        forward: forwardToActiveWindow,
+        caller: session.caller,
+        grantedScopes: session.grantedScopes,
+      } as const
 
       if (session.caller === 'first-party' && method.startsWith('cate.panel.target.')) {
+        const denied = authorizeCateInvoke(invokeScope, method, args)
+        if (denied) {
+          send(200, { result: denied })
+          return
+        }
         if (!clientId) {
           send(200, { result: { error: 'cli-session-unavailable' } })
           return
@@ -170,26 +183,7 @@ function panelTargetKey(workspaceId: string, clientId: string): string {
         }
       }
 
-      const result = await dispatchCateInvoke(
-        {
-          extensionId: session.extensionId,
-          workspaceId: session.workspaceId,
-          // No owning panel/sender on the server side: panel-scoped storage and
-          // forwarded methods target the workspace best-effort.
-          panelId: undefined,
-          // State-mutating methods (editor.openFile / canvas.createPanel /
-          // panel.setTitle) need a renderer. The server has no sender, so we
-          // forward to the active main window (best-effort — there's no
-          // authoritative workspace→window map for main windows).
-          forward: forwardToActiveWindow,
-          // Absent for extension-server sessions (undefined => 'extension'
-          // gate + manifest scopes); set for first-party terminal/agent callers.
-          caller: session.caller,
-          grantedScopes: session.grantedScopes,
-        },
-        method,
-        dispatchArgs,
-      )
+      const result = await dispatchCateInvoke(invokeScope, method, dispatchArgs)
       // A void host method resolves `undefined`; coerce to `null` so the wire
       // body keeps a `result` key (JSON.stringify drops undefined values). Without
       // this, `{ result: undefined }` serializes to `{}` and the CLI's unwrap

@@ -76,14 +76,21 @@ function destroyEntry(entry: Entry): void {
   if (!entry.view.webContents.isDestroyed()) entry.view.webContents.close()
 }
 
+function destroyEntriesForOwner(owner: BrowserWindow): void {
+  for (const entry of [...entries.values()]) {
+    if (entry.owner === owner) destroyEntry(entry)
+  }
+}
+
 function watchOwner(owner: BrowserWindow): void {
   if (watchedOwners.has(owner)) return
   watchedOwners.add(owner)
-  owner.once('closed', () => {
-    for (const entry of [...entries.values()]) {
-      if (entry.owner === owner) destroyEntry(entry)
-    }
+  owner.once('closed', () => destroyEntriesForOwner(owner))
+  owner.webContents.on('did-start-navigation', (_event, _url, isSameDocument, isMainFrame) => {
+    if (isMainFrame && !isSameDocument) destroyEntriesForOwner(owner)
   })
+  owner.webContents.on('render-process-gone', () => destroyEntriesForOwner(owner))
+  owner.webContents.once('destroyed', () => destroyEntriesForOwner(owner))
 }
 
 function bindEvents(entry: Entry): void {
@@ -100,6 +107,24 @@ function bindEvents(entry: Entry): void {
   contents.on('did-stop-loading', () => send(entry, { type: 'did-stop-loading', state: stateOf(entry) }))
   contents.on('render-process-gone', (_event, details) => {
     send(entry, { type: 'render-process-gone', reason: details.reason })
+  })
+  contents.on('before-mouse-event', (event, input) => {
+    const modifiers = input.modifiers ?? []
+    const canvasZoom = input.type === 'mouseWheel'
+      && modifiers.some((modifier) => (
+        modifier === 'control'
+        || modifier === 'ctrl'
+        || modifier === 'meta'
+        || modifier === 'command'
+        || modifier === 'cmd'
+      ))
+    if (!canvasZoom || !entry.bounds || entry.owner.webContents.isDestroyed()) return
+    event.preventDefault()
+    entry.owner.webContents.sendInputEvent({
+      ...input,
+      x: entry.bounds.x + input.x,
+      y: entry.bounds.y + input.y,
+    })
   })
 }
 

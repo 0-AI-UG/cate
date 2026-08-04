@@ -239,9 +239,7 @@ describe('AgentBrowserService', () => {
     expect(clicked).toMatchObject({
       cursor: { x: 50, y: 35, rect: [10, 20, 80, 30], kind: 'click' },
     })
-    expect(commands).toContainEqual(['mouse', 'move', '50', '35'])
-    expect(commands).toContainEqual(['mouse', 'down', 'left'])
-    expect(commands).toContainEqual(['mouse', 'up', 'left'])
+    expect(commands).toContainEqual(['click', '@e1'])
 
     const snapshotCommandIndex = commands.findIndex((command) => command[0] === 'snapshot')
     const clickCommandIndex = commands.findIndex((command) => command[0] === 'mouse')
@@ -273,6 +271,69 @@ describe('AgentBrowserService', () => {
     await expect(service.execute(42, 'snapshot', {})).resolves.toEqual({
       error: 'agent-browser-target-not-registered',
     })
+  })
+
+  it('fills a fallback username field and clears its temporary marker', async () => {
+    const guest = fakeContents()
+    let selected = ''
+    const commands: string[][] = []
+    const runner = vi.fn(async (args: string[]) => {
+      commands.push(args)
+      if (args[0] === 'tab' && args.length === 1) return { tabs: [{ tabId: 't1', type: 'webview' }] }
+      if (args[0] === 'tab') {
+        selected = args[1]
+        return {}
+      }
+      if (args[0] === 'eval' && args[1].includes("document.querySelectorAll('[data-cate-autofill-target]')")) {
+        return { result: { password: true, username: true } }
+      }
+      if (args[0] === 'eval' && args[1].includes('new InputEvent')) return { result: { value: 'filled' } }
+      if (args[0] === 'eval') return { result: selected === 't1' ? guest.marker() : null }
+      return {}
+    })
+    const service = new AgentBrowserService({ runner, endpoint: async () => '19333' })
+    await service.register(guest.contents, 'panel-1', 'tab-1')
+
+    await expect(service.fillCredential(
+      42,
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      { username: 'person@example.com', password: 'secret', usernameElement: '' },
+    )).resolves.toEqual({ ok: true })
+
+    expect(commands.some((command) => command[0] === 'eval'
+      && command[1].includes('data-cate-autofill-username-target')
+      && command[1].includes('person@example.com'))).toBe(true)
+    expect(commands.some((command) => command[0] === 'eval'
+      && command[1].includes('data-cate-autofill-target')
+      && command[1].includes('secret'))).toBe(true)
+    expect(commands.at(-1)?.[0]).toBe('eval')
+    expect(commands.at(-1)?.[1]).toContain('removeAttribute')
+  })
+
+  it('rejects an autofill marker that no longer points to a password input', async () => {
+    const guest = fakeContents()
+    let selected = ''
+    const runner = vi.fn(async (args: string[]) => {
+      if (args[0] === 'tab' && args.length === 1) return { tabs: [{ tabId: 't1', type: 'webview' }] }
+      if (args[0] === 'tab') {
+        selected = args[1]
+        return {}
+      }
+      if (args[0] === 'eval' && args[1].includes("document.querySelectorAll('[data-cate-autofill-target]')")) {
+        return { result: { password: false, username: false } }
+      }
+      if (args[0] === 'eval') return { result: selected === 't1' ? guest.marker() : null }
+      return {}
+    })
+    const service = new AgentBrowserService({ runner, endpoint: async () => '19333' })
+    await service.register(guest.contents, 'panel-1', 'tab-1')
+
+    await expect(service.fillCredential(
+      42,
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      { username: 'person@example.com', password: 'secret', usernameElement: '' },
+    )).resolves.toEqual({ error: 'autofill-target-not-password' })
+    expect(runner).not.toHaveBeenCalledWith(expect.arrayContaining(['fill']))
   })
 
   it('forwards native argv, translates revisioned refs, and enforces read envelopes', async () => {
@@ -320,9 +381,12 @@ describe('AgentBrowserService', () => {
     expect(clicked).toMatchObject({
       cursor: { x: 6, y: 12, kind: 'click' },
     })
-    expect(commands).toContainEqual(['mouse', 'move', '6', '12'])
-    expect(commands).toContainEqual(['mouse', 'down', 'left'])
-    expect(commands).toContainEqual(['mouse', 'up', 'left'])
+    expect(commands).toContainEqual(['click', '@e2'])
+
+    await service.execute(42, 'readCommand', {
+      command: ['wait', '@s1e2', '--state', 'visible', '--timeout', '3000'],
+    })
+    expect(commands).toContainEqual(['wait', '@e2', '--timeout', '3000'])
 
     await expect(service.execute(42, 'readCommand', {
       command: ['click', '@s1e2'],
@@ -332,7 +396,7 @@ describe('AgentBrowserService', () => {
     })).resolves.toEqual({ error: 'unsupported-browser-command:tab' })
   })
 
-  it('routes ref actions through trusted pointer and keyboard input without DOM ids', async () => {
+  it('routes revisioned refs through native agent-browser element actions', async () => {
     const guest = fakeContents()
     let selected = ''
     const commands: string[][] = []
@@ -360,10 +424,9 @@ describe('AgentBrowserService', () => {
       if (args[0] === 'get' && args[1] === 'box') {
         return { x: 1.25, y: 2.5, width: 10.5, height: 20.5 }
       }
-      if (args[0] === 'mouse' && args[1] === 'move' && args.slice(2).some((value) => !/^-?\d+$/.test(value))) {
-        throw new Error('Missing arguments for: mouse move')
+      if (args[0] === 'get' && args[1] === 'attr') {
+        return { value: { '@e4': 'login', '@e5': 'username', '@e7': 'remember', '@e8': 'drop' }[args[2]] }
       }
-      if (args[0] === 'is' && args[1] === 'checked') return { checked: false }
       return {}
     })
     const service = new AgentBrowserService({ runner, endpoint: async () => '19333' })
@@ -371,25 +434,45 @@ describe('AgentBrowserService', () => {
       .then(() => service.execute(42, 'readCommand', { command: ['snapshot', '-i'] }))
 
     expect(snapshot.result).toMatchObject({ snapshotId: 's1' })
-    const filled = await service.execute(42, 'command', { command: ['fill', '@s1e5', 'standard_user'] })
+    const filled = await service.execute(42, 'fill', { ref: '@s1e5', text: 'standard_user' })
+    await service.execute(42, 'click', { ref: '@s1e4' })
+    await service.execute(42, 'check', { ref: '@s1e7' })
+    await service.execute(42, 'drag', { from: '@s1e7', to: '@s1e8' })
+    await service.execute(42, 'type', { ref: '@s1e5', text: ' suffix' })
+    await service.execute(42, 'command', { command: ['fill', '@s1e5', 'raw fill'] })
+    await service.execute(42, 'command', { command: ['type', '@s1e5', ' raw type'] })
     await service.execute(42, 'command', { command: ['click', '@s1e4'] })
-    await service.execute(42, 'command', { command: ['check', '@s1e7'] })
-    await service.execute(42, 'command', { command: ['drag', '@s1e7', '@s1e8'] })
+    await service.execute(42, 'readCommand', {
+      command: ['wait', '@s1e5', '--state', 'visible', '--timeout', '3000'],
+    })
 
-    expect(commands).not.toContainEqual(expect.arrayContaining(['get', 'attr']))
-    expect(commands).not.toContainEqual(['fill', '@e5', 'standard_user'])
-    expect(commands).not.toContainEqual(['click', '@e4'])
-    expect(commands).not.toContainEqual(['check', '@e7'])
-    expect(commands).not.toContainEqual(['drag', '@e7', '@e8'])
     expect(filled.error).toBeUndefined()
-    expect(commands).toContainEqual(['mouse', 'move', '7', '13'])
-    expect(commands).toContainEqual(['is', 'checked', '@e7'])
-    expect(commands).toContainEqual(['press', process.platform === 'darwin' ? 'Meta+A' : 'Control+A'])
-    expect(commands).toContainEqual(['press', 'Backspace'])
-    expect(commands).toContainEqual(['keyboard', 'type', 'standard_user'])
+    expect(commands.some((command) => command[0] === 'eval'
+      && command[1].includes('[id=\\"username\\"]')
+      && command[1].includes('standard_user'))).toBe(true)
+    expect(commands.some((command) => command[0] === 'eval'
+      && command[1].includes('[id=\\"login\\"]')
+      && command[1].includes('element.click()'))).toBe(true)
+    expect(commands).toContainEqual(['check', '[id="remember"]'])
+    expect(commands).toContainEqual(['drag', '[id="remember"]', '[id="drop"]'])
+    expect(commands.some((command) => command[0] === 'eval'
+      && command[1].includes('[id=\\"username\\"]')
+      && command[1].includes('element.value + text')
+      && command[1].includes(' suffix'))).toBe(true)
+    expect(commands.some((command) => command[0] === 'eval'
+      && command[1].includes('[id=\\"username\\"]')
+      && command[1].includes('raw fill'))).toBe(true)
+    expect(commands.some((command) => command[0] === 'eval'
+      && command[1].includes('[id=\\"username\\"]')
+      && command[1].includes('element.value + text')
+      && command[1].includes(' raw type'))).toBe(true)
+    expect(commands.filter((command) => command[0] === 'eval'
+      && command[1].includes('[id=\\"login\\"]')
+      && command[1].includes('element.click()'))).toHaveLength(2)
+    expect(commands).toContainEqual(['wait', '[id="username"]', '--timeout', '3000'])
   })
 
-  it('fills semantic locators with the same trusted keyboard path', async () => {
+  it('passes semantic locator actions through without rewriting them', async () => {
     const guest = fakeContents()
     let selected = ''
     const commands: string[][] = []
@@ -416,11 +499,8 @@ describe('AgentBrowserService', () => {
     })
 
     expect(commands).toContainEqual([
-      'find', 'role', 'textbox', 'click', '--name', 'Username',
+      'find', 'role', 'textbox', 'fill', 'standard_user', '--name', 'Username',
     ])
-    expect(commands).toContainEqual(['press', process.platform === 'darwin' ? 'Meta+A' : 'Control+A'])
-    expect(commands).toContainEqual(['press', 'Backspace'])
-    expect(commands).toContainEqual(['keyboard', 'type', 'standard_user'])
     expect(commands).toContainEqual(['find', 'nth', '2', 'fill', 'click'])
   })
 })

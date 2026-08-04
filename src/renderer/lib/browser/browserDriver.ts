@@ -15,12 +15,13 @@ import {
   placementForBackgroundPanel,
   resolvePanelLocation,
 } from '../workspace/canvasAccess'
-import { emitAgentCursor } from './agentCursor'
+import { emitAgentCursor, emitBrowserContentChanged } from './agentCursor'
 import { isBrowserInternalPage } from './internalPages'
 import { PANEL_MINIMUM_SIZES } from '../../../shared/types'
 import {
   agentBrowserActivityLabel,
   agentBrowserCommandShowsActivity,
+  isReadOnlyAgentBrowserCommand,
   validateAgentBrowserCommand,
 } from '../../../shared/agentBrowserCommand'
 
@@ -133,6 +134,45 @@ async function navigateAndReadUrl(
   })
 }
 
+async function waitForGuestReady(
+  webview: PortalWebview,
+  requestedUrl: string,
+  timeoutMs = 8_000,
+): Promise<{ url: string } | { error: 'navigation-timeout' }> {
+  const needsNavigation = requestedUrl !== 'about:blank'
+  return new Promise((resolve) => {
+    let settled = false
+    let navigated = !needsNavigation || webview.getURL() !== 'about:blank'
+    const cleanup = () => {
+      clearTimeout(timer)
+      webview.removeEventListener('did-navigate', onNavigate)
+      webview.removeEventListener('did-navigate-in-page', onNavigate)
+      webview.removeEventListener('did-stop-loading', onLoadStop)
+    }
+    const finishIfReady = () => {
+      if (settled || !navigated || webview.isLoading()) return
+      settled = true
+      cleanup()
+      resolve({ url: webview.getURL() })
+    }
+    const onNavigate = (event: { url?: string }) => {
+      if (!needsNavigation || (event.url ?? webview.getURL()) !== 'about:blank') navigated = true
+      finishIfReady()
+    }
+    const onLoadStop = () => finishIfReady()
+    webview.addEventListener('did-navigate', onNavigate)
+    webview.addEventListener('did-navigate-in-page', onNavigate)
+    webview.addEventListener('did-stop-loading', onLoadStop)
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve({ error: 'navigation-timeout' })
+    }, timeoutMs)
+    finishIfReady()
+  })
+}
+
 function stringArg(args: Record<string, unknown>, key: string): string | undefined {
   return typeof args[key] === 'string' ? args[key] as string : undefined
 }
@@ -193,6 +233,14 @@ async function executeAgentBrowser(
   const response = await control(webview, { op: 'agentBrowser', method, args })
   if (response.error) return { ok: false, error: response.error }
   if (response.cursor) emitAgentCursor(panelId, response.cursor)
+  if (
+    ACTING_METHODS.has(method)
+    || method === 'evaluate'
+    || method === 'dialogPolicy'
+    || (commandActivity !== null && !isReadOnlyAgentBrowserCommand(commandActivity))
+  ) {
+    emitBrowserContentChanged(panelId)
+  }
   return response.result === undefined ? { ok: true } : { ok: true, result: response.result }
 }
 
@@ -215,7 +263,10 @@ export async function handleBrowserMethod(
         const tabId = controller.newTab(url)
         const mounted = await waitForWebview(target.panelId, 8_000, previous)
         if (!mounted) return { ok: false, error: 'webview-not-ready' }
-        return { ok: true, result: { panelId: target.panelId, tabId, url } }
+        const ready = await waitForGuestReady(mounted, url)
+        return 'error' in ready
+          ? { ok: false, error: ready.error }
+          : { ok: true, result: { panelId: target.panelId, tabId, url: ready.url } }
       }
       if (target.error !== 'no-browser') return { ok: false, error: target.error }
     }
@@ -279,9 +330,13 @@ export async function handleBrowserMethod(
       const previous = portalRegistry.get(target.panelId)
       const tabId = controller.newTab(stringArg(args, 'url'))
       const mounted = await waitForWebview(target.panelId, 8_000, previous)
-      return mounted
-        ? { ok: true, result: { panelId: target.panelId, tabId } }
-        : { ok: false, error: 'webview-not-ready' }
+      if (!mounted) return { ok: false, error: 'webview-not-ready' }
+      const url = stringArg(args, 'url')
+      if (url) {
+        const ready = await waitForGuestReady(mounted, url)
+        if ('error' in ready) return { ok: false, error: ready.error }
+      }
+      return { ok: true, result: { panelId: target.panelId, tabId } }
     }
     const requested = stringArg(args, 'tabId')
     if (!requested) return { ok: false, error: 'tabId-required' }
