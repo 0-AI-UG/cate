@@ -135,7 +135,9 @@ describe('SshTransport system OpenSSH connection', () => {
     if (!askpass) throw new Error('test setup did not provide SSH_ASKPASS')
     const helper = probe.options.env?.CATE_SSH_ASKPASS_SCRIPT
     expect(helper).toBeTruthy()
-    expect((await stat(helper!)).mode & 0o777).toBe(0o600)
+    // Windows reports ACL-backed files as 0666; POSIX platforms expose the
+    // restrictive mode that protects the helper itself.
+    if (process.platform !== 'win32') expect((await stat(helper!)).mode & 0o777).toBe(0o600)
     expect(await readFile(helper!, 'utf8')).not.toContain('correct horse')
     expect(execFileSync(
       askpass,
