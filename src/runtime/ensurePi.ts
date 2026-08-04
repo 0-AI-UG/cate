@@ -3,7 +3,7 @@
 // to runtime/ and runtime.cjs), so it is present on the host the moment the
 // daemon is provisioned. There is nothing to download or extract on demand: we
 // resolve pi relative to the bundle and verify it exists. The air-gapped case is
-// covered by the runtime tarball's own SFTP/copy fallback, which now carries
+// covered by the runtime tarball's own scp/copy fallback, which now carries
 // pi along with node + node-pty + ripgrep.
 // =============================================================================
 

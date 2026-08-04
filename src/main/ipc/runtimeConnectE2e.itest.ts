@@ -8,7 +8,7 @@
 //                        → probe → bootstrap/install → launch → handshake → register
 //   RUNTIME_ENSURE   → restore from the stored connection and reconnect; hold to
 //                        prove it doesn't self-drop (#335)
-//   RUNTIME_DELETE   → uninstall (+ unpin host key for SSH)
+//   RUNTIME_DELETE   → uninstall
 //
 // Unlike sshLive.itest.ts (which constructs SshTransport directly with a hand-read
 // key and a stubbed host-key check — so it never exercises buildTransport, key
@@ -64,7 +64,7 @@ vi.mock('electron', () => ({
     isPackaged: false,
     getAppPath: () => process.cwd(),
     getName: () => 'Cate',
-    // userData → a throwaway dir so the real secret / known-hosts stores round-trip
+    // userData → a throwaway dir so the real encrypted secret store round-trips
     // on disk without touching the developer's actual Cate state.
     getPath: (name: string) => (name === 'userData' ? H.state.userDataDir : join(H.state.userDataDir, name)),
   },
@@ -174,7 +174,7 @@ describe.skipIf(!LIVE_SSH)('SSH runtime connect — full e2e through the IPC han
     expect(secrets[res.runtimeId]).toMatchObject({ keyPath: KEY })
   })
 
-  test('INSTALL brings the daemon up end-to-end and pins the host key (TOFU)', async () => {
+  test('INSTALL brings the daemon up end-to-end through system OpenSSH', async () => {
     const mark = H.captured.length
     const res = await invoke(RUNTIME_INSTALL, connection)
     expect(res.ok, JSON.stringify(res)).toBe(true)
@@ -183,9 +183,6 @@ describe.skipIf(!LIVE_SSH)('SSH runtime connect — full e2e through the IPC han
     // Exactly one live daemon — extras would mean a leaked/duplicate transport.
     const daemons = serverDaemonCount()
     expect(daemons === -1 || daemons <= 1, `daemon count=${daemons}`).toBe(true)
-    // The REAL verifyAndPinHostKey ran (sshLive.itest.ts stubs it) and pinned.
-    const known = readJson('runtime-known-hosts.json')
-    expect(Object.keys(known)).toContain(`${HOST}:${PORT}`)
   }, 180_000)
 
   test('ENSURE restores from the stored connection and HOLDS without self-dropping (#335)', async () => {
@@ -271,11 +268,9 @@ describe.skipIf(!LIVE_SSH)('SSH runtime connect — full e2e through the IPC han
     await saveGoodSecret()
   }, 60_000)
 
-  test('DELETE uninstalls the daemon and unpins the host key', async () => {
+  test('DELETE uninstalls the daemon without altering the user OpenSSH trust store', async () => {
     const res = await invoke<{ ok: boolean; error?: string }>(RUNTIME_DELETE, connection)
     expect(res.ok, JSON.stringify(res)).toBe(true)
-    const known = readJson('runtime-known-hosts.json')
-    expect(Object.keys(known)).not.toContain(`${HOST}:${PORT}`)
   }, 60_000)
 })
 

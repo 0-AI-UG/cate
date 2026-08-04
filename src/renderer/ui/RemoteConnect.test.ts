@@ -38,6 +38,11 @@ describe('buildConnectSpec', () => {
     }
   })
 
+  test('keeps an SSH config alias without requiring an explicit user', () => {
+    const spec = buildConnectSpec('server', { ...base, host: 'corp-bastion', remotePath: '/srv/project' })
+    expect(spec).toMatchObject({ kind: 'server', host: 'corp-bastion', user: '' })
+  })
+
   test('builds a WSL spec ignoring server fields', () => {
     const spec = buildConnectSpec('wsl', { ...base, host: 'ignored', distro: ' Ubuntu-22.04 ', distroPath: ' /home/me/proj ' })
     expect(spec).toEqual({ kind: 'wsl', distro: 'Ubuntu-22.04', distroPath: '/home/me/proj' })

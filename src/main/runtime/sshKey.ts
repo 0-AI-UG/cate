@@ -1,7 +1,7 @@
 // =============================================================================
-// SSH private-key helpers — path normalization and a friendly format check so a
-// failed remote connect explains *why* (a pasted/quoted path, a PuTTY .ppk, or
-// an otherwise unparseable key) instead of a generic auth/transport error.
+// SSH identity helpers. OpenSSH owns key parsing so certificates, security keys,
+// PKCS#11 providers, and future formats work without Cate duplicating its parser.
+// Cate only normalizes pasted paths and retains the actionable PuTTY guidance.
 // =============================================================================
 
 import { homedir } from 'os'
@@ -29,29 +29,10 @@ export function normalizeKeyPath(raw: string, home: string = homedir()): string 
   return s
 }
 
-async function loadParseKey(): Promise<
-  (data: Buffer | string, passphrase?: string) => unknown
-> {
-  const spec = 'ssh2'
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mod = (await import(spec)) as any
-  // ssh2 is CommonJS. `utils` is not a statically-detected named export, so under
-  // Node's native ESM↔CJS interop (the packaged app) `mod.utils` is undefined and
-  // only `mod.default.utils` is populated. Vite/vitest hoists it, which is why this
-  // passed tests but threw "reading 'parseKey'" in the build. See issue #335.
-  const utils = mod.utils ?? mod.default?.utils
-  return utils.parseKey
-}
-
-/**
- * Validate a private-key buffer BEFORE the SSH connect so an unsupported format
- * surfaces as a clear, actionable error rather than a generic auth/host failure.
- * PuTTY `.ppk` is the common culprit and is named explicitly with the puttygen
- * conversion. Encrypted-key / wrong-passphrase parse failures are deliberately
- * NOT treated as format errors — ssh2 may still complete the connect via the SSH
- * agent or a supplied passphrase, so we let the real connect decide. See #333.
- */
-export async function assertSupportedPrivateKey(key: Buffer, passphrase?: string): Promise<void> {
+/** Preserve the existing targeted guidance for the one format OpenSSH does not
+ * accept. Every actual OpenSSH/private-key/certificate parse remains delegated
+ * to the system client so Cate cannot reject formats it does not understand. */
+export function assertNotPuttyKey(key: Buffer): void {
   const head = key.subarray(0, 64).toString('utf8').trimStart()
   if (head.startsWith('PuTTY-User-Key-File')) {
     throw new Error(
@@ -59,15 +40,4 @@ export async function assertSupportedPrivateKey(key: Buffer, passphrase?: string
         'format first, e.g.  puttygen mykey.ppk -O private-openssh -o mykey',
     )
   }
-  const parseKey = await loadParseKey()
-  const parsed = parseKey(key, passphrase)
-  if (!(parsed instanceof Error)) return
-  // Encrypted key with a missing/incorrect passphrase: not a format problem —
-  // the agent or a passphrase entered later can still satisfy it. Stay quiet.
-  if (/passphrase|integrity check/i.test(parsed.message)) return
-  throw new Error(
-    `Unsupported private key format (${parsed.message}). Supported formats are OpenSSH and ` +
-      'PEM (RSA/EC/ED25519/DSA). PuTTY .ppk keys must be converted: ' +
-      'puttygen mykey.ppk -O private-openssh -o mykey',
-  )
 }

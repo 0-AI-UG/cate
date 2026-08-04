@@ -1,120 +1,199 @@
 // =============================================================================
-// SshTransport — runs the runtime daemon on a remote Linux/macOS host over
-// SSH. The daemon is SELF-CONTAINED per target (runtime.cjs + node_modules
-// incl. the matching node-pty prebuild + a bundled Node runtime), so the host
-// needs nothing preinstalled (server-side `git` is still needed for VCS).
-//
-// On connect the transport installs the daemon into ~/.cate/runtime/<ver>/<target>:
-//   1. REMOTE PULL — the host downloads its own tarball straight from the
-//      GitHub release (curl/wget). Bytes never transit the laptop; this is the
-//      fast path and works whenever the host has internet.
-//   2. SFTP FALLBACK — if the host can't fetch (no internet / no curl+wget, or
-//      the release doesn't have this target yet, e.g. a dev build), the client
-//      downloads the tarball (runtimeArtifacts.ensureLocalTarball) and pushes
-//      it over SFTP.
-// Either way the install is cached by version+target on the host (.ok marker),
-// so reconnects are instant.
-//
-// STATUS: runtime-verified against a real server via the opt-in live harness
-// (sshLive.itest.ts) — connect/hold, concurrent-connect dedup, and force
-// reinstall all behave, with the remote daemon exiting cleanly on teardown.
-// Requires the `ssh2` package (installed); the import is dynamic to keep the
-// build resilient.
+// SshTransport — runs the runtime daemon through the user's system OpenSSH
+// client. OpenSSH remains the authority for ~/.ssh/config, Include/Match blocks,
+// ProxyCommand/ProxyJump, certificates, IdentityAgent, hardware-backed keys, and
+// the known-hosts database. Cate supplies explicit form overrides plus its
+// existing accept-new TOFU default, and otherwise leaves SSH config intact.
 // =============================================================================
 
+import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { ensureLocalTarball, isRuntimeDevMode, isRuntimeTarget, type RuntimeTarget } from '../runtimeArtifacts'
-import { verifyAndPinHostKey, hostKeyId } from '../sshKnownHosts'
 import { shellQuote as shq, bootstrapDevShared, isInstalledShared, bootstrapProdShared, buildExtractCommand, type RuntimeChannel, type RuntimeTransport } from './transport'
 
 export interface SshOptions {
+  /** Host name or unmodified OpenSSH Host alias. */
   host: string
+  /** Optional explicit user. Empty means OpenSSH resolves User from its config. */
   user: string
   port?: number
   /** Runtime-absolute workspace root on the server. */
   root: string
   id: string
-  privateKey?: Buffer | string
+  /** Explicit identity path. OpenSSH automatically discovers its `-cert.pub`. */
+  keyPath?: string
   passphrase?: string
-  agentSock?: string
+  /** False disables both SSH_AUTH_SOCK and configured IdentityAgent use. */
+  useAgent?: boolean
+  /** Resolved login-shell environment, including SSH_AUTH_SOCK and PATH. */
+  env?: NodeJS.ProcessEnv
   exclusions?: string[]
   /** Idle-suspend of backgrounded terminals (the user's setting); appended as
    *  `--idle-suspend` to the daemon launch args when true — same flag the
    *  local transport passes, so an SSH host honors the setting identically. */
   idleSuspend?: boolean
-  /** Host-key policy (TOFU pin). Injected for tests; defaults to the on-disk
-   *  known-hosts store keyed by host:port. Receives ssh2's sha256 fingerprint;
-   *  must throw to reject the connection (host-key mismatch / MITM). */
-  verifyHostKey?: (fingerprint: string) => Promise<void>
+  /** Test seam; production always uses child_process.spawn. */
+  spawn?: typeof nodeSpawn
 }
 
-async function loadSsh2(): Promise<unknown> {
-  const spec = 'ssh2'
-  return import(spec)
+interface ProcessResult {
+  code: number
+  stdout: string
+  stderr: string
+}
+
+function detail(stderr: string): string {
+  return stderr.trim().replace(/\s+/g, ' ')
+}
+
+function openSshFailure(binary: string, target: string, stderr: string, cause?: NodeJS.ErrnoException): Error {
+  if (cause?.code === 'ENOENT') {
+    return new Error(
+      `The system OpenSSH ${binary} client was not found. Install OpenSSH and ensure "${binary}" is available on PATH.`,
+    )
+  }
+  const message = detail(stderr) || cause?.message || `${binary} exited without an error message`
+  if (/permission denied|no supported authentication methods available/i.test(message)) {
+    return new Error(`SSH authentication failed for "${target}". OpenSSH reported: ${message}`)
+  }
+  if (/could not resolve hostname|name or service not known|nodename nor servname/i.test(message)) {
+    return new Error(
+      `SSH could not resolve or route "${target}". OpenSSH configuration, including ProxyCommand, was applied. ${message}`,
+    )
+  }
+  if (/host key verification failed|remote host identification has changed/i.test(message)) {
+    return new Error(`SSH host-key verification failed for "${target}". OpenSSH reported: ${message}`)
+  }
+  return new Error(`SSH connection to "${target}" failed. OpenSSH reported: ${message}`)
 }
 
 export class SshTransport implements RuntimeTransport {
   readonly kind = 'server'
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private conn: any = null
   private target: RuntimeTarget | '' = ''
   private installDir = ''
+  private readonly children = new Set<ChildProcessWithoutNullStreams>()
+  private askpassDir = ''
+  private askpassPromise: Promise<string> | null = null
 
   constructor(private readonly opts: SshOptions) {}
 
-  private verifyHostKey(fingerprint: string): Promise<void> {
-    if (this.opts.verifyHostKey) return this.opts.verifyHostKey(fingerprint)
-    return verifyAndPinHostKey(hostKeyId(this.opts.host, this.opts.port), fingerprint)
+  private get spawn(): typeof nodeSpawn {
+    return this.opts.spawn ?? nodeSpawn
   }
 
-  private async ensureConnected(): Promise<void> {
-    if (this.conn) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ssh2 = (await loadSsh2()) as any
-    const conn = new ssh2.Client()
-    // Host-key verification (TOFU). ssh2 does NO checking without a hostVerifier;
-    // a mismatch here is captured so the connect rejects with a clear reason
-    // rather than ssh2's generic transport error.
-    let hostKeyError: Error | null = null
-    await new Promise<void>((resolve, reject) => {
-      conn.on('ready', resolve)
-      conn.on('error', (err: Error) => reject(hostKeyError ?? err))
-      conn.connect({
-        host: this.opts.host,
-        port: this.opts.port ?? 22,
-        username: this.opts.user,
-        privateKey: this.opts.privateKey,
-        passphrase: this.opts.passphrase,
-        agent: this.opts.agentSock,
-        keepaliveInterval: 15000,
-        readyTimeout: 20000,
-        // hostHash makes ssh2 hand us a hex sha256 of the host key — our pin.
-        hostHash: 'sha256',
-        hostVerifier: (hashedKey: string | Buffer, cb: (valid: boolean) => void) => {
-          const fingerprint = typeof hashedKey === 'string' ? hashedKey : Buffer.from(hashedKey).toString('hex')
-          this.verifyHostKey(fingerprint).then(
-            () => cb(true),
-            (err: unknown) => { hostKeyError = err instanceof Error ? err : new Error(String(err)); cb(false) },
-          )
-        },
-      })
-    })
-    this.conn = conn
+  private destination(): string {
+    return this.opts.user ? `${this.opts.user}@${this.opts.host}` : this.opts.host
   }
 
-  private exec(cmd: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  /** Options shared by ssh/scp. They deliberately do not use IdentitiesOnly:
+   * OpenSSH must remain free to offer configured certificates and agent keys. */
+  private connectionArgs(portFlag: '-p' | '-P'): string[] {
+    const args = [
+      '-o', 'StrictHostKeyChecking=accept-new',
+      '-o', 'ConnectTimeout=20',
+      '-o', 'ServerAliveInterval=15',
+      '-o', 'ServerAliveCountMax=3',
+    ]
+    if (this.opts.passphrase) {
+      // Askpass unlocks only local public-key identities. Restricting the SSH
+      // methods prevents the key passphrase from being reused as a host password.
+      args.push('-o', 'BatchMode=no', '-o', 'PreferredAuthentications=publickey')
+      // Even a broad user `SendEnv *` must never forward Cate's askpass secret.
+      args.push(
+        '-o', 'SendEnv=-CATE_SSH_*',
+        '-o', 'SendEnv=-NODE_OPTIONS',
+        '-o', 'SendEnv=-ELECTRON_RUN_AS_NODE',
+      )
+    } else {
+      args.push('-o', 'BatchMode=yes')
+    }
+    if (this.opts.useAgent === false) args.push('-o', 'IdentityAgent=none')
+    if (this.opts.keyPath) args.push('-i', this.opts.keyPath)
+    if (this.opts.port != null) args.push(portFlag, String(this.opts.port))
+    return args
+  }
+
+  private async ensureAskpass(): Promise<string> {
+    if (!this.askpassPromise) {
+      this.askpassPromise = (async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'cate-ssh-askpass-'))
+        this.askpassDir = dir
+        const script = join(dir, 'answer.js')
+        await writeFile(
+          script,
+          "process.stdout.write(process.env.CATE_SSH_PASSPHRASE || ''); process.exit(0)\n",
+          { mode: 0o600 },
+        )
+        return script
+      })()
+    }
+    return this.askpassPromise
+  }
+
+  private async processEnv(): Promise<NodeJS.ProcessEnv> {
+    const env: NodeJS.ProcessEnv = { ...(this.opts.env ?? process.env) }
+    if (this.opts.useAgent === false) delete env.SSH_AUTH_SOCK
+    if (!this.opts.passphrase) return env
+    const askpassScript = await this.ensureAskpass()
+    return {
+      ...env,
+      DISPLAY: env.DISPLAY || 'cate:0',
+      ELECTRON_RUN_AS_NODE: '1',
+      // Electron becomes a plain Node executable under ELECTRON_RUN_AS_NODE.
+      // Preloading the answer script avoids platform-specific shell wrappers;
+      // this works for packaged macOS/Linux builds and Windows electron.exe.
+      SSH_ASKPASS: process.execPath,
+      SSH_ASKPASS_REQUIRE: 'force',
+      NODE_OPTIONS: `--require=${askpassScript}`,
+      CATE_SSH_ASKPASS_SCRIPT: askpassScript,
+      CATE_SSH_PASSPHRASE: this.opts.passphrase,
+    }
+  }
+
+  private track(child: ChildProcessWithoutNullStreams): void {
+    this.children.add(child)
+    child.once('close', () => this.children.delete(child))
+  }
+
+  private async run(binary: 'ssh' | 'scp', args: string[]): Promise<ProcessResult> {
+    const env = await this.processEnv()
     return new Promise((resolve, reject) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.conn.exec(cmd, (err: unknown, stream: any) => {
-        if (err) return reject(err)
-        let stdout = '', stderr = ''
-        // A channel-level error (connection dropped mid-command) would otherwise
-        // never fire 'close', hanging this promise forever — reject instead.
-        stream.on('error', (e: unknown) => reject(e instanceof Error ? e : new Error(String(e))))
-        stream.on('data', (d: Buffer) => { stdout += d.toString() })
-        stream.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
-        stream.on('close', (code: number) => resolve({ code, stdout, stderr }))
+      let child: ChildProcessWithoutNullStreams
+      try {
+        child = this.spawn(binary, args, {
+          env,
+          stdio: 'pipe',
+          windowsHide: true,
+        })
+      } catch (err) {
+        reject(openSshFailure(binary, this.destination(), '', err as NodeJS.ErrnoException))
+        return
+      }
+      this.track(child)
+      let stdout = ''
+      let stderr = ''
+      child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+      child.once('error', (err: NodeJS.ErrnoException) => {
+        reject(openSshFailure(binary, this.destination(), stderr, err))
       })
+      child.once('close', (code) => resolve({ code: code ?? 255, stdout, stderr }))
     })
+  }
+
+  private async exec(cmd: string): Promise<ProcessResult> {
+    const result = await this.run('ssh', [
+      '-T',
+      ...this.connectionArgs('-p'),
+      this.destination(),
+      cmd,
+    ])
+    // OpenSSH reserves 255 for transport/config/authentication failures. Remote
+    // command failures use their own exit code and remain ordinary probe data.
+    if (result.code === 255) throw openSshFailure('ssh', this.destination(), result.stderr)
+    return result
   }
 
   /** Probe the host's platform/arch (and libc) and map to a runtime target. */
@@ -135,23 +214,17 @@ export class SshTransport implements RuntimeTransport {
     return target
   }
 
-  /** Connect + probe the host's arch and resolve the version-specific install
-   *  dir, caching both. Shared by isInstalled / bootstrap / launch / uninstall
-   *  so any of them can be the first call in a connect lifecycle. */
+  /** Probe + resolve the version-specific install dir. Each operation invokes
+   * OpenSSH independently; the long-lived daemon connection is created by launch. */
   private async resolveInstallDir(version: string): Promise<string> {
-    await this.ensureConnected()
     if (!this.target) this.target = await this.probeTarget()
     if (!this.installDir) {
-      const { stdout: home } = await this.exec('echo $HOME')
+      const { stdout: home } = await this.exec('printf %s "$HOME"')
       this.installDir = `${home.trim()}/.cate/runtime/${version}/${this.target}`
     }
     return this.installDir
   }
 
-  /** Reachable + correct-version bundle present? Does NOT install. A connect
-   *  failure rejects (→ unreachable); `false` means reachable-but-absent (→
-   *  missing). In dev the freshness key is the provisioned core (the cjs hot-swap
-   *  is part of install, not the probe). */
   async isInstalled(version: string): Promise<boolean> {
     const D = shq(await this.resolveInstallDir(version))
     return isInstalledShared(version, D, this.target as RuntimeTarget, (cmd) => this.exec(cmd))
@@ -159,47 +232,30 @@ export class SshTransport implements RuntimeTransport {
 
   /** Remove the whole runtime install tree on the host (all versions). */
   async uninstall(): Promise<void> {
-    await this.ensureConnected()
-    const { stdout: home } = await this.exec('echo $HOME')
+    const { stdout: home } = await this.exec('printf %s "$HOME"')
     await this.exec(`rm -rf ${shq(`${home.trim()}/.cate/runtime`)}`)
-    this.installDir = '' // force a fresh resolve on the next probe/install
+    this.installDir = ''
   }
 
   async bootstrap(version: string, force?: boolean): Promise<void> {
     const D = shq(await this.resolveInstallDir(version))
-
-    // Reinstall: drop the whole install dir (binaries + .ok/.cjs.ok markers) so
-    // every "already provisioned?" probe below sees a clean slate and re-pulls.
     if (force) await this.exec(`rm -rf ${D}`)
 
-    // DEV: never remote-pull (it would fetch a stale release tarball). Provision
-    // the heavy parts once from the local tarball, then hot-swap only the 262KB
-    // runtime.cjs whenever its hash changes — so `npm run build:runtime` +
-    // reconnect updates the host with no version bump and no 35MB rebuild.
     if (isRuntimeDevMode()) {
       await this.bootstrapDev(version, D)
       return
     }
 
-    // PROD: probe the `.ok` marker, then remote-pull from the release with an
-    // SFTP push fallback when the host can't fetch (shared with WSL).
     await bootstrapProdShared(version, D, {
       tag: 'ssh',
       target: this.target as RuntimeTarget,
       installDir: this.installDir,
       exec: (cmd) => this.exec(cmd),
       pushTarball: (v, marker) => this.pushTarball(v, marker),
-      pullFallbackLabel: '[runtime:ssh] remote pull unavailable (%s); falling back to SFTP push',
+      pullFallbackLabel: '[runtime:ssh] remote pull unavailable (%s); falling back to OpenSSH file transfer',
     })
   }
 
-  /**
-   * Dev provisioning. Installs the heavy parts (runtime + node_modules + node-pty)
-   * from the local tarball once, then overlays the freshest local runtime.cjs,
-   * keyed by its content hash in `.cjs.ok`. Subsequent connects with an unchanged
-   * bundle are a single hash check; a changed bundle is a 262KB SFTP push. Never
-   * remote-pulls. The host runs whatever `build:runtime` last produced.
-   */
   private bootstrapDev(version: string, D: string): Promise<void> {
     return bootstrapDevShared(version, D, {
       tag: 'ssh',
@@ -207,7 +263,7 @@ export class SshTransport implements RuntimeTransport {
       pushTarball: (v, marker) => this.pushTarball(v, marker),
       pushBundle: async (bundle, hash, quotedDir) => {
         await this.exec(`mkdir -p ${quotedDir}`)
-        await this.sftpPut(bundle, `${this.installDir}/runtime.cjs`)
+        await this.upload(bundle, `${this.installDir}/runtime.cjs`)
         await this.exec(`printf %s ${shq(hash)} > ${quotedDir}/.cjs.ok`)
       },
     })
@@ -219,49 +275,92 @@ export class SshTransport implements RuntimeTransport {
     const D = shq(this.installDir)
     const remoteTar = `${this.installDir}/pkg.tgz`
     await this.exec(`mkdir -p ${D}`)
-    await this.sftpPut(localTar, remoteTar)
+    await this.upload(localTar, remoteTar)
     const extract = await this.exec(`cd ${D} && ${buildExtractCommand(shq(marker), 'CATE_EXTRACT_OK')}`)
     if (!extract.stdout.includes('CATE_EXTRACT_OK')) {
       throw new Error(`remote extract failed: ${extract.stderr || extract.stdout}`)
     }
   }
 
-  private sftpPut(localPath: string, remotePath: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.conn.sftp((err: unknown, sftp: any) => {
-        if (err) return reject(err)
-        sftp.fastPut(localPath, remotePath, (e: unknown) => (e ? reject(e) : resolve()))
-      })
-    })
+  /** scp uses OpenSSH's SFTP protocol by default on current clients while also
+   * preserving the exact Host alias/configuration used by ssh. */
+  private async upload(localPath: string, remotePath: string): Promise<void> {
+    const result = await this.run('scp', [
+      ...this.connectionArgs('-P'),
+      '--',
+      localPath,
+      `${this.destination()}:${remotePath}`,
+    ])
+    if (result.code !== 0) throw openSshFailure('scp', this.destination(), result.stderr)
   }
 
   async launch(): Promise<RuntimeChannel> {
-    await this.ensureConnected()
     const nodeBin = `${this.installDir}/runtime/bin/node`
     const args = `--root ${shq(this.opts.root)} --id ${shq(this.opts.id)}` +
       (this.opts.exclusions?.length ? ` --exclude ${shq(this.opts.exclusions.join(','))}` : '') +
       (this.opts.idleSuspend ? ' --idle-suspend' : '')
     const cmd = `${shq(nodeBin)} ${shq(`${this.installDir}/runtime.cjs`)} ${args}`
+    const env = await this.processEnv()
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = this.spawn('ssh', [
+        '-T',
+        ...this.connectionArgs('-p'),
+        this.destination(),
+        cmd,
+      ], { env, stdio: 'pipe', windowsHide: true })
+    } catch (err) {
+      throw openSshFailure('ssh', this.destination(), '', err as NodeJS.ErrnoException)
+    }
+    this.track(child)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stream: any = await new Promise((resolve, reject) => {
-      // No PTY on the control channel — clean stdout for JSON framing.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.conn.exec(cmd, { pty: false }, (err: unknown, s: any) => (err ? reject(err) : resolve(s)))
+    // Attach buffering before awaiting spawn so an immediate auth failure or
+    // fast daemon hello cannot race RuntimeManager's listener registration.
+    const dataQueue: Buffer[] = []
+    const stderrQueue: Buffer[] = []
+    let dataListener: ((chunk: Buffer) => void) | null = null
+    let stderrListener: ((chunk: Buffer) => void) | null = null
+    let closeListener: ((info: { code: number | null }) => void) | null = null
+    let closed: { code: number | null } | null = null
+    child.stdout.on('data', (chunk: Buffer) => dataListener ? dataListener(chunk) : dataQueue.push(chunk))
+    child.stderr.on('data', (chunk: Buffer) => stderrListener ? stderrListener(chunk) : stderrQueue.push(chunk))
+    child.once('close', (code) => {
+      closed = { code }
+      closeListener?.(closed)
+    })
+
+    await new Promise<void>((resolve, reject) => {
+      child.once('spawn', resolve)
+      child.once('error', (err: NodeJS.ErrnoException) => {
+        reject(openSshFailure('ssh', this.destination(), '', err))
+      })
     })
 
     return {
-      write: (line) => { stream.write(line) },
-      onData: (cb) => { stream.on('data', cb) },
-      onStderr: (cb) => { stream.stderr?.on('data', cb) },
-      onClose: (cb) => { stream.on('close', (code: number) => cb({ code })) },
-      kill: () => { try { stream.close?.() } catch { /* ignore */ } },
+      write: (line) => { child.stdin.write(line) },
+      onData: (cb) => {
+        dataListener = cb
+        for (const chunk of dataQueue.splice(0)) cb(chunk)
+      },
+      onStderr: (cb) => {
+        stderrListener = cb
+        for (const chunk of stderrQueue.splice(0)) cb(chunk)
+      },
+      onClose: (cb) => {
+        closeListener = cb
+        if (closed) queueMicrotask(() => cb(closed!))
+      },
+      kill: () => { try { child.kill() } catch { /* already exited */ } },
     }
   }
 
   async dispose(): Promise<void> {
-    try { this.conn?.end() } catch { /* ignore */ }
-    this.conn = null
+    for (const child of this.children) {
+      try { child.kill() } catch { /* already exited */ }
+    }
+    this.children.clear()
+    if (this.askpassDir) await rm(this.askpassDir, { recursive: true, force: true }).catch(() => {})
+    this.askpassDir = ''
+    this.askpassPromise = null
   }
 }

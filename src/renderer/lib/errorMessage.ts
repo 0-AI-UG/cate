@@ -94,6 +94,10 @@ function unwrap(message: string): string {
 export function errorMessage(err: unknown, fallback = 'Something went wrong.'): string {
   const cleaned = unwrap(rawMessage(err))
   if (!cleaned) return fallback
+  // System OpenSSH failures already distinguish configuration/routing,
+  // authentication, host keys, and missing client binaries. Preserve that
+  // actionable detail instead of collapsing it into a generic network message.
+  if (/^(?:SSH |The system OpenSSH )/.test(cleaned)) return cleaned
   for (const { match, message } of FRIENDLY) {
     if (match.test(cleaned)) return message
   }

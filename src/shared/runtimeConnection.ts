@@ -20,7 +20,7 @@ export function runtimeConnectionLabel(
   connection: RemoteRuntimeConnection | RemoteConnectSpec,
 ): string {
   return connection.kind === 'server'
-    ? `${connection.user}@${connection.host}`
+    ? `${connection.user ? `${connection.user}@` : ''}${connection.host}`
     : connection.distro
 }
 

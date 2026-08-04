@@ -52,6 +52,15 @@ describe('runtimeConnection', () => {
     })
   })
 
+  test('labels a config-owned user without a leading @', () => {
+    expect(runtimeConnectionLabel({
+      kind: 'server',
+      host: 'corp-bastion',
+      user: '',
+      remotePath: '/srv/project',
+    })).toBe('corp-bastion')
+  })
+
   test('narrows stored connection unions', () => {
     const connection: RuntimeConnection = { kind: 'local' }
     expect(isRemoteRuntimeConnection(connection)).toBe(false)
