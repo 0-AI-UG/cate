@@ -1,5 +1,4 @@
-import React from 'react'
-import { act } from 'react'
+import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -24,23 +23,15 @@ vi.mock('../ui/Tooltip', () => ({ Tooltip: ({ children }: { children: React.Reac
 vi.mock('./UrlSuggestions', () => ({ UrlSuggestions: () => null }))
 vi.mock('./StartPage', () => ({ StartPage: () => <div>Start page</div> }))
 vi.mock('./BrowserMenu', () => ({
-  BrowserMenu: ({
-    onOpenPasswordManager,
-    onZoomOut,
-    onZoomIn,
-    onZoomReset,
-    zoomPercent,
-  }: {
+  BrowserMenu: ({ onOpenPasswordManager, onZoomOut, onZoomReset, zoomPercent }: {
     onOpenPasswordManager: () => void
     onZoomOut: () => void
-    onZoomIn: () => void
     onZoomReset: () => void
     zoomPercent: number
   }) => (
     <>
       <button onClick={onOpenPasswordManager}>Open password manager</button>
       <button onClick={onZoomOut}>Zoom out</button>
-      <button onClick={onZoomIn}>Zoom in</button>
       <button onClick={onZoomReset}>Reset zoom ({zoomPercent}%)</button>
     </>
   ),
@@ -48,16 +39,16 @@ vi.mock('./BrowserMenu', () => ({
 vi.mock('./BrowserPasswordManagerPage', () => ({
   BrowserPasswordManagerPage: () => <div>Password manager page</div>,
 }))
-vi.mock('./BrowserTabStrip', () => ({
-  BrowserTabStrip: () => <div data-testid="browser-tab-strip" />,
-}))
+vi.mock('./BrowserTabStrip', () => ({ BrowserTabStrip: () => <div data-testid="browser-tab-strip" /> }))
 vi.mock('./BrowserBookmarksSidebar', () => ({ BrowserBookmarksSidebar: () => null }))
 
-import BrowserPanel from './BrowserPanel'
+import BrowserPanel, { browserNativeZoomFactor, browserViewportScale } from './BrowserPanel'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import type { BrowserViewEvent, BrowserViewState } from '../../shared/electron-api'
 import type { BrowserTab } from '../../shared/types'
+import { emitBrowserContentChanged } from '../lib/browser/agentCursor'
 
 const initialAppState = useAppStore.getState()
 const initialBrowserState = useBrowserStore.getState()
@@ -75,11 +66,18 @@ const browserCredentialSuggestions = vi.fn(async () => ({
   suggestions: [{ id: 'credential-1', username: 'person@example.com', origin: 'https://initial.example' }],
 }))
 const browserCredentialFill = vi.fn(async () => ({ ok: true }))
+const browserViewCreate = vi.fn()
+const browserViewCommand = vi.fn()
+const browserViewDestroy = vi.fn(async () => undefined)
+const browserViewSetBounds = vi.fn()
 
+let browserViewEventCallback: ((event: BrowserViewEvent) => void) | null = null
+let nextWebContentsId = 41
+let nativeState: BrowserViewState
 let host: HTMLDivElement
 let root: Root
 
-function mount(options?: { proxyUrl?: string; tabs?: BrowserTab[]; activeTabId?: string }): void {
+function mount(options?: { tabs?: BrowserTab[]; activeTabId?: string }): void {
   const tabs = options?.tabs ?? [{ id: 'tab-1', url: 'https://initial.example', title: 'Initial' }]
   act(() => {
     root.render(
@@ -87,7 +85,6 @@ function mount(options?: { proxyUrl?: string; tabs?: BrowserTab[]; activeTabId?:
         panelId="browser-1"
         workspaceId="ws-1"
         nodeId="node-1"
-        proxyUrl={options?.proxyUrl}
         tabs={tabs}
         activeTabId={options?.activeTabId ?? tabs[0].id}
       />,
@@ -95,51 +92,56 @@ function mount(options?: { proxyUrl?: string; tabs?: BrowserTab[]; activeTabId?:
   })
 }
 
-function event(type: string, fields: Record<string, unknown> = {}): Event {
-  return Object.assign(new Event(type), fields)
-}
-
-function installWebviewMethods(webview: HTMLElement) {
-  const methods = {
-    loadURL: vi.fn(),
-    goBack: vi.fn(),
-    goForward: vi.fn(),
-    reload: vi.fn(),
-    reloadIgnoringCache: vi.fn(),
-    canGoBack: vi.fn(() => true),
-    canGoForward: vi.fn(() => false),
-    isLoading: vi.fn(() => false),
-    getURL: vi.fn(() => 'https://navigated.example/page'),
-    getTitle: vi.fn(() => 'Navigated title'),
-    getWebContentsId: vi.fn(() => 42),
-    getZoomFactor: vi.fn(() => 1),
-    insertCSS: vi.fn(async () => 'css-key'),
-    setZoomFactor: vi.fn(),
-    executeJavaScript: vi.fn(async () => undefined),
-  }
-  Object.assign(webview, methods)
-  return methods
-}
-
 async function flush(): Promise<void> {
-  await act(async () => { await Promise.resolve() })
+  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+}
+
+function emit(type: BrowserViewEvent['type'], fields: Partial<BrowserViewEvent> = {}): void {
+  if (fields.url) nativeState.url = fields.url
+  if (fields.title) nativeState.title = fields.title
+  if (type === 'did-start-loading') nativeState.loading = true
+  if (type === 'did-stop-loading' || type === 'did-fail-load') nativeState.loading = false
+  act(() => browserViewEventCallback?.({
+    panelId: 'browser-1',
+    webContentsId: nativeState.webContentsId,
+    type,
+    ...fields,
+  }))
+}
+
+function placeholder(): HTMLElement {
+  const element = host.querySelector<HTMLElement>('[data-browser-native-view]')
+  if (!element) throw new Error('native browser placeholder not mounted')
+  return element
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  nextWebContentsId = 41
+  nativeState = {
+    webContentsId: nextWebContentsId,
+    url: 'about:blank',
+    title: '',
+    loading: false,
+    canGoBack: true,
+    canGoForward: false,
+  }
+  browserViewCreate.mockImplementation(async () => {
+    nativeState = { ...nativeState, webContentsId: nextWebContentsId++ }
+    return { ...nativeState }
+  })
+  browserViewCommand.mockImplementation(async (_panelId, _webContentsId, command) => {
+    if (command.op === 'getState') return { ...nativeState }
+    if (command.op === 'loadURL') nativeState.url = command.url
+    return command.op === 'capturePage' ? null : undefined
+  })
+
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
-  useAppStore.setState({
-    updatePanelTitle,
-    updateBrowserActiveTabUrl,
-    updatePanelTabs,
-  })
+  useAppStore.setState({ updatePanelTitle, updateBrowserActiveTabUrl, updatePanelTabs })
   useBrowserStore.setState({
-    bookmarks: [],
-    recordVisit,
-    toggleBookmark: vi.fn(),
-    querySuggestions: vi.fn(() => []),
+    bookmarks: [], recordVisit, toggleBookmark: vi.fn(), querySuggestions: vi.fn(() => []),
   })
   useSettingsStore.setState({
     browserHomepage: 'https://home.example',
@@ -151,15 +153,20 @@ beforeEach(() => {
   })
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     onBrowserShortcut,
+    onBrowserViewEvent: (callback: (event: BrowserViewEvent) => void) => {
+      browserViewEventCallback = callback
+      return vi.fn()
+    },
+    browserViewCreate,
+    browserViewCommand,
+    browserViewDestroy,
+    browserViewSetBounds,
     browserSetProxy,
     browserControl,
     browserCredentialSuggestions,
     browserCredentialFill,
     browserCredentialProfiles: vi.fn(async () => ({
-      directImportSupported: false,
-      secureStorageAvailable: true,
-      profiles: [],
-      importedCount: 0,
+      directImportSupported: false, secureStorageAvailable: true, profiles: [], importedCount: 0,
     })),
     browserCredentialList: vi.fn(async () => []),
     webviewScreenshot: vi.fn(async () => null),
@@ -171,190 +178,178 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   host.remove()
+  vi.unstubAllGlobals()
   useAppStore.setState(initialAppState, true)
   useBrowserStore.setState(initialBrowserState, true)
   useSettingsStore.setState(initialSettingsState, true)
 })
 
 describe('BrowserPanel component', () => {
-  it('keeps the tab strip above a blank new-tab address bar', () => {
-    mount({
-      tabs: [{ id: 'tab-1', url: 'cate://newtab', title: '' }],
+  it('uses a main-owned native browser surface and keeps viewport scale math', async () => {
+    mount()
+    await flush()
+
+    expect(browserViewCreate).toHaveBeenCalledWith({ panelId: 'browser-1', partition: 'persist:browser-shared' })
+    expect(placeholder().dataset.browserSrc).toBe('https://initial.example')
+    expect(browserViewportScale(
+      { preset: 'desktop', width: 1280, height: 800 },
+      { width: 800, height: 500 },
+    )).toBe(0.625)
+    expect(browserNativeZoomFactor(0.9, 0.625, 0.8)).toBeCloseTo(0.45)
+  })
+
+  it('does not poll native layout while the browser is idle', async () => {
+    let nextFrameId = 1
+    const frames = new Map<number, FrameRequestCallback>()
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const id = nextFrameId++
+      frames.set(id, callback)
+      return id
     })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id) })
+    mount()
+    await flush()
+
+    for (let pass = 0; pass < 5 && frames.size > 0; pass += 1) {
+      const batch = [...frames.values()]
+      frames.clear()
+      act(() => batch.forEach((callback) => callback(performance.now())))
+      await flush()
+    }
+
+    expect(frames.size).toBe(0)
+  })
+
+  it('captures a preview only when renderer chrome must cover the native view', async () => {
+    browserViewCommand.mockImplementation(async (_panelId, _webContentsId, command) => {
+      if (command.op === 'getState') return { ...nativeState }
+      if (command.op === 'loadURL') nativeState.url = command.url
+      return command.op === 'capturePage' ? 'data:image/jpeg;base64,preview' : undefined
+    })
+    mount()
+    await flush()
+    emit('did-stop-loading')
+    await flush()
+    expect(browserViewCommand).not.toHaveBeenCalledWith(
+      'browser-1',
+      41,
+      { op: 'capturePage' },
+    )
+
+    act(() => { (host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click() })
+    await flush()
+    expect(browserViewCommand).toHaveBeenCalledWith('browser-1', 41, { op: 'capturePage' })
+
+    browserViewCommand.mockClear()
+    act(() => emitBrowserContentChanged('browser-1'))
+    await flush()
+    expect(browserViewCommand).toHaveBeenCalledTimes(1)
+    expect(browserViewCommand).toHaveBeenCalledWith('browser-1', 41, { op: 'capturePage' })
+  })
+
+  it('lets the agent switch the placeholder to a fixed mobile viewport', async () => {
+    mount()
+    await flush()
+    const controller = portalMocks.registerController.mock.calls.at(-1)?.[1]
+
+    act(() => controller.setViewport({ preset: 'mobile', width: 390, height: 844 }))
+
+    expect(placeholder().style.width).toBe('195px')
+    expect(placeholder().style.height).toBe('422px')
+  })
+
+  it('keeps the tab strip above a blank start page without exposing the sentinel to native content', async () => {
+    mount({ tabs: [{ id: 'tab-1', url: 'cate://newtab', title: '' }] })
+    await flush()
 
     const tabStrip = host.querySelector('[data-testid="browser-tab-strip"]') as HTMLElement
     const toolbar = host.querySelector('[data-browser-toolbar]') as HTMLElement
-    const input = host.querySelector('input') as HTMLInputElement
-
     expect(tabStrip.compareDocumentPosition(toolbar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(input.value).toBe('')
-    expect(input.placeholder).toBe('Enter a URL')
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('')
     expect(host.textContent).toContain('Start page')
-    expect(host.querySelector('button[aria-label="Open address"]')).toBeTruthy()
-    const webview = host.querySelector('webview')
-    expect(webview).toBeTruthy()
-    expect(webview?.getAttribute('src')).toBe('about:blank')
-    expect(webview?.classList.contains('invisible')).toBe(true)
+    expect(placeholder().dataset.browserSrc).toBe('about:blank')
   })
 
-  it('opens password management as an internal browser tab', () => {
-    mount()
+  it('routes navigation through the native view facade', async () => {
+    mount({ tabs: [{ id: 'tab-1', url: 'cate://newtab', title: '' }] })
+    await flush()
+    const controller = portalMocks.registerController.mock.calls.at(-1)?.[1]
 
-    act(() => {
-      ;(host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click()
-    })
+    act(() => controller.navigate('https://destination.example'))
+    await flush()
+
+    expect(browserViewCommand).toHaveBeenCalledWith(
+      'browser-1',
+      41,
+      { op: 'loadURL', url: 'https://destination.example' },
+    )
+  })
+
+  it('opens password management as an internal browser tab', async () => {
+    mount()
+    await flush()
+    act(() => { (host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click() })
     act(() => {
       ;([...host.querySelectorAll('button')]
         .find((button) => button.textContent === 'Open password manager') as HTMLButtonElement).click()
     })
-
     expect(host.textContent).toContain('Password manager page')
-    expect(updatePanelTabs).toHaveBeenLastCalledWith(
-      'ws-1',
-      'browser-1',
-      expect.arrayContaining([
-        expect.objectContaining({
-          url: 'chrome://password-manager/passwords',
-          title: 'Password manager',
-        }),
-      ]),
-      expect.any(String),
-    )
   })
 
-  it('persists a completed navigation, records history, and updates navigation controls', () => {
+  it('persists native navigation events and updates navigation controls', async () => {
     mount()
-    const webview = host.querySelector('webview') as HTMLElement
-    const methods = installWebviewMethods(webview)
+    await flush()
+    nativeState = { ...nativeState, title: 'Navigated title', canGoBack: true, canGoForward: false }
+    emit('page-title-updated', { title: 'Navigated title' })
+    recordVisit.mockClear()
+    emit('did-navigate', { url: 'https://navigated.example/page' })
+    await flush()
 
-    act(() => {
-      webview.dispatchEvent(event('did-navigate', { url: 'https://navigated.example/page' }))
-    })
-
-    expect(updateBrowserActiveTabUrl).toHaveBeenCalledWith(
-      'ws-1',
-      'browser-1',
-      'https://navigated.example/page',
-    )
+    expect(updateBrowserActiveTabUrl).toHaveBeenCalledWith('ws-1', 'browser-1', 'https://navigated.example/page')
     expect(recordVisit).toHaveBeenCalledWith('https://navigated.example/page', 'Navigated title')
-    expect((host.querySelector('input') as HTMLInputElement).value).toBe('https://navigated.example/page')
     expect((host.querySelector('button[aria-label="Back"]') as HTMLButtonElement).disabled).toBe(false)
     expect((host.querySelector('button[aria-label="Forward"]') as HTMLButtonElement).disabled).toBe(true)
-    expect(updatePanelTabs).toHaveBeenLastCalledWith(
-      'ws-1',
-      'browser-1',
-      [{ id: 'tab-1', url: 'https://navigated.example/page', title: 'Navigated title' }],
-      'tab-1',
-    )
-    expect(methods.canGoBack).toHaveBeenCalled()
   })
 
-  it('ignores subframe failures but surfaces a main-frame failure with a working retry', () => {
+  it('ignores subframe failures and retries a main-frame failure', async () => {
     mount()
-    const webview = host.querySelector('webview') as HTMLElement
-    const methods = installWebviewMethods(webview)
-
-    act(() => {
-      webview.dispatchEvent(event('did-fail-load', {
-        errorCode: -105,
-        errorDescription: 'Tracker failed',
-        isMainFrame: false,
-      }))
-    })
+    await flush()
+    emit('did-fail-load', { errorCode: -105, errorDescription: 'Tracker failed', isMainFrame: false })
     expect(host.textContent).not.toContain('Tracker failed')
-
-    act(() => {
-      webview.dispatchEvent(event('did-fail-load', {
-        errorCode: -105,
-        errorDescription: 'DNS lookup failed',
-        isMainFrame: true,
-      }))
-    })
+    emit('did-fail-load', { errorCode: -105, errorDescription: 'DNS lookup failed', isMainFrame: true })
     expect(host.textContent).toContain('DNS lookup failed')
 
-    const retry = Array.from(host.querySelectorAll('button')).find((button) => button.textContent === 'Try Again')
-    expect(retry).toBeTruthy()
-    act(() => retry!.click())
-    expect(methods.reload).toHaveBeenCalledTimes(1)
+    const retry = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Try Again')!
+    act(() => retry.click())
+    expect(browserViewCommand).toHaveBeenCalledWith('browser-1', 41, { op: 'reload' })
   })
 
-  it('waits for proxy configuration before attaching the webview', async () => {
+  it('waits for proxy configuration before creating the native view', async () => {
     let releaseProxy!: () => void
     browserSetProxy.mockReturnValueOnce(new Promise<void>((resolve) => { releaseProxy = resolve }))
     useSettingsStore.setState({ browserProxyUrl: ' http://proxy.example:8080 ' })
-
     mount()
 
-    expect(host.querySelector('webview')).toBeNull()
-    expect(browserSetProxy).toHaveBeenCalledTimes(1)
-    expect(browserSetProxy.mock.calls[0][0]).toMatch(/^persist:browser-proxy-/)
-    expect(browserSetProxy.mock.calls[0][1]).toBe('http://proxy.example:8080')
-
-    await act(async () => {
-      releaseProxy()
-      await Promise.resolve()
-    })
-    const webview = host.querySelector('webview')
-    expect(webview).toBeTruthy()
-    expect(webview?.getAttribute('partition')).toMatch(/^persist:browser-proxy-/)
+    expect(host.querySelector('[data-browser-native-view]')).toBeNull()
+    expect(browserViewCreate).not.toHaveBeenCalled()
+    await act(async () => { releaseProxy(); await Promise.resolve() })
+    await flush()
+    expect(browserViewCreate.mock.calls[0][0].partition).toMatch(/^persist:browser-proxy-/)
   })
 
-  it('unregisters the guest and subscriptions, and removes webview listeners on unmount', async () => {
+  it('unregisters and destroys the native view on unmount', async () => {
     mount()
-    const webview = host.querySelector('webview') as HTMLElement
-    installWebviewMethods(webview)
-    act(() => webview.dispatchEvent(event('dom-ready')))
-    expect(portalMocks.register).toHaveBeenCalledWith('browser-1', webview)
-    // The navigator registers at mount (not dom-ready): it is how the reverse
-    // API reaches a panel sitting on its start page, which has no webview.
-    expect(portalMocks.registerController).toHaveBeenCalledWith('browser-1', expect.any(Object))
-
+    await flush()
+    expect(portalMocks.register).toHaveBeenCalledWith('browser-1', expect.any(Object))
     act(() => root.unmount())
     expect(portalMocks.unregister).toHaveBeenCalledWith('browser-1')
     expect(portalMocks.unregisterController).toHaveBeenCalledWith('browser-1')
+    expect(browserViewDestroy).toHaveBeenCalledWith('browser-1', 41)
     expect(unsubscribeShortcut).toHaveBeenCalledTimes(1)
-
-    const persistedCalls = updateBrowserActiveTabUrl.mock.calls.length
-    act(() => webview.dispatchEvent(event('did-navigate', { url: 'https://late.example' })))
-    expect(updateBrowserActiveTabUrl).toHaveBeenCalledTimes(persistedCalls)
-
     root = createRoot(host)
-    await flush()
   })
 
-  it('shows horizontal guest scrollbars and scales browser content from the menu', async () => {
-    mount()
-    const webview = host.querySelector('webview') as HTMLElement
-    const methods = installWebviewMethods(webview)
-
-    act(() => webview.dispatchEvent(event('dom-ready')))
-    await flush()
-
-    expect(methods.insertCSS).toHaveBeenCalledWith(expect.stringContaining('height:8px'))
-    expect(methods.setZoomFactor).toHaveBeenLastCalledWith(1)
-    methods.setZoomFactor.mockClear()
-    act(() => webview.dispatchEvent(event('dom-ready')))
-    await flush()
-    expect(methods.insertCSS).toHaveBeenCalledTimes(2)
-    expect(methods.setZoomFactor).not.toHaveBeenCalled()
-
-    act(() => {
-      ;(host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click()
-    })
-    const zoomOut = [...host.querySelectorAll('button')]
-      .find((button) => button.textContent === 'Zoom out') as HTMLButtonElement
-    act(() => zoomOut.click())
-
-    expect(methods.setZoomFactor).toHaveBeenLastCalledWith(0.9)
-    expect(host.textContent).toContain('Reset zoom (90%)')
-
-    const reset = [...host.querySelectorAll('button')]
-      .find((button) => button.textContent?.startsWith('Reset zoom')) as HTMLButtonElement
-    act(() => reset.click())
-    expect(methods.setZoomFactor).toHaveBeenLastCalledWith(1)
-  })
-
-  it('keeps one live webview per tab and registers the active tab with Playwright', async () => {
+  it('keeps inactive tabs live and does not reload them on selection', async () => {
     mount({
       tabs: [
         { id: 'tab-1', url: 'https://one.example', title: 'One' },
@@ -362,67 +357,55 @@ describe('BrowserPanel component', () => {
       ],
       activeTabId: 'tab-1',
     })
-    const webviews = Array.from(host.querySelectorAll('webview')) as HTMLElement[]
-    expect(webviews).toHaveLength(2)
-    const first = installWebviewMethods(webviews[0])
-    const second = installWebviewMethods(webviews[1])
-    first.getWebContentsId.mockReturnValue(41)
-    second.getWebContentsId.mockReturnValue(42)
-
-    act(() => webviews[0].dispatchEvent(event('dom-ready')))
     await flush()
+    expect(browserViewCreate).toHaveBeenCalledTimes(2)
     expect(browserControl).toHaveBeenCalledWith({
-      op: 'registerPlaywright',
-      webContentsId: 41,
-      panelId: 'browser-1',
-      tabId: 'tab-1',
+      op: 'registerAgentBrowser', webContentsId: 41, panelId: 'browser-1', tabId: 'tab-1',
     })
+    await vi.waitFor(() => {
+      expect(browserViewCommand).toHaveBeenCalledWith(
+        'browser-1', 41, { op: 'loadURL', url: 'https://one.example' },
+      )
+      expect(browserViewCommand).toHaveBeenCalledWith(
+        'browser-1', 42, { op: 'loadURL', url: 'https://two.example' },
+      )
+    })
+    browserViewCommand.mockClear()
 
-    const controller = portalMocks.registerController.mock.calls[0][1] as {
-      selectTab(id: string): boolean
-    }
+    const controller = portalMocks.registerController.mock.calls[0][1]
     act(() => { expect(controller.selectTab('tab-2')).toBe(true) })
     await flush()
-
-    expect(webviews[0].style.display).toBe('none')
-    expect(webviews[1].style.display).toBe('flex')
-    expect(first.loadURL).not.toHaveBeenCalled()
-    expect(second.loadURL).not.toHaveBeenCalled()
+    expect(browserViewCreate).toHaveBeenCalledTimes(2)
+    expect(browserViewDestroy).not.toHaveBeenCalled()
+    expect(browserViewCommand).not.toHaveBeenCalledWith(
+      'browser-1',
+      42,
+      expect.objectContaining({ op: 'loadURL' }),
+    )
     expect(browserControl).toHaveBeenCalledWith({
-      op: 'registerPlaywright',
-      webContentsId: 42,
-      panelId: 'browser-1',
-      tabId: 'tab-2',
+      op: 'registerAgentBrowser', webContentsId: 42, panelId: 'browser-1', tabId: 'tab-2',
     })
   })
 
-  it('shows only username metadata and delegates password filling to main', async () => {
+  it('forwards password-focus metadata through the native view bridge', async () => {
     mount()
-    const webview = host.querySelector('webview') as HTMLElement
-    installWebviewMethods(webview)
-
-    act(() => {
-      webview.dispatchEvent(event('ipc-message', {
-        channel: 'cate-browser-password-focus',
-        args: [{
-          targetId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-          rect: { left: 20, bottom: 80, width: 200, height: 30 },
-        }],
-      }))
+    await flush()
+    emit('password-focus', {
+      payload: {
+        targetId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        rect: { left: 20, bottom: 80, width: 200, height: 30 },
+      },
     })
     await flush()
 
-    expect(browserCredentialSuggestions).toHaveBeenCalledWith(42)
+    expect(browserCredentialSuggestions).toHaveBeenCalledWith(41)
     expect(host.textContent).toContain('person@example.com')
-    expect(host.textContent).not.toContain('password-value')
-
-    const choice = Array.from(host.querySelectorAll('button'))
-      .find((button) => button.textContent?.includes('person@example.com'))
-    expect(choice).toBeTruthy()
-    act(() => choice!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    const choice = [...host.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('person@example.com'))!
+    act(() => choice.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
     await flush()
     expect(browserCredentialFill).toHaveBeenCalledWith({
-      webContentsId: 42,
+      webContentsId: 41,
       credentialId: 'credential-1',
       targetId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     })

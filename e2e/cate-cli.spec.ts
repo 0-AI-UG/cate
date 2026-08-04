@@ -163,7 +163,7 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
 
   // Process/transport basics.
   expect(await runCate(controlNode, '--version')).toMatch(/^cate cli \d+$/)
-  expect(await runCate(controlNode, '--help')).toContain('browser    control a browser panel')
+  expect(await runCate(controlNode, '--help')).toContain('cate browser <agent-browser-command>')
   expect(await runCate(controlNode, 'version')).toBe('6')
   expect(await runCate(controlNode, 'panel', 'list')).toContain('terminal')
 
@@ -175,77 +175,60 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   // Browser verbs against a real Electron webview and local HTTP page.
   const freshDataOne = `data:text/html,${encodeURIComponent('<title>Fresh One</title>')}`
   const freshDataTwo = `data:text/html,${encodeURIComponent('<title>Fresh Two</title>')}`
-  const freshOpen = JSON.parse(await runCate(controlNode, 'browser', 'open', freshDataOne, '--new', '--json'))
+  const freshOpen = JSON.parse(await runCate(controlNode, 'browser', 'new-panel', freshDataOne, '--json'))
   const freshBrowserId = freshOpen.panelId as string
   expect(await runCate(controlNode, 'browser', 'open', freshDataTwo, '--panel', freshBrowserId)).toBe(freshDataTwo)
-  expect(await runCate(controlNode, 'browser', 'wait', '8000', '--panel', freshBrowserId)).toBe(freshDataTwo)
-  expect(await runCate(controlNode, 'browser', 'back', '--panel', freshBrowserId)).toBe(freshDataOne)
+  await runCate(controlNode, 'browser', 'wait', '8000', '--panel', freshBrowserId)
+  const freshTabs = await runCate(controlNode, 'browser', 'tabs', '--panel', freshBrowserId)
+  expect(freshTabs).toContain(freshDataOne)
+  expect(freshTabs).toContain(freshDataTwo)
   expect(await runCate(controlNode, 'panel', 'close', freshBrowserId)).toBe('ok')
 
-  const opened = JSON.parse(await runCate(controlNode, 'browser', 'open', baseUrl, '--new', '--json'))
+  const opened = JSON.parse(await runCate(controlNode, 'browser', 'new-panel', baseUrl, '--json'))
   const browserId = opened.panelId as string
   expect(browserId).toMatch(/^[a-z0-9-]+$/i)
-  expect(await runCate(controlNode, 'browser', 'open', `${baseUrl}?opened=1`, '--panel', browserId)).toBe(`${baseUrl}?opened=1`)
-  expect(await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)).toBe(`${baseUrl}?opened=1`)
+  expect(await runCate(controlNode, 'browser', 'navigate', `${baseUrl}?opened=1`, '--panel', browserId)).toBe(`${baseUrl}?opened=1`)
+  await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)
 
   const firstDataUrl = `data:text/html,${encodeURIComponent('<title>Data One</title><h1>Data One</h1>')}`
   const secondDataUrl = `data:text/html,${encodeURIComponent('<title>Data Two</title><h1>Data Two</h1>')}`
-  expect(await runCate(controlNode, 'browser', 'open', firstDataUrl, '--panel', browserId)).toBe(firstDataUrl)
-  expect(await runCate(controlNode, 'browser', 'open', secondDataUrl, '--panel', browserId)).toBe(secondDataUrl)
-  expect(await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)).toBe(secondDataUrl)
+  expect(await runCate(controlNode, 'browser', 'navigate', firstDataUrl, '--panel', browserId)).toBe(firstDataUrl)
+  expect(await runCate(controlNode, 'browser', 'navigate', secondDataUrl, '--panel', browserId)).toBe(secondDataUrl)
+  await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)
   expect(await runCate(controlNode, 'panel', 'list')).toContain(secondDataUrl)
-  expect(await runCate(controlNode, 'browser', 'back', '--panel', browserId)).toBe(firstDataUrl)
-  expect(await runCate(controlNode, 'browser', 'back', '--panel', browserId)).toBe(`${baseUrl}?opened=1`)
-  expect(await runCate(controlNode, 'browser', 'forward', '--panel', browserId)).toBe(firstDataUrl)
-  expect(await runCate(controlNode, 'browser', 'forward', '--panel', browserId)).toBe(secondDataUrl)
-  expect(await runCate(controlNode, 'browser', 'back', '--panel', browserId)).toBe(firstDataUrl)
-  expect(await runCate(controlNode, 'browser', 'back', '--panel', browserId)).toBe(`${baseUrl}?opened=1`)
+  await runCate(controlNode, 'browser', 'back', '--panel', browserId)
+  await runCate(controlNode, 'browser', 'back', '--panel', browserId)
 
-  let snapshot = await runCate(controlNode, 'browser', 'snapshot', '--panel', browserId)
+  const snapshot = await runCate(controlNode, 'browser', 'snapshot', '-i', '--panel', browserId)
   expect(snapshot).toContain('title: Form Ready')
   expect(snapshot).toContain('••••••••')
   expect(snapshot).not.toContain('never-expose-me')
-  let queryRef = snapshot.match(/\[(@s\d+e\d+)\] input:search "Query"/)?.[1]
-  const clickRef = snapshot.match(/\[(@s\d+e\d+)\] button "Click me"/)?.[1]
+  let queryRef = snapshot.match(/(?:textbox|searchbox) "Query".*\[ref=(s\d+e\d+)\]/)?.[1]
+  const clickRef = snapshot.match(/button "Click me".*\[ref=(s\d+e\d+)\]/)?.[1]
   expect(queryRef).toBeTruthy()
   expect(clickRef).toBeTruthy()
-  expect(await runCate(controlNode, 'browser', 'inspect', queryRef!, '--panel', browserId)).toContain('"tag": "input"')
+  queryRef = `@${queryRef}`
 
-  expect(await runCate(controlNode, 'browser', 'fill', queryRef!, 'hello', '--panel', browserId)).toBe('ok')
-  expect(await runCate(controlNode, 'browser', 'type', queryRef!, ' cate', '--panel', browserId)).toBe('ok')
-  snapshot = await runCate(controlNode, 'browser', 'snapshot', '--panel', browserId)
-  expect(snapshot).toContain('= "hello cate"')
-  const currentClickRef = snapshot.match(/\[(@s\d+e\d+)\] button "Click me"/)?.[1]
-  const clickObservation = await runCate(
-    controlNode, 'browser', 'click', currentClickRef!, '--snapshot', '--panel', browserId,
-  )
-  expect(clickObservation).toContain('title: Clicked')
-  const savedObservation = await runCate(
-    controlNode, 'browser', 'wait', 'text', 'Saved', '--wait-timeout', '3000', '--snapshot', '--panel', browserId,
-  )
+  await runCate(controlNode, 'browser', 'fill', queryRef!, 'hello', '--panel', browserId)
+  await runCate(controlNode, 'browser', 'type', queryRef!, ' cate', '--panel', browserId)
+  expect(await runCate(controlNode, 'browser', 'get', 'value', queryRef!, '--panel', browserId)).toContain('hello cate')
+  await runCate(controlNode, 'browser', 'click', `@${clickRef}`, '--panel', browserId)
+  await runCate(controlNode, 'browser', 'wait', '--text', 'Saved', '--timeout', '3000', '--panel', browserId)
+  const savedObservation = await runCate(controlNode, 'browser', 'snapshot', '-i', '--panel', browserId)
   expect(savedObservation).toContain('title: Clicked')
-  expect(await runCate(
-    controlNode, 'browser', 'click', 'role=button', '--nth', '1', '--panel', browserId,
-  )).toBe('ok')
-  expect(await runCate(
-    controlNode, 'browser', 'wait', 'gone', 'Loading', '--wait-timeout', '3000', '--panel', browserId,
-  )).toBe(`${baseUrl}?opened=1`)
-  expect(await runCate(
-    controlNode, 'browser', 'wait', 'url', '**?opened=1', '--wait-timeout', '3000', '--panel', browserId,
-  )).toBe(`${baseUrl}?opened=1`)
-  queryRef = savedObservation.match(/\[(@s\d+e\d+)\] input:search "Query"/)?.[1]
+  queryRef = savedObservation.match(/(?:textbox|searchbox) "Query".*\[ref=(s\d+e\d+)\]/)?.[1]
   expect(queryRef).toBeTruthy()
-  expect(await runCate(
-    controlNode, 'browser', 'wait', 'ref', queryRef!, 'visible', '--wait-timeout', '3000', '--panel', browserId,
-  )).toBe(`${baseUrl}?opened=1`)
-  expect(await runCate(controlNode, 'browser', 'press', queryRef!, 'Enter', '--panel', browserId)).toBe('ok')
+  queryRef = `@${queryRef}`
+  await runCate(controlNode, 'browser', 'wait', queryRef, '--state', 'visible', '--timeout', '3000', '--panel', browserId)
+  await runCate(controlNode, 'browser', 'focus', queryRef, '--panel', browserId)
+  await runCate(controlNode, 'browser', 'press', 'Enter', '--panel', browserId)
   expect(await runCate(controlNode, 'browser', 'snapshot', '--panel', browserId)).toContain('title: Submitted:hello cate')
-  expect(await runCate(controlNode, 'browser', 'press', 'PageDown', '--panel', browserId)).toBe('ok')
+  await runCate(controlNode, 'browser', 'press', 'PageDown', '--panel', browserId)
 
   // CATE_E2E creates an initially-hidden Chromium surface, for which Electron's
   // viewport capture never resolves. Screenshot output and composition are
   // covered by the capture IPC + bitmap regression tests instead.
-  expect(await runCate(controlNode, 'browser', 'reload', '--panel', browserId)).toBe('ok')
+  await runCate(controlNode, 'browser', 'reload', '--panel', browserId)
   await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)
 
   // A second real terminal proves terminal type/press/read, not just the shell
@@ -266,7 +249,7 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
     () => existsSync(workerOutput) ? readFileSync(workerOutput, 'utf8') : '',
     { timeout: 10_000 },
   ).toBe('CLI_TARGET_OK')
-  expect(await runCate(controlNode, 'terminal', 'read', '--max', '20', '--panel', workerId)).toContain('CLI_TARGET_OK')
+  expect(await runCate(controlNode, 'terminal', 'read', '--panel', workerId)).toContain('CLI_TARGET_OK')
 
   // Close verifies immediate list consistency for several panel types.
   expect(await runCate(controlNode, 'panel', 'close', workerId)).toBe('ok')

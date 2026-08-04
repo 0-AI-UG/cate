@@ -494,7 +494,11 @@ describe('CATE_API env injection into spawned terminals', () => {
     const env = await spawnAndGetEnv({ cols: 80, rows: 24, workspaceId: 'ws-1' })
 
     expect(cateApi.ensureEndpoint).toHaveBeenCalledWith('ws-1')
-    expect(env).toEqual({ CATE_API: 'http://127.0.0.1:9876', CATE_TOKEN: 'tok-abc' })
+    expect(env).toEqual({
+      CATE_API: 'http://127.0.0.1:9876',
+      CATE_TOKEN: 'tok-abc',
+      CATE_CLI_SESSION_ID: expect.any(String),
+    })
   })
 
   it('passes the base workspace cwd as the agent hook auto reference', async () => {
@@ -526,6 +530,7 @@ describe('CATE_API env injection into spawned terminals', () => {
     expect(env).toEqual({
       CATE_API: 'http://127.0.0.1:9876',
       CATE_TOKEN: 'tok-abc',
+      CATE_CLI_SESSION_ID: expect.any(String),
       CATE_PANEL_ID: 'panel-123',
     })
   })
@@ -543,6 +548,7 @@ describe('CATE_API env injection into spawned terminals', () => {
     expect(env).toEqual({
       CATE_API: 'http://127.0.0.1:9876',
       CATE_TOKEN: 'tok-abc',
+      CATE_CLI_SESSION_ID: expect.any(String),
       CATE_PLACEMENT_GROUP: 'group-1',
     })
   })

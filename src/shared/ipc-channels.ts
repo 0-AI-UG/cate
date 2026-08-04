@@ -191,6 +191,12 @@ export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
  *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the
  *  Browser menu. The focused BrowserPanel acts on it. */
 export const BROWSER_SHORTCUT = 'browser:shortcut'
+export const BROWSER_VIEW_CREATE = 'browserView:create'
+export const BROWSER_VIEW_COMMAND = 'browserView:command'
+export const BROWSER_VIEW_BOUNDS = 'browserView:bounds'
+export const BROWSER_VIEW_DESTROY = 'browserView:destroy'
+export const BROWSER_VIEW_EVENT = 'browserView:event'
+export const BROWSER_VIEW_GUEST_MESSAGE = 'browserView:guestMessage'
 
 /** Configure the proxy for a browser panel's Electron session partition
  *  (renderer -> main). Awaited before the panel mounts its <webview> so the
@@ -381,6 +387,7 @@ export const SKILLS_REFRESH = 'skills:refresh'               // renderer -> main
 export const SKILLS_GET_PREVIEW = 'skills:getPreview'         // renderer -> main (fetch SKILL.md body)
 export const SKILLS_INSTALL = 'skills:install'               // renderer -> main
 export const SKILLS_UNINSTALL = 'skills:uninstall'           // renderer -> main
+export const SKILLS_REINSTALL_CATE_CLI = 'skills:reinstallCateCli' // renderer -> main
 export const SKILLS_LIST_INSTALLED = 'skills:listInstalled'   // renderer -> main (workspace manifest)
 export const SKILLS_LIST_SAVED = 'skills:listSaved'           // renderer -> main (userData library)
 export const SKILLS_SAVE = 'skills:save'                     // renderer -> main (fetch + cache to library)

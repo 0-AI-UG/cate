@@ -131,6 +131,45 @@ export async function seedCateCliSkill(cwd: string): Promise<void> {
   }
 }
 
+/** Explicit settings action: replace Cate-managed copies with the current
+ * bundled skill. Unlike automatic seeding, this intentionally overwrites edits. */
+export async function reinstallCateCliSkill(cwd: string): Promise<number> {
+  const { runtimeId, path: hostCwd } = parseLocator(cwd)
+  if (!hostCwd) throw new Error('Open a workspace before reinstalling the cate CLI skill.')
+  const runtime = runtimes.resolve(runtimeId)
+  const srcDir = bundledSkillDir()
+  if (!srcDir) throw new Error('Bundled cate-cli skill not found.')
+
+  const bundled = await readBundledFiles(srcDir)
+  const installed = await readManifest(runtime, runtimeId, hostCwd)
+  let installedTargets = 0
+
+  for (const target of SKILL_TARGETS) {
+    const targetId = target.id
+    const existing = installed.some((entry) => entry.skillId === SKILL_ID && entry.targetId === targetId)
+    if (
+      targetId !== 'cate-agent'
+      && !existing
+      && !(await dirExists(runtime, hostJoin(runtimeId, hostCwd, toolDirSegment(targetId))))
+    ) {
+      continue
+    }
+    await writeSkillToWorkspace({
+      skillId: SKILL_ID,
+      name: SKILL_NAME,
+      targetId,
+      cwd,
+      files: bundled,
+      origin: 'local',
+    })
+    const hash = hashFiles(expectedInstall(bundled, targetId))
+    await setSeededMarker(runtime, runtimeId, hostCwd, `${SKILL_ID}:${targetId}@${hash}`)
+    installedTargets += 1
+  }
+
+  return installedTargets
+}
+
 async function seed(cwd: string): Promise<void> {
   if (getSetting('cliSkillInstallEnabled') !== true) return
   const { runtimeId, path: hostCwd } = parseLocator(cwd)

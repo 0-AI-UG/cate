@@ -1,6 +1,6 @@
 // =============================================================================
-// BrowserPanel — React component wrapping Electron's <webview> tag
-// Provides URL bar with navigation controls and embedded web content.
+// BrowserPanel — React chrome around a main-owned WebContentsView.
+// Provides URL bar with navigation controls and isolated embedded content.
 // Ported from BrowserPanel.swift
 // =============================================================================
 
@@ -9,35 +9,30 @@ import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, ArrowUpRight, Camera, Key
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
-import { useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
+import { useOptionalCanvasStoreApi, useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { SEARCH_ENGINE_URLS, BROWSER_NEW_TAB_URL, isStartPageUrl } from '../../shared/types'
 import { UrlSuggestions } from './UrlSuggestions'
 import { StartPage } from './StartPage'
 import { AgentCursorOverlay } from './AgentCursorOverlay'
-import { recordConsoleMessage } from '../lib/browser/consoleBuffer'
 import { BrowserMenu } from './BrowserMenu'
 import { BrowserPasswordManagerPage } from './BrowserPasswordManagerPage'
 import { BrowserTabStrip } from './BrowserTabStrip'
 import type { BrowserCredentialSuggestion, BrowserTab } from '../../shared/types'
 import type { BrowserPanelProps } from './types'
 import type { BrowserShortcutAction } from '../../shared/types'
-import { portalRegistry } from '../lib/portalRegistry'
+import { portalRegistry, type BrowserViewport } from '../lib/portalRegistry'
+import { releaseAgentCursor, subscribeBrowserContentChanged } from '../lib/browser/agentCursor'
 import { writeCateFileDrag } from '../drag/fileDragPayload'
 import { isUrl, normalizeUrl } from './browserUrl'
 import { pageLoadErrorFrom } from './browserLoadError'
+import { NativeBrowserView } from '../lib/browser/nativeBrowserView'
 import { Tooltip } from '../ui/Tooltip'
 import {
   BROWSER_PASSWORD_MANAGER_URL,
   browserInternalPageTitle,
   isBrowserInternalPage,
 } from '../lib/browser/internalPages'
-
-// -----------------------------------------------------------------------------
-// Type declarations for Electron's <webview> element
-// -----------------------------------------------------------------------------
-
-// Electron already declares webview in its types - we use 'as any' on the ref instead
 
 // Single shared persistent session for all browser panels (issue #220 bug 2).
 // Previously the partition was keyed to the runtime panelId
@@ -82,29 +77,36 @@ function addressBarValue(url: string): string {
   return isStartPageUrl(url) ? '' : url
 }
 
-interface WebviewElement extends HTMLElement {
-  loadURL(url: string): void
-  goBack(): void
-  goForward(): void
-  reload(): void
-  reloadIgnoringCache(): void
-  canGoBack(): boolean
-  canGoForward(): boolean
-  isLoading(): boolean
-  getURL(): string
-  getTitle(): string
-  getWebContentsId(): number
-  getZoomFactor(): number
-  insertCSS(css: string): Promise<string>
-  setZoomFactor(factor: number): void
-  executeJavaScript(code: string): Promise<any>
-  addEventListener(type: string, listener: (event: any) => void): void
-  removeEventListener(type: string, listener: (event: any) => void): void
+function webviewSeedUrl(url: string): string {
+  return isStartPageUrl(url) ? 'about:blank' : url
 }
+
+type WebviewElement = NativeBrowserView
 
 const BROWSER_ZOOM_FACTORS = [
   0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5,
 ] as const
+
+const COMPACT_BROWSER_SCALE = 0.75
+
+export function browserViewportScale(
+  viewport: BrowserViewport,
+  container: { width: number; height: number },
+): number {
+  if (viewport.preset === 'compact') return COMPACT_BROWSER_SCALE
+  if (container.width <= 0 || container.height <= 0) return 0.5
+  return Math.min(1, container.width / viewport.width, container.height / viewport.height)
+}
+
+/** Native content is sized in window coordinates, outside the renderer's CSS
+ * transform tree, so reproduce every scale that would have affected a webview. */
+export function browserNativeZoomFactor(
+  browserZoom: number,
+  viewportScale: number,
+  canvasZoom: number,
+): number {
+  return browserZoom * viewportScale * canvasZoom
+}
 
 // Browser guests are isolated documents, so the renderer's global scrollbar
 // styles do not reach them. Inject a visible horizontal thumb using the current
@@ -129,33 +131,349 @@ interface AutofillPopup {
 }
 
 function BrowserWebviewSlot({
+  panelId,
   tabId,
   src,
   partition,
   active,
   hidden,
+  viewport,
+  displayScale,
+  browserZoomFactor,
+  canvasBacked,
+  focused,
   onElement,
 }: {
+  panelId: string
   tabId: string
   src: string
   partition: string
   active: boolean
   hidden: boolean
+  viewport: BrowserViewport
+  displayScale: number
+  browserZoomFactor: number
+  canvasBacked: boolean
+  focused: boolean
   onElement(tabId: string, element: WebviewElement | null): void
 }) {
-  const attach = useCallback((element: WebviewElement | null) => {
-    onElement(tabId, element)
-  }, [onElement, tabId])
+  const canvasStoreApi = useOptionalCanvasStoreApi()
+  const frameRef = useRef<HTMLDivElement | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const previewRef = useRef<string | null>(null)
+  const previewCaptureInFlightRef = useRef(false)
+  const previewCaptureRequestedRef = useRef(false)
+  const previewGenerationRef = useRef(0)
+  const previewCapturedGenerationRef = useRef(-1)
+  const previewModeRef = useRef(false)
+  const nativeVisibleRef = useRef(false)
+  const capturePreviewRef = useRef<() => void>(() => {})
+  const [view, setView] = useState<NativeBrowserView | null>(null)
+  const scheduleLayoutRef = useRef<() => void>(() => {})
+  const layoutInputsRef = useRef({
+    active,
+    hidden,
+    displayScale,
+    browserZoomFactor,
+    canvasBacked,
+    focused,
+  })
+  layoutInputsRef.current = {
+    active,
+    hidden,
+    displayScale,
+    browserZoomFactor,
+    canvasBacked,
+    focused,
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    let created: NativeBrowserView | null = null
+    void NativeBrowserView.create(panelId, partition).then((next) => {
+      if (!next || cancelled) {
+        next?.dispose()
+        return
+      }
+      created = next
+      setView(next)
+      onElement(tabId, next)
+      requestAnimationFrame(() => {
+        if (!cancelled) next.loadURL(src)
+      })
+    })
+    return () => {
+      cancelled = true
+      onElement(tabId, null)
+      created?.dispose()
+    }
+  }, [panelId, partition, tabId])
+
+  const capturePreview = useCallback(() => {
+    if (!view || previewCapturedGenerationRef.current === previewGenerationRef.current) return
+    if (previewCaptureInFlightRef.current) {
+      previewCaptureRequestedRef.current = true
+      return
+    }
+    const generation = previewGenerationRef.current
+    previewCaptureInFlightRef.current = true
+    previewCaptureRequestedRef.current = false
+    void view.capturePage().then((dataUrl) => {
+      if (dataUrl && generation === previewGenerationRef.current) {
+        previewRef.current = dataUrl
+        previewCapturedGenerationRef.current = generation
+        setPreview(dataUrl)
+      }
+    }).catch(() => {}).finally(() => {
+      previewCaptureInFlightRef.current = false
+      if (previewCaptureRequestedRef.current) {
+        previewCaptureRequestedRef.current = false
+        queueMicrotask(() => capturePreviewRef.current())
+      }
+    })
+  }, [view])
+  capturePreviewRef.current = capturePreview
+
+  useEffect(() => subscribeBrowserContentChanged(panelId, () => {
+    previewGenerationRef.current += 1
+    const inputs = layoutInputsRef.current
+    if (inputs.active && (inputs.hidden || (inputs.canvasBacked && !inputs.focused))) {
+      capturePreview()
+    }
+  }), [panelId, capturePreview])
+
+  useEffect(() => {
+    if (!view) return
+    const markPreviewStale = () => {
+      previewGenerationRef.current += 1
+    }
+    const captureIfHidden = () => {
+      const inputs = layoutInputsRef.current
+      if (inputs.active && (inputs.hidden || (inputs.canvasBacked && !inputs.focused))) {
+        capturePreview()
+      }
+    }
+    view.addEventListener('did-start-loading', markPreviewStale)
+    view.addEventListener('did-stop-loading', captureIfHidden)
+    return () => {
+      view.removeEventListener('did-start-loading', markPreviewStale)
+      view.removeEventListener('did-stop-loading', captureIfHidden)
+    }
+  }, [view, capturePreview])
+
+  // A native WebContentsView cannot participate in the canvas's CSS transform.
+  // Track the placeholder's final screen rect and hide the native surface while
+  // a gesture is active; the last captured frame remains in the DOM and scales
+  // with the rest of the canvas until the gesture settles. Layout sync is
+  // event-driven so an idle browser does no renderer-side polling.
+  useEffect(() => {
+    if (!view) return
+    let raf = 0
+    let last = ''
+    let lastLayout: Parameters<NativeBrowserView['setLayout']>[0] | null = null
+    let canvasMotion = false
+    let canvasMotionTimer: ReturnType<typeof setTimeout> | null = null
+
+    const setLayout = (layout: Parameters<NativeBrowserView['setLayout']>[0]) => {
+      const signature = JSON.stringify(layout)
+      if (signature === last) return
+      last = signature
+      lastLayout = layout
+      if (nativeVisibleRef.current && !layout.visible && !previewModeRef.current) {
+        previewGenerationRef.current += 1
+        capturePreview()
+      }
+      nativeVisibleRef.current = layout.visible
+      view.setLayout(layout)
+    }
+
+    const sync = () => {
+      raf = 0
+      const frame = frameRef.current
+      if (frame) {
+        const inputs = layoutInputsRef.current
+        const canvasZoom = inputs.canvasBacked
+          ? canvasStoreApi?.getState().zoomLevel ?? 1
+          : 1
+        if (!inputs.active) {
+          const rect = frame.getBoundingClientRect()
+          setLayout({
+            rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+            rendererSize: { width: window.innerWidth, height: window.innerHeight },
+            visible: false,
+            zoomFactor: browserNativeZoomFactor(
+              inputs.browserZoomFactor,
+              inputs.displayScale,
+              canvasZoom,
+            ),
+          })
+          return
+        }
+
+        const gesture = document.body.classList.contains('canvas-interacting')
+          || document.body.classList.contains('canvas-dragging')
+          || document.body.classList.contains('canvas-zooming')
+
+        // The DOM preview follows canvas transforms while a gesture is active.
+        // Hide the native surface once, then defer its expensive bounds/zoom
+        // updates until the gesture settles instead of relaying every frame to
+        // main and forcing Chromium to rerasterize the page each time.
+        if (gesture || canvasMotion) {
+          capturePreview()
+          const rect = frame.getBoundingClientRect()
+          setLayout({
+            rect: lastLayout?.rect ?? { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+            rendererSize: { width: window.innerWidth, height: window.innerHeight },
+            visible: false,
+            zoomFactor: lastLayout?.zoomFactor ?? browserNativeZoomFactor(
+              inputs.browserZoomFactor,
+              inputs.displayScale,
+              canvasZoom,
+            ),
+          })
+          return
+        }
+
+        const rect = frame.getBoundingClientRect()
+        const fullyOnscreen = rect.left >= 0
+          && rect.top >= 0
+          && rect.right <= window.innerWidth
+          && rect.bottom <= window.innerHeight
+        const obscuredByChrome = [...document.querySelectorAll<HTMLElement>('[data-toolbar-card], [role="dialog"]')]
+          .some((element) => {
+            const overlay = element.getBoundingClientRect()
+            return overlay.width > 0
+              && overlay.height > 0
+              && rect.left < overlay.right
+              && rect.right > overlay.left
+              && rect.top < overlay.bottom
+              && rect.bottom > overlay.top
+          })
+        const visible = inputs.active
+          && !inputs.hidden
+          && (!inputs.canvasBacked || inputs.focused)
+          && fullyOnscreen
+          && !obscuredByChrome
+          && rect.width > 1
+          && rect.height > 1
+        const layout = {
+          rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+          rendererSize: { width: window.innerWidth, height: window.innerHeight },
+          visible,
+          zoomFactor: browserNativeZoomFactor(
+            inputs.browserZoomFactor,
+            inputs.displayScale,
+            canvasZoom,
+          ),
+        }
+        setLayout(layout)
+      }
+    }
+
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(sync)
+    }
+    scheduleLayoutRef.current = schedule
+
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(schedule)
+    if (frameRef.current) resizeObserver?.observe(frameRef.current)
+
+    const bodyClassObserver = new MutationObserver(schedule)
+    bodyClassObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['class'],
+    })
+
+    // Renderer overlays are usually portalled outside the panel. Child-list
+    // changes are enough to notice them without watching every class/style
+    // mutation in the application.
+    const overlayObserver = new MutationObserver(schedule)
+    overlayObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    })
+
+    // Canvas/world/node positioning is applied imperatively through ancestor
+    // styles. Observe just this slot's ancestor chain so auto-layout and shell
+    // transitions update native bounds without a global animation-frame loop.
+    const geometryObserver = new MutationObserver(schedule)
+    let ancestor = frameRef.current?.parentElement ?? null
+    while (ancestor && ancestor !== document.body) {
+      geometryObserver.observe(ancestor, {
+        attributes: true,
+        attributeFilter: ['class', 'style'],
+      })
+      ancestor = ancestor.parentElement
+    }
+
+    const unsubscribeCanvas = active && canvasBacked && canvasStoreApi
+      ? canvasStoreApi.subscribe((state, previous) => {
+          if (state.zoomLevel === previous.zoomLevel && state.viewportOffset === previous.viewportOffset) return
+          canvasMotion = true
+          schedule()
+          if (canvasMotionTimer) clearTimeout(canvasMotionTimer)
+          canvasMotionTimer = setTimeout(() => {
+            canvasMotionTimer = null
+            canvasMotion = false
+            schedule()
+          }, 80)
+        })
+      : () => {}
+
+    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', schedule, true)
+    schedule()
+
+    return () => {
+      scheduleLayoutRef.current = () => {}
+      if (raf) cancelAnimationFrame(raf)
+      if (canvasMotionTimer) clearTimeout(canvasMotionTimer)
+      resizeObserver?.disconnect()
+      bodyClassObserver.disconnect()
+      overlayObserver.disconnect()
+      geometryObserver.disconnect()
+      unsubscribeCanvas()
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', schedule, true)
+    }
+  }, [view, active, canvasBacked, canvasStoreApi, capturePreview])
+
+  useEffect(() => {
+    scheduleLayoutRef.current()
+    const previewMode = active && (hidden || (canvasBacked && !focused))
+    if (previewMode && !previewModeRef.current) previewGenerationRef.current += 1
+    previewModeRef.current = previewMode
+    if (previewMode) capturePreview()
+  }, [active, hidden, displayScale, browserZoomFactor, canvasBacked, focused, capturePreview])
+
+  const fixed = viewport.preset !== 'compact'
+  const frameStyle = fixed
+    ? { width: viewport.width * displayScale, height: viewport.height * displayScale }
+    : { width: '100%', height: '100%' }
+  const webviewStyle = fixed
+    ? { width: viewport.width, height: viewport.height }
+    : { width: `${100 / displayScale}%`, height: `${100 / displayScale}%` }
 
   return (
-    <webview
-      ref={attach as any}
-      src={src}
-      className={`w-full h-full ${hidden ? 'invisible' : ''}`}
-      style={{ display: active ? 'flex' : 'none' }}
-      partition={partition}
-      {...({ allowpopups: 'true' } as any)}
-    />
+    <div
+      ref={frameRef}
+      data-browser-native-view
+      data-browser-src={src}
+      data-browser-partition={partition}
+      className={`${active ? 'relative' : 'absolute inset-0 invisible pointer-events-none'} overflow-hidden bg-surface-0`}
+      style={frameStyle}
+    >
+      {preview && (
+        <img
+          src={preview}
+          aria-hidden
+          className="absolute left-0 top-0 h-full w-full object-fill pointer-events-none"
+        />
+      )}
+      {!preview && <div style={webviewStyle} />}
+    </div>
   )
 }
 
@@ -187,6 +505,10 @@ export default function BrowserPanel({
   // Optional: a panel docked in a detached dock window has no CanvasStoreProvider
   // (no canvas node to be focused), so treat that as not-canvas-focused.
   const isFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
+  const canvasStoreApi = useOptionalCanvasStoreApi()
+  // Main-window docks share the root CanvasStoreProvider but have no nodeId;
+  // only a panel inside an actual CanvasNode follows canvas focus/zoom.
+  const canvasBacked = Boolean(nodeId && canvasStoreApi)
 
   // --- Tabs -----------------------------------------------------------------
   // Seed once from the current persisted schema. There is deliberately no
@@ -225,16 +547,18 @@ export default function BrowserPanel({
   )
   const proxyReady = !activeProxy || readyPartition === partition
 
-  // Each tab owns a live guest. Keeping background guests mounted preserves
-  // page state, history, OAuth continuations and downloads across tab switches.
-  const webviewSrcByTabRef = useRef(new Map(seedTabs.current.tabs.map((tab) => [tab.id, tab.url])))
+  // Each tab keeps its guest renderer for the lifetime of the tab. Destroying an
+  // inactive guest would turn every tab switch into a page reload and discard
+  // in-page state such as scroll position, form input, and media playback.
+  const webviewSrcByTabRef = useRef(new Map(
+    seedTabs.current.tabs.map((tab) => [tab.id, webviewSeedUrl(tab.url)]),
+  ))
   const seededPartitionRef = useRef(partition)
   if (seededPartitionRef.current !== partition) {
-    for (const tab of tabs) webviewSrcByTabRef.current.set(tab.id, tab.url)
+    for (const tab of tabs) webviewSrcByTabRef.current.set(tab.id, webviewSeedUrl(tab.url))
     seededPartitionRef.current = partition
   }
   const webviewsByTabRef = useRef(new Map<string, WebviewElement>())
-  const zoomInitializedWebviewsRef = useRef(new WeakSet<WebviewElement>())
   const webviewRef = useRef<WebviewElement | null>(null)
   const [webviewEl, setWebviewEl] = useState<WebviewElement | null>(null)
   const [autofillPopup, setAutofillPopup] = useState<AutofillPopup | null>(null)
@@ -269,10 +593,15 @@ export default function BrowserPanel({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [browserZoomFactor, setBrowserZoomFactor] = useState(1)
   const browserZoomFactorRef = useRef(1)
+  const [browserViewport, setBrowserViewport] = useState<BrowserViewport>({ preset: 'compact' })
+  const [viewportContainerSize, setViewportContainerSize] = useState({ width: 0, height: 0 })
+  const viewportContainerRef = useRef<HTMLDivElement | null>(null)
+  const viewportDisplayScale = browserViewportScale(browserViewport, viewportContainerSize)
   // Distinct from loadError: the guest *renderer process* died (OOM / GPU
   // fault / native crash), not merely a failed navigation. Needs a reload to
   // respawn the renderer, so it gets its own overlay + recovery affordance.
   const [crashed, setCrashed] = useState(false)
+  const [agentOverlayActive, setAgentOverlayActive] = useState(false)
   const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -298,6 +627,9 @@ export default function BrowserPanel({
     setInputUrl(addressBarValue(targetUrl))
     currentUrlRef.current = targetUrl
     if (isStartPageUrl(targetUrl) || isBrowserInternalPage(targetUrl)) {
+      if (isStartPageUrl(targetUrl)) {
+        webviewSrcByTabRef.current.set(activeTabIdRef.current, 'about:blank')
+      }
       setIsLoading(false)
       return
     }
@@ -350,7 +682,7 @@ export default function BrowserPanel({
   const openTab = useCallback((url?: string) => {
     const id = makeTabId()
     const u = url || newTabUrl()
-    webviewSrcByTabRef.current.set(id, u)
+    webviewSrcByTabRef.current.set(id, webviewSeedUrl(u))
     setTabs((prev) => [...prev, { id, url: u, title: browserInternalPageTitle(u) }])
     activeTabIdRef.current = id
     setActiveTabId(id)
@@ -376,7 +708,7 @@ export default function BrowserPanel({
       const fresh: BrowserTab = { id: makeTabId(), url: BROWSER_NEW_TAB_URL, title: '' }
       webviewSrcByTabRef.current.delete(id)
       webviewsByTabRef.current.delete(id)
-      webviewSrcByTabRef.current.set(fresh.id, fresh.url)
+      webviewSrcByTabRef.current.set(fresh.id, webviewSeedUrl(fresh.url))
       setTabs([fresh])
       activeTabIdRef.current = fresh.id
       setActiveTabId(fresh.id)
@@ -431,9 +763,6 @@ export default function BrowserPanel({
   const applyBrowserZoom = useCallback((factor: number) => {
     browserZoomFactorRef.current = factor
     setBrowserZoomFactor(factor)
-    for (const webview of webviewsByTabRef.current.values()) {
-      try { webview.setZoomFactor(factor) } catch { /* guest not ready */ }
-    }
   }, [])
 
   const adjustBrowserZoom = useCallback((direction: -1 | 1) => {
@@ -510,17 +839,8 @@ export default function BrowserPanel({
   const [menuOpen, setMenuOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const toggleBrowserMenu = useCallback(() => {
-    if (!menuOpen) {
-      try {
-        const liveFactor = webviewRef.current?.getZoomFactor()
-        if (liveFactor && Number.isFinite(liveFactor)) {
-          browserZoomFactorRef.current = liveFactor
-          setBrowserZoomFactor(liveFactor)
-        }
-      } catch { /* guest not ready */ }
-    }
     setMenuOpen((open) => !open)
-  }, [menuOpen])
+  }, [])
 
   // "New tab" → a new browser panel on the canvas (opens the start page).
   const handleNewTab = addTab
@@ -757,15 +1077,6 @@ export default function BrowserPanel({
       setIsLoading(false)
     }
 
-    // Buffer guest console output for `cate browser console`. Attached here
-    // rather than injected into the page so it also captures the errors thrown
-    // during load — the ones an agent debugging a page most needs — and
-    // survives navigations for the panel's whole mounted life.
-    const onConsoleMessage = (event: any) => {
-      recordConsoleMessage(panelId, event?.level ?? 1, String(event?.message ?? ''), String(event?.sourceId ?? ''), event?.line ?? 0)
-    }
-    webview.addEventListener('console-message', onConsoleMessage)
-
     const onIpcMessage = (event: any) => {
       if (event?.channel !== 'cate-browser-password-focus') return
       const payload = event.args?.[0] as Partial<AutofillPopup> | undefined
@@ -810,25 +1121,13 @@ export default function BrowserPanel({
       let webContentsId: number
       try { webContentsId = webview.getWebContentsId() } catch { return }
       try { portalRegistry.register(panelId, webview as any) } catch { /* ignore */ }
-      // Initialize a newly attached guest once. Reapplying on every navigation
-      // would overwrite zoom changes made with the browser's native shortcuts.
-      if (!zoomInitializedWebviewsRef.current.has(webview)) {
-        try {
-          webview.setZoomFactor(browserZoomFactorRef.current)
-          zoomInitializedWebviewsRef.current.add(webview)
-        } catch { /* detached */ }
-      }
-      try {
-        void webview.insertCSS(browserGuestScrollbarCss()).catch(() => { /* guest gone */ })
-      } catch { /* detached */ }
       void window.electronAPI.browserControl({
-        op: 'registerPlaywright',
+        op: 'registerAgentBrowser',
         webContentsId,
         panelId,
         tabId: activeTabId,
-      }).catch(() => {
-        // The browser remains user-operable through the webview if Playwright
-        // could not attach; browserDriver has the same trusted-input fallback.
+      }).catch((error) => {
+        console.error('[BrowserPanel] agent-browser registration failed:', error)
       })
     }
     webview.addEventListener('dom-ready', onDomReady)
@@ -859,7 +1158,6 @@ export default function BrowserPanel({
       webview.removeEventListener('did-start-loading', onDidStartLoading)
       webview.removeEventListener('did-stop-loading', onDidStopLoading)
       webview.removeEventListener('render-process-gone', onRenderProcessGone)
-      webview.removeEventListener('console-message', onConsoleMessage)
       webview.removeEventListener('ipc-message', onIpcMessage)
     }
     // `webviewEl` is the dep that matters: it changes identity whenever the
@@ -889,8 +1187,36 @@ export default function BrowserPanel({
   //   • tabs — the tab list and active live guest are panel-level state.
   // Registered once per panelId; the live values are read through refs so the
   // changing identity of the callbacks doesn't churn the registry.
-  const controllerRef = useRef({ navigateTo, tabs, activeTabId, openTab, selectTab, closeTab })
-  controllerRef.current = { navigateTo, tabs, activeTabId, openTab, selectTab, closeTab }
+  useEffect(() => {
+    const element = viewportContainerRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const updateSize = (): void => {
+      setViewportContainerSize({ width: element.clientWidth, height: element.clientHeight })
+    }
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  const controllerRef = useRef({
+    navigateTo,
+    tabs,
+    activeTabId,
+    openTab,
+    selectTab,
+    closeTab,
+    setBrowserViewport,
+  })
+  controllerRef.current = {
+    navigateTo,
+    tabs,
+    activeTabId,
+    openTab,
+    selectTab,
+    closeTab,
+    setBrowserViewport,
+  }
   useEffect(() => {
     portalRegistry.registerController(panelId, {
       navigate: (url) => controllerRef.current.navigateTo(url),
@@ -911,6 +1237,7 @@ export default function BrowserPanel({
         controllerRef.current.closeTab(tabId)
         return true
       },
+      setViewport: (viewport) => controllerRef.current.setBrowserViewport(viewport),
     })
     return () => portalRegistry.unregisterController(panelId)
   }, [panelId])
@@ -920,7 +1247,14 @@ export default function BrowserPanel({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="flex w-full h-full relative" onKeyDown={handleChromeKeyDown}>
+    <div
+      className="flex w-full h-full relative"
+      onKeyDown={(event) => {
+        releaseAgentCursor(panelId)
+        handleChromeKeyDown(event)
+      }}
+      onPointerDownCapture={() => releaseAgentCursor(panelId)}
+    >
       {/* Main column: browser chrome + content */}
       <div className="flex flex-col flex-1 min-w-0 h-full">
       {/* Tabs stay visible even when the browser has only one tab. */}
@@ -1075,7 +1409,10 @@ export default function BrowserPanel({
       )}
 
       {/* Webview + overlays container */}
-      <div className="flex-1 relative">
+      <div
+        ref={viewportContainerRef}
+        className="flex flex-1 items-start justify-start overflow-hidden relative"
+      >
         {/* Error state overlay */}
         {loadError && (
           <WebviewErrorOverlay
@@ -1096,12 +1433,12 @@ export default function BrowserPanel({
           />
         )}
 
-        {/* One live guest per real tab. Background guests stay mounted so page
-            state and OAuth flows survive switching tabs. All guests share the
-            same persistent browser profile/session partition. */}
+        {/* Keep every tab's native guest alive so switching tabs preserves the
+            document, navigation history, scroll position, and form state. */}
         {proxyReady && tabs.map((tab) => (
           isBrowserInternalPage(tab.url) ? null : (
             <BrowserWebviewSlot
+              panelId={panelId}
               key={`${panelId}:${partition}:${tab.id}`}
               tabId={tab.id}
               src={isStartPageUrl(tab.url)
@@ -1109,9 +1446,21 @@ export default function BrowserPanel({
                 : (webviewSrcByTabRef.current.get(tab.id) ?? tab.url)}
               partition={partition}
               active={tab.id === activeTabId}
-              hidden={tab.id === activeTabId && Boolean(
-                loadError || crashed || isStartPageUrl(tab.url),
+              hidden={Boolean(
+                loadError
+                || crashed
+                || isStartPageUrl(tab.url)
+                || autofillPopup
+                || menuOpen
+                || showSuggestions
+                || screenshot
+                || agentOverlayActive
               )}
+              viewport={browserViewport}
+              displayScale={viewportDisplayScale}
+              browserZoomFactor={browserZoomFactor}
+              canvasBacked={canvasBacked}
+              focused={isFocused}
               onElement={attachWebview}
             />
           )
@@ -1133,8 +1482,14 @@ export default function BrowserPanel({
           <div
             className="absolute z-40 min-w-56 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg border border-subtle bg-surface-2 shadow-2xl"
             style={{
-              left: Math.max(8, autofillPopup.rect.left),
-              top: Math.max(8, autofillPopup.rect.bottom + 6),
+              left: Math.max(
+                8,
+                autofillPopup.rect.left * browserZoomFactor * viewportDisplayScale,
+              ),
+              top: Math.max(
+                8,
+                autofillPopup.rect.bottom * browserZoomFactor * viewportDisplayScale + 6,
+              ),
             }}
           >
             <div className="flex items-center gap-2 border-b border-subtle px-3 py-2 text-xs text-muted">
@@ -1162,7 +1517,11 @@ export default function BrowserPanel({
         {/* Agent activity — ghost pointer, target highlight and action label for
             `cate.browser.*` input, which is otherwise indistinguishable from the
             user's own. Sits above the webview and never takes pointer events. */}
-        <AgentCursorOverlay panelId={panelId} />
+        <AgentCursorOverlay
+          panelId={panelId}
+          scale={browserZoomFactor * viewportDisplayScale}
+          onVisibilityChange={setAgentOverlayActive}
+        />
 
         {/* Screenshot thumbnail */}
         {screenshot && (
