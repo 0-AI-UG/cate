@@ -362,6 +362,14 @@ describe('BrowserPanel component', () => {
     expect(browserControl).toHaveBeenCalledWith({
       op: 'registerAgentBrowser', webContentsId: 41, panelId: 'browser-1', tabId: 'tab-1',
     })
+    await vi.waitFor(() => {
+      expect(browserViewCommand).toHaveBeenCalledWith(
+        'browser-1', 41, { op: 'loadURL', url: 'https://one.example' },
+      )
+      expect(browserViewCommand).toHaveBeenCalledWith(
+        'browser-1', 42, { op: 'loadURL', url: 'https://two.example' },
+      )
+    })
     browserViewCommand.mockClear()
 
     const controller = portalMocks.registerController.mock.calls[0][1]
