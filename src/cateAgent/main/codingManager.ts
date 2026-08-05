@@ -37,6 +37,7 @@ import { CODING_EVENT, AUTH_CHANGED } from '../../shared/ipc-channels'
 import { broadcastToAll } from '../../main/windowRegistry'
 import { installPlanModeExtension } from './installPlanMode'
 import { installCanvasModeExtension } from './installCanvasMode'
+import { installSubagentExtension } from './installSubagent'
 import { installAskUserExtension } from './installAskUser'
 import { installOrchestratorExtension } from './installOrchestrator'
 import { installMcpAdapter } from './installMcpAdapter'
@@ -180,6 +181,7 @@ export class CodingManager {
       await mirrorModelsToWorkspace(runtime, cwd)
       await installPlanModeExtension(runtime, cwd)
       await installCanvasModeExtension(runtime, cwd)
+      await installSubagentExtension(runtime, cwd)
       await installAskUserExtension(runtime, cwd)
       await installOrchestratorExtension(runtime, cwd)
       // Register pi-mcp-adapter in <cwd>/.cate/cate-agent/settings.json so pi

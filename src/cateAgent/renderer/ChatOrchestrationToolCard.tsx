@@ -9,6 +9,7 @@ export const ORCHESTRATION_TOOL_NAMES: ReadonlySet<string> = new Set([
   'send_to_coding_agent',
   'wait_for_coding_agents',
   'inspect_coding_agent',
+  'review_coding_agent',
   'stop_coding_agent',
 ])
 
@@ -89,6 +90,7 @@ function InputDetails({
     return (
       <>
         <DetailField label="Agent" value={agentLabel(args.agentId)} />
+        <DetailField label="Role" value={text(args.title)} />
         <DetailField label="Task" value={text(args.prompt)} />
         <DetailField
           label="Worktree"
@@ -137,6 +139,23 @@ function OutputDetails({
   result: Record<string, unknown>
   rawResult?: string
 }) {
+  if (name === 'review_coding_agent') {
+    const review = result.review && typeof result.review === 'object'
+      ? result.review as Record<string, unknown>
+      : {}
+    const files = Array.isArray(review.files)
+      ? review.files.filter((file): file is Record<string, unknown> => !!file && typeof file === 'object')
+      : []
+    const commits = Array.isArray(review.commits) ? review.commits.length : 0
+    return (
+      <>
+        <RunDetails run={result} />
+        <DetailField label="Target" value={text(review.baseBranch)} mono />
+        <DetailField label="Review" value={`${commits} commit${commits === 1 ? '' : 's'} · ${files.length} changed file${files.length === 1 ? '' : 's'}`} />
+        <DetailField label="Apply" value={review.canApply === true ? 'Ready for user approval' : text(review.message)} />
+      </>
+    )
+  }
   if (name === 'wait_for_coding_agents') {
     const runs = Array.isArray(result.runs)
       ? result.runs.filter((run): run is Record<string, unknown> =>
@@ -244,6 +263,16 @@ export function orchestrationToolSummary(msg: ToolMessage): { verb: string; deta
           typeof result.status === 'string' ? ` · ${result.status}` : ''
         }`,
       }
+    case 'review_coding_agent': {
+      const review = result.review && typeof result.review === 'object'
+        ? result.review as Record<string, unknown>
+        : {}
+      const files = Array.isArray(review.files) ? review.files.length : 0
+      return {
+        verb: failed ? 'Review failed' : running ? 'Reviewing' : 'Reviewed',
+        detail: `${runLabel(args, result)} · ${files} changed file${files === 1 ? '' : 's'}`,
+      }
+    }
     case 'stop_coding_agent':
       return {
         verb: failed ? 'Stop failed' : running ? 'Stopping' : 'Stopped',

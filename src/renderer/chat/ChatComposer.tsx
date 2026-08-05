@@ -66,7 +66,7 @@ export type ComposerPromptMode = 'plan' | 'canvas' | 'orchestrate'
 const promptModeLabel = (mode: ComposerPromptMode): string => {
   if (mode === 'plan') return 'Create plan'
   if (mode === 'canvas') return 'Manage canvas'
-  return 'Orchestrate agents'
+  return 'Parallel agents'
 }
 
 const worktreeLabel = (wt: JoinedWorktree | undefined): string =>
@@ -212,6 +212,8 @@ export interface ChatComposerProps {
   onPickThinkingLevel?: (level: CodingThinkingLevel) => void
   promptMode?: ComposerPromptMode | null
   onPromptModeChange?: (mode: ComposerPromptMode | null) => void
+  promptModeStatus?: string
+  promptModeDetails?: React.ReactNode
   autoCompactionEnabled?: boolean
   onManualCompact?: () => void
   onToggleAutoCompaction?: () => void
@@ -256,6 +258,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   onPickThinkingLevel,
   promptMode = null,
   onPromptModeChange,
+  promptModeStatus,
+  promptModeDetails,
   autoCompactionEnabled = false,
   onManualCompact,
   onToggleAutoCompaction,
@@ -304,6 +308,24 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       gap: 8,
     }),
   )
+  const promptModeDetailsBtn = React.useRef<HTMLButtonElement>(null)
+  const {
+    open: promptModeDetailsOpen,
+    setOpen: setPromptModeDetailsOpen,
+    popoverRef: promptModeDetailsPopover,
+    pos: promptModeDetailsPos,
+    portalTarget: promptModeDetailsPortalTarget,
+  } = useNodePopover(
+    promptModeDetailsBtn,
+    (rect) => ({
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 228)),
+      gap: 6,
+      height: 190,
+    }),
+  )
+  React.useEffect(() => {
+    setPromptModeDetailsOpen(false)
+  }, [promptMode, setPromptModeDetailsOpen])
   const composerCardRef = React.useRef<HTMLDivElement>(null)
 
   // Slash popup is active when the draft starts with "/" and has no spaces
@@ -443,7 +465,55 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
         )}
         {onRemoveImage && <ImageChips images={images} onRemove={onRemoveImage} />}
         <div className="flex items-start gap-2 px-3 pt-2.5 pb-1">
-          {promptMode && onPromptModeChange && (
+          {promptMode && onPromptModeChange && promptModeDetails ? (
+            <div className="inline-flex h-5 flex-shrink-0 items-center rounded-md bg-hover text-[10px] text-secondary">
+              <button
+                ref={promptModeDetailsBtn}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setPromptModeDetailsOpen((open) => !open)}
+                className="flex h-full items-center gap-1 px-1.5 hover:text-primary"
+                aria-label={`Open ${promptModeLabel(promptMode)} settings`}
+                aria-expanded={promptModeDetailsOpen}
+                title={`${promptModeLabel(promptMode)} settings`}
+              >
+                {promptMode === 'plan'
+                  ? <ClipboardText size={11} />
+                  : promptMode === 'canvas'
+                    ? <BoundingBox size={11} />
+                    : <GitBranch size={11} />}
+                <span>{promptModeLabel(promptMode)}</span>
+                {promptModeStatus && (
+                  <span className="text-muted">· {promptModeStatus}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setPromptModeDetailsOpen(false)
+                  onPromptModeChange(null)
+                  taRef.current?.focus()
+                }}
+                className="flex h-full items-center px-1.5 text-muted hover:text-primary"
+                aria-label={`Remove ${promptModeLabel(promptMode)} mode`}
+                title="Remove prompt mode"
+              >
+                <X size={9} />
+              </button>
+              {promptModeDetailsOpen && (
+                <NodePopover
+                  popoverRef={promptModeDetailsPopover}
+                  pos={promptModeDetailsPos}
+                  portalTarget={promptModeDetailsPortalTarget}
+                  width={220}
+                  bodyClassName="p-3"
+                >
+                  {promptModeDetails}
+                </NodePopover>
+              )}
+            </div>
+          ) : promptMode && onPromptModeChange ? (
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
@@ -463,7 +533,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               <span>{promptModeLabel(promptMode)}</span>
               <X size={10} className="text-muted" />
             </button>
-          )}
+          ) : null}
           <textarea
             ref={taRef}
             rows={1}
@@ -624,8 +694,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                     >
                       <GitBranch size={13} className="flex-shrink-0 text-muted" />
                       <span className="flex-1">
-                        <span className="block text-[12px]">Orchestrate agents</span>
-                        <span className="block text-[10px] text-muted">Create and supervise coding agents</span>
+                        <span className="block text-[12px]">Parallel agents</span>
+                        <span className="block text-[10px] text-muted">Delegate work, then review before applying</span>
                       </span>
                     </MenuRow>
                   </div>

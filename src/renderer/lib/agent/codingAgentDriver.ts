@@ -22,6 +22,7 @@ import {
   type CodingAgentRunStatus,
 } from '../../../shared/codingAgentRuns'
 import { resolveDriverAgentCli } from './agentCliHooks'
+import { reviewCodingAgentWorktree } from './codingAgentIntegration'
 import type { AgentId } from '../../../shared/agents'
 import {
   actionableCodingAgentRunIds,
@@ -295,10 +296,12 @@ export async function handleCodingAgentMethod(
     if (stoppedMissionOwners.has(ownerKey)) return { ok: false, error: 'mission-deleted' }
     const requestedAgentId = args.agentId === undefined ? '' : parseCodingAgentId(args.agentId)
     const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
+    const requestedTitle = typeof args.title === 'string' ? args.title.trim() : ''
     if (args.agentId !== undefined && !requestedAgentId) {
       return { ok: false, error: 'unsupported-agent' }
     }
     if (!prompt) return { ok: false, error: 'prompt-required' }
+    if (requestedTitle.length > 80) return { ok: false, error: 'title-too-long' }
     if (prompt.includes('\0')) return { ok: false, error: 'invalid-prompt' }
     if (prompt.length > 50_000) return { ok: false, error: 'prompt-too-long' }
     const active = allSnapshots(workspaceId, ownerPanelId).filter((run) =>
@@ -398,10 +401,18 @@ export async function handleCodingAgentMethod(
     }
 
     const runId = crypto.randomUUID()
+    const title = requestedTitle || prompt.replace(/\s+/g, ' ').slice(0, 54)
     const placementGroupId = target.worktreeId
       ? `coding-agent:${target.worktreeId}`
       : 'coding-agent:primary'
-    const launch = { runId, agentId, prompt, ownerPanelId }
+    const launch = {
+      runId,
+      agentId,
+      title,
+      prompt,
+      ownerPanelId,
+      ownsWorktree: Boolean(createdWorktree),
+    }
     const panelId = useAppStore.getState().createTerminal(
       workspaceId,
       undefined,
@@ -420,9 +431,6 @@ export async function handleCodingAgentMethod(
         worktreeId: target.worktreeId,
       })
     }
-    const label = prompt.replace(/\s+/g, ' ').slice(0, 54)
-    store.updatePanelTitle(workspaceId, panelId, `${codingAgentDisplayName(agentId)} · ${label}`)
-
     // Mission workers are processes, not a React mount side effect. Starting
     // the existing terminal lifecycle here keeps them alive in inactive
     // workspaces/canvases; TerminalPanel later attaches to the same entry.
@@ -439,6 +447,7 @@ export async function handleCodingAgentMethod(
         id: runId,
         panelId,
         agentId,
+        title,
         status: 'starting',
       },
     }
@@ -456,6 +465,24 @@ export async function handleCodingAgentMethod(
         ...compactCodingAgentSnapshot(snapshot),
         recentOutput: terminalText(snapshot.panelId),
       },
+    }
+  }
+
+  if (name === 'review') {
+    const snapshot = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
+    if (!snapshot) return { ok: false, error: 'coding-agent-not-found' }
+    if (!snapshot.worktreeId) return { ok: false, error: 'coding-agent-not-isolated' }
+    try {
+      const review = await reviewCodingAgentWorktree(workspaceId, snapshot.panelId)
+      return {
+        ok: true,
+        result: { ...compactCodingAgentSnapshot(snapshot), review },
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? `review-failed: ${error.message}` : 'review-failed',
+      }
     }
   }
 

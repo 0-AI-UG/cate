@@ -100,6 +100,7 @@ export interface UseCodingChatParams {
   /** Controlled model-picker open state (the readiness banner opens it). */
   modelPickerOpen: boolean
   onModelPickerOpenChange: (open: boolean) => void
+  promptModeCommands?: Partial<Record<ComposerPromptMode, string>>
   composerExtras: CodingChatComposerExtras
 }
 
@@ -114,6 +115,7 @@ export function useCodingChat({
   onSlashOpen,
   modelPickerOpen,
   onModelPickerOpenChange,
+  promptModeCommands,
   composerExtras,
 }: UseCodingChatParams) {
   const {
@@ -467,7 +469,9 @@ export function useCodingChat({
     promptModeChangeInFlight.current = true
     try {
       if (activePromptMode) await codingClient.prompt(agentKey, `/${activePromptMode}`)
-      if (mode) await codingClient.prompt(agentKey, `/${mode}`)
+      if (mode) {
+        await codingClient.prompt(agentKey, promptModeCommands?.[mode]?.trim() || `/${mode}`)
+      }
     }
     catch (err) {
       setPendingPromptMode(null)
@@ -475,7 +479,16 @@ export function useCodingChat({
     } finally {
       promptModeChangeInFlight.current = false
     }
-  }, [activePromptMode, agentKey])
+  }, [activePromptMode, agentKey, promptModeCommands])
+
+  const configurePromptMode = useCallback(async (mode: ComposerPromptMode, command: string) => {
+    if (!agentKey || promptMode !== mode) return
+    try {
+      await codingClient.prompt(agentKey, command)
+    } catch (err) {
+      log.warn('[CateAgentPanel] configure prompt mode failed', err)
+    }
+  }, [agentKey, promptMode])
 
   const handleImplementPlan = useCallback(async () => {
     if (!agentKey) return
@@ -683,6 +696,7 @@ export function useCodingChat({
     scrollKeyBase: agentKey ?? '',
     // composer-facing
     composerProps,
+    configurePromptMode,
     // banner / state
     readiness,
     composerDisabled,

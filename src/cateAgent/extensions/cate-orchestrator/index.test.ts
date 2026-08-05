@@ -6,6 +6,7 @@ const TOOL_NAMES = [
   "send_to_coding_agent",
   "wait_for_coding_agents",
   "inspect_coding_agent",
+  "review_coding_agent",
   "stop_coding_agent",
 ]
 
@@ -58,6 +59,8 @@ describe("cate-orchestrator", () => {
       .toMatchObject({ minimum: 15, maximum: 120, default: 60 })
     expect(tools.get("create_coding_agent").parameters.properties.agentId.anyOf)
       .toEqual([{ const: "codex", type: "string" }, { const: "pi", type: "string" }])
+    expect(tools.get("create_coding_agent").parameters.properties.title)
+      .toMatchObject({ minLength: 1, maxLength: 80 })
     expect(tools.get("wait_for_coding_agents").parameters.required).toContain("runIds")
   })
 
@@ -127,5 +130,21 @@ describe("cate-orchestrator", () => {
     const guidelines = registeredTools().get("create_coding_agent").promptGuidelines
     expect(guidelines.join("\n")).toContain("failureReason")
     expect(guidelines.join("\n")).toContain("different registered agentId")
+  })
+
+  it("reviews worker changes through the read-only lifecycle method", async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ result: { review: { canApply: true } } }),
+    }))
+    vi.stubGlobal("fetch", fetch)
+
+    await registeredTools().get("review_coding_agent").execute("call-1", { runId: "run-1" })
+
+    expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({
+      method: "cate.codingAgent.review",
+      args: { runId: "run-1" },
+    })
   })
 })

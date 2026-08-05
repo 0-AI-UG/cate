@@ -238,6 +238,21 @@ export interface ElectronAPI {
     untracked: number
   } | null>
 
+  /** Review committed and uncommitted changes in a worktree relative to the
+   *  target branch before offering integration. */
+  gitWorktreeReview(worktreePath: string, baseBranch: string, workspaceId: string): Promise<{
+    branch: string
+    baseBranch: string
+    dirty: boolean
+    canApply: boolean
+    commits: Array<{ hash: string; message: string }>
+    files: Array<{ path: string; status: string }>
+    workingFiles: string[]
+    diff: string
+    truncated: boolean
+    message?: string
+  }>
+
   /** Fetch + checkout `toBranch` + merge `fromBranch` into it. Returns
    *  `{ ok: false, conflict }` on merge failure so the renderer can show a
    *  conflict prompt instead of throwing. */

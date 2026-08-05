@@ -78,5 +78,8 @@ describe('createBundledExtensionInstaller', () => {
     expect(builderConfig).toMatch(
       /extraResources:[\s\S]*from: src\/cateAgent\/extensions\s+to: cate-extensions\s+filter:\s+- "\*\*\/\*"/,
     )
+    expect(builderConfig).toMatch(
+      /from: node_modules\/@earendil-works\/pi-coding-agent\/examples\/extensions\/subagent[\s\S]*to: cate-subagent-runtime[\s\S]*- "index\.ts"[\s\S]*- "agents\.ts"/,
+    )
   })
 })

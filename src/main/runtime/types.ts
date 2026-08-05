@@ -386,6 +386,19 @@ export interface WorktreeStatusResult {
   untracked: number
 }
 
+export interface WorktreeReviewResult {
+  branch: string
+  baseBranch: string
+  dirty: boolean
+  canApply: boolean
+  commits: Array<{ hash: string; message: string }>
+  files: Array<{ path: string; status: string }>
+  workingFiles: string[]
+  diff: string
+  truncated: boolean
+  message?: string
+}
+
 /** Lightweight poll result for the sidebar git monitor (git-monitor.ts). Mirrors
  *  exactly what the monitor needs: the current branch + dirty flag it broadcasts
  *  (GIT_BRANCH_UPDATE), plus the local branch name list it diffs to detect a
@@ -471,6 +484,7 @@ export interface VcsHost {
   worktreeRemove(repoCwd: string, worktreePath: string, options?: { force?: boolean }, access?: FileAccessContext): Promise<void>
   worktreePrune(repoCwd: string, access?: FileAccessContext): Promise<{ output: string }>
   worktreeStatus(worktreePath: string, access?: FileAccessContext): Promise<WorktreeStatusResult | null>
+  worktreeReview(worktreePath: string, baseBranch: string, access?: FileAccessContext): Promise<WorktreeReviewResult>
   worktreeMergeTo(repoCwd: string, fromBranch: string, toBranch: string, access?: FileAccessContext): Promise<MergeResult>
   worktreeUpdateFrom(worktreePath: string, fromBranch: string, access?: FileAccessContext): Promise<MergeResult>
   createPr(worktreePath: string, branch: string, access?: FileAccessContext): Promise<CreatePrResult>

@@ -415,7 +415,7 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
   })
 
   it('maps every native coding-agent method to its dedicated scope', () => {
-    for (const verb of ['create', 'send', 'wait', 'inspect', 'stop']) {
+    for (const verb of ['create', 'send', 'wait', 'inspect', 'review', 'stop']) {
       expect(requiredScopeFor(`cate.codingAgent.${verb}`)).toBe('coding-agent')
     }
   })

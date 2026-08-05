@@ -5,25 +5,35 @@ export interface CodingAgentRun {
   id: string
   agentId: AgentId
   panelId: string
+  /** Short user-facing responsibility, e.g. “Integration tests”. */
+  title?: string
   /** Cate Agent panel/session that owns and may control this run. */
   ownerPanelId: string
   prompt: string
   createdAt: number
   worktreeId?: string
+  /** True only when this mission created the worktree and may offer discard. */
+  ownsWorktree?: boolean
   /** Follow-up prompts sent after the initial task. Kept with panel state so
    *  mission context survives a Cate restart. */
   followUps?: Array<{ prompt: string; sentAt: number }>
   endedAt?: number
   exitCode?: number
   stoppedAt?: number
+  appliedAt?: number
+  appliedToBranch?: string
+  /** User explicitly chose to retain the isolated branch for later. */
+  keptAt?: number
 }
 
 /** One-shot launch data consumed when the terminal's PTY is first spawned. */
 export interface CodingAgentLaunch {
   runId: string
   agentId: AgentId
+  title?: string
   prompt: string
   ownerPanelId: string
+  ownsWorktree?: boolean
 }
 
 export type CodingAgentRunStatus =

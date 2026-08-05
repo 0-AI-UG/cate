@@ -140,6 +140,7 @@ export const Methods = {
   vcsWorktreeRemove: 'vcs.worktreeRemove',
   vcsWorktreePrune: 'vcs.worktreePrune',
   vcsWorktreeStatus: 'vcs.worktreeStatus',
+  vcsWorktreeReview: 'vcs.worktreeReview',
   vcsWorktreeMergeTo: 'vcs.worktreeMergeTo',
   vcsWorktreeUpdateFrom: 'vcs.worktreeUpdateFrom',
   vcsCreatePr: 'vcs.createPr',

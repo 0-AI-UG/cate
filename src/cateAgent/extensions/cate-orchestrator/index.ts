@@ -11,6 +11,7 @@ const TOOL_NAMES = [
   "send_to_coding_agent",
   "wait_for_coding_agents",
   "inspect_coding_agent",
+  "review_coding_agent",
   "stop_coding_agent",
 ] as const
 const TOOL_NAME_SET: ReadonlySet<string> = new Set(TOOL_NAMES)
@@ -106,13 +107,18 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Delegate bounded implementation or investigation tasks when parallel work materially helps; keep architectural ownership and final verification yourself.",
       "Give each worker a self-contained prompt with scope, constraints, and concrete success criteria. Never ask a worker to create more workers.",
+      "Give each worker a short role title that describes its responsibility, such as API implementation or Integration tests.",
+      "For isolated worktrees, ask the worker to run relevant checks and commit completed changes before finishing so Cate can review and integrate the branch safely.",
       "After delegation, call wait_for_coding_agents once and let it block until worker state changes. Do not repeatedly inspect a worker that is still working; inspect after a change or timeout, then send a targeted follow-up only when needed.",
       "Never create more than five live workers. Reuse a run with send_to_coding_agent when follow-up belongs to the same task.",
       "Respect followUpSupported in each run result; create a fresh run when that capability is false.",
       "When a run fails, use its failureReason or inspect it for full output. If the failure is specific to that CLI, such as quota, authentication, or service availability, create a fresh run with a different registered agentId.",
+      "When an isolated worker finishes, call review_coding_agent and summarize its commits, changed files, checks, and any uncommitted work. Never claim the mission is integrated merely because the worker process finished.",
+      "Recommend Apply, Keep worktree, or Discard based on the review, then let the user make that choice from the worker card. Do not imply that reviewing changed the primary checkout.",
     ],
     parameters: Type.Object({
       agentId: Type.Optional(agentIdSchema()),
+      title: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: "Short responsibility shown to the user, such as Integration tests." })),
       prompt: Type.String({ minLength: 1, description: "Self-contained task, constraints, and success criteria." }),
       worktreeId: Type.Optional(
         Type.String({ description: "Registered Cate worktree id. Omit to inherit this Cate Agent panel's worktree or use the primary checkout." }),
@@ -165,6 +171,17 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({ runId: Type.String() }),
     async execute(_id, params, signal) {
       return toolResult(await invoke("cate.codingAgent.inspect", params, signal))
+    },
+  })
+
+  pi.registerTool({
+    name: "review_coding_agent",
+    label: "Review coding agent changes",
+    description:
+      "Review an isolated worker branch relative to the current primary branch. Returns commits, changed files, a bounded diff, and whether the branch is clean enough to apply. This is read-only and never merges changes.",
+    parameters: Type.Object({ runId: Type.String() }),
+    async execute(_id, params, signal) {
+      return toolResult(await invoke("cate.codingAgent.review", params, signal))
     },
   })
 

@@ -17,6 +17,7 @@ const submitTerminalText = vi.hoisted(() => vi.fn(async () => true))
 const terminate = vi.hoisted(() => vi.fn())
 const createWorktreeForWorkspace = vi.hoisted(() => vi.fn())
 const discardCreatedWorktreeForWorkspace = vi.hoisted(() => vi.fn())
+const reviewCodingAgentWorktree = vi.hoisted(() => vi.fn())
 
 vi.mock('../../stores/appStore', () => ({
   useAppStore: {
@@ -66,6 +67,7 @@ vi.mock('../../stores/useWorktreeActions', () => ({
   discardCreatedWorktreeForWorkspace,
 }))
 vi.mock('./agentCliHooks', () => ({ resolveDriverAgentCli }))
+vi.mock('./codingAgentIntegration', () => ({ reviewCodingAgentWorktree }))
 
 import { AGENTS } from '../../../shared/agents'
 import { codingAgentSnapshot, handleCodingAgentMethod } from './codingAgentDriver'
@@ -94,21 +96,30 @@ describe('codingAgentDriver mission integration', () => {
         _position: unknown,
         placement: { placementGroupId: string },
         cwd: string,
-        launch: { runId: string; agentId: string; prompt: string; ownerPanelId: string },
+        launch: {
+          runId: string
+          agentId: string
+          title?: string
+          prompt: string
+          ownerPanelId: string
+          ownsWorktree?: boolean
+        },
       ) => {
         panels.worker = {
           id: 'worker',
           type: 'terminal',
-          title: 'Terminal',
+          title: launch.title ?? 'Terminal',
           cwd,
           placementGroupId: placement.placementGroupId,
           codingAgentLaunch: launch,
           codingAgentRun: {
             id: launch.runId,
             agentId: launch.agentId,
+            title: launch.title,
             panelId: 'worker',
             ownerPanelId: launch.ownerPanelId,
             prompt: launch.prompt,
+            ownsWorktree: launch.ownsWorktree,
             createdAt: 1,
           },
         }
@@ -129,6 +140,7 @@ describe('codingAgentDriver mission integration', () => {
     createWorktreeForWorkspace.mockReset()
     discardCreatedWorktreeForWorkspace.mockReset()
     discardCreatedWorktreeForWorkspace.mockResolvedValue(undefined)
+    reviewCodingAgentWorktree.mockReset()
   })
 
   it('automatically selects a hook-ready canonical agent and starts its PTY headlessly', async () => {
@@ -167,6 +179,26 @@ describe('codingAgentDriver mission integration', () => {
       cwd: '/repo',
       codingAgentLaunch: expect.objectContaining({ ownerPanelId: 'supervisor-1' }),
     }))
+  })
+
+  it('keeps a short responsibility title with the worker launch and snapshot', async () => {
+    const outcome = await handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.create',
+      { title: 'API implementation', prompt: 'Implement it' },
+    )
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      result: { title: 'API implementation' },
+    })
+    expect(state.app.createTerminal).toHaveBeenCalledWith(
+      'ws', undefined, undefined, expect.any(Object), '/repo',
+      expect.objectContaining({ title: 'API implementation', ownsWorktree: false }),
+    )
+    expect(state.app.workspaces[0].panels.worker.title).toBe('API implementation')
+    expect(state.app.updatePanelTitle).not.toHaveBeenCalled()
   })
 
   it('rejects a non-ready explicit agent before creating a terminal', async () => {
@@ -432,6 +464,34 @@ describe('codingAgentDriver mission integration', () => {
     expect(state.app.workspaces[0].panels.worker.codingAgentRun.followUps).toEqual([
       { prompt: 'Now test it', sentAt: expect.any(Number) },
     ])
+  })
+
+  it('returns a read-only review for an owned isolated worker', async () => {
+    state.app.workspaces[0].panels.worker = {
+      id: 'worker',
+      type: 'terminal',
+      worktreeId: 'wt-1',
+      codingAgentRun: {
+        id: 'run-1',
+        agentId: 'codex',
+        panelId: 'worker',
+        ownerPanelId: 'supervisor-1',
+        prompt: 'Implement it',
+        worktreeId: 'wt-1',
+        createdAt: 1,
+      },
+    }
+    reviewCodingAgentWorktree.mockResolvedValue({
+      branch: 'agent/api', baseBranch: 'main', canApply: true, commits: [], files: [],
+    })
+
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor-1', 'cate.codingAgent.review', { runId: 'run-1' },
+    )).resolves.toMatchObject({
+      ok: true,
+      result: { id: 'run-1', review: { canApply: true } },
+    })
+    expect(reviewCodingAgentWorktree).toHaveBeenCalledWith('ws', 'worker')
   })
 
   it('enforces follow-up capability and terminal readiness', async () => {

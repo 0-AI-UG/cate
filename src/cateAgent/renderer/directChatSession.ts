@@ -16,6 +16,7 @@ export interface DirectChatTurnOptions {
   thinkingLevel?: CodingThinkingLevel
   autoCompactionEnabled?: boolean
   promptMode?: ComposerPromptMode
+  promptModeCommand?: string
 }
 
 const creating = new Map<string, Promise<boolean>>()
@@ -111,7 +112,12 @@ export async function promptDirectChat(
 
   try {
     await Promise.all(controlUpdates)
-    if (options.promptMode) await codingClient.prompt(panelId, `/${options.promptMode}`)
+    if (options.promptMode) {
+      await codingClient.prompt(
+        panelId,
+        options.promptModeCommand?.trim() || `/${options.promptMode}`,
+      )
+    }
     if (!appendedOptimistically) store.appendUser(panelId, text)
     await codingClient.prompt(panelId, text, options.images)
     return true

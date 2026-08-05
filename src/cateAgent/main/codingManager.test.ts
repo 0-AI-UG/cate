@@ -19,6 +19,7 @@ vi.mock('../../shared/runtimeLocator', () => ({
 vi.mock('./piRpcClient', () => ({ PiRpcClient: vi.fn() }))
 vi.mock('./installPlanMode', () => ({ installPlanModeExtension: vi.fn() }))
 vi.mock('./installCanvasMode', () => ({ installCanvasModeExtension: vi.fn() }))
+vi.mock('./installSubagent', () => ({ installSubagentExtension: vi.fn() }))
 vi.mock('./installAskUser', () => ({ installAskUserExtension: vi.fn() }))
 vi.mock('./installOrchestrator', () => ({ installOrchestratorExtension: vi.fn() }))
 vi.mock('./installMcpAdapter', () => ({ installMcpAdapter: vi.fn() }))
@@ -44,6 +45,7 @@ import type { AuthManager } from './authManager'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import { PiRpcClient } from './piRpcClient'
 import { prepareCodingDir } from './codingDir'
+import { installSubagentExtension } from './installSubagent'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
 import { CODING_EVENT } from '../../shared/ipc-channels'
 import { workspaceCateApi } from '../../main/extensions/workspaceCateApi'
@@ -104,6 +106,7 @@ describe('CodingManager worktree skill preparation', () => {
     )
 
     expect(syncWorkspaceSkills).toHaveBeenCalledWith('/repo/base', '/repo/worktree')
+    expect(installSubagentExtension).toHaveBeenCalledWith(runtime, '/repo/worktree')
     expect(vi.mocked(syncWorkspaceSkills).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(prepareCodingDir).mock.invocationCallOrder[0],
     )

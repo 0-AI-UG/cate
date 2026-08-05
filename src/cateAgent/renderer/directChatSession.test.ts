@@ -37,6 +37,23 @@ describe('promptDirectChat', () => {
     ])
     await expect(sending).resolves.toBe(true)
   })
+
+  it('enables a prompt mode with its selected extension configuration', async () => {
+    await promptDirectChat(
+      chat,
+      'workspace-1',
+      '/repo',
+      'Inspect this canvas',
+      { promptMode: 'canvas', promptModeCommand: '/canvas inspect' },
+    )
+
+    expect(window.electronAPI.agentPrompt).toHaveBeenNthCalledWith(
+      1,
+      directAgentKey(chat.id),
+      '/canvas inspect',
+      undefined,
+    )
+  })
 })
 
 describe('disposeDirectChatSession', () => {

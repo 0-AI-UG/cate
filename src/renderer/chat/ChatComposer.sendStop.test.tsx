@@ -108,11 +108,22 @@ describe('ChatComposer send/stop', () => {
     act(() => createPlan.click())
     expect(onPromptModeChange).toHaveBeenCalledWith('plan')
 
-    renderComposer({ promptMode: 'plan', onPromptModeChange })
+    renderComposer({
+      promptMode: 'plan',
+      onPromptModeChange,
+      promptModeStatus: '2 scouts',
+      promptModeDetails: <div data-testid="plan-settings">Plan settings</div>,
+    })
     const planChip = button('Remove Create plan mode')
     expect(planChip).toBeTruthy()
-    expect(planChip?.parentElement?.querySelector('textarea')).toBe(host.querySelector('textarea'))
+    expect(planChip?.parentElement?.parentElement?.querySelector('textarea')).toBe(host.querySelector('textarea'))
     expect(host.textContent).toContain('Create plan')
+    expect(host.textContent).toContain('2 scouts')
+
+    act(() => button('Open Create plan settings')?.click())
+    const settings = document.body.querySelector<HTMLElement>('[data-testid="plan-settings"]')
+    expect(settings).toBeTruthy()
+    expect(host.contains(settings)).toBe(false)
   })
 
   it('selects canvas mode from the plus menu and renders it inline', () => {
@@ -127,9 +138,20 @@ describe('ChatComposer send/stop', () => {
     act(() => manageCanvas.click())
     expect(onPromptModeChange).toHaveBeenCalledWith('canvas')
 
-    renderComposer({ promptMode: 'canvas', onPromptModeChange })
+    renderComposer({
+      promptMode: 'canvas',
+      onPromptModeChange,
+      promptModeStatus: 'Existing panels',
+      promptModeDetails: <div data-testid="canvas-settings">Canvas settings</div>,
+    })
     expect(button('Remove Manage canvas mode')).toBeTruthy()
     expect(host.textContent).toContain('Manage canvas')
+    expect(host.textContent).toContain('Existing panels')
+
+    act(() => button('Open Manage canvas settings')?.click())
+    const settings = document.body.querySelector<HTMLElement>('[data-testid="canvas-settings"]')
+    expect(settings).toBeTruthy()
+    expect(host.contains(settings)).toBe(false)
   })
 
   it('selects orchestration mode from the plus menu and renders it inline', () => {
@@ -138,15 +160,30 @@ describe('ChatComposer send/stop', () => {
 
     act(() => button('Add prompt mode')?.click())
     const orchestrate = Array.from(document.body.querySelectorAll('button'))
-      .find((candidate) => candidate.textContent?.includes('Orchestrate agents')) as HTMLButtonElement
+      .find((candidate) => candidate.textContent?.includes('Parallel agents')) as HTMLButtonElement
     expect(orchestrate).toBeTruthy()
 
     act(() => orchestrate.click())
     expect(onPromptModeChange).toHaveBeenCalledWith('orchestrate')
 
-    renderComposer({ promptMode: 'orchestrate', onPromptModeChange })
-    expect(button('Remove Orchestrate agents mode')).toBeTruthy()
-    expect(host.textContent).toContain('Orchestrate agents')
+    renderComposer({
+      promptMode: 'orchestrate',
+      onPromptModeChange,
+      promptModeStatus: '2/6 hooks',
+      promptModeDetails: <div data-testid="orchestration-details">Hook details</div>,
+    })
+    act(() => button('Open Parallel agents settings')?.click())
+    const details = document.body.querySelector<HTMLElement>('[data-testid="orchestration-details"]')
+    expect(details).toBeTruthy()
+    expect(host.contains(details)).toBe(false)
+    expect(details?.parentElement?.classList.contains('fixed')).toBe(true)
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(button('Remove Parallel agents mode')).toBeTruthy()
+    expect(host.textContent).toContain('Parallel agents')
+    expect(host.textContent).toContain('2/6 hooks')
+
+    act(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(document.body.querySelector('[data-testid="orchestration-details"]')).toBeNull()
   })
 
 })

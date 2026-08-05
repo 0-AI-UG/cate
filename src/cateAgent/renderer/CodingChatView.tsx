@@ -15,12 +15,30 @@
 // readyByKey ref, so it too arrives as a prop.
 // =============================================================================
 
+import { useState } from 'react'
 import { ChatThread } from './ChatThread'
 import { ChatComposer } from '../../renderer/chat/ChatComposer'
 import { ExtensionDialog, ExtensionWidget, QueueBadges } from './CateAgentPanelChrome'
 import { useCodingChat, type CodingChatComposerExtras } from './useCodingChat'
 import type { CodingSlashCommand } from '../../shared/types'
 import { CateAgentEmptyState } from './CateAgentEmptyState'
+import { OrchestrationPreflight, useOrchestrationPreflight } from './OrchestrationPreflight'
+import {
+  CanvasModeSettings,
+  DEFAULT_CANVAS_MODE_CONFIG,
+  canvasModeEnableCommand,
+  canvasModeSummary,
+  canvasModeUpdateCommand,
+  type CanvasModeConfig,
+} from './CanvasModeSettings'
+import {
+  PlanModeSettings,
+  DEFAULT_PLAN_MODE_CONFIG,
+  planModeEnableCommand,
+  planModeSummary,
+  planModeUpdateCommand,
+  type PlanModeConfig,
+} from './PlanModeSettings'
 
 export type { CodingChatComposerExtras }
 
@@ -68,6 +86,14 @@ export function CodingChatView({
   composerExtras,
 }: CodingChatViewProps) {
   const { refreshModels, openProviderSettings } = composerExtras
+  const [canvasModeConfigByAgent, setCanvasModeConfigByAgent] = useState<Record<string, CanvasModeConfig>>({})
+  const [planModeConfigByAgent, setPlanModeConfigByAgent] = useState<Record<string, PlanModeConfig>>({})
+  const canvasModeConfig = agentKey
+    ? canvasModeConfigByAgent[agentKey] ?? DEFAULT_CANVAS_MODE_CONFIG
+    : DEFAULT_CANVAS_MODE_CONFIG
+  const planModeConfig = agentKey
+    ? planModeConfigByAgent[agentKey] ?? DEFAULT_PLAN_MODE_CONFIG
+    : DEFAULT_PLAN_MODE_CONFIG
 
   const {
     messages,
@@ -91,6 +117,7 @@ export function CodingChatView({
     extensionWidgets,
     steeringQueue,
     followUpQueue,
+    configurePromptMode,
   } = useCodingChat({
     agentKey,
     workspaceId,
@@ -102,8 +129,43 @@ export function CodingChatView({
     onSlashOpen,
     modelPickerOpen,
     onModelPickerOpenChange,
+    promptModeCommands: {
+      plan: planModeEnableCommand(planModeConfig),
+      canvas: canvasModeEnableCommand(canvasModeConfig),
+    },
     composerExtras,
   })
+  const orchestrationPreflight = useOrchestrationPreflight({
+    active: composerProps.promptMode === 'orchestrate',
+    workspaceId,
+    rootPath,
+  })
+  const updateCanvasModeConfig = (next: CanvasModeConfig): void => {
+    if (agentKey) {
+      setCanvasModeConfigByAgent((current) => ({ ...current, [agentKey]: next }))
+    }
+    void configurePromptMode('canvas', canvasModeUpdateCommand(next))
+  }
+  const updatePlanModeConfig = (next: PlanModeConfig): void => {
+    if (agentKey) {
+      setPlanModeConfigByAgent((current) => ({ ...current, [agentKey]: next }))
+    }
+    void configurePromptMode('plan', planModeUpdateCommand(next))
+  }
+  const promptModeStatus = composerProps.promptMode === 'orchestrate'
+    ? orchestrationPreflight.status ?? undefined
+    : composerProps.promptMode === 'plan'
+      ? planModeSummary(planModeConfig)
+      : composerProps.promptMode === 'canvas'
+        ? canvasModeSummary(canvasModeConfig)
+        : undefined
+  const promptModeDetails = composerProps.promptMode === 'orchestrate'
+    ? <OrchestrationPreflight state={orchestrationPreflight} />
+    : composerProps.promptMode === 'plan'
+      ? <PlanModeSettings config={planModeConfig} onChange={updatePlanModeConfig} />
+      : composerProps.promptMode === 'canvas'
+        ? <CanvasModeSettings config={canvasModeConfig} onChange={updateCanvasModeConfig} />
+        : undefined
 
   // ---------------------------------------------------------------------------
   // Render
@@ -150,6 +212,8 @@ export function CodingChatView({
         <CateAgentEmptyState>
           <ChatComposer
             {...composerProps}
+            promptModeStatus={promptModeStatus}
+            promptModeDetails={promptModeDetails}
             placeholder={composerPlaceholder ?? 'Ask the agent anything about this workspace…'}
           />
         </CateAgentEmptyState>
@@ -175,7 +239,12 @@ export function CodingChatView({
             </div>
           )}
           <div className="px-3 py-2 shrink-0">
-            <ChatComposer {...composerProps} placeholder={composerPlaceholder} />
+            <ChatComposer
+              {...composerProps}
+              promptModeStatus={promptModeStatus}
+              promptModeDetails={promptModeDetails}
+              placeholder={composerPlaceholder}
+            />
           </div>
         </>
       )}

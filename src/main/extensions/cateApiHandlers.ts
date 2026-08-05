@@ -483,6 +483,7 @@ export function requiredScopeFor(method: string): string | null | undefined {
     case 'cate.codingAgent.send':
     case 'cate.codingAgent.wait':
     case 'cate.codingAgent.inspect':
+    case 'cate.codingAgent.review':
     case 'cate.codingAgent.stop':
       return 'coding-agent'
     case 'cate.editor.openFile':

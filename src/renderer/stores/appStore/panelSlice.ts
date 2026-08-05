@@ -83,13 +83,17 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     createTerminal(workspaceId, initialInput?, position?, placement?, cwd?, codingAgentLaunch?) {
       const panelId = generateId()
+      const missionTitle = codingAgentLaunch?.title?.trim()
+      const siblingPanels = get().workspaces.find((workspace) => workspace.id === workspaceId)?.panels ?? {}
       // Auto-number terminal titles so `cate ask "Terminal 2"` and similar
       // inter-panel calls address each one unambiguously — unique across ALL
       // windows, including terminals detached into other windows.
       const panel: PanelState = {
         id: panelId,
         type: 'terminal',
-        title: nextNumberedTitle(get, workspaceId, 'terminal', 'Terminal'),
+        title: missionTitle
+          ? disambiguateTitle(missionTitle, panelId, siblingPanels)
+          : nextNumberedTitle(get, workspaceId, 'terminal', 'Terminal'),
         isDirty: false,
         ...(cwd ? { cwd } : {}),
         ...(codingAgentLaunch ? {
@@ -98,8 +102,10 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
             id: codingAgentLaunch.runId,
             agentId: codingAgentLaunch.agentId,
             panelId,
+            title: codingAgentLaunch.title,
             ownerPanelId: codingAgentLaunch.ownerPanelId,
             prompt: codingAgentLaunch.prompt,
+            ownsWorktree: codingAgentLaunch.ownsWorktree,
             createdAt: Date.now(),
           },
         } : {}),
@@ -266,7 +272,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         workspaces: state.workspaces.map((ws) => {
           if (ws.id !== workspaceId) return ws
           const panel = ws.panels[panelId]
-          if (!panel || panel.titleUserOverridden) return ws
+          if (!panel || panel.titleUserOverridden || panel.codingAgentRun) return ws
           const final = disambiguateTitle(title, panelId, ws.panels)
           if (panel.title === final) return ws
           return { ...ws, panels: { ...ws.panels, [panelId]: { ...panel, title: final } } }
