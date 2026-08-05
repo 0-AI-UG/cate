@@ -1,5 +1,5 @@
 // =============================================================================
-// Path validation — prevent path traversal and restrict filesystem access
+// Path validation  prevent path traversal and restrict filesystem access
 // to registered workspace roots and the system temp directory.
 // =============================================================================
 
@@ -22,6 +22,33 @@ export function pathCompareKey(p: string, platform: NodeJS.Platform = process.pl
   return platform === 'win32' ? p.toLowerCase() : p
 }
 
+// -----------------------------------------------------------------------------
+// Windows network-drive helpers
+// -----------------------------------------------------------------------------
+
+/**
+ * Strip the Windows long-path prefix (\\?\) so that paths returned by
+ * `realpathSync.native` / `fs.realpath` (which may add this prefix) can be
+ * compared with paths from `path.resolve` (which never adds it).
+ *
+ *   \\?\UNC\server\share\foo  ->  \\server\share\foo
+ *   \\?\C:\foo                ->  C:\foo
+ *
+ * On non-Windows platforms this is a no-op.
+ */
+function normalizeForComparison(p: string): string {
+  if (process.platform !== 'win32') return p
+  if (p.startsWith('\\\\?\\UNC\\')) {
+    // \\?\UNC\server\share -> \\server\share  (keep leading double-backslash)
+    return '\\' + p.slice(7)
+  }
+  if (p.startsWith('\\\\?\\')) {
+    // \\?\C:\foo -> C:\foo
+    return p.slice(4)
+  }
+  return p
+}
+
 // Persistent per-window grants for files the user explicitly chose outside
 // the workspace roots (e.g. via the native Save-As dialog). Unlike scoped
 // write allowances, these:
@@ -41,13 +68,21 @@ const persistentFileGrants = new Map<number, Set<string>>()
 // form would make the strict check reject paths that are genuinely inside the
 // root, so each root is stored with every canonical form we can compute.
 function canonicalForms(resolved: string): string[] {
+  const forms = new Set<string>()
+  forms.add(resolved)
+  forms.add(normalizeForComparison(resolved))
+
   try {
     const real = realpathSync.native(resolved)
-    if (pathCompareKey(real) !== pathCompareKey(resolved)) return [resolved, real]
+    forms.add(real)
+    forms.add(normalizeForComparison(real))
   } catch {
-    // Root doesn't exist (yet) — lexical form only.
+    // Root doesn't exist yet, or realpath failed (common on FUSE/WinFsp/
+    // network drives).  Lexical + normalized forms are still stored above
+    // so that drive-letter / UNC equivalence works when both sides were
+    // registered via addAllowedRoot.
   }
-  return [resolved]
+  return [...forms]
 }
 
 export function addAllowedRoot(root: string, scopeId: string): void {
@@ -97,7 +132,12 @@ export function removeAllowedRootFromAllScopes(root: string): void {
 function keyUnderRoots(key: string, roots: Iterable<string>): boolean {
   for (const root of roots) {
     const rootKey = pathCompareKey(root)
-    if (key.startsWith(rootKey + path.sep) || key === rootKey) {
+    // Filesystem roots (e.g. Z:\, \\server\share\) already end with a path
+    // separator.  Appending another separator would create a double-separator
+    // (e.g. "z:\\") that never matches a child path like "z:\foo".  Use the
+    // root key directly when it already ends with a separator.
+    const prefix = rootKey.endsWith(path.sep) ? rootKey : rootKey + path.sep
+    if (key.startsWith(prefix) || key === rootKey) {
       return true
     }
   }
@@ -105,7 +145,7 @@ function keyUnderRoots(key: string, roots: Iterable<string>): boolean {
 }
 
 // os.tmpdir() in both lexical and realpath form (see canonicalForms), computed
-// once — it's checked on every validation and never changes within a process.
+// once  it's checked on every validation and never changes within a process.
 let tmpDirForms: string[] | undefined
 
 function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
@@ -121,6 +161,20 @@ function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
   for (const forms of roots.values()) {
     if (keyUnderRoots(key, forms)) return true
   }
+
+  // On Windows, also try the comparison with the \\?\ prefix stripped so that
+  // a realpath result like "\\?\UNC\server\share\file" can match a root stored
+  // as "\\server\share" (or its drive-letter equivalent "Z:\").
+  if (process.platform === 'win32') {
+    const normalizedKey = pathCompareKey(normalizeForComparison(normalized))
+    if (normalizedKey !== key) {
+      if (keyUnderRoots(normalizedKey, tmpDirForms)) return true
+      for (const forms of roots.values()) {
+        if (keyUnderRoots(normalizedKey, forms)) return true
+      }
+    }
+  }
+
   return false
 }
 
@@ -135,25 +189,42 @@ function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
  * This keeps the symlink-escape protection intact: every segment that actually
  * exists is resolved (a symlink can only exist if its segment exists), so a
  * symlink pointing outside an allowed root still resolves and gets rejected.
- * Only not-yet-created segments — which cannot be symlinks — stay literal.
- * Non-ENOENT errors (e.g. EACCES) are rethrown so genuine access failures keep
- * surfacing as access errors rather than being mistaken for "doesn't exist".
+ * Only not-yet-created segments  which cannot be symlinks  stay literal.
+ *
+ * Error handling for network / FUSE drives:
+ *   - ENOENT: walk up to the parent and retry (existing behaviour).
+ *   - Any other error (EIO, EACCES, etc.): common on WinFsp, rclone, sshfs-win
+ *     and read-only SMB mounts.  Fall back to the lexically resolved path
+ *     instead of throwing, so that validation can still succeed.
+ *   - A hard cap on parent-directory traversals prevents retry storms on
+ *     degenerate or deeply nested paths.
  */
+const MAX_PARENT_TRAVERSALS = 256
+
 async function realpathAllowingMissing(targetPath: string): Promise<string> {
   const resolved = path.resolve(targetPath)
   const missing: string[] = []
   let cur = resolved
+  let attempts = 0
   for (;;) {
     try {
       const real = await fs.realpath(cur)
       return missing.length ? path.join(real, ...missing) : real
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      const code = (err as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT') {
+        // Non-ENOENT error common on network/FUSE drives (EIO, EACCES,
+        // ERRNO_UNKNOWN, etc.).  Fall back to the lexically resolved path
+        // rather than throwing, so that path validation can still succeed
+        // for workspaces on mapped network drives.
+        return resolved
+      }
     }
     const parent = path.dirname(cur)
     if (parent === cur) return resolved // reached the fs root with nothing existing
     missing.unshift(path.basename(cur))
     cur = parent
+    if (++attempts >= MAX_PARENT_TRAVERSALS) return resolved
   }
 }
 
@@ -309,7 +380,7 @@ export async function validatePathForCreation(filePath: string, ownerWindowId?: 
   // a write follow the link out of the allowed root. Mirrors statEntry /
   // removeEntry, which likewise refuse to operate through a symlink.
   const targetStat = await fs.lstat(safeTarget).catch((err: NodeJS.ErrnoException) => {
-    if (err.code === 'ENOENT') return null // target doesn't exist yet — fine
+    if (err.code === 'ENOENT') return null // target doesn't exist yet  fine
     throw err
   })
   if (targetStat?.isSymbolicLink()) {
