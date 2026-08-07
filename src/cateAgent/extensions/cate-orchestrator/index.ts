@@ -15,6 +15,7 @@ const TOOL_NAMES = [
   "stop_coding_agent",
 ] as const
 const TOOL_NAME_SET: ReadonlySet<string> = new Set(TOOL_NAMES)
+const BACKGROUND_WATCH_TIMEOUT_SECONDS = 60
 
 const ORCHESTRATOR_PROMPT = `
 <orchestration_mode>
@@ -75,8 +76,91 @@ function toolResult(result: unknown) {
   }
 }
 
+function objectResult(result: unknown): Record<string, unknown> {
+  return result && typeof result === "object" ? result as Record<string, unknown> : {}
+}
+
+function backgroundUpdateText(result: Record<string, unknown>, changedRunIds: string[]): string {
+  const runs = Array.isArray(result.runs)
+    ? result.runs.filter((run): run is Record<string, unknown> => !!run && typeof run === "object")
+    : []
+  const lines = runs
+    .filter((run) => changedRunIds.includes(String(run.id)))
+    .map((run) => {
+      const label = typeof run.title === "string"
+        ? run.title
+        : typeof run.agentName === "string" ? run.agentName : String(run.id)
+      return `- ${label}: ${String(run.status ?? "changed")} (run ${String(run.id)})`
+    })
+  return [
+    "Coding-agent background update:",
+    ...(lines.length > 0 ? lines : changedRunIds.map((id) => `- run ${id} changed state`)),
+    "Continue supervising these workers. Inspect or review them when appropriate.",
+  ].join("\n")
+}
+
 export default function (pi: ExtensionAPI) {
   let active = false
+  const backgroundRunIds = new Set<string>()
+  const armedBackgroundRunIds = new Set<string>()
+  const backgroundStatuses = new Map<string, string>()
+  let watchController: AbortController | undefined
+  let watchRetry: ReturnType<typeof setTimeout> | undefined
+  let watchEpoch = 0
+
+  const stopBackgroundWatch = (): void => {
+    watchEpoch += 1
+    watchController?.abort()
+    watchController = undefined
+    if (watchRetry) clearTimeout(watchRetry)
+    watchRetry = undefined
+  }
+
+  const restartBackgroundWatch = (): void => {
+    stopBackgroundWatch()
+    const runIds = [...armedBackgroundRunIds]
+    if (!active || runIds.length === 0) return
+
+    const epoch = watchEpoch
+    const controller = new AbortController()
+    watchController = controller
+    void invoke("cate.codingAgent.wait", {
+      runIds,
+      timeoutSeconds: BACKGROUND_WATCH_TIMEOUT_SECONDS,
+      baselineStatuses: Object.fromEntries(runIds.flatMap((runId) => {
+        const status = backgroundStatuses.get(runId)
+        return status ? [[runId, status]] : []
+      })),
+    }, controller.signal).then((rawResult) => {
+      if (controller.signal.aborted || epoch !== watchEpoch) return
+      const result = objectResult(rawResult)
+      const changedRunIds = Array.isArray(result.changedRunIds)
+        ? result.changedRunIds.filter((id): id is string => typeof id === "string")
+        : []
+      if (Array.isArray(result.runs)) {
+        for (const run of result.runs) {
+          if (!run || typeof run !== "object") continue
+          const snapshot = run as Record<string, unknown>
+          if (typeof snapshot.id === "string" && typeof snapshot.status === "string") {
+            backgroundStatuses.set(snapshot.id, snapshot.status)
+          }
+        }
+      }
+      if (changedRunIds.length > 0) {
+        for (const runId of changedRunIds) armedBackgroundRunIds.delete(runId)
+        pi.sendMessage({
+          customType: "cate-coding-agent-background-update",
+          content: backgroundUpdateText(result, changedRunIds),
+          display: true,
+          details: result,
+        }, { triggerTurn: true, deliverAs: "followUp" })
+      }
+      restartBackgroundWatch()
+    }).catch(() => {
+      if (controller.signal.aborted || epoch !== watchEpoch) return
+      watchRetry = setTimeout(restartBackgroundWatch, 1_000)
+    })
+  }
 
   const setMode = (
     enabled: boolean,
@@ -84,6 +168,7 @@ export default function (pi: ExtensionAPI) {
   ): void => {
     active = enabled
     ctx.ui.setStatus(STATUS_KEY, enabled ? "Orchestration mode" : undefined)
+    restartBackgroundWatch()
   }
 
   const syncActiveTools = (): void => {
@@ -101,7 +186,7 @@ export default function (pi: ExtensionAPI) {
     name: "create_coding_agent",
     label: "Create coding agent",
     description:
-      "Create a visible coding-agent terminal, bind it to a registered worktree, and give it an initial implementation task. Omit agentId to use Cate's first hook-ready registered agent. An explicit choice is accepted only when its hooks are ready in the target checkout. Returns a runId and panelId.",
+      "Create a visible coding-agent terminal, bind it to a registered worktree, and give it an initial implementation task. Background workers wake you when they need attention; non-background workers must be monitored with wait_for_coding_agents. Omit agentId to use Cate's first hook-ready registered agent. Returns a runId and panelId.",
     promptSnippet:
       "create_coding_agent - start a visible, registered coding-agent worker in a Cate worktree with an initial task.",
     promptGuidelines: [
@@ -109,7 +194,7 @@ export default function (pi: ExtensionAPI) {
       "Give each worker a self-contained prompt with scope, constraints, and concrete success criteria. Never ask a worker to create more workers.",
       "Give each worker a short role title that describes its responsibility, such as API implementation or Integration tests.",
       "For isolated worktrees, ask the worker to run relevant checks and commit completed changes before finishing so Cate can review and integrate the branch safely.",
-      "After delegation, call wait_for_coding_agents once and let it block until worker state changes. Do not repeatedly inspect a worker that is still working; inspect after a change or timeout, then send a targeted follow-up only when needed.",
+      "Use background workers by default so Cate wakes you when they need attention. For a non-background worker, repeatedly call wait_for_coding_agents with a short timeout until it changes state.",
       "Never create more than five live workers. Reuse a run with send_to_coding_agent when follow-up belongs to the same task.",
       "Respect followUpSupported in each run result; create a fresh run when that capability is false.",
       "When a run fails, use its failureReason or inspect it for full output. If the failure is specific to that CLI, such as quota, authentication, or service availability, create a fresh run with a different registered agentId.",
@@ -120,6 +205,7 @@ export default function (pi: ExtensionAPI) {
       agentId: Type.Optional(agentIdSchema()),
       title: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: "Short responsibility shown to the user, such as Integration tests." })),
       prompt: Type.String({ minLength: 1, description: "Self-contained task, constraints, and success criteria." }),
+      background: Type.Optional(Type.Boolean({ default: true, description: "Wake this supervisor when the worker needs attention. Set false to monitor it with wait_for_coding_agents." })),
       worktreeId: Type.Optional(
         Type.String({ description: "Registered Cate worktree id. Omit to inherit this Cate Agent panel's worktree or use the primary checkout." }),
       ),
@@ -131,7 +217,16 @@ export default function (pi: ExtensionAPI) {
       ),
     }),
     async execute(_id, params, signal) {
-      return toolResult(await invoke("cate.codingAgent.create", params, signal))
+      const result = await invoke("cate.codingAgent.create", params, signal)
+      const snapshot = objectResult(result)
+      const runId = snapshot.id
+      if (params.background !== false && typeof runId === "string") {
+        backgroundRunIds.add(runId)
+        armedBackgroundRunIds.add(runId)
+        if (typeof snapshot.status === "string") backgroundStatuses.set(runId, snapshot.status)
+        restartBackgroundWatch()
+      }
+      return toolResult(result)
     },
   })
 
@@ -145,7 +240,14 @@ export default function (pi: ExtensionAPI) {
       prompt: Type.String({ minLength: 1 }),
     }),
     async execute(_id, params, signal) {
-      return toolResult(await invoke("cate.codingAgent.send", params, signal))
+      const result = await invoke("cate.codingAgent.send", params, signal)
+      if (backgroundRunIds.has(params.runId)) {
+        armedBackgroundRunIds.add(params.runId)
+        const status = objectResult(result).status
+        if (typeof status === "string") backgroundStatuses.set(params.runId, status)
+        restartBackgroundWatch()
+      }
+      return toolResult(result)
     },
   })
 
@@ -153,10 +255,10 @@ export default function (pi: ExtensionAPI) {
     name: "wait_for_coding_agents",
     label: "Wait for coding agents",
     description:
-      "Efficiently monitor one or more Cate-owned coding agents. Blocks for up to 60 seconds by default but returns immediately when a worker changes state or needs input. Prefer one long wait over repeated polling; inspect only after this reports a change or timeout.",
+      "Wait briefly for one or more non-background coding agents. Returns immediately when a worker needs attention, or returns current states after the timeout. Call again while workers are still active.",
     parameters: Type.Object({
       runIds: Type.Array(Type.String(), { minItems: 1, maxItems: 5 }),
-      timeoutSeconds: Type.Optional(Type.Number({ minimum: 15, maximum: 120, default: 60 })),
+      timeoutSeconds: Type.Optional(Type.Number({ minimum: 5, maximum: 60, default: 10 })),
     }),
     async execute(_id, params, signal) {
       return toolResult(await invoke("cate.codingAgent.wait", params, signal))
@@ -192,7 +294,12 @@ export default function (pi: ExtensionAPI) {
       "Stop a Cate-owned coding agent process. Use for obsolete, stuck, or explicitly cancelled work.",
     parameters: Type.Object({ runId: Type.String() }),
     async execute(_id, params, signal) {
-      return toolResult(await invoke("cate.codingAgent.stop", params, signal))
+      const result = await invoke("cate.codingAgent.stop", params, signal)
+      backgroundRunIds.delete(params.runId)
+      armedBackgroundRunIds.delete(params.runId)
+      backgroundStatuses.delete(params.runId)
+      restartBackgroundWatch()
+      return toolResult(result)
     },
   })
 
@@ -226,5 +333,9 @@ export default function (pi: ExtensionAPI) {
   // so the initial gate belongs in session_start rather than module setup.
   pi.on("session_start", async () => {
     syncActiveTools()
+  })
+
+  pi.on("session_shutdown", async () => {
+    stopBackgroundWatch()
   })
 }

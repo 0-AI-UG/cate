@@ -98,6 +98,10 @@ function InputDetails({
           mono
         />
         <DetailField label="Base ref" value={text(args.baseRef)} mono />
+        <DetailField
+          label="Monitoring"
+          value={args.background === false ? 'Wait explicitly' : 'Wake when ready'}
+        />
       </>
     )
   }
@@ -122,7 +126,7 @@ function InputDetails({
         />
         <DetailField
           label="Timeout"
-          value={`${Number(args.timeoutSeconds ?? 60)} seconds`}
+          value={`${Number(args.timeoutSeconds ?? 10)} seconds`}
         />
       </>
     )

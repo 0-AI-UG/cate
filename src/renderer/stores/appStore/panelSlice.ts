@@ -106,6 +106,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
             ownerPanelId: codingAgentLaunch.ownerPanelId,
             prompt: codingAgentLaunch.prompt,
             ownsWorktree: codingAgentLaunch.ownsWorktree,
+            background: codingAgentLaunch.background !== false,
             createdAt: Date.now(),
           },
         } : {}),

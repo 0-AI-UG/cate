@@ -103,6 +103,7 @@ describe('codingAgentDriver mission integration', () => {
           prompt: string
           ownerPanelId: string
           ownsWorktree?: boolean
+          background?: boolean
         },
       ) => {
         panels.worker = {
@@ -120,6 +121,7 @@ describe('codingAgentDriver mission integration', () => {
             ownerPanelId: launch.ownerPanelId,
             prompt: launch.prompt,
             ownsWorktree: launch.ownsWorktree,
+            background: launch.background,
             createdAt: 1,
           },
         }
@@ -199,6 +201,21 @@ describe('codingAgentDriver mission integration', () => {
     )
     expect(state.app.workspaces[0].panels.worker.title).toBe('API implementation')
     expect(state.app.updatePanelTitle).not.toHaveBeenCalled()
+  })
+
+  it('stores whether the supervisor must wait explicitly for the worker', async () => {
+    const outcome = await handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.create',
+      { prompt: 'Implement it', background: false },
+    )
+
+    expect(outcome).toMatchObject({
+      ok: true,
+      result: { background: false },
+    })
+    expect(state.app.workspaces[0].panels.worker.codingAgentRun.background).toBe(false)
   })
 
   it('rejects a non-ready explicit agent before creating a terminal', async () => {
@@ -551,6 +568,33 @@ describe('codingAgentDriver mission integration', () => {
     expect(state.appSubscribers.size).toBe(0)
     expect(state.statusSubscribers.size).toBe(0)
     expect(state.failureSubscribers.size).toBe(0)
+  })
+
+  it('uses a rolling supplied baseline for background re-arming', async () => {
+    state.status = {
+      workspaces: { ws: { terminals: { 'pty-1': { agentState: 'running', agentPresent: true } } } },
+    }
+    await handleCodingAgentMethod('ws', 'supervisor-1', 'cate.codingAgent.create', {
+      agentId: 'codex', prompt: 'Implement it', background: true,
+    })
+    const run = state.app.workspaces[0].panels.worker.codingAgentRun
+    const waiting = handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.wait',
+      { runIds: [run.id], baselineStatuses: { [run.id]: 'waiting' }, timeoutSeconds: 5 },
+    )
+
+    // The worker has moved waiting -> working, which updates the baseline but
+    // is not actionable and therefore must not wake the supervisor.
+    expect(state.statusSubscribers.size).toBe(1)
+    state.status.workspaces.ws.terminals['pty-1'].agentState = 'waitingForInput'
+    for (const listener of [...state.statusSubscribers]) listener()
+
+    await expect(waiting).resolves.toMatchObject({
+      ok: true,
+      result: { changedRunIds: [run.id], runs: [{ status: 'waiting' }] },
+    })
   })
 
   it('returns the current compact snapshot when a wait times out', async () => {

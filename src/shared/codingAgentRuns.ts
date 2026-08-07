@@ -14,6 +14,9 @@ export interface CodingAgentRun {
   worktreeId?: string
   /** True only when this mission created the worktree and may offer discard. */
   ownsWorktree?: boolean
+  /** When true, Cate wakes the owning supervisor on actionable state changes.
+   *  When false, the supervisor must wait for this run explicitly. */
+  background?: boolean
   /** Follow-up prompts sent after the initial task. Kept with panel state so
    *  mission context survives a Cate restart. */
   followUps?: Array<{ prompt: string; sentAt: number }>
@@ -34,6 +37,7 @@ export interface CodingAgentLaunch {
   prompt: string
   ownerPanelId: string
   ownsWorktree?: boolean
+  background?: boolean
 }
 
 export type CodingAgentRunStatus =

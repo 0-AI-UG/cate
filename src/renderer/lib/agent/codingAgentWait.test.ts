@@ -24,11 +24,11 @@ function run(id: string, status: CodingAgentRunSnapshot['status']): CodingAgentR
 }
 
 describe('coding-agent wait policy', () => {
-  it('uses a long default while bounding explicit waits', () => {
-    expect(codingAgentWaitMs(undefined)).toBe(60_000)
-    expect(codingAgentWaitMs(1)).toBe(15_000)
+  it('uses a short default while bounding explicit waits', () => {
+    expect(codingAgentWaitMs(undefined)).toBe(10_000)
+    expect(codingAgentWaitMs(1)).toBe(5_000)
     expect(codingAgentWaitMs(45)).toBe(45_000)
-    expect(codingAgentWaitMs(999)).toBe(120_000)
+    expect(codingAgentWaitMs(999)).toBe(60_000)
   })
 
   it('wakes for actionable current states and meaningful transitions', () => {
@@ -65,6 +65,7 @@ describe('coding-agent wait policy', () => {
       cwd: '/repo',
       alive: true,
       followUpSupported: true,
+      background: true,
       statusLine: 'Running tests',
     })
   })

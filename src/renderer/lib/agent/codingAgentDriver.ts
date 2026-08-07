@@ -179,6 +179,7 @@ async function waitForCodingAgentChange(
   ownerPanelId: string,
   rawRunIds: unknown,
   timeoutMs: number,
+  rawBaselineStatuses?: unknown,
 ): Promise<CodingAgentOutcome> {
   const initial = findRequestedRuns(workspaceId, ownerPanelId, rawRunIds)
   if ('error' in initial) return { ok: false, error: initial.error }
@@ -191,7 +192,10 @@ async function waitForCodingAgentChange(
   if (watched.length === 0) {
     return { ok: true, result: { timedOut: false, changedRunIds: [], runs: [] } }
   }
-  const actionable = actionableCodingAgentRunIds(watched)
+  const suppliedBaseline = rawBaselineStatuses && typeof rawBaselineStatuses === 'object'
+    ? rawBaselineStatuses as Record<string, unknown>
+    : null
+  const actionable = suppliedBaseline ? [] : actionableCodingAgentRunIds(watched)
   if (actionable.length > 0) {
     return {
       ok: true,
@@ -203,7 +207,13 @@ async function waitForCodingAgentChange(
     }
   }
   const ids = watched.map((run) => run.id)
-  const baseline = new Map(watched.map((run) => [run.id, run.status]))
+  const baseline = new Map(watched.map((run) => {
+    const supplied = suppliedBaseline?.[run.id]
+    return [
+      run.id,
+      typeof supplied === 'string' ? supplied as CodingAgentRunStatus : run.status,
+    ] as const
+  }))
 
   return new Promise<CodingAgentOutcome>((resolve) => {
     let settled = false
@@ -229,6 +239,7 @@ async function waitForCodingAgentChange(
         return
       }
       const changedRunIds = changedCodingAgentRunIds(baseline, snapshots)
+      for (const snapshot of snapshots) baseline.set(snapshot.id, snapshot.status)
       if (changedRunIds.length > 0) {
         finish({
           ok: true,
@@ -297,6 +308,7 @@ export async function handleCodingAgentMethod(
     const requestedAgentId = args.agentId === undefined ? '' : parseCodingAgentId(args.agentId)
     const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
     const requestedTitle = typeof args.title === 'string' ? args.title.trim() : ''
+    const background = args.background !== false
     if (args.agentId !== undefined && !requestedAgentId) {
       return { ok: false, error: 'unsupported-agent' }
     }
@@ -412,6 +424,7 @@ export async function handleCodingAgentMethod(
       prompt,
       ownerPanelId,
       ownsWorktree: Boolean(createdWorktree),
+      background,
     }
     const panelId = useAppStore.getState().createTerminal(
       workspaceId,
@@ -449,6 +462,7 @@ export async function handleCodingAgentMethod(
         agentId,
         title,
         status: 'starting',
+        background,
       },
     }
   }
@@ -526,6 +540,7 @@ export async function handleCodingAgentMethod(
       ownerPanelId,
       args.runIds,
       codingAgentWaitMs(args.timeoutSeconds),
+      args.baselineStatuses,
     )
   }
 

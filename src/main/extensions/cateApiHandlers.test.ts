@@ -410,7 +410,7 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
   })
 
   it('allows a long monitor call without extending unrelated host actions', () => {
-    expect(forwardTimeoutMs('cate.codingAgent.wait')).toBe(125_000)
+    expect(forwardTimeoutMs('cate.codingAgent.wait')).toBe(65_000)
     expect(forwardTimeoutMs('cate.editor.openFile')).toBe(10_000)
   })
 

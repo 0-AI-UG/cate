@@ -102,7 +102,7 @@ import type { CodingAgentRunStatus } from '../../shared/codingAgentRuns'
 const CATE_API_VERSION = 6
 
 const FORWARD_TIMEOUT_MS = 10_000
-const CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS = 125_000
+const CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS = 65_000
 
 export function forwardTimeoutMs(method: string): number {
   return method === 'cate.codingAgent.wait'
@@ -346,6 +346,7 @@ function waitForCrossWindowCodingAgents(args: {
   ownerPanelId: string
   originCwd?: string
   timeoutSeconds: unknown
+  baselineStatuses?: unknown
 }): Promise<InvokeResult> {
   const initial = codingAgentReports(args.runIds, args.ownerPanelId)
   if (!initial || initial.some((report) => !report.codingAgentStatus)) {
@@ -354,14 +355,20 @@ function waitForCrossWindowCodingAgents(args: {
       method: 'cate.codingAgent.wait',
     })
   }
-  const baseline = new Map(initial.map((report) => [
-    report.codingAgentRunId!,
-    report.codingAgentStatus!,
-  ]))
-  const requestedSeconds = Number(args.timeoutSeconds ?? 60)
+  const suppliedBaseline = args.baselineStatuses && typeof args.baselineStatuses === 'object'
+    ? args.baselineStatuses as Record<string, unknown>
+    : null
+  const baseline = new Map(initial.map((report) => {
+    const supplied = suppliedBaseline?.[report.codingAgentRunId!]
+    return [
+      report.codingAgentRunId!,
+      typeof supplied === 'string' ? supplied as CodingAgentRunStatus : report.codingAgentStatus!,
+    ] as const
+  }))
+  const requestedSeconds = Number(args.timeoutSeconds ?? 10)
   const timeoutMs = (Number.isFinite(requestedSeconds)
-    ? Math.max(15, Math.min(120, requestedSeconds))
-    : 60) * 1_000
+    ? Math.max(5, Math.min(60, requestedSeconds))
+    : 10) * 1_000
 
   return new Promise((resolve) => {
     let settled = false
@@ -394,9 +401,12 @@ function waitForCrossWindowCodingAgents(args: {
           ACTIONABLE_CODING_AGENT_STATUSES.has(report.codingAgentStatus),
         )
         .map((report) => report.codingAgentRunId!)
+      for (const report of reports) {
+        if (report.codingAgentStatus) baseline.set(report.codingAgentRunId!, report.codingAgentStatus)
+      }
       if (changedRunIds.length > 0) void finish(false, changedRunIds, reports)
     }
-    const initialActionable = initial
+    const initialActionable = suppliedBaseline ? [] : initial
       .filter((report) => ACTIONABLE_CODING_AGENT_STATUSES.has(report.codingAgentStatus!))
       .map((report) => report.codingAgentRunId!)
     const timer = setTimeout(() => {
@@ -722,6 +732,7 @@ export async function dispatchCateInvoke(
           ownerPanelId: panelId ?? '',
           originCwd: scope.originCwd,
           timeoutSeconds: routedArgs.timeoutSeconds,
+          baselineStatuses: routedArgs.baselineStatuses,
         })
       }
       return { error: target.error, method }

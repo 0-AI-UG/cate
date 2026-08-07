@@ -1,8 +1,8 @@
 import type { CodingAgentRunSnapshot } from '../../../shared/codingAgentRuns'
 
-export const DEFAULT_CODING_AGENT_WAIT_SECONDS = 60
-export const MIN_CODING_AGENT_WAIT_SECONDS = 15
-export const MAX_CODING_AGENT_WAIT_SECONDS = 120
+export const DEFAULT_CODING_AGENT_WAIT_SECONDS = 10
+export const MIN_CODING_AGENT_WAIT_SECONDS = 5
+export const MAX_CODING_AGENT_WAIT_SECONDS = 60
 
 /** Routine lifecycle calls return this compact view instead of replaying the
  * original task and follow-up history into the supervisor's context. */
@@ -19,6 +19,7 @@ export function compactCodingAgentSnapshot(snapshot: CodingAgentRunSnapshot) {
     followUpSupported: snapshot.followUpSupported,
     ...(snapshot.worktreeId ? { worktreeId: snapshot.worktreeId } : {}),
     ...(snapshot.ownsWorktree ? { ownsWorktree: true } : {}),
+    background: snapshot.background !== false,
     ...(snapshot.appliedAt ? {
       appliedAt: snapshot.appliedAt,
       appliedToBranch: snapshot.appliedToBranch,
