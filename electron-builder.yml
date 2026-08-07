@@ -58,6 +58,13 @@ extraResources:
     to: cate-extensions
     filter:
       - "**/*"
+  # Pi ships its subagent tool as a supported example rather than a built-in.
+  # Cate installs these two source files into every workspace-scoped agent home.
+  - from: node_modules/@earendil-works/pi-coding-agent/examples/extensions/subagent
+    to: cate-subagent-runtime
+    filter:
+      - "index.ts"
+      - "agents.ts"
   # Ship the cate-theme authoring skill so installThemeSkill can copy it into
   # ~/.claude/skills/cate-theme/ on first launch.
   - from: skills

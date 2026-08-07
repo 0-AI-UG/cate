@@ -108,11 +108,22 @@ describe('ChatComposer send/stop', () => {
     act(() => createPlan.click())
     expect(onPromptModeChange).toHaveBeenCalledWith('plan')
 
-    renderComposer({ promptMode: 'plan', onPromptModeChange })
+    renderComposer({
+      promptMode: 'plan',
+      onPromptModeChange,
+      promptModeStatus: '2 scouts',
+      promptModeDetails: <div data-testid="plan-settings">Plan settings</div>,
+    })
     const planChip = button('Remove Create plan mode')
     expect(planChip).toBeTruthy()
-    expect(planChip?.parentElement?.querySelector('textarea')).toBe(host.querySelector('textarea'))
+    expect(planChip?.parentElement?.parentElement?.querySelector('textarea')).toBe(host.querySelector('textarea'))
     expect(host.textContent).toContain('Create plan')
+    expect(host.textContent).toContain('2 scouts')
+
+    act(() => button('Open Create plan settings')?.click())
+    const settings = document.body.querySelector<HTMLElement>('[data-testid="plan-settings"]')
+    expect(settings).toBeTruthy()
+    expect(host.contains(settings)).toBe(false)
   })
 
   it('selects canvas mode from the plus menu and renders it inline', () => {
@@ -127,15 +138,58 @@ describe('ChatComposer send/stop', () => {
     act(() => manageCanvas.click())
     expect(onPromptModeChange).toHaveBeenCalledWith('canvas')
 
-    renderComposer({ promptMode: 'canvas', onPromptModeChange })
+    renderComposer({
+      promptMode: 'canvas',
+      onPromptModeChange,
+      promptModeStatus: 'Existing panels',
+      promptModeDetails: <div data-testid="canvas-settings">Canvas settings</div>,
+    })
     expect(button('Remove Manage canvas mode')).toBeTruthy()
     expect(host.textContent).toContain('Manage canvas')
+    expect(host.textContent).toContain('Existing panels')
+
+    act(() => button('Open Manage canvas settings')?.click())
+    const settings = document.body.querySelector<HTMLElement>('[data-testid="canvas-settings"]')
+    expect(settings).toBeTruthy()
+    expect(host.contains(settings)).toBe(false)
+  })
+
+  it('selects orchestration mode from the plus menu and renders it inline', () => {
+    const onPromptModeChange = vi.fn()
+    renderComposer({ onPromptModeChange })
+
+    act(() => button('Add prompt mode')?.click())
+    const orchestrate = Array.from(document.body.querySelectorAll('button'))
+      .find((candidate) => candidate.textContent?.includes('Parallel agents')) as HTMLButtonElement
+    expect(orchestrate).toBeTruthy()
+
+    act(() => orchestrate.click())
+    expect(onPromptModeChange).toHaveBeenCalledWith('orchestrate')
+
+    renderComposer({
+      promptMode: 'orchestrate',
+      onPromptModeChange,
+      promptModeStatus: '2/6 hooks',
+      promptModeDetails: <div data-testid="orchestration-details">Hook details</div>,
+    })
+    act(() => button('Open Parallel agents settings')?.click())
+    const details = document.body.querySelector<HTMLElement>('[data-testid="orchestration-details"]')
+    expect(details).toBeTruthy()
+    expect(host.contains(details)).toBe(false)
+    expect(details?.parentElement?.classList.contains('fixed')).toBe(true)
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(button('Remove Parallel agents mode')).toBeTruthy()
+    expect(host.textContent).toContain('Parallel agents')
+    expect(host.textContent).toContain('2/6 hooks')
+
+    act(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(document.body.querySelector('[data-testid="orchestration-details"]')).toBeNull()
   })
 
 })
 
 describe('ChatComposer popovers', () => {
-  it('renders thinking controls in viewport space without a canvas node', () => {
+  it('opens thinking controls below a centred composer', () => {
     renderComposer({ onPickThinkingLevel: vi.fn() })
     const trigger = button('Reasoning effort: medium') as HTMLButtonElement
     trigger.getBoundingClientRect = () => ({
@@ -158,11 +212,37 @@ describe('ChatComposer popovers', () => {
     expect(popover).toBeTruthy()
     expect(host.contains(popover ?? null)).toBe(false)
     expect(popover?.classList.contains('fixed')).toBe(true)
-    expect(popover?.style.top).toBe('296px')
+    expect(popover?.dataset.placement).toBe('below')
+    expect(popover?.style.top).toBe('324px')
     expect(popover?.style.left).toBe('260px')
   })
 
-  it('portals the model picker above overflow-clipped composers', () => {
+  it('opens thinking controls above a bottom composer', () => {
+    renderComposer({ onPickThinkingLevel: vi.fn() })
+    const trigger = button('Reasoning effort: medium') as HTMLButtonElement
+    trigger.getBoundingClientRect = () => ({
+      top: 700,
+      right: 420,
+      bottom: 720,
+      left: 400,
+      width: 20,
+      height: 20,
+      x: 400,
+      y: 700,
+      toJSON: () => ({}),
+    })
+
+    act(() => trigger.click())
+
+    const heading = Array.from(document.body.querySelectorAll('div'))
+      .find((candidate) => candidate.textContent === 'Thinking level')
+    const popover = heading?.parentElement
+    expect(popover?.dataset.placement).toBe('above')
+    expect(popover?.style.top).toBe('696px')
+    expect(popover?.style.transform).toBe('translateY(-100%)')
+  })
+
+  it('portals the model picker below a centred composer', () => {
     renderComposer({
       models: [{ provider: 'openai', model: 'gpt-test' }],
       onPickModel: vi.fn(),
@@ -187,7 +267,34 @@ describe('ChatComposer popovers', () => {
     expect(popover).toBeTruthy()
     expect(host.contains(popover)).toBe(false)
     expect(popover?.style.position).toBe('fixed')
-    expect(popover?.style.top).toBe('292px')
+    expect(popover?.style.top).toBe('328px')
     expect(popover?.style.left).toBe('100px')
+    expect(popover?.style.transform).toBe('')
+  })
+
+  it('opens slash commands on the available side of the composer', () => {
+    const commands = [{ name: 'review', description: 'Review changes', source: 'skill' as const }]
+    renderComposer({ commands })
+    const card = host.querySelector('textarea')?.closest('.relative.z-10') as HTMLDivElement
+    let top = 300
+    card.getBoundingClientRect = () => ({
+      top,
+      right: 520,
+      bottom: top + 80,
+      left: 100,
+      width: 420,
+      height: 80,
+      x: 100,
+      y: top,
+      toJSON: () => ({}),
+    })
+
+    renderComposer({ draft: '/', commands })
+    expect((host.querySelector('[data-placement]') as HTMLElement).dataset.placement).toBe('below')
+
+    renderComposer({ draft: '', commands })
+    top = 680
+    renderComposer({ draft: '/', commands })
+    expect((host.querySelector('[data-placement]') as HTMLElement).dataset.placement).toBe('above')
   })
 })

@@ -25,9 +25,25 @@
 import { useAppStore } from '../../stores/appStore'
 import { getActivePanelId } from '../activePanel'
 import { getEntry } from './registryState'
-import type { Terminal } from '@xterm/xterm'
+import { readTerminalBuffer } from './terminalBuffer'
 
 export type TerminalOutcome = { ok: true; result?: unknown } | { ok: false; error: string }
+
+/** Paste one complete prompt using xterm's bracketed-paste semantics, then
+ * submit it through the same PTY write bridge used by terminal input. */
+export async function submitTerminalText(panelId: string, text: string): Promise<boolean> {
+  const entry = getEntry(panelId)
+  if (!entry?.ptyId || entry.alive === false) return false
+  try {
+    entry.terminal.paste(text)
+    // Let xterm emit the paste payload before the trailing Enter.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await window.electronAPI.terminalWrite(entry.ptyId, '\r')
+    return true
+  } catch {
+    return false
+  }
+}
 
 /** Resolve which terminal panel a call targets. `allowFocused` is true only for
  *  `read` — input verbs must address their target explicitly. */
@@ -88,20 +104,6 @@ export function sequenceForKey(raw: string): string | null {
 
 // --- read --------------------------------------------------------------------
 
-/** The rendered screen: the alt screen when a TUI holds the alternate buffer,
- *  otherwise the whole normal buffer including scrollback (the CLI caps the
- *  printed tail). Trailing blank lines are dropped. */
-function readScreen(terminal: Terminal): { alt: boolean; text: string } {
-  const buf = terminal.buffer.active
-  const alt = buf.type === 'alternate'
-  const lines: string[] = []
-  for (let i = 0; i < buf.length; i++) {
-    lines.push(buf.getLine(i)?.translateToString(true) ?? '')
-  }
-  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
-  return { alt, text: lines.join('\n') }
-}
-
 // --- Entry point -------------------------------------------------------------
 
 /** Execute one `cate.terminal.*` method. `method` keeps its full
@@ -123,7 +125,7 @@ export async function handleTerminalMethod(
   if (!entry) return { ok: false, error: 'terminal-not-ready' }
 
   if (name === 'read') {
-    const screen = readScreen(entry.terminal)
+    const screen = readTerminalBuffer(entry.terminal)
     return { ok: true, result: { panelId: target.panelId, ...screen } }
   }
 

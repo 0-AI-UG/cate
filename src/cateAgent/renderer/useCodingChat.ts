@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import log from '../../renderer/lib/logger'
-import { errorMessage as toErrorMessage } from '../../renderer/lib/errorMessage'
+import { agentErrorMessage as toErrorMessage } from '../../shared/agentErrorMessage'
 import { useCodingStore } from './codingStore'
 import { codingClient } from './codingClient'
 import { useChatsStore } from '../../renderer/stores/chatsStore'
@@ -100,6 +100,7 @@ export interface UseCodingChatParams {
   /** Controlled model-picker open state (the readiness banner opens it). */
   modelPickerOpen: boolean
   onModelPickerOpenChange: (open: boolean) => void
+  promptModeCommands?: Partial<Record<ComposerPromptMode, string>>
   composerExtras: CodingChatComposerExtras
 }
 
@@ -114,6 +115,7 @@ export function useCodingChat({
   onSlashOpen,
   modelPickerOpen,
   onModelPickerOpenChange,
+  promptModeCommands,
   composerExtras,
 }: UseCodingChatParams) {
   const {
@@ -143,8 +145,17 @@ export function useCodingChat({
   const extensionWidgets = slice?.extensionWidgets ?? []
   const planModeActive = extensionStatuses.some((status) => status.key === 'plan-mode')
   const canvasModeActive = extensionStatuses.some((status) => status.key === 'canvas-mode')
+  const orchestratorModeActive = extensionStatuses.some(
+    (status) => status.key === 'orchestrator-mode',
+  )
   const activePromptMode: ComposerPromptMode | null =
-    planModeActive ? 'plan' : canvasModeActive ? 'canvas' : null
+    planModeActive
+      ? 'plan'
+      : canvasModeActive
+        ? 'canvas'
+        : orchestratorModeActive
+          ? 'orchestrate'
+          : null
   // Composer draft lives in the active chat's slice so switching chats keeps
   // each chat's own in-progress message + image attachments.
   const draft = slice?.draft ?? ''
@@ -448,7 +459,7 @@ export function useCodingChat({
   }, [agentKey, forkMap, refreshStatsAndState, setDraft])
 
   // ---------------------------------------------------------------------------
-  // Prompt modes (cate-plan-mode / cate-canvas-mode extensions)
+  // Prompt modes (plan, canvas, and coding-agent orchestration extensions)
   // ---------------------------------------------------------------------------
 
   const handlePromptModeChange = useCallback(async (mode: ComposerPromptMode | null) => {
@@ -458,7 +469,9 @@ export function useCodingChat({
     promptModeChangeInFlight.current = true
     try {
       if (activePromptMode) await codingClient.prompt(agentKey, `/${activePromptMode}`)
-      if (mode) await codingClient.prompt(agentKey, `/${mode}`)
+      if (mode) {
+        await codingClient.prompt(agentKey, promptModeCommands?.[mode]?.trim() || `/${mode}`)
+      }
     }
     catch (err) {
       setPendingPromptMode(null)
@@ -466,7 +479,16 @@ export function useCodingChat({
     } finally {
       promptModeChangeInFlight.current = false
     }
-  }, [activePromptMode, agentKey])
+  }, [activePromptMode, agentKey, promptModeCommands])
+
+  const configurePromptMode = useCallback(async (mode: ComposerPromptMode, command: string) => {
+    if (!agentKey || promptMode !== mode) return
+    try {
+      await codingClient.prompt(agentKey, command)
+    } catch (err) {
+      log.warn('[CateAgentPanel] configure prompt mode failed', err)
+    }
+  }, [agentKey, promptMode])
 
   const handleImplementPlan = useCallback(async () => {
     if (!agentKey) return
@@ -674,6 +696,7 @@ export function useCodingChat({
     scrollKeyBase: agentKey ?? '',
     // composer-facing
     composerProps,
+    configurePromptMode,
     // banner / state
     readiness,
     composerDisabled,

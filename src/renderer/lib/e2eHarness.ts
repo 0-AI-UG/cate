@@ -17,6 +17,10 @@ import { BUILT_IN_THEMES } from '../../shared/themes'
 import { terminalRegistry } from './terminal/terminalRegistry'
 import type { Point, WorktreeMeta } from '../../shared/types'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
+import { useSettingsStore } from '../stores/settingsStore'
+import { parseCodingAgentId, type CodingAgentRunSnapshot } from '../../shared/codingAgentRuns'
+import { codingAgentSnapshot, handleCodingAgentMethod } from './agent/codingAgentDriver'
+import type { AgentHookMode } from '../../shared/agentHookModes'
 
 /** Serializable snapshot of the search store for e2e assertions. */
 export interface SearchSnapshot {
@@ -93,6 +97,15 @@ declare global {
       writeTerminal(nodeId: string, data: string): boolean
       /** Plain text currently held by a terminal's active xterm buffer. */
       terminalText(nodeId: string): string | null
+      terminalTextForPanel(panelId: string): string | null
+      setCodingAgentHookMode(agentId: string, mode: AgentHookMode): boolean
+      codingAgentInvoke(
+        ownerPanelId: string,
+        method: 'create' | 'inspect' | 'send' | 'stop' | 'wait',
+        args: Record<string, unknown>,
+      ): Promise<{ ok: boolean; result?: unknown; error?: string }>
+      codingAgentRuns(ownerPanelId: string): CodingAgentRunSnapshot[]
+      nodeForPanel(panelId: string): string | null
       /** Point the selected workspace at a real directory (registers it as an
        *  allowed root) so content search has files to scan. */
       setWorkspaceRoot(rootPath: string): Promise<boolean>
@@ -324,6 +337,59 @@ export function installE2EHarness(): void {
     return lines.join('\n')
   }
 
+  const terminalTextForPanel = (panelId: string): string | null => {
+    const terminal = terminalRegistry.getEntry(panelId)?.terminal
+    if (!terminal) return null
+    const buffer = terminal.buffer.active
+    const lines: string[] = []
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i)
+      const text = line?.translateToString(true) ?? ''
+      if (line?.isWrapped && lines.length > 0) lines[lines.length - 1] += text
+      else lines.push(text)
+    }
+    while (lines.at(-1) === '') lines.pop()
+    return lines.join('\n')
+  }
+
+  const setCodingAgentHookMode = (agentId: string, mode: AgentHookMode): boolean => {
+    const parsed = parseCodingAgentId(agentId)
+    if (!parsed) return false
+    const workspaceId = useAppStore.getState().selectedWorkspaceId
+    const current = useSettingsStore.getState().agentHookInjection
+    useSettingsStore.getState().setSetting('agentHookInjection', {
+      ...current,
+      [workspaceId]: { ...current[workspaceId], [parsed]: mode },
+    })
+    return true
+  }
+
+  const codingAgentInvoke = (
+    ownerPanelId: string,
+    method: 'create' | 'inspect' | 'send' | 'stop' | 'wait',
+    args: Record<string, unknown>,
+  ) => {
+    const workspaceId = useAppStore.getState().selectedWorkspaceId
+    return handleCodingAgentMethod(
+      workspaceId,
+      ownerPanelId,
+      `cate.codingAgent.${method}`,
+      args,
+    )
+  }
+
+  const codingAgentRuns = (ownerPanelId: string): CodingAgentRunSnapshot[] => {
+    const state = useAppStore.getState()
+    const workspace = state.workspaces.find((candidate) => candidate.id === state.selectedWorkspaceId)
+    return Object.values(workspace?.panels ?? {})
+      .filter((panel) => panel.codingAgentRun?.ownerPanelId === ownerPanelId)
+      .map((panel) => codingAgentSnapshot(state.selectedWorkspaceId, ownerPanelId, panel.codingAgentRun!.id))
+      .filter((snapshot): snapshot is CodingAgentRunSnapshot => snapshot !== null)
+  }
+
+  const nodeForPanel = (panelId: string): string | null =>
+    activeCanvasStore()?.getState().nodeForPanel(panelId) ?? null
+
   const setWorkspaceRoot = (rootPath: string): Promise<boolean> => {
     const wsId = useAppStore.getState().selectedWorkspaceId
     return useAppStore.getState().setWorkspaceRootPath(wsId, rootPath)
@@ -408,6 +474,11 @@ export function installE2EHarness(): void {
     terminalPtyId,
     writeTerminal,
     terminalText,
+    terminalTextForPanel,
+    setCodingAgentHookMode,
+    codingAgentInvoke,
+    codingAgentRuns,
+    nodeForPanel,
     setWorkspaceRoot,
     openSidebarView,
     setActiveLeftSidebarView,

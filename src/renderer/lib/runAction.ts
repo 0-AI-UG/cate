@@ -22,6 +22,7 @@ import { provideAppStoreForHistory } from '../stores/canvas/historySlice'
 import { inheritedWorktreeFromSelection } from './inheritWorktree'
 import { closePanelWithConfirm } from './closePanelWithConfirm'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
+import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
 
 /**
  * Ensures the workspace has a rootPath before proceeding.
@@ -119,12 +120,15 @@ export async function runAction(
       const placement = placementForActivePanel()
       const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
       if (wsId) {
-        // Same worktree inheritance as newTerminal — an agent carries only a
-        // worktreeId (no cwd), so bind it when the selection has one.
+        // Same worktree inheritance as newTerminal, but the target belongs to
+        // the new agent's first chat rather than its panel record.
         const canvas = canvasStore()
         const wt = canvas ? inheritedWorktreeFromSelection(canvas, appStore().getWorkspace(wsId)?.panels) : {}
         const panelId = appStore().createCateAgent(wsId, undefined, placement)
-        if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
+        const rootPath = appStore().getWorkspace(wsId)?.rootPath
+        if (panelId && rootPath && wt.worktreeId) {
+          await seedAgentPanelWithWorktreeChat(wsId, rootPath, panelId, wt.worktreeId)
+        }
       }
       break
     }

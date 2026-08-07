@@ -16,6 +16,11 @@ import { Markdown, CursorBlink } from './ChatMarkdown'
 import { ToolCard, AskUserToolView } from './ChatToolCard'
 import { SubagentCard } from './ChatSubagentCard'
 import { PlanReadyCard } from './ChatPlanCard'
+import { CodingAgentCard } from './ChatCodingAgentCard'
+import {
+  ORCHESTRATION_TOOL_NAMES,
+  OrchestrationToolCard,
+} from './ChatOrchestrationToolCard'
 import { formatTime } from './chatShared'
 
 interface MessageRowProps {
@@ -70,7 +75,7 @@ export const MessageRow = memo(function MessageRow({
   }
   if (msg.type === 'assistant') {
     return (
-      <div className={`text-[13.5px] text-primary leading-relaxed space-y-1.5 cate-fade-in ${shimmer ? 'cate-notif-pulse' : ''}`}>
+      <div className={`text-[13.5px] text-primary leading-relaxed space-y-1.5 cate-fade-in ${shimmer && !msg.thinking ? 'cate-notif-pulse' : ''}`}>
         {msg.thinking && <ThinkingBlock text={msg.thinking} streaming={msg.streaming && !msg.text} />}
         <div>
           <Markdown text={msg.text} />
@@ -124,6 +129,12 @@ export const MessageRow = memo(function MessageRow({
         stale={!isLast}
       />
     )
+  }
+  if (msg.type === 'tool' && msg.name === 'create_coding_agent') {
+    return <CodingAgentCard msg={msg} shimmer={shimmer} />
+  }
+  if (msg.type === 'tool' && ORCHESTRATION_TOOL_NAMES.has(msg.name)) {
+    return <OrchestrationToolCard msg={msg} shimmer={shimmer} />
   }
   return <ToolCard msg={msg} shimmer={shimmer} />
 })

@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-07
+
+Cate 1.6 brings agent mission orchestration, native browser automation, safer remote workspaces, and a more reliable terminal and agent experience.
+
+### Added
+
+- **Agent mission orchestration**: Cate Agent can plan work, delegate tasks to coding agents in isolated worktrees, monitor them in the background, review results, and clean up completed missions.
+- **Agent-ready browser controls and credential profiles**: automation can inspect and operate native browser panels, manage tabs and dialogs, capture screenshots, and use saved credentials without exposing secrets to page scripts.
+- **Flexible agent workspaces**: unified chats can move between the sidebar and panels, multiple custom AI providers are supported, and workspace commands are available from the command palette.
+
+### Changed
+
+- **Native browser foundation**: browser panels now use native views and a consolidated agent-browser command surface with stronger authorization and panel targeting.
+- **Remote workspace transport**: remote connections use the system OpenSSH client for better compatibility with existing SSH configuration and authentication.
+- **Safer, clearer automation**: Cate CLI permissions are split by capability, workspace trust protects repo-controlled layouts, and worktree-aware setup keeps agent configuration consistent across checkouts.
+
+### Fixed
+
+- **Agent startup and recovery**: stopped or failed Cate Agent sessions can be recreated cleanly, restored sessions retain their lifecycle state, Windows hooks launch reliably, and obsolete managed subagent installs no longer cause duplicate-tool failures.
+- **Terminal rendering and sizing**: new terminals receive their real dimensions, split panes retain focus, and zoom or display-density changes no longer leave unstable glyph sizing or rendering artifacts.
+- **Workspace and canvas reliability**: remote paths are validated, worktree failures roll back cleanly, moved panels survive canvas closure, and interrupted gestures no longer leave canvas input stuck.
+
 ## [1.6.0-beta.3] - 2026-07-26
 
 This beta sharpens browser automation, workspace navigation, remote safety, and agent status reporting.

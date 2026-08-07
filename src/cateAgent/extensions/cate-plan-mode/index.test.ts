@@ -30,6 +30,9 @@ describe("cate-plan-mode", () => {
     expect(setStatus).toHaveBeenCalledWith("plan-mode", "Plan mode")
     const prompt = await api.handlers.get("before_agent_start")!({ systemPrompt: "base" })
     expect(prompt.systemPrompt).toContain("Plan mode is ACTIVE")
+    expect(prompt.systemPrompt).toContain("exactly 2 read-only `scout` tasks")
+    expect(prompt.systemPrompt).toContain("single mode with the\n   read-only `planner` agent")
+    expect(prompt.systemPrompt).toContain("main agent must then call `plan_complete`")
     await expect(api.handlers.get("tool_call")!({ toolName: "Write", input: {} })).resolves.toMatchObject({
       block: true,
       reason: expect.stringContaining("'Write' modifies the workspace"),
@@ -44,6 +47,25 @@ describe("cate-plan-mode", () => {
     await api.commands.get("plan").handler("", ctx)
     expect(setStatus).toHaveBeenLastCalledWith("plan-mode", undefined)
     expect(await api.handlers.get("tool_call")!({ toolName: "write", input: {} })).toBeUndefined()
+  })
+
+  it("configures zero to four parallel exploration scouts for the session", async () => {
+    const api = makeApi()
+    const ctx = { ui: { setStatus: vi.fn() } }
+
+    await api.commands.get("plan").handler("explorers=4", ctx)
+    let prompt = await api.handlers.get("before_agent_start")!({ systemPrompt: "base" })
+    expect(prompt.systemPrompt).toContain("exactly 4 read-only `scout` tasks")
+
+    await api.commands.get("plan-config").handler("explorers=0", ctx)
+    prompt = await api.handlers.get("before_agent_start")!({ systemPrompt: "base" })
+    expect(prompt.systemPrompt).toContain("user selected zero scouts")
+    expect(prompt.systemPrompt).not.toContain("parallel mode with\n   exactly")
+    expect(prompt.systemPrompt).toContain("read-only `planner` agent")
+
+    await api.commands.get("plan-config").handler("explorers=9", ctx)
+    prompt = await api.handlers.get("before_agent_start")!({ systemPrompt: "base" })
+    expect(prompt.systemPrompt).toContain("user selected zero scouts")
   })
 
   it("records a plan, aborts the planning turn, and restates it after compaction", async () => {

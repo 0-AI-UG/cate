@@ -25,6 +25,7 @@ import { toAbsolutePath, pathKey } from '../../shared/pathUtils'
 import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { handleBrowserMethod } from '../lib/browser/browserDriver'
 import { handleTerminalMethod } from '../lib/terminal/terminalDriver'
+import { handleCodingAgentMethod } from '../lib/agent/codingAgentDriver'
 import { browserPanelUrl, isStartPageUrl, type PanelType, type Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 
@@ -136,6 +137,13 @@ export function useCateHostActionResponder(): void {
           const outcome = await handleTerminalMethod(workspaceId, method, args)
           return outcome.ok
             ? reply(true, outcome.result !== undefined ? { result: outcome.result } : undefined)
+            : reply(false, { error: outcome.error })
+        }
+
+        if (method.startsWith('cate.codingAgent.')) {
+          const outcome = await handleCodingAgentMethod(workspaceId, payload.panelId, method, args)
+          return outcome.ok
+            ? reply(true, { result: outcome.result })
             : reply(false, { error: outcome.error })
         }
 

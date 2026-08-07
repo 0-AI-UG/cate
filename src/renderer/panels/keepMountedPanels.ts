@@ -25,7 +25,12 @@ export function keepMountedOffscreenPanelIds(
   const ids = new Set<string>()
   if (!panels) return ids
   for (const p of Object.values(panels)) {
-    if (keepsMountedOffscreen(p.type)) ids.add(p.id)
+    if (
+      keepsMountedOffscreen(p.type) ||
+      (p.codingAgentRun && !p.codingAgentRun.stoppedAt && !p.codingAgentRun.endedAt)
+    ) {
+      ids.add(p.id)
+    }
   }
   return ids
 }

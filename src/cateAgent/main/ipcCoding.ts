@@ -194,8 +194,12 @@ export function registerCodingHandlers(authManager: AuthManager, codingManager: 
     await codingManager.interrupt(panelId)
   })
 
-  ipcMain.handle(CODING_DISPOSE, async (_event, panelId: string) => {
-    await codingManager.dispose(panelId)
+  ipcMain.handle(CODING_DISPOSE, async (
+    event,
+    panelId: string,
+    options?: { stopCodingAgents?: boolean; workspaceId?: string },
+  ) => {
+    await codingManager.dispose(panelId, options, event.sender)
   })
 
   ipcMain.handle(CODING_SET_MODEL, async (_event, panelId: string, model: CateAgentModelRef) => {

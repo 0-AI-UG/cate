@@ -16,8 +16,8 @@ import {
   ensureDirectChatSession,
   persistDirectSessionFile,
 } from './directChatSession'
-import { resolveTargetWorktree, setTargetWorktree } from './cateAgentWorktreeTarget'
 import { codingClient } from './codingClient'
+import { CateAgentEmptyState } from './CateAgentEmptyState'
 
 export const CateAgentChatView: React.FC<{
   wsId: string
@@ -26,9 +26,7 @@ export const CateAgentChatView: React.FC<{
   onChatCreated?: (chatId: string) => void
   /** Set only when rendered inside an Agent panel; absent means sidebar. */
   hostPanelId?: string
-  /** Worktree assigned when this Agent panel was launched from Parallel Work. */
-  defaultWorktreeId?: string
-}> = ({ wsId, rootPath, chatId, onChatCreated, hostPanelId, defaultWorktreeId }) => {
+}> = ({ wsId, rootPath, chatId, onChatCreated, hostPanelId }) => {
   const chat = useChatsStore((state) => chatId
     ? (state.chatsByRoot[rootPath] ?? []).find((candidate) => candidate.id === chatId)
     : undefined)
@@ -36,16 +34,15 @@ export const CateAgentChatView: React.FC<{
   // The first send mints a durable record; every later turn uses that session.
   if (!chat) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col justify-end p-3">
+      <CateAgentEmptyState>
         <CateAgentComposer
           wsId={wsId}
           rootPath={rootPath}
           chatId={null}
           onChatCreated={onChatCreated}
           hostPanelId={hostPanelId}
-          defaultWorktreeId={defaultWorktreeId}
         />
-      </div>
+      </CateAgentEmptyState>
     )
   }
 
@@ -54,8 +51,6 @@ export const CateAgentChatView: React.FC<{
       wsId={wsId}
       rootPath={rootPath}
       chatId={chat.id}
-      hostPanelId={hostPanelId}
-      defaultWorktreeId={defaultWorktreeId}
     />
   )
 }
@@ -64,14 +59,10 @@ const DirectCateChatView: React.FC<{
   wsId: string
   rootPath: string
   chatId: string
-  hostPanelId?: string
-  defaultWorktreeId?: string
 }> = ({
   wsId,
   rootPath,
   chatId,
-  hostPanelId,
-  defaultWorktreeId,
 }) => {
   const chat = useChatsStore((state) => (state.chatsByRoot[rootPath] ?? []).find((candidate) => candidate.id === chatId))
   const agentKey = directAgentKey(chatId)
@@ -81,7 +72,7 @@ const DirectCateChatView: React.FC<{
   const [commands, setCommands] = React.useState<CodingSlashCommand[]>([])
   const [modelPickerOpen, setModelPickerOpen] = React.useState(false)
   const [targetId, setTargetId] = React.useState<string | null>(
-    () => resolveTargetWorktree(chatId, defaultWorktreeId),
+    () => chat?.worktreeId ?? null,
   )
   const { models, refreshModels } = useComposerModels()
   const { worktrees, onCreateWorktree, onCheckoutPr } = useComposerWorktrees({ rootPath, workspaceId: wsId })
@@ -89,13 +80,8 @@ const DirectCateChatView: React.FC<{
   const directCwd = resolveWorktree(targetId ?? undefined, worktreeMetas)?.path ?? rootPath
 
   React.useEffect(() => {
-    const next = resolveTargetWorktree(chatId, defaultWorktreeId)
-    setTargetId(next)
-    if (next && defaultWorktreeId) setTargetWorktree(chatId, next)
-    if (hostPanelId && next) {
-      useAppStore.getState().setPanelWorktreeId(wsId, hostPanelId, next)
-    }
-  }, [chatId, defaultWorktreeId, hostPanelId, wsId])
+    setTargetId(chat?.worktreeId ?? null)
+  }, [chat?.worktreeId, chatId])
 
   React.useEffect(() => {
     if (!chat) return
@@ -112,8 +98,7 @@ const DirectCateChatView: React.FC<{
     if (!chat) return
     const cwd = resolveWorktree(id, worktreeMetas)?.path ?? worktrees.find((worktree) => worktree.id === id)?.path ?? rootPath
     setTargetId(id)
-    setTargetWorktree(chatId, id)
-    if (hostPanelId) useAppStore.getState().setPanelWorktreeId(wsId, hostPanelId, id)
+    useChatsStore.getState().patchChat(rootPath, chatId, { worktreeId: id })
     setReady(false)
     try {
       // Pi may have learned its session path since the last stats refresh. Save
@@ -135,7 +120,7 @@ const DirectCateChatView: React.FC<{
     } catch {
       setReady(false)
     }
-  }, [agentKey, chat, chatId, hostPanelId, rootPath, worktreeMetas, worktrees, wsId])
+  }, [agentKey, chat, chatId, rootPath, worktreeMetas, worktrees, wsId])
 
   const refreshCommands = React.useCallback(async () => {
     if (!ready && !sliceExists) return

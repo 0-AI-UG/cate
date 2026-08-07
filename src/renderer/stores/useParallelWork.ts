@@ -20,9 +20,11 @@ import type { WorktreeMeta } from '../../shared/types'
 import type { PrListItem } from '../sidebar/CreateWorktreeForm'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
 import { isLocalLocator } from '../../shared/runtimeLocator'
-import { isWorktreePanelType, type WorktreePanelType } from '../../shared/panels'
+import type { WorktreePanelType } from '../../shared/panels'
 import { errorMessage } from '../lib/errorMessage'
 import { pathKey } from '../../shared/pathUtils'
+import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
+import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
 
 /** Apply a color/label change to a worktree's UI metadata, creating the metadata
  *  record when none exists yet (a worktree discovered only from git has its path
@@ -166,9 +168,11 @@ export function useParallelWork(
         type === 'terminal'
           ? s.createTerminal(workspaceId, undefined, undefined, placement, wt.path)
           : s.createCateAgent(workspaceId, undefined, placement)
-      if (panelId) s.setPanelWorktreeId(workspaceId, panelId, wt.id)
+      if (!panelId) return
+      if (type === 'terminal') s.setPanelWorktreeId(workspaceId, panelId, wt.id)
+      else void seedAgentPanelWithWorktreeChat(workspaceId, rootPath, panelId, wt.id)
     },
-    [workspaceId],
+    [rootPath, workspaceId],
   )
 
   const handlePublish = useCallback(
@@ -287,12 +291,15 @@ export function useParallelWork(
       }
       const dirty = !!status?.dirty
       const branchAhead = (status?.ahead ?? 0) > 0
-      // When the close-on-delete setting is on, count the terminal/agent panels
-      // bound to this worktree so the prompt warns about what it'll tear down.
+      // When close-on-delete is on, count terminals by their panel tag and
+      // agents by their active chat tag.
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       const panelCount = useSettingsStore.getState().closeWorktreePanelsOnDelete
         ? Object.values(ws?.panels ?? {}).filter(
-            (p) => p.worktreeId === wt.id && isWorktreePanelType(p.type),
+            (p) => (
+              (p.type === 'terminal' && p.worktreeId === wt.id) ||
+              (p.type === 'cateAgent' && activeChatWorktreeIdForPanel(p.id) === wt.id)
+            ),
           ).length
         : 0
       const ok = window.confirm(

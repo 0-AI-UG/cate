@@ -49,6 +49,42 @@ describe('vcs.worktreeMergeTo', () => {
     expect((await simpleGit(root).status()).files).toHaveLength(1)
   })
 
+  test('reviews committed and uncommitted work before integration', async () => {
+    const git = simpleGit(root)
+    await git.checkout('feature')
+
+    const committed = await vcs().worktreeReview(root, primaryBranch, access)
+
+    expect(committed).toMatchObject({
+      branch: 'feature',
+      baseBranch: primaryBranch,
+      dirty: false,
+      canApply: true,
+      commits: [{ message: 'feature change' }],
+      files: [{ status: 'M', path: 'shared.txt' }],
+    })
+    expect(committed.diff).toContain('+feature')
+
+    await fs.writeFile(path.join(root, 'uncommitted.txt'), 'not ready\n')
+    const dirty = await vcs().worktreeReview(root, primaryBranch, access)
+
+    expect(dirty.canApply).toBe(false)
+    expect(dirty.dirty).toBe(true)
+    expect(dirty.workingFiles).toContain('uncommitted.txt')
+    expect(dirty.message).toContain('Commit or discard')
+  })
+
+  test('does not offer to apply a detached worktree', async () => {
+    const git = simpleGit(root)
+    await git.checkout(['--detach', 'feature'])
+
+    const review = await vcs().worktreeReview(root, primaryBranch, access)
+
+    expect(review.canApply).toBe(false)
+    expect(review.branch).toBe('')
+    expect(review.message).toContain('named branch')
+  })
+
   test('aborts a conflicting merge and restores a clean primary worktree', async () => {
     const git = simpleGit(root)
     await fs.writeFile(path.join(root, 'shared.txt'), 'primary\n')

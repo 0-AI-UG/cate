@@ -7,6 +7,7 @@ import type { Theme } from './theme'
 export type { Theme } from './theme'
 import type { AgentId } from './agents'
 import type { AgentHookMode } from './agentHooks'
+import type { CodingAgentLaunch, CodingAgentRun, CodingAgentRunStatus } from './codingAgentRuns'
 
 // -----------------------------------------------------------------------------
 // Geometry primitives
@@ -114,9 +115,8 @@ export interface PanelState {
   cwd?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
-  /** Id of the WorktreeMeta in the parent workspace that this panel is
-   *  associated with. Drives the per-panel color accent for terminal + agent
-   *  panels; terminals also expose the title-bar "switch worktree" pill. */
+  /** Terminal panels only: id of the WorktreeMeta in the parent workspace that
+   *  this terminal is associated with. Cate Agent worktrees live on Chat. */
   worktreeId?: string
   /** Terminal panels only. Set to true the first time the user renames the
    *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
@@ -134,6 +134,13 @@ export interface PanelState {
    *  fresh shell and retains this until newer agent evidence replaces or
    *  clears it. */
   agentSession?: TerminalAgentSession
+  /** Terminal panels created by Cate Agent carry durable ownership metadata.
+   *  This is the native mission/run record; live status is derived from the
+   *  terminal registry and agent hooks rather than persisted stale state. */
+  codingAgentRun?: CodingAgentRun
+  /** One-shot direct-process launch. Cleared immediately after PTY creation so
+   *  restoring a workspace never repeats an already-started task. */
+  codingAgentLaunch?: CodingAgentLaunch
   /** Extension panels only: which installed extension + which of its declared
    *  panels this instance renders. */
   extensionId?: string
@@ -336,6 +343,11 @@ export interface WindowPanelReport {
   /** Whether the owner window's scan found listening ports for this panel, so a
    *  detached row shows the same port dot as a local one. */
   hasPorts?: boolean
+  /** Mission identity used only for exact owner-window routing of a live
+   * Cate-owned worker after cross-window terminal transfer. */
+  codingAgentRunId?: string
+  codingAgentOwnerPanelId?: string
+  codingAgentStatus?: CodingAgentRunStatus
 }
 
 export interface CateWindowParams {
@@ -1080,12 +1092,16 @@ export interface ProjectSessionPanel {
   ptyId?: string
   workingDirectory?: string
   unsavedContent?: string
-  /** Worktree this terminal/agent panel is tagged with. Machine-local (worktree
-   *  ids are runtime uuids), so it lives in session.json, not workspace.json. */
+  /** Worktree this terminal panel is tagged with. Machine-local (worktree ids
+   *  are runtime uuids), so it lives in session.json, not workspace.json. */
   worktreeId?: string
   /** Agent-CLI session running in this terminal at save time. Machine-local
    *  (session ids reference stores on this machine's runtime host). */
   agentSession?: TerminalAgentSession
+  /** Cate-owned coding-agent mission metadata. The initial one-shot launch is
+   *  deliberately excluded; restoring may resume a stamped CLI session but
+   *  never repeats the original task. */
+  codingAgentRun?: CodingAgentRun
 }
 
 // -----------------------------------------------------------------------------
@@ -1103,6 +1119,8 @@ export interface Chat {
   /** The Agent panel that owns this chat. Absence means the workspace Cate
    *  sidebar owns it. A chat is rendered by exactly one of those hosts. */
   hostPanelId?: string
+  /** Worktree this chat's agent runs in. Follows the chat between hosts. */
+  worktreeId?: string
   /** Per-chat model override. The Cate Agent otherwise uses the global default. */
   model?: CateAgentModelRef
   /** On-disk Pi transcript for this chat's sole main-agent session. */

@@ -456,6 +456,66 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         untracked: status.not_added.length,
       }
     },
+    async worktreeReview(worktreePath, baseBranch, access) {
+      const git = simpleGit(validateCwd(worktreePath, access))
+      const status = await git.status()
+      const branch = status.current === 'HEAD' ? '' : status.current ?? ''
+      const dirty = status.files.length > 0
+      const workingFiles = status.files.map((file) => file.path)
+      let mergeBase: string
+      try {
+        mergeBase = (await git.raw(['merge-base', baseBranch, 'HEAD'])).trim()
+      } catch {
+        return {
+          branch,
+          baseBranch,
+          dirty,
+          canApply: false,
+          commits: [],
+          files: [],
+          workingFiles,
+          diff: '',
+          truncated: false,
+          message: `Couldn’t compare this worktree with ${baseBranch}.`,
+        }
+      }
+
+      const [commitText, fileText, rawDiff] = await Promise.all([
+        git.raw(['log', '--format=%H%x09%s', '-n', '100', `${mergeBase}..HEAD`]),
+        git.raw(['diff', '--name-status', `${mergeBase}...HEAD`]),
+        git.raw(['diff', '--no-ext-diff', '--binary', `${mergeBase}...HEAD`]),
+      ])
+      const commits = commitText.trim().split('\n').filter(Boolean).map((line) => {
+        const [hash, ...message] = line.split('\t')
+        return { hash, message: message.join('\t') }
+      })
+      const allFiles = fileText.trim().split('\n').filter(Boolean).map((line) => {
+        const [statusCode, ...paths] = line.split('\t')
+        return { status: statusCode, path: paths.at(-1) ?? '' }
+      })
+      const maxFiles = 500
+      const files = allFiles.slice(0, maxFiles)
+      const maxDiffChars = 40_000
+      const truncated = rawDiff.length > maxDiffChars || allFiles.length > maxFiles
+      return {
+        branch,
+        baseBranch,
+        dirty,
+        canApply: Boolean(branch) && !dirty && commits.length > 0,
+        commits,
+        files,
+        workingFiles,
+        diff: truncated ? rawDiff.slice(0, maxDiffChars) : rawDiff,
+        truncated,
+        ...(!branch
+          ? { message: 'Check out a named branch in this worktree before applying it.' }
+          : dirty
+            ? { message: 'Commit or discard the worker’s uncommitted changes before applying it.' }
+            : commits.length === 0
+              ? { message: `No unapplied commits differ from ${baseBranch}.` }
+              : {}),
+      }
+    },
     async worktreeMergeTo(repoCwd, fromBranch, toBranch, access) {
       const git = simpleGit(validateCwd(repoCwd, access))
       try {

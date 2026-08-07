@@ -50,4 +50,34 @@ describe('process agent hook preparation', () => {
     )
     processCapability.kill(handle.id)
   })
+
+  test('spawns an exact trusted command instead of interpolating it through a shell', async () => {
+    const processCapability = createProcessCapability({
+      resolveShell: () => ({ path: '/bin/sh', args: ['-l'] }),
+      getEnv: () => ({ PATH: '/usr/bin:/bin' }),
+    })
+
+    const handle = await processCapability.create(
+      {
+        id: 'pty-codex',
+        cols: 80,
+        rows: 24,
+        cwd: '/repo/worktree',
+        command: {
+          executable: 'codex',
+          args: ['Fix it; touch /tmp/not-shell-syntax'],
+        },
+      },
+      () => {},
+      () => {},
+    )
+
+    expect(ptySpawn).toHaveBeenCalledWith(
+      'codex',
+      ['Fix it; touch /tmp/not-shell-syntax'],
+      expect.objectContaining({ cwd: '/repo/worktree' }),
+    )
+    expect(handle.shell).toBe('codex')
+    processCapability.kill(handle.id)
+  })
 })

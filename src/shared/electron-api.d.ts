@@ -3,6 +3,7 @@
 // =============================================================================
 
 import type { CodingCreateOptions, CodingEventEnvelope, CodingExtensionUIResponse, CodingImageAttachment, CateAgentModelRef, CodingModelDescriptor, CodingRpcState, CodingSessionListEntry, CodingSessionStats, CodingSlashCommand, CodingThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
+import type { CodingAgentLaunch } from './codingAgentRuns'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 import type { AgentHookEvent, AgentHookAgentState } from './agentHooks'
 import type { ExtensionListEntry, ExtensionManifest } from './extensions'
@@ -110,6 +111,8 @@ export interface ElectronAPI {
     panelId?: string
     /** Opaque canvas affinity, exposed to the shell for host-API creates. */
     placementGroupId?: string
+    /** Closed agent launch contract; main resolves the executable and argv. */
+    codingAgentLaunch?: CodingAgentLaunch
   }): Promise<string>
 
   /** Write data (keystrokes) to a terminal. */
@@ -283,6 +286,21 @@ export interface ElectronAPI {
     unstaged: number
     untracked: number
   } | null>
+
+  /** Review committed and uncommitted changes in a worktree relative to the
+   *  target branch before offering integration. */
+  gitWorktreeReview(worktreePath: string, baseBranch: string, workspaceId: string): Promise<{
+    branch: string
+    baseBranch: string
+    dirty: boolean
+    canApply: boolean
+    commits: Array<{ hash: string; message: string }>
+    files: Array<{ path: string; status: string }>
+    workingFiles: string[]
+    diff: string
+    truncated: boolean
+    message?: string
+  }>
 
   /** Fetch + checkout `toBranch` + merge `fromBranch` into it. Returns
    *  `{ ok: false, conflict }` on merge failure so the renderer can show a
@@ -1123,8 +1141,12 @@ export interface ElectronAPI {
   /** Interrupt the running agent (cancels current turn). */
   agentInterrupt(panelId: string): Promise<void>
 
-  /** Dispose the agent session for this panel. */
-  agentDispose(panelId: string): Promise<void>
+  /** Dispose the agent session for this panel. Deleting a durable mission chat
+   *  also stops the coding-agent workers owned by that session. */
+  agentDispose(panelId: string, options?: {
+    stopCodingAgents?: boolean
+    workspaceId?: string
+  }): Promise<void>
 
   /** Change the model used by an existing agent session. */
   agentSetModel(panelId: string, model: CateAgentModelRef): Promise<void>

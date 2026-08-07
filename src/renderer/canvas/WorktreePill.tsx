@@ -78,8 +78,8 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
     useAppStore.getState().respawnPanelTerminal(workspaceId, panel.id, target.path, target.id)
   }, [worktrees, current, focusedWorktreeId, panel, workspaceId, focusWorktree])
 
-  // The chip is terminal chrome only. Agent worktree selection lives below its
-  // composer while panel.worktreeId still records its worktree association.
+  // The chip is terminal chrome only. Agent worktree selection lives on Chat
+  // and is rendered below its composer.
   if (panel.type !== 'terminal') return null
   if (worktrees.length < 2 || !current) return null
 

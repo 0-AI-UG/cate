@@ -4,7 +4,7 @@
 //
 // While active:
 //   • The system prompt is augmented with plan-mode instructions
-//     (read-only exploration, parallel scouts, finish with plan_complete).
+//     (parallel scouts, planner synthesis, main-agent plan_complete).
 //   • Write-y tool calls are blocked preemptively via the `tool_call` hook.
 //   • Status footer shows "Plan mode" via ctx.ui.setStatus.
 //
@@ -25,7 +25,25 @@ import { Type } from "typebox"
 
 const STATUS_KEY = "plan-mode"
 
-const PLAN_PROMPT = `
+const DEFAULT_EXPLORE_AGENTS = 2
+
+function parseExploreAgents(args: string): number | null {
+  const match = args.trim().match(/^(?:explorers=)?([0-4])$/)
+  return match ? Number(match[1]) : null
+}
+
+function explorationPrompt(exploreAgents: number): string {
+  if (exploreAgents === 0) {
+    return `1. Explore in the main agent. The user selected zero scouts, so do
+   not run a parallel scout phase.`
+  }
+  return `1. Start by using the \`subagent\` tool once in parallel mode with
+   exactly ${exploreAgents} read-only \`scout\` ${exploreAgents === 1 ? "task" : "tasks"}.
+   Give each scout a distinct, relevant area to inspect. Scouts only gather
+   evidence and must not modify the workspace.`
+}
+
+const planPrompt = (exploreAgents: number) => `
 <plan_mode>
 Plan mode is ACTIVE. Your job this turn is to investigate the user's task and
 produce a concrete plan — NOT to execute it.
@@ -42,6 +60,16 @@ Constraints (strict):
 Investigation strategy:
 - Inspect the relevant files, call sites, tests, and configuration directly.
 - Keep the investigation focused on evidence needed for an executable plan.
+${explorationPrompt(exploreAgents)}
+2. After exploration, use the \`subagent\` tool again in single mode with the
+   read-only \`planner\` agent. Give it the original request, relevant constraints,
+   and the combined evidence from every scout plus your own investigation. Ask
+   it for a concrete implementation plan. The planner is advisory and must not
+   submit the final plan.
+3. Back in the main agent, critically review the planner's proposal, verify any
+   important details it relied on, and correct or refine the steps as needed.
+4. The main agent must then call \`plan_complete\` with the final plan. Do not ask
+   a scout or planner to call it.
 
 Output:
 - When (and only when) the plan is concrete and you have enough context, call
@@ -136,6 +164,7 @@ export default function (pi: ExtensionAPI) {
   // Per-process module state. Pi reloads extensions per session, so this is
   // session-scoped — exactly what we want for the toggle.
   let active = false
+  let exploreAgents = DEFAULT_EXPLORE_AGENTS
   // The most recent plan submitted via plan_complete. Survives compaction (the
   // extension closure outlives it), so "Clear context & implement" can restate
   // the plan after the conversation has been summarized away.
@@ -155,9 +184,19 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("plan", {
     description: "Toggle plan mode (read-only investigation + structured plan).",
-    handler: async (_args, ctx) => {
+    handler: async (args, ctx) => {
       if (active) disable(ctx)
-      else enable(ctx)
+      else {
+        exploreAgents = parseExploreAgents(args) ?? exploreAgents
+        enable(ctx)
+      }
+    },
+  })
+
+  pi.registerCommand("plan-config", {
+    description: "Set the number of parallel read-only exploration scouts (0-4).",
+    handler: async (args) => {
+      exploreAgents = parseExploreAgents(args) ?? exploreAgents
     },
   })
 
@@ -187,7 +226,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
     if (!active) return
     return {
-      systemPrompt: event.systemPrompt + "\n\n" + PLAN_PROMPT,
+      systemPrompt: event.systemPrompt + "\n\n" + planPrompt(exploreAgents),
     }
   })
 

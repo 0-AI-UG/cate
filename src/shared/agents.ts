@@ -80,6 +80,10 @@ export interface AgentDef {
   /** The CLI command that launches this agent in a terminal — usually the same
    *  as the detected process name. */
   command: string
+  /** Build the shell-free argv for a new Cate-owned mission worker. */
+  codingAgentArgs: (prompt: string) => string[]
+  /** Whether the launched surface accepts another prompt on the same PTY. */
+  codingAgentFollowUp: boolean
   /** True when a shell child process with this (already-lowercased) name means
    *  this agent is the one running in that terminal. */
   matchProcess: (procName: string) => boolean
@@ -120,6 +124,8 @@ export const AGENTS: readonly AgentDef[] = [
     id: 'claude-code',
     displayName: 'Claude Code',
     command: 'claude',
+    codingAgentArgs: (prompt) => [prompt],
+    codingAgentFollowUp: true,
     matchProcess: (n) => n === 'claude' || n === 'claude-code' || n.startsWith('claude'),
     resumeArgs: (sid) => ['--resume', sid],
     // claude is the standard's origin: it REQUIRES frontmatter name === dir name.
@@ -129,6 +135,8 @@ export const AGENTS: readonly AgentDef[] = [
     id: 'codex',
     displayName: 'Codex',
     command: 'codex',
+    codingAgentArgs: (prompt) => [prompt],
+    codingAgentFollowUp: true,
     matchProcess: (n) => n === 'codex',
     resumeArgs: (sid) => ['resume', sid],
     skills: folderSkills('codex', ['.codex', 'skills']),
@@ -140,6 +148,8 @@ export const AGENTS: readonly AgentDef[] = [
     id: 'cursor',
     displayName: 'Cursor',
     command: 'cursor-agent',
+    codingAgentArgs: (prompt) => [prompt],
+    codingAgentFollowUp: true,
     matchProcess: (n) => n === 'cursor-agent' || n === 'cursor',
     // --resume ADOPTS an unknown id (fresh chat under that id, exit 0) rather
     // than failing — a stale stamp degrades to a fresh session, never a wrong one.
@@ -156,6 +166,8 @@ export const AGENTS: readonly AgentDef[] = [
     id: 'grok',
     displayName: 'Grok',
     command: 'grok',
+    codingAgentArgs: (prompt) => [prompt],
+    codingAgentFollowUp: true,
     matchProcess: (n) => n === 'grok' || /^grok-\d/.test(n),
     // --resume ERRORS on an id with no session on disk (pinned live), so a stale
     // stamp falls back to a plain shell instead of silently opening a fresh chat.
@@ -170,6 +182,8 @@ export const AGENTS: readonly AgentDef[] = [
     id: 'opencode',
     displayName: 'OpenCode',
     command: 'opencode',
+    codingAgentArgs: (prompt) => ['run', prompt],
+    codingAgentFollowUp: false,
     matchProcess: (n) => n === 'opencode',
     resumeArgs: (sid) => ['--session', sid],
     skills: folderSkills('opencode', ['.opencode', 'skills']),
@@ -179,6 +193,8 @@ export const AGENTS: readonly AgentDef[] = [
     id: 'pi',
     displayName: 'PI Agent',
     command: 'pi',
+    codingAgentArgs: (prompt) => [prompt],
+    codingAgentFollowUp: true,
     matchProcess: (n) => n === 'pi',
     // pi's --resume is an interactive picker; --session takes an exact id.
     resumeArgs: (sid) => ['--session', sid],

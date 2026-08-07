@@ -37,14 +37,16 @@ import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvi
 import { clearWebglDisabled, releaseWebglGrant } from './terminalDom'
 import { getActiveTheme } from '../themeManager'
 import { useStatusStore } from '../../stores/statusStore'
-import { awaitWorkspaceSync } from '../../stores/appStore'
+import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
 import { replayTerminalLog } from '../workspace/session'
+import type { CodingAgentLaunch } from '../../../shared/codingAgentRuns'
 import { noteAgentInputSubmitted } from '../agent/agentScreenDetector'
 
 interface CreateOpts {
   workspaceId: string
   cwd?: string
   initialInput?: string
+  codingAgentLaunch?: CodingAgentLaunch
   placementGroupId?: string
   /** Terminal session-restore: a full agent resume command (e.g.
    *  `claude --resume <id>`) typed into the fresh shell right after spawn, via
@@ -190,6 +192,15 @@ export function wireTerminalListeners(args: {
     if (id === ptyId) {
       const e = registry.get(panelId)
       if (e) e.alive = false
+      const panel = useAppStore.getState().workspaces
+        .find((workspace) => workspace.id === opts.workspaceId)?.panels[panelId]
+      if (panel?.codingAgentRun && !panel.codingAgentRun.stoppedAt) {
+        useAppStore.getState().setPanelCodingAgentRun(opts.workspaceId, panelId, {
+          ...panel.codingAgentRun,
+          endedAt: Date.now(),
+          exitCode,
+        })
+      }
       terminal.write(
         `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`,
       )
@@ -319,18 +330,23 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
       workspaceId: opts.workspaceId,
       panelId,
       placementGroupId: opts.placementGroupId,
+      codingAgentLaunch: opts.codingAgentLaunch,
     })
 
-    // If the entry was disposed while we were waiting, dispose() couldn't kill
-    // the PTY (ptyId was still '') — kill the freshly-created one here so it
-    // doesn't leak, then bail out.
-    if (!registry.has(panelId)) {
+    // If the entry was disposed OR terminated while we were waiting, neither
+    // operation could kill the PTY (ptyId was still '') — kill the freshly
+    // created one here so a mission deleted during startup cannot leak a live
+    // worker. A terminated entry stays registered to retain its xterm panel.
+    if (!registry.has(panelId) || entry.alive === false) {
       electronAPI.terminalKill(ptyId).catch((err) => log.warn('[terminal] Kill failed:', err))
-      terminal.dispose()
+      if (!registry.has(panelId)) terminal.dispose()
       return entry
     }
 
     setPtyForPanel(panelId, ptyId)
+    if (opts.codingAgentLaunch) {
+      useAppStore.getState().setPanelCodingAgentLaunch(opts.workspaceId, panelId, undefined)
+    }
 
     // 6. Wire PTY<->xterm listeners + shell registration (shared with
     //    reconnectTerminal via wireTerminalListeners). freshSpawn: this is a
@@ -565,6 +581,26 @@ function teardownEntry(entry: RegistryEntry): void {
   try { serializeAddon.dispose() } catch { /* ignore */ }
 
   try { terminal.dispose() } catch { /* ignore */ }
+}
+
+/**
+ * Kill a terminal's PTY while retaining its xterm instance and scrollback.
+ * Used when a process stops but its panel remains on the canvas; dispose()
+ * would remove the xterm DOM and leave the still-mounted panel blank.
+ */
+export function terminate(panelId: string): void {
+  const entry = registry.get(panelId)
+  if (!entry) return
+
+  const { ptyId, workspaceId } = entry
+  entry.alive = false
+  entry.ptyId = ''
+  if (ptyId) ptyToPanel.delete(ptyId)
+
+  if (ptyId) {
+    window.electronAPI.terminalKill(ptyId).catch((err) => log.warn('[terminal] Kill failed:', err))
+    useStatusStore.getState().unregisterTerminal(ptyId, workspaceId)
+  }
 }
 
 /**

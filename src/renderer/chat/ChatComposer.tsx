@@ -6,8 +6,9 @@
 // textarea with a control row beneath it — model picker on the left, the run
 // controls on the right, so the send button always sits at the bottom-right,
 // never floating mid-height. A second card tucks under the main one and sticks
-// out below: the worktree selector. Both menus open UPWARD (the composer lives
-// at its panel's bottom edge).
+// out below: the worktree selector. Menus choose above or below at runtime
+// because the composer can live either in an empty-state centre or at the
+// panel's bottom edge.
 //
 // Capabilities (from the agent panel composer): image attachments, thinking
 // level, prompt modes, context compaction, the stats chip, the slash-command
@@ -28,6 +29,7 @@ import {
   Plus,
   ClipboardText,
   BoundingBox,
+  GitBranch,
   X,
   Spinner,
   ArrowsClockwise,
@@ -43,6 +45,8 @@ import {
   NodePopover,
   useNodePopover,
   useViewportPopoverPosition,
+  verticalPopoverPosition,
+  type ViewportPopoverPosition,
   COMPOSER_POPOVER_SURFACE,
 } from '../../cateAgent/renderer/CateAgentPanelChrome'
 import type { JoinedWorktree } from '../stores/useWorktrees'
@@ -57,23 +61,26 @@ import type {
 const MAX_HEIGHT = 160
 
 export type ModelOption = { provider: string; model: string; label?: string }
-export type ComposerPromptMode = 'plan' | 'canvas'
+export type ComposerPromptMode = 'plan' | 'canvas' | 'orchestrate'
 
-const promptModeLabel = (mode: ComposerPromptMode): string =>
-  mode === 'plan' ? 'Create plan' : 'Manage canvas'
+const promptModeLabel = (mode: ComposerPromptMode): string => {
+  if (mode === 'plan') return 'Create plan'
+  if (mode === 'canvas') return 'Manage canvas'
+  return 'Parallel agents'
+}
 
 const worktreeLabel = (wt: JoinedWorktree | undefined): string =>
   wt?.label || wt?.branch || (wt?.isPrimary ? 'main' : 'worktree')
 
-// --- an upward-opening portal menu anchored above a trigger --------------------
-const UpwardMenu: React.FC<{
-  anchor: DOMRect
+// --- a portal menu anchored on the roomier side of a trigger -------------------
+const AnchoredMenu: React.FC<{
+  pos: ViewportPopoverPosition
   width: number
   onClose: () => void
   triggerRef?: React.RefObject<HTMLElement | null>
   children: React.ReactNode
 }> = ({
-  anchor,
+  pos,
   width,
   onClose,
   triggerRef,
@@ -102,7 +109,13 @@ const UpwardMenu: React.FC<{
       ref={ref}
       role="listbox"
       className={`fixed z-[9999] max-h-[340px] overflow-y-auto no-scrollbar p-1.5 ${COMPOSER_POPOVER_SURFACE}`}
-      style={{ left: anchor.left, bottom: window.innerHeight - anchor.top + 6, width }}
+      data-placement={pos.placement}
+      style={{
+        top: pos.top,
+        left: pos.left,
+        width,
+        transform: pos.placement === 'above' ? 'translateY(-100%)' : undefined,
+      }}
     >
       {children}
     </div>,
@@ -199,6 +212,8 @@ export interface ChatComposerProps {
   onPickThinkingLevel?: (level: CodingThinkingLevel) => void
   promptMode?: ComposerPromptMode | null
   onPromptModeChange?: (mode: ComposerPromptMode | null) => void
+  promptModeStatus?: string
+  promptModeDetails?: React.ReactNode
   autoCompactionEnabled?: boolean
   onManualCompact?: () => void
   onToggleAutoCompaction?: () => void
@@ -243,6 +258,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   onPickThinkingLevel,
   promptMode = null,
   onPromptModeChange,
+  promptModeStatus,
+  promptModeDetails,
   autoCompactionEnabled = false,
   onManualCompact,
   onToggleAutoCompaction,
@@ -268,8 +285,9 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     modelPillRef,
     modelOpen,
     (rect) => ({
-      top: rect.top - 8,
       left: Math.max(8, Math.min(rect.left, window.innerWidth - 288)),
+      gap: 8,
+      height: 320,
     }),
   )
   const [wtAnchor, setWtAnchor] = React.useState<DOMRect | null>(null)
@@ -286,10 +304,29 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   } = useNodePopover(
     promptModeBtn,
     (rect) => ({
-      top: rect.top - 8,
       left: Math.max(8, Math.min(rect.left, window.innerWidth - 228)),
+      gap: 8,
     }),
   )
+  const promptModeDetailsBtn = React.useRef<HTMLButtonElement>(null)
+  const {
+    open: promptModeDetailsOpen,
+    setOpen: setPromptModeDetailsOpen,
+    popoverRef: promptModeDetailsPopover,
+    pos: promptModeDetailsPos,
+    portalTarget: promptModeDetailsPortalTarget,
+  } = useNodePopover(
+    promptModeDetailsBtn,
+    (rect) => ({
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 228)),
+      gap: 6,
+      height: 190,
+    }),
+  )
+  React.useEffect(() => {
+    setPromptModeDetailsOpen(false)
+  }, [promptMode, setPromptModeDetailsOpen])
+  const composerCardRef = React.useRef<HTMLDivElement>(null)
 
   // Slash popup is active when the draft starts with "/" and has no spaces
   // before the cursor — i.e. the user is still picking a command name.
@@ -368,6 +405,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     <div className="flex flex-col">
       {/* Main composer card */}
       <div
+        ref={composerCardRef}
         onDragEnter={
           onDrop
             ? (e) => {
@@ -418,11 +456,64 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
             selectedIdx={selectedIdx}
             onPick={acceptCommand}
             onHover={setSelectedIdx}
+            placement={
+              composerCardRef.current
+                ? verticalPopoverPosition(composerCardRef.current.getBoundingClientRect(), 6, 240).placement
+                : 'above'
+            }
           />
         )}
         {onRemoveImage && <ImageChips images={images} onRemove={onRemoveImage} />}
         <div className="flex items-start gap-2 px-3 pt-2.5 pb-1">
-          {promptMode && onPromptModeChange && (
+          {promptMode && onPromptModeChange && promptModeDetails ? (
+            <div className="inline-flex h-5 flex-shrink-0 items-center rounded-md bg-hover text-[10px] text-secondary">
+              <button
+                ref={promptModeDetailsBtn}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setPromptModeDetailsOpen((open) => !open)}
+                className="flex h-full items-center gap-1 px-1.5 hover:text-primary"
+                aria-label={`Open ${promptModeLabel(promptMode)} settings`}
+                aria-expanded={promptModeDetailsOpen}
+                title={`${promptModeLabel(promptMode)} settings`}
+              >
+                {promptMode === 'plan'
+                  ? <ClipboardText size={11} />
+                  : promptMode === 'canvas'
+                    ? <BoundingBox size={11} />
+                    : <GitBranch size={11} />}
+                <span>{promptModeLabel(promptMode)}</span>
+                {promptModeStatus && (
+                  <span className="text-muted">· {promptModeStatus}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setPromptModeDetailsOpen(false)
+                  onPromptModeChange(null)
+                  taRef.current?.focus()
+                }}
+                className="flex h-full items-center px-1.5 text-muted hover:text-primary"
+                aria-label={`Remove ${promptModeLabel(promptMode)} mode`}
+                title="Remove prompt mode"
+              >
+                <X size={9} />
+              </button>
+              {promptModeDetailsOpen && (
+                <NodePopover
+                  popoverRef={promptModeDetailsPopover}
+                  pos={promptModeDetailsPos}
+                  portalTarget={promptModeDetailsPortalTarget}
+                  width={220}
+                  bodyClassName="p-3"
+                >
+                  {promptModeDetails}
+                </NodePopover>
+              )}
+            </div>
+          ) : promptMode && onPromptModeChange ? (
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
@@ -434,11 +525,15 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               aria-label={`Remove ${promptModeLabel(promptMode)} mode`}
               title="Remove prompt mode"
             >
-              {promptMode === 'plan' ? <ClipboardText size={12} /> : <BoundingBox size={12} />}
+              {promptMode === 'plan'
+                ? <ClipboardText size={12} />
+                : promptMode === 'canvas'
+                  ? <BoundingBox size={12} />
+                  : <GitBranch size={12} />}
               <span>{promptModeLabel(promptMode)}</span>
               <X size={10} className="text-muted" />
             </button>
-          )}
+          ) : null}
           <textarea
             ref={taRef}
             rows={1}
@@ -515,7 +610,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                     top: modelPos.top,
                     left: modelPos.left,
                     width: 280,
-                    transform: 'translateY(-100%)',
+                    transform: modelPos.placement === 'above' ? 'translateY(-100%)' : undefined,
                     zIndex: 9999,
                   }}
                   onPick={(m) => {
@@ -588,6 +683,19 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                       <span className="flex-1">
                         <span className="block text-[12px]">Manage canvas</span>
                         <span className="block text-[10px] text-muted">Control Cate panels with the Cate CLI</span>
+                      </span>
+                    </MenuRow>
+                    <MenuRow
+                      selected={promptMode === 'orchestrate'}
+                      onClick={() => {
+                        onPromptModeChange(promptMode === 'orchestrate' ? null : 'orchestrate')
+                        setPromptModeOpen(false)
+                      }}
+                    >
+                      <GitBranch size={13} className="flex-shrink-0 text-muted" />
+                      <span className="flex-1">
+                        <span className="block text-[12px]">Parallel agents</span>
+                        <span className="block text-[10px] text-muted">Delegate work, then review before applying</span>
                       </span>
                     </MenuRow>
                   </div>
@@ -667,7 +775,15 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       )}
 
       {onPickWorktree && wtAnchor && (
-        <UpwardMenu anchor={wtAnchor} width={260} onClose={closeWorktreeMenu} triggerRef={wtBtn}>
+        <AnchoredMenu
+          pos={{
+            left: Math.max(8, Math.min(wtAnchor.left, window.innerWidth - 268)),
+            ...verticalPopoverPosition(wtAnchor, 6, 340),
+          }}
+          width={260}
+          onClose={closeWorktreeMenu}
+          triggerRef={wtBtn}
+        >
           {creating && onCreateWorktree ? (
             <CreateWorktreeForm
               defaultBaseBranch={current?.branch ?? ''}
@@ -711,7 +827,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               )}
             </>
           )}
-        </UpwardMenu>
+        </AnchoredMenu>
       )}
     </div>
   )
@@ -739,7 +855,7 @@ function CompactButton({
       const popW = 200
       let left = r.left
       if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8
-      return { top: r.top - 6, left }
+      return { left, gap: 6 }
     },
   )
   return (
@@ -816,7 +932,10 @@ function StatsChip({
   const btnRef = React.useRef<HTMLButtonElement>(null)
   const { open, setOpen, popoverRef, pos, portalTarget } = useNodePopover(
     btnRef,
-    (r) => ({ top: r.top - 6, left: r.left }),
+    (r) => ({
+      left: Math.max(8, Math.min(r.left, window.innerWidth - 268)),
+      gap: 6,
+    }),
   )
   if (!stats) return null
   const ctx = stats.contextUsage
@@ -931,14 +1050,21 @@ function SlashPopup({
   selectedIdx,
   onPick,
   onHover,
+  placement,
 }: {
   commands: CodingSlashCommand[]
   selectedIdx: number
   onPick: (cmd: CodingSlashCommand) => void
   onHover: (idx: number) => void
+  placement: 'above' | 'below'
 }) {
   return (
-    <div className="absolute bottom-full left-0 right-0 mb-1.5 max-h-[240px] overflow-y-auto rounded-xl border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-20">
+    <div
+      data-placement={placement}
+      className={`absolute left-0 right-0 max-h-[240px] overflow-y-auto rounded-xl border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)] z-20 ${
+        placement === 'above' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+      }`}
+    >
       {commands.map((cmd, i) => {
         const active = i === selectedIdx
         return (

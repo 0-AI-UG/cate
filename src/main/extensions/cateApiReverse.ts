@@ -16,10 +16,17 @@
 
 import http from 'http'
 import { Duplex } from 'stream'
+import type { WebContents } from 'electron'
 import log from '../logger'
 import type { Runtime } from '../runtime/types'
 import { getWindowPanels } from '../windowPanels'
-import { authorizeCateInvoke, dispatchCateInvoke, forwardToActiveWindow } from './cateApiHandlers'
+import {
+  authorizeCateInvoke,
+  dispatchCateInvoke,
+  forwardToActiveWindow,
+  forwardToOwner,
+  type InvokeScope,
+} from './cateApiHandlers'
 import { reverseDuplex } from './serverTunnel'
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024
@@ -32,10 +39,17 @@ export interface ReverseSession {
   /** First-party (terminal/agent) callers skip the extension-enabled gate and
    *  browser consent prompt. Absent for extension-server sessions (the default).
    *  `extensionId` may be a sentinel string for first-party sessions. */
-  caller?: 'first-party'
+  caller?: 'first-party' | 'cate-agent'
+  /** Owning Cate Agent session/panel for native worktree affinity. */
+  panelId?: string
+  /** Runtime-absolute cwd of the embedded supervisor session. */
+  originCwd?: string
   /** Scopes granted to a first-party caller (used instead of a manifest's
    *  `cateApi`). Absent for extension-server sessions. */
   grantedScopes?: string[]
+  /** Exact renderer hosting the embedded Cate Agent. Server extensions do not
+   * have one and retain the active-window fallback. */
+  ownerWebContents?: WebContents
 }
 
 export interface CateApiReverseEndpoint {
@@ -67,11 +81,11 @@ function readBody(req: http.IncomingMessage): Promise<string> {
  */
 export function createCateApiReverse(session: ReverseSession): CateApiReverseEndpoint {
   const duplexes = new Set<Duplex>()
-const panelTargets = new Map<string, string>()
+  const panelTargets = new Map<string, string>()
 
-function panelTargetKey(workspaceId: string, clientId: string): string {
-  return `${workspaceId}\0${clientId}`
-}
+  function panelTargetKey(workspaceId: string, clientId: string): string {
+    return `${workspaceId}\0${clientId}`
+  }
 
   const server = http.createServer((req, res) => {
     void handle(req, res)
@@ -109,10 +123,14 @@ function panelTargetKey(workspaceId: string, clientId: string): string {
       const invokeScope = {
         extensionId: session.extensionId,
         workspaceId: session.workspaceId,
-        panelId: undefined,
-        forward: forwardToActiveWindow,
+        panelId: session.panelId,
+        forward: session.ownerWebContents && !session.ownerWebContents.isDestroyed()
+          ? (payload: Parameters<InvokeScope['forward']>[0]) =>
+              forwardToOwner(session.ownerWebContents!, payload)
+          : forwardToActiveWindow,
         caller: session.caller,
         grantedScopes: session.grantedScopes,
+        originCwd: session.originCwd,
       } as const
 
       if (session.caller === 'first-party' && method.startsWith('cate.panel.target.')) {

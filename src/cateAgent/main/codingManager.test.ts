@@ -6,6 +6,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const stopCodingAgentsForMission = vi.hoisted(() => vi.fn(async () => {}))
+
 vi.mock('electron', () => ({}))
 vi.mock('../../main/windowRegistry', () => ({ broadcastToAll: vi.fn() }))
 vi.mock('../../main/windowPanels', () => ({ getWindowPanels: () => [] }))
@@ -17,7 +19,9 @@ vi.mock('../../shared/runtimeLocator', () => ({
 vi.mock('./piRpcClient', () => ({ PiRpcClient: vi.fn() }))
 vi.mock('./installPlanMode', () => ({ installPlanModeExtension: vi.fn() }))
 vi.mock('./installCanvasMode', () => ({ installCanvasModeExtension: vi.fn() }))
+vi.mock('./installSubagent', () => ({ installSubagentExtension: vi.fn() }))
 vi.mock('./installAskUser', () => ({ installAskUserExtension: vi.fn() }))
+vi.mock('./installOrchestrator', () => ({ installOrchestratorExtension: vi.fn() }))
 vi.mock('./installMcpAdapter', () => ({ installMcpAdapter: vi.fn() }))
 vi.mock('./codingDir', () => ({
   hostCodingDir: vi.fn(() => '/agent'),
@@ -31,8 +35,12 @@ vi.mock('./codingDir', () => ({
 vi.mock('./customModels', () => ({ mirrorModelsToWorkspace: vi.fn() }))
 vi.mock('../../skills/main/skillsMirror', () => ({ syncWorkspaceSkills: vi.fn() }))
 vi.mock('../../main/extensions/workspaceCateApi', () => ({
-  workspaceCateApi: { ensureEndpoint: vi.fn().mockResolvedValue(null) },
+  workspaceCateApi: {
+    ensureCateAgentEndpoint: vi.fn().mockResolvedValue(null),
+    disposeCateAgentEndpoint: vi.fn(),
+  },
 }))
+vi.mock('../../main/extensions/cateApiHandlers', () => ({ stopCodingAgentsForMission }))
 vi.mock('../../main/workspaceStateStore', () => ({ isProjectTrusted: vi.fn(() => false) }))
 
 import { CodingManager } from './codingManager'
@@ -40,9 +48,33 @@ import type { AuthManager } from './authManager'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import { PiRpcClient } from './piRpcClient'
 import { prepareCodingDir } from './codingDir'
+import { installSubagentExtension } from './installSubagent'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
+import { CODING_EVENT } from '../../shared/ipc-channels'
+import { workspaceCateApi } from '../../main/extensions/workspaceCateApi'
 
 const fakeAuthManager = { setOnChange: vi.fn() } as unknown as AuthManager
+
+describe('CodingManager mission cleanup', () => {
+  beforeEach(() => stopCodingAgentsForMission.mockClear())
+
+  it('stops workers even when the deleted chat has no live main-agent session', async () => {
+    const manager = new CodingManager(fakeAuthManager)
+    const sender = { id: 4, isDestroyed: () => false, send: vi.fn() } as never
+
+    await manager.dispose(
+      'cate-direct:chat-1',
+      { stopCodingAgents: true, workspaceId: 'workspace-1' },
+      sender,
+    )
+
+    expect(stopCodingAgentsForMission).toHaveBeenCalledWith(
+      'workspace-1',
+      'cate-direct:chat-1',
+      sender,
+    )
+  })
+})
 
 describe('CodingManager worktree skill preparation', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -52,6 +84,8 @@ describe('CodingManager worktree skill preparation', () => {
     vi.mocked(runtimes.resolve).mockReturnValue(runtime as never)
     const client = {
       start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => true),
+      getState: vi.fn().mockResolvedValue({}),
       onEvent: vi.fn(() => vi.fn()),
       onExit: vi.fn(() => vi.fn()),
     }
@@ -65,6 +99,7 @@ describe('CodingManager worktree skill preparation', () => {
     })
 
     const manager = new CodingManager(fakeAuthManager)
+    const sender = { id: 4, isDestroyed: () => false, send: vi.fn() } as never
     await manager.create(
       {
         panelId: 'panel-worktree',
@@ -72,14 +107,155 @@ describe('CodingManager worktree skill preparation', () => {
         workspaceRoot: '/repo/base',
         cwd: '/repo/worktree',
       },
-      { id: 4, isDestroyed: () => false, send: vi.fn() } as never,
+      sender,
     )
 
     expect(syncWorkspaceSkills).toHaveBeenCalledWith('/repo/base', '/repo/worktree')
+    expect(installSubagentExtension).toHaveBeenCalledWith(runtime, '/repo/worktree')
     expect(vi.mocked(syncWorkspaceSkills).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(prepareCodingDir).mock.invocationCallOrder[0],
     )
     expect(client.start).toHaveBeenCalledOnce()
+    expect(workspaceCateApi.ensureCateAgentEndpoint).toHaveBeenCalledWith(
+      'workspace-1',
+      'panel-worktree',
+      '/repo/worktree',
+      sender,
+    )
+    expect(PiRpcClient).toHaveBeenCalledWith(runtime, expect.objectContaining({
+      env: expect.objectContaining({
+        CATE_CODING_AGENT_IDS: JSON.stringify([
+          'claude-code',
+          'codex',
+          'cursor',
+          'grok',
+          'opencode',
+          'pi',
+        ]),
+      }),
+    }))
+  })
+
+  it('logs process diagnostics but sends only a bounded error to the panel', async () => {
+    const runtime = { agent: { ensurePi: vi.fn().mockResolvedValue(undefined) } }
+    vi.mocked(runtimes.resolve).mockReturnValue(runtime as never)
+    let exitListener: ((code: number | null, stderr: string) => void) | undefined
+    const client = {
+      start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => true),
+      getState: vi.fn().mockResolvedValue({}),
+      onEvent: vi.fn(() => vi.fn()),
+      onExit: vi.fn((listener: typeof exitListener) => {
+        exitListener = listener
+        return vi.fn()
+      }),
+    }
+    vi.mocked(PiRpcClient).mockImplementation(() => client as never)
+    vi.mocked(syncWorkspaceSkills).mockResolvedValue({
+      copied: [],
+      updated: [],
+      removed: [],
+      preserved: [],
+      warnings: [],
+    })
+    const send = vi.fn()
+    const manager = new CodingManager(fakeAuthManager)
+
+    await manager.create(
+      {
+        panelId: 'panel-crash',
+        workspaceId: 'workspace-1',
+        workspaceRoot: '/repo/base',
+        cwd: '/repo/worktree',
+      },
+      { id: 4, isDestroyed: () => false, send } as never,
+    )
+    exitListener?.(
+      1,
+      'Failed to load extension "/Users/anton/Dev/repo/private-extension.ts": ' +
+        'Extension runtime not initialized.',
+    )
+
+    expect(send).toHaveBeenCalledWith(CODING_EVENT, {
+      panelId: 'panel-crash',
+      event: {
+        type: 'error',
+        message: 'Cate couldn’t load its agent tools. Restart Cate and start a new chat.',
+      },
+    })
+    expect(JSON.stringify(send.mock.calls)).not.toContain('/Users/')
+    expect(JSON.stringify(send.mock.calls)).not.toContain('Extension runtime')
+  })
+
+  it('rejects creation and removes the session when pi exits during readiness', async () => {
+    const runtime = { agent: { ensurePi: vi.fn().mockResolvedValue(undefined) } }
+    vi.mocked(runtimes.resolve).mockReturnValue(runtime as never)
+    const client = {
+      start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => false),
+      getState: vi.fn().mockRejectedValue(new Error('PiRpcClient not started')),
+      onEvent: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+      rejectAllPending: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+    }
+    vi.mocked(PiRpcClient).mockImplementation(() => client as never)
+
+    const manager = new CodingManager(fakeAuthManager)
+    await expect(manager.create(
+      {
+        panelId: 'panel-early-exit',
+        workspaceId: 'workspace-1',
+        workspaceRoot: '/repo/base',
+        cwd: '/repo/worktree',
+      },
+      { id: 4, isDestroyed: () => false, send: vi.fn() } as never,
+    )).rejects.toThrow('Pi process exited during startup')
+
+    expect(client.rejectAllPending).toHaveBeenCalled()
+    expect(client.stop).toHaveBeenCalled()
+    expect((manager as unknown as { sessions: Map<string, unknown> }).sessions.has('panel-early-exit')).toBe(false)
+  })
+
+  it('replaces a stopped session instead of adopting it', async () => {
+    const runtime = { agent: { ensurePi: vi.fn().mockResolvedValue(undefined) } }
+    vi.mocked(runtimes.resolve).mockReturnValue(runtime as never)
+    let firstStarted = true
+    const first = {
+      start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => firstStarted),
+      getState: vi.fn().mockResolvedValue({}),
+      onEvent: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+      rejectAllPending: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+    }
+    const second = {
+      start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => true),
+      getState: vi.fn().mockResolvedValue({}),
+      onEvent: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+    }
+    vi.mocked(PiRpcClient)
+      .mockImplementationOnce(() => first as never)
+      .mockImplementationOnce(() => second as never)
+
+    const manager = new CodingManager(fakeAuthManager)
+    const sender = { id: 4, isDestroyed: () => false, send: vi.fn() } as never
+    const options = {
+      panelId: 'panel-restart',
+      workspaceId: 'workspace-1',
+      workspaceRoot: '/repo/base',
+      cwd: '/repo/worktree',
+    }
+    await manager.create(options, sender)
+    firstStarted = false
+    await manager.create(options, sender)
+
+    expect(PiRpcClient).toHaveBeenCalledTimes(2)
+    expect(first.rejectAllPending).toHaveBeenCalled()
+    expect(second.start).toHaveBeenCalledOnce()
   })
 })
 

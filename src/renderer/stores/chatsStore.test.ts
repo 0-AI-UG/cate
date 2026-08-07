@@ -69,10 +69,11 @@ describe('chat host ownership', () => {
 
   it('creates new chats in the requested host', () => {
     const sidebar = useChatsStore.getState().createChat(ROOT, 'Sidebar chat')
-    const panel = useChatsStore.getState().createChat(ROOT, 'Panel chat', 'agent-a')
+    const panel = useChatsStore.getState().createChat(ROOT, 'Panel chat', 'agent-a', 'wt-feature')
 
     expect(sidebar.hostPanelId).toBeUndefined()
     expect(panel.hostPanelId).toBe('agent-a')
+    expect(panel.worktreeId).toBe('wt-feature')
   })
 
   it('coalesces concurrent loads so a late response cannot overwrite a move', async () => {

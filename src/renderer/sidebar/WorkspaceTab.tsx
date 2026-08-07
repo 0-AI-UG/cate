@@ -31,6 +31,7 @@ import { InlineEditInput } from './InlineEditInput'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
 import { canvasKey, toggleCollapsed, useTreeCollapseStore } from './treeCollapse'
 import { Tooltip } from '../ui/Tooltip'
+import { useActiveChatWorktreeByPanel } from '../../cateAgent/renderer/cateAgentStore'
 
 // Stable empty map so the ports selector returns a referentially-constant value
 // when a workspace has no status entry (a fresh `{}` each render would defeat
@@ -291,6 +292,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     const ws = s.workspaces.find((w) => w.id === workspace.id)
     return ws?.worktrees ?? workspace.worktrees ?? []
   }))
+  const activeChatWorktreeByPanel = useActiveChatWorktreeByPanel()
 
 
   // Ports in the status store are keyed by ptyId, but panel rows are keyed by
@@ -567,8 +569,12 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     const wt = worktrees.find((w) => w.id === worktreeId) ?? worktrees.find((w) => w.path === workspace.rootPath)
     return wt?.color
   }
-  const worktreeColorFor = (panelId: string): string | undefined =>
-    worktreeColorForId(panels[panelId]?.worktreeId)
+  const worktreeColorFor = (panelId: string): string | undefined => {
+    const panel = panels[panelId]
+    return worktreeColorForId(
+      panel?.type === 'cateAgent' ? activeChatWorktreeByPanel[panelId] : panel?.worktreeId,
+    )
+  }
 
   // A panel living in another window — click focuses that window and reveals it.
   // Read-only (no rename/close), since it isn't hosted here, but otherwise

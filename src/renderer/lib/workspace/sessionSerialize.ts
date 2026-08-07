@@ -84,18 +84,26 @@ export function buildSessionFile(
   dockWindows?: DetachedDockWindowSnapshot[],
 ): ProjectSessionFile {
   // Machine-local per-panel facts for every placed panel, keyed by id: the
-  // worktree tag, the terminal's live working directory, and unsaved scratch
+  // terminal worktree tag, live working directory, and unsaved scratch
   // content — all kept out of the committed workspace.json.
   const panels: Record<string, ProjectSessionPanel> = {}
   for (const p of Object.values(snapshot.panels ?? {})) {
     const workingDirectory = snapshot.terminalCwds?.[p.id]
-    if (!p.worktreeId && !workingDirectory && !p.unsavedContent && !p.agentSession) continue
+    const worktreeId = p.type === 'terminal' ? p.worktreeId : undefined
+    if (
+      !worktreeId &&
+      !workingDirectory &&
+      !p.unsavedContent &&
+      !p.agentSession &&
+      !p.codingAgentRun
+    ) continue
     panels[p.id] = {
       panelId: p.id,
       workingDirectory,
       unsavedContent: p.unsavedContent,
-      worktreeId: p.worktreeId,
+      worktreeId,
       agentSession: p.agentSession,
+      codingAgentRun: p.codingAgentRun,
     }
   }
 
@@ -138,12 +146,13 @@ export function projectFilesToSnapshot(
         filePath: ref.filePath ? toAbsolutePath(ref.filePath, rootPath) : undefined,
         ...pickPassthroughPanelFields(ref),
         // Re-attach the machine-local facts kept out of the committed file.
-        worktreeId: sp?.worktreeId,
+        worktreeId: ref.type === 'terminal' ? sp?.worktreeId : undefined,
         unsavedContent: sp?.unsavedContent,
         // The agent session to resume in this terminal — TerminalPanel types
         // the resume command into the fresh shell and retains the stamp until
         // observed agent evidence replaces or clears it.
         agentSession: sp?.agentSession,
+        codingAgentRun: sp?.codingAgentRun,
         // Restore the per-panel cwd (worktree path / dropped folder) so the
         // terminal respawns there. TerminalPanel reads panel.cwd directly. The
         // terminalCwds map below feeds the separate scrollback-restore path.

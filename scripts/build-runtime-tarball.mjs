@@ -224,15 +224,15 @@ async function stageParcelWatcher(outRoot) {
   }
   // Stage @parcel/watcher's JS dependency closure. wrapper.js requires
   // picomatch + is-glob (→ is-extglob); index.js requires detect-libc on linux.
-  // Resolve EACH from @parcel/watcher's own resolution root rather than assuming
-  // a fixed location: npm may nest a dep under @parcel/watcher/node_modules (a
-  // version-pin conflict) OR hoist it to the top-level node_modules (no conflict)
-  // — and which one happens varies by the full install tree. A previous version
-  // copied the nested dir if present, else a hardcoded list that OMITTED
-  // picomatch; when npm hoisted picomatch the nested dir was absent AND it wasn't
-  // in the list, so it shipped missing and the daemon crashed at startup with
-  // `Cannot find module 'picomatch'` (require'd by wrapper.js). createRequire
-  // finds the exact copy node would load, at whatever depth, every time.
+  // Resolve EACH from @parcel/watcher's own resolution root so we copy the exact
+  // installed version, but always stage it at the tarball's top-level
+  // node_modules. `require()` from @parcel/watcher resolves that location.
+  //
+  // Do not derive a destination with path.relative(repoRoot, pkgDir): in a git
+  // worktree node_modules is commonly a symlink to the primary checkout, and
+  // createRequire resolves the REAL path. Relativizing that path contains `..`
+  // segments and silently copies outside stageDir, producing a tarball that
+  // crashes with `Cannot find module 'picomatch'`.
   const requireFrom = createRequire(path.join(src, 'package.json'))
   for (const dep of ['picomatch', 'is-glob', 'is-extglob', 'detect-libc']) {
     let pkgDir
@@ -243,17 +243,18 @@ async function stageParcelWatcher(outRoot) {
       if (dep === 'detect-libc') continue
       throw new Error(`@parcel/watcher dependency "${dep}" not resolvable from ${src} — run \`npm install\` first`)
     }
-    // Stage into the SAME relative location node resolved it from (nested under
-    // @parcel/watcher or hoisted to the top level) so resolution matches at runtime.
-    const rel = path.relative(repoRoot, pkgDir)
-    cpSync(pkgDir, path.join(outRoot, rel), { recursive: true, dereference: true })
+    cpSync(pkgDir, path.join(nm, dep), { recursive: true, dereference: true })
   }
   // Fail loudly if the staged tree can't resolve wrapper.js's requires — the exact
   // crash that shipped before. Mirrors the watcher.node assert below.
   const stagedRequire = createRequire(path.join(dest, 'wrapper.js'))
   for (const dep of ['picomatch', 'is-glob']) {
     try {
-      stagedRequire.resolve(dep)
+      const resolved = stagedRequire.resolve(dep)
+      const stagedModules = path.resolve(nm) + path.sep
+      if (!path.resolve(resolved).startsWith(stagedModules)) {
+        throw new Error(`resolved outside stage: ${resolved}`)
+      }
     } catch {
       throw new Error(
         `staged @parcel/watcher cannot resolve "${dep}" from ${path.join(dest, 'wrapper.js')}. ` +

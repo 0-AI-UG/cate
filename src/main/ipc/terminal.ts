@@ -49,6 +49,7 @@ import { workspaceCateApi } from '../extensions/workspaceCateApi'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
 import { resolveWorktreeContext, validateWorktreeContext } from '../worktreeContext'
+import { codingAgentCommand, type CodingAgentLaunch } from '../../shared/codingAgentRuns'
 
 // Set true during app shutdown so PTY data/exit callbacks no-op instead of
 // calling into a torn-down JS environment.
@@ -239,6 +240,7 @@ async function spawnTerminal(
     workspaceId?: string
     panelId?: string
     placementGroupId?: string
+    codingAgentLaunch?: CodingAgentLaunch
   },
   ownerWindowId: number,
 ): Promise<string> {
@@ -361,6 +363,9 @@ async function spawnTerminal(
       rows: options.rows,
       cwd,
       shell: options.shell,
+      ...(options.codingAgentLaunch
+        ? { command: codingAgentCommand(options.codingAgentLaunch) }
+        : {}),
       env: cateApiEnv,
       agentHooks: true,
       agentHookConfig,
@@ -435,6 +440,7 @@ export function registerHandlers(): void {
       workspaceId?: string
       panelId?: string
       placementGroupId?: string
+      codingAgentLaunch?: CodingAgentLaunch
     }): Promise<string> => {
       const win = windowFromEvent(event)
       const windowId = win?.id ?? -1

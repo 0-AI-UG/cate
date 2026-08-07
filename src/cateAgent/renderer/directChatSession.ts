@@ -9,12 +9,14 @@ import { codingClient } from './codingClient'
 import { resolveSessionModel } from './codingModelPrefs'
 import log from '../../renderer/lib/logger'
 import type { ComposerPromptMode } from '../../renderer/chat/ChatComposer'
+import { agentErrorMessage } from '../../shared/agentErrorMessage'
 
 export interface DirectChatTurnOptions {
   images?: CodingImageAttachment[]
   thinkingLevel?: CodingThinkingLevel
   autoCompactionEnabled?: boolean
   promptMode?: ComposerPromptMode
+  promptModeCommand?: string
 }
 
 const creating = new Map<string, Promise<boolean>>()
@@ -30,16 +32,16 @@ export async function ensureDirectChatSession(
   cwd: string,
 ): Promise<boolean> {
   const panelId = directAgentKey(chat.id)
-  if (useCodingStore.getState().panels[panelId]) return true
   const inFlight = creating.get(panelId)
   if (inFlight) return inFlight
 
   const promise = (async () => {
     const store = useCodingStore.getState()
+    const existingPanel = store.panels[panelId]
     store.init(panelId)
-    const model = (await resolveSessionModel(chat.model)) ?? undefined
+    const model = existingPanel?.model ?? (await resolveSessionModel(chat.model)) ?? undefined
     if (model) store.setModel(panelId, model)
-    if (chat.sessionFile) {
+    if (!existingPanel && chat.sessionFile) {
       try {
         const messages = await window.electronAPI.agentLoadSessionMessages(chat.sessionFile)
         store.loadMessages(panelId, messages as CodingMessage[])
@@ -57,7 +59,14 @@ export async function ensureDirectChatSession(
         sessionFile: chat.sessionFile ?? undefined,
       })
       if (!result.ok) {
-        store.appendSystem(panelId, `Failed to start agent: ${result.error}`, 'error')
+        store.appendSystem(
+          panelId,
+          agentErrorMessage(
+            result.error,
+            'Cate couldn’t start the agent. Start a new chat and try again.',
+          ),
+          'error',
+        )
         return false
       }
       return true
@@ -81,9 +90,16 @@ export async function promptDirectChat(
   cwd = rootPath,
 ): Promise<boolean> {
   const panelId = directAgentKey(chat.id)
-  if (!(await ensureDirectChatSession(chat, workspaceId, rootPath, cwd))) return false
-
+  const session = ensureDirectChatSession(chat, workspaceId, rootPath, cwd)
   const store = useCodingStore.getState()
+  // A brand-new chat has no transcript to hydrate, so show its first message
+  // immediately while the agent session starts. Otherwise selecting the newly
+  // created chat briefly renders the empty-chat composer before this message
+  // arrives and makes the composer jump between layouts.
+  const appendedOptimistically = !chat.sessionFile
+  if (appendedOptimistically) store.appendUser(panelId, text)
+  if (!(await session)) return false
+
   const controlUpdates: Promise<unknown>[] = []
   if (options.thinkingLevel) {
     store.setThinkingLevel(panelId, options.thinkingLevel)
@@ -96,8 +112,13 @@ export async function promptDirectChat(
 
   try {
     await Promise.all(controlUpdates)
-    if (options.promptMode) await codingClient.prompt(panelId, `/${options.promptMode}`)
-    store.appendUser(panelId, text)
+    if (options.promptMode) {
+      await codingClient.prompt(
+        panelId,
+        options.promptModeCommand?.trim() || `/${options.promptMode}`,
+      )
+    }
+    if (!appendedOptimistically) store.appendUser(panelId, text)
     await codingClient.prompt(panelId, text, options.images)
     return true
   } catch (error) {
@@ -114,10 +135,10 @@ export function persistDirectSessionFile(rootPath: string, chatId: string, file:
   }
 }
 
-export function disposeDirectChatSession(chatId: string): void {
+export function disposeDirectChatSession(chatId: string, workspaceId: string): void {
   const panelId = directAgentKey(chatId)
   if (typeof window.electronAPI?.agentDispose === 'function') {
-    void codingClient.dispose(panelId)
+    void codingClient.dispose(panelId, { stopCodingAgents: true, workspaceId })
   }
   useCodingStore.getState().dispose(panelId)
 }

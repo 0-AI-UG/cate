@@ -4,7 +4,6 @@ import { useComposerModels } from '../../renderer/chat/useComposerModels'
 import { useComposerWorktrees } from '../../renderer/chat/useComposerWorktrees'
 import { useSettingsStore } from '../../renderer/stores/settingsStore'
 import { useUIStore } from '../../renderer/stores/uiStore'
-import { useAppStore } from '../../renderer/stores/appStore'
 import { sendDirectAgentMessage } from './cateAgentSend'
 import { saveDefaultModel } from './codingModelPrefs'
 import { buildFileMentions } from './codingDrop'
@@ -21,6 +20,19 @@ import type {
   CodingImageAttachment,
   CodingThinkingLevel,
 } from '../../shared/types'
+import { OrchestrationPreflight, useOrchestrationPreflight } from './OrchestrationPreflight'
+import {
+  CanvasModeSettings,
+  DEFAULT_CANVAS_MODE_CONFIG,
+  canvasModeEnableCommand,
+  canvasModeSummary,
+} from './CanvasModeSettings'
+import {
+  PlanModeSettings,
+  DEFAULT_PLAN_MODE_CONFIG,
+  planModeEnableCommand,
+  planModeSummary,
+} from './PlanModeSettings'
 
 const draftKey = (wsId: string, hostPanelId?: string): string => (
   hostPanelId ? `cate.mainAgentDraft.${wsId}.${hostPanelId}` : `cate.mainAgentDraft.${wsId}`
@@ -50,25 +62,30 @@ export const CateAgentComposer: React.FC<{
   chatId?: string | null
   onChatCreated?: (chatId: string) => void
   hostPanelId?: string
-  defaultWorktreeId?: string
 }> = ({
   wsId,
   rootPath,
   onChatCreated,
   hostPanelId,
-  defaultWorktreeId,
 }) => {
   const [draft, setDraft] = React.useState(() => loadDraft(wsId, hostPanelId))
   const [images, setImages] = React.useState<CodingImageAttachment[]>([])
   const [thinkingLevel, setThinkingLevel] = React.useState<CodingThinkingLevel | null>(null)
   const [promptMode, setPromptMode] = React.useState<ComposerPromptMode | null>(null)
+  const [canvasModeConfig, setCanvasModeConfig] = React.useState(DEFAULT_CANVAS_MODE_CONFIG)
+  const [planModeConfig, setPlanModeConfig] = React.useState(DEFAULT_PLAN_MODE_CONFIG)
   const [autoCompactionEnabled, setAutoCompactionEnabled] = React.useState(true)
-  const [targetId, setTargetId] = React.useState<string | null>(defaultWorktreeId ?? null)
+  const [targetId, setTargetId] = React.useState<string | null>(null)
   const { models, refreshModels } = useComposerModels()
   const defaultModel = useSettingsStore((state) => state.agentDefaultModel)
   const { worktrees, onCreateWorktree, onCheckoutPr } = useComposerWorktrees({
     rootPath,
     workspaceId: wsId,
+  })
+  const orchestrationPreflight = useOrchestrationPreflight({
+    active: promptMode === 'orchestrate',
+    workspaceId: wsId,
+    rootPath,
   })
 
   const updateDraft = React.useCallback((value: string) => {
@@ -133,6 +150,11 @@ export const CateAgentComposer: React.FC<{
         thinkingLevel: thinkingLevel ?? undefined,
         autoCompactionEnabled,
         promptMode: promptMode ?? undefined,
+        promptModeCommand: promptMode === 'plan'
+          ? planModeEnableCommand(planModeConfig)
+          : promptMode === 'canvas'
+            ? canvasModeEnableCommand(canvasModeConfig)
+            : undefined,
       },
       cwd,
       hostPanelId,
@@ -142,6 +164,20 @@ export const CateAgentComposer: React.FC<{
     setPromptMode(null)
     onChatCreated?.(chatId)
   }
+  const promptModeStatus = promptMode === 'orchestrate'
+    ? orchestrationPreflight.status ?? undefined
+    : promptMode === 'plan'
+      ? planModeSummary(planModeConfig)
+      : promptMode === 'canvas'
+        ? canvasModeSummary(canvasModeConfig)
+        : undefined
+  const promptModeDetails = promptMode === 'orchestrate'
+    ? <OrchestrationPreflight state={orchestrationPreflight} />
+    : promptMode === 'plan'
+      ? <PlanModeSettings config={planModeConfig} onChange={setPlanModeConfig} />
+      : promptMode === 'canvas'
+        ? <CanvasModeSettings config={canvasModeConfig} onChange={setCanvasModeConfig} />
+        : undefined
 
   return (
     <ChatComposer
@@ -151,7 +187,7 @@ export const CateAgentComposer: React.FC<{
       onStop={() => {}}
       disabled={false}
       running={false}
-      placeholder="Message Cate…"
+      placeholder="Ask the agent anything about this workspace…"
       images={images}
       onAddImage={addImage}
       onRemoveImage={(index) => setImages((current) => current.filter((_, i) => i !== index))}
@@ -161,6 +197,8 @@ export const CateAgentComposer: React.FC<{
       onPickThinkingLevel={setThinkingLevel}
       promptMode={promptMode}
       onPromptModeChange={setPromptMode}
+      promptModeStatus={promptModeStatus}
+      promptModeDetails={promptModeDetails}
       autoCompactionEnabled={autoCompactionEnabled}
       onToggleAutoCompaction={() => setAutoCompactionEnabled((value) => !value)}
       models={models}
@@ -170,10 +208,7 @@ export const CateAgentComposer: React.FC<{
       onManageModels={() => useUIStore.getState().openSettings('cate agent')}
       worktrees={worktrees}
       selectedWorktreeId={targetId}
-      onPickWorktree={(id) => {
-        setTargetId(id)
-        if (hostPanelId) useAppStore.getState().setPanelWorktreeId(wsId, hostPanelId, id)
-      }}
+      onPickWorktree={setTargetId}
       worktreeMenuHeading="Work in…"
       rootPath={rootPath}
       onCreateWorktree={onCreateWorktree}

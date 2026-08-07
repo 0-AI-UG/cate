@@ -24,6 +24,12 @@ import { panelRowLabel } from '../panelTitle'
 import { useActivePanelStore } from '../activePanel'
 import { parseLocator } from '../../../shared/runtimeLocator'
 import { browserPanelUrl, isStartPageUrl, type WindowPanelReport } from '../../../shared/types'
+import {
+  activeChatWorktreeIdForPanel,
+  useCateAgentStore,
+} from '../../../cateAgent/renderer/cateAgentStore'
+import { useChatsStore } from '../../stores/chatsStore'
+import { deriveCodingAgentRunStatus } from '../../../shared/codingAgentRuns'
 
 let cleanup: (() => void) | null = null
 
@@ -120,6 +126,9 @@ export function setupWindowPanelSync(): () => void {
         ...freePanels,
       ]
       for (const p of placed) {
+        const terminalEntry = p.codingAgentRun ? terminalRegistry.getEntry(p.id) : undefined
+        const terminalFailure = p.codingAgentRun ? terminalRegistry.getFailure(p.id) : null
+        const workerAgent = agentInfo[p.id]
         report.push({
           panelId: p.id,
           type: p.type,
@@ -133,9 +142,22 @@ export function setupWindowPanelSync(): () => void {
             : {}),
           focused: p.id === activePanelId,
           parentCanvasId: childToCanvas.get(p.id),
-          worktreeId: p.worktreeId,
+          worktreeId: p.type === 'cateAgent'
+            ? activeChatWorktreeIdForPanel(p.id)
+            : p.type === 'terminal' ? p.worktreeId : undefined,
           agentState: agentInfo[p.id]?.state,
           agentName: agentInfo[p.id]?.name ?? null,
+          codingAgentRunId: p.codingAgentRun?.id,
+          codingAgentOwnerPanelId: p.codingAgentRun?.ownerPanelId,
+          codingAgentStatus: p.codingAgentRun
+            ? deriveCodingAgentRunStatus(p.codingAgentRun, {
+                terminalStarted: terminalEntry !== undefined,
+                terminalAlive: terminalEntry?.alive === true,
+                terminalFailed: terminalFailure !== null,
+                agentState: workerAgent?.state,
+                agentPresent: Boolean(workerAgent?.name),
+              })
+            : undefined,
           hasPorts: withPorts.has(p.id),
         })
       }
@@ -175,6 +197,8 @@ export function setupWindowPanelSync(): () => void {
     schedule()
   })
   const unsubscribeActivePanel = useActivePanelStore.subscribe(schedule)
+  const unsubscribeActiveChats = useCateAgentStore.subscribe(schedule)
+  const unsubscribeChats = useChatsStore.subscribe(schedule)
   syncCanvasSubscriptions()
 
   // Re-report when agent state / ports change so detached rows track the owner's
@@ -188,11 +212,15 @@ export function setupWindowPanelSync(): () => void {
     lastStatusSig = sig
     schedule()
   })
+  const unsubscribeTerminalFailure = terminalRegistry.subscribeFailure(schedule)
 
   cleanup = () => {
     unsubscribeApp()
     unsubscribeActivePanel()
+    unsubscribeActiveChats()
+    unsubscribeChats()
     unsubscribeStatus()
+    unsubscribeTerminalFailure()
     for (const unsub of canvasSubs.values()) unsub()
     canvasSubs.clear()
     if (timer) clearTimeout(timer)

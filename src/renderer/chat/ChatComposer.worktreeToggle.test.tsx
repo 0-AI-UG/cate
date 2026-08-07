@@ -62,4 +62,52 @@ describe('ChatComposer worktree selector', () => {
     mouseClick(selector)
     expect(document.body.querySelector('[role="listbox"]')).toBeNull()
   })
+
+  it('opens on the side of the selector with enough viewport space', () => {
+    act(() => {
+      root.render(
+        <ChatComposer
+          draft=""
+          onChange={vi.fn()}
+          onSubmit={vi.fn()}
+          onStop={vi.fn()}
+          disabled={false}
+          running={false}
+          worktrees={[{
+            id: 'main',
+            path: '/repo',
+            branch: 'main',
+            label: 'main',
+            color: '#fff',
+            isPrimary: true,
+            isCurrent: true,
+            isOrphan: false,
+          }]}
+          selectedWorktreeId="main"
+          onPickWorktree={vi.fn()}
+        />,
+      )
+    })
+    const selector = host.querySelector('button[title="Worktree this task branches off and lands back into"]') as HTMLButtonElement
+    let top = 300
+    selector.getBoundingClientRect = () => ({
+      top,
+      right: 180,
+      bottom: top + 20,
+      left: 100,
+      width: 80,
+      height: 20,
+      x: 100,
+      y: top,
+      toJSON: () => ({}),
+    })
+
+    mouseClick(selector)
+    expect((document.body.querySelector('[role="listbox"]') as HTMLElement).dataset.placement).toBe('below')
+
+    mouseClick(selector)
+    top = 700
+    mouseClick(selector)
+    expect((document.body.querySelector('[role="listbox"]') as HTMLElement).dataset.placement).toBe('above')
+  })
 })

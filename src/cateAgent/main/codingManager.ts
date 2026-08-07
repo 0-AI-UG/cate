@@ -37,7 +37,9 @@ import { CODING_EVENT, AUTH_CHANGED } from '../../shared/ipc-channels'
 import { broadcastToAll } from '../../main/windowRegistry'
 import { installPlanModeExtension } from './installPlanMode'
 import { installCanvasModeExtension } from './installCanvasMode'
+import { installSubagentExtension } from './installSubagent'
 import { installAskUserExtension } from './installAskUser'
+import { installOrchestratorExtension } from './installOrchestrator'
 import { installMcpAdapter } from './installMcpAdapter'
 import { isProjectTrusted } from '../../main/workspaceStateStore'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
@@ -49,9 +51,12 @@ import { getSetting } from '../../main/settingsFile'
 import { workspaceCateApi } from '../../main/extensions/workspaceCateApi'
 import { KeyedLock } from '../../main/keyedLock'
 import { agentMessageText, lastAssistantMessage } from '../../shared/agentMessages'
+import { agentErrorMessage } from '../../shared/agentErrorMessage'
+import { AGENTS } from '../../shared/agents'
 
 interface AgentSession {
   panelId: string
+  workspaceId: string
   /** The runtime hosting this session (local or remote). */
   runtime: Runtime
   /** Runtime-absolute workspace path (the locator's path part). */
@@ -145,7 +150,8 @@ export class CodingManager {
 
   async create(opts: CodingCreateOptions, sender: WebContents): Promise<void> {
     return this.locks.run(opts.panelId, async () => {
-      if (this.sessions.has(opts.panelId)) {
+      const existing = this.sessions.get(opts.panelId)
+      if (existing?.client.isStarted()) {
         // Idempotent per session key: a second create for a live headless Cate
         // Agent session (or a create racing an in-flight one) is a no-op adoption.
         // Respawning here would strand the first freshly-started pi process and
@@ -153,6 +159,10 @@ export class CodingManager {
         // race-free against a concurrent create for the same key.
         log.info('[codingManager] adopting existing session for %s (create is a no-op)', opts.panelId)
         return
+      }
+      if (existing) {
+        log.warn('[codingManager] replacing stopped session for %s', opts.panelId)
+        await this.disposeInternal(opts.panelId)
       }
 
       // Resolve the workspace's runtime from its locator (throws if a remote
@@ -176,7 +186,9 @@ export class CodingManager {
       await mirrorModelsToWorkspace(runtime, cwd)
       await installPlanModeExtension(runtime, cwd)
       await installCanvasModeExtension(runtime, cwd)
+      await installSubagentExtension(runtime, cwd)
       await installAskUserExtension(runtime, cwd)
+      await installOrchestratorExtension(runtime, cwd)
       // Register pi-mcp-adapter in <cwd>/.cate/cate-agent/settings.json so pi
       // auto-installs + loads it on session start (MCP driven by <cwd>/.pi/mcp.json).
       //
@@ -194,12 +206,20 @@ export class CodingManager {
 
       const env: Record<string, string> = {
         PI_CODING_AGENT_DIR: hostCodingDir(runtimeId, cwd),
+        // The standalone Pi extension cannot import Cate's source tree. Feed
+        // it the canonical registry so its tool schema cannot drift.
+        CATE_CODING_AGENT_IDS: JSON.stringify(AGENTS.map((agent) => agent.id)),
       }
 
-      // First-party CATE_API endpoint: give pi CATE_API/CATE_TOKEN so a `cate`
-      // CLI run from a tool can reach the dispatch core. Null when the CLI
-      // setting is disabled (the gate) — then nothing is injected (fail closed).
-      const cateApi = await workspaceCateApi.ensureEndpoint(opts.workspaceId)
+      // The embedded supervisor gets a panel-bound endpoint with orchestration
+      // scope. Worker terminals receive the ordinary first-party endpoint and
+      // therefore cannot recursively spawn agents.
+      const cateApi = await workspaceCateApi.ensureCateAgentEndpoint(
+        opts.workspaceId,
+        opts.panelId,
+        cwd,
+        sender,
+      )
       if (cateApi) {
         env.CATE_API = `http://127.0.0.1:${cateApi.port}`
         env.CATE_TOKEN = cateApi.token
@@ -223,7 +243,11 @@ export class CodingManager {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         log.warn('[codingManager] failed to start pi for %s: %s', opts.panelId, message)
-        this.sendErrorEvent(sender, opts.panelId, `Failed to start pi: ${message}`)
+        this.sendErrorEvent(
+          sender,
+          opts.panelId,
+          agentErrorMessage(message, 'Cate couldn’t start the agent. Start a new chat and try again.'),
+        )
         throw err
       }
 
@@ -246,7 +270,11 @@ export class CodingManager {
       const disposeExitWatcher = client.onExit((code, stderr) => {
         const reason = stderr ? `\n${stderr}` : ''
         log.warn('[codingManager] pi exited unexpectedly panel=%s code=%s%s', opts.panelId, code, reason)
-        this.sendErrorEvent(sender, opts.panelId, `Agent process exited (code ${code}).${reason}`)
+        this.sendErrorEvent(
+          sender,
+          opts.panelId,
+          agentErrorMessage(`Agent process exited (code ${code}).${reason}`),
+        )
       })
 
       // Watch the host's auth.json so OAuth token refreshes written by pi
@@ -255,6 +283,7 @@ export class CodingManager {
 
       this.sessions.set(opts.panelId, {
         panelId: opts.panelId,
+        workspaceId: opts.workspaceId,
         runtime,
         cwd,
         client,
@@ -298,6 +327,10 @@ export class CodingManager {
       } catch (err) {
         log.warn('[codingManager] readiness probe failed for %s: %O', opts.panelId, err)
       }
+      if (!client.isStarted()) {
+        await this.disposeInternal(opts.panelId)
+        throw new Error('Pi process exited during startup')
+      }
     })
   }
 
@@ -312,7 +345,7 @@ export class CodingManager {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.warn('[codingManager] prompt failed for %s: %s', panelId, message)
-      this.sendErrorEvent(session.sender, panelId, message)
+      this.sendErrorEvent(session.sender, panelId, agentErrorMessage(message))
       throw err
     }
   }
@@ -333,8 +366,12 @@ export class CodingManager {
     }
   }
 
-  async dispose(panelId: string): Promise<void> {
-    return this.locks.run(panelId, () => this.disposeInternal(panelId))
+  async dispose(
+    panelId: string,
+    options?: { stopCodingAgents?: boolean; workspaceId?: string },
+    cleanupSender?: WebContents,
+  ): Promise<void> {
+    return this.locks.run(panelId, () => this.disposeInternal(panelId, options, cleanupSender))
   }
 
   // ---------------------------------------------------------------------------
@@ -502,8 +539,26 @@ export class CodingManager {
     return null
   }
 
-  private async disposeInternal(panelId: string): Promise<void> {
+  private async disposeInternal(
+    panelId: string,
+    options?: { stopCodingAgents?: boolean; workspaceId?: string },
+    cleanupSender?: WebContents,
+  ): Promise<void> {
     const session = this.sessions.get(panelId)
+    const workspaceId = session?.workspaceId ?? options?.workspaceId
+    const sender = session?.sender ?? cleanupSender
+    if (options?.stopCodingAgents && workspaceId && sender) {
+      try {
+        const { stopCodingAgentsForMission } = await import('../../main/extensions/cateApiHandlers')
+        await stopCodingAgentsForMission(
+          workspaceId,
+          panelId,
+          sender,
+        )
+      } catch (err) {
+        log.warn('[codingManager] failed to stop mission workers for %s: %O', panelId, err)
+      }
+    }
     if (!session) return
     try { session.unsubscribeEvents() } catch { /* noop */ }
     try { session.disposeExitWatcher() } catch { /* noop */ }
@@ -512,6 +567,7 @@ export class CodingManager {
     try { session.client.rejectAllPending('Pi session disposed') } catch { /* noop */ }
     try { await session.client.stop() } catch { /* noop */ }
     this.sessions.delete(panelId)
+    workspaceCateApi.disposeCateAgentEndpoint(session.workspaceId, panelId)
     // Drop any extension handle that routed to this session (e.g. the owning
     // window went away) so a stale handle can't outlive its client.
     for (const [handle, ext] of this.extSessions) {

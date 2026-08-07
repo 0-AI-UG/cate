@@ -43,6 +43,7 @@ function normalizeChat(raw: unknown): Chat | null {
     updatedAt: typeof o.updatedAt === 'number' ? o.updatedAt : 0,
   }
   if (typeof o.hostPanelId === 'string') chat.hostPanelId = o.hostPanelId
+  if (typeof o.worktreeId === 'string') chat.worktreeId = o.worktreeId
   if (typeof o.sessionFile === 'string') chat.sessionFile = o.sessionFile
   const m = o.model
   if (m && typeof m === 'object' && typeof (m as Record<string, unknown>).provider === 'string' && typeof (m as Record<string, unknown>).model === 'string') {

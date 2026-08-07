@@ -17,6 +17,7 @@ import './terminalSettings'
 
 import {
   getOrCreate,
+  terminate,
   dispose,
   disposeWorkspace,
   release,
@@ -49,6 +50,7 @@ export { isTerminalPasteChord, isTerminalCopyChord } from './terminalInput'
 
 export const terminalRegistry = {
   getOrCreate,
+  terminate,
   attach,
   detach,
   dispose,

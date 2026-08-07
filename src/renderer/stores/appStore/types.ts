@@ -17,6 +17,7 @@ import type {
   RuntimeConnection,
   RuntimePhase,
 } from '../../../shared/types'
+import type { CodingAgentLaunch, CodingAgentRun } from '../../../shared/codingAgentRuns'
 
 // -----------------------------------------------------------------------------
 // Panel placement — specifies where a newly created panel should go
@@ -81,7 +82,14 @@ export interface AppStoreActions {
   removeWorkspace: (id: string, forgetRecent?: boolean) => void
 
   // Panel creation — each adds a PanelState to the workspace AND places it
-  createTerminal: (workspaceId: string, initialInput?: string, position?: Point, placement?: PanelPlacement, cwd?: string) => string
+  createTerminal: (
+    workspaceId: string,
+    initialInput?: string,
+    position?: Point,
+    placement?: PanelPlacement,
+    cwd?: string,
+    codingAgentLaunch?: CodingAgentLaunch,
+  ) => string
   createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement, proxyUrl?: string) => string
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
@@ -119,6 +127,8 @@ export interface AppStoreActions {
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
   setPanelInitialChat: (workspaceId: string, panelId: string, chatId: string) => void
   setPanelAgentSession: (workspaceId: string, panelId: string, session: TerminalAgentSession | null) => void
+  setPanelCodingAgentLaunch: (workspaceId: string, panelId: string, launch: CodingAgentLaunch | undefined) => void
+  setPanelCodingAgentRun: (workspaceId: string, panelId: string, run: CodingAgentRun | undefined) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
   removePanelRecord: (workspaceId: string, panelId: string) => void
 

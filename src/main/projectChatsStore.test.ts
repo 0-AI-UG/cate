@@ -54,6 +54,7 @@ describe('projectChatsStore', () => {
       createdAt: 1,
       updatedAt: 2,
       hostPanelId: 'agent-panel-1',
+      worktreeId: 'wt-feature',
       sessionFile: '/tmp/direct-chat.jsonl',
       model: { provider: 'anthropic', model: 'claude-sonnet' },
     }

@@ -201,7 +201,11 @@ if (process.env.CATE_E2E === '1') {
 
   const fs = require('fs') as typeof import('fs')
   const os = require('os') as typeof import('os')
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-e2e-'))
+  const requestedUserData = process.env.CATE_E2E_USER_DATA
+  const tmp = requestedUserData
+    ? path.resolve(requestedUserData)
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'cate-e2e-'))
+  fs.mkdirSync(tmp, { recursive: true })
   app.setPath('userData', tmp)
   // Keep the e2e app out of the macOS dock / app-switcher so launching it never
   // foregrounds the shared Electron bundle (and a running `npm run dev`).
@@ -318,10 +322,16 @@ app.whenReady().then(async () => {
   // DeferredRuntime SYNCHRONOUSLY (resolve(LOCAL) works immediately) and connects
   // the daemon in the background, so first-run tarball provisioning never blocks
   // the window paint — early IPC ops queue behind the deferred's `ready`.
+  const runtimeEnv = getShellEnv()
+  const e2ePathPrefix = process.env.CATE_E2E === '1'
+    ? process.env.CATE_E2E_PATH_PREPEND
+    : undefined
   runtimes.ensureLocalRuntime({
     root: app.getPath('home'),
     exclusions: [...currentExclusionSet()],
-    env: getShellEnv(),
+    env: e2ePathPrefix
+      ? { ...runtimeEnv, PATH: `${e2ePathPrefix}${path.delimiter}${runtimeEnv.PATH ?? ''}` }
+      : runtimeEnv,
     idleSuspend: getSettingSync('autoSuspendIdleTerminals'),
   })
 

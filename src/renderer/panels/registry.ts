@@ -105,7 +105,10 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     Component: TerminalPanel,
     create: ({ workspaceId, canvasPoint, placement, initialInput }) =>
       trackCreated('terminal', useAppStore.getState().createTerminal(workspaceId, initialInput, canvasPoint, placement) || null),
-    props: baseProps,
+    props: (panel, ctx) => ({
+      ...baseProps(panel, ctx),
+      codingAgentLaunch: panel.codingAgentLaunch,
+    }),
   },
   browser: {
     ...PANEL_DEFINITIONS.browser,

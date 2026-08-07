@@ -6,8 +6,9 @@ import { runtimes } from '../runtime/runtimeManager'
 import type { Runtime } from '../runtime/types'
 import { getWorkspaceInfo } from '../workspaceManager'
 import type { ReverseTunnelBinding } from './cateApiReverse'
+import type { WebContents } from 'electron'
 
-type CateApiEndpointOwner = 'extension' | 'first-party'
+type CateApiEndpointOwner = 'extension' | 'first-party' | 'cate-agent'
 
 interface CateApiEndpoint {
   runtime: Runtime
@@ -28,8 +29,12 @@ interface CateApiEndpointOptions {
   extensionId: string
   workspaceId: string
   listenerId: string
-  caller?: 'first-party'
+  caller?: 'first-party' | 'cate-agent'
+  panelId?: string
+  originCwd?: string
   grantedScopes?: string[]
+  /** Renderer that owns the embedded supervisor's panel/session. */
+  ownerWebContents?: WebContents
 }
 
 export function resolveWorkspaceRuntime(workspaceId: string): { runtime: Runtime; cwd: string } {
@@ -73,7 +78,10 @@ export class CateApiEndpointManager {
         token,
         runtime,
         caller: options.caller,
+        panelId: options.panelId,
+        originCwd: options.originCwd,
         grantedScopes: options.grantedScopes,
+        ownerWebContents: options.ownerWebContents,
       })
       let binding: ReverseTunnelBinding
       try {

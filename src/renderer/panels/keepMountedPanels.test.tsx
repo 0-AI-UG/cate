@@ -43,6 +43,33 @@ describe('keepMountedOffscreenPanelIds', () => {
     expect(keepMountedOffscreenPanelIds(panels).has('p-editor')).toBe(false)
   })
 
+  it('keeps a live Cate-owned coding-agent terminal mounted', () => {
+    const runPanel: PanelState = {
+      id: 'worker',
+      type: 'terminal',
+      title: 'Codex worker',
+      isDirty: false,
+      codingAgentRun: {
+        id: 'run-1',
+        agentId: 'codex',
+        panelId: 'worker',
+        ownerPanelId: 'agent-1',
+        prompt: 'Implement it',
+        createdAt: 1,
+      },
+    }
+    expect(keepMountedOffscreenPanelIds({ worker: runPanel }).has('worker')).toBe(true)
+    runPanel.codingAgentRun = { ...runPanel.codingAgentRun!, stoppedAt: 2 }
+    expect(keepMountedOffscreenPanelIds({ worker: runPanel }).has('worker')).toBe(false)
+    runPanel.codingAgentRun = {
+      ...runPanel.codingAgentRun!,
+      stoppedAt: undefined,
+      endedAt: 3,
+      exitCode: 0,
+    }
+    expect(keepMountedOffscreenPanelIds({ worker: runPanel }).has('worker')).toBe(false)
+  })
+
   it('tolerates a workspace with no panels', () => {
     expect(keepMountedOffscreenPanelIds(undefined).size).toBe(0)
   })

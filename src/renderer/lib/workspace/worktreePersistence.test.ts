@@ -1,6 +1,6 @@
 // =============================================================================
 // Worktree session-persistence regression tests. Worktree colors/labels and each
-// terminal/agent panel's worktree tag are machine-local (gitignored checkouts),
+// terminal panel's worktree tag are machine-local (gitignored checkouts),
 // so they live in session.json. These tests pin that they survive a save/restore
 // round-trip — previously both were dropped, so colors got re-rolled from the
 // palette on restart and terminals came back tagged to the primary worktree even
@@ -88,6 +88,23 @@ function snapshotWithWorktrees(): SessionSnapshot {
 
 describe('worktree session persistence', () => {
   beforeEach(reset)
+
+  it('allows terminal tags but strips Cate Agent panel residue', () => {
+    const ws = useAppStore.getState().addWorkspace('WT', ROOT, 'ws')
+    useAppStore.getState().addPanel(ws, {
+      id: 'terminal-1', type: 'terminal', title: 'Terminal', isDirty: false,
+    })
+    useAppStore.getState().addPanel(ws, {
+      id: 'agent-1', type: 'cateAgent', title: 'Agent', isDirty: false, worktreeId: 'legacy',
+    })
+
+    useAppStore.getState().setPanelWorktreeId(ws, 'terminal-1', 'wt-x')
+    useAppStore.getState().setPanelWorktreeId(ws, 'agent-1', 'wt-x')
+
+    const panels = useAppStore.getState().getWorkspace(ws)!.panels
+    expect(panels['terminal-1'].worktreeId).toBe('wt-x')
+    expect(panels['agent-1'].worktreeId).toBeUndefined()
+  })
 
   it('restoreSession hydrates the worktree registry (colors/labels) into the workspace', async () => {
     const ws = useAppStore.getState().addWorkspace('WT', ROOT, 'ws')

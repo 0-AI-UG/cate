@@ -62,15 +62,23 @@ import { getCachedCatalog } from './catalog'
 import { getProxyUrlFor, identityForGuestUrl } from './proxyServer'
 import { extensionServerManager } from './ExtensionServerManager'
 import { codingManager } from '../../cateAgent/main/codingManager'
+import { codingAgentAdmission } from './codingAgentAdmission'
 import { getExtensionStorage } from './storage'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { getActiveMainWindow, getWindow } from '../windowRegistry'
-import { getWindowPanels, removeWindowPanel, revealWindowPanel, upsertWindowPanel } from '../windowPanels'
+import {
+  getWindowPanels,
+  removeWindowPanel,
+  revealWindowPanel,
+  subscribeWindowPanels,
+  upsertWindowPanel,
+} from '../windowPanels'
 import { parseLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import { getAllSettings, getSetting } from '../settingsFile'
 import { resolveActiveTheme } from '../themeBootCache'
 import { showOsNotification } from '../ipc/notifications'
-import type { PanelType } from '../../shared/types'
+import type { PanelType, WindowPanelInfo } from '../../shared/types'
+import type { CodingAgentRunStatus } from '../../shared/codingAgentRuns'
 
 /** Bumped when the cateHost API surface changes incompatibly. Guests use
  *  `cate.version` for feature detection.
@@ -94,6 +102,13 @@ import type { PanelType } from '../../shared/types'
 const CATE_API_VERSION = 6
 
 const FORWARD_TIMEOUT_MS = 10_000
+const CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS = 65_000
+
+export function forwardTimeoutMs(method: string): number {
+  return method === 'cate.codingAgent.wait'
+    ? CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS
+    : FORWARD_TIMEOUT_MS
+}
 
 /** Stable errors for CLI permission cells (Settings → CLI) that are off. Each
  *  tells the caller how to get the feature enabled, not just that it is denied.
@@ -125,11 +140,13 @@ export interface InvokeScope {
   /** Who is calling. First-party (terminal/agent via the CLI/reverse endpoint)
    *  callers are trusted: they skip the extension-enabled gate and the browser
    *  consent prompt. Undefined is treated as 'extension'. */
-  caller?: 'extension' | 'first-party'
+  caller?: 'extension' | 'first-party' | 'cate-agent'
   /** Scopes the caller was granted. For first-party callers this is supplied by
    *  the env-manager instead of a manifest; when absent the extension manifest's
    *  `cateApi` is used. */
   grantedScopes?: string[]
+  /** Runtime-absolute cwd of an embedded supervisor session. */
+  originCwd?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +192,7 @@ export function forwardToOwner(
     const timer = setTimeout(() => {
       pendingForwards.delete(requestId)
       resolve({ error: 'timeout', method: payload.method })
-    }, FORWARD_TIMEOUT_MS)
+    }, forwardTimeoutMs(payload.method))
     pendingForwards.set(requestId, { resolve, timer })
     try {
       owner.send(CATE_HOST_FORWARD, {
@@ -234,6 +251,212 @@ function resolvePanelTargetWindow(
   return { wc: win.webContents, ownerWindowId: win.id }
 }
 
+/** Resolve a mission worker to the renderer currently hosting its terminal.
+ * Window reports carry both the run and supervisor identities, preventing one
+ * Cate Agent session from using a guessed run id to reach another mission. */
+function resolveCodingAgentTargetWindow(
+  runIds: string[],
+  ownerPanelId: string,
+): { wc: WebContents } | { error: string } | null {
+  if (runIds.length === 0) return null
+  const reports = runIds.map((runId) =>
+    getWindowPanels().find((panel) =>
+      panel.type === 'terminal' &&
+      panel.codingAgentRunId === runId &&
+      panel.codingAgentOwnerPanelId === ownerPanelId,
+    ),
+  )
+  // A just-created panel may not have reached the debounced discovery report
+  // yet. The supervisor-bound forward remains exact in that common case.
+  if (reports.some((report) => !report)) return null
+  const ownerIds = new Set(reports.map((report) => report!.ownerWindowId))
+  if (ownerIds.size !== 1) return { error: 'coding-agent-runs-span-windows' }
+  const win = getWindow([...ownerIds][0])
+  if (!win || win.isDestroyed()) return { error: 'coding-agent-window-not-found' }
+  return { wc: win.webContents }
+}
+
+const ACTIONABLE_CODING_AGENT_STATUSES = new Set<CodingAgentRunStatus>([
+  'waiting',
+  'ready',
+  'stopped',
+  'failed',
+])
+
+function codingAgentReports(
+  runIds: string[],
+  ownerPanelId: string,
+): WindowPanelInfo[] | null {
+  const reports = runIds.map((runId) =>
+    getWindowPanels().find((panel) =>
+      panel.type === 'terminal' &&
+      panel.codingAgentRunId === runId &&
+      panel.codingAgentOwnerPanelId === ownerPanelId,
+    ),
+  )
+  return reports.some((report) => !report) ? null : reports as WindowPanelInfo[]
+}
+
+async function inspectCodingAgentReports(args: {
+  reports: WindowPanelInfo[]
+  extensionId: string
+  workspaceId: string
+  ownerPanelId: string
+  originCwd?: string
+}): Promise<unknown[]> {
+  return Promise.all(args.reports.map(async (report) => {
+    const win = getWindow(report.ownerWindowId)
+    if (!win || win.isDestroyed()) {
+      return {
+        id: report.codingAgentRunId,
+        panelId: report.panelId,
+        status: report.codingAgentStatus,
+      }
+    }
+    const result = await forwardToOwner(win.webContents, {
+      extensionId: args.extensionId,
+      workspaceId: args.workspaceId,
+      panelId: args.ownerPanelId,
+      method: 'cate.codingAgent.inspect',
+      args: {
+        runId: report.codingAgentRunId,
+        _cateOriginCwd: args.originCwd,
+      },
+    })
+    if (result && typeof result === 'object' && !('error' in result)) {
+      const { recentOutput: _recentOutput, ...compact } =
+        result as Record<string, unknown>
+      return compact
+    }
+    return {
+      id: report.codingAgentRunId,
+      panelId: report.panelId,
+      status: report.codingAgentStatus,
+    }
+  }))
+}
+
+/** Wait across workers hosted by different renderers using the existing
+ * cross-window discovery events. No renderer polling and no orphaned parallel
+ * wait requests: one main-process subscription observes all worker statuses. */
+function waitForCrossWindowCodingAgents(args: {
+  runIds: string[]
+  extensionId: string
+  workspaceId: string
+  ownerPanelId: string
+  originCwd?: string
+  timeoutSeconds: unknown
+  baselineStatuses?: unknown
+}): Promise<InvokeResult> {
+  const initial = codingAgentReports(args.runIds, args.ownerPanelId)
+  if (!initial || initial.some((report) => !report.codingAgentStatus)) {
+    return Promise.resolve({
+      error: 'coding-agent-status-unavailable',
+      method: 'cate.codingAgent.wait',
+    })
+  }
+  const suppliedBaseline = args.baselineStatuses && typeof args.baselineStatuses === 'object'
+    ? args.baselineStatuses as Record<string, unknown>
+    : null
+  const baseline = new Map(initial.map((report) => {
+    const supplied = suppliedBaseline?.[report.codingAgentRunId!]
+    return [
+      report.codingAgentRunId!,
+      typeof supplied === 'string' ? supplied as CodingAgentRunStatus : report.codingAgentStatus!,
+    ] as const
+  }))
+  const requestedSeconds = Number(args.timeoutSeconds ?? 10)
+  const timeoutMs = (Number.isFinite(requestedSeconds)
+    ? Math.max(5, Math.min(60, requestedSeconds))
+    : 10) * 1_000
+
+  return new Promise((resolve) => {
+    let settled = false
+    let unsubscribe = () => {}
+    const finish = async (
+      timedOut: boolean,
+      changedRunIds: string[],
+      reports: WindowPanelInfo[],
+    ): Promise<void> => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      unsubscribe()
+      resolve({
+        timedOut,
+        changedRunIds,
+        runs: await inspectCodingAgentReports({ reports, ...args }),
+      })
+    }
+    const check = (): void => {
+      const reports = codingAgentReports(args.runIds, args.ownerPanelId)
+      if (!reports) {
+        void finish(false, args.runIds, initial)
+        return
+      }
+      const changedRunIds = reports
+        .filter((report) =>
+          report.codingAgentStatus !== baseline.get(report.codingAgentRunId!) &&
+          report.codingAgentStatus !== undefined &&
+          ACTIONABLE_CODING_AGENT_STATUSES.has(report.codingAgentStatus),
+        )
+        .map((report) => report.codingAgentRunId!)
+      for (const report of reports) {
+        if (report.codingAgentStatus) baseline.set(report.codingAgentRunId!, report.codingAgentStatus)
+      }
+      if (changedRunIds.length > 0) void finish(false, changedRunIds, reports)
+    }
+    const initialActionable = suppliedBaseline ? [] : initial
+      .filter((report) => ACTIONABLE_CODING_AGENT_STATUSES.has(report.codingAgentStatus!))
+      .map((report) => report.codingAgentRunId!)
+    const timer = setTimeout(() => {
+      const reports = codingAgentReports(args.runIds, args.ownerPanelId) ?? initial
+      void finish(true, [], reports)
+    }, timeoutMs)
+    unsubscribe = subscribeWindowPanels(check)
+    if (initialActionable.length > 0) {
+      void finish(false, initialActionable, initial)
+      return
+    }
+    check()
+  })
+}
+
+/** Stop every live worker owned by a mission before its durable chat is
+ * deleted. The supervisor renderer is always included to catch a worker whose
+ * discovery report has not landed yet; reported detached windows are added so
+ * transferred workers are stopped in their current owner renderer. This is an
+ * internal lifecycle command, not part of the public cate.codingAgent surface. */
+export async function stopCodingAgentsForMission(
+  workspaceId: string,
+  ownerPanelId: string,
+  supervisor: WebContents,
+): Promise<void> {
+  const targets = new Map<number, WebContents>()
+  if (!supervisor.isDestroyed()) targets.set(supervisor.id, supervisor)
+  for (const report of getWindowPanels()) {
+    if (
+      report.workspaceId !== workspaceId ||
+      report.type !== 'terminal' ||
+      report.codingAgentOwnerPanelId !== ownerPanelId
+    ) continue
+    const win = getWindow(report.ownerWindowId)
+    if (win && !win.isDestroyed()) targets.set(win.webContents.id, win.webContents)
+  }
+  await Promise.all([...targets.values()].map(async (target) => {
+    const result = await forwardToOwner(target, {
+      extensionId: 'cate-agent',
+      workspaceId,
+      panelId: ownerPanelId,
+      method: 'cate.codingAgent.stopAll',
+      args: {},
+    })
+    if (result && typeof result === 'object' && 'error' in result) {
+      log.warn('[coding-agent] mission cleanup failed owner=%s: %s', ownerPanelId, result.error)
+    }
+  }))
+}
+
 // ---------------------------------------------------------------------------
 // Method dispatch
 // ---------------------------------------------------------------------------
@@ -266,6 +489,13 @@ export function requiredScopeFor(method: string): string | null | undefined {
       return 'theme'
     case 'cate.ui.notify':
       return 'ui'
+    case 'cate.codingAgent.create':
+    case 'cate.codingAgent.send':
+    case 'cate.codingAgent.wait':
+    case 'cate.codingAgent.inspect':
+    case 'cate.codingAgent.review':
+    case 'cate.codingAgent.stop':
+      return 'coding-agent'
     case 'cate.editor.openFile':
       return 'editor.write'
     // Unlike the self-identity panel.* methods below, these read or steer OTHER
@@ -415,16 +645,24 @@ export function authorizeCateInvoke(
   args: unknown,
 ): InvokeResult | null {
   const { extensionId, panelId } = scope
+  const trustedCaller = scope.caller === 'first-party' || scope.caller === 'cate-agent'
 
   // Security: only enabled, known extensions may call the host. First-party
-  // (terminal/agent) callers are trusted and skip this gate.
-  if (scope.caller !== 'first-party' && (!extensionManager.isKnown(extensionId) || !extensionManager.isEnabled(extensionId))) {
+  // terminals and the embedded Cate Agent are trusted and skip this gate.
+  if (!trustedCaller && (!extensionManager.isKnown(extensionId) || !extensionManager.isEnabled(extensionId))) {
     return { error: 'not-enabled', method }
+  }
+
+  // Coding-agent orchestration is the embedded supervisor's privileged surface.
+  // Ordinary terminals, extension webviews, and spawned workers never receive
+  // its token, even if they self-declare a matching scope.
+  if (method.startsWith('cate.codingAgent.') && scope.caller !== 'cate-agent') {
+    return { error: 'cate-agent-only', method }
   }
 
   // The terminal/agent endpoint must never move the user's window, panel focus,
   // or canvas camera. Extensions retain panel.focus behind their panel scope.
-  if (scope.caller === 'first-party' && method === 'cate.panel.focus') {
+  if (trustedCaller && method === 'cate.panel.focus') {
     return unsupported(method)
   }
 
@@ -448,11 +686,22 @@ export function authorizeCateInvoke(
     }
   }
 
-  // Security: the first-party CLI permission matrix (Settings → CLI) — one
-  // read/control cell per surface, checked before anything is touched. A method
-  // no row covers is governed by scopes alone. Extensions never reach this:
-  // their gate is manifest scopes plus, for browser/agent, a consent prompt.
-  if (scope.caller === 'first-party') {
+  // Security: direct CLI calls and the embedded supervisor's non-orchestration
+  // calls share the Settings → CLI gates. The supervisor endpoint must stay
+  // alive when the master switch is off so its coding-agent orchestration can
+  // still work, but that privileged endpoint must not become a way around the
+  // user's CLI permissions for browser, terminal, panel, editor, or UI access.
+  // Extensions remain governed by manifest scopes plus capability consent.
+  const isCodingAgentOrchestration = method.startsWith('cate.codingAgent.')
+  const usesCliPermissions = scope.caller === 'first-party'
+    || (scope.caller === 'cate-agent' && !isCodingAgentOrchestration)
+  if (usesCliPermissions) {
+    if (getSetting('cliEnabled') !== true) {
+      return {
+        error: 'cli-disabled: enable Command-line control (cate CLI) in Cate Settings → CLI',
+        method,
+      }
+    }
     const cell = cliPermissionForRequest(method, args)
     if (cell && getSetting(cell.key) !== true) {
       return { error: cliPermissionDenied(cell), method }
@@ -477,6 +726,59 @@ export async function dispatchCateInvoke(
   if (denied) return denied
 
   const { extensionId, workspaceId, panelId } = scope
+  const trustedCaller = scope.caller === 'first-party' || scope.caller === 'cate-agent'
+
+  if (method.startsWith('cate.codingAgent.')) {
+    const routedArgs: Record<string, unknown> = {
+      ...((args ?? {}) as Record<string, unknown>),
+      _cateOriginCwd: scope.originCwd,
+    }
+    const name = method.slice('cate.codingAgent.'.length)
+    const requestedRunIds = name === 'wait'
+      ? (Array.isArray(routedArgs.runIds)
+          ? routedArgs.runIds.filter((id: unknown): id is string => typeof id === 'string')
+          : [])
+      : typeof routedArgs.runId === 'string' ? [routedArgs.runId] : []
+    const target = name === 'create'
+      ? null
+      : resolveCodingAgentTargetWindow(requestedRunIds, panelId ?? '')
+    if (target && 'error' in target) {
+      if (name === 'wait' && target.error === 'coding-agent-runs-span-windows') {
+        return waitForCrossWindowCodingAgents({
+          runIds: requestedRunIds,
+          extensionId,
+          workspaceId,
+          ownerPanelId: panelId ?? '',
+          originCwd: scope.originCwd,
+          timeoutSeconds: routedArgs.timeoutSeconds,
+          baselineStatuses: routedArgs.baselineStatuses,
+        })
+      }
+      return { error: target.error, method }
+    }
+    const payload = {
+      extensionId,
+      workspaceId,
+      panelId: panelId ?? '',
+      method,
+      args: routedArgs,
+    }
+    const forward = (): Promise<InvokeResult> => target
+      ? forwardToOwner(target.wc, payload)
+      : scope.forward(payload)
+    if (name === 'create') {
+      const admission = await codingAgentAdmission.admit({
+        workspaceId,
+        ownerPanelId: panelId ?? '',
+        panels: getWindowPanels,
+        create: forward,
+      })
+      return admission.admitted
+        ? admission.result
+        : { error: 'coding-agent-limit', method }
+    }
+    return forward()
+  }
 
   // Storage (handled in main, backed by storage.ts). Routed by prefix — mirrors
   // requiredScopeFor's storage.* branch — so dispatchStorage's switch is the sole
@@ -495,7 +797,7 @@ export async function dispatchCateInvoke(
     // Two flavors of the same gate: extensions get a one-time-per-session
     // consent prompt (mirroring agent); the first-party CLI was already checked
     // against its Browser read/control cells above, so it needs no prompt.
-    if (scope.caller !== 'first-party' && !(await ensureConsent(extensionId, 'browser'))) {
+    if (!trustedCaller && !(await ensureConsent(extensionId, 'browser'))) {
       return { error: 'consent-denied', method }
     }
     const result = await forwardToOwner(target.wc, { extensionId, workspaceId, panelId: panelId ?? '', method, args })
@@ -525,7 +827,7 @@ export async function dispatchCateInvoke(
     // self-declared, and the terminal consent story (prompt vs toggle) is
     // deferred until a real extension consumer exists. Revisit alongside
     // ConsentCapability if one appears.
-    if (scope.caller !== 'first-party') {
+    if (!trustedCaller) {
       return { error: 'terminal-first-party-only', method }
     }
     const a = (args ?? {}) as { panelId?: string }
