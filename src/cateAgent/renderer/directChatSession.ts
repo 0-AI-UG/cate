@@ -32,16 +32,16 @@ export async function ensureDirectChatSession(
   cwd: string,
 ): Promise<boolean> {
   const panelId = directAgentKey(chat.id)
-  if (useCodingStore.getState().panels[panelId]) return true
   const inFlight = creating.get(panelId)
   if (inFlight) return inFlight
 
   const promise = (async () => {
     const store = useCodingStore.getState()
+    const existingPanel = store.panels[panelId]
     store.init(panelId)
-    const model = (await resolveSessionModel(chat.model)) ?? undefined
+    const model = existingPanel?.model ?? (await resolveSessionModel(chat.model)) ?? undefined
     if (model) store.setModel(panelId, model)
-    if (chat.sessionFile) {
+    if (!existingPanel && chat.sessionFile) {
       try {
         const messages = await window.electronAPI.agentLoadSessionMessages(chat.sessionFile)
         store.loadMessages(panelId, messages as CodingMessage[])

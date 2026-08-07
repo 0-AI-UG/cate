@@ -54,6 +54,19 @@ describe('promptDirectChat', () => {
       undefined,
     )
   })
+
+  it('revalidates an existing renderer session before sending', async () => {
+    const agentKey = directAgentKey(chat.id)
+    useCodingStore.getState().init(agentKey)
+    useCodingStore.getState().appendSystem(agentKey, 'Keep this transcript')
+
+    await promptDirectChat(chat, 'workspace-1', '/repo', 'Next message')
+
+    expect(window.electronAPI.agentCreate).toHaveBeenCalledOnce()
+    expect(useCodingStore.getState().panels[agentKey]?.messages).toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: 'Keep this transcript' })]),
+    )
+  })
 })
 
 describe('disposeDirectChatSession', () => {

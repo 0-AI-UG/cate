@@ -35,7 +35,10 @@ vi.mock('./codingDir', () => ({
 vi.mock('./customModels', () => ({ mirrorModelsToWorkspace: vi.fn() }))
 vi.mock('../../skills/main/skillsMirror', () => ({ syncWorkspaceSkills: vi.fn() }))
 vi.mock('../../main/extensions/workspaceCateApi', () => ({
-  workspaceCateApi: { ensureCateAgentEndpoint: vi.fn().mockResolvedValue(null) },
+  workspaceCateApi: {
+    ensureCateAgentEndpoint: vi.fn().mockResolvedValue(null),
+    disposeCateAgentEndpoint: vi.fn(),
+  },
 }))
 vi.mock('../../main/extensions/cateApiHandlers', () => ({ stopCodingAgentsForMission }))
 vi.mock('../../main/workspaceStateStore', () => ({ isProjectTrusted: vi.fn(() => false) }))
@@ -81,6 +84,8 @@ describe('CodingManager worktree skill preparation', () => {
     vi.mocked(runtimes.resolve).mockReturnValue(runtime as never)
     const client = {
       start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => true),
+      getState: vi.fn().mockResolvedValue({}),
       onEvent: vi.fn(() => vi.fn()),
       onExit: vi.fn(() => vi.fn()),
     }
@@ -137,6 +142,8 @@ describe('CodingManager worktree skill preparation', () => {
     let exitListener: ((code: number | null, stderr: string) => void) | undefined
     const client = {
       start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => true),
+      getState: vi.fn().mockResolvedValue({}),
       onEvent: vi.fn(() => vi.fn()),
       onExit: vi.fn((listener: typeof exitListener) => {
         exitListener = listener
@@ -178,6 +185,77 @@ describe('CodingManager worktree skill preparation', () => {
     })
     expect(JSON.stringify(send.mock.calls)).not.toContain('/Users/')
     expect(JSON.stringify(send.mock.calls)).not.toContain('Extension runtime')
+  })
+
+  it('rejects creation and removes the session when pi exits during readiness', async () => {
+    const runtime = { agent: { ensurePi: vi.fn().mockResolvedValue(undefined) } }
+    vi.mocked(runtimes.resolve).mockReturnValue(runtime as never)
+    const client = {
+      start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => false),
+      getState: vi.fn().mockRejectedValue(new Error('PiRpcClient not started')),
+      onEvent: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+      rejectAllPending: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+    }
+    vi.mocked(PiRpcClient).mockImplementation(() => client as never)
+
+    const manager = new CodingManager(fakeAuthManager)
+    await expect(manager.create(
+      {
+        panelId: 'panel-early-exit',
+        workspaceId: 'workspace-1',
+        workspaceRoot: '/repo/base',
+        cwd: '/repo/worktree',
+      },
+      { id: 4, isDestroyed: () => false, send: vi.fn() } as never,
+    )).rejects.toThrow('Pi process exited during startup')
+
+    expect(client.rejectAllPending).toHaveBeenCalled()
+    expect(client.stop).toHaveBeenCalled()
+    expect((manager as unknown as { sessions: Map<string, unknown> }).sessions.has('panel-early-exit')).toBe(false)
+  })
+
+  it('replaces a stopped session instead of adopting it', async () => {
+    const runtime = { agent: { ensurePi: vi.fn().mockResolvedValue(undefined) } }
+    vi.mocked(runtimes.resolve).mockReturnValue(runtime as never)
+    let firstStarted = true
+    const first = {
+      start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => firstStarted),
+      getState: vi.fn().mockResolvedValue({}),
+      onEvent: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+      rejectAllPending: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+    }
+    const second = {
+      start: vi.fn().mockResolvedValue(undefined),
+      isStarted: vi.fn(() => true),
+      getState: vi.fn().mockResolvedValue({}),
+      onEvent: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+    }
+    vi.mocked(PiRpcClient)
+      .mockImplementationOnce(() => first as never)
+      .mockImplementationOnce(() => second as never)
+
+    const manager = new CodingManager(fakeAuthManager)
+    const sender = { id: 4, isDestroyed: () => false, send: vi.fn() } as never
+    const options = {
+      panelId: 'panel-restart',
+      workspaceId: 'workspace-1',
+      workspaceRoot: '/repo/base',
+      cwd: '/repo/worktree',
+    }
+    await manager.create(options, sender)
+    firstStarted = false
+    await manager.create(options, sender)
+
+    expect(PiRpcClient).toHaveBeenCalledTimes(2)
+    expect(first.rejectAllPending).toHaveBeenCalled()
+    expect(second.start).toHaveBeenCalledOnce()
   })
 })
 

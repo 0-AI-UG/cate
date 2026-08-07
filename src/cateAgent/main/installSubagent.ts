@@ -11,7 +11,7 @@ import path from 'path'
 import { app } from 'electron'
 import log from '../../main/logger'
 import { hostCodingDir, hostJoin } from './codingDir'
-import { copyFileToHost, findSourceDir } from './extensionInstall'
+import { copyFileToHost, findSourceDir, hostFileExists } from './extensionInstall'
 import type { Runtime } from '../../main/runtime/types'
 
 const installed = new Set<string>()
@@ -44,6 +44,16 @@ export async function installSubagentExtension(runtime: Runtime, cwd: string): P
     ])
     if (!runtimeSource || !agentSource) {
       throw new Error('bundled subagent source directory not found')
+    }
+
+    // Older Cate versions installed the same managed tool under
+    // extensions/subagent. Pi loads both directories and rejects the duplicate
+    // `subagent` registration, so remove the obsolete Cate-managed copy before
+    // installing its renamed replacement.
+    const legacyExtensionDir = hostJoin(runtime.id, home, 'extensions', 'subagent')
+    if (await hostFileExists(runtime, legacyExtensionDir)) {
+      await runtime.file.remove(legacyExtensionDir)
+      log.info('[installSubagent] removed legacy extension %s', legacyExtensionDir)
     }
 
     const extensionDir = hostJoin(runtime.id, home, 'extensions', 'cate-subagent')

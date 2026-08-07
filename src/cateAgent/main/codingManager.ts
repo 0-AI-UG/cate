@@ -150,7 +150,8 @@ export class CodingManager {
 
   async create(opts: CodingCreateOptions, sender: WebContents): Promise<void> {
     return this.locks.run(opts.panelId, async () => {
-      if (this.sessions.has(opts.panelId)) {
+      const existing = this.sessions.get(opts.panelId)
+      if (existing?.client.isStarted()) {
         // Idempotent per session key: a second create for a live headless Cate
         // Agent session (or a create racing an in-flight one) is a no-op adoption.
         // Respawning here would strand the first freshly-started pi process and
@@ -158,6 +159,10 @@ export class CodingManager {
         // race-free against a concurrent create for the same key.
         log.info('[codingManager] adopting existing session for %s (create is a no-op)', opts.panelId)
         return
+      }
+      if (existing) {
+        log.warn('[codingManager] replacing stopped session for %s', opts.panelId)
+        await this.disposeInternal(opts.panelId)
       }
 
       // Resolve the workspace's runtime from its locator (throws if a remote
@@ -321,6 +326,10 @@ export class CodingManager {
         ])
       } catch (err) {
         log.warn('[codingManager] readiness probe failed for %s: %O', opts.panelId, err)
+      }
+      if (!client.isStarted()) {
+        await this.disposeInternal(opts.panelId)
+        throw new Error('Pi process exited during startup')
       }
     })
   }

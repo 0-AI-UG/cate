@@ -22,6 +22,7 @@ describe('installSubagentExtension', () => {
         readFile: vi.fn(),
         mkdir: vi.fn(async () => undefined),
         writeFile: vi.fn(async () => undefined),
+        remove: vi.fn(async () => undefined),
       },
     } as any
 
@@ -51,6 +52,30 @@ describe('installSubagentExtension', () => {
       .not.toContain('tools: subagent')
   })
 
+  it('removes the legacy Cate-managed extension before installing the renamed one', async () => {
+    const legacyDir = '/host/.cate/cate-agent/extensions/subagent'
+    const runtime = {
+      id: 'legacy-local',
+      file: {
+        stat: vi.fn(async (filePath: string) => {
+          if (filePath === legacyDir) return { isDirectory: true, isFile: false }
+          throw new Error('missing')
+        }),
+        readFile: vi.fn(),
+        mkdir: vi.fn(async () => undefined),
+        writeFile: vi.fn(async () => undefined),
+        remove: vi.fn(async () => undefined),
+      },
+    } as any
+
+    await installSubagentExtension(runtime, '/repo')
+
+    expect(runtime.file.remove).toHaveBeenCalledWith(legacyDir)
+    expect(runtime.file.remove.mock.invocationCallOrder[0]).toBeLessThan(
+      runtime.file.writeFile.mock.invocationCallOrder[0],
+    )
+  })
+
   it('does not start a Cate Agent session without the required subagent runtime', async () => {
     const failure = new Error('remote write failed')
     const runtime = {
@@ -60,6 +85,7 @@ describe('installSubagentExtension', () => {
         readFile: vi.fn(),
         mkdir: vi.fn(async () => undefined),
         writeFile: vi.fn(async () => { throw failure }),
+        remove: vi.fn(async () => undefined),
       },
     } as any
 

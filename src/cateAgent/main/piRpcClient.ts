@@ -58,26 +58,36 @@ export class PiRpcClient {
   async start(): Promise<void> {
     if (this.started) throw new Error('PiRpcClient already started')
     this.started = true
-    await this.runtime.agent.start(
-      {
-        id: this.aid,
-        cwd: this.options.cwd,
-        env: this.options.env,
-        provider: this.options.provider,
-        model: this.options.model,
-        args: this.options.args,
-      },
-      (_id, line) => this.handleLine(line),
-      (_id, code, stderr) => {
-        if (stderr) this.stderr = stderr
-        const detail = stderr ? `:\n${stderr}` : ''
-        this.rejectAllPending(`pi process exited (code ${code})${detail}`)
-        this.started = false
-        if (!this.disposing) {
-          for (const l of this.exitListeners) { try { l(code, stderr) } catch { /* noop */ } }
-        }
-      },
-    )
+    try {
+      await this.runtime.agent.start(
+        {
+          id: this.aid,
+          cwd: this.options.cwd,
+          env: this.options.env,
+          provider: this.options.provider,
+          model: this.options.model,
+          args: this.options.args,
+        },
+        (_id, line) => this.handleLine(line),
+        (_id, code, stderr) => {
+          if (stderr) this.stderr = stderr
+          const detail = stderr ? `:\n${stderr}` : ''
+          this.rejectAllPending(`pi process exited (code ${code})${detail}`)
+          this.started = false
+          if (!this.disposing) {
+            for (const l of this.exitListeners) { try { l(code, stderr) } catch { /* noop */ } }
+          }
+        },
+      )
+    } catch (err) {
+      this.started = false
+      throw err
+    }
+    if (!this.started) throw new Error('Pi process exited during startup')
+  }
+
+  isStarted(): boolean {
+    return this.started
   }
 
   async stop(): Promise<void> {
