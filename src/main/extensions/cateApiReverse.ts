@@ -16,10 +16,17 @@
 
 import http from 'http'
 import { Duplex } from 'stream'
+import type { WebContents } from 'electron'
 import log from '../logger'
 import type { Runtime } from '../runtime/types'
-import type { WebContents } from 'electron'
-import { dispatchCateInvoke, forwardToActiveWindow, forwardToOwner } from './cateApiHandlers'
+import { getWindowPanels } from '../windowPanels'
+import {
+  authorizeCateInvoke,
+  dispatchCateInvoke,
+  forwardToActiveWindow,
+  forwardToOwner,
+  type InvokeScope,
+} from './cateApiHandlers'
 import { reverseDuplex } from './serverTunnel'
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024
@@ -74,6 +81,11 @@ function readBody(req: http.IncomingMessage): Promise<string> {
  */
 export function createCateApiReverse(session: ReverseSession): CateApiReverseEndpoint {
   const duplexes = new Set<Duplex>()
+  const panelTargets = new Map<string, string>()
+
+  function panelTargetKey(workspaceId: string, clientId: string): string {
+    return `${workspaceId}\0${clientId}`
+  }
 
   const server = http.createServer((req, res) => {
     void handle(req, res)
@@ -97,34 +109,99 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
         return
       }
       const raw = await readBody(req)
-      let parsed: { method?: unknown; args?: unknown }
+      let parsed: { method?: unknown; args?: unknown; clientId?: unknown }
       try { parsed = raw ? JSON.parse(raw) : {} } catch { send(400, { error: 'bad-json' }); return }
       const method = typeof parsed.method === 'string' ? parsed.method : ''
       if (!method) { send(400, { error: 'no-method' }); return }
+      const clientId = typeof parsed.clientId === 'string' && parsed.clientId
+        ? parsed.clientId
+        : undefined
+      const targetKey = clientId ? panelTargetKey(session.workspaceId, clientId) : undefined
+      const args = parsed.args && typeof parsed.args === 'object'
+        ? parsed.args as Record<string, unknown>
+        : {}
+      const invokeScope = {
+        extensionId: session.extensionId,
+        workspaceId: session.workspaceId,
+        panelId: session.panelId,
+        forward: session.ownerWebContents && !session.ownerWebContents.isDestroyed()
+          ? (payload: Parameters<InvokeScope['forward']>[0]) =>
+              forwardToOwner(session.ownerWebContents!, payload)
+          : forwardToActiveWindow,
+        caller: session.caller,
+        grantedScopes: session.grantedScopes,
+        originCwd: session.originCwd,
+      } as const
 
-      const result = await dispatchCateInvoke(
-        {
-          extensionId: session.extensionId,
-          workspaceId: session.workspaceId,
-          // No owning panel/sender on the server side: panel-scoped storage and
-          // forwarded methods target the workspace best-effort.
-          panelId: session.panelId,
-          // State-mutating methods (editor.openFile / canvas.createPanel /
-          // panel.setTitle) need a renderer. The server has no sender, so we
-          // forward to the active main window (best-effort — there's no
-          // authoritative workspace→window map for main windows).
-          forward: session.ownerWebContents && !session.ownerWebContents.isDestroyed()
-            ? (payload) => forwardToOwner(session.ownerWebContents!, payload)
-            : forwardToActiveWindow,
-          // Absent for extension-server sessions (undefined => 'extension'
-          // gate + manifest scopes); set for first-party terminal/agent callers.
-          caller: session.caller,
-          grantedScopes: session.grantedScopes,
-          originCwd: session.originCwd,
-        },
-        method,
-        parsed.args,
-      )
+      if (session.caller === 'first-party' && method.startsWith('cate.panel.target.')) {
+        const denied = authorizeCateInvoke(invokeScope, method, args)
+        if (denied) {
+          send(200, { result: denied })
+          return
+        }
+        if (!clientId) {
+          send(200, { result: { error: 'cli-session-unavailable' } })
+          return
+        }
+        if (method === 'cate.panel.target.set') {
+          const panelId = typeof args.panelId === 'string' ? args.panelId : ''
+          const panel = getWindowPanels().find(
+            (candidate) => candidate.panelId === panelId && candidate.workspaceId === session.workspaceId,
+          )
+          if (!panel) {
+            send(200, { result: { error: 'no-such-panel' } })
+            return
+          }
+          panelTargets.set(targetKey!, panel.panelId)
+          send(200, { result: { panelId: panel.panelId, type: panel.type } })
+          return
+        }
+        if (method === 'cate.panel.target.current') {
+          const panelId = panelTargets.get(targetKey!)
+          const panel = panelId
+            ? getWindowPanels().find(
+                (candidate) => candidate.panelId === panelId && candidate.workspaceId === session.workspaceId,
+              )
+            : undefined
+          if (panelId && !panel) panelTargets.delete(targetKey!)
+          send(200, { result: panel ? { panelId: panel.panelId, type: panel.type } : { panelId: null } })
+          return
+        }
+        if (method === 'cate.panel.target.clear') {
+          panelTargets.delete(targetKey!)
+          send(200, { result: { ok: true } })
+          return
+        }
+      }
+
+      let dispatchArgs: unknown = parsed.args
+      let selectedPanelId = targetKey ? panelTargets.get(targetKey) : undefined
+      const targetType = method.startsWith('cate.browser.')
+        ? 'browser'
+        : method.startsWith('cate.terminal.')
+          ? 'terminal'
+          : undefined
+      const usesSelectedPanel = targetType
+        && selectedPanelId
+        && args.panelId === undefined
+        && !(method === 'cate.browser.open' && args.newPanel === true)
+      if (usesSelectedPanel) {
+        const panel = getWindowPanels().find(
+          (candidate) => candidate.panelId === selectedPanelId && candidate.workspaceId === session.workspaceId,
+        )
+        if (!panel) {
+          panelTargets.delete(targetKey!)
+          selectedPanelId = undefined
+        } else {
+          if (panel.type !== targetType) {
+            send(200, { result: { error: `selected-panel-is-${panel.type}-not-${targetType}` } })
+            return
+          }
+          dispatchArgs = { ...args, panelId: selectedPanelId }
+        }
+      }
+
+      const result = await dispatchCateInvoke(invokeScope, method, dispatchArgs)
       // A void host method resolves `undefined`; coerce to `null` so the wire
       // body keeps a `result` key (JSON.stringify drops undefined values). Without
       // this, `{ result: undefined }` serializes to `{}` and the CLI's unwrap
@@ -148,6 +225,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
     dispose(): void {
       for (const d of duplexes) { try { d.destroy() } catch { /* gone */ } }
       duplexes.clear()
+      panelTargets.clear()
       try { server.close() } catch { /* gone */ }
     },
   }

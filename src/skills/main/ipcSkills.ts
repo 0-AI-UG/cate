@@ -11,6 +11,7 @@ import {
   SKILLS_GET_PREVIEW,
   SKILLS_INSTALL,
   SKILLS_UNINSTALL,
+  SKILLS_REINSTALL_CATE_CLI,
   SKILLS_LIST_INSTALLED,
   SKILLS_LIST_SAVED,
   SKILLS_SAVE,
@@ -31,6 +32,7 @@ import { runtimes } from '../../main/runtime/runtimeManager'
 import { windowFromEvent } from '../../main/windowRegistry'
 import { syncWorkspaceSkills } from './skillsMirror'
 import { listWorktreeCheckouts } from '../../main/worktreeContext'
+import { reinstallCateCliSkill } from './seedCateCliSkill'
 
 async function syncOpenWorktrees(
   baseCwd: string,
@@ -103,6 +105,16 @@ export function registerSkillHandlers(): void {
       await installer.uninstall(skillId, name, targetId, cwd)
       await syncOpenWorktrees(cwd, workspaceId, windowFromEvent(event)?.id)
       return { ok: true as const }
+    } catch (err) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(SKILLS_REINSTALL_CATE_CLI, async (event, cwd: string, workspaceId?: string) => {
+    try {
+      const installedTargets = await reinstallCateCliSkill(cwd)
+      const warnings = await syncOpenWorktrees(cwd, workspaceId, windowFromEvent(event)?.id)
+      return { ok: true as const, installedTargets, warnings }
     } catch (err) {
       return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
     }

@@ -9,6 +9,7 @@ import { viewToCanvas as viewToCanvasCoords } from '../../lib/canvas/coordinates
 import type { CanvasGet, CanvasSet, CanvasStoreActions } from './storeTypes'
 import type { CanvasStoreCtx } from './storeCtx'
 import { focusedNodeId } from './selectionModel'
+import { zoomEaseForElapsed } from '../../lib/canvas/zoomAnimation'
 
 type ViewportActions = Pick<
   CanvasStoreActions,
@@ -84,8 +85,9 @@ export function createViewportSlice(set: CanvasSet, get: CanvasGet, ctx: CanvasS
       if (get().suppressAutoFocus) set({ suppressAutoFocus: false })
 
       const clampedTarget = Math.min(Math.max(targetZoom, ZOOM_MIN), ZOOM_MAX)
+      let lastFrameAt = performance.now()
 
-      const tick = () => {
+      const tick = (now: number) => {
         const state = get()
         const diff = clampedTarget - state.zoomLevel
 
@@ -105,7 +107,9 @@ export function createViewportSlice(set: CanvasSet, get: CanvasGet, ctx: CanvasS
           return
         }
 
-        const newZoom = state.zoomLevel + diff * 0.15
+        const ease = zoomEaseForElapsed(now - lastFrameAt)
+        lastFrameAt = now
+        const newZoom = state.zoomLevel + diff * ease
         const centerX = (state.containerSize?.width || window.innerWidth) / 2
         const centerY = (state.containerSize?.height || window.innerHeight) / 2
         const canvasPoint = viewToCanvasCoords({ x: centerX, y: centerY }, state.zoomLevel, state.viewportOffset)

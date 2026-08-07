@@ -12,6 +12,7 @@
 // =============================================================================
 
 import { clipboard, ipcMain } from 'electron'
+import { randomUUID } from 'crypto'
 import fs from 'fs/promises'
 import path from 'path'
 import {
@@ -263,6 +264,7 @@ async function spawnTerminal(
       cateApiEnv = {
         CATE_API: `http://127.0.0.1:${endpoint.port}`,
         CATE_TOKEN: endpoint.token,
+        CATE_CLI_SESSION_ID: randomUUID(),
         ...(options.panelId ? { CATE_PANEL_ID: options.panelId } : {}),
         ...(options.placementGroupId ? { CATE_PLACEMENT_GROUP: options.placementGroupId } : {}),
       }

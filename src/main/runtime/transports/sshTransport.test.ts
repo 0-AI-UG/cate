@@ -1,20 +1,12 @@
 import { EventEmitter } from 'node:events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ChildProcessWithoutNullStreams, spawn as nodeSpawn } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
+import { readFile, stat } from 'node:fs/promises'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const sshModule = vi.hoisted(() => ({ makeClient: vi.fn() }))
-
-vi.mock('ssh2', () => ({
-  Client: class {
-    constructor() { return sshModule.makeClient() }
-  },
-}))
-vi.mock('../sshKnownHosts', () => ({
-  hostKeyId: vi.fn(),
-  verifyAndPinHostKey: vi.fn(),
-}))
 vi.mock('../../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../runtimeArtifacts', () => ({
-  ensureLocalTarball: vi.fn(),
+  ensureLocalTarball: vi.fn(async () => '/tmp/cate-runtime.tgz'),
   isRuntimeDevMode: () => false,
   isRuntimeTarget: (target: string) => ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64'].includes(target),
   localTarballIfPresent: () => null,
@@ -25,176 +17,213 @@ vi.mock('../runtimeArtifacts', () => ({
 
 import { SshTransport } from './sshTransport'
 
-type ConnectMode = 'ready' | 'authentication-error'
-
-class FakeChannel extends EventEmitter {
-  stderr = new EventEmitter()
+class FakePipe extends EventEmitter {
   write = vi.fn()
-  close = vi.fn()
 }
 
-let connectMode: ConnectMode
-let launchError: Error | null
-let probeStreamError: Error | null
-let clients: FakeSshClient[]
+class FakeChild extends EventEmitter {
+  stdin = new FakePipe()
+  stdout = new FakePipe()
+  stderr = new FakePipe()
+  kill = vi.fn()
+}
 
-class FakeSshClient extends EventEmitter {
-  connectOptions: Record<string, unknown> | null = null
-  launchChannel = new FakeChannel()
-  end = vi.fn()
-  exec = vi.fn((command: string, optionsOrCallback: unknown, maybeCallback?: (err: unknown, stream?: FakeChannel) => void) => {
-    const callback = (typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback) as (err: unknown, stream?: FakeChannel) => void
-    if (typeof optionsOrCallback !== 'function') {
-      if (launchError) callback(launchError)
-      else callback(null, this.launchChannel)
+interface SpawnCall {
+  binary: string
+  args: string[]
+  options: { env?: NodeJS.ProcessEnv }
+  child: FakeChild
+}
+
+let calls: SpawnCall[]
+let transports: SshTransport[]
+let installed: boolean
+let connectionFailure: string
+let spawnFailure: NodeJS.ErrnoException | null
+
+function commandResult(binary: string, args: string[]): { stdout?: string; stderr?: string; code?: number; hold?: boolean } {
+  if (binary === 'scp') return { code: 0 }
+  const command = args.at(-1) ?? ''
+  if (command.includes('/runtime.cjs') && command.includes('--root')) return { hold: true }
+  if (connectionFailure) return { code: 255, stderr: connectionFailure }
+  if (command.startsWith('uname -s')) return { stdout: 'Linux\nx86_64\nglibc 2.37\n' }
+  if (command === 'printf %s "$HOME"') return { stdout: '/home/tester' }
+  if (command.includes('CATE_PULL_OK')) return { code: 1, stderr: 'remote has no network' }
+  if (command.includes('CATE_EXTRACT_OK')) return { stdout: 'CATE_EXTRACT_OK\n' }
+  if (command.includes('/.ok')) return { stdout: installed ? '3.0.0\n' : '' }
+  return { code: 0 }
+}
+
+const fakeSpawn = ((binary: string, args: string[], options: { env?: NodeJS.ProcessEnv }) => {
+  const child = new FakeChild()
+  calls.push({ binary, args, options, child })
+  const failure = spawnFailure
+  spawnFailure = null
+  queueMicrotask(() => {
+    if (failure) {
+      child.emit('error', failure)
       return
     }
-
-    const channel = new FakeChannel()
-    callback(null, channel)
-    queueMicrotask(() => {
-      if (probeStreamError && command.startsWith('uname -s')) {
-        channel.emit('error', probeStreamError)
-        return
-      }
-      const stdout = command.startsWith('uname -s')
-        ? 'Linux\nx86_64\nglibc 2.37\n'
-        : command === 'echo $HOME'
-          ? '/home/tester\n'
-          : command.includes('/.ok')
-            ? '3.0.0\n'
-            : ''
-      if (stdout) channel.emit('data', Buffer.from(stdout))
-      channel.emit('close', 0)
-    })
+    child.emit('spawn')
+    const result = commandResult(binary, args)
+    if (result.hold) return
+    if (result.stdout) child.stdout.emit('data', Buffer.from(result.stdout))
+    if (result.stderr) child.stderr.emit('data', Buffer.from(result.stderr))
+    child.emit('close', result.code ?? 0)
   })
+  return child as unknown as ChildProcessWithoutNullStreams
+}) as unknown as typeof nodeSpawn
 
-  connect(options: Record<string, unknown>): void {
-    this.connectOptions = options
-    if (connectMode === 'authentication-error') {
-      queueMicrotask(() => this.emit('error', new Error('All configured authentication methods failed')))
-      return
-    }
-    const verifier = options.hostVerifier as (key: string, callback: (valid: boolean) => void) => void
-    verifier('aabbcc', (valid) => {
-      queueMicrotask(() => {
-        if (valid) this.emit('ready')
-        else this.emit('error', new Error('Host denied by verifier'))
-      })
-    })
-  }
-}
-
-function makeTransport(verifyHostKey = vi.fn().mockResolvedValue(undefined)): SshTransport {
-  return new SshTransport({
-    host: 'server.example',
-    user: 'alice',
+function makeTransport(overrides: Partial<ConstructorParameters<typeof SshTransport>[0]> = {}): SshTransport {
+  const transport = new SshTransport({
+    host: 'corp-bastion',
+    user: '',
     root: "/srv/O'Reilly project",
     id: 'runtime-ssh',
-    privateKey: 'private-key',
-    passphrase: 'secret',
-    agentSock: '/tmp/agent.sock',
+    keyPath: '/home/alice/.ssh/id_ecdsa',
+    passphrase: 'correct horse battery staple',
+    useAgent: true,
+    env: { PATH: '/usr/bin:/bin', SSH_AUTH_SOCK: '/tmp/resolved-agent.sock' },
     exclusions: ['node_modules', '.git'],
     idleSuspend: true,
-    verifyHostKey,
+    spawn: fakeSpawn,
+    ...overrides,
   })
+  transports.push(transport)
+  return transport
 }
 
 beforeEach(() => {
-  connectMode = 'ready'
-  launchError = null
-  probeStreamError = null
-  clients = []
-  sshModule.makeClient.mockReset().mockImplementation(() => {
-    const client = new FakeSshClient()
-    clients.push(client)
-    return client
-  })
+  calls = []
+  transports = []
+  installed = true
+  connectionFailure = ''
+  spawnFailure = null
 })
 
-describe('SshTransport connection lifecycle', () => {
-  it('verifies the host key, forwards connection options, and probes the target', async () => {
-    const verifyHostKey = vi.fn().mockResolvedValue(undefined)
-    const transport = makeTransport(verifyHostKey)
+afterEach(async () => {
+  await Promise.all(transports.map((transport) => transport.dispose()))
+})
+
+describe('SshTransport system OpenSSH connection', () => {
+  it('preserves the Host alias and delegates certificates, agents, and proxy config to OpenSSH', async () => {
+    const transport = makeTransport()
 
     await expect(transport.isInstalled('3.0.0')).resolves.toBe(true)
 
-    expect(clients).toHaveLength(1)
-    expect(clients[0].connectOptions).toEqual(expect.objectContaining({
-      host: 'server.example',
-      port: 22,
-      username: 'alice',
-      privateKey: 'private-key',
-      passphrase: 'secret',
-      agent: '/tmp/agent.sock',
-      keepaliveInterval: 15000,
-      readyTimeout: 20000,
-      hostHash: 'sha256',
-    }))
-    expect(verifyHostKey).toHaveBeenCalledWith('aabbcc')
-    expect(clients[0].exec).toHaveBeenCalledWith(
+    const probe = calls[0]
+    expect(probe.binary).toBe('ssh')
+    expect(probe.args).toEqual(expect.arrayContaining([
+      '-T',
+      '-i', '/home/alice/.ssh/id_ecdsa',
+      'corp-bastion',
       'uname -s; uname -m; (ldd --version 2>&1 | head -n1) || true',
-      expect.any(Function),
+    ]))
+    expect(probe.args.join(' ')).not.toContain('id_ecdsa-cert.pub')
+    expect(probe.args).not.toContain('server.example')
+    expect(probe.options.env?.SSH_AUTH_SOCK).toBe('/tmp/resolved-agent.sock')
+
+    // The passphrase is provided through a mode-0600 Node preload, never argv.
+    expect(probe.args).toEqual(expect.arrayContaining([
+      '-o', 'PreferredAuthentications=publickey',
+      '-o', 'SendEnv=-CATE_SSH_*',
+    ]))
+    expect(probe.args.join(' ')).not.toContain('correct horse')
+    expect(probe.options.env?.CATE_SSH_PASSPHRASE).toBe('correct horse battery staple')
+    const askpass = probe.options.env?.SSH_ASKPASS
+    expect(askpass).toBe(process.execPath)
+    if (!askpass) throw new Error('test setup did not provide SSH_ASKPASS')
+    const helper = probe.options.env?.CATE_SSH_ASKPASS_SCRIPT
+    expect(helper).toBeTruthy()
+    // Windows reports ACL-backed files as 0666; POSIX platforms expose the
+    // restrictive mode that protects the helper itself.
+    if (process.platform !== 'win32') expect((await stat(helper!)).mode & 0o777).toBe(0o600)
+    expect(await readFile(helper!, 'utf8')).not.toContain('correct horse')
+    expect(execFileSync(
+      askpass,
+      ['Enter passphrase for key'],
+      { env: probe.options.env, encoding: 'utf8' },
+    )).toBe('correct horse battery staple')
+  })
+
+  it('honors an explicit user and port without disabling configured identities', async () => {
+    const transport = makeTransport({ user: 'alice', port: 2222, passphrase: undefined })
+    await transport.isInstalled('3.0.0')
+
+    expect(calls[0].args).toEqual(expect.arrayContaining([
+      '-p', '2222', 'alice@corp-bastion',
+    ]))
+    expect(calls[0].args).not.toContain('IdentitiesOnly=yes')
+  })
+
+  it('fully disables agent authentication when requested', async () => {
+    const transport = makeTransport({ useAgent: false, passphrase: undefined })
+    await transport.isInstalled('3.0.0')
+
+    expect(calls[0].args).toEqual(expect.arrayContaining(['-o', 'IdentityAgent=none']))
+    expect(calls[0].options.env?.SSH_AUTH_SOCK).toBeUndefined()
+  })
+
+  it('surfaces actionable OpenSSH authentication failures', async () => {
+    connectionFailure = 'alice@corp: Permission denied (publickey,keyboard-interactive).'
+    const transport = makeTransport()
+
+    await expect(transport.isInstalled('3.0.0')).rejects.toThrow(
+      'SSH authentication failed for "corp-bastion"',
     )
-    expect(clients[0].exec).toHaveBeenCalledWith('echo $HOME', expect.any(Function))
   })
 
-  it('surfaces authentication failures from ssh2', async () => {
-    connectMode = 'authentication-error'
+  it('states that OpenSSH proxy configuration was applied on routing failures', async () => {
+    connectionFailure = 'ssh: Could not resolve hostname internal.corp: nodename nor servname provided'
     const transport = makeTransport()
 
-    await expect(transport.isInstalled('3.0.0')).rejects.toThrow('All configured authentication methods failed')
+    await expect(transport.isInstalled('3.0.0')).rejects.toThrow(
+      'OpenSSH configuration, including ProxyCommand, was applied',
+    )
   })
 
-  it('surfaces the host-key rejection instead of ssh2 generic verifier failure', async () => {
-    const verifyHostKey = vi.fn().mockRejectedValue(new Error('Host key changed'))
-    const transport = makeTransport(verifyHostKey)
-
-    await expect(transport.isInstalled('3.0.0')).rejects.toThrow('Host key changed')
-    expect(verifyHostKey).toHaveBeenCalledWith('aabbcc')
-  })
-
-  it('rejects a channel error during platform probing rather than hanging', async () => {
-    probeStreamError = new Error('connection dropped')
+  it('reports a missing system OpenSSH client explicitly', async () => {
+    spawnFailure = Object.assign(new Error('spawn ssh ENOENT'), { code: 'ENOENT' })
     const transport = makeTransport()
 
-    await expect(transport.isInstalled('3.0.0')).rejects.toThrow('connection dropped')
+    await expect(transport.isInstalled('3.0.0')).rejects.toThrow(
+      'The system OpenSSH ssh client was not found',
+    )
   })
 
-  it('disposes the connection idempotently and reconnects on the next operation', async () => {
-    const transport = makeTransport()
-    await transport.isInstalled('3.0.0')
-    const first = clients[0]
+  it('uses the same alias and identity for the OpenSSH upload fallback', async () => {
+    installed = false
+    const transport = makeTransport({ passphrase: undefined })
+    await transport.bootstrap('3.0.0')
 
-    await transport.dispose()
-    await transport.dispose()
-    expect(first.end).toHaveBeenCalledTimes(1)
-
-    await transport.isInstalled('3.0.0')
-    expect(clients).toHaveLength(2)
+    const upload = calls.find((call) => call.binary === 'scp')
+    expect(upload?.args).toEqual(expect.arrayContaining([
+      '-i', '/home/alice/.ssh/id_ecdsa',
+      '/tmp/cate-runtime.tgz',
+      'corp-bastion:/home/tester/.cate/runtime/3.0.0/linux-x64/pkg.tgz',
+    ]))
   })
 })
 
 describe('SshTransport runtime channel', () => {
-  it('quotes launch arguments and forwards frames and lifecycle events', async () => {
-    const transport = makeTransport()
+  it('quotes launch arguments and buffers frames, diagnostics, and early close events', async () => {
+    const transport = makeTransport({ passphrase: undefined })
     await transport.isInstalled('3.0.0')
-    const client = clients[0]
-
     const channel = await transport.launch()
+    const launch = calls.at(-1)!
 
-    const launchCall = client.exec.mock.calls.find(([, options]) => typeof options !== 'function')
-    expect(launchCall).toBeDefined()
-    expect(launchCall?.[0]).toBe(
+    expect(launch.binary).toBe('ssh')
+    expect(launch.args.at(-2)).toBe('corp-bastion')
+    expect(launch.args.at(-1)).toBe(
       "'/home/tester/.cate/runtime/3.0.0/linux-x64/runtime/bin/node' " +
       "'/home/tester/.cate/runtime/3.0.0/linux-x64/runtime.cjs' " +
       "--root '/srv/O'\\''Reilly project' --id 'runtime-ssh' " +
       "--exclude 'node_modules,.git' --idle-suspend",
     )
-    expect(launchCall?.[1]).toEqual({ pty: false })
 
-    channel.write('{"id":1}\n')
-    expect(client.launchChannel.write).toHaveBeenCalledWith('{"id":1}\n')
+    launch.child.stdout.emit('data', Buffer.from('response\n'))
+    launch.child.stderr.emit('data', Buffer.from('diagnostic'))
+    launch.child.emit('close', 9)
 
     const data = vi.fn()
     const stderr = vi.fn()
@@ -202,22 +231,22 @@ describe('SshTransport runtime channel', () => {
     channel.onData(data)
     channel.onStderr?.(stderr)
     channel.onClose(close)
-    client.launchChannel.emit('data', Buffer.from('response\n'))
-    client.launchChannel.stderr.emit('data', Buffer.from('diagnostic'))
-    client.launchChannel.emit('close', 9)
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()))
     expect(data.mock.calls[0][0].toString()).toBe('response\n')
     expect(stderr.mock.calls[0][0].toString()).toBe('diagnostic')
     expect(close).toHaveBeenCalledWith({ code: 9 })
 
+    channel.write('{"id":1}\n')
+    expect(launch.child.stdin.write).toHaveBeenCalledWith('{"id":1}\n')
     channel.kill()
-    expect(client.launchChannel.close).toHaveBeenCalledTimes(1)
+    expect(launch.child.kill).toHaveBeenCalledTimes(1)
   })
 
-  it('rejects launch when SSH command forwarding fails', async () => {
-    const transport = makeTransport()
+  it('rejects launch when the ssh executable cannot start', async () => {
+    const transport = makeTransport({ passphrase: undefined })
     await transport.isInstalled('3.0.0')
-    launchError = new Error('administratively prohibited')
+    spawnFailure = Object.assign(new Error('spawn ssh ENOENT'), { code: 'ENOENT' })
 
-    await expect(transport.launch()).rejects.toThrow('administratively prohibited')
+    await expect(transport.launch()).rejects.toThrow('system OpenSSH ssh client was not found')
   })
 })

@@ -71,6 +71,19 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Install OpenSSH server for loopback E2E
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v sshd >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y openssh-server
+          fi
+          sudo mkdir -p /run/sshd
+
+      - name: System OpenSSH loopback E2E
+        if: runner.os != 'Windows'
+        run: npm run test:ssh:loopback
+
       - name: Electron smoke test (macOS only)
         if: matrix.os == 'macos-latest'
         run: npm run test:smoke:electron

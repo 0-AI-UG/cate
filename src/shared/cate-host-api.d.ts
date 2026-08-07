@@ -209,10 +209,8 @@ export interface CateHost {
         | { kind: 'ref'; ref: string; state: 'visible' | 'hidden' | 'attached' | 'detached' }
     }): Promise<{ url: string; title: string; loading: boolean; snapshot?: CateBrowserSnapshot }>
     /** Press a named key (Enter, Tab, Escape, Backspace, Delete, Space, arrows,
-     *  PageUp/PageDown, Home, End) as TRUSTED input — unlike `click`/`type`,
-     *  which synthesise untrusted DOM events — so Enter submits forms. With
-     *  `ref` the element is focused first; without it the key goes to the
-     *  guest's current focus. */
+     *  PageUp/PageDown, Home, End) as trusted input. With `ref` the element is
+     *  focused first; without it the key goes to the guest's current focus. */
     press(opts: { key: string; ref?: string; panelId?: string; includeSnapshot?: boolean }): Promise<{ ok: true; snapshot?: CateBrowserSnapshot }>
   }
   storage: CateHostStorage

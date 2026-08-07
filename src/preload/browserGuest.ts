@@ -1,9 +1,14 @@
 // Browser-guest preload — deliberately tiny and one-way. Remote pages receive
 // no API. The preload only tells the embedding BrowserPanel when a password
 // field is focused, using an opaque marker shared with the main-process
-// Playwright autofill path.
+// agent-browser autofill path.
 
 import { ipcRenderer, webFrame } from 'electron'
+
+// Keep this preload self-contained. Sharing the IPC constants module with the
+// renderer preload makes electron-vite emit a chunk that Electron's sandboxed
+// preload loader cannot require.
+const BROWSER_VIEW_GUEST_MESSAGE = 'browserView:guestMessage'
 
 // Match Cate's thin, rounded panel scrollbar inside remote browser pages. The
 // guest cannot inherit renderer theme variables, so these colors mirror the
@@ -44,7 +49,7 @@ document.addEventListener('focusin', (event) => {
   marked = input
 
   const rect = input.getBoundingClientRect()
-  ipcRenderer.sendToHost(CHANNEL, {
+  ipcRenderer.send(BROWSER_VIEW_GUEST_MESSAGE, CHANNEL, {
     targetId,
     rect: {
       left: rect.left,

@@ -46,6 +46,9 @@ asarUnpack:
   - "node_modules/@img/**"
   - "node_modules/sharp/**"
   - "node_modules/pdfjs-dist/**"
+  # Required agent-browser native executables. The main process spawns the
+  # host-platform binary directly, so it must live outside app.asar.
+  - "node_modules/agent-browser/bin/agent-browser-*"
 extraResources:
   # Ship bundled pi extensions (e.g. cate-plan-mode) into the packaged app so
   # installPlanModeExtension can copy them into ~/.pi/agent/extensions/ on

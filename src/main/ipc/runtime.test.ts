@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { mintRuntimeId } from './runtime'
+import { mergedSshSecret, mintRuntimeId } from './runtime'
 
 describe('mintRuntimeId', () => {
   test('WSL ids carry the sanitized distro name as a readable prefix + a path hash', () => {
@@ -40,5 +40,14 @@ describe('mintRuntimeId', () => {
     const wslA = mintRuntimeId({ kind: 'wsl', distro: 'Ubuntu', distroPath: '/home/me/a' })
     const wslB = mintRuntimeId({ kind: 'wsl', distro: 'Ubuntu', distroPath: '/home/me/b' })
     expect(wslA).not.toBe(wslB)
+  })
+})
+
+describe('mergedSshSecret', () => {
+  test('keeps stored key material when edit fields are blank and persists agent=false', () => {
+    expect(mergedSshSecret(
+      { keyPath: '/keys/id_ecdsa', passphrase: 'secret', useAgent: true },
+      { useAgent: false },
+    )).toEqual({ keyPath: '/keys/id_ecdsa', passphrase: 'secret', useAgent: false })
   })
 })

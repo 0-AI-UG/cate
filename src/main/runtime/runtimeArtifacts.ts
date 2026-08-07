@@ -9,7 +9,7 @@
 //      bytes never transit the laptop); the transports do this over ssh/wsl.
 //   2. if the remote has no internet, the client downloads the tarball here
 //      (dev-built dist-runtime first, then a userData cache, then the release
-//      URL) and the transport SFTP-pushes it.
+//      URL) and the transport pushes it with scp (SSH) or /mnt copy (WSL).
 //
 // Keep GH_OWNER/GH_REPO in sync with the `publish:` block in electron-builder.yml.
 // =============================================================================
@@ -121,7 +121,7 @@ export async function tarballHash(file: string): Promise<string> {
 }
 
 /**
- * Return a local path to the target's tarball for the SFTP-push fallback,
+ * Return a local path to the target's tarball for the client-side push fallback,
  * downloading it from the release if needed. Prefers a dev build, then the
  * cache, then the network. Throws with a clear message if all sources fail.
  */

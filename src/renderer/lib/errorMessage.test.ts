@@ -28,6 +28,12 @@ describe('errorMessage', () => {
     )
   })
 
+  it('preserves actionable system OpenSSH diagnostics', () => {
+    const message =
+      'SSH authentication failed for "corp". OpenSSH reported: Permission denied (publickey).'
+    expect(errorMessage(message)).toBe(message)
+  })
+
   it('turns a diverged git checkout into an actionable message', () => {
     const raw =
       `Error invoking remote method 'git:worktreeAddFromPr': Error: Command failed: gh pr checkout 525\n` +

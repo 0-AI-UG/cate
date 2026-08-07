@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { Session } from 'electron'
 
 const PROXY_ORIGIN = 'http://127.0.0.1:5555'
 const CANONICAL_PRELOAD = '/app/dist/preload/cateHost.js'
@@ -41,7 +42,7 @@ function makeSession(): Record<string, unknown> {
   }
 }
 
-import { installWebContentsSecurity } from './webSecurity'
+import { configureBrowserGuestSession, installWebContentsSecurity } from './webSecurity'
 
 /** Build a fake webview WebContents, run the created-handlers over it, and
  *  return its captured will-attach-webview handler. */
@@ -137,5 +138,28 @@ describe('browser popup policy', () => {
 
     expect(handler({ url: 'https://example.com' })).toEqual({ action: 'deny' })
     expect(params.allowpopups).toBeUndefined()
+  })
+})
+
+describe('main-owned browser view navigation', () => {
+  it('uses the browser allowlist for a WebContentsView reported as a window', () => {
+    const targetSession = makeSession()
+    configureBrowserGuestSession(targetSession as unknown as Session)
+    const listeners: Record<string, (...args: unknown[]) => void> = {}
+    const contents = {
+      getType: () => 'window',
+      on: (event: string, callback: (...args: unknown[]) => void) => { listeners[event] = callback },
+      setWindowOpenHandler: vi.fn(),
+      session: targetSession,
+    }
+    for (const callback of createdHandlers) callback({}, contents)
+
+    const httpsNavigation = { preventDefault: vi.fn() }
+    listeners['will-navigate'](httpsNavigation, 'https://de.wikipedia.org/')
+    expect(httpsNavigation.preventDefault).not.toHaveBeenCalled()
+
+    const unsafeNavigation = { preventDefault: vi.fn() }
+    listeners['will-navigate'](unsafeNavigation, 'javascript:alert(1)')
+    expect(unsafeNavigation.preventDefault).toHaveBeenCalledOnce()
   })
 })

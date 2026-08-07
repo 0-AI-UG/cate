@@ -1,9 +1,9 @@
 // =============================================================================
-// portalRegistry — renderer-side map of each BrowserPanel's active <webview>.
+// portalRegistry — renderer-side map of each BrowserPanel's active browser view.
 //
 // The main-process orchestrator addresses portals by name (PanelState.title).
 // To drive a portal's underlying webContents from main, we need to translate
-// panelId → webContentsId. BrowserPanel registers its <webview> here once
+// panelId → webContentsId. BrowserPanel registers its view here once
 // `dom-ready` fires (which is when getWebContentsId() returns a stable id),
 // and unregisters on unmount.
 //
@@ -11,8 +11,8 @@
 // the guest DOM and resolved by browserDriver on subsequent commands.
 // =============================================================================
 
-/** Minimal subset of the Electron <webview> tag interface we depend on.
- *  BrowserPanel registers the real <webview> (a superset of this) — these are
+/** Minimal subset of an embedded browser surface that we depend on.
+ *  BrowserPanel registers a renderer-side facade for its WebContentsView — these are
  *  the members the reverse-API driver (browserDriver.ts) and terminalUrlOpen
  *  actually call. */
 export type PortalInputModifier = 'shift' | 'control' | 'alt' | 'meta'
@@ -54,11 +54,11 @@ export interface PortalWebview {
   canGoBack(): boolean
   canGoForward(): boolean
   addEventListener(
-    type: 'did-navigate' | 'did-navigate-in-page',
+    type: 'did-navigate' | 'did-navigate-in-page' | 'did-stop-loading',
     listener: (event: { url?: string }) => void,
   ): void
   removeEventListener(
-    type: 'did-navigate' | 'did-navigate-in-page',
+    type: 'did-navigate' | 'did-navigate-in-page' | 'did-stop-loading',
     listener: (event: { url?: string }) => void,
   ): void
   executeJavaScript(code: string): Promise<unknown>
@@ -74,21 +74,25 @@ interface Entry {
 const byPanelId = new Map<string, Entry>()
 
 /** Panel-level control surface, registered for a BrowserPanel's whole mounted
- *  lifetime — unlike webviews, which only exist once a page is loaded.
+ *  lifetime — unlike browser views, which only exist once a page is loaded.
  *
  *  Two things live here that the active <webview> cannot answer:
- *   • navigate() drives a panel sitting on its start page. Such a panel has NO
- *     <webview> (the start page renders in its place), so navigating through
+ *   • navigate() drives a panel sitting on its start page. Its native view is
+ *     hidden behind the start page, so navigating through
  *     this callback is what mounts one.
- *   • tabs are a PANEL concept: each tab now keeps a live guest, while the tab
- *     list and active-guest selection still live in React state. */
+ *   • tabs are a PANEL concept; the active guest and tab list live in React. */
 export interface BrowserPanelController {
   navigate(url: string): void
   listTabs(): Array<{ id: string; url: string; title: string; active: boolean }>
   newTab(url?: string): string
   selectTab(tabId: string): boolean
   closeTab(tabId: string): boolean
+  setViewport(viewport: BrowserViewport): void
 }
+
+export type BrowserViewport =
+  | { preset: 'compact' }
+  | { preset: 'desktop' | 'mobile' | 'custom'; width: number; height: number }
 
 const controllerByPanelId = new Map<string, BrowserPanelController>()
 

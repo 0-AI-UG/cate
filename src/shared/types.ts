@@ -192,6 +192,7 @@ export type RuntimeConnection =
       /** Routing key; matches the authority in this workspace's rootPath URI. */
       runtimeId: string
       host: string
+      /** Empty when OpenSSH should resolve User from ~/.ssh/config. */
       user: string
       port?: number
       /** Runtime-absolute root on the server. */
@@ -234,9 +235,9 @@ export type RuntimeConnectResult =
   | { ok: true; runtimeId: string; rootPath: string; connection: RuntimeConnection }
   | { ok: false; error: string }
 
-/** A connectable host alias parsed from the user's ~/.ssh/config. Wildcard
- *  patterns (`Host *`) are excluded — only concrete aliases the user can dial.
- *  `host` is the resolved HostName (falls back to the alias when unset). */
+/** A connectable host alias parsed for the picker. The alias itself is passed to
+ *  OpenSSH unchanged; these resolved fields are display metadata only. Wildcard
+ *  patterns (`Host *`) are excluded — only concrete aliases the user can dial. */
 export interface SshHostEntry {
   alias: string
   host: string

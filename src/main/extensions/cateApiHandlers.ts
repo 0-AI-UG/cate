@@ -30,7 +30,7 @@ import log from '../logger'
 import {
   cliPermissionCellByKey,
   cliPermissionDenied,
-  cliPermissionForMethod,
+  cliPermissionForRequest,
   type CliPermissionKey,
 } from '../../shared/cliPermissions'
 import {
@@ -503,6 +503,9 @@ export function requiredScopeFor(method: string): string | null | undefined {
     case 'cate.panel.list':
     case 'cate.panel.focus':
     case 'cate.panel.close':
+    case 'cate.panel.target.current':
+    case 'cate.panel.target.set':
+    case 'cate.panel.target.clear':
       return 'panel'
     default:
       // A panel controlling its own identity (id / title / badge) needs no scope.
@@ -634,18 +637,14 @@ async function ensureConsent(extensionId: string, capability: ConsentCapability)
   return false
 }
 
-/**
- * Scope-based cate.* dispatch core, shared by the IPC handler (guest webview)
- * and the CATE_API reverse endpoint (extension server). The scope carries the
- * caller identity + a `forward` for state-mutating methods, so this never
- * touches an IPC event directly.
- */
-export async function dispatchCateInvoke(
+/** Run the shared enablement, scope, and first-party permission gates without
+ * dispatching. Endpoint-local methods use this before touching their state. */
+export function authorizeCateInvoke(
   scope: InvokeScope,
   method: string,
   args: unknown,
-): Promise<InvokeResult> {
-  const { extensionId, workspaceId, panelId } = scope
+): InvokeResult | null {
+  const { extensionId, panelId } = scope
   const trustedCaller = scope.caller === 'first-party' || scope.caller === 'cate-agent'
 
   // Security: only enabled, known extensions may call the host. First-party
@@ -703,11 +702,31 @@ export async function dispatchCateInvoke(
         method,
       }
     }
-    const cell = cliPermissionForMethod(method)
+    const cell = cliPermissionForRequest(method, args)
     if (cell && getSetting(cell.key) !== true) {
       return { error: cliPermissionDenied(cell), method }
     }
   }
+
+  return null
+}
+
+/**
+ * Scope-based cate.* dispatch core, shared by the IPC handler (guest webview)
+ * and the CATE_API reverse endpoint (extension server). The scope carries the
+ * caller identity + a `forward` for state-mutating methods, so this never
+ * touches an IPC event directly.
+ */
+export async function dispatchCateInvoke(
+  scope: InvokeScope,
+  method: string,
+  args: unknown,
+): Promise<InvokeResult> {
+  const denied = authorizeCateInvoke(scope, method, args)
+  if (denied) return denied
+
+  const { extensionId, workspaceId, panelId } = scope
+  const trustedCaller = scope.caller === 'first-party' || scope.caller === 'cate-agent'
 
   if (method.startsWith('cate.codingAgent.')) {
     const routedArgs: Record<string, unknown> = {

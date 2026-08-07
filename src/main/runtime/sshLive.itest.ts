@@ -11,7 +11,6 @@
 import { describe, test, expect, vi, beforeAll } from 'vitest'
 import { homedir } from 'os'
 import { join } from 'path'
-import { readFileSync } from 'fs'
 import { execFileSync } from 'child_process'
 
 // Server + key come from the environment so nothing host-specific is committed:
@@ -72,9 +71,9 @@ describe.skipIf(!LIVE)('live SSH runtime (real server)', () => {
   const newTransport = (id: string): InstanceType<typeof SshTransportCtor> =>
     new SshTransportCtor({
       host: HOST, user: USER, port: 22, root: ROOT, id,
-      privateKey: readFileSync(KEY),
-      // Accept whatever host key is presented (this is a debug harness).
-      verifyHostKey: async () => {},
+      keyPath: KEY,
+      useAgent: process.env.CATE_LIVE_SSH_USE_AGENT === '1',
+      env: process.env,
     })
 
   test('connect, then HOLD 8s — does the connection drop on its own? (#335 core symptom)', async () => {
