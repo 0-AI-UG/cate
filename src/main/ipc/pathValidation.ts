@@ -4,7 +4,7 @@
 // =============================================================================
 
 import fs from 'fs/promises'
-import { realpathSync } from 'fs'
+import fsSync from 'fs'
 import path from 'path'
 import os from 'os'
 
@@ -20,6 +20,33 @@ const DEFAULT_WRITE_ALLOWANCE_TTL_MS = 60_000
 // platform (the live calls use the real process.platform).
 export function pathCompareKey(p: string, platform: NodeJS.Platform = process.platform): string {
   return platform === 'win32' ? p.toLowerCase() : p
+}
+
+// -----------------------------------------------------------------------------
+// Windows network-drive helpers
+// -----------------------------------------------------------------------------
+
+/**
+ * Strip the Windows long-path prefix (\\?\) so that paths returned by
+ * `realpathSync.native` / `fs.realpath` (which may add this prefix) can be
+ * compared with paths from `path.resolve` (which never adds it).
+ *
+ *   \\?\UNC\server\share\foo  ->  \\server\share\foo
+ *   \\?\C:\foo                ->  C:\foo
+ *
+ * On non-Windows platforms this is a no-op.
+ */
+function normalizeForComparison(p: string): string {
+  if (process.platform !== 'win32') return p
+  if (p.startsWith('\\\\?\\UNC\\')) {
+    // \\?\UNC\server\share -> \\server\share  (keep leading double-backslash)
+    return '\\' + p.slice(7)
+  }
+  if (p.startsWith('\\\\?\\')) {
+    // \\?\C:\foo -> C:\foo
+    return p.slice(4)
+  }
+  return p
 }
 
 // Persistent per-window grants for files the user explicitly chose outside
@@ -41,13 +68,25 @@ const persistentFileGrants = new Map<number, Set<string>>()
 // form would make the strict check reject paths that are genuinely inside the
 // root, so each root is stored with every canonical form we can compute.
 function canonicalForms(resolved: string): string[] {
+  const forms = new Set<string>()
+  forms.add(resolved)
+  forms.add(normalizeForComparison(resolved))
+
   try {
-    const real = realpathSync.native(resolved)
-    if (pathCompareKey(real) !== pathCompareKey(resolved)) return [resolved, real]
+    let real: string
+    try {
+      real = fsSync.realpathSync.native(resolved)
+    } catch {
+      // The native resolver fails on some WinFsp disk-mode mounts. Node's JS
+      // implementation still resolves every existing segment on those mounts.
+      real = fsSync.realpathSync(resolved)
+    }
+    forms.add(real)
+    forms.add(normalizeForComparison(real))
   } catch {
-    // Root doesn't exist (yet) — lexical form only.
+    // Root doesn't exist yet, or neither resolver can read it — lexical form only.
   }
-  return [resolved]
+  return [...forms]
 }
 
 export function addAllowedRoot(root: string, scopeId: string): void {
@@ -97,7 +136,12 @@ export function removeAllowedRootFromAllScopes(root: string): void {
 function keyUnderRoots(key: string, roots: Iterable<string>): boolean {
   for (const root of roots) {
     const rootKey = pathCompareKey(root)
-    if (key.startsWith(rootKey + path.sep) || key === rootKey) {
+    // Filesystem roots (e.g. Z:\, \\server\share\) already end with a path
+    // separator.  Appending another separator would create a double-separator
+    // (e.g. "z:\\") that never matches a child path like "z:\foo".  Use the
+    // root key directly when it already ends with a separator.
+    const prefix = rootKey.endsWith(path.sep) ? rootKey : rootKey + path.sep
+    if (key.startsWith(prefix) || key === rootKey) {
       return true
     }
   }
@@ -121,6 +165,20 @@ function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
   for (const forms of roots.values()) {
     if (keyUnderRoots(key, forms)) return true
   }
+
+  // On Windows, also try the comparison with the \\?\ prefix stripped so that
+  // a realpath result like "\\?\UNC\server\share\file" can match a root stored
+  // as "\\server\share" (or its drive-letter equivalent "Z:\").
+  if (process.platform === 'win32') {
+    const normalizedKey = pathCompareKey(normalizeForComparison(normalized))
+    if (normalizedKey !== key) {
+      if (keyUnderRoots(normalizedKey, tmpDirForms)) return true
+      for (const forms of roots.values()) {
+        if (keyUnderRoots(normalizedKey, forms)) return true
+      }
+    }
+  }
+
   return false
 }
 
@@ -136,16 +194,30 @@ function isWithinAllowedRoots(normalized: string, scopeId?: string): boolean {
  * exists is resolved (a symlink can only exist if its segment exists), so a
  * symlink pointing outside an allowed root still resolves and gets rejected.
  * Only not-yet-created segments — which cannot be symlinks — stay literal.
- * Non-ENOENT errors (e.g. EACCES) are rethrown so genuine access failures keep
- * surfacing as access errors rather than being mistaken for "doesn't exist".
+ *
+ * If the native resolver fails on a WinFsp mount, Node's JS resolver is tried
+ * before validation fails. A bounded parent walk rejects paths with an
+ * unreasonable number of missing segments instead of accepting them lexically.
  */
+const MAX_PARENT_TRAVERSALS = 256
+
+async function realpathWithFallback(targetPath: string): Promise<string> {
+  try {
+    return await fs.realpath(targetPath)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw err
+    return fsSync.realpathSync(targetPath)
+  }
+}
+
 async function realpathAllowingMissing(targetPath: string): Promise<string> {
   const resolved = path.resolve(targetPath)
   const missing: string[] = []
   let cur = resolved
+  let attempts = 0
   for (;;) {
     try {
-      const real = await fs.realpath(cur)
+      const real = await realpathWithFallback(cur)
       return missing.length ? path.join(real, ...missing) : real
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
@@ -154,6 +226,9 @@ async function realpathAllowingMissing(targetPath: string): Promise<string> {
     if (parent === cur) return resolved // reached the fs root with nothing existing
     missing.unshift(path.basename(cur))
     cur = parent
+    if (++attempts >= MAX_PARENT_TRAVERSALS) {
+      throw new Error(`Too many missing path segments while resolving "${targetPath}"`)
+    }
   }
 }
 

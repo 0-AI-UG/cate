@@ -95,4 +95,16 @@ describe('per-root write ownership', () => {
     await saveSession()
     expect(savesForRoot()).toHaveLength(firstCount)
   })
+
+  it('stops retrying .cate saves after three consecutive failures', async () => {
+    projectStateSave.mockRejectedValue(new Error('EPERM: read-only mount'))
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await saveSession()
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+
+    expect(savesForRoot()).toHaveLength(3)
+  })
 })

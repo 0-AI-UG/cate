@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import fsSync from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import {
@@ -37,6 +38,7 @@ describe('pathValidation', () => {
     await fs.rm(rootDir, { recursive: true, force: true })
     await fs.rm(outsideDir, { recursive: true, force: true })
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   test('allows creation inside trusted roots', async () => {
@@ -132,6 +134,32 @@ describe('pathValidation', () => {
       await fs.symlink(outsideDir, link)
       await expect(validatePathStrict(path.join(link, 'new-file.txt'), undefined, SCOPE)).rejects.toThrow(
         /outside allowed directories/,
+      )
+    })
+  })
+
+  describe('realpath fallback', () => {
+    test('uses the JS resolver when the native resolver fails on an existing mount path', async () => {
+      const target = path.join(rootDir, 'file.txt')
+      await fs.writeFile(target, 'data')
+      vi.spyOn(fs, 'realpath').mockRejectedValueOnce(
+        Object.assign(new Error('unknown realpath error'), { code: 'UNKNOWN' }),
+      )
+
+      await expect(validatePathStrict(target, undefined, SCOPE)).resolves.toBe(
+        fsSync.realpathSync(target),
+      )
+    })
+
+    test('fails closed when both realpath implementations reject a non-ENOENT error', async () => {
+      const target = path.join(rootDir, 'file.txt')
+      await fs.writeFile(target, 'data')
+      const error = Object.assign(new Error('I/O failure'), { code: 'EIO' })
+      vi.spyOn(fs, 'realpath').mockRejectedValue(error)
+      vi.spyOn(fsSync, 'realpathSync').mockImplementation(() => { throw error })
+
+      await expect(validatePathStrict(target, undefined, SCOPE)).rejects.toThrow(
+        /cannot resolve real path/,
       )
     })
   })
