@@ -182,8 +182,10 @@ export const AGENTS: readonly AgentDef[] = [
     id: 'opencode',
     displayName: 'OpenCode',
     command: 'opencode',
-    codingAgentArgs: (prompt) => ['run', prompt],
-    codingAgentFollowUp: false,
+    // Seed the persistent TUI instead of using the one-shot `run` command so
+    // the mission supervisor can submit follow-up prompts on the same PTY.
+    codingAgentArgs: (prompt) => ['--prompt', prompt],
+    codingAgentFollowUp: true,
     matchProcess: (n) => n === 'opencode',
     resumeArgs: (sid) => ['--session', sid],
     skills: folderSkills('opencode', ['.opencode', 'skills']),

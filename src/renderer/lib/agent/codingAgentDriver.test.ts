@@ -511,7 +511,7 @@ describe('codingAgentDriver mission integration', () => {
     expect(reviewCodingAgentWorktree).toHaveBeenCalledWith('ws', 'worker')
   })
 
-  it('enforces follow-up capability and terminal readiness', async () => {
+  it('supports OpenCode follow-ups and enforces terminal readiness', async () => {
     resolveDriverAgentCli.mockResolvedValue(AGENTS.find((agent) => agent.id === 'opencode'))
     await handleCodingAgentMethod('ws', 'supervisor-1', 'cate.codingAgent.create', {
       agentId: 'opencode', prompt: 'Implement it',
@@ -519,12 +519,12 @@ describe('codingAgentDriver mission integration', () => {
     const run = state.app.workspaces[0].panels.worker.codingAgentRun
     await expect(handleCodingAgentMethod(
       'ws', 'supervisor-1', 'cate.codingAgent.send', { runId: run.id, prompt: 'Again' },
-    )).resolves.toEqual({ ok: false, error: 'coding-agent-follow-up-unsupported' })
+    )).resolves.toMatchObject({ ok: true, result: { id: run.id, followUpSupported: true } })
+    expect(submitTerminalText).toHaveBeenCalledWith('worker', 'Again')
 
-    run.agentId = 'codex'
     submitTerminalText.mockResolvedValueOnce(false)
     await expect(handleCodingAgentMethod(
-      'ws', 'supervisor-1', 'cate.codingAgent.send', { runId: run.id, prompt: 'Again' },
+      'ws', 'supervisor-1', 'cate.codingAgent.send', { runId: run.id, prompt: 'One more time' },
     )).resolves.toEqual({ ok: false, error: 'coding-agent-not-ready' })
   })
 
