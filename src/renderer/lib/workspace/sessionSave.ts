@@ -31,6 +31,12 @@ import type {
 // actually changed, so the periodic auto-save doesn't rewrite an identical file
 // every ~1s.
 const lastSerializedByRoot = new Map<string, string>()
+// A read-only or broken mount must not trigger one failed `.cate` write every
+// autosave tick forever. Stop scheduling writes for the root after a small
+// consecutive-failure budget; relaunching Cate starts a fresh budget.
+const MAX_PROJECT_STATE_SAVE_FAILURES = 3
+const projectStateSaveFailuresByRoot = new Map<string, number>()
+const projectStateSavesInFlight = new Set<string>()
 // Same idea for the global sidebar arrangement: skip the IPC + electron-store
 // write when order/active-workspace haven't changed since the last save.
 let lastSidebarSessionSerialized: string | null = null
@@ -224,12 +230,24 @@ export async function saveSession(): Promise<void> {
     // Dedup: skip IPC when the payload hasn't changed
     const serialized = JSON.stringify({ ws: wsFile, sess: sessFile })
     if (lastSerializedByRoot.get(snapshot.rootPath) === serialized) continue
+    if ((projectStateSaveFailuresByRoot.get(snapshot.rootPath) ?? 0) >= MAX_PROJECT_STATE_SAVE_FAILURES) continue
+    if (projectStateSavesInFlight.has(snapshot.rootPath)) continue
 
+    projectStateSavesInFlight.add(snapshot.rootPath)
     window.electronAPI.projectStateSave(snapshot.rootPath, wsFile, sessFile)
-      .then(() => { lastSerializedByRoot.set(snapshot.rootPath!, serialized) })
-      .catch((err) => {
-        log.warn('[session] Project state save failed for %s: %s', snapshot.rootPath, err)
+      .then(() => {
+        lastSerializedByRoot.set(snapshot.rootPath!, serialized)
+        projectStateSaveFailuresByRoot.delete(snapshot.rootPath!)
       })
+      .catch((err) => {
+        const failures = (projectStateSaveFailuresByRoot.get(snapshot.rootPath!) ?? 0) + 1
+        projectStateSaveFailuresByRoot.set(snapshot.rootPath!, failures)
+        log.warn('[session] Project state save failed for %s: %s', snapshot.rootPath, err)
+        if (failures === MAX_PROJECT_STATE_SAVE_FAILURES) {
+          log.warn('[session] Disabling project state saves for %s after %d consecutive failures', snapshot.rootPath, failures)
+        }
+      })
+      .finally(() => { projectStateSavesInFlight.delete(snapshot.rootPath!) })
   }
 
   // Persist the sidebar arrangement (order + active workspace, keyed by root
