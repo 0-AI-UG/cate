@@ -19,7 +19,7 @@ describe('codingAgentCommand', () => {
       { id: 'codex', command: { executable: 'codex', args: [prefixed] }, followUp: true },
       { id: 'cursor', command: { executable: 'cursor-agent', args: [prefixed] }, followUp: true },
       { id: 'grok', command: { executable: 'grok', args: [prefixed] }, followUp: true },
-      { id: 'opencode', command: { executable: 'opencode', args: ['run', prefixed] }, followUp: false },
+      { id: 'opencode', command: { executable: 'opencode', args: ['--prompt', prefixed] }, followUp: true },
       { id: 'pi', command: { executable: 'pi', args: [prefixed] }, followUp: true },
     ])
   })
