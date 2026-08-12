@@ -19,7 +19,9 @@ const windowPanels = vi.hoisted(() => [] as Array<{
   panelId: string
   type: string
   workspaceId: string
+  ownerWindowId?: number
 }>)
+const windows = vi.hoisted(() => new Map<number, any>())
 vi.mock('./cateApiHandlers', () => ({
   authorizeCateInvoke,
   dispatchCateInvoke,
@@ -28,6 +30,9 @@ vi.mock('./cateApiHandlers', () => ({
 }))
 vi.mock('../windowPanels', () => ({
   getWindowPanels: () => windowPanels,
+}))
+vi.mock('../windowRegistry', () => ({
+  getWindow: (id: number) => windows.get(id),
 }))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
@@ -101,6 +106,7 @@ function request(
 beforeEach(() => {
   store.clear()
   windowPanels.length = 0
+  windows.clear()
   dispatchCateInvoke.mockReset()
   authorizeCateInvoke.mockReset()
   authorizeCateInvoke.mockReturnValue(null)
@@ -225,6 +231,45 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
       'cate.storage.get',
       { key: 'x' },
     )
+    endpoint.dispose()
+  })
+
+  it('binds first-party orchestration to the calling terminal and cwd', async () => {
+    windowPanels.push({
+      panelId: 'terminal-parent',
+      type: 'terminal',
+      workspaceId: 'ws-1',
+      ownerWindowId: 7,
+    })
+    const owner = { isDestroyed: () => false } as never
+    windows.set(7, { isDestroyed: () => false, webContents: owner })
+    const host = makeRuntime()
+    const endpoint = createCateApiReverse({
+      extensionId: 'terminal',
+      workspaceId: 'ws-1',
+      token: TOKEN,
+      runtime: host.runtime,
+      caller: 'first-party',
+      grantedScopes: ['coding-agent'],
+    })
+
+    await request(endpoint, host.output, {
+      json: {
+        method: 'cate.codingAgent.create',
+        args: { prompt: 'Implement it' },
+        callerPanelId: 'terminal-parent',
+        originCwd: '/ws/worktree',
+      },
+    })
+
+    const scope = dispatchCateInvoke.mock.calls[0][0]
+    expect(scope).toMatchObject({
+      caller: 'first-party',
+      panelId: 'terminal-parent',
+      originCwd: '/ws/worktree',
+    })
+    await scope.forward({ method: 'cate.codingAgent.create' })
+    expect(forwardToOwner).toHaveBeenCalledWith(owner, { method: 'cate.codingAgent.create' })
     endpoint.dispose()
   })
 

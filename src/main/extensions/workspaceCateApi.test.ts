@@ -65,13 +65,14 @@ describe('GRANTED_SCOPES contract', () => {
     expect(GRANTED_SCOPES).toContain('browser')
     expect(GRANTED_SCOPES).not.toContain('storage')
     expect(GRANTED_SCOPES).not.toContain('agent')
+    expect(GRANTED_SCOPES).toContain('coding-agent')
     // workspace.read/theme are extension-only: a terminal's cwd IS the
     // workspace root, so the CLI has no verbs (and thus no grants) for them.
-    expect([...GRANTED_SCOPES]).toEqual(['browser', 'ui', 'editor', 'canvas', 'panel', 'terminal'])
+    expect([...GRANTED_SCOPES]).toEqual(['browser', 'ui', 'editor', 'canvas', 'panel', 'terminal', 'coding-agent'])
   })
 
-  it('reserves coding-agent orchestration for the embedded supervisor', () => {
-    expect(GRANTED_SCOPES).not.toContain('coding-agent')
+  it('uses the same coding-agent scope for terminal and embedded callers', () => {
+    expect(GRANTED_SCOPES).toContain('coding-agent')
     expect(CATE_AGENT_GRANTED_SCOPES).toContain('coding-agent')
   })
 })
@@ -106,6 +107,7 @@ describe('WorkspaceCateApiManager.ensureEndpoint', () => {
     const session = reverseCalls[0]
     expect(session.caller).toBe('first-party')
     expect(session.grantedScopes).toContain('browser')
+    expect(session.grantedScopes).toContain('coding-agent')
     expect(session.grantedScopes).not.toContain('storage')
     expect(session.grantedScopes).not.toContain('agent')
     expect(session.token).toBe(ep!.token)

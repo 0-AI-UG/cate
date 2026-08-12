@@ -1,6 +1,6 @@
 {
   "name": "cate-orchestrator",
-  "description": "Native tools for Cate Agent to create, prompt, inspect, wait for, and stop visible coding agents.",
+  "description": "Prompt mode that teaches Cate Agent to orchestrate visible coding agents through the cate CLI.",
   "private": true,
   "pi": {
     "extensions": ["./index.ts"]

@@ -20,6 +20,7 @@ import type { WebContents } from 'electron'
 import log from '../logger'
 import type { Runtime } from '../runtime/types'
 import { getWindowPanels } from '../windowPanels'
+import { getWindow } from '../windowRegistry'
 import {
   authorizeCateInvoke,
   dispatchCateInvoke,
@@ -109,7 +110,13 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
         return
       }
       const raw = await readBody(req)
-      let parsed: { method?: unknown; args?: unknown; clientId?: unknown }
+      let parsed: {
+        method?: unknown
+        args?: unknown
+        clientId?: unknown
+        callerPanelId?: unknown
+        originCwd?: unknown
+      }
       try { parsed = raw ? JSON.parse(raw) : {} } catch { send(400, { error: 'bad-json' }); return }
       const method = typeof parsed.method === 'string' ? parsed.method : ''
       if (!method) { send(400, { error: 'no-method' }); return }
@@ -120,17 +127,38 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
       const args = parsed.args && typeof parsed.args === 'object'
         ? parsed.args as Record<string, unknown>
         : {}
+      const callerPanelId = session.caller === 'first-party' && typeof parsed.callerPanelId === 'string'
+        ? parsed.callerPanelId
+        : undefined
+      const callerPanel = callerPanelId
+        ? getWindowPanels().find((candidate) =>
+            candidate.panelId === callerPanelId &&
+            candidate.workspaceId === session.workspaceId &&
+            candidate.type === 'terminal',
+          )
+        : undefined
+      const callerWindow = callerPanel ? getWindow(callerPanel.ownerWindowId) : undefined
+      const callerWebContents = callerWindow && !callerWindow.isDestroyed()
+        ? callerWindow.webContents
+        : undefined
       const invokeScope = {
         extensionId: session.extensionId,
         workspaceId: session.workspaceId,
-        panelId: session.panelId,
-        forward: session.ownerWebContents && !session.ownerWebContents.isDestroyed()
+        panelId: session.panelId ?? callerPanelId,
+        forward: callerWebContents
+          ? (payload: Parameters<InvokeScope['forward']>[0]) =>
+              forwardToOwner(callerWebContents, payload)
+          : session.ownerWebContents && !session.ownerWebContents.isDestroyed()
           ? (payload: Parameters<InvokeScope['forward']>[0]) =>
               forwardToOwner(session.ownerWebContents!, payload)
           : forwardToActiveWindow,
         caller: session.caller,
         grantedScopes: session.grantedScopes,
-        originCwd: session.originCwd,
+        originCwd: session.originCwd ?? (
+          session.caller === 'first-party' && typeof parsed.originCwd === 'string'
+            ? parsed.originCwd
+            : undefined
+        ),
       } as const
 
       if (session.caller === 'first-party' && method.startsWith('cate.panel.target.')) {

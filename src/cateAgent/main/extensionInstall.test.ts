@@ -67,7 +67,7 @@ describe('createBundledExtensionInstaller', () => {
       host.file.writeFile.mock.calls.map((call: unknown[]) => [call[0], call[1]]),
     )
     expect(writes.get('/host/.cate/cate-agent/extensions/cate-orchestrator/index.ts'))
-      .toContain('create_coding_agent')
+      .toContain('same recursive workflow')
     expect(JSON.parse(String(
       writes.get('/host/.cate/cate-agent/extensions/cate-orchestrator/package.json'),
     ))).toMatchObject({ name: 'cate-orchestrator' })

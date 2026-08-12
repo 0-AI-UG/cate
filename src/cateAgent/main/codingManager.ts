@@ -52,7 +52,6 @@ import { workspaceCateApi } from '../../main/extensions/workspaceCateApi'
 import { KeyedLock } from '../../main/keyedLock'
 import { agentMessageText, lastAssistantMessage } from '../../shared/agentMessages'
 import { agentErrorMessage } from '../../shared/agentErrorMessage'
-import { AGENTS } from '../../shared/agents'
 
 interface AgentSession {
   panelId: string
@@ -206,14 +205,12 @@ export class CodingManager {
 
       const env: Record<string, string> = {
         PI_CODING_AGENT_DIR: hostCodingDir(runtimeId, cwd),
-        // The standalone Pi extension cannot import Cate's source tree. Feed
-        // it the canonical registry so its tool schema cannot drift.
-        CATE_CODING_AGENT_IDS: JSON.stringify(AGENTS.map((agent) => agent.id)),
+        CATE_PANEL_ID: opts.panelId,
       }
 
-      // The embedded supervisor gets a panel-bound endpoint with orchestration
-      // scope. Worker terminals receive the ordinary first-party endpoint and
-      // therefore cannot recursively spawn agents.
+      // The embedded agent retains a panel-bound endpoint for native
+      // worktree/window affinity, but uses the same public cate CLI as terminal
+      // agents for orchestration.
       const cateApi = await workspaceCateApi.ensureCateAgentEndpoint(
         opts.workspaceId,
         opts.panelId,

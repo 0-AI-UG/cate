@@ -7,7 +7,7 @@ export interface CodingAgentRun {
   panelId: string
   /** Short user-facing responsibility, e.g. “Integration tests”. */
   title?: string
-  /** Cate Agent panel/session that owns and may control this run. */
+  /** Cate terminal or embedded-agent panel that owns and may control this run. */
   ownerPanelId: string
   prompt: string
   createdAt: number

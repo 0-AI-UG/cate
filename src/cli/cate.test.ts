@@ -9,6 +9,7 @@ import {
   parseCli,
   parseFileTarget,
   resolvePanel,
+  resolveAgentRun,
   run,
   send,
   shortId,
@@ -18,7 +19,7 @@ import {
   type SendDeps,
 } from './cate'
 
-const flags: Flags = { json: false, help: false, version: false }
+const flags: Flags = { json: false, help: false, version: false, foreground: false }
 
 describe('thin browser CLI', () => {
   it('makes open a new tab and keeps replacement navigation explicit', () => {
@@ -127,7 +128,7 @@ describe('global parsing', () => {
       '--panel', 'abc', '--json',
     ])).toEqual({
       positionals: ['browser', 'wait', '#done', '--timeout', '5000'],
-      flags: { panel: 'abc', json: true, help: false, version: false },
+      flags: { panel: 'abc', json: true, help: false, version: false, foreground: false },
     })
   })
 
@@ -171,6 +172,68 @@ describe('non-browser surface', () => {
       args: { panelId: 'abcd1234' },
       resolvePanel: 'panel',
     })
+  })
+})
+
+describe('agent orchestration surface', () => {
+  it('parses create options without changing browser-native argv parsing', () => {
+    const parsed = parseCli([
+      'agent', 'create', 'Implement', 'the API', '--agent', 'codex', '--title', 'API',
+      '--new-worktree', 'agent/api', '--base-ref', 'main', '--foreground',
+    ])
+    expect(buildRequest(parsed.positionals, parsed.flags)).toEqual({
+      method: 'cate.codingAgent.create',
+      args: {
+        prompt: 'Implement the API',
+        agentId: 'codex',
+        title: 'API',
+        newWorktree: 'agent/api',
+        baseRef: 'main',
+        background: false,
+      },
+    })
+  })
+
+  it('maps the complete lifecycle and validates worktree options', () => {
+    expect(buildRequest(['agent', 'list'], flags)).toEqual({
+      method: 'cate.codingAgent.list', args: {},
+    })
+    expect(buildRequest(['agent', 'send', 'abcd1234', 'Run', 'tests'], flags)).toEqual({
+      method: 'cate.codingAgent.send',
+      args: { runId: 'abcd1234', prompt: 'Run tests' },
+      resolveAgentRuns: true,
+    })
+    expect(buildRequest(['agent', 'inspect', 'abcd1234'], flags).method)
+      .toBe('cate.codingAgent.inspect')
+    expect(buildRequest(['agent', 'review', 'abcd1234'], flags).method)
+      .toBe('cate.codingAgent.review')
+    expect(buildRequest(['agent', 'apply', 'abcd1234'], flags).method)
+      .toBe('cate.codingAgent.apply')
+    expect(buildRequest(['agent', 'keep', 'abcd1234'], flags).method)
+      .toBe('cate.codingAgent.keep')
+    expect(buildRequest(['agent', 'discard', 'abcd1234'], flags).method)
+      .toBe('cate.codingAgent.discard')
+    expect(buildRequest(['agent', 'stop', 'abcd1234'], flags).method)
+      .toBe('cate.codingAgent.stop')
+    expect(() => buildRequest(
+      ['agent', 'create', 'task'],
+      { ...flags, worktreeId: 'one', newWorktree: 'two' },
+    )).toThrow(/either --worktree or --new-worktree/)
+  })
+
+  it('maps wait milliseconds to the bounded host timeout', () => {
+    expect(buildRequest(
+      ['agent', 'wait', 'abcd1234', 'efgh5678'],
+      { ...flags, waitTimeout: '15000' },
+    )).toEqual({
+      method: 'cate.codingAgent.wait',
+      args: { runIds: ['abcd1234', 'efgh5678'], timeoutSeconds: 15 },
+      resolveAgentRuns: true,
+    })
+    expect(() => buildRequest(
+      ['agent', 'wait'],
+      { ...flags, waitTimeout: '1000' },
+    )).toThrow(/between 5000 and 60000/)
   })
 })
 
@@ -226,6 +289,7 @@ describe('transport and panel resolution', () => {
       method: 'cate.browser.command',
       args: { command: ['snapshot', '-i'], placementGroupId: 'origin-panel' },
       clientId: 'cli-session',
+      callerPanelId: 'origin-panel',
     })
   })
 
@@ -253,6 +317,15 @@ describe('transport and panel resolution', () => {
     await expect(resolvePanel('abcd1234-b', 'browser', deps)).resolves.toBe('abcd1234-browser')
     await expect(resolvePanel('abcd1234-t', 'browser', deps)).rejects.toThrow(/no browser panel/)
   })
+
+  it('resolves exact or unique short agent run ids', async () => {
+    const deps = panelDeps([
+      { id: 'abcd1234-run-one' },
+      { id: 'efgh5678-run-two' },
+    ])
+    await expect(resolveAgentRun('abcd1234', deps)).resolves.toBe('abcd1234-run-one')
+    await expect(resolveAgentRun('missing', deps)).rejects.toThrow(/no agent run/)
+  })
 })
 
 describe('output and run loop', () => {
@@ -266,6 +339,9 @@ describe('output and run loop', () => {
     })).toContain('- button "Save" [ref=s1e1]')
     expect(formatHuman('cate.browser.readCommand', { path: '/tmp/shot.png' })).toBe('/tmp/shot.png')
     expect(formatHuman('cate.terminal.read', { text: 'one\ntwo' })).toBe('one\ntwo')
+    expect(formatHuman('cate.codingAgent.list', [
+      { id: 'abcdefgh-more', status: 'working', title: 'Tests' },
+    ])).toBe('abcdefgh\tworking\tTests')
   })
 
   function runDeps(body: unknown = { result: null }): RunDeps & { out: string[]; err: string[] } {
@@ -306,5 +382,25 @@ describe('output and run loop', () => {
     expect(await run(['browser', 'tab', 'list'], deps)).toBe(2)
     expect(deps.err.join('\n')).toContain('unsupported-browser-command:tab')
     expect(deps.fetch).not.toHaveBeenCalled()
+  })
+
+  it('resolves a short agent id before inspecting it', async () => {
+    const deps = runDeps()
+    ;(deps.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        status: 200,
+        json: async () => ({ result: [{ id: 'abcdefgh-full', status: 'ready' }] }),
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        json: async () => ({ result: { id: 'abcdefgh-full', status: 'ready' } }),
+      })
+
+    expect(await run(['agent', 'inspect', 'abcdefgh'], deps)).toBe(0)
+    const request = JSON.parse((deps.fetch as ReturnType<typeof vi.fn>).mock.calls[1][1].body)
+    expect(request).toEqual({
+      method: 'cate.codingAgent.inspect',
+      args: { runId: 'abcdefgh-full' },
+    })
   })
 })
