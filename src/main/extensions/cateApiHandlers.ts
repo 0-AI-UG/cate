@@ -693,15 +693,12 @@ export function authorizeCateInvoke(
     }
   }
 
-  // Security: direct CLI calls and the embedded supervisor's non-orchestration
-  // calls share the Settings → CLI gates. The supervisor endpoint must stay
-  // alive when the master switch is off so its coding-agent orchestration can
-  // still work, but that privileged endpoint must not become a way around the
-  // user's CLI permissions for browser, terminal, panel, editor, or UI access.
-  // Extensions remain governed by manifest scopes plus capability consent.
-  const isCodingAgentOrchestration = method.startsWith('cate.codingAgent.')
-  const usesCliPermissions = scope.caller === 'first-party'
-    || (scope.caller === 'cate-agent' && !isCodingAgentOrchestration)
+  // Security: direct CLI calls and the embedded supervisor share the same
+  // Settings → CLI gates, including the Agents row. The supervisor endpoint
+  // remains available for session lifecycle, but cannot use host capabilities
+  // while the master switch or relevant cell is off. Extensions remain
+  // governed by manifest scopes plus capability consent.
+  const usesCliPermissions = trustedCaller
   if (usesCliPermissions) {
     if (getSetting('cliEnabled') !== true) {
       return {

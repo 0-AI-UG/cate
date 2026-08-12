@@ -30,6 +30,8 @@ export type CliPermissionKey = Extract<
   | 'cliEditorReadEnabled'
   | 'cliEditorControlEnabled'
   | 'cliNotifyEnabled'
+  | 'cliAgentReadEnabled'
+  | 'cliAgentControlEnabled'
 >
 
 export interface CliPermissionCell {
@@ -151,6 +153,30 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Control',
       code: 'notify-disabled',
       detail: '`cate notify <message>` — post a desktop notification from a terminal.',
+    },
+  },
+  {
+    label: 'Agents',
+    prefixes: ['cate.codingAgent.'],
+    readMethods: [
+      'cate.codingAgent.list',
+      'cate.codingAgent.wait',
+      'cate.codingAgent.inspect',
+      'cate.codingAgent.review',
+    ],
+    read: {
+      key: 'cliAgentReadEnabled',
+      access: 'Read',
+      code: 'agent-read-disabled',
+      detail:
+        '`cate agent list / wait / inspect / review` — observe workers, their terminal output, and isolated worktree changes.',
+    },
+    control: {
+      key: 'cliAgentControlEnabled',
+      access: 'Control',
+      code: 'agent-control-disabled',
+      detail:
+        '`cate agent create / send / apply / keep / discard / stop` — run and steer workers or integrate and remove their worktrees.',
     },
   },
 ]
