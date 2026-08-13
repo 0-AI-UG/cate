@@ -94,20 +94,22 @@ import type { CodingAgentRunStatus } from '../../shared/codingAgentRuns'
  *  history, JS-dialog policy, cross-origin frame evaluation, viewport
  *  emulation, downloads, clipboard, and full-page/element screenshots.
  *
+ *  v7 adds the recursive coding-agent CLI lifecycle: list/create/send/wait,
+ *  inspect/review/apply/keep/discard/stop.
+ *
  *  v4 added generation-scoped browser refs, native fill/click actions,
  *  conditional waits, and action snapshots. v3 removed browser.list and
  *  editor.active (cate.panel.list is the single PANEL enumeration surface —
  *  browser panels carry `url`, the focused entry answers "what is the user
  *  looking at") and agent.run (compose open -> send -> dispose). */
-const CATE_API_VERSION = 6
+const CATE_API_VERSION = 7
 
 const FORWARD_TIMEOUT_MS = 10_000
 const CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS = 65_000
 
 export function forwardTimeoutMs(method: string): number {
-  return method === 'cate.codingAgent.wait'
-    ? CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS
-    : FORWARD_TIMEOUT_MS
+  if (method === 'cate.codingAgent.wait') return CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS
+  return FORWARD_TIMEOUT_MS
 }
 
 /** Stable errors for CLI permission cells (Settings → CLI) that are off. Each
@@ -253,7 +255,8 @@ function resolvePanelTargetWindow(
 
 /** Resolve a mission worker to the renderer currently hosting its terminal.
  * Window reports carry both the run and supervisor identities, preventing one
- * Cate Agent session from using a guessed run id to reach another mission. */
+ * terminal or embedded-agent session from using a guessed run id to reach
+ * another mission. */
 function resolveCodingAgentTargetWindow(
   runIds: string[],
   ownerPanelId: string,
@@ -490,10 +493,14 @@ export function requiredScopeFor(method: string): string | null | undefined {
     case 'cate.ui.notify':
       return 'ui'
     case 'cate.codingAgent.create':
+    case 'cate.codingAgent.list':
     case 'cate.codingAgent.send':
     case 'cate.codingAgent.wait':
     case 'cate.codingAgent.inspect':
     case 'cate.codingAgent.review':
+    case 'cate.codingAgent.apply':
+    case 'cate.codingAgent.keep':
+    case 'cate.codingAgent.discard':
     case 'cate.codingAgent.stop':
       return 'coding-agent'
     case 'cate.editor.openFile':
@@ -653,11 +660,11 @@ export function authorizeCateInvoke(
     return { error: 'not-enabled', method }
   }
 
-  // Coding-agent orchestration is the embedded supervisor's privileged surface.
-  // Ordinary terminals, extension webviews, and spawned workers never receive
-  // its token, even if they self-declare a matching scope.
-  if (method.startsWith('cate.codingAgent.') && scope.caller !== 'cate-agent') {
-    return { error: 'cate-agent-only', method }
+  // Coding-agent orchestration is available to first-party terminal callers
+  // and the embedded Cate Agent. Third-party extensions cannot opt into it by
+  // self-declaring the scope.
+  if (method.startsWith('cate.codingAgent.') && !trustedCaller) {
+    return { error: 'first-party-only', method }
   }
 
   // The terminal/agent endpoint must never move the user's window, panel focus,
@@ -686,15 +693,12 @@ export function authorizeCateInvoke(
     }
   }
 
-  // Security: direct CLI calls and the embedded supervisor's non-orchestration
-  // calls share the Settings → CLI gates. The supervisor endpoint must stay
-  // alive when the master switch is off so its coding-agent orchestration can
-  // still work, but that privileged endpoint must not become a way around the
-  // user's CLI permissions for browser, terminal, panel, editor, or UI access.
-  // Extensions remain governed by manifest scopes plus capability consent.
-  const isCodingAgentOrchestration = method.startsWith('cate.codingAgent.')
-  const usesCliPermissions = scope.caller === 'first-party'
-    || (scope.caller === 'cate-agent' && !isCodingAgentOrchestration)
+  // Security: direct CLI calls and the embedded supervisor share the same
+  // Settings → CLI gates, including the Agents row. The supervisor endpoint
+  // remains available for session lifecycle, but cannot use host capabilities
+  // while the master switch or relevant cell is off. Extensions remain
+  // governed by manifest scopes plus capability consent.
+  const usesCliPermissions = trustedCaller
   if (usesCliPermissions) {
     if (getSetting('cliEnabled') !== true) {
       return {
@@ -766,6 +770,30 @@ export async function dispatchCateInvoke(
     const forward = (): Promise<InvokeResult> => target
       ? forwardToOwner(target.wc, payload)
       : scope.forward(payload)
+    if (name === 'list') {
+      const local = await forward()
+      if (local && typeof local === 'object' && 'error' in local) return local
+      const runs = Array.isArray(local) ? [...local] : []
+      const seen = new Set(runs.flatMap((run) => {
+        const id = run && typeof run === 'object' ? (run as Record<string, unknown>).id : undefined
+        return typeof id === 'string' ? [id] : []
+      }))
+      const reports = getWindowPanels().filter((report) =>
+        report.workspaceId === workspaceId &&
+        report.type === 'terminal' &&
+        report.codingAgentOwnerPanelId === (panelId ?? '') &&
+        typeof report.codingAgentRunId === 'string' &&
+        !seen.has(report.codingAgentRunId),
+      )
+      const remote = await inspectCodingAgentReports({
+        reports,
+        extensionId,
+        workspaceId,
+        ownerPanelId: panelId ?? '',
+        originCwd: scope.originCwd,
+      })
+      return [...runs, ...remote]
+    }
     if (name === 'create') {
       const admission = await codingAgentAdmission.admit({
         workspaceId,

@@ -23,11 +23,11 @@ export const GRANTED_SCOPES: readonly string[] = [
   'canvas',
   'panel',
   'terminal',
+  'coding-agent',
 ]
 
 export const CATE_AGENT_GRANTED_SCOPES: readonly string[] = [
   ...GRANTED_SCOPES,
-  'coding-agent',
 ]
 
 export interface WorkspaceCateApiEndpoint {
@@ -60,10 +60,9 @@ export class WorkspaceCateApiManager {
     }
   }
 
-  /** A token minted only for the embedded Cate Agent. Unlike the token injected
-   *  into ordinary terminals, it may create and supervise coding agents. The
-   *  endpoint is bound to the originating agent panel/session for worktree
-   *  affinity and cannot be obtained by a spawned worker. */
+  /** Panel-bound endpoint for the embedded Cate Agent. It uses the same public
+   *  scopes as terminal CLI callers while retaining native panel/worktree
+   *  affinity for the direct chat session. */
   async ensureCateAgentEndpoint(
     workspaceId: string,
     panelId: string,

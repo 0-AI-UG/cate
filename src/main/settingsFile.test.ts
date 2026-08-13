@@ -56,6 +56,8 @@ describe('settingsFile', () => {
     expect(fs.existsSync(settingsPath())).toBe(true)
     const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
     expect(onDisk.showMinimap).toBe(DEFAULT_SETTINGS.showMinimap)
+    expect(onDisk.cliAgentReadEnabled).toBe(true)
+    expect(onDisk.cliAgentControlEnabled).toBe(true)
     expect(m.getSetting('showMinimap')).toBe(DEFAULT_SETTINGS.showMinimap)
   })
 

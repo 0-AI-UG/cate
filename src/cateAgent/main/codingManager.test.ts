@@ -124,14 +124,7 @@ describe('CodingManager worktree skill preparation', () => {
     )
     expect(PiRpcClient).toHaveBeenCalledWith(runtime, expect.objectContaining({
       env: expect.objectContaining({
-        CATE_CODING_AGENT_IDS: JSON.stringify([
-          'claude-code',
-          'codex',
-          'cursor',
-          'grok',
-          'opencode',
-          'pi',
-        ]),
+        CATE_PANEL_ID: 'panel-worktree',
       }),
     }))
   })

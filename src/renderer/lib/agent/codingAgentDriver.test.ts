@@ -18,6 +18,9 @@ const terminate = vi.hoisted(() => vi.fn())
 const createWorktreeForWorkspace = vi.hoisted(() => vi.fn())
 const discardCreatedWorktreeForWorkspace = vi.hoisted(() => vi.fn())
 const reviewCodingAgentWorktree = vi.hoisted(() => vi.fn())
+const applyCodingAgentWorktree = vi.hoisted(() => vi.fn())
+const keepCodingAgentWorktree = vi.hoisted(() => vi.fn())
+const discardCodingAgentWorktree = vi.hoisted(() => vi.fn())
 
 vi.mock('../../stores/appStore', () => ({
   useAppStore: {
@@ -67,7 +70,12 @@ vi.mock('../../stores/useWorktreeActions', () => ({
   discardCreatedWorktreeForWorkspace,
 }))
 vi.mock('./agentCliHooks', () => ({ resolveDriverAgentCli }))
-vi.mock('./codingAgentIntegration', () => ({ reviewCodingAgentWorktree }))
+vi.mock('./codingAgentIntegration', () => ({
+  reviewCodingAgentWorktree,
+  applyCodingAgentWorktree,
+  keepCodingAgentWorktree,
+  discardCodingAgentWorktree,
+}))
 
 import { AGENTS } from '../../../shared/agents'
 import { codingAgentSnapshot, handleCodingAgentMethod } from './codingAgentDriver'
@@ -143,6 +151,9 @@ describe('codingAgentDriver mission integration', () => {
     discardCreatedWorktreeForWorkspace.mockReset()
     discardCreatedWorktreeForWorkspace.mockResolvedValue(undefined)
     reviewCodingAgentWorktree.mockReset()
+    applyCodingAgentWorktree.mockReset()
+    keepCodingAgentWorktree.mockReset()
+    discardCodingAgentWorktree.mockReset()
   })
 
   it('automatically selects a hook-ready canonical agent and starts its PTY headlessly', async () => {
@@ -216,6 +227,31 @@ describe('codingAgentDriver mission integration', () => {
       result: { background: false },
     })
     expect(state.app.workspaces[0].panels.worker.codingAgentRun.background).toBe(false)
+  })
+
+  it('lists runs owned by the calling terminal for recovery and short-id resolution', async () => {
+    await handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.create',
+      { title: 'API', prompt: 'Implement it' },
+    )
+
+    await expect(handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.list',
+      {},
+    )).resolves.toMatchObject({
+      ok: true,
+      result: [expect.objectContaining({ title: 'API', panelId: 'worker' })],
+    })
+    await expect(handleCodingAgentMethod(
+      'ws',
+      'different-supervisor',
+      'cate.codingAgent.list',
+      {},
+    )).resolves.toEqual({ ok: true, result: [] })
   })
 
   it('rejects a non-ready explicit agent before creating a terminal', async () => {
@@ -509,6 +545,86 @@ describe('codingAgentDriver mission integration', () => {
       result: { id: 'run-1', review: { canApply: true } },
     })
     expect(reviewCodingAgentWorktree).toHaveBeenCalledWith('ws', 'worker')
+  })
+
+  it('applies, keeps, and discards an owned isolated worker without a UI card', async () => {
+    state.app.workspaces[0].panels.worker = {
+      id: 'worker',
+      type: 'terminal',
+      worktreeId: 'wt-1',
+      codingAgentRun: {
+        id: 'run-1',
+        agentId: 'codex',
+        panelId: 'worker',
+        ownerPanelId: 'supervisor-1',
+        prompt: 'Implement it',
+        worktreeId: 'wt-1',
+        ownsWorktree: true,
+        createdAt: 1,
+        endedAt: 2,
+        exitCode: 0,
+      },
+    }
+    reviewCodingAgentWorktree.mockResolvedValue({
+      branch: 'agent/api', baseBranch: 'main', canApply: true, commits: [], files: [],
+    })
+    applyCodingAgentWorktree.mockResolvedValue({ ok: true, branch: 'main' })
+    discardCodingAgentWorktree.mockResolvedValue(undefined)
+
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor-1', 'cate.codingAgent.apply', { runId: 'run-1' },
+    )).resolves.toMatchObject({ ok: true, result: { id: 'run-1' } })
+    expect(applyCodingAgentWorktree).toHaveBeenCalledWith('ws', 'worker', 'main')
+
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor-1', 'cate.codingAgent.keep', { runId: 'run-1' },
+    )).resolves.toMatchObject({ ok: true, result: { id: 'run-1' } })
+    expect(keepCodingAgentWorktree).toHaveBeenCalledWith('ws', 'worker')
+
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor-1', 'cate.codingAgent.discard', { runId: 'run-1' },
+    )).resolves.toMatchObject({ ok: true, result: { id: 'run-1' } })
+    expect(discardCodingAgentWorktree).toHaveBeenCalledWith('ws', 'worker')
+  })
+
+  it('does not integrate active workers or discard worktrees the worker does not own', async () => {
+    state.app.workspaces[0].panels.worker = {
+      id: 'worker',
+      type: 'terminal',
+      worktreeId: 'wt-1',
+      codingAgentRun: {
+        id: 'run-1',
+        agentId: 'codex',
+        panelId: 'worker',
+        ownerPanelId: 'supervisor-1',
+        prompt: 'Implement it',
+        worktreeId: 'wt-1',
+        ownsWorktree: false,
+        createdAt: 1,
+      },
+    }
+
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor-1', 'cate.codingAgent.apply', { runId: 'run-1' },
+    )).resolves.toEqual({ ok: false, error: 'coding-agent-not-ready' })
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor-1', 'cate.codingAgent.keep', { runId: 'run-1' },
+    )).resolves.toEqual({ ok: false, error: 'coding-agent-not-ready' })
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor-1', 'cate.codingAgent.discard', { runId: 'run-1' },
+    )).resolves.toEqual({ ok: false, error: 'worker-does-not-own-worktree' })
+
+    state.app.workspaces[0].panels.worker.codingAgentRun = {
+      ...state.app.workspaces[0].panels.worker.codingAgentRun,
+      endedAt: 2,
+      exitCode: 0,
+    }
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor-1', 'cate.codingAgent.discard', { runId: 'run-1' },
+    )).resolves.toEqual({ ok: false, error: 'worker-does-not-own-worktree' })
+    expect(applyCodingAgentWorktree).not.toHaveBeenCalled()
+    expect(keepCodingAgentWorktree).not.toHaveBeenCalled()
+    expect(discardCodingAgentWorktree).not.toHaveBeenCalled()
   })
 
   it('supports OpenCode follow-ups and enforces terminal readiness', async () => {

@@ -70,6 +70,8 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   cliEditorReadEnabled: 'boolean',
   cliEditorControlEnabled: 'boolean',
   cliNotifyEnabled: 'boolean',
+  cliAgentReadEnabled: 'boolean',
+  cliAgentControlEnabled: 'boolean',
   browserHomepage: 'string',
   browserSearchEngine: 'string',
   browserProxyUrl: 'string',

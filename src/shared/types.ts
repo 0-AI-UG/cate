@@ -1333,6 +1333,12 @@ export interface AppSettings {
   cliEditorControlEnabled: boolean
   /** `cate notify` — post a desktop notification. On by default. */
   cliNotifyEnabled: boolean
+  /** Read half of `cate agent *` — list, wait for, inspect, and review workers.
+   *  On by default. */
+  cliAgentReadEnabled: boolean
+  /** Control half of `cate agent *` — create, prompt, apply, keep, discard, and
+   *  stop workers. On by default. */
+  cliAgentControlEnabled: boolean
 
   // Browser
   browserHomepage: string
@@ -1467,6 +1473,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   cliEditorReadEnabled: true,
   cliEditorControlEnabled: true,
   cliNotifyEnabled: true,
+  cliAgentReadEnabled: true,
+  cliAgentControlEnabled: true,
 
   // Browser
   browserHomepage: '',

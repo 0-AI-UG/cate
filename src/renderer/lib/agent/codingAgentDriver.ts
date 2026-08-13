@@ -22,7 +22,12 @@ import {
   type CodingAgentRunStatus,
 } from '../../../shared/codingAgentRuns'
 import { resolveDriverAgentCli } from './agentCliHooks'
-import { reviewCodingAgentWorktree } from './codingAgentIntegration'
+import {
+  applyCodingAgentWorktree,
+  discardCodingAgentWorktree,
+  keepCodingAgentWorktree,
+  reviewCodingAgentWorktree,
+} from './codingAgentIntegration'
 import type { AgentId } from '../../../shared/agents'
 import {
   actionableCodingAgentRunIds,
@@ -467,6 +472,13 @@ export async function handleCodingAgentMethod(
     }
   }
 
+  if (name === 'list') {
+    return {
+      ok: true,
+      result: allSnapshots(workspaceId, ownerPanelId).map(compactCodingAgentSnapshot),
+    }
+  }
+
   const runId = typeof args.runId === 'string' ? args.runId : ''
   if (name !== 'wait' && !runId) return { ok: false, error: 'runId-required' }
 
@@ -496,6 +508,79 @@ export async function handleCodingAgentMethod(
       return {
         ok: false,
         error: error instanceof Error ? `review-failed: ${error.message}` : 'review-failed',
+      }
+    }
+  }
+
+  if (name === 'apply') {
+    const snapshot = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
+    if (!snapshot) return { ok: false, error: 'coding-agent-not-found' }
+    if (!snapshot.worktreeId) return { ok: false, error: 'coding-agent-not-isolated' }
+    if (snapshot.status !== 'ready') return { ok: false, error: 'coding-agent-not-ready' }
+    if (snapshot.appliedToBranch) return { ok: false, error: 'coding-agent-already-applied' }
+    try {
+      const review = await reviewCodingAgentWorktree(workspaceId, snapshot.panelId)
+      if (!review.canApply) {
+        return { ok: false, error: review.message ?? 'coding-agent-not-ready-to-apply' }
+      }
+      const applied = await applyCodingAgentWorktree(
+        workspaceId,
+        snapshot.panelId,
+        review.baseBranch,
+      )
+      if (!applied.ok) return { ok: false, error: applied.message }
+      const current = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
+      return {
+        ok: true,
+        result: current
+          ? compactCodingAgentSnapshot(current)
+          : { id: runId, appliedToBranch: applied.branch },
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? `apply-failed: ${error.message}` : 'apply-failed',
+      }
+    }
+  }
+
+  if (name === 'keep') {
+    const snapshot = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
+    if (!snapshot) return { ok: false, error: 'coding-agent-not-found' }
+    if (!snapshot.worktreeId) return { ok: false, error: 'coding-agent-not-isolated' }
+    if (snapshot.status !== 'ready') return { ok: false, error: 'coding-agent-not-ready' }
+    try {
+      keepCodingAgentWorktree(workspaceId, snapshot.panelId)
+      const current = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
+      return {
+        ok: true,
+        result: current ? compactCodingAgentSnapshot(current) : { id: runId, kept: true },
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? `keep-failed: ${error.message}` : 'keep-failed',
+      }
+    }
+  }
+
+  if (name === 'discard') {
+    const snapshot = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
+    if (!snapshot) return { ok: false, error: 'coding-agent-not-found' }
+    if (!snapshot.worktreeId) return { ok: false, error: 'coding-agent-not-isolated' }
+    if (!snapshot.ownsWorktree) return { ok: false, error: 'worker-does-not-own-worktree' }
+    if (snapshot.status !== 'ready') return { ok: false, error: 'coding-agent-not-ready' }
+    try {
+      await discardCodingAgentWorktree(workspaceId, snapshot.panelId)
+      const current = codingAgentSnapshot(workspaceId, ownerPanelId, runId)
+      return {
+        ok: true,
+        result: current ? compactCodingAgentSnapshot(current) : { id: runId, discarded: true },
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? `discard-failed: ${error.message}` : 'discard-failed',
       }
     }
   }
