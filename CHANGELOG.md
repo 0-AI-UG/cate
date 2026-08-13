@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.6.1-beta.1] - 2026-08-13
+
+This beta opens Cate's coding-agent orchestration to terminal-based agents, improves agent follow-ups, and hardens Windows workspace paths.
+
+### Added
+
+- **Recursive agent orchestration through Cate CLI**: terminal agents can create, inspect, message, wait for, review, apply, keep, discard, and stop visible coding-agent workers, including nested workers and isolated worktrees.
+- **Agent CLI permissions**: Settings now exposes separate read and control permissions for coding-agent orchestration.
+
+### Changed
+
+- **Shared orchestration contract**: Cate Agent now uses the public Cate CLI workflow instead of a private orchestration tool, so built-in and terminal-based agents manage the same workers.
+- **OpenCode follow-ups**: running OpenCode workers can receive additional instructions through the shared agent workflow.
+- **Updated skills and document support**: refreshed the bundled skills index and updated PDF and YAML dependencies.
+
+### Fixed
+
+- **Windows network-drive workspaces**: mapped and UNC paths are normalized and validated consistently when opening workspaces and saving sessions.
+
 ## [1.6.0] - 2026-08-07
 
 Cate 1.6 brings agent mission orchestration, native browser automation, safer remote workspaces, and a more reliable terminal and agent experience.
