@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.6.1-beta.2] - 2026-08-19
+
+This beta makes browser panels faster and more reliable across canvas, focus, and workspace changes.
+
+### Changed
+
+- **Persistent webview rendering**: browser panels now use connected Electron webviews instead of native browser views, preserving page state while panels move between active and background workspaces.
+
+### Fixed
+
+- **Background browser automation**: browser commands keep working while a panel is unfocused or its workspace is inactive, with faster and more reliable target binding.
+- **Browser sizing and overlays**: browser surfaces track panel resize, canvas pan, and zoom correctly so content and automation overlays stay aligned.
+- **Workspace state retention**: switching away and back no longer reloads browser pages or clears live form state.
+
 ## [1.6.1-beta.1] - 2026-08-13
 
 This beta opens Cate's coding-agent orchestration to terminal-based agents, improves agent follow-ups, and hardens Windows workspace paths.
