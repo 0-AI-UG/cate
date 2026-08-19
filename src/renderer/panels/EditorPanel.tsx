@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Check, Copy } from '@phosphor-icons/react'
+import { Check, Copy, FolderOpen } from '@phosphor-icons/react'
 import { useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
@@ -39,6 +39,7 @@ import { useFileSync } from '../lib/editor/useFileSync'
 import EditorConflictBanner from './EditorConflictBanner'
 import { Tooltip } from '../ui/Tooltip'
 import { isRuntimeLocator } from '../../shared/runtimeLocator'
+import { useUIStore } from '../stores/uiStore'
 
 // -----------------------------------------------------------------------------
 // Editor font
@@ -338,6 +339,8 @@ export default function EditorPanel({
   }, [isFocused, markdownPreview])
   const rootPath = ws?.rootPath
   const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
+  const isDirty = !!ws?.panels[panelId]?.isDirty
+  const openFilePalette = useUIStore((s) => s.openFilePalette)
 
   const markdownPreviewRef = useRef(markdownPreview)
   markdownPreviewRef.current = markdownPreview
@@ -797,6 +800,16 @@ export default function EditorPanel({
           </div>
         )}
         <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
+        {!filePath && !diffMode && !isDirty && (
+          <button
+            onClick={() => openFilePalette(panelId)}
+            className="absolute top-2 right-3 z-40 flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium bg-surface-3 text-secondary shadow-sm hover:bg-surface-4 hover:text-primary transition-colors"
+            title="Open an existing workspace file"
+          >
+            <FolderOpen size={13} />
+            Open File…
+          </button>
+        )}
         {/* Source/Preview toggle — floats over the content's top-right instead
             of taking a header row. right-3 (12px) clears Monaco's 8px vertical
             scrollbar lane; z-40 keeps it above the diff (z-30) and load-error

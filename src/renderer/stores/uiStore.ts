@@ -42,6 +42,8 @@ export function getSidebarLayout(): SidebarLayout {
 
 interface UIStoreState {
   showCommandPalette: boolean
+  /** Untitled editor to reuse when the palette was opened as an Open File picker. */
+  openFileTargetPanelId: string | null
   showLayoutsDialog: boolean
   showSkillsDialog: boolean
   /** Bumped whenever a saved layout is created/deleted, so open surfaces
@@ -83,6 +85,7 @@ interface UIStoreState {
 
 interface UIStoreActions {
   setShowCommandPalette: (show: boolean) => void
+  openFilePalette: (targetPanelId: string) => void
   setShowLayoutsDialog: (show: boolean) => void
   setShowSkillsDialog: (show: boolean) => void
   bumpLayoutsVersion: () => void
@@ -125,6 +128,7 @@ export type UIStore = UIStoreState & UIStoreActions
 export const useUIStore = create<UIStore>((set, get) => ({
   // --- State ---
   showCommandPalette: false,
+  openFileTargetPanelId: null,
   showLayoutsDialog: false,
   showSkillsDialog: false,
   layoutsVersion: 0,
@@ -144,7 +148,11 @@ export const useUIStore = create<UIStore>((set, get) => ({
   // --- Actions ---
 
   setShowCommandPalette(show) {
-    set({ showCommandPalette: show })
+    set({ showCommandPalette: show, ...(!show ? { openFileTargetPanelId: null } : {}) })
+  },
+
+  openFilePalette(targetPanelId) {
+    set({ showCommandPalette: true, openFileTargetPanelId: targetPanelId })
   },
 
   setShowLayoutsDialog(show) {
