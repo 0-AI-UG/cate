@@ -142,7 +142,7 @@ describe('browser popup policy', () => {
 })
 
 describe('main-owned browser view navigation', () => {
-  it('uses the browser allowlist for a WebContentsView reported as a window', () => {
+  it('uses the browser allowlist for a browser-session popup reported as a window', () => {
     const targetSession = makeSession()
     configureBrowserGuestSession(targetSession as unknown as Session)
     const listeners: Record<string, (...args: unknown[]) => void> = {}

@@ -15,13 +15,12 @@ import {
   placementForBackgroundPanel,
   resolvePanelLocation,
 } from '../workspace/canvasAccess'
-import { emitAgentCursor, emitBrowserContentChanged } from './agentCursor'
+import { emitAgentCursor } from './agentCursor'
 import { isBrowserInternalPage } from './internalPages'
 import { PANEL_MINIMUM_SIZES } from '../../../shared/types'
 import {
   agentBrowserActivityLabel,
   agentBrowserCommandShowsActivity,
-  isReadOnlyAgentBrowserCommand,
   validateAgentBrowserCommand,
 } from '../../../shared/agentBrowserCommand'
 
@@ -233,14 +232,6 @@ async function executeAgentBrowser(
   const response = await control(webview, { op: 'agentBrowser', method, args })
   if (response.error) return { ok: false, error: response.error }
   if (response.cursor) emitAgentCursor(panelId, response.cursor)
-  if (
-    ACTING_METHODS.has(method)
-    || method === 'evaluate'
-    || method === 'dialogPolicy'
-    || (commandActivity !== null && !isReadOnlyAgentBrowserCommand(commandActivity))
-  ) {
-    emitBrowserContentChanged(panelId)
-  }
   return response.result === undefined ? { ok: true } : { ok: true, result: response.result }
 }
 

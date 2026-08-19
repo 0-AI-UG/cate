@@ -63,6 +63,34 @@ describe('switchWorkspaceByOffset (store action)', () => {
     await useAppStore.getState().switchWorkspaceByOffset(1)
     expect(useAppStore.getState().selectedWorkspaceId).toBe('solo')
   })
+
+  it('preserves a rootless workspace that contains a browser panel', async () => {
+    const browserWorkspace = {
+      id: 'browser-workspace',
+      name: 'Browser workspace',
+      color: '',
+      rootPath: '',
+      panels: {
+        browser: {
+          id: 'browser',
+          type: 'browser',
+          title: 'Browser',
+          isDirty: false,
+          tabs: [{ id: 'tab', url: 'https://example.com', title: 'Example' }],
+          activeTabId: 'tab',
+        },
+      },
+    } as WorkspaceState
+    useAppStore.setState({
+      workspaces: [browserWorkspace, localWorkspace('other')],
+      selectedWorkspaceId: browserWorkspace.id,
+    })
+
+    await useAppStore.getState().selectWorkspace('other')
+
+    expect(useAppStore.getState().workspaces.map((workspace) => workspace.id))
+      .toContain(browserWorkspace.id)
+  })
 })
 
 describe('workspaceIdAtOffset', () => {

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { runInNewContext } from 'node:vm'
 
 vi.mock('electron', () => ({
   app: {
@@ -12,6 +11,7 @@ import { AgentBrowserService } from './agentBrowser'
 
 function fakeContents() {
   let marker = ''
+  let debuggerAttached = false
   const destroyed: Array<() => void> = []
   return {
     contents: {
@@ -20,6 +20,18 @@ function fakeContents() {
         const match = code.match(/value: ("[^"]+")/)
         if (match) marker = JSON.parse(match[1])
       }),
+      debugger: {
+        isAttached: vi.fn(() => debuggerAttached),
+        attach: vi.fn(() => { debuggerAttached = true }),
+        detach: vi.fn(() => { debuggerAttached = false }),
+        sendCommand: vi.fn(async (method: string, params?: { expression?: string }) => {
+          if (method === 'Runtime.evaluate') {
+            const match = params?.expression?.match(/value: ("[^"]+")/)
+            if (match) marker = JSON.parse(match[1])
+          }
+          return {}
+        }),
+      },
       once: vi.fn((event: string, callback: () => void) => {
         if (event === 'destroyed') destroyed.push(callback)
       }),
@@ -35,51 +47,52 @@ function fakeContents() {
 describe('AgentBrowserService', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('returns a cloneable scalar from the webview marker script', async () => {
+  it('marks the exact guest in its CDP page world', async () => {
     const guest = fakeContents()
-    let token = ''
-    guest.contents.executeJavaScript.mockImplementation(async (code: string) => {
-      const match = code.match(/value: ("[^"]+")/)
-      if (match) token = JSON.parse(match[1])
-      const completion = runInNewContext(code, {})
-      if (completion !== null && (typeof completion === 'object' || typeof completion === 'function')) {
-        throw new Error('An object could not be cloned.')
-      }
-      return completion
-    })
     const runner = vi.fn(async (args: string[]) => {
       if (args[0] === 'tab' && args.length === 1) return { tabs: [{ tabId: 't1', type: 'webview' }] }
-      if (args[0] === 'eval') return { result: token }
+      if (args[0] === 'eval') return { result: guest.marker() }
       return {}
     })
     const service = new AgentBrowserService({ runner, endpoint: async () => '19333' })
 
     await expect(service.register(guest.contents, 'panel-1', 'tab-1')).resolves.toBeUndefined()
+    expect(guest.contents.debugger.attach).toHaveBeenCalledWith('1.3')
+    expect(guest.contents.debugger.sendCommand).toHaveBeenCalledWith(
+      'Runtime.evaluate',
+      expect.objectContaining({ returnByValue: true }),
+    )
+    expect(guest.contents.debugger.detach).toHaveBeenCalledOnce()
+    expect(guest.contents.executeJavaScript).not.toHaveBeenCalled()
   })
 
   it('does not deadlock a command when a later registration replaces the binding promise', async () => {
     const guest = fakeContents()
-    let token = ''
     let releaseFirstMarker!: () => void
     const firstMarker = new Promise<void>((resolve) => { releaseFirstMarker = resolve })
     let markerCalls = 0
-    guest.contents.executeJavaScript.mockImplementation(async (code: string) => {
-      const match = code.match(/value: ("[^"]+")/)
-      if (match) token = JSON.parse(match[1])
+    guest.contents.debugger.sendCommand.mockImplementation(async (method: string, params?: { expression?: string }) => {
+      if (method !== 'Runtime.evaluate') return {}
+      const match = params?.expression?.match(/value: ("[^"]+")/)
       markerCalls += 1
       if (markerCalls === 1) await firstMarker
-      return true
+      if (match) {
+        // Preserve the fake guest's normal marker behavior after the delayed
+        // first registration.
+        await guest.contents.executeJavaScript(params!.expression!)
+      }
+      return {}
     })
     const runner = vi.fn(async (args: string[]) => {
       if (args[0] === 'tab' && args.length === 1) return { tabs: [{ tabId: 't1', type: 'webview' }] }
-      if (args[0] === 'eval') return { result: token }
+      if (args[0] === 'eval') return { result: guest.marker() }
       if (args[0] === 'snapshot') return { refs: {}, snapshot: '- document' }
       return {}
     })
     const service = new AgentBrowserService({ runner, endpoint: async () => '19333' })
 
     const firstRegistration = service.register(guest.contents, 'panel-1', 'tab-1')
-    await vi.waitFor(() => expect(guest.contents.executeJavaScript).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(guest.contents.debugger.sendCommand).toHaveBeenCalledTimes(1))
     const command = service.execute(42, 'readCommand', { command: ['snapshot', '-i'] })
     const laterRegistration = service.register(guest.contents, 'panel-1', 'tab-1')
     releaseFirstMarker()
@@ -89,7 +102,7 @@ describe('AgentBrowserService', () => {
     await expect(Promise.race([completed, timedOut])).resolves.toBe(true)
   })
 
-  it('binds the exact marked CDP target using the native tab-list command', async () => {
+  it('filters to matching webview targets before validating the marker', async () => {
     const guest = fakeContents()
     let selected = ''
     const commands: string[][] = []
@@ -107,7 +120,7 @@ describe('AgentBrowserService', () => {
         selected = args[1]
         return {}
       }
-      if (args[0] === 'eval') return { result: selected === 't2' ? guest.marker() : null }
+      if (args[0] === 'eval') return { result: selected === 't1' ? guest.marker() : null }
       return {}
     })
     const service = new AgentBrowserService({ runner, endpoint: async () => '19333' })
@@ -118,7 +131,7 @@ describe('AgentBrowserService', () => {
     expect(commands).toContainEqual(['tab'])
     expect(commands).not.toContainEqual(['tab', 'list'])
     expect(commands).toContainEqual(['tab', 't1'])
-    expect(commands).toContainEqual(['tab', 't2'])
+    expect(commands).not.toContainEqual(['tab', 't2'])
     expect(commands.at(-1)).toEqual(expect.arrayContaining(['eval']))
   })
 

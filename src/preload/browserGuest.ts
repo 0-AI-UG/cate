@@ -8,7 +8,6 @@ import { ipcRenderer, webFrame } from 'electron'
 // Keep this preload self-contained. Sharing the IPC constants module with the
 // renderer preload makes electron-vite emit a chunk that Electron's sandboxed
 // preload loader cannot require.
-const BROWSER_VIEW_GUEST_MESSAGE = 'browserView:guestMessage'
 
 // Match Cate's thin, rounded panel scrollbar inside remote browser pages. The
 // guest cannot inherit renderer theme variables, so these colors mirror the
@@ -49,7 +48,7 @@ document.addEventListener('focusin', (event) => {
   marked = input
 
   const rect = input.getBoundingClientRect()
-  ipcRenderer.send(BROWSER_VIEW_GUEST_MESSAGE, CHANNEL, {
+  ipcRenderer.sendToHost(CHANNEL, {
     targetId,
     rect: {
       left: rect.left,

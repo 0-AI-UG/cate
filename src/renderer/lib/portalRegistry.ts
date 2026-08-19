@@ -11,10 +11,7 @@
 // the guest DOM and resolved by browserDriver on subsequent commands.
 // =============================================================================
 
-/** Minimal subset of an embedded browser surface that we depend on.
- *  BrowserPanel registers a renderer-side facade for its WebContentsView — these are
- *  the members the reverse-API driver (browserDriver.ts) and terminalUrlOpen
- *  actually call. */
+/** Minimal subset of the DOM <webview> surface that browser automation uses. */
 export type PortalInputModifier = 'shift' | 'control' | 'alt' | 'meta'
 
 export type PortalInputEvent =
@@ -76,11 +73,8 @@ const byPanelId = new Map<string, Entry>()
 /** Panel-level control surface, registered for a BrowserPanel's whole mounted
  *  lifetime — unlike browser views, which only exist once a page is loaded.
  *
- *  Two things live here that the active <webview> cannot answer:
- *   • navigate() drives a panel sitting on its start page. Its native view is
- *     hidden behind the start page, so navigating through
- *     this callback is what mounts one.
- *   • tabs are a PANEL concept; the active guest and tab list live in React. */
+ *  Navigation and tabs are panel concepts; the active guest and light tab list
+ *  live in React. */
 export interface BrowserPanelController {
   navigate(url: string): void
   listTabs(): Array<{ id: string; url: string; title: string; active: boolean }>
@@ -100,8 +94,8 @@ export const portalRegistry = {
   register(panelId: string, webview: PortalWebview): void {
     byPanelId.set(panelId, { webview })
   },
-  unregister(panelId: string): void {
-    byPanelId.delete(panelId)
+  unregister(panelId: string, webview?: PortalWebview): void {
+    if (!webview || byPanelId.get(panelId)?.webview === webview) byPanelId.delete(panelId)
   },
   get(panelId: string): PortalWebview | null {
     return byPanelId.get(panelId)?.webview ?? null
@@ -109,8 +103,10 @@ export const portalRegistry = {
   registerController(panelId: string, controller: BrowserPanelController): void {
     controllerByPanelId.set(panelId, controller)
   },
-  unregisterController(panelId: string): void {
-    controllerByPanelId.delete(panelId)
+  unregisterController(panelId: string, controller?: BrowserPanelController): void {
+    if (!controller || controllerByPanelId.get(panelId) === controller) {
+      controllerByPanelId.delete(panelId)
+    }
   },
   getController(panelId: string): BrowserPanelController | null {
     return controllerByPanelId.get(panelId) ?? null

@@ -192,12 +192,6 @@ export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
  *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the
  *  Browser menu. The focused BrowserPanel acts on it. */
 export const BROWSER_SHORTCUT = 'browser:shortcut'
-export const BROWSER_VIEW_CREATE = 'browserView:create'
-export const BROWSER_VIEW_COMMAND = 'browserView:command'
-export const BROWSER_VIEW_BOUNDS = 'browserView:bounds'
-export const BROWSER_VIEW_DESTROY = 'browserView:destroy'
-export const BROWSER_VIEW_EVENT = 'browserView:event'
-export const BROWSER_VIEW_GUEST_MESSAGE = 'browserView:guestMessage'
 
 /** Configure the proxy for a browser panel's Electron session partition
  *  (renderer -> main). Awaited before the panel mounts its <webview> so the

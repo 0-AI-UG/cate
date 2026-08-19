@@ -156,11 +156,18 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
       // serializes straight from them via the canvasAccess resolvers.
 
       // Discard outgoing workspace if it was never initialized (no folder
-      // picked, not currently picking one). Keeps stray "Add Workspace" rows
-      // from accumulating in the sidebar.
+      // picked, not currently picking one) and contains only its placeholder
+      // canvas. A rootless workspace with a browser/editor/etc. is real user
+      // state and must survive the switch so background work can continue.
       const outgoing = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
+      const hasUserPanels = Object.values(outgoing?.panels ?? {})
+        .some((panel) => panel.type !== 'canvas')
       const shouldDropOutgoing =
-        !!outgoing && !outgoing.rootPath && !outgoing.isRootPathPending && outgoing.id !== id
+        !!outgoing
+        && !outgoing.rootPath
+        && !outgoing.isRootPathPending
+        && !hasUserPanels
+        && outgoing.id !== id
 
       // Switch selection. The shell is keyed by selectedWorkspaceId, so it
       // remounts and reads the incoming workspace's OWN dock + canvas stores —

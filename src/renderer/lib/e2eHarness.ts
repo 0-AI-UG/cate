@@ -20,6 +20,8 @@ import { activeDockPanelId } from '../../shared/collectPanelIds'
 import { useSettingsStore } from '../stores/settingsStore'
 import { parseCodingAgentId, type CodingAgentRunSnapshot } from '../../shared/codingAgentRuns'
 import { codingAgentSnapshot, handleCodingAgentMethod } from './agent/codingAgentDriver'
+import { handleBrowserMethod, type BrowserOutcome } from './browser/browserDriver'
+import { portalRegistry } from './portalRegistry'
 import type { AgentHookMode } from '../../shared/agentHookModes'
 
 /** Serializable snapshot of the search store for e2e assertions. */
@@ -51,6 +53,13 @@ declare global {
       createTerminal(point: Point): string
       createEditor(point: Point): string
       createCanvasPanel(point: Point): string
+      createBrowser(url: string, point?: Point): { workspaceId: string; panelId: string }
+      browserInvoke(
+        workspaceId: string,
+        method: string,
+        args: Record<string, unknown>,
+      ): Promise<BrowserOutcome>
+      browserWebContentsId(panelId: string): number | null
       nodes(): { id: string; panelId: string; origin: Point; size: { width: number; height: number } }[]
       zoom(): number
       setZoom(z: number): void
@@ -187,6 +196,26 @@ export function installE2EHarness(): void {
     if (!cs) return ''
     const nodes = Object.values(cs.getState().nodes)
     return nodes.length ? nodes[nodes.length - 1].id : ''
+  }
+
+  const createBrowser = (url: string, point?: Point): { workspaceId: string; panelId: string } => {
+    const workspaceId = useAppStore.getState().selectedWorkspaceId
+    const panelId = useAppStore.getState().createBrowser(workspaceId, url, point)
+    return { workspaceId, panelId }
+  }
+
+  const browserInvoke = (
+    workspaceId: string,
+    method: string,
+    args: Record<string, unknown>,
+  ): Promise<BrowserOutcome> => handleBrowserMethod(workspaceId, `cate.browser.${method}`, args)
+
+  const browserWebContentsId = (panelId: string): number | null => {
+    try {
+      return portalRegistry.get(panelId)?.getWebContentsId() ?? null
+    } catch {
+      return null
+    }
   }
 
   const nodes = () => {
@@ -458,6 +487,9 @@ export function installE2EHarness(): void {
     createTerminal,
     createEditor,
     createCanvasPanel,
+    createBrowser,
+    browserInvoke,
+    browserWebContentsId,
     nodes,
     zoom,
     setZoom,

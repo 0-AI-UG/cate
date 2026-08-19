@@ -33,55 +33,6 @@ export interface NativeContextMenuItem {
   submenu?: NativeContextMenuItem[]
 }
 
-export interface BrowserViewState {
-  webContentsId: number
-  url: string
-  title: string
-  loading: boolean
-  canGoBack: boolean
-  canGoForward: boolean
-}
-
-export interface BrowserViewEvent {
-  panelId: string
-  webContentsId: number
-  state?: BrowserViewState
-  type:
-    | 'dom-ready'
-    | 'did-navigate'
-    | 'did-navigate-in-page'
-    | 'page-favicon-updated'
-    | 'page-title-updated'
-    | 'did-fail-load'
-    | 'did-start-loading'
-    | 'did-stop-loading'
-    | 'render-process-gone'
-    | 'password-focus'
-  url?: string
-  title?: string
-  favicons?: string[]
-  errorDescription?: string
-  errorCode?: number
-  isMainFrame?: boolean
-  reason?: string
-  payload?: unknown
-}
-
-export type BrowserViewCommand =
-  | { op: 'loadURL'; url: string }
-  | { op: 'reload' | 'reloadIgnoringCache' | 'goBack' | 'goForward' | 'focus' }
-  | { op: 'executeJavaScript'; code: string }
-  | { op: 'sendInputEvent'; event: Electron.MouseInputEvent | Electron.MouseWheelInputEvent | Electron.KeyboardInputEvent }
-  | { op: 'capturePage' }
-  | { op: 'getState' }
-
-export interface BrowserViewLayout {
-  rect: { x: number; y: number; width: number; height: number }
-  rendererSize: { width: number; height: number }
-  visible: boolean
-  zoomFactor: number
-}
-
 export interface ElectronAPI {
   /** True when launched with CATE_E2E=1 (Playwright). Renderer uses this to
    *  install the test harness on window.__cateE2E. */
@@ -702,12 +653,6 @@ export interface ElectronAPI {
    *  temp dir instead of the Desktop (default). */
   webviewScreenshot(webContentsId: number, options: { wantDataUrl: false; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string } | null>
   webviewScreenshot(webContentsId: number, options?: { wantDataUrl?: boolean; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string; dataUrl: string } | null>
-
-  browserViewCreate(request: { panelId: string; partition: string }): Promise<BrowserViewState | null>
-  browserViewCommand(panelId: string, webContentsId: number, command: BrowserViewCommand): Promise<unknown>
-  browserViewDestroy(panelId: string, webContentsId: number): Promise<void>
-  browserViewSetBounds(panelId: string, webContentsId: number, layout: BrowserViewLayout): void
-  onBrowserViewEvent(callback: (event: BrowserViewEvent) => void): () => void
 
   /** Main-process agent-browser control plane. The target must be a webview
    *  guest of the calling window. See main/ipc/browserControl. */

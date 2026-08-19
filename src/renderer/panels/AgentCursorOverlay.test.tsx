@@ -33,6 +33,28 @@ afterEach(() => {
 })
 
 describe('AgentCursorOverlay', () => {
+  it('maps guest geometry through the same display scale as the webview', () => {
+    act(() => {
+      root.render(<AgentCursorOverlay panelId="browser-1" scale={0.5} />)
+      emitAgentCursor('browser-1', {
+        kind: 'click',
+        x: 80,
+        y: 60,
+        rect: [20, 30, 100, 40],
+        label: 'click',
+      })
+    })
+
+    const cursor = host.querySelector<HTMLElement>('[data-agent-cursor]')!
+    const target = host.querySelector<HTMLElement>('[data-agent-effect="click"]')!
+    expect(cursor.style.left).toBe('40px')
+    expect(cursor.style.top).toBe('30px')
+    expect(target.style.left).toBe('10px')
+    expect(target.style.top).toBe('15px')
+    expect(target.style.width).toBe('50px')
+    expect(target.style.height).toBe('20px')
+  })
+
   it('renders click feedback without exposing the command label or ref', () => {
     act(() => {
       emitAgentCursor('browser-1', {

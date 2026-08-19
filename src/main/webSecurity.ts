@@ -154,28 +154,9 @@ function configureGuestSessionPolicies(
   })
 }
 
-/** Apply the browser-panel session policy to a main-owned WebContentsView. */
+/** Apply browser-panel identity and request policy to a guest session. */
 export function configureBrowserGuestSession(targetSession: Session): void {
   configureGuestSessionPolicies(targetSession, true)
-}
-
-/** Apply browser guest navigation, popup and shortcut policy to non-webview
- *  embedded contents. WebContentsView has no hostWebContents, so its owning
- *  Cate renderer is supplied explicitly for shortcut forwarding. */
-export function installBrowserGuestContents(contents: WebContents, host: WebContents): void {
-  contents.on('will-navigate', (event, url) => {
-    if (!isAllowedGuestUrl(url)) {
-      log.warn('[browser] Blocked guest navigation to %s', url)
-      event.preventDefault()
-    }
-  })
-  installBrowserPopupHandler(contents)
-  contents.on('before-input-event', (event, input) => {
-    const action = browserActionForInput(input)
-    if (!action) return
-    event.preventDefault()
-    if (!host.isDestroyed()) host.send(BROWSER_SHORTCUT, action)
-  })
 }
 
 function installBrowserPopupHandler(contents: WebContents): void {
@@ -251,9 +232,8 @@ export function installWebContentsSecurity(): void {
 
     if (contents.getType() === 'window') {
       contents.on('will-navigate', (event, url) => {
-        // WebContentsView currently reports `window` here too. Its session is
-        // configured before construction, so use that identity to keep remote
-        // browser navigation out of the app-window allowlist.
+        // Browser OAuth popups report `window`; use their session identity to
+        // keep remote navigation out of the app-window allowlist.
         const allowed = browserPopupContents.has(contents) || isBrowserGuestSession(contents.session)
           ? isAllowedGuestUrl(url)
           : isTrustedAppUrl(url)
