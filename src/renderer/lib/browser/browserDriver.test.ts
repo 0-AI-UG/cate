@@ -17,7 +17,6 @@ const h = vi.hoisted(() => ({
   },
   browserControl: vi.fn(),
   emitAgentCursor: vi.fn(),
-  emitBrowserContentChanged: vi.fn(),
   portalWebview: null as null | Record<string, unknown>,
   controller: null as null | {
     setViewport?: ReturnType<typeof vi.fn>
@@ -61,7 +60,6 @@ vi.mock('../workspace/canvasAccess', () => ({
 }))
 vi.mock('./agentCursor', () => ({
   emitAgentCursor: h.emitAgentCursor,
-  emitBrowserContentChanged: h.emitBrowserContentChanged,
 }))
 
 import { handleBrowserMethod } from './browserDriver'
@@ -111,7 +109,6 @@ describe('browserDriver agent-browser boundary', () => {
       method: 'command',
       args: { command: ['click', '@s1e4'] },
     })
-    expect(h.emitBrowserContentChanged).toHaveBeenCalledWith('browser-1')
   })
 
   it('shows activity before the action and applies engine geometry afterward', async () => {

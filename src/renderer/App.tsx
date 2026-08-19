@@ -43,6 +43,9 @@ import { hydrateReceivedPanel } from './lib/panelTransfer'
 import { useWindowRuntime } from './lib/hooks/useWindowRuntime'
 import { closePanelWithConfirm } from './lib/closePanelWithConfirm'
 import pkg from '../../package.json'
+import { PersistentBrowserHostContext } from './panels/browserSurfaceRegistry'
+
+const BackgroundBrowserHost = React.lazy(() => import('./panels/BackgroundBrowserHost'))
 
 // -----------------------------------------------------------------------------
 // App
@@ -91,7 +94,12 @@ export default function App() {
 
   return (
     <WindowTypeContext.Provider value="main">
-      <MainApp />
+      <PersistentBrowserHostContext.Provider value>
+        <MainApp />
+        <React.Suspense fallback={null}>
+          <BackgroundBrowserHost />
+        </React.Suspense>
+      </PersistentBrowserHostContext.Provider>
     </WindowTypeContext.Provider>
   )
 }

@@ -9,7 +9,6 @@ import { configureBrowserProxy } from '../browserProxy'
 import { flattenScreenshotPng } from '../browser/screenshotPng'
 import { windowFromEvent } from '../windowRegistry'
 import { WEBVIEW_SCREENSHOT, BROWSER_SET_PROXY, NATIVE_FILE_DRAG } from '../../shared/ipc-channels'
-import { browserViewOwner } from '../browser/browserViewOwnership'
 
 export function registerCaptureHandlers(): void {
   // Capture a webview's visible content, save to disk, return dataUrl + path.
@@ -25,8 +24,7 @@ export function registerCaptureHandlers(): void {
     if (!wc || wc.isDestroyed()) return null
     // Ensure the target webContents belongs to the caller's window
     const targetWin = BrowserWindow.fromWebContents(wc)
-    const nativeOwner = browserViewOwner(webContentsId)
-    if (!callerWin || ((!targetWin || targetWin.id !== callerWin.id) && nativeOwner?.id !== callerWin.id)) {
+    if (!callerWin || !targetWin || targetWin.id !== callerWin.id) {
       // For webview guests, the host window should match the caller
       const hostWc = wc.hostWebContents
       if (!hostWc || hostWc.id !== event.sender.id) {

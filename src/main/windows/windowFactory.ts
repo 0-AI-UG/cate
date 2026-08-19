@@ -98,12 +98,14 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
       sandbox: !disableRendererSandbox(),
       webSecurity: true,
       webviewTag: true,
+      // Browser automation is intentionally independent of window focus and
+      // workspace visibility. Keep the host renderer responsive so its hidden
+      // browser controllers continue to receive IPC and mount/switch guests.
+      backgroundThrottling: false,
       // Under e2e the window is never shown (revealWindow is a no-op).
       // paintWhenInitiallyHidden makes the hidden renderer paint + fire
-      // ready-to-show anyway; backgroundThrottling:false keeps its rAF/timers
-      // running. (CSS animations are also disabled in e2eHarness.) Harmless
-      // no-ops outside e2e.
-      ...(IS_E2E ? { backgroundThrottling: false, paintWhenInitiallyHidden: true } : {}),
+      // ready-to-show anyway. (CSS animations are disabled in e2eHarness.)
+      ...(IS_E2E ? { paintWhenInitiallyHidden: true } : {}),
     },
   })
 

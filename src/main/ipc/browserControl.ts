@@ -16,7 +16,6 @@ import { wrapHandler } from './handlerError'
 import { grantFileAccess } from './pathValidation'
 import { BROWSER_CONTROL } from '../../shared/ipc-channels'
 import { agentBrowserService } from '../browser/agentBrowser'
-import { browserViewOwner } from '../browser/browserViewOwnership'
 
 export interface BrowserControlRequest {
   op:
@@ -36,8 +35,7 @@ export function resolveBrowserGuest(event: Electron.IpcMainInvokeEvent, webConte
   if (!wc || wc.isDestroyed()) return null
   const callerWin = BrowserWindow.fromWebContents(event.sender)
   const targetWin = BrowserWindow.fromWebContents(wc)
-  const nativeOwner = browserViewOwner(webContentsId)
-  if (!callerWin || ((!targetWin || targetWin.id !== callerWin.id) && nativeOwner?.id !== callerWin.id)) {
+  if (!callerWin || !targetWin || targetWin.id !== callerWin.id) {
     const hostWc = wc.hostWebContents
     if (!hostWc || hostWc.id !== event.sender.id) {
       log.warn(`[browser:control] denied: webContentsId ${webContentsId} is not owned by the calling window`)

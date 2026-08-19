@@ -14,7 +14,7 @@ import {
 const TARGET_MARKER = '__cateAgentBrowserTarget'
 const CONNECT_TIMEOUT_MS = 8_000
 const COMMAND_TIMEOUT_MS = 28_000
-const BIND_ATTEMPTS = 8
+const BIND_ATTEMPTS = 4
 const BIND_RETRY_MS = 75
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 const SESSION = 'cate'
@@ -248,6 +248,33 @@ function markerScript(token: string): string {
     `{ value: ${JSON.stringify(token)}, configurable: false, enumerable: false, writable: false }) }; true`
 }
 
+async function markTarget(contents: WebContents, token: string): Promise<void> {
+  const script = markerScript(token)
+  let attachedHere = false
+  try {
+    if (!contents.debugger.isAttached()) {
+      contents.debugger.attach('1.3')
+      attachedHere = true
+    }
+    await contents.debugger.sendCommand('Runtime.evaluate', {
+      expression: script,
+      returnByValue: true,
+    })
+  } catch (error) {
+    // DevTools can already own the debugger. executeJavaScript is a safe
+    // fallback, but CDP is preferred because agent-browser evaluates in this
+    // same page world when it validates the target marker.
+    log.warn(
+      '[browser:agent-browser] CDP marker injection failed for webContents %d: %s',
+      contents.id,
+      error instanceof Error ? error.message : String(error),
+    )
+    await contents.executeJavaScript(script, true)
+  } finally {
+    if (attachedHere && contents.debugger.isAttached()) contents.debugger.detach()
+  }
+}
+
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
@@ -331,7 +358,7 @@ export class AgentBrowserService {
 
     const current = target
     return this.serial(async () => {
-      await current.contents.executeJavaScript(markerScript(current.token), true)
+      await markTarget(current.contents, current.token)
       await this.bind(current)
     }).then(() => undefined)
   }
@@ -411,14 +438,19 @@ export class AgentBrowserService {
     let probeErrors: string[] = []
     for (let attempt = 0; attempt < BIND_ATTEMPTS; attempt += 1) {
       const listed = objectValue(await this.run(['tab']))
-      const tabs = Array.isArray(listed.tabs) ? listed.tabs : []
+      const tabs = Array.isArray(listed.tabs) ? listed.tabs.map(objectValue) : []
       discovered = tabs.map((raw) => {
-        const tab = objectValue(raw)
-        return `${String(tab.tabId ?? '?')}:${String(tab.type ?? 'unknown')}`
+        return `${String(raw.tabId ?? '?')}:${String(raw.type ?? 'unknown')}`
       })
+      const guestTabs = tabs.filter((tab) => tab.type === 'webview')
+      const url = target.contents.getURL()
+      const title = target.contents.getTitle()
+      const matchingTabs = guestTabs.filter((tab) => tab.url === url && (!title || tab.title === title))
+      const candidates = matchingTabs.length > 0
+        ? [...matchingTabs, ...guestTabs.filter((tab) => !matchingTabs.includes(tab))]
+        : guestTabs.length > 0 ? guestTabs : tabs
       probeErrors = []
-      for (const raw of tabs) {
-        const tab = objectValue(raw)
+      for (const tab of candidates) {
         if (typeof tab.tabId !== 'string') continue
         try {
           // agent-browser invalidates its snapshot refs on every tab command,
