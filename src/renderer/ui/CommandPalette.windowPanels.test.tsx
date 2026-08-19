@@ -25,6 +25,7 @@ import { WindowTypeContext } from '../stores/WindowTypeContext'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import { useWindowPanelStore } from '../stores/windowPanelStore'
+import { recordRecentFile } from '../lib/fs/recentFiles'
 import type { CateWindowType, WindowPanelInfo } from '../../shared/types'
 
 let host: HTMLDivElement
@@ -85,6 +86,37 @@ function rowWithText(text: string): HTMLElement | undefined {
 }
 
 describe('CommandPalette in the main window', () => {
+  it('opens a remote workspace file in the untitled editor that launched the picker', () => {
+    const filePath = 'cate-runtime://ssh_devbox/home/dev/project/src/main.ts'
+    useAppStore.setState({
+      workspaces: [{
+        id: 'ws-A',
+        name: 'Remote project',
+        color: '',
+        rootPath: 'cate-runtime://ssh_devbox/home/dev/project',
+        panels: {
+          'editor-1': { id: 'editor-1', type: 'editor', title: 'Untitled', isDirty: false },
+        },
+      } as never],
+      selectedWorkspaceId: 'ws-A',
+    })
+    recordRecentFile('ws-A', filePath)
+    useUIStore.getState().openFilePalette('editor-1')
+
+    renderPalette('main')
+
+    expect(host.querySelector('input')?.placeholder).toBe('Search workspace files')
+    expect(host.textContent).not.toContain('New Terminal')
+    const row = rowWithText('main.ts')
+    expect(row).toBeTruthy()
+    act(() => { row!.click() })
+
+    const panel = useAppStore.getState().workspaces[0].panels['editor-1']
+    expect(panel.filePath).toBe(filePath)
+    expect(panel.title).toBe('main.ts')
+    expect(useUIStore.getState().showCommandPalette).toBe(false)
+  })
+
   it('lists workspaces and switches to the selected one', () => {
     useAppStore.setState({
       workspaces: [

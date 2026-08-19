@@ -45,7 +45,7 @@ import { runAction } from '../lib/runAction'
 import { useWorkspacePanelTree } from '../lib/workspace/useWorkspacePanelTree'
 import { revealPanel } from '../lib/workspace/panelReveal'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
-import { getRecentFiles } from '../lib/fs/recentFiles'
+import { getRecentFiles, recordRecentFile } from '../lib/fs/recentFiles'
 import { pathDisplayName, relativeDisplayPath } from '../lib/fs/displayPath'
 
 // -----------------------------------------------------------------------------
@@ -125,6 +125,7 @@ type FlatItem =
 
 export const CommandPalette: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
+  const openFileTargetPanelId = useUIStore((s) => s.openFileTargetPanelId)
   const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const workspaces = useAppStore((s) => s.workspaces)
@@ -333,12 +334,15 @@ export const CommandPalette: React.FC = () => {
   const displayedFiles = query ? fileResults : recentFileResults
 
   // Flat list of every navigable item, in render order. Drives keyboard nav.
+  const visibleCommands = openFileTargetPanelId ? [] : filteredCommands
+  const visibleWorkspaces = openFileTargetPanelId ? [] : filteredWorkspaces
+  const visiblePanels = openFileTargetPanelId ? [] : filteredPanels
   const flatItems = useMemo<FlatItem[]>(() => [
-    ...filteredCommands.map((command) => ({ kind: 'command', command }) as FlatItem),
-    ...filteredWorkspaces.map((workspace) => ({ kind: 'workspace', workspace }) as FlatItem),
-    ...filteredPanels.map((panel) => ({ kind: 'panel', panel }) as FlatItem),
+    ...(openFileTargetPanelId ? [] : filteredCommands.map((command) => ({ kind: 'command', command }) as FlatItem)),
+    ...(openFileTargetPanelId ? [] : filteredWorkspaces.map((workspace) => ({ kind: 'workspace', workspace }) as FlatItem)),
+    ...(openFileTargetPanelId ? [] : filteredPanels.map((panel) => ({ kind: 'panel', panel }) as FlatItem)),
     ...displayedFiles.map((file) => ({ kind: 'file', file }) as FlatItem),
-  ], [filteredCommands, filteredWorkspaces, filteredPanels, displayedFiles])
+  ], [openFileTargetPanelId, filteredCommands, filteredWorkspaces, filteredPanels, displayedFiles])
 
   const totalItems = flatItems.length
 
@@ -378,6 +382,13 @@ export const CommandPalette: React.FC = () => {
       const ws = appStore.workspaces.find((w) => w.id === wsId)
       let panelId: string | undefined
       if (ws) {
+        const target = openFileTargetPanelId ? ws.panels[openFileTargetPanelId] : undefined
+        if (target?.type === 'editor' && !target.filePath && !target.isDirty) {
+          appStore.updatePanelFilePath(wsId, target.id, file.path)
+          appStore.updatePanelTitle(wsId, target.id, pathDisplayName(file.path) || 'Untitled')
+          recordRecentFile(wsId, file.path)
+          return
+        }
         const existing = Object.values(ws.panels).find(
           (p) => (p.type === 'editor' || p.type === 'document') && p.filePath === file.path,
         )
@@ -389,7 +400,7 @@ export const CommandPalette: React.FC = () => {
       const nodeId = panelId ? cs.nodeForPanel(panelId) : null
       if (nodeId) cs.focusAndCenter(nodeId)
     },
-    [canvasApi],
+    [canvasApi, openFileTargetPanelId],
   )
 
   const activate = useCallback(
@@ -419,9 +430,9 @@ export const CommandPalette: React.FC = () => {
   if (!showCommandPalette) return null
 
   // Section boundaries within the flat list.
-  const workspaceStart = filteredCommands.length
-  const panelStart = workspaceStart + filteredWorkspaces.length
-  const fileStart = panelStart + filteredPanels.length
+  const workspaceStart = visibleCommands.length
+  const panelStart = workspaceStart + visibleWorkspaces.length
+  const fileStart = panelStart + visiblePanels.length
   const filesLabel = query ? 'Files' : 'Recent Files'
 
   return (
@@ -462,7 +473,7 @@ export const CommandPalette: React.FC = () => {
                     break
                 }
               }}
-              placeholder="Search commands, workspaces, panels and files"
+              placeholder={openFileTargetPanelId ? 'Search workspace files' : 'Search commands, workspaces, panels and files'}
               className="flex-1 bg-transparent text-primary text-[13px] outline-none placeholder:text-muted"
             />
           </div>
@@ -477,10 +488,10 @@ export const CommandPalette: React.FC = () => {
           ) : (
             <>
               {/* Commands */}
-              {filteredCommands.length > 0 && (
+              {visibleCommands.length > 0 && (
                 <>
                   <SectionHeader>Commands</SectionHeader>
-                  {filteredCommands.map((cmd, i) => {
+                  {visibleCommands.map((cmd, i) => {
                     const isSelected = i === selectedIndex
                     return (
                       <Row
@@ -499,11 +510,11 @@ export const CommandPalette: React.FC = () => {
               )}
 
               {/* Workspaces */}
-              {filteredWorkspaces.length > 0 && (
+              {visibleWorkspaces.length > 0 && (
                 <>
-                  {filteredCommands.length > 0 && <Separator />}
+                  {visibleCommands.length > 0 && <Separator />}
                   <SectionHeader>Workspaces</SectionHeader>
-                  {filteredWorkspaces.map((workspace, i) => {
+                  {visibleWorkspaces.map((workspace, i) => {
                     const itemIndex = workspaceStart + i
                     const isSelected = itemIndex === selectedIndex
                     return (
@@ -532,11 +543,11 @@ export const CommandPalette: React.FC = () => {
               )}
 
               {/* Panels */}
-              {filteredPanels.length > 0 && (
+              {visiblePanels.length > 0 && (
                 <>
-                  {(filteredCommands.length > 0 || filteredWorkspaces.length > 0) && <Separator />}
+                  {(visibleCommands.length > 0 || visibleWorkspaces.length > 0) && <Separator />}
                   <SectionHeader>Panels</SectionHeader>
-                  {filteredPanels.map((panel, i) => {
+                  {visiblePanels.map((panel, i) => {
                     const itemIndex = panelStart + i
                     const isSelected = itemIndex === selectedIndex
                     return (
@@ -559,7 +570,7 @@ export const CommandPalette: React.FC = () => {
               {/* Files */}
               {displayedFiles.length > 0 && (
                 <>
-                  {(filteredCommands.length > 0 || filteredWorkspaces.length > 0 || filteredPanels.length > 0) && <Separator />}
+                  {(visibleCommands.length > 0 || visibleWorkspaces.length > 0 || visiblePanels.length > 0) && <Separator />}
                   <SectionHeader>{filesLabel}</SectionHeader>
                   {displayedFiles.map((file, i) => {
                     const itemIndex = fileStart + i
