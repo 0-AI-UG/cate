@@ -1,5 +1,5 @@
 import { execFile } from 'child_process'
-import { randomUUID } from 'crypto'
+import { randomInt, randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { app, type WebContents } from 'electron'
@@ -20,9 +20,12 @@ const MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 const SESSION = 'cate'
 const NAMESPACE = 'cate'
 const AUTOFILL_USERNAME_MARKER = 'data-cate-autofill-username-target'
+const EPHEMERAL_PORT_MIN = 49_152
+const EPHEMERAL_PORT_MAX_EXCLUSIVE = 65_536
 type Runner = (args: string[]) => Promise<unknown>
 
 let runtimeSocketDir: string | null = null
+let configuredDevToolsPort: string | null = null
 
 interface RegisteredTarget {
   contents: WebContents
@@ -54,11 +57,20 @@ export interface AgentBrowserResult {
 
 type BrowserArgs = Record<string, unknown>
 
-/** Enable Chromium's loopback CDP endpoint before Electron becomes ready. */
-export function enableAgentBrowserBackend(): void {
-  if (!app.commandLine.hasSwitch('remote-debugging-port')) {
-    app.commandLine.appendSwitch('remote-debugging-port', '0')
+/** Enable Chromium's loopback CDP endpoint before Electron becomes ready.
+ * Chromium's special port `0` also enables AutomationControlled and exposes
+ * `navigator.webdriver` to every browser guest. An explicit port keeps the CDP
+ * bridge available without changing the identity of normal browsing pages. */
+export function enableAgentBrowserBackend(
+  port = randomInt(EPHEMERAL_PORT_MIN, EPHEMERAL_PORT_MAX_EXCLUSIVE),
+): void {
+  if (app.commandLine.hasSwitch('remote-debugging-port')) {
+    const existing = app.commandLine.getSwitchValue('remote-debugging-port')
+    configuredDevToolsPort = /^\d+$/.test(existing) && existing !== '0' ? existing : null
+    return
   }
+  configuredDevToolsPort = String(port)
+  app.commandLine.appendSwitch('remote-debugging-port', configuredDevToolsPort)
 }
 
 function binaryName(): string {
@@ -93,6 +105,7 @@ export function agentBrowserBinaryPath(): string {
 }
 
 async function readDevToolsPort(): Promise<string> {
+  if (configuredDevToolsPort) return configuredDevToolsPort
   const file = path.join(app.getPath('userData'), 'DevToolsActivePort')
   const deadline = Date.now() + CONNECT_TIMEOUT_MS
   for (;;) {

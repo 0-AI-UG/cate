@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   app: {
-    commandLine: { hasSwitch: vi.fn(() => false), appendSwitch: vi.fn() },
+    commandLine: { hasSwitch: vi.fn(() => false), getSwitchValue: vi.fn(() => ''), appendSwitch: vi.fn() },
     getPath: vi.fn(() => '/tmp/cate-agent-browser-test'),
   },
 }))
 
-import { AgentBrowserService } from './agentBrowser'
+import { app } from 'electron'
+import { AgentBrowserService, enableAgentBrowserBackend } from './agentBrowser'
 
 function fakeContents() {
   let marker = ''
@@ -46,6 +47,22 @@ function fakeContents() {
 
 describe('AgentBrowserService', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('connects automation through an explicit debugging port', async () => {
+    const guest = fakeContents()
+    const runner = vi.fn(async (args: string[]) => {
+      if (args[0] === 'tab' && args.length === 1) return { tabs: [{ tabId: 't1', type: 'webview' }] }
+      if (args[0] === 'eval') return { result: guest.marker() }
+      return {}
+    })
+
+    enableAgentBrowserBackend(54_321)
+    const service = new AgentBrowserService({ runner })
+    await service.register(guest.contents, 'panel-1', 'tab-1')
+
+    expect(app.commandLine.appendSwitch).toHaveBeenCalledWith('remote-debugging-port', '54321')
+    expect(runner).toHaveBeenCalledWith(['connect', '54321'])
+  })
 
   it('marks the exact guest in its CDP page world', async () => {
     const guest = fakeContents()
