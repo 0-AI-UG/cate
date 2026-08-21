@@ -535,6 +535,10 @@ describe('kiro spec', () => {
       cwd: base.cwd,
     })
     expect(norm('kiro', { hook_event_name: 'sessionStart', ...base })?.kind).toBe('session-start')
+    expect(norm('kiro', { hook_event_name: 'SessionStart', ...base })?.kind).toBe('session-start')
+    expect(norm('kiro', { hook_event_name: 'UserPromptSubmit', ...base })?.kind).toBe('turn-start')
+    expect(norm('kiro', { hook_event_name: 'PostToolUse', ...base })?.kind).toBe('turn-resume')
+    expect(norm('kiro', { hook_event_name: 'Stop', ...base })?.kind).toBe('turn-end')
     expect(norm('kiro', { hook_event_name: 'userPromptSubmit', ...base })?.kind).toBe('turn-start')
     expect(norm('kiro', { hook_event_name: 'postToolUse', ...base })?.kind).toBe('turn-resume')
     expect(norm('kiro', { hook_event_name: 'stop', ...base })?.kind).toBe('turn-end')

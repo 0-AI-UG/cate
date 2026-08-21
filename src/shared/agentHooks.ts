@@ -862,12 +862,16 @@ const kiroSpec: AgentHookSpec = {
   normalize: (p) => {
     const base = { sessionId: str(p.session_id), cwd: str(p.cwd) ?? undefined }
     switch (p.hook_event_name) {
-      // Current standalone-hook docs name the trigger SessionStart while the
-      // CLI payload reference still shows agentSpawn. Accept both spellings.
+      // Kiro CLI v3 emits canonical PascalCase. Keep documented legacy aliases
+      // so payloads from older CLI releases remain useful during migration.
+      case 'SessionStart':
       case 'agentSpawn':
       case 'sessionStart': return { kind: 'session-start', ...base }
+      case 'UserPromptSubmit':
       case 'userPromptSubmit': return { kind: 'turn-start', ...base }
+      case 'PostToolUse':
       case 'postToolUse': return { kind: 'turn-resume', ...base }
+      case 'Stop':
       case 'stop': return { kind: 'turn-end', ...base }
       default: return null
     }

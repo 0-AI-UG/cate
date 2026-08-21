@@ -2523,11 +2523,11 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
     const env = cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid })
 
     const tui = await driveTui('kiro-cli', ['chat', '--v3', PROMPT], cwd, env)
-    await tui.waitFor(() => byName('stop').length > 0, 300_000, 'Kiro stop hook')
-    const startName = byName('sessionStart').length > 0 ? 'sessionStart' : 'agentSpawn'
+    await tui.waitFor(() => byName('Stop').length > 0, 300_000, 'Kiro Stop hook')
+    const startName = 'SessionStart'
     const id = byName(startName)[0]?.payload.session_id as string
     expect(id, 'session start reports a session id').toBeTruthy()
-    for (const name of [startName, 'userPromptSubmit', 'stop']) {
+    for (const name of [startName, 'UserPromptSubmit', 'Stop']) {
       const hits = byName(name)
       expect(hits.length, `${name} fired`).toBeGreaterThan(0)
       for (const hit of hits) expect(hit.payload.session_id).toBe(id)
@@ -2544,11 +2544,21 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
       cleanEnv({ CATE_EVENTS_FILE: resumeEventsFile, CATE_TERMINAL_ID: tid }),
     )
     await resumed.waitFor(
-      () => readJsonl<BridgeEvent>(resumeEventsFile).some((event) => event.payload.session_id === id),
-      120_000,
-      'Kiro resumed session hook',
+      () => resumed.peek().includes('ask a question or describe a task'),
+      30_000,
+      'Kiro resumed session input',
     )
-    expectEcho(readJsonl<BridgeEvent>(resumeEventsFile), tid)
+    await resumed.send(PROMPT)
+    await resumed.waitFor(
+      () => readJsonl<BridgeEvent>(resumeEventsFile).some((event) =>
+        event.payload.hook_event_name === 'Stop' && event.payload.session_id === id),
+      60_000,
+      'Kiro resumed session Stop hook',
+    )
+    const resumeEvents = readJsonl<BridgeEvent>(resumeEventsFile)
+    expect(resumeEvents.some((event) =>
+      event.payload.hook_event_name === 'UserPromptSubmit' && event.payload.session_id === id)).toBe(true)
+    expectEcho(resumeEvents, tid)
     resumed.kill()
   })
 })
