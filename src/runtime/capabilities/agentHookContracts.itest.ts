@@ -2498,7 +2498,7 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
 })
 
 // =============================================================================
-// kiro — doc-backed until kiro-cli is installed in the release environment.
+// kiro — requires an installed, authenticated Kiro CLI when live tests run.
 // This suite then pins the standalone v1 hook schema, payload casing, session
 // identity, shipped mission argv, and exact resume-id relaunch end to end.
 // =============================================================================
@@ -2522,11 +2522,12 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
       events().filter((event) => event.payload.hook_event_name === name)
     const env = cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid })
 
-    const tui = await driveTui('kiro-cli', ['chat', PROMPT], cwd, env)
+    const tui = await driveTui('kiro-cli', ['chat', '--v3', PROMPT], cwd, env)
     await tui.waitFor(() => byName('stop').length > 0, 300_000, 'Kiro stop hook')
-    const id = byName('agentSpawn')[0]?.payload.session_id as string
-    expect(id, 'agentSpawn reports a session id').toBeTruthy()
-    for (const name of ['agentSpawn', 'userPromptSubmit', 'stop']) {
+    const startName = byName('sessionStart').length > 0 ? 'sessionStart' : 'agentSpawn'
+    const id = byName(startName)[0]?.payload.session_id as string
+    expect(id, 'session start reports a session id').toBeTruthy()
+    for (const name of [startName, 'userPromptSubmit', 'stop']) {
       const hits = byName(name)
       expect(hits.length, `${name} fired`).toBeGreaterThan(0)
       for (const hit of hits) expect(hit.payload.session_id).toBe(id)
@@ -2538,7 +2539,7 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
     const resumeEventsFile = join(cwd, 'events-resume.jsonl')
     const resumed = await driveTui(
       'kiro-cli',
-      ['chat', '--resume-id', id],
+      ['chat', '--v3', '--resume-id', id],
       cwd,
       cleanEnv({ CATE_EVENTS_FILE: resumeEventsFile, CATE_TERMINAL_ID: tid }),
     )

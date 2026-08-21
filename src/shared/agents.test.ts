@@ -43,7 +43,7 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('grok', uuid)).toBe(`grok --resume ${uuid}`)
     expect(resumeCommandForAgent('pi', uuid)).toBe(`pi --session ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
-    expect(resumeCommandForAgent('kiro', uuid)).toBe(`kiro-cli chat --resume-id ${uuid}`)
+    expect(resumeCommandForAgent('kiro', uuid)).toBe(`kiro-cli chat --v3 --resume-id ${uuid}`)
   })
 
   it('returns null for unknown agent ids', () => {

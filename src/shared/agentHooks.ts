@@ -827,12 +827,12 @@ const opencodeSpec: AgentHookSpec = {
 
 // ---------------------------------------------------------------------------
 // kiro — standalone v1 hook file in <workspace>/.kiro/hooks/. Kiro CLI 3.x
-// documents agentSpawn/userPromptSubmit/postToolUse/stop lifecycle payloads
+// documents session-start/userPromptSubmit/postToolUse/stop lifecycle payloads
 // with session_id + cwd on JSON stdin. Cate owns this one file outright;
 // every other user hook in the directory is untouched.
 // ---------------------------------------------------------------------------
 
-const KIRO_TRIGGERS = ['AgentSpawn', 'UserPromptSubmit', 'PostToolUse', 'Stop'] as const
+const KIRO_TRIGGERS = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop'] as const
 
 function kiroHookSource(ctx: HookInjectionContext): string {
   return JSON.stringify({
@@ -862,7 +862,10 @@ const kiroSpec: AgentHookSpec = {
   normalize: (p) => {
     const base = { sessionId: str(p.session_id), cwd: str(p.cwd) ?? undefined }
     switch (p.hook_event_name) {
-      case 'agentSpawn': return { kind: 'session-start', ...base }
+      // Current standalone-hook docs name the trigger SessionStart while the
+      // CLI payload reference still shows agentSpawn. Accept both spellings.
+      case 'agentSpawn':
+      case 'sessionStart': return { kind: 'session-start', ...base }
       case 'userPromptSubmit': return { kind: 'turn-start', ...base }
       case 'postToolUse': return { kind: 'turn-resume', ...base }
       case 'stop': return { kind: 'turn-end', ...base }

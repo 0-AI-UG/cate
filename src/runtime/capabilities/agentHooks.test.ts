@@ -409,7 +409,7 @@ describe('agentHooks capability', () => {
       hooks: Array<{ trigger: string }>
     }
     expect(kiroHooks.version).toBe('v1')
-    expect(kiroHooks.hooks.map((hook) => hook.trigger)).toContain('AgentSpawn')
+    expect(kiroHooks.hooks.map((hook) => hook.trigger)).toContain('SessionStart')
 
     const exclude = readFileSync(path.join(cwd, '.git', 'info', 'exclude'), 'utf-8')
     expect(exclude).toContain('/.claude/settings.local.json')

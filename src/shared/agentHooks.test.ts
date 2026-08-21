@@ -516,7 +516,7 @@ describe('kiro spec', () => {
     }
     expect(parsed.version).toBe('v1')
     expect(parsed.hooks.map((hook) => hook.trigger)).toEqual([
-      'AgentSpawn', 'UserPromptSubmit', 'PostToolUse', 'Stop',
+      'SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop',
     ])
     for (const hook of parsed.hooks) {
       expect(hook.name).toContain(CATE_HOOK_MARKER)
@@ -534,6 +534,7 @@ describe('kiro spec', () => {
       sessionId: base.session_id,
       cwd: base.cwd,
     })
+    expect(norm('kiro', { hook_event_name: 'sessionStart', ...base })?.kind).toBe('session-start')
     expect(norm('kiro', { hook_event_name: 'userPromptSubmit', ...base })?.kind).toBe('turn-start')
     expect(norm('kiro', { hook_event_name: 'postToolUse', ...base })?.kind).toBe('turn-resume')
     expect(norm('kiro', { hook_event_name: 'stop', ...base })?.kind).toBe('turn-end')
