@@ -826,6 +826,52 @@ const opencodeSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
+// kiro — standalone v1 hook file in <workspace>/.kiro/hooks/. Kiro CLI 3.x
+// documents agentSpawn/userPromptSubmit/postToolUse/stop lifecycle payloads
+// with session_id + cwd on JSON stdin. Cate owns this one file outright;
+// every other user hook in the directory is untouched.
+// ---------------------------------------------------------------------------
+
+const KIRO_TRIGGERS = ['AgentSpawn', 'UserPromptSubmit', 'PostToolUse', 'Stop'] as const
+
+function kiroHookSource(ctx: HookInjectionContext): string {
+  return JSON.stringify({
+    version: 'v1',
+    hooks: KIRO_TRIGGERS.map((trigger) => ({
+      name: `${CATE_HOOK_MARKER}-${trigger}`,
+      trigger,
+      action: { type: 'command', command: ctx.bridgeCommand },
+    })),
+  }, null, 2) + '\n'
+}
+
+const kiroSpec: AgentHookSpec = {
+  // Kiro documents Stop on normal completion, but not interrupt behavior.
+  // Keep the honest non-self-healing fallback until the live suite can pin it.
+  reportsTurnEndOnInterrupt: false,
+  projectFiles: [
+    {
+      relPath: '.kiro/hooks/cate-hook.json',
+      build: (existing, ctx) => {
+        const source = kiroHookSource(ctx)
+        return existing === source ? null : source
+      },
+      strip: (existing) => (existing.includes(CATE_HOOK_MARKER) ? { delete: true } : null),
+    },
+  ],
+  normalize: (p) => {
+    const base = { sessionId: str(p.session_id), cwd: str(p.cwd) ?? undefined }
+    switch (p.hook_event_name) {
+      case 'agentSpawn': return { kind: 'session-start', ...base }
+      case 'userPromptSubmit': return { kind: 'turn-start', ...base }
+      case 'postToolUse': return { kind: 'turn-resume', ...base }
+      case 'stop': return { kind: 'turn-end', ...base }
+      default: return null
+    }
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Registry + normalization entry point
 // ---------------------------------------------------------------------------
 
@@ -834,6 +880,7 @@ export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
   codex: codexSpec,
   cursor: cursorSpec,
   grok: grokSpec,
+  kiro: kiroSpec,
   pi: piSpec,
   opencode: opencodeSpec,
 }

@@ -54,6 +54,9 @@ const RESUMABLE_FROM_SESSION_START: Record<AgentId, boolean> = {
   // already open and on disk when the id arrives — a session killed mid-turn,
   // before its Stop, still resumes (pinned live).
   grok: true,
+  // Kiro documents that sessions are saved on each conversation turn; its
+  // agentSpawn event precedes that first turn, so stamp from prompt submit.
+  kiro: false,
   pi: true,
   opencode: true,
 }

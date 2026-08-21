@@ -2496,3 +2496,58 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
     }
   })
 })
+
+// =============================================================================
+// kiro — doc-backed until kiro-cli is installed in the release environment.
+// This suite then pins the standalone v1 hook schema, payload casing, session
+// identity, shipped mission argv, and exact resume-id relaunch end to end.
+// =============================================================================
+
+describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
+  function prepare(cwd: string, bridge: string): void {
+    const file = AGENT_HOOK_SPECS.kiro.projectFiles![0]
+    const path = join(cwd, file.relPath)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, file.build(null, { bridgeCommand: bridge })!)
+  }
+
+  test('TUI lifecycle hooks identify one session and resume by exact id', { timeout: 420_000 }, async () => {
+    const cwd = makeCwd('kiro')
+    const bridge = writeBridge(cwd)
+    prepare(cwd, bridge)
+    const tid = `cate-term-kiro-${Date.now()}`
+    const eventsFile = join(cwd, 'events.jsonl')
+    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
+    const byName = (name: string): BridgeEvent[] =>
+      events().filter((event) => event.payload.hook_event_name === name)
+    const env = cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid })
+
+    const tui = await driveTui('kiro-cli', ['chat', PROMPT], cwd, env)
+    await tui.waitFor(() => byName('stop').length > 0, 300_000, 'Kiro stop hook')
+    const id = byName('agentSpawn')[0]?.payload.session_id as string
+    expect(id, 'agentSpawn reports a session id').toBeTruthy()
+    for (const name of ['agentSpawn', 'userPromptSubmit', 'stop']) {
+      const hits = byName(name)
+      expect(hits.length, `${name} fired`).toBeGreaterThan(0)
+      for (const hit of hits) expect(hit.payload.session_id).toBe(id)
+    }
+    expectEcho(events(), tid)
+    expect(replayAgentState('kiro', tid, events())).toBe('waitingForInput')
+    tui.kill()
+
+    const resumeEventsFile = join(cwd, 'events-resume.jsonl')
+    const resumed = await driveTui(
+      'kiro-cli',
+      ['chat', '--resume-id', id],
+      cwd,
+      cleanEnv({ CATE_EVENTS_FILE: resumeEventsFile, CATE_TERMINAL_ID: tid }),
+    )
+    await resumed.waitFor(
+      () => readJsonl<BridgeEvent>(resumeEventsFile).some((event) => event.payload.session_id === id),
+      120_000,
+      'Kiro resumed session hook',
+    )
+    expectEcho(readJsonl<BridgeEvent>(resumeEventsFile), tid)
+    resumed.kill()
+  })
+})

@@ -37,6 +37,7 @@ export type AgentId =
   | 'codex'
   | 'cursor'
   | 'grok'
+  | 'kiro'
   | 'opencode'
   | 'pi'
 
@@ -203,6 +204,20 @@ export const AGENTS: readonly AgentDef[] = [
     // `.agents/skills` is the cross-tool shared location pi (and others) read,
     // so pi's target id is 'pi-native' rather than the dir-derived name.
     skills: folderSkills('pi-native', ['.agents', 'skills'], { label: 'Pi' }),
+  },
+  // Kiro CLI 3.x. Official docs define `chat [INPUT]`, `chat --resume-id`,
+  // workspace `.kiro/skills`, and project `.kiro/hooks` lifecycle hooks.
+  // The static contracts are doc-backed; the opt-in live contract remains
+  // skipped until kiro-cli is available in the release test environment.
+  {
+    id: 'kiro',
+    displayName: 'Kiro',
+    command: 'kiro-cli',
+    codingAgentArgs: (prompt) => ['chat', prompt],
+    codingAgentFollowUp: true,
+    matchProcess: (n) => n === 'kiro-cli',
+    resumeArgs: (sid) => ['chat', '--resume-id', sid],
+    skills: folderSkills('kiro', ['.kiro', 'skills'], { nameMatchesDir: true }),
   },
 ]
 

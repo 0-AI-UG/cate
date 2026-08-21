@@ -337,13 +337,13 @@ describe('agentHooks capability', () => {
     expect(posts).toEqual([{ terminalId: 'rpty-guard', agentId: 'grok', pid: process.pid }])
   })
 
-  test('prepareWorkspace writes the claude + codex + cursor + grok + pi hook files and git-excludes them', async () => {
+  test('prepareWorkspace writes every agent hook file and git-excludes them', async () => {
     const cap = makeCap()
     const cwd = tmpDir('ws')
     mkdirSync(path.join(cwd, '.git')) // enough of a repo for info/exclude
     // 'auto' (the default) injects only where the agent's config folder already
-    // exists — seed all five so this covers every file writer.
-    for (const id of ['claude-code', 'codex', 'cursor', 'grok', 'pi'] as const) {
+    // exists — seed every folder so this covers every file writer.
+    for (const id of ['claude-code', 'codex', 'cursor', 'grok', 'pi', 'opencode', 'kiro'] as const) {
       mkdirSync(path.join(cwd, agentHookFolder(id)!))
     }
 
@@ -404,12 +404,20 @@ describe('agentHooks capability', () => {
     const piExt = readFileSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'), 'utf-8')
     expect(piExt).toContain('CATE_HOOK_ENDPOINT')
 
+    const kiroHooks = JSON.parse(readFileSync(path.join(cwd, '.kiro', 'hooks', 'cate-hook.json'), 'utf-8')) as {
+      version: string
+      hooks: Array<{ trigger: string }>
+    }
+    expect(kiroHooks.version).toBe('v1')
+    expect(kiroHooks.hooks.map((hook) => hook.trigger)).toContain('AgentSpawn')
+
     const exclude = readFileSync(path.join(cwd, '.git', 'info', 'exclude'), 'utf-8')
     expect(exclude).toContain('/.claude/settings.local.json')
     expect(exclude).toContain('/.codex/hooks.json')
     expect(exclude).toContain('/.cursor/hooks.json')
     expect(exclude).toContain('/.grok/hooks/cate-hook.json')
     expect(exclude).toContain('/.pi/extensions/cate-hook.ts')
+    expect(exclude).toContain('/.kiro/hooks/cate-hook.json')
 
     // Idempotent: a second prepare does not duplicate exclude lines.
     await cap.prepareWorkspace(cwd)
@@ -417,6 +425,7 @@ describe('agentHooks capability', () => {
     expect(exclude2.split('\n').filter((l) => l === '/.claude/settings.local.json').length).toBe(1)
     expect(exclude2.split('\n').filter((l) => l === '/.codex/hooks.json').length).toBe(1)
     expect(exclude2.split('\n').filter((l) => l === '/.pi/extensions/cate-hook.ts').length).toBe(1)
+    expect(exclude2.split('\n').filter((l) => l === '/.kiro/hooks/cate-hook.json').length).toBe(1)
   })
 
   test('prepareWorkspace never touches the user home dir or a non-absolute cwd', async () => {
@@ -432,7 +441,7 @@ describe('agentHooks capability', () => {
     const cap = makeCap()
     // The guard actually short-circuits prepareWorkspace: forcing every agent
     // 'on' would otherwise write into home, so a clean home subtree proves it.
-    const forceOn = { 'claude-code': 'on', codex: 'on', cursor: 'on', pi: 'on' } as const
+    const forceOn = { 'claude-code': 'on', codex: 'on', cursor: 'on', pi: 'on', kiro: 'on' } as const
     await cap.prepareWorkspace(home, forceOn)
     await cap.prepareWorkspace('', forceOn)
     expect(existsSync(path.join(home, '.codex', 'hooks.json'))).toBe(false)
@@ -476,6 +485,7 @@ describe('agentHooks capability', () => {
     expect(existsSync(path.join(cwd2, '.codex'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.cursor'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.pi'))).toBe(false)
+    expect(existsSync(path.join(cwd2, '.kiro'))).toBe(false)
   })
 
   test('auto injects only agents whose config folder already exists', async () => {
@@ -491,6 +501,7 @@ describe('agentHooks capability', () => {
     expect(existsSync(path.join(cwd, '.claude'))).toBe(false)
     expect(existsSync(path.join(cwd, '.cursor'))).toBe(false)
     expect(existsSync(path.join(cwd, '.pi'))).toBe(false)
+    expect(existsSync(path.join(cwd, '.kiro'))).toBe(false)
   })
 
   test('auto also uses the base workspace folder signal but writes only in the linked worktree', async () => {
@@ -508,6 +519,7 @@ describe('agentHooks capability', () => {
     expect(existsSync(path.join(worktreeCwd, '.codex'))).toBe(false)
     expect(existsSync(path.join(worktreeCwd, '.cursor'))).toBe(false)
     expect(existsSync(path.join(worktreeCwd, '.pi'))).toBe(false)
+    expect(existsSync(path.join(worktreeCwd, '.kiro'))).toBe(false)
   })
 
   test("'on' injects with no pre-existing folder; 'off' strips our entries but keeps the user's", async () => {
@@ -601,6 +613,7 @@ describe('agentHooks capability', () => {
     expect(byId.pi).toMatchObject({ folderPresent: false, injected: false })
     // opencode injects a repo file like every other agent.
     expect(byId.opencode).toMatchObject({ folderPresent: false, injected: false })
+    expect(byId.kiro).toMatchObject({ folderPresent: false, injected: false })
     // Every agent carries a display name for the UI.
     expect(states.every((s) => s.displayName.length > 0)).toBe(true)
   })

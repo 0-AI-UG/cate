@@ -27,7 +27,11 @@ const NO_SKILLS: ReadonlySet<AgentId> = new Set([])
 
 /** Agents deliberately without a bundled logo (they fall back to the panel's
  *  default icon). */
-const NO_LOGO: ReadonlySet<AgentId> = new Set([])
+const NO_LOGO: ReadonlySet<AgentId> = new Set([
+  // Kiro support is CLI-contract complete; use Cate's neutral agent icon until
+  // an official redistribution-safe brand asset is added.
+  'kiro',
+])
 
 describe('agent registry coverage', () => {
   test('every agent declares a skills target, or is an explicit omission', () => {
@@ -68,7 +72,7 @@ describe('agent registry coverage', () => {
   // restatement of the type.
   test('persisted SkillTargetId values never drift', () => {
     const expected: SkillTargetId[] = [
-      'claude-code', 'cate-agent', 'pi-native', 'opencode', 'codex', 'cursor', 'grok',
+      'claude-code', 'cate-agent', 'pi-native', 'opencode', 'codex', 'cursor', 'grok', 'kiro',
     ]
     expect([...SKILL_TARGETS].map((t) => t.id).sort()).toEqual([...expected].sort())
   })

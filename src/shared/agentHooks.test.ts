@@ -499,6 +499,48 @@ describe('opencode spec', () => {
   })
 })
 
+describe('kiro spec', () => {
+  const spec = AGENT_HOOK_SPECS.kiro
+  const file = spec.projectFiles![0]
+  const base = {
+    session_id: 'abc123-def456-789',
+    cwd: '/home/u/proj',
+  }
+
+  test('owns a standalone Kiro v1 hook file with the documented CLI lifecycle triggers', () => {
+    expect(file.relPath).toBe('.kiro/hooks/cate-hook.json')
+    const source = file.build(null, ctx)!
+    const parsed = JSON.parse(source) as {
+      version: string
+      hooks: Array<{ name: string; trigger: string; action: { type: string; command: string } }>
+    }
+    expect(parsed.version).toBe('v1')
+    expect(parsed.hooks.map((hook) => hook.trigger)).toEqual([
+      'AgentSpawn', 'UserPromptSubmit', 'PostToolUse', 'Stop',
+    ])
+    for (const hook of parsed.hooks) {
+      expect(hook.name).toContain(CATE_HOOK_MARKER)
+      expect(hook.action).toEqual({ type: 'command', command: ctx.bridgeCommand })
+    }
+    expect(file.build(source, ctx)).toBeNull()
+    expect(file.strip!(source)).toEqual({ delete: true })
+    expect(file.strip!('{"version":"v1","hooks":[]}')).toBeNull()
+  })
+
+  test('normalizes the documented Kiro CLI lifecycle payloads', () => {
+    expect(norm('kiro', { hook_event_name: 'agentSpawn', ...base })).toMatchObject({
+      agentId: 'kiro',
+      kind: 'session-start',
+      sessionId: base.session_id,
+      cwd: base.cwd,
+    })
+    expect(norm('kiro', { hook_event_name: 'userPromptSubmit', ...base })?.kind).toBe('turn-start')
+    expect(norm('kiro', { hook_event_name: 'postToolUse', ...base })?.kind).toBe('turn-resume')
+    expect(norm('kiro', { hook_event_name: 'stop', ...base })?.kind).toBe('turn-end')
+    expect(norm('kiro', { hook_event_name: 'preToolUse', ...base })).toBeNull()
+  })
+})
+
 describe('normalizeAgentHookPayload', () => {
   test('unknown agents and untracked payloads drop; raw payload rides along', () => {
     expect(normalizeAgentHookPayload('not-an-agent', 't', { hook_event_name: 'Stop' })).toBeNull()
@@ -532,6 +574,9 @@ describe('reportsTurnEndOnInterrupt', () => {
       // Expected self-heal via stop{cancelled}; streaming path not yet
       // observed live (test account quota) — see grokSpec.
       grok: true,
+      // Doc-backed pending live CLI validation: Kiro documents stop on normal
+      // completion but does not state whether an interrupted turn fires it.
+      kiro: false,
     })
   })
 })
