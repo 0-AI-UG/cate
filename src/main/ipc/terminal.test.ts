@@ -65,7 +65,10 @@ vi.mock('../../runtime/capabilities/shellResolver', () => ({ resolveShell: () =>
 
 // Hoisted spies shared with the module mocks below (vi.mock factories are
 // hoisted above all other code, so the spies they reference must be too).
-const diag = vi.hoisted(() => ({ warn: vi.fn(), ptyCreate: vi.fn() }))
+const diag = vi.hoisted(() => ({ warn: vi.fn(), ptyCreate: vi.fn(), ptyWrite: vi.fn() }))
+const runtimeEvents = vi.hoisted(() => ({
+  disconnected: undefined as ((runtimeId: string) => void) | undefined,
+}))
 vi.mock('../logger', () => ({ default: { warn: diag.warn, info: () => {}, error: () => {}, debug: () => {} } }))
 
 // First-party CATE_API endpoint provider. spawnTerminal awaits
@@ -90,13 +93,20 @@ vi.mock('../runtime/runtimeManager', () => ({
     resolve: () => ({
       validateCwd: (p: string) => p,
       validatePathStrict: (p: string) => Promise.resolve(p),
-      process: { create: diag.ptyCreate },
+      process: { create: diag.ptyCreate, write: diag.ptyWrite },
     }),
+    onDisconnected: (cb: (runtimeId: string) => void) => {
+      runtimeEvents.disconnected = cb
+      return () => { runtimeEvents.disconnected = undefined }
+    },
     disposeAll: () => Promise.resolve(),
   },
 }))
 vi.mock('../../shared/runtimeLocator', () => ({
-  parseLocator: (cwd: string) => ({ runtimeId: 'local', path: cwd }),
+  parseLocator: (cwd: string) => ({
+    runtimeId: cwd.startsWith('/remote/') ? 'remote-1' : 'local',
+    path: cwd,
+  }),
   formatLocator: ({ path }: { path: string }) => path,
 }))
 
@@ -146,6 +156,44 @@ vi.mock('../../renderer/stores/appStore', () => ({
   useAppStore: { getState: () => ({ updatePanelTitleFromAgent: () => {} }) },
 }))
 vi.mock('../../renderer/lib/workspace/session', () => ({ replayTerminalLog: () => Promise.resolve() }))
+
+describe('runtime disconnect terminal invalidation (#584)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    handlers.clear()
+    diag.ptyCreate.mockReset()
+    diag.ptyWrite.mockClear()
+    runtimeEvents.disconnected = undefined
+  })
+
+  it('removes remote PTY mappings and reports an exit when their runtime drops', async () => {
+    diag.ptyCreate.mockResolvedValue({ id: 'pty-remote', pid: 123, shell: '/bin/zsh' })
+    const terminal = await import('./terminal')
+    terminal.registerHandlers()
+
+    await handlers.get('terminal:create')!(
+      {},
+      { cols: 80, rows: 24, cwd: '/remote/repo' },
+    )
+    expect(terminal.getTerminalIds()).toContain('pty-remote')
+
+    expect(runtimeEvents.disconnected).toBeTypeOf('function')
+    runtimeEvents.disconnected?.('remote-1')
+
+    expect(terminal.getTerminalIds()).not.toContain('pty-remote')
+    await handlers.get('terminal:write')!({}, 'pty-remote', 'echo stale\r')
+    expect(diag.ptyWrite).not.toHaveBeenCalled()
+
+    const { __sent } = await import('../windowRegistry') as unknown as {
+      __sent: Array<{ channel: string; args: unknown[] }>
+    }
+    expect(__sent).toContainEqual({
+      windowId: -1,
+      channel: 'terminal:exit',
+      args: ['pty-remote', 255],
+    })
+  })
+})
 
 describe('cross-window drop terminal ownership transfer', () => {
   beforeEach(() => {

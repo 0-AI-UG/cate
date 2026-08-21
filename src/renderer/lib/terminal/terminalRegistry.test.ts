@@ -707,6 +707,31 @@ describe('terminal identity bimap', () => {
     terminalRegistry.dispose('panel-E')
     expect(terminalRegistry.isAlive('panel-E')).toBeUndefined()
   })
+
+  it('replaces a dead PTY instead of reusing it after a runtime reconnect', async () => {
+    const { terminalRegistry } = await import('./terminalRegistry')
+    let exitListener: ((id: string, code: number) => void) | undefined
+    ;(window.electronAPI as any).onTerminalExit = vi.fn((cb: (id: string, code: number) => void) => {
+      exitListener = cb
+      return () => {}
+    })
+    terminalCreate
+      .mockResolvedValueOnce('pty-before-drop')
+      .mockResolvedValueOnce('pty-after-reconnect')
+
+    const before = await terminalRegistry.getOrCreate('panel-reconnect', { workspaceId: 'ws-remote' })
+    exitListener?.('pty-before-drop', 255)
+    expect(terminalRegistry.isAlive('panel-reconnect')).toBe(false)
+
+    const after = await terminalRegistry.getOrCreate('panel-reconnect', { workspaceId: 'ws-remote' })
+
+    expect(after).not.toBe(before)
+    expect(after.ptyId).toBe('pty-after-reconnect')
+    expect(terminalRegistry.isAlive('panel-reconnect')).toBe(true)
+    expect(terminalCreate).toHaveBeenCalledTimes(2)
+
+    terminalRegistry.dispose('panel-reconnect')
+  })
 })
 
 describe('WebGL glyph-atlas resync on a shared-config change', () => {
