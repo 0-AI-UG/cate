@@ -2509,6 +2509,16 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
     const path = join(cwd, file.relPath)
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, file.build(null, { bridgeCommand: bridge })!)
+    const skillDir = join(cwd, '.kiro', 'skills', 'cate-live-contract')
+    mkdirSync(skillDir, { recursive: true })
+    writeFileSync(join(skillDir, 'SKILL.md'), [
+      '---',
+      'name: cate-live-contract',
+      'description: Verifies Kiro workspace skill discovery.',
+      '---',
+      'Reply with exactly CATE_KIRO_SKILL_OK and nothing else.',
+      '',
+    ].join('\n'))
   }
 
   test('TUI lifecycle hooks identify one session and resume by exact id', { timeout: 420_000 }, async () => {
@@ -2534,6 +2544,20 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
     }
     expectEcho(events(), tid)
     expect(replayAgentState('kiro', tid, events())).toBe('waitingForInput')
+
+    const stopCount = byName('Stop').length
+    await tui.send('/cate-live-contract')
+    await tui.waitFor(
+      () => tui.peek().includes('CATE_KIRO_SKILL_OK') || tui.peek().includes('Always deny'),
+      30_000,
+      'Kiro workspace skill permission',
+    )
+    if (!tui.peek().includes('CATE_KIRO_SKILL_OK')) tui.press('\r')
+    await tui.waitFor(
+      () => byName('Stop').length > stopCount && tui.peek().includes('CATE_KIRO_SKILL_OK'),
+      30_000,
+      'Kiro workspace skill invocation',
+    )
     tui.kill()
 
     const resumeEventsFile = join(cwd, 'events-resume.jsonl')
