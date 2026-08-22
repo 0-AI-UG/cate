@@ -1,6 +1,6 @@
 // =============================================================================
 // Stamping rules for hook-pushed agent-session identity (agentSessionStamps.ts):
-// per-agent resumability gating (claude only stamps once a turn proves the
+// per-agent resumability gating (Claude and Kiro stamp once a turn proves the
 // session is persisted), the /clear rotation (clear on session-end, re-stamp
 // only after the next turn), the cwd fallback for cwd-less payloads, and dedup.
 // =============================================================================
@@ -93,6 +93,16 @@ describe('claude resumability gating', () => {
     ])
     ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'turn-start', 'id-2', '/w'))
     expect(stamps(tid).at(-1)).toEqual({ agentId: 'claude-code', sessionId: 'id-2', cwd: '/w' })
+  })
+})
+
+describe('kiro resumability gating', () => {
+  it('waits for the first prompt before stamping the session', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'kiro', 'session-start', 'id-1', '/w'))
+    expect(stamps(tid)).toEqual([])
+
+    ingestAgentSessionStamp(runtime, ev(tid, 'kiro', 'turn-start', 'id-1', '/w'))
+    expect(stamps(tid)).toEqual([{ agentId: 'kiro', sessionId: 'id-1', cwd: '/w' }])
   })
 })
 

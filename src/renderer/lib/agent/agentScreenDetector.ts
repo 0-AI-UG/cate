@@ -1,7 +1,7 @@
 // =============================================================================
 // Agent activity coordinator: a hook-event FSM plus presence edges.
 //
-// Running/idle for all agents (claude/codex/cursor/pi/opencode) is driven by the
+// Running/idle for all agents is driven by the
 // normalized agent-hook event stream (SHELL_AGENT_HOOK_EVENT →
 // noteAgentHookEvent): turn-start flips to 'running' immediately, turn-end
 // flips back to 'waitingForInput' and fires the "needs input" notification,
@@ -64,6 +64,8 @@ interface Tracker {
    *  session-start idempotent instead of letting it overwrite a turn event
    *  from the same session that already arrived. */
   sessionId: string | null
+  /** Agent that produced the latest hook for this terminal. */
+  agentId: AgentHookEvent['agentId'] | null
   /** turn-start seen more recently than turn-end/session-end. */
   hookTurnActive: boolean
   /** The in-flight turn is parked on a permission prompt (permission-wait seen
@@ -84,6 +86,7 @@ function trackerFor(terminalId: string): Tracker {
       present: false,
       wasPresent: false,
       sessionId: null,
+      agentId: null,
       hookTurnActive: false,
       hookPermissionWait: false,
       state: 'notRunning',
@@ -167,6 +170,7 @@ function recompute(terminalId: string, notifyOnIdle = false, permissionBody?: st
 /** A normalized agent-hook event arrived for a terminal this window owns. */
 export function noteAgentHookEvent(event: AgentHookEvent): void {
   const t = trackerFor(event.terminalId)
+  t.agentId = event.agentId
   switch (event.kind) {
     case 'turn-start':
       t.sessionId = event.sessionId
@@ -229,6 +233,18 @@ export function noteAgentInputSubmitted(terminalId: string): void {
   const t = trackers.get(terminalId)
   if (!t?.hookPermissionWait) return
   t.hookTurnActive = true
+  t.hookPermissionWait = false
+  recompute(terminalId)
+}
+
+/** Kiro 2.19's v3 TUI returns to its input prompt on Ctrl-C but emits no Stop
+ * hook and exposes no transcript marker. Terminal input is therefore its only
+ * deterministic interrupt boundary. Scope this recovery to a hook-proven,
+ * active Kiro turn so Ctrl-C in the shell or another CLI cannot change state. */
+export function noteAgentInterruptSubmitted(terminalId: string): void {
+  const t = trackers.get(terminalId)
+  if (t?.agentId !== 'kiro' || !t.hookTurnActive) return
+  t.hookTurnActive = false
   t.hookPermissionWait = false
   recompute(terminalId)
 }

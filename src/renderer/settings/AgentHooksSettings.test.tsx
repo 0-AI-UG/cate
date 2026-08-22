@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS, type WorkspaceState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { AgentHooksSettings } from './AgentHooksSettings'
+import { SettingsSearchContext } from './SettingsSearchContext'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -73,5 +74,20 @@ describe('AgentHooksSettings', () => {
 
     const claudeRow = host.querySelector('[data-agent-hook-id="claude-code"]')
     expect(claudeRow?.textContent).not.toContain("Hooks aren't installed.")
+  })
+
+  it('is discoverable when settings search is filtered to Kiro', async () => {
+    inspect.mockResolvedValue([])
+
+    await act(async () => {
+      root.render(
+        <SettingsSearchContext.Provider value={{ query: 'kiro', sectionMatched: false }}>
+          <AgentHooksSettings />
+        </SettingsSearchContext.Provider>,
+      )
+      await Promise.resolve()
+    })
+
+    expect(host.querySelector('[data-srow]')).not.toBeNull()
   })
 })
