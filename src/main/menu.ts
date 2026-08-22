@@ -165,6 +165,9 @@ export function buildApplicationMenu(): void {
         { type: 'separator' },
         { ...actionMeta('saveFile'), label: 'Save', click: dispatch('saveFile') },
         { type: 'separator' },
+        // Deliberately no native accelerator: Cmd+R must still reach a focused
+        // browser so its panel-local reload handling can take precedence.
+        { label: SHORTCUT_DISPLAY_NAMES.renamePanel, click: dispatch('renamePanel') },
         { ...actionMeta('closePanel'), click: dispatch('closePanel') },
         { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' },
       ],

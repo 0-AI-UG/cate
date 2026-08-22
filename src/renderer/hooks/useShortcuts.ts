@@ -21,6 +21,7 @@ import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionMode
 import type { ShortcutAction } from '../../shared/types'
 import { runAction } from '../lib/runAction'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
+import { getFocusedLeafPanelId } from '../lib/focusedPanel'
 
 // ensureWorkspaceFolder lives in lib/runAction now; re-exported here for the
 // panels/pages that still import it from this module.
@@ -280,6 +281,14 @@ export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
         // — let it bubble to the sidebar's own keydown handler instead of
         // closing a canvas panel.
         if (isSidebarKeyNavFocused()) return
+      }
+
+      // Cmd+R belongs to browser reload whenever the focused leaf is a browser.
+      // Returning before preventDefault lets BrowserPanel handle chrome keys;
+      // webview guest keys are forwarded by the main process instead.
+      if (action === 'renamePanel') {
+        const panelId = getFocusedLeafPanelId()
+        if (panelId && resolvePanelById(panelId)?.type === 'browser') return
       }
 
       // Keyboard-only passthrough: when a browser panel is focused, let

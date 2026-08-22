@@ -48,7 +48,12 @@ import { createStringDispatcher } from './batchedDispatcher'
 import { workspaceCateApi } from '../extensions/workspaceCateApi'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
-import { resolveWorktreeContext, validateWorktreeContext } from '../worktreeContext'
+import {
+  listWorktreeCheckouts,
+  resolveWorktreeContext,
+  validateWorktreeContext,
+  type WorktreeContext,
+} from '../worktreeContext'
 import { codingAgentCommand, type CodingAgentLaunch } from '../../shared/codingAgentRuns'
 
 // Set true during app shutdown so PTY data/exit callbacks no-op instead of
@@ -365,9 +370,29 @@ async function spawnTerminal(
   const unresolvedWorktree = workspaceRoot && options.cwd
     ? resolveWorktreeContext(workspaceRoot, options.cwd)
     : undefined
-  const worktree = unresolvedWorktree && options.workspaceId
-    ? await validateWorktreeContext(unresolvedWorktree, runtime, ownerWindowId, options.workspaceId)
-    : undefined
+  let worktree: WorktreeContext | undefined
+  if (
+    unresolvedWorktree
+    && unresolvedWorktree.checkout.locator !== unresolvedWorktree.base.locator
+    && options.workspaceId
+  ) {
+    try {
+      const checkouts = await listWorktreeCheckouts(unresolvedWorktree.base.locator, runtime, {
+        ownerWindowId,
+        scopeId: options.workspaceId,
+      })
+      if (checkouts.includes(unresolvedWorktree.checkout.locator)) {
+        worktree = await validateWorktreeContext(
+          unresolvedWorktree,
+          runtime,
+          ownerWindowId,
+          options.workspaceId,
+        )
+      }
+    } catch (err) {
+      log.warn('[terminal] worktree detection failed: %O', err)
+    }
+  }
   // Existing or externally-created worktrees may predate Cate's eager mirror
   // triggers. Hydrate managed skills before the shell can launch an agent.
   if (worktree) {

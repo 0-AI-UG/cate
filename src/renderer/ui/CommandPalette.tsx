@@ -173,6 +173,7 @@ export const CommandPalette: React.FC = () => {
       { id: 'newAgent', title: shortcutTitle('newAgent'), icon: <AgentIcon />, action: run('newAgent') },
       { id: 'newCanvas', title: shortcutTitle('newCanvas'), icon: <LayoutIcon />, action: run('newCanvas') },
       { id: 'closePanel', title: shortcutTitle('closePanel'), icon: <CloseIcon />, action: run('closePanel') },
+      { id: 'renamePanel', title: shortcutTitle('renamePanel'), icon: <FileText size={18} />, action: run('renamePanel') },
       { id: 'saveFile', title: shortcutTitle('saveFile'), icon: <SaveIcon />, action: run('saveFile') },
       // Sidebar toggles only exist in the main window; hidden in detached windows.
       ...(isMainWindow
