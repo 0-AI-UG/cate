@@ -34,6 +34,7 @@ import { resolveWorktree } from '../../shared/worktrees'
 import { resumeCommandForAgent } from '../../shared/agents'
 import { CATE_FILE_MIME, hasChatDrag, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
 import { parseLocator } from '../../shared/runtimeLocator'
+import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -193,6 +194,12 @@ export default function TerminalPanel({
   const ptyEpoch = useAppStore(
     (state) => state.workspaces.find((w) => w.id === workspaceId)?.panels[panelId]?.ptyEpoch ?? 0,
   )
+  const runtimePhase = useAppStore((state) => {
+    const workspace = state.workspaces.find((w) => w.id === workspaceId)
+    return isRemoteRuntimeConnection(workspace?.connection)
+      ? workspace?.runtime?.phase
+      : state.localRuntimePhase
+  })
   const workspaceRoot = workspaces.find((w) => w.id === workspaceId)?.rootPath
   // Tagged worktree wins; else an explicit per-panel cwd (drag-drop folder); else
   // the workspace root.
@@ -408,6 +415,11 @@ export default function TerminalPanel({
       ? resumeCommandForAgent(agentSession.agentId, agentSession.sessionId) ?? undefined
       : undefined
 
+    // Keep the dead xterm visible behind the runtime lock while disconnected.
+    // The connected phase re-runs this effect; getOrCreate then replaces the
+    // entry that TERMINAL_EXIT marked dead with a fresh PTY on the new daemon.
+    if (runtimePhase && runtimePhase !== 'connected') return
+
     // 1. Ensure the terminal + PTY exist in the registry (no-op if already live)
     terminalRegistry
       .getOrCreate(panelId, {
@@ -462,7 +474,7 @@ export default function TerminalPanel({
 
       detachAndDisconnect()
     }
-  }, [panelId, workspaceId, nodeId, initialInput, codingAgentLaunch, placementGroupId, retryKey, ptyEpoch])
+  }, [panelId, workspaceId, nodeId, initialInput, codingAgentLaunch, placementGroupId, retryKey, ptyEpoch, runtimePhase])
 
   // -------------------------------------------------------------------------
   // Focus xterm when this node becomes the focused node

@@ -236,6 +236,26 @@ function cleanupTerminal(id: string): void {
   emitSessionsChanged()
 }
 
+// A dropped runtime destroys every PTY hosted by its daemon. Remove their
+// routing entries immediately and tell the owning renderer they exited; keeping
+// those ids would route input to the fresh daemon after reconnect, where the ids
+// do not exist, leaving the terminal apparently alive but permanently frozen.
+function invalidateRuntimeTerminals(runtimeId: RuntimeId): void {
+  for (const [id, terminalRuntimeId] of [...terminalRuntime]) {
+    if (terminalRuntimeId !== runtimeId) continue
+    const ownerWindowId = terminalOwners.get(id)
+    const transfer = transferStates.get(id)
+    if (transfer) {
+      clearTimeout(transfer.timer)
+      transferStates.delete(id)
+    }
+    cleanupTerminal(id)
+    if (ownerWindowId != null) {
+      try { sendToWindow(ownerWindowId, TERMINAL_EXIT, id, 255) } catch { /* owner gone */ }
+    }
+  }
+}
+
 async function spawnTerminal(
   options: {
     cols: number
@@ -431,6 +451,8 @@ function killTerminal(id: string): void {
 }
 
 export function registerHandlers(): void {
+  runtimes.onDisconnected(invalidateRuntimeTerminals)
+
   // Complete/abandon in-flight terminal transfers when a window closes so a
   // running PTY's ownership follows the panel instead of orphaning on a dead window.
   onWindowClosed(handleWindowClosedTerminalTransfers)

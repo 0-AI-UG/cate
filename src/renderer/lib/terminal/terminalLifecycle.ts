@@ -253,6 +253,11 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
       // must never be shared across workspaces, so tear the stale one down and
       // build a fresh terminal for the requesting workspace below.
       dispose(panelId)
+    } else if (!existing.alive) {
+      // A runtime drop destroys its daemon-side PTYs. TERMINAL_EXIT marks the
+      // retained xterm dead; once the runtime reconnects, replace that entry
+      // instead of returning its stale PTY id forever.
+      dispose(panelId)
     } else {
       if (pendingTerminalStarts.get(panelId)?.kind === 'transfer') pendingTerminalStarts.delete(panelId)
       return existing
