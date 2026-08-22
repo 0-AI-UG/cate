@@ -27,11 +27,7 @@ const NO_SKILLS: ReadonlySet<AgentId> = new Set([])
 
 /** Agents deliberately without a bundled logo (they fall back to the panel's
  *  default icon). */
-const NO_LOGO: ReadonlySet<AgentId> = new Set([
-  // Kiro support is CLI-contract complete; use Cate's neutral agent icon until
-  // an official redistribution-safe brand asset is added.
-  'kiro',
-])
+const NO_LOGO: ReadonlySet<AgentId> = new Set([])
 
 describe('agent registry coverage', () => {
   test('every agent declares a skills target, or is an explicit omission', () => {

@@ -542,6 +542,9 @@ describe('kiro spec', () => {
     expect(norm('kiro', { hook_event_name: 'userPromptSubmit', ...base })?.kind).toBe('turn-start')
     expect(norm('kiro', { hook_event_name: 'postToolUse', ...base })?.kind).toBe('turn-resume')
     expect(norm('kiro', { hook_event_name: 'stop', ...base })?.kind).toBe('turn-end')
+    // PreToolUse fires for approved and approval-gated tools alike, so it
+    // cannot truthfully identify a permission wait.
+    expect(norm('kiro', { hook_event_name: 'PreToolUse', ...base })).toBeNull()
     expect(norm('kiro', { hook_event_name: 'preToolUse', ...base })).toBeNull()
   })
 })
@@ -579,8 +582,8 @@ describe('reportsTurnEndOnInterrupt', () => {
       // Expected self-heal via stop{cancelled}; streaming path not yet
       // observed live (test account quota) — see grokSpec.
       grok: true,
-      // Doc-backed pending live CLI validation: Kiro documents stop on normal
-      // completion but does not state whether an interrupted turn fires it.
+      // Verified live: Ctrl-C returns to Kiro's prompt without a Stop hook;
+      // renderer terminal input supplies the scoped recovery edge.
       kiro: false,
     })
   })

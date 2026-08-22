@@ -72,11 +72,12 @@ export function AgentHooksSettings() {
 
   return (
     <div className="flex flex-col gap-1">
-      <SearchableBlock keywords="agent hooks injection claude codex cursor grok pi opencode status presence auto on off">
+      <SearchableBlock keywords="agent hooks injection claude codex cursor grok kiro pi opencode status presence auto on off">
         <p className="text-xs text-muted py-2 leading-relaxed">
           Cate writes tiny git-ignored hook files so agent CLIs report session and turn status
           back to it. <span className="text-secondary">Auto</span> injects only where an agent&apos;s
-          config folder already exists. Changes apply to terminals opened after saving.
+          config folder already exists. Changes apply to terminals opened after saving. Approval
+          prompts from CLIs without a dedicated permission event remain visible in the terminal.
         </p>
       </SearchableBlock>
 

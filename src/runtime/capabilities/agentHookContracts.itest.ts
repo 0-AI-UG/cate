@@ -91,9 +91,9 @@
 //
 // Permission-wait exists ONLY on claude/codex/opencode. pi has no approval
 // concept at all (tools execute directly — verified: zero approval strings in
-// its dist). cursor HAS native approval prompts but no hook event that marks
-// them (see above) — while parked on approval, the last event is an ordinary
-// beforeShellExecution, indistinguishable from an auto-approved run.
+// its dist). Cursor and Kiro have native approval prompts but no hook event
+// that distinguishes a blocked approval from an automatically allowed tool;
+// mapping their ordinary pre-tool event would create false notifications.
 //
 // Opt-in only: drives the real, locally-installed CLIs with the user's
 // accounts (a few tiny prompts — cents; pi is offline/free). *.itest.ts is
@@ -103,7 +103,7 @@
 //         agentHookContracts
 // =============================================================================
 
-import { describe, test, expect, afterAll } from 'vitest'
+import { describe, test, expect, afterAll, afterEach } from 'vitest'
 import { execFile, execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { homedir, tmpdir } from 'node:os'
@@ -2504,6 +2504,12 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
 // =============================================================================
 
 describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
+  const liveTuis: Array<{ kill(): void }> = []
+
+  afterEach(() => {
+    for (const tui of liveTuis.splice(0)) tui.kill()
+  })
+
   function prepare(cwd: string, bridge: string): void {
     const file = AGENT_HOOK_SPECS.kiro.projectFiles![0]
     const path = join(cwd, file.relPath)
@@ -2533,6 +2539,7 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
     const env = cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid })
 
     const tui = await driveTui('kiro-cli', ['chat', '--v3', PROMPT], cwd, env)
+    liveTuis.push(tui)
     await tui.waitFor(() => byName('Stop').length > 0, 300_000, 'Kiro Stop hook')
     const startName = 'SessionStart'
     const id = byName(startName)[0]?.payload.session_id as string
@@ -2549,14 +2556,19 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
     await tui.send('/cate-live-contract')
     await tui.waitFor(
       () => tui.peek().includes('CATE_KIRO_SKILL_OK') || tui.peek().includes('Always deny'),
-      30_000,
+      120_000,
       'Kiro workspace skill permission',
     )
     if (!tui.peek().includes('CATE_KIRO_SKILL_OK')) tui.press('\r')
     await tui.waitFor(
-      () => byName('Stop').length > stopCount && tui.peek().includes('CATE_KIRO_SKILL_OK'),
+      () => tui.peek().includes('CATE_KIRO_SKILL_OK'),
       30_000,
       'Kiro workspace skill invocation',
+    )
+    await tui.waitFor(
+      () => byName('Stop').length > stopCount,
+      90_000,
+      'Kiro Stop after workspace skill invocation',
     )
     tui.kill()
 
@@ -2567,6 +2579,7 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
       cwd,
       cleanEnv({ CATE_EVENTS_FILE: resumeEventsFile, CATE_TERMINAL_ID: tid }),
     )
+    liveTuis.push(resumed)
     await resumed.waitFor(
       () => resumed.peek().includes('ask a question or describe a task'),
       30_000,
@@ -2584,5 +2597,49 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
       event.payload.hook_event_name === 'UserPromptSubmit' && event.payload.session_id === id)).toBe(true)
     expectEcho(resumeEvents, tid)
     resumed.kill()
+  })
+
+  test('TUI: Ctrl-C pushes no Stop hook; terminal input recovery is required', { timeout: 300_000 }, async () => {
+    const cwd = makeCwd('kiro-interrupt')
+    const bridge = writeBridge(cwd)
+    prepare(cwd, bridge)
+    const tid = `cate-term-kiro-int-${Date.now()}`
+    const eventsFile = join(cwd, 'events.jsonl')
+    const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
+    const env = cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid })
+
+    const tui = await driveTui('kiro-cli', ['chat', '--v3'], cwd, env)
+    liveTuis.push(tui)
+    await tui.waitFor(
+      () => tui.peek().includes('ask a question or describe a task'),
+      30_000,
+      'Kiro input prompt',
+    )
+    await tui.settle(2_000)
+    await tui.send('Write out the numbers from 1 to 3000, one per line, plain text, no tools.')
+    await tui.waitFor(
+      () => events().some((event) => event.payload.hook_event_name === 'UserPromptSubmit'),
+      120_000,
+      'Kiro UserPromptSubmit',
+    )
+    await tui.waitFor(() => /\b1\d\d\b/.test(stripAnsi(tui.peek())), 120_000, 'Kiro streamed output')
+    expect(events().some((event) => event.payload.hook_event_name === 'Stop')).toBe(false)
+
+    const before = events().length
+    tui.press('\x03')
+    await tui.waitFor(
+      () => tui.peek().includes('ask a question or describe a task'),
+      30_000,
+      'Kiro input prompt after interrupt',
+    )
+    await tui.settle(5_000)
+    const after = events().slice(before)
+    const selfHeals = normalizedKinds('kiro', after).includes('turn-end')
+    expect(selfHeals, 'Kiro emits no turn-end after Ctrl-C').toBe(false)
+    expect(
+      AGENT_HOOK_SPECS.kiro.reportsTurnEndOnInterrupt,
+      `declared interrupt behavior must match live events: ${after.map((event) => event.payload.hook_event_name).join(', ')}`,
+    ).toBe(selfHeals)
+    tui.kill()
   })
 })

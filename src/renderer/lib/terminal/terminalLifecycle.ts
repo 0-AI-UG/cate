@@ -40,7 +40,7 @@ import { useStatusStore } from '../../stores/statusStore'
 import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
 import { replayTerminalLog } from '../workspace/session'
 import type { CodingAgentLaunch } from '../../../shared/codingAgentRuns'
-import { noteAgentInputSubmitted } from '../agent/agentScreenDetector'
+import { noteAgentInputSubmitted, noteAgentInterruptSubmitted } from '../agent/agentScreenDetector'
 
 interface CreateOpts {
   workspaceId: string
@@ -222,6 +222,7 @@ export function wireTerminalListeners(args: {
     // the real resume edge; the detector ignores it unless this terminal is
     // currently parked on a permission prompt.
     if (data.includes('\r')) noteAgentInputSubmitted(ptyId)
+    if (data.includes('\x03')) noteAgentInterruptSubmitted(ptyId)
     electronAPI.terminalWrite(ptyId, data)
   })
   cleanupListeners.push(() => dataDisposable.dispose())

@@ -205,7 +205,7 @@ export const AGENTS: readonly AgentDef[] = [
     // so pi's target id is 'pi-native' rather than the dir-derived name.
     skills: folderSkills('pi-native', ['.agents', 'skills'], { label: 'Pi' }),
   },
-  // Kiro CLI v3. Standalone workspace hooks require the v3 engine, so select
+  // Kiro CLI with its v3 engine. Standalone workspace hooks require that engine, so select
   // it explicitly for fresh and resumed sessions.
   {
     id: 'kiro',

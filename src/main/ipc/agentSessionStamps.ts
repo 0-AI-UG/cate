@@ -18,10 +18,9 @@
 // events.
 //
 // Resumability gating: a stamp is only worth persisting if resuming it works.
-// claude's SessionStart fires at TUI launch BEFORE any transcript exists, and
-// resuming a transcript-less id FAILS (pinned live by
-// agentHookContracts.itest.ts) — so claude is only stamped from its first
-// turn event. See RESUMABLE_FROM_SESSION_START below.
+// Claude announces an id before its transcript exists; Kiro announces one
+// before its first conversation turn is saved. Both are stamped from their
+// first turn event. See RESUMABLE_FROM_SESSION_START below.
 // =============================================================================
 
 import { SHELL_AGENT_SESSION_UPDATE } from '../../shared/ipc-channels'
@@ -34,15 +33,9 @@ import { sendToWindow } from '../windowRegistry'
 
 /**
  * Whether this agent's session is already resumable when its session-start
- * event arrives. Every CLI persists its session lazily, but only claude both
- * announces a session BEFORE anything is persisted (SessionStart at TUI
- * launch, and again on /clear rotation) and FAILS to resume that empty id —
- * so claude waits for the first turn event (turn-start = prompt submitted;
- * turn-end / permission-wait equally prove a submitted prompt). Everyone
- * else's first sessionId-bearing event is already tied to a persisted store:
- * codex's TUI pushes nothing until the first submit (exec pushes at start,
- * with the rollout as transcript), pi/opencode create-or-resume by exact id.
- * Contracts pinned live in agentHookContracts.itest.ts.
+ * event arrives. Claude and Kiro wait for the first turn event; every other
+ * CLI's first sessionId-bearing event is already tied to a persisted store.
+ * Contracts are pinned live in agentHookContracts.itest.ts.
  */
 const RESUMABLE_FROM_SESSION_START: Record<AgentId, boolean> = {
   'claude-code': false,
@@ -98,7 +91,7 @@ function emit(terminalId: string, session: TerminalAgentSession | null): void {
  * the new id and re-stamps under the same gating — a claude session that was
  * /clear'd but never prompted again stays CLEARED, not stale); any other
  * sessionId-bearing event stamps, except a session-start for an agent whose
- * sessions aren't resumable yet at that point (claude).
+ * sessions aren't resumable yet at that point.
  *
  * cwd: the event's own cwd when the payload carries one (claude/codex/pi/
  * opencode); when an event doesn't, the terminal's current cwd is fetched
