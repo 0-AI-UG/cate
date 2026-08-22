@@ -23,6 +23,7 @@ import { inheritedWorktreeFromSelection } from './inheritWorktree'
 import { closePanelWithConfirm } from './closePanelWithConfirm'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
 import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
+import { getFocusedLeafPanelId, requestPanelRename } from './focusedPanel'
 
 /**
  * Ensures the workspace has a rootPath before proceeding.
@@ -207,6 +208,11 @@ export async function runAction(
     case 'saveFile':
       window.dispatchEvent(new CustomEvent('save-file'))
       break
+    case 'renamePanel': {
+      const panelId = getFocusedLeafPanelId()
+      if (panelId) requestPanelRename(panelId)
+      break
+    }
     case 'zoomToFit':
       canvasStore()?.zoomToFit()
       break

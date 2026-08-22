@@ -15,6 +15,10 @@ import { getPanelDef } from '../panels/registry'
 import { setActivePanel } from '../lib/activePanel'
 import { useMultiNodeSelection } from '../canvas/useMultiNodeSelection'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
+import {
+  RENAME_PANEL_EVENT,
+  type RenamePanelEventDetail,
+} from '../lib/focusedPanel'
 
 export interface DockTabActionsParams {
   stack: DockTabStackType
@@ -93,11 +97,11 @@ export function useDockTabActions(params: DockTabActionsParams) {
     }
     setRenameId(null)
   }
-  const beginRename = (panelId: string, currentTitle: string) => {
+  const beginRename = useCallback((panelId: string, currentTitle: string) => {
     renameSeedRef.current = currentTitle
     setRenameValue(currentTitle)
     setRenameId(panelId)
-  }
+  }, [])
 
   const getPanelLocal = useCallback(
     (panelId: string): PanelState | undefined => {
@@ -108,6 +112,17 @@ export function useDockTabActions(params: DockTabActionsParams) {
     },
     [getPanelProp],
   )
+
+  useEffect(() => {
+    const onRenamePanel = (event: Event) => {
+      const panelId = (event as CustomEvent<RenamePanelEventDetail>).detail?.panelId
+      if (!panelId || !stack.panelIds.includes(panelId)) return
+      const panel = getPanelLocal(panelId)
+      if (panel) beginRename(panelId, panel.title)
+    }
+    window.addEventListener(RENAME_PANEL_EVENT, onRenamePanel)
+    return () => window.removeEventListener(RENAME_PANEL_EVENT, onRenamePanel)
+  }, [beginRename, getPanelLocal, stack.panelIds])
 
   // --- Move to new window ---------------------------------------------------
   const moveTabToNewWindow = useCallback(
@@ -250,7 +265,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           break
       }
     },
-    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, workspaceId, splitWithType, showMultiSelectionMenu, showCloseAll],
+    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, splitWithType, showMultiSelectionMenu, showCloseAll, beginRename],
   )
 
   // Tab-bar (empty-area) context menu — split/new menus. Returns a handler
