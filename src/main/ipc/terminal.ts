@@ -48,7 +48,12 @@ import { createStringDispatcher } from './batchedDispatcher'
 import { workspaceCateApi } from '../extensions/workspaceCateApi'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
-import { resolveWorktreeContext, validateWorktreeContext } from '../worktreeContext'
+import {
+  listWorktreeCheckouts,
+  resolveWorktreeContext,
+  validateWorktreeContext,
+  type WorktreeContext,
+} from '../worktreeContext'
 import { codingAgentCommand, type CodingAgentLaunch } from '../../shared/codingAgentRuns'
 
 // Set true during app shutdown so PTY data/exit callbacks no-op instead of
@@ -231,6 +236,26 @@ function cleanupTerminal(id: string): void {
   emitSessionsChanged()
 }
 
+// A dropped runtime destroys every PTY hosted by its daemon. Remove their
+// routing entries immediately and tell the owning renderer they exited; keeping
+// those ids would route input to the fresh daemon after reconnect, where the ids
+// do not exist, leaving the terminal apparently alive but permanently frozen.
+function invalidateRuntimeTerminals(runtimeId: RuntimeId): void {
+  for (const [id, terminalRuntimeId] of [...terminalRuntime]) {
+    if (terminalRuntimeId !== runtimeId) continue
+    const ownerWindowId = terminalOwners.get(id)
+    const transfer = transferStates.get(id)
+    if (transfer) {
+      clearTimeout(transfer.timer)
+      transferStates.delete(id)
+    }
+    cleanupTerminal(id)
+    if (ownerWindowId != null) {
+      try { sendToWindow(ownerWindowId, TERMINAL_EXIT, id, 255) } catch { /* owner gone */ }
+    }
+  }
+}
+
 async function spawnTerminal(
   options: {
     cols: number
@@ -345,9 +370,29 @@ async function spawnTerminal(
   const unresolvedWorktree = workspaceRoot && options.cwd
     ? resolveWorktreeContext(workspaceRoot, options.cwd)
     : undefined
-  const worktree = unresolvedWorktree && options.workspaceId
-    ? await validateWorktreeContext(unresolvedWorktree, runtime, ownerWindowId, options.workspaceId)
-    : undefined
+  let worktree: WorktreeContext | undefined
+  if (
+    unresolvedWorktree
+    && unresolvedWorktree.checkout.locator !== unresolvedWorktree.base.locator
+    && options.workspaceId
+  ) {
+    try {
+      const checkouts = await listWorktreeCheckouts(unresolvedWorktree.base.locator, runtime, {
+        ownerWindowId,
+        scopeId: options.workspaceId,
+      })
+      if (checkouts.includes(unresolvedWorktree.checkout.locator)) {
+        worktree = await validateWorktreeContext(
+          unresolvedWorktree,
+          runtime,
+          ownerWindowId,
+          options.workspaceId,
+        )
+      }
+    } catch (err) {
+      log.warn('[terminal] worktree detection failed: %O', err)
+    }
+  }
   // Existing or externally-created worktrees may predate Cate's eager mirror
   // triggers. Hydrate managed skills before the shell can launch an agent.
   if (worktree) {
@@ -406,6 +451,8 @@ function killTerminal(id: string): void {
 }
 
 export function registerHandlers(): void {
+  runtimes.onDisconnected(invalidateRuntimeTerminals)
+
   // Complete/abandon in-flight terminal transfers when a window closes so a
   // running PTY's ownership follows the panel instead of orphaning on a dead window.
   onWindowClosed(handleWindowClosedTerminalTransfers)

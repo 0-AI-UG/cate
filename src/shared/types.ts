@@ -672,6 +672,7 @@ export const SHORTCUT_DEFINITIONS = {
   focusNext: { label: 'Focus Next Panel', shortcut: storedShortcut('\t', { control: true }) },
   focusPrevious: { label: 'Focus Previous Panel', shortcut: storedShortcut('\t', { shift: true, control: true }) },
   saveFile: { label: 'Save File', shortcut: storedShortcut('s', { command: true }) },
+  renamePanel: { label: 'Rename Focused Panel', shortcut: storedShortcut('r', { command: true }) },
   zoomToFit: { label: 'Zoom to Fit', shortcut: storedShortcut('1', { command: true }) },
   zoomToSelection: { label: 'Zoom to Selection', shortcut: storedShortcut('2', { command: true }) },
   autoLayout: { label: 'Auto Layout Canvas', shortcut: storedShortcut('l', { command: true, shift: true }) },

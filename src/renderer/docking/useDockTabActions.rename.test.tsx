@@ -74,6 +74,23 @@ afterEach(() => {
 })
 
 describe('useDockTabActions — commitRename seed regression', () => {
+  it('begins renaming when the global request targets a tab in this stack', () => {
+    act(() => {
+      window.dispatchEvent(new CustomEvent('rename-panel', { detail: { panelId: 'p1' } }))
+    })
+
+    expect(api.current!.renameId).toBe('p1')
+    expect(api.current!.renameValue).toBe('Agent · foo')
+  })
+
+  it('ignores rename requests for tabs owned by another stack', () => {
+    act(() => {
+      window.dispatchEvent(new CustomEvent('rename-panel', { detail: { panelId: 'other' } }))
+    })
+
+    expect(api.current!.renameId).toBeNull()
+  })
+
   it('committing the seeded value unchanged does NOT rename', () => {
     act(() => { api.current!.beginRename('p1', 'Agent · foo') })
     expect(api.current!.renameId).toBe('p1')
