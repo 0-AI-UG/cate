@@ -65,7 +65,7 @@ vi.mock('../../runtime/capabilities/shellResolver', () => ({ resolveShell: () =>
 
 // Hoisted spies shared with the module mocks below (vi.mock factories are
 // hoisted above all other code, so the spies they reference must be too).
-const diag = vi.hoisted(() => ({ warn: vi.fn(), ptyCreate: vi.fn() }))
+const diag = vi.hoisted(() => ({ warn: vi.fn(), ptyCreate: vi.fn(), worktreeList: vi.fn() }))
 vi.mock('../logger', () => ({ default: { warn: diag.warn, info: () => {}, error: () => {}, debug: () => {} } }))
 
 // First-party CATE_API endpoint provider. spawnTerminal awaits
@@ -90,6 +90,7 @@ vi.mock('../runtime/runtimeManager', () => ({
     resolve: () => ({
       validateCwd: (p: string) => p,
       validatePathStrict: (p: string) => Promise.resolve(p),
+      vcs: { worktreeList: diag.worktreeList },
       process: { create: diag.ptyCreate },
     }),
     disposeAll: () => Promise.resolve(),
@@ -464,6 +465,9 @@ describe('CATE_API env injection into spawned terminals', () => {
   beforeEach(() => {
     vi.resetModules()
     diag.ptyCreate.mockReset()
+    diag.worktreeList.mockReset().mockResolvedValue([
+      { path: '/repo/base', branch: 'main', isBare: false },
+    ])
     cateApi.ensureEndpoint.mockReset()
   })
 
@@ -504,6 +508,10 @@ describe('CATE_API env injection into spawned terminals', () => {
   it('passes the base workspace cwd as the agent hook auto reference', async () => {
     cateApi.ensureEndpoint.mockResolvedValue(null)
     workspaceInfo.get.mockReturnValueOnce({ rootPath: '/repo/base' })
+    diag.worktreeList.mockResolvedValueOnce([
+      { path: '/repo/base', branch: 'main', isBare: false },
+      { path: '/repo/worktree', branch: 'feature', isBare: false },
+    ])
     diag.ptyCreate.mockResolvedValue({ id: 'pty-hooks', pid: 123, shell: '/bin/zsh' })
     const mod = await import('./terminal')
     mod.registerHandlers()
@@ -520,6 +528,22 @@ describe('CATE_API env injection into spawned terminals', () => {
       scopeId: 'ws-1',
       workspaceBaseCwd: '/repo/base',
     })
+  })
+
+  it('does not mirror workspace skills into an ordinary subdirectory terminal', async () => {
+    cateApi.ensureEndpoint.mockResolvedValue(null)
+    workspaceInfo.get.mockReturnValueOnce({ rootPath: '/repo/base' })
+    skillsSync.run.mockClear()
+    diag.ptyCreate.mockResolvedValue({ id: 'pty-subdir', pid: 123, shell: '/bin/zsh' })
+    const mod = await import('./terminal')
+    mod.registerHandlers()
+
+    await handlers.get('terminal:create')!(
+      {},
+      { cols: 80, rows: 24, cwd: '/repo/base/packages/app', workspaceId: 'ws-1' },
+    )
+
+    expect(skillsSync.run).not.toHaveBeenCalled()
   })
 
   it('injects CATE_PANEL_ID when the PTY belongs to a Cate terminal panel', async () => {
