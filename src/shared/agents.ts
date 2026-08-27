@@ -37,6 +37,7 @@ export type AgentId =
   | 'codex'
   | 'cursor'
   | 'grok'
+  | 'kiro'
   | 'opencode'
   | 'pi'
 
@@ -203,6 +204,18 @@ export const AGENTS: readonly AgentDef[] = [
     // `.agents/skills` is the cross-tool shared location pi (and others) read,
     // so pi's target id is 'pi-native' rather than the dir-derived name.
     skills: folderSkills('pi-native', ['.agents', 'skills'], { label: 'Pi' }),
+  },
+  // Kiro CLI with its v3 engine. Standalone workspace hooks require that engine, so select
+  // it explicitly for fresh and resumed sessions.
+  {
+    id: 'kiro',
+    displayName: 'Kiro',
+    command: 'kiro-cli',
+    codingAgentArgs: (prompt) => ['chat', '--v3', prompt],
+    codingAgentFollowUp: true,
+    matchProcess: (n) => n === 'kiro-cli',
+    resumeArgs: (sid) => ['chat', '--v3', '--resume-id', sid],
+    skills: folderSkills('kiro', ['.kiro', 'skills'], { nameMatchesDir: true }),
   },
 ]
 

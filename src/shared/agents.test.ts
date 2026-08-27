@@ -6,6 +6,7 @@ describe('agentForLaunchCommand', () => {
     expect(agentForLaunchCommand('claude')?.id).toBe('claude-code')
     expect(agentForLaunchCommand('/usr/local/bin/codex --some-flag')?.id).toBe('codex')
     expect(agentForLaunchCommand('"C:\\tools\\cursor-agent"')?.id).toBe('cursor')
+    expect(agentForLaunchCommand('/usr/local/bin/kiro-cli chat')?.id).toBe('kiro')
   })
 
   it('does not guess through compound shell syntax', () => {
@@ -21,6 +22,7 @@ describe('matchAgentDef', () => {
     // The CLI's launcher is cursor-agent; comm can also surface as cursor.
     expect(matchAgentDef('cursor-agent')?.id).toBe('cursor')
     expect(matchAgentDef('cursor')?.id).toBe('cursor')
+    expect(matchAgentDef('kiro-cli')?.id).toBe('kiro')
     expect(matchAgentDef('node')).toBeNull()
   })
 
@@ -41,6 +43,7 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('grok', uuid)).toBe(`grok --resume ${uuid}`)
     expect(resumeCommandForAgent('pi', uuid)).toBe(`pi --session ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
+    expect(resumeCommandForAgent('kiro', uuid)).toBe(`kiro-cli chat --v3 --resume-id ${uuid}`)
   })
 
   it('returns null for unknown agent ids', () => {

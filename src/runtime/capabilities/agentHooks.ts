@@ -12,8 +12,8 @@
 //      are regenerated on every boot; stale files are harmless.
 //   2. plant the hook env on every PTY (endpoint + per-terminal derived token
 //      + CATE_TERMINAL_ID — the terminal↔event correlation contract);
-//   3. prepare workspace-scoped hook files (claude, codex, cursor, grok, pi,
-//      opencode) at PTY create time;
+//   3. prepare workspace-scoped hook files (claude, codex, cursor, grok, kiro,
+//      pi, opencode) at PTY create time;
 //   4. ingest hook posts on a daemon-owned loopback HTTP endpoint, normalize
 //      them (shared code), and emit AgentHookEvents to subscribers (the
 //      rpcServer forwards them to the client as evt frames).

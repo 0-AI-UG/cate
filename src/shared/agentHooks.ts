@@ -135,14 +135,10 @@ export interface AgentHookSpec {
    *    control turn that DID fire Stop). Cate's running indicator therefore
    *    stays stuck until the next prompt.
    *
-   * For the false agents Cate recovers the turn-end out-of-band, from the one
-   * interrupt channel that is still deterministic and file-based (not a
-   * keystroke, not screen scraping, not a settle timer): the CLI writes an
-   * interrupt MARKER into its own transcript, and `interruptRecovery.marker`
-   * below matches it. The runtime arms a transcript tail-watch at turn-start
-   * and synthesizes a turn-end the moment the marker lands (see
-   * runtime/capabilities/agentHooks.ts) — so the FSM idles like it does for the
-   * self-healing agents, just via the transcript rather than a hook.
+   * Claude and Codex recover out-of-band from a deterministic interrupt marker
+   * in their transcript (`interruptRecovery.marker` below). Kiro exposes
+   * neither a Stop hook nor a transcript marker on interrupt, so its v3 TUI is
+   * recovered from the Ctrl-C input edge while a hook-proven turn is active.
    *
    * The flag itself stays a truthful statement about the CLI: it still pushes
    * no hook, so the "a user interrupt pushes NO hook event" tests keep guarding
@@ -826,6 +822,59 @@ const opencodeSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
+// kiro — standalone v1 hook file in <workspace>/.kiro/hooks/. Kiro's v3 engine
+// documents session-start/userPromptSubmit/postToolUse/stop lifecycle payloads
+// with session_id + cwd on JSON stdin. Cate owns this one file outright;
+// every other user hook in the directory is untouched.
+// ---------------------------------------------------------------------------
+
+const KIRO_TRIGGERS = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop'] as const
+
+function kiroHookSource(ctx: HookInjectionContext): string {
+  return JSON.stringify({
+    version: 'v1',
+    hooks: KIRO_TRIGGERS.map((trigger) => ({
+      name: `${CATE_HOOK_MARKER}-${trigger}`,
+      trigger,
+      action: { type: 'command', command: ctx.bridgeCommand },
+    })),
+  }, null, 2) + '\n'
+}
+
+const kiroSpec: AgentHookSpec = {
+  // Verified live against Kiro CLI 2.19.0: Ctrl-C returns to the prompt without
+  // a Stop hook. The renderer recovers from that terminal input edge.
+  reportsTurnEndOnInterrupt: false,
+  projectFiles: [
+    {
+      relPath: '.kiro/hooks/cate-hook.json',
+      build: (existing, ctx) => {
+        const source = kiroHookSource(ctx)
+        return existing === source ? null : source
+      },
+      strip: (existing) => (existing.includes(CATE_HOOK_MARKER) ? { delete: true } : null),
+    },
+  ],
+  normalize: (p) => {
+    const base = { sessionId: str(p.session_id), cwd: str(p.cwd) ?? undefined }
+    switch (p.hook_event_name) {
+      // Kiro CLI v3 emits canonical PascalCase. Keep documented legacy aliases
+      // so payloads from older CLI releases remain useful during migration.
+      case 'SessionStart':
+      case 'agentSpawn':
+      case 'sessionStart': return { kind: 'session-start', ...base }
+      case 'UserPromptSubmit':
+      case 'userPromptSubmit': return { kind: 'turn-start', ...base }
+      case 'PostToolUse':
+      case 'postToolUse': return { kind: 'turn-resume', ...base }
+      case 'Stop':
+      case 'stop': return { kind: 'turn-end', ...base }
+      default: return null
+    }
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Registry + normalization entry point
 // ---------------------------------------------------------------------------
 
@@ -834,6 +883,7 @@ export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
   codex: codexSpec,
   cursor: cursorSpec,
   grok: grokSpec,
+  kiro: kiroSpec,
   pi: piSpec,
   opencode: opencodeSpec,
 }

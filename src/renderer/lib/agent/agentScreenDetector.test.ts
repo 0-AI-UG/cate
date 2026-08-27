@@ -6,6 +6,7 @@ import {
   stopAgentScreenDetector,
   noteAgentPresence,
   noteAgentHookEvent,
+  noteAgentInterruptSubmitted,
   noteAgentInputSubmitted,
   forgetAgentTracker,
 } from './agentScreenDetector'
@@ -192,6 +193,24 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     expect(state()).toBe('waitingForInput')
 
     noteAgentInputSubmitted(PTY)
+    expect(state()).toBe('running')
+  })
+
+  it('a Kiro Ctrl-C ends only its known active turn and stays silent', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start', 'kiro'))
+    expect(state()).toBe('running')
+
+    noteAgentInterruptSubmitted(PTY)
+    expect(state()).toBe('waitingForInput')
+    expect(sendOsNotification).not.toHaveBeenCalled()
+  })
+
+  it('does not guess an interrupt boundary for other agents', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start', 'claude-code'))
+
+    noteAgentInterruptSubmitted(PTY)
     expect(state()).toBe('running')
   })
 

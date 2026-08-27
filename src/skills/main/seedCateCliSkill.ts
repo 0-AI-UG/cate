@@ -13,7 +13,7 @@
 //   - `cate-agent` is always seeded — it is Cate's own agent and `.cate/` is
 //     already Cate-managed;
 //   - every other target (one per agent CLI that declares `skills` in
-//     src/shared/agents.ts — claude-code, codex, cursor, grok, opencode,
+//     src/shared/agents.ts — claude-code, codex, cursor, grok, kiro, opencode,
 //     pi-native) is seeded only when its tool dir (`.claude`, `.agents`, …)
 //     already exists in the workspace, so repos don't grow dot-dirs for agents
 //     nobody uses there. A tool dir created later is picked up on a subsequent

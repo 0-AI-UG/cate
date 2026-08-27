@@ -122,10 +122,12 @@ vi.mock('./terminalFileLinkProvider', () => ({
   resolveLinkRoot: () => undefined,
 }))
 const noteAgentInputSubmitted = vi.fn()
+const noteAgentInterruptSubmitted = vi.fn()
 vi.mock('../agent/agentScreenDetector', () => ({
   noteAgentPresence: vi.fn(),
   forgetAgentTracker: vi.fn(),
   noteAgentInputSubmitted,
+  noteAgentInterruptSubmitted,
 }))
 vi.mock('../themeManager', () => ({
   getActiveTheme: () => ({ terminal: {} }),
@@ -278,6 +280,16 @@ describe('spawn → wire → dispose happy path', () => {
 
     expect(noteAgentInputSubmitted).toHaveBeenCalledWith('pty-input')
     expect(terminalWrite).toHaveBeenCalledWith('pty-input', '\r')
+  })
+
+  it('reports Ctrl-C to the agent status coordinator', async () => {
+    terminalCreate.mockResolvedValueOnce('pty-interrupt')
+    await LC.getOrCreate('panel-interrupt', { workspaceId: 'ws-1' })
+
+    terminalInstances[0].emitData('\x03')
+
+    expect(noteAgentInterruptSubmitted).toHaveBeenCalledWith('pty-interrupt')
+    expect(terminalWrite).toHaveBeenCalledWith('pty-interrupt', '\x03')
   })
 
   it('returns the same in-flight entry for concurrent getOrCreate calls and spawns once', async () => {

@@ -68,7 +68,7 @@ describe('agent registry coverage', () => {
   // restatement of the type.
   test('persisted SkillTargetId values never drift', () => {
     const expected: SkillTargetId[] = [
-      'claude-code', 'cate-agent', 'pi-native', 'opencode', 'codex', 'cursor', 'grok',
+      'claude-code', 'cate-agent', 'pi-native', 'opencode', 'codex', 'cursor', 'grok', 'kiro',
     ]
     expect([...SKILL_TARGETS].map((t) => t.id).sort()).toEqual([...expected].sort())
   })

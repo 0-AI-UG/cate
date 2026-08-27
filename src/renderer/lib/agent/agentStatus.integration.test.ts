@@ -68,6 +68,12 @@ const fixtures: AgentLifecycleFixture[] = [
     turnStart: { type: 'session.status', sessionID: SESSION, status: { type: 'busy' } },
     turnEnd: { type: 'session.idle', sessionID: SESSION },
   },
+  {
+    agentId: 'kiro',
+    sessionStart: { hook_event_name: 'agentSpawn', session_id: SESSION },
+    turnStart: { hook_event_name: 'userPromptSubmit', session_id: SESSION },
+    turnEnd: { hook_event_name: 'stop', session_id: SESSION },
+  },
 ]
 
 const permissionFixtures: PermissionFixture[] = [
