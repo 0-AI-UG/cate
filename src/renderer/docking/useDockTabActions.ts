@@ -7,6 +7,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { StoreApi } from 'zustand'
 import type { DockTabStack as DockTabStackType, PanelState, PanelType } from '../../shared/types'
+import { parseLocator } from '../../shared/runtimeLocator'
+import { relativeDisplayPath } from '../lib/fs/displayPath'
 import { createTransferSnapshot } from '../lib/panelTransfer'
 import { removePanelFromWindow } from '../lib/panels/removePanelFromWindow'
 import { useAppStore } from '../stores/appStore'
@@ -217,6 +219,16 @@ export function useDockTabActions(params: DockTabActionsParams) {
             ] as NativeContextMenuItem[]
           : []),
         { id: 'rename', label: 'Rename' },
+        // Path copies only for panels backed by a file, grouped with Rename as
+        // in the explorer menu. The explorer's Alt+Cmd+C accelerators are
+        // display-only labels (bound nowhere), so they're omitted here rather
+        // than advertising chords that don't fire.
+        ...(panel?.filePath
+          ? ([
+              { id: 'copy-path', label: 'Copy Path' },
+              { id: 'copy-rel-path', label: 'Copy Relative Path' },
+            ] as NativeContextMenuItem[])
+          : []),
         { type: 'separator' },
         { id: 'close', label: 'Close', accelerator: 'Cmd+W' },
         { id: 'close-others', label: 'Close Others', enabled: hasOthers },
@@ -238,6 +250,20 @@ export function useDockTabActions(params: DockTabActionsParams) {
         case 'rename':
           if (panel) beginRename(panelId, panel.title)
           break
+        case 'copy-path':
+          // parseLocator strips the cate-runtime:// wrapper so a remote file
+          // copies its host path, not the internal URI.
+          if (panel?.filePath) navigator.clipboard.writeText(parseLocator(panel.filePath).path)
+          break
+        case 'copy-rel-path': {
+          if (!panel?.filePath) break
+          const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
+          const root = useAppStore.getState().workspaces.find((w) => w.id === wsId)?.rootPath
+          navigator.clipboard.writeText(
+            root ? relativeDisplayPath(panel.filePath, root) : parseLocator(panel.filePath).path,
+          )
+          break
+        }
         case 'close':
           onClosePanel?.(panelId)
           break
@@ -265,7 +291,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           break
       }
     },
-    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, splitWithType, showMultiSelectionMenu, showCloseAll, beginRename],
+    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, splitWithType, showMultiSelectionMenu, showCloseAll, beginRename, workspaceId],
   )
 
   // Tab-bar (empty-area) context menu — split/new menus. Returns a handler
