@@ -104,3 +104,54 @@ test('agent-browser controls a mounted webview while its workspace is inactive',
     result: { value: 'Filled from another workspace' },
   })
 })
+
+test('persistent browser surfaces respect canvas clipping and canvas node order', async () => {
+  const browser = await page.evaluate(() => (
+    window.__cateE2E!.createBrowser('data:text/html,<title>Stacking test</title>', { x: -100, y: 120 })
+  ))
+
+  await expect.poll(() => page.evaluate((panelId) => {
+    const surface = document.querySelector<HTMLElement>(`[data-browser-surface="${panelId}"]`)
+    return surface?.dataset.browserSurfaceVisible
+  }, browser.panelId)).toBe('true')
+
+  const clippedUnderSidebar = await page.evaluate((panelId) => {
+    const sidebar = document.querySelector<HTMLElement>('[data-app-sidebar="left"]')!
+    const surface = document.querySelector<HTMLElement>(`[data-browser-surface="${panelId}"]`)!
+    const sidebarRect = sidebar.getBoundingClientRect()
+    const surfaceRect = surface.getBoundingClientRect()
+    const x = Math.min(sidebarRect.right - 10, surfaceRect.right - 10)
+    const y = surfaceRect.top + Math.min(100, surfaceRect.height / 2)
+    return document.elementFromPoint(x, y)?.closest('[data-app-sidebar="left"]') !== null
+  }, browser.panelId)
+  expect(clippedUnderSidebar).toBe(true)
+
+  const browserNodeId = await page.evaluate(
+    (panelId) => window.__cateE2E!.nodeForPanel(panelId),
+    browser.panelId,
+  )
+  expect(browserNodeId).not.toBeNull()
+  const terminalNodeId = await page.evaluate(() => window.__cateE2E!.createTerminal({ x: 200, y: 180 }))
+  await page.evaluate(({ browserNodeId, terminalNodeId }) => {
+    window.__cateE2E!.resetViewport()
+    window.__cateE2E!.moveNode(browserNodeId!, { x: 100, y: 120 })
+    window.__cateE2E!.moveNode(terminalNodeId, { x: 200, y: 180 })
+  }, { browserNodeId, terminalNodeId })
+
+  await page.waitForSelector(`[data-node-id="${terminalNodeId}"]`)
+  await expect.poll(() => page.evaluate(({ panelId, terminalNodeId }) => {
+    const surface = document.querySelector<HTMLElement>(`[data-browser-surface="${panelId}"]`)
+    const terminal = document.querySelector<HTMLElement>(`[data-node-id="${terminalNodeId}"]`)
+    if (!surface || !terminal || !surface.style.clipPath.startsWith('path(')) return false
+    const a = surface.getBoundingClientRect()
+    const b = terminal.getBoundingClientRect()
+    const left = Math.max(a.left, b.left)
+    const top = Math.max(a.top, b.top)
+    const right = Math.min(a.right, b.right)
+    const bottom = Math.min(a.bottom, b.bottom)
+    if (right <= left || bottom <= top) return false
+    return document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+      ?.closest('[data-node-id]')
+      ?.getAttribute('data-node-id') === terminalNodeId
+  }, { panelId: browser.panelId, terminalNodeId })).toBe(true)
+})
