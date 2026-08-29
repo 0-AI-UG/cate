@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.6.1-beta.3] - 2026-08-29
+
+This beta expands terminal-agent support and sharpens everyday panel, remote-workspace, and browser workflows.
+
+### Added
+
+- **Kiro CLI support**: Kiro joins the supported terminal coding agents with detection, mission orchestration, follow-ups, exact session resume, workspace skills, lifecycle hooks, and interruption recovery.
+- **Focused panel actions**: rename the focused panel with a customizable shortcut, and copy absolute or workspace-relative file paths directly from dock and canvas tab context menus.
+
+### Fixed
+
+- **Remote terminal recovery**: terminals whose runtime disconnects no longer keep stale PTY mappings and are recreated after the runtime reconnects.
+- **Local and remote file opening**: clean untitled editors can open an existing workspace file directly without creating a duplicate panel.
+- **Worktree skill mirroring**: managed skills are synchronized only for real linked worktrees, not ordinary workspace subdirectories.
+- **Browser compatibility and stacking**: browser pages no longer advertise WebDriver automation, and persistent webviews respect canvas clipping, sidebars, panel z-order, and pointer targeting.
+
 ## [1.6.1-beta.2] - 2026-08-19
 
 This beta makes browser panels faster and more reliable across canvas, focus, and workspace changes.
