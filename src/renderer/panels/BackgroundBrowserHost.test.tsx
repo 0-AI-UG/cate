@@ -21,7 +21,22 @@ let root: Root
 
 Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
   configurable: true,
-  value: () => ({ x: 10, y: 20, left: 10, top: 20, right: 210, bottom: 120, width: 200, height: 100, toJSON: () => ({}) }),
+  value(this: HTMLElement) {
+    const [left, top, right, bottom] = (this.dataset.testRect ?? '10,20,210,120')
+      .split(',')
+      .map(Number)
+    return {
+      x: left,
+      y: top,
+      left,
+      top,
+      right,
+      bottom,
+      width: right - left,
+      height: bottom - top,
+      toJSON: () => ({}),
+    }
+  },
 })
 Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
   configurable: true,
@@ -35,6 +50,23 @@ Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
 function VisibleBrowserSlot(): React.ReactElement {
   const selectedWorkspaceId = useAppStore((state) => state.selectedWorkspaceId)
   return <BrowserPanelSurfaceSlot panelId={`browser-${selectedWorkspaceId}`} />
+}
+
+function ClippedStackedBrowserSlot(): React.ReactElement {
+  return (
+    <div data-test-rect="100,0,400,300" style={{ overflow: 'clip' }}>
+      <div>
+        <div data-node-id="browser-node" style={{ zIndex: 1001 }}>
+          <BrowserPanelSurfaceSlot panelId="browser-one" />
+        </div>
+        <div
+          data-node-id="terminal-node"
+          data-test-rect="150,40,210,100"
+          style={{ position: 'absolute', zIndex: 1002 }}
+        />
+      </div>
+    </div>
+  )
 }
 
 function renderHost(): void {
@@ -113,5 +145,19 @@ describe('BackgroundBrowserHost', () => {
     expect(container.querySelector('[data-browser-panel="browser-one"]')).toBe(original)
     expect(container.querySelector('[data-browser-surface="browser-one"]')
       ?.getAttribute('data-browser-surface-visible')).toBe('true')
+  })
+
+  it('clips a persistent surface to its canvas and punches out higher canvas nodes', () => {
+    act(() => root.render(
+      <PersistentBrowserHostContext.Provider value>
+        <ClippedStackedBrowserSlot />
+        <BackgroundBrowserHost />
+      </PersistentBrowserHostContext.Provider>,
+    ))
+
+    const surface = container.querySelector<HTMLElement>('[data-browser-surface="browser-one"]')
+    expect(surface?.style.clipPath).toBe(
+      'path(evenodd, "M 90 0 H 200 V 100 H 90 Z M 140 20 H 200 V 80 H 140 Z")',
+    )
   })
 })
