@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.6.1-beta.4] - 2026-08-30
+
+This beta keeps browser panels visually synchronized during canvas navigation.
+
+### Fixed
+
+- **Browser pan and zoom synchronization**: persistent webviews now update their position and scale continuously while the canvas pans or zooms, instead of snapping into place only after the gesture ends.
+
 ## [1.6.1-beta.3] - 2026-08-29
 
 This beta expands terminal-agent support and sharpens everyday panel, remote-workspace, and browser workflows.
