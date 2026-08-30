@@ -211,7 +211,14 @@ function watchSurface(panelId: string): void {
   const node = slot.closest<HTMLElement>('[data-node-id]')
   const nodeLayer = node?.parentElement
   if (nodeLayer) {
-    mutation?.observe(nodeLayer, { childList: true })
+    // nodeLayer is also one of the ancestors observed above. Calling observe()
+    // again replaces that target's options, so retain attribute observation:
+    // its transform changes on every canvas pan/zoom frame.
+    mutation?.observe(nodeLayer, {
+      attributes: true,
+      attributeFilter: ['style', 'class', 'aria-hidden'],
+      childList: true,
+    })
     for (const sibling of Array.from(nodeLayer.children)) {
       if (!(sibling instanceof HTMLElement) || !sibling.hasAttribute('data-node-id')) continue
       mutation?.observe(sibling, { attributes: true, attributeFilter: ['style', 'class', 'aria-hidden'] })

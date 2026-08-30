@@ -55,7 +55,7 @@ function VisibleBrowserSlot(): React.ReactElement {
 function ClippedStackedBrowserSlot(): React.ReactElement {
   return (
     <div data-test-rect="100,0,400,300" style={{ overflow: 'clip' }}>
-      <div>
+      <div data-canvas-world>
         <div data-node-id="browser-node" style={{ zIndex: 1001 }}>
           <BrowserPanelSurfaceSlot panelId="browser-one" />
         </div>
@@ -159,5 +159,27 @@ describe('BackgroundBrowserHost', () => {
     expect(surface?.style.clipPath).toBe(
       'path(evenodd, "M 90 0 H 200 V 100 H 90 Z M 140 20 H 200 V 80 H 140 Z")',
     )
+  })
+
+  it('keeps a persistent surface aligned while the canvas world transform changes', async () => {
+    act(() => root.render(
+      <PersistentBrowserHostContext.Provider value>
+        <ClippedStackedBrowserSlot />
+        <BackgroundBrowserHost />
+      </PersistentBrowserHostContext.Provider>,
+    ))
+
+    const slot = container.querySelector<HTMLElement>('[data-browser-surface-slot="browser-one"]')!
+    const world = container.querySelector<HTMLElement>('[data-canvas-world]')!
+    const surface = container.querySelector<HTMLElement>('[data-browser-surface="browser-one"]')!
+    slot.dataset.testRect = '120,40,420,190'
+
+    act(() => {
+      world.style.transform = 'scale(1.5) translate(20px, 10px)'
+    })
+
+    await vi.waitFor(() => {
+      expect(surface.style.transform).toBe('translate3d(120px, 40px, 0) scale(1.5, 1.5)')
+    })
   })
 })
