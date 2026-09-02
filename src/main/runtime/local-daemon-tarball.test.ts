@@ -60,7 +60,7 @@ describe.skipIf(!hasTarball)('local daemon from the real tarball', () => {
     expect(existsSync(path.join(installDir, 'pi', 'dist', 'cli.js'))).toBe(true)
 
     // fs over the wire.
-    const dir = await runtime.validatePathStrict(workspace)
+    const dir = await runtime.validatePathStrict(workspace, undefined, 'srv_localtarball')
     const tree = await runtime.file.readDir(dir)
     expect(tree.map((n) => n.name)).toContain('hello.ts')
 
