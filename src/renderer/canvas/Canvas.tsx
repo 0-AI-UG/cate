@@ -540,6 +540,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
           { id: 'new-editor', label: 'New Editor' },
           { id: 'new-browser', label: 'New Browser' },
           { id: 'new-agent', label: 'New Agent' },
+          { id: 'new-review', label: 'New Review' },
           { id: 'new-canvas', label: 'New Canvas' },
           { type: 'separator' as const },
         )
@@ -572,6 +573,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         case 'new-editor': onCreateAtPoint?.('editor', point); break
         case 'new-browser': onCreateAtPoint?.('browser', point); break
         case 'new-agent': onCreateAtPoint?.('cateAgent', point); break
+        case 'new-review': onCreateAtPoint?.('review', point); break
         case 'new-canvas': onCreateAtPoint?.('canvas', point); break
         case 'auto-layout':
           canvasApi.getState().autoLayout()

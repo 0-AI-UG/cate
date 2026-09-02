@@ -36,7 +36,7 @@ import type {
 import type { FileAccessContext } from './types'
 import type { RuntimeRpcClient } from './rpcClient'
 import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload, AgentHookEvtPayload, SearchEvtPayload, ServerEvtPayload, TunnelEvtPayload, TunnelListenEvtPayload } from '../../runtime/protocol'
-import type { FileTreeNode, FileSearchResult } from '../../shared/types'
+import type { FileTreeNode, FileSearchResult, GitComparisonResult, GitFileContent, GitFileDiff } from '../../shared/types'
 import type { AgentHookAgentState } from '../../shared/agentHooks'
 
 export class RemoteRuntime implements Runtime {
@@ -322,8 +322,12 @@ export class RemoteRuntime implements Runtime {
       status: (cwd, access) => call<GitStatusResult>(Methods.vcsStatus, [cwd, scoped(access)]),
       diff: (cwd, filePath, access) => call<string>(Methods.vcsDiff, [cwd, filePath, scoped(access)]),
       diffStaged: (cwd, filePath, access) => call<string>(Methods.vcsDiffStaged, [cwd, filePath, scoped(access)]),
+      compare: (cwd, spec, access) => call<GitComparisonResult>(Methods.vcsCompare, [cwd, spec, scoped(access)]),
+      fileDiff: (cwd, spec, filePath, options, access) => call<GitFileDiff>(Methods.vcsFileDiff, [cwd, spec, filePath, options, scoped(access)]),
+      fileContent: (cwd, spec, filePath, side, access) => call<GitFileContent>(Methods.vcsFileContent, [cwd, spec, filePath, side, scoped(access)]),
       monitorStatus: (cwd, access) => call<MonitorStatusResult>(Methods.vcsMonitorStatus, [cwd, scoped(access)]),
       stage: (cwd, filePath, access) => call<void>(Methods.vcsStage, [cwd, filePath, scoped(access)]),
+      stageAll: (cwd, access) => call<void>(Methods.vcsStageAll, [cwd, scoped(access)]),
       unstage: (cwd, filePath, access) => call<void>(Methods.vcsUnstage, [cwd, filePath, scoped(access)]),
       commit: (cwd, message, access) => call<void>(Methods.vcsCommit, [cwd, message, scoped(access)]),
       push: (cwd, remote, branch, access) => longCall<void>(Methods.vcsPush, [cwd, remote, branch, scoped(access)]),

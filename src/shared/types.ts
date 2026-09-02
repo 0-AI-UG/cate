@@ -32,7 +32,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'cateAgent' | 'document' | 'extension'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'cateAgent' | 'document' | 'review' | 'extension'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -80,6 +80,104 @@ export interface TerminalAgentSession {
   cwd: string
 }
 
+// -----------------------------------------------------------------------------
+// Git review contracts
+// -----------------------------------------------------------------------------
+
+export type GitComparisonSpec =
+  | { kind: 'uncommitted'; ignoreWhitespace?: boolean }
+  | { kind: 'unstaged'; ignoreWhitespace?: boolean }
+  | { kind: 'staged'; ignoreWhitespace?: boolean }
+  | { kind: 'commit'; commit: string; ignoreWhitespace?: boolean }
+  | { kind: 'branch'; base: string; target: string; ignoreWhitespace?: boolean }
+
+export type GitChangeStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'type-changed' | 'unmerged'
+
+export interface GitChangedFile {
+  path: string
+  oldPath?: string
+  status: GitChangeStatus
+  additions: number | null
+  deletions: number | null
+  binary: boolean
+  staged: boolean
+  working: boolean
+  untracked?: boolean
+}
+
+export interface GitComparisonResult {
+  spec: GitComparisonSpec
+  resolvedBase: string | null
+  resolvedTarget: string | null
+  currentBranch: string | null
+  files: GitChangedFile[]
+  additions: number
+  deletions: number
+}
+
+export interface GitDiffLine {
+  kind: 'context' | 'add' | 'delete' | 'meta'
+  text: string
+  oldLine: number | null
+  newLine: number | null
+}
+
+export interface GitDiffHunk {
+  header: string
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+  lines: GitDiffLine[]
+}
+
+export interface GitFileDiff {
+  path: string
+  oldPath?: string
+  binary: boolean
+  tooLarge: boolean
+  byteLength: number
+  patch?: string
+  hunks: GitDiffHunk[]
+}
+
+export interface GitFileContent {
+  exists: boolean
+  size: number
+  base64?: string
+}
+
+export interface GitReviewNote {
+  id: string
+  path: string
+  side: 'old' | 'new' | 'file'
+  line: number | null
+  body: string
+  context: string
+  /** Stable local anchor used to relocate the note when line numbers move. */
+  contextHash?: string
+  resolvedBase: string | null
+  resolvedTarget: string | null
+  outdated?: boolean
+  createdAt: string
+}
+
+export interface ReviewPanelState {
+  repoPath: string
+  spec: GitComparisonSpec
+  focusedFile?: string
+  fileFilter?: string
+  display: {
+    split: boolean
+    wordDiff: boolean
+    wrap: boolean
+    fullFile: boolean
+    advancedPreview: boolean
+  }
+  collapsedFiles?: string[]
+  notes?: GitReviewNote[]
+}
+
 export interface PanelState {
   id: string
   type: PanelType
@@ -102,6 +200,8 @@ export interface PanelState {
   proxyUrl?: string
   /** When set, EditorPanel renders as a Monaco diff editor. */
   diffMode?: 'staged' | 'working'
+  /** Review panels only: comparison query, view preferences, expansion, and notes. */
+  reviewState?: ReviewPanelState
   /** Editor panels with a markdown file only: render the rendered preview
    *  instead of the source. Kept per-panel (not local component state) because
    *  a single EditorPanel mount is reused across dock tabs. */
@@ -1095,6 +1195,8 @@ export interface ProjectSessionPanel {
   unsavedContent?: string
   /** Worktree this terminal panel is tagged with. Machine-local (worktree ids
    *  are runtime uuids), so it lives in session.json, not workspace.json. */
+  /** Machine-local review query, display preferences, expansion, and notes. */
+  reviewState?: ReviewPanelState
   worktreeId?: string
   /** Agent-CLI session running in this terminal at save time. Machine-local
    *  (session ids reference stores on this machine's runtime host). */
@@ -1581,6 +1683,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   canvas: { width: 640, height: 480 },
   cateAgent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
+  review: { width: 820, height: 560 },
   extension: { width: 520, height: 360 },
 }
 

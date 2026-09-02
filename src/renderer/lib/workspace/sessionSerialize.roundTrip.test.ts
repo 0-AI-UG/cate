@@ -222,6 +222,37 @@ describe('workspace.json + session.json round-trip', () => {
     expect(JSON.stringify(wsFile)).not.toContain('Implement the parser')
   })
 
+  it('round-trips review state and notes through machine-local session.json only', () => {
+    const { snapshot } = buildSnapshot()
+    const reviewState = {
+      repoPath: ROOT,
+      spec: { kind: 'branch' as const, base: 'main', target: 'feature' },
+      display: { split: true, wordDiff: true, wrap: false, fullFile: false, advancedPreview: true },
+      collapsedFiles: ['src/large.ts'],
+      notes: [{
+        id: 'note-1',
+        path: 'src/app.ts',
+        side: 'new' as const,
+        line: 42,
+        body: 'Please cover this branch.',
+        context: 'if (ready) {',
+        contextHash: '92aec6c2',
+        resolvedBase: 'abc',
+        resolvedTarget: 'def',
+        createdAt: '2026-09-02T12:00:00.000Z',
+      }],
+    }
+    snapshot.panels!['review-1'] = panel({ id: 'review-1', type: 'review', reviewState })
+
+    const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT, ''))
+    const sessFile = throughDisk(buildSessionFile(snapshot))
+    const restored = projectFilesToSnapshot(wsFile, sessFile, ROOT)
+
+    expect(wsFile.panels!['review-1']).not.toHaveProperty('reviewState')
+    expect(sessFile.panels['review-1'].reviewState).toEqual(reviewState)
+    expect(restored.panels!['review-1'].reviewState).toEqual(reviewState)
+  })
+
   it('a file outside the workspace root keeps its absolute path through the round trip', () => {
     const { snapshot } = buildSnapshot()
     snapshot.panels!['ed-out'] = panel({

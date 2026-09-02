@@ -23,8 +23,141 @@ import {
 } from '../../main/ipc/pathValidation'
 import { ensureCateGitignore } from '../../main/cateGitignore'
 import type { FileAccessContext, VcsHost } from '../../main/runtime/types'
+import type {
+  GitChangedFile,
+  GitChangeStatus,
+  GitComparisonResult,
+  GitComparisonSpec,
+  GitDiffHunk,
+  GitFileDiff,
+  GitFileContent,
+} from '../../shared/types'
 
 const execFileP = promisify(execFile)
+
+const REVIEW_PATCH_MAX_BYTES = 2 * 1024 * 1024
+const REVIEW_PATCH_MAX_LINES = 20_000
+const REVIEW_CONTENT_MAX_BYTES = 25 * 1024 * 1024
+
+function gitBuffer(cwd: string, args: string[], env: NodeJS.ProcessEnv): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    execFile('git', ['-C', cwd, ...args], { env, encoding: 'buffer', maxBuffer: REVIEW_CONTENT_MAX_BYTES }, (error, stdout) => {
+      if (error) reject(error)
+      else resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout))
+    })
+  })
+}
+
+interface ResolvedComparison {
+  args: string[]
+  rootCommit?: string
+  resolvedBase: string | null
+  resolvedTarget: string | null
+}
+
+function changeStatus(code: string): GitChangeStatus {
+  switch (code[0]) {
+    case 'A': return 'added'
+    case 'D': return 'deleted'
+    case 'R': return 'renamed'
+    case 'C': return 'copied'
+    case 'T': return 'type-changed'
+    case 'U': return 'unmerged'
+    default: return 'modified'
+  }
+}
+
+function parseNameStatus(raw: string): Array<{ path: string; oldPath?: string; status: GitChangeStatus }> {
+  const tokens = raw.split('\0')
+  const files: Array<{ path: string; oldPath?: string; status: GitChangeStatus }> = []
+  for (let i = 0; i < tokens.length;) {
+    const code = tokens[i++]
+    if (!code) continue
+    const firstPath = tokens[i++] ?? ''
+    if (!firstPath) continue
+    if (code.startsWith('R') || code.startsWith('C')) {
+      const nextPath = tokens[i++] ?? firstPath
+      files.push({ path: nextPath, oldPath: firstPath, status: changeStatus(code) })
+    } else {
+      files.push({ path: firstPath, status: changeStatus(code) })
+    }
+  }
+  return files
+}
+
+function parseNumstat(raw: string): Map<string, { additions: number | null; deletions: number | null; oldPath?: string }> {
+  const tokens = raw.split('\0')
+  const result = new Map<string, { additions: number | null; deletions: number | null; oldPath?: string }>()
+  for (let i = 0; i < tokens.length;) {
+    const record = tokens[i++]
+    if (!record) continue
+    const [addsRaw, delsRaw, pathInRecord = ''] = record.split('\t')
+    let filePath = pathInRecord
+    let oldPath: string | undefined
+    if (!filePath) {
+      oldPath = tokens[i++] ?? ''
+      filePath = tokens[i++] ?? oldPath
+    }
+    if (!filePath) continue
+    result.set(filePath, {
+      additions: addsRaw === '-' ? null : Number(addsRaw),
+      deletions: delsRaw === '-' ? null : Number(delsRaw),
+      ...(oldPath ? { oldPath } : {}),
+    })
+  }
+  return result
+}
+
+export function parseReviewPatch(raw: string): GitDiffHunk[] {
+  const hunks: GitDiffHunk[] = []
+  const metadata: string[] = []
+  const lines = raw.replace(/\r\n/g, '\n').split('\n')
+  let hunk: GitDiffHunk | null = null
+  let oldLine = 0
+  let newLine = 0
+  for (const line of lines) {
+    if (/^(old mode|new mode|new file mode|deleted file mode|similarity index|dissimilarity index|rename from|rename to|copy from|copy to) /.test(line)) {
+      metadata.push(line)
+    }
+    if (line.startsWith('@@')) {
+      const match = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/)
+      if (!match) continue
+      oldLine = Number(match[1])
+      newLine = Number(match[3])
+      hunk = {
+        header: line,
+        oldStart: oldLine,
+        oldLines: Number(match[2] ?? 1),
+        newStart: newLine,
+        newLines: Number(match[4] ?? 1),
+        lines: [],
+      }
+      hunks.push(hunk)
+      continue
+    }
+    if (!hunk) continue
+    if (line.startsWith('\\ No newline at end of file')) {
+      hunk.lines.push({ kind: 'meta', text: line, oldLine: null, newLine: null })
+    } else if (line.startsWith('+')) {
+      hunk.lines.push({ kind: 'add', text: line.slice(1), oldLine: null, newLine: newLine++ })
+    } else if (line.startsWith('-')) {
+      hunk.lines.push({ kind: 'delete', text: line.slice(1), oldLine: oldLine++, newLine: null })
+    } else if (line.startsWith(' ')) {
+      hunk.lines.push({ kind: 'context', text: line.slice(1), oldLine: oldLine++, newLine: newLine++ })
+    }
+  }
+  if (metadata.length > 0) {
+    hunks.unshift({
+      header: 'File metadata',
+      oldStart: 0,
+      oldLines: 0,
+      newStart: 0,
+      newLines: 0,
+      lines: metadata.map((text) => ({ kind: 'meta', text, oldLine: null, newLine: null })),
+    })
+  }
+  return hunks
+}
 
 /** Best-effort symlink of workspace-root-relative paths (e.g. node_modules,
  *  build output) from the source checkout into a freshly created worktree, so
@@ -121,6 +254,87 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       throw new Error('filePath escapes workspace')
     }
     return path.relative(cwd, resolved)
+  }
+
+  async function repositoryContext(cwd: string, access?: FileAccessContext) {
+    const validCwd = validateCwd(cwd, access)
+    const repoRoot = path.resolve((await simpleGit(validCwd).revparse(['--show-toplevel'])).trim())
+    return { repoRoot, git: simpleGit(repoRoot) }
+  }
+
+  async function resolveCommit(git: ReturnType<typeof simpleGit>, ref: string): Promise<string> {
+    if (!ref.trim()) throw new Error('A Git ref is required')
+    try {
+      return (await git.revparse(['--verify', `${ref}^{commit}`])).trim()
+    } catch {
+      throw new Error(`Invalid Git ref "${ref}"`)
+    }
+  }
+
+  async function resolveComparison(
+    git: ReturnType<typeof simpleGit>,
+    spec: GitComparisonSpec,
+  ): Promise<ResolvedComparison> {
+    if (spec.kind === 'unstaged') {
+      return { args: [], resolvedBase: 'INDEX', resolvedTarget: 'WORKTREE' }
+    }
+    const head = await resolveCommit(git, 'HEAD')
+    if (spec.kind === 'uncommitted') {
+      return { args: [head], resolvedBase: head, resolvedTarget: 'WORKTREE' }
+    }
+    if (spec.kind === 'staged') {
+      return { args: ['--cached', head], resolvedBase: head, resolvedTarget: 'INDEX' }
+    }
+    if (spec.kind === 'commit') {
+      const commit = await resolveCommit(git, spec.commit)
+      try {
+        const parent = await resolveCommit(git, `${commit}^`)
+        return { args: [parent, commit], resolvedBase: parent, resolvedTarget: commit }
+      } catch {
+        return { args: [], rootCommit: commit, resolvedBase: null, resolvedTarget: commit }
+      }
+    }
+    const base = await resolveCommit(git, spec.base)
+    const target = await resolveCommit(git, spec.target)
+    const mergeBase = (await git.raw(['merge-base', base, target])).trim()
+    if (!mergeBase) throw new Error(`No merge base exists between ${spec.base} and ${spec.target}`)
+    return { args: [mergeBase, target], resolvedBase: mergeBase, resolvedTarget: target }
+  }
+
+  async function comparisonRaw(
+    git: ReturnType<typeof simpleGit>,
+    resolved: ResolvedComparison,
+    spec: GitComparisonSpec,
+    options: string[],
+    filePath?: string,
+  ): Promise<string> {
+    const common = ['--no-ext-diff', '--no-color', '--find-renames', ...(spec.ignoreWhitespace ? ['--ignore-all-space'] : [])]
+    if (resolved.rootCommit) {
+      return git.raw(['show', '--format=', ...common, ...options, resolved.rootCommit, ...(filePath ? ['--', filePath] : [])])
+    }
+    return git.raw(['diff', ...common, ...options, ...resolved.args, ...(filePath ? ['--', filePath] : [])])
+  }
+
+  async function untrackedSummary(validCwd: string, filePath: string): Promise<Pick<GitChangedFile, 'additions' | 'deletions' | 'binary'>> {
+    try {
+      const absolutePath = path.join(validCwd, filePath)
+      const stat = await fsp.stat(absolutePath)
+      const handle = await fsp.open(absolutePath, 'r')
+      const probe = Buffer.alloc(Math.min(stat.size, 8192))
+      try {
+        await handle.read(probe, 0, probe.length, 0)
+      } finally {
+        await handle.close()
+      }
+      if (probe.includes(0)) return { additions: null, deletions: null, binary: true }
+      if (stat.size > REVIEW_PATCH_MAX_BYTES) return { additions: null, deletions: null, binary: false }
+      const content = await fsp.readFile(absolutePath)
+      const text = content.toString('utf8')
+      const additions = text ? text.split('\n').length - (text.endsWith('\n') ? 1 : 0) : 0
+      return { additions, deletions: 0, binary: false }
+    } catch {
+      return { additions: 0, deletions: 0, binary: false }
+    }
   }
 
   async function isGitRepo(dirPath: string): Promise<boolean> {
@@ -242,21 +456,154 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       const status = await simpleGit(validateCwd(cwd, access)).status()
       return {
         files: status.files.map((f) => ({ path: f.path, index: f.index, working_dir: f.working_dir })),
-        current: status.current,
+        current: status.detached ? null : status.current,
         tracking: status.tracking,
         ahead: status.ahead,
         behind: status.behind,
       }
     },
     async diff(cwd, filePath, access) {
-      const validCwd = validateCwd(cwd, access)
-      const git = simpleGit(validCwd)
-      return filePath ? git.diff([validateFilePath(validCwd, filePath)]) : git.diff()
+      const { repoRoot, git } = await repositoryContext(cwd, access)
+      return filePath ? git.diff([validateFilePath(repoRoot, filePath)]) : git.diff()
     },
     async diffStaged(cwd, filePath, access) {
-      const validCwd = validateCwd(cwd, access)
-      const git = simpleGit(validCwd)
-      return filePath ? git.diff(['--cached', validateFilePath(validCwd, filePath)]) : git.diff(['--cached'])
+      const { repoRoot, git } = await repositoryContext(cwd, access)
+      return filePath ? git.diff(['--cached', validateFilePath(repoRoot, filePath)]) : git.diff(['--cached'])
+    },
+    async compare(cwd, spec, access): Promise<GitComparisonResult> {
+      const { repoRoot, git } = await repositoryContext(cwd, access)
+      const resolved = await resolveComparison(git, spec)
+      const [nameStatusRaw, numstatRaw, status] = await Promise.all([
+        comparisonRaw(git, resolved, spec, ['--name-status', '-z']),
+        comparisonRaw(git, resolved, spec, ['--numstat', '-z']),
+        git.status(['--untracked-files=all']),
+      ])
+      const stats = parseNumstat(numstatRaw)
+      const statusByPath = new Map(status.files.map((file) => [file.path, file]))
+      const files: GitChangedFile[] = parseNameStatus(nameStatusRaw).map((file) => {
+        const counts = stats.get(file.path)
+        const current = statusByPath.get(file.path)
+        return {
+          ...file,
+          oldPath: file.oldPath ?? counts?.oldPath,
+          additions: counts?.additions ?? 0,
+          deletions: counts?.deletions ?? 0,
+          binary: counts?.additions == null || counts?.deletions == null,
+          staged: spec.kind === 'staged' || spec.kind === 'uncommitted'
+            ? !!current && current.index !== ' ' && current.index !== '?'
+            : false,
+          working: spec.kind === 'unstaged' || spec.kind === 'uncommitted'
+            ? !!current && current.working_dir !== ' '
+            : false,
+        }
+      })
+
+      if (spec.kind === 'uncommitted' || spec.kind === 'unstaged') {
+        const known = new Set(files.map((file) => file.path))
+        for (const current of status.files) {
+          if (current.working_dir !== '?' || known.has(current.path)) continue
+          const summary = await untrackedSummary(repoRoot, current.path)
+          files.push({
+            path: current.path,
+            status: 'added',
+            ...summary,
+            staged: false,
+            working: true,
+            untracked: true,
+          })
+        }
+      }
+
+      return {
+        spec,
+        resolvedBase: resolved.resolvedBase,
+        resolvedTarget: resolved.resolvedTarget,
+        currentBranch: status.detached ? null : status.current,
+        files,
+        additions: files.reduce((sum, file) => sum + (file.additions ?? 0), 0),
+        deletions: files.reduce((sum, file) => sum + (file.deletions ?? 0), 0),
+      }
+    },
+    async fileDiff(cwd, spec, filePath, options, access): Promise<GitFileDiff> {
+      const { repoRoot, git } = await repositoryContext(cwd, access)
+      const relativePath = validateFilePath(repoRoot, filePath)
+      const resolved = await resolveComparison(git, spec)
+      const status = await git.status(['--untracked-files=all'])
+      const untracked = (spec.kind === 'uncommitted' || spec.kind === 'unstaged')
+        && status.files.some((file) => file.path === relativePath && file.working_dir === '?')
+      if (untracked) {
+        const content = await fsp.readFile(path.join(repoRoot, relativePath))
+        const binary = content.includes(0)
+        const byteLength = content.byteLength
+        const lines = binary ? [] : content.toString('utf8').split('\n')
+        const tooLarge = !options?.allowLarge && (byteLength > REVIEW_PATCH_MAX_BYTES || lines.length > REVIEW_PATCH_MAX_LINES)
+        if (binary || tooLarge) return { path: relativePath, binary, tooLarge, byteLength, hunks: [] }
+        const displayLines = lines.length > 0 && lines[lines.length - 1] === '' ? lines.slice(0, -1) : lines
+        const patch = [
+          `diff --git a/${relativePath} b/${relativePath}`,
+          'new file mode 100644',
+          '--- /dev/null',
+          `+++ b/${relativePath}`,
+          `@@ -0,0 +1,${displayLines.length} @@`,
+          ...displayLines.map((line) => `+${line}`),
+          '',
+        ].join('\n')
+        return {
+          path: relativePath,
+          binary: false,
+          tooLarge: false,
+          byteLength,
+          patch,
+          hunks: [{
+            header: `@@ -0,0 +1,${displayLines.length} @@`,
+            oldStart: 0,
+            oldLines: 0,
+            newStart: 1,
+            newLines: displayLines.length,
+            lines: displayLines.map((text, index) => ({ kind: 'add' as const, text, oldLine: null, newLine: index + 1 })),
+          }],
+        }
+      }
+
+      const contextLines = Math.max(0, Math.min(options?.contextLines ?? 3, 999_999))
+      const raw = await comparisonRaw(git, resolved, spec, ['--binary', `--unified=${contextLines}`], relativePath)
+      const byteLength = Buffer.byteLength(raw)
+      const lineCount = raw ? raw.split('\n').length : 0
+      const binary = raw.includes('GIT binary patch') || raw.includes('Binary files ')
+      const tooLarge = !options?.allowLarge && (byteLength > REVIEW_PATCH_MAX_BYTES || lineCount > REVIEW_PATCH_MAX_LINES)
+      return {
+        path: relativePath,
+        binary,
+        tooLarge,
+        byteLength,
+        patch: tooLarge ? undefined : raw,
+        hunks: binary || tooLarge ? [] : parseReviewPatch(raw),
+      }
+    },
+    async fileContent(cwd, spec, filePath, side, access): Promise<GitFileContent> {
+      const { repoRoot, git } = await repositoryContext(cwd, access)
+      const relativePath = validateFilePath(repoRoot, filePath)
+      const resolved = await resolveComparison(git, spec)
+      const worktreeSide = side === 'new' && (spec.kind === 'uncommitted' || spec.kind === 'unstaged')
+      try {
+        const content = worktreeSide
+          ? await fsp.readFile(path.join(repoRoot, relativePath))
+          : await (() => {
+              let object: string | null = null
+              if (spec.kind === 'unstaged') object = `:${relativePath}`
+              else if (spec.kind === 'staged') object = side === 'old'
+                ? `${resolved.resolvedBase}:${relativePath}`
+                : `:${relativePath}`
+              else {
+                const ref = side === 'old' ? resolved.resolvedBase : resolved.resolvedTarget
+                if (ref && ref !== 'WORKTREE' && ref !== 'INDEX') object = `${ref}:${relativePath}`
+              }
+              return object ? gitBuffer(repoRoot, ['show', object], env()) : Promise.reject(new Error('File side does not exist'))
+            })()
+        return { exists: true, size: content.byteLength, base64: content.toString('base64') }
+      } catch {
+        return { exists: false, size: 0 }
+      }
     },
     async monitorStatus(cwd, access) {
       // Mirrors git-monitor.ts's old raw-git poll exactly: current branch,
@@ -280,12 +627,15 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       }
     },
     async stage(cwd, filePath, access) {
-      const validCwd = validateCwd(cwd, access)
-      await simpleGit(validCwd).add(validateFilePath(validCwd, filePath))
+      const { repoRoot, git } = await repositoryContext(cwd, access)
+      await git.add(validateFilePath(repoRoot, filePath))
+    },
+    async stageAll(cwd, access) {
+      await simpleGit(validateCwd(cwd, access)).add(['-A'])
     },
     async unstage(cwd, filePath, access) {
-      const validCwd = validateCwd(cwd, access)
-      await simpleGit(validCwd).reset([validateFilePath(validCwd, filePath)])
+      const { repoRoot, git } = await repositoryContext(cwd, access)
+      await git.reset([validateFilePath(repoRoot, filePath)])
     },
     async commit(cwd, message, access) {
       await simpleGit(validateCwd(cwd, access)).commit(message)
@@ -341,8 +691,8 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       await simpleGit(validateCwd(cwd, access)).stash(['pop'])
     },
     async discardFile(cwd, filePath, access) {
-      const validCwd = validateCwd(cwd, access)
-      await simpleGit(validCwd).checkout(['--', validateFilePath(validCwd, filePath)])
+      const { repoRoot, git } = await repositoryContext(cwd, access)
+      await git.checkout(['--', validateFilePath(repoRoot, filePath)])
     },
     async worktreeList(cwd, access) {
       try {
