@@ -20,6 +20,7 @@ import {
   SquaresFour,
   FileDoc,
   PuzzlePiece,
+  GitDiff,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
@@ -42,6 +43,7 @@ const BrowserPanel = React.lazy(() => import('./BrowserPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const CateAgentPanel = React.lazy(() => import('../../cateAgent/renderer/CateAgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
+const ReviewPanel = React.lazy(() => import('./ReviewPanel'))
 const ExtensionPanel = React.lazy(() => import('./ExtensionPanel'))
 
 // -----------------------------------------------------------------------------
@@ -155,6 +157,18 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     create: ({ workspaceId, canvasPoint, placement, filePath, documentType }) =>
       trackCreated('document', useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null),
     props: (panel, ctx) => ({ ...baseProps(panel, ctx), filePath: panel.filePath }),
+  },
+  review: {
+    ...PANEL_DEFINITIONS.review,
+    icon: GitDiff,
+    Component: ReviewPanel,
+    create: ({ workspaceId, canvasPoint, placement }) => {
+      const rootPath = useAppStore.getState().getWorkspace(workspaceId)?.rootPath
+      return rootPath
+        ? trackCreated('review', useAppStore.getState().createReview(workspaceId, rootPath, undefined, canvasPoint, placement) || null)
+        : null
+    },
+    props: baseProps,
   },
   extension: {
     ...PANEL_DEFINITIONS.extension,

@@ -16,6 +16,7 @@ import type {
   RemoteConnectSpec,
   RuntimeConnection,
   RuntimePhase,
+  ReviewPanelState,
 } from '../../../shared/types'
 import type { CodingAgentLaunch, CodingAgentRun } from '../../../shared/codingAgentRuns'
 
@@ -93,6 +94,7 @@ export interface AppStoreActions {
   createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement, proxyUrl?: string) => string
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
+  createReview: (workspaceId: string, repoPath: string, initial?: Partial<ReviewPanelState>, position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createCateAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
@@ -126,6 +128,7 @@ export interface AppStoreActions {
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
   setPanelInitialChat: (workspaceId: string, panelId: string, chatId: string) => void
+  setPanelReviewState: (workspaceId: string, panelId: string, reviewState: ReviewPanelState) => void
   setPanelAgentSession: (workspaceId: string, panelId: string, session: TerminalAgentSession | null) => void
   setPanelCodingAgentLaunch: (workspaceId: string, panelId: string, launch: CodingAgentLaunch | undefined) => void
   setPanelCodingAgentRun: (workspaceId: string, panelId: string, run: CodingAgentRun | undefined) => void

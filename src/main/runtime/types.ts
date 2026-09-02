@@ -14,7 +14,19 @@
 //     terminal.ts, which must stay in the IPC layer for cross-window transfer).
 // =============================================================================
 
-import type { FileTreeNode, FileSearchResult, FileSearchOptions, SearchOptions, SearchFileResult, SearchStats, TerminalActivity } from '../../shared/types'
+import type {
+  FileTreeNode,
+  FileSearchResult,
+  FileSearchOptions,
+  SearchOptions,
+  SearchFileResult,
+  SearchStats,
+  TerminalActivity,
+  GitComparisonSpec,
+  GitComparisonResult,
+  GitFileDiff,
+  GitFileContent,
+} from '../../shared/types'
 import type { AgentHookAgentState, AgentHookConfig, AgentHookEvent } from '../../shared/agentHooks'
 import type { RuntimeId } from '../../shared/runtimeLocator'
 
@@ -450,9 +462,25 @@ export interface VcsHost {
   status(cwd: string, access?: FileAccessContext): Promise<GitStatusResult>
   diff(cwd: string, filePath?: string, access?: FileAccessContext): Promise<string>
   diffStaged(cwd: string, filePath?: string, access?: FileAccessContext): Promise<string>
+  compare(cwd: string, spec: GitComparisonSpec, access?: FileAccessContext): Promise<GitComparisonResult>
+  fileDiff(
+    cwd: string,
+    spec: GitComparisonSpec,
+    filePath: string,
+    options?: { contextLines?: number; allowLarge?: boolean },
+    access?: FileAccessContext,
+  ): Promise<GitFileDiff>
+  fileContent(
+    cwd: string,
+    spec: GitComparisonSpec,
+    filePath: string,
+    side: 'old' | 'new',
+    access?: FileAccessContext,
+  ): Promise<GitFileContent>
   /** Cheap poll for the sidebar branch/dirty indicator. */
   monitorStatus(cwd: string, access?: FileAccessContext): Promise<MonitorStatusResult>
   stage(cwd: string, filePath: string, access?: FileAccessContext): Promise<void>
+  stageAll(cwd: string, access?: FileAccessContext): Promise<void>
   unstage(cwd: string, filePath: string, access?: FileAccessContext): Promise<void>
   commit(cwd: string, message: string, access?: FileAccessContext): Promise<void>
   push(cwd: string, remote?: string, branch?: string, access?: FileAccessContext): Promise<void>

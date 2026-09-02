@@ -29,6 +29,7 @@ import {
   ArrowUUpRight,
   CaretLeft,
   CaretRight,
+  GitDiff,
 } from '@phosphor-icons/react'
 import { CateLogo } from './CateLogo'
 import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
@@ -642,5 +643,6 @@ function PanelIcon({ type }: { type: PanelType }) {
   if (type === 'browser')  return <span className={`${cls} text-sky-400`}><Globe size={ICON_SIZE} /></span>
   if (type === 'editor' || type === 'document') return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
   if (type === 'cateAgent') return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><CateLogo size={ICON_SIZE} /></span>
+  if (type === 'review')   return <span className={`${cls} text-green-400`}><GitDiff size={ICON_SIZE} /></span>
   return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
 }

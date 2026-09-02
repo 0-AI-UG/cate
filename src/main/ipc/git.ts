@@ -24,7 +24,11 @@ import {
   GIT_LS_FILES,
   GIT_STATUS,
   GIT_DIFF,
+  GIT_COMPARE,
+  GIT_FILE_DIFF,
+  GIT_FILE_CONTENT,
   GIT_STAGE,
+  GIT_STAGE_ALL,
   GIT_UNSTAGE,
   GIT_COMMIT,
   GIT_WORKTREE_LIST,
@@ -126,7 +130,11 @@ export function registerHandlers(): void {
   route(GIT_LS_FILES, 'lsFiles')
   route(GIT_STATUS, 'status')
   route(GIT_DIFF, 'diff')
+  route(GIT_COMPARE, 'compare')
+  route(GIT_FILE_DIFF, 'fileDiff')
+  route(GIT_FILE_CONTENT, 'fileContent')
   route(GIT_STAGE, 'stage')
+  route(GIT_STAGE_ALL, 'stageAll')
   route(GIT_UNSTAGE, 'unstage')
   route(GIT_COMMIT, 'commit')
   route(GIT_PUSH, 'push')

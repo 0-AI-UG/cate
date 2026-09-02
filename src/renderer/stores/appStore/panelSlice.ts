@@ -4,7 +4,7 @@
 
 import log from '../../lib/logger'
 import { disambiguateTitle } from '../../lib/panelTitle'
-import type { PanelState, PanelType } from '../../../shared/types'
+import type { PanelState, PanelType, ReviewPanelState } from '../../../shared/types'
 import { BROWSER_NEW_TAB_URL } from '../../../shared/types'
 import { resolvePanelSize } from '../../../shared/panels'
 import { useSettingsStore } from '../settingsStore'
@@ -38,6 +38,7 @@ type PanelSliceActions = Pick<
   | 'createBrowser'
   | 'createEditor'
   | 'createDiffEditor'
+  | 'createReview'
   | 'createCanvas'
   | 'createCateAgent'
   | 'createDocument'
@@ -54,6 +55,7 @@ type PanelSliceActions = Pick<
   | 'setPanelMarkdownPreview'
   | 'setPanelUnsavedContent'
   | 'setPanelInitialChat'
+  | 'setPanelReviewState'
   | 'setPanelAgentSession'
   | 'setPanelCodingAgentLaunch'
   | 'setPanelCodingAgentRun'
@@ -174,6 +176,33 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('editor', placement), position)
     },
 
+    createReview(workspaceId, repoPath, initial?, position?, placement?) {
+      const panelId = generateId()
+      const reviewState: ReviewPanelState = {
+        repoPath,
+        spec: initial?.spec ?? { kind: 'uncommitted' },
+        display: {
+          split: initial?.display?.split ?? false,
+          wordDiff: initial?.display?.wordDiff ?? true,
+          wrap: initial?.display?.wrap ?? false,
+          fullFile: initial?.display?.fullFile ?? false,
+          advancedPreview: initial?.display?.advancedPreview ?? true,
+        },
+        focusedFile: initial?.focusedFile,
+        fileFilter: initial?.fileFilter,
+        collapsedFiles: initial?.collapsedFiles ?? [],
+        notes: initial?.notes ?? [],
+      }
+      const panel: PanelState = {
+        id: panelId,
+        type: 'review',
+        title: 'Diff Review',
+        isDirty: false,
+        reviewState,
+      }
+      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('review', placement), position)
+    },
+
     createCanvas(workspaceId, position?, placement?) {
       const panel: PanelState = {
         id: generateId(),
@@ -263,6 +292,10 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     updatePanelTitle(workspaceId, panelId, title) {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, title }))
+    },
+
+    setPanelReviewState(workspaceId, panelId, reviewState) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, reviewState }))
     },
 
     updatePanelTitleFromAgent(workspaceId, panelId, title) {

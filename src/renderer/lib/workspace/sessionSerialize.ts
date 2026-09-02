@@ -95,7 +95,8 @@ export function buildSessionFile(
       !workingDirectory &&
       !p.unsavedContent &&
       !p.agentSession &&
-      !p.codingAgentRun
+      !p.codingAgentRun &&
+      !p.reviewState
     ) continue
     panels[p.id] = {
       panelId: p.id,
@@ -104,6 +105,7 @@ export function buildSessionFile(
       worktreeId,
       agentSession: p.agentSession,
       codingAgentRun: p.codingAgentRun,
+      reviewState: p.reviewState,
     }
   }
 
@@ -153,6 +155,7 @@ export function projectFilesToSnapshot(
         // observed agent evidence replaces or clears it.
         agentSession: sp?.agentSession,
         codingAgentRun: sp?.codingAgentRun,
+        reviewState: sp?.reviewState,
         // Restore the per-panel cwd (worktree path / dropped folder) so the
         // terminal respawns there. TerminalPanel reads panel.cwd directly. The
         // terminalCwds map below feeds the separate scrollback-restore path.

@@ -6,6 +6,7 @@ import { beforeEach, afterEach, describe, expect, test, vi } from 'vitest'
 // Capture the handlers registered via ipcMain.handle so we can invoke them
 // directly without a live Electron main process.
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
+const { trashItem } = vi.hoisted(() => ({ trashItem: vi.fn(async () => undefined) }))
 
 vi.mock('electron', () => ({
   ipcMain: {
@@ -13,6 +14,7 @@ vi.mock('electron', () => ({
       handlers.set(channel, fn)
     },
   },
+  shell: { trashItem },
 }))
 
 vi.mock('../windowRegistry', () => ({
@@ -24,7 +26,7 @@ vi.mock('../windowRegistry', () => ({
 
 const { registerHandlers } = await import('./filesystem')
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
-const { FS_IMPORT_ENTRIES, FS_WATCH_START, FS_WATCH_STOP } = await import('../../shared/ipc-channels')
+const { FS_IMPORT_ENTRIES, FS_TRASH_OR_DELETE, FS_WATCH_START, FS_WATCH_STOP } = await import('../../shared/ipc-channels')
 const { registerTestDaemonRuntime } = await import('../runtime/testHarness')
 
 registerHandlers()
@@ -32,6 +34,7 @@ const testRuntime = registerTestDaemonRuntime()
 const importEntries = handlers.get(FS_IMPORT_ENTRIES)!
 const watchStartHandler = handlers.get(FS_WATCH_START)!
 const watchStopHandler = handlers.get(FS_WATCH_STOP)!
+const trashOrDeleteHandler = handlers.get(FS_TRASH_OR_DELETE)!
 const fakeEvent = { sender: {} } as unknown
 
 // A throwaway event arg + helper to call the handler ergonomically.
@@ -40,6 +43,31 @@ function callImport(sources: string[], destDir: string, mode: 'copy' | 'move') {
   // registered under that scope.
   return importEntries(fakeEvent, sources, destDir, mode, 'local') as Promise<{ created: string[]; failed: number }>
 }
+
+describe('FS_TRASH_OR_DELETE', () => {
+  test('validates a local workspace path before moving it to Trash', async () => {
+    const scope = 'trash-scope'
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-trash-')))
+    const target = path.join(root, 'untracked.txt')
+    await fs.writeFile(target, 'draft', 'utf8')
+    addAllowedRoot(root, scope)
+    trashItem.mockClear()
+    try {
+      await expect(trashOrDeleteHandler(fakeEvent, target, scope)).resolves.toEqual({ permanent: false })
+      expect(trashItem).toHaveBeenCalledWith(target)
+    } finally {
+      removeAllowedRoot(root, scope)
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test('rejects a local path outside the workspace before calling Trash', async () => {
+    const target = process.execPath
+    trashItem.mockClear()
+    await expect(trashOrDeleteHandler(fakeEvent, target, 'trash-outside-scope')).rejects.toThrow('outside allowed directories')
+    expect(trashItem).not.toHaveBeenCalled()
+  })
+})
 
 describe('FS_IMPORT_ENTRIES', () => {
   let root: string // workspace destination (an allowed root: lives under tmpdir)

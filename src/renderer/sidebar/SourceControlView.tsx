@@ -17,6 +17,8 @@ import {
   ClockCounterClockwise,
   X,
   Check,
+  GitDiff,
+  FileMagnifyingGlass,
 } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
@@ -26,6 +28,8 @@ import { useGitStatusSnapshot, gitStatusStore, workspaceIdForRoot } from '../sto
 import { useWorktrees } from '../stores/useWorktrees'
 import { errorMessage } from '../lib/errorMessage'
 import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
+import { openReviewPanel } from '../lib/review/openReviewPanel'
+import type { GitComparisonSpec } from '../../shared/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,7 +161,8 @@ const FileEntry: React.FC<{
   onUnstage?: () => void
   onDiscard?: () => void
   onClick?: () => void
-}> = ({ file, statusChar, onStage, onUnstage, onDiscard, onClick }) => {
+  onStandaloneDiff?: () => void
+}> = ({ file, statusChar, onStage, onUnstage, onDiscard, onClick, onStandaloneDiff }) => {
   const dir = dirName(file.path)
   return (
     <div
@@ -172,6 +177,17 @@ const FileEntry: React.FC<{
         {dir && <span className="text-muted ml-1">{dir}</span>}
       </span>
       <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
+        {onStandaloneDiff && (
+          <Tooltip label="Open standalone diff">
+            <button
+              className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
+              onClick={(e) => { e.stopPropagation(); onStandaloneDiff() }}
+              aria-label="Open standalone diff"
+            >
+              <FileMagnifyingGlass size={13} />
+            </button>
+          </Tooltip>
+        )}
         {onDiscard && (
           <Tooltip label="Discard changes">
             <button
@@ -218,7 +234,8 @@ const BranchPicker: React.FC<{
   rootPath: string
   currentBranch: string | null
   onSwitch: () => void
-}> = ({ rootPath, currentBranch, onSwitch }) => {
+  onReview: (branch: string) => void
+}> = ({ rootPath, currentBranch, onSwitch, onReview }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [branches, setBranches] = useState<GitBranchInfo[]>([])
   const [filter, setFilter] = useState('')
@@ -360,15 +377,20 @@ const BranchPicker: React.FC<{
               <span className="truncate flex-1 min-w-0">{b.name}</span>
               {b.current && <span className="text-[9px] text-green-400/60 flex-shrink-0">current</span>}
               {!b.current && (
-                <Tooltip label="Delete branch">
-                  <button
-                    className="hidden group-hover:block p-0.5 rounded-lg hover:bg-hover text-muted hover:text-red-400 flex-shrink-0"
-                    onClick={(e) => handleDelete(b.name, e)}
-                    aria-label="Delete branch"
-                  >
-                    <Trash size={10} />
-                  </button>
-                </Tooltip>
+                <div className="hidden group-hover:flex items-center">
+                  <Tooltip label="Review branch against current">
+                    <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={(e) => { e.stopPropagation(); onReview(b.name) }} aria-label="Review branch"><GitDiff size={11} /></button>
+                  </Tooltip>
+                  <Tooltip label="Delete branch">
+                    <button
+                      className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-red-400 flex-shrink-0"
+                      onClick={(e) => handleDelete(b.name, e)}
+                      aria-label="Delete branch"
+                    >
+                      <Trash size={10} />
+                    </button>
+                  </Tooltip>
+                </div>
               )}
             </div>
           ))}
@@ -383,6 +405,9 @@ const BranchPicker: React.FC<{
                 >
                   <GitBranch size={11} className="flex-shrink-0" />
                   <span className="truncate flex-1 min-w-0">{b.name.replace('remotes/', '')}</span>
+                  <Tooltip label="Review branch against current">
+                    <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={(e) => { e.stopPropagation(); onReview(b.name) }} aria-label="Review branch"><GitDiff size={11} /></button>
+                  </Tooltip>
                 </div>
               ))}
             </>
@@ -478,6 +503,15 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
       : `${root.replace(/\/+$/, '')}/${filePath}`
     createDiffEditor(selectedWorkspaceId, formatLocator({ runtimeId, path: hostPath }), staged ? 'staged' : 'working')
   }, [rootPath, selectedWorkspaceId, createDiffEditor])
+
+  const openReview = useCallback((
+    spec: GitComparisonSpec,
+    focusedFile?: string,
+    openNew = false,
+  ) => {
+    if (!selectedWorkspaceId) return
+    void openReviewPanel({ workspaceId: selectedWorkspaceId, repoPath: rootPath, spec, focusedFile, openNew })
+  }, [rootPath, selectedWorkspaceId])
 
   // -------------------------------------------------------------------------
   // Actions
@@ -651,6 +685,16 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
 
   const headerActions = (
     <>
+      <Tooltip label="Review all uncommitted changes">
+        <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' })} aria-label="Review all uncommitted changes">
+          <GitDiff size={12} />
+        </SidebarHeaderButton>
+      </Tooltip>
+      <Tooltip label="Open new diff review">
+        <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' }, undefined, true)} aria-label="Open new diff review">
+          <Plus size={12} />
+        </SidebarHeaderButton>
+      </Tooltip>
       <Tooltip label="Fetch from remote">
         <SidebarHeaderButton onClick={fetch_} aria-label="Fetch from remote" disabled={fetching} spinning={fetching}>
           <Download size={12} />
@@ -767,15 +811,20 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           title="Staged Changes"
           count={stagedFiles.length}
           actions={
-            <Tooltip label="Unstage all">
-              <button
-                className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
-                onClick={() => unstageAll(stagedFiles)}
-                aria-label="Unstage all"
-              >
-                <Minus size={13} />
-              </button>
-            </Tooltip>
+            <>
+              <Tooltip label="Review staged changes">
+                <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={() => openReview({ kind: 'staged' })} aria-label="Review staged changes"><GitDiff size={13} /></button>
+              </Tooltip>
+              <Tooltip label="Unstage all">
+                <button
+                  className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
+                  onClick={() => unstageAll(stagedFiles)}
+                  aria-label="Unstage all"
+                >
+                  <Minus size={13} />
+                </button>
+              </Tooltip>
+            </>
           }
         >
           {stagedFiles.map((f) => (
@@ -784,7 +833,8 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
               file={f}
               statusChar={f.index}
               onUnstage={() => unstageFile(f.path)}
-              onClick={() => openFileDiff(f.path, true)}
+              onClick={() => openReview({ kind: 'staged' }, f.path)}
+              onStandaloneDiff={() => openFileDiff(f.path, true)}
             />
           ))}
         </Section>
@@ -794,15 +844,20 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           title="Changes"
           count={changedFiles.length}
           actions={
-            <Tooltip label="Stage all">
-              <button
-                className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
-                onClick={() => stageAll(changedFiles)}
-                aria-label="Stage all"
-              >
-                <Plus size={13} />
-              </button>
-            </Tooltip>
+            <>
+              <Tooltip label="Review unstaged changes">
+                <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={() => openReview({ kind: 'unstaged' })} aria-label="Review unstaged changes"><GitDiff size={13} /></button>
+              </Tooltip>
+              <Tooltip label="Stage all">
+                <button
+                  className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
+                  onClick={() => stageAll(changedFiles)}
+                  aria-label="Stage all"
+                >
+                  <Plus size={13} />
+                </button>
+              </Tooltip>
+            </>
           }
         >
           {changedFiles.map((f) => (
@@ -812,7 +867,8 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
               statusChar={f.working_dir}
               onStage={() => stageFile(f.path)}
               onDiscard={() => discardFile(f.path)}
-              onClick={() => openFileDiff(f.path, false)}
+              onClick={() => openReview({ kind: 'unstaged' }, f.path)}
+              onStandaloneDiff={() => openFileDiff(f.path, false)}
             />
           ))}
         </Section>
@@ -840,7 +896,8 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
               file={f}
               statusChar="?"
               onStage={() => stageFile(f.path)}
-              onClick={() => openFileDiff(f.path, false)}
+              onClick={() => openReview({ kind: 'unstaged' }, f.path)}
+              onStandaloneDiff={() => openFileDiff(f.path, false)}
             />
           ))}
         </Section>
@@ -850,6 +907,10 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           rootPath={rootPath}
           currentBranch={status?.current ?? null}
           onSwitch={refresh}
+          onReview={(base) => {
+            const target = status?.current
+            if (target && target !== base) openReview({ kind: 'branch', base, target })
+          }}
         />
 
         {/* Commit Log */}
@@ -857,7 +918,8 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           {logEntries.map((entry) => (
             <div
               key={entry.hash}
-              className="flex items-start gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[4px] hover:bg-hover text-[11px]"
+              className="flex items-start gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[4px] hover:bg-hover text-[11px] cursor-pointer"
+              onClick={() => openReview({ kind: 'commit', commit: entry.hash })}
             >
               <ClockCounterClockwise size={11} className="text-muted flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">

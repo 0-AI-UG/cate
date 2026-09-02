@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { CodingCreateOptions, CodingEventEnvelope, CodingExtensionUIResponse, CodingImageAttachment, CateAgentModelRef, CodingModelDescriptor, CodingRpcState, CodingSessionListEntry, CodingSessionStats, CodingSlashCommand, CodingThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
+import type { CodingCreateOptions, CodingEventEnvelope, CodingExtensionUIResponse, CodingImageAttachment, CateAgentModelRef, CodingModelDescriptor, CodingRpcState, CodingSessionListEntry, CodingSessionStats, CodingSlashCommand, CodingThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, GitComparisonResult, GitComparisonSpec, GitFileContent, GitFileDiff, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { CodingAgentLaunch } from './codingAgentRuns'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 import type { AgentHookEvent, AgentHookAgentState } from './agentHooks'
@@ -193,8 +193,26 @@ export interface ElectronAPI {
   /** Get diff output for a file or the whole working tree. */
   gitDiff(cwd: string, filePath: string | undefined, workspaceId: string): Promise<string>
 
+  /** Resolve and summarize a multi-file Git comparison. */
+  gitCompare(cwd: string, spec: GitComparisonSpec, workspaceId: string): Promise<GitComparisonResult>
+
+  /** Load one file's structured hunks for a Git comparison. */
+  gitFileDiff(
+    cwd: string,
+    spec: GitComparisonSpec,
+    filePath: string,
+    options: { contextLines?: number; allowLarge?: boolean } | undefined,
+    workspaceId: string,
+  ): Promise<GitFileDiff>
+
+  /** Read one side of a comparison as base64 for binary or image previews. */
+  gitFileContent(cwd: string, spec: GitComparisonSpec, filePath: string, side: 'old' | 'new', workspaceId: string): Promise<GitFileContent>
+
   /** Stage a file. */
   gitStage(cwd: string, filePath: string, workspaceId: string): Promise<void>
+
+  /** Stage every tracked and untracked working-tree change. */
+  gitStageAll(cwd: string, workspaceId: string): Promise<void>
 
   /** Unstage a file. */
   gitUnstage(cwd: string, filePath: string, workspaceId: string): Promise<void>
@@ -719,6 +737,8 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
 
   fsDelete(filePath: string, workspaceId?: string): Promise<void>
+  /** Move a local file to the OS Trash, or permanently remove it on a remote runtime. */
+  fsTrashOrDelete(filePath: string, workspaceId?: string): Promise<{ permanent: boolean }>
   fsRename(oldPath: string, newPath: string, workspaceId?: string): Promise<void>
   fsMkdir(dirPath: string, workspaceId?: string): Promise<void>
   fsCopy(srcPath: string, destDir: string, workspaceId?: string): Promise<string>

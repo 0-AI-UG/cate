@@ -2,7 +2,7 @@
 // Filesystem IPC handlers — file read/write and directory watching
 // =============================================================================
 
-import { ipcMain } from 'electron'
+import { ipcMain, shell } from 'electron'
 import log from '../logger'
 import { consumeScopedWriteAllowance } from './pathValidation'
 import { wrapHandler } from './handlerError'
@@ -19,6 +19,7 @@ import {
   FS_WATCH_EVENT,
   FS_STAT,
   FS_DELETE,
+  FS_TRASH_OR_DELETE,
   FS_RENAME,
   FS_MKDIR,
   FS_COPY,
@@ -218,6 +219,21 @@ export function registerHandlers(): void {
     const win = windowFromEvent(event)
     const { runtime, path: p } = fileRuntimeFor(filePath)
     await runtime.file.remove(p, { ownerWindowId: win?.id, scopeId: workspaceId })
+  }))
+
+  ipcMain.handle(FS_TRASH_OR_DELETE, wrapHandler(`[${FS_TRASH_OR_DELETE}]`, async (event, filePath: string, workspaceId?: string) => {
+    const win = windowFromEvent(event)
+    const { runtime, path: p, runtimeId } = fileRuntimeFor(filePath)
+    const access = { ownerWindowId: win?.id, scopeId: workspaceId }
+    if (runtimeId === LOCAL_RUNTIME_ID) {
+      // stat performs the same workspace-scope validation as remove before the
+      // path is handed to Electron's recoverable OS Trash operation.
+      await runtime.file.stat(p, access)
+      await shell.trashItem(p)
+      return { permanent: false }
+    }
+    await runtime.file.remove(p, access)
+    return { permanent: true }
   }))
 
   ipcMain.handle(FS_RENAME, wrapHandler(`[${FS_RENAME}]`, async (event, oldPath: string, newPath: string, workspaceId?: string) => {
