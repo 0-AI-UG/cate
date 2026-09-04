@@ -111,8 +111,8 @@ export interface AppStoreActions {
   // Panel management
   closePanel: (workspaceId: string, panelId: string) => void
   updatePanelTitle: (workspaceId: string, panelId: string, title: string) => void
-  /** Apply a title that came from the running process (xterm OSC 0/1/2). Skips
-   *  the update if the user has manually renamed the tab. */
+  /** Apply a title that came from the running agent. Skips the update if the
+   *  user has manually renamed the tab. */
   updatePanelTitleFromAgent: (workspaceId: string, panelId: string, title: string) => void
   /** User-initiated rename. Marks the panel as user-overridden so OSC updates
    *  no longer fight the chosen name. */

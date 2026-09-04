@@ -19,6 +19,7 @@ import {
   ensureGitExcluded,
   isRepoLocalCwd,
   type AgentHooksCapability,
+  type AgentHooksDeps,
 } from './agentHooks'
 import { CATE_HOOK_MARKER, agentHookFolder, type AgentHookEvent } from '../../shared/agentHooks'
 
@@ -41,12 +42,7 @@ function tmpDir(sub: string): string {
  *  fixed per-user dir — sharing it across tests would leak state and files
  *  into the real ~/.cate). */
 function makeCap(
-  deps: {
-    hooksDir?: string
-    nodePath?: string
-    interruptPollMs?: number
-    onPost?: (post: { terminalId: string; agentId: string; pid?: number }) => void | Promise<void>
-  } = {},
+  deps: AgentHooksDeps = {},
 ): AgentHooksCapability {
   const cap = createAgentHooksCapability({ hooksDir: tmpDir('stable'), ...deps })
   cleanups.push(() => cap.dispose())
@@ -187,6 +183,37 @@ describe('agentHooks capability', () => {
     await post(url, tokenFor(''), { agentId: 'claude-code', terminalId: '', payload: claudeStart })
     await new Promise((r) => setTimeout(r, 100))
     expect(events.length).toBe(1)
+  })
+
+  test('resolves CLI metadata into a normal session-title event without delaying the hook', async () => {
+    const resolver = vi.fn(async () => 'Fix terminal titles')
+    const cap = makeCap({
+      titleResolvers: new Proxy({}, { get: () => resolver }) as AgentHooksDeps['titleResolvers'],
+      titleRetryDelaysMs: [0],
+    })
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    const payload = {
+      hook_event_name: 'Stop',
+      session_id: '11111111-2222-4333-8444-555555555555',
+      transcript_path: '/h/.claude/projects/x/1.jsonl',
+      cwd: '/w',
+    }
+
+    const response = await post(url, tokenFor('rpty-title'), {
+      agentId: 'claude-code', terminalId: 'rpty-title', payload,
+    })
+
+    expect(response.status).toBe(204)
+    expect(events[0]?.kind).toBe('turn-end')
+    await waitFor(() => events.some((event) => event.kind === 'session-title'))
+    expect(events.at(-1)).toMatchObject({
+      terminalId: 'rpty-title',
+      agentId: 'claude-code',
+      kind: 'session-title',
+      sessionId: payload.session_id,
+      title: 'Fix terminal titles',
+    })
   })
 
   test('onPost fires per authenticated known-agent post — awaited before the response, with the lineage pid', async () => {
@@ -354,6 +381,9 @@ describe('agentHooks capability', () => {
     }
     expect(Object.keys(claudeSettings.hooks)).toContain('SessionStart')
     expect(Object.keys(claudeSettings.hooks)).toContain('Stop')
+    expect(Object.keys(claudeSettings.hooks)).toContain('StopFailure')
+    expect(Object.keys(claudeSettings.hooks)).toContain('PermissionRequest')
+    expect(Object.keys(claudeSettings.hooks)).not.toContain('Notification')
 
     // codex discovers <project>/.codex/hooks.json itself (repo scope) — the
     // command must be the stable bridge path, with codex's timeout field.
@@ -361,6 +391,7 @@ describe('agentHooks capability', () => {
       hooks: Record<string, Array<{ hooks: Array<{ command: string; timeout: number }> }>>
     }
     expect(Object.keys(codexHooks.hooks)).toContain('PermissionRequest')
+    expect(codexHooks.hooks.Interrupt[0].hooks[0].timeout).toBe(3)
     const { dir } = await cap.endpoint()
     expect(codexHooks.hooks.SessionStart[0].hooks[0]).toMatchObject({
       command: bridgeHookCommand(
@@ -390,6 +421,8 @@ describe('agentHooks capability', () => {
       hooks: Record<string, Array<{ hooks: Array<{ command: string; timeout: number }> }>>
     }
     expect(Object.keys(grokHooks.hooks)).toContain('Notification')
+    expect(Object.keys(grokHooks.hooks)).toContain('StopFailure')
+    expect(Object.keys(grokHooks.hooks)).toContain('StopCancelled')
     expect(grokHooks.hooks.PreToolUse).toBeUndefined()
     expect(grokHooks.hooks.SessionStart[0].hooks[0]).toMatchObject({
       command: bridgeHookCommand(
@@ -680,7 +713,6 @@ describe('agentHooks interrupt recovery', () => {
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
   const CLAUDE_INTERRUPT =
     '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}\n'
-  const CODEX_INTERRUPT = '{"type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}\n'
   const synthEnds = (events: AgentHookEvent[]): AgentHookEvent[] =>
     events.filter((e) => e.kind === 'turn-end' && (e.raw as { __cateInterruptRecovery?: unknown }).__cateInterruptRecovery)
 
@@ -765,23 +797,6 @@ describe('agentHooks interrupt recovery', () => {
     appendFileSync(transcript, '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}\n')
     await sleep(120)
     expect(synthEnds(events)).toHaveLength(0)
-  })
-
-  test('codex: a rollout turn_aborted record synthesizes turn-end', async () => {
-    const cap = makeCap({ interruptPollMs: 20 })
-    const events = collect(cap)
-    const { url, tokenFor } = await cap.endpoint()
-    const rollout = transcriptFile('{"type":"session_meta"}\n')
-
-    await post(url, tokenFor('t-codex'), {
-      agentId: 'codex',
-      terminalId: 't-codex',
-      payload: { hook_event_name: 'UserPromptSubmit', session_id: 'c1', cwd: '/w', transcript_path: rollout },
-    })
-    await waitFor(() => events.some((e) => e.kind === 'turn-start'))
-    appendFileSync(rollout, CODEX_INTERRUPT)
-    await waitFor(() => synthEnds(events).length > 0)
-    expect(synthEnds(events)[0].agentId).toBe('codex')
   })
 
   test('a self-healing agent (cursor) arms no watch', async () => {

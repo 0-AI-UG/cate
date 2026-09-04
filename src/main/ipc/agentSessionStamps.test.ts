@@ -149,6 +149,15 @@ describe('cwd fallback (payloads that carry no cwd)', () => {
 })
 
 describe('emit mechanics', () => {
+  it('ignores title metadata because it does not change resume identity', () => {
+    ingestAgentSessionStamp(runtime, {
+      ...ev(tid, 'codex', 'session-title', 'id-1', '/w'),
+      title: 'Fix terminal titles',
+    })
+    expect(stamps(tid)).toEqual([])
+    expect(getCwdCalls).toBe(0)
+  })
+
   it('ignores events with a null sessionId', () => {
     ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', null))
     expect(stamps(tid)).toEqual([])
