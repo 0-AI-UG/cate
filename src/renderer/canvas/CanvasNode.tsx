@@ -7,6 +7,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRenderCount } from '../lib/perf/perfClient'
 import type { StoreApi } from 'zustand'
 import type { NodeActivityState, DockTabStack as DockTabStackNode, PanelType } from '../../shared/types'
@@ -37,6 +38,7 @@ import { isWorktreePanelType, PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
 import { useCateAgentStore } from '../../cateAgent/renderer/cateAgentStore'
 import { useChatsStore } from '../stores/chatsStore'
+import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
 
 // Node ids already reported for missing geometry, so a bad node that keeps
 // re-rendering warns/reports once instead of spamming.
@@ -158,6 +160,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   useRenderCount('CanvasNode')
 
   const canvasApi = useCanvasStoreApi()
+  const topOverlayTarget = useCanvasTopOverlayTarget()
   const nodeRef = useRef<HTMLDivElement>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [isAnimatingLayout, setIsAnimatingLayout] = useState(false)
@@ -663,7 +666,9 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   return (
     <>
-    {glowStyle && <div aria-hidden data-glow-for={nodeId} style={glowStyle} />}
+    {glowStyle && (topOverlayTarget
+      ? createPortal(<div aria-hidden data-glow-for={nodeId} style={glowStyle} />, topOverlayTarget)
+      : <div aria-hidden data-glow-for={nodeId} style={glowStyle} />)}
     <div
       ref={nodeRef}
       data-node-id={nodeId}

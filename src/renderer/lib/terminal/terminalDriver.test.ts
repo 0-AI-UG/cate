@@ -79,8 +79,10 @@ beforeEach(() => {
 describe('target resolution', () => {
   it('read routes to an explicit args.panelId', async () => {
     h.entries.set('t2', makeEntry(['from t2']))
-    const out = await handleTerminalMethod(WS, M('read'), { panelId: 't2' })
+    const onTargetResolved = vi.fn()
+    const out = await handleTerminalMethod(WS, M('read'), { panelId: 't2' }, onTargetResolved)
     expect(out).toEqual({ ok: true, result: { panelId: 't2', alt: false, text: 'from t2' } })
+    expect(onTargetResolved).toHaveBeenCalledWith('t2')
   })
 
   it('read defaults to the focused panel when it is a terminal', async () => {

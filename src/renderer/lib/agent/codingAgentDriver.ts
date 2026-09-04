@@ -58,6 +58,34 @@ function runPanel(workspaceId: string, ownerPanelId: string, runId: string) {
   )
 }
 
+/** Resolve the worker terminal panels a mission command addresses. Kept next
+ * to runPanel so interaction visualization uses the same ownership checks as
+ * command execution instead of guessing from a raw run id. */
+export function codingAgentInteractionTargets(
+  workspaceId: string,
+  ownerPanelId: string,
+  method: string,
+  args: Record<string, unknown>,
+): string[] {
+  const name = method.slice('cate.codingAgent.'.length)
+  if (name === 'create' || name === 'list') return []
+  const runIds = name === 'wait'
+    ? Array.isArray(args.runIds)
+      ? args.runIds.filter((id): id is string => typeof id === 'string')
+      : []
+    : typeof args.runId === 'string' ? [args.runId] : []
+  if (name === 'wait' && runIds.length === 0) {
+    const ws = workspace(workspaceId)
+    return Object.values(ws?.panels ?? {})
+      .filter((panel) => panel.codingAgentRun?.ownerPanelId === ownerPanelId)
+      .map((panel) => panel.id)
+  }
+  return runIds.flatMap((runId) => {
+    const panel = runPanel(workspaceId, ownerPanelId, runId)
+    return panel ? [panel.id] : []
+  })
+}
+
 function terminalText(panelId: string, maxChars = 4_000): string {
   const terminal = terminalRegistry.getEntry(panelId)?.terminal
   return terminal ? terminalBufferTail(terminal, maxChars) : ''
