@@ -1,6 +1,6 @@
 ---
 name: cate-cli
-description: Drive Cate browser, terminal, editor, panel, and coding-agent orchestration surfaces from a Cate terminal. Browser page automation targets Cate's live webviews directly.
+description: Drive Cate browser, terminal, editor, panel, review, and coding-agent orchestration surfaces from a Cate terminal. Browser page automation targets Cate's live webviews directly.
 user-invocable: true
 ---
 
@@ -152,7 +152,12 @@ cate agent create "Inspect the API boundary and report risks" --title "API scout
 cate agent create "Implement the parser and run its focused tests" \
   --agent codex --title "Parser" --new-worktree agent/parser
 cate agent create "Review the current worktree changes" --worktree <worktree-id>
+cate agent create "Continue in this terminal" --terminal <terminal-panel-id>
 ```
+
+`--terminal` reuses an idle terminal panel by restarting its PTY with the
+selected agent. It rejects busy terminals, agent-owned terminals, and the
+calling terminal. Omit it to create a new terminal panel.
 
 Workers may recursively create and supervise their own workers with the same
 commands. This naturally forms an agent tree: each terminal owns the workers it
@@ -193,3 +198,22 @@ interactive confirmation. Keep records that the worktree should remain for
 later. Review is read-only: a finished process or successful review does not
 mean its branch has been integrated. The parent remains responsible for
 verification and for reporting any uncommitted or unintegrated work.
+
+## Review panels
+
+Select a Review Panel once, inspect its comparison, and record structured
+findings. `--panel <id>` is an optional one-command override for every review
+command.
+
+```bash
+cate panel set <review-panel-id>
+cate review inspect
+cate review note add --file src/app.ts --line 42 --side new \
+  --severity error --body "Handle the rejected request"
+cate review note resolve <note-id>
+cate review complete
+```
+
+Use `complete` only when running as the review agent assigned by that Review
+Panel. Review commands record findings; they do not modify files, stage,
+commit, or push changes.

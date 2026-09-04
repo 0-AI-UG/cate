@@ -17,31 +17,29 @@ import type {
 } from '../../../shared/types'
 import type { PlacementCandidate, PlacementTrace } from '../../canvas/placement'
 
-/** Interactive ghost placement awaiting a user-chosen spot. */
-export interface PendingPlacement {
-  panelId: string
+export type PanelTargetAvailability = 'new' | 'existing' | 'both'
+
+export type CanvasPanelTargetChoice =
+  | { kind: 'new'; point: Point; size: Size }
+  | { kind: 'existing'; panelId: string }
+
+export interface PendingPanelTarget {
+  /** Present when a normal create action already owns the panel record. */
+  panelId?: string
   panelType: PanelType
-  /** 3–5 recommended spots; candidates[0] is the best. User picks by click or number. */
+  availability: PanelTargetAvailability
   candidates: PlacementCandidate[]
+  existing: Array<{ panelId: string; nodeId: CanvasNodeId; title: string }>
   hoveredIndex: number | null
-  /** Free "place anywhere" mode — armed by pressing F. While armed, the cursor
-   *  shows a "Place here" ghost and a click drops there; otherwise the ghost is
-   *  hidden and clicking empty canvas cancels. */
   freeArmed: boolean
-  /** Escape hatch preview: where a free "click-anywhere" placement would land
-   *  (only while `freeArmed`). */
   freeGhost: { point: Point; size: Size } | null
-  /** Resolved node size for this placement (the panel type's default). */
   size: Size
-  /** Dev-only: the placement algorithm's trace from this computation, captured so
-   *  the dev visualization overlay (Cmd/Ctrl+Shift+G) can render the REAL spots.
-   *  Populated only in dev builds; undefined in production. */
+  /** Dev-only trace for the placement visualization overlay. */
   trace?: PlacementTrace
-  /** Viewport before we zoomed out to show recommendations — restored on cancel/commit. */
   prevZoom: number
   prevOffset: Point
-  /** Invoked if the placement is cancelled — rolls the orphan panel record back. */
-  onCancelled?: (panelId: string) => void
+  onSelected?: (choice: CanvasPanelTargetChoice) => void
+  onCancelled: () => void
 }
 
 export interface CanvasStoreState {
@@ -81,8 +79,8 @@ export interface CanvasStoreState {
   history: CanvasHistoryEntry[]
   /** Redo stack — populated when undo() is called. */
   future: CanvasHistoryEntry[]
-  /** Interactive ghost placement in progress (null when idle). */
-  pendingPlacement: PendingPlacement | null
+  /** Canonical interactive new/existing panel target transaction (null when idle). */
+  pendingPanelTarget: PendingPanelTarget | null
 }
 
 export interface CanvasHistoryEntry {
@@ -136,25 +134,14 @@ export interface CanvasStoreActions {
   // Focus and center viewport on a node
   focusAndCenter: (nodeId: CanvasNodeId) => void
 
-  // Interactive ghost placement
+  // Interactive panel target selection
   /** Record the latest canvas-space pointer position so recommendations can be
    *  anchored to where the mouse is hovering. Non-reactive (no re-render). */
   setPlacementPointer: (point: Point | null) => void
-  /** Begin interactive ghost placement: compute 3–5 recommended spots, zoom out
-   *  to reveal them, and render numbered ghosts. Returns true if ghosts are shown
-   *  (caller must NOT also place the node). `onCancelled` rolls the panel back. */
-  beginPlacement: (
-    panelId: string,
-    panelType: PanelType,
-    onCancelled?: (panelId: string) => void,
-    size?: Size,
-  ) => boolean
-  /** Re-rank the pending placement's ghosts around whatever node is focused NOW
+  /** Re-rank recommended new positions around whatever node is focused NOW
    *  (the user clicked a different panel) and re-frame the camera, keeping the
    *  open transaction. No-op when nothing is pending or free mode is armed. */
   refreshPlacement: () => void
-  /** Commit the pending placement at the given candidate index; returns the new node id. */
-  commitPlacement: (index: number) => CanvasNodeId | null
   /** Arm/disarm free "place anywhere" mode (press F). Disarming clears the ghost. */
   setFreeArmed: (armed: boolean) => void
   /** Escape hatch: preview a free placement centred on `point` (canvas-space),
@@ -162,10 +149,24 @@ export interface CanvasStoreActions {
   updatePlacementCursor: (point: Point) => void
   /** Escape hatch: commit a free placement centred on `point` (click-anywhere). */
   commitFreePlacement: (point: Point) => CanvasNodeId | null
-  /** Cancel the pending placement and roll back the orphan panel record. */
-  cancelPlacement: () => void
   /** Highlight a candidate ghost (null clears the hover). */
   setPlacementHover: (index: number | null) => void
+
+  /** Choose a new placement, an existing panel, or either for a consumer. */
+  beginPanelTarget: (request: {
+    /** A panel record already created by the caller; selecting a new target
+     *  places it directly and cancellation lets the caller roll it back. */
+    panelId?: string
+    panelType: PanelType
+    availability: PanelTargetAvailability
+    existing: Array<{ panelId: string; title: string }>
+    onSelected?: (choice: CanvasPanelTargetChoice) => void
+    onCancelled: () => void
+    size?: Size
+  }) => boolean
+  selectNewPanelTarget: (index: number) => CanvasNodeId | null
+  selectExistingPanelTarget: (panelId: string) => void
+  cancelPanelTarget: () => void
 
   // Move focus to the spatially-nearest node in a direction, centering it
   navigateDirection: (dir: 'up' | 'down' | 'left' | 'right') => void

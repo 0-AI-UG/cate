@@ -23,7 +23,6 @@ import {
   GIT_INIT,
   GIT_LS_FILES,
   GIT_STATUS,
-  GIT_DIFF,
   GIT_COMPARE,
   GIT_FILE_DIFF,
   GIT_FILE_CONTENT,
@@ -51,7 +50,6 @@ import {
   GIT_BRANCH_CREATE,
   GIT_BRANCH_DELETE,
   GIT_CHECKOUT,
-  GIT_DIFF_STAGED,
   GIT_STASH,
   GIT_STASH_POP,
   GIT_DISCARD_FILE,
@@ -129,7 +127,6 @@ export function registerHandlers(): void {
   route(GIT_INIT, 'init')
   route(GIT_LS_FILES, 'lsFiles')
   route(GIT_STATUS, 'status')
-  route(GIT_DIFF, 'diff')
   route(GIT_COMPARE, 'compare')
   route(GIT_FILE_DIFF, 'fileDiff')
   route(GIT_FILE_CONTENT, 'fileContent')
@@ -145,7 +142,6 @@ export function registerHandlers(): void {
   route(GIT_BRANCH_CREATE, 'branchCreate')
   route(GIT_BRANCH_DELETE, 'branchDelete')
   route(GIT_CHECKOUT, 'checkout')
-  route(GIT_DIFF_STAGED, 'diffStaged')
   route(GIT_STASH, 'stash')
   route(GIT_STASH_POP, 'stashPop')
   route(GIT_DISCARD_FILE, 'discardFile')

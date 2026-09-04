@@ -16,6 +16,7 @@ import {
   ImageSquare,
   Minus,
   NotePencil,
+  PaperPlaneTilt,
   Plus,
   PushPin,
   Rows,
@@ -32,17 +33,30 @@ import type {
   GitReviewNote,
   ReviewPanelState,
 } from '../../shared/types'
+import { AGENTS, type AgentDef, type AgentId } from '../../shared/agents'
 import type { PanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { Tooltip } from '../ui/Tooltip'
 import { errorMessage } from '../lib/errorMessage'
 import { formatLocator, parseLocator } from '../../shared/runtimeLocator'
 import { gitStatusStore, useGitStatusSnapshot } from '../stores/gitStatusStore'
+import { requestPanelTarget } from '../lib/panelTargetPicker'
+import {
+  codingAgentTerminalError,
+  handleCodingAgentMethod,
+} from '../lib/agent/codingAgentDriver'
+import {
+  evaluateAgentCliHooks,
+  inspectAgentCliHooks,
+} from '../lib/agent/agentCliHooks'
+import { getAgentLogoById } from '../lib/agent/agentLogos'
+import { pathKey } from '../../shared/pathUtils'
 
 const MODES: Array<{ value: GitComparisonSpec['kind']; label: string }> = [
-  { value: 'uncommitted', label: 'Uncommitted' },
-  { value: 'unstaged', label: 'Unstaged' },
-  { value: 'staged', label: 'Staged' },
+  { value: 'uncommitted', label: 'All Changes' },
+  { value: 'unstaged', label: 'Changes' },
+  { value: 'staged', label: 'Staged Changes' },
   { value: 'commit', label: 'Commit' },
   { value: 'branch', label: 'Branch' },
 ]
@@ -58,6 +72,26 @@ interface CommitInfo {
   message: string
   author_name: string
   date: string
+}
+
+interface NoteDraft {
+  filePath: string
+  side: 'old' | 'new'
+  line: number
+  context: string
+}
+
+interface AgentChoice {
+  agent: AgentDef
+  ready: boolean
+}
+
+type AgentAction = { kind: 'review' | 'changes' }
+
+interface DiffLoadOptions {
+  allowLarge?: boolean
+  fullFile?: boolean
+  contextLines?: number
 }
 
 function defaultReviewState(repoPath: string): ReviewPanelState {
@@ -156,7 +190,8 @@ function notesMarkdown(notes: GitReviewNote[]): string {
     output.push(`## ${filePath}`, '')
     for (const note of fileNotes) {
       const location = note.side === 'file' ? 'File' : `${note.side} line ${note.line ?? '?'}`
-      output.push(`- **${location}${note.outdated ? ' (outdated)' : ''}:** ${note.body}`)
+      const state = note.outdated ? ' (outdated)' : note.status === 'resolved' ? ' (resolved)' : ''
+      output.push(`- **${location}${state}:** ${note.body}`)
     }
     output.push('')
   }
@@ -170,6 +205,51 @@ function contextHash(value: string): string {
     hash = Math.imul(hash, 0x01000193)
   }
   return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+export function collapsedHunkGaps(hunks: GitDiffHunk[]): number[] {
+  let previousOldEnd = 1
+  let previousNewEnd = 1
+  return hunks.map((hunk) => {
+    if (hunk.oldStart === 0 && hunk.newStart === 0) return 0
+    const hiddenLines = Math.max(
+      Math.max(0, hunk.oldStart - previousOldEnd),
+      Math.max(0, hunk.newStart - previousNewEnd),
+    )
+    previousOldEnd = hunk.oldStart + hunk.oldLines
+    previousNewEnd = hunk.newStart + hunk.newLines
+    return hiddenLines
+  })
+}
+
+function reviewAgentPrompt(panelId: string, repoPath: string, spec: GitComparisonSpec): string {
+  return `Review the changes shown in Cate's Review Panel ${panelId}.
+
+This is a read-only code review. Do not edit files, commit, push, or otherwise change the repository.
+Repository: ${repoPath}
+Comparison: ${JSON.stringify(spec)}
+
+Use the structured review API:
+1. Run: cate panel set ${panelId}
+2. Run: cate review inspect
+3. Inspect the relevant files and diffs in the repository.
+4. Record each actionable finding with:
+   cate review note add --file <path> --line <number> --side old|new --body <finding> [--severity info|warning|error]
+5. When finished, run: cate review complete
+
+Prioritize correctness, regressions, security, and missing tests. Do not add notes for stylistic preferences unless they materially affect maintainability.`
+}
+
+function changesAgentPrompt(panelId: string, notes: GitReviewNote[]): string {
+  const findings = notes.map((note, index) => {
+    const location = note.side === 'file' ? note.path : `${note.path}:${note.line ?? '?'}`
+    return `${index + 1}. [${note.severity ?? 'warning'}] ${location} — ${note.body}`
+  }).join('\n')
+  return `Address the open findings from Cate Review Panel ${panelId}.
+
+${findings}
+
+Make the requested changes in the current checkout, add or update focused tests, and run the relevant verification. Do not commit or push unless the user explicitly asks.`
 }
 
 const ToolbarButton: React.FC<{
@@ -211,6 +291,145 @@ const ReviewMenuButton: React.FC<{
     <span className="w-4 flex items-center justify-center">{active && <Check size={12} />}</span>
   </button>
 )
+
+const ReviewActionButton: React.FC<{
+  label: string
+  title?: string
+  disabled?: boolean
+  onClick: () => void
+  children?: React.ReactNode
+}> = ({ label, title, disabled, onClick, children }) => (
+  <button
+    type="button"
+    aria-label={label}
+    title={title}
+    disabled={disabled}
+    onClick={onClick}
+    className="h-7 px-2.5 rounded-lg flex items-center gap-1.5 border border-subtle bg-surface-2 text-[11px] text-secondary hover:text-primary hover:bg-hover disabled:opacity-30 disabled:pointer-events-none transition-colors"
+  >
+    {children}
+    <span>{label}</span>
+  </button>
+)
+
+export function ReviewNoteComposer({
+  draft,
+  onClose,
+  onSubmit,
+}: {
+  draft: NoteDraft
+  onClose: () => void
+  onSubmit: (body: string, severity: NonNullable<GitReviewNote['severity']>) => void
+}) {
+  const [body, setBody] = useState('')
+  const [severity, setSeverity] = useState<NonNullable<GitReviewNote['severity']>>('warning')
+  const submit = () => {
+    const value = body.trim()
+    if (value) onSubmit(value, severity)
+  }
+  return (
+    <form
+      onSubmit={(event) => { event.preventDefault(); submit() }}
+      className="flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-subtle bg-surface-1 font-sans whitespace-normal"
+    >
+      <div className="flex items-center gap-2 px-2.5 pt-2 text-[9px] text-muted">
+        <span className="font-medium text-secondary">You</span>
+        <span className="ml-auto">Local comment on line {draft.side === 'new' ? 'R' : 'L'}{draft.line}</span>
+      </div>
+      <textarea
+        autoFocus
+        aria-label="Review note"
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onClose()
+          }
+        }}
+        placeholder="Request a change…"
+        rows={2}
+        className="min-h-14 w-full resize-y bg-transparent px-2.5 py-2 text-[11px] leading-relaxed text-primary placeholder:text-muted focus:outline-none"
+      />
+      <div className="flex items-center gap-1.5 px-2 pb-2">
+        <select
+          aria-label="Review note severity"
+          value={severity}
+          onChange={(event) => setSeverity(event.target.value as NonNullable<GitReviewNote['severity']>)}
+          className="h-6 rounded border border-subtle bg-surface-2 px-1.5 text-[9px] text-secondary focus:outline-none"
+        >
+          <option value="info">Info</option>
+          <option value="warning">Warning</option>
+          <option value="error">Blocking</option>
+        </select>
+        <button type="button" onClick={onClose} className="ml-auto h-6 px-2 rounded text-[10px] text-muted hover:text-primary hover:bg-hover">Cancel</button>
+        <button type="submit" disabled={!body.trim()} className="h-6 rounded bg-focus-blue px-2.5 text-[10px] text-white disabled:bg-surface-2 disabled:text-muted">Comment</button>
+      </div>
+    </form>
+  )
+}
+
+function AgentPickerPopover({
+  action,
+  choices,
+  selectedAgentId,
+  busy,
+  onSelect,
+  onClose,
+  onConfirm,
+}: {
+  action: AgentAction
+  choices: AgentChoice[] | null
+  selectedAgentId: AgentId | null
+  busy: boolean
+  onSelect: (agentId: AgentId) => void
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div role="dialog" aria-label={action.kind === 'review' ? 'Choose review agent' : 'Choose changes agent'} className="absolute right-0 top-9 z-50 w-64 rounded-lg border border-subtle bg-surface-2 p-1.5 shadow-xl">
+      <p className="px-1 pb-1.5 text-[10px] text-muted">
+        {action.kind === 'review'
+          ? 'Choose an agent to review this diff.'
+          : 'Choose an agent to address the open review notes.'}
+      </p>
+      {choices === null ? (
+        <div className="py-4 text-center text-[10px] text-muted">Checking available agents…</div>
+      ) : (
+        <div role="radiogroup" aria-label="Agent" className="grid grid-cols-3 gap-1">
+          {choices.map(({ agent, ready }) => {
+            const selected = selectedAgentId === agent.id
+            const logo = getAgentLogoById(agent.id)
+            return (
+              <button
+                key={agent.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={!ready}
+                title={ready ? agent.displayName : `${agent.displayName}: hooks not enabled`}
+                onClick={() => onSelect(agent.id)}
+                className={`relative h-12 min-w-0 rounded-md border px-1 py-1 flex flex-col items-center justify-center gap-0.5 transition-colors disabled:opacity-35 ${selected ? 'border-focus-blue bg-focus-blue/10' : 'border-transparent hover:bg-hover'}`}
+              >
+                {logo
+                  ? <img src={logo} alt="" className="w-4 h-4 object-contain shrink-0" />
+                  : <span className="w-4 h-4 shrink-0 rounded bg-surface-4 flex items-center justify-center text-[9px]">{agent.displayName[0]}</span>}
+                <span className="w-full truncate text-center text-[9px] text-primary">{agent.displayName}</span>
+                {!ready && <span className="absolute right-1 top-1 w-1.5 h-1.5 rounded-full bg-amber-400" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      <div className="mt-1.5 flex justify-end gap-1 border-t border-subtle pt-1.5">
+        <button type="button" onClick={onClose} disabled={busy} className="h-6 px-2 rounded text-[10px] text-muted hover:text-primary hover:bg-hover disabled:opacity-40">Cancel</button>
+        <button type="button" onClick={onConfirm} disabled={busy || !selectedAgentId} className="h-6 px-2 rounded bg-focus-blue text-white text-[10px] disabled:opacity-40">
+          {busy ? 'Starting…' : action.kind === 'review' ? 'Start review' : 'Send request'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function SearchableRefInput({
   id,
@@ -265,6 +484,13 @@ function LazyDiffBody({
   wrap,
   notes,
   addNote,
+  toggleNote,
+  noteDraft,
+  submitNote,
+  cancelNote,
+  fullFile,
+  expandContext,
+  expandFullFile,
 }: {
   diff?: GitFileDiff
   load: () => void
@@ -274,6 +500,13 @@ function LazyDiffBody({
   wrap: boolean
   notes: GitReviewNote[]
   addNote: (side: 'old' | 'new', line: number, context: string) => void
+  toggleNote: (noteId: string) => void
+  noteDraft: NoteDraft | null
+  submitNote: (body: string, severity: NonNullable<GitReviewNote['severity']>) => void
+  cancelNote: () => void
+  fullFile: boolean
+  expandContext: () => void
+  expandFullFile: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -301,58 +534,130 @@ function LazyDiffBody({
   }
   if (diff.hunks.length === 0) return <div ref={ref} className="px-4 py-5 text-center text-[11px] text-muted">No textual changes</div>
 
+  const collapsedGaps = collapsedHunkGaps(diff.hunks)
+  const renderedHunks: React.ReactNode[] = []
+  for (const [hunkIndex, hunk] of diff.hunks.entries()) {
+    const metadataOnly = hunk.oldStart === 0 && hunk.newStart === 0
+    if (!fullFile && !metadataOnly) {
+      const hiddenLines = collapsedGaps[hunkIndex]
+      if (hiddenLines > 0) {
+        renderedHunks.push(
+          <div
+            key={`fold-${hunkIndex}`}
+            className="h-7 min-w-full flex items-center gap-2 border-y border-subtle bg-surface-2 px-3 text-[10px] text-muted hover:bg-hover hover:text-primary font-sans"
+          >
+            <button type="button" onClick={expandContext} title="Show more context" className="h-full flex items-center hover:text-primary">
+              <CaretDown size={11} />
+            </button>
+            <span>{hiddenLines} unchanged line{hiddenLines === 1 ? '' : 's'}</span>
+            <button type="button" onClick={expandFullFile} className="ml-auto text-[9px] hover:text-primary">Full file</button>
+          </div>,
+        )
+      }
+    }
+    renderedHunks.push(
+      <HunkView
+        key={`${hunk.header}-${hunkIndex}`}
+        hunk={hunk}
+        split={split}
+        wordDiff={wordDiff}
+        wrap={wrap}
+        notes={notes}
+        addNote={addNote}
+        toggleNote={toggleNote}
+        noteDraft={noteDraft}
+        submitNote={submitNote}
+        cancelNote={cancelNote}
+      />,
+    )
+  }
+  if (!fullFile) {
+    renderedHunks.push(
+      <div
+        key="expand-full-file"
+        className="h-7 min-w-full flex items-center gap-2 border-t border-subtle bg-surface-2 px-3 text-[10px] text-muted hover:bg-hover hover:text-primary font-sans"
+      >
+        <button type="button" onClick={expandContext} title="Show more context" className="h-full flex items-center gap-2 hover:text-primary">
+          <CaretDown size={11} />
+          <span>More unchanged lines</span>
+        </button>
+        <button type="button" onClick={expandFullFile} className="ml-auto text-[9px] hover:text-primary">Full file</button>
+      </div>,
+    )
+  }
+
   return (
-    <div ref={ref} className={`font-mono text-[11px] leading-[1.45] ${wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>
-      {diff.hunks.map((hunk, hunkIndex) => (
-        <HunkView
-          key={`${hunk.header}-${hunkIndex}`}
-          hunk={hunk}
-          split={split}
-          wordDiff={wordDiff}
-          wrap={wrap}
-          notes={notes}
-          addNote={addNote}
-        />
-      ))}
+    <div ref={ref} className={`font-mono text-[11px] leading-[1.45] ${wrap ? 'w-full min-w-0 whitespace-pre-wrap break-all' : 'w-max min-w-full whitespace-pre'}`}>
+      {renderedHunks}
     </div>
   )
 }
 
-function NoteRows({ notes }: { notes: GitReviewNote[] }) {
+function ReviewNoteRow({ note, toggleNote }: { note: GitReviewNote; toggleNote: (noteId: string) => void }) {
+  const inactive = note.outdated || note.status === 'resolved'
+  const severityColor = note.severity === 'error'
+    ? 'bg-red-400'
+    : note.severity === 'info' ? 'bg-blue-400' : 'bg-amber-400'
+  return (
+    <div className={`flex items-start gap-1.5 px-2 py-1.5 text-[10.5px] leading-relaxed ${inactive ? 'text-muted opacity-60' : 'text-primary/85'}`}>
+      <button
+        type="button"
+        aria-label={note.status === 'resolved' ? 'Reopen review comment' : 'Resolve review comment'}
+        onClick={() => toggleNote(note.id)}
+        className="mt-[2px] w-3.5 h-3.5 shrink-0 rounded-full flex items-center justify-center text-blue-400 hover:bg-hover hover:text-primary"
+      >
+        {note.status === 'resolved'
+          ? <Check size={9} weight="bold" />
+          : <span className="w-2 h-2 rounded-full border border-current" />}
+      </button>
+      <span title={note.severity ?? 'warning'} className={`mt-[5px] w-1.5 h-1.5 shrink-0 rounded-full ${severityColor}`} />
+      <span className={inactive ? 'line-through' : ''}>{note.author === 'agent' && <span className="mr-1 text-[9px] text-muted">Agent</span>}{note.body}</span>
+    </div>
+  )
+}
+
+function InlineCommentThread({ notes, toggleNote }: { notes: GitReviewNote[]; toggleNote: (noteId: string) => void }) {
   if (notes.length === 0) return null
   return (
-    <div className="px-3 py-1.5 bg-blue-500/[0.08] border-y border-blue-500/15 font-sans whitespace-normal">
-      {notes.map((note) => (
-        <div key={note.id} className={`text-[11px] ${note.outdated ? 'text-muted line-through' : 'text-primary/80'}`}>
-          <NotePencil size={11} className="inline mr-1" />{note.body}
-        </div>
-      ))}
+    <div className="flex w-full min-w-0 flex-col divide-y divide-subtle overflow-hidden rounded border border-subtle bg-surface-1/70 font-sans whitespace-normal">
+      {notes.map((note) => <ReviewNoteRow key={note.id} note={note} toggleNote={toggleNote} />)}
     </div>
   )
 }
 
-function UnifiedLine({
+export function UnifiedLine({
   line,
   other,
   wordDiff,
   notes,
   addNote,
+  toggleNote,
+  noteDraft,
+  submitNote,
+  cancelNote,
 }: {
   line: GitDiffLine
   other?: string
   wordDiff: boolean
   notes: GitReviewNote[]
   addNote: (side: 'old' | 'new', line: number, context: string) => void
+  toggleNote: (noteId: string) => void
+  noteDraft: NoteDraft | null
+  submitNote: (body: string, severity: NonNullable<GitReviewNote['severity']>) => void
+  cancelNote: () => void
 }) {
   const side = line.kind === 'delete' ? 'old' : 'new'
   const lineNumber = side === 'old' ? line.oldLine : line.newLine
   const background = line.kind === 'add' ? 'bg-diff-add' : line.kind === 'delete' ? 'bg-diff-del' : ''
   const color = line.kind === 'add' ? 'text-diff-add' : line.kind === 'delete' ? 'text-diff-del' : 'text-primary/75'
   const lineNotes = lineNumber == null ? [] : notes.filter((note) => note.side === side && note.line === lineNumber)
+  const isEditing = noteDraft?.side === side && noteDraft.line === lineNumber
   return (
     <>
-      <div className={`group flex min-w-0 w-full ${background}`}>
+      <div className={`group flex min-w-full ${background}`}>
         <button
+          type="button"
+          title={lineNumber == null ? undefined : `Add note on ${side} line ${lineNumber}`}
           className="w-10 shrink-0 text-right pr-2 text-muted/45 select-none hover:text-primary"
           disabled={lineNumber == null}
           onClick={() => lineNumber != null && addNote(side, lineNumber, line.text)}
@@ -360,16 +665,35 @@ function UnifiedLine({
           {line.oldLine ?? ''}
         </button>
         <button
+          type="button"
+          title={lineNumber == null ? undefined : `Add note on ${side} line ${lineNumber}`}
           className="w-10 shrink-0 text-right pr-2 text-muted/45 select-none hover:text-primary"
           disabled={lineNumber == null}
           onClick={() => lineNumber != null && addNote(side, lineNumber, line.text)}
         >
           {line.newLine ?? ''}
         </button>
+        <button
+          type="button"
+          aria-label={lineNumber == null ? undefined : `Add review note on ${side} line ${lineNumber}`}
+          disabled={lineNumber == null}
+          onClick={() => lineNumber != null && addNote(side, lineNumber, line.text)}
+          className="w-5 shrink-0 flex items-center justify-center text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-primary disabled:pointer-events-none"
+        >
+          {lineNumber != null && <NotePencil size={10} />}
+        </button>
         <span className={`w-4 shrink-0 select-none ${color}`}>{line.kind === 'add' ? '+' : line.kind === 'delete' ? '-' : ' '}</span>
-        <span className={`flex-1 min-w-0 pr-4 ${color}`}>{wordHighlight(line.text, other, wordDiff && (line.kind === 'add' || line.kind === 'delete'))}</span>
+        <span className={`flex-1 pr-4 ${color}`}>{wordHighlight(line.text, other, wordDiff && (line.kind === 'add' || line.kind === 'delete'))}</span>
       </div>
-      <NoteRows notes={lineNotes} />
+      {(isEditing || lineNotes.length > 0) && (
+        <div className="sticky left-0 flex w-[100cqw] min-w-0 border-y border-blue-500/15 bg-blue-500/[0.035]">
+          <div className="w-[116px] shrink-0 border-r border-blue-500/15 bg-surface-1/50" />
+          <div className="min-w-0 flex-1 space-y-1.5 px-2 py-1.5">
+            <InlineCommentThread notes={lineNotes} toggleNote={toggleNote} />
+            {isEditing && <ReviewNoteComposer draft={noteDraft} onClose={cancelNote} onSubmit={submitNote} />}
+          </div>
+        </div>
+      )}
     </>
   )
 }
@@ -416,41 +740,70 @@ function SplitCell({
   const number = side === 'old' ? line?.oldLine : line?.newLine
   const kind = line?.kind
   return (
-    <div className={`flex min-w-0 ${kind === 'delete' ? 'bg-diff-del' : kind === 'add' ? 'bg-diff-add' : ''}`}>
-      <button className="w-10 shrink-0 text-right pr-2 text-muted/45" disabled={number == null} onClick={() => number != null && line && addNote(side, number, line.text)}>{number ?? ''}</button>
+    <div className={`group flex min-w-[360px] ${kind === 'delete' ? 'bg-diff-del' : kind === 'add' ? 'bg-diff-add' : ''}`}>
+      <button type="button" title={number == null ? undefined : `Add note on ${side} line ${number}`} className="w-10 shrink-0 text-right pr-2 text-muted/45 hover:text-primary" disabled={number == null} onClick={() => number != null && line && addNote(side, number, line.text)}>{number ?? ''}</button>
+      <button type="button" aria-label={number == null ? undefined : `Add review note on ${side} line ${number}`} className="w-5 shrink-0 flex items-center justify-center text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-primary disabled:pointer-events-none" disabled={number == null} onClick={() => number != null && line && addNote(side, number, line.text)}>{number != null && <NotePencil size={10} />}</button>
       <span className={`w-4 shrink-0 ${kind === 'delete' ? 'text-diff-del' : kind === 'add' ? 'text-diff-add' : ''}`}>{kind === 'delete' ? '-' : kind === 'add' ? '+' : ' '}</span>
-      <span className="flex-1 overflow-hidden pr-2">{line ? wordHighlight(line.text, other, wordDiff) : ' '}</span>
+      <span className="flex-1 pr-2">{line ? wordHighlight(line.text, other, wordDiff) : ' '}</span>
     </div>
   )
 }
 
-function HunkView({ hunk, split, wordDiff, wrap, notes, addNote }: {
+function HunkView({ hunk, split, wordDiff, wrap, notes, addNote, toggleNote, noteDraft, submitNote, cancelNote }: {
   hunk: GitDiffHunk
   split: boolean
   wordDiff: boolean
   wrap: boolean
   notes: GitReviewNote[]
   addNote: (side: 'old' | 'new', line: number, context: string) => void
+  toggleNote: (noteId: string) => void
+  noteDraft: NoteDraft | null
+  submitNote: (body: string, severity: NonNullable<GitReviewNote['severity']>) => void
+  cancelNote: () => void
 }) {
   const metadataOnly = hunk.lines.every((line) => line.kind === 'meta')
   return (
     <div>
-      <div className="px-3 py-1 text-blue-400/70 bg-blue-500/[0.07] border-y border-blue-500/10 select-text">{hunk.header}</div>
+      {metadataOnly && <div className="px-3 py-1 text-blue-400/70 bg-blue-500/[0.07] border-y border-blue-500/10 select-text">{hunk.header}</div>}
       {metadataOnly ? hunk.lines.map((line, index) => (
         <div key={index} className="px-3 py-0.5 text-muted">{line.text}</div>
-      )) : split ? splitRows(hunk.lines).map((row, index) => (
-        <React.Fragment key={index}>
-          <div className={`grid grid-cols-2 divide-x divide-subtle text-primary/75 ${wrap ? 'min-w-0' : 'min-w-[720px]'}`}>
-            <SplitCell line={row.left} side="old" other={row.right?.text} wordDiff={wordDiff} addNote={addNote} />
-            <SplitCell line={row.right} side="new" other={row.left?.text} wordDiff={wordDiff} addNote={addNote} />
-          </div>
-          <NoteRows notes={notes.filter((note) =>
-            (note.side === 'old' && note.line === row.left?.oldLine)
-            || (note.side === 'new' && note.line === row.right?.newLine))}
-          />
-        </React.Fragment>
-      )) : hunk.lines.map((line, index) => (
-        <UnifiedLine key={index} line={line} other={counterpart(hunk.lines, index)} wordDiff={wordDiff} notes={notes} addNote={addNote} />
+      )) : split ? splitRows(hunk.lines).map((row, index) => {
+        const leftNotes = notes.filter((note) => note.side === 'old' && note.line === row.left?.oldLine)
+        const rightNotes = notes.filter((note) => note.side === 'new' && note.line === row.right?.newLine)
+        const editingLeft = noteDraft?.side === 'old' && noteDraft.line === row.left?.oldLine
+        const editingRight = noteDraft?.side === 'new' && noteDraft.line === row.right?.newLine
+        const hasComments = editingLeft || editingRight || leftNotes.length > 0 || rightNotes.length > 0
+        const gridClass = wrap
+          ? 'grid-cols-2 min-w-0'
+          : 'grid-cols-[minmax(360px,max-content)_minmax(360px,max-content)] min-w-full'
+        return (
+          <React.Fragment key={index}>
+            <div className={`grid divide-x divide-subtle text-primary/75 ${gridClass}`}>
+              <SplitCell line={row.left} side="old" other={row.right?.text} wordDiff={wordDiff} addNote={addNote} />
+              <SplitCell line={row.right} side="new" other={row.left?.text} wordDiff={wordDiff} addNote={addNote} />
+            </div>
+            {hasComments && (
+              <div className="sticky left-0 grid w-[100cqw] min-w-0 grid-cols-2 divide-x divide-blue-500/15 border-y border-blue-500/15 bg-blue-500/[0.035]">
+                <div className="flex min-w-0">
+                  <div className="w-[76px] shrink-0 border-r border-blue-500/15 bg-surface-1/50" />
+                  <div className="min-w-0 flex-1 space-y-1.5 px-2 py-1.5">
+                    <InlineCommentThread notes={leftNotes} toggleNote={toggleNote} />
+                    {editingLeft && <ReviewNoteComposer draft={noteDraft} onClose={cancelNote} onSubmit={submitNote} />}
+                  </div>
+                </div>
+                <div className="flex min-w-0">
+                  <div className="w-[76px] shrink-0 border-r border-blue-500/15 bg-surface-1/50" />
+                  <div className="min-w-0 flex-1 space-y-1.5 px-2 py-1.5">
+                    <InlineCommentThread notes={rightNotes} toggleNote={toggleNote} />
+                    {editingRight && <ReviewNoteComposer draft={noteDraft} onClose={cancelNote} onSubmit={submitNote} />}
+                  </div>
+                </div>
+              </div>
+            )}
+          </React.Fragment>
+        )
+      }) : hunk.lines.map((line, index) => (
+        <UnifiedLine key={index} line={line} other={counterpart(hunk.lines, index)} wordDiff={wordDiff} notes={notes} addNote={addNote} toggleNote={toggleNote} noteDraft={noteDraft} submitNote={submitNote} cancelNote={cancelNote} />
       ))}
     </div>
   )
@@ -495,6 +848,7 @@ function ImageComparisonPreview({ repoPath, spec, file, workspaceId }: { repoPat
 }
 
 export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
   const workspace = useAppStore((state) => state.workspaces.find((item) => item.id === workspaceId))
   const stored = workspace?.panels[panelId]?.reviewState
   const reviewState = stored ?? defaultReviewState(workspace?.rootPath ?? '')
@@ -503,16 +857,30 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
   stateRef.current = reviewState
   const [comparison, setComparison] = useState<GitComparisonResult | null>(null)
   const [diffs, setDiffs] = useState<Record<string, GitFileDiff>>({})
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(() => new Set())
+  const [contextLinesByFile, setContextLinesByFile] = useState<Record<string, number>>({})
+  const diffsRef = useRef(diffs)
+  const expandedFilesRef = useRef(expandedFiles)
+  const contextLinesByFileRef = useRef(contextLinesByFile)
+  const comparisonKeyRef = useRef('')
+  const requestDiffRef = useRef<(file: GitChangedFile, options?: DiffLoadOptions) => void>(() => {})
+  diffsRef.current = diffs
+  expandedFilesRef.current = expandedFiles
+  contextLinesByFileRef.current = contextLinesByFile
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [branches, setBranches] = useState<BranchInfo[]>([])
   const [trackingBranch, setTrackingBranch] = useState<string | null>(null)
   const [commits, setCommits] = useState<CommitInfo[]>([])
-  const [commitMessage, setCommitMessage] = useState('')
-  const [includeUnstaged, setIncludeUnstaged] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [agentBusy, setAgentBusy] = useState(false)
+  const [noteDraft, setNoteDraft] = useState<NoteDraft | null>(null)
+  const [agentAction, setAgentAction] = useState<AgentAction | null>(null)
+  const [agentChoices, setAgentChoices] = useState<AgentChoice[] | null>(null)
+  const [selectedAgentId, setSelectedAgentId] = useState<AgentId | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreMenuRef = useRef<HTMLDivElement>(null)
+  const agentPopoverRef = useRef<HTMLDivElement>(null)
   const generation = useRef(0)
   const activeLoads = useRef(0)
   const loadQueue = useRef<Array<() => void>>([])
@@ -535,6 +903,47 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
     return () => window.removeEventListener('pointerdown', close)
   }, [moreOpen])
 
+  useEffect(() => {
+    if (!agentAction) return
+    const close = (event: PointerEvent) => {
+      if (!agentBusy && !agentPopoverRef.current?.contains(event.target as Node)) setAgentAction(null)
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [agentAction, agentBusy])
+
+  useEffect(() => {
+    if (!agentAction) return
+    let active = true
+    setAgentChoices(null)
+    setSelectedAgentId(null)
+    const repoPath = parseLocator(reviewState.repoPath).path
+    const fallbackPath = workspace?.rootPath
+    const inspect = async () => {
+      try {
+        const [states, fallbackStates] = await Promise.all([
+          inspectAgentCliHooks(repoPath),
+          fallbackPath && fallbackPath !== repoPath ? inspectAgentCliHooks(fallbackPath) : Promise.resolve([]),
+        ])
+        if (!active) return
+        const fallbackById = new Map(fallbackStates.map((state) => [state.agent.id, state]))
+        const hookConfig = useSettingsStore.getState().agentHookInjection[workspaceId]
+        const choices = states.map((state) => ({
+          agent: state.agent,
+          ready: evaluateAgentCliHooks(state, hookConfig, fallbackById.get(state.agent.id)).ready,
+        }))
+        setAgentChoices(choices)
+        setSelectedAgentId(choices.find((choice) => choice.ready)?.agent.id ?? null)
+      } catch (cause) {
+        if (!active) return
+        setAgentChoices(AGENTS.map((agent) => ({ agent, ready: false })))
+        setError(errorMessage(cause, 'Could not inspect available agents'))
+      }
+    }
+    void inspect()
+    return () => { active = false }
+  }, [agentAction, reviewState.repoPath, workspace?.rootPath, workspaceId])
+
   const update = useCallback((patch: Partial<ReviewPanelState>) => {
     persist({ ...stateRef.current, ...patch })
   }, [persist])
@@ -543,25 +952,62 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
     persist({ ...stateRef.current, display: { ...stateRef.current.display, ...patch } })
   }, [persist])
 
+  const reviewerRun = reviewState.agentReview
+    ? Object.values(workspace?.panels ?? {}).find((panel) =>
+        panel.codingAgentRun?.id === reviewState.agentReview?.runId,
+      )?.codingAgentRun
+    : undefined
+  useEffect(() => {
+    if (reviewState.agentReview?.status !== 'working' || !reviewerRun?.endedAt) return
+    update({
+      agentReview: {
+        ...reviewState.agentReview,
+        status: 'failed',
+        completedAt: reviewerRun.endedAt,
+      },
+    })
+  }, [reviewState.agentReview, reviewerRun?.endedAt, update])
+
   const refresh = useCallback(async () => {
     const current = ++generation.current
     const state = stateRef.current
     if (!state.repoPath) return
+    const comparisonKey = JSON.stringify([state.repoPath, state.spec])
+    const comparisonChanged = comparisonKeyRef.current !== comparisonKey
+    comparisonKeyRef.current = comparisonKey
+    const cachedDiffs = comparisonChanged ? {} : diffsRef.current
+    if (comparisonChanged) {
+      diffsRef.current = {}
+      expandedFilesRef.current = new Set()
+      contextLinesByFileRef.current = {}
+      setDiffs({})
+      setExpandedFiles(new Set())
+      setContextLinesByFile({})
+    }
     setLoading(true)
     setError(null)
-    setDiffs({})
     try {
       const result = await window.electronAPI.gitCompare(state.repoPath, state.spec, workspaceId)
       if (generation.current !== current) return
       setComparison(result)
       const paths = new Set(result.files.map((file) => file.path))
+      setDiffs((loaded) => Object.fromEntries(Object.entries(loaded).filter(([filePath]) => paths.has(filePath))))
+      for (const file of result.files) {
+        if (!cachedDiffs[file.path]) continue
+        const fullFile = state.display.fullFile || expandedFilesRef.current.has(file.path)
+        requestDiffRef.current(file, {
+          allowLarge: fullFile,
+          fullFile,
+          contextLines: contextLinesByFileRef.current[file.path] ?? 3,
+        })
+      }
       const notes = (state.notes ?? []).map((note) => ({ ...note, outdated: !paths.has(note.path) }))
       if (notes.some((note, index) => note.outdated !== state.notes?.[index]?.outdated)) {
         persist({ ...state, notes })
       }
       requestAnimationFrame(() => {
         if (!state.focusedFile) return
-        document.querySelector(`[data-review-file="${encodeURIComponent(state.focusedFile)}"]`)?.scrollIntoView({ block: 'start' })
+        panelRef.current?.querySelector(`[data-review-file="${encodeURIComponent(state.focusedFile)}"]`)?.scrollIntoView({ block: 'start' })
       })
     } catch (cause) {
       if (generation.current === current) setError(errorMessage(cause, 'Could not load comparison'))
@@ -577,7 +1023,7 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
   useEffect(() => {
     if (!reviewState.focusedFile || !comparison) return
     requestAnimationFrame(() => {
-      document.querySelector(`[data-review-file="${encodeURIComponent(reviewState.focusedFile ?? '')}"]`)?.scrollIntoView({ block: 'start' })
+      panelRef.current?.querySelector(`[data-review-file="${encodeURIComponent(reviewState.focusedFile ?? '')}"]`)?.scrollIntoView({ block: 'start' })
     })
   }, [reviewState.focusedFile, comparison])
   useEffect(() => {
@@ -630,15 +1076,18 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
     if (changed) persist({ ...state, notes })
   }, [persist])
 
-  const requestDiff = useCallback((file: GitChangedFile, allowLarge = false) => {
-    if (!allowLarge && diffs[file.path]) return
+  const requestDiff = useCallback((file: GitChangedFile, options: DiffLoadOptions = {}) => {
+    if (!options.allowLarge && !options.fullFile && options.contextLines === undefined && diffs[file.path]) return
     const state = stateRef.current
     const requestGeneration = generation.current
     void limited(() => window.electronAPI.gitFileDiff(
       state.repoPath,
       state.spec,
       file.path,
-      { contextLines: state.display.fullFile ? 999_999 : 3, allowLarge },
+      {
+        contextLines: state.display.fullFile || options.fullFile ? 999_999 : options.contextLines ?? 3,
+        allowLarge: options.allowLarge,
+      },
       workspaceId,
     )).then((diff) => {
       if (requestGeneration !== generation.current) return
@@ -648,6 +1097,7 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
       if (requestGeneration === generation.current) setError(errorMessage(cause, `Could not load ${file.path}`))
     })
   }, [diffs, limited, workspaceId, reanchorNotes])
+  requestDiffRef.current = requestDiff
 
   const setMode = useCallback((kind: GitComparisonSpec['kind']) => {
     const ignoreWhitespace = stateRef.current.spec.ignoreWhitespace
@@ -678,76 +1128,194 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
     update({ spec: { ...spec, ignoreWhitespace: !spec.ignoreWhitespace } as GitComparisonSpec })
   }, [update])
 
-  const addNote = useCallback((filePath: string, side: 'old' | 'new' | 'file', line: number | null, context: string) => {
-    const body = window.prompt(side === 'file' ? `Review note for ${filePath}` : `Review note for ${filePath}:${line}`)?.trim()
-    if (!body) return
+  const addNote = useCallback((draft: NoteDraft, body: string, severity: NonNullable<GitReviewNote['severity']>) => {
     const state = stateRef.current
     const note: GitReviewNote = {
       id: crypto.randomUUID(),
-      path: filePath,
-      side,
-      line,
+      path: draft.filePath,
+      side: draft.side,
+      line: draft.line,
       body,
-      context,
-      contextHash: contextHash(context),
+      context: draft.context,
+      contextHash: contextHash(draft.context),
       resolvedBase: comparison?.resolvedBase ?? null,
       resolvedTarget: comparison?.resolvedTarget ?? null,
+      status: 'open',
+      severity,
+      author: 'human',
       createdAt: new Date().toISOString(),
     }
     persist({ ...state, notes: [...(state.notes ?? []), note] })
+    setNoteDraft(null)
   }, [comparison, persist])
 
-  const mutate = useCallback(async (action: () => Promise<unknown>) => {
+  const toggleNote = useCallback((noteId: string) => {
+    const state = stateRef.current
+    persist({
+      ...state,
+      notes: (state.notes ?? []).map((note) => note.id === noteId
+        ? { ...note, status: note.status === 'resolved' ? 'open' : 'resolved' }
+        : note),
+    })
+  }, [persist])
+
+  const mutateFile = useCallback(async (action: () => Promise<unknown>) => {
     setBusy(true)
     setError(null)
     try {
       await action()
       gitStatusStore.refresh(stateRef.current.repoPath)
       await refresh()
+    } catch (cause) {
+      setError(errorMessage(cause, 'Could not update file'))
+    } finally {
+      setBusy(false)
     }
-    catch (cause) { setError(errorMessage(cause, 'Git action failed')) }
-    finally { setBusy(false) }
   }, [refresh])
 
-  const stage = (file: GitChangedFile) => mutate(() => window.electronAPI.gitStage(reviewState.repoPath, file.path, workspaceId))
-  const unstage = (file: GitChangedFile) => mutate(() => window.electronAPI.gitUnstage(reviewState.repoPath, file.path, workspaceId))
-  const discard = (file: GitChangedFile) => {
+  const stageFile = (file: GitChangedFile) => void mutateFile(() =>
+    window.electronAPI.gitStage(reviewState.repoPath, file.path, workspaceId))
+
+  const unstageFile = (file: GitChangedFile) => void mutateFile(() =>
+    window.electronAPI.gitUnstage(reviewState.repoPath, file.path, workspaceId))
+
+  const discardFile = (file: GitChangedFile) => {
     if (file.untracked) {
       const local = parseLocator(reviewState.repoPath).runtimeId === 'local'
-      const prompt = local
+      const message = local
         ? `Move untracked file "${file.path}" to Trash?`
         : `Permanently delete untracked file "${file.path}" from the remote host? This cannot be undone.`
-      if (!window.confirm(prompt)) return
-      void mutate(() => window.electronAPI.fsTrashOrDelete(
+      if (!window.confirm(message)) return
+      void mutateFile(() => window.electronAPI.fsTrashOrDelete(
         absoluteFilePath(reviewState.repoPath, file.path),
         workspaceId,
       ))
       return
     }
     if (!window.confirm(`Discard working changes in "${file.path}"? Staged changes will be preserved.`)) return
-    void mutate(() => window.electronAPI.gitDiscardFile(reviewState.repoPath, file.path, workspaceId))
+    void mutateFile(() => window.electronAPI.gitDiscardFile(reviewState.repoPath, file.path, workspaceId))
   }
 
-  const commit = () => {
-    if (!commitMessage.trim()) return
-    void mutate(async () => {
-      if (includeUnstaged) await window.electronAPI.gitStageAll(reviewState.repoPath, workspaceId)
-      await window.electronAPI.gitCommit(reviewState.repoPath, commitMessage.trim(), workspaceId)
-      setCommitMessage('')
+  const launchAgent = useCallback(async (prompt: string, title: string, agentId: AgentId) => {
+    const currentWorkspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
+    if (!currentWorkspace) throw new Error('Workspace not found')
+    const existingPanelIds = Object.values(currentWorkspace.panels)
+      .filter((panel) => panel.type === 'terminal')
+      .filter((panel) => codingAgentTerminalError(workspaceId, panel.id, panelId) === null)
+      .map((panel) => panel.id)
+    const target = await requestPanelTarget({
+      workspaceId,
+      panelType: 'terminal',
+      availability: 'both',
+      existingPanelIds,
+      sourcePanelId: panelId,
     })
-  }
+    if (!target) return null
+    const repoPath = parseLocator(stateRef.current.repoPath).path
+    const worktree = currentWorkspace.worktrees?.find((candidate) =>
+      pathKey(parseLocator(candidate.path).path) === pathKey(repoPath),
+    )
+    const outcome = await handleCodingAgentMethod(
+      workspaceId,
+      panelId,
+      'cate.codingAgent.create',
+      {
+        agentId,
+        prompt,
+        title,
+        background: false,
+        _cateOriginCwd: repoPath,
+        ...(worktree ? { worktreeId: worktree.id } : {}),
+        ...(target.kind === 'existing' ? { terminalPanelId: target.panelId } : {}),
+      },
+      target.kind === 'new' ? { placement: target.placement } : undefined,
+    )
+    if (!outcome.ok) throw new Error(outcome.error)
+    const result = outcome.result as { id?: unknown; panelId?: unknown } | null
+    if (typeof result?.id !== 'string' || typeof result.panelId !== 'string') {
+      throw new Error('Agent launch did not return a run')
+    }
+    return { runId: result.id, terminalPanelId: result.panelId }
+  }, [workspaceId, panelId])
 
-  const createPr = () => {
+  const reviewWithAgent = useCallback(async (agentId: AgentId) => {
+    setAgentBusy(true)
+    setError(null)
+    try {
+      const launched = await launchAgent(
+        reviewAgentPrompt(panelId, stateRef.current.repoPath, stateRef.current.spec),
+        'Review changes',
+        agentId,
+      )
+      if (!launched) return
+      update({
+        agentReview: {
+          ...launched,
+          status: 'working',
+          startedAt: Date.now(),
+        },
+      })
+      setAgentAction(null)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Could not start agent review'))
+    } finally {
+      setAgentBusy(false)
+    }
+  }, [launchAgent, panelId, update])
+
+  const requestChanges = useCallback(async (agentId: AgentId | null, useSource: boolean) => {
+    const notes = (stateRef.current.notes ?? []).filter((note) =>
+      note.status !== 'resolved' && !note.outdated,
+    )
+    if (notes.length === 0) return
+    setAgentBusy(true)
+    setError(null)
+    const prompt = changesAgentPrompt(panelId, notes)
+    try {
+      const source = useSource ? stateRef.current.sourceAgent : undefined
+      if (source) {
+        const outcome = await handleCodingAgentMethod(
+          workspaceId,
+          source.ownerPanelId,
+          'cate.codingAgent.send',
+          { runId: source.runId, prompt },
+        )
+        if (outcome.ok) {
+          setAgentAction(null)
+          return
+        }
+        setError('The original agent session is no longer available. Choose an agent to start a new session.')
+        setAgentChoices(null)
+        setSelectedAgentId(null)
+        setAgentAction({ kind: 'changes' })
+        return
+      }
+      if (!agentId) return
+      const launched = await launchAgent(prompt, 'Address review findings', agentId)
+      if (launched) setAgentAction(null)
+    } catch (cause) {
+      setError(errorMessage(cause, 'Could not request changes'))
+    } finally {
+      setAgentBusy(false)
+    }
+  }, [launchAgent, panelId, workspaceId])
+
+  const copyNotes = () => void navigator.clipboard.writeText(notesMarkdown(reviewState.notes ?? []))
+  const createPr = async () => {
     const branch = comparison?.currentBranch
     if (!branch) return
-    void mutate(async () => {
+    setBusy(true)
+    setError(null)
+    try {
       const result = await window.electronAPI.gitCreatePR(reviewState.repoPath, branch, workspaceId)
       if (result.ok) window.electronAPI.openExternalUrl(result.url)
       else throw new Error(result.message)
-    })
+    } catch (cause) {
+      setError(errorMessage(cause, 'Could not create pull request'))
+    } finally {
+      setBusy(false)
+    }
   }
-
-  const copyNotes = () => void navigator.clipboard.writeText(notesMarkdown(reviewState.notes ?? []))
   const copyApplyCommand = async () => {
     if (!comparison) return
     setBusy(true)
@@ -759,6 +1327,8 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
         { contextLines: 3, allowLarge: true },
         workspaceId,
       ))))
+      const incomplete = patches.find((item) => item.patch == null)
+      if (incomplete) throw new Error(`A complete patch cannot be created for ${incomplete.path}`)
       const patch = patches.map((item) => item.patch).filter(Boolean).join('\n')
       const marker = 'CATE_DIFF_PATCH'
       await navigator.clipboard.writeText(`git apply <<'${marker}'\n${patch}\n${marker}`)
@@ -783,10 +1353,11 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
   const stagedMode = reviewState.spec.kind === 'staged'
   const currentBranchMode = reviewState.spec.kind === 'branch'
     && reviewState.spec.target === comparison?.currentBranch
-  const canWriteCurrentBranch = workingMode || stagedMode || currentBranchMode
-
+  const openNotes = (reviewState.notes ?? []).filter((note) =>
+    note.side !== 'file' && note.status !== 'resolved' && !note.outdated,
+  )
   return (
-    <div className="flex flex-col h-full min-h-0 bg-surface-0 text-primary">
+    <div ref={panelRef} className="relative flex flex-col h-full min-h-0 bg-surface-0 text-primary">
       <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 border-b border-subtle bg-surface-1 flex-shrink-0">
         <select
           value={reviewState.spec.kind}
@@ -827,18 +1398,81 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
           </>
         )}
         <div className="flex items-center gap-1 ml-auto">
+          {reviewState.agentReview && (
+            <span className={`text-[10px] mr-1 ${reviewState.agentReview.status === 'complete' ? 'text-green-400' : reviewState.agentReview.status === 'failed' ? 'text-red-400' : 'text-blue-400'}`}>
+              Agent review: {reviewState.agentReview.status}
+            </span>
+          )}
           <span className="text-[11px] text-muted tabular-nums mr-1">
             {comparison ? `${comparison.files.length} files ` : ''}
             <span className="text-diff-add">+{comparison?.additions ?? 0}</span>{' '}
             <span className="text-diff-del">-{comparison?.deletions ?? 0}</span>
           </span>
           <ToolbarButton label="Refresh" onClick={() => void refresh()} disabled={loading}><ArrowClockwise size={14} className={loading ? 'animate-spin' : ''} /></ToolbarButton>
+          <div ref={agentAction?.kind === 'review' ? agentPopoverRef : undefined} className="relative">
+            <ReviewActionButton
+              label="Review"
+              onClick={() => {
+                if (agentAction?.kind === 'review') { setAgentAction(null); return }
+                setAgentChoices(null)
+                setSelectedAgentId(null)
+                setAgentAction({ kind: 'review' })
+              }}
+              disabled={agentBusy || reviewState.agentReview?.status === 'working'}
+            />
+            {agentAction?.kind === 'review' && (
+              <AgentPickerPopover
+                action={agentAction}
+                choices={agentChoices}
+                selectedAgentId={selectedAgentId}
+                busy={agentBusy}
+                onSelect={setSelectedAgentId}
+                onClose={() => !agentBusy && setAgentAction(null)}
+                onConfirm={() => selectedAgentId && void reviewWithAgent(selectedAgentId)}
+              />
+            )}
+          </div>
+          <div ref={agentAction?.kind === 'changes' ? agentPopoverRef : undefined} className="relative">
+            <ReviewActionButton
+              label={`Request changes${openNotes.length ? ` (${openNotes.length})` : ''}`}
+              title={openNotes.length === 0 ? 'Add an open review note before requesting changes' : 'Send open findings to an agent'}
+              onClick={() => {
+                if (reviewState.sourceAgent) {
+                  void requestChanges(null, true)
+                  return
+                }
+                if (agentAction?.kind === 'changes') { setAgentAction(null); return }
+                setAgentChoices(null)
+                setSelectedAgentId(null)
+                setAgentAction({ kind: 'changes' })
+              }}
+              disabled={agentBusy || openNotes.length === 0}
+            >
+              <PaperPlaneTilt size={14} />
+            </ReviewActionButton>
+            {agentAction?.kind === 'changes' && (
+              <AgentPickerPopover
+                action={agentAction}
+                choices={agentChoices}
+                selectedAgentId={selectedAgentId}
+                busy={agentBusy}
+                onSelect={setSelectedAgentId}
+                onClose={() => !agentBusy && setAgentAction(null)}
+                onConfirm={() => void requestChanges(selectedAgentId, false)}
+              />
+            )}
+          </div>
           <ToolbarButton
             label={reviewState.display.split ? 'Switch to unified diff' : 'Switch to split diff'}
             onClick={() => updateDisplay({ split: !reviewState.display.split })}
           >
             {reviewState.display.split ? <Rows size={14} /> : <SplitHorizontal size={14} />}
           </ToolbarButton>
+          {currentBranchMode && (
+            <ToolbarButton label="Create pull request" disabled={busy} onClick={() => void createPr()}>
+              <GitPullRequest size={14} />
+            </ToolbarButton>
+          )}
           <div ref={moreMenuRef} className="relative">
             <ToolbarButton label="More review options" active={moreOpen} onClick={() => setMoreOpen((open) => !open)}><DotsThree size={16} /></ToolbarButton>
             {moreOpen && (
@@ -858,20 +1492,6 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
         </div>
       </div>
 
-      {canWriteCurrentBranch && (
-        <div className="flex flex-wrap items-center gap-2 px-2 py-1.5 border-b border-subtle bg-surface-1 flex-shrink-0">
-          {!currentBranchMode && <>
-            <input value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} placeholder="Commit message" className="h-7 flex-1 min-w-[180px] rounded-lg bg-surface-2 border border-subtle px-2 text-[12px] focus:outline-none" />
-            <label className="flex items-center gap-1 text-[11px] text-secondary select-none">
-              <input type="checkbox" checked={includeUnstaged} onChange={(event) => setIncludeUnstaged(event.target.checked)} /> Include unstaged changes
-            </label>
-            <button disabled={!commitMessage.trim() || busy} onClick={commit} className="h-7 px-3 rounded-lg bg-surface-2 hover:bg-hover disabled:opacity-30 text-[11px]">Commit</button>
-          </>}
-          <button disabled={busy} onClick={() => void mutate(() => window.electronAPI.gitPush(reviewState.repoPath, undefined, undefined, workspaceId))} className="h-7 px-3 rounded-lg bg-surface-2 hover:bg-hover disabled:opacity-30 text-[11px]">Push</button>
-          <button disabled={busy || !comparison?.currentBranch} onClick={createPr} className="h-7 px-3 rounded-lg bg-surface-2 hover:bg-hover disabled:opacity-30 text-[11px] flex items-center gap-1"><GitPullRequest size={13} /> PR</button>
-        </div>
-      )}
-
       <div className="flex items-center gap-2 px-2 py-1.5 border-b border-subtle flex-shrink-0">
         <FileMagnifyingGlass size={14} className="text-muted" />
         <input value={reviewState.fileFilter ?? ''} onChange={(event) => update({ fileFilter: event.target.value })} placeholder="Filter changed files" className="bg-transparent flex-1 min-w-0 text-[12px] focus:outline-none" />
@@ -890,35 +1510,63 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
 
       {error && <div className="px-3 py-2 bg-red-500/10 text-red-400 text-[11px] border-b border-red-500/15">{error}</div>}
 
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {!loading && !error && filteredFiles.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center gap-2 text-muted text-[12px]"><GitDiff size={28} /><span>No changes in this comparison</span></div>
         )}
         {filteredFiles.map((file) => {
           const isCollapsed = collapsed.has(file.path)
-          const fileNotes = (reviewState.notes ?? []).filter((note) => note.path === file.path)
+          const fileNotes = (reviewState.notes ?? []).filter((note) => note.path === file.path && note.side !== 'file')
+          const fileDraft = noteDraft?.filePath === file.path ? noteDraft : null
+          const contextLines = contextLinesByFile[file.path] ?? 3
           return (
-            <section key={file.path} data-review-file={encodeURIComponent(file.path)} className="border-b border-subtle scroll-mt-2">
+            <section key={file.path} data-review-file={encodeURIComponent(file.path)} className="min-w-0 border-b border-subtle scroll-mt-2">
               <div className="sticky top-0 z-10 flex items-center gap-2 px-2 py-1.5 bg-surface-2/95 backdrop-blur border-b border-subtle group">
                 <button onClick={() => update({ collapsedFiles: isCollapsed ? [...collapsed].filter((path) => path !== file.path) : [...collapsed, file.path] })} className="text-muted hover:text-primary">{isCollapsed ? <CaretRight size={13} /> : <CaretDown size={13} />}</button>
                 <span className={`w-4 text-center font-mono text-[11px] ${statusClass(file)}`}>{statusLabel(file)}</span>
                 <span className="font-mono text-[11px] truncate flex-1" title={file.path}>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
                 <span className="text-[10px] tabular-nums"><span className="text-diff-add">+{file.additions ?? '–'}</span> <span className="text-diff-del">-{file.deletions ?? '–'}</span></span>
                 {fileNotes.length > 0 && <span className="text-[10px] text-blue-400">{fileNotes.length} note{fileNotes.length === 1 ? '' : 's'}</span>}
-                <ToolbarButton label="Add file note" onClick={() => addNote(file.path, 'file', null, '')}><NotePencil size={13} /></ToolbarButton>
                 <ToolbarButton label="Open file" onClick={() => useAppStore.getState().createEditor(workspaceId, absoluteFilePath(reviewState.repoPath, file.path))}><FileMagnifyingGlass size={13} /></ToolbarButton>
-                {workingMode && file.working && <ToolbarButton label="Stage file" disabled={busy} onClick={() => void stage(file)}><Plus size={13} /></ToolbarButton>}
-                {(stagedMode || (reviewState.spec.kind === 'uncommitted' && file.staged)) && <ToolbarButton label="Unstage file" disabled={busy} onClick={() => void unstage(file)}><Minus size={13} /></ToolbarButton>}
-                {workingMode && file.working && <ToolbarButton label="Discard working changes" disabled={busy} onClick={() => discard(file)}><Trash size={13} /></ToolbarButton>}
+                {workingMode && file.working && <ToolbarButton label="Stage file" disabled={busy} onClick={() => stageFile(file)}><Plus size={13} /></ToolbarButton>}
+                {(stagedMode || (reviewState.spec.kind === 'uncommitted' && file.staged)) && <ToolbarButton label="Unstage file" disabled={busy} onClick={() => unstageFile(file)}><Minus size={13} /></ToolbarButton>}
+                {workingMode && file.working && <ToolbarButton label="Discard working changes" disabled={busy} onClick={() => discardFile(file)}><Trash size={13} /></ToolbarButton>}
               </div>
-              <NoteRows notes={fileNotes.filter((note) => note.side === 'file')} />
               {!isCollapsed && reviewState.display.advancedPreview && imageMime(file.path)
                 ? <ImageComparisonPreview repoPath={reviewState.repoPath} spec={reviewState.spec} file={file} workspaceId={workspaceId} />
-                : !isCollapsed && <LazyDiffBody diff={diffs[file.path]} load={() => requestDiff(file)} allowLarge={() => requestDiff(file, true)} split={reviewState.display.split} wordDiff={reviewState.display.wordDiff} wrap={reviewState.display.wrap} notes={fileNotes} addNote={(side, line, context) => addNote(file.path, side, line, context)} />}
+                : !isCollapsed && (
+                  <div className="max-w-full overflow-x-auto overscroll-x-contain [container-type:inline-size]">
+                    <LazyDiffBody
+                      diff={diffs[file.path]}
+                      load={() => requestDiff(file)}
+                      allowLarge={() => requestDiff(file, { allowLarge: true, fullFile: expandedFiles.has(file.path) })}
+                      split={reviewState.display.split}
+                      wordDiff={reviewState.display.wordDiff}
+                      wrap={reviewState.display.wrap}
+                      notes={fileNotes}
+                      addNote={(side, line, context) => setNoteDraft({ filePath: file.path, side, line, context })}
+                      toggleNote={toggleNote}
+                      noteDraft={fileDraft}
+                      submitNote={(body, severity) => fileDraft && addNote(fileDraft, body, severity)}
+                      cancelNote={() => setNoteDraft(null)}
+                      fullFile={reviewState.display.fullFile || expandedFiles.has(file.path)}
+                      expandContext={() => {
+                        const nextContextLines = contextLines < 10 ? 10 : Math.min(contextLines * 2, 500)
+                        setContextLinesByFile((current) => ({ ...current, [file.path]: nextContextLines }))
+                        requestDiff(file, { allowLarge: true, contextLines: nextContextLines })
+                      }}
+                      expandFullFile={() => {
+                        setExpandedFiles((current) => new Set(current).add(file.path))
+                        requestDiff(file, { allowLarge: true, fullFile: true })
+                      }}
+                    />
+                  </div>
+                )}
             </section>
           )
         })}
       </div>
+
     </div>
   )
 }

@@ -31,6 +31,7 @@ import {
   type PanelInteractionKind,
   type PanelTargetObserver,
 } from '../lib/panelInteractions'
+import { handleReviewMethod } from '../lib/review/reviewDriver'
 import { browserPanelUrl, isStartPageUrl, type PanelType, type Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 
@@ -236,6 +237,13 @@ export function useCateHostActionResponder(): void {
               : null
             if (typeof created?.panelId === 'string') tracker.observe(created.panelId)
           }
+          return outcome.ok
+            ? reply(true, { result: outcome.result })
+            : reply(false, { error: outcome.error })
+        }
+
+        if (method.startsWith('cate.review.')) {
+          const outcome = await handleReviewMethod(workspaceId, payload.panelId, method, args)
           return outcome.ok
             ? reply(true, { result: outcome.result })
             : reply(false, { error: outcome.error })

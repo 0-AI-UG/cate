@@ -159,6 +159,10 @@ export interface GitReviewNote {
   resolvedBase: string | null
   resolvedTarget: string | null
   outdated?: boolean
+  status?: 'open' | 'resolved'
+  severity?: 'info' | 'warning' | 'error'
+  author?: 'human' | 'agent'
+  agentRunId?: string
   createdAt: string
 }
 
@@ -176,6 +180,14 @@ export interface ReviewPanelState {
   }
   collapsedFiles?: string[]
   notes?: GitReviewNote[]
+  sourceAgent?: { runId: string; ownerPanelId: string; panelId: string }
+  agentReview?: {
+    runId: string
+    terminalPanelId: string
+    status: 'working' | 'complete' | 'failed'
+    startedAt: number
+    completedAt?: number
+  }
 }
 
 export interface PanelState {
@@ -198,8 +210,6 @@ export interface PanelState {
    *  suffix, and `pac://` PAC scripts. See `configureBrowserProxy` in
    *  `src/main/browserProxy.ts`. */
   proxyUrl?: string
-  /** When set, EditorPanel renders as a Monaco diff editor. */
-  diffMode?: 'staged' | 'working'
   /** Review panels only: comparison query, view preferences, expansion, and notes. */
   reviewState?: ReviewPanelState
   /** Editor panels with a markdown file only: render the rendered preview

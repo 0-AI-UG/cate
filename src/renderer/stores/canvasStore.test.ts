@@ -856,7 +856,7 @@ describe('canvasStore.nudgeToFree', () => {
 })
 
 // =============================================================================
-// Interactive ghost placement — beginPlacement / commitPlacement / cancel.
+// Interactive new-panel target selection.
 // =============================================================================
 
 describe('canvasStore ghost placement actions', () => {
@@ -869,35 +869,49 @@ describe('canvasStore ghost placement actions', () => {
     return store
   }
 
-  it('beginPlacement sets pendingPlacement and returns true', () => {
+  function beginNewTarget(
+    store: ReturnType<typeof setup>,
+    panelId: string,
+    onCancelled?: (panelId: string) => void,
+  ) {
+    return store.getState().beginPanelTarget({
+      panelId,
+      panelType: 'terminal',
+      availability: 'new',
+      existing: [],
+      onCancelled: () => onCancelled?.(panelId),
+    })
+  }
+
+  it('beginPanelTarget sets pendingPanelTarget and returns true', () => {
     const store = setup()
-    const shown = store.getState().beginPlacement('p1', 'terminal')
+    const shown = beginNewTarget(store, 'p1')
     expect(shown).toBe(true)
-    const pending = store.getState().pendingPlacement
+    const pending = store.getState().pendingPanelTarget
     expect(pending).not.toBeNull()
     expect(pending!.panelId).toBe('p1')
     expect(pending!.candidates.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('beginPlacement captures the dev placement trace on pendingPlacement', () => {
+  it('beginPanelTarget captures the dev placement trace on pendingPanelTarget', () => {
     // Vitest runs with import.meta.env.DEV truthy, so the dev-only trace capture
     // is active here. (Verified: import.meta.env.DEV === true under vitest.)
     const store = setup()
-    store.getState().beginPlacement('p1', 'terminal')
-    const pending = store.getState().pendingPlacement
+    beginNewTarget(store, 'p1')
+    const pending = store.getState().pendingPanelTarget
     expect(pending).not.toBeNull()
     expect(pending!.trace).toBeDefined()
     expect(pending!.trace!.steps.length).toBeGreaterThan(0)
     expect(pending!.trace!.guides).toBeDefined()
   })
 
-  it('beginPlacement on an empty canvas skips the picker and drops the panel at the camera centre', () => {
+  it('beginPanelTarget on an empty canvas skips the picker and drops the panel at the camera centre', () => {
     const store = createCanvasStore()
     store.getState().setContainerSize({ width: 1000, height: 800 })
-    const shown = store.getState().beginPlacement('p1', 'terminal')
+    const shown = beginNewTarget(store, 'p1')
     // No ghosts — placed immediately.
     expect(shown).toBe(true)
-    expect(store.getState().pendingPlacement).toBeNull()
+    expect(store.getState().pendingPanelTarget).toBeNull()
     const nodes = Object.values(store.getState().nodes)
     expect(nodes).toHaveLength(1)
     expect(nodes[0].dockLayout).toMatchObject({ panelIds: ['p1'] })
@@ -907,16 +921,16 @@ describe('canvasStore ghost placement actions', () => {
     expect(origin.y + size.height / 2).toBeCloseTo(400)
   })
 
-  it('commitPlacement creates one node at the chosen spot+size and clears state', () => {
+  it('selectNewPanelTarget creates one node at the chosen spot+size and clears state', () => {
     const store = setup()
     store.getState().addNode('seed', 'editor', { x: 0, y: 0 }, { width: 200, height: 150 })
-    store.getState().beginPlacement('p1', 'terminal')
-    const target = store.getState().pendingPlacement!.candidates[1] ?? store.getState().pendingPlacement!.candidates[0]
-    const idx = store.getState().pendingPlacement!.candidates.indexOf(target)
+    beginNewTarget(store, 'p1')
+    const target = store.getState().pendingPanelTarget!.candidates[1] ?? store.getState().pendingPanelTarget!.candidates[0]
+    const idx = store.getState().pendingPanelTarget!.candidates.indexOf(target)
 
-    const nodeId = store.getState().commitPlacement(idx)
+    const nodeId = store.getState().selectNewPanelTarget(idx)
     expect(nodeId).toBeTruthy()
-    expect(store.getState().pendingPlacement).toBeNull()
+    expect(store.getState().pendingPanelTarget).toBeNull()
     const node = store.getState().nodes[nodeId!]
     expect(node.dockLayout).toMatchObject({ panelIds: ['p1'] })
     expect(node.origin).toEqual(target.point)
@@ -925,61 +939,61 @@ describe('canvasStore ghost placement actions', () => {
     expect(focusedNodeId(store.getState())).toBe(nodeId)
   })
 
-  it('beginPlacement only ever zooms out, and cancel restores the viewport', () => {
+  it('beginPanelTarget only ever zooms out, and cancel restores the viewport', () => {
     const store = setup()
     // Two far-apart nodes force a zoom-out to fit the recommendations.
     store.getState().addNode('a', 'editor', { x: 0, y: 0 }, { width: 400, height: 300 })
     store.getState().addNode('b', 'editor', { x: 4000, y: 3000 }, { width: 400, height: 300 })
     const zoomBefore = store.getState().zoomLevel
     const offsetBefore = store.getState().viewportOffset
-    store.getState().beginPlacement('p1', 'terminal')
+    beginNewTarget(store, 'p1')
     expect(store.getState().zoomLevel).toBeLessThanOrEqual(zoomBefore)
-    expect(store.getState().pendingPlacement!.prevZoom).toBe(zoomBefore)
-    store.getState().cancelPlacement()
+    expect(store.getState().pendingPanelTarget!.prevZoom).toBe(zoomBefore)
+    store.getState().cancelPanelTarget()
     expect(store.getState().zoomLevel).toBe(zoomBefore)
     expect(store.getState().viewportOffset).toEqual(offsetBefore)
   })
 
-  it('cancelPlacement clears state and invokes the rollback callback', () => {
+  it('cancelPanelTarget clears state and invokes the rollback callback', () => {
     const store = setup()
     let cancelledId: string | null = null
-    store.getState().beginPlacement('p1', 'terminal', (id) => { cancelledId = id })
-    store.getState().cancelPlacement()
-    expect(store.getState().pendingPlacement).toBeNull()
+    beginNewTarget(store, 'p1', (id) => { cancelledId = id })
+    store.getState().cancelPanelTarget()
+    expect(store.getState().pendingPanelTarget).toBeNull()
     expect(cancelledId).toBe('p1')
   })
 
   it('re-trigger rolls the previous pending panel back (latest wins)', () => {
     const store = setup()
     let cancelledId: string | null = null
-    store.getState().beginPlacement('p1', 'terminal', (id) => { cancelledId = id })
-    store.getState().beginPlacement('p2', 'terminal', () => {})
+    beginNewTarget(store, 'p1', (id) => { cancelledId = id })
+    beginNewTarget(store, 'p2', () => {})
     expect(cancelledId).toBe('p1')
-    expect(store.getState().pendingPlacement!.panelId).toBe('p2')
+    expect(store.getState().pendingPanelTarget!.panelId).toBe('p2')
   })
 
   it('setPlacementHover updates the hovered index', () => {
     const store = setup()
-    store.getState().beginPlacement('p1', 'terminal')
+    beginNewTarget(store, 'p1')
     store.getState().setPlacementHover(0)
-    expect(store.getState().pendingPlacement!.hoveredIndex).toBe(0)
+    expect(store.getState().pendingPanelTarget!.hoveredIndex).toBe(0)
     store.getState().setPlacementHover(null)
-    expect(store.getState().pendingPlacement!.hoveredIndex).toBeNull()
+    expect(store.getState().pendingPanelTarget!.hoveredIndex).toBeNull()
   })
 
-  it('commitPlacement is a no-op with an out-of-range index', () => {
+  it('selectNewPanelTarget is a no-op with an out-of-range index', () => {
     const store = setup()
-    store.getState().beginPlacement('p1', 'terminal')
-    const result = store.getState().commitPlacement(999)
+    beginNewTarget(store, 'p1')
+    const result = store.getState().selectNewPanelTarget(999)
     expect(result).toBeNull()
-    expect(store.getState().pendingPlacement).not.toBeNull()
+    expect(store.getState().pendingPanelTarget).not.toBeNull()
   })
 
   it('updatePlacementCursor previews a free spot under the cursor', () => {
     const store = setup()
-    store.getState().beginPlacement('p1', 'terminal')
+    beginNewTarget(store, 'p1')
     store.getState().updatePlacementCursor({ x: 700, y: 500 })
-    const free = store.getState().pendingPlacement!.freeGhost!
+    const free = store.getState().pendingPanelTarget!.freeGhost!
     expect(free).not.toBeNull()
     // Centre of the free ghost tracks the cursor (within grid-snap tolerance).
     expect(Math.abs(free.point.x + free.size.width / 2 - 700)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)
@@ -988,23 +1002,23 @@ describe('canvasStore ghost placement actions', () => {
 
   it('F arms free placement; disarming clears the preview ghost', () => {
     const store = setup()
-    store.getState().beginPlacement('p1', 'terminal')
-    expect(store.getState().pendingPlacement!.freeArmed).toBe(false)
+    beginNewTarget(store, 'p1')
+    expect(store.getState().pendingPanelTarget!.freeArmed).toBe(false)
     store.getState().setFreeArmed(true)
-    expect(store.getState().pendingPlacement!.freeArmed).toBe(true)
+    expect(store.getState().pendingPanelTarget!.freeArmed).toBe(true)
     store.getState().updatePlacementCursor({ x: 700, y: 500 })
-    expect(store.getState().pendingPlacement!.freeGhost).not.toBeNull()
+    expect(store.getState().pendingPanelTarget!.freeGhost).not.toBeNull()
     store.getState().setFreeArmed(false)
-    expect(store.getState().pendingPlacement!.freeArmed).toBe(false)
-    expect(store.getState().pendingPlacement!.freeGhost).toBeNull()
+    expect(store.getState().pendingPanelTarget!.freeArmed).toBe(false)
+    expect(store.getState().pendingPanelTarget!.freeGhost).toBeNull()
   })
 
   it('commitFreePlacement creates a node centred on the click point and clears state', () => {
     const store = setup()
-    store.getState().beginPlacement('p1', 'terminal')
+    beginNewTarget(store, 'p1')
     const nodeId = store.getState().commitFreePlacement({ x: 650, y: 450 })
     expect(nodeId).toBeTruthy()
-    expect(store.getState().pendingPlacement).toBeNull()
+    expect(store.getState().pendingPanelTarget).toBeNull()
     const node = store.getState().nodes[nodeId!]
     expect(node.dockLayout).toMatchObject({ panelIds: ['p1'] })
     expect(Math.abs(node.origin.x + node.size.width / 2 - 650)).toBeLessThanOrEqual(CANVAS_GRID_SIZE / 2)

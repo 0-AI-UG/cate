@@ -190,9 +190,6 @@ export interface ElectronAPI {
     behind: number
   }>
 
-  /** Get diff output for a file or the whole working tree. */
-  gitDiff(cwd: string, filePath: string | undefined, workspaceId: string): Promise<string>
-
   /** Resolve and summarize a multi-file Git comparison. */
   gitCompare(cwd: string, spec: GitComparisonSpec, workspaceId: string): Promise<GitComparisonResult>
 
@@ -266,8 +263,6 @@ export interface ElectronAPI {
     commits: Array<{ hash: string; message: string }>
     files: Array<{ path: string; status: string }>
     workingFiles: string[]
-    diff: string
-    truncated: boolean
     message?: string
   }>
 
@@ -364,9 +359,6 @@ export interface ElectronAPI {
 
   /** Checkout a branch. */
   gitCheckout(cwd: string, branchName: string, workspaceId: string): Promise<void>
-
-  /** Get diff of staged changes. */
-  gitDiffStaged(cwd: string, filePath: string | undefined, workspaceId: string): Promise<string>
 
   /** Stash changes. */
   gitStash(cwd: string, message: string | undefined, workspaceId: string): Promise<void>

@@ -208,6 +208,8 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
         ? 'browser'
         : method.startsWith('cate.terminal.')
           ? 'terminal'
+          : method.startsWith('cate.review.')
+            ? 'review'
           : undefined
       const usesSelectedPanel = targetType
         && selectedPanelId

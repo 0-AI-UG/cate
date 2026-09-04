@@ -9,6 +9,7 @@ export interface OpenReviewOptions {
   spec: GitComparisonSpec
   focusedFile?: string
   openNew?: boolean
+  sourceAgent?: ReviewPanelState['sourceAgent']
 }
 
 /** Open a review comparison, reusing the active or newest panel for the same repo. */
@@ -23,10 +24,13 @@ export async function openReviewPanel(options: OpenReviewOptions): Promise<strin
   const existing = options.openNew ? undefined : active ?? matching[matching.length - 1]
 
   if (existing?.reviewState) {
+    const sourceChanged = options.sourceAgent?.runId !== existing.reviewState.sourceAgent?.runId
     const next: ReviewPanelState = {
       ...existing.reviewState,
       spec: options.spec,
       focusedFile: options.focusedFile,
+      sourceAgent: options.sourceAgent,
+      agentReview: sourceChanged ? undefined : existing.reviewState.agentReview,
       collapsedFiles: options.focusedFile
         ? (existing.reviewState.collapsedFiles ?? []).filter((path) => path !== options.focusedFile)
         : existing.reviewState.collapsedFiles,
@@ -39,6 +43,7 @@ export async function openReviewPanel(options: OpenReviewOptions): Promise<strin
   const panelId = app.createReview(options.workspaceId, options.repoPath, {
     spec: options.spec,
     focusedFile: options.focusedFile,
+    sourceAgent: options.sourceAgent,
   })
   await revealPanel(options.workspaceId, panelId, { retry: true })
   return panelId
