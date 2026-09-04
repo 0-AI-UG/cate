@@ -29,10 +29,9 @@
 //   node scripts/build-runtime-tarball.mjs --target linux-x64
 //   node scripts/build-runtime-tarball.mjs --target linux-x64 --docker
 //
-// On CI, run this NATIVELY on the matching runner (ubuntu for linux-*, macos
-// for darwin-*) so node-pty's binary is the runner's own compiled output. The
-// --docker flag cross-builds the linux node-pty binary on a non-linux host
-// (e.g. a Mac) for local end-to-end testing before CI exists.
+// On CI, macOS/Windows run natively on matching runners. Linux release builds
+// always pass --docker so node-pty is compiled in the pinned old-glibc image;
+// the same flag also supports local Linux cross-builds from a Mac.
 // =============================================================================
 
 import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync, readdirSync, openSync, readSync, closeSync } from 'node:fs'
@@ -44,6 +43,7 @@ import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { runtimeBuildOptions, syncRuntimeVersion } from '../src/runtime/build/esbuild.config.mjs'
+import { buildLinuxNodePty } from './linux-node-pty.mjs'
 
 // Bundled runtime version. MUST satisfy pi's `engines.node` (currently
 // >=22.19.0 — its undici build calls webidl APIs absent on Node 20, which
@@ -370,6 +370,17 @@ async function resolveWinNodePtyPrebuild() {
 async function resolveNativeBinaries() {
   const hostTarget = `${plat(process.platform)}-${process.arch}`
 
+  // Linux release binaries must always be built in the pinned old-glibc
+  // container, even when the runner has the target architecture natively.
+  // Otherwise ubuntu-latest leaks its newer glibc into pty.node (#604).
+  if (useDocker && targetPlatform === 'linux') {
+    return buildLinuxNodePty({
+      targetArch,
+      nodePtyVersion: NODE_PTY_VERSION,
+      outDir: path.join(dist, 'native', `node-pty-${targetArg}-${NODE_PTY_VERSION}`),
+    })
+  }
+
   // Native build: use the installed node-pty's host binary. Prefer the host's
   // own compiled output (build/Release, e.g. a from-source `node-gyp rebuild`)
   // and fall back to the prebuild node-pty ships for this platform. Both are
@@ -393,38 +404,12 @@ async function resolveNativeBinaries() {
     )
   }
 
-  // Cross build of the linux binary via a linux container (QEMU for arm64).
-  if (useDocker && targetPlatform === 'linux') {
-    return dockerBuildLinuxPty()
-  }
-
   throw new Error(
     `Cannot produce a ${targetArg} node-pty binary on a ${hostTarget} host. ` +
       (targetPlatform === 'linux'
         ? 'Pass --docker to cross-build it, or run this on a matching CI runner.'
         : 'Run this on a matching runner (e.g. macos-13 for darwin-x64).'),
   )
-}
-
-/** Compile node-pty inside `node:20` for the target arch and extract its binaries. */
-async function dockerBuildLinuxPty() {
-  const outDir = path.join(os.tmpdir(), `cate-pty-${targetArg}-${NODE_PTY_VERSION}`)
-  rmSync(outDir, { recursive: true, force: true })
-  mkdirSync(outDir, { recursive: true })
-  // node-pty builds spawn-helper on darwin only; on linux pty.node forks itself.
-  const script =
-    `set -e; mkdir -p /b && cd /b && npm init -y >/dev/null 2>&1 && ` +
-    `npm i node-pty@${NODE_PTY_VERSION} --build-from-source >/dev/null 2>&1 && ` +
-    `cp node_modules/node-pty/build/Release/pty.node /out/ && ` +
-    `(cp node_modules/node-pty/build/Release/spawn-helper /out/ 2>/dev/null || true)`
-  console.log(`[runtime] docker cross-building node-pty for ${targetArg} (QEMU; may be slow)…`)
-  execFileSync(
-    'docker',
-    ['run', '--rm', '--platform', `linux/${targetArch === 'x64' ? 'amd64' : 'arm64'}`, '-v', `${outDir}:/out`, 'node:22', 'bash', '-lc', script],
-    { stdio: 'inherit' },
-  )
-  const helper = path.join(outDir, 'spawn-helper')
-  return { ptyNode: path.join(outDir, 'pty.node'), spawnHelper: existsSync(helper) ? helper : null }
 }
 
 /** Download just the `node` binary for the target into `outBin`. On win32 the
