@@ -140,6 +140,9 @@ export function setupWindowPanelSync(): () => void {
           ...(p.type === 'browser'
             ? { url: isStartPageUrl(browserPanelUrl(p)) ? '' : (browserPanelUrl(p) ?? '') }
             : {}),
+          ...(p.type === 'review' && p.reviewState
+            ? { reviewRepoPath: p.reviewState.repoPath }
+            : {}),
           focused: p.id === activePanelId,
           parentCanvasId: childToCanvas.get(p.id),
           worktreeId: p.type === 'cateAgent'

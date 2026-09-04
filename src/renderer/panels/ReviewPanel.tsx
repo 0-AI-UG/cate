@@ -52,6 +52,7 @@ import {
 } from '../lib/agent/agentCliHooks'
 import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { pathKey } from '../../shared/pathUtils'
+import { placementForPanel } from '../lib/workspace/canvasAccess'
 
 const MODES: Array<{ value: GitComparisonSpec['kind']; label: string }> = [
   { value: 'uncommitted', label: 'All Changes' },
@@ -1527,7 +1528,12 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
                 <span className="font-mono text-[11px] truncate flex-1" title={file.path}>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
                 <span className="text-[10px] tabular-nums"><span className="text-diff-add">+{file.additions ?? '–'}</span> <span className="text-diff-del">-{file.deletions ?? '–'}</span></span>
                 {fileNotes.length > 0 && <span className="text-[10px] text-blue-400">{fileNotes.length} note{fileNotes.length === 1 ? '' : 's'}</span>}
-                <ToolbarButton label="Open file" onClick={() => useAppStore.getState().createEditor(workspaceId, absoluteFilePath(reviewState.repoPath, file.path))}><FileMagnifyingGlass size={13} /></ToolbarButton>
+                <ToolbarButton label="Open file" onClick={() => useAppStore.getState().createEditor(
+                  workspaceId,
+                  absoluteFilePath(reviewState.repoPath, file.path),
+                  undefined,
+                  placementForPanel(workspaceId, panelId),
+                )}><FileMagnifyingGlass size={13} /></ToolbarButton>
                 {workingMode && file.working && <ToolbarButton label="Stage file" disabled={busy} onClick={() => stageFile(file)}><Plus size={13} /></ToolbarButton>}
                 {(stagedMode || (reviewState.spec.kind === 'uncommitted' && file.staged)) && <ToolbarButton label="Unstage file" disabled={busy} onClick={() => unstageFile(file)}><Minus size={13} /></ToolbarButton>}
                 {workingMode && file.working && <ToolbarButton label="Discard working changes" disabled={busy} onClick={() => discardFile(file)}><Trash size={13} /></ToolbarButton>}

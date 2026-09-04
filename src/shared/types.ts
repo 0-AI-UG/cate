@@ -190,6 +190,15 @@ export interface ReviewPanelState {
   }
 }
 
+/** The comparison identity carried when an existing Review panel is opened
+ * from another surface. The owning renderer merges this into its local panel
+ * state so display preferences and notes remain authoritative there. */
+export interface ReviewPanelOpenRequest {
+  spec: GitComparisonSpec
+  focusedFile?: string
+  sourceAgent?: ReviewPanelState['sourceAgent']
+}
+
 export interface PanelState {
   id: string
   type: PanelType
@@ -434,6 +443,9 @@ export interface WindowPanelReport {
   /** File/browser identity used by the cross-window cate.panel.list surface. */
   filePath?: string
   url?: string
+  /** Review repository identity used to reuse/deep-link a Review panel that is
+   * hosted by another window without mirroring its full local state. */
+  reviewRepoPath?: string
   /** Canonical active-panel marker from the owning window. */
   focused?: boolean
   /** Set when this panel lives inside a canvas panel in its window. */

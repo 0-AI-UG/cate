@@ -20,7 +20,9 @@ vi.mock('../stores/appStore', () => ({
 }))
 
 vi.mock('./workspace/canvasAccess', () => ({
-  resolvePanelLocation: () => state.location,
+  placementForPanel: () => state.location.kind === 'dock'
+    ? { target: 'dock', zone: state.location.zone, stackId: state.location.stackId }
+    : { target: 'canvas', canvasPanelId: state.location.canvasPanelId },
   getActiveCanvasPanelId: () => 'canvas-active',
   getWorkspaceCanvasPanelId: () => 'canvas-primary',
   getCanvasOpsById: () => ({ storeApi: { getState: () => ({ beginPanelTarget: state.begin }) } }),

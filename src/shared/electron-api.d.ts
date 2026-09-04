@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { CodingCreateOptions, CodingEventEnvelope, CodingExtensionUIResponse, CodingImageAttachment, CateAgentModelRef, CodingModelDescriptor, CodingRpcState, CodingSessionListEntry, CodingSessionStats, CodingSlashCommand, CodingThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, GitComparisonResult, GitComparisonSpec, GitFileContent, GitFileDiff, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
+import type { CodingCreateOptions, CodingEventEnvelope, CodingExtensionUIResponse, CodingImageAttachment, CateAgentModelRef, CodingModelDescriptor, CodingRpcState, CodingSessionListEntry, CodingSessionStats, CodingSlashCommand, CodingThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, GitComparisonResult, GitComparisonSpec, GitFileContent, GitFileDiff, ReviewPanelOpenRequest, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { CodingAgentLaunch } from './codingAgentRuns'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 import type { AgentHookEvent, AgentHookAgentState } from './agentHooks'
@@ -866,6 +866,9 @@ export interface ElectronAPI {
   /** Ask main to focus the window that owns `panelId` and reveal it. */
   focusWindowPanel(panelId: string): Promise<void>
 
+  /** Ask the owning renderer to retarget and reveal an existing Review panel. */
+  openWindowReviewPanel(panelId: string, request: ReviewPanelOpenRequest): Promise<boolean>
+
   /** Ask main to have the window that owns `panelId` close it (behind that
    *  window's own dirty/running confirmation gates). */
   closeWindowPanel(panelId: string): Promise<void>
@@ -875,6 +878,9 @@ export interface ElectronAPI {
 
   /** This window owns `panelId` — bring it forward within this window. */
   onRevealPanelInWindow(callback: (panelId: string) => void): () => void
+
+  /** This window owns a Review panel targeted from another window. */
+  onOpenReviewInWindow(callback: (panelId: string, request: ReviewPanelOpenRequest) => void): () => void
 
   /** This window owns `panelId` — close it (with the usual confirmation gates). */
   onClosePanelInWindow(callback: (panelId: string) => void): () => void

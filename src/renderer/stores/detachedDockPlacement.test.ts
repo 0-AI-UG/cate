@@ -21,7 +21,7 @@ vi.mock('../lib/terminal/terminalRegistry', () => ({
 import { useAppStore } from './appStore'
 import { createDockStore } from './dockStore'
 import { registerWorkspaceDockStore, releaseWorkspaceDockStore } from '../lib/workspace/dockRegistry'
-import { placementForActivePanel } from '../lib/workspace/canvasAccess'
+import { placementForActivePanel, placementForPanel } from '../lib/workspace/canvasAccess'
 import { setActivePanel } from '../lib/activePanel'
 import { useWindowPanelStore } from './windowPanelStore'
 import type { DockStore } from './dockStore'
@@ -80,6 +80,17 @@ describe('detached dock window panel placement', () => {
     // Same zone AND same stack — the new tab joined the active one.
     expect(secondLoc.zone).toBe(firstLoc.zone)
     expect(secondLoc.stackId).toBe(firstLoc.stackId)
+  })
+
+  it('resolves an explicit detached consumer to its exact dock stack', () => {
+    const source = useAppStore.getState().createTerminal(wsId)
+    const sourceLoc = dockLoc(localDock, source)
+
+    expect(placementForPanel(wsId, source)).toEqual({
+      target: 'dock',
+      zone: sourceLoc.zone,
+      stackId: sourceLoc.stackId,
+    })
   })
 
   it('places several created terminals into the window and numbers them', () => {

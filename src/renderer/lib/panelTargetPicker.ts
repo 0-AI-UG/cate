@@ -6,7 +6,7 @@ import {
   getActiveCanvasPanelId,
   getCanvasOpsById,
   getWorkspaceCanvasPanelId,
-  resolvePanelLocation,
+  placementForPanel,
 } from './workspace/canvasAccess'
 
 export type PanelTarget =
@@ -28,22 +28,18 @@ export function requestPanelTarget(request: PanelTargetRequest): Promise<PanelTa
   const workspace = state.workspaces.find((candidate) => candidate.id === request.workspaceId)
   if (!workspace) return Promise.resolve(null)
 
-  const sourceLocation = request.sourcePanelId
-    ? resolvePanelLocation(request.workspaceId, request.sourcePanelId)
-    : null
-  if (sourceLocation?.kind === 'dock') {
+  const sourcePlacement = request.sourcePanelId
+    ? placementForPanel(request.workspaceId, request.sourcePanelId)
+    : undefined
+  if (sourcePlacement?.target === 'dock') {
     if (request.availability === 'existing') return Promise.resolve(null)
     return Promise.resolve({
       kind: 'new',
-      placement: {
-        target: 'dock',
-        zone: sourceLocation.zone,
-        stackId: sourceLocation.stackId,
-      },
+      placement: sourcePlacement,
     })
   }
-  const canvasPanelId = sourceLocation?.kind === 'canvas'
-    ? sourceLocation.canvasPanelId
+  const canvasPanelId = sourcePlacement?.target === 'canvas'
+    ? sourcePlacement.canvasPanelId
     : getActiveCanvasPanelId() ?? getWorkspaceCanvasPanelId(request.workspaceId)
   if (!canvasPanelId) return Promise.resolve(null)
   const canvas = getCanvasOpsById(canvasPanelId)?.storeApi

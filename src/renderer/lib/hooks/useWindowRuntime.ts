@@ -30,6 +30,7 @@ import {
 } from '../agent/agentScreenDetector'
 import { isExternalFileDrag } from '../fs/importExternalEntries'
 import { revealPanel } from '../workspace/panelReveal'
+import { retargetReviewPanel } from '../review/openReviewPanel'
 import { closePanelWithConfirm } from '../closePanelWithConfirm'
 import { setupWindowPanelSync } from '../workspace/windowPanelSync'
 import { useOwnedTerminalTelemetry } from '../../hooks/useProcessMonitor'
@@ -154,6 +155,15 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
       const owner = app.workspaces.find((w) => panelId in w.panels)
       const wsId = owner?.id ?? app.selectedWorkspaceId
       void revealPanel(wsId, panelId, { retry: true })
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.electronAPI.onOpenReviewInWindow?.((panelId, request) => {
+      const app = useAppStore.getState()
+      const owner = app.workspaces.find((w) => panelId in w.panels)
+      if (!owner) return
+      void retargetReviewPanel(owner.id, panelId, request)
     })
   }, [])
 

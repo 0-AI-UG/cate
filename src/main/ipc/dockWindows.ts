@@ -5,7 +5,7 @@ import {
   listDockWindows,
   windowFromEvent,
 } from '../windowRegistry'
-import { revealWindowPanel, closeWindowPanel } from '../windowPanels'
+import { revealWindowPanel, openWindowReviewPanel, closeWindowPanel } from '../windowPanels'
 import { collectTopLevelPanelIds } from '../windows/dockState'
 import { revealWindow } from '../windows/reveal'
 import type {
@@ -20,8 +20,10 @@ import {
   DOCK_WINDOWS_LIST,
   DOCK_WINDOW_RESTORE,
   FOCUS_WINDOW_PANEL,
+  OPEN_WINDOW_REVIEW,
   CLOSE_WINDOW_PANEL,
 } from '../../shared/ipc-channels'
+import type { ReviewPanelOpenRequest } from '../../shared/types'
 
 interface DockWindowDeps {
   createWindow: (params?: CateWindowParams) => BrowserWindow
@@ -45,6 +47,14 @@ export function registerDockWindowHandlers({ createWindow }: DockWindowDeps): vo
   ipcMain.handle(FOCUS_WINDOW_PANEL, async (_event, panelId: string) => {
     revealWindowPanel(panelId)
   })
+
+  // Retarget an existing Review panel in whichever renderer owns it, then
+  // reveal that panel in its window.
+  ipcMain.handle(OPEN_WINDOW_REVIEW, async (
+    _event,
+    panelId: string,
+    request: ReviewPanelOpenRequest,
+  ) => openWindowReviewPanel(panelId, request))
 
   // Close a panel that lives in another window: route the request to its owner,
   // which runs its own dirty/running confirmation gates before closing.
