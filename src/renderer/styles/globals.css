@@ -146,6 +146,41 @@
   .border-danger { border-color: color-mix(in srgb, var(--git-deleted) 36%, transparent); }
   .border-warning { border-color: color-mix(in srgb, var(--activity-orange) 30%, transparent); }
 
+  @keyframes catePanelConnectionFlow {
+    to { stroke-dashoffset: -18; }
+  }
+
+  @keyframes catePanelConnectionFade {
+    from { opacity: 0.72; }
+    to { opacity: 0; }
+  }
+
+  @keyframes catePanelInteractionPulse {
+    0%, 100% { transform: scale(0.8); opacity: 0.55; }
+    50% { transform: scale(1.15); opacity: 1; }
+  }
+
+  .cate-panel-connection-active {
+    stroke-dasharray: 10 8;
+    animation: catePanelConnectionFlow 700ms linear infinite;
+  }
+
+  .cate-panel-connection-finished {
+    animation: catePanelConnectionFade 10s ease-out 30s forwards;
+  }
+
+  .cate-panel-interaction-dot-active {
+    animation: catePanelInteractionPulse 900ms ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cate-panel-connection-active,
+    .cate-panel-connection-finished,
+    .cate-panel-interaction-dot-active {
+      animation: none;
+    }
+  }
+
   /* Inline diff add/remove rows — themed via the git add/delete colors. */
   .bg-diff-add { background-color: color-mix(in srgb, var(--git-added) 12%, transparent); }
   .bg-diff-del { background-color: color-mix(in srgb, var(--git-deleted) 12%, transparent); }
