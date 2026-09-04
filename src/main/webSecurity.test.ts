@@ -7,7 +7,6 @@
 // =============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { Session } from 'electron'
 
 const PROXY_ORIGIN = 'http://127.0.0.1:5555'
 const CANONICAL_PRELOAD = '/app/dist/preload/cateHost.js'
@@ -42,16 +41,18 @@ function makeSession(): Record<string, unknown> {
   }
 }
 
-import { configureBrowserGuestSession, installWebContentsSecurity } from './webSecurity'
+import { installWebContentsSecurity } from './webSecurity'
 
 /** Build a fake webview WebContents, run the created-handlers over it, and
  *  return its captured will-attach-webview handler. */
 function webviewHarness() {
   const listeners: Record<string, (...a: unknown[]) => void> = {}
   const contents = {
+    id: 42,
     getType: () => 'webview',
     on: (ev: string, cb: (...a: unknown[]) => void) => { listeners[ev] = cb },
     setWindowOpenHandler: vi.fn(),
+    hostWebContents: { send: vi.fn() },
     session: makeSession(),
   }
   for (const cb of createdHandlers) cb({}, contents)
@@ -110,7 +111,7 @@ describe('will-attach-webview — extension-proxy preload pinning', () => {
 })
 
 describe('browser popup policy', () => {
-  it('keeps HTTPS sign-in popups inside Cate and blocks unsafe schemes', () => {
+  it('routes HTTPS popups into the opener panel tab layer and blocks unsafe schemes', () => {
     const { contents, listeners } = webviewHarness()
     listeners['will-attach-webview'](
       { preventDefault: vi.fn() },
@@ -122,9 +123,10 @@ describe('browser popup policy', () => {
       outlivesOpener?: boolean
     }
 
-    expect(handler({ url: 'https://accounts.google.com/o/oauth2/auth' })).toMatchObject({
-      action: 'allow',
-      outlivesOpener: false,
+    expect(handler({ url: 'https://accounts.google.com/o/oauth2/auth' })).toEqual({ action: 'deny' })
+    expect(contents.hostWebContents.send).toHaveBeenCalledWith('browser:openTabRequest', {
+      openerWebContentsId: 42,
+      url: 'https://accounts.google.com/o/oauth2/auth',
     })
     expect(handler({ url: 'javascript:alert(1)' })).toEqual({ action: 'deny' })
   })
@@ -141,22 +143,20 @@ describe('browser popup policy', () => {
   })
 })
 
-describe('main-owned browser view navigation', () => {
-  it('uses the browser allowlist for a browser-session popup reported as a window', () => {
-    const targetSession = makeSession()
-    configureBrowserGuestSession(targetSession as unknown as Session)
+describe('app-window navigation', () => {
+  it('does not permit remote browser content in top-level app windows', () => {
     const listeners: Record<string, (...args: unknown[]) => void> = {}
     const contents = {
       getType: () => 'window',
       on: (event: string, callback: (...args: unknown[]) => void) => { listeners[event] = callback },
       setWindowOpenHandler: vi.fn(),
-      session: targetSession,
+      session: makeSession(),
     }
     for (const callback of createdHandlers) callback({}, contents)
 
     const httpsNavigation = { preventDefault: vi.fn() }
     listeners['will-navigate'](httpsNavigation, 'https://de.wikipedia.org/')
-    expect(httpsNavigation.preventDefault).not.toHaveBeenCalled()
+    expect(httpsNavigation.preventDefault).toHaveBeenCalledOnce()
 
     const unsafeNavigation = { preventDefault: vi.fn() }
     listeners['will-navigate'](unsafeNavigation, 'javascript:alert(1)')

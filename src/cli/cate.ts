@@ -1,11 +1,11 @@
 // `cate` is a small client for the per-workspace loopback API injected into
-// Cate terminals. Browser page commands deliberately use agent-browser's
-// native argv. Cate only owns panel/tab lifecycle and canvas presentation.
+// Cate terminals. Browser page commands use Cate's stable argv grammar; the
+// app executes them against the selected live webview through target-bound CDP.
 
 import {
-  isReadOnlyAgentBrowserCommand,
-  validateAgentBrowserCommand,
-} from '../shared/agentBrowserCommand'
+  isReadOnlyBrowserCommand,
+  validateBrowserCommand,
+} from '../shared/browserCommand'
 
 export const CLI_VERSION = '11'
 export const DEFAULT_TIMEOUT_MS = 30_000
@@ -75,7 +75,7 @@ export function parseFileTarget(target: string): Record<string, unknown> {
 }
 
 /** Extract only Cate's four global flags. Everything else remains byte-for-byte
- * native agent-browser argv after `cate browser`. */
+ * native browser argv after `cate browser`. */
 export function parseCli(argv: string[]): Parsed {
   const flags: Flags = { json: false, help: false, version: false, foreground: false }
   const positionals: string[] = []
@@ -241,6 +241,10 @@ function browserRequest(args: string[], flags: Flags): Request {
       args: { tabId },
     }, flags.panel, 'browser')
   }
+  if (command === 'current' || command === 'back' || command === 'forward' || command === 'reload' || command === 'downloads') {
+    exact(rest, 0)
+    return withPanel({ method: `cate.browser.${command}`, args: {} }, flags.panel, 'browser')
+  }
   if (command === 'viewport') {
     const preset = rest[0]
     let viewport: Record<string, unknown>
@@ -275,12 +279,12 @@ function browserRequest(args: string[], flags: Flags): Request {
 
   let native: string[]
   try {
-    native = validateAgentBrowserCommand(args)
+    native = validateBrowserCommand(args)
   } catch (error) {
     throw new UsageError(error instanceof Error ? error.message : 'invalid-browser-command')
   }
   return withPanel({
-    method: isReadOnlyAgentBrowserCommand(native)
+    method: isReadOnlyBrowserCommand(native)
       ? 'cate.browser.readCommand'
       : 'cate.browser.command',
     args: { command: native },
@@ -561,7 +565,7 @@ export function formatHuman(method: string, value: unknown): string {
 }
 
 const USAGE = `Usage:
-  cate browser <agent-browser-command> [args] [--panel <id>]
+  cate browser <browser-command> [args] [--panel <id>]
   cate browser open|navigate|new-panel <url> [--panel <id>]
   cate browser tabs|new-tab|select-tab|close-tab [args] [--panel <id>]
   cate browser viewport compact|desktop|mobile|<width> <height>
@@ -572,8 +576,8 @@ const USAGE = `Usage:
   cate agent list|create|send|wait|inspect|review|apply|keep|discard|stop [args]
   cate version
 
-Browser page commands use native agent-browser syntax. Cate pins them to the
-selected built-in webview; browser/session startup, native tabs, batch commands,
+Browser page commands use Cate's native syntax. Cate pins them to the
+selected built-in browser session; session startup, native tabs, batch commands,
 and arbitrary host file paths are not exposed.
 
 Global flags: --panel <id> --json -h|--help --version`
@@ -588,10 +592,13 @@ Cate lifecycle:
   new-tab [url]
   select-tab <id>
   close-tab <id>
+  current
+  back|forward|reload
+  downloads
   viewport compact|desktop|mobile|<width> <height>
   resize <width> <height>
 
-Page automation uses native agent-browser syntax, for example:
+Page automation uses Cate's native browser syntax, for example:
   cate browser snapshot -i
   cate browser click @s1e3
   cate browser find role button click --name Save

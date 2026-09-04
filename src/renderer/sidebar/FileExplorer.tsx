@@ -19,6 +19,7 @@ import { pathDisplayName, workspaceDisplayName } from '../lib/fs/displayPath'
 import { isLocalLocator } from '../../shared/runtimeLocator'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
+import { LoadingState } from '../ui/Spinner'
 
 // Opening a workspace sets its root path optimistically in the renderer, but
 // main only registers that path as an allowed root once the async workspace
@@ -713,9 +714,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
 
       {/* Tree content */}
       {isLoading && nodes.length === 0 ? (
-        <div className="flex items-center justify-center flex-1 text-xs text-muted">
-          Loading...
-        </div>
+        <LoadingState label="Loading files…" size={14} className="flex-1 text-xs" />
       ) : nodes.length === 0 && !rootCreating ? (
         <div
           className="flex flex-col items-center justify-center flex-1 text-muted text-xs gap-2 p-4"

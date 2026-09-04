@@ -81,6 +81,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   terminalLinkOpenTarget: 'string',
   sidebarTintOpacity: 'number',
   showFileExplorerOnLaunch: 'boolean',
+  showSkillsInWorkspaceOverview: 'boolean',
   fileExclusions: 'array',
   notificationsEnabled: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',

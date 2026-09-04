@@ -1,6 +1,6 @@
 // Real Cate CLI E2E. Unlike src/cli/cate.integration.test.ts (scripted HTTP),
 // this launches Electron, provisions Cate's runtime, types commands into a real
-// Cate terminal, and drives a real BrowserPanel webview through CATE_API.
+// Cate terminal, and drives a real persistent BrowserPanel webview through CATE_API.
 
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
@@ -28,7 +28,17 @@ const FORM_HTML = `<!doctype html>
       <input id="password" type="password" value="never-expose-me" />
       <button id="submit" type="submit">Submit query</button>
       <button id="click" type="button">Click me</button>
+      <button id="semantic" type="button">Semantic action</button>
+      <button id="double" type="button">Double action</button>
+      <button id="hover" type="button">Hover action</button>
+      <label><input id="option" type="checkbox" checked /> Optional setting</label>
+      <label for="size">Size</label>
+      <select id="size"><option value="small">Small</option><option value="large">Large</option></select>
+      <div id="editor" contenteditable="true">Draft</div>
+      <button id="disabled" type="button" disabled>Disabled action</button>
+      <div id="hidden" style="display:none">Hidden content</div>
       <div id="status">Loading</div>
+      <div id="bottom" style="margin-top:1000px">Bottom marker</div>
     </form>
     <script>
       document.querySelector('#click').addEventListener('click', () => {
@@ -38,6 +48,18 @@ const FORM_HTML = `<!doctype html>
       document.querySelector('#form').addEventListener('submit', (event) => {
         event.preventDefault()
         document.title = 'Submitted:' + document.querySelector('#query').value
+      })
+      document.querySelector('#semantic').addEventListener('click', () => {
+        document.body.dataset.semantic = 'clicked'
+      })
+      document.querySelector('#double').addEventListener('dblclick', () => {
+        document.body.dataset.double = 'received'
+      })
+      document.querySelector('#hover').addEventListener('mouseenter', () => {
+        document.body.dataset.hover = 'received'
+      })
+      window.addEventListener('mousemove', (event) => {
+        document.body.dataset.mouse = event.clientX + ',' + event.clientY
       })
     </script>
   </body>
@@ -163,8 +185,8 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
 
   // Process/transport basics.
   expect(await runCate(controlNode, '--version')).toMatch(/^cate cli \d+$/)
-  expect(await runCate(controlNode, '--help')).toContain('cate browser <agent-browser-command>')
-  expect(await runCate(controlNode, 'version')).toBe('6')
+  expect(await runCate(controlNode, '--help')).toContain('cate browser <browser-command>')
+  expect(await runCate(controlNode, 'version')).toBe('7')
   expect(await runCate(controlNode, 'panel', 'list')).toContain('terminal')
 
   // Editor + panel verbs.
@@ -224,6 +246,45 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   await runCate(controlNode, 'browser', 'press', 'Enter', '--panel', browserId)
   expect(await runCate(controlNode, 'browser', 'snapshot', '--panel', browserId)).toContain('title: Submitted:hello cate')
   await runCate(controlNode, 'browser', 'press', 'PageDown', '--panel', browserId)
+
+  // Exercise every page-command family through the real terminal -> CLI ->
+  // HTTP -> renderer -> target-bound CDP path, not only through unit parsers.
+  await runCate(controlNode, 'browser', 'find', 'role', 'button', 'click', '--name', 'Semantic action', '--panel', browserId)
+  expect(await runCate(controlNode, 'browser', 'get', 'attr', 'body', 'data-semantic', '--panel', browserId)).toContain('clicked')
+
+  expect(JSON.parse(await runCate(controlNode, 'browser', 'is', 'visible', '#query', '--panel', browserId))).toMatchObject({ visible: true })
+  expect(JSON.parse(await runCate(controlNode, 'browser', 'is', 'enabled', '#disabled', '--panel', browserId))).toMatchObject({ enabled: false })
+  expect(JSON.parse(await runCate(controlNode, 'browser', 'is', 'checked', '#option', '--panel', browserId))).toMatchObject({ checked: true })
+  await runCate(controlNode, 'browser', 'uncheck', '#option', '--panel', browserId)
+  expect(JSON.parse(await runCate(controlNode, 'browser', 'is', 'checked', '#option', '--panel', browserId))).toMatchObject({ checked: false })
+  await runCate(controlNode, 'browser', 'check', '#option', '--panel', browserId)
+
+  await runCate(controlNode, 'browser', 'dblclick', '#double', '--panel', browserId)
+  expect(await runCate(controlNode, 'browser', 'get', 'attr', 'body', 'data-double', '--panel', browserId)).toContain('received')
+  await runCate(controlNode, 'browser', 'hover', '#hover', '--panel', browserId)
+  expect(await runCate(controlNode, 'browser', 'get', 'attr', 'body', 'data-hover', '--panel', browserId)).toContain('received')
+
+  await runCate(controlNode, 'browser', 'fill', '#editor', 'Rich', '--panel', browserId)
+  await runCate(controlNode, 'browser', 'type', '#editor', ' text', '--panel', browserId)
+  await runCate(controlNode, 'browser', 'focus', '#editor', '--panel', browserId)
+  await runCate(controlNode, 'browser', 'keyboard', 'type', ' via keyboard', '--panel', browserId)
+  expect(await runCate(controlNode, 'browser', 'get', 'text', '#editor', '--panel', browserId)).toContain('Rich text via keyboard')
+
+  await runCate(controlNode, 'browser', 'select', '#size', 'large', '--panel', browserId)
+  expect(await runCate(controlNode, 'browser', 'get', 'value', '#size', '--panel', browserId)).toContain('large')
+  await runCate(controlNode, 'browser', 'scrollintoview', '#bottom', '--panel', browserId)
+  await runCate(controlNode, 'browser', 'scroll', 'bottom', '--panel', browserId)
+  expect(JSON.parse(await runCate(controlNode, 'browser', 'eval', 'scrollY > 0', '--panel', browserId))).toMatchObject({ result: true })
+  await runCate(controlNode, 'browser', 'scroll', 'top', '--panel', browserId)
+  await runCate(controlNode, 'browser', 'mouse', 'move', '20', '30', '--panel', browserId)
+  expect(await runCate(controlNode, 'browser', 'get', 'attr', 'body', 'data-mouse', '--panel', browserId)).toContain('20,30')
+
+  expect(JSON.parse(await runCate(controlNode, 'browser', 'eval', 'console.log("CATE_CONSOLE_MARKER"); setTimeout(() => { window.__cateErrorReady = true; throw new Error("CATE_ERROR_MARKER") }, 0); "EVAL_OK"', '--panel', browserId))).toMatchObject({ result: 'EVAL_OK' })
+  await runCate(controlNode, 'browser', 'wait', '--fn', 'window.__cateErrorReady === true', '--timeout', '3000', '--panel', browserId)
+  expect(await runCate(controlNode, 'browser', 'console', '--panel', browserId)).toContain('CATE_CONSOLE_MARKER')
+  expect(await runCate(controlNode, 'browser', 'errors', '--panel', browserId)).toContain('CATE_ERROR_MARKER')
+  await runCate(controlNode, 'browser', 'console', '--clear', '--panel', browserId)
+  expect(JSON.parse(await runCate(controlNode, 'browser', 'console', '--panel', browserId))).toMatchObject({ messages: [] })
 
   // CATE_E2E creates an initially-hidden Chromium surface, for which Electron's
   // viewport capture never resolves. Screenshot output and composition are

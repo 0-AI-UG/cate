@@ -37,6 +37,7 @@ describe('BrowserMenu', () => {
         <BrowserMenu
           onNewTab={vi.fn()}
           onNavigate={vi.fn()}
+          onOpenHistory={vi.fn()}
           onOpenPasswordManager={vi.fn()}
           zoomPercent={67}
           onZoomOut={onZoomOut}
@@ -66,6 +67,7 @@ describe('BrowserMenu', () => {
         <BrowserMenu
           onNewTab={vi.fn()}
           onNavigate={vi.fn()}
+          onOpenHistory={vi.fn()}
           onOpenPasswordManager={vi.fn()}
           zoomPercent={100}
           onZoomOut={vi.fn()}
@@ -94,6 +96,7 @@ describe('BrowserMenu', () => {
         <BrowserMenu
           onNewTab={vi.fn()}
           onNavigate={vi.fn()}
+          onOpenHistory={vi.fn()}
           onOpenPasswordManager={vi.fn()}
           zoomPercent={100}
           onZoomOut={vi.fn()}
@@ -115,6 +118,7 @@ describe('BrowserMenu', () => {
         <BrowserMenu
           onNewTab={vi.fn()}
           onNavigate={vi.fn()}
+          onOpenHistory={vi.fn()}
           onOpenPasswordManager={onOpenPasswordManager}
           zoomPercent={100}
           onZoomOut={vi.fn()}
@@ -133,6 +137,32 @@ describe('BrowserMenu', () => {
     expect(onOpenPasswordManager).toHaveBeenCalledOnce()
   })
 
+  it('opens history inside the browser', () => {
+    const onOpenHistory = vi.fn()
+    act(() => {
+      root.render(
+        <BrowserMenu
+          onNewTab={vi.fn()}
+          onNavigate={vi.fn()}
+          onOpenHistory={onOpenHistory}
+          onOpenPasswordManager={vi.fn()}
+          zoomPercent={100}
+          onZoomOut={vi.fn()}
+          onZoomIn={vi.fn()}
+          onZoomReset={vi.fn()}
+          onClose={vi.fn()}
+          triggerRef={{ current: null }}
+        />,
+      )
+    })
+
+    const historyButton = [...host.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('History'))
+    act(() => historyButton?.click())
+
+    expect(onOpenHistory).toHaveBeenCalledOnce()
+  })
+
   it('opens bookmarks on hover and navigates from the submenu', () => {
     const onNavigate = vi.fn()
     const onClose = vi.fn()
@@ -148,6 +178,7 @@ describe('BrowserMenu', () => {
         <BrowserMenu
           onNewTab={vi.fn()}
           onNavigate={onNavigate}
+          onOpenHistory={vi.fn()}
           onOpenPasswordManager={vi.fn()}
           zoomPercent={100}
           onZoomOut={vi.fn()}
@@ -185,6 +216,7 @@ describe('BrowserMenu', () => {
             <BrowserMenu
               onNewTab={vi.fn()}
               onNavigate={vi.fn()}
+              onOpenHistory={vi.fn()}
               onOpenPasswordManager={vi.fn()}
               zoomPercent={100}
               onZoomOut={vi.fn()}

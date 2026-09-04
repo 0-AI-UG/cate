@@ -3,7 +3,7 @@
 // Ported from CanvasView.swift.
 // =============================================================================
 
-import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useRef, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore, type PanelPlacement } from '../stores/appStore'
@@ -26,6 +26,7 @@ import { CHAT_DRAG_MIME, readChatDrag } from '../drag/fileDragPayload'
 import { createSeededChatPanel } from '../drag/openChatDrop'
 import { endChatDrag } from '../drag/chatDragState'
 import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
+import { CanvasTopOverlayContext } from './CanvasTopOverlayContext'
 
 // Module-level style injection — shared across all Canvas instances
 let canvasStyleInjected = false
@@ -40,6 +41,10 @@ function injectCanvasInteractingStyle(): void {
     .canvas-interacting .xterm,
     .canvas-interacting .xterm-screen,
     .canvas-interacting .xterm-helper-textarea {
+      pointer-events: none !important;
+    }
+    .canvas-dragging [data-browser-surface],
+    .canvas-interacting [data-browser-surface] {
       pointer-events: none !important;
     }
     .canvas-interacting .xterm,
@@ -149,15 +154,24 @@ const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = 
 
 interface CanvasProps {
   children?: React.ReactNode
+  /** Screen-space canvas chrome that must remain above persistent browser surfaces. */
+  overlayChildren?: React.ReactNode
   /** Called when the user right-clicks empty canvas and picks a panel type. */
   onCreateAtPoint?: (type: PanelType, canvasPoint: Point) => void
   /** Stamped onto the container so resolveDrop can map back to a CanvasStore. */
   panelId?: string
 }
 
-const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) => {
+const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPoint, panelId }) => {
   const canvasRef = useRef<HTMLDivElement>(null)
   const worldRef = useRef<HTMLDivElement>(null)
+  const topOverlayRef = useRef<HTMLDivElement>(null)
+  const topOverlayWorldRef = useRef<HTMLDivElement | null>(null)
+  const [topOverlayWorld, setTopOverlayWorld] = useState<HTMLDivElement | null>(null)
+  const setTopOverlayWorldRef = useCallback((element: HTMLDivElement | null) => {
+    topOverlayWorldRef.current = element
+    setTopOverlayWorld(element)
+  }, [])
   // Debounce handle for de-promoting the world layer after pan/zoom settles.
   const willChangeResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const canvasApi = useCanvasStoreApi()
@@ -203,21 +217,28 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
   // Canvas itself never re-renders during pan/zoom — only the world div moves.
   useEffect(() => {
     const applyTransform = (zoom: number, offset: { x: number; y: number }) => {
-      const el = worldRef.current
-      if (!el) return
-      el.style.transform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
-      el.style.setProperty('--zoom', String(zoom))
+      const transform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
+      const layers = [worldRef.current, topOverlayWorldRef.current]
+      if (!layers.some(Boolean)) return
+      for (const el of layers) {
+        if (!el) continue
+        el.style.transform = transform
+        el.style.setProperty('--zoom', String(zoom))
+      }
 
       // Promote the world to its own GPU layer for the duration of the gesture so
       // pan/zoom stays smooth, then de-promote once it settles. While promoted,
       // Chromium bitmap-scales the layer's cached texture (blurs thin SVG icon
       // strokes); removing will-change forces a crisp re-raster at the resting
       // transform. Debounced so it only fires after the user stops interacting.
-      el.style.willChange = 'transform'
+      for (const el of layers) {
+        if (el) el.style.willChange = 'transform'
+      }
       if (willChangeResetRef.current) clearTimeout(willChangeResetRef.current)
       willChangeResetRef.current = setTimeout(() => {
-        const node = worldRef.current
-        if (node) node.style.willChange = 'auto'
+        for (const node of [worldRef.current, topOverlayWorldRef.current]) {
+          if (node) node.style.willChange = 'auto'
+        }
         willChangeResetRef.current = null
       }, 150)
     }
@@ -237,6 +258,33 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
       if (willChangeResetRef.current) clearTimeout(willChangeResetRef.current)
     }
   }, []) // mount-only
+
+  // The persistent browser host is fixed at the window root, outside this
+  // canvas's stacking context. Keep a fixed overlay clipped and aligned to the
+  // canvas viewport so above-panel chrome can share screen space with it.
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const sync = () => {
+      const overlay = topOverlayRef.current
+      if (!overlay) return
+      const rect = canvas.getBoundingClientRect()
+      overlay.style.left = `${rect.left}px`
+      overlay.style.top = `${rect.top}px`
+      overlay.style.width = `${rect.width}px`
+      overlay.style.height = `${rect.height}px`
+    }
+    sync()
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(sync)
+    resize?.observe(canvas)
+    window.addEventListener('resize', sync)
+    window.addEventListener('scroll', sync, true)
+    return () => {
+      resize?.disconnect()
+      window.removeEventListener('resize', sync)
+      window.removeEventListener('scroll', sync, true)
+    }
+  }, [])
 
   // Auto-focus the node that occupies the most visible viewport area (opt-in).
   useAutoFocusLargestVisible(canvasApi)
@@ -587,13 +635,32 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
     return () => { cancelled = true }
   }, [canvasContextMenu, onCreateAtPoint, canvasApi, closeCanvasContextMenu, here])
 
-  return (
+  const marqueeElement = marqueeRect ? (
     <div
-      ref={canvasRef}
-      data-canvas-container
-      data-canvas-panel-id={panelId}
-      data-filedrop="canvas"
-      data-filedrop-id={panelId}
+      data-canvas-marquee
+      style={{
+        position: 'absolute',
+        left: marqueeRect.x,
+        top: marqueeRect.y,
+        width: marqueeRect.w,
+        height: marqueeRect.h,
+        backgroundColor: 'rgba(74, 158, 255, 0.1)',
+        border: '1px solid rgba(74, 158, 255, 0.5)',
+        borderRadius: 2,
+        pointerEvents: 'none',
+        zIndex: 99999,
+      }}
+    />
+  ) : null
+
+  return (
+    <CanvasTopOverlayContext.Provider value={topOverlayWorld}>
+      <div
+        ref={canvasRef}
+        data-canvas-container
+        data-canvas-panel-id={panelId}
+        data-filedrop="canvas"
+        data-filedrop-id={panelId}
       // overflow-clip, not overflow-hidden: the canvas pans via the world
       // transform and must never become a scroll container. `hidden` clips
       // visually but still allows *programmatic* scrolling — when a panel's
@@ -648,29 +715,44 @@ const Canvas: React.FC<CanvasProps> = ({ children, onCreateAtPoint, panelId }) =
         onClick={handleWorldClick}
       >
         <SnapGuides />
-        {marqueeRect && (
-          <div
-            style={{
-              position: 'absolute',
-              left: marqueeRect.x,
-              top: marqueeRect.y,
-              width: marqueeRect.w,
-              height: marqueeRect.h,
-              backgroundColor: 'rgba(74, 158, 255, 0.1)',
-              border: '1px solid rgba(74, 158, 255, 0.5)',
-              borderRadius: 2,
-              pointerEvents: 'none',
-              zIndex: 99999,
-            }}
-          />
-        )}
         {children}
-        <GhostPlacementLayer />
-        {(import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV && <PlacementVizOverlay />}
       </div>
 
+      {createPortal(
+        <div
+          ref={topOverlayRef}
+          data-canvas-top-overlay={panelId ?? ''}
+          style={{
+            position: 'fixed',
+            overflow: 'clip',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        >
+          <div
+            ref={setTopOverlayWorldRef}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 1,
+              height: 1,
+              transformOrigin: '0 0',
+              pointerEvents: 'none',
+            }}
+          >
+            {marqueeElement}
+            <GhostPlacementLayer canvasRef={canvasRef} />
+            {(import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV && <PlacementVizOverlay />}
+          </div>
+          {overlayChildren}
+        </div>,
+        document.body,
+      )}
+
       <PlacementHint canvasRef={canvasRef} />
-    </div>
+      </div>
+    </CanvasTopOverlayContext.Provider>
   )
 }
 

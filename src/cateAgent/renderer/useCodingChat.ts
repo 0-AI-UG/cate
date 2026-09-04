@@ -31,7 +31,7 @@ import {
   readFileAsImage,
   readPathAsImage,
   imageMimeForPath,
-} from './CateAgentPanelChrome'
+} from '../../renderer/chat/imageAttachments'
 import type {
   CodingImageAttachment,
   CateAgentModelRef,

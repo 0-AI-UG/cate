@@ -24,6 +24,7 @@ import { useAppStore } from '../stores/appStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { pathDisplayName } from '../lib/fs/displayPath'
 import { Tooltip } from '../ui/Tooltip'
+import { Spinner } from '../ui/Spinner'
 import { useGitStatusSnapshot, gitStatusStore, workspaceIdForRoot } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
 import { errorMessage } from '../lib/errorMessage'
@@ -685,36 +686,24 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
 
   const headerActions = (
     <>
-      <Tooltip label="Review all uncommitted changes">
-        <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' })} aria-label="Review all uncommitted changes">
-          <GitDiff size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Open new diff review">
-        <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' }, undefined, true)} aria-label="Open new diff review">
-          <Plus size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Fetch from remote">
-        <SidebarHeaderButton onClick={fetch_} aria-label="Fetch from remote" disabled={fetching} spinning={fetching}>
-          <Download size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Pull from remote">
-        <SidebarHeaderButton onClick={pull} aria-label="Pull from remote" disabled={pulling}>
-          <ArrowDown size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Push to remote">
-        <SidebarHeaderButton onClick={push} aria-label="Push to remote" disabled={pushing}>
-          <ArrowUp size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Refresh status">
-        <SidebarHeaderButton onClick={refresh} aria-label="Refresh status" spinning={loading}>
-          <ArrowClockwise size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
+      <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' })} title="Review all uncommitted changes">
+        <GitDiff size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' }, undefined, true)} title="Open new diff review">
+        <Plus size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={fetch_} title="Fetch from remote" disabled={fetching} spinning={fetching}>
+        <Download size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={pull} title="Pull from remote" disabled={pulling} spinning={pulling}>
+        <ArrowDown size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={push} title="Push to remote" disabled={pushing} spinning={pushing}>
+        <ArrowUp size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={refresh} title="Refresh status" spinning={loading}>
+        <ArrowClockwise size={12} />
+      </SidebarHeaderButton>
     </>
   )
 
@@ -776,11 +765,12 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
         />
         <div className="flex gap-1 mt-1.5">
           <button
-            className="flex-1 py-1 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-surface-2 hover:bg-hover text-primary"
+            className="flex-1 inline-flex items-center justify-center gap-1 py-1 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-surface-2 hover:bg-hover text-primary"
             disabled={!commitMessage.trim() || stagedFiles.length === 0 || committing}
             onClick={commit}
           >
-            {committing ? 'Committing...' : 'Commit'}
+            {committing && <Spinner size={12} />}
+            {committing ? 'Committing…' : 'Commit'}
           </button>
           <Tooltip label="Stash changes" placement="top">
             <button

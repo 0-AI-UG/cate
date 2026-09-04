@@ -19,11 +19,13 @@
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Plus, Trash, CircleNotch, ArrowsClockwise, ArrowCircleUp, Warning, CaretRight, CaretLeft } from '@phosphor-icons/react'
+import { Plus, Trash, ArrowsClockwise, ArrowCircleUp, Warning, CaretRight, CaretLeft } from '@phosphor-icons/react'
 import { SettingRow, SearchableBlock, SecondaryButton, Toggle, TextInput } from './SettingsComponents'
-import { Tooltip } from '../ui/Tooltip'
 import { errorMessage } from '../lib/errorMessage'
 import { useExtensionsStore, ensureExtensionsStarted } from '../stores/extensionsStore'
+import { LoadingState, Spinner } from '../ui/Spinner'
+import { InlineNotice } from '../ui/InlineNotice'
+import { IconButton } from '../ui/Button'
 import {
   EXTENSION_CATEGORIES,
   extensionCategoryLabel,
@@ -140,18 +142,16 @@ const IconAction = ({
   danger?: boolean
   children: ReactNode
 }) => (
-  <Tooltip label={label}>
-    <button
+    <IconButton
+      label={label}
+      size={20}
       onClick={onClick}
       disabled={disabled}
-      aria-label={label}
-      className={`shrink-0 p-0.5 rounded-lg text-muted disabled:opacity-30 ${
-        danger ? 'hover:text-red-400' : 'hover:text-primary'
-      }`}
+      tone={danger ? 'danger' : 'default'}
+      className="p-0.5"
     >
       {children}
-    </button>
-  </Tooltip>
+    </IconButton>
 )
 
 /** The extension's declared `cateApi` scopes as readable permission chips,
@@ -494,13 +494,13 @@ export function ExtensionsSettings() {
         }
         actions={
           !entry.installed ? (
-            <SecondaryButton onClick={() => void install(entry)} disabled={inFlight}>
-              {inFlight ? <CircleNotch size={11} className="animate-spin" /> : <Plus size={11} />}
-              {inFlight ? 'Installing…' : 'Install'}
+            <SecondaryButton onClick={() => void install(entry)} loading={inFlight} loadingLabel="Installing…">
+              <Plus size={11} />
+              Install
             </SecondaryButton>
           ) : (
             <>
-              {inFlight && <CircleNotch size={12} className="animate-spin text-muted shrink-0" />}
+              {inFlight && <Spinner size={12} className="text-muted" />}
               {entry.updateAvailable && (
                 <SecondaryButton onClick={() => void update(id)} disabled={inFlight}>
                   <ArrowCircleUp size={11} />
@@ -541,13 +541,9 @@ export function ExtensionsSettings() {
       <SearchableBlock keywords="extensions catalog browse install remote plugin marketplace">
         <div className="flex items-center justify-between pt-1">
           <span className="text-sm text-primary">Catalog</span>
-          <SecondaryButton onClick={() => void refreshCatalog()} disabled={refreshing}>
-            {refreshing ? (
-              <CircleNotch size={11} className="animate-spin" />
-            ) : (
-              <ArrowsClockwise size={11} />
-            )}
-            {refreshing ? 'Refreshing…' : 'Refresh catalog'}
+          <SecondaryButton onClick={() => void refreshCatalog()} loading={refreshing} loadingLabel="Refreshing…">
+            <ArrowsClockwise size={11} />
+            Refresh catalog
           </SecondaryButton>
         </div>
 
@@ -603,7 +599,7 @@ export function ExtensionsSettings() {
             )}
           </>
         ) : refreshing || initialLoad ? (
-          <p className="text-[11px] text-muted px-1 py-2">Loading catalog…</p>
+          <LoadingState label="Loading catalog…" size={13} className="justify-start px-1 py-2 text-[11px]" />
         ) : sources.length === 0 ? (
           <p className="text-[11px] text-muted px-1 py-2">
             No catalog sources configured. Add one below, then refresh.
@@ -620,13 +616,13 @@ export function ExtensionsSettings() {
         label="Add local folder"
         description="Load an extension from a folder on disk (sideload). The folder must contain an extension manifest."
       >
-        <SecondaryButton onClick={() => void addFolder()} disabled={busy}>
+        <SecondaryButton onClick={() => void addFolder()} loading={busy} loadingLabel="Adding…">
           <Plus size={11} />
           Add local folder…
         </SecondaryButton>
       </SettingRow>
 
-      {err && <div className="text-[11px] text-red-400 -mt-1 mb-1">{err}</div>}
+      {err && <InlineNotice tone="error" className="-mt-1 mb-1 border-0 bg-transparent px-0">{err}</InlineNotice>}
 
       {sideloadEntries.length > 0 && (
         <SearchableBlock keywords="extensions sideload local panels enable disable plugin">
@@ -664,13 +660,13 @@ export function ExtensionsSettings() {
               }}
               disabled={addingSource}
             />
-            <SecondaryButton onClick={() => void addSource()} disabled={addingSource || newSource.trim() === ''}>
-              {addingSource ? <CircleNotch size={11} className="animate-spin" /> : <Plus size={11} />}
+            <SecondaryButton onClick={() => void addSource()} disabled={newSource.trim() === ''} loading={addingSource} loadingLabel="Adding…">
+              <Plus size={11} />
               Add source
             </SecondaryButton>
           </div>
 
-          {sourceErr && <div className="text-[11px] text-red-400 mb-1">{sourceErr}</div>}
+          {sourceErr && <InlineNotice tone="error" className="mb-1 border-0 bg-transparent px-0">{sourceErr}</InlineNotice>}
 
           {sources.length > 0 ? (
             <div className="rounded-lg border border-subtle overflow-hidden">

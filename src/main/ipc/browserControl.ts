@@ -1,107 +1,94 @@
-// =============================================================================
-// browserControl — main-process half of the `cate.browser.*` agent surface.
-//
-// Browser automation is main-process-owned and implemented by agent-browser.
-// The renderer resolves the visible Cate panel and forwards the method here;
-// this module enforces guest ownership before the service can reach CDP.
-//
-// Every op re-uses the WEBVIEW_SCREENSHOT ownership rule: the target
-// webContents must be a webview guest hosted by the CALLING window, so one
-// window can never reach into another's pages.
-// =============================================================================
+// Main-process control plane for Cate browser webviews. The renderer owns the
+// visible tab and passes its exact guest id; this module validates ownership,
+// binds an explicit logical identity, and delegates only to that guest's CDP
+// session. There is no global target lookup and no second browser instance.
 
 import { BrowserWindow, ipcMain, webContents, type WebContents } from 'electron'
 import log from '../logger'
 import { wrapHandler } from './handlerError'
 import { grantFileAccess } from './pathValidation'
 import { BROWSER_CONTROL } from '../../shared/ipc-channels'
-import { agentBrowserService } from '../browser/agentBrowser'
+import { browserRuntime, type BrowserTargetIdentity } from '../browser/browserRuntime'
+import { actOnBrowserDownload, downloadsForWebContents, watchDownloadsForSession } from '../browser/browserDownloads'
+import { authorizeBrowserUploadCommand } from '../browser/browserUpload'
 
-export interface BrowserControlRequest {
-  op:
-    | 'registerAgentBrowser'
-    | 'agentBrowser'
-    | 'downloads'
+export { watchDownloadsForSession }
+
+export interface BrowserControlRequest extends Partial<BrowserTargetIdentity> {
+  op: 'attach' | 'execute' | 'downloads' | 'downloadAction'
   webContentsId: number
-  panelId?: string
-  tabId?: string
   method?: string
   args?: Record<string, unknown>
 }
 
 /** Resolve the target guest, enforcing that it belongs to the calling window. */
 export function resolveBrowserGuest(event: Electron.IpcMainInvokeEvent, webContentsId: number): WebContents | null {
-  const wc = webContents.fromId(webContentsId)
-  if (!wc || wc.isDestroyed()) return null
-  const callerWin = BrowserWindow.fromWebContents(event.sender)
-  const targetWin = BrowserWindow.fromWebContents(wc)
-  if (!callerWin || !targetWin || targetWin.id !== callerWin.id) {
-    const hostWc = wc.hostWebContents
-    if (!hostWc || hostWc.id !== event.sender.id) {
-      log.warn(`[browser:control] denied: webContentsId ${webContentsId} is not owned by the calling window`)
-      return null
-    }
+  const contents = webContents.fromId(webContentsId)
+  if (!contents || contents.isDestroyed() || contents.getType() !== 'webview') return null
+  const host = contents.hostWebContents
+  if (!host || host.id !== event.sender.id) {
+    log.warn(`[browser:control] denied: webContentsId ${webContentsId} is not owned by the calling window`)
+    return null
   }
-  return wc
+  return contents
 }
 
-// Downloads observed per guest webContents, newest last. `wait download` reads
-// this; it is capped because nothing ever prunes it otherwise.
-const DOWNLOADS_PER_GUEST = 20
-const downloadsByWebContents = new Map<number, Array<{ url: string; filePath: string; state: string; at: number }>>()
-
-/** Record downloads for a guest's session. Called by the browser panel host when
- *  a partition is first configured, so a download that happens before any agent
- *  asks about it is still observed. Safe to call repeatedly for one session. */
-const watchedSessions = new WeakSet<Electron.Session>()
-export function watchDownloadsForSession(session: Electron.Session): void {
-  if (watchedSessions.has(session)) return
-  watchedSessions.add(session)
-  session.on('will-download', (_event, item, guest) => {
-    const id = guest?.id
-    if (id === undefined) return
-    const list = downloadsByWebContents.get(id) ?? []
-    const entry = { url: item.getURL(), filePath: '', state: 'started', at: Date.now() }
-    list.push(entry)
-    while (list.length > DOWNLOADS_PER_GUEST) list.shift()
-    downloadsByWebContents.set(id, list)
-    item.once('done', (_e, state) => {
-      entry.state = state
-      entry.filePath = item.getSavePath()
-    })
-  })
+function identity(req: BrowserControlRequest): BrowserTargetIdentity | null {
+  return req.workspaceId && req.panelId && req.tabId
+    ? { workspaceId: req.workspaceId, panelId: req.panelId, tabId: req.tabId }
+    : null
 }
 
 export function registerBrowserControlHandlers(): void {
+  // Native user input wins over an in-flight agent action for this guest. The
+  // guest preload sends no page data—only this cancellation signal.
+  ipcMain.on('cate-browser-user-input', (event) => {
+    if (event.sender.getType() === 'webview') browserRuntime.noteUserInput(event.sender.id)
+  })
   ipcMain.handle(BROWSER_CONTROL, wrapHandler(`[${BROWSER_CONTROL}]`, async (event, req: BrowserControlRequest) => {
-    // Clipboard is app-global, but still gated on owning a real guest so the
-    // permission story stays "you may drive THIS panel".
-    const wc = resolveBrowserGuest(event, req.webContentsId)
-    if (!wc) return { error: 'no-guest' }
-    switch (req.op) {
-      case 'downloads':
-        return { downloads: downloadsByWebContents.get(req.webContentsId) ?? [] }
+    const contents = resolveBrowserGuest(event, req.webContentsId)
+    if (!contents) return { error: 'no-guest' }
+    const target = identity(req)
+    if (!target) return { error: 'browser-target-required' }
 
-      case 'registerAgentBrowser': {
-        if (!req.panelId || !req.tabId) return { error: 'browser-target-required' }
-        await agentBrowserService.register(wc, req.panelId, req.tabId)
-        return { ok: true }
-      }
-
-      case 'agentBrowser': {
-        if (!req.method) return { error: 'browser-method-required' }
-        const response = await agentBrowserService.execute(req.webContentsId, req.method, req.args ?? {})
-        const callerWinId = BrowserWindow.fromWebContents(event.sender)?.id
-        const result = response.result
-        if (callerWinId !== undefined && result && typeof result === 'object') {
-          const filePath = (result as { path?: unknown }).path
-          if (typeof filePath === 'string') await grantFileAccess(callerWinId, filePath)
-        }
-        return response
-      }
-
-      default:
-        return { error: 'unsupported-op' }
+    if (req.op === 'attach') {
+      watchDownloadsForSession(contents.session)
+      await browserRuntime.attach(contents, target)
+      return { ok: true }
     }
+    if (req.op === 'downloads') {
+      if (!browserRuntime.isRegistered(contents.id)) return { error: 'browser-target-not-registered' }
+      return { downloads: downloadsForWebContents(contents.id) }
+    }
+    if (req.op === 'downloadAction') {
+      if (!browserRuntime.isRegistered(contents.id)) return { error: 'browser-target-not-registered' }
+      const downloadId = req.args?.downloadId
+      const action = req.method
+      if (typeof downloadId !== 'string' || !['cancel', 'open', 'show'].includes(action ?? '')) {
+        return { error: 'invalid-download-action' }
+      }
+      return actOnBrowserDownload(contents.id, downloadId, action as 'cancel' | 'open' | 'show')
+    }
+    if (req.op === 'execute') {
+      if (!req.method) return { error: 'browser-method-required' }
+      const callerWindowId = BrowserWindow.fromWebContents(event.sender)?.id
+      let args = req.args ?? {}
+      if (req.method === 'command' && Array.isArray(args.command) && args.command[0] === 'upload') {
+        if (callerWindowId === undefined) return { error: 'browser-upload-owner-required' }
+        try {
+          args = { ...args, command: await authorizeBrowserUploadCommand(args.command as string[], callerWindowId, target.workspaceId) }
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : 'browser-upload-path-denied' }
+        }
+      }
+      const response = await browserRuntime.execute(contents.id, target, req.method, args)
+      const result = response.result
+      if (callerWindowId !== undefined && result && typeof result === 'object') {
+        const filePath = (result as { path?: unknown }).path
+        if (typeof filePath === 'string') await grantFileAccess(callerWindowId, filePath)
+      }
+      return response
+    }
+    return { error: 'unsupported-op' }
   }))
 }

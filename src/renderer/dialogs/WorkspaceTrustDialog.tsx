@@ -23,17 +23,19 @@ import { useState } from 'react'
 import { ShieldWarning } from '@phosphor-icons/react'
 import { Modal, btn } from '../ui/Modal'
 import { useWorkspaceTrustStore } from '../stores/workspaceTrustStore'
+import { Spinner } from '../ui/Spinner'
 
 export function WorkspaceTrustDialog(): JSX.Element | null {
   const locator = useWorkspaceTrustStore((s) => s.queue[0]?.locator)
   const answerTrustPrompt = useWorkspaceTrustStore((s) => s.answerTrustPrompt)
-  const [busy, setBusy] = useState(false)
+  const [busyChoice, setBusyChoice] = useState<boolean | null>(null)
+  const busy = busyChoice !== null
 
   if (!locator) return null
 
   const answer = (trusted: boolean): void => {
-    setBusy(true)
-    void answerTrustPrompt(trusted).finally(() => setBusy(false))
+    setBusyChoice(trusted)
+    void answerTrustPrompt(trusted).finally(() => setBusyChoice(null))
   }
 
   return (
@@ -72,7 +74,8 @@ export function WorkspaceTrustDialog(): JSX.Element | null {
           disabled={busy}
           autoFocus
         >
-          Don&apos;t open
+          {busyChoice === false && <Spinner size={13} />}
+          {busyChoice === false ? 'Closing…' : 'Don\'t open'}
         </button>
         <button
           type="button"
@@ -80,7 +83,8 @@ export function WorkspaceTrustDialog(): JSX.Element | null {
           onClick={() => answer(true)}
           disabled={busy}
         >
-          Trust and open
+          {busyChoice === true && <Spinner size={13} />}
+          {busyChoice === true ? 'Opening…' : 'Trust and open'}
         </button>
       </div>
     </Modal>

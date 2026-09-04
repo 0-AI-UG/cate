@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, session } from 'electron'
 import log from '../logger'
 import { createWindow } from '../windows/windowFactory'
 import { setMainWindowReady, flushPendingOpenPaths } from './openPath'
@@ -32,9 +32,10 @@ import {
 //      SESSION_FLUSH_SAVE to the renderer, defer quit
 //   2. renderer saves session (async — needs live PTYs for CWD/scrollback)
 //   3. renderer sends SESSION_FLUSH_SAVE_DONE
-//   4. main process marks the quit committed and re-triggers app.quit()
-//   5. before-quit fires again (isQuitCommitted() — falls through)
-//   6. will-quit: sync fallback save, kill PTYs, _exit(0)
+//   4. main flushes the persistent browser storage/cookie stores
+//   5. main process marks the quit committed and re-triggers app.quit()
+//   6. before-quit fires again (isQuitCommitted() — falls through)
+//   7. will-quit: sync fallback save, kill PTYs, _exit(0)
 //
 // EVERY quit route lands here with its windows still alive: Cmd+Q and menu-Quit
 // arrive directly, and closing the last main window is turned into an app.quit()
@@ -52,6 +53,18 @@ const DOCK_FLUSH_TIMEOUT_MS = 600
 // hard reallyExit(). Long enough for a clean local SIGTERM, short enough that an
 // unresponsive remote socket can't stall quit (the daemon reaps orphans anyway).
 const EXIT_DISPOSE_TIMEOUT_MS = 800
+
+const SHARED_BROWSER_PARTITION = 'persist:browser-shared'
+
+type BrowserSessionStore = Pick<Electron.Session, 'cookies' | 'flushStorageData'>
+
+/** Force Chromium's persistent browser state to disk before Cate's hard exit. */
+export async function flushPersistentBrowserSession(
+  browserSession: BrowserSessionStore = session.fromPartition(SHARED_BROWSER_PARTITION),
+): Promise<void> {
+  browserSession.flushStorageData()
+  await browserSession.cookies.flushStore()
+}
 
 // Re-entrancy guard for the hard-exit path: once we've prevented Electron's
 // natural teardown and kicked off the bounded dispose, a second will-quit fire
@@ -160,9 +173,16 @@ export function registerLifecycleHandlers(): void {
     // Prevent quit until the renderer confirms session save
     event.preventDefault()
 
+    let proceedStarted = false
     const proceed = () => {
-      markQuitCommitted()
-      app.quit()
+      if (proceedStarted) return
+      proceedStarted = true
+      void flushPersistentBrowserSession()
+        .catch((err) => log.warn('Browser session flush failed during quit: %O', err))
+        .finally(() => {
+          markQuitCommitted()
+          app.quit()
+        })
     }
 
     // Listen for renderer ACK

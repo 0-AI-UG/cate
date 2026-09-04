@@ -26,6 +26,7 @@ import { relativeDisplayPath } from '../lib/fs/displayPath'
 import { InlineEditInput } from './InlineEditInput'
 import { CreateFileForm } from './CreateFileForm'
 import { CATE_FILE_MIME, readCateFilePaths, writeCateFileDrag } from '../drag/fileDragPayload'
+import { Spinner } from '../ui/Spinner'
 
 // -----------------------------------------------------------------------------
 // Icon mapping — extension to inline SVG icons with colors
@@ -541,7 +542,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 
         {/* Loading indicator for lazy-loaded directories */}
         {isLoading && (
-          <span className="text-xs text-muted ml-auto">...</span>
+          <Spinner size={11} className="text-muted ml-auto" label={`Loading ${node.name}`} />
         )}
       </div>
 

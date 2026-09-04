@@ -27,6 +27,7 @@ import { useWindowRuntime } from '../lib/hooks/useWindowRuntime'
 import WindowChrome from './WindowChrome'
 import { TRAFFIC_LIGHTS_WIDTH } from './MacWindowChrome'
 import { useWindowFullscreen } from '../lib/useWindowFullscreen'
+import { LoadingState } from '../ui/Spinner'
 
 import { PanelHost } from '../panels/PanelHost'
 import { IS_MAC } from '../lib/platform'
@@ -362,7 +363,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   if (!ready) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-surface-4 text-muted">
-        <div className="text-sm">Loading...</div>
+        <LoadingState label="Loading window…" className="text-sm" />
       </div>
     )
   }

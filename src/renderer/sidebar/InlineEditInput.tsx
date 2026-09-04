@@ -39,6 +39,7 @@ export const InlineEditInput = forwardRef<HTMLInputElement, InlineEditInputProps
         if (stopKeyPropagation) e.stopPropagation()
       }}
       onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
     />
   ),
 )

@@ -14,7 +14,7 @@ import React from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
-import { SettingRow, SearchableBlock } from './SettingsComponents'
+import { SettingRow, SearchableBlock, Toggle } from './SettingsComponents'
 import { SettingsSearchContext, type SettingsSearchState } from './SettingsSearchContext'
 
 let host: HTMLDivElement
@@ -104,5 +104,20 @@ describe('SearchableBlock filtering', () => {
   it('stays visible when the section title matched', () => {
     const el = render({ query: 'font', sectionMatched: true }, block)
     expect(isVisible(el)).toBe(true)
+  })
+})
+
+describe('settings control accessibility', () => {
+  it('associates a toggle with its setting label and exposes switch state', () => {
+    const el = render(
+      { query: '', sectionMatched: false },
+      <SettingRow label="Warn before quit">
+        <Toggle checked onChange={() => {}} />
+      </SettingRow>,
+    )
+    const toggle = el.querySelector('[role="switch"]')!
+    const label = el.querySelector('[id]')!
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    expect(toggle.getAttribute('aria-labelledby')).toBe(label.id)
   })
 })

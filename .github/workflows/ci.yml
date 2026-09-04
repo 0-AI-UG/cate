@@ -42,6 +42,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Build the same native addon shipped in Linux runtime tarballs and inspect
+      # its ELF symbol versions. This catches a future image/toolchain change
+      # that would make terminals fail on glibc 2.28–2.31 hosts (#604).
+      - name: Linux runtime glibc compatibility regression
+        if: runner.os == 'Linux'
+        run: npm run test:runtime:linux-glibc
+
       - name: Build
         run: npm run build
         env:
@@ -88,9 +95,31 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: npm run test:smoke:electron
 
-      # NOTE: the Playwright e2e suite is intentionally NOT run here. The content-
-      # search specs drive the real local runtime daemon, whose ripgrep ships in
-      # the runtime tarball — building that tarball (node-pty compile + node/rg
-      # download + pi bundle) adds ~5min to every PR. The release workflow builds
-      # the tarball anyway, so e2e runs there instead (see release.yml). Keep this
-      # PR gate fast: build + typecheck + unit + smoke.
+      # Browser-control E2E does not need the separately packaged Cate runtime:
+      # it drives local deterministic HTTP fixtures through the real Electron
+      # webview + CDP boundary. Keep this cross-platform so Chromium/Electron
+      # behavior changes cannot pass on one desktop OS and fail silently on the
+      # others. Linux needs a virtual display even though Cate hides its window.
+      - name: Browser workflow E2E (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run test:e2e:browser
+        env:
+          E2E_SKIP_PERF: "1"
+
+      - name: Browser workflow E2E (macOS/Windows)
+        if: runner.os != 'Linux'
+        run: npm run test:e2e:browser
+        env:
+          E2E_SKIP_PERF: "1"
+
+      - name: Browser workflow flake check (macOS)
+        if: runner.os == 'macOS'
+        run: npx playwright test e2e/browser-advanced-workflows.spec.ts --repeat-each=3
+        env:
+          E2E_SKIP_PERF: "1"
+
+      # NOTE: the remaining Playwright specs are intentionally NOT run here. The
+      # content-search specs drive the real local runtime daemon, whose ripgrep
+      # ships in the runtime tarball — building that tarball (node-pty compile +
+      # node/rg download + pi bundle) adds ~5min to every PR. Browser E2E above is
+      # self-contained, so it can remain a normal PR gate.
