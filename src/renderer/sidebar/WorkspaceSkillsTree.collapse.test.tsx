@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import type { InstalledSkill } from '../../shared/skills'
+import { DEFAULT_SETTINGS } from '../../shared/types'
+import { useSettingsStore } from '../stores/settingsStore'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
 import { useTreeCollapseStore } from './treeCollapse'
 
@@ -25,6 +27,7 @@ let root: Root
 beforeEach(() => {
   localStorage.clear()
   useTreeCollapseStore.setState({ collapsed: new Set() })
+  useSettingsStore.setState({ ...DEFAULT_SETTINGS, _loaded: true })
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -58,6 +61,15 @@ async function remount(workspaceId = 'w1'): Promise<void> {
 }
 
 describe('WorkspaceSkillsTree collapse persistence', () => {
+  it('does not load or show skills when the overview setting is disabled', async () => {
+    useSettingsStore.setState({ showSkillsInWorkspaceOverview: false })
+
+    await mount()
+
+    expect(window.electronAPI.skillsListInstalled).not.toHaveBeenCalled()
+    expect(rowTitles()).toEqual([])
+  })
+
   it('keeps an agent group collapsed across a remount', async () => {
     await mount()
     expect(rowTitles()).toContain('cate-cli')

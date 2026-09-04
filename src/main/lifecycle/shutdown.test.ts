@@ -36,7 +36,24 @@ vi.mock('../extensions/ExtensionServerManager', () => ({
 vi.mock('../extensions/storage', () => ({ flushAllPendingWritesSync: () => {} }))
 vi.mock('../auto-updater', () => ({ isUpdatePendingInstall: () => false }))
 
-const { runHardExit } = await import('./shutdown')
+const { flushPersistentBrowserSession, runHardExit } = await import('./shutdown')
+
+describe('flushPersistentBrowserSession', () => {
+  it('flushes DOM storage and awaits the cookie store before quit continues', async () => {
+    const order: string[] = []
+    const flushStore = vi.fn(async () => { order.push('cookies') })
+    const flushStorageData = vi.fn(() => { order.push('storage') })
+
+    await flushPersistentBrowserSession({
+      cookies: { flushStore },
+      flushStorageData,
+    } as unknown as Electron.Session)
+
+    expect(flushStorageData).toHaveBeenCalledOnce()
+    expect(flushStore).toHaveBeenCalledOnce()
+    expect(order).toEqual(['storage', 'cookies'])
+  })
+})
 
 describe('runHardExit', () => {
   it('prevents natural teardown, awaits dispose, then exits — in that order', async () => {

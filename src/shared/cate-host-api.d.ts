@@ -195,7 +195,7 @@ export interface CateHost {
     snapshot(opts?: { panelId?: string }): Promise<CateBrowserSnapshot>
     /** Auto-wait for actionability, then click with trusted pointer input. */
     click(opts: { ref: string; panelId?: string; includeSnapshot?: boolean }): Promise<{ ok: true; snapshot?: CateBrowserSnapshot }>
-    /** Fill with trusted keyboard input. `type` is retained as an alias. */
+    /** Fill inside the selected browser guest. `type` is retained as an alias. */
     fill(opts: { ref: string; text: string; panelId?: string; includeSnapshot?: boolean }): Promise<{ ok: true; snapshot?: CateBrowserSnapshot }>
     type(opts: { ref: string; text: string; panelId?: string; includeSnapshot?: boolean }): Promise<{ ok: true; snapshot?: CateBrowserSnapshot }>
     /** Wait for load, text, text disappearance, URL glob, or ref state. */

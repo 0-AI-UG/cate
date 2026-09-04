@@ -7,6 +7,7 @@ import { isWorkspaceMonitorReady } from './workspaceMonitorReady'
 import { syncWorktrees } from '../lib/worktreeSync'
 import log from '../lib/logger'
 import { matchAgentProcess } from '../../shared/agents'
+import { isAgentFallbackTitle } from '../lib/panelTitle'
 import type { TerminalActivity } from '../../shared/types'
 
 /** Retained for the statusStore.unregisterTerminal wiring. The per-terminal
@@ -62,18 +63,23 @@ export function useOwnedTerminalTelemetry(): void {
         // coordinator can read it at commit.
         noteAgentPresence(terminalId, agentPresent)
 
-        // Agent tab title: the clean detected agent name (e.g. "Codex", "Claude
-        // Code") is the canonical tab label for agent terminals. Prefer the
-        // hook-reported name; fall back to the process-scan match so an agent
-        // whose hooks aren't installed still gets a clean name instead of its
-        // raw session title. updatePanelTitleFromAgent numbers duplicates and
-        // skips tabs the user has manually renamed, and no-ops when unchanged.
+        // Agent tab title fallback: show a clean detected agent name while its
+        // native session title is not available (or hooks are not installed).
+        // A resolved native title is a normal panel title and is intentionally
+        // not touched by later process scans.
         const scannedName =
           terminalActivity.type === 'running' ? matchAgentProcess(terminalActivity.processName ?? '') : null
         const displayName = agentName ?? scannedName
         if (displayName) {
           const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
-          useAppStore.getState().updatePanelTitleFromAgent(actualWorkspaceId, panelId, displayName)
+          const panel = useAppStore.getState().workspaces
+            .find((workspace) => workspace.id === actualWorkspaceId)?.panels[panelId]
+          // A native session title is just the normal panel title. Only replace
+          // Cate's generic terminal/agent fallback labels here; otherwise this
+          // 1 Hz process scan would immediately overwrite the resolved title.
+          if (isAgentFallbackTitle(panel?.title ?? '')) {
+            useAppStore.getState().updatePanelTitleFromAgent(actualWorkspaceId, panelId, displayName)
+          }
         }
       },
     )

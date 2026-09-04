@@ -34,7 +34,7 @@ function injectStyles() {
   document.head.appendChild(style)
 }
 
-const GhostPlacementLayer: React.FC = () => {
+const GhostPlacementLayer: React.FC<{ canvasRef?: React.RefObject<HTMLDivElement> }> = ({ canvasRef }) => {
   const pending = useCanvasStoreContext((s) => s.pendingPlacement)
   const focusedId = useCanvasStoreContext((s) => focusedNodeIdOf(s))
   const zoom = useCanvasStoreContext((s) => s.zoomLevel)
@@ -110,7 +110,8 @@ const GhostPlacementLayer: React.FC = () => {
 
   const armed = pending.freeArmed
   const toCanvas = (clientX: number, clientY: number, el: HTMLElement) => {
-    const container = el.closest('[data-canvas-container]') as HTMLElement | null
+    const container = canvasRef?.current
+      ?? el.closest('[data-canvas-container]') as HTMLElement | null
     if (!container) return null
     const rect = container.getBoundingClientRect()
     return api.getState().viewToCanvas({ x: clientX - rect.left, y: clientY - rect.top })

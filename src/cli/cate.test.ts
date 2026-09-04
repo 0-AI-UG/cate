@@ -37,13 +37,13 @@ describe('thin browser CLI', () => {
     })
   })
 
-  it('passes native read commands through without translating their grammar', () => {
+  it('passes Cate read commands through without translating their grammar', () => {
     expect(buildRequest(
-      ['browser', 'snapshot', '-i', '--compact', '--depth', '4'],
+      ['browser', 'snapshot', '-i'],
       flags,
     )).toEqual({
       method: 'cate.browser.readCommand',
-      args: { command: ['snapshot', '-i', '--compact', '--depth', '4'] },
+      args: { command: ['snapshot', '-i'] },
     })
     expect(buildRequest(['browser', 'get', 'text', '@s2e7'], flags)).toEqual({
       method: 'cate.browser.readCommand',
@@ -51,7 +51,7 @@ describe('thin browser CLI', () => {
     })
   })
 
-  it('passes native acting commands through without Cate locator parsing', () => {
+  it('passes Cate acting commands through without CLI-side locator parsing', () => {
     expect(buildRequest(
       ['browser', 'find', 'role', 'button', 'click', '--name', 'Save'],
       flags,
@@ -73,6 +73,9 @@ describe('thin browser CLI', () => {
     })
     expect(buildRequest(['browser', 'select-tab', 'abcd'], flags).args).toEqual({ tabId: 'abcd' })
     expect(buildRequest(['browser', 'close-tab', 'abcd'], flags).method).toBe('cate.browser.tabClose')
+    expect(buildRequest(['browser', 'back'], flags).method).toBe('cate.browser.back')
+    expect(buildRequest(['browser', 'reload'], flags).method).toBe('cate.browser.reload')
+    expect(buildRequest(['browser', 'downloads'], flags).method).toBe('cate.browser.downloads')
     expect(buildRequest(['browser', 'viewport', 'mobile'], flags).args).toEqual({
       preset: 'mobile',
       width: 390,
@@ -105,7 +108,6 @@ describe('thin browser CLI', () => {
       ['browser', 'tab', 'list'],
       ['browser', 'connect', '9222'],
       ['browser', 'batch', 'click @e1'],
-      ['browser', 'upload', '#file', '/tmp/x'],
       ['browser', 'click', '#x', '--session', 'other'],
       ['browser', 'screenshot', '/tmp/owned.png'],
     ]) {
@@ -122,7 +124,7 @@ describe('thin browser CLI', () => {
 })
 
 describe('global parsing', () => {
-  it('extracts only Cate global flags and preserves native argv', () => {
+  it('extracts only Cate global flags and preserves browser argv', () => {
     expect(parseCli([
       'browser', 'wait', '#done', '--timeout', '5000',
       '--panel', 'abc', '--json',
@@ -176,7 +178,7 @@ describe('non-browser surface', () => {
 })
 
 describe('agent orchestration surface', () => {
-  it('parses create options without changing browser-native argv parsing', () => {
+  it('parses create options without changing browser argv parsing', () => {
     const parsed = parseCli([
       'agent', 'create', 'Implement', 'the API', '--agent', 'codex', '--title', 'API',
       '--new-worktree', 'agent/api', '--base-ref', 'main', '--foreground',

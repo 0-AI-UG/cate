@@ -98,7 +98,7 @@ export function OrchestrationPreflight({
           <span>{error}</span>
         </div>
       ) : agents === null ? (
-        <div className="h-16 animate-pulse rounded bg-surface-2" />
+        <div className="h-16 animate-pulse motion-reduce:animate-none rounded bg-surface-2" />
       ) : (
         <div
           data-agent-preflight-list

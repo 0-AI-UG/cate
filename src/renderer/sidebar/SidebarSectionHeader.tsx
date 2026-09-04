@@ -4,7 +4,7 @@
 // =============================================================================
 
 import React from 'react'
-import { Tooltip } from '../ui/Tooltip'
+import { IconButton } from '../ui/Button'
 
 interface SidebarSectionHeaderProps {
   title: string
@@ -49,15 +49,17 @@ export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ titl
  *  aria-label, instead of being passed through to the DOM. */
 export const SidebarHeaderButton: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & { spinning?: boolean }
-> = ({ children, className = '', spinning, title, ...rest }) => {
-  const button = (
-    <button
-      aria-label={title}
+> = ({ children, className = '', spinning, title, 'aria-label': ariaLabel, ...rest }) => {
+  const label = typeof title === 'string' ? title : typeof ariaLabel === 'string' ? ariaLabel : 'Action'
+  return (
+    <IconButton
+      label={label}
+      loading={spinning}
+      size={22}
       {...rest}
-      className={`flex items-center justify-center w-[22px] h-[22px] my-1 rounded-lg text-secondary hover:text-primary hover:bg-hover transition-colors disabled:opacity-30 ${className}`}
+      className={`my-1 ${className}`}
     >
-      <span className={spinning ? 'inline-flex opacity-60' : 'inline-flex'}>{children}</span>
-    </button>
+      {children}
+    </IconButton>
   )
-  return title ? <Tooltip label={title}>{button}</Tooltip> : button
 }

@@ -16,6 +16,7 @@ import { listLayouts, loadLayoutIntoCanvas } from '../lib/layouts'
 import { CARD_SURFACE } from '../ui/Modal'
 import { Tooltip } from '../ui/Tooltip'
 import log from '../lib/logger'
+import { Spinner } from '../ui/Spinner'
 
 // Per-canvas dismissal is durable: a canvas the user has waved off should never
 // re-offer layouts, even after it's emptied again or the app restarts. Keyed by
@@ -53,7 +54,7 @@ export function EmptyCanvasOverlay({
   const layoutsVersion = useUIStore((s) => s.layoutsVersion)
   const setShowLayoutsDialog = useUIStore((s) => s.setShowLayoutsDialog)
   const [names, setNames] = useState<string[]>([])
-  const [busy, setBusy] = useState(false)
+  const [busyName, setBusyName] = useState<string | null>(null)
   const canvasKey = `${workspaceId}:${panelId}`
   const [dismissed, setDismissed] = useState(() => loadDismissed().has(canvasKey))
 
@@ -68,11 +69,11 @@ export function EmptyCanvasOverlay({
   }, [layoutsVersion])
 
   const load = useCallback(async (name: string) => {
-    setBusy(true)
+    setBusyName(name)
     try {
       await loadLayoutIntoCanvas(name, workspaceId, panelId, canvasApi)
     } finally {
-      setBusy(false)
+      setBusyName(null)
     }
   }, [workspaceId, panelId, canvasApi])
 
@@ -113,11 +114,13 @@ export function EmptyCanvasOverlay({
             <button
               key={name}
               type="button"
-              disabled={busy}
+              disabled={busyName !== null}
               onClick={() => load(name)}
               className="w-full flex items-center gap-2.5 px-3.5 py-1.5 text-left hover:bg-[rgb(var(--agent-rgb))]/12 disabled:opacity-50"
             >
-              <span className="shrink-0 text-violet-400"><SquaresFour size={16} /></span>
+              <span className="shrink-0 text-violet-400">
+                {busyName === name ? <Spinner size={16} label={`Loading ${name}`} /> : <SquaresFour size={16} />}
+              </span>
               <span className="flex-1 text-primary text-[13px] truncate">{name}</span>
             </button>
           ))}

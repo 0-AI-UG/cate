@@ -3,6 +3,7 @@ import { ArrowClockwise } from '@phosphor-icons/react'
 import type { UpdateStatus } from '../../shared/electron-api'
 import { CateLogo } from '../ui/CateLogo'
 import headerImg from '../assets/welcome-header.jpg'
+import { Spinner } from '../ui/Spinner'
 
 // In-app "update ready" modal. Shown once electron-updater has downloaded an
 // update (status === 'downloaded'). Offers both install modes:
@@ -136,7 +137,7 @@ export function UpdateReadyDialog() {
             disabled={restarting}
             className="flex-1 inline-flex items-center justify-center gap-1.5 h-10 rounded-lg bg-blue-500 text-white text-[12.5px] font-semibold hover:bg-blue-400 transition-colors disabled:opacity-50"
           >
-            <ArrowClockwise size={14} />
+            {restarting ? <Spinner size={14} /> : <ArrowClockwise size={14} />}
             {restarting ? 'Restarting…' : 'Restart now'}
           </button>
         </div>

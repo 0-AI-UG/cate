@@ -7,6 +7,7 @@ import {
   isAbsoluteRuntimePath,
 } from '../../shared/runtimeLocator'
 import { btn, inputCls, SEGMENT } from './Modal'
+import { LoadingState, Spinner } from './Spinner'
 
 // In-panel connect form (no modal) for a remote SSH server or a WSL distro.
 // Presentational: it builds a RemoteConnectSpec and hands it to `onSubmit`;
@@ -293,7 +294,7 @@ export function RemoteConnect({
       ) : (
         <>
           {distros === null ? (
-            <div className="text-[12px] text-muted px-0.5 py-1">Looking for WSL distros…</div>
+            <LoadingState label="Looking for WSL distros…" size={13} className="justify-start px-0.5 py-1 text-[12px]" />
           ) : distros.length > 0 ? (
             <select className={`${inputCls} cursor-pointer`} value={distro} onChange={(e) => setDistro(e.target.value)} autoFocus>
               {distros.map((d) => (
@@ -329,6 +330,7 @@ export function RemoteConnect({
           </button>
         )}
         <button type="button" className={btn.primary} onClick={submit} disabled={!canSubmit}>
+          {pending && <Spinner size={13} />}
           {pending ? 'Connecting…' : 'Connect'}
         </button>
       </div>

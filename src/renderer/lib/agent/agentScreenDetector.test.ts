@@ -94,6 +94,20 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     )
   })
 
+  it('ignores a late turn-end from the turn replaced by an in-flight follow-up', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent({ ...hookEvent('turn-start', 'codex'), turnId: 'turn-a' })
+    noteAgentHookEvent({ ...hookEvent('turn-start', 'codex'), turnId: 'turn-b' })
+
+    noteAgentHookEvent({ ...hookEvent('turn-end', 'codex'), turnId: 'turn-a' })
+    expect(state()).toBe('running')
+    expect(sendOsNotification).not.toHaveBeenCalled()
+
+    noteAgentHookEvent({ ...hookEvent('turn-end', 'codex'), turnId: 'turn-b' })
+    expect(state()).toBe('waitingForInput')
+    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+  })
+
   it('presence without turn events shows waitingForInput and never notifies', () => {
     // Presence is hook-anchored daemon-side (the agent's first post registers
     // its pid), so present-with-no-TURN-events is a registered agent between

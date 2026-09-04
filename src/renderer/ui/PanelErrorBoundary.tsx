@@ -12,6 +12,8 @@ import React from 'react'
 import { ArrowClockwise, Warning } from '@phosphor-icons/react'
 import log from '../lib/logger'
 import { BaseErrorBoundary } from './BaseErrorBoundary'
+import { Button } from './Button'
+import { PanelCenteredState } from './PanelCenteredState'
 
 interface Props {
   children?: React.ReactNode
@@ -40,20 +42,18 @@ export function PanelErrorBoundary({ children, panelType, panelId }: Props): Rea
       fallback={(error, reset) => {
         const label = panelType ? `This ${panelType} panel` : 'This panel'
         return (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-surface-4 text-secondary p-4 text-center select-none">
-            <Warning size={30} className="mb-2 text-muted" weight="duotone" />
-            <p className="text-sm font-medium mb-1">{label} hit an error</p>
-            <p className="text-xs text-muted max-w-[28ch] truncate" title={error.message}>
+          <PanelCenteredState
+            className="select-none"
+            icon={<Warning size={30} weight="duotone" />}
+            title={`${label} hit an error`}
+            description={<span className="block max-w-[28ch] truncate" title={error.message}>
               {error.message}
-            </p>
-            <button
-              onClick={reset}
-              className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 text-xs rounded bg-surface-6 hover:bg-hover text-primary transition-colors"
-            >
+            </span>}
+            actions={<Button size="sm" onClick={reset}>
               <ArrowClockwise size={13} />
               Reload panel
-            </button>
-          </div>
+            </Button>}
+          />
         )
       }}
     >

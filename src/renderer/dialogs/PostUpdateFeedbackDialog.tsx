@@ -6,6 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
 import { findChangelogRelease, parseChangelog } from '../../shared/changelog'
 import changelogMarkdown from '../../../CHANGELOG.md?raw'
+import { Spinner } from '../ui/Spinner'
 
 type Payload = { fromVersion: string; toVersion: string }
 
@@ -227,9 +228,10 @@ export function PostUpdateFeedbackDialog() {
                   <button
                     onClick={submit}
                     disabled={rating === 0 || sending}
-                    className="text-[12px] font-semibold px-5 py-1.5 rounded-full bg-blue-500 text-white hover:bg-blue-400 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
+                    className="inline-flex items-center justify-center gap-1.5 text-[12px] font-semibold px-5 py-1.5 rounded-full bg-blue-500 text-white hover:bg-blue-400 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
                   >
-                    {sending ? 'Sending...' : 'Send'}
+                    {sending && <Spinner size={13} />}
+                    {sending ? 'Sending…' : 'Send'}
                   </button>
                 )}
               </div>

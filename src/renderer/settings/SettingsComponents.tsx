@@ -2,9 +2,12 @@
 // Reusable settings form components. Ported from SettingsComponents.swift
 // =============================================================================
 
-import { useEffect, useState } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useId, useState } from 'react'
+import type { ButtonHTMLAttributes, KeyboardEvent, ReactNode } from 'react'
 import { useSettingsSearch, matchesQuery } from './SettingsSearchContext'
+import { Button } from '../ui/Button'
+
+const SettingLabelContext = createContext<string | undefined>(undefined)
 
 // -----------------------------------------------------------------------------
 // SettingRow — label + control layout
@@ -20,20 +23,23 @@ interface SettingRowProps {
 
 export function SettingRow({ label, description, hint, children }: SettingRowProps) {
   const { query, sectionMatched } = useSettingsSearch()
+  const labelId = useId()
   // Hide when there's an active query the section title didn't match and
   // neither the label nor description contains it.
   if (query !== '' && !sectionMatched && !matchesQuery(label, query) && !matchesQuery(description, query)) {
     return null
   }
   return (
+    <SettingLabelContext.Provider value={labelId}>
     <div data-srow className="flex items-center justify-between py-2.5 border-b border-subtle">
       <div className="flex flex-col min-w-0">
-        <span className="text-sm text-primary">{label}</span>
+        <span id={labelId} className="text-sm text-primary">{label}</span>
         {description && <span className="text-xs text-muted mt-0.5">{description}</span>}
         {hint && <div className="mt-1">{hint}</div>}
       </div>
       <div className="flex-shrink-0 ml-4">{children}</div>
     </div>
+    </SettingLabelContext.Provider>
   )
 }
 
@@ -63,23 +69,16 @@ export function SearchableBlock({ keywords, children }: SearchableBlockProps) {
 // hover styles so it reads as inert.
 // -----------------------------------------------------------------------------
 
-interface SecondaryButtonProps {
-  onClick: () => void
-  disabled?: boolean
-  title?: string
-  children: ReactNode
+interface SecondaryButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  loading?: boolean
+  loadingLabel?: string
 }
 
-export function SecondaryButton({ onClick, disabled, title, children }: SecondaryButtonProps) {
+export function SecondaryButton({ className = '', children, ...props }: SecondaryButtonProps) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className="flex items-center gap-1.5 px-2 py-1 text-[11px] rounded text-secondary hover:text-primary bg-surface-2 hover:bg-hover border border-subtle disabled:opacity-40 disabled:cursor-default disabled:hover:bg-surface-2 disabled:hover:text-secondary"
-    >
+    <Button size="sm" variant="secondary" className={`bg-surface-2 ${className}`} {...props}>
       {children}
-    </button>
+    </Button>
   )
 }
 
@@ -90,13 +89,22 @@ export function SecondaryButton({ onClick, disabled, title, children }: Secondar
 interface ToggleProps {
   checked: boolean
   onChange: (value: boolean) => void
+  disabled?: boolean
+  label?: string
 }
 
-export function Toggle({ checked, onChange }: ToggleProps) {
+export function Toggle({ checked, onChange, disabled, label }: ToggleProps) {
+  const labelledBy = useContext(SettingLabelContext)
   return (
     <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      aria-labelledby={label ? undefined : labelledBy}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative w-9 h-5 rounded-full transition-colors ${
+      className={`relative w-9 h-5 rounded-full transition-colors disabled:opacity-40 disabled:cursor-default ${
         checked ? 'bg-focus-blue' : 'bg-surface-6'
       }`}
     >
@@ -150,6 +158,7 @@ export function TextInput({
   layoutClassName = TEXT_INPUT_LAYOUT,
   className,
 }: TextInputProps) {
+  const labelledBy = useContext(SettingLabelContext)
   return (
     <input
       type={type}
@@ -159,6 +168,7 @@ export function TextInput({
       onBlur={onBlur}
       placeholder={placeholder}
       disabled={disabled}
+      aria-labelledby={labelledBy}
       className={`${layoutClassName} ${TEXT_INPUT_BASE}${className ? ` ${className}` : ''}`}
     />
   )
@@ -177,6 +187,7 @@ interface NumberInputProps {
 }
 
 export function NumberInput({ value, onChange, min, max, step = 1 }: NumberInputProps) {
+  const labelledBy = useContext(SettingLabelContext)
   // Keep a local draft string so the user can freely clear the field and type
   // intermediate values. We only parse + clamp on commit (blur / Enter), never
   // on every keystroke — otherwise empty input snaps to 0 and partial values
@@ -215,6 +226,7 @@ export function NumberInput({ value, onChange, min, max, step = 1 }: NumberInput
       min={min}
       max={max}
       step={step}
+      aria-labelledby={labelledBy}
       className="w-20 bg-surface-5 border border-subtle rounded-md px-2 py-1 text-sm text-primary text-center focus:border-focus-blue focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
     />
   )
@@ -236,9 +248,11 @@ interface SelectProps {
 }
 
 export function Select({ value, onChange, options }: SelectProps) {
+  const labelledBy = useContext(SettingLabelContext)
   return (
     <select
       value={value}
+      aria-labelledby={labelledBy}
       onChange={(e) => onChange(e.target.value)}
       className="bg-surface-5 border border-subtle rounded-md px-2 py-1 text-sm text-primary focus:border-focus-blue focus:outline-none cursor-pointer"
     >
@@ -264,6 +278,7 @@ interface SliderProps {
 }
 
 export function Slider({ value, onChange, min, max, step }: SliderProps) {
+  const labelledBy = useContext(SettingLabelContext)
   return (
     <input
       type="range"
@@ -272,6 +287,7 @@ export function Slider({ value, onChange, min, max, step }: SliderProps) {
       min={min}
       max={max}
       step={step}
+      aria-labelledby={labelledBy}
       className="w-32 h-1.5 bg-surface-6 rounded-full appearance-none cursor-pointer accent-focus-blue [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-focus-blue"
     />
   )

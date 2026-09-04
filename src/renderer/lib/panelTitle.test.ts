@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { disambiguateTitle } from './panelTitle'
+import { disambiguateTitle, isAgentFallbackTitle } from './panelTitle'
 
 type P = Record<string, { title: string }>
 
@@ -48,5 +48,16 @@ describe('disambiguateTitle', () => {
     panels.a.title = disambiguateTitle('Claude Code', 'a', panels)
     expect(panels.b.title).toBe('Claude Code · Running tests')
     expect(panels.a.title).toBe('Claude Code') // suffix dropped — no more collision
+  })
+})
+
+describe('isAgentFallbackTitle', () => {
+  it('only treats generated terminal and known agent names as replaceable', () => {
+    expect(isAgentFallbackTitle('Terminal')).toBe(true)
+    expect(isAgentFallbackTitle('Terminal 3')).toBe(true)
+    expect(isAgentFallbackTitle('Codex')).toBe(true)
+    expect(isAgentFallbackTitle('Claude Code')).toBe(true)
+    expect(isAgentFallbackTitle('Fix terminal titles')).toBe(false)
+    expect(isAgentFallbackTitle('My terminal')).toBe(false)
   })
 })

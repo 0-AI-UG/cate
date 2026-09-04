@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Browser password saving**: Cate can save or update credentials submitted by users or agents after explicit native confirmation, with manual entry available in the password manager.
+
+### Changed
+
+- **Single-surface browser architecture**: browser panels now keep one persistent live webview per tab and run automation against that exact guest through target-bound Chromium DevTools sessions, removing the separate agent-browser process and hidden-window path.
+
 ## [1.6.1-beta.5] - 2026-09-03
 
 This beta adds a unified review workflow for changes across entire commits, branches, and working trees.

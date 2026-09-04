@@ -14,7 +14,6 @@ import { act } from 'react'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-vi.mock('../lib/portalRegistry', () => ({ portalRegistry: { register: vi.fn(), unregister: vi.fn() } }))
 
 import ExtensionPanel, { readDroppedFiles, clampText, guestScrollbarCss } from './ExtensionPanel'
 

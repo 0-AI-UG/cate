@@ -11,7 +11,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useRenderCount } from '../../renderer/lib/perf/perfClient'
 import {
-  ArrowClockwise,
   ArrowDown,
   WarningCircle,
 } from '@phosphor-icons/react'
@@ -19,6 +18,7 @@ import type { CodingMessage, RetryState } from './codingStore'
 import { MessageRow } from './ChatMessageRow'
 import { LoadingIndicator } from './ChatMarkdown'
 import { Tooltip } from '../../renderer/ui/Tooltip'
+import { Spinner } from '../../renderer/ui/Spinner'
 
 // Per-conversation scroll memory — survives the dock-tab unmount/remount cycle.
 // Transient UI state, intentionally module-level (not persisted to disk/store).
@@ -247,7 +247,7 @@ function RetryIndicator({ state, onAbort }: { state: RetryState; onAbort?: () =>
     const delay = state.delayMs != null ? `${Math.round(state.delayMs / 1000)}s` : '…'
     return (
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning-tint border border-warning text-[12px]">
-        <ArrowClockwise size={13} className="text-warning animate-spin shrink-0" />
+        <Spinner size={13} className="text-warning" />
         <div className="flex-1 min-w-0">
           <span className="text-warning">
             Retrying ({state.attempt ?? '?'}/{state.maxAttempts ?? '?'}) in {delay}

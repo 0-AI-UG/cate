@@ -27,7 +27,6 @@ import {
   X,
   BookmarkSimple,
   Check,
-  CircleNotch,
   CaretDown,
   ArrowSquareOut,
 } from '@phosphor-icons/react'
@@ -38,6 +37,10 @@ import log from '../lib/logger'
 import { errorMessage } from '../lib/errorMessage'
 import { useEscapeKey } from '../lib/hooks/useEscapeKey'
 import { Tooltip } from '../ui/Tooltip'
+import { LoadingState, Spinner } from '../ui/Spinner'
+import { PaletteTextInput } from '../ui/PaletteTextInput'
+import { InlineNotice } from '../ui/InlineNotice'
+import { IconButton } from '../ui/Button'
 import {
   SKILL_TARGETS,
   type InstalledSkill,
@@ -242,22 +245,21 @@ export function SkillsDialog() {
   return (
     <PaletteDialogShell
       onClose={close}
+      ariaLabel="Skills"
       cardClassName="w-[600px] max-w-[600px] max-h-[560px] mt-[80px] overflow-hidden flex flex-col self-start"
     >
         {/* Search + actions — no header bar, matching the other dialogs */}
         <div className="p-2 shrink-0 flex items-center gap-2">
-          <div className="flex-1 flex items-center gap-2 px-2.5 h-8 rounded-md bg-surface-0/60 border border-strong focus-within:border-[rgba(255,255,255,0.18)] transition-colors">
-            <MagnifyingGlass size={14} className="text-muted shrink-0" />
-            <input
+          <PaletteTextInput
+              icon={<MagnifyingGlass size={14} />}
+              containerClassName="flex-1"
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Escape' && query) { e.stopPropagation(); setQuery('') } }}
               placeholder="Search skills…"
               spellCheck={false}
-              className="flex-1 bg-transparent text-primary text-[13px] outline-none placeholder:text-muted"
-            />
-          </div>
+          />
           <span
             className="shrink-0 max-w-[130px] truncate text-[11px] text-muted"
             title={rootPath ? currentWs?.name : undefined}
@@ -265,7 +267,7 @@ export function SkillsDialog() {
             {rootPath ? `into ${currentWs?.name || 'workspace'}` : 'no folder open'}
           </span>
           <IconBtn title="Refresh catalog" onClick={() => void loadIndex(true)}>
-            <ArrowsClockwise size={15} className={loading ? 'animate-spin' : undefined} />
+            {loading ? <Spinner size={15} /> : <ArrowsClockwise size={15} />}
           </IconBtn>
           <IconBtn title="Skill sources & settings" onClick={() => useUIStore.getState().openSettings('skills')}>
             <SlidersHorizontal size={15} />
@@ -273,10 +275,10 @@ export function SkillsDialog() {
         </div>
 
         {error && (
-          <div className="mx-2 mb-1.5 px-2.5 py-1.5 text-[11px] text-red-400 bg-red-600/10 rounded-md flex items-start gap-2">
+          <InlineNotice tone="error" className="mx-2 mb-1.5 flex items-start gap-2 border-0">
             <span className="flex-1 whitespace-pre-wrap break-words">{error}</span>
-            <button onClick={() => setError(null)} className="text-muted hover:text-primary"><X size={12} /></button>
-          </div>
+            <button type="button" aria-label="Dismiss error" onClick={() => setError(null)} className="text-muted hover:text-primary"><X size={12} /></button>
+          </InlineNotice>
         )}
 
         {/* Lists */}
@@ -304,7 +306,7 @@ export function SkillsDialog() {
 
           <GroupLabel>Browse{browseRows.length > 0 && ` · ${browseRows.length}`}</GroupLabel>
           {loading && browseRows.length === 0 ? (
-            <div className="px-4 py-6 text-center text-[13px] text-muted">Loading…</div>
+            <LoadingState label="Loading skills…" size={15} className="px-4 py-6 text-[13px]" />
           ) : browseRows.length === 0 ? (
             <div className="px-4 py-6 text-center text-[13px] text-muted">
               {index.length === 0
@@ -422,7 +424,7 @@ function SkillRow({
         className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg disabled:opacity-50"
       >
         {saveBusy ? (
-          <CircleNotch size={13} className="animate-spin text-muted" />
+          <Spinner size={13} className="text-muted" />
         ) : (
           <BookmarkSimple
             size={15}
@@ -453,7 +455,7 @@ function SkillRow({
             aria-label="Update installed copies from source"
             className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-secondary disabled:opacity-50"
           >
-            <ArrowsClockwise size={14} className={updateBusy ? 'animate-spin' : undefined} />
+            {updateBusy ? <Spinner size={14} /> : <ArrowsClockwise size={14} />}
           </button>
         </Tooltip>
       )}
@@ -582,7 +584,7 @@ function AgentMenu({
             title={on ? 'Installed — click to remove' : 'Install here'}
           >
             <span className="w-3.5 shrink-0 flex items-center justify-center text-accent">
-              {working ? <CircleNotch size={11} className="animate-spin" /> : on ? <Check size={11} /> : null}
+              {working ? <Spinner size={11} /> : on ? <Check size={11} /> : null}
             </span>
             <span className="flex-1">{t.label}</span>
             {t.beta && <span className="text-[8px] uppercase opacity-60">beta</span>}
@@ -608,16 +610,14 @@ function IconBtn({
   onClick: () => void
 }) {
   return (
-    <Tooltip label={title}>
-      <button
-        type="button"
-        aria-label={title}
+      <IconButton
+        label={title}
+        size={28}
         onClick={onClick}
-        className="flex items-center justify-center w-7 h-7 rounded-[10px] text-muted hover:text-primary hover:bg-white/5 transition-colors"
+        className="rounded-[10px] text-muted hover:bg-white/5"
       >
         {children}
-      </button>
-    </Tooltip>
+      </IconButton>
   )
 }
 

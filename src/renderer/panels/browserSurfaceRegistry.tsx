@@ -166,12 +166,12 @@ function updateSurface(panelId: string): void {
   const { container } = surface
   container.dataset.browserSurfaceVisible = 'true'
   container.style.position = 'fixed'
-  container.style.left = '0'
-  container.style.top = '0'
+  container.style.left = `${rect.left}px`
+  container.style.top = `${rect.top}px`
   container.style.width = `${logicalWidth}px`
   container.style.height = `${logicalHeight}px`
   container.style.transformOrigin = '0 0'
-  container.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0) scale(${rect.width / logicalWidth}, ${rect.height / logicalHeight})`
+  container.style.transform = `scale(${rect.width / logicalWidth}, ${rect.height / logicalHeight})`
   container.style.clipPath = clipPath
   container.style.zIndex = nodeZIndex === 'auto' ? '1' : nodeZIndex
   container.style.opacity = '1'

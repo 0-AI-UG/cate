@@ -1,4 +1,5 @@
 import { browserPanelUrl, type PanelState } from '../../shared/types'
+import { AGENTS } from '../../shared/agents'
 import { pathDisplayName } from './fs/displayPath'
 
 /** Display label for a panel: explicit title, else the file basename, else the
@@ -36,4 +37,10 @@ export function disambiguateTitle(
     const candidate = `${base} ${n}`
     if (!taken.has(candidate)) return candidate
   }
+}
+
+/** Process detection supplies a useful label before native session metadata is
+ * available, but must not replace a real chat title on every scan. */
+export function isAgentFallbackTitle(title: string): boolean {
+  return /^Terminal(?: \d+)?$/.test(title) || AGENTS.some((agent) => agent.displayName === title)
 }
