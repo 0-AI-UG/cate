@@ -1,20 +1,15 @@
 // =============================================================================
-// agentCursor — the channel that makes agent-driven browsing VISIBLE.
+// agentCursor — the channel that makes agent-driven browsing visible on its
+// canvas card. The card is a screenshot, not a coordinate surface, so it shows
+// the action label rather than pretending the cursor geometry is live.
 //
-// Input from `cate.browser.*` is delivered with webContents.sendInputEvent, which
-// is indistinguishable from a real user's input: the page reacts, but nothing on
-// screen explains why. Without a rendered cursor the user watches a page operate
-// itself with no idea what the agent targeted or why it clicked there.
-//
-// The driver publishes one event per action here BEFORE performing it; the
-// overlay in BrowserPanel subscribes per panel and draws a ghost pointer plus
-// action-specific motion. This is a pure observation channel —
+// The driver publishes one event per action here BEFORE performing it. This is
+// a pure observation channel —
 // dropping an event must never change what the browser actually does, so every
 // emit is fire-and-forget and failures are swallowed by the subscriber, not the
 // driver.
 //
-// Coordinates are GUEST viewport pixels. BrowserPanel supplies the page zoom
-// and fit-to-panel scale so AgentCursorOverlay maps them onto the rendered page.
+// Coordinates remain available to other diagnostics in guest viewport pixels.
 // =============================================================================
 
 export type AgentCursorKind =

@@ -21,7 +21,7 @@ describe('resolvePanelSize', () => {
 })
 
 describe('keepsMountedWhenTabHidden', () => {
-  it('is true for webview-backed panels whose live state cannot survive a remount (#459)', () => {
+  it('is true for webview panels whose live state cannot survive a remount', () => {
     expect(keepsMountedWhenTabHidden('browser')).toBe(true)
     expect(keepsMountedWhenTabHidden('extension')).toBe(true)
   })
@@ -40,7 +40,7 @@ describe('keepsMountedWhenTabHidden', () => {
 })
 
 describe('keepsMountedOffscreen', () => {
-  it('keeps browsers mounted so background API automation remains reachable', () => {
+  it('keeps browsers mounted so the live guest remains authoritative', () => {
     expect(keepsMountedOffscreen('browser')).toBe(true)
     expect(keepsMountedOffscreen('extension')).toBe(true)
     expect(keepsMountedOffscreen('editor')).toBe(false)

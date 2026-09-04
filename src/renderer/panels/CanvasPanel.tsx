@@ -33,6 +33,7 @@ import { getPanelDef } from '../panels/registry'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
 import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
+import { PanelConnectionLayer } from '../canvas/PanelConnectionLayer'
 
 // Re-export the lookup helpers so existing callers (drag dispatcher, drop
 // resolver) keep working through the same import path. New code should import
@@ -286,7 +287,22 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
           <EmptyCanvasOverlay workspaceId={workspaceId} panelId={panelId} canvasApi={store} />
         )}
 
-        <Canvas onCreateAtPoint={onCreateAtPoint} panelId={panelId}>
+        <Canvas
+          onCreateAtPoint={onCreateAtPoint}
+          panelId={panelId}
+          overlayChildren={(nodeIds.length > 0 || workspaceRootPath) ? (
+            <CanvasToolbar
+              canvasPanelId={panelId}
+              workspaceId={workspaceId}
+              rootPath={workspaceRootPath}
+              onNewTerminal={onNewTerminal}
+              onNewBrowser={onNewBrowser}
+              onNewEditor={onNewEditor}
+              onNewAgent={onNewAgent}
+            />
+          ) : null}
+        >
+          <PanelConnectionLayer workspaceId={workspaceId} />
           {visibleNodeIds.map((nId) => (
             <CanvasNodeWrapper
               key={nId}
@@ -297,17 +313,6 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
           ))}
         </Canvas>
 
-        {(nodeIds.length > 0 || workspaceRootPath) && (
-          <CanvasToolbar
-            canvasPanelId={panelId}
-            workspaceId={workspaceId}
-            rootPath={workspaceRootPath}
-            onNewTerminal={onNewTerminal}
-            onNewBrowser={onNewBrowser}
-            onNewEditor={onNewEditor}
-            onNewAgent={onNewAgent}
-          />
-        )}
       </div>
     </CanvasStoreProvider>
   )

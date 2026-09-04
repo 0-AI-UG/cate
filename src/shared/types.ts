@@ -803,6 +803,19 @@ export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace' | '
  *  with Monaco keys like Cmd+[ / Cmd+] / Cmd+L. */
 export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
 
+export type BrowserDownloadState = 'progressing' | 'paused' | 'completed' | 'cancelled' | 'interrupted'
+
+export interface BrowserDownloadEntry {
+  id: string
+  url: string
+  filename: string
+  filePath: string
+  state: BrowserDownloadState
+  receivedBytes: number
+  totalBytes: number
+  at: number
+}
+
 /** A single global browsing-history entry, deduplicated by URL. Shared across
  *  all workspaces and browser panels so Cate behaves like one browser. */
 export interface BrowserHistoryEntry {
@@ -831,6 +844,19 @@ export interface BrowserCredentialSuggestion {
   origin: string
 }
 
+export interface BrowserCredentialSaveInput {
+  origin: string
+  username: string
+  password: string
+  usernameElement?: string
+  passwordElement?: string
+}
+
+export interface BrowserCredentialSaveResult {
+  action: 'created' | 'updated' | 'unchanged'
+  credential: BrowserCredentialSuggestion
+}
+
 export interface BrowserCredentialProfilesResult {
   directImportSupported: boolean
   secureStorageAvailable: boolean
@@ -838,8 +864,8 @@ export interface BrowserCredentialProfilesResult {
   importedCount: number
 }
 
-/** One open tab in a browser panel. Every non-start-page tab owns a live guest
- *  while mounted; this record is the persisted restore state. */
+/** One open tab in a browser panel. Main owns its persistent page; this light
+ *  record is the renderer-visible restore state. */
 export interface BrowserTab {
   id: string
   url: string

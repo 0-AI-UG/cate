@@ -672,16 +672,13 @@ export interface ElectronAPI {
   webviewScreenshot(webContentsId: number, options: { wantDataUrl: false; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string } | null>
   webviewScreenshot(webContentsId: number, options?: { wantDataUrl?: boolean; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string; dataUrl: string } | null>
 
-  /** Main-process agent-browser control plane. The target must be a webview
-   *  guest of the calling window. See main/ipc/browserControl. */
+  /** Target-bound CDP control plane for a live browser webview guest. */
   browserControl(request: {
-    op:
-      | 'registerAgentBrowser'
-      | 'agentBrowser'
-      | 'downloads'
+    op: 'attach' | 'execute' | 'downloads' | 'downloadAction'
     webContentsId: number
-    panelId?: string
-    tabId?: string
+    workspaceId: string
+    panelId: string
+    tabId: string
     method?: string
     args?: Record<string, unknown>
   }): Promise<{
@@ -695,8 +692,14 @@ export interface ElectronAPI {
       rect?: [number, number, number, number]
       label: string
     }
-    downloads?: Array<{ url: string; filePath: string; state: string; at: number }>
+    downloads?: import('./types').BrowserDownloadEntry[]
   }>
+
+  /** Subscribe to progress updates from browser-panel downloads. */
+  onBrowserDownloadsChanged(callback: (payload: {
+    webContentsId: number
+    downloads: import('./types').BrowserDownloadEntry[]
+  }) => void): () => void
 
   /** Configure the proxy for a browser panel's session partition (issue #241).
    *  Pass an empty/undefined proxyUrl to use a direct connection. */
@@ -715,13 +718,17 @@ export interface ElectronAPI {
     skipped: number
     total: number
   }>
+  /** Save a password explicitly entered in Cate's trusted password-manager UI. */
+  browserCredentialSave(
+    input: import('./types').BrowserCredentialSaveInput,
+  ): Promise<import('./types').BrowserCredentialSaveResult>
   browserCredentialRemove(credentialId: string): Promise<void>
   /** Matching usernames for the current URL of an owned browser guest. */
   browserCredentialSuggestions(webContentsId: number): Promise<{
     suggestions?: import('./types').BrowserCredentialSuggestion[]
     error?: string
   }>
-  /** Main-process-only decrypt + agent-browser fill; password never returns over IPC. */
+  /** Main-process-only decrypt + target-bound CDP fill; password never returns over IPC. */
   browserCredentialFill(request: {
     webContentsId: number
     credentialId: string
@@ -987,6 +994,9 @@ export interface ElectronAPI {
   /** Subscribe to browser navigation shortcuts forwarded from a focused webview
    *  guest (Cmd+R/[/]/L) or the Browser menu. */
   onBrowserShortcut(callback: (action: import('./types').BrowserShortcutAction) => void): () => void
+  /** A permitted window.open request from a browser guest, routed into the
+   *  opener panel's persistent tab layer. */
+  onBrowserOpenTabRequest(callback: (request: { openerWebContentsId: number; url: string }) => void): () => void
 
   /** Show a native context menu. Returns the clicked item id, or null if dismissed. */
   showContextMenu(items: NativeContextMenuItem[]): Promise<string | null>

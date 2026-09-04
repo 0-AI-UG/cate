@@ -1,16 +1,18 @@
 // =============================================================================
 // BrowserMenu — the URL-bar overflow (⋮) dropdown for a browser panel.
 // =============================================================================
-import { useEffect, useRef, useState, type RefObject } from 'react'
-import { BookmarkSimple, CaretLeft, Minus, Plus, Gear, Key } from '@phosphor-icons/react'
+import { useRef, useState, type RefObject } from 'react'
+import { BookmarkSimple, CaretLeft, ClockCounterClockwise, Minus, Plus, Gear, Key } from '@phosphor-icons/react'
 import { useBrowserStore } from '../stores/browserStore'
 import { useUIStore } from '../stores/uiStore'
 import { BrowserFavicon } from './BrowserFavicon'
 import { faviconForUrl } from './browserUrl'
+import { useDismissableLayer } from '../ui/Popover'
 
 interface Props {
   onNewTab: () => void
   onNavigate: (url: string) => void
+  onOpenHistory: () => void
   onOpenPasswordManager: () => void
   zoomPercent: number
   onZoomOut: () => void
@@ -23,6 +25,7 @@ interface Props {
 export function BrowserMenu({
   onNewTab,
   onNavigate,
+  onOpenHistory,
   onOpenPasswordManager,
   zoomPercent,
   onZoomOut,
@@ -35,23 +38,7 @@ export function BrowserMenu({
   const [bookmarksOpen, setBookmarksOpen] = useState(false)
   const bookmarks = useBrowserStore((s) => s.bookmarks)
 
-  useEffect(() => {
-    const onDown = (e: MouseEvent): void => {
-      const target = e.target as Node
-      if (
-        ref.current
-        && !ref.current.contains(target)
-        && !triggerRef.current?.contains(target)
-      ) onClose()
-    }
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [onClose, triggerRef])
+  useDismissableLayer({ open: true, contentRef: ref, triggerRefs: [triggerRef], onDismiss: onClose })
 
   const item = 'w-full flex items-center gap-2.5 px-3 h-8 text-sm text-secondary hover:bg-hover transition-colors text-left'
 
@@ -110,6 +97,9 @@ export function BrowserMenu({
           </div>
         )}
       </div>
+      <button className={item} onClick={() => { onClose(); onOpenHistory() }}>
+        <ClockCounterClockwise size={14} className="text-muted" /> History
+      </button>
       <button className={item} onClick={() => { onClose(); onOpenPasswordManager() }}>
         <Key size={14} className="text-muted" /> Passwords and autofill
       </button>

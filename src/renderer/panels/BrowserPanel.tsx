@@ -4,8 +4,8 @@
 // Ported from BrowserPanel.swift
 // =============================================================================
 
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, ArrowUpRight, Camera, Key, Star, DotsThreeVertical } from '@phosphor-icons/react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, ArrowUpRight, Camera, DownloadSimple, Key, Star, DotsThreeVertical } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
@@ -16,6 +16,8 @@ import { UrlSuggestions } from './UrlSuggestions'
 import { StartPage } from './StartPage'
 import { AgentCursorOverlay } from './AgentCursorOverlay'
 import { BrowserMenu } from './BrowserMenu'
+import { BrowserHistoryPage } from './BrowserHistoryPage'
+import { BrowserDownloadsPopover, type BrowserPanelDownload } from './BrowserDownloadsPopover'
 import { BrowserPasswordManagerPage } from './BrowserPasswordManagerPage'
 import { BrowserTabStrip } from './BrowserTabStrip'
 import type { BrowserCredentialSuggestion, BrowserTab } from '../../shared/types'
@@ -27,8 +29,12 @@ import { writeCateFileDrag } from '../drag/fileDragPayload'
 import { isUrl, normalizeUrl } from './browserUrl'
 import { pageLoadErrorFrom } from './browserLoadError'
 import { Tooltip } from '../ui/Tooltip'
+import { Spinner } from '../ui/Spinner'
+import { PanelCenteredState } from '../ui/PanelCenteredState'
+import { Button } from '../ui/Button'
 import { useActivePanelStore } from '../lib/activePanel'
 import {
+  BROWSER_HISTORY_URL,
   BROWSER_PASSWORD_MANAGER_URL,
   browserInternalPageTitle,
   isBrowserInternalPage,
@@ -315,12 +321,51 @@ export default function BrowserPanel({
   const [viewportContainerSize, setViewportContainerSize] = useState({ width: 0, height: 0 })
   const viewportContainerRef = useRef<HTMLDivElement | null>(null)
   const viewportDisplayScale = browserViewportScale(browserViewport, viewportContainerSize)
+  const viewportGenerationRef = useRef(0)
+  const pendingViewportRef = useRef(new Map<number, () => void>())
+  const setSettledBrowserViewport = useCallback((viewport: BrowserViewport): Promise<void> => {
+    const generation = ++viewportGenerationRef.current
+    setBrowserViewport(viewport)
+    return new Promise((resolve) => pendingViewportRef.current.set(generation, resolve))
+  }, [])
+  useLayoutEffect(() => {
+    if (pendingViewportRef.current.size === 0) return
+    const committedGeneration = viewportGenerationRef.current
+    let secondFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        for (const [generation, resolve] of pendingViewportRef.current) {
+          if (generation <= committedGeneration) {
+            pendingViewportRef.current.delete(generation)
+            resolve()
+          }
+        }
+      })
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      if (secondFrame) cancelAnimationFrame(secondFrame)
+    }
+  }, [browserViewport, viewportDisplayScale])
+  useEffect(() => () => {
+    for (const resolve of pendingViewportRef.current.values()) resolve()
+    pendingViewportRef.current.clear()
+  }, [])
   // Distinct from loadError: the guest *renderer process* died (OOM / GPU
   // fault / native crash), not merely a failed navigation. Needs a reload to
   // respawn the renderer, so it gets its own overlay + recovery affordance.
   const [crashed, setCrashed] = useState(false)
   const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [downloadsByGuest, setDownloadsByGuest] = useState<Map<number, BrowserPanelDownload[]>>(new Map())
+  const [downloadsOpen, setDownloadsOpen] = useState(false)
+  const downloadButtonRef = useRef<HTMLButtonElement>(null)
+  const seenDownloadIdsRef = useRef(new Set<string>())
+
+  const downloads = useMemo(
+    () => [...downloadsByGuest.values()].flat().sort((a, b) => b.at - a.at),
+    [downloadsByGuest],
+  )
 
   // -------------------------------------------------------------------------
   // Navigation helpers
@@ -559,6 +604,7 @@ export default function BrowserPanel({
   const [menuOpen, setMenuOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const toggleBrowserMenu = useCallback(() => {
+    setDownloadsOpen(false)
     setMenuOpen((open) => !open)
   }, [])
 
@@ -595,7 +641,10 @@ export default function BrowserPanel({
 
   useEffect(() => {
     if (!isFocused || !isStartPageUrl(currentUrl)) return
-    requestAnimationFrame(() => urlInputRef.current?.focus())
+    const frame = requestAnimationFrame(() => {
+      if (!document.body.classList.contains('canvas-dragging')) urlInputRef.current?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
   }, [currentUrl, isFocused])
 
   // -------------------------------------------------------------------------
@@ -697,9 +746,16 @@ export default function BrowserPanel({
     if (!isFocused) return
     const webview = webviewRef.current
     if (!webview) return
-    requestAnimationFrame(() => {
-      webview.focus()
+    const frame = requestAnimationFrame(() => {
+      // Canvas-node focus happens on mousedown, before the drag dead zone has
+      // armed. Focusing a <webview> switches webContents and blurs the host
+      // window, which cancels that pending drag. Keep focus on the title bar
+      // for pointer-driven node focus; direct browser clicks focus their exact
+      // target naturally.
+      if (document.body.classList.contains('canvas-dragging')) return
+      if (isFocusedRef.current && webviewRef.current === webview) webview.focus()
     })
+    return () => cancelAnimationFrame(frame)
   }, [isFocused, webviewEl, activeTabId])
 
   // Browser nav keys forwarded from the main process (fired while the webview
@@ -711,6 +767,54 @@ export default function BrowserPanel({
       runBrowserAction(action as BrowserShortcutAction)
     })
   }, [runBrowserAction])
+
+  // Keep popup/new-window navigation inside the same persistent browser layer.
+  // Main validates the URL and reports the exact opener guest; only the panel
+  // that owns that guest may create the tab.
+  useEffect(() => {
+    return window.electronAPI.onBrowserOpenTabRequest(({ openerWebContentsId, url }) => {
+      const ownsOpener = [...webviewsByTabRef.current.values()].some((webview) => {
+        try { return webview.getWebContentsId() === openerWebContentsId } catch { return false }
+      })
+      if (ownsOpener) openTab(url)
+    })
+  }, [openTab])
+
+  useEffect(() => {
+    return window.electronAPI.onBrowserDownloadsChanged(({ webContentsId, downloads: updated }) => {
+      const tabId = [...webviewsByTabRef.current.entries()].find(([, webview]) => {
+        try { return webview.getWebContentsId() === webContentsId } catch { return false }
+      })?.[0]
+      if (!tabId) return
+
+      const hasNewDownload = updated.some((download) => !seenDownloadIdsRef.current.has(download.id))
+      updated.forEach((download) => seenDownloadIdsRef.current.add(download.id))
+      setDownloadsByGuest((current) => {
+        const next = new Map(current)
+        next.set(webContentsId, updated.map((download) => ({ ...download, webContentsId, tabId })))
+        return next
+      })
+      if (hasNewDownload) {
+        setMenuOpen(false)
+        setDownloadsOpen(true)
+      }
+    })
+  }, [])
+
+  const runDownloadAction = useCallback((
+    download: BrowserPanelDownload,
+    action: 'cancel' | 'open' | 'show',
+  ) => {
+    void window.electronAPI.browserControl({
+      op: 'downloadAction',
+      webContentsId: download.webContentsId,
+      workspaceId,
+      panelId,
+      tabId: download.tabId,
+      method: action,
+      args: { downloadId: download.id },
+    })
+  }, [workspaceId, panelId])
 
   // -------------------------------------------------------------------------
   // Webview event listeners
@@ -851,12 +955,13 @@ export default function BrowserPanel({
         void webview.insertCSS(browserGuestScrollbarCss()).catch(() => { /* guest gone */ })
       } catch { /* detached */ }
       void window.electronAPI.browserControl({
-        op: 'registerAgentBrowser',
+        op: 'attach',
         webContentsId,
+        workspaceId,
         panelId,
         tabId: activeTabId,
       }).catch((error) => {
-        console.error('[BrowserPanel] agent-browser registration failed:', error)
+        console.error('[BrowserPanel] browser runtime attachment failed:', error)
       })
     }
     webview.addEventListener('dom-ready', onDomReady)
@@ -932,7 +1037,7 @@ export default function BrowserPanel({
     openTab,
     selectTab,
     closeTab,
-    setBrowserViewport,
+    setBrowserViewport: setSettledBrowserViewport,
   })
   controllerRef.current = {
     navigateTo,
@@ -941,7 +1046,7 @@ export default function BrowserPanel({
     openTab,
     selectTab,
     closeTab,
-    setBrowserViewport,
+    setBrowserViewport: setSettledBrowserViewport,
   }
   useEffect(() => {
     const controller: BrowserPanelController = {
@@ -1028,7 +1133,7 @@ export default function BrowserPanel({
               className="flex h-7 w-7 items-center justify-center rounded-[10px] text-secondary transition-colors hover:bg-hover hover:text-primary disabled:opacity-30 disabled:hover:bg-transparent"
               aria-label="Reload"
             >
-              <ArrowClockwise size={14} className={isLoading ? 'animate-spin' : ''} />
+              {isLoading ? <Spinner size={14} /> : <ArrowClockwise size={14} />}
             </button>
           </Tooltip>
         </div>
@@ -1074,6 +1179,29 @@ export default function BrowserPanel({
             onHover={setActiveSuggestion}
           />
         </div>
+
+        {downloads.length > 0 && (
+          <Tooltip label="Downloads">
+            <button
+              ref={downloadButtonRef}
+              type="button"
+              onClick={() => {
+                setMenuOpen(false)
+                setDownloadsOpen((open) => !open)
+              }}
+              className={`relative flex h-7 w-7 items-center justify-center rounded-[10px] transition-colors hover:bg-hover hover:text-primary ${
+                downloadsOpen ? 'bg-hover text-primary' : 'text-secondary'
+              }`}
+              aria-label="Downloads"
+              aria-expanded={downloadsOpen}
+            >
+              <DownloadSimple size={14} />
+              {downloads.some((download) => download.state === 'progressing') && (
+                <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-agent" />
+              )}
+            </button>
+          </Tooltip>
+        )}
 
         {!isStartPageUrl(currentUrl) && (
           <>
@@ -1125,6 +1253,7 @@ export default function BrowserPanel({
         <BrowserMenu
           onNewTab={handleNewTab}
           onNavigate={navigateTo}
+          onOpenHistory={() => openTab(BROWSER_HISTORY_URL)}
           onOpenPasswordManager={() => openTab(BROWSER_PASSWORD_MANAGER_URL)}
           zoomPercent={Math.round(browserZoomFactor * 100)}
           onZoomOut={() => adjustBrowserZoom(-1)}
@@ -1132,6 +1261,14 @@ export default function BrowserPanel({
           onZoomReset={() => applyBrowserZoom(1)}
           onClose={() => setMenuOpen(false)}
           triggerRef={menuButtonRef}
+        />
+      )}
+      {downloadsOpen && downloads.length > 0 && (
+        <BrowserDownloadsPopover
+          downloads={downloads}
+          onAction={runDownloadAction}
+          onClose={() => setDownloadsOpen(false)}
+          triggerRef={downloadButtonRef}
         />
       )}
 
@@ -1192,7 +1329,8 @@ export default function BrowserPanel({
             <StartPage />
           </div>
         )}
-        {isBrowserInternalPage(currentUrl) && <BrowserPasswordManagerPage />}
+        {currentUrl === BROWSER_HISTORY_URL && <BrowserHistoryPage onNavigate={navigateTo} />}
+        {currentUrl === BROWSER_PASSWORD_MANAGER_URL && <BrowserPasswordManagerPage />}
 
         {/* Host-rendered password suggestions. Only usernames cross renderer
             IPC; the selected password is decrypted and filled in main. */}
@@ -1232,8 +1370,8 @@ export default function BrowserPanel({
           </div>
         )}
 
-        {/* Agent activity — ghost pointer, target highlight and action label for
-            `cate.browser.*` input, which is otherwise indistinguishable from the
+        {/* Agent activity — ghost pointer and click feedback for `cate.browser.*`
+            input, which is otherwise indistinguishable from the
             user's own. Sits above the webview and never takes pointer events. */}
         <AgentCursorOverlay
           panelId={panelId}
@@ -1291,16 +1429,12 @@ function WebviewErrorOverlay({
   onRetry: () => void
 }) {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-4 text-secondary p-4 text-center z-10">
-      <Globe size={32} className="mb-2 text-muted" />
-      <p className="text-sm font-medium mb-1">{title}</p>
-      <p className="text-xs text-muted">{description}</p>
-      <button
-        onClick={onRetry}
-        className="mt-3 px-3 py-1 text-xs rounded bg-surface-6 hover:bg-hover text-primary"
-      >
-        {buttonLabel}
-      </button>
-    </div>
+    <PanelCenteredState
+      className="absolute inset-0 z-10"
+      icon={<Globe size={32} />}
+      title={title}
+      description={description}
+      actions={<Button size="sm" onClick={onRetry}>{buttonLabel}</Button>}
+    />
   )
 }

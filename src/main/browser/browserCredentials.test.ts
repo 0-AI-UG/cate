@@ -25,12 +25,14 @@ import {
   clearBrowserCredentials,
   decryptChromePassword,
   getCredentialForFill,
+  getCredentialSaveDisposition,
   getBrowserCredentials,
   getCredentialSuggestions,
   importChromePasswordCsv,
   importChromePasswords,
   listChromePasswordProfiles,
   removeBrowserCredential,
+  saveBrowserCredential,
 } from './browserCredentials'
 
 let root = ''
@@ -173,5 +175,52 @@ describe('Chrome password import', () => {
 
     await removeBrowserCredential(suggestions[0].id)
     expect(await getBrowserCredentials()).toEqual([])
+  })
+
+  it('creates, updates, and deduplicates credentials saved in Cate', async () => {
+    const input = {
+      origin: 'https://example.com/login',
+      username: 'person@example.com',
+      password: 'first secret',
+      usernameElement: 'email',
+      passwordElement: 'password',
+    }
+    await expect(getCredentialSaveDisposition(input)).resolves.toBe('create')
+    const created = await saveBrowserCredential(input)
+    expect(created.action).toBe('created')
+    await expect(getCredentialSaveDisposition(input)).resolves.toBe('unchanged')
+    await expect(saveBrowserCredential(input)).resolves.toMatchObject({
+      action: 'unchanged',
+      credential: { id: created.credential.id },
+    })
+
+    const changed = { ...input, password: 'replacement secret' }
+    await expect(getCredentialSaveDisposition(changed)).resolves.toBe('update')
+    await expect(saveBrowserCredential(changed)).resolves.toMatchObject({
+      action: 'updated',
+      credential: { id: created.credential.id },
+    })
+    expect(await getBrowserCredentials()).toHaveLength(1)
+    await expect(getCredentialForFill(created.credential.id, 'https://example.com/account')).resolves.toMatchObject({
+      username: 'person@example.com',
+      password: 'replacement secret',
+    })
+
+    const onDisk = await fsp.readFile(path.join(state.userData, 'browser-credentials.json'), 'utf8')
+    expect(onDisk).not.toContain('first secret')
+    expect(onDisk).not.toContain('replacement secret')
+  })
+
+  it('rejects invalid manual password entries', async () => {
+    await expect(saveBrowserCredential({
+      origin: 'javascript:alert(1)',
+      username: 'person@example.com',
+      password: 'secret',
+    })).rejects.toThrow('invalid')
+    await expect(saveBrowserCredential({
+      origin: 'https://example.com',
+      username: '',
+      password: '',
+    })).rejects.toThrow('invalid')
   })
 })
