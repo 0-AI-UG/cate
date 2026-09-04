@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { CloudWarning, CloudArrowDown, CircleNotch, PlugsConnected } from '@phosphor-icons/react'
+import { CloudWarning, CloudArrowDown, PlugsConnected } from '@phosphor-icons/react'
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
@@ -9,6 +9,7 @@ import {
   isRemoteRuntimeConnection,
   runtimeConnectionLabel,
 } from '../../shared/runtimeConnection'
+import { Spinner } from './Spinner'
 
 // Full-cover lock for the main canvas while the selected remote workspace's
 // runtime isn't usable. It blocks interaction with the dead panels beneath and
@@ -74,7 +75,7 @@ export function RuntimeLockOverlay(): JSX.Element | null {
     if (!loading) return null
     return (
       <div className={`modal-backdrop-in absolute inset-0 z-10 flex items-center justify-center select-none ${BACKDROP}`}>
-        <CircleNotch size={24} className="text-muted animate-spin" />
+        <Spinner size={24} className="text-muted" label="Connecting to local runtime" />
       </div>
     )
   }
@@ -129,9 +130,9 @@ export function RuntimeLockOverlay(): JSX.Element | null {
       <div className={`modal-backdrop-in absolute inset-0 z-10 flex items-center justify-center select-none ${BACKDROP}`}>
         <div className={`modal-card-in w-[300px] max-w-[90%] flex flex-col items-center gap-3 px-6 py-7 ${CARD_SURFACE}`}>
           {view.icon === 'spin' ? (
-            <CircleNotch size={24} className="text-muted animate-spin" />
+            <Spinner size={24} className="text-muted" />
           ) : view.icon === 'install' ? (
-            <CloudArrowDown size={24} weight="fill" className="text-focus-blue animate-pulse" />
+            <CloudArrowDown size={24} weight="fill" className="text-focus-blue animate-pulse motion-reduce:animate-none" />
           ) : (
             <CloudWarning size={24} weight="fill" className="text-red-400" />
           )}

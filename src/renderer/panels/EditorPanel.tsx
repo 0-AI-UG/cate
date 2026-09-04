@@ -40,6 +40,8 @@ import EditorConflictBanner from './EditorConflictBanner'
 import { Tooltip } from '../ui/Tooltip'
 import { isRuntimeLocator } from '../../shared/runtimeLocator'
 import { useUIStore } from '../stores/uiStore'
+import { LoadingState } from '../ui/Spinner'
+import { PanelCenteredState } from '../ui/PanelCenteredState'
 
 // -----------------------------------------------------------------------------
 // Editor font
@@ -302,6 +304,7 @@ export default function EditorPanel({
 
   const [markdownContent, setMarkdownContent] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [fileLoading, setFileLoading] = useState(!!filePath)
 
   const workspaces = useAppStore((s) => s.workspaces)
   const ws = workspaces.find((w) => w.id === workspaceId)
@@ -530,6 +533,7 @@ export default function EditorPanel({
         retainModel(filePath)
         modelRetained = true
         editor.setModel(cached)
+        setFileLoading(false)
         applyPendingReveal()
         // The warm model may be stale: nothing kept it current while this panel
         // was closed. Reconcile with disk — a clean buffer silently catches up, a
@@ -537,6 +541,7 @@ export default function EditorPanel({
         // (resyncFromDisk recovers the real disk baseline from the model cache.)
         void sync.resyncFromDisk()
       } else {
+        setFileLoading(true)
         const language = detectLanguage(filePath)
         const targetPath = filePath
         window.electronAPI
@@ -545,6 +550,7 @@ export default function EditorPanel({
             if (cancelled) return
             clearLoadFailed(targetPath)
             setLoadError(null)
+            setFileLoading(false)
             // Pass the file URI so Monaco indexes the model by it; this enables
             // monaco.editor.getModel(uri) reuse on later opens. When two panels
             // open the same uncached file concurrently the URI is already taken,
@@ -570,10 +576,12 @@ export default function EditorPanel({
             // Cmd+S from that empty buffer would overwrite the real file. Mark
             // the path as failed (blocks save) and surface a visible error.
             markLoadFailed(targetPath)
+            setFileLoading(false)
             setLoadError(String((err as Error)?.message ?? err))
           })
       }
     } else {
+      setFileLoading(false)
       const restored = useAppStore.getState().workspaces
         .find((w) => w.id === workspaceId)?.panels[panelId]?.unsavedContent ?? ''
       const model = monaco.editor.createModel(restored, 'plaintext')
@@ -794,10 +802,14 @@ export default function EditorPanel({
           <MarkdownPreview content={markdownContent} />
         )}
         {loadError && !diffMode && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 bg-surface-1 px-6 text-center">
-            <div className="text-[13px] font-medium text-primary">Couldn’t open this file</div>
-            <div className="text-[12px] text-secondary break-all">{loadError}</div>
-          </div>
+          <PanelCenteredState
+            className="absolute inset-0 z-20 bg-surface-1 px-6"
+            title="Couldn’t open this file"
+            description={<span className="break-all text-secondary">{loadError}</span>}
+          />
+        )}
+        {fileLoading && !diffMode && (
+          <LoadingState label="Loading file…" className="absolute inset-0 z-20 bg-surface-1 text-sm" />
         )}
         <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
         {!filePath && !diffMode && !isDirty && (

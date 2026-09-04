@@ -131,10 +131,12 @@ export function CliSettings() {
         <div className="flex items-center gap-2">
           <SecondaryButton
             onClick={() => void reinstallSkill()}
-            disabled={!workspace?.rootPath || reinstalling}
+            disabled={!workspace?.rootPath}
+            loading={reinstalling}
+            loadingLabel="Reinstalling…"
             title={workspace?.rootPath ? 'Replace installed copies with the bundled skill' : 'Open a workspace first'}
           >
-            {reinstalling ? 'Reinstalling...' : 'Reinstall skill'}
+            Reinstall skill
           </SecondaryButton>
           <Toggle
             checked={store.cliSkillInstallEnabled}

@@ -20,6 +20,7 @@ import {
   CaretDown,
   GitPullRequest,
 } from '@phosphor-icons/react'
+import { Spinner } from '../ui/Spinner'
 
 export interface PrListItem {
   number: number
@@ -181,7 +182,7 @@ export const CreateWorktreeForm: React.FC<{
             className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
             aria-label={selectedPr ? 'Check out pull request' : 'Start'}
           >
-            <Check size={14} />
+            {busy ? <Spinner size={14} /> : <Check size={14} />}
           </button>
         </Tooltip>
         <Tooltip label="Cancel">

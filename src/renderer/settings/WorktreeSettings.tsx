@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Plus, X } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
-import { SettingRow, Toggle, SearchableBlock, TextInput } from './SettingsComponents'
+import { SettingRow, Toggle, SearchableBlock } from './SettingsComponents'
+import { StringListEditor } from './StringListEditor'
 
 export function WorktreeSettings() {
   const store = useSettingsStore()
@@ -49,49 +49,15 @@ export function WorktreeSettings() {
             node_modules) so they don't need rebuilding. Leave empty to disable.
           </p>
 
-          <div className="flex gap-1.5">
-            <TextInput
-              value={draft}
-              onChange={(value) => {
-                setDraft(value)
-                if (error) setError(null)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') add()
-              }}
-              placeholder="Add a path, e.g. node_modules"
-              layoutClassName="flex-1 px-2"
-            />
-            <button
-              onClick={add}
-              className="flex items-center gap-1 px-2.5 py-1 text-[12px] rounded text-secondary hover:text-primary bg-surface-2 hover:bg-hover border border-subtle"
-            >
-              <Plus size={12} />
-              Add
-            </button>
-          </div>
-
-          {error && <div className="text-[11px] text-red-400 mt-2">{error}</div>}
-
-          {paths.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {paths.map((name) => (
-                <span
-                  key={name}
-                  className="group inline-flex items-center gap-1 rounded bg-surface-5 border border-subtle pl-2 pr-1 py-0.5 text-[12px] font-mono text-primary"
-                >
-                  {name}
-                  <button
-                    onClick={() => remove(name)}
-                    className="p-0.5 rounded-lg text-muted hover:text-red-400"
-                    title={`Remove ${name}`}
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
+          <StringListEditor
+            values={paths}
+            draft={draft}
+            onDraftChange={(value) => { setDraft(value); if (error) setError(null) }}
+            onAdd={add}
+            onRemove={remove}
+            placeholder="Add a path, e.g. node_modules"
+            error={error}
+          />
         </div>
       </SearchableBlock>
     </div>

@@ -19,7 +19,8 @@ import {
   reviewCodingAgentWorktree,
   type CodingAgentWorktreeReview,
 } from '../../renderer/lib/agent/codingAgentIntegration'
-import { worktreeTitleStyle } from '../../renderer/lib/worktreeTitleStyle'
+import { AgentActivityTitle, AwaitingIndicator } from '../../renderer/ui/AgentActivityTitle'
+import { Spinner } from '../../renderer/ui/Spinner'
 
 function resultObject(result: string | undefined): Record<string, unknown> {
   if (!result) return {}
@@ -108,16 +109,15 @@ export function CodingAgentCard({ msg }: { msg: ToolMessage; shimmer?: boolean }
               className="shrink-0"
             />
           )}
-          <span
-            className={`truncate min-w-0 ${titleShimmers ? 'cate-notif-pulse' : ''}`}
-            style={worktreeTitleStyle(worktreeColor, titleShimmers)}
+          <AgentActivityTitle
+            className="min-w-0 truncate"
+            running={titleShimmers}
+            worktreeColor={worktreeColor}
           >
             {title}
-          </span>
+          </AgentActivityTitle>
           {canonicalStatus === 'waiting' && (
-            <span className="cate-await-indicator shrink-0" aria-label="awaiting input">
-              <span className="cate-await-dot" style={{ backgroundColor: '#c08a5a' }} />
-            </span>
+            <AwaitingIndicator />
           )}
         </button>
         <button
@@ -241,10 +241,11 @@ function CodingAgentIntegrationActions({
     <div className="mt-2 ml-[23px] rounded-md border border-subtle bg-surface-1 p-2 text-[10.5px]">
       <div className="flex flex-wrap items-center gap-1.5">
         <button
-          className="rounded bg-surface-2 px-2 py-1 text-primary hover:bg-hover-strong disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded bg-surface-2 px-2 py-1 text-primary hover:bg-hover-strong disabled:opacity-50"
           disabled={busy}
           onClick={() => { void loadReview(true) }}
         >
+          {busy && !review && <Spinner size={12} />}
           {busy && !review ? 'Reviewing…' : 'Review changes'}
         </button>
         {!appliedToBranch && (

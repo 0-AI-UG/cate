@@ -12,6 +12,7 @@ import { useGitTree } from './useGitTree'
 import { useSearchStore, lineKey } from '../stores/searchStore'
 import { ensureSearchSubscriptions } from '../stores/searchIpc'
 import log from '../lib/logger'
+import { Spinner } from '../ui/Spinner'
 
 const DEBOUNCE_MS = 250
 let searchSeq = 0
@@ -265,7 +266,7 @@ export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = 
           {error ? (
             <span className="text-red-400 truncate" title={error}>{error}</span>
           ) : status === 'searching' && matchCount === 0 ? (
-            <span>Searching…</span>
+            <span className="flex items-center gap-1.5"><Spinner size={11} />Searching…</span>
           ) : matchCount === 0 ? (
             <span>No results</span>
           ) : (

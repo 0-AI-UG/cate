@@ -1,8 +1,8 @@
 // =============================================================================
 // ExtensionPanel — minimal webview host for a frontend extension panel.
 //
-// Modeled on BrowserPanel's <webview> usage (ref typing, dom-ready, stable
-// src, keyed remount) but stripped of all browser chrome: no URL bar, no
+// Owns a minimal extension <webview> (ref typing, dom-ready, stable src, keyed
+// remount) without browser chrome: no URL bar, no
 // navigation, no proxy. On mount it asks the main process for the proxied URL
 // + preload script that serve this extension's panel, then renders an Electron
 // <webview> pointed at it. The session partition is keyed to the extension id
@@ -11,13 +11,15 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { PuzzlePiece } from '@phosphor-icons/react'
-import { portalRegistry } from '../lib/portalRegistry'
 import { useExtensionsStore, ensureExtensionsStarted } from '../stores/extensionsStore'
 import { CATE_HOST_EVENT } from '../../shared/ipc-channels'
 import type { CateDroppedFile } from '../../shared/cate-host-api'
 import type { ExtensionPanelProps } from './types'
 import { hasCateFileDrag, readCateFilePaths } from '../drag/fileDragPayload'
 import { pathDisplayName } from '../lib/fs/displayPath'
+import { LoadingState } from '../ui/Spinner'
+import { PanelCenteredState } from '../ui/PanelCenteredState'
+import { Button } from '../ui/Button'
 
 // Cap forwarded file content so a huge drop can't choke the IPC bridge / guest.
 const MAX_DROP_BYTES = 32 * 1024 * 1024
@@ -266,48 +268,36 @@ export default function ExtensionPanel({
     }
   }, [acceptsDrops, state.phase, workspaceId, panelId])
 
-  // Register the live guest webContents with the portal registry once it's up
-  // (mirrors BrowserPanel) so cross-window/portal machinery can find it.
+  // Apply guest scrollbar styling once the extension page is ready.
   useEffect(() => {
     if (state.phase !== 'ready') return
     const webview = webviewRef.current
     if (!webview) return
     const onDomReady = (): void => {
-      try { portalRegistry.register(panelId, webview as any) } catch { /* ignore */ }
       try { void webview.insertCSS(guestScrollbarCss()).catch(() => { /* guest gone */ }) } catch { /* detached */ }
     }
     webview.addEventListener('dom-ready', onDomReady)
     return () => {
-      try { portalRegistry.unregister(panelId) } catch { /* ignore */ }
       webview.removeEventListener('dom-ready', onDomReady)
     }
   }, [state.phase, panelId])
 
   if (state.phase === 'loading') {
     return (
-      <div className="flex flex-col items-center justify-center w-full h-full bg-surface-4 text-secondary">
-        <PuzzlePiece size={28} className="mb-2 text-muted animate-pulse" />
-        <p className="text-xs text-muted">Loading extension…</p>
-      </div>
+      <LoadingState label="Loading extension…" className="w-full h-full bg-surface-4 text-xs" />
     )
   }
 
   if (state.phase === 'error') {
     return (
-      <div className="flex flex-col items-center justify-center w-full h-full bg-surface-4 text-secondary p-4 text-center">
-        <PuzzlePiece size={28} className="mb-2 text-muted" />
-        <p className="text-sm font-medium mb-1">Extension unavailable</p>
-        <p className="text-xs text-muted whitespace-pre-wrap max-w-md max-h-40 overflow-auto">
+      <PanelCenteredState
+        icon={<PuzzlePiece size={28} />}
+        title="Extension unavailable"
+        description={<span className="block max-h-40 overflow-auto whitespace-pre-wrap">
           {state.message ?? 'This extension is not enabled or could not be found.'}
-        </p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-3 px-3 py-1 text-xs rounded bg-surface-2 hover:bg-surface-1 text-secondary"
-        >
-          Retry
-        </button>
-      </div>
+        </span>}
+        actions={<Button size="sm" onClick={onRetry}>Retry</Button>}
+      />
     )
   }
 

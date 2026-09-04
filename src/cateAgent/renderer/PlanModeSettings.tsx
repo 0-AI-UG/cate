@@ -1,4 +1,4 @@
-import { CheckCircle } from '@phosphor-icons/react'
+import { CompactChoiceList } from '../../renderer/chat/CompactChoiceList'
 
 export type PlanExploreAgentCount = 0 | 1 | 2 | 3 | 4
 
@@ -37,29 +37,13 @@ export function PlanModeSettings({
   onChange: (config: PlanModeConfig) => void
 }) {
   return (
-    <div data-plan-mode-settings className="text-[11px]">
-      <div className="mb-1.5 text-[10px] text-muted">Explore agents</div>
-      <div className="overflow-hidden rounded-md border border-subtle bg-surface-2 divide-y divide-subtle">
-        {EXPLORE_OPTIONS.map((option) => {
-          const selected = config.exploreAgents === option.value
-          return (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => onChange({ exploreAgents: option.value })}
-              className={`flex h-6 w-full items-center gap-1.5 px-2 text-left text-[10px] transition-colors ${
-                selected ? 'text-primary bg-hover' : 'text-secondary hover:text-primary hover:bg-hover'
-              }`}
-            >
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              {selected && (
-                <CheckCircle size={10} weight="fill" className="shrink-0 text-agent-light" />
-              )}
-            </button>
-          )
-        })}
-      </div>
+    <div data-plan-mode-settings>
+      <CompactChoiceList
+        label="Explore agents"
+        options={EXPLORE_OPTIONS}
+        value={config.exploreAgents}
+        onChange={(exploreAgents) => onChange({ exploreAgents })}
+      />
     </div>
   )
 }

@@ -48,6 +48,8 @@ import { revealPanel } from '../lib/workspace/panelReveal'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { getRecentFiles, recordRecentFile } from '../lib/fs/recentFiles'
 import { pathDisplayName, relativeDisplayPath } from '../lib/fs/displayPath'
+import { LoadingState } from './Spinner'
+import { PaletteTextInput } from './PaletteTextInput'
 
 // -----------------------------------------------------------------------------
 // Command definitions
@@ -440,17 +442,16 @@ export const CommandPalette: React.FC = () => {
   return (
     <PaletteDialogShell
       onClose={close}
+      ariaLabel="Command palette"
       cardClassName="w-[600px] max-w-[600px] max-h-[440px] mt-[120px] overflow-hidden flex flex-col self-start"
       cardProps={{ 'data-onboarding': 'command-palette' }}
     >
         {/* Search input */}
         <div className="p-2 shrink-0">
-          <div className="flex items-center gap-2 px-2.5 h-8 rounded-md bg-surface-0/60 border border-strong focus-within:border-[rgba(255,255,255,0.18)] transition-colors">
-            <MagnifyingGlass size={15} className="text-muted shrink-0" />
-            <input
+          <PaletteTextInput
+              icon={<MagnifyingGlass size={15} />}
               ref={inputRef}
               autoFocus
-              type="text"
               value={searchText}
               onChange={(e) => { setSearchText(e.target.value); setSelectedIndex(0) }}
               onKeyDown={(e) => {
@@ -476,16 +477,14 @@ export const CommandPalette: React.FC = () => {
                 }
               }}
               placeholder={openFileTargetPanelId ? 'Search workspace files' : 'Search commands, workspaces, panels and files'}
-              className="flex-1 bg-transparent text-primary text-[13px] outline-none placeholder:text-muted"
-            />
-          </div>
+          />
         </div>
 
         {/* Results list */}
         <div className="flex-1 overflow-y-auto pb-1.5">
           {totalItems === 0 ? (
             <div className="text-muted text-[13px] text-center py-5">
-              {searching ? 'Searching…' : 'No results'}
+              {searching ? <LoadingState label="Searching…" size={14} /> : 'No results'}
             </div>
           ) : (
             <>

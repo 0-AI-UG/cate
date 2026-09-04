@@ -7,6 +7,9 @@ import { errorMessage } from '../lib/errorMessage'
 import { viewedArrayBuffer } from './documentBytes'
 import { pathDisplayName } from '../lib/fs/displayPath'
 import { isLocalLocator } from '../../shared/runtimeLocator'
+import { LoadingState } from '../ui/Spinner'
+import { PanelCenteredState } from '../ui/PanelCenteredState'
+import { Button } from '../ui/Button'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -207,6 +210,10 @@ function PdfViewer({ data }: { data: Uint8Array }) {
     )
   }
 
+  if (!pdf) {
+    return <LoadingState label="Opening PDF…" className="flex-1 text-sm" />
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800/60 border-b border-subtle text-xs text-neutral-400">
@@ -278,11 +285,7 @@ function DocxViewer({ data }: { data: Uint8Array }) {
   }
 
   if (!html) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">
-        Converting…
-      </div>
-    )
+    return <LoadingState label="Converting document…" className="flex-1 text-sm" />
   }
 
   return (
@@ -356,26 +359,19 @@ export default function DocumentPanel({ panelId, workspaceId }: PanelProps) {
 
   if (loading) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-surface-4 text-neutral-500 text-sm">
-        Loading {fileName}…
-      </div>
+      <LoadingState label={`Loading ${fileName}…`} className="w-full h-full bg-surface-4 text-sm" />
     )
   }
 
   if (error || !data) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-surface-4 gap-2">
-        <span className="text-red-400 text-sm">{error ?? 'Failed to load file'}</span>
-        {/* Finder is local-only; a remote file has nothing to show there. */}
-        {filePath && isLocalLocator(filePath) && (
-          <button
-            onClick={openExternal}
-            className="text-xs text-neutral-400 hover:text-white underline"
-          >
-            Show in Finder
-          </button>
-        )}
-      </div>
+      <PanelCenteredState
+        title="Couldn’t open this document"
+        description={<span className="text-danger">{error ?? 'Failed to load file'}</span>}
+        actions={filePath && isLocalLocator(filePath)
+          ? <Button size="sm" variant="ghost" onClick={openExternal}>Show in Finder</Button>
+          : undefined}
+      />
     )
   }
 
@@ -385,9 +381,7 @@ export default function DocumentPanel({ panelId, workspaceId }: PanelProps) {
       {documentType === 'pdf' && <PdfViewer data={data} />}
       {documentType === 'docx' && <DocxViewer data={data} />}
       {!documentType && (
-        <div className="flex-1 flex items-center justify-center text-neutral-500 text-sm">
-          Unsupported file format
-        </div>
+        <PanelCenteredState title="Unsupported file format" />
       )}
     </div>
   )

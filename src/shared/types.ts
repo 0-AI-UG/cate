@@ -1464,6 +1464,8 @@ export interface AppSettings {
   // Sidebar
   sidebarTintOpacity: number
   showFileExplorerOnLaunch: boolean
+  /** Show installed agent skills in each expanded workspace overview. */
+  showSkillsInWorkspaceOverview: boolean
 
   // File Explorer
   /** Folder/file names hidden in the file explorer, file search, and watcher. */
@@ -1591,6 +1593,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Sidebar
   sidebarTintOpacity: 1.0,
   showFileExplorerOnLaunch: false,
+  showSkillsInWorkspaceOverview: true,
 
   // File Explorer
   fileExclusions: [...FILE_EXCLUSIONS],

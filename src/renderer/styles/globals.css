@@ -2,8 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-*:focus {
-  outline: none;
+:where(button, [role='button'], a[href], input, select, textarea):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 /* =============================================================================
@@ -363,6 +364,13 @@
   color: transparent;
   -webkit-text-fill-color: transparent;
   animation: cate-notif-sweep 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cate-notif-pulse,
+  .skill-fill {
+    animation: none;
+  }
 }
 
 @keyframes cate-fade-in {
