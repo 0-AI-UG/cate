@@ -31,6 +31,10 @@ const STACK: DockTabStack = { type: 'tabs', id: 'stack-1', panelIds: ['p1'], act
 const EDITOR_PANEL = { id: 'p1', type: 'editor', title: 'a.md', isDirty: false, filePath: '/root/sub/a.md' } as PanelState
 const SCRATCH_PANEL = { id: 'p1', type: 'editor', title: 'Untitled', isDirty: false, unsavedContent: 'draft' } as PanelState
 const REMOTE_PANEL = { id: 'p1', type: 'editor', title: 'a.ts', isDirty: false, filePath: 'cate-runtime://srv_1/home/u/proj/a.ts' } as PanelState
+const WORKTREE_PANEL = {
+  id: 'p1', type: 'editor', title: 'feature.ts', isDirty: false,
+  filePath: '/root/.cate/worktrees/feature/src/feature.ts', worktreeId: 'wt-feature',
+} as PanelState
 
 type Actions = ReturnType<typeof useDockTabActions>
 const api: { current: Actions | null } = { current: null }
@@ -130,6 +134,24 @@ describe('useDockTabActions — Copy Path / Copy Relative Path', () => {
     await openTabMenu()
 
     expect(clipboardWriteText).toHaveBeenCalledWith('sub/a.md')
+  })
+
+  it('copies a worktree-backed file relative to its checkout root', async () => {
+    panelFixture = WORKTREE_PANEL
+    useAppStore.setState({
+      workspaces: [{
+        id: WS,
+        rootPath: '/root',
+        worktrees: [{ id: 'wt-feature', path: '/root/.cate/worktrees/feature', color: '#123456' }],
+        panels: {},
+      }],
+      selectedWorkspaceId: WS,
+    } as never)
+    showContextMenu.mockResolvedValue('copy-rel-path')
+
+    await openTabMenu()
+
+    expect(clipboardWriteText).toHaveBeenCalledWith('src/feature.ts')
   })
 
   it('copies the host path, not the locator URI, for a remote file', async () => {

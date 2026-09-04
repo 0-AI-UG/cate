@@ -25,6 +25,11 @@ import { broadcastToAll, focusWindow, getWindow, getWindowType, onWindowClosed, 
 /** The latest panel report from each window, keyed by Electron window id. */
 const windowPanels = new Map<number, WindowPanelInfo[]>()
 const windowPanelListeners = new Set<() => void>()
+const pendingPanelCloses = new Map<string, {
+  ownerWindowId: number
+  resolve: (closed: boolean) => void
+}>()
+let nextPanelCloseRequest = 1
 
 /** Store a window's reported panels (stamped with its owner id + type) and
  *  rebroadcast the union. Ignored if the window isn't tracked (e.g. a late
@@ -160,16 +165,33 @@ export function revealWindowPanel(panelId: string): boolean {
   return true
 }
 
-/** Ask the window that owns `panelId` to close the panel (behind its own
- *  dirty/running confirmation gates). Focuses the owner first so the gates'
- *  dialogs are visible. Returns false if no live window owns it. */
-export function closeWindowPanel(panelId: string): boolean {
+/** Ask the window that owns `panelId` to close the panel behind its own
+ * dirty/running confirmation gates. Resolves false if the owner is gone or the
+ * user cancels, so destructive callers can stop before deleting backing data. */
+export function closeWindowPanel(panelId: string): Promise<boolean> {
   const owner = getWindowPanels().find((p) => p.panelId === panelId)
-  if (!owner) return false
+  if (!owner) return Promise.resolve(false)
   const win = getWindow(owner.ownerWindowId)
-  if (!win) return false
+  if (!win) return Promise.resolve(false)
   focusWindow(win)
-  sendToWindow(owner.ownerWindowId, CLOSE_PANEL_IN_WINDOW, panelId)
+  const requestId = `panel-close-${nextPanelCloseRequest++}`
+  return new Promise<boolean>((resolve) => {
+    pendingPanelCloses.set(requestId, { ownerWindowId: owner.ownerWindowId, resolve })
+    sendToWindow(owner.ownerWindowId, CLOSE_PANEL_IN_WINDOW, panelId, requestId)
+  })
+}
+
+/** Complete a routed close request. The sender window must match the owner that
+ * received it, preventing an unrelated renderer from resolving the request. */
+export function completeWindowPanelClose(
+  ownerWindowId: number,
+  requestId: string,
+  closed: boolean,
+): boolean {
+  const pending = pendingPanelCloses.get(requestId)
+  if (!pending || pending.ownerWindowId !== ownerWindowId) return false
+  pendingPanelCloses.delete(requestId)
+  pending.resolve(closed)
   return true
 }
 
@@ -177,5 +199,10 @@ export function closeWindowPanel(panelId: string): boolean {
 // windows update. (onWindowClosed fires before the registry deletes its entries,
 // but the union is keyed off this module's own map, which we clear here.)
 onWindowClosed((windowId) => {
+  for (const [requestId, pending] of pendingPanelCloses) {
+    if (pending.ownerWindowId !== windowId) continue
+    pendingPanelCloses.delete(requestId)
+    pending.resolve(false)
+  }
   if (windowPanels.delete(windowId)) broadcastWindowPanels()
 })

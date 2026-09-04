@@ -31,6 +31,8 @@ const h = vi.hoisted(() => ({
   settingsOpen: false,
   useOwnedTerminalTelemetry: vi.fn(),
   updatePanelTitleFromAgent: vi.fn(),
+  closePanelWithConfirm: vi.fn(async () => true),
+  removeWorktree: vi.fn(),
 }))
 vi.mock('../../hooks/useShortcuts', () => ({ useShortcuts: h.useShortcuts }))
 vi.mock('./useThemeAndScaleHydration', () => ({ useThemeAndScaleHydration: h.useThemeAndScaleHydration }))
@@ -41,6 +43,7 @@ vi.mock('../agent/agentScreenDetector', () => ({
   noteAgentHookEvent: h.noteAgentHookEvent,
 }))
 vi.mock('../workspace/panelReveal', () => ({ revealPanel: h.revealPanel }))
+vi.mock('../closePanelWithConfirm', () => ({ closePanelWithConfirm: h.closePanelWithConfirm }))
 vi.mock('../../hooks/useProcessMonitor', () => ({ useOwnedTerminalTelemetry: h.useOwnedTerminalTelemetry }))
 vi.mock('../../stores/settingsStore', () => ({
   useSettingsStore: { getState: () => ({ loadSettings: h.loadSettings }), subscribe: () => () => {} },
@@ -55,6 +58,7 @@ vi.mock('../../stores/appStore', () => ({
       selectedWorkspaceId: 'ws-X',
       workspaces: [{ id: 'ws-X', panels: { p9: {} } }],
       updatePanelTitleFromAgent: h.updatePanelTitleFromAgent,
+      removeWorktree: h.removeWorktree,
     }),
     // setupWindowPanelSync subscribes to report this window's panels.
     subscribe: () => () => {},
@@ -91,6 +95,9 @@ beforeEach(() => {
     onAgentScreenStateUpdate: vi.fn((cb: (...a: unknown[]) => void) => { captured.agent = cb; return () => {} }),
     onShellAgentHookEvent: vi.fn((cb: (...a: unknown[]) => void) => { captured.hook = cb; return () => {} }),
     onRevealPanelInWindow: vi.fn((cb: (id: string) => void) => { captured.reveal = cb as never; return () => {} }),
+    onClosePanelInWindow: vi.fn((cb: (...a: unknown[]) => void) => { captured.close = cb; return () => {} }),
+    onWorktreeRemoved: vi.fn((cb: (...a: unknown[]) => void) => { captured.worktreeRemoved = cb; return () => {} }),
+    closePanelInWindowResult: vi.fn().mockResolvedValue(undefined),
     onWindowPanelsChanged: vi.fn((cb: (...a: unknown[]) => void) => { captured.union = cb; return () => {} }),
   }
   host = document.createElement('div')
@@ -162,6 +169,21 @@ describe('useWindowRuntime', () => {
     mount()
     act(() => { captured.reveal('p9') })
     expect(h.revealPanel).toHaveBeenCalledWith('ws-X', 'p9', { retry: true })
+  })
+
+  it('acknowledges the result after the owner window runs its close gates', async () => {
+    mount()
+    act(() => { captured.close('p9', 'request-1') })
+    await vi.waitFor(() => {
+      expect(h.closePanelWithConfirm).toHaveBeenCalledWith('ws-X', 'p9')
+      expect(window.electronAPI.closePanelInWindowResult).toHaveBeenCalledWith('request-1', true)
+    })
+  })
+
+  it('clears local worktree metadata when another window removes it', () => {
+    mount()
+    act(() => { captured.worktreeRemoved('ws-X', 'wt-1') })
+    expect(h.removeWorktree).toHaveBeenCalledWith('ws-X', 'wt-1')
   })
 
   it('swallows external OS file drops so the window cannot navigate to file://', () => {

@@ -7,8 +7,6 @@ import { pathKey } from '../../../shared/pathUtils'
 import type { AppSet, AppGet, AppStoreActions } from './types'
 import { pickWorktreeColor, setPanelField } from './helpers'
 import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
-import { useSettingsStore } from '../settingsStore'
-import { activeChatWorktreeIdForPanel } from '../../../cateAgent/renderer/cateAgentStore'
 import { useChatsStore } from '../chatsStore'
 
 type WorktreeSliceActions = Pick<
@@ -78,22 +76,9 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
     },
 
     removeWorktree(wsId, worktreeId) {
-      // Optionally destroy the worktree's terminal panels (PTYs killed) before
-      // we drop the worktree record. Agent targets live on chats, not panels.
-      // Done outside
-      // the set() updater because closePanel runs its own teardown + set().
-      if (useSettingsStore.getState().closeWorktreePanelsOnDelete) {
-        const ws = get().workspaces.find((w) => w.id === wsId)
-        const doomed = Object.values(ws?.panels ?? {}).filter(
-          (p) => p.type === 'cateAgent'
-            ? activeChatWorktreeIdForPanel(p.id) === worktreeId
-            : p.worktreeId === worktreeId && (
-                p.type === 'terminal' || p.type === 'editor' ||
-                p.type === 'document' || p.type === 'review'
-              ),
-        )
-        for (const p of doomed) get().closePanel(wsId, p.id)
-      }
+      // Panel closure is deliberately handled by the async deletion flows
+      // before they remove backing files. This synchronous metadata action must
+      // never bypass dirty-editor or running-terminal confirmation gates.
       const ws = get().workspaces.find((w) => w.id === wsId)
       const chats = useChatsStore.getState()
       if (ws?.rootPath && chats.loadedRoots[ws.rootPath]) {

@@ -341,6 +341,8 @@ export const FOCUS_WINDOW_PANEL = 'window:focusPanel'         // renderer -> mai
 export const REVEAL_PANEL_IN_WINDOW = 'detached:revealPanelInWindow' // main -> owning renderer
 export const CLOSE_WINDOW_PANEL = 'window:closePanel'         // renderer -> main
 export const CLOSE_PANEL_IN_WINDOW = 'detached:closePanelInWindow' // main -> owning renderer
+export const CLOSE_PANEL_IN_WINDOW_RESULT = 'window:closePanelResult' // owning renderer -> main
+export const WORKTREE_REMOVED = 'window:worktreeRemoved'       // renderer -> main -> all renderers
 export const WINDOW_PANELS_REPORT = 'window:panelsReport'     // renderer -> main (this window's panels)
 
 // Cross-window drag coordination

@@ -51,7 +51,7 @@ import { pathDisplayName, relativeDisplayPath } from '../lib/fs/displayPath'
 import { LoadingState } from './Spinner'
 import { PaletteTextInput } from './PaletteTextInput'
 import { useWorktrees } from '../stores/useWorktrees'
-import { selectedWorktree, worktreeForPanel } from '../lib/worktreeContext'
+import { selectedWorktree, worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
 import { getActivePanelId } from '../lib/activePanel'
 import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
 
@@ -258,10 +258,10 @@ export const CommandPalette: React.FC = () => {
   const detachedPanelWorktree = !isMainWindow
     ? worktreeForPanel(activePanel, worktrees, activeChatWorktreeIdForPanel)
     : undefined
-  const navigationRoot = savedNavigationWorktree?.path
-    ?? detachedPanelWorktree?.path
-    ?? selectedWorktree(worktrees, undefined)?.path
-    ?? rootPath
+  const navigationWorktree = savedNavigationWorktree
+    ?? detachedPanelWorktree
+    ?? selectedWorktree(worktrees, undefined)
+  const navigationRoot = navigationWorktree?.path ?? rootPath
 
   const query = searchText.trim().toLowerCase()
 
@@ -350,12 +350,18 @@ export const CommandPalette: React.FC = () => {
     const openPaths = new Set(Object.values(panels).map((p) => p.filePath).filter(Boolean) as string[])
     return getRecentFiles(selectedWorkspaceId)
       .filter((p) => !openPaths.has(p))
+      .filter((p) => {
+        if (!navigationRoot) return false
+        if (!worktreeForPath(p, [{ id: 'navigation-scope', path: navigationRoot }])) return false
+        return !navigationWorktree
+          || worktreeForPath(p, worktrees)?.id === navigationWorktree.id
+      })
       .map((p) => ({
         path: p,
         name: pathDisplayName(p) || p,
         relativePath: relativeDisplayPath(p, navigationRoot ?? ''),
       }))
-  }, [query, panels, selectedWorkspaceId, navigationRoot])
+  }, [query, panels, selectedWorkspaceId, navigationRoot, navigationWorktree, worktrees])
 
   const displayedFiles = query ? fileResults : recentFileResults
 

@@ -26,6 +26,7 @@ import {
   getWindowPanels,
   revealWindowPanel,
   closeWindowPanel,
+  completeWindowPanelClose,
 } from './windowPanels'
 import { WINDOW_PANELS_CHANGED, REVEAL_PANEL_IN_WINDOW, CLOSE_PANEL_IN_WINDOW } from '../shared/ipc-channels'
 import type { WindowPanelInfo, WindowPanelReport, PanelState } from '../shared/types'
@@ -272,23 +273,26 @@ describe('cross-window panel discovery (main)', () => {
     expect(revealWindowPanel('nope')).toBe(false)
   })
 
-  it('closes a panel by focusing its owner window and asking IT to run the close (behind its gates)', () => {
+  it('closes a panel by focusing its owner window and awaiting its confirmation result', async () => {
     open(1, 'main', 'ws-A')
     const dock = open(160, 'dock', 'ws-A')
     setWindowPanels(160, [report('t1', 'terminal', 'Terminal 1')])
 
-    expect(closeWindowPanel('t1')).toBe(true)
+    const result = closeWindowPanel('t1')
     // Focused first so the owner's confirm dialogs are visible.
     expect(dock.focus).toHaveBeenCalled()
     const close = dock.sent.filter((m) => m.channel === CLOSE_PANEL_IN_WINDOW)
     expect(close).toHaveLength(1)
     expect(close[0].args[0]).toBe('t1')
+    const requestId = close[0].args[1] as string
+    expect(completeWindowPanelClose(160, requestId, true)).toBe(true)
+    await expect(result).resolves.toBe(true)
 
     // Unknown panel → not found, nothing sent anywhere.
-    expect(closeWindowPanel('nope')).toBe(false)
+    await expect(closeWindowPanel('nope')).resolves.toBe(false)
   })
 
-  it('closeWindowPanel returns false when the owning window died without a clean close', () => {
+  it('closeWindowPanel returns false when the owning window died without a clean close', async () => {
     const dock = open(161, 'dock', 'ws-A')
     setWindowPanels(161, [report('t2', 'terminal', 'Terminal 2')])
     expect(getWindowPanels()).toHaveLength(1)
@@ -297,9 +301,21 @@ describe('cross-window panel discovery (main)', () => {
     // holds its stale report — closeWindowPanel must not target a dead window.
     dock.destroyed = true
 
-    expect(closeWindowPanel('t2')).toBe(false)
+    await expect(closeWindowPanel('t2')).resolves.toBe(false)
     expect(dock.sent.filter((m) => m.channel === CLOSE_PANEL_IN_WINDOW)).toHaveLength(0)
     expect(dock.focus).not.toHaveBeenCalled()
+  })
+
+  it('rejects a close result sent by a window that does not own the panel', async () => {
+    open(1, 'main', 'ws-A')
+    const dock = open(162, 'dock', 'ws-A')
+    setWindowPanels(162, [report('t3', 'terminal', 'Terminal 3')])
+
+    const result = closeWindowPanel('t3')
+    const requestId = dock.sent.find((m) => m.channel === CLOSE_PANEL_IN_WINDOW)!.args[1] as string
+    expect(completeWindowPanelClose(1, requestId, true)).toBe(false)
+    expect(completeWindowPanelClose(162, requestId, false)).toBe(true)
+    await expect(result).resolves.toBe(false)
   })
 
   it('does NOT drive discovery from the dock session-persistence sync', () => {

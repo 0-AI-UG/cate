@@ -292,7 +292,12 @@ export function useDockTabActions(params: DockTabActionsParams) {
         case 'copy-rel-path': {
           if (!panel?.filePath) break
           const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
-          const root = useAppStore.getState().workspaces.find((w) => w.id === wsId)?.rootPath
+          const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
+          const root = worktreeForPanel(
+            panel,
+            ws?.worktrees ?? [],
+            activeChatWorktreeIdForPanel,
+          )?.path ?? ws?.rootPath
           navigator.clipboard.writeText(
             root ? relativeDisplayPath(panel.filePath, root) : parseLocator(panel.filePath).path,
           )

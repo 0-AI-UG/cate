@@ -33,6 +33,7 @@ import {
 } from '../lib/panelInteractions'
 import { browserPanelUrl, isStartPageUrl, type PanelType, type Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
+import { worktreeForPath } from '../lib/worktreeContext'
 
 // Host-API panel creation (CLI + extensions) is always non-interactive: callers
 // may add panels but must not open the placement picker, switch tabs, change
@@ -161,6 +162,32 @@ function resolveWorkspacePath(workspaceId: string, filePath: string, originCwd?:
     return key === rootKey || key.startsWith(`${rootKey}/`)
   })) return null
   return formatLocator({ runtimeId, path: normalized })
+}
+
+/** Resolve a CLI caller cwd to its containing checkout. Worktree metadata from
+ * a remote workspace may carry a bare host path, so attach the workspace's
+ * runtime before using the shared locator-aware containment helper. */
+function worktreeForOrigin(workspaceId: string, originCwd?: string) {
+  if (!originCwd) return undefined
+  const workspace = useAppStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
+  if (!workspace?.rootPath) return undefined
+  const workspaceRoot = parseLocator(workspace.rootPath)
+  const origin = parseLocator(originCwd)
+  const originLocator = formatLocator({
+    runtimeId: origin.runtimeId === 'local' ? workspaceRoot.runtimeId : origin.runtimeId,
+    path: origin.path,
+  })
+  const candidates = (workspace.worktrees ?? []).map((worktree) => {
+    const parsed = parseLocator(worktree.path)
+    return {
+      ...worktree,
+      path: formatLocator({
+        runtimeId: parsed.runtimeId === 'local' ? workspaceRoot.runtimeId : parsed.runtimeId,
+        path: parsed.path,
+      }),
+    }
+  })
+  return worktreeForPath(originLocator, candidates)
 }
 
 /** Resolve `.` / `..` segments in an absolute path WITHOUT touching the fs (this
@@ -304,6 +331,19 @@ export function useCateHostActionResponder(): void {
               const extPanelId = typeof args.extensionPanelId === 'string' ? args.extensionPanelId : undefined
               if (!extPanelId) return reply(false, { error: 'extensionPanelId required' })
               newPanelId = useAppStore.getState().createExtensionPanel(workspaceId, extId, extPanelId, undefined, placement)
+            } else if (type === 'terminal') {
+              const worktree = worktreeForOrigin(workspaceId, payload.originCwd)
+              const store = useAppStore.getState()
+              newPanelId = store.createTerminal(
+                workspaceId,
+                undefined,
+                undefined,
+                placement,
+                worktree?.path,
+              )
+              if (newPanelId && worktree) {
+                store.setPanelWorktreeId(workspaceId, newPanelId, worktree.id)
+              }
             } else {
               let filePath: string | undefined
               if (typeof args.filePath === 'string') {

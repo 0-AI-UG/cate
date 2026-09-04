@@ -32,6 +32,8 @@ const h = vi.hoisted(() => ({
   createExtensionPanel: vi.fn(() => 'new-ext-id'),
   updatePanelTitle: vi.fn(),
   editorCreate: vi.fn(() => 'reg-editor-id'),
+  createTerminal: vi.fn(() => 'new-terminal-id'),
+  setPanelWorktreeId: vi.fn(),
   placementForBackgroundPanel: vi.fn(),
   setPendingReveal: vi.fn(),
   activePanelId: null as string | null,
@@ -59,6 +61,7 @@ vi.mock('../lib/activePanel', () => ({ getActivePanelId: () => h.activePanelId }
 vi.mock('../lib/logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../panels/registry', () => ({
   PANEL_REGISTRY: {
+    terminal: { create: vi.fn() },
     editor: { create: h.editorCreate },
     extension: { create: vi.fn() },
   },
@@ -95,6 +98,8 @@ vi.mock('../stores/appStore', () => ({
         { id: REMOTE_WS, rootPath: REMOTE_ROOT_LOCATOR, panels: {} },
       ],
       createExtensionPanel: h.createExtensionPanel,
+      createTerminal: h.createTerminal,
+      setPanelWorktreeId: h.setPanelWorktreeId,
       updatePanelTitle: h.updatePanelTitle,
     }),
   },
@@ -314,6 +319,21 @@ describe('useCateHostActionResponder', () => {
         filePath: `${WORKTREE_ROOT}/src/index.ts`,
       }),
     )
+  })
+
+  it('creates a terminal at the containing CLI caller worktree', async () => {
+    await fire('cate.canvas.createPanel', { type: 'terminal' }, {
+      originCwd: `${WORKTREE_ROOT}/packages/client`,
+    })
+
+    expect(h.createTerminal).toHaveBeenCalledWith(
+      WS,
+      undefined,
+      undefined,
+      BACKGROUND_PLACEMENT,
+      WORKTREE_ROOT,
+    )
+    expect(h.setPanelWorktreeId).toHaveBeenCalledWith(WS, 'new-terminal-id', 'wt-feature')
   })
 
   it('rejects an unknown panel type', async () => {

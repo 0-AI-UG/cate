@@ -50,6 +50,8 @@ import {
   DOCK_WINDOW_RESTORE,
   FOCUS_WINDOW_PANEL,
   CLOSE_WINDOW_PANEL,
+  CLOSE_PANEL_IN_WINDOW_RESULT,
+  WORKTREE_REMOVED,
   REVEAL_PANEL_IN_WINDOW,
   CLOSE_PANEL_IN_WINDOW,
 } from '../../shared/ipc-channels'
@@ -321,10 +323,14 @@ describe('FOCUS_WINDOW_PANEL / CLOSE_WINDOW_PANEL', () => {
     const dock = open(211, 'dock', 'ws-A')
     setWindowPanels(211, [{ panelId: 't1', type: 'terminal', title: 'Terminal 1', workspaceId: 'ws-A' }])
 
-    await invoke(CLOSE_WINDOW_PANEL, senderFor(null), 't1')
+    const closeResult = invoke(CLOSE_WINDOW_PANEL, senderFor(null), 't1') as Promise<boolean>
 
     expect(dock.focus).toHaveBeenCalled()
-    expect(dock.sent).toContainEqual({ channel: CLOSE_PANEL_IN_WINDOW, args: ['t1'] })
+    const routed = dock.sent.find((message) => message.channel === CLOSE_PANEL_IN_WINDOW)
+    expect(routed?.args[0]).toBe('t1')
+    const requestId = routed?.args[1] as string
+    await invoke(CLOSE_PANEL_IN_WINDOW_RESULT, senderFor(dock), requestId, true)
+    await expect(closeResult).resolves.toBe(true)
   })
 
   it('is a silent no-op for an unknown panel (the not-found boolean is swallowed)', async () => {
@@ -335,7 +341,7 @@ describe('FOCUS_WINDOW_PANEL / CLOSE_WINDOW_PANEL', () => {
     // the invoking renderer resolves undefined either way (the declared API is
     // Promise<void>) and nothing is sent anywhere for an unknown panel.
     expect(await invoke(FOCUS_WINDOW_PANEL, senderFor(null), 'nope')).toBeUndefined()
-    expect(await invoke(CLOSE_WINDOW_PANEL, senderFor(null), 'nope')).toBeUndefined()
+    expect(await invoke(CLOSE_WINDOW_PANEL, senderFor(null), 'nope')).toBe(false)
     expect(dock.focus).not.toHaveBeenCalled()
     // (The window still received the WINDOW_PANELS_CHANGED broadcast from
     // setWindowPanels above; only the routed reveal/close sends must be absent.)
@@ -343,5 +349,21 @@ describe('FOCUS_WINDOW_PANEL / CLOSE_WINDOW_PANEL', () => {
       (m) => m.channel === REVEAL_PANEL_IN_WINDOW || m.channel === CLOSE_PANEL_IN_WINDOW,
     )
     expect(routed).toEqual([])
+  })
+
+  it('broadcasts removed worktree metadata to every live window', async () => {
+    const main = open(213, 'main', 'ws-A')
+    const dock = open(214, 'dock', 'ws-A')
+
+    await invoke(WORKTREE_REMOVED, senderFor(main), 'ws-A', 'wt-feature')
+
+    expect(main.sent).toContainEqual({
+      channel: WORKTREE_REMOVED,
+      args: ['ws-A', 'wt-feature'],
+    })
+    expect(dock.sent).toContainEqual({
+      channel: WORKTREE_REMOVED,
+      args: ['ws-A', 'wt-feature'],
+    })
   })
 })

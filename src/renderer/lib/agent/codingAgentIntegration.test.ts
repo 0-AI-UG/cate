@@ -7,6 +7,14 @@ const state = vi.hoisted(() => ({
   removeAdditionalRoot: vi.fn(),
   refresh: vi.fn(),
 }))
+const panelClose = vi.hoisted(() => ({
+  targets: vi.fn(() => ({ localPanelIds: [], otherWindowPanelIds: [], hasDirtyEditor: false })),
+  prepare: vi.fn(async () => true),
+  close: vi.fn(),
+  removeEverywhere: vi.fn((workspaceId: string, worktreeId: string) => {
+    state.removeWorktree(workspaceId, worktreeId)
+  }),
+}))
 
 vi.mock('../../stores/appStore', () => ({
   useAppStore: {
@@ -20,6 +28,12 @@ vi.mock('../../stores/appStore', () => ({
 }))
 vi.mock('../../stores/gitStatusStore', () => ({
   gitStatusStore: { refresh: state.refresh },
+}))
+vi.mock('../worktreePanelClose', () => ({
+  worktreePanelCloseTargets: panelClose.targets,
+  prepareWorktreePanelsForClose: panelClose.prepare,
+  closePreparedWorktreePanels: panelClose.close,
+  removeWorktreeFromAllWindows: panelClose.removeEverywhere,
 }))
 
 import {
@@ -72,6 +86,8 @@ describe('coding-agent worktree integration', () => {
         gitWorktreeStatus: vi.fn(async () => ({ branch: 'agent/api', dirty: false })),
         gitWorktreeRemove: vi.fn(async () => {}),
         gitBranchDelete: vi.fn(async () => {}),
+        notifyWorktreeRemoved: vi.fn(async () => {}),
+        closeWindowPanel: vi.fn(async () => true),
       },
     })
   })

@@ -160,11 +160,30 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
   // Cross-window close: another window's overview asked to close a panel this
   // window owns. Runs the same confirm gates as any local close affordance.
   useEffect(() => {
-    return window.electronAPI.onClosePanelInWindow?.((panelId: string) => {
-      const app = useAppStore.getState()
-      const owner = app.workspaces.find((w) => panelId in w.panels)
-      if (!owner) return
-      void closePanelWithConfirm(owner.id, panelId)
+    return window.electronAPI.onClosePanelInWindow?.((panelId: string, requestId: string) => {
+      void (async () => {
+        let closed = false
+        try {
+          const app = useAppStore.getState()
+          const owner = app.workspaces.find((w) => panelId in w.panels)
+          closed = owner ? await closePanelWithConfirm(owner.id, panelId) : false
+        } catch {
+          closed = false
+        } finally {
+          try {
+            await window.electronAPI.closePanelInWindowResult(requestId, closed)
+          } catch {
+            // The requesting window may have closed while the owner prompt was
+            // open; there is nobody left to acknowledge in that case.
+          }
+        }
+      })()
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.electronAPI.onWorktreeRemoved?.((workspaceId: string, worktreeId: string) => {
+      useAppStore.getState().removeWorktree(workspaceId, worktreeId)
     })
   }, [])
 }

@@ -30,6 +30,7 @@ import {
 } from '../../../cateAgent/renderer/cateAgentStore'
 import { useChatsStore } from '../../stores/chatsStore'
 import { deriveCodingAgentRunStatus } from '../../../shared/codingAgentRuns'
+import { worktreeForPanel } from '../worktreeContext'
 
 let cleanup: (() => void) | null = null
 
@@ -144,7 +145,7 @@ export function setupWindowPanelSync(): () => void {
           parentCanvasId: childToCanvas.get(p.id),
           worktreeId: p.type === 'cateAgent'
             ? activeChatWorktreeIdForPanel(p.id)
-            : p.worktreeId,
+            : worktreeForPanel(p, ws.worktrees ?? [])?.id ?? p.worktreeId,
           agentState: agentInfo[p.id]?.state,
           agentName: agentInfo[p.id]?.name ?? null,
           codingAgentRunId: p.codingAgentRun?.id,
