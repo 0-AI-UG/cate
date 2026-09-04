@@ -20,8 +20,8 @@
 //             transcript_path/cwd on every event; /clear = SessionEnd(
 //             reason=clear) + SessionStart(source=clear, new id). Works in
 //             -p and TUI.
-//             Permission-wait: Notification hook, notification_type
-//             "permission_prompt" (and "idle_prompt" once idle nags kick in).
+//             Permission-wait: PermissionRequest fires immediately before the
+//             approval UI. StopFailure closes API/error turns.
 //             PostToolUse fires once the approved tool FINISHES (denial
 //             produces none). Cate therefore resumes earlier from the user's
 //             terminal submission.
@@ -49,6 +49,7 @@
 //             unanswerable approval is then auto-rejected and the turn Stops.
 //             PostToolUse (label post_tool_use) fires only after an executed
 //             command finishes; Cate resumes earlier from terminal input.
+//             Interrupt closes user-cancelled turns with the same turn_id.
 //   cursor  · JSON-on-stdin hooks configured in <workspace>/.cursor/hooks.json
 //             (project scope, discovered by the CLI itself; hooks landed in
 //             the CLI ~2026.07 — pinned live 2026-07-19 against
@@ -78,7 +79,7 @@
 //   opencode· in-process plugin injected as <project>/.opencode/plugin/*.js
 //             (no shared vendor config file); bus events carry sessionID;
 //             session.status
-//             busy/idle + session.idle mark turn state. The full lifecycle
+//             busy/idle marks turn state. The full lifecycle
 //             fires even when the provider errors, so this works with broken
 //             auth. ALWAYS spawn with OPENCODE_DISABLE_AUTOUPDATE=1 — the TUI
 //             update modal steals keystrokes and self-updates.
@@ -89,7 +90,7 @@
 //             Approval resolution: permission.replied (sessionID, requestID =
 //             the asked id, reply "once"/"always"/"reject"), then busy resumes.
 //
-// Permission-wait exists ONLY on claude/codex/opencode. pi has no approval
+// Permission-wait exists on claude/codex/grok/opencode. pi has no approval
 // concept at all (tools execute directly — verified: zero approval strings in
 // its dist). Cursor and Kiro have native approval prompts but no hook event
 // that distinguishes a blocked approval from an automatically allowed tool;
@@ -435,8 +436,11 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     'ElicitationResult', 'ConfigChange', 'InstructionsLoaded', 'MessageDisplay',
   ]
 
-  /** The six events claudeSpec actually injects in the shipped product. */
-  const SHIPPED_CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
+  /** The seven events claudeSpec actually injects in the shipped product. */
+  const SHIPPED_CLAUDE_EVENTS = [
+    'SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PostToolUse',
+    'Stop', 'StopFailure', 'SessionEnd',
+  ]
 
   const writeClaudeSettings = (cwd: string, bridge: string, events = SHIPPED_CLAUDE_EVENTS): void => {
     mkdirSync(join(cwd, '.claude'), { recursive: true })
@@ -585,13 +589,10 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     expectEcho(resumeEvents, tid)
   })
 
-  // Permission-wait is PUSHED: while a tool call is blocked on the user's
-  // approval, the Notification hook fires with notification_type
-  // "permission_prompt" — mid-turn, before any Stop. This is the signal that
-  // replaces the spinner-stop + settle-timer "needs input" heuristic. And the
-  // RESOLUTION is pushed too: approving runs the tool, so PostToolUse marks
-  // the turn as back in flight before it finally Stops.
-  test('TUI: Notification(permission_prompt) while blocked; approval resumes via PostToolUse', { retry: 1, timeout: 420_000 }, async () => {
+  // PermissionRequest fires immediately before Claude displays an approval
+  // prompt. Approving runs the tool, so PostToolUse marks the turn as back in
+  // flight before it finally Stops.
+  test('TUI: PermissionRequest while blocked; approval resumes via PostToolUse', { retry: 1, timeout: 420_000 }, async () => {
     const cwd = makeCwd('claude-perm')
     const eventsFile = join(cwd, 'events.jsonl')
     const bridge = writeBridge(cwd)
@@ -613,15 +614,13 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     // so the turn parks on an approval prompt instead of completing.
     await tui.send('Use the Bash tool to run exactly this command: touch needs-approval.txt')
     await tui.waitFor(
-      () => byName(events(), 'Notification').some((e) => e.payload.notification_type === 'permission_prompt'),
+      () => byName(events(), 'PermissionRequest').length > 0,
       180_000,
-      'Notification(permission_prompt)',
+      'PermissionRequest',
     )
-    const perm = byName(events(), 'Notification').find(
-      (e) => e.payload.notification_type === 'permission_prompt',
-    )?.payload
+    const perm = byName(events(), 'PermissionRequest')[0]?.payload
     expect(perm?.session_id, 'permission-wait identifies the session').toBe(id)
-    expect(perm?.message, 'human-readable permission message').toContain('permission')
+    expect(perm?.tool_name).toBe('Bash')
     // The turn is still in flight — the wait signal precedes any Stop.
     expect(byName(events(), 'Stop').length, 'no Stop while blocked on approval').toBe(0)
     expect(replayAgentState('claude-code', tid, events()), 'the workspace overview shows Claude awaiting approval')
@@ -664,7 +663,7 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     const cwd = makeCwd('claude-interrupt')
     const eventsFile = join(cwd, 'events.jsonl')
     const bridge = writeBridge(cwd)
-    // ALL events, not the shipped six: the claim under test is about claude.
+    // ALL events, not the shipped seven: the claim under test is about claude.
     writeClaudeSettings(cwd, bridge, CLAUDE_ALL_EVENTS)
     const tid = `cate-term-claude-int-${Date.now()}`
     const events = (): BridgeEvent[] => readJsonl<BridgeEvent>(eventsFile)
@@ -763,7 +762,10 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     ['PermissionRequest', 'permission_request'],
     ['PostToolUse', 'post_tool_use'],
     ['Stop', 'stop'],
+    ['Interrupt', 'interrupt'],
   ]
+
+  const codexHookTimeout = (event: string): number => event === 'Interrupt' ? 3 : 60
 
   // Trust-key hash: sha256 of the canonical handler identity. Key + hash
   // formats are codex internals (source comment: "replace this positional
@@ -785,17 +787,17 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
       join(root, '.codex', 'hooks.json'),
       JSON.stringify({
         hooks: Object.fromEntries(
-          events.map(([key]) => [key, [{ hooks: [{ type: 'command', command: bridge, timeout: 60 }] }]]),
+          events.map(([key]) => [key, [{ hooks: [{
+            type: 'command', command: bridge, timeout: codexHookTimeout(key),
+          }] }]]),
         ),
       }),
     )
   }
 
-  /** EVERY event codex 0.144.5 supports (its HookEventsToml enum — read out of
-   *  the binary and confirmed against the in-app /hooks screen). Note there is
+  /** Current Codex hook events used by the contract suite. Note there is
    *  no SessionEnd and no Notification AT ALL in codex: not "never fires",
-   *  simply not in the enum. Used by the interrupt test so "nothing fires" is
-   *  a statement about codex, not about Cate's five-event subset. */
+   *  simply not in the enum. */
   const CODEX_ALL_EVENTS: [string, string][] = [
     ['PreToolUse', 'pre_tool_use'],
     ['PermissionRequest', 'permission_request'],
@@ -807,6 +809,7 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     ['SubagentStart', 'subagent_start'],
     ['SubagentStop', 'subagent_stop'],
     ['Stop', 'stop'],
+    ['Interrupt', 'interrupt'],
   ]
 
   /** Folder trust for the project root. Inline-table form REQUIRED — the
@@ -821,7 +824,7 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
    *  simulate the state the user's one-time "trust" click persists. */
   const hookTrustArg = (root: string, bridge: string, events = CODEX_EVENTS): string =>
     `hooks.state={${events.map(
-      ([, label]) => `"${root}/.codex/hooks.json:${label}:0:0"={trusted_hash="${trustedHash(label, bridge, 60)}"}`,
+      ([key, label]) => `"${root}/.codex/hooks.json:${label}:0:0"={trusted_hash="${trustedHash(label, bridge, codexHookTimeout(key))}"}`,
     ).join(',')}}`
 
   /** The full harness-only trust pre-plant: trusted folder + trusted hooks.
@@ -1010,16 +1013,9 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     tui.kill()
   })
 
-  // The interrupt contract (see the claude suite for the failure it guards).
-  // codex has the SAME gap as claude: Ctrl+C on a running turn kills it dead
-  // and pushes nothing — no Stop, no PostToolUse, nothing, with all TEN of its
-  // events registered. Verified against 0.144.5, and the control below proves
-  // the rig: an identical session that is allowed to finish DOES fire Stop.
-  //
-  // Esc is not the key here: on a running turn codex ignores it (verified,
-  // single and double press — the turn streamed on), and at an empty composer
-  // a single Esc QUITS the app.
-  test('TUI: a user interrupt pushes NO hook event (the turn-end gap)', { retry: 1, timeout: 420_000 }, async () => {
+  // Current Codex has a dedicated main-thread Interrupt hook carrying the
+  // interrupted turn_id. This replaces the old rollout transcript fallback.
+  test('TUI: a user interrupt pushes Interrupt with the active turn id', { retry: 1, timeout: 420_000 }, async () => {
     const cwd = makeCwd('codex-interrupt')
     const bridge = writeBridge(cwd)
     writeHooksFile(cwd, bridge, CODEX_ALL_EVENTS)
@@ -1039,7 +1035,6 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
       180_000,
       'UserPromptSubmit',
     )
-    cleanups.push(() => rmSync(events()[0].payload.transcript_path as string, { force: true }))
     // Streamed numbers on the (ANSI-stripped) screen = the turn is in flight.
     await tui.waitFor(() => /\b1\d\d\b/.test(stripAnsi(tui.peek())), 180_000, 'streamed output (turn in flight)')
     expect(
@@ -1047,35 +1042,24 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
       'turn has not ended on its own yet',
     ).toBe(false)
 
-    const before = events().length
     tui.press('\x03') // Ctrl+C — codex's interrupt (Esc is a no-op mid-turn)
     await tui.waitFor(() => /Conversation interrupted/i.test(stripAnsi(tui.peek())), 30_000, 'codex\'s interrupt line')
-
-    await tui.settle(45_000)
-    const after = events().slice(before)
-    expect(
-      after.map((e) => e.payload.hook_event_name),
-      'NO hook event follows a user interrupt — Cate cannot learn the turn ended from hooks',
-    ).toEqual([])
-    expect(normalizedKinds('codex', after)).not.toContain('turn-end')
-    expect(AGENT_HOOK_SPECS.codex.reportsTurnEndOnInterrupt, 'declared gap matches reality').toBe(false)
-
-    // ...but recoverable from the ROLLOUT: codex records a turn_aborted event
-    // there, which the runtime's tail-watch maps to a synthetic turn-end
-    // (interrupt recovery, agentHooks capability). Pin interruptRecovery.marker
-    // against the real rollout so a wrong regex fails HERE, with its tail shown.
-    const codexRollout = events()[0].payload.transcript_path as string
-    const codexTail = readFileSync(codexRollout, 'utf8').slice(-8000)
-    expect(codexTail, 'codex persists a turn_aborted record to the rollout').toMatch(
-      AGENT_HOOK_SPECS.codex.interruptRecovery!.marker,
+    await tui.waitFor(
+      () => events().some((e) => e.payload.hook_event_name === 'Interrupt'),
+      30_000,
+      'Interrupt hook',
     )
+    const submitted = events().find((e) => e.payload.hook_event_name === 'UserPromptSubmit')?.payload
+    const interrupted = events().find((e) => e.payload.hook_event_name === 'Interrupt')?.payload
+    expect(interrupted?.turn_id, 'Interrupt identifies the submitted turn').toBe(submitted?.turn_id)
+    expect(normalizedKinds('codex', events())).toContain('turn-end')
+    expect(AGENT_HOOK_SPECS.codex.reportsTurnEndOnInterrupt, 'declared native self-heal matches reality').toBe(true)
+    expect(AGENT_HOOK_SPECS.codex.interruptRecovery, 'no transcript fallback remains').toBeUndefined()
     expectEcho(events(), tid)
     tui.kill()
   })
 
-  // The control for the test above: same hooks, same trust, same TUI — a turn
-  // that ENDS ON ITS OWN does fire Stop. Without this, "no events after the
-  // interrupt" could just mean the hooks were never wired up.
+  // Normal completion remains a distinct Stop event.
   test('TUI: a turn left to finish DOES fire Stop (control for the interrupt gap)', { retry: 1, timeout: 300_000 }, async () => {
     const cwd = makeCwd('codex-stop-control')
     const bridge = writeBridge(cwd)
@@ -1132,7 +1116,7 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     // Trusted folder, correct hashes, but the OLD placeholder path segment in
     // the key — the source-file path is part of the trust identity.
     const wrongPathState = `hooks.state={${CODEX_EVENTS.map(
-      ([, label]) => `"/<session-flags>/config.toml:${label}:0:0"={trusted_hash="${trustedHash(label, bridge, 60)}"}`,
+      ([key, label]) => `"/<session-flags>/config.toml:${label}:0:0"={trusted_hash="${trustedHash(label, bridge, codexHookTimeout(key))}"}`,
     ).join(',')}}`
     await runCase('wrong-key-path', ['-c', folderTrustArg(cwd), '-c', wrongPathState])
   })
@@ -1719,13 +1703,17 @@ export const CateEventLogger = async ({ directory }) => {
       execFileSync('opencode', ['session', 'delete', id], { env: cleanEnv(), timeout: 30_000 })
       rmSync(join(homedir(), '.local', 'share', 'opencode', 'storage', 'session_diff', `${id}.json`), { force: true })
     })
-    // Turn status: busy → idle for this session, then the explicit
-    // end-of-turn signal (fires even on the provider-error path).
+    // Canonical turn status: busy → idle for this session, including the
+    // provider-error path.
     expect(
       events.some((e) => e.sessionID === id && (e.status as { type?: string })?.type === 'busy'),
       'session.status busy',
     ).toBe(true)
-    expect(events.some((e) => e.type === 'session.idle' && e.sessionID === id), 'session.idle').toBe(true)
+    expect(
+      events.some((e) => e.type === 'session.status' && e.sessionID === id &&
+        (e.status as { type?: string })?.type === 'idle'),
+      'session.status idle',
+    ).toBe(true)
     const statusEvents: BridgeEvent[] = events.map((event) => ({
       terminalId: event.cate_terminal_id,
       payload: event as unknown as Record<string, unknown>,
@@ -1757,7 +1745,8 @@ export const CateEventLogger = async ({ directory }) => {
       resumeEvents.some((e) => e.type === 'session.created' && e.sessionID !== id),
       'resume must not create a new session',
     ).toBe(false)
-    expect(resumeEvents.some((e) => e.type === 'session.idle' && e.sessionID === id)).toBe(true)
+    expect(resumeEvents.some((e) => e.type === 'session.status' && e.sessionID === id &&
+      (e.status as { type?: string })?.type === 'idle')).toBe(true)
 
     // Exact interactive command Cate types into a restored terminal. Unlike
     // `opencode run --session`, this covers the default TUI argument path.
@@ -1767,9 +1756,10 @@ export const CateEventLogger = async ({ directory }) => {
     await tui.settle(8_000)
     await tui.send(PROMPT2)
     await tui.waitFor(
-      () => tuiEvents().some((e) => e.type === 'session.idle' && e.sessionID === id),
+      () => tuiEvents().some((e) => e.type === 'session.status' && e.sessionID === id &&
+        (e.status as { type?: string })?.type === 'idle'),
       180_000,
-      'session.idle on exact interactive resume command',
+      'session.status idle on exact interactive resume command',
     )
     expect(
       tuiEvents().some((e) => e.type === 'session.created' && e.sessionID !== id),
@@ -1847,6 +1837,7 @@ export const CatePermLogger = async () => ({
         metadata?: { command?: string }
         requestID?: string
         reply?: string
+        status?: { type?: string }
       } | null
       cate_terminal_id: string | null
     }
@@ -1888,12 +1879,14 @@ export const CatePermLogger = async () => ({
     expect(asked?.permission).toBe('bash')
     expect(asked?.metadata?.command).toContain('touch')
     // The turn is still busy while parked on approval — idle has not fired.
-    expect(events().some((e) => e.type === 'session.idle' && e.sessionID === id)).toBe(false)
+    expect(events().some((e) => e.type === 'session.status' && e.sessionID === id &&
+      e.properties?.status?.type === 'idle')).toBe(false)
     const asStatusEvents = (): BridgeEvent[] => events().map((event) => ({
       terminalId: event.cate_terminal_id,
       payload: {
         type: event.type,
         sessionID: event.sessionID,
+        status: event.properties?.status,
         permission: event.properties?.permission,
         metadata: event.properties?.metadata,
       },
@@ -1918,9 +1911,10 @@ export const CatePermLogger = async () => ({
       'the workspace overview resumes when OpenCode reports the reply',
     ).toBe('running')
     await tui.waitFor(
-      () => events().some((e) => e.type === 'session.idle' && e.sessionID === id),
+      () => events().some((e) => e.type === 'session.status' && e.sessionID === id &&
+        e.properties?.status?.type === 'idle'),
       120_000,
-      'session.idle after approval',
+      'session.status idle after approval',
     )
     expectEcho(events().map((e) => ({ cateTerminalId: e.cate_terminal_id })), tid)
     tui.kill()
@@ -1954,13 +1948,17 @@ export const CatePermLogger = async () => ({
 // writing to the user's ~/.grok (the shipped product plants no trust — the
 // user grants it once via /hooks-trust, exactly like codex's review prompt).
 //
-// Verified live 2026-07-21 against grok 0.2.106.
+// StopFailure/StopCancelled follow Grok's current documented hook contract;
+// older 0.2.x installs must be upgraded before running this suite.
 // =============================================================================
 
 describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
   /** hooks.json event keys are CamelCase; the payload's hookEventName echoes
    *  the same events in snake_case. Both casings are contract. */
-  const GROK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd', 'Notification']
+  const GROK_EVENTS = [
+    'SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'StopFailure',
+    'StopCancelled', 'SessionEnd', 'Notification',
+  ]
 
   /** A cwd that grok resolves a PROJECT ROOT for. Project-scoped hooks are
    *  keyed on that root, and grok derives it from the git repo — a plain
@@ -2466,21 +2464,14 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
     //   3 (○) No, reject (type to add feedback)
     expect(tui.peek(), 'approval menu still defaults to the blanket grant').toContain('always-approve')
 
-    // Ctrl+C cancels the turn (Esc does NOT dismiss this menu — verified).
-    // "Turn cancelled by user", Stop fires, and no grant is persisted. This is
-    // ALSO grok's interrupt contract (the gap claude/codex fail — see their
-    // suites): a user Ctrl+C on an in-flight turn pushes Stop, which
-    // normalize() turns into turn-end, so grok's running indicator idles on its
-    // own. Pinned on the approval-parked turn because the account's free quota
-    // was exhausted while this was written, and a quota-refused streaming turn
-    // dies before it can be interrupted (429 → agent_error + stop{reason:error}
-    // ~3s in); the cancel mechanism (Ctrl+C → grok turn-cancel → Stop) is the
-    // same either way, and grok's own docs list Stop as firing on a "cancelled"
-    // turn. This is why grokSpec.reportsTurnEndOnInterrupt is true.
+    // Ctrl+C cancels the turn (Esc does not dismiss this menu). Current Grok
+    // reports cancellation separately from successful Stop, and includes the
+    // promptId needed to reject a late cancellation from a replaced turn.
     tui.press('\x03')
-    await tui.waitFor(() => byName(events(), 'stop').length > 0, 120_000, 'Stop after cancel')
-    expect(byName(events(), 'stop')[0].payload.sessionId).toBe(id)
-    expect(normalizedKinds('grok', byName(events(), 'stop'))).toContain('turn-end')
+    await tui.waitFor(() => byName(events(), 'stop_cancelled').length > 0, 120_000, 'StopCancelled after cancel')
+    expect(byName(events(), 'stop_cancelled')[0].payload.sessionId).toBe(id)
+    expect(byName(events(), 'stop_cancelled')[0].payload.promptId).toBeTruthy()
+    expect(normalizedKinds('grok', byName(events(), 'stop_cancelled'))).toContain('turn-end')
     expect(AGENT_HOOK_SPECS.grok.reportsTurnEndOnInterrupt, 'declared self-heal matches reality').toBe(true)
     // The gated command never ran.
     expect(existsSync(join(cwd, 'needs-approval.txt')), 'cancelled tool call did not execute').toBe(false)

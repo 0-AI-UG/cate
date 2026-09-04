@@ -33,6 +33,8 @@ import { revealPanel } from '../workspace/panelReveal'
 import { closePanelWithConfirm } from '../closePanelWithConfirm'
 import { setupWindowPanelSync } from '../workspace/windowPanelSync'
 import { useOwnedTerminalTelemetry } from '../../hooks/useProcessMonitor'
+import { terminalRegistry } from '../terminal/terminalRegistry'
+import { workspaceIdForTerminal } from '../../stores/statusStore'
 import type { AgentState } from '../../../shared/types'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../stores/canvasStore'
@@ -73,7 +75,19 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
         applyRemoteAgentScreenState(terminalId, state)
       },
     )
-    const offHook = window.electronAPI?.onShellAgentHookEvent?.((_terminalId, event) => {
+    const offHook = window.electronAPI?.onShellAgentHookEvent?.((terminalId, event) => {
+      if (event.kind === 'session-title' && event.title && event.sessionId) {
+        const workspaceId =
+          workspaceIdForTerminal(terminalId) ?? useAppStore.getState().selectedWorkspaceId
+        if (!workspaceId) return
+        const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
+        useAppStore.getState().updatePanelTitleFromAgent(
+          workspaceId,
+          panelId,
+          event.title,
+        )
+        return
+      }
       noteAgentHookEvent(event)
     })
     return () => {

@@ -66,6 +66,8 @@ interface Tracker {
   sessionId: string | null
   /** Agent that produced the latest hook for this terminal. */
   agentId: AgentHookEvent['agentId'] | null
+  /** Active CLI turn identity, when the hook payload provides one. */
+  activeTurnId: string | null
   /** turn-start seen more recently than turn-end/session-end. */
   hookTurnActive: boolean
   /** The in-flight turn is parked on a permission prompt (permission-wait seen
@@ -87,6 +89,7 @@ function trackerFor(terminalId: string): Tracker {
       wasPresent: false,
       sessionId: null,
       agentId: null,
+      activeTurnId: null,
       hookTurnActive: false,
       hookPermissionWait: false,
       state: 'notRunning',
@@ -174,6 +177,7 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
   switch (event.kind) {
     case 'turn-start':
       t.sessionId = event.sessionId
+      t.activeTurnId = event.turnId ?? null
       t.hookTurnActive = true
       t.hookPermissionWait = false
       recompute(event.terminalId)
@@ -181,6 +185,7 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
     case 'turn-resume':
       // A permission reply arrived or a tool completed — either way the turn
       // is in flight. Idempotent and silent.
+      if (t.activeTurnId && event.turnId && t.activeTurnId !== event.turnId) break
       t.hookTurnActive = true
       t.hookPermissionWait = false
       recompute(event.terminalId)
@@ -188,6 +193,8 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
     case 'turn-end':
       // Also lands after a DENIED permission: state is already waiting then,
       // so commit's transition gate swallows the would-be second notification.
+      if (t.activeTurnId && event.turnId && t.activeTurnId !== event.turnId) break
+      t.activeTurnId = null
       t.hookTurnActive = false
       t.hookPermissionWait = false
       recompute(event.terminalId, true)
@@ -195,6 +202,7 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
     case 'session-end':
       // Like turn-end for state (the process may keep running after /clear),
       // but silent — only a genuine turn end notifies.
+      t.activeTurnId = null
       t.hookTurnActive = false
       t.hookPermissionWait = false
       recompute(event.terminalId)
@@ -208,9 +216,14 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
       // idle.
       if (t.sessionId === event.sessionId && t.hookTurnActive) break
       t.sessionId = event.sessionId
+      t.activeTurnId = null
       t.hookTurnActive = false
       t.hookPermissionWait = false
       recompute(event.terminalId)
+      break
+    case 'session-title':
+      // Metadata only. useWindowRuntime applies it to panel state; the activity
+      // FSM deliberately has no transition for a title update.
       break
     case 'permission-wait':
       // Mid-turn block on the user's approval: show waiting NOW and say what
@@ -218,6 +231,7 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
       // notification is skipped with the state change (same pre-presence
       // semantics as every other hook event); the model needs seconds to
       // reach a tool call, so in practice presence always lands first.
+      if (t.activeTurnId && event.turnId && t.activeTurnId !== event.turnId) break
       t.hookPermissionWait = true
       recompute(event.terminalId, true, permissionBodyFor(event))
       break
@@ -244,6 +258,7 @@ export function noteAgentInputSubmitted(terminalId: string): void {
 export function noteAgentInterruptSubmitted(terminalId: string): void {
   const t = trackers.get(terminalId)
   if (t?.agentId !== 'kiro' || !t.hookTurnActive) return
+  t.activeTurnId = null
   t.hookTurnActive = false
   t.hookPermissionWait = false
   recompute(terminalId)
@@ -259,6 +274,7 @@ export function noteAgentPresence(terminalId: string, present: boolean): void {
   if (!present) {
     // The process is gone; any in-flight turn died with it. The next launch
     // starts idle and re-proves itself through fresh hook events.
+    t.activeTurnId = null
     t.hookTurnActive = false
     t.hookPermissionWait = false
   }

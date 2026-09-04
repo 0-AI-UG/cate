@@ -30,6 +30,7 @@ const h = vi.hoisted(() => ({
   closeSettings: vi.fn(),
   settingsOpen: false,
   useOwnedTerminalTelemetry: vi.fn(),
+  updatePanelTitleFromAgent: vi.fn(),
 }))
 vi.mock('../../hooks/useShortcuts', () => ({ useShortcuts: h.useShortcuts }))
 vi.mock('./useThemeAndScaleHydration', () => ({ useThemeAndScaleHydration: h.useThemeAndScaleHydration }))
@@ -50,9 +51,21 @@ vi.mock('../../stores/uiStore', () => ({
 }))
 vi.mock('../../stores/appStore', () => ({
   useAppStore: {
-    getState: () => ({ selectedWorkspaceId: 'ws-X', workspaces: [{ id: 'ws-X', panels: { p9: {} } }] }),
+    getState: () => ({
+      selectedWorkspaceId: 'ws-X',
+      workspaces: [{ id: 'ws-X', panels: { p9: {} } }],
+      updatePanelTitleFromAgent: h.updatePanelTitleFromAgent,
+    }),
     // setupWindowPanelSync subscribes to report this window's panels.
     subscribe: () => () => {},
+  },
+}))
+vi.mock('../terminal/terminalRegistry', () => ({
+  terminalRegistry: {
+    panelIdForPty: () => 'p9',
+    getEntry: () => undefined,
+    getFailure: () => null,
+    subscribeFailure: () => () => {},
   },
 }))
 // windowPanelStore is real (harmless); the runtime only calls setPanels on it.
@@ -118,6 +131,21 @@ describe('useWindowRuntime', () => {
     const event = { terminalId: 'pty-1', agentId: 'claude-code', kind: 'turn-start', sessionId: 's', raw: {} }
     act(() => { captured.hook('pty-1', event) })
     expect(h.noteAgentHookEvent).toHaveBeenCalledWith(event)
+  })
+
+  it('writes a resolved session title through the normal panel title action', () => {
+    mount()
+    const event = {
+      terminalId: 'pty-1',
+      agentId: 'claude-code',
+      kind: 'session-title',
+      sessionId: 's',
+      title: 'Fix terminal titles',
+      raw: {},
+    }
+    act(() => { captured.hook('pty-1', event) })
+    expect(h.updatePanelTitleFromAgent).toHaveBeenCalledWith('ws-X', 'p9', 'Fix terminal titles')
+    expect(h.noteAgentHookEvent).not.toHaveBeenCalledWith(event)
   })
 
   it('opens settings when the Cmd+, menu fires (and the detector stops on unmount)', () => {
