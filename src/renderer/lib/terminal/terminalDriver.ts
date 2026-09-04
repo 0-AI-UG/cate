@@ -26,6 +26,7 @@ import { useAppStore } from '../../stores/appStore'
 import { getActivePanelId } from '../activePanel'
 import { getEntry } from './registryState'
 import { readTerminalBuffer } from './terminalBuffer'
+import type { PanelTargetObserver } from '../panelInteractions'
 
 export type TerminalOutcome = { ok: true; result?: unknown } | { ok: false; error: string }
 
@@ -113,6 +114,7 @@ export async function handleTerminalMethod(
   workspaceId: string,
   method: string,
   args: Record<string, unknown>,
+  onTargetResolved?: PanelTargetObserver,
 ): Promise<TerminalOutcome> {
   const name = method.slice('cate.terminal.'.length)
   if (name !== 'read' && name !== 'type' && name !== 'press') {
@@ -121,6 +123,7 @@ export async function handleTerminalMethod(
 
   const target = resolveTargetPanelId(workspaceId, args, name === 'read')
   if ('error' in target) return { ok: false, error: target.error }
+  onTargetResolved?.(target.panelId)
   const entry = getEntry(target.panelId)
   if (!entry) return { ok: false, error: 'terminal-not-ready' }
 

@@ -95,6 +95,8 @@ import {
   MENU_TRIGGER_ACTION,
   MENU_LOAD_LAYOUT,
   BROWSER_SHORTCUT,
+  BROWSER_OPEN_TAB_REQUEST,
+  BROWSER_DOWNLOADS_CHANGED,
   MENU_SHOW_CONTEXT,
   MENU_GET_BAR_ITEMS,
   MENU_POPUP_BAR_ITEM,
@@ -200,6 +202,7 @@ import {
   BROWSER_CREDENTIAL_LIST,
   BROWSER_CREDENTIAL_IMPORT,
   BROWSER_CREDENTIAL_IMPORT_FILE,
+  BROWSER_CREDENTIAL_SAVE,
   BROWSER_CREDENTIAL_REMOVE,
   BROWSER_CREDENTIAL_SUGGESTIONS,
   BROWSER_CREDENTIAL_FILL,
@@ -495,6 +498,7 @@ const invokeForwarders = {
   browserCredentialList: makeInvoker<'browserCredentialList'>(BROWSER_CREDENTIAL_LIST),
   browserCredentialImport: makeInvoker<'browserCredentialImport'>(BROWSER_CREDENTIAL_IMPORT),
   browserCredentialImportFile: makeInvoker<'browserCredentialImportFile'>(BROWSER_CREDENTIAL_IMPORT_FILE),
+  browserCredentialSave: makeInvoker<'browserCredentialSave'>(BROWSER_CREDENTIAL_SAVE),
   browserCredentialRemove: makeInvoker<'browserCredentialRemove'>(BROWSER_CREDENTIAL_REMOVE),
   browserCredentialSuggestions: makeInvoker<'browserCredentialSuggestions'>(BROWSER_CREDENTIAL_SUGGESTIONS),
   browserCredentialFill: makeInvoker<'browserCredentialFill'>(BROWSER_CREDENTIAL_FILL),
@@ -954,6 +958,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onBrowserShortcut(callback: (action: string) => void): () => void {
     return createIpcListener(BROWSER_SHORTCUT, callback)
+  },
+  onBrowserOpenTabRequest(callback: (request: { openerWebContentsId: number; url: string }) => void): () => void {
+    return createIpcListener(BROWSER_OPEN_TAB_REQUEST, callback)
+  },
+  onBrowserDownloadsChanged(callback: (payload: { webContentsId: number; downloads: import('../shared/types').BrowserDownloadEntry[] }) => void): () => void {
+    return createIpcListener(BROWSER_DOWNLOADS_CHANGED, callback)
   },
   onBrowserHistoryChanged(callback: () => void): () => void {
     return createIpcListener(BROWSER_HISTORY_CHANGED, callback)

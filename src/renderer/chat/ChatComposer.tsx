@@ -31,24 +31,23 @@ import {
   BoundingBox,
   GitBranch,
   X,
-  Spinner,
   ArrowsClockwise,
 } from '@phosphor-icons/react'
 import { useAutoGrowingTextarea } from '../lib/hooks/useAutoGrowingTextarea'
 import { Tooltip } from '../ui/Tooltip'
+import { Spinner } from '../ui/Spinner'
 import { CreateWorktreeForm, type PrListItem } from '../sidebar/CreateWorktreeForm'
-import { ModelPickerDropdown } from '../../cateAgent/renderer/ModelPicker'
+import { ModelPickerDropdown } from './ModelPicker'
+import { ImageAttachButton, ImageChips } from './ComposerImageAttachments'
+import { ThinkingLevelPicker } from './ThinkingLevelPicker'
 import {
-  ImageAttachButton,
-  ImageChips,
-  ThinkingLevelPicker,
   NodePopover,
   useNodePopover,
   useViewportPopoverPosition,
   verticalPopoverPosition,
   type ViewportPopoverPosition,
-  COMPOSER_POPOVER_SURFACE,
-} from '../../cateAgent/renderer/CateAgentPanelChrome'
+  POPOVER_SURFACE,
+} from '../ui/Popover'
 import type { JoinedWorktree } from '../stores/useWorktrees'
 import type {
   CodingImageAttachment,
@@ -108,7 +107,7 @@ const AnchoredMenu: React.FC<{
     <div
       ref={ref}
       role="listbox"
-      className={`fixed z-[9999] max-h-[340px] overflow-y-auto no-scrollbar p-1.5 ${COMPOSER_POPOVER_SURFACE}`}
+      className={`fixed z-[9999] max-h-[340px] overflow-y-auto no-scrollbar p-1.5 ${POPOVER_SURFACE}`}
       data-placement={pos.placement}
       style={{
         top: pos.top,
@@ -718,7 +717,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               title="Compacting context…"
               className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full border border-strong text-secondary opacity-60"
             >
-              <Spinner size={15} weight="bold" className="animate-spin" />
+              <Spinner size={15} />
             </div>
           ) : (
             <>
@@ -870,7 +869,7 @@ function CompactButton({
           }`}
           aria-label="Compact context"
         >
-          <ArrowsClockwise size={12} className={compactionActive ? 'animate-spin' : ''} />
+          {compactionActive ? <Spinner size={12} /> : <ArrowsClockwise size={12} />}
         </button>
       </Tooltip>
       {open && (

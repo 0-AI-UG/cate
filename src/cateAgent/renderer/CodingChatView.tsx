@@ -39,6 +39,7 @@ import {
   planModeUpdateCommand,
   type PlanModeConfig,
 } from './PlanModeSettings'
+import { LoadingState } from '../../renderer/ui/Spinner'
 
 export type { CodingChatComposerExtras }
 
@@ -178,7 +179,9 @@ export function CodingChatView({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
-      {readiness.kind !== 'ok' && readiness.kind !== 'loading' ? (
+      {readiness.kind === 'loading' ? (
+        <LoadingState label="Loading provider…" size={13} className="justify-start border-b border-agent/30 bg-agent/10 px-3 py-2 text-[12px]" />
+      ) : readiness.kind !== 'ok' ? (
         <div className="px-3 py-2 bg-agent/10 border-b border-agent/30 flex items-center gap-2 text-[12px] text-primary">
           <span className="flex-1 truncate" title={readiness.error}>
             {readiness.message}

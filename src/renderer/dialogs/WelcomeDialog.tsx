@@ -17,6 +17,7 @@ import log from '../lib/logger'
 import headerImg from '../assets/welcome-header.jpg'
 import { AnimatedDotGrid } from './AnimatedDotGrid'
 import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
+import { Spinner } from '../ui/Spinner'
 
 const GITHUB_REPO = 'https://github.com/0-AI-UG/cate'
 const NEWSLETTER_URL = 'https://cate.cero-ai.com'
@@ -163,8 +164,9 @@ export function WelcomeDialog() {
           <button
             onClick={onContinue}
             disabled={saving}
-            className="mt-1 h-10 rounded-lg bg-blue-500 text-white text-[13.5px] font-semibold hover:bg-blue-400 transition-colors disabled:opacity-50"
+            className="mt-1 h-10 inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-500 text-white text-[13.5px] font-semibold hover:bg-blue-400 transition-colors disabled:opacity-50"
           >
+            {saving && <Spinner size={14} />}
             {saving ? 'Saving…' : 'Continue'}
           </button>
         </div>

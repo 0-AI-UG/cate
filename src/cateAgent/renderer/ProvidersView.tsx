@@ -19,17 +19,18 @@ import {
   CircleDashed,
   ArrowSquareOut,
   Copy,
-  Spinner,
   CloudArrowUp,
   CaretRight,
   CaretDown,
   Sparkle,
   Plus,
 } from '@phosphor-icons/react'
-import { ModelPickerDropdown } from './ModelPicker'
+import { ModelPickerDropdown } from '../../renderer/chat/ModelPicker'
 import log from '../../renderer/lib/logger'
 import { errorMessage as toErrorMessage } from '../../renderer/lib/errorMessage'
 import { Tooltip } from '../../renderer/ui/Tooltip'
+import { Spinner } from '../../renderer/ui/Spinner'
+import { InlineNotice } from '../../renderer/ui/InlineNotice'
 import type {
   CateAgentModelRef,
   AuthProviderDescriptor,
@@ -408,8 +409,9 @@ function CustomOpenAIForm({
         <button
           disabled={saving}
           onClick={handleSave}
-          className="shrink-0 px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
+          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
         >
+          {saving && <Spinner size={13} />}
           {saving ? 'Saving…' : 'Save'}
         </button>
         {cfg && (
@@ -490,11 +492,11 @@ function SecretInput({
 function SaveFeedback({ error, savedAt }: { error: string | null; savedAt: number | null }) {
   return (
     <>
-      {error && <div className="text-[11px] text-danger">{error}</div>}
+      {error && <InlineNotice tone="error" className="border-0 bg-transparent px-0 py-0">{error}</InlineNotice>}
       {savedAt && !error && (
-        <div className="flex items-center gap-1 text-[11px] text-agent-light">
+        <InlineNotice tone="success" className="flex items-center gap-1 border-0 bg-transparent px-0 py-0">
           <CheckCircle size={12} weight="fill" /> Saved.
-        </div>
+        </InlineNotice>
       )}
     </>
   )
@@ -718,7 +720,7 @@ function OAuthForm({
 
       {phase.type === 'progress' && (
         <div className="flex items-center gap-2 text-[12px] text-muted">
-          <Spinner size={14} className="animate-spin" />
+          <Spinner size={14} />
           {phase.message}
         </div>
       )}
@@ -901,8 +903,9 @@ function ApiKeyForm({
         <button
           disabled={saving || !value.trim()}
           onClick={handleSave}
-          className="shrink-0 px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
+          className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-agent hover:bg-agent-light disabled:opacity-40 text-white text-[12px] font-medium"
         >
+          {saving && <Spinner size={13} />}
           {saving ? 'Saving…' : 'Save'}
         </button>
       </div>

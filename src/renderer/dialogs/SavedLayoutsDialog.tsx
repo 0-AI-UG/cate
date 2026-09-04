@@ -18,6 +18,9 @@ import {
 import log from '../lib/logger'
 import { useEscapeKey } from '../lib/hooks/useEscapeKey'
 import { Tooltip } from '../ui/Tooltip'
+import { LoadingState, Spinner } from '../ui/Spinner'
+import { PaletteTextInput } from '../ui/PaletteTextInput'
+import { InlineNotice } from '../ui/InlineNotice'
 
 export function SavedLayoutsDialog() {
   const show = useUIStore((s) => s.showLayoutsDialog)
@@ -29,13 +32,17 @@ export function SavedLayoutsDialog() {
   const [selected, setSelected] = useState<string | null>(null)
   const [saveName, setSaveName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
+    setLoading(true)
     try {
       setNames(await listLayouts())
     } catch (err) {
       log.warn('[SavedLayoutsDialog] list failed', err)
+    } finally {
+      setLoading(false)
     }
   }, [])
 
@@ -104,23 +111,22 @@ export function SavedLayoutsDialog() {
   return (
     <PaletteDialogShell
       onClose={close}
+      ariaLabel="Saved layouts"
       cardClassName="w-[600px] max-w-[600px] max-h-[440px] mt-[120px] overflow-hidden flex flex-col self-start"
     >
         {/* Save input — mirrors the palette's search-bar treatment */}
         <div className="p-2 shrink-0">
-          <div className="flex items-center gap-2 px-2.5 h-8 rounded-md bg-surface-0/60 border border-strong focus-within:border-[rgba(255,255,255,0.18)] transition-colors">
-            <FloppyDisk size={15} className="text-muted shrink-0" />
-            <input
+          <PaletteTextInput
+              icon={<FloppyDisk size={15} />}
               autoFocus
-              type="text"
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
               placeholder="Save current canvas as…"
-              className="flex-1 bg-transparent text-primary text-[13px] outline-none placeholder:text-muted"
               disabled={busy}
-            />
-            {saveName.trim() && (
+              trailing={busy ? (
+              <Spinner size={14} label="Updating layouts" />
+            ) : saveName.trim() && (
               <button
                 onClick={handleSave}
                 disabled={busy}
@@ -132,18 +138,18 @@ export function SavedLayoutsDialog() {
                 </kbd>
               </button>
             )}
-          </div>
+          />
         </div>
 
         {error && (
-          <div className="mx-2 mb-1.5 px-2.5 py-1.5 text-[11px] text-red-400 bg-red-600/10 rounded-md">
-            {error}
-          </div>
+          <InlineNotice tone="error" className="mx-2 mb-1.5">{error}</InlineNotice>
         )}
 
         {/* Layout list */}
         <div className="flex-1 overflow-y-auto pb-1.5">
-          {names.length === 0 ? (
+          {loading ? (
+            <LoadingState label="Loading layouts…" size={14} className="py-5 text-[13px]" />
+          ) : names.length === 0 ? (
             <div className="text-muted text-[13px] text-center py-5">
               No saved layouts yet. Type a name above and hit Enter.
             </div>

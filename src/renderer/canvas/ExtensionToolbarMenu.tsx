@@ -12,7 +12,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { SquaresFour } from '@phosphor-icons/react'
-import { Tooltip } from '../ui/Tooltip'
+import { useDismissableLayer } from '../ui/Popover'
+import { CanvasToolbarButton } from './CanvasToolbarButton'
 import { useAppStore } from '../stores/appStore'
 import {
   ensureExtensionsStarted,
@@ -105,18 +106,15 @@ const ExtensionToolbarMenu: React.FC<ExtensionToolbarMenuProps> = ({
 
   return (
     <>
-      <Tooltip label={title} placement={tooltipPlacement}>
-        <button
+      <CanvasToolbarButton
           ref={btnRef}
-          type="button"
           onClick={onClick}
-          aria-label="Extensions"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
-          className={`w-9 h-9 ${active ? 'bg-hover-strong text-primary' : 'bg-transparent text-secondary'} flex items-center justify-center rounded-full hover:text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
-        >
+          label={title}
+          active={active}
+          tooltipPlacement={tooltipPlacement}
+      >
           <SquaresFour size={18} />
-        </button>
-      </Tooltip>
+      </CanvasToolbarButton>
       {open && pos &&
         createPortal(
           <ExtensionMenuPopover
@@ -141,23 +139,7 @@ const ExtensionMenuPopover: React.FC<{
 }> = ({ pos, triggerRef, targets, onPick, onClose }) => {
   const rootRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (rootRef.current?.contains(target)) return
-      if (triggerRef.current?.contains(target)) return
-      onClose()
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [onClose, triggerRef])
+  useDismissableLayer({ open: true, contentRef: rootRef, triggerRefs: [triggerRef], onDismiss: onClose })
 
   // Group panels under their extension so a multi-panel extension reads clearly.
   const byExt = new Map<string, ExtensionPanelTarget[]>()

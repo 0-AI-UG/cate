@@ -11,7 +11,7 @@ import {
   imageMimeForPath,
   readFileAsImage,
   readPathAsImage,
-} from './CateAgentPanelChrome'
+} from '../../renderer/chat/imageAttachments'
 import {
   readCateFileLocation,
   readCateFilePaths,

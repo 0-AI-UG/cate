@@ -74,6 +74,9 @@ const BOOT_BG = new URLSearchParams(window.location.search).get('bg') ?? undefin
 
 export default function App() {
   const windowParams = getWindowParams()
+  // Every renderer window can own panels. Host actions must therefore be
+  // answered here, above the main/dock split, rather than only by MainApp.
+  useCateHostActionResponder()
 
   // E2E test harness — every renderer window needs it so Playwright can inspect
   // a panel after a real cross-window transfer.
@@ -87,7 +90,12 @@ export default function App() {
   if (windowParams.type === 'dock') {
     return (
       <WindowTypeContext.Provider value="dock">
-        <DockWindowShell workspaceId={windowParams.workspaceId} />
+        <PersistentBrowserHostContext.Provider value>
+          <DockWindowShell workspaceId={windowParams.workspaceId} />
+          <React.Suspense fallback={null}>
+            <BackgroundBrowserHost />
+          </React.Suspense>
+        </PersistentBrowserHostContext.Provider>
       </WindowTypeContext.Provider>
     )
   }
@@ -155,10 +163,6 @@ function MainApp() {
 
   // Main-only: terminal/agent activity → status bar + worktree sync.
   useProcessMonitor(selectedWorkspaceId)
-
-  // Extension reverse-API: execute cate.* host actions forwarded from extension
-  // webviews (open file / create panel / set title). Mounted once here.
-  useCateHostActionResponder()
 
   // Sync the OS window title to the active workspace name. On macOS this is
   // what each native tab in the title bar displays, so the user can tell

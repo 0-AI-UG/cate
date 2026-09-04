@@ -25,7 +25,6 @@ import {
   Warning,
   X,
   GitPullRequest,
-  CircleNotch,
 } from '@phosphor-icons/react'
 import { Tooltip } from '../ui/Tooltip'
 import { CateLogo } from '../ui/CateLogo'
@@ -39,6 +38,9 @@ import { useParallelWork, runWorktreeContextMenu, type CardCallbacks } from '../
 import { useWorktreeStatuses, humanStatus, type PrStatus } from '../stores/useWorktreeStatuses'
 import type { WorktreePanelType } from '../../shared/panels'
 import { useActiveChatWorktreeByPanel } from '../../cateAgent/renderer/cateAgentStore'
+import { Spinner } from '../ui/Spinner'
+import { useDismissableLayer } from '../ui/Popover'
+import { CanvasToolbarButton } from './CanvasToolbarButton'
 
 interface WorktreeToolbarMenuProps {
   canvasPanelId: string
@@ -99,18 +101,15 @@ const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
 
   return (
     <>
-      <Tooltip label="Parallel worktrees" placement={tooltipPlacement}>
-        <button
+      <CanvasToolbarButton
           ref={btnRef}
-          type="button"
           onClick={toggle}
-          aria-label="Parallel worktrees"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
-          className={`w-9 h-9 ${active ? 'bg-hover-strong' : 'bg-transparent'} flex items-center justify-center rounded-full ${active ? 'text-primary' : 'text-secondary'} hover:text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
-        >
+          label="Parallel worktrees"
+          active={active}
+          tooltipPlacement={tooltipPlacement}
+      >
           <ArrowsSplit size={18} />
-        </button>
-      </Tooltip>
+      </CanvasToolbarButton>
       {open && pos &&
         createPortal(
           <WorktreeMenuPopover
@@ -190,25 +189,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
     { setError, onPrCreated: refreshPr, setBusy: setBusyId },
   )
 
-  // Close on outside click or Escape. Clicks on the trigger button are ignored
-  // so its own onClick can toggle the menu cleanly.
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (rootRef.current?.contains(target)) return
-      if (triggerRef.current?.contains(target)) return
-      onClose()
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [onClose, triggerRef])
+  useDismissableLayer({ open: true, contentRef: rootRef, triggerRefs: [triggerRef], onDismiss: onClose })
 
   // Never leave a worktree highlighted on the canvas once the menu is gone.
   useEffect(() => () => setHoveredWorktree(null), [setHoveredWorktree])
@@ -511,7 +492,7 @@ const WorktreeRow: React.FC<{
         )}
 
         {busy && (
-          <CircleNotch size={13} className="flex-shrink-0 text-muted animate-spin" />
+          <Spinner size={13} className="text-muted" />
         )}
 
         {!renaming && !busy && (

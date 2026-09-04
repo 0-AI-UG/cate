@@ -35,7 +35,6 @@ import { PERF_GET } from '../shared/ipc-channels'
 import { TELEMETRY_NOTICE_VERSION } from '../shared/types'
 import { installWebContentsSecurity } from './webSecurity'
 import { installProxyAuthHandler } from './browserProxy'
-import { enableAgentBrowserBackend } from './browser/agentBrowser'
 import { installBundledSkill } from './installBundledSkill'
 
 import { createWindow } from './windows/windowFactory'
@@ -134,7 +133,6 @@ function registerDeferredHandlers(): void {
 
 // Set app name before menu and window creation
 app.setName('Cate')
-enableAgentBrowserBackend()
 
 // Windows: the toast notification system keys off the AppUserModelID, and it
 // must match the install shortcut's ID (electron-builder uses `appId`) for the
