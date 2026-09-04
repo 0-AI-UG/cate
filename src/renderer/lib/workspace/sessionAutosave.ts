@@ -13,6 +13,7 @@
 
 import type { StoreApi } from 'zustand'
 import { useAppStore } from '../../stores/appStore'
+import { useUIStore } from '../../stores/uiStore'
 import { getWorkspaceCanvasPanelIds } from './canvasAccess'
 import { peekCanvasStoreForPanel } from '../../stores/canvasStore'
 import { getOrCreateWorkspaceDockStore } from './dockRegistry'
@@ -176,6 +177,17 @@ export function setupAutoSave(): () => void {
     subscribeActive()
     scheduleSave()
   })
+  // Most uiStore state is deliberately transient (hover, marquee, dialogs).
+  // Only the two worktree scope maps belong in the machine-local session, so
+  // watch their references explicitly instead of autosaving on every UI edit.
+  const unsubUI = useUIStore.subscribe((state, previous) => {
+    if (
+      state.navigationWorktreeByWorkspace !== previous.navigationWorktreeByWorkspace
+      || state.sourceControlWorktreeByRepository !== previous.sourceControlWorktreeByRepository
+    ) {
+      scheduleSave()
+    }
+  })
   subscribeActive()
 
   // Unconditional periodic save — ensures on-disk state is never more than
@@ -236,6 +248,7 @@ export function setupAutoSave(): () => void {
   return () => {
     unsubActive()
     unsubApp()
+    unsubUI()
     unsubFlush()
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
     if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null }

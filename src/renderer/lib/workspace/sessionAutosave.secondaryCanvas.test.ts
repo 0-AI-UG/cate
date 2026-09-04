@@ -17,6 +17,7 @@ const saveSession = vi.fn(async () => {})
 vi.mock('./sessionSave', () => ({ saveSession: () => saveSession() }))
 
 import { useAppStore } from '../../stores/appStore'
+import { useUIStore } from '../../stores/uiStore'
 import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../../stores/canvasStore'
 import { setupAutoSave } from './sessionAutosave'
 import type { PanelState } from '../../../shared/types'
@@ -63,6 +64,10 @@ beforeEach(() => {
     ],
     selectedWorkspaceId: 'ws-1',
   } as never)
+  useUIStore.setState({
+    navigationWorktreeByWorkspace: {},
+    sourceControlWorktreeByRepository: {},
+  })
   getOrCreateCanvasStoreForPanel(PRIMARY)
   getOrCreateCanvasStoreForPanel(SECONDARY)
 })
@@ -124,5 +129,22 @@ describe('autosave watches secondary canvases', () => {
 
     await vi.advanceTimersByTimeAsync(MAX_WAIT)
     expect(saveSession).toHaveBeenCalled()
+  })
+
+  it('saves worktree view scope changes but ignores transient UI state', async () => {
+    teardown = setupAutoSave()
+
+    useUIStore.getState().setHoveredWorktree('wt-1')
+    await vi.advanceTimersByTimeAsync(MAX_WAIT)
+    expect(saveSession).not.toHaveBeenCalled()
+
+    useUIStore.getState().setNavigationWorktree('ws-1', 'wt-1')
+    await vi.advanceTimersByTimeAsync(MAX_WAIT)
+    expect(saveSession).toHaveBeenCalledTimes(1)
+
+    saveSession.mockClear()
+    useUIStore.getState().setSourceControlWorktree('/repo', 'wt-2')
+    await vi.advanceTimersByTimeAsync(MAX_WAIT)
+    expect(saveSession).toHaveBeenCalledTimes(1)
   })
 })

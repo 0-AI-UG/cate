@@ -38,6 +38,7 @@ beforeEach(() => {
 })
 
 import { useAppStore } from '../../stores/appStore'
+import { useUIStore } from '../../stores/uiStore'
 import { restoreSession, projectFilesToSnapshot } from './session'
 import type {
   SessionSnapshot,
@@ -50,6 +51,10 @@ function reset() {
   for (const w of [...useAppStore.getState().workspaces]) {
     useAppStore.getState().removeWorkspace(w.id)
   }
+  useUIStore.setState({
+    navigationWorktreeByWorkspace: {},
+    sourceControlWorktreeByRepository: {},
+  })
 }
 
 const ROOT = '/tmp/wt'
@@ -104,6 +109,34 @@ describe('worktree session persistence', () => {
     const panels = useAppStore.getState().getWorkspace(ws)!.panels
     expect(panels['terminal-1'].worktreeId).toBe('wt-x')
     expect(panels['agent-1'].worktreeId).toBeUndefined()
+  })
+
+  it('tags file panels created inside a sibling worktree', () => {
+    const ws = useAppStore.getState().addWorkspace('WT', ROOT, 'ws')
+    useAppStore.getState().hydrateWorktrees(ws, [WT_PRIMARY, WT_X])
+
+    const editorId = useAppStore.getState().createEditor(
+      ws,
+      `${WT_X.path}/src/app.ts`,
+      undefined,
+      { target: 'none' },
+    )
+
+    expect(useAppStore.getState().getWorkspace(ws)?.panels[editorId].worktreeId).toBe(WT_X.id)
+  })
+
+  it('restores machine-local navigation and Source Control checkout selections', async () => {
+    const ws = useAppStore.getState().addWorkspace('WT', ROOT, 'ws')
+    const snapshot = snapshotWithWorktrees()
+    snapshot.worktreeViewScopes = {
+      navigationWorktreeId: WT_X.id,
+      sourceControlWorktreeByRepository: { [ROOT]: WT_X.id },
+    }
+
+    await restoreSession(snapshot, ws)
+
+    expect(useUIStore.getState().navigationWorktreeByWorkspace[ws]).toBe(WT_X.id)
+    expect(useUIStore.getState().sourceControlWorktreeByRepository[ROOT]).toBe(WT_X.id)
   })
 
   it('restoreSession hydrates the worktree registry (colors/labels) into the workspace', async () => {

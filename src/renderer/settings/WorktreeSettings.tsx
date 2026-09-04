@@ -34,7 +34,7 @@ export function WorktreeSettings() {
     <div className="flex flex-col gap-1">
       <SettingRow
         label="Close panels when discarding a worktree"
-        description="Discarding a worktree also closes its terminals and agent panels."
+        description="Discarding a worktree also closes its terminals, agents, files, documents, and reviews."
       >
         <Toggle
           checked={store.closeWorktreePanelsOnDelete}

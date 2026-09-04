@@ -11,6 +11,7 @@ import {
   ensureCanvasOpsForPanel,
   getWorkspaceCanvasPanelId,
 } from '../../stores/appStore'
+import { useUIStore } from '../../stores/uiStore'
 import { setActivePanel } from '../activePanel'
 import { getOrCreateWorkspaceDockStore } from './dockRegistry'
 import {
@@ -266,6 +267,14 @@ async function restoreSessionHydrate(snapshot: SessionSnapshot, workspaceId: str
   // their persisted worktreeId, and so the colors/labels here win over anything
   // a background sync already discovered for the same checkout paths.
   if (snapshot.worktrees?.length) appStore.hydrateWorktrees(wsId, snapshot.worktrees)
+  if (snapshot.worktreeViewScopes?.navigationWorktreeId) {
+    useUIStore.getState().setNavigationWorktree(wsId, snapshot.worktreeViewScopes.navigationWorktreeId)
+  }
+  for (const [repositoryRoot, worktreeId] of Object.entries(
+    snapshot.worktreeViewScopes?.sourceControlWorktreeByRepository ?? {},
+  )) {
+    useUIStore.getState().setSourceControlWorktree(repositoryRoot, worktreeId)
+  }
 
   const restoredCount = restorePanelRecords(wsId, snapshot)
   if (restoredCount > 0) {

@@ -85,10 +85,12 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
       if (useSettingsStore.getState().closeWorktreePanelsOnDelete) {
         const ws = get().workspaces.find((w) => w.id === wsId)
         const doomed = Object.values(ws?.panels ?? {}).filter(
-          (p) => (
-            (p.type === 'terminal' && p.worktreeId === worktreeId) ||
-            (p.type === 'cateAgent' && activeChatWorktreeIdForPanel(p.id) === worktreeId)
-          ),
+          (p) => p.type === 'cateAgent'
+            ? activeChatWorktreeIdForPanel(p.id) === worktreeId
+            : p.worktreeId === worktreeId && (
+                p.type === 'terminal' || p.type === 'editor' ||
+                p.type === 'document' || p.type === 'review'
+              ),
         )
         for (const p of doomed) get().closePanel(wsId, p.id)
       }
@@ -105,8 +107,8 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
         workspaces: state.workspaces.map((ws) => {
           if (ws.id !== wsId) return ws
           const list = (ws.worktrees ?? []).filter((w) => w.id !== worktreeId)
-          // Strip the worktreeId from any panel still tagged with it (editors,
-          // browsers, or all panels when the close-on-delete setting is off).
+          // Strip the worktreeId from any checkout-bound panel left open when
+          // close-on-delete is disabled.
           const panels = Object.fromEntries(
             Object.entries(ws.panels).map(([id, p]) => [
               id,
@@ -145,9 +147,9 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
 
     setPanelWorktreeId(wsId, panelId, worktreeId) {
       setPanelField(set, wsId, panelId, (panel) => (
-        panel.type === 'terminal'
-          ? { ...panel, worktreeId }
-          : { ...panel, worktreeId: undefined }
+        panel.type === 'cateAgent'
+          ? { ...panel, worktreeId: undefined }
+          : { ...panel, worktreeId }
       ))
     },
 

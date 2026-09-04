@@ -144,7 +144,7 @@ export function setupWindowPanelSync(): () => void {
           parentCanvasId: childToCanvas.get(p.id),
           worktreeId: p.type === 'cateAgent'
             ? activeChatWorktreeIdForPanel(p.id)
-            : p.type === 'terminal' ? p.worktreeId : undefined,
+            : p.worktreeId,
           agentState: agentInfo[p.id]?.state,
           agentName: agentInfo[p.id]?.name ?? null,
           codingAgentRunId: p.codingAgentRun?.id,

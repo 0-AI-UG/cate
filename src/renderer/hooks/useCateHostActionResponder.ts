@@ -56,6 +56,7 @@ interface HostActionPayload {
   extensionId: string
   method: string
   args: unknown
+  originCwd?: string
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -124,10 +125,11 @@ async function finishTracked<T>(
 // SECURITY: confine the resolved path to the workspace root. An extension must
 // not be able to open arbitrary files on disk (e.g. /etc/hosts, ../../secrets)
 // via the reverse API — neither by passing an absolute path that escapes the
-// root nor by a relative path that traverses out of it. Returns null when the
-// resolved path falls outside the verified root (caller rejects the request).
-function resolveWorkspacePath(workspaceId: string, filePath: string): string | null {
-  const rootPath = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)?.rootPath
+// workspace's known checkouts nor by a relative path that traverses out of its
+// caller checkout. Returns null outside those verified roots.
+function resolveWorkspacePath(workspaceId: string, filePath: string, originCwd?: string): string | null {
+  const workspace = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  const rootPath = workspace?.rootPath
   if (!rootPath) return null
   // A REMOTE workspace stores rootPath as a locator URI
   // (cate-runtime://<id>/<path>), but cate.workspace.get hands the extension the
@@ -139,12 +141,25 @@ function resolveWorkspacePath(workspaceId: string, filePath: string): string | n
   // routes to the correct runtime. Local roots have no scheme, so this is a no-op
   // for them (bareRoot === rootPath, runtimeId === 'local').
   const { runtimeId, path: bareRoot } = parseLocator(rootPath)
+  const allowedRoots = [rootPath, ...(workspace?.worktrees ?? []).map((worktree) => worktree.path)]
+    .map(parseLocator)
+    .filter((root) => root.runtimeId === runtimeId)
+    .map((root) => root.path)
+  const originBase = originCwd && allowedRoots.some((root) => {
+    const originKey = pathKey(originCwd)
+    const rootKey = pathKey(root)
+    return originKey === rootKey || originKey.startsWith(`${rootKey}/`)
+  })
+    ? originCwd
+    : bareRoot
   // Collapse `.`/`..` segments before checking containment so a traversal like
   // `../../etc/passwd` can't slip past a naive prefix match.
-  const normalized = normalizeSegments(toAbsolutePath(filePath, bareRoot))
-  const rootKey = pathKey(bareRoot)
+  const normalized = normalizeSegments(toAbsolutePath(filePath, originBase))
   const key = pathKey(normalized)
-  if (key !== rootKey && !key.startsWith(rootKey + '/')) return null
+  if (!allowedRoots.some((root) => {
+    const rootKey = pathKey(root)
+    return key === rootKey || key.startsWith(`${rootKey}/`)
+  })) return null
   return formatLocator({ runtimeId, path: normalized })
 }
 
@@ -245,9 +260,9 @@ export function useCateHostActionResponder(): void {
           case 'cate.editor.openFile': {
             const filePath = typeof args.path === 'string' ? args.path : undefined
             if (!filePath) return reply(false, { error: 'path required' })
-            // Confine the target to the workspace root — reject any path that
-            // escapes it (absolute or traversal).
-            const resolved = resolveWorkspacePath(workspaceId, filePath)
+            // Confine the target to the workspace's known checkouts — reject
+            // any absolute or traversal path that escapes them.
+            const resolved = resolveWorkspacePath(workspaceId, filePath, payload.originCwd)
             if (!resolved) return reply(false, { error: 'path outside workspace' })
             // Reject a nonexistent target instead of opening a healthy-looking
             // panel on it — that silence hides typos from agent callers. (This
@@ -292,7 +307,7 @@ export function useCateHostActionResponder(): void {
             } else {
               let filePath: string | undefined
               if (typeof args.filePath === 'string') {
-                const resolved = resolveWorkspacePath(workspaceId, args.filePath)
+                const resolved = resolveWorkspacePath(workspaceId, args.filePath, payload.originCwd)
                 if (!resolved) return reply(false, { error: 'path outside workspace' })
                 filePath = resolved
               }

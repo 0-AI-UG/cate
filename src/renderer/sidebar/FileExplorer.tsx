@@ -20,6 +20,7 @@ import { isLocalLocator } from '../../shared/runtimeLocator'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { LoadingState } from '../ui/Spinner'
+import { worktreeForPath } from '../lib/worktreeContext'
 
 // Opening a workspace sets its root path optimistically in the renderer, but
 // main only registers that path as an allowed root once the async workspace
@@ -35,6 +36,7 @@ const FS_READ_RETRY_DELAY_MS = 120
 
 interface FileExplorerProps {
   rootPath: string
+  scopeControl?: React.ReactNode
 }
 
 // One entry per on-screen row, top to bottom (root nodes + children of expanded
@@ -47,7 +49,7 @@ interface FlatRow {
   node: FileTreeNodeType
 }
 
-export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
+export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeControl }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
   // Expansion state is owned by the explorer (not each FileTreeNode) so this
@@ -581,7 +583,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       { type: 'separator' },
       { id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: hasClipboard() },
       { type: 'separator' },
-      { id: 'remove-workspace', label: 'Remove Folder from Workspace' },
+      { id: 'remove-workspace', label: 'Remove Workspace' },
       { type: 'separator' },
       { id: 'find-in-folder', label: 'Find in Folder…', accelerator: 'Alt+Shift+F' },
       { type: 'separator' },
@@ -593,7 +595,19 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
       case 'new-folder': startRootCreate('folder'); break
       case 'reveal': window.electronAPI.shellShowInFolder(rootPath, selectedWorkspaceId); break
       case 'open-terminal':
-        createTerminal(selectedWorkspaceId, undefined, undefined, { target: 'dock', zone: 'bottom' })
+        {
+          const store = useAppStore.getState()
+          const workspace = store.getWorkspace(selectedWorkspaceId)
+          const worktree = worktreeForPath(rootPath, workspace?.worktrees ?? [])
+          const panelId = createTerminal(
+            selectedWorkspaceId,
+            undefined,
+            undefined,
+            { target: 'dock', zone: 'bottom' },
+            rootPath,
+          )
+          if (panelId && worktree) store.setPanelWorktreeId(selectedWorkspaceId, panelId, worktree.id)
+        }
         break
       case 'paste': {
         const sources = getClipboard()
@@ -608,7 +622,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
         break
       }
       case 'remove-workspace':
-        if (window.confirm(`Remove "${folderName}" from your workspaces?`)) {
+        if (window.confirm('Remove this workspace?')) {
           removeWorkspace(selectedWorkspaceId, true)
         }
         break
@@ -650,7 +664,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath }) => {
     >
       <SidebarSectionHeader
         title="Explorer"
-        subtitle={folderName}
+        subtitle={scopeControl ?? folderName}
         actions={
           <>
             <SidebarHeaderButton onClick={() => startRootCreate('file')} title="New File">

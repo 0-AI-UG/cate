@@ -131,7 +131,11 @@ describe('windowPanelSync — canvas child parentCanvasId', () => {
       workspaces: [{
         id: ws, name: 'W', color: '', rootPath: '/x', rootPathError: null,
         isRootPathPending: false, worktrees: [],
-        panels: { t1: panel('t1', 'terminal', 'wt-feature'), t2: panel('t2', 'terminal') },
+        panels: {
+          t1: panel('t1', 'terminal', 'wt-feature'),
+          t2: panel('t2', 'terminal'),
+          e1: panel('e1', 'editor', 'wt-feature'),
+        },
       } as any],
       selectedWorkspaceId: ws,
     } as any)
@@ -142,6 +146,7 @@ describe('windowPanelSync — canvas child parentCanvasId', () => {
     const byId = Object.fromEntries(reports[reports.length - 1].filter((r) => r.workspaceId === ws).map((r) => [r.panelId, r]))
     expect(byId.t1?.worktreeId).toBe('wt-feature')
     expect(byId.t2?.worktreeId).toBeUndefined()
+    expect(byId.e1?.worktreeId).toBe('wt-feature')
 
     stop()
   })

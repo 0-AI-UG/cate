@@ -47,10 +47,16 @@ describe('inheritedWorktreeFromSelection', () => {
       .toEqual({ cwd: undefined, worktreeId: 'wt-chat' })
   })
 
-  it('returns {} when the selected node is not a terminal or agent', () => {
+  it('inherits a checkout from a selected file-backed panel', () => {
     const state = canvasState(['n1'], true, { n1: node('e1') })
-    const ps = panels([{ id: 'e1', type: 'editor', title: 'file.ts', isDirty: false, worktreeId: 'wt-c' }])
-    expect(inheritedWorktreeFromSelection(state, ps)).toEqual({})
+    const ps = panels([{
+      id: 'e1', type: 'editor', title: 'file.ts', isDirty: false,
+      filePath: '/checkouts/feature/src/file.ts',
+    }])
+    expect(inheritedWorktreeFromSelection(state, ps, undefined, [
+      { id: 'wt-primary', path: '/repo', color: '#fff' },
+      { id: 'wt-feature', path: '/checkouts/feature', color: '#000' },
+    ])).toEqual({ cwd: '/checkouts/feature', worktreeId: 'wt-feature' })
   })
 
   it('uses the lead (last) selection entry as the focused node', () => {

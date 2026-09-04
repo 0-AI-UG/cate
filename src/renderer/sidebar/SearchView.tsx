@@ -47,7 +47,11 @@ const ToggleBtn: React.FC<ToggleBtnProps> = ({ active, onClick, title, children 
   </Tooltip>
 )
 
-export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = ({ rootPath, workspaceId }) => {
+export const SearchView: React.FC<{
+  rootPath: string
+  workspaceId?: string
+  scopeControl?: React.ReactNode
+}> = ({ rootPath, workspaceId, scopeControl }) => {
   const query = useSearchStore((s) => s.query)
   const isRegex = useSearchStore((s) => s.isRegex)
   const matchCase = useSearchStore((s) => s.matchCase)
@@ -153,6 +157,7 @@ export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = 
     <div className="flex flex-col h-full">
       <SidebarSectionHeader
         title="Search"
+        subtitle={scopeControl}
         actions={
           <Tooltip label="Clear search">
             <SidebarHeaderButton

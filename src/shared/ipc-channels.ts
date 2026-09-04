@@ -469,5 +469,5 @@ export const CATE_HOST_EVENT = 'cate:event'          // main -> guest: { panelId
 
 // Forward a reverse-API call that mutates renderer state to the guest's owner
 // window and await its reply (editor.openFile, canvas.createPanel, panel.setTitle).
-export const CATE_HOST_FORWARD = 'cate:hostAction'        // main -> renderer: { requestId, workspaceId, panelId, extensionId, method, args }
+export const CATE_HOST_FORWARD = 'cate:hostAction'        // main -> renderer: { requestId, workspaceId, panelId, extensionId, method, args, originCwd? }
 export const CATE_HOST_FORWARD_REPLY = 'cate:hostActionReply' // renderer -> main: { requestId, ok, result?, error? }

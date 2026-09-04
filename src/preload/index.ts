@@ -1051,6 +1051,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       extensionId: string
       method: string
       args: unknown
+      originCwd?: string
     }) => void,
   ): () => void {
     return createIpcListener(CATE_HOST_FORWARD, callback)

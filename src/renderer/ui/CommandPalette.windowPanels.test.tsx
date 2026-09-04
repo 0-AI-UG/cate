@@ -48,6 +48,10 @@ beforeEach(() => {
   // The shared test setup installs a base electronAPI stub; add what the palette
   // touches for detached panels.
   ;(window.electronAPI as unknown as Record<string, unknown>).focusWindowPanel = vi.fn().mockResolvedValue(undefined)
+  ;(window.electronAPI as unknown as Record<string, unknown>).gitIsRepo = vi.fn().mockResolvedValue(false)
+  ;(window.electronAPI as unknown as Record<string, unknown>).onFsWatchEvent = vi.fn(() => () => {})
+  ;(window.electronAPI as unknown as Record<string, unknown>).fsWatchStart = vi.fn().mockResolvedValue(undefined)
+  ;(window.electronAPI as unknown as Record<string, unknown>).fsWatchStop = vi.fn().mockResolvedValue(undefined)
 
   useAppStore.setState({
     workspaces: [{ id: 'ws-A', name: 'Proj', color: '', rootPath: '/tmp/p', panels: {} } as never],

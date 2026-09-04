@@ -291,22 +291,24 @@ export function useParallelWork(
       }
       const dirty = !!status?.dirty
       const branchAhead = (status?.ahead ?? 0) > 0
-      // When close-on-delete is on, count terminals by their panel tag and
-      // agents by their active chat tag.
+      // When close-on-delete is on, count every checkout-bound panel; agents
+      // keep their binding on the active chat rather than the panel record.
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       const panelCount = useSettingsStore.getState().closeWorktreePanelsOnDelete
         ? Object.values(ws?.panels ?? {}).filter(
-            (p) => (
-              (p.type === 'terminal' && p.worktreeId === wt.id) ||
-              (p.type === 'cateAgent' && activeChatWorktreeIdForPanel(p.id) === wt.id)
-            ),
+            (p) => p.type === 'cateAgent'
+              ? activeChatWorktreeIdForPanel(p.id) === wt.id
+              : p.worktreeId === wt.id && (
+                  p.type === 'terminal' || p.type === 'editor' ||
+                  p.type === 'document' || p.type === 'review'
+                ),
           ).length
         : 0
       const ok = window.confirm(
         `Discard “${label}”?\n\n` +
           `This deletes the parallel branch and everything in it.\n` +
           (panelCount
-            ? `\nIts ${panelCount} open ${panelCount === 1 ? 'terminal/agent panel' : 'terminal/agent panels'} will be closed.`
+            ? `\nIts ${panelCount} open ${panelCount === 1 ? 'panel' : 'panels'} will be closed.`
             : '') +
           (dirty ? '\nWARNING: unsaved changes here will be lost.' : '') +
           (branchAhead ? `\nWARNING: ${status?.ahead} unpublished commit(s) will be lost.` : ''),

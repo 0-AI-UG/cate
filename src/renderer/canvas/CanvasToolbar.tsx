@@ -102,7 +102,8 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
       // workspace's primary canvas (matters on secondary/nested canvases), and
       // inherit the selected terminal/agent's worktree like the click path does.
       if (wsId) {
-        const wt = inheritedWorktreeFromSelection(canvasApi.getState(), app.getWorkspace(wsId)?.panels)
+        const workspace = app.getWorkspace(wsId)
+        const wt = inheritedWorktreeFromSelection(canvasApi.getState(), workspace?.panels, undefined, workspace?.worktrees)
         const newId = app.createTerminal(wsId, undefined, pos, { target: 'canvas', canvasPanelId }, wt.cwd)
         if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
       }

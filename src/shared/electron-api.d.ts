@@ -1286,6 +1286,7 @@ export interface ElectronAPI {
       extensionId: string
       method: string
       args: unknown
+      originCwd?: string
     }) => void,
   ): () => void
 

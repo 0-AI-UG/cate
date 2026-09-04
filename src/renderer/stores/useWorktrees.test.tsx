@@ -141,4 +141,38 @@ describe('useWorktrees', () => {
     // Same snapshot + same meta -> memoized to the same array.
     expect(lastResult).toBe(first)
   })
+
+  it('joins Windows worktree metadata across case and separator differences', () => {
+    const windowsRoot = 'C:\\Users\\dev\\Repo'
+    useAppStore.setState({
+      workspaces: [{
+        id: WS,
+        rootPath: windowsRoot,
+        worktrees: [{ id: 'meta-feat', path: 'C:\\Users\\dev\\Repo\\.cate\\worktrees\\Feat', color: '#f00' }],
+      } as any],
+    } as any)
+    snapshot = {
+      ...snapshot,
+      worktrees: [{
+        path: 'c:/users/dev/repo/.cate/worktrees/feat',
+        branch: 'feat',
+        isPrimary: false,
+        isCurrent: false,
+      }],
+    }
+
+    function WindowsProbe(): React.ReactElement {
+      // Git can round-trip the canonical root with POSIX separators and
+      // different drive-letter/path casing than Electron's folder picker.
+      lastResult = useWorktrees('c:/users/dev/repo', WS)
+      return <div />
+    }
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    roots.push(root)
+    act(() => { root.render(<WindowsProbe />) })
+
+    expect(lastResult[0]).toMatchObject({ id: 'meta-feat', color: '#f00', branch: 'feat' })
+  })
 })

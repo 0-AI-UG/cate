@@ -98,7 +98,8 @@ export async function runAction(
         // Inherit the selected terminal/agent's worktree so ⌘T from inside a
         // worktree opens the new terminal in that same worktree.
         const canvas = canvasStore()
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, appStore().getWorkspace(wsId)?.panels) : {}
+        const workspace = appStore().getWorkspace(wsId)
+        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, undefined, workspace?.worktrees) : {}
         const panelId = appStore().createTerminal(wsId, undefined, undefined, placement, wt.cwd)
         if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
       }
@@ -114,7 +115,13 @@ export async function runAction(
     case 'newFile': {
       const placement = placementForActivePanel()
       const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      if (wsId) appStore().createEditor(wsId, undefined, undefined, placement)
+      if (wsId) {
+        const canvas = canvasStore()
+        const workspace = appStore().getWorkspace(wsId)
+        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, undefined, workspace?.worktrees) : {}
+        const panelId = appStore().createEditor(wsId, undefined, undefined, placement)
+        if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
+      }
       break
     }
     case 'newAgent': {
@@ -124,7 +131,8 @@ export async function runAction(
         // Same worktree inheritance as newTerminal, but the target belongs to
         // the new agent's first chat rather than its panel record.
         const canvas = canvasStore()
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, appStore().getWorkspace(wsId)?.panels) : {}
+        const workspace = appStore().getWorkspace(wsId)
+        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, undefined, workspace?.worktrees) : {}
         const panelId = appStore().createCateAgent(wsId, undefined, placement)
         const rootPath = appStore().getWorkspace(wsId)?.rootPath
         if (panelId && rootPath && wt.worktreeId) {
