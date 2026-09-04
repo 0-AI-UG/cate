@@ -13,6 +13,7 @@ import {
   browserCommandShowsActivity,
   validateBrowserCommand,
 } from '../../../shared/browserCommand'
+import type { PanelTargetObserver } from '../panelInteractions'
 
 export type BrowserOutcome = { ok: true; result?: unknown } | { ok: false; error: string }
 
@@ -133,6 +134,7 @@ export async function handleBrowserMethod(
   workspaceId: string,
   method: string,
   args: Record<string, unknown>,
+  onTargetResolved?: PanelTargetObserver,
 ): Promise<BrowserOutcome> {
   const name = method.slice('cate.browser.'.length)
 
@@ -140,13 +142,16 @@ export async function handleBrowserMethod(
     const url = stringArg(args, 'url')
     if (!url) return { ok: false, error: 'url-required' }
     if (args.newPanel === true) {
-      return createBrowserPanel(workspaceId, url, args)
+      const created = await createBrowserPanel(workspaceId, url, args)
+      if (created.ok && created.result && typeof created.result === 'object') onTargetResolved?.((created.result as { panelId: string }).panelId)
+      return created
     }
     const target = resolveTargetPanel(workspaceId, args)
     if ('error' in target) {
       if (target.error === 'no-browser') return createBrowserPanel(workspaceId, url, args)
       return { ok: false, error: target.error }
     }
+    onTargetResolved?.(target.panel.id)
     const controller = await waitForController(target.panel.id)
     if (!controller) return { ok: false, error: 'panel-not-mounted' }
     if (args.newTab === true) {
@@ -168,6 +173,7 @@ export async function handleBrowserMethod(
   if ('error' in target) return { ok: false, error: target.error }
   const panel = target.panel
   if (!panel.activeTabId) return { ok: false, error: 'invalid-browser-tab-state' }
+  onTargetResolved?.(panel.id)
 
   if (name === 'tabs' || name === 'tabNew' || name === 'tabSelect' || name === 'tabClose') {
     const controller = await waitForController(panel.id)

@@ -78,7 +78,11 @@ vi.mock('./codingAgentIntegration', () => ({
 }))
 
 import { AGENTS } from '../../../shared/agents'
-import { codingAgentSnapshot, handleCodingAgentMethod } from './codingAgentDriver'
+import {
+  codingAgentInteractionTargets,
+  codingAgentSnapshot,
+  handleCodingAgentMethod,
+} from './codingAgentDriver'
 
 describe('codingAgentDriver mission integration', () => {
   beforeEach(() => {
@@ -154,6 +158,30 @@ describe('codingAgentDriver mission integration', () => {
     applyCodingAgentWorktree.mockReset()
     keepCodingAgentWorktree.mockReset()
     discardCodingAgentWorktree.mockReset()
+  })
+
+  it('resolves interaction targets through the same supervisor ownership check', async () => {
+    const created = await handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.create',
+      { prompt: 'Implement it', agentId: 'codex' },
+    )
+    expect(created.ok).toBe(true)
+    const runId = state.app.workspaces[0].panels.worker.codingAgentRun.id
+
+    expect(codingAgentInteractionTargets(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.send',
+      { runId },
+    )).toEqual(['worker'])
+    expect(codingAgentInteractionTargets(
+      'ws',
+      'another-supervisor',
+      'cate.codingAgent.send',
+      { runId },
+    )).toEqual([])
   })
 
   it('automatically selects a hook-ready canonical agent and starts its PTY headlessly', async () => {

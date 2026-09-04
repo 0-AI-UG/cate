@@ -37,7 +37,15 @@ const h = vi.hoisted(() => ({
 }))
 
 const terminalDriver = vi.hoisted(() => ({
-  handleTerminalMethod: vi.fn(async () => ({ ok: true as const, result: { panelId: 't1', alt: false, text: 'x' } })),
+  handleTerminalMethod: vi.fn(async (
+    _workspaceId: string,
+    _method: string,
+    _args: unknown,
+    onTargetResolved?: (panelId: string) => void,
+  ) => {
+    onTargetResolved?.('t1')
+    return { ok: true as const, result: { panelId: 't1', alt: false, text: 'x' } }
+  }),
 }))
 vi.mock('../lib/terminal/terminalDriver', () => ({ handleTerminalMethod: terminalDriver.handleTerminalMethod }))
 
@@ -91,6 +99,7 @@ vi.mock('../stores/appStore', () => ({
 }))
 
 import { useCateHostActionResponder } from './useCateHostActionResponder'
+import { clearPanelInteractions, usePanelInteractionStore } from '../lib/panelInteractions'
 
 // Capture the action callback main would invoke, and the replies the hook sends.
 let actionCb: ((payload: unknown) => unknown) | null = null
@@ -138,6 +147,7 @@ const BACKGROUND_PLACEMENT = { target: 'canvas', canvasPanelId: 'canvas-1', focu
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearPanelInteractions()
   fsStat.mockResolvedValue({ isDirectory: false, isFile: true })
   h.placementForBackgroundPanel.mockReturnValue(BACKGROUND_PLACEMENT)
   h.activePanelId = null
@@ -153,6 +163,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => { root.unmount() })
   container.remove()
+  clearPanelInteractions()
 })
 
 describe('useCateHostActionResponder', () => {
@@ -332,11 +343,23 @@ describe('useCateHostActionResponder', () => {
 
   it('delegates cate.terminal.* to the terminal driver and relays its result', async () => {
     await fire('cate.terminal.read', { panelId: 't1' })
-    expect(terminalDriver.handleTerminalMethod).toHaveBeenCalledWith(WS, 'cate.terminal.read', { panelId: 't1' })
+    expect(terminalDriver.handleTerminalMethod).toHaveBeenCalledWith(
+      WS,
+      'cate.terminal.read',
+      { panelId: 't1' },
+      expect.any(Function),
+    )
     expect(replies).toContainEqual({
       requestId: 'req-cate.terminal.read',
       ok: true,
       result: { panelId: 't1', alt: false, text: 'x' },
+    })
+    expect(Object.values(usePanelInteractionStore.getState().interactions)[0]).toMatchObject({
+      workspaceId: WS,
+      sourcePanelId: 'host-panel',
+      targetPanelId: 't1',
+      kind: 'read',
+      phase: 'active',
     })
   })
 
