@@ -51,7 +51,15 @@ async function waitForWebview(panelId: string, timeoutMs = 8_000, previous?: Por
   const deadline = Date.now() + timeoutMs
   for (;;) {
     const webview = portalRegistry.get(panelId)
-    if (webview && (previous === undefined || webview !== previous)) return webview
+    if (webview && (previous === undefined || webview !== previous)) {
+      // React may have switched the active tab before the previous webview's
+      // cleanup removes it from the registry. Only hand callers a guest that
+      // Electron still considers attached.
+      try {
+        webview.getWebContentsId()
+        return webview
+      } catch { /* wait for the active tab's dom-ready registration */ }
+    }
     if (Date.now() >= deadline) return null
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
@@ -68,17 +76,19 @@ async function waitForController(panelId: string, timeoutMs = 8_000) {
 }
 
 async function waitForGuestReady(webview: PortalWebview, timeoutMs = 8_000): Promise<boolean> {
-  if (!webview.isLoading()) return true
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => { cleanup(); resolve(false) }, timeoutMs)
-    const done = () => { cleanup(); resolve(true) }
-    const cleanup = () => {
-      clearTimeout(timer)
-      webview.removeEventListener('did-stop-loading', done)
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    try {
+      webview.getWebContentsId()
+      if (!webview.isLoading()) return true
+    } catch {
+      // Tab transitions briefly leave the outgoing DOM node in the registry.
+      // It cannot become usable again; let the caller resolve the new guest.
+      return false
     }
-    webview.addEventListener('did-stop-loading', done)
-    if (!webview.isLoading()) done()
-  })
+    if (Date.now() >= deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
 }
 
 function stringArg(args: Record<string, unknown>, key: string): string | undefined {
@@ -193,11 +203,15 @@ export async function handleBrowserMethod(
     const exact = tabs.find((tab) => tab.id === tabId)
     const matches = exact ? [exact] : tabs.filter((tab) => tab.id.startsWith(tabId))
     if (matches.length !== 1) return { ok: false, error: matches.length ? 'ambiguous-tab' : 'no-such-tab' }
+    const previous = portalRegistry.get(panel.id)
+    const wasActive = matches[0].active
     const ok = name === 'tabSelect' ? controller.selectTab(matches[0].id) : controller.closeTab(matches[0].id)
     if (!ok) return { ok: false, error: 'no-such-tab' }
-    if (name === 'tabSelect') {
-      const webview = await waitForWebview(panel.id)
-      if (webview) await waitForGuestReady(webview)
+    if ((name === 'tabSelect' && !wasActive) || (name === 'tabClose' && wasActive)) {
+      const webview = await waitForWebview(panel.id, 8_000, previous)
+      if (!webview || !await waitForGuestReady(webview)) return { ok: false, error: 'webview-not-ready' }
+    } else if (name === 'tabSelect' && previous && !await waitForGuestReady(previous)) {
+      return { ok: false, error: 'webview-not-ready' }
     }
     return { ok: true, result: { tabId: matches[0].id } }
   }

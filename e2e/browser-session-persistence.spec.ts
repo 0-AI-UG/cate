@@ -98,6 +98,10 @@ test('lists a saved password and autofills username and password without exposin
     const launched = await launchApp({ userDataDir })
     app = launched.electronApp
     const page = launched.mainWindow
+    const credentialStorageAvailable = await app.evaluate(({ safeStorage }) =>
+      safeStorage.isEncryptionAvailable()
+      && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'))
+    test.skip(!credentialStorageAvailable, 'Secure credential storage is unavailable in this environment')
     const encryptedPassword = await app.evaluate(({ safeStorage }, password) =>
       safeStorage.encryptString(password).toString('base64'), 'autofill secret')
     const credentialId = '11111111-1111-4111-8111-111111111111'

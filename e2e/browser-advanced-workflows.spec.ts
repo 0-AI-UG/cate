@@ -301,6 +301,7 @@ test('controls streaming, infinite, virtualized, and content-editable interfaces
 })
 
 test('shows recovery UI and reloads after the browser guest renderer crashes', async () => {
+  test.skip(process.platform === 'linux', 'Electron does not reliably surface webview renderer crashes under Xvfb')
   const browser = await createBrowser('/crash')
   await expect.poll(() => invoke(browser, 'readCommand', {
     command: ['wait', '#alive', '--state', 'visible'],
