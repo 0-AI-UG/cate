@@ -47,6 +47,7 @@ jobs:
             platform: mac
           - os: ubuntu-latest
             platform: linux
+            docker: true
           - os: windows-latest
             platform: win
 
@@ -96,9 +97,9 @@ jobs:
 
       # The runtime tarball stages node-pty's native binary from build/Release.
       # On macOS/Windows `npm install` satisfies node-pty from a shipped prebuild
-      # and never populates build/Release, so compile from source here. On Linux
-      # node-pty ships NO prebuild, so `npm install` already built it from source
-      # into build/Release — a rebuild would just duplicate that, so skip it.
+      # and never populates build/Release, so compile from source here. Linux is
+      # rebuilt later in the pinned old-glibc container instead of using the
+      # ubuntu-latest output.
       # (node-pty is N-API: the node-20 binary runs under the bundled node-22.)
       - name: Compile node-pty from source (mac/win; Linux builds it at install)
         if: runner.os != 'Linux'
@@ -124,7 +125,7 @@ jobs:
       - name: Build + stage host runtime tarball
         shell: bash
         run: |
-          node scripts/build-runtime-tarball.mjs
+          node scripts/build-runtime-tarball.mjs ${{ matrix.docker && '--docker' || '' }}
           cp dist-runtime/cate-runtime-*.tgz dist-runtime/runtime-host.tgz
 
       # A single macOS .app can run on either CPU (x64 natively on Intel, arm64
@@ -237,9 +238,9 @@ jobs:
             --repo "${{ github.repository }}" \
             --clobber
 
-  # Per-target cate-runtime daemon tarballs. Built on the matching runner so
-  # node-pty's native binary is correct for the target; linux-arm64 is cross-
-  # built in a QEMU-emulated container (--docker). Uploaded to the same release
+  # Per-target cate-runtime daemon tarballs. macOS/Windows build on matching
+  # runners; both Linux targets use the pinned old-glibc container, with arm64
+  # running under QEMU. Uploaded to the same release
   # so a connecting host can pull its tarball straight from the release URL
   # (see src/main/runtime/runtimeArtifacts.ts).
   runtime:
@@ -250,6 +251,7 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux-x64
+            docker: true
           - os: ubuntu-latest
             target: linux-arm64
             docker: true
@@ -283,17 +285,16 @@ jobs:
         run: pip install setuptools
 
       - name: Set up QEMU (linux-arm64 cross-build)
-        if: matrix.docker
+        if: matrix.target == 'linux-arm64'
         uses: docker/setup-qemu-action@v4
 
       - name: Install dependencies
         run: npm ci
 
       # Stage node-pty from build/Release. macOS/Windows installs use a shipped
-      # prebuild (build/Release empty) so compile from source; Linux ships no
-      # prebuild, so `npm install` already built it from source. The --docker
-      # linux-arm64 cross-build compiles node-pty in the container — all of these
-      # Linux cases are exactly the ones runner.os != 'Linux' skips.
+      # prebuild (build/Release empty) so compile from source. Both Linux targets
+      # are compiled later in the pinned old-glibc container; the host build
+      # produced by npm ci is deliberately ignored.
       # The windows runner image ships Visual Studio 2026 (18.x), which node-gyp
       # only learned to detect in 12.1.0 — hence the node-gyp override in
       # package.json. Without it this step fails with "could not find any Visual

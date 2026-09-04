@@ -38,6 +38,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:ssh:loopback": "CATE_LOCAL_SSH_E2E=1 vitest run --config vitest.live.config.ts sshLoopback",
+    "test:runtime:linux-glibc": "node scripts/test-linux-node-pty-baseline.mjs",
     "test:agent-contracts": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts agentHookContracts",
     "test:e2e": "playwright test",
     "test:e2e:ci": "E2E_SKIP_PERF=1 playwright test",
