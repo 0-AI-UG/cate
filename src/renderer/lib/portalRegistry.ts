@@ -7,8 +7,8 @@
 // `dom-ready` fires (which is when getWebContentsId() returns a stable id),
 // and unregisters on unmount.
 //
-// Snapshot refs are generation-scoped tokens (for example @s2e4) injected into
-// the guest DOM and resolved by browserDriver on subsequent commands.
+// Snapshot refs are generation-scoped tokens (for example @s2e4) resolved by
+// the target-bound main-process runtime on subsequent commands.
 // =============================================================================
 
 /** Minimal subset of the DOM <webview> surface that browser automation uses. */
@@ -81,7 +81,7 @@ export interface BrowserPanelController {
   newTab(url?: string): string
   selectTab(tabId: string): boolean
   closeTab(tabId: string): boolean
-  setViewport(viewport: BrowserViewport): void
+  setViewport(viewport: BrowserViewport): Promise<void>
 }
 
 export type BrowserViewport =

@@ -56,8 +56,7 @@ export interface SharedPanelDefinition {
   keepMountedOffscreen: boolean
   /** When true, an inactive tab of this type stays mounted (hidden) in its dock
    *  stack instead of being unmounted, so its live `<webview>` guest process
-   *  survives a tab switch. Without this, switching away from a browser/extension
-   *  tab and back reloads the page and loses all in-page state (#459).
+   *  survives a tab switch.
    *  Terminals/editors leave this false: unmounting an inactive terminal frees
    *  its xterm/WebGL context (the PTY keeps running in main), which is the
    *  cheaper trade-off. */
@@ -107,8 +106,9 @@ export const PANEL_DEFINITIONS = {
     worktreeBinding: false,
     navigable: true,
     splitMenuOrder: 2,
-    // Browser automation must remain usable when an API caller creates the
-    // panel in the background without moving the user's camera.
+    // The live webview is the browser. Keep it mounted when its canvas card is
+    // culled or its dock tab is hidden so DOM, history, auth, and form state
+    // remain the same object for both the user and automation.
     keepMountedOffscreen: true,
     keepMountedWhenTabHidden: true,
   },
@@ -223,7 +223,7 @@ export function keepsMountedOffscreen(type: PanelType | string | undefined): boo
 
 /** True when an inactive tab of this type must stay mounted (hidden) in its dock
  *  stack rather than being unmounted — its live `<webview>` state can't survive a
- *  remount, so unmounting on tab switch would reload the page (#459). */
+ *  remount. */
 export function keepsMountedWhenTabHidden(type: PanelType | string | undefined): boolean {
   return !!type && getSharedPanelDef(type).keepMountedWhenTabHidden
 }

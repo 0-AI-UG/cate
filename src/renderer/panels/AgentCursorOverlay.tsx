@@ -81,11 +81,6 @@ export function AgentCursorOverlay({
   if (!event) return null
 
   const hasPoint = typeof event.x === 'number' && typeof event.y === 'number'
-  const [rawBoxLeft, rawBoxTop, rawBoxWidth, rawBoxHeight] = event.rect ?? []
-  const boxLeft = rawBoxLeft === undefined ? undefined : rawBoxLeft * scale
-  const boxTop = rawBoxTop === undefined ? undefined : rawBoxTop * scale
-  const boxWidth = rawBoxWidth === undefined ? undefined : rawBoxWidth * scale
-  const boxHeight = rawBoxHeight === undefined ? undefined : rawBoxHeight * scale
   const pointX = typeof event.x === 'number' ? event.x * scale : undefined
   const pointY = typeof event.y === 'number' ? event.y * scale : undefined
   const pointerAnimation = event.kind === 'click' || event.kind === 'dblclick'
@@ -97,13 +92,6 @@ export function AgentCursorOverlay({
         : event.kind === 'hover'
           ? 'cate-agent-pointer-hover 700ms ease-in-out'
           : undefined
-  const targetAnimation = event.kind === 'type' || event.kind === 'press'
-    ? 'cate-agent-target-type 650ms ease-out'
-    : event.kind === 'hover'
-      ? 'cate-agent-target-hover 900ms ease-in-out'
-      : event.kind === 'click' || event.kind === 'dblclick'
-        ? 'cate-agent-target-click 450ms ease-out'
-        : undefined
 
   return (
     <div
@@ -111,26 +99,6 @@ export function AgentCursorOverlay({
       style={{ opacity: visible ? 1 : 0, transition: 'opacity 400ms ease-out' }}
       aria-hidden
     >
-      {/* Target highlight — the element the action is aimed at. */}
-      {event.rect && (
-        <div
-          key={`target-${activitySerial}`}
-          data-agent-effect={event.kind}
-          className="absolute rounded-[4px]"
-          style={{
-            left: boxLeft,
-            top: boxTop,
-            width: boxWidth,
-            height: boxHeight,
-            border: '2px solid rgba(74,158,255,0.9)',
-            boxShadow: '0 0 0 3px rgba(74,158,255,0.18), 0 2px 12px rgba(74,158,255,0.35)',
-            background: 'rgba(74,158,255,0.08)',
-            transition: 'left 180ms ease-out, top 180ms ease-out, width 180ms, height 180ms',
-            animation: targetAnimation,
-          }}
-        />
-      )}
-
       {/* Drag path — a dashed line from origin to destination. */}
       {event.kind === 'drag' && hasPoint && typeof event.toX === 'number' && typeof event.toY === 'number' && (
         <svg className="absolute inset-0 w-full h-full">
@@ -159,8 +127,8 @@ export function AgentCursorOverlay({
         />
       ))}
 
-      {/* The pointer. Action feedback is visual only: click rings, target
-          pulses and pointer motion. Command labels/selectors stay out of the UI. */}
+      {/* The pointer. Action feedback is visual only: click rings and pointer
+          motion. Command labels/selectors stay out of the UI. */}
       {hasPoint && (
         <div
           data-agent-cursor
@@ -210,18 +178,6 @@ export function AgentCursorOverlay({
         @keyframes cate-agent-pointer-hover {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-3px); }
-        }
-        @keyframes cate-agent-target-click {
-          0% { opacity: 1; transform: scale(1); }
-          100% { opacity: 0.35; transform: scale(1.025); }
-        }
-        @keyframes cate-agent-target-type {
-          0%, 100% { opacity: 0.7; }
-          50% { opacity: 1; box-shadow: 0 0 0 5px rgba(74,158,255,0.24); }
-        }
-        @keyframes cate-agent-target-hover {
-          0%, 100% { opacity: 0.55; }
-          50% { opacity: 1; }
         }
       `}</style>
     </div>

@@ -11,7 +11,7 @@
 
 import { app, session, type Session } from 'electron'
 import log from './logger'
-import { watchDownloadsForSession } from './ipc/browserControl'
+import { watchDownloadsForSession } from './browser/browserDownloads'
 
 interface ProxyCredentials {
   username: string

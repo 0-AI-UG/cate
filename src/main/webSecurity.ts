@@ -3,7 +3,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import log from './logger'
 import { disableWebviewHardening } from './featureFlags'
-import { BROWSER_SHORTCUT } from '../shared/ipc-channels'
+import { BROWSER_OPEN_TAB_REQUEST, BROWSER_SHORTCUT } from '../shared/ipc-channels'
 import type { BrowserShortcutAction } from '../shared/types'
 import { getProxyOrigin, getCateHostPreloadPath } from './extensions/proxyServer'
 
@@ -54,7 +54,6 @@ function browserActionForInput(input: Electron.Input): BrowserShortcutAction | n
 const configuredGuestSessions = new WeakSet<Session>()
 const browserGuestSessions = new WeakSet<Session>()
 const browserGuestSessionPaths = new Set<string>()
-const browserPopupContents = new WeakSet<WebContents>()
 
 function isBrowserGuestSession(targetSession: Session): boolean {
   return browserGuestSessions.has(targetSession)
@@ -159,39 +158,21 @@ export function configureBrowserGuestSession(targetSession: Session): void {
   configureGuestSessionPolicies(targetSession, true)
 }
 
-function installBrowserPopupHandler(contents: WebContents): void {
+function installBrowserTabHandler(contents: WebContents): void {
   contents.setWindowOpenHandler(({ url }) => {
     if (!isBrowserGuestSession(contents.session) || !isAllowedGuestUrl(url)) {
       log.warn('[browser] Blocked popup navigation to %s', url)
       return { action: 'deny' }
     }
-    return {
-      action: 'allow',
-      outlivesOpener: false,
-      overrideBrowserWindowOptions: {
-        width: 520,
-        height: 720,
-        show: false,
-        autoHideMenuBar: true,
-        title: 'Sign in',
-        webPreferences: {
-          session: contents.session,
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: true,
-          webSecurity: true,
-        },
-      },
+    try {
+      contents.hostWebContents?.send(BROWSER_OPEN_TAB_REQUEST, {
+        openerWebContentsId: contents.id,
+        url,
+      })
+    } catch {
+      // The host disappeared while the page requested the new tab.
     }
-  })
-
-  contents.on('did-create-window', (popup) => {
-    browserPopupContents.add(popup.webContents)
-    installBrowserPopupHandler(popup.webContents)
-    popup.setMenuBarVisibility(false)
-    popup.once('ready-to-show', () => {
-      if (!popup.isDestroyed()) popup.show()
-    })
+    return { action: 'deny' }
   })
 }
 
@@ -210,7 +191,7 @@ export function installWebContentsSecurity(): void {
         }
       })
 
-      installBrowserPopupHandler(contents)
+      installBrowserTabHandler(contents)
 
       // Capture browser navigation keys (Cmd+R/[/]/L) even when the guest page
       // has keyboard focus, and forward them to the embedding renderer so the
@@ -232,12 +213,7 @@ export function installWebContentsSecurity(): void {
 
     if (contents.getType() === 'window') {
       contents.on('will-navigate', (event, url) => {
-        // Browser OAuth popups report `window`; use their session identity to
-        // keep remote navigation out of the app-window allowlist.
-        const allowed = browserPopupContents.has(contents) || isBrowserGuestSession(contents.session)
-          ? isAllowedGuestUrl(url)
-          : isTrustedAppUrl(url)
-        if (!allowed) {
+        if (!isTrustedAppUrl(url)) {
           log.warn('[security] Blocked app-window navigation to %s', url)
           event.preventDefault()
         }
@@ -273,8 +249,8 @@ export function installWebContentsSecurity(): void {
       webPreferences.webSecurity = true
       ;(webPreferences as { allowRunningInsecureContent?: boolean }).allowRunningInsecureContent = false
 
-      // Allow `window.open()` from webview content so we can track OAuth /
-      // Sign-In popups via Cate's popup registry. The setWindowOpenHandler
+      // Allow `window.open()` so sign-in popups can become tabs in the owning
+      // browser panel. The setWindowOpenHandler
       // installed when the guest's webContents is created strictly filters
       // which URLs are actually allowed; this just removes the blanket veto.
       if (!extensionGuest) params.allowpopups = 'true'

@@ -756,7 +756,7 @@
     {
       "id": "cate/cate-cli",
       "name": "cate-cli",
-      "description": "Drive Cate browser, terminal, editor, and panel surfaces from a Cate terminal. Browser page automation uses native agent-browser command syntax.",
+      "description": "Drive Cate browser, terminal, editor, and panel surfaces from a Cate terminal. Browser page automation targets Cate's live webviews directly.",
       "tags": [],
       "format": "skill-md",
       "source": {

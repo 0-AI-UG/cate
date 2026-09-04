@@ -33,7 +33,7 @@ afterEach(() => {
 })
 
 describe('AgentCursorOverlay', () => {
-  it('maps guest geometry through the same display scale as the webview', () => {
+  it('maps the guest cursor through the same display scale without a target box', () => {
     act(() => {
       root.render(<AgentCursorOverlay panelId="browser-1" scale={0.5} />)
       emitAgentCursor('browser-1', {
@@ -46,13 +46,14 @@ describe('AgentCursorOverlay', () => {
     })
 
     const cursor = host.querySelector<HTMLElement>('[data-agent-cursor]')!
-    const target = host.querySelector<HTMLElement>('[data-agent-effect="click"]')!
     expect(cursor.style.left).toBe('40px')
     expect(cursor.style.top).toBe('30px')
-    expect(target.style.left).toBe('10px')
-    expect(target.style.top).toBe('15px')
-    expect(target.style.width).toBe('50px')
-    expect(target.style.height).toBe('20px')
+    expect(Array.from(host.querySelectorAll<HTMLElement>('div')).some((element) => (
+      element.style.left === '10px'
+      && element.style.top === '15px'
+      && element.style.width === '50px'
+      && element.style.height === '20px'
+    ))).toBe(false)
   })
 
   it('renders click feedback without exposing the command label or ref', () => {
@@ -67,13 +68,14 @@ describe('AgentCursorOverlay', () => {
     })
 
     expect(host.querySelector('[data-agent-cursor]')).not.toBeNull()
-    expect(host.querySelector('[data-agent-effect="click"]')).not.toBeNull()
+    const ripple = host.querySelector<HTMLElement>('[data-agent-effect="click"]')!
+    expect(ripple.style.animation).toContain('cate-agent-ripple')
     expect(renderedText()).not.toContain('click')
     expect(renderedText()).not.toContain('@s2e5')
     expect(renderedText()).not.toContain('Agent')
   })
 
-  it('uses target animation for typing without rendering entered text', () => {
+  it('keeps the pointer animation for typing without rendering a target box or entered text', () => {
     act(() => {
       emitAgentCursor('browser-1', {
         kind: 'type',
@@ -84,7 +86,9 @@ describe('AgentCursorOverlay', () => {
       })
     })
 
-    expect(host.querySelector('[data-agent-effect="type"]')).not.toBeNull()
+    const cursorSvg = host.querySelector<SVGElement>('[data-agent-cursor] svg')!
+    expect(cursorSvg.style.animation).toContain('cate-agent-pointer-type')
+    expect(host.querySelector('[data-agent-effect="type"]')).toBeNull()
     expect(renderedText()).not.toContain('private value')
   })
 })

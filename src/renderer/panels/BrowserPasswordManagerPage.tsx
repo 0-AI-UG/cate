@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Globe, Key, MagnifyingGlass, Trash } from '@phosphor-icons/react'
+import { Globe, Key, MagnifyingGlass, Plus, Trash } from '@phosphor-icons/react'
 import type {
   BrowserCredentialProfile,
   BrowserCredentialProfilesResult,
   BrowserCredentialSuggestion,
 } from '../../shared/types'
 import { SecondaryButton, Select } from '../settings/SettingsComponents'
+import { LoadingState, Spinner } from '../ui/Spinner'
 
 type PasswordManagerTab = 'passwords' | 'advanced'
 
@@ -15,6 +16,10 @@ export function BrowserPasswordManagerPage(): JSX.Element {
   const [credentialState, setCredentialState] = useState<BrowserCredentialProfilesResult | null>(null)
   const [credentials, setCredentials] = useState<BrowserCredentialSuggestion[]>([])
   const [selectedProfile, setSelectedProfile] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [manualOrigin, setManualOrigin] = useState('')
+  const [manualUsername, setManualUsername] = useState('')
+  const [manualPassword, setManualPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -82,6 +87,35 @@ export function BrowserPasswordManagerPage(): JSX.Element {
     setCredentials((current) => current.filter((credential) => credential.id !== id))
   }
 
+  const saveManualCredential = async () => {
+    setBusy(true)
+    setMessage('')
+    try {
+      const result = await window.electronAPI.browserCredentialSave({
+        origin: manualOrigin,
+        username: manualUsername,
+        password: manualPassword,
+      })
+      setMessage(result.action === 'updated' ? 'Saved password updated.' : 'Password saved.')
+      setManualOrigin('')
+      setManualUsername('')
+      setManualPassword('')
+      setAdding(false)
+      await load()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not save password.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const cancelManualCredential = () => {
+    setManualOrigin('')
+    setManualUsername('')
+    setManualPassword('')
+    setAdding(false)
+  }
+
   const removeAll = async () => {
     if (!window.confirm('Remove all passwords imported into Cate?')) return
     await window.electronAPI.browserCredentialClear()
@@ -92,7 +126,10 @@ export function BrowserPasswordManagerPage(): JSX.Element {
   const profiles = credentialState?.profiles ?? []
 
   return (
-    <div className="h-full overflow-y-auto bg-surface-0 text-primary">
+    <div
+      data-browser-password-manager
+      className="absolute inset-0 h-full w-full overflow-y-auto bg-surface-0 text-primary"
+    >
       <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-10 py-10">
         <div className="mb-7 flex items-center gap-3">
           <Key size={26} className="text-secondary" />
@@ -115,18 +152,77 @@ export function BrowserPasswordManagerPage(): JSX.Element {
 
         {tab === 'passwords' ? (
           <>
-            <label className="relative mb-6 block">
-              <MagnifyingGlass
-                size={15}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-              />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search passwords"
-                className="w-full rounded-lg border border-subtle bg-surface-2 py-2 pl-9 pr-3 text-sm outline-none focus:border-focus-blue"
-              />
-            </label>
+            <div className="mb-6 flex gap-2">
+              <label className="relative block flex-1">
+                <MagnifyingGlass
+                  size={15}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+                />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search passwords"
+                  className="w-full rounded-lg border border-subtle bg-surface-2 py-2 pl-9 pr-3 text-sm outline-none focus:border-focus-blue"
+                />
+              </label>
+              <SecondaryButton
+                onClick={() => setAdding(true)}
+                disabled={credentialState?.secureStorageAvailable === false || adding}
+              >
+                <Plus size={14} /> Add password
+              </SecondaryButton>
+            </div>
+
+            {adding && (
+              <form
+                className="mb-6 grid gap-3 rounded-xl border border-subtle bg-surface-1 p-5"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void saveManualCredential()
+                }}
+              >
+                <label className="grid gap-1 text-xs text-muted">
+                  Website
+                  <input
+                    type="url"
+                    required
+                    value={manualOrigin}
+                    onChange={(event) => setManualOrigin(event.target.value)}
+                    placeholder="https://example.com"
+                    className="rounded-lg border border-subtle bg-surface-2 px-3 py-2 text-sm text-primary outline-none focus:border-focus-blue"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-muted">
+                  Username
+                  <input
+                    value={manualUsername}
+                    onChange={(event) => setManualUsername(event.target.value)}
+                    autoComplete="off"
+                    className="rounded-lg border border-subtle bg-surface-2 px-3 py-2 text-sm text-primary outline-none focus:border-focus-blue"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-muted">
+                  Password
+                  <input
+                    type="password"
+                    required
+                    value={manualPassword}
+                    onChange={(event) => setManualPassword(event.target.value)}
+                    autoComplete="new-password"
+                    className="rounded-lg border border-subtle bg-surface-2 px-3 py-2 text-sm text-primary outline-none focus:border-focus-blue"
+                  />
+                </label>
+                <div className="flex justify-end gap-2">
+                  <SecondaryButton type="button" onClick={cancelManualCredential} disabled={busy}>
+                    Cancel
+                  </SecondaryButton>
+                  <SecondaryButton type="submit" disabled={busy || !manualOrigin || !manualPassword}>
+                    {busy && <Spinner size={13} />}
+                    {busy ? 'Saving…' : 'Save'}
+                  </SecondaryButton>
+                </div>
+              </form>
+            )}
 
             <div className="overflow-hidden rounded-xl border border-subtle bg-surface-1">
               {filteredCredentials.length === 0 ? (
@@ -166,7 +262,7 @@ export function BrowserPasswordManagerPage(): JSX.Element {
                 Passwords are encrypted with operating-system secure storage.
               </p>
               {!credentialState ? (
-                <span className="text-xs text-muted">Checking…</span>
+                <LoadingState label="Checking secure storage…" size={13} className="justify-start text-xs" />
               ) : !credentialState.secureStorageAvailable ? (
                 <span className="text-xs text-muted">Operating-system secure storage is unavailable</span>
               ) : (
@@ -187,6 +283,7 @@ export function BrowserPasswordManagerPage(): JSX.Element {
                     </>
                   )}
                   <SecondaryButton onClick={() => void importFile()} disabled={busy}>
+                    {busy && <Spinner size={13} />}
                     {busy ? 'Importing…' : 'Choose Chrome export…'}
                   </SecondaryButton>
                 </div>

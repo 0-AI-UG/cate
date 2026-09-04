@@ -17,7 +17,7 @@
 // =============================================================================
 
 import type { AppSettings } from './types'
-import { isReadOnlyAgentBrowserCommand, validateAgentBrowserCommand } from './agentBrowserCommand'
+import { isReadOnlyBrowserCommand, validateBrowserCommand } from './browserCommand'
 
 export type CliPermissionKey = Extract<
   keyof AppSettings,
@@ -78,7 +78,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Control',
       code: 'browser-control-disabled',
       detail:
-        '`cate browser open / click / fill / type / press / eval` — act on the page with native agent-browser commands, using your live logged-in sessions.',
+        '`cate browser open / click / fill / type / press / eval` — act on the page through the selected live browser webview.',
     },
   },
   {
@@ -207,7 +207,7 @@ export function cliPermissionForRequest(
       const raw = args && typeof args === 'object'
         ? (args as { command?: unknown }).command
         : undefined
-      if (!isReadOnlyAgentBrowserCommand(validateAgentBrowserCommand(raw))) {
+      if (!isReadOnlyBrowserCommand(validateBrowserCommand(raw))) {
         return CLI_PERMISSIONS[0].control
       }
     } catch {
