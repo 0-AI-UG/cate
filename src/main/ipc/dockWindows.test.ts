@@ -54,6 +54,8 @@ import {
   WORKTREE_REMOVED,
   REVEAL_PANEL_IN_WINDOW,
   CLOSE_PANEL_IN_WINDOW,
+  OPEN_WINDOW_REVIEW,
+  OPEN_REVIEW_IN_WINDOW,
 } from '../../shared/ipc-channels'
 import type {
   DetachedDockWindowSnapshot,
@@ -331,6 +333,20 @@ describe('FOCUS_WINDOW_PANEL / CLOSE_WINDOW_PANEL', () => {
     const requestId = routed?.args[1] as string
     await invoke(CLOSE_PANEL_IN_WINDOW_RESULT, senderFor(dock), requestId, true)
     await expect(closeResult).resolves.toBe(true)
+  })
+
+  it('routes a Review deep link to the panel owner', async () => {
+    open(1, 'main', 'ws-A')
+    const dock = open(213, 'dock', 'ws-A')
+    setWindowPanels(213, [{
+      panelId: 'review-1', type: 'review', title: 'Diff Review', workspaceId: 'ws-A', reviewRepoPath: '/repo',
+    }])
+    const request = { spec: { kind: 'unstaged' }, focusedFile: 'src/a.ts' }
+
+    expect(await invoke(OPEN_WINDOW_REVIEW, senderFor(null), 'review-1', request)).toBe(true)
+
+    expect(dock.focus).toHaveBeenCalled()
+    expect(dock.sent).toContainEqual({ channel: OPEN_REVIEW_IN_WINDOW, args: ['review-1', request] })
   })
 
   it('is a silent no-op for an unknown panel (the not-found boolean is swallowed)', async () => {

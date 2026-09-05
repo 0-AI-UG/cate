@@ -294,6 +294,13 @@ describe('windowPanelSync — placed-only report + derived titles', () => {
             activeTabId: 'tab1',
           } as PanelState,
           e1: { id: 'e1', type: 'editor', title: '', isDirty: false, filePath: '/x/src/main.ts' } as PanelState,
+          r1: {
+            id: 'r1', type: 'review', title: 'Diff Review', isDirty: false,
+            reviewState: {
+              repoPath: '/x', spec: { kind: 'uncommitted' },
+              display: { split: false, wordDiff: true, wrap: false, fullFile: false, advancedPreview: true },
+            },
+          } as PanelState,
         },
       } as any],
       selectedWorkspaceId: ws,
@@ -310,6 +317,7 @@ describe('windowPanelSync — placed-only report + derived titles', () => {
     expect(byId.e1?.title).toBe('main.ts')
     expect(byId.e1?.filePath).toBe('/x/src/main.ts')
     expect(byId.e1?.focused).toBe(false)
+    expect(byId.r1?.reviewRepoPath).toBe('/x')
 
     reports.length = 0
     setActivePanel('e1')

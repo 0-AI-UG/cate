@@ -1,6 +1,5 @@
 // =============================================================================
 // EditorPanel — Monaco Editor wrapper for CanvasIDE editor panels.
-// Supports both regular editing and git diff viewing modes.
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react'
@@ -227,68 +226,6 @@ function detectLanguage(filePath: string): string {
 }
 
 // -----------------------------------------------------------------------------
-// Helper: reconstruct original content from current content + unified diff
-// -----------------------------------------------------------------------------
-
-function reconstructOriginalFromDiff(currentContent: string, diff: string): string {
-  if (!diff) return currentContent
-
-  const currentLines = currentContent.split('\n')
-  const diffLines = diff.split('\n')
-  const originalLines: string[] = []
-
-  let currentIdx = 0
-  let i = 0
-
-  // Skip diff headers (diff --git, index, ---, +++)
-  while (i < diffLines.length && !diffLines[i].startsWith('@@')) {
-    i++
-  }
-
-  while (i < diffLines.length) {
-    const line = diffLines[i]
-
-    if (line.startsWith('@@')) {
-      const match = line.match(/@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/)
-      if (match) {
-        const newStart = parseInt(match[3], 10) - 1
-
-        // Copy unchanged lines before this hunk
-        while (currentIdx < newStart && currentIdx < currentLines.length) {
-          originalLines.push(currentLines[currentIdx])
-          currentIdx++
-        }
-      }
-      i++
-      continue
-    }
-
-    if (line.startsWith('-')) {
-      // Line exists in original but was removed
-      originalLines.push(line.slice(1))
-      i++
-    } else if (line.startsWith('+')) {
-      // Line was added in modified — skip in original
-      currentIdx++
-      i++
-    } else {
-      // Context line
-      originalLines.push(currentLines[currentIdx] ?? line.slice(1))
-      currentIdx++
-      i++
-    }
-  }
-
-  // Copy remaining unchanged lines
-  while (currentIdx < currentLines.length) {
-    originalLines.push(currentLines[currentIdx])
-    currentIdx++
-  }
-
-  return originalLines.join('\n')
-}
-
-// -----------------------------------------------------------------------------
 // EditorPanel component
 // -----------------------------------------------------------------------------
 
@@ -301,7 +238,6 @@ export default function EditorPanel({
   useRenderCount('EditorPanel')
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
-  const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
   const diffOverlayRef = useRef<HTMLDivElement>(null)
 
   const [markdownContent, setMarkdownContent] = useState('')
@@ -311,7 +247,6 @@ export default function EditorPanel({
   const workspaces = useAppStore((s) => s.workspaces)
   const ws = workspaces.find((w) => w.id === workspaceId)
   const panel = ws?.panels[panelId]
-  const diffMode = panel?.diffMode
   // Preview mode is kept per-panel in the store rather than as local state: a
   // single EditorPanel mount is reused across dock tabs (renderPanelComponent
   // creates the element without a key), so local state would leak the toggle
@@ -336,7 +271,7 @@ export default function EditorPanel({
     let raf = 0
     let tries = 0
     const tryFocus = (): void => {
-      const editor = editorRef.current ?? diffEditorRef.current
+      const editor = editorRef.current
       if (editor) { editor.focus(); return }
       if (tries++ < 10) raf = requestAnimationFrame(tryFocus)
     }
@@ -370,7 +305,6 @@ export default function EditorPanel({
     panelId,
     filePath,
     rootPath: checkoutRoot,
-    diffMode,
     getModel,
     onExternalReplace,
   })
@@ -388,7 +322,7 @@ export default function EditorPanel({
   } = sync
 
   // ---------------------------------------------------------------------------
-  // Mount: create regular editor OR diff editor
+  // Mount: create the editor
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
@@ -399,81 +333,6 @@ export default function EditorPanel({
     const fontSize = useSettingsStore.getState().editorFontSize
     const fontFamily = resolveEditorFontFamily(useSettingsStore.getState().editorFontFamily)
 
-    // =======================================================================
-    // DIFF MODE — Monaco diff editor
-    // =======================================================================
-    if (diffMode && filePath && checkoutRoot) {
-      const diffEditor = monaco.editor.createDiffEditor(containerRef.current, {
-        theme: CATE_MONACO_THEME,
-        fontFamily,
-        fontSize: fontSize || 12,
-        automaticLayout: false,
-        readOnly: true,
-        renderSideBySide: true,
-        useInlineViewWhenSpaceIsLimited: false,
-        scrollBeyondLastLine: false,
-        minimap: { enabled: false },
-        padding: { top: 8, bottom: 8 },
-      })
-
-      diffEditorRef.current = diffEditor
-
-      const layoutObserver = new ResizeObserver(() => {
-        diffEditor.layout()
-      })
-      layoutObserver.observe(containerRef.current)
-
-      const language = detectLanguage(filePath)
-      const relativePath = toRelativePath(filePath, checkoutRoot)
-
-      let cancelled = false
-
-      const loadDiff = async () => {
-        let modifiedContent = ''
-        try {
-          modifiedContent = await window.electronAPI.fsReadFile(filePath, workspaceId)
-        } catch { /* empty */ }
-
-        let originalContent = ''
-        try {
-          const diff = diffMode === 'staged'
-            ? await window.electronAPI.gitDiffStaged(checkoutRoot, relativePath, workspaceId)
-            : await window.electronAPI.gitDiff(checkoutRoot, relativePath, workspaceId)
-          originalContent = reconstructOriginalFromDiff(modifiedContent, diff)
-        } catch {
-          originalContent = modifiedContent
-        }
-
-        if (cancelled) return
-
-        const originalModel = monaco.editor.createModel(originalContent, language)
-        const modifiedModel = monaco.editor.createModel(modifiedContent, language)
-
-        diffEditor.setModel({
-          original: originalModel,
-          modified: modifiedModel,
-        })
-      }
-
-      loadDiff()
-
-      return () => {
-        cancelled = true
-        layoutObserver.disconnect()
-        const model = diffEditor.getModel()
-        // Dispose the diff editor BEFORE its models — Monaco's DiffEditorWidget
-        // still references them during teardown and throws "TextModel got disposed
-        // before DiffEditorWidget model got reset" otherwise.
-        diffEditor.dispose()
-        model?.original?.dispose()
-        model?.modified?.dispose()
-        diffEditorRef.current = null
-      }
-    }
-
-    // =======================================================================
-    // REGULAR EDITOR
-    // =======================================================================
     const editor = monaco.editor.create(containerRef.current, {
       theme: CATE_MONACO_THEME,
       fontFamily,
@@ -646,7 +505,7 @@ export default function EditorPanel({
       editorRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filePath, workspaceId, diffMode])
+  }, [filePath, workspaceId])
 
   // ---------------------------------------------------------------------------
   // Listen for save-file custom event
@@ -681,14 +540,10 @@ export default function EditorPanel({
         if (editorRef.current) {
           editorRef.current.updateOptions({ fontSize: state.editorFontSize })
         }
-        if (diffEditorRef.current) {
-          diffEditorRef.current.updateOptions({ fontSize: state.editorFontSize })
-        }
       }
       if (state.editorFontFamily !== prevState.editorFontFamily) {
         const fontFamily = resolveEditorFontFamily(state.editorFontFamily)
         editorRef.current?.updateOptions({ fontFamily })
-        diffEditorRef.current?.updateOptions({ fontFamily })
         // Cached glyph metrics belong to the old font; without this, layout
         // (cursor position, selection width) stays measured for the old face.
         monaco.editor.remeasureFonts()
@@ -712,7 +567,6 @@ export default function EditorPanel({
     } else {
       // Re-layout Monaco after unhiding — dimensions may have changed while hidden
       editorRef.current?.layout()
-      diffEditorRef.current?.layout()
     }
   }, [markdownPreview, isMarkdown, filePath, workspaceId])
 
@@ -782,7 +636,7 @@ export default function EditorPanel({
 
   return (
     <div className="w-full h-full flex flex-col">
-      {conflict && !diffMode && (
+      {conflict && (
         <EditorConflictBanner
           kind={conflict.kind}
           showDiff={showDiff}
@@ -804,18 +658,18 @@ export default function EditorPanel({
         {markdownPreview && isMarkdown && (
           <MarkdownPreview content={markdownContent} />
         )}
-        {loadError && !diffMode && (
+        {loadError && (
           <PanelCenteredState
             className="absolute inset-0 z-20 bg-surface-1 px-6"
             title="Couldn’t open this file"
             description={<span className="break-all text-secondary">{loadError}</span>}
           />
         )}
-        {fileLoading && !diffMode && (
+        {fileLoading && (
           <LoadingState label="Loading file…" className="absolute inset-0 z-20 bg-surface-1 text-sm" />
         )}
         <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
-        {!filePath && !diffMode && !isDirty && (
+        {!filePath && !isDirty && (
           <button
             onClick={() => openFilePalette(panelId)}
             className="absolute top-2 right-3 z-40 flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium bg-surface-3 text-secondary shadow-sm hover:bg-surface-4 hover:text-primary transition-colors"
@@ -829,7 +683,7 @@ export default function EditorPanel({
             of taking a header row. right-3 (12px) clears Monaco's 8px vertical
             scrollbar lane; z-40 keeps it above the diff (z-30) and load-error
             (z-20) overlays, matching the reach it had as a header. */}
-        {isMarkdown && !diffMode && (
+        {isMarkdown && (
           <button
             onClick={() => setMarkdownPreview(!markdownPreview)}
             className={`absolute top-1.5 right-3 z-40 px-2 py-0.5 rounded text-[11px] font-medium shadow-sm transition-colors ${

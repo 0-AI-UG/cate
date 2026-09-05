@@ -196,6 +196,18 @@ describe('agent orchestration surface', () => {
     })
   })
 
+  it('targets an existing terminal for agent creation', () => {
+    const parsed = parseCli([
+      'agent', 'create', 'Review', 'the diff', '--terminal', 'term1234',
+    ])
+    expect(buildRequest(parsed.positionals, parsed.flags)).toEqual({
+      method: 'cate.codingAgent.create',
+      args: { prompt: 'Review the diff', terminalPanelId: 'term1234' },
+      resolvePanel: 'terminal',
+      resolvePanelArg: 'terminalPanelId',
+    })
+  })
+
   it('maps the complete lifecycle and validates worktree options', () => {
     expect(buildRequest(['agent', 'list'], flags)).toEqual({
       method: 'cate.codingAgent.list', args: {},
@@ -236,6 +248,49 @@ describe('agent orchestration surface', () => {
       ['agent', 'wait'],
       { ...flags, waitTimeout: '1000' },
     )).toThrow(/between 5000 and 60000/)
+  })
+})
+
+describe('review surface', () => {
+  it('uses the selected CLI panel when --panel is omitted', () => {
+    expect(buildRequest(['review', 'inspect'], flags)).toEqual({
+      method: 'cate.review.inspect',
+      args: {},
+    })
+    expect(buildRequest(['review', 'complete'], flags)).toEqual({
+      method: 'cate.review.complete',
+      args: {},
+    })
+  })
+
+  it('resolves an explicit review panel and creates structured notes', () => {
+    const parsed = parseCli([
+      'review', 'note', 'add', '--panel', 'review12', '--file', 'src/a.ts',
+      '--line', '42', '--side', 'new', '--severity', 'error', '--body', 'Handle failure',
+    ])
+    expect(buildRequest(parsed.positionals, parsed.flags)).toEqual({
+      method: 'cate.review.note.add',
+      args: {
+        panelId: 'review12',
+        file: 'src/a.ts',
+        line: 42,
+        side: 'new',
+        severity: 'error',
+        body: 'Handle failure',
+      },
+      resolvePanel: 'review',
+    })
+  })
+
+  it('validates note locations', () => {
+    const missingLine = parseCli([
+      'review', 'note', 'add', '--file', 'src/a.ts', '--side', 'old', '--body', 'Broken',
+    ])
+    expect(() => buildRequest(missingLine.positionals, missingLine.flags)).toThrow(/--line is required/)
+    const fileLine = parseCli([
+      'review', 'note', 'add', '--file', 'src/a.ts', '--side', 'file', '--line', '3', '--body', 'Broken',
+    ])
+    expect(() => buildRequest(fileLine.positionals, fileLine.flags)).toThrow(/invalid <side>/)
   })
 })
 
@@ -318,6 +373,15 @@ describe('transport and panel resolution', () => {
     ])
     await expect(resolvePanel('abcd1234-b', 'browser', deps)).resolves.toBe('abcd1234-browser')
     await expect(resolvePanel('abcd1234-t', 'browser', deps)).rejects.toThrow(/no browser panel/)
+  })
+
+  it('resolves only review panels for review commands', async () => {
+    const deps = panelDeps([
+      { panelId: 'review123-full', type: 'review' },
+      { panelId: 'review456-terminal', type: 'terminal' },
+    ])
+    await expect(resolvePanel('review123', 'review', deps)).resolves.toBe('review123-full')
+    await expect(resolvePanel('review456', 'review', deps)).rejects.toThrow(/no review panel/)
   })
 
   it('resolves exact or unique short agent run ids', async () => {

@@ -426,6 +426,39 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
     ]) {
       expect(requiredScopeFor(`cate.codingAgent.${verb}`)).toBe('coding-agent')
     }
+    for (const method of [
+      'cate.review.inspect', 'cate.review.note.add', 'cate.review.note.resolve', 'cate.review.complete',
+    ]) {
+      expect(requiredScopeFor(method)).toBe('panel')
+    }
+  })
+
+  it('routes review commands to the window that owns the review panel', async () => {
+    const send = vi.fn(() => { throw new Error('closed for test') })
+    windowsById.set(8, { isDestroyed: () => false, webContents: { send } })
+    windowPanelList.value = [{
+      panelId: 'review-panel',
+      type: 'review',
+      workspaceId: WS,
+      ownerWindowId: 8,
+    }]
+
+    const result = await dispatchCateInvoke({
+      extensionId: 'terminal',
+      workspaceId: WS,
+      panelId: 'reviewer-terminal',
+      caller: 'first-party',
+      grantedScopes: ['panel'],
+      forward: vi.fn(),
+    }, 'cate.review.inspect', { panelId: 'review-panel' })
+
+    expect(result).toEqual({ error: 'no-owner', method: 'cate.review.inspect' })
+    expect(send).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      workspaceId: WS,
+      panelId: 'reviewer-terminal',
+      method: 'cate.review.inspect',
+      args: { panelId: 'review-panel' },
+    }))
   })
 
   it('forwards orchestration only for the embedded Cate Agent and carries its cwd', async () => {
@@ -530,6 +563,36 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
       method: 'cate.codingAgent.create',
     })
     expect(forward).not.toHaveBeenCalled()
+  })
+
+  it('launches into an existing terminal in the window that owns it', async () => {
+    const send = vi.fn(() => { throw new Error('closed for test') })
+    windowsById.set(9, { isDestroyed: () => false, webContents: { send } })
+    windowPanelList.value = [{
+      panelId: 'target-terminal',
+      type: 'terminal',
+      workspaceId: WS,
+      ownerWindowId: 9,
+    }]
+
+    const result = await dispatchCateInvoke({
+      extensionId: 'terminal',
+      workspaceId: WS,
+      panelId: 'caller-terminal',
+      caller: 'first-party',
+      grantedScopes: ['coding-agent'],
+      forward: vi.fn(),
+    }, 'cate.codingAgent.create', {
+      prompt: 'Review it',
+      terminalPanelId: 'target-terminal',
+    })
+
+    expect(result).toEqual({ error: 'no-owner', method: 'cate.codingAgent.create' })
+    expect(send).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      panelId: 'caller-terminal',
+      method: 'cate.codingAgent.create',
+      args: expect.objectContaining({ terminalPanelId: 'target-terminal' }),
+    }))
   })
 
   it('routes a transferred worker to its exact owner window', async () => {
@@ -1363,6 +1426,8 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
     expect(cliPermissionForMethod('cate.browser.somethingNew')?.key).toBe('cliBrowserControlEnabled')
     expect(cliPermissionForMethod('cate.panel.somethingNew')?.key).toBe('cliPanelControlEnabled')
     expect(cliPermissionForMethod('cate.codingAgent.somethingNew')?.key).toBe('cliAgentControlEnabled')
+    expect(cliPermissionForMethod('cate.review.inspect')?.key).toBe('cliAgentReadEnabled')
+    expect(cliPermissionForMethod('cate.review.somethingNew')?.key).toBe('cliAgentControlEnabled')
     // Namespaces the matrix doesn't cover stay governed by scopes alone.
     expect(cliPermissionForMethod('cate.storage.get')).toBeUndefined()
     expect(cliPermissionForMethod('cate.version')).toBeUndefined()

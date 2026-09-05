@@ -15,7 +15,7 @@ import { viewToCanvas } from '../lib/canvas/coordinates'
 import CanvasGrid from './CanvasGrid'
 import CanvasBackgroundImage from './CanvasBackgroundImage'
 import SnapGuides from './SnapGuides'
-import GhostPlacementLayer from './GhostPlacementLayer'
+import PanelTargetLayer from './PanelTargetLayer'
 import PlacementVizOverlay from './placementViz/PlacementVizOverlay'
 import { WorktreeTerritoryLayer } from './worktree'
 import type { Point, PanelType } from '../../shared/types'
@@ -109,7 +109,7 @@ const Dot: React.FC = () => (
 )
 
 const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = ({ canvasRef }) => {
-  const pending = useCanvasStoreContext((s) => s.pendingPlacement)
+  const pending = useCanvasStoreContext((s) => s.pendingPanelTarget)
   if (!pending) return null
   const r = canvasRef.current?.getBoundingClientRect()
   if (!r) return null
@@ -117,7 +117,7 @@ const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = 
   // rect itself is the visible region.
   const visLeft = r.left
   const visRight = r.right
-  const count = pending.candidates.length
+  const count = pending.candidates.length + pending.existing.length
   const armed = pending.freeArmed
 
   return createPortal(
@@ -142,8 +142,10 @@ const PlacementHint: React.FC<{ canvasRef: React.RefObject<HTMLDivElement> }> = 
         <span>
           {armed ? (
             <>Click anywhere to place<Dot /><Kbd>F</Kbd> to go back<Dot /><Kbd>Esc</Kbd> to cancel</>
+          ) : pending.availability !== 'new' ? (
+            <>Choose {pending.availability === 'both' ? 'a new or existing' : 'an existing'} {pending.panelType} panel<Dot /><Kbd>1</Kbd>{count > 1 ? <>–<Kbd>{Math.min(count, 9)}</Kbd></> : null}{pending.availability === 'both' ? <><Dot /><Kbd>F</Kbd> anywhere</> : null}<Dot /><Kbd>Esc</Kbd> to cancel</>
           ) : (
-            <>Pick a spot<Dot /><Kbd>1</Kbd>{count > 1 ? <>–<Kbd>{count}</Kbd></> : null} or click a ghost<Dot /><Kbd>F</Kbd> anywhere<Dot /><Kbd>Esc</Kbd> to cancel</>
+            <>Pick a spot<Dot /><Kbd>1</Kbd>{count > 1 ? <>–<Kbd>{Math.min(count, 9)}</Kbd></> : null} or click a ghost<Dot /><Kbd>F</Kbd> anywhere<Dot /><Kbd>Esc</Kbd> to cancel</>
           )}
         </span>
       </div>
@@ -408,9 +410,9 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
       // itself), clicking another panel re-targets the recommendations to it (the
       // node's focus change drives refreshPlacement), and a click on genuinely
       // empty canvas — neither ghost nor node — cancels.
-      if (canvasApi.getState().pendingPlacement) {
-        if (!target.closest('[data-ghost-candidate]') && !target.closest('[data-node-id]')) {
-          canvasApi.getState().cancelPlacement()
+      if (canvasApi.getState().pendingPanelTarget) {
+        if (!target.closest('[data-panel-target]') && !target.closest('[data-node-id]')) {
+          canvasApi.getState().cancelPanelTarget()
         }
         return
       }
@@ -588,7 +590,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
           { id: 'new-editor', label: 'New Editor' },
           { id: 'new-browser', label: 'New Browser' },
           { id: 'new-agent', label: 'New Agent' },
-          { id: 'new-review', label: 'New Review' },
           { id: 'new-canvas', label: 'New Canvas' },
           { type: 'separator' as const },
         )
@@ -621,7 +622,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
         case 'new-editor': onCreateAtPoint?.('editor', point); break
         case 'new-browser': onCreateAtPoint?.('browser', point); break
         case 'new-agent': onCreateAtPoint?.('cateAgent', point); break
-        case 'new-review': onCreateAtPoint?.('review', point); break
         case 'new-canvas': onCreateAtPoint?.('canvas', point); break
         case 'auto-layout':
           canvasApi.getState().autoLayout()
@@ -740,9 +740,9 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
               transformOrigin: '0 0',
               pointerEvents: 'none',
             }}
-          >
-            {marqueeElement}
-            <GhostPlacementLayer canvasRef={canvasRef} />
+            >
+              {marqueeElement}
+            <PanelTargetLayer canvasRef={canvasRef} />
             {(import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV && <PlacementVizOverlay />}
           </div>
           {overlayChildren}

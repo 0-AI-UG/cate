@@ -63,8 +63,6 @@ describe('vcs.worktreeMergeTo', () => {
       commits: [{ message: 'feature change' }],
       files: [{ status: 'M', path: 'shared.txt' }],
     })
-    expect(committed.diff).toContain('+feature')
-
     await fs.writeFile(path.join(root, 'uncommitted.txt'), 'not ready\n')
     const dirty = await vcs().worktreeReview(root, primaryBranch, access)
 

@@ -15,6 +15,7 @@ const panelClose = vi.hoisted(() => ({
     state.removeWorktree(workspaceId, worktreeId)
   }),
 }))
+const openReviewPanel = vi.hoisted(() => vi.fn(async () => 'review-panel'))
 
 vi.mock('../../stores/appStore', () => ({
   useAppStore: {
@@ -35,11 +36,13 @@ vi.mock('../worktreePanelClose', () => ({
   closePreparedWorktreePanels: panelClose.close,
   removeWorktreeFromAllWindows: panelClose.removeEverywhere,
 }))
+vi.mock('../review/openReviewPanel', () => ({ openReviewPanel }))
 
 import {
   applyCodingAgentWorktree,
   discardCodingAgentWorktree,
   keepCodingAgentWorktree,
+  openCodingAgentReviewPanel,
   reviewCodingAgentWorktree,
 } from './codingAgentIntegration'
 
@@ -52,8 +55,6 @@ describe('coding-agent worktree integration', () => {
     commits: [{ hash: 'abc', message: 'Implement API' }],
     files: [{ status: 'M', path: 'api.ts' }],
     workingFiles: [],
-    diff: 'diff',
-    truncated: false,
   }
 
   beforeEach(() => {
@@ -95,6 +96,26 @@ describe('coding-agent worktree integration', () => {
   it('reviews against the primary checkout current branch', async () => {
     await expect(reviewCodingAgentWorktree('ws', 'worker')).resolves.toEqual(review)
     expect(window.electronAPI.gitWorktreeReview).toHaveBeenCalledWith('/repo-wt', 'main', 'ws')
+  })
+
+  it('opens committed worker changes in the shared review panel', async () => {
+    await expect(openCodingAgentReviewPanel('ws', 'worker', review)).resolves.toBe('review-panel')
+    expect(openReviewPanel).toHaveBeenCalledWith({
+      workspaceId: 'ws',
+      repoPath: '/repo-wt',
+      spec: { kind: 'branch', base: 'main', target: 'agent/api' },
+      sourceAgent: { runId: 'run-1', ownerPanelId: 'supervisor', panelId: 'worker' },
+    })
+  })
+
+  it('opens dirty worker changes as an uncommitted review', async () => {
+    await openCodingAgentReviewPanel('ws', 'worker', { ...review, dirty: true })
+    expect(openReviewPanel).toHaveBeenCalledWith({
+      workspaceId: 'ws',
+      repoPath: '/repo-wt',
+      spec: { kind: 'uncommitted' },
+      sourceAgent: { runId: 'run-1', ownerPanelId: 'supervisor', panelId: 'worker' },
+    })
   })
 
   it('rechecks readiness and records a successful guarded merge', async () => {

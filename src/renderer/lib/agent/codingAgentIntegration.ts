@@ -7,6 +7,7 @@ import {
   removeWorktreeFromAllWindows,
   worktreePanelCloseTargets,
 } from '../worktreePanelClose'
+import { openReviewPanel } from '../review/openReviewPanel'
 
 export type CodingAgentWorktreeReview = Awaited<ReturnType<ElectronAPI['gitWorktreeReview']>>
 
@@ -29,6 +30,28 @@ export async function reviewCodingAgentWorktree(
   const primary = await window.electronAPI.gitStatus(workspace.rootPath, workspaceId)
   if (!primary.current) throw new Error('target-branch-not-found')
   return window.electronAPI.gitWorktreeReview(worktree.path, primary.current, workspaceId)
+}
+
+export async function openCodingAgentReviewPanel(
+  workspaceId: string,
+  panelId: string,
+  currentReview?: CodingAgentWorktreeReview,
+): Promise<string> {
+  const { run, worktree } = context(workspaceId, panelId)
+  const review = currentReview ?? await reviewCodingAgentWorktree(workspaceId, panelId)
+  const spec = review.dirty
+    ? { kind: 'uncommitted' as const }
+    : {
+        kind: 'branch' as const,
+        base: review.baseBranch,
+        target: review.branch || 'HEAD',
+      }
+  return openReviewPanel({
+    workspaceId,
+    repoPath: worktree.path,
+    spec,
+    sourceAgent: { runId: run.id, ownerPanelId: run.ownerPanelId, panelId },
+  })
 }
 
 export async function applyCodingAgentWorktree(

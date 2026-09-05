@@ -230,8 +230,6 @@ export class RpcServer {
       case Methods.vcsInit: return api.vcs.init(s(0), a(1))
       case Methods.vcsLsFiles: return api.vcs.lsFiles(s(0), a(1))
       case Methods.vcsStatus: return api.vcs.status(s(0), a(1))
-      case Methods.vcsDiff: return api.vcs.diff(s(0), p[1] as string | undefined, a(2))
-      case Methods.vcsDiffStaged: return api.vcs.diffStaged(s(0), p[1] as string | undefined, a(2))
       case Methods.vcsCompare: return api.vcs.compare(s(0), p[1] as never, a(2))
       case Methods.vcsFileDiff: return api.vcs.fileDiff(s(0), p[1] as never, s(2), p[3] as never, a(4))
       case Methods.vcsFileContent: return api.vcs.fileContent(s(0), p[1] as never, s(2), s(3) as 'old' | 'new', a(4))

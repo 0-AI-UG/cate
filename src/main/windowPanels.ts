@@ -18,8 +18,8 @@
 // getters and subscribes to onWindowClosed; windowRegistry never imports it.
 // =============================================================================
 
-import type { WindowPanelInfo, WindowPanelReport } from '../shared/types'
-import { WINDOW_PANELS_CHANGED, REVEAL_PANEL_IN_WINDOW, CLOSE_PANEL_IN_WINDOW } from '../shared/ipc-channels'
+import type { ReviewPanelOpenRequest, WindowPanelInfo, WindowPanelReport } from '../shared/types'
+import { WINDOW_PANELS_CHANGED, REVEAL_PANEL_IN_WINDOW, OPEN_REVIEW_IN_WINDOW, CLOSE_PANEL_IN_WINDOW } from '../shared/ipc-channels'
 import { broadcastToAll, focusWindow, getWindow, getWindowType, onWindowClosed, sendToWindow } from './windowRegistry'
 
 /** The latest panel report from each window, keyed by Electron window id. */
@@ -46,6 +46,7 @@ export function setWindowPanels(windowId: number, report: WindowPanelReport[]): 
       workspaceId: p.workspaceId,
       filePath: p.filePath,
       url: p.url,
+      reviewRepoPath: p.reviewRepoPath,
       focused: p.focused,
       ownerWindowId: windowId,
       ownerWindowType,
@@ -77,6 +78,7 @@ export function upsertWindowPanel(windowId: number, panel: WindowPanelReport): v
     workspaceId: panel.workspaceId,
     filePath: panel.filePath,
     url: panel.url,
+    reviewRepoPath: panel.reviewRepoPath,
     focused: panel.focused,
     ownerWindowId: windowId,
     ownerWindowType,
@@ -144,7 +146,7 @@ let lastWindowPanelSignature = ''
 export function broadcastWindowPanels(): void {
   const panels = getWindowPanels()
   const signature = panels
-    .map((p) => `${p.ownerWindowId}:${p.panelId}:${p.type}:${p.title}:${p.workspaceId}:${p.filePath ?? ''}:${p.url ?? ''}:${p.focused ? 1 : 0}:${p.parentCanvasId ?? ''}:${p.worktreeId ?? ''}:${p.agentState ?? ''}:${p.agentName ?? ''}:${p.hasPorts ? 1 : 0}:${p.codingAgentRunId ?? ''}:${p.codingAgentOwnerPanelId ?? ''}:${p.codingAgentStatus ?? ''}`)
+    .map((p) => `${p.ownerWindowId}:${p.panelId}:${p.type}:${p.title}:${p.workspaceId}:${p.filePath ?? ''}:${p.url ?? ''}:${p.reviewRepoPath ?? ''}:${p.focused ? 1 : 0}:${p.parentCanvasId ?? ''}:${p.worktreeId ?? ''}:${p.agentState ?? ''}:${p.agentName ?? ''}:${p.hasPorts ? 1 : 0}:${p.codingAgentRunId ?? ''}:${p.codingAgentOwnerPanelId ?? ''}:${p.codingAgentStatus ?? ''}`)
     .sort()
     .join('|')
   if (signature === lastWindowPanelSignature) return
@@ -162,6 +164,19 @@ export function revealWindowPanel(panelId: string): boolean {
   if (!win) return false
   focusWindow(win)
   sendToWindow(owner.ownerWindowId, REVEAL_PANEL_IN_WINDOW, panelId)
+  return true
+}
+
+/** Retarget and reveal an existing Review panel in its owning renderer. The
+ * owner merges the request into its full local state, avoiding a cross-window
+ * copy of notes and display preferences. */
+export function openWindowReviewPanel(panelId: string, request: ReviewPanelOpenRequest): boolean {
+  const owner = getWindowPanels().find((p) => p.panelId === panelId && p.type === 'review')
+  if (!owner) return false
+  const win = getWindow(owner.ownerWindowId)
+  if (!win) return false
+  focusWindow(win)
+  sendToWindow(owner.ownerWindowId, OPEN_REVIEW_IN_WINDOW, panelId, request)
   return true
 }
 

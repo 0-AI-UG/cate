@@ -47,6 +47,27 @@ describe('Git review comparisons', () => {
     expect(all.additions).toBeGreaterThanOrEqual(3)
   })
 
+  test('reviews staged changes before the first commit', async () => {
+    const emptyRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'cate-review-unborn-'))
+    try {
+      const git = simpleGit(emptyRepo)
+      await git.init()
+      await fs.writeFile(path.join(emptyRepo, 'first.txt'), 'first\n')
+      await git.add('first.txt')
+
+      const staged = await vcs.compare(emptyRepo, { kind: 'staged' }, access)
+      expect(staged.resolvedBase).toBeNull()
+      expect(staged.files).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: 'first.txt', status: 'added', additions: 1 }),
+      ]))
+
+      const all = await vcs.compare(emptyRepo, { kind: 'uncommitted' }, access)
+      expect(all.files.map((file) => file.path)).toEqual(['first.txt'])
+    } finally {
+      await fs.rm(emptyRepo, { recursive: true, force: true })
+    }
+  })
+
   test('loads structured hunks and root commit diffs', async () => {
     await fs.writeFile(path.join(repo, 'tracked.txt'), 'changed\n')
     const working = await vcs.fileDiff(repo, { kind: 'unstaged' }, 'tracked.txt', undefined, access)

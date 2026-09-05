@@ -39,12 +39,13 @@ const REVIEW_PATCH_MAX_BYTES = 2 * 1024 * 1024
 const REVIEW_PATCH_MAX_LINES = 20_000
 const REVIEW_CONTENT_MAX_BYTES = 25 * 1024 * 1024
 
-function gitBuffer(cwd: string, args: string[], env: NodeJS.ProcessEnv): Promise<Buffer> {
+function gitBuffer(cwd: string, args: string[], env: NodeJS.ProcessEnv, input?: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    execFile('git', ['-C', cwd, ...args], { env, encoding: 'buffer', maxBuffer: REVIEW_CONTENT_MAX_BYTES }, (error, stdout) => {
+    const child = execFile('git', ['-C', cwd, ...args], { env, encoding: 'buffer', maxBuffer: REVIEW_CONTENT_MAX_BYTES }, (error, stdout) => {
       if (error) reject(error)
       else resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout))
     })
+    if (input !== undefined) child.stdin?.end(input)
   })
 }
 
@@ -272,18 +273,29 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
   }
 
   async function resolveComparison(
+    repoRoot: string,
     git: ReturnType<typeof simpleGit>,
     spec: GitComparisonSpec,
   ): Promise<ResolvedComparison> {
     if (spec.kind === 'unstaged') {
       return { args: [], resolvedBase: 'INDEX', resolvedTarget: 'WORKTREE' }
     }
-    const head = await resolveCommit(git, 'HEAD')
-    if (spec.kind === 'uncommitted') {
-      return { args: [head], resolvedBase: head, resolvedTarget: 'WORKTREE' }
-    }
-    if (spec.kind === 'staged') {
-      return { args: ['--cached', head], resolvedBase: head, resolvedTarget: 'INDEX' }
+    if (spec.kind === 'uncommitted' || spec.kind === 'staged') {
+      let head: string
+      let resolvedHead: string | null
+      try {
+        head = await resolveCommit(git, 'HEAD')
+        resolvedHead = head
+      } catch {
+        // Compute the repository's canonical empty-tree object in either SHA-1
+        // or SHA-256 repositories. This lets a newly initialized repository
+        // review its first staged/uncommitted files.
+        head = (await gitBuffer(repoRoot, ['hash-object', '-t', 'tree', '--stdin'], env(), Buffer.alloc(0))).toString().trim()
+        resolvedHead = null
+      }
+      return spec.kind === 'uncommitted'
+        ? { args: [head], resolvedBase: resolvedHead, resolvedTarget: 'WORKTREE' }
+        : { args: ['--cached', head], resolvedBase: resolvedHead, resolvedTarget: 'INDEX' }
     }
     if (spec.kind === 'commit') {
       const commit = await resolveCommit(git, spec.commit)
@@ -462,17 +474,9 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         behind: status.behind,
       }
     },
-    async diff(cwd, filePath, access) {
-      const { repoRoot, git } = await repositoryContext(cwd, access)
-      return filePath ? git.diff([validateFilePath(repoRoot, filePath)]) : git.diff()
-    },
-    async diffStaged(cwd, filePath, access) {
-      const { repoRoot, git } = await repositoryContext(cwd, access)
-      return filePath ? git.diff(['--cached', validateFilePath(repoRoot, filePath)]) : git.diff(['--cached'])
-    },
     async compare(cwd, spec, access): Promise<GitComparisonResult> {
       const { repoRoot, git } = await repositoryContext(cwd, access)
-      const resolved = await resolveComparison(git, spec)
+      const resolved = await resolveComparison(repoRoot, git, spec)
       const [nameStatusRaw, numstatRaw, status] = await Promise.all([
         comparisonRaw(git, resolved, spec, ['--name-status', '-z']),
         comparisonRaw(git, resolved, spec, ['--numstat', '-z']),
@@ -480,7 +484,15 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       ])
       const stats = parseNumstat(numstatRaw)
       const statusByPath = new Map(status.files.map((file) => [file.path, file]))
-      const files: GitChangedFile[] = parseNameStatus(nameStatusRaw).map((file) => {
+      const namedFiles = parseNameStatus(nameStatusRaw)
+      // Git's --name-status still reports whitespace-only paths with -w, while
+      // --numstat omits them. Treat numstat as the visibility source only for
+      // whitespace-ignoring comparisons; binary entries remain present with
+      // null counts.
+      const visibleFiles = spec.ignoreWhitespace
+        ? namedFiles.filter((file) => stats.has(file.path))
+        : namedFiles
+      const files: GitChangedFile[] = visibleFiles.map((file) => {
         const counts = stats.get(file.path)
         const current = statusByPath.get(file.path)
         return {
@@ -527,7 +539,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
     async fileDiff(cwd, spec, filePath, options, access): Promise<GitFileDiff> {
       const { repoRoot, git } = await repositoryContext(cwd, access)
       const relativePath = validateFilePath(repoRoot, filePath)
-      const resolved = await resolveComparison(git, spec)
+      const resolved = await resolveComparison(repoRoot, git, spec)
       const status = await git.status(['--untracked-files=all'])
       const untracked = (spec.kind === 'uncommitted' || spec.kind === 'unstaged')
         && status.files.some((file) => file.path === relativePath && file.working_dir === '?')
@@ -583,7 +595,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
     async fileContent(cwd, spec, filePath, side, access): Promise<GitFileContent> {
       const { repoRoot, git } = await repositoryContext(cwd, access)
       const relativePath = validateFilePath(repoRoot, filePath)
-      const resolved = await resolveComparison(git, spec)
+      const resolved = await resolveComparison(repoRoot, git, spec)
       const worktreeSide = side === 'new' && (spec.kind === 'uncommitted' || spec.kind === 'unstaged')
       try {
         const content = worktreeSide
@@ -824,16 +836,13 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
           commits: [],
           files: [],
           workingFiles,
-          diff: '',
-          truncated: false,
           message: `Couldn’t compare this worktree with ${baseBranch}.`,
         }
       }
 
-      const [commitText, fileText, rawDiff] = await Promise.all([
+      const [commitText, fileText] = await Promise.all([
         git.raw(['log', '--format=%H%x09%s', '-n', '100', `${mergeBase}..HEAD`]),
         git.raw(['diff', '--name-status', `${mergeBase}...HEAD`]),
-        git.raw(['diff', '--no-ext-diff', '--binary', `${mergeBase}...HEAD`]),
       ])
       const commits = commitText.trim().split('\n').filter(Boolean).map((line) => {
         const [hash, ...message] = line.split('\t')
@@ -843,20 +852,14 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         const [statusCode, ...paths] = line.split('\t')
         return { status: statusCode, path: paths.at(-1) ?? '' }
       })
-      const maxFiles = 500
-      const files = allFiles.slice(0, maxFiles)
-      const maxDiffChars = 40_000
-      const truncated = rawDiff.length > maxDiffChars || allFiles.length > maxFiles
       return {
         branch,
         baseBranch,
         dirty,
         canApply: Boolean(branch) && !dirty && commits.length > 0,
         commits,
-        files,
+        files: allFiles,
         workingFiles,
-        diff: truncated ? rawDiff.slice(0, maxDiffChars) : rawDiff,
-        truncated,
         ...(!branch
           ? { message: 'Check out a named branch in this worktree before applying it.' }
           : dirty

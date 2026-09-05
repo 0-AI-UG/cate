@@ -159,6 +159,10 @@ export interface GitReviewNote {
   resolvedBase: string | null
   resolvedTarget: string | null
   outdated?: boolean
+  status?: 'open' | 'resolved'
+  severity?: 'info' | 'warning' | 'error'
+  author?: 'human' | 'agent'
+  agentRunId?: string
   createdAt: string
 }
 
@@ -176,6 +180,23 @@ export interface ReviewPanelState {
   }
   collapsedFiles?: string[]
   notes?: GitReviewNote[]
+  sourceAgent?: { runId: string; ownerPanelId: string; panelId: string }
+  agentReview?: {
+    runId: string
+    terminalPanelId: string
+    status: 'working' | 'complete' | 'failed'
+    startedAt: number
+    completedAt?: number
+  }
+}
+
+/** The comparison identity carried when an existing Review panel is opened
+ * from another surface. The owning renderer merges this into its local panel
+ * state so display preferences and notes remain authoritative there. */
+export interface ReviewPanelOpenRequest {
+  spec: GitComparisonSpec
+  focusedFile?: string
+  sourceAgent?: ReviewPanelState['sourceAgent']
 }
 
 export interface PanelState {
@@ -198,8 +219,6 @@ export interface PanelState {
    *  suffix, and `pac://` PAC scripts. See `configureBrowserProxy` in
    *  `src/main/browserProxy.ts`. */
   proxyUrl?: string
-  /** When set, EditorPanel renders as a Monaco diff editor. */
-  diffMode?: 'staged' | 'working'
   /** Review panels only: comparison query, view preferences, expansion, and notes. */
   reviewState?: ReviewPanelState
   /** Editor panels with a markdown file only: render the rendered preview
@@ -424,6 +443,9 @@ export interface WindowPanelReport {
   /** File/browser identity used by the cross-window cate.panel.list surface. */
   filePath?: string
   url?: string
+  /** Review repository identity used to reuse/deep-link a Review panel that is
+   * hosted by another window without mirroring its full local state. */
+  reviewRepoPath?: string
   /** Canonical active-panel marker from the owning window. */
   focused?: boolean
   /** Set when this panel lives inside a canvas panel in its window. */

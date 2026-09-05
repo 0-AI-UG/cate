@@ -33,6 +33,7 @@ const h = vi.hoisted(() => ({
   updatePanelTitleFromAgent: vi.fn(),
   closePanelWithConfirm: vi.fn(async () => true),
   removeWorktree: vi.fn(),
+  retargetReviewPanel: vi.fn(),
 }))
 vi.mock('../../hooks/useShortcuts', () => ({ useShortcuts: h.useShortcuts }))
 vi.mock('./useThemeAndScaleHydration', () => ({ useThemeAndScaleHydration: h.useThemeAndScaleHydration }))
@@ -44,6 +45,7 @@ vi.mock('../agent/agentScreenDetector', () => ({
 }))
 vi.mock('../workspace/panelReveal', () => ({ revealPanel: h.revealPanel }))
 vi.mock('../closePanelWithConfirm', () => ({ closePanelWithConfirm: h.closePanelWithConfirm }))
+vi.mock('../review/openReviewPanel', () => ({ retargetReviewPanel: h.retargetReviewPanel }))
 vi.mock('../../hooks/useProcessMonitor', () => ({ useOwnedTerminalTelemetry: h.useOwnedTerminalTelemetry }))
 vi.mock('../../stores/settingsStore', () => ({
   useSettingsStore: { getState: () => ({ loadSettings: h.loadSettings }), subscribe: () => () => {} },
@@ -98,6 +100,7 @@ beforeEach(() => {
     onClosePanelInWindow: vi.fn((cb: (...a: unknown[]) => void) => { captured.close = cb; return () => {} }),
     onWorktreeRemoved: vi.fn((cb: (...a: unknown[]) => void) => { captured.worktreeRemoved = cb; return () => {} }),
     closePanelInWindowResult: vi.fn().mockResolvedValue(undefined),
+    onOpenReviewInWindow: vi.fn((cb: (...a: unknown[]) => void) => { captured.openReview = cb; return () => {} }),
     onWindowPanelsChanged: vi.fn((cb: (...a: unknown[]) => void) => { captured.union = cb; return () => {} }),
   }
   host = document.createElement('div')
@@ -184,6 +187,13 @@ describe('useWindowRuntime', () => {
     mount()
     act(() => { captured.worktreeRemoved('ws-X', 'wt-1') })
     expect(h.removeWorktree).toHaveBeenCalledWith('ws-X', 'wt-1')
+  })
+
+  it('retargets a Review panel in this window when another window deep-links it', () => {
+    mount()
+    const request = { spec: { kind: 'unstaged' }, focusedFile: 'src/a.ts' }
+    act(() => { captured.openReview('p9', request) })
+    expect(h.retargetReviewPanel).toHaveBeenCalledWith('ws-X', 'p9', request)
   })
 
   it('swallows external OS file drops so the window cannot navigate to file://', () => {

@@ -38,7 +38,6 @@ type PanelSliceActions = Pick<
   | 'createTerminal'
   | 'createBrowser'
   | 'createEditor'
-  | 'createDiffEditor'
   | 'createReview'
   | 'createCanvas'
   | 'createCateAgent'
@@ -173,23 +172,6 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('document', placement), position)
     },
 
-    createDiffEditor(workspaceId, filePath, diffMode, position?, placement?) {
-      const panelId = generateId()
-      const worktreeId = worktreeIdForPath(workspaceId, filePath)
-      const fileName = pathDisplayName(filePath) || 'Untitled'
-      const label = diffMode === 'staged' ? 'Staged' : 'Working'
-      const panel: PanelState = {
-        id: panelId,
-        type: 'editor',
-        title: `${fileName} (${label} Diff)`,
-        isDirty: false,
-        filePath,
-        diffMode,
-        ...(worktreeId ? { worktreeId } : {}),
-      }
-      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('editor', placement), position)
-    },
-
     createReview(workspaceId, repoPath, initial?, position?, placement?) {
       const panelId = generateId()
       const worktreeId = worktreeIdForPath(workspaceId, repoPath)
@@ -207,6 +189,8 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         fileFilter: initial?.fileFilter,
         collapsedFiles: initial?.collapsedFiles ?? [],
         notes: initial?.notes ?? [],
+        sourceAgent: initial?.sourceAgent,
+        agentReview: initial?.agentReview,
       }
       const panel: PanelState = {
         id: panelId,

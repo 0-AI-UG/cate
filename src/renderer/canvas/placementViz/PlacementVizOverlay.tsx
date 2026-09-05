@@ -4,12 +4,12 @@
 // Toggle with Cmd/Ctrl+Shift+G. Renders the place area, gap bands, free rects,
 // alignment guides, and each chosen ghost (with a size/gap/match label) over the
 // LIVE canvas. When a real placement is in progress it draws the EXACT trace the
-// real picker computed (from pendingPlacement.trace); when idle it runs a
+// real picker computed (from pendingPanelTarget.trace); when idle it runs a
 // simulated 'editor' placement and labels it as hypothetical.
 //
 // REMOVABLE FEATURE: delete this folder, the import + mount line in Canvas.tsx,
 // the optional `trace` param on recommendPlacements, and the optional `trace`
-// field on PendingPlacement and its capture in placementSlice.beginPlacement to
+// field on PendingPanelTarget and its capture in panelTargetSlice to
 // fully remove it.
 // =============================================================================
 import React, { useEffect, useState } from 'react'
@@ -27,7 +27,7 @@ const PlacementVizOverlay: React.FC = () => {
   const offset = useCanvasStoreContext((s) => s.viewportOffset)
   const zoom = useCanvasStoreContext((s) => s.zoomLevel)
   const containerSize = useCanvasStoreContext((s) => s.containerSize)
-  const pending = useCanvasStoreContext((s) => s.pendingPlacement)
+  const pending = useCanvasStoreContext((s) => s.pendingPanelTarget)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
