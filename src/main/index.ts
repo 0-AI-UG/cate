@@ -38,6 +38,7 @@ import { registerCaptureHandlers } from './ipc/capture'
 import { registerBrowserControlHandlers } from './ipc/browserControl'
 import { registerBrowserCredentialHandlers } from './ipc/browserCredentials'
 import { registerWindowControlHandlers } from './ipc/windowControls'
+import { registerKeepAwakeHandlers } from './ipc/keepAwake'
 import { registerDockWindowHandlers } from './ipc/dockWindows'
 import { registerWindowPanelHandlers } from './ipc/windowPanels'
 import { registerDragHandlers } from './ipc/dragHandlers'
@@ -96,6 +97,7 @@ function registerCriticalHandlers(): void {
   registerBrowserControlHandlers()
   registerBrowserCredentialHandlers()
   registerWindowControlHandlers()
+  registerKeepAwakeHandlers()
   registerDockWindowHandlers({ createWindow })
   registerWindowPanelHandlers()
   registerDragHandlers({ createWindow })

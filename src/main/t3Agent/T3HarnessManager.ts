@@ -687,7 +687,10 @@ export class T3HarnessManager {
       // FileHost.copy preserves T3's 0600 secret-file mode. Re-encoding via
       // writeBinary would create a new file with the host's ordinary umask.
       const copiedPath = await runtime.file.copy(entry.path, targetDir)
-      if (copiedPath !== runtimePath(runtimeId, targetDir, entry.name)) {
+      // copy validates the destination on the owning host and returns its
+      // canonical path, which can differ from targetDir through a symlink.
+      // Only a collision-renamed filename would break T3's secret lookup.
+      if ((runtimeId === 'local' ? path : path.posix).basename(copiedPath) !== entry.name) {
         throw new Error(`Provider secret copy chose an unexpected destination: ${copiedPath}`)
       }
     }

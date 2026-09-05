@@ -1,5 +1,6 @@
+import { LoadingState, Spinner } from '../ui/Spinner'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowBendDownLeft, ArrowSquareOut, CaretDown, CaretUp, Check, CheckCircle, CircleNotch, Copy, SignIn } from '@phosphor-icons/react'
+import { ArrowBendDownLeft, ArrowSquareOut, CaretDown, CaretUp, Check, CheckCircle, Copy, SignIn } from '@phosphor-icons/react'
 import { btn, inputCls, Modal } from '../ui/Modal'
 import { useAppStore } from '../stores/appStore'
 import { SearchableBlock, SecondaryButton } from './SettingsComponents'
@@ -129,7 +130,7 @@ export function AgentSettings() {
   }, [authSession?.phase, authSession?.providerId, refreshProviderStatuses])
 
   return (
-    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok opencode">
+    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok opencode advanced display name accent color binary path home launch arguments custom models environment variables server password endpoint auto-compact updates legacy token streaming settle chats merge refresh interval generated titles">
       <div className="flex flex-col gap-4">
         <AgentProviderConfiguration workspaceId={workspaceId} cwd={cwd} onChanged={refreshProviderStatuses} authentication={(driver) => (
           <div>
@@ -145,7 +146,7 @@ export function AgentSettings() {
                       : status?.state === 'disabled'
                         ? 'Disabled in provider configuration'
                         : providerStatusesLoading
-                          ? 'Checking status…'
+                          ? <Spinner size={13} label="Checking provider status" />
                           : 'Status unavailable'
                 const versionLabel = status?.version ? `v${status.version.replace(/^v/, '')}` : null
                 return (
@@ -156,7 +157,7 @@ export function AgentSettings() {
                     className="flex flex-wrap items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
-                      <h3 className="text-sm font-medium text-primary">Provider authentication</h3>
+                      <h3 className="text-sm font-medium text-primary">{provider.name} account</h3>
                       <p className="mt-0.5 text-xs text-muted">{provider.description}</p>
                       <p className={`mt-1 flex items-center gap-1 text-xs ${connected ? 'text-green-400' : 'text-muted'}`}>
                         {connected && <CheckCircle size={13} weight="fill" />}
@@ -238,10 +239,7 @@ export function AgentSettings() {
             )}
 
             {authStarting && (
-              <div className="flex items-center justify-center py-8 text-sm text-muted">
-                <CircleNotch size={18} className="mr-2 animate-spin" />
-                Starting official sign-in…
-              </div>
+              <LoadingState label="Starting official sign-in…" className="py-8 text-sm" />
             )}
 
             {authError && (
@@ -253,7 +251,7 @@ export function AgentSettings() {
             {authSession && (
               <>
                 <div className="flex items-center gap-2 text-sm text-primary">
-                  {authSession.phase === 'running' && <CircleNotch size={16} className="animate-spin" />}
+                  {authSession.phase === 'running' && <Spinner size={16} label="Waiting for sign-in" />}
                   <span>{authSession.message ?? (authSession.phase === 'running' ? 'Waiting for sign-in…' : 'Sign-in finished.')}</span>
                 </div>
                 {authSession.code && (

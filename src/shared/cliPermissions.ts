@@ -156,7 +156,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
     },
   },
   {
-    label: 'Agents',
+    label: 'Agents & reviews',
     prefixes: ['cate.codingAgent.', 'cate.review.'],
     readMethods: [
       'cate.codingAgent.list',

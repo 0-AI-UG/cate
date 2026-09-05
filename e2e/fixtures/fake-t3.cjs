@@ -66,7 +66,9 @@ function writeStatusCaches() {
       auth: { status: 'unauthenticated' },
     },
   }
+  const settings = JSON.parse(fs.readFileSync(path.join(t3Home, 'userdata', 'settings.json'), 'utf8'))
   for (const [name, value] of Object.entries(snapshots)) {
+    value.enabled = settings.providers?.[name.replace('.json', '')]?.enabled ?? value.enabled
     fs.writeFileSync(path.join(cacheDir, name), `${JSON.stringify(value)}\n`)
   }
 }

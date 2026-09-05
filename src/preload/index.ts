@@ -4,6 +4,9 @@ import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
 try { performance.mark('preload-start') } catch { /* noop */ }
 
 import {
+  KEEP_AWAKE_GET,
+  KEEP_AWAKE_SET,
+  KEEP_AWAKE_CHANGED,
   TERMINAL_CREATE,
   TERMINAL_WRITE,
   TERMINAL_RESIZE,
@@ -779,6 +782,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
    *  into the invokeForwarders table. */
   windowSetTitle(title: string): Promise<void> {
     return ipcRenderer.invoke(WINDOW_SET_TITLE, title)
+  },
+
+  getKeepAwake(): Promise<boolean> {
+    return ipcRenderer.invoke(KEEP_AWAKE_GET)
+  },
+  setKeepAwake(enabled: boolean): Promise<boolean> {
+    return ipcRenderer.invoke(KEEP_AWAKE_SET, enabled)
+  },
+  onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void {
+    return createIpcListener(KEEP_AWAKE_CHANGED, callback)
   },
 
   // ---------------------------------------------------------------------------

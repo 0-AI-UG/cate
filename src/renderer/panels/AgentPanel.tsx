@@ -1,7 +1,8 @@
+import { LoadingState } from '../ui/Spinner'
 import { T3_THREAD_SUBSCRIPTION_SCRIPT } from '../lib/t3ThreadState'
 import { useT3ActivityStore, type T3Snapshot } from '../stores/t3ActivityStore'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowClockwise, ChatsCircle, CircleNotch } from '@phosphor-icons/react'
+import { ArrowClockwise, ChatsCircle } from '@phosphor-icons/react'
 import type { AgentPanelProps } from './types'
 import { agentProductCopy } from '../../shared/agentProductCopy'
 import { useAppStore } from '../stores/appStore'
@@ -75,6 +76,12 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
   }), [workspaceId, threadId, panelId, state])
   const restoreThreadId = useRef(threadId)
   restoreThreadId.current = threadId
+  const observedThreadId = useRef(threadId)
+  useEffect(() => {
+    if (observedThreadId.current === threadId) return
+    observedThreadId.current = threadId
+    setRetryNonce((value) => value + 1)
+  }, [threadId])
   const t3Connection = useT3ActivityStore((s) => s.panels[panelId]?.connected)
 
   useEffect(() => {
@@ -152,6 +159,8 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       }
       const nextThreadId = agentThreadIdFromUrl(navigatedUrl, state.environmentId) ?? undefined
       if (nextThreadId !== threadId) {
+        // Guest-created threads are already open; only host selections reload.
+        observedThreadId.current = nextThreadId
         useAppStore.getState().setPanelAgentThreadId(workspaceId, panelId, nextThreadId)
       }
     }
@@ -268,17 +277,11 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
             </button>
           </div>
         ) : state.phase === 'loading' ? (
-          <div className="flex h-full flex-col items-center justify-center text-muted">
-            <CircleNotch size={24} className="mb-2 animate-spin" />
-            <p className="text-xs">Starting T3 Code…</p>
-          </div>
+          <LoadingState size={24} label="Starting T3 Code…" className="h-full flex-col text-xs" />
         ) : (
           <>
             {!guestReady && (
-              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center bg-surface-4 text-muted">
-                <CircleNotch size={24} className="mb-2 animate-spin" />
-                <p className="text-xs">Loading conversation…</p>
-              </div>
+              <LoadingState size={24} label="Loading conversation…" className="pointer-events-none absolute inset-0 z-10 flex-col bg-surface-4 text-xs" />
             )}
               <webview
                 key={`${panelId}:${state.url}`}

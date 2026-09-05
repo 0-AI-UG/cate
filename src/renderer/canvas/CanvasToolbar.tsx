@@ -30,6 +30,7 @@ import { useAppStore } from '../stores/appStore'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { Tooltip } from '../ui/Tooltip'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
+import { KeepAwakeButton } from './KeepAwakeButton'
 
 interface CanvasToolbarProps {
   canvasPanelId: string
@@ -221,6 +222,8 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const divider = <div className={isHorizontal ? 'w-px h-5 bg-surface-5 mx-1' : 'h-px w-6 bg-surface-5 my-1'} />
   const items = (
     <>
+      <KeepAwakeButton tooltipPlacement={place} />
+      {divider}
       <CanvasToolbarButton
         onClick={() => setActiveTool('select')}
         label={`Select tool (Space, or ${toggleToolKey} inside a panel)`}
