@@ -18,13 +18,18 @@
 // getters and subscribes to onWindowClosed; windowRegistry never imports it.
 // =============================================================================
 
-import type { WindowPanelInfo, WindowPanelReport } from '../shared/types'
-import { WINDOW_PANELS_CHANGED, REVEAL_PANEL_IN_WINDOW, CLOSE_PANEL_IN_WINDOW } from '../shared/ipc-channels'
+import type { ReviewPanelOpenRequest, WindowPanelInfo, WindowPanelReport } from '../shared/types'
+import { WINDOW_PANELS_CHANGED, REVEAL_PANEL_IN_WINDOW, OPEN_REVIEW_IN_WINDOW, CLOSE_PANEL_IN_WINDOW } from '../shared/ipc-channels'
 import { broadcastToAll, focusWindow, getWindow, getWindowType, onWindowClosed, sendToWindow } from './windowRegistry'
 
 /** The latest panel report from each window, keyed by Electron window id. */
 const windowPanels = new Map<number, WindowPanelInfo[]>()
 const windowPanelListeners = new Set<() => void>()
+const pendingPanelCloses = new Map<string, {
+  ownerWindowId: number
+  resolve: (closed: boolean) => void
+}>()
+let nextPanelCloseRequest = 1
 
 /** Store a window's reported panels (stamped with its owner id + type) and
  *  rebroadcast the union. Ignored if the window isn't tracked (e.g. a late
@@ -41,6 +46,7 @@ export function setWindowPanels(windowId: number, report: WindowPanelReport[]): 
       workspaceId: p.workspaceId,
       filePath: p.filePath,
       url: p.url,
+      reviewRepoPath: p.reviewRepoPath,
       focused: p.focused,
       ownerWindowId: windowId,
       ownerWindowType,
@@ -72,6 +78,7 @@ export function upsertWindowPanel(windowId: number, panel: WindowPanelReport): v
     workspaceId: panel.workspaceId,
     filePath: panel.filePath,
     url: panel.url,
+    reviewRepoPath: panel.reviewRepoPath,
     focused: panel.focused,
     ownerWindowId: windowId,
     ownerWindowType,
@@ -139,7 +146,7 @@ let lastWindowPanelSignature = ''
 export function broadcastWindowPanels(): void {
   const panels = getWindowPanels()
   const signature = panels
-    .map((p) => `${p.ownerWindowId}:${p.panelId}:${p.type}:${p.title}:${p.workspaceId}:${p.filePath ?? ''}:${p.url ?? ''}:${p.focused ? 1 : 0}:${p.parentCanvasId ?? ''}:${p.worktreeId ?? ''}:${p.agentState ?? ''}:${p.agentName ?? ''}:${p.hasPorts ? 1 : 0}:${p.codingAgentRunId ?? ''}:${p.codingAgentOwnerPanelId ?? ''}:${p.codingAgentStatus ?? ''}`)
+    .map((p) => `${p.ownerWindowId}:${p.panelId}:${p.type}:${p.title}:${p.workspaceId}:${p.filePath ?? ''}:${p.url ?? ''}:${p.reviewRepoPath ?? ''}:${p.focused ? 1 : 0}:${p.parentCanvasId ?? ''}:${p.worktreeId ?? ''}:${p.agentState ?? ''}:${p.agentName ?? ''}:${p.hasPorts ? 1 : 0}:${p.codingAgentRunId ?? ''}:${p.codingAgentOwnerPanelId ?? ''}:${p.codingAgentStatus ?? ''}`)
     .sort()
     .join('|')
   if (signature === lastWindowPanelSignature) return
@@ -160,16 +167,46 @@ export function revealWindowPanel(panelId: string): boolean {
   return true
 }
 
-/** Ask the window that owns `panelId` to close the panel (behind its own
- *  dirty/running confirmation gates). Focuses the owner first so the gates'
- *  dialogs are visible. Returns false if no live window owns it. */
-export function closeWindowPanel(panelId: string): boolean {
-  const owner = getWindowPanels().find((p) => p.panelId === panelId)
+/** Retarget and reveal an existing Review panel in its owning renderer. The
+ * owner merges the request into its full local state, avoiding a cross-window
+ * copy of notes and display preferences. */
+export function openWindowReviewPanel(panelId: string, request: ReviewPanelOpenRequest): boolean {
+  const owner = getWindowPanels().find((p) => p.panelId === panelId && p.type === 'review')
   if (!owner) return false
   const win = getWindow(owner.ownerWindowId)
   if (!win) return false
   focusWindow(win)
-  sendToWindow(owner.ownerWindowId, CLOSE_PANEL_IN_WINDOW, panelId)
+  sendToWindow(owner.ownerWindowId, OPEN_REVIEW_IN_WINDOW, panelId, request)
+  return true
+}
+
+/** Ask the window that owns `panelId` to close the panel behind its own
+ * dirty/running confirmation gates. Resolves false if the owner is gone or the
+ * user cancels, so destructive callers can stop before deleting backing data. */
+export function closeWindowPanel(panelId: string): Promise<boolean> {
+  const owner = getWindowPanels().find((p) => p.panelId === panelId)
+  if (!owner) return Promise.resolve(false)
+  const win = getWindow(owner.ownerWindowId)
+  if (!win) return Promise.resolve(false)
+  focusWindow(win)
+  const requestId = `panel-close-${nextPanelCloseRequest++}`
+  return new Promise<boolean>((resolve) => {
+    pendingPanelCloses.set(requestId, { ownerWindowId: owner.ownerWindowId, resolve })
+    sendToWindow(owner.ownerWindowId, CLOSE_PANEL_IN_WINDOW, panelId, requestId)
+  })
+}
+
+/** Complete a routed close request. The sender window must match the owner that
+ * received it, preventing an unrelated renderer from resolving the request. */
+export function completeWindowPanelClose(
+  ownerWindowId: number,
+  requestId: string,
+  closed: boolean,
+): boolean {
+  const pending = pendingPanelCloses.get(requestId)
+  if (!pending || pending.ownerWindowId !== ownerWindowId) return false
+  pendingPanelCloses.delete(requestId)
+  pending.resolve(closed)
   return true
 }
 
@@ -177,5 +214,10 @@ export function closeWindowPanel(panelId: string): boolean {
 // windows update. (onWindowClosed fires before the registry deletes its entries,
 // but the union is keyed off this module's own map, which we clear here.)
 onWindowClosed((windowId) => {
+  for (const [requestId, pending] of pendingPanelCloses) {
+    if (pending.ownerWindowId !== windowId) continue
+    pendingPanelCloses.delete(requestId)
+    pending.resolve(false)
+  }
   if (windowPanels.delete(windowId)) broadcastWindowPanels()
 })

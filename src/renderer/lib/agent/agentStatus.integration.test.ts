@@ -60,7 +60,7 @@ const fixtures: AgentLifecycleFixture[] = [
     agentId: 'opencode',
     sessionStart: { type: 'session.created', sessionID: SESSION },
     turnStart: { type: 'session.status', sessionID: SESSION, status: { type: 'busy' } },
-    turnEnd: { type: 'session.idle', sessionID: SESSION },
+    turnEnd: { type: 'session.status', sessionID: SESSION, status: { type: 'idle' } },
   },
   {
     agentId: 'kiro',
@@ -75,8 +75,7 @@ const permissionFixtures: PermissionFixture[] = [
     agentId: 'claude-code',
     turnStart: { hook_event_name: 'UserPromptSubmit', session_id: SESSION },
     permissionWait: {
-      hook_event_name: 'Notification',
-      notification_type: 'permission_prompt',
+      hook_event_name: 'PermissionRequest',
       session_id: SESSION,
     },
   },

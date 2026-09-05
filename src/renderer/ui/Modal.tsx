@@ -17,10 +17,11 @@
 // exported so even hand-rolled overlays match without a component per element.
 // =============================================================================
 
-import { useEffect, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type CSSProperties, type HTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from '@phosphor-icons/react'
 import { Tooltip } from './Tooltip'
+import { buttonClassName } from './Button'
 
 /** Dimmed, blurred backdrop shared by every full-screen modal. */
 export const BACKDROP = 'bg-black/50 backdrop-blur-sm'
@@ -36,14 +37,10 @@ export const CARD_SURFACE =
 
 /** Button variants used across modal footers and overlay action rows. */
 export const btn = {
-  primary:
-    'inline-flex items-center justify-center gap-1.5 h-8 px-3.5 rounded-md text-[13px] font-medium bg-focus-blue text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-default',
-  secondary:
-    'inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md text-[13px] font-medium border border-subtle text-secondary hover:text-primary hover:bg-hover transition-colors disabled:opacity-40 disabled:cursor-default',
-  ghost:
-    'inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md text-[13px] text-secondary hover:text-primary transition-colors disabled:opacity-40',
-  danger:
-    'inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md text-[13px] text-muted hover:text-red-400 transition-colors disabled:opacity-40',
+  primary: buttonClassName('primary'),
+  secondary: buttonClassName('secondary'),
+  ghost: buttonClassName('ghost'),
+  danger: buttonClassName('danger'),
 }
 
 /** Form-control surface — the same well Settings inputs use. */
@@ -96,6 +93,50 @@ interface PaletteDialogShellProps {
   aside?: ReactNode
   /** Sizing/positioning classes for the aside card. CARD_SURFACE is applied. */
   asideClassName?: string
+  /** Accessible name for the palette dialog. */
+  ariaLabel?: string
+}
+
+const FOCUSABLE = [
+  'button:not([disabled])',
+  '[href]',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function useDialogFocus(ref: RefObject<HTMLElement | null>): void {
+  useEffect(() => {
+    const dialog = ref.current
+    if (!dialog) return
+    if (!dialog.contains(document.activeElement)) {
+      const initial = dialog.querySelector<HTMLElement>('[autofocus], [data-autofocus]')
+        ?? dialog.querySelector<HTMLElement>(FOCUSABLE)
+        ?? dialog
+      initial.focus({ preventScroll: true })
+    }
+  }, [ref])
+}
+
+function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>): void {
+  if (event.key !== 'Tab') return
+  const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE))
+    .filter((element) => element.getClientRects().length > 0)
+  if (focusable.length === 0) {
+    event.preventDefault()
+    event.currentTarget.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }
 
 /** Top-anchored palette shell: full-screen dimmed backdrop that closes on an
@@ -110,14 +151,23 @@ export function PaletteDialogShell({
   children,
   aside,
   asideClassName,
+  ariaLabel = 'Dialog',
 }: PaletteDialogShellProps) {
   useRestoreFocusOnUnmount()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(dialogRef)
   return (
     <div className={`fixed inset-0 flex flex-row items-start justify-center gap-2 z-50 ${BACKDROP}`} onClick={onClose}>
       <div
         {...cardProps}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+        tabIndex={-1}
         className={`${cardClassName} ${CARD_SURFACE}`}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={trapDialogFocus}
       >
         {children}
       </div>
@@ -148,6 +198,8 @@ interface ModalCardProps {
   /** Classes on the body wrapper. Defaults to a scrollable region. */
   bodyClassName?: string
   children: ReactNode
+  /** Internal id used to associate a surrounding dialog with its title. */
+  titleId?: string
 }
 
 /** Bare card: shared surface + optional header + body. No portal or backdrop —
@@ -160,6 +212,7 @@ export function ModalCard({
   onClose,
   className = '',
   bodyClassName = 'min-h-0 flex-1 overflow-auto',
+  titleId,
   children,
 }: ModalCardProps) {
   const hasHeader = title != null || icon != null || headerActions != null
@@ -169,7 +222,7 @@ export function ModalCard({
       {hasHeader && (
         <div className="flex items-center gap-2.5 px-5 h-14 shrink-0 border-b border-subtle bg-surface-0/40">
           {icon && <span className="shrink-0 text-secondary">{icon}</span>}
-          <span className="flex-1 text-[15px] font-semibold text-primary truncate">{title}</span>
+          <span id={titleId} className="flex-1 text-[15px] font-semibold text-primary truncate">{title}</span>
           {headerActions}
           {close && onClose && (
             <Tooltip label="Close (Esc)">
@@ -218,6 +271,9 @@ export function Modal({
   ...card
 }: ModalProps) {
   useRestoreFocusOnUnmount()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  useDialogFocus(dialogRef)
   const escapeCloses = closeOnEscape ?? dismissable
   useEffect(() => {
     if (!escapeCloses) return
@@ -239,11 +295,18 @@ export function Modal({
       onClick={dismissable ? onClose : undefined}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={card.title != null ? titleId : undefined}
+        aria-label={card.title == null ? 'Dialog' : undefined}
+        tabIndex={-1}
         className="modal-card-in flex flex-col max-w-[92vw] max-h-[90vh]"
         style={size}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={trapDialogFocus}
       >
-        <ModalCard {...card} onClose={onClose} bodyClassName={bodyClassName} className="flex-1 min-h-0" />
+        <ModalCard {...card} titleId={titleId} onClose={onClose} bodyClassName={bodyClassName} className="flex-1 min-h-0" />
       </div>
     </div>,
     document.body,

@@ -37,13 +37,13 @@ describe('thin browser CLI', () => {
     })
   })
 
-  it('passes native read commands through without translating their grammar', () => {
+  it('passes Cate read commands through without translating their grammar', () => {
     expect(buildRequest(
-      ['browser', 'snapshot', '-i', '--compact', '--depth', '4'],
+      ['browser', 'snapshot', '-i'],
       flags,
     )).toEqual({
       method: 'cate.browser.readCommand',
-      args: { command: ['snapshot', '-i', '--compact', '--depth', '4'] },
+      args: { command: ['snapshot', '-i'] },
     })
     expect(buildRequest(['browser', 'get', 'text', '@s2e7'], flags)).toEqual({
       method: 'cate.browser.readCommand',
@@ -51,7 +51,7 @@ describe('thin browser CLI', () => {
     })
   })
 
-  it('passes native acting commands through without Cate locator parsing', () => {
+  it('passes Cate acting commands through without CLI-side locator parsing', () => {
     expect(buildRequest(
       ['browser', 'find', 'role', 'button', 'click', '--name', 'Save'],
       flags,
@@ -73,6 +73,9 @@ describe('thin browser CLI', () => {
     })
     expect(buildRequest(['browser', 'select-tab', 'abcd'], flags).args).toEqual({ tabId: 'abcd' })
     expect(buildRequest(['browser', 'close-tab', 'abcd'], flags).method).toBe('cate.browser.tabClose')
+    expect(buildRequest(['browser', 'back'], flags).method).toBe('cate.browser.back')
+    expect(buildRequest(['browser', 'reload'], flags).method).toBe('cate.browser.reload')
+    expect(buildRequest(['browser', 'downloads'], flags).method).toBe('cate.browser.downloads')
     expect(buildRequest(['browser', 'viewport', 'mobile'], flags).args).toEqual({
       preset: 'mobile',
       width: 390,
@@ -105,7 +108,6 @@ describe('thin browser CLI', () => {
       ['browser', 'tab', 'list'],
       ['browser', 'connect', '9222'],
       ['browser', 'batch', 'click @e1'],
-      ['browser', 'upload', '#file', '/tmp/x'],
       ['browser', 'click', '#x', '--session', 'other'],
       ['browser', 'screenshot', '/tmp/owned.png'],
     ]) {
@@ -122,7 +124,7 @@ describe('thin browser CLI', () => {
 })
 
 describe('global parsing', () => {
-  it('extracts only Cate global flags and preserves native argv', () => {
+  it('extracts only Cate global flags and preserves browser argv', () => {
     expect(parseCli([
       'browser', 'wait', '#done', '--timeout', '5000',
       '--panel', 'abc', '--json',
@@ -176,7 +178,7 @@ describe('non-browser surface', () => {
 })
 
 describe('agent orchestration surface', () => {
-  it('parses create options without changing browser-native argv parsing', () => {
+  it('parses create options without changing browser argv parsing', () => {
     const parsed = parseCli([
       'agent', 'create', 'Implement', 'the API', '--agent', 'codex', '--title', 'API',
       '--new-worktree', 'agent/api', '--base-ref', 'main', '--foreground',
@@ -191,6 +193,18 @@ describe('agent orchestration surface', () => {
         baseRef: 'main',
         background: false,
       },
+    })
+  })
+
+  it('targets an existing terminal for agent creation', () => {
+    const parsed = parseCli([
+      'agent', 'create', 'Review', 'the diff', '--terminal', 'term1234',
+    ])
+    expect(buildRequest(parsed.positionals, parsed.flags)).toEqual({
+      method: 'cate.codingAgent.create',
+      args: { prompt: 'Review the diff', terminalPanelId: 'term1234' },
+      resolvePanel: 'terminal',
+      resolvePanelArg: 'terminalPanelId',
     })
   })
 
@@ -234,6 +248,49 @@ describe('agent orchestration surface', () => {
       ['agent', 'wait'],
       { ...flags, waitTimeout: '1000' },
     )).toThrow(/between 5000 and 60000/)
+  })
+})
+
+describe('review surface', () => {
+  it('uses the selected CLI panel when --panel is omitted', () => {
+    expect(buildRequest(['review', 'inspect'], flags)).toEqual({
+      method: 'cate.review.inspect',
+      args: {},
+    })
+    expect(buildRequest(['review', 'complete'], flags)).toEqual({
+      method: 'cate.review.complete',
+      args: {},
+    })
+  })
+
+  it('resolves an explicit review panel and creates structured notes', () => {
+    const parsed = parseCli([
+      'review', 'note', 'add', '--panel', 'review12', '--file', 'src/a.ts',
+      '--line', '42', '--side', 'new', '--severity', 'error', '--body', 'Handle failure',
+    ])
+    expect(buildRequest(parsed.positionals, parsed.flags)).toEqual({
+      method: 'cate.review.note.add',
+      args: {
+        panelId: 'review12',
+        file: 'src/a.ts',
+        line: 42,
+        side: 'new',
+        severity: 'error',
+        body: 'Handle failure',
+      },
+      resolvePanel: 'review',
+    })
+  })
+
+  it('validates note locations', () => {
+    const missingLine = parseCli([
+      'review', 'note', 'add', '--file', 'src/a.ts', '--side', 'old', '--body', 'Broken',
+    ])
+    expect(() => buildRequest(missingLine.positionals, missingLine.flags)).toThrow(/--line is required/)
+    const fileLine = parseCli([
+      'review', 'note', 'add', '--file', 'src/a.ts', '--side', 'file', '--line', '3', '--body', 'Broken',
+    ])
+    expect(() => buildRequest(fileLine.positionals, fileLine.flags)).toThrow(/invalid <side>/)
   })
 })
 
@@ -316,6 +373,15 @@ describe('transport and panel resolution', () => {
     ])
     await expect(resolvePanel('abcd1234-b', 'browser', deps)).resolves.toBe('abcd1234-browser')
     await expect(resolvePanel('abcd1234-t', 'browser', deps)).rejects.toThrow(/no browser panel/)
+  })
+
+  it('resolves only review panels for review commands', async () => {
+    const deps = panelDeps([
+      { panelId: 'review123-full', type: 'review' },
+      { panelId: 'review456-terminal', type: 'terminal' },
+    ])
+    await expect(resolvePanel('review123', 'review', deps)).resolves.toBe('review123-full')
+    await expect(resolvePanel('review456', 'review', deps)).rejects.toThrow(/no review panel/)
   })
 
   it('resolves exact or unique short agent run ids', async () => {

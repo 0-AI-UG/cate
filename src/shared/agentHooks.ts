@@ -44,6 +44,10 @@ export const CATE_TERMINAL_ID_ENV = 'CATE_TERMINAL_ID'
 export type AgentHookEventKind =
   | 'session-start'
   | 'session-end'
+  /** Cate resolved the CLI's own persisted chat title for this session. This
+   *  is transported on the hook stream because it has the same terminal +
+   *  session identity, but it is metadata rather than a hook lifecycle edge. */
+  | 'session-title'
   | 'turn-start'
   | 'turn-end'
   | 'permission-wait'
@@ -61,12 +65,17 @@ export interface AgentHookEvent {
   /** The CLI's own session/conversation id, or null when the event doesn't
    *  carry one (e.g. a malformed payload field). */
   sessionId: string | null
+  /** The CLI's turn id when available. End events are correlated against this
+   *  so a late end from an interrupted turn cannot idle its replacement. */
+  turnId?: string
   /** The cwd the CLI reports for the session (its store join key), when the
    *  payload carries one. */
   cwd?: string
   /** The transcript / rollout / session file backing the session, when the
    *  payload carries one. */
   transcriptPath?: string
+  /** Present only for session-title events. */
+  title?: string
   /** The raw payload as posted by the bridge, for consumers that need
    *  per-CLI detail (e.g. codex's turn_id / tool_input on permission-wait). */
   raw: Record<string, unknown>
@@ -125,26 +134,15 @@ export interface AgentHookSpec {
    * completion.
    *
    *  - true: the CLI's interrupt path fires an event that normalize() turns
-   *    into 'turn-end' (cursor's stop{status:aborted} and opencode's
-   *    session.idle, each verified live and pinned in
-   *    agentHookContracts.itest.ts). Cate's FSM idles correctly, unaided.
-   *  - false: the CLI pushes NOTHING on interrupt. claude and codex both do
-   *    this — verified live with EVERY one of their hook events registered
-   *    (claude's Stop emitter runs at end-turn, through the very abort signal
-   *    the interrupt trips; codex is identically silent, proven against a
-   *    control turn that DID fire Stop). Cate's running indicator therefore
-   *    stays stuck until the next prompt.
+   *    into 'turn-end' (codex's Interrupt, cursor's stop{status:aborted}, pi's
+   *    agent_end, opencode's session.status{idle}). Cate's FSM idles correctly,
+   *    unaided.
+   *  - false: the CLI pushes no interrupt event. Claude is recovered from its
+   *    transcript marker; Kiro is recovered from the terminal input edge.
    *
-   * Claude and Codex recover out-of-band from a deterministic interrupt marker
-   * in their transcript (`interruptRecovery.marker` below). Kiro exposes
-   * neither a Stop hook nor a transcript marker on interrupt, so its v3 TUI is
-   * recovered from the Ctrl-C input edge while a hook-proven turn is active.
-   *
-   * The flag itself stays a truthful statement about the CLI: it still pushes
-   * no hook, so the "a user interrupt pushes NO hook event" tests keep guarding
-   * the day claude/codex ship a real interrupt event — the signal to flip this
-   * flag true (they would then self-heal via the hook and the transcript watch
-   * is no longer armed).
+   * Kiro exposes neither a Stop hook nor a transcript marker on interrupt, so
+   * its v3 TUI is recovered from the Ctrl-C input edge while a hook-proven turn
+   * is active.
    */
   reportsTurnEndOnInterrupt: boolean
   /**
@@ -228,10 +226,10 @@ interface SharedHooksJson {
 function mergeSharedHooksFile(
   existing: string | null,
   events: readonly string[],
-  oursGroup: () => HookGroup,
+  oursGroup: (event: string) => HookGroup,
 ): string | null {
   if (existing === null) {
-    return JSON.stringify({ hooks: Object.fromEntries(events.map((e) => [e, [oursGroup()]])) }, null, 2) + '\n'
+    return JSON.stringify({ hooks: Object.fromEntries(events.map((e) => [e, [oursGroup(e)]])) }, null, 2) + '\n'
   }
   let parsed: SharedHooksJson
   try {
@@ -262,7 +260,7 @@ function mergeSharedHooksFile(
       if (entries.length > 0 && filtered.length === 0) continue // group was ours
       kept.push(filtered.length === entries.length ? group : { ...group, hooks: filtered })
     }
-    hooks[event] = [...kept, oursGroup()]
+    hooks[event] = [...kept, oursGroup(event)]
   }
   const out = JSON.stringify({ ...parsed, hooks }, null, 2) + '\n'
   return out === existing ? null : out
@@ -337,7 +335,10 @@ export function agentHookFolder(agentId: AgentId): string | null {
 // session_id/transcript_path/cwd on every event.
 // ---------------------------------------------------------------------------
 
-const CLAUDE_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
+const CLAUDE_EVENTS = [
+  'SessionStart', 'UserPromptSubmit', 'PermissionRequest',
+  'PostToolUse', 'Stop', 'StopFailure', 'SessionEnd',
+]
 
 const claudeSpec: AgentHookSpec = {
   // No hook fires on a user interrupt — pinned live (see the field doc).
@@ -372,11 +373,9 @@ const claudeSpec: AgentHookSpec = {
       // long-running tool fires it only after finishing.
       case 'PostToolUse': return { kind: 'turn-resume', ...base }
       case 'Stop': return { kind: 'turn-end', ...base }
+      case 'StopFailure': return { kind: 'turn-end', ...base }
       case 'SessionEnd': return { kind: 'session-end', ...base }
-      case 'Notification':
-        // permission_prompt = blocked on tool approval; idle_prompt (and any
-        // future notification type) is not a tracked state — drop it.
-        return p.notification_type === 'permission_prompt' ? { kind: 'permission-wait', ...base } : null
+      case 'PermissionRequest': return { kind: 'permission-wait', ...base }
       default: return null
     }
   },
@@ -412,30 +411,25 @@ export function codexTrustedHash(label: string, command: string, timeout: number
 /** hooks.json event keys (CamelCase). Codex's own trust-state keys use
  *  snake_case labels of these same events — a codex quirk the live suite's
  *  trust harness mirrors. */
-const CODEX_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'Stop']
+const CODEX_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'Stop', 'Interrupt']
 
 const CODEX_HOOK_TIMEOUT = 60
 
 const codexSpec: AgentHookSpec = {
-  // Identically silent on interrupt (Ctrl+C) — pinned live against a control
-  // turn that DID fire Stop, so it is a real gap, not a wiring failure.
-  reportsTurnEndOnInterrupt: false,
-  // Recovered from the rollout: codex writes an event_msg whose payload type is
-  // `turn_aborted` (reason "interrupted") when a running turn is cancelled —
-  // confirmed against real rollouts and the 0.145.0 binary's EventMsg enum. The
-  // marker is deliberately the serialized record TYPE, not free text, so
-  // ordinary assistant output can't trip it; it also serializes for the other
-  // abort reasons (budget/context exceeded), which is correct — any aborted
-  // turn has ended. Pinned live against the real rollout tail in
-  // agentHookContracts.itest.ts.
-  interruptRecovery: { marker: /"turn_aborted"/ },
+  // Current Codex emits Interrupt with the interrupted turn_id. Hook-native on
+  // purpose: its transcript format is explicitly not a stable hook interface.
+  reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
       relPath: '.codex/hooks.json',
       // Shared with the user's own codex hooks — merged, never clobbered.
       build: (existing, ctx) =>
-        mergeSharedHooksFile(existing, CODEX_EVENTS, () => ({
-          hooks: [{ type: 'command', command: ctx.bridgeCommand, timeout: CODEX_HOOK_TIMEOUT }],
+        mergeSharedHooksFile(existing, CODEX_EVENTS, (event) => ({
+          hooks: [{
+            type: 'command',
+            command: ctx.bridgeCommand,
+            timeout: event === 'Interrupt' ? 3 : CODEX_HOOK_TIMEOUT,
+          }],
         })),
       strip: (existing) => stripSharedHooksFile(existing, CODEX_EVENTS),
     },
@@ -450,6 +444,7 @@ const codexSpec: AgentHookSpec = {
       case 'SessionStart': return { kind: 'session-start', ...base }
       case 'UserPromptSubmit': return { kind: 'turn-start', ...base }
       case 'Stop': return { kind: 'turn-end', ...base }
+      case 'Interrupt': return { kind: 'turn-end', ...base }
       case 'PermissionRequest': return { kind: 'permission-wait', ...base }
       // Fires after EVERY executed tool call. This confirms the turn is still
       // active, but is too late to represent approval resolution: an approved
@@ -603,16 +598,16 @@ const cursorSpec: AgentHookSpec = {
 // never loads them at all. Both are normal, not failure states.
 // ---------------------------------------------------------------------------
 
-const GROK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse', 'Stop', 'SessionEnd']
+const GROK_EVENTS = [
+  'SessionStart', 'UserPromptSubmit', 'Notification', 'PostToolUse',
+  'Stop', 'StopFailure', 'StopCancelled', 'SessionEnd',
+]
 
 const GROK_HOOK_TIMEOUT = 60
 
 const grokSpec: AgentHookSpec = {
-  // Ctrl+C on an in-flight turn fires Stop → turn-end, pinned live on the
-  // approval-parked turn in agentHookContracts.itest.ts (a free-streaming turn
-  // could not be tested — the account's grok-4.5-build quota was exhausted —
-  // but the cancel mechanism is the same, and grok's docs list Stop as firing
-  // on a "cancelled" turn).
+  // Current Grok emits StopCancelled on user interrupt; promptId correlates a
+  // possibly-late cancellation with the turn it actually ended.
   reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
@@ -627,6 +622,8 @@ const grokSpec: AgentHookSpec = {
     },
   ],
   normalize: (p) => {
+    // Root terminal state must not be ended by a child-agent completion.
+    if (p.subagentType != null) return null
     const base = {
       sessionId: str(p.sessionId),
       cwd: str(p.cwd) ?? undefined,
@@ -641,6 +638,8 @@ const grokSpec: AgentHookSpec = {
       // earlier approval-answer edge for long-running approved tools.
       case 'post_tool_use': return { kind: 'turn-resume', ...base }
       case 'stop': return { kind: 'turn-end', ...base }
+      case 'stop_failure': return { kind: 'turn-end', ...base }
+      case 'stop_cancelled': return { kind: 'turn-end', ...base }
       case 'session_end': return { kind: 'session-end', ...base }
       case 'notification':
         // permission_prompt = parked on tool approval. PreToolUse fires ~30ms
@@ -657,7 +656,7 @@ const grokSpec: AgentHookSpec = {
 // opencode scans `{plugin,plugins}/*.{ts,js}` under every config directory it
 // resolves and imports each match at startup (verified against the 1.18.3
 // binary: a probe file in .opencode/plugin/ was loaded and received
-// session.created / session.status / session.idle). Two contract details that
+// session.created / session.status). Two contract details that
 // suite pins: the extension must be .js (.mjs is outside the glob), and EVERY
 // exported factory is invoked — not just the default — hence a single named
 // export here.
@@ -667,7 +666,7 @@ const grokSpec: AgentHookSpec = {
 // themselves, and it puts opencode on the same Auto/On/Off tri-state (and the
 // same ownership/strip rules) as every other agent.
 //
-// The plugin forwards only the five bus events Cate tracks; the bus is
+// The plugin forwards only the four bus events Cate tracks; the bus is
 // otherwise chatty (message parts, plugin.added, catalog.updated…).
 // ---------------------------------------------------------------------------
 
@@ -675,13 +674,17 @@ const OPENCODE_PLUGIN_SOURCE = `// cate-hook — generated by Cate (agent hook i
 // Inert outside Cate terminals: it no-ops unless the CATE_HOOK_* env vars are set.
 const ENDPOINT = process.env.${CATE_HOOK_ENDPOINT_ENV}
 const TOKEN = process.env.${CATE_HOOK_TOKEN_ENV}
-const TRACKED = new Set(["session.created", "session.status", "session.idle", "permission.asked", "permission.replied"])
+const TRACKED = new Set(["session.created", "session.status", "permission.asked", "permission.replied"])
+const SUBAGENT_SESSIONS = new Set()
 export const CateHookBridge = async () => {
   if (!ENDPOINT || !TOKEN) return {}
   return {
     event: async ({ event }) => {
       if (!event || !TRACKED.has(event.type)) return
       const props = event.properties ?? {}
+      const sessionID = props.sessionID ?? props.info?.id ?? null
+      if (sessionID && event.type === "session.created" && props.info?.parentID) SUBAGENT_SESSIONS.add(sessionID)
+      if (SUBAGENT_SESSIONS.has(sessionID)) return
       fetch(ENDPOINT + "/hook", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer " + TOKEN },
@@ -691,7 +694,7 @@ export const CateHookBridge = async () => {
           pid: process.pid, // in-process: this IS the agent, for presence tracking
           payload: {
             type: event.type,
-            sessionID: props.sessionID ?? props.info?.id ?? null,
+            sessionID,
             status: props.status ?? null,
             directory: props.info?.directory ?? null,
             permission: props.permission ?? null,
@@ -705,8 +708,7 @@ export const CateHookBridge = async () => {
 `
 
 const opencodeSpec: AgentHookSpec = {
-  // Interrupt (Ctrl+C) aborts the turn and fires session.idle ~45ms later →
-  // turn-end.
+  // Interrupt (Ctrl+C) returns session.status to idle → turn-end.
   reportsTurnEndOnInterrupt: true,
   projectFiles: [
     {
@@ -725,10 +727,9 @@ const opencodeSpec: AgentHookSpec = {
     switch (p.type) {
       case 'session.created': return { kind: 'session-start', ...base }
       case 'session.status':
-        // busy marks the turn starting; the idle STATUS is redundant with the
-        // explicit session.idle event below, so only busy maps.
-        return (p.status as { type?: unknown } | null)?.type === 'busy' ? { kind: 'turn-start', ...base } : null
-      case 'session.idle': return { kind: 'turn-end', ...base }
+        // session.status is OpenCode's canonical busy/idle lifecycle event.
+        if ((p.status as { type?: unknown } | null)?.type === 'busy') return { kind: 'turn-start', ...base }
+        return (p.status as { type?: unknown } | null)?.type === 'idle' ? { kind: 'turn-end', ...base } : null
       case 'permission.asked': return { kind: 'permission-wait', ...base }
       // The user answered the permission prompt. Even a "reject" reply keeps
       // the turn in flight (the model receives the denial, produces text, and
@@ -817,5 +818,6 @@ export function normalizeAgentHookPayload(
   if (!spec) return null
   const fields = spec.normalize(payload)
   if (!fields) return null
-  return { terminalId, agentId: agentId as AgentId, raw: payload, ...fields }
+  const turnId = str(payload.turn_id) ?? str(payload.turnId) ?? str(payload.promptId) ?? undefined
+  return { terminalId, agentId: agentId as AgentId, raw: payload, turnId, ...fields }
 }

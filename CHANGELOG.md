@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Browser password saving**: Cate can save or update credentials submitted by users or agents after explicit native confirmation, with manual entry available in the password manager.
+
+### Changed
+
+- **Single-surface browser architecture**: browser panels now keep one persistent live webview per tab and run automation against that exact guest through target-bound Chromium DevTools sessions, removing the separate agent-browser process and hidden-window path.
+
+## [1.6.1-beta.5] - 2026-09-03
+
+This beta adds a unified review workflow for changes across entire commits, branches, and working trees.
+
+### Added
+
+- **Multi-file Diff Review panel**: inspect every changed file and its individual diff together for uncommitted, unstaged, staged, commit, and merge-base branch comparisons.
+- **Focused review workflows**: launch reviews from Source Control or the canvas, jump directly to a selected file, switch between unified and split layouts, filter files, preview image changes, and add exportable local file or line notes.
+- **Review-time Git actions**: stage, unstage, or discard files and commit, push, or open a pull request directly from eligible reviews across local, SSH, and WSL workspaces.
+
+### Fixed
+
+- **Nested workspace comparisons**: Diff Review resolves repository-root paths correctly when the open workspace is inside a repository subdirectory.
+
 ## [1.6.1-beta.4] - 2026-08-30
 
 This beta keeps browser panels visually synchronized during canvas navigation.

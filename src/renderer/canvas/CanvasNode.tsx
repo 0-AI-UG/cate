@@ -7,6 +7,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRenderCount } from '../lib/perf/perfClient'
 import type { StoreApi } from 'zustand'
 import type { NodeActivityState, DockTabStack as DockTabStackNode, PanelType } from '../../shared/types'
@@ -33,8 +34,10 @@ import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { collectPanelIds } from '../../shared/collectPanelIds'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
-import { isWorktreePanelType, PANEL_DEFINITIONS } from '../../shared/panels'
+import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
+import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
+import { worktreeForPanel } from '../lib/worktreeContext'
 
 // Node ids already reported for missing geometry, so a bad node that keeps
 // re-rendering warns/reports once instead of spamming.
@@ -156,6 +159,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   useRenderCount('CanvasNode')
 
   const canvasApi = useCanvasStoreApi()
+  const topOverlayTarget = useCanvasTopOverlayTarget()
   const nodeRef = useRef<HTMLDivElement>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [isAnimatingLayout, setIsAnimatingLayout] = useState(false)
@@ -389,16 +393,13 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   // chip) so single-branch flows show no tint/sludge.
   const worktrees = currentWorkspace?.worktrees ?? []
   const wtEnabled = worktrees.length >= 2
-  // Resolve the active tab's worktree from its panel tag. A worktree panel with no explicit
-  // tag belongs to the PRIMARY worktree (the record keyed by the workspace root),
-  // so the main checkout gets the same tint / terrace / focus-lens as the others
-  // — mirroring the WorktreePill + tab-title fallback. Non-terminal panels stay
-  // untagged (no territory).
+  // Resolve the active tab's worktree. File-backed and review panels derive it
+  // from the path they operate on; terminals and Agent panels use their cwd/tag. An untagged terminal/agent belongs to the
+  // primary checkout so the main checkout gets the same visual treatment.
   const primaryWorktree = worktrees.find((w) => w.path === currentWorkspace?.rootPath)
-  const isWorktreePanel = isWorktreePanelType(activePanel?.type)
-  const explicitWorktreeId = activePanel?.worktreeId
   const activeWorktree = wtEnabled
-    ? worktrees.find((w) => w.id === explicitWorktreeId) ?? (isWorktreePanel ? primaryWorktree : undefined)
+    ? worktreeForPanel(activePanel ?? undefined, worktrees)
+      ?? (activePanel?.type === 'terminal' || activePanel?.type === 'agent' ? primaryWorktree : undefined)
     : undefined
   const activeWorktreeId = activeWorktree?.id ?? null
   const worktreeColor = activeWorktree?.color ?? null
@@ -648,7 +649,9 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 
   return (
     <>
-    {glowStyle && <div aria-hidden data-glow-for={nodeId} style={glowStyle} />}
+    {glowStyle && (topOverlayTarget
+      ? createPortal(<div aria-hidden data-glow-for={nodeId} style={glowStyle} />, topOverlayTarget)
+      : <div aria-hidden data-glow-for={nodeId} style={glowStyle} />)}
     <div
       ref={nodeRef}
       data-node-id={nodeId}

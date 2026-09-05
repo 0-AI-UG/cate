@@ -12,6 +12,7 @@ import { useGitTree } from './useGitTree'
 import { useSearchStore, lineKey } from '../stores/searchStore'
 import { ensureSearchSubscriptions } from '../stores/searchIpc'
 import log from '../lib/logger'
+import { Spinner } from '../ui/Spinner'
 
 const DEBOUNCE_MS = 250
 let searchSeq = 0
@@ -46,7 +47,11 @@ const ToggleBtn: React.FC<ToggleBtnProps> = ({ active, onClick, title, children 
   </Tooltip>
 )
 
-export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = ({ rootPath, workspaceId }) => {
+export const SearchView: React.FC<{
+  rootPath: string
+  workspaceId?: string
+  scopeControl?: React.ReactNode
+}> = ({ rootPath, workspaceId, scopeControl }) => {
   const query = useSearchStore((s) => s.query)
   const isRegex = useSearchStore((s) => s.isRegex)
   const matchCase = useSearchStore((s) => s.matchCase)
@@ -152,6 +157,7 @@ export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = 
     <div className="flex flex-col h-full">
       <SidebarSectionHeader
         title="Search"
+        subtitle={scopeControl}
         actions={
           <Tooltip label="Clear search">
             <SidebarHeaderButton
@@ -265,7 +271,7 @@ export const SearchView: React.FC<{ rootPath: string; workspaceId?: string }> = 
           {error ? (
             <span className="text-red-400 truncate" title={error}>{error}</span>
           ) : status === 'searching' && matchCount === 0 ? (
-            <span>Searching…</span>
+            <span className="flex items-center gap-1.5"><Spinner size={11} />Searching…</span>
           ) : matchCount === 0 ? (
             <span>No results</span>
           ) : (

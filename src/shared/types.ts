@@ -159,6 +159,10 @@ export interface GitReviewNote {
   resolvedBase: string | null
   resolvedTarget: string | null
   outdated?: boolean
+  status?: 'open' | 'resolved'
+  severity?: 'info' | 'warning' | 'error'
+  author?: 'human' | 'agent'
+  agentRunId?: string
   createdAt: string
 }
 
@@ -176,6 +180,23 @@ export interface ReviewPanelState {
   }
   collapsedFiles?: string[]
   notes?: GitReviewNote[]
+  sourceAgent?: { runId: string; ownerPanelId: string; panelId: string }
+  agentReview?: {
+    runId: string
+    terminalPanelId: string
+    status: 'working' | 'complete' | 'failed'
+    startedAt: number
+    completedAt?: number
+  }
+}
+
+/** The comparison identity carried when an existing Review panel is opened
+ * from another surface. The owning renderer merges this into its local panel
+ * state so display preferences and notes remain authoritative there. */
+export interface ReviewPanelOpenRequest {
+  spec: GitComparisonSpec
+  focusedFile?: string
+  sourceAgent?: ReviewPanelState['sourceAgent']
 }
 
 export interface PanelState {
@@ -198,8 +219,6 @@ export interface PanelState {
    *  suffix, and `pac://` PAC scripts. See `configureBrowserProxy` in
    *  `src/main/browserProxy.ts`. */
   proxyUrl?: string
-  /** When set, EditorPanel renders as a Monaco diff editor. */
-  diffMode?: 'staged' | 'working'
   /** Review panels only: comparison query, view preferences, expansion, and notes. */
   reviewState?: ReviewPanelState
   /** Editor panels with a markdown file only: render the rendered preview
@@ -215,8 +234,7 @@ export interface PanelState {
   cwd?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
-  /** Terminal and Agent panels only: id of the WorktreeMeta in the parent
-   *  workspace that supplies the process working directory. */
+  /** Checkout affinity for terminals, Agent, file-backed, and review panels. */
   worktreeId?: string
   /** Terminal panels only. Set to true the first time the user renames the
    *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
@@ -422,6 +440,9 @@ export interface WindowPanelReport {
   /** File/browser identity used by the cross-window cate.panel.list surface. */
   filePath?: string
   url?: string
+  /** Review repository identity used to reuse/deep-link a Review panel that is
+   * hosted by another window without mirroring its full local state. */
+  reviewRepoPath?: string
   /** Canonical active-panel marker from the owning window. */
   focused?: boolean
   /** Set when this panel lives inside a canvas panel in its window. */
@@ -801,6 +822,19 @@ export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace' | '
  *  with Monaco keys like Cmd+[ / Cmd+] / Cmd+L. */
 export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
 
+export type BrowserDownloadState = 'progressing' | 'paused' | 'completed' | 'cancelled' | 'interrupted'
+
+export interface BrowserDownloadEntry {
+  id: string
+  url: string
+  filename: string
+  filePath: string
+  state: BrowserDownloadState
+  receivedBytes: number
+  totalBytes: number
+  at: number
+}
+
 /** A single global browsing-history entry, deduplicated by URL. Shared across
  *  all workspaces and browser panels so Cate behaves like one browser. */
 export interface BrowserHistoryEntry {
@@ -829,6 +863,19 @@ export interface BrowserCredentialSuggestion {
   origin: string
 }
 
+export interface BrowserCredentialSaveInput {
+  origin: string
+  username: string
+  password: string
+  usernameElement?: string
+  passwordElement?: string
+}
+
+export interface BrowserCredentialSaveResult {
+  action: 'created' | 'updated' | 'unchanged'
+  credential: BrowserCredentialSuggestion
+}
+
 export interface BrowserCredentialProfilesResult {
   directImportSupported: boolean
   secureStorageAvailable: boolean
@@ -836,8 +883,8 @@ export interface BrowserCredentialProfilesResult {
   importedCount: number
 }
 
-/** One open tab in a browser panel. Every non-start-page tab owns a live guest
- *  while mounted; this record is the persisted restore state. */
+/** One open tab in a browser panel. Main owns its persistent page; this light
+ *  record is the renderer-visible restore state. */
 export interface BrowserTab {
   id: string
   url: string
@@ -1065,6 +1112,8 @@ export interface SessionSnapshot {
    *  stay stable across restarts instead of being re-assigned round-robin from
    *  the palette, and so panel.worktreeId references still resolve. */
   worktrees?: WorktreeMeta[]
+  /** Machine-local checkout selections for navigation and Source Control. */
+  worktreeViewScopes?: WorktreeViewScopes
   /** Resolved runtime connection for a remote/WSL workspace (absent ⇒ local).
    *  Persisted so the runtime can be reconnected on restore before any
    *  fs/git/terminal op runs. Mirrors WorkspaceState.connection. */
@@ -1180,10 +1229,17 @@ export interface ProjectSessionFile {
    *  here (not in committed workspace.json) so colors/labels survive a restart.
    *  Paths are absolute, matching `ProjectSessionPanel.workingDirectory`. */
   worktrees?: WorktreeMeta[]
+  /** Last checkout selected in worktree-aware views on this machine. */
+  worktreeViewScopes?: WorktreeViewScopes
   /** Resolved runtime connection for THIS workspace on THIS machine. Machine-
    *  local on purpose — a server/wsl choice is the opener's, not the repo's, so
    *  it lives here and never in the VCS-committed workspace.json. Absent ⇒ local. */
   connection?: RuntimeConnection
+}
+
+export interface WorktreeViewScopes {
+  navigationWorktreeId?: string
+  sourceControlWorktreeByRepository?: Record<string, string>
 }
 
 export interface ProjectSessionPanel {
@@ -1191,11 +1247,11 @@ export interface ProjectSessionPanel {
   ptyId?: string
   workingDirectory?: string
   unsavedContent?: string
-  /** Worktree this terminal panel is tagged with. Machine-local (worktree ids
-   *  are runtime uuids), so it lives in session.json, not workspace.json. */
+  /** Worktree this panel is associated with. Machine-local (worktree ids are
+   *  runtime uuids), so it lives in session.json, not workspace.json. */
+  worktreeId?: string
   /** Machine-local review query, display preferences, expansion, and notes. */
   reviewState?: ReviewPanelState
-  worktreeId?: string
   /** T3 thread displayed by an Agent panel on this machine's harness. */
   agentThreadId?: string
   /** Agent-CLI session running in this terminal at save time. Machine-local
@@ -1435,6 +1491,8 @@ export interface AppSettings {
   // Sidebar
   sidebarTintOpacity: number
   showFileExplorerOnLaunch: boolean
+  /** Show installed agent skills in each expanded workspace overview. */
+  showSkillsInWorkspaceOverview: boolean
 
   // File Explorer
   /** Folder/file names hidden in the file explorer, file search, and watcher. */
@@ -1558,6 +1616,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Sidebar
   sidebarTintOpacity: 1.0,
   showFileExplorerOnLaunch: false,
+  showSkillsInWorkspaceOverview: true,
 
   // File Explorer
   fileExclusions: [...FILE_EXCLUSIONS],

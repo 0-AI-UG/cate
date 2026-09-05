@@ -30,13 +30,13 @@ import {
 import { clearActivePanelIfMatches } from '../../lib/activePanel'
 import { pathDisplayName } from '../../lib/fs/displayPath'
 import { recordRecentFile } from '../../lib/fs/recentFiles'
+import { worktreeForPath } from '../../lib/worktreeContext'
 
 type PanelSliceActions = Pick<
   AppStoreActions,
   | 'createTerminal'
   | 'createBrowser'
   | 'createEditor'
-  | 'createDiffEditor'
   | 'createReview'
   | 'createCanvas'
   | 'createAgent'
@@ -79,11 +79,17 @@ function withDefaultSize(type: PanelType, placement: PanelPlacement | undefined)
 }
 
 export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
+  const worktreeIdForPath = (workspaceId: string, path: string | undefined): string | undefined => {
+    const workspace = get().workspaces.find((candidate) => candidate.id === workspaceId)
+    return worktreeForPath(path, workspace?.worktrees ?? [])?.id
+  }
+
   return {
     // --- Panel creation ---
 
     createTerminal(workspaceId, initialInput?, position?, placement?, cwd?, codingAgentLaunch?) {
       const panelId = generateId()
+      const worktreeId = worktreeIdForPath(workspaceId, cwd)
       const missionTitle = codingAgentLaunch?.title?.trim()
       const siblingPanels = get().workspaces.find((workspace) => workspace.id === workspaceId)?.panels ?? {}
       // Auto-number terminal titles so `cate ask "Terminal 2"` and similar
@@ -97,6 +103,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
           : nextNumberedTitle(get, workspaceId, 'terminal', 'Terminal'),
         isDirty: false,
         ...(cwd ? { cwd } : {}),
+        ...(worktreeId ? { worktreeId } : {}),
         ...(codingAgentLaunch ? {
           codingAgentLaunch,
           codingAgentRun: {
@@ -133,6 +140,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     createEditor(workspaceId, filePath?, position?, placement?) {
       const panelId = generateId()
+      const worktreeId = worktreeIdForPath(workspaceId, filePath)
       if (filePath) recordRecentFile(workspaceId, filePath)
       const fileName = (filePath && pathDisplayName(filePath)) || 'Untitled'
       const panel: PanelState = {
@@ -141,12 +149,14 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         title: fileName,
         isDirty: false,
         filePath,
+        ...(worktreeId ? { worktreeId } : {}),
       }
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('editor', placement), position)
     },
 
     createDocument(workspaceId, filePath?, documentType?, position?, placement?) {
       const panelId = generateId()
+      const worktreeId = worktreeIdForPath(workspaceId, filePath)
       if (filePath) recordRecentFile(workspaceId, filePath)
       const fileName = (filePath && pathDisplayName(filePath)) || 'Document'
       const panel: PanelState = {
@@ -156,27 +166,14 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         isDirty: false,
         filePath,
         documentType,
+        ...(worktreeId ? { worktreeId } : {}),
       }
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('document', placement), position)
     },
 
-    createDiffEditor(workspaceId, filePath, diffMode, position?, placement?) {
-      const panelId = generateId()
-      const fileName = pathDisplayName(filePath) || 'Untitled'
-      const label = diffMode === 'staged' ? 'Staged' : 'Working'
-      const panel: PanelState = {
-        id: panelId,
-        type: 'editor',
-        title: `${fileName} (${label} Diff)`,
-        isDirty: false,
-        filePath,
-        diffMode,
-      }
-      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('editor', placement), position)
-    },
-
     createReview(workspaceId, repoPath, initial?, position?, placement?) {
       const panelId = generateId()
+      const worktreeId = worktreeIdForPath(workspaceId, repoPath)
       const reviewState: ReviewPanelState = {
         repoPath,
         spec: initial?.spec ?? { kind: 'uncommitted' },
@@ -191,6 +188,8 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         fileFilter: initial?.fileFilter,
         collapsedFiles: initial?.collapsedFiles ?? [],
         notes: initial?.notes ?? [],
+        sourceAgent: initial?.sourceAgent,
+        agentReview: initial?.agentReview,
       }
       const panel: PanelState = {
         id: panelId,
@@ -198,6 +197,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         title: 'Diff Review',
         isDirty: false,
         reviewState,
+        ...(worktreeId ? { worktreeId } : {}),
       }
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('review', placement), position)
     },
@@ -344,7 +344,8 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
     },
 
     updatePanelFilePath(workspaceId, panelId, filePath) {
-      setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, filePath }))
+      const worktreeId = worktreeIdForPath(workspaceId, filePath)
+      setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, filePath, worktreeId }))
     },
 
     setPanelDirty(workspaceId, panelId, dirty) {

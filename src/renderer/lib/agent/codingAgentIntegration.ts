@@ -1,6 +1,13 @@
 import type { ElectronAPI } from '../../../shared/electron-api'
 import { useAppStore } from '../../stores/appStore'
 import { gitStatusStore } from '../../stores/gitStatusStore'
+import {
+  closePreparedWorktreePanels,
+  prepareWorktreePanelsForClose,
+  removeWorktreeFromAllWindows,
+  worktreePanelCloseTargets,
+} from '../worktreePanelClose'
+import { openReviewPanel } from '../review/openReviewPanel'
 
 export type CodingAgentWorktreeReview = Awaited<ReturnType<ElectronAPI['gitWorktreeReview']>>
 
@@ -23,6 +30,28 @@ export async function reviewCodingAgentWorktree(
   const primary = await window.electronAPI.gitStatus(workspace.rootPath, workspaceId)
   if (!primary.current) throw new Error('target-branch-not-found')
   return window.electronAPI.gitWorktreeReview(worktree.path, primary.current, workspaceId)
+}
+
+export async function openCodingAgentReviewPanel(
+  workspaceId: string,
+  panelId: string,
+  currentReview?: CodingAgentWorktreeReview,
+): Promise<string> {
+  const { run, worktree } = context(workspaceId, panelId)
+  const review = currentReview ?? await reviewCodingAgentWorktree(workspaceId, panelId)
+  const spec = review.dirty
+    ? { kind: 'uncommitted' as const }
+    : {
+        kind: 'branch' as const,
+        base: review.baseBranch,
+        target: review.branch || 'HEAD',
+      }
+  return openReviewPanel({
+    workspaceId,
+    repoPath: worktree.path,
+    spec,
+    sourceAgent: { runId: run.id, ownerPanelId: run.ownerPanelId, panelId },
+  })
 }
 
 export async function applyCodingAgentWorktree(
@@ -73,10 +102,16 @@ export async function discardCodingAgentWorktree(
   if (!run.ownsWorktree) throw new Error('worker-does-not-own-worktree')
   const status = await window.electronAPI.gitWorktreeStatus(worktree.path, workspaceId)
   if (!status) throw new Error('worktree-not-found')
+  const panelTargets = worktreePanelCloseTargets(workspaceId, worktree.id)
+  if (!(await prepareWorktreePanelsForClose(workspaceId, panelTargets))) {
+    throw new Error('worktree-panel-close-cancelled')
+  }
+  const removalStatus = await window.electronAPI.gitWorktreeStatus(worktree.path, workspaceId)
+  if (!removalStatus) throw new Error('worktree-not-found')
   await window.electronAPI.gitWorktreeRemove(
     workspace.rootPath,
     worktree.path,
-    { force: status.dirty },
+    { force: status.dirty || removalStatus.dirty || panelTargets.hasDirtyEditor },
     workspaceId,
   )
   try {
@@ -87,7 +122,8 @@ export async function discardCodingAgentWorktree(
       workspaceId,
     )
   } finally {
-    store.removeWorktree(workspaceId, worktree.id)
+    closePreparedWorktreePanels(workspaceId, panelTargets)
+    removeWorktreeFromAllWindows(workspaceId, worktree.id)
     store.removeAdditionalRoot(workspaceId, worktree.path)
     store.setPanelCodingAgentRun(workspaceId, panelId, {
       ...run,

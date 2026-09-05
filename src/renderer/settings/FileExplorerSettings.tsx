@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Plus, X, ArrowCounterClockwise } from '@phosphor-icons/react'
+import { ArrowCounterClockwise } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { DEFAULT_SETTINGS } from '../../shared/types'
-import { SearchableBlock, SecondaryButton, TextInput } from './SettingsComponents'
+import { SearchableBlock, SecondaryButton } from './SettingsComponents'
+import { StringListEditor } from './StringListEditor'
 
 function sameAsDefault(list: string[]): boolean {
   const defaults = DEFAULT_SETTINGS.fileExclusions
@@ -56,53 +57,16 @@ export function FileExplorerSettings() {
         project.
       </p>
 
-      <div className="flex gap-1.5">
-        <TextInput
-          value={draft}
-          onChange={(value) => {
-            setDraft(value)
-            if (error) setError(null)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') add()
-          }}
-          placeholder="Add a name, e.g. dist"
-          layoutClassName="flex-1 px-2"
-        />
-        <button
-          onClick={add}
-          className="flex items-center gap-1 px-2.5 py-1 text-[12px] rounded text-secondary hover:text-primary bg-surface-2 hover:bg-hover border border-subtle"
-        >
-          <Plus size={12} />
-          Add
-        </button>
-      </div>
-
-      {error && <div className="text-[11px] text-red-400 mt-2">{error}</div>}
-
-      <div className="flex flex-wrap gap-1.5 mt-3">
-        {folders.length === 0 ? (
-          <div className="text-[11px] text-muted italic px-0.5 py-1">
-            No exclusions. Every file and folder is shown.
-          </div>
-        ) : (
-          folders.map((name) => (
-            <span
-              key={name}
-              className="group inline-flex items-center gap-1 rounded bg-surface-5 border border-subtle pl-2 pr-1 py-0.5 text-[12px] font-mono text-primary"
-            >
-              {name}
-              <button
-                onClick={() => remove(name)}
-                className="p-0.5 rounded-lg text-muted hover:text-red-400"
-                title={`Remove ${name}`}
-              >
-                <X size={11} />
-              </button>
-            </span>
-          ))
-        )}
-      </div>
+      <StringListEditor
+        values={folders}
+        draft={draft}
+        onDraftChange={(value) => { setDraft(value); if (error) setError(null) }}
+        onAdd={add}
+        onRemove={remove}
+        placeholder="Add a name, e.g. dist"
+        error={error}
+        emptyMessage="No exclusions. Every file and folder is shown."
+      />
 
       <div className="mt-4 pt-3 border-t border-subtle flex justify-end">
         <SecondaryButton onClick={restore} disabled={sameAsDefault(folders)}>

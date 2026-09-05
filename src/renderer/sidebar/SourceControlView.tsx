@@ -18,18 +18,21 @@ import {
   X,
   Check,
   GitDiff,
-  FileMagnifyingGlass,
 } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { pathDisplayName } from '../lib/fs/displayPath'
 import { Tooltip } from '../ui/Tooltip'
+import { Spinner } from '../ui/Spinner'
 import { useGitStatusSnapshot, gitStatusStore, workspaceIdForRoot } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
 import { errorMessage } from '../lib/errorMessage'
-import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
+import { parseLocator } from '../../shared/runtimeLocator'
 import { openReviewPanel } from '../lib/review/openReviewPanel'
 import type { GitComparisonSpec } from '../../shared/types'
+import { useUIStore } from '../stores/uiStore'
+import { selectedWorktree } from '../lib/worktreeContext'
+import { WorktreeScopeSelect } from './WorktreeScopeSelect'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -161,8 +164,7 @@ const FileEntry: React.FC<{
   onUnstage?: () => void
   onDiscard?: () => void
   onClick?: () => void
-  onStandaloneDiff?: () => void
-}> = ({ file, statusChar, onStage, onUnstage, onDiscard, onClick, onStandaloneDiff }) => {
+}> = ({ file, statusChar, onStage, onUnstage, onDiscard, onClick }) => {
   const dir = dirName(file.path)
   return (
     <div
@@ -177,17 +179,6 @@ const FileEntry: React.FC<{
         {dir && <span className="text-muted ml-1">{dir}</span>}
       </span>
       <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
-        {onStandaloneDiff && (
-          <Tooltip label="Open standalone diff">
-            <button
-              className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
-              onClick={(e) => { e.stopPropagation(); onStandaloneDiff() }}
-              aria-label="Open standalone diff"
-            >
-              <FileMagnifyingGlass size={13} />
-            </button>
-          </Tooltip>
-        )}
         {onDiscard && (
           <Tooltip label="Discard changes">
             <button
@@ -231,11 +222,12 @@ const FileEntry: React.FC<{
 // ---------------------------------------------------------------------------
 
 const BranchPicker: React.FC<{
-  rootPath: string
+  repositoryRoot: string
+  checkoutRoot: string
   currentBranch: string | null
   onSwitch: () => void
   onReview: (branch: string) => void
-}> = ({ rootPath, currentBranch, onSwitch, onReview }) => {
+}> = ({ repositoryRoot, checkoutRoot, currentBranch, onSwitch, onReview }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [branches, setBranches] = useState<GitBranchInfo[]>([])
   const [filter, setFilter] = useState('')
@@ -245,10 +237,10 @@ const BranchPicker: React.FC<{
 
   const loadBranches = useCallback(async () => {
     try {
-      const result = await window.electronAPI.gitBranchList(rootPath, workspaceIdForRoot(rootPath))
+      const result = await window.electronAPI.gitBranchList(repositoryRoot, workspaceIdForRoot(repositoryRoot))
       setBranches(result.branches)
     } catch { /* ignore */ }
-  }, [rootPath])
+  }, [repositoryRoot])
 
   useEffect(() => {
     if (isOpen) {
@@ -265,37 +257,39 @@ const BranchPicker: React.FC<{
     setError(null)
     try {
       const branchName = name.replace(/^remotes\/origin\//, '')
-      await window.electronAPI.gitCheckout(rootPath, branchName, workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitCheckout(checkoutRoot, branchName, workspaceIdForRoot(checkoutRoot))
       setIsOpen(false)
       onSwitch()
     } catch (err: any) {
       setError(errorMessage(err, 'Checkout failed'))
     }
-  }, [rootPath, onSwitch])
+  }, [checkoutRoot, onSwitch])
 
   const handleCreate = useCallback(async () => {
     if (!newBranchName.trim()) return
     setError(null)
     try {
-      await window.electronAPI.gitBranchCreate(rootPath, newBranchName.trim(), undefined, workspaceIdForRoot(rootPath))
+      // Creating a branch also checks it out, so it belongs to the selected
+      // checkout even though the branch inventory itself is repository-wide.
+      await window.electronAPI.gitBranchCreate(checkoutRoot, newBranchName.trim(), undefined, workspaceIdForRoot(checkoutRoot))
       setIsOpen(false)
       onSwitch()
     } catch (err: any) {
       setError(errorMessage(err, 'Create failed'))
     }
-  }, [rootPath, newBranchName, onSwitch])
+  }, [checkoutRoot, newBranchName, onSwitch])
 
   const handleDelete = useCallback(async (name: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (name === currentBranch) return
     setError(null)
     try {
-      await window.electronAPI.gitBranchDelete(rootPath, name, undefined, workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitBranchDelete(repositoryRoot, name, undefined, workspaceIdForRoot(repositoryRoot))
       loadBranches()
     } catch (err: any) {
       setError(errorMessage(err, 'Delete failed'))
     }
-  }, [rootPath, currentBranch, loadBranches])
+  }, [repositoryRoot, currentBranch, loadBranches])
 
   const localBranches = branches.filter(b => !b.isRemote)
   const remoteBranches = branches.filter(b => b.isRemote)
@@ -367,33 +361,39 @@ const BranchPicker: React.FC<{
           )}
 
           {/* Branch list */}
-          {filtered(localBranches).map(b => (
-            <div
-              key={b.name}
-              className={`group flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] ${b.current ? 'text-primary' : 'text-secondary'}`}
-              onClick={() => handleCheckout(b.name)}
-            >
-              <GitBranch size={11} className="flex-shrink-0" />
-              <span className="truncate flex-1 min-w-0">{b.name}</span>
-              {b.current && <span className="text-[9px] text-green-400/60 flex-shrink-0">current</span>}
-              {!b.current && (
-                <div className="hidden group-hover:flex items-center">
-                  <Tooltip label="Review branch against current">
-                    <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={(e) => { e.stopPropagation(); onReview(b.name) }} aria-label="Review branch"><GitDiff size={11} /></button>
-                  </Tooltip>
-                  <Tooltip label="Delete branch">
-                    <button
-                      className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-red-400 flex-shrink-0"
-                      onClick={(e) => handleDelete(b.name, e)}
-                      aria-label="Delete branch"
-                    >
-                      <Trash size={10} />
-                    </button>
-                  </Tooltip>
-                </div>
-              )}
-            </div>
-          ))}
+          {filtered(localBranches).map(b => {
+            // git branch list is loaded from the canonical repository root, so
+            // its `current` bit describes that checkout. The selected Changes
+            // checkout has its own current branch from the status snapshot.
+            const isSelectedCurrent = b.name === currentBranch
+            return (
+              <div
+                key={b.name}
+                className={`group flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] ${isSelectedCurrent ? 'text-primary' : 'text-secondary'}`}
+                onClick={() => handleCheckout(b.name)}
+              >
+                <GitBranch size={11} className="flex-shrink-0" />
+                <span className="truncate flex-1 min-w-0">{b.name}</span>
+                {isSelectedCurrent && <span className="text-[9px] text-green-400/60 flex-shrink-0">current</span>}
+                {!isSelectedCurrent && (
+                  <div className="hidden group-hover:flex items-center">
+                    <Tooltip label="Review branch against current">
+                      <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={(e) => { e.stopPropagation(); onReview(b.name) }} aria-label="Review branch"><GitDiff size={11} /></button>
+                    </Tooltip>
+                    <Tooltip label="Delete branch">
+                      <button
+                        className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-red-400 flex-shrink-0"
+                        onClick={(e) => handleDelete(b.name, e)}
+                        aria-label="Delete branch"
+                      >
+                        <Trash size={10} />
+                      </button>
+                    </Tooltip>
+                  </div>
+                )}
+              </div>
+            )
+          })}
           {filtered(remoteBranches).length > 0 && (
             <>
               <div className="px-3 py-0.5 text-[10px] text-muted uppercase mt-1">Remote</div>
@@ -437,9 +437,15 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
   // shared fsWatch + focus + branch-update loop). The Source Control list can
   // therefore no longer disagree with the Explorer / Search git tints. Only the
   // commit log is still fetched locally (it isn't part of the shared snapshot).
-  const snapshot = useGitStatusSnapshot(rootPath)
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const worktrees = useWorktrees(rootPath, selectedWorkspaceId)
+  const selectedChangesWorktreeId = useUIStore(
+    (s) => s.sourceControlWorktreeByRepository[rootPath],
+  )
+  const setSourceControlWorktree = useUIStore((s) => s.setSourceControlWorktree)
+  const changesWorktree = selectedWorktree(worktrees, selectedChangesWorktreeId)
+  const checkoutRoot = changesWorktree?.path ?? rootPath
+  const snapshot = useGitStatusSnapshot(checkoutRoot)
   const status: GitStatusResult | null = snapshot.isRepo
     ? {
         files: snapshot.statusFiles,
@@ -460,8 +466,6 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
   const [actionError, setActionError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const createDiffEditor = useAppStore((s) => s.createDiffEditor)
-
   // -------------------------------------------------------------------------
   // Data fetching — kick the shared git store and refresh the local commit log.
   // The store's own loop already refreshes on fs-watch / focus / branch-update,
@@ -473,36 +477,22 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     if (!rootPath) return
     setLoading(true)
     setActionError(null)
-    gitStatusStore.refresh(rootPath)
+    gitStatusStore.refresh(checkoutRoot)
     try {
-      const logResult = await window.electronAPI.gitLog(rootPath, 30, workspaceIdForRoot(rootPath))
+      // History follows the selected checkout's current branch. Branch and
+      // worktree inventories below remain repository-wide.
+      const logResult = await window.electronAPI.gitLog(checkoutRoot, 30, workspaceIdForRoot(checkoutRoot))
       setLogEntries(logResult)
     } catch (err) {
       log.error('Git log error:', err)
     } finally {
       setLoading(false)
     }
-  }, [rootPath])
+  }, [rootPath, checkoutRoot])
 
   useEffect(() => {
     refresh()
   }, [refresh])
-
-  // -------------------------------------------------------------------------
-  // Open diff on canvas
-  // -------------------------------------------------------------------------
-
-  const openFileDiff = useCallback((filePath: string, staged: boolean) => {
-    // filePath is git-relative (POSIX). Join onto the DECODED host root and
-    // re-encode through formatLocator — concatenating onto the raw locator
-    // string corrupts remote filenames whose bytes collide with the percent
-    // encoding. For local roots formatLocator returns the bare path unchanged.
-    const { runtimeId, path: root } = parseLocator(rootPath)
-    const hostPath = filePath.startsWith('/')
-      ? filePath
-      : `${root.replace(/\/+$/, '')}/${filePath}`
-    createDiffEditor(selectedWorkspaceId, formatLocator({ runtimeId, path: hostPath }), staged ? 'staged' : 'working')
-  }, [rootPath, selectedWorkspaceId, createDiffEditor])
 
   const openReview = useCallback((
     spec: GitComparisonSpec,
@@ -510,52 +500,52 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     openNew = false,
   ) => {
     if (!selectedWorkspaceId) return
-    void openReviewPanel({ workspaceId: selectedWorkspaceId, repoPath: rootPath, spec, focusedFile, openNew })
-  }, [rootPath, selectedWorkspaceId])
+    void openReviewPanel({ workspaceId: selectedWorkspaceId, repoPath: checkoutRoot, spec, focusedFile, openNew })
+  }, [checkoutRoot, selectedWorkspaceId])
 
   // -------------------------------------------------------------------------
   // Actions
   // -------------------------------------------------------------------------
 
   const stageFile = useCallback(async (filePath: string) => {
-    await window.electronAPI.gitStage(rootPath, filePath, workspaceIdForRoot(rootPath))
+    await window.electronAPI.gitStage(checkoutRoot, filePath, workspaceIdForRoot(checkoutRoot))
     refresh()
-  }, [rootPath, refresh])
+  }, [checkoutRoot, refresh])
 
   const unstageFile = useCallback(async (filePath: string) => {
-    await window.electronAPI.gitUnstage(rootPath, filePath, workspaceIdForRoot(rootPath))
+    await window.electronAPI.gitUnstage(checkoutRoot, filePath, workspaceIdForRoot(checkoutRoot))
     refresh()
-  }, [rootPath, refresh])
+  }, [checkoutRoot, refresh])
 
   const discardFile = useCallback(async (filePath: string) => {
     try {
-      await window.electronAPI.gitDiscardFile(rootPath, filePath, workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitDiscardFile(checkoutRoot, filePath, workspaceIdForRoot(checkoutRoot))
       refresh()
     } catch (err: any) {
       setActionError(errorMessage(err, 'Discard failed'))
     }
-  }, [rootPath, refresh])
+  }, [checkoutRoot, refresh])
 
   const stageAll = useCallback(async (files: GitFileStatus[]) => {
     for (const f of files) {
-      await window.electronAPI.gitStage(rootPath, f.path, workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitStage(checkoutRoot, f.path, workspaceIdForRoot(checkoutRoot))
     }
     refresh()
-  }, [rootPath, refresh])
+  }, [checkoutRoot, refresh])
 
   const unstageAll = useCallback(async (files: GitFileStatus[]) => {
     for (const f of files) {
-      await window.electronAPI.gitUnstage(rootPath, f.path, workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitUnstage(checkoutRoot, f.path, workspaceIdForRoot(checkoutRoot))
     }
     refresh()
-  }, [rootPath, refresh])
+  }, [checkoutRoot, refresh])
 
   const commit = useCallback(async () => {
     if (!commitMessage.trim() || committing) return
     setCommitting(true)
     setActionError(null)
     try {
-      await window.electronAPI.gitCommit(rootPath, commitMessage.trim(), workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitCommit(checkoutRoot, commitMessage.trim(), workspaceIdForRoot(checkoutRoot))
       setCommitMessage('')
       refresh()
     } catch (err: any) {
@@ -563,35 +553,35 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     } finally {
       setCommitting(false)
     }
-  }, [rootPath, commitMessage, committing, refresh])
+  }, [checkoutRoot, commitMessage, committing, refresh])
 
   const push = useCallback(async () => {
     if (pushing) return
     setPushing(true)
     setActionError(null)
     try {
-      await window.electronAPI.gitPush(rootPath, undefined, undefined, workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitPush(checkoutRoot, undefined, undefined, workspaceIdForRoot(checkoutRoot))
       refresh()
     } catch (err: any) {
       setActionError(errorMessage(err, 'Push failed'))
     } finally {
       setPushing(false)
     }
-  }, [rootPath, pushing, refresh])
+  }, [checkoutRoot, pushing, refresh])
 
   const pull = useCallback(async () => {
     if (pulling) return
     setPulling(true)
     setActionError(null)
     try {
-      await window.electronAPI.gitPull(rootPath, undefined, undefined, workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitPull(checkoutRoot, undefined, undefined, workspaceIdForRoot(checkoutRoot))
       refresh()
     } catch (err: any) {
       setActionError(errorMessage(err, 'Pull failed'))
     } finally {
       setPulling(false)
     }
-  }, [rootPath, pulling, refresh])
+  }, [checkoutRoot, pulling, refresh])
 
   const fetch_ = useCallback(async () => {
     if (fetching) return
@@ -610,22 +600,22 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
   const stash = useCallback(async () => {
     setActionError(null)
     try {
-      await window.electronAPI.gitStash(rootPath, undefined, workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitStash(checkoutRoot, undefined, workspaceIdForRoot(checkoutRoot))
       refresh()
     } catch (err: any) {
       setActionError(errorMessage(err, 'Stash failed'))
     }
-  }, [rootPath, refresh])
+  }, [checkoutRoot, refresh])
 
   const stashPop = useCallback(async () => {
     setActionError(null)
     try {
-      await window.electronAPI.gitStashPop(rootPath, workspaceIdForRoot(rootPath))
+      await window.electronAPI.gitStashPop(checkoutRoot, workspaceIdForRoot(checkoutRoot))
       refresh()
     } catch (err: any) {
       setActionError(errorMessage(err, 'Stash pop failed'))
     }
-  }, [rootPath, refresh])
+  }, [checkoutRoot, refresh])
 
   // -------------------------------------------------------------------------
   // Categorize files
@@ -683,38 +673,37 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     </span>
   )
 
+  const hasMultipleWorktrees = worktrees.filter((worktree) => !worktree.isOrphan).length > 1
+  const changesScope = hasMultipleWorktrees ? (
+    <WorktreeScopeSelect
+      worktrees={worktrees}
+      value={changesWorktree?.id}
+      onChange={(id) => setSourceControlWorktree(rootPath, id)}
+      prefix="Changes in"
+      title={`Changes worktree for ${repoName}`}
+    />
+  ) : null
+
   const headerActions = (
     <>
-      <Tooltip label="Review all uncommitted changes">
-        <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' })} aria-label="Review all uncommitted changes">
-          <GitDiff size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Open new diff review">
-        <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' }, undefined, true)} aria-label="Open new diff review">
-          <Plus size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Fetch from remote">
-        <SidebarHeaderButton onClick={fetch_} aria-label="Fetch from remote" disabled={fetching} spinning={fetching}>
-          <Download size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Pull from remote">
-        <SidebarHeaderButton onClick={pull} aria-label="Pull from remote" disabled={pulling}>
-          <ArrowDown size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Push to remote">
-        <SidebarHeaderButton onClick={push} aria-label="Push to remote" disabled={pushing}>
-          <ArrowUp size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
-      <Tooltip label="Refresh status">
-        <SidebarHeaderButton onClick={refresh} aria-label="Refresh status" spinning={loading}>
-          <ArrowClockwise size={12} />
-        </SidebarHeaderButton>
-      </Tooltip>
+      <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' })} title="Review all uncommitted changes">
+        <GitDiff size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' }, undefined, true)} title="Open new diff review">
+        <Plus size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={fetch_} title="Fetch from remote" disabled={fetching} spinning={fetching}>
+        <Download size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={pull} title="Pull from remote" disabled={pulling} spinning={pulling}>
+        <ArrowDown size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={push} title="Push to remote" disabled={pushing} spinning={pushing}>
+        <ArrowUp size={12} />
+      </SidebarHeaderButton>
+      <SidebarHeaderButton onClick={refresh} title="Refresh status" spinning={loading}>
+        <ArrowClockwise size={12} />
+      </SidebarHeaderButton>
     </>
   )
 
@@ -739,9 +728,15 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
       ) : (
         <SidebarSectionHeader
           title="Source Control"
-          subtitle={branchSubtitle}
+          subtitle={changesScope ? repoName : branchSubtitle}
           actions={headerActions}
         />
+      )}
+
+      {bodyVisible && changesScope && (
+        <div className="px-3 py-1 border-b border-subtle">
+          {changesScope}
+        </div>
       )}
 
       {bodyVisible && (
@@ -776,11 +771,12 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
         />
         <div className="flex gap-1 mt-1.5">
           <button
-            className="flex-1 py-1 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-surface-2 hover:bg-hover text-primary"
+            className="flex-1 inline-flex items-center justify-center gap-1 py-1 rounded-lg text-[11px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-surface-2 hover:bg-hover text-primary"
             disabled={!commitMessage.trim() || stagedFiles.length === 0 || committing}
             onClick={commit}
           >
-            {committing ? 'Committing...' : 'Commit'}
+            {committing && <Spinner size={12} />}
+            {committing ? 'Committing…' : 'Commit'}
           </button>
           <Tooltip label="Stash changes" placement="top">
             <button
@@ -834,7 +830,6 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
               statusChar={f.index}
               onUnstage={() => unstageFile(f.path)}
               onClick={() => openReview({ kind: 'staged' }, f.path)}
-              onStandaloneDiff={() => openFileDiff(f.path, true)}
             />
           ))}
         </Section>
@@ -845,8 +840,8 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           count={changedFiles.length}
           actions={
             <>
-              <Tooltip label="Review unstaged changes">
-                <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={() => openReview({ kind: 'unstaged' })} aria-label="Review unstaged changes"><GitDiff size={13} /></button>
+              <Tooltip label="Review changes">
+                <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={() => openReview({ kind: 'unstaged' })} aria-label="Review changes"><GitDiff size={13} /></button>
               </Tooltip>
               <Tooltip label="Stage all">
                 <button
@@ -868,7 +863,6 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
               onStage={() => stageFile(f.path)}
               onDiscard={() => discardFile(f.path)}
               onClick={() => openReview({ kind: 'unstaged' }, f.path)}
-              onStandaloneDiff={() => openFileDiff(f.path, false)}
             />
           ))}
         </Section>
@@ -897,14 +891,14 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
               statusChar="?"
               onStage={() => stageFile(f.path)}
               onClick={() => openReview({ kind: 'unstaged' }, f.path)}
-              onStandaloneDiff={() => openFileDiff(f.path, false)}
             />
           ))}
         </Section>
 
         {/* Branches */}
         <BranchPicker
-          rootPath={rootPath}
+          repositoryRoot={rootPath}
+          checkoutRoot={checkoutRoot}
           currentBranch={status?.current ?? null}
           onSwitch={refresh}
           onReview={(base) => {
@@ -942,19 +936,24 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           defaultOpen={false}
         >
           {worktrees.filter((wt) => !wt.isOrphan).map((wt) => (
-            <div
+            <button
+              type="button"
               key={wt.path}
-              className={`flex items-center gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] ${
-                wt.isCurrent ? 'text-primary' : 'text-secondary'
+              className={`w-[calc(100%-0.75rem)] flex items-center gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] hover:bg-hover text-left ${
+                wt.id === changesWorktree?.id ? 'text-primary bg-surface-3' : 'text-secondary'
               }`}
-              title={wt.path}
+              title={`${wt.path}\nSelect this checkout for Changes. Manage worktrees in Parallel Work.`}
+              onClick={() => setSourceControlWorktree(rootPath, wt.id)}
             >
               <GitBranch size={12} className="flex-shrink-0" />
               <span className="truncate flex-1">{wt.label || wt.branch || '(detached)'}</span>
-              {wt.isCurrent && (
-                <span className="text-[10px] text-green-400/60">current</span>
+              {wt.id === changesWorktree?.id && (
+                <span className="text-[10px] text-green-400/60">changes</span>
               )}
-            </div>
+              {wt.isPrimary && wt.id !== changesWorktree?.id && (
+                <span className="text-[10px] text-muted">primary</span>
+              )}
+            </button>
           ))}
         </Section>
 

@@ -12,7 +12,8 @@ vi.mock('../lib/fs/fsWatchManager', () => ({
   },
 }))
 
-import { gitStatusStore } from './gitStatusStore'
+import { gitStatusStore, workspaceIdForRoot } from './gitStatusStore'
+import { useAppStore } from './appStore'
 
 const ROOT = '/repo'
 
@@ -46,6 +47,7 @@ async function flush(): Promise<void> {
 describe('gitStatusStore', () => {
   beforeEach(() => {
     gitStatusStore._reset()
+    useAppStore.setState({ workspaces: [] })
     watchCalls.length = 0
     releaseCount = 0
     ;(globalThis as any).window = globalThis as any
@@ -127,6 +129,18 @@ describe('gitStatusStore', () => {
     expect(snap.isRepo).toBe(false)
     expect(snap.worktrees).toHaveLength(0)
     unsub()
+  })
+
+  it('routes an unpersisted sibling worktree through its canonical workspace', () => {
+    useAppStore.setState({
+      workspaces: [{ id: 'workspace-1', rootPath: ROOT, panels: {} } as any],
+    })
+    gitStatusStore._seedWorktrees(ROOT, [
+      { path: ROOT, branch: 'main', isPrimary: true, isCurrent: true },
+      { path: '/checkouts/feature', branch: 'feature', isPrimary: false, isCurrent: false },
+    ])
+
+    expect(workspaceIdForRoot('/checkouts/feature/src/app.ts')).toBe('workspace-1')
   })
 
   it('a stale in-flight fetch cannot clobber a newer snapshot', async () => {

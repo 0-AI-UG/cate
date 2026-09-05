@@ -1,6 +1,6 @@
 // =============================================================================
 // Placement slice — behavioral tests for the interactive ghost-placement
-// transaction: beginPlacement snapshots the viewport and zooms out;
+// transaction: beginPanelTarget snapshots the viewport and zooms out;
 // commit/cancel must resolve the transaction exactly once (place the node OR
 // restore the viewport + roll back the orphan panel record via onCancelled);
 // free "click-anywhere" mode and hover are transaction-scoped sub-state.
@@ -11,6 +11,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { createCanvasStore } from '../canvasStore'
 import { focusedNodeId } from './selectionModel'
 import { ZOOM_MIN, PANEL_DEFAULT_SIZES } from '../../../shared/types'
+import type { PanelType, Size } from '../../../shared/types'
 import { rectsOverlap } from '../../canvas/layoutEngine'
 
 const SEED_SIZE = { width: 640, height: 400 }
@@ -31,16 +32,33 @@ function nodeCount(store: ReturnType<typeof createCanvasStore>) {
   return Object.keys(store.getState().nodes).length
 }
 
-describe('beginPlacement', () => {
+function beginNewTarget(
+  store: ReturnType<typeof createCanvasStore>,
+  panelId: string,
+  panelType: PanelType,
+  onCancelled?: (panelId: string) => void,
+  size?: Size,
+) {
+  return store.getState().beginPanelTarget({
+    panelId,
+    panelType,
+    availability: 'new',
+    existing: [],
+    onCancelled: () => onCancelled?.(panelId),
+    size,
+  })
+}
+
+describe('beginPanelTarget — new placement', () => {
   it('on an empty canvas skips the picker and drops the panel at the viewport centre', () => {
     const store = createCanvasStore()
     store.getState().setContainerSize(CONTAINER)
     const onCancelled = vi.fn()
 
-    const shown = store.getState().beginPlacement('p1', 'terminal', onCancelled)
+    const shown = beginNewTarget(store, 'p1', 'terminal', onCancelled)
 
     expect(shown).toBe(true)
-    expect(store.getState().pendingPlacement).toBeNull() // no transaction opened
+    expect(store.getState().pendingPanelTarget).toBeNull() // no transaction opened
     const nodes = Object.values(store.getState().nodes)
     expect(nodes).toHaveLength(1)
     // 640x400 terminal centred on the view centre (600,400) → top-left (280,200).
@@ -53,7 +71,7 @@ describe('beginPlacement', () => {
   it('on an empty canvas with an unmeasured container falls back to the default origin', () => {
     const store = createCanvasStore() // containerSize stays 0x0
 
-    const shown = store.getState().beginPlacement('p1', 'editor')
+    const shown = beginNewTarget(store, 'p1', 'editor')
 
     expect(shown).toBe(true)
     const nodes = Object.values(store.getState().nodes)
@@ -64,10 +82,10 @@ describe('beginPlacement', () => {
   it('snapshots zoom/offset, zooms out to fit the ghosts, and populates candidate state', () => {
     const { store } = storeWithSeed(1.5, { x: 120, y: -40 })
 
-    const shown = store.getState().beginPlacement('p2', 'terminal')
+    const shown = beginNewTarget(store, 'p2', 'terminal')
 
     expect(shown).toBe(true)
-    const pending = store.getState().pendingPlacement
+    const pending = store.getState().pendingPanelTarget
     expect(pending).not.toBeNull()
     // Snapshot is the viewport at begin time, byte-exact.
     expect(pending!.prevZoom).toBe(1.5)
@@ -91,9 +109,9 @@ describe('beginPlacement', () => {
   it('only ever zooms OUT — already zoomed out further than the fit, zoom is untouched', () => {
     const { store } = storeWithSeed(ZOOM_MIN, { x: 0, y: 0 })
 
-    store.getState().beginPlacement('p2', 'terminal')
+    beginNewTarget(store, 'p2', 'terminal')
 
-    expect(store.getState().pendingPlacement).not.toBeNull()
+    expect(store.getState().pendingPanelTarget).not.toBeNull()
     expect(store.getState().zoomLevel).toBe(ZOOM_MIN)
   })
 
@@ -101,9 +119,9 @@ describe('beginPlacement', () => {
     const { store } = storeWithSeed()
     const size = { width: 400, height: 300 }
 
-    store.getState().beginPlacement('p2', 'terminal', undefined, size)
+    beginNewTarget(store, 'p2', 'terminal', undefined, size)
 
-    const pending = store.getState().pendingPlacement!
+    const pending = store.getState().pendingPanelTarget!
     expect(pending.size).toEqual(size)
     const id = store.getState().commitFreePlacement({ x: 5000, y: 5000 })!
     expect(store.getState().nodes[id].size).toEqual(size)
@@ -121,8 +139,8 @@ describe('beginPlacement', () => {
       store.getState().setZoomAndOffset(1, { x: 700, y: 500 }) // seed centred with margin
       store.getState().addNode('seed', 'terminal', { x: 0, y: 0 }, SEED_SIZE) // not focused
       store.getState().setPlacementPointer(pointer)
-      store.getState().beginPlacement('p2', 'terminal')
-      return store.getState().pendingPlacement!.candidates[0]
+      beginNewTarget(store, 'p2', 'terminal')
+      return store.getState().pendingPanelTarget!.candidates[0]
     }
 
     const towardRight = make({ x: 1100, y: 200 })
@@ -154,8 +172,8 @@ describe('refreshPlacement (re-target on focus change)', () => {
   it('recomputes candidates around the newly focused node, preserving the transaction', () => {
     const { store, a, b } = storeWithTwo()
     store.getState().focusNode(a)
-    store.getState().beginPlacement('p3', 'terminal')
-    const pendingA = store.getState().pendingPlacement!
+    beginNewTarget(store, 'p3', 'terminal')
+    const pendingA = store.getState().pendingPanelTarget!
     const bestA = pendingA.candidates[0]
 
     // Reproduce the click on B: restore the user's view (both panels visible),
@@ -164,7 +182,7 @@ describe('refreshPlacement (re-target on focus change)', () => {
     store.getState().focusNode(b)
     store.getState().refreshPlacement()
 
-    const pendingB = store.getState().pendingPlacement!
+    const pendingB = store.getState().pendingPanelTarget!
     // The transaction itself is preserved — only the candidates re-target.
     expect(pendingB.panelId).toBe('p3')
     expect(pendingB.prevZoom).toBe(pendingA.prevZoom)
@@ -181,35 +199,35 @@ describe('refreshPlacement (re-target on focus change)', () => {
   it('is a no-op when no placement is pending', () => {
     const { store } = storeWithTwo()
     store.getState().refreshPlacement()
-    expect(store.getState().pendingPlacement).toBeNull()
+    expect(store.getState().pendingPanelTarget).toBeNull()
     expect(nodeCount(store)).toBe(2)
   })
 
   it('does not disturb an armed free placement', () => {
     const { store, a } = storeWithTwo()
     store.getState().focusNode(a)
-    store.getState().beginPlacement('p3', 'terminal')
+    beginNewTarget(store, 'p3', 'terminal')
     store.getState().setFreeArmed(true)
-    const before = store.getState().pendingPlacement!
+    const before = store.getState().pendingPanelTarget!
 
     store.getState().refreshPlacement()
 
-    expect(store.getState().pendingPlacement).toBe(before) // untouched while armed
+    expect(store.getState().pendingPanelTarget).toBe(before) // untouched while armed
   })
 })
 
-describe('commitPlacement', () => {
+describe('selectNewPanelTarget', () => {
   it('places the node exactly once at the chosen candidate, restores zoom, and recentres on the node', () => {
     const { store } = storeWithSeed(1.5, { x: 120, y: -40 })
     const onCancelled = vi.fn()
-    store.getState().beginPlacement('p2', 'terminal', onCancelled)
-    const candidate = store.getState().pendingPlacement!.candidates[0]
+    beginNewTarget(store, 'p2', 'terminal', onCancelled)
+    const candidate = store.getState().pendingPanelTarget!.candidates[0]
 
-    const nodeId = store.getState().commitPlacement(0)
+    const nodeId = store.getState().selectNewPanelTarget(0)
 
     expect(nodeId).not.toBeNull()
     const s = store.getState()
-    expect(s.pendingPlacement).toBeNull()
+    expect(s.pendingPanelTarget).toBeNull()
     // Exactly one new node, exactly at the candidate rect.
     expect(nodeCount(store)).toBe(2)
     expect(s.nodes[nodeId!].origin).toEqual(candidate.point)
@@ -229,28 +247,28 @@ describe('commitPlacement', () => {
 
   it('rejects an out-of-range candidate index and keeps the transaction pending', () => {
     const { store } = storeWithSeed()
-    store.getState().beginPlacement('p2', 'terminal')
-    const pendingBefore = store.getState().pendingPlacement!
+    beginNewTarget(store, 'p2', 'terminal')
+    const pendingBefore = store.getState().pendingPanelTarget!
     const zoomBefore = store.getState().zoomLevel
 
-    expect(store.getState().commitPlacement(99)).toBeNull()
-    expect(store.getState().commitPlacement(-1)).toBeNull()
+    expect(store.getState().selectNewPanelTarget(99)).toBeNull()
+    expect(store.getState().selectNewPanelTarget(-1)).toBeNull()
 
     // Nothing placed, nothing restored, transaction object untouched.
     expect(nodeCount(store)).toBe(1)
-    expect(store.getState().pendingPlacement).toBe(pendingBefore)
+    expect(store.getState().pendingPanelTarget).toBe(pendingBefore)
     expect(store.getState().zoomLevel).toBe(zoomBefore)
     // A valid commit still succeeds afterwards.
-    expect(store.getState().commitPlacement(0)).not.toBeNull()
+    expect(store.getState().selectNewPanelTarget(0)).not.toBeNull()
     expect(nodeCount(store)).toBe(2)
   })
 
   it('called twice only places once — the second commit is a rejected no-op', () => {
     const { store } = storeWithSeed()
-    store.getState().beginPlacement('p2', 'terminal')
+    beginNewTarget(store, 'p2', 'terminal')
 
-    const first = store.getState().commitPlacement(0)
-    const second = store.getState().commitPlacement(0)
+    const first = store.getState().selectNewPanelTarget(0)
+    const second = store.getState().selectNewPanelTarget(0)
 
     expect(first).not.toBeNull()
     expect(second).toBeNull()
@@ -259,22 +277,22 @@ describe('commitPlacement', () => {
 
   it('is a no-op when no placement is pending', () => {
     const { store } = storeWithSeed()
-    expect(store.getState().commitPlacement(0)).toBeNull()
+    expect(store.getState().selectNewPanelTarget(0)).toBeNull()
     expect(nodeCount(store)).toBe(1)
   })
 })
 
-describe('cancelPlacement', () => {
+describe('cancelPanelTarget', () => {
   it('restores the snapshotted zoom/offset exactly and fires onCancelled with the panel id', () => {
     const { store } = storeWithSeed(1.5, { x: 120, y: -40 })
     const onCancelled = vi.fn()
-    store.getState().beginPlacement('p2', 'terminal', onCancelled)
+    beginNewTarget(store, 'p2', 'terminal', onCancelled)
     expect(store.getState().zoomLevel).not.toBe(1.5) // sanity: we actually zoomed out
 
-    store.getState().cancelPlacement()
+    store.getState().cancelPanelTarget()
 
     const s = store.getState()
-    expect(s.pendingPlacement).toBeNull()
+    expect(s.pendingPanelTarget).toBeNull()
     expect(s.zoomLevel).toBe(1.5)
     expect(s.viewportOffset).toEqual({ x: 120, y: -40 })
     expect(nodeCount(store)).toBe(1) // no node was placed
@@ -285,14 +303,14 @@ describe('cancelPlacement', () => {
   it('cancel mid-placement with the free ghost armed still restores and rolls back cleanly', () => {
     const { store } = storeWithSeed(1.2, { x: 7, y: 13 })
     const onCancelled = vi.fn()
-    store.getState().beginPlacement('p2', 'terminal', onCancelled)
+    beginNewTarget(store, 'p2', 'terminal', onCancelled)
     store.getState().setFreeArmed(true)
     store.getState().updatePlacementCursor({ x: 2000, y: 2000 })
-    expect(store.getState().pendingPlacement!.freeGhost).not.toBeNull()
+    expect(store.getState().pendingPanelTarget!.freeGhost).not.toBeNull()
 
-    store.getState().cancelPlacement() // Escape
+    store.getState().cancelPanelTarget() // Escape
 
-    expect(store.getState().pendingPlacement).toBeNull()
+    expect(store.getState().pendingPanelTarget).toBeNull()
     expect(store.getState().zoomLevel).toBe(1.2)
     expect(store.getState().viewportOffset).toEqual({ x: 7, y: 13 })
     expect(onCancelled).toHaveBeenCalledTimes(1)
@@ -301,12 +319,12 @@ describe('cancelPlacement', () => {
   it('after a commit is a no-op — no double restore, no spurious rollback', () => {
     const { store } = storeWithSeed(1.5, { x: 120, y: -40 })
     const onCancelled = vi.fn()
-    store.getState().beginPlacement('p2', 'terminal', onCancelled)
-    store.getState().commitPlacement(0)
+    beginNewTarget(store, 'p2', 'terminal', onCancelled)
+    store.getState().selectNewPanelTarget(0)
     const zoomAfterCommit = store.getState().zoomLevel
     const offsetAfterCommit = store.getState().viewportOffset
 
-    store.getState().cancelPlacement()
+    store.getState().cancelPanelTarget()
 
     expect(store.getState().zoomLevel).toBe(zoomAfterCommit)
     expect(store.getState().viewportOffset).toBe(offsetAfterCommit)
@@ -317,11 +335,11 @@ describe('cancelPlacement', () => {
   it('double cancel only restores and rolls back once', () => {
     const { store } = storeWithSeed(1.5, { x: 0, y: 0 })
     const onCancelled = vi.fn()
-    store.getState().beginPlacement('p2', 'terminal', onCancelled)
+    beginNewTarget(store, 'p2', 'terminal', onCancelled)
 
-    store.getState().cancelPlacement()
+    store.getState().cancelPanelTarget()
     store.getState().setZoom(0.8) // user moves on
-    store.getState().cancelPlacement() // stray second Escape
+    store.getState().cancelPanelTarget() // stray second Escape
 
     expect(store.getState().zoomLevel).toBe(0.8) // not yanked back to 1.5
     expect(onCancelled).toHaveBeenCalledTimes(1)
@@ -331,15 +349,15 @@ describe('cancelPlacement', () => {
 describe('free "place anywhere" mode', () => {
   it('arming, previewing, and disarming are transaction-scoped', () => {
     const { store } = storeWithSeed()
-    store.getState().beginPlacement('p2', 'terminal')
+    beginNewTarget(store, 'p2', 'terminal')
 
     store.getState().setFreeArmed(true)
-    expect(store.getState().pendingPlacement!.freeArmed).toBe(true)
+    expect(store.getState().pendingPanelTarget!.freeArmed).toBe(true)
 
     // Cursor centred on the seed node → ghost is nudged to a free, non-
     // overlapping spot rather than previewing an overlap.
     store.getState().updatePlacementCursor({ x: 320, y: 200 })
-    const ghost = store.getState().pendingPlacement!.freeGhost
+    const ghost = store.getState().pendingPanelTarget!.freeGhost
     expect(ghost).not.toBeNull()
     expect(
       rectsOverlap(
@@ -349,27 +367,27 @@ describe('free "place anywhere" mode', () => {
     ).toBe(false)
 
     // Re-sending the same cursor position must not churn state objects.
-    const before = store.getState().pendingPlacement
+    const before = store.getState().pendingPanelTarget
     store.getState().updatePlacementCursor({ x: 320, y: 200 })
-    expect(store.getState().pendingPlacement).toBe(before)
+    expect(store.getState().pendingPanelTarget).toBe(before)
 
     // Disarming clears the ghost preview.
     store.getState().setFreeArmed(false)
-    expect(store.getState().pendingPlacement!.freeArmed).toBe(false)
-    expect(store.getState().pendingPlacement!.freeGhost).toBeNull()
+    expect(store.getState().pendingPanelTarget!.freeArmed).toBe(false)
+    expect(store.getState().pendingPanelTarget!.freeGhost).toBeNull()
   })
 
   it('commitFreePlacement places once at the nudged spot, restores zoom, and ends the transaction', () => {
     const { store } = storeWithSeed(1.5, { x: 0, y: 0 })
     const onCancelled = vi.fn()
-    store.getState().beginPlacement('p2', 'terminal', onCancelled)
+    beginNewTarget(store, 'p2', 'terminal', onCancelled)
 
     // Click directly on top of the seed node — the drop must be nudged free.
     const nodeId = store.getState().commitFreePlacement({ x: 320, y: 200 })
 
     expect(nodeId).not.toBeNull()
     const s = store.getState()
-    expect(s.pendingPlacement).toBeNull()
+    expect(s.pendingPanelTarget).toBeNull()
     expect(nodeCount(store)).toBe(2)
     const placed = s.nodes[nodeId!]
     expect(
@@ -394,7 +412,7 @@ describe('free "place anywhere" mode', () => {
     store.getState().updatePlacementCursor({ x: 50, y: 50 })
     store.getState().setPlacementHover(1)
 
-    expect(store.getState().pendingPlacement).toBeNull()
+    expect(store.getState().pendingPanelTarget).toBeNull()
     expect(store.getState().nodes).toBe(before.nodes)
     expect(store.getState().commitFreePlacement({ x: 50, y: 50 })).toBeNull()
   })
@@ -403,65 +421,63 @@ describe('free "place anywhere" mode', () => {
 describe('setPlacementHover', () => {
   it('sets and clears the hovered candidate without disturbing the rest of the transaction', () => {
     const { store } = storeWithSeed()
-    store.getState().beginPlacement('p2', 'terminal')
-    const candidates = store.getState().pendingPlacement!.candidates
+    beginNewTarget(store, 'p2', 'terminal')
+    const candidates = store.getState().pendingPanelTarget!.candidates
 
     store.getState().setPlacementHover(1)
-    expect(store.getState().pendingPlacement!.hoveredIndex).toBe(1)
-    expect(store.getState().pendingPlacement!.candidates).toBe(candidates)
+    expect(store.getState().pendingPanelTarget!.hoveredIndex).toBe(1)
+    expect(store.getState().pendingPanelTarget!.candidates).toBe(candidates)
 
     // Same value → no state churn.
-    const before = store.getState().pendingPlacement
+    const before = store.getState().pendingPanelTarget
     store.getState().setPlacementHover(1)
-    expect(store.getState().pendingPlacement).toBe(before)
+    expect(store.getState().pendingPanelTarget).toBe(before)
 
     store.getState().setPlacementHover(null)
-    expect(store.getState().pendingPlacement!.hoveredIndex).toBeNull()
+    expect(store.getState().pendingPanelTarget!.hoveredIndex).toBeNull()
   })
 })
 
-describe('re-entrant beginPlacement (placement pending → begin again)', () => {
+describe('re-entrant beginPanelTarget (placement pending → begin again)', () => {
   it('rolls back the previous pending panel and replaces the transaction (latest wins)', () => {
     const { store } = storeWithSeed(1.5, { x: 120, y: -40 })
     const firstCancelled = vi.fn()
     const secondCancelled = vi.fn()
-    store.getState().beginPlacement('p2', 'terminal', firstCancelled)
+    beginNewTarget(store, 'p2', 'terminal', firstCancelled)
     const zoomDuringFirst = store.getState().zoomLevel
 
-    store.getState().beginPlacement('p3', 'editor', secondCancelled)
+    beginNewTarget(store, 'p3', 'editor', secondCancelled)
 
     // First transaction's orphan panel was rolled back immediately.
     expect(firstCancelled).toHaveBeenCalledTimes(1)
     expect(firstCancelled).toHaveBeenCalledWith('p2')
     expect(secondCancelled).not.toHaveBeenCalled()
-    const pending = store.getState().pendingPlacement!
+    const pending = store.getState().pendingPanelTarget!
     expect(pending.panelId).toBe('p3')
     expect(pending.panelType).toBe('editor')
 
-    // BUG?: the replacement transaction snapshots the CURRENT (already
-    // zoomed-out) viewport rather than inheriting the first transaction's
-    // snapshot, so the user's original viewport (zoom 1.5, offset 120/-40)
-    // leaks: cancelling now restores the first placement's zoomed-out camera,
-    // not where the user actually was before any placement started.
-    expect(pending.prevZoom).toBe(zoomDuringFirst)
-    expect(pending.prevZoom).not.toBe(1.5)
-    store.getState().cancelPlacement()
-    expect(store.getState().zoomLevel).toBe(zoomDuringFirst)
-    expect(store.getState().zoomLevel).not.toBe(1.5)
+    // Replacements start from the original camera rather than snapshotting the
+    // first request's temporary zoomed-out view.
+    expect(pending.prevZoom).toBe(1.5)
+    expect(pending.prevZoom).not.toBe(zoomDuringFirst)
+    expect(pending.prevOffset).toEqual({ x: 120, y: -40 })
+    store.getState().cancelPanelTarget()
+    expect(store.getState().zoomLevel).toBe(1.5)
+    expect(store.getState().viewportOffset).toEqual({ x: 120, y: -40 })
     expect(secondCancelled).toHaveBeenCalledTimes(1)
   })
 
   it('re-triggering with the SAME panel id does not roll the panel back', () => {
     const { store } = storeWithSeed()
     const onCancelled = vi.fn()
-    store.getState().beginPlacement('p2', 'terminal', onCancelled)
+    beginNewTarget(store, 'p2', 'terminal', onCancelled)
 
-    store.getState().beginPlacement('p2', 'terminal', onCancelled)
+    beginNewTarget(store, 'p2', 'terminal', onCancelled)
 
     expect(onCancelled).not.toHaveBeenCalled()
-    expect(store.getState().pendingPlacement!.panelId).toBe('p2')
+    expect(store.getState().pendingPanelTarget!.panelId).toBe('p2')
     // The panel is still placeable exactly once.
-    expect(store.getState().commitPlacement(0)).not.toBeNull()
+    expect(store.getState().selectNewPanelTarget(0)).not.toBeNull()
     expect(nodeCount(store)).toBe(2)
   })
 })

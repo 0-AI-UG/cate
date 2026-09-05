@@ -35,6 +35,7 @@ import { resumeCommandForAgent } from '../../shared/agents'
 import { CATE_FILE_MIME, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
 import { parseLocator } from '../../shared/runtimeLocator'
 import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
+import { Spinner } from '../ui/Spinner'
 
 // ---------------------------------------------------------------------------
 // Component
@@ -1003,8 +1004,9 @@ export default function TerminalPanel({
                 type="button"
                 onClick={handleRetry}
                 disabled={retrying}
-                className="px-3 py-1.5 rounded-md bg-[var(--focus-blue,#3b82f6)] text-white text-[12px] font-medium hover:brightness-110 active:scale-[0.97] focus:outline-none transition-all disabled:opacity-60 disabled:pointer-events-none"
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--focus-blue,#3b82f6)] text-white text-[12px] font-medium hover:brightness-110 active:scale-[0.97] focus:outline-none transition-all disabled:opacity-60 disabled:pointer-events-none"
               >
+                {retrying && <Spinner size={13} />}
                 {retrying ? 'Reconnecting…' : 'Retry'}
               </button>
             </div>

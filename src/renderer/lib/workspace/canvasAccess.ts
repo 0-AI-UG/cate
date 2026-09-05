@@ -66,6 +66,23 @@ export function getActiveCanvasOps(): CanvasOperations | null {
   return canvasPanelId ? getCanvasOpsById(canvasPanelId) : null
 }
 
+/** Placement adjacent to a specific consumer panel, independent of which panel
+ * happens to be active. This is the canonical non-interactive placement probe
+ * for panel-to-panel actions in canvas and detached dock surfaces. */
+export function placementForPanel(workspaceId: string, panelId: string): PanelPlacement | undefined {
+  if (peekCanvasStoreForPanel(panelId)) {
+    return { target: 'canvas', canvasPanelId: panelId }
+  }
+  const location = resolvePanelLocation(workspaceId, panelId)
+  if (location?.kind === 'dock') {
+    return { target: 'dock', zone: location.zone, stackId: location.stackId }
+  }
+  if (location?.kind === 'canvas') {
+    return { target: 'canvas', canvasPanelId: location.canvasPanelId }
+  }
+  return undefined
+}
+
 /** Placement for a keyboard-created panel (Cmd+T / Cmd+N / …) based on the
  *  canonical active panel. A docked active panel → tab into its exact stack (so
  *  a split lands in the focused pane, not the zone's first stack). A canvas
@@ -74,19 +91,7 @@ export function getActiveCanvasOps(): CanvasOperations | null {
 export function placementForActivePanel(): PanelPlacement | undefined {
   const activeId = getActivePanelId()
   if (!activeId) return undefined
-  // A canvas is itself a center-zone dock tab, so it HAS a dock location — but a
-  // create while a canvas is active must land ON the canvas, not as a sibling
-  // tab beside it. Canvas panels register ops, so the registry distinguishes
-  // them. Pin to the active canvas explicitly: the unpinned default routes to
-  // the workspace's PRIMARY canvas, which is the wrong (hidden) one whenever a
-  // secondary canvas tab is active.
-  if (peekCanvasStoreForPanel(activeId)) return { target: 'canvas', canvasPanelId: activeId }
-  const workspaceId = useAppStore.getState().selectedWorkspaceId
-  const location = getWorkspaceDockStore(workspaceId)?.getState().getPanelLocation(activeId)
-  if (location?.type === 'dock') {
-    return { target: 'dock', zone: location.zone, stackId: location.stackId }
-  }
-  return undefined
+  return placementForPanel(useAppStore.getState().selectedWorkspaceId, activeId)
 }
 
 /** Placement for host-API creates (CLI + extensions). API callers may add

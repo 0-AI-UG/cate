@@ -40,12 +40,12 @@ describe('claude spec', () => {
 
   const file = spec.projectFiles![0]
 
-  test('creates .claude/settings.local.json with the bridge on all six hook events', () => {
+  test('creates .claude/settings.local.json with the bridge on all seven hook events', () => {
     expect(file.relPath).toBe('.claude/settings.local.json')
     const out = file.build(null, ctx)!
     const parsed = JSON.parse(out) as { hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string }> }>> }
     expect(Object.keys(parsed.hooks).sort()).toEqual(
-      ['Notification', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'].sort(),
+      ['PermissionRequest', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit'].sort(),
     )
     for (const groups of Object.values(parsed.hooks)) {
       expect(groups).toHaveLength(1)
@@ -95,20 +95,21 @@ describe('claude spec', () => {
     })
     expect(norm('claude-code', { hook_event_name: 'UserPromptSubmit', ...base })?.kind).toBe('turn-start')
     expect(norm('claude-code', { hook_event_name: 'Stop', ...base })?.kind).toBe('turn-end')
+    expect(norm('claude-code', { hook_event_name: 'StopFailure', ...base })?.kind).toBe('turn-end')
     expect(norm('claude-code', { hook_event_name: 'SessionEnd', reason: 'clear', ...base })?.kind).toBe('session-end')
   })
 
-  test('Notification maps permission_prompt to permission-wait and drops idle_prompt', () => {
+  test('PermissionRequest maps immediately to permission-wait; Notification is not a fallback', () => {
     expect(
       norm('claude-code', {
-        hook_event_name: 'Notification',
-        notification_type: 'permission_prompt',
-        message: 'Claude needs your permission to use Bash',
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Bash',
+        tool_input: { command: 'touch needs-approval.txt' },
         ...base,
       })?.kind,
     ).toBe('permission-wait')
     expect(
-      norm('claude-code', { hook_event_name: 'Notification', notification_type: 'idle_prompt', ...base }),
+      norm('claude-code', { hook_event_name: 'Notification', notification_type: 'permission_prompt', ...base }),
     ).toBeNull()
   })
 
@@ -130,17 +131,20 @@ describe('codex spec', () => {
   const spec = AGENT_HOOK_SPECS.codex
   const file = spec.projectFiles![0]
 
-  test('creates .codex/hooks.json with the bridge + timeout on all five events', () => {
+  test('creates .codex/hooks.json with native Interrupt and its three-second timeout', () => {
     expect(file.relPath).toBe('.codex/hooks.json')
     const parsed = JSON.parse(file.build(null, ctx)!) as {
       hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string; timeout: number }> }>>
     }
     expect(Object.keys(parsed.hooks).sort()).toEqual(
-      ['PermissionRequest', 'PostToolUse', 'SessionStart', 'Stop', 'UserPromptSubmit'].sort(),
+      ['Interrupt', 'PermissionRequest', 'PostToolUse', 'SessionStart', 'Stop', 'UserPromptSubmit'].sort(),
     )
-    for (const groups of Object.values(parsed.hooks)) {
-      expect(groups).toEqual([{ hooks: [{ type: 'command', command: ctx.bridgeCommand, timeout: 60 }] }])
-    }
+    expect(parsed.hooks.Interrupt).toEqual([
+      { hooks: [{ type: 'command', command: ctx.bridgeCommand, timeout: 3 }] },
+    ])
+    expect(parsed.hooks.Stop).toEqual([
+      { hooks: [{ type: 'command', command: ctx.bridgeCommand, timeout: 60 }] },
+    ])
   })
 
   test('merges into an existing hooks.json: user hooks/fields kept, stale Cate groups refreshed', () => {
@@ -194,7 +198,10 @@ describe('codex spec', () => {
       sessionId: base.session_id,
       transcriptPath: base.transcript_path,
     })
-    expect(norm('codex', { hook_event_name: 'UserPromptSubmit', ...base })?.kind).toBe('turn-start')
+    expect(norm('codex', { hook_event_name: 'UserPromptSubmit', turn_id: 'turn-1', ...base })).toMatchObject({
+      kind: 'turn-start',
+      turnId: 'turn-1',
+    })
     const perm = norm('codex', {
       hook_event_name: 'PermissionRequest',
       ...base,
@@ -203,12 +210,18 @@ describe('codex spec', () => {
       tool_input: { command: 'touch needs-approval.txt' },
     })
     expect(perm?.kind).toBe('permission-wait')
+    expect(perm?.turnId).toBe('turn-1')
     expect(perm?.raw.turn_id).toBe('turn-1')
     expect(
       norm('codex', { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'touch x' }, ...base })
         ?.kind,
     ).toBe('turn-resume')
     expect(norm('codex', { hook_event_name: 'Stop', ...base })?.kind).toBe('turn-end')
+    expect(norm('codex', { hook_event_name: 'Interrupt', turn_id: 'turn-1', ...base })).toMatchObject({
+      kind: 'turn-end',
+      turnId: 'turn-1',
+    })
+    expect(spec.interruptRecovery).toBeUndefined()
   })
 })
 
@@ -340,7 +353,7 @@ describe('grok spec', () => {
     transcriptPath: '/home/u/.grok/sessions/%2Fhome%2Fu%2Fproj/019f8441/updates.jsonl',
   }
 
-  test('owns .grok/hooks/cate.json: created with the bridge + timeout on all six events', () => {
+  test('owns .grok/hooks/cate.json with native success, failure, and cancellation end hooks', () => {
     // One file of its own in a directory grok merges — a user's other hook
     // files in .grok/hooks/ are never touched.
     expect(file.relPath).toBe('.grok/hooks/cate-hook.json')
@@ -349,7 +362,7 @@ describe('grok spec', () => {
     }
     // File keys are CamelCase even though the payload reports snake_case.
     expect(Object.keys(parsed.hooks).sort()).toEqual(
-      ['Notification', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'],
+      ['Notification', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'StopCancelled', 'StopFailure', 'UserPromptSubmit'],
     )
     for (const groups of Object.values(parsed.hooks)) {
       expect(groups[0].hooks[0]).toEqual({ type: 'command', command: ctx.bridgeCommand, timeout: 60 })
@@ -374,8 +387,16 @@ describe('grok spec', () => {
       cwd: '/home/u/proj',
       transcriptPath: base.transcriptPath,
     })
-    expect(norm('grok', { hookEventName: 'user_prompt_submit', ...base })?.kind).toBe('turn-start')
+    expect(norm('grok', { hookEventName: 'user_prompt_submit', promptId: 'prompt-1', ...base })).toMatchObject({
+      kind: 'turn-start',
+      turnId: 'prompt-1',
+    })
     expect(norm('grok', { hookEventName: 'stop', ...base })?.kind).toBe('turn-end')
+    expect(norm('grok', { hookEventName: 'stop_failure', ...base })?.kind).toBe('turn-end')
+    expect(norm('grok', { hookEventName: 'stop_cancelled', promptId: 'prompt-1', ...base })).toMatchObject({
+      kind: 'turn-end',
+      turnId: 'prompt-1',
+    })
     expect(norm('grok', { hookEventName: 'session_end', ...base })?.kind).toBe('session-end')
     // Approval resolution / any executed tool call.
     expect(norm('grok', { hookEventName: 'post_tool_use', ...base, toolName: 'run_terminal_command' })?.kind)
@@ -410,6 +431,7 @@ describe('grok spec', () => {
     expect(norm('grok', { hookEventName: 'SessionStart', ...base })).toBeNull() // CamelCase is the FILE casing
     expect(norm('grok', { hookEventName: 'pre_tool_use', ...base })).toBeNull()
     expect(norm('grok', { hookEventName: 'permission_denied', ...base })).toBeNull()
+    expect(norm('grok', { hookEventName: 'stop_cancelled', subagentType: 'explorer', ...base })).toBeNull()
   })
 })
 
@@ -426,21 +448,21 @@ describe('opencode spec', () => {
     // Cate owns the file outright: marked, never rewritten when current,
     // reclaimed on 'off', and a same-named user file is left alone.
     expect(source).toContain(CATE_HOOK_MARKER)
+    expect(source).toContain('props.info?.parentID')
     expect(pf.build(source, ctx)).toBeNull()
     expect(pf.strip!(source)).toEqual({ delete: true })
     expect(pf.strip!('// my own plugin\n')).toBeNull()
   })
 
-  test('normalizes bus events; busy status starts the turn, idle event ends it', () => {
+  test('normalizes canonical session.status busy and idle lifecycle events', () => {
     expect(norm('opencode', { type: 'session.created', sessionID: 'ses_1', directory: '/w' })).toMatchObject({
       kind: 'session-start',
       sessionId: 'ses_1',
       cwd: '/w',
     })
     expect(norm('opencode', { type: 'session.status', sessionID: 'ses_1', status: { type: 'busy' } })?.kind).toBe('turn-start')
-    // The idle STATUS is redundant with the explicit session.idle event.
-    expect(norm('opencode', { type: 'session.status', sessionID: 'ses_1', status: { type: 'idle' } })).toBeNull()
-    expect(norm('opencode', { type: 'session.idle', sessionID: 'ses_1' })?.kind).toBe('turn-end')
+    expect(norm('opencode', { type: 'session.status', sessionID: 'ses_1', status: { type: 'idle' } })?.kind).toBe('turn-end')
+    expect(norm('opencode', { type: 'session.idle', sessionID: 'ses_1' })).toBeNull()
     const asked = norm('opencode', {
       type: 'permission.asked',
       sessionID: 'ses_1',
@@ -530,10 +552,10 @@ describe('reportsTurnEndOnInterrupt', () => {
       ]),
     )
     expect(table).toEqual({
-      // Push NOTHING on interrupt (verified live) — indicator stays stuck.
+      // Claude pushes nothing on interrupt; its transcript marker recovers it.
       'claude-code': false,
-      codex: false,
-      // Push a mapped turn-end on interrupt (verified live) — self-heal.
+      // Push a mapped native turn-end on interrupt.
+      codex: true,
       cursor: true,
       opencode: true,
       // Expected self-heal via stop{cancelled}; streaming path not yet

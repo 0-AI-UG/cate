@@ -142,8 +142,6 @@ export class DeferredRuntime implements Runtime {
       init: (dir, access) => d((c) => c.vcs.init(dir, access)),
       lsFiles: (dir, access) => d((c) => c.vcs.lsFiles(dir, access)),
       status: (cwd, access) => d((c) => c.vcs.status(cwd, access)),
-      diff: (cwd, filePath, access) => d((c) => c.vcs.diff(cwd, filePath, access)),
-      diffStaged: (cwd, filePath, access) => d((c) => c.vcs.diffStaged(cwd, filePath, access)),
       compare: (cwd, spec, access) => d((c) => c.vcs.compare(cwd, spec, access)),
       fileDiff: (cwd, spec, filePath, options, access) => d((c) => c.vcs.fileDiff(cwd, spec, filePath, options, access)),
       fileContent: (cwd, spec, filePath, side, access) => d((c) => c.vcs.fileContent(cwd, spec, filePath, side, access)),

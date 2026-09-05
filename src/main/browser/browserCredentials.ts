@@ -15,6 +15,8 @@ import { app, safeStorage } from 'electron'
 import type {
   BrowserCredentialProfile,
   BrowserCredentialProfilesResult,
+  BrowserCredentialSaveInput,
+  BrowserCredentialSaveResult,
   BrowserCredentialSuggestion,
 } from '../../shared/types'
 import { isPlainObject } from '../jsonUtils'
@@ -25,6 +27,10 @@ const execFileAsync = promisify(execFile)
 const STORE_VERSION = 1
 const MAX_CREDENTIALS = 20_000
 const MAX_IMPORT_FILE_BYTES = 32 * 1024 * 1024
+const MAX_ORIGIN_LENGTH = 2_048
+const MAX_USERNAME_LENGTH = 1_024
+const MAX_PASSWORD_LENGTH = 16 * 1024
+const MAX_ELEMENT_NAME_LENGTH = 256
 const CHROME_PREFIX = Buffer.from('v10')
 const CHROME_IV = Buffer.alloc(16, 0x20)
 
@@ -67,6 +73,14 @@ interface PlainCredential {
   password: string
 }
 
+interface ValidatedCredentialInput {
+  origin: string
+  username: string
+  password: string
+  usernameElement: string
+  passwordElement: string
+}
+
 function storePath(): string {
   return path.join(app.getPath('userData'), 'browser-credentials.json')
 }
@@ -95,6 +109,27 @@ function normalizeOrigin(value: string): string | null {
     return parsed.origin
   } catch {
     return null
+  }
+}
+
+function validateCredentialInput(input: BrowserCredentialSaveInput): ValidatedCredentialInput {
+  const origin = input.origin.length <= MAX_ORIGIN_LENGTH ? normalizeOrigin(input.origin) : null
+  if (
+    !origin
+    || !input.password
+    || input.username.length > MAX_USERNAME_LENGTH
+    || input.password.length > MAX_PASSWORD_LENGTH
+    || (input.usernameElement?.length ?? 0) > MAX_ELEMENT_NAME_LENGTH
+    || (input.passwordElement?.length ?? 0) > MAX_ELEMENT_NAME_LENGTH
+  ) {
+    throw new Error('The password entry is invalid')
+  }
+  return {
+    origin,
+    username: input.username,
+    password: input.password,
+    usernameElement: input.usernameElement ?? '',
+    passwordElement: input.passwordElement ?? '',
   }
 }
 
@@ -476,6 +511,64 @@ export async function getCredentialSuggestions(url: string): Promise<BrowserCred
 export async function getBrowserCredentials(): Promise<BrowserCredentialSuggestion[]> {
   const store = await readStore()
   return store.credentials.map(({ id, username, origin }) => ({ id, username, origin }))
+}
+
+export async function getCredentialSaveDisposition(
+  input: BrowserCredentialSaveInput,
+): Promise<'create' | 'update' | 'unchanged'> {
+  assertSecureStorageAvailable()
+  const value = validateCredentialInput(input)
+  const store = await readStore()
+  const existing = store.credentials.find((credential) =>
+    credential.origin === value.origin && credential.username === value.username)
+  if (!existing) return 'create'
+  try {
+    return safeStorage.decryptString(Buffer.from(existing.encryptedPassword, 'base64')) === value.password
+      ? 'unchanged'
+      : 'update'
+  } catch {
+    return 'update'
+  }
+}
+
+export async function saveBrowserCredential(
+  input: BrowserCredentialSaveInput,
+): Promise<BrowserCredentialSaveResult> {
+  assertSecureStorageAvailable()
+  const value = validateCredentialInput(input)
+  const store = await readStore()
+  const existing = store.credentials.find((credential) =>
+    credential.origin === value.origin && credential.username === value.username)
+  if (existing) {
+    try {
+      if (safeStorage.decryptString(Buffer.from(existing.encryptedPassword, 'base64')) === value.password) {
+        return {
+          action: 'unchanged',
+          credential: { id: existing.id, origin: existing.origin, username: existing.username },
+        }
+      }
+    } catch {
+      // Replace credentials whose encrypted value can no longer be read.
+    }
+  }
+
+  const stored: StoredCredential = {
+    id: existing?.id ?? randomUUID(),
+    origin: value.origin,
+    signonRealm: value.origin,
+    username: value.username,
+    usernameElement: value.usernameElement,
+    passwordElement: value.passwordElement,
+    encryptedPassword: safeStorage.encryptString(value.password).toString('base64'),
+    importedAt: Date.now(),
+  }
+  const credentials = [stored, ...store.credentials.filter((credential) => credential.id !== stored.id)]
+    .slice(0, MAX_CREDENTIALS)
+  await writeStore(credentials)
+  return {
+    action: existing ? 'updated' : 'created',
+    credential: { id: stored.id, origin: stored.origin, username: stored.username },
+  }
 }
 
 export async function getCredentialForFill(

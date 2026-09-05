@@ -56,7 +56,6 @@ export const GIT_BRANCH_UPDATE = 'git:branch-update'         // main -> renderer
 export const GIT_MONITOR_START = 'git:monitor-start'
 export const GIT_MONITOR_STOP = 'git:monitor-stop'
 export const GIT_STATUS = 'git:status'
-export const GIT_DIFF = 'git:diff'
 export const GIT_COMPARE = 'git:compare'
 export const GIT_FILE_DIFF = 'git:fileDiff'
 export const GIT_FILE_CONTENT = 'git:fileContent'
@@ -84,7 +83,6 @@ export const GIT_BRANCH_LIST = 'git:branchList'
 export const GIT_BRANCH_CREATE = 'git:branchCreate'
 export const GIT_BRANCH_DELETE = 'git:branchDelete'
 export const GIT_CHECKOUT = 'git:checkout'
-export const GIT_DIFF_STAGED = 'git:diffStaged'
 export const GIT_STASH = 'git:stash'
 export const GIT_STASH_POP = 'git:stashPop'
 export const GIT_DISCARD_FILE = 'git:discardFile'
@@ -193,19 +191,25 @@ export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
  *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the
  *  Browser menu. The focused BrowserPanel acts on it. */
 export const BROWSER_SHORTCUT = 'browser:shortcut'
+/** A permitted window.open from a browser guest becomes another persistent
+ * webview tab in the same panel rather than a separate BrowserWindow. */
+export const BROWSER_OPEN_TAB_REQUEST = 'browser:openTabRequest'
+/** Download progress for one browser guest (main -> owning renderer). */
+export const BROWSER_DOWNLOADS_CHANGED = 'browser:downloadsChanged'
 
 /** Configure the proxy for a browser panel's Electron session partition
  *  (renderer -> main). Awaited before the panel mounts its <webview> so the
  *  first request already goes through the proxy. */
 export const BROWSER_SET_PROXY = 'browser:setProxy'
 
-// Browser password import/autofill. Password plaintext never crosses these
-// renderer IPC channels: profile import and suggestion lookup return metadata,
-// while fill resolves/decrypts/injects entirely in the main process.
+// Browser password management/autofill. Autofill never returns plaintext over
+// renderer IPC: suggestions expose metadata, while main decrypts and injects.
+// Manual entry sends its user-typed secret once to main for immediate encryption.
 export const BROWSER_CREDENTIAL_PROFILES = 'browserCredentials:profiles'
 export const BROWSER_CREDENTIAL_LIST = 'browserCredentials:list'
 export const BROWSER_CREDENTIAL_IMPORT = 'browserCredentials:import'
 export const BROWSER_CREDENTIAL_IMPORT_FILE = 'browserCredentials:importFile'
+export const BROWSER_CREDENTIAL_SAVE = 'browserCredentials:save'
 export const BROWSER_CREDENTIAL_REMOVE = 'browserCredentials:remove'
 export const BROWSER_CREDENTIAL_SUGGESTIONS = 'browserCredentials:suggestions'
 export const BROWSER_CREDENTIAL_FILL = 'browserCredentials:fill'
@@ -329,8 +333,12 @@ export const DOCK_WINDOW_FLUSH_SYNC_DONE = 'dock:windowFlushSyncDone' // rendere
 export const WINDOW_PANELS_CHANGED = 'window:panelsChanged'   // main -> renderer (broadcast)
 export const FOCUS_WINDOW_PANEL = 'window:focusPanel'         // renderer -> main
 export const REVEAL_PANEL_IN_WINDOW = 'detached:revealPanelInWindow' // main -> owning renderer
+export const OPEN_WINDOW_REVIEW = 'window:openReview'         // renderer -> main
+export const OPEN_REVIEW_IN_WINDOW = 'detached:openReviewInWindow' // main -> owning renderer
 export const CLOSE_WINDOW_PANEL = 'window:closePanel'         // renderer -> main
 export const CLOSE_PANEL_IN_WINDOW = 'detached:closePanelInWindow' // main -> owning renderer
+export const CLOSE_PANEL_IN_WINDOW_RESULT = 'window:closePanelResult' // owning renderer -> main
+export const WORKTREE_REMOVED = 'window:worktreeRemoved'       // renderer -> main -> all renderers
 export const WINDOW_PANELS_REPORT = 'window:panelsReport'     // renderer -> main (this window's panels)
 
 // Cross-window drag coordination
@@ -342,7 +350,7 @@ export const CROSS_WINDOW_DRAG_RESOLVE = 'crossDrag:resolve'   // renderer -> ma
 
 // Webview
 export const WEBVIEW_SCREENSHOT = 'webview:screenshot'
-export const BROWSER_CONTROL = 'browser:control'   // renderer -> main (agent browser ops needing a real webContents)
+export const BROWSER_CONTROL = 'browser:control'   // renderer -> main (target-bound webview CDP)
 export const NATIVE_FILE_DRAG = 'native:fileDrag'
 
 // T3 provider harness. Cate owns the workspace/worktree path and panel shell;
@@ -429,5 +437,5 @@ export const CATE_HOST_EVENT = 'cate:event'          // main -> guest: { panelId
 
 // Forward a reverse-API call that mutates renderer state to the guest's owner
 // window and await its reply (editor.openFile, canvas.createPanel, panel.setTitle).
-export const CATE_HOST_FORWARD = 'cate:hostAction'        // main -> renderer: { requestId, workspaceId, panelId, extensionId, method, args }
+export const CATE_HOST_FORWARD = 'cate:hostAction'        // main -> renderer: { requestId, workspaceId, panelId, extensionId, method, args, originCwd? }
 export const CATE_HOST_FORWARD_REPLY = 'cate:hostActionReply' // renderer -> main: { requestId, ok, result?, error? }

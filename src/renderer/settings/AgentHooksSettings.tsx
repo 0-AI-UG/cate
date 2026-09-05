@@ -17,6 +17,7 @@ import { useSelectedWorkspace } from '../stores/appStore'
 import { SearchableBlock } from './SettingsComponents'
 import type { AgentId } from '../../shared/agents'
 import type { AgentHookMode } from '../../shared/agentHooks'
+import { LoadingState } from '../ui/Spinner'
 import {
   evaluateAgentCliHooks,
   inspectAgentCliHooks,
@@ -81,7 +82,7 @@ export function AgentHooksSettings() {
         </p>
       </SearchableBlock>
 
-      {agents === null && <p className="text-xs text-muted py-3">Loading…</p>}
+      {agents === null && <LoadingState label="Loading agent hooks…" size={14} className="justify-start py-3 text-xs" />}
 
       <div className="flex flex-col">
         {(agents ?? []).map((a) => {

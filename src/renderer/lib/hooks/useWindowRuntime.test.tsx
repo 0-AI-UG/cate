@@ -30,6 +30,10 @@ const h = vi.hoisted(() => ({
   closeSettings: vi.fn(),
   settingsOpen: false,
   useOwnedTerminalTelemetry: vi.fn(),
+  updatePanelTitleFromAgent: vi.fn(),
+  closePanelWithConfirm: vi.fn(async () => true),
+  removeWorktree: vi.fn(),
+  retargetReviewPanel: vi.fn(),
 }))
 vi.mock('../../hooks/useShortcuts', () => ({ useShortcuts: h.useShortcuts }))
 vi.mock('./useThemeAndScaleHydration', () => ({ useThemeAndScaleHydration: h.useThemeAndScaleHydration }))
@@ -40,6 +44,8 @@ vi.mock('../agent/agentScreenDetector', () => ({
   noteAgentHookEvent: h.noteAgentHookEvent,
 }))
 vi.mock('../workspace/panelReveal', () => ({ revealPanel: h.revealPanel }))
+vi.mock('../closePanelWithConfirm', () => ({ closePanelWithConfirm: h.closePanelWithConfirm }))
+vi.mock('../review/openReviewPanel', () => ({ retargetReviewPanel: h.retargetReviewPanel }))
 vi.mock('../../hooks/useProcessMonitor', () => ({ useOwnedTerminalTelemetry: h.useOwnedTerminalTelemetry }))
 vi.mock('../../stores/settingsStore', () => ({
   useSettingsStore: { getState: () => ({ loadSettings: h.loadSettings }), subscribe: () => () => {} },
@@ -50,9 +56,22 @@ vi.mock('../../stores/uiStore', () => ({
 }))
 vi.mock('../../stores/appStore', () => ({
   useAppStore: {
-    getState: () => ({ selectedWorkspaceId: 'ws-X', workspaces: [{ id: 'ws-X', panels: { p9: {} } }] }),
+    getState: () => ({
+      selectedWorkspaceId: 'ws-X',
+      workspaces: [{ id: 'ws-X', panels: { p9: {} } }],
+      updatePanelTitleFromAgent: h.updatePanelTitleFromAgent,
+      removeWorktree: h.removeWorktree,
+    }),
     // setupWindowPanelSync subscribes to report this window's panels.
     subscribe: () => () => {},
+  },
+}))
+vi.mock('../terminal/terminalRegistry', () => ({
+  terminalRegistry: {
+    panelIdForPty: () => 'p9',
+    getEntry: () => undefined,
+    getFailure: () => null,
+    subscribeFailure: () => () => {},
   },
 }))
 // windowPanelStore is real (harmless); the runtime only calls setPanels on it.
@@ -78,6 +97,10 @@ beforeEach(() => {
     onAgentScreenStateUpdate: vi.fn((cb: (...a: unknown[]) => void) => { captured.agent = cb; return () => {} }),
     onShellAgentHookEvent: vi.fn((cb: (...a: unknown[]) => void) => { captured.hook = cb; return () => {} }),
     onRevealPanelInWindow: vi.fn((cb: (id: string) => void) => { captured.reveal = cb as never; return () => {} }),
+    onClosePanelInWindow: vi.fn((cb: (...a: unknown[]) => void) => { captured.close = cb; return () => {} }),
+    onWorktreeRemoved: vi.fn((cb: (...a: unknown[]) => void) => { captured.worktreeRemoved = cb; return () => {} }),
+    closePanelInWindowResult: vi.fn().mockResolvedValue(undefined),
+    onOpenReviewInWindow: vi.fn((cb: (...a: unknown[]) => void) => { captured.openReview = cb; return () => {} }),
     onWindowPanelsChanged: vi.fn((cb: (...a: unknown[]) => void) => { captured.union = cb; return () => {} }),
   }
   host = document.createElement('div')
@@ -120,6 +143,21 @@ describe('useWindowRuntime', () => {
     expect(h.noteAgentHookEvent).toHaveBeenCalledWith(event)
   })
 
+  it('writes a resolved session title through the normal panel title action', () => {
+    mount()
+    const event = {
+      terminalId: 'pty-1',
+      agentId: 'claude-code',
+      kind: 'session-title',
+      sessionId: 's',
+      title: 'Fix terminal titles',
+      raw: {},
+    }
+    act(() => { captured.hook('pty-1', event) })
+    expect(h.updatePanelTitleFromAgent).toHaveBeenCalledWith('ws-X', 'p9', 'Fix terminal titles')
+    expect(h.noteAgentHookEvent).not.toHaveBeenCalledWith(event)
+  })
+
   it('opens settings when the Cmd+, menu fires (and the detector stops on unmount)', () => {
     mount()
     expect(window.electronAPI.onMenuOpenSettings).toHaveBeenCalled()
@@ -134,6 +172,28 @@ describe('useWindowRuntime', () => {
     mount()
     act(() => { captured.reveal('p9') })
     expect(h.revealPanel).toHaveBeenCalledWith('ws-X', 'p9', { retry: true })
+  })
+
+  it('acknowledges the result after the owner window runs its close gates', async () => {
+    mount()
+    act(() => { captured.close('p9', 'request-1') })
+    await vi.waitFor(() => {
+      expect(h.closePanelWithConfirm).toHaveBeenCalledWith('ws-X', 'p9')
+      expect(window.electronAPI.closePanelInWindowResult).toHaveBeenCalledWith('request-1', true)
+    })
+  })
+
+  it('clears local worktree metadata when another window removes it', () => {
+    mount()
+    act(() => { captured.worktreeRemoved('ws-X', 'wt-1') })
+    expect(h.removeWorktree).toHaveBeenCalledWith('ws-X', 'wt-1')
+  })
+
+  it('retargets a Review panel in this window when another window deep-links it', () => {
+    mount()
+    const request = { spec: { kind: 'unstaged' }, focusedFile: 'src/a.ts' }
+    act(() => { captured.openReview('p9', request) })
+    expect(h.retargetReviewPanel).toHaveBeenCalledWith('ws-X', 'p9', request)
   })
 
   it('swallows external OS file drops so the window cannot navigate to file://', () => {

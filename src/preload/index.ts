@@ -33,7 +33,6 @@ import {
   GIT_MONITOR_START,
   GIT_MONITOR_STOP,
   GIT_STATUS,
-  GIT_DIFF,
   GIT_COMPARE,
   GIT_FILE_DIFF,
   GIT_FILE_CONTENT,
@@ -61,7 +60,6 @@ import {
   GIT_BRANCH_CREATE,
   GIT_BRANCH_DELETE,
   GIT_CHECKOUT,
-  GIT_DIFF_STAGED,
   GIT_STASH,
   GIT_STASH_POP,
   GIT_DISCARD_FILE,
@@ -93,6 +91,8 @@ import {
   MENU_TRIGGER_ACTION,
   MENU_LOAD_LAYOUT,
   BROWSER_SHORTCUT,
+  BROWSER_OPEN_TAB_REQUEST,
+  BROWSER_DOWNLOADS_CHANGED,
   MENU_SHOW_CONTEXT,
   MENU_GET_BAR_ITEMS,
   MENU_POPUP_BAR_ITEM,
@@ -168,8 +168,12 @@ import {
   WINDOW_PANELS_CHANGED,
   FOCUS_WINDOW_PANEL,
   REVEAL_PANEL_IN_WINDOW,
+  OPEN_WINDOW_REVIEW,
+  OPEN_REVIEW_IN_WINDOW,
   CLOSE_WINDOW_PANEL,
   CLOSE_PANEL_IN_WINDOW,
+  CLOSE_PANEL_IN_WINDOW_RESULT,
+  WORKTREE_REMOVED,
   WINDOW_PANELS_REPORT,
   CROSS_WINDOW_DRAG_START,
   CROSS_WINDOW_DRAG_UPDATE,
@@ -198,6 +202,7 @@ import {
   BROWSER_CREDENTIAL_LIST,
   BROWSER_CREDENTIAL_IMPORT,
   BROWSER_CREDENTIAL_IMPORT_FILE,
+  BROWSER_CREDENTIAL_SAVE,
   BROWSER_CREDENTIAL_REMOVE,
   BROWSER_CREDENTIAL_SUGGESTIONS,
   BROWSER_CREDENTIAL_FILL,
@@ -368,7 +373,6 @@ const invokeForwarders = {
   gitInit: makeInvoker<'gitInit'>(GIT_INIT),
   gitLsFiles: makeInvoker<'gitLsFiles'>(GIT_LS_FILES),
   gitStatus: makeInvoker<'gitStatus'>(GIT_STATUS),
-  gitDiff: makeInvoker<'gitDiff'>(GIT_DIFF),
   gitCompare: makeInvoker<'gitCompare'>(GIT_COMPARE),
   gitFileDiff: makeInvoker<'gitFileDiff'>(GIT_FILE_DIFF),
   gitFileContent: makeInvoker<'gitFileContent'>(GIT_FILE_CONTENT),
@@ -396,7 +400,6 @@ const invokeForwarders = {
   gitBranchCreate: makeInvoker<'gitBranchCreate'>(GIT_BRANCH_CREATE),
   gitBranchDelete: makeInvoker<'gitBranchDelete'>(GIT_BRANCH_DELETE),
   gitCheckout: makeInvoker<'gitCheckout'>(GIT_CHECKOUT),
-  gitDiffStaged: makeInvoker<'gitDiffStaged'>(GIT_DIFF_STAGED),
   gitStash: makeInvoker<'gitStash'>(GIT_STASH),
   gitStashPop: makeInvoker<'gitStashPop'>(GIT_STASH_POP),
   gitDiscardFile: makeInvoker<'gitDiscardFile'>(GIT_DISCARD_FILE),
@@ -468,6 +471,7 @@ const invokeForwarders = {
   browserCredentialList: makeInvoker<'browserCredentialList'>(BROWSER_CREDENTIAL_LIST),
   browserCredentialImport: makeInvoker<'browserCredentialImport'>(BROWSER_CREDENTIAL_IMPORT),
   browserCredentialImportFile: makeInvoker<'browserCredentialImportFile'>(BROWSER_CREDENTIAL_IMPORT_FILE),
+  browserCredentialSave: makeInvoker<'browserCredentialSave'>(BROWSER_CREDENTIAL_SAVE),
   browserCredentialRemove: makeInvoker<'browserCredentialRemove'>(BROWSER_CREDENTIAL_REMOVE),
   browserCredentialSuggestions: makeInvoker<'browserCredentialSuggestions'>(BROWSER_CREDENTIAL_SUGGESTIONS),
   browserCredentialFill: makeInvoker<'browserCredentialFill'>(BROWSER_CREDENTIAL_FILL),
@@ -514,7 +518,10 @@ const invokeForwarders = {
 
   // Cross-window panel discovery
   focusWindowPanel: makeInvoker<'focusWindowPanel'>(FOCUS_WINDOW_PANEL),
+  openWindowReviewPanel: makeInvoker<'openWindowReviewPanel'>(OPEN_WINDOW_REVIEW),
   closeWindowPanel: makeInvoker<'closeWindowPanel'>(CLOSE_WINDOW_PANEL),
+  closePanelInWindowResult: makeInvoker<'closePanelInWindowResult'>(CLOSE_PANEL_IN_WINDOW_RESULT),
+  notifyWorktreeRemoved: makeInvoker<'notifyWorktreeRemoved'>(WORKTREE_REMOVED),
   reportWindowPanels: makeInvoker<'reportWindowPanels'>(WINDOW_PANELS_REPORT),
 
   // Cross-window drag coordination
@@ -853,8 +860,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return createIpcListener(REVEAL_PANEL_IN_WINDOW, callback)
   },
 
-  onClosePanelInWindow(callback: (panelId: string) => void): () => void {
+  onOpenReviewInWindow(callback: (panelId: string, request: unknown) => void): () => void {
+    return createIpcListener(OPEN_REVIEW_IN_WINDOW, callback)
+  },
+
+  onClosePanelInWindow(callback: (panelId: string, requestId: string) => void): () => void {
     return createIpcListener(CLOSE_PANEL_IN_WINDOW, callback)
+  },
+
+  onWorktreeRemoved(callback: (workspaceId: string, worktreeId: string) => void): () => void {
+    return createIpcListener(WORKTREE_REMOVED, callback)
   },
 
   // ---------------------------------------------------------------------------
@@ -910,6 +925,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onBrowserShortcut(callback: (action: string) => void): () => void {
     return createIpcListener(BROWSER_SHORTCUT, callback)
+  },
+  onBrowserOpenTabRequest(callback: (request: { openerWebContentsId: number; url: string }) => void): () => void {
+    return createIpcListener(BROWSER_OPEN_TAB_REQUEST, callback)
+  },
+  onBrowserDownloadsChanged(callback: (payload: { webContentsId: number; downloads: import('../shared/types').BrowserDownloadEntry[] }) => void): () => void {
+    return createIpcListener(BROWSER_DOWNLOADS_CHANGED, callback)
   },
   onBrowserHistoryChanged(callback: () => void): () => void {
     return createIpcListener(BROWSER_HISTORY_CHANGED, callback)
@@ -973,6 +994,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       extensionId: string
       method: string
       args: unknown
+      originCwd?: string
     }) => void,
   ): () => void {
     return createIpcListener(CATE_HOST_FORWARD, callback)

@@ -12,6 +12,7 @@ import { SettingRow, SearchableBlock, SecondaryButton, TextInput } from './Setti
 import { errorMessage } from '../lib/errorMessage'
 import type { SkillSource } from '../../shared/skills'
 import { Tooltip } from '../ui/Tooltip'
+import { InlineNotice } from '../ui/InlineNotice'
 
 const api = () => window.electronAPI
 
@@ -84,14 +85,14 @@ export function SkillsSettings() {
             placeholder="owner/repo"
             className="font-mono"
           />
-          <SecondaryButton onClick={() => void add()} disabled={adding || !repo.trim()}>
+          <SecondaryButton onClick={() => void add()} disabled={!repo.trim()} loading={adding} loadingLabel="Adding…">
             <Plus size={11} />
             Add
           </SecondaryButton>
         </div>
       </SettingRow>
 
-      {err && <div className="text-[11px] text-red-400 -mt-1 mb-1">{err}</div>}
+      {err && <InlineNotice tone="error" className="-mt-1 mb-1 border-0 bg-transparent px-0">{err}</InlineNotice>}
 
       {sources.length > 0 && (
         <SearchableBlock keywords="skills sources repositories github repo catalog list">

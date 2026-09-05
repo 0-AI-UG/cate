@@ -125,6 +125,8 @@ interface InvokePayload {
   panelId: string
   method: string
   args: unknown
+  /** Runtime-absolute cwd of a trusted terminal/agent caller. */
+  originCwd?: string
 }
 
 type InvokeResult = unknown | { error: string; method?: string }
@@ -202,6 +204,7 @@ export function forwardToOwner(
         extensionId: payload.extensionId,
         method: payload.method,
         args: payload.args,
+        originCwd: payload.originCwd,
       })
     } catch (err) {
       clearTimeout(timer)
@@ -237,7 +240,7 @@ export function forwardToActiveWindow(payload: InvokePayload): Promise<InvokeRes
  */
 function resolvePanelTargetWindow(
   panelId: string | undefined,
-  type: 'browser' | 'terminal',
+  type: 'browser' | 'terminal' | 'review',
 ): { wc: WebContents; ownerWindowId: number } | { error: string } {
   if (panelId) {
     const info = getWindowPanels().find((p) => p.panelId === panelId)
@@ -466,6 +469,11 @@ export function requiredScopeFor(method: string): string | null | undefined {
     case 'cate.codingAgent.discard':
     case 'cate.codingAgent.stop':
       return 'coding-agent'
+    case 'cate.review.inspect':
+    case 'cate.review.note.add':
+    case 'cate.review.note.resolve':
+    case 'cate.review.complete':
+      return 'panel'
     case 'cate.editor.openFile':
       return 'editor.write'
     // Unlike the self-identity panel.* methods below, these read or steer OTHER
@@ -561,9 +569,10 @@ export function authorizeCateInvoke(
     return { error: 'not-enabled', method }
   }
 
-  // Coding-agent orchestration is available to first-party terminal callers.
-  // Third-party extensions cannot opt into it by self-declaring the scope.
-  if (method.startsWith('cate.codingAgent.') && !trustedCaller) {
+  // Coding-agent orchestration is available to first-party terminal callers
+  // and the embedded Cate Agent. Third-party extensions cannot opt into it by
+  // self-declaring the scope.
+  if ((method.startsWith('cate.codingAgent.') || method.startsWith('cate.review.')) && !trustedCaller) {
     return { error: 'first-party-only', method }
   }
 
@@ -641,7 +650,9 @@ export async function dispatchCateInvoke(
           : [])
       : typeof routedArgs.runId === 'string' ? [routedArgs.runId] : []
     const target = name === 'create'
-      ? null
+      ? typeof routedArgs.terminalPanelId === 'string'
+        ? resolvePanelTargetWindow(routedArgs.terminalPanelId, 'terminal')
+        : null
       : resolveCodingAgentTargetWindow(requestedRunIds, panelId ?? '')
     if (target && 'error' in target) {
       if (name === 'wait' && target.error === 'coding-agent-runs-span-windows') {
@@ -703,6 +714,22 @@ export async function dispatchCateInvoke(
         : { error: 'coding-agent-limit', method }
     }
     return forward()
+  }
+
+  if (method.startsWith('cate.review.')) {
+    const routedArgs = (args ?? {}) as Record<string, unknown>
+    const target = resolvePanelTargetWindow(
+      typeof routedArgs.panelId === 'string' ? routedArgs.panelId : undefined,
+      'review',
+    )
+    if ('error' in target) return { error: target.error, method }
+    return forwardToOwner(target.wc, {
+      extensionId,
+      workspaceId,
+      panelId: panelId ?? '',
+      method,
+      args: routedArgs,
+    })
   }
 
   // Storage (handled in main, backed by storage.ts). Routed by prefix — mirrors
@@ -859,7 +886,14 @@ export async function dispatchCateInvoke(
     default:
       // Forward state-mutating methods (strip the leading `cate.`) to the owner.
       if (FORWARDED_METHODS.has(method.replace(/^cate\./, ''))) {
-        const result = await scope.forward({ extensionId, workspaceId, panelId: panelId ?? '', method, args })
+        const result = await scope.forward({
+          extensionId,
+          workspaceId,
+          panelId: panelId ?? '',
+          method,
+          args,
+          originCwd: scope.originCwd,
+        })
         // A create result is meant to be used immediately by the next CLI
         // command. The renderer's full panel report is debounced, so register a
         // provisional row now; otherwise `panel create browser` followed by

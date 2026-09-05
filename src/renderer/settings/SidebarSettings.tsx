@@ -9,6 +9,15 @@ export function SidebarSettings() {
       <SettingRow label="Show file explorer on launch">
         <Toggle checked={store.showFileExplorerOnLaunch} onChange={(v) => store.setSetting('showFileExplorerOnLaunch', v)} />
       </SettingRow>
+      <SettingRow
+        label="Show skills in workspace overview"
+        description="List installed agent skills beneath expanded workspaces."
+      >
+        <Toggle
+          checked={store.showSkillsInWorkspaceOverview}
+          onChange={(v) => store.setSetting('showSkillsInWorkspaceOverview', v)}
+        />
+      </SettingRow>
       <SettingRow label="Background opacity" description={`${Math.round(store.sidebarTintOpacity * 100)}%`}>
         <Slider value={store.sidebarTintOpacity} onChange={(v) => store.setSetting('sidebarTintOpacity', v)} min={0.3} max={1.0} step={0.05} />
       </SettingRow>

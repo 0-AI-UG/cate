@@ -2,7 +2,7 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { AppSettings, AgentState, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, GitComparisonResult, GitComparisonSpec, GitFileContent, GitFileDiff, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, PanelTransferSnapshot, PerfSnapshot, Point, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
+import type { AppSettings, AgentState, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, GitComparisonResult, GitComparisonSpec, GitFileContent, GitFileDiff, ReviewPanelOpenRequest, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, PanelTransferSnapshot, PerfSnapshot, Point, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { CodingAgentLaunch } from './codingAgentRuns'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 import type { AgentHookEvent, AgentHookAgentState } from './agentHooks'
@@ -191,9 +191,6 @@ export interface ElectronAPI {
     behind: number
   }>
 
-  /** Get diff output for a file or the whole working tree. */
-  gitDiff(cwd: string, filePath: string | undefined, workspaceId: string): Promise<string>
-
   /** Resolve and summarize a multi-file Git comparison. */
   gitCompare(cwd: string, spec: GitComparisonSpec, workspaceId: string): Promise<GitComparisonResult>
 
@@ -267,8 +264,6 @@ export interface ElectronAPI {
     commits: Array<{ hash: string; message: string }>
     files: Array<{ path: string; status: string }>
     workingFiles: string[]
-    diff: string
-    truncated: boolean
     message?: string
   }>
 
@@ -365,9 +360,6 @@ export interface ElectronAPI {
 
   /** Checkout a branch. */
   gitCheckout(cwd: string, branchName: string, workspaceId: string): Promise<void>
-
-  /** Get diff of staged changes. */
-  gitDiffStaged(cwd: string, filePath: string | undefined, workspaceId: string): Promise<string>
 
   /** Stash changes. */
   gitStash(cwd: string, message: string | undefined, workspaceId: string): Promise<void>
@@ -667,16 +659,13 @@ export interface ElectronAPI {
   webviewScreenshot(webContentsId: number, options: { wantDataUrl: false; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string } | null>
   webviewScreenshot(webContentsId: number, options?: { wantDataUrl?: boolean; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string; dataUrl: string } | null>
 
-  /** Main-process agent-browser control plane. The target must be a webview
-   *  guest of the calling window. See main/ipc/browserControl. */
+  /** Target-bound CDP control plane for a live browser webview guest. */
   browserControl(request: {
-    op:
-      | 'registerAgentBrowser'
-      | 'agentBrowser'
-      | 'downloads'
+    op: 'attach' | 'execute' | 'downloads' | 'downloadAction'
     webContentsId: number
-    panelId?: string
-    tabId?: string
+    workspaceId: string
+    panelId: string
+    tabId: string
     method?: string
     args?: Record<string, unknown>
   }): Promise<{
@@ -690,8 +679,14 @@ export interface ElectronAPI {
       rect?: [number, number, number, number]
       label: string
     }
-    downloads?: Array<{ url: string; filePath: string; state: string; at: number }>
+    downloads?: import('./types').BrowserDownloadEntry[]
   }>
+
+  /** Subscribe to progress updates from browser-panel downloads. */
+  onBrowserDownloadsChanged(callback: (payload: {
+    webContentsId: number
+    downloads: import('./types').BrowserDownloadEntry[]
+  }) => void): () => void
 
   /** Configure the proxy for a browser panel's session partition (issue #241).
    *  Pass an empty/undefined proxyUrl to use a direct connection. */
@@ -710,13 +705,17 @@ export interface ElectronAPI {
     skipped: number
     total: number
   }>
+  /** Save a password explicitly entered in Cate's trusted password-manager UI. */
+  browserCredentialSave(
+    input: import('./types').BrowserCredentialSaveInput,
+  ): Promise<import('./types').BrowserCredentialSaveResult>
   browserCredentialRemove(credentialId: string): Promise<void>
   /** Matching usernames for the current URL of an owned browser guest. */
   browserCredentialSuggestions(webContentsId: number): Promise<{
     suggestions?: import('./types').BrowserCredentialSuggestion[]
     error?: string
   }>
-  /** Main-process-only decrypt + agent-browser fill; password never returns over IPC. */
+  /** Main-process-only decrypt + target-bound CDP fill; password never returns over IPC. */
   browserCredentialFill(request: {
     webContentsId: number
     credentialId: string
@@ -862,9 +861,21 @@ export interface ElectronAPI {
   /** Ask main to focus the window that owns `panelId` and reveal it. */
   focusWindowPanel(panelId: string): Promise<void>
 
+  /** Ask the owning renderer to retarget and reveal an existing Review panel. */
+  openWindowReviewPanel(panelId: string, request: ReviewPanelOpenRequest): Promise<boolean>
+
   /** Ask main to have the window that owns `panelId` close it (behind that
-   *  window's own dirty/running confirmation gates). */
-  closeWindowPanel(panelId: string): Promise<void>
+   *  window's own dirty/running confirmation gates). Returns false when the
+   *  owner is gone or the user cancels. */
+  closeWindowPanel(panelId: string): Promise<boolean>
+
+  /** Reply to a cross-window close request after running the owner window's
+   *  confirmation gates. */
+  closePanelInWindowResult(requestId: string, closed: boolean): Promise<void>
+
+  /** Tell every live window to remove a deleted worktree's metadata and clear
+   *  any panel/chat affinity that remains open there. */
+  notifyWorktreeRemoved(workspaceId: string, worktreeId: string): Promise<void>
 
   /** Report this window's panels (across its workspaces) for cross-window discovery. */
   reportWindowPanels(report: WindowPanelReport[]): Promise<void>
@@ -872,8 +883,15 @@ export interface ElectronAPI {
   /** This window owns `panelId` — bring it forward within this window. */
   onRevealPanelInWindow(callback: (panelId: string) => void): () => void
 
+  /** This window owns a Review panel targeted from another window. */
+  onOpenReviewInWindow(callback: (panelId: string, request: ReviewPanelOpenRequest) => void): () => void
+
   /** This window owns `panelId` — close it (with the usual confirmation gates). */
-  onClosePanelInWindow(callback: (panelId: string) => void): () => void
+  onClosePanelInWindow(callback: (panelId: string, requestId: string) => void): () => void
+
+  /** A worktree was removed by another renderer; clear local metadata and
+   *  affinity without initiating another broadcast. */
+  onWorktreeRemoved(callback: (workspaceId: string, worktreeId: string) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Cross-window drag coordination
@@ -982,6 +1000,9 @@ export interface ElectronAPI {
   /** Subscribe to browser navigation shortcuts forwarded from a focused webview
    *  guest (Cmd+R/[/]/L) or the Browser menu. */
   onBrowserShortcut(callback: (action: import('./types').BrowserShortcutAction) => void): () => void
+  /** A permitted window.open request from a browser guest, routed into the
+   *  opener panel's persistent tab layer. */
+  onBrowserOpenTabRequest(callback: (request: { openerWebContentsId: number; url: string }) => void): () => void
 
   /** Show a native context menu. Returns the clicked item id, or null if dismissed. */
   showContextMenu(items: NativeContextMenuItem[]): Promise<string | null>
@@ -1188,6 +1209,7 @@ export interface ElectronAPI {
       extensionId: string
       method: string
       args: unknown
+      originCwd?: string
     }) => void,
   ): () => void
 

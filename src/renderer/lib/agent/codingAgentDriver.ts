@@ -6,6 +6,7 @@ import { terminalBufferTail } from '../terminal/terminalBuffer'
 import { submitTerminalText } from '../terminal/terminalDriver'
 import { placementForBackgroundPanel } from '../workspace/canvasAccess'
 import { parseLocator, formatLocator } from '../../../shared/runtimeLocator'
+import { worktreeForPath } from '../worktreeContext'
 import { pathKey } from '../../../shared/pathUtils'
 import {
   createWorktreeForWorkspace,
@@ -29,6 +30,7 @@ import {
   reviewCodingAgentWorktree,
 } from './codingAgentIntegration'
 import type { AgentId } from '../../../shared/agents'
+import type { PanelPlacement } from '../../stores/appStore'
 import {
   actionableCodingAgentRunIds,
   changedCodingAgentRunIds,
@@ -42,6 +44,10 @@ export type CodingAgentOutcome =
 
 const stoppedMissionOwners = new Set<string>()
 
+export interface CodingAgentCreateContext {
+  placement?: PanelPlacement
+}
+
 function missionOwnerKey(workspaceId: string, ownerPanelId: string): string {
   return `${workspaceId}\0${ownerPanelId}`
 }
@@ -50,12 +56,56 @@ function workspace(workspaceId: string) {
   return useAppStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
 }
 
+export function codingAgentTerminalError(
+  workspaceId: string,
+  terminalPanelId: string,
+  ownerPanelId?: string,
+): string | null {
+  if (terminalPanelId === ownerPanelId) return 'agent-cannot-replace-caller-terminal'
+  const panel = workspace(workspaceId)?.panels[terminalPanelId]
+  if (!panel || panel.type !== 'terminal') return 'terminal-not-found'
+  if (panel.codingAgentRun) return 'terminal-already-has-agent'
+  const entry = terminalRegistry.getEntry(terminalPanelId)
+  if (!entry?.alive || !entry.ptyId) return null
+  const status = useStatusStore.getState().workspaces[workspaceId]?.terminals[entry.ptyId]
+  if (status?.agentPresent || status?.activity?.type === 'running') return 'terminal-busy'
+  return null
+}
+
 function runPanel(workspaceId: string, ownerPanelId: string, runId: string) {
   const ws = workspace(workspaceId)
   return Object.values(ws?.panels ?? {}).find((panel) =>
     panel.codingAgentRun?.id === runId &&
     panel.codingAgentRun.ownerPanelId === ownerPanelId,
   )
+}
+
+/** Resolve the worker terminal panels a mission command addresses. Kept next
+ * to runPanel so interaction visualization uses the same ownership checks as
+ * command execution instead of guessing from a raw run id. */
+export function codingAgentInteractionTargets(
+  workspaceId: string,
+  ownerPanelId: string,
+  method: string,
+  args: Record<string, unknown>,
+): string[] {
+  const name = method.slice('cate.codingAgent.'.length)
+  if (name === 'create' || name === 'list') return []
+  const runIds = name === 'wait'
+    ? Array.isArray(args.runIds)
+      ? args.runIds.filter((id): id is string => typeof id === 'string')
+      : []
+    : typeof args.runId === 'string' ? [args.runId] : []
+  if (name === 'wait' && runIds.length === 0) {
+    const ws = workspace(workspaceId)
+    return Object.values(ws?.panels ?? {})
+      .filter((panel) => panel.codingAgentRun?.ownerPanelId === ownerPanelId)
+      .map((panel) => panel.id)
+  }
+  return runIds.flatMap((runId) => {
+    const panel = runPanel(workspaceId, ownerPanelId, runId)
+    return panel ? [panel.id] : []
+  })
 }
 
 function terminalText(panelId: string, maxChars = 4_000): string {
@@ -152,8 +202,15 @@ function resolveTarget(
   const origin = typeof args._cateOriginCwd === 'string' ? args._cateOriginCwd : ''
   const rootPath = parseLocator(ws.rootPath).path
   if (origin && pathKey(origin) === pathKey(rootPath)) return { cwd: ws.rootPath }
-  const inherited = worktrees.find((candidate) =>
-    pathKey(parseLocator(candidate.path).path) === pathKey(origin),
+  const originLocator = runtimeLocatorForPath(ws.rootPath, origin)
+  const inherited = worktreeForPath(
+    originLocator,
+    worktrees
+      .filter((candidate) => pathKey(parseLocator(candidate.path).path) !== pathKey(rootPath))
+      .map((candidate) => ({
+        ...candidate,
+        path: runtimeLocatorForPath(ws.rootPath, candidate.path),
+      })),
   )
   if (inherited) {
     return { cwd: runtimeLocatorForPath(ws.rootPath, inherited.path), worktreeId: inherited.id }
@@ -283,6 +340,7 @@ export async function handleCodingAgentMethod(
   ownerPanelId: string,
   method: string,
   args: Record<string, unknown>,
+  createContext?: CodingAgentCreateContext,
 ): Promise<CodingAgentOutcome> {
   const name = method.slice('cate.codingAgent.'.length)
   if (!ownerPanelId) return { ok: false, error: 'mission-owner-required' }
@@ -314,6 +372,7 @@ export async function handleCodingAgentMethod(
     const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
     const requestedTitle = typeof args.title === 'string' ? args.title.trim() : ''
     const background = args.background !== false
+    const terminalPanelId = typeof args.terminalPanelId === 'string' ? args.terminalPanelId : undefined
     if (args.agentId !== undefined && !requestedAgentId) {
       return { ok: false, error: 'unsupported-agent' }
     }
@@ -321,6 +380,10 @@ export async function handleCodingAgentMethod(
     if (requestedTitle.length > 80) return { ok: false, error: 'title-too-long' }
     if (prompt.includes('\0')) return { ok: false, error: 'invalid-prompt' }
     if (prompt.length > 50_000) return { ok: false, error: 'prompt-too-long' }
+    if (terminalPanelId) {
+      const terminalError = codingAgentTerminalError(workspaceId, terminalPanelId, ownerPanelId)
+      if (terminalError) return { ok: false, error: terminalError }
+    }
     const active = allSnapshots(workspaceId, ownerPanelId).filter((run) =>
       run.status === 'starting' || run.status === 'working' || run.status === 'waiting',
     )
@@ -431,16 +494,38 @@ export async function handleCodingAgentMethod(
       ownsWorktree: Boolean(createdWorktree),
       background,
     }
-    const panelId = useAppStore.getState().createTerminal(
-      workspaceId,
-      undefined,
-      undefined,
-      placementForBackgroundPanel(workspaceId, placementGroupId),
-      target.cwd,
-      launch,
-    )
-    if (!panelId) return { ok: false, error: 'panel-creation-failed' }
     const store = useAppStore.getState()
+    let panelId: string
+    if (terminalPanelId) {
+      // Reuse the panel, not its shell process. Restarting the PTY lets main
+      // launch the canonical executable+argv directly, avoiding shell quoting
+      // and accidental input into whatever previously owned the terminal.
+      store.respawnPanelTerminal(workspaceId, terminalPanelId, target.cwd, target.worktreeId)
+      store.setPanelCodingAgentLaunch(workspaceId, terminalPanelId, launch)
+      store.setPanelCodingAgentRun(workspaceId, terminalPanelId, {
+        id: runId,
+        agentId,
+        panelId: terminalPanelId,
+        title: requestedTitle || undefined,
+        ownerPanelId,
+        prompt,
+        ownsWorktree: Boolean(createdWorktree),
+        background,
+        createdAt: Date.now(),
+        worktreeId: target.worktreeId,
+      })
+      panelId = terminalPanelId
+    } else {
+      panelId = store.createTerminal(
+        workspaceId,
+        undefined,
+        undefined,
+        createContext?.placement ?? placementForBackgroundPanel(workspaceId, placementGroupId),
+        target.cwd,
+        launch,
+      )
+    }
+    if (!panelId) return { ok: false, error: 'panel-creation-failed' }
     if (target.worktreeId) store.setPanelWorktreeId(workspaceId, panelId, target.worktreeId)
     const panel = workspace(workspaceId)?.panels[panelId]
     if (panel?.codingAgentRun) {

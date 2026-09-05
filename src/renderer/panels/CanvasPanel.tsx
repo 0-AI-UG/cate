@@ -32,6 +32,7 @@ import {
 import { getPanelDef } from '../panels/registry'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
+import { PanelConnectionLayer } from '../canvas/PanelConnectionLayer'
 
 // Re-export the lookup helpers so existing callers (drag dispatcher, drop
 // resolver) keep working through the same import path. New code should import
@@ -236,7 +237,8 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     // Open the new terminal in the same worktree as the terminal/agent selected
     // on this canvas (see inheritedWorktreeFromSelection).
     const app = useAppStore.getState()
-    const wt = inheritedWorktreeFromSelection(store.getState(), app.getWorkspace(wsId)?.panels)
+    const workspace = app.getWorkspace(wsId)
+    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
     const newId = app.createTerminal(wsId, undefined, undefined, here(), wt.cwd)
     if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
   }, [workspaceId, here, store])
@@ -248,14 +250,20 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
 
   const onNewEditor = useCallback(async () => {
     const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (wsId) useAppStore.getState().createEditor(wsId, undefined, undefined, here())
-  }, [workspaceId, here])
+    if (!wsId) return
+    const app = useAppStore.getState()
+    const workspace = app.getWorkspace(wsId)
+    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
+    const panelId = app.createEditor(wsId, undefined, undefined, here())
+    if (panelId && wt.worktreeId) app.setPanelWorktreeId(wsId, panelId, wt.worktreeId)
+  }, [workspaceId, here, store])
 
   const onNewAgent = useCallback(async () => {
     const wsId = await ensureWorkspaceFolder(workspaceId)
     if (!wsId) return
     const app = useAppStore.getState()
-    const wt = inheritedWorktreeFromSelection(store.getState(), app.getWorkspace(wsId)?.panels)
+    const workspace = app.getWorkspace(wsId)
+    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
     app.createAgent(wsId, undefined, here(), wt.cwd, wt.worktreeId)
   }, [workspaceId, here, store])
 
@@ -281,7 +289,22 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
           <EmptyCanvasOverlay workspaceId={workspaceId} panelId={panelId} canvasApi={store} />
         )}
 
-        <Canvas onCreateAtPoint={onCreateAtPoint} panelId={panelId}>
+        <Canvas
+          onCreateAtPoint={onCreateAtPoint}
+          panelId={panelId}
+          overlayChildren={(nodeIds.length > 0 || workspaceRootPath) ? (
+            <CanvasToolbar
+              canvasPanelId={panelId}
+              workspaceId={workspaceId}
+              rootPath={workspaceRootPath}
+              onNewTerminal={onNewTerminal}
+              onNewBrowser={onNewBrowser}
+              onNewEditor={onNewEditor}
+              onNewAgent={onNewAgent}
+            />
+          ) : null}
+        >
+          <PanelConnectionLayer workspaceId={workspaceId} />
           {visibleNodeIds.map((nId) => (
             <CanvasNodeWrapper
               key={nId}
@@ -292,17 +315,6 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
           ))}
         </Canvas>
 
-        {(nodeIds.length > 0 || workspaceRootPath) && (
-          <CanvasToolbar
-            canvasPanelId={panelId}
-            workspaceId={workspaceId}
-            rootPath={workspaceRootPath}
-            onNewTerminal={onNewTerminal}
-            onNewBrowser={onNewBrowser}
-            onNewEditor={onNewEditor}
-            onNewAgent={onNewAgent}
-          />
-        )}
       </div>
     </CanvasStoreProvider>
   )

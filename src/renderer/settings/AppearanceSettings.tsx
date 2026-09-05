@@ -7,6 +7,7 @@ import type { Theme } from '../../shared/types'
 import { validateTheme } from '../../shared/theme'
 import { BASE_DARK, BASE_LIGHT, BUILT_IN_THEMES } from '../../shared/themes'
 import { errorMessage } from '../lib/errorMessage'
+import { InlineNotice } from '../ui/InlineNotice'
 
 const SKILL_GUIDE_URL = 'https://github.com/0-AI-UG/cate/blob/main/skills/cate-theme/SKILL.md'
 
@@ -117,7 +118,7 @@ export function AppearanceSettings() {
         </SecondaryButton>
       </div>
 
-      {importError && <div className="text-[11px] text-red-400 mb-2">{importError}</div>}
+      {importError && <InlineNotice tone="error" className="mb-2 border-0 bg-transparent px-0">{importError}</InlineNotice>}
 
       {/* Catalog */}
       <div className="grid grid-cols-2 gap-2">

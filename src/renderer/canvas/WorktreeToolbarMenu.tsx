@@ -25,7 +25,6 @@ import {
   Warning,
   X,
   GitPullRequest,
-  CircleNotch,
   ChatsCircle,
 } from '@phosphor-icons/react'
 import { Tooltip } from '../ui/Tooltip'
@@ -36,8 +35,17 @@ import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore, getWorktreeColorPalette } from '../stores/appStore'
 import { useParallelWork, runWorktreeContextMenu, type CardCallbacks } from '../stores/useParallelWork'
+import {
+  closePreparedWorktreePanels,
+  prepareWorktreePanelsForClose,
+  removeWorktreeFromAllWindows,
+  worktreePanelCloseTargets,
+} from '../lib/worktreePanelClose'
 import { useWorktreeStatuses, humanStatus, type PrStatus } from '../stores/useWorktreeStatuses'
 import type { WorktreePanelType } from '../../shared/panels'
+import { Spinner } from '../ui/Spinner'
+import { useDismissableLayer } from '../ui/Popover'
+import { CanvasToolbarButton } from './CanvasToolbarButton'
 
 interface WorktreeToolbarMenuProps {
   canvasPanelId: string
@@ -98,18 +106,15 @@ const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
 
   return (
     <>
-      <Tooltip label="Parallel worktrees" placement={tooltipPlacement}>
-        <button
+      <CanvasToolbarButton
           ref={btnRef}
-          type="button"
           onClick={toggle}
-          aria-label="Parallel worktrees"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
-          className={`w-9 h-9 ${active ? 'bg-hover-strong' : 'bg-transparent'} flex items-center justify-center rounded-full ${active ? 'text-primary' : 'text-secondary'} hover:text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
-        >
+          label="Parallel worktrees"
+          active={active}
+          tooltipPlacement={tooltipPlacement}
+      >
           <ArrowsSplit size={18} />
-        </button>
-      </Tooltip>
+      </CanvasToolbarButton>
       {open && pos &&
         createPortal(
           <WorktreeMenuPopover
@@ -164,8 +169,6 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
   const focusWorktree = useUIStore((s) => s.focusWorktree)
   const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
   const setHoveredWorktree = useUIStore((s) => s.setHoveredWorktree)
-  const removeWorktree = useAppStore((s) => s.removeWorktree)
-
   // What's already open on the canvas, per worktree.
   const panels = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.panels)
   const panelCounts = useMemo(() => {
@@ -188,25 +191,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
     { setError, onPrCreated: refreshPr, setBusy: setBusyId },
   )
 
-  // Close on outside click or Escape. Clicks on the trigger button are ignored
-  // so its own onClick can toggle the menu cleanly.
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (rootRef.current?.contains(target)) return
-      if (triggerRef.current?.contains(target)) return
-      onClose()
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [onClose, triggerRef])
+  useDismissableLayer({ open: true, contentRef: rootRef, triggerRefs: [triggerRef], onDismiss: onClose })
 
   // Never leave a worktree highlighted on the canvas once the menu is gone.
   useEffect(() => () => setHoveredWorktree(null), [setHoveredWorktree])
@@ -229,6 +214,13 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
       setError(`Couldn’t initialize git: ${errorMessage(err, 'The operation failed.')}`)
     }
   }, [rootPath, workspaceId])
+
+  const removeOrphan = useCallback(async (worktreeId: string) => {
+    const targets = worktreePanelCloseTargets(workspaceId, worktreeId)
+    if (!(await prepareWorktreePanelsForClose(workspaceId, targets))) return
+    closePreparedWorktreePanels(workspaceId, targets)
+    removeWorktreeFromAllWindows(workspaceId, worktreeId)
+  }, [workspaceId])
 
   return (
     <div
@@ -335,7 +327,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
                   />
                   <span className="flex-1 min-w-0 text-[12px] truncate">{wt.label || wt.branch}</span>
                   <button
-                    onClick={() => removeWorktree(workspaceId, wt.id)}
+                    onClick={() => void removeOrphan(wt.id)}
                     className="text-[11px] text-muted hover:text-red-400"
                   >
                     Remove
@@ -509,7 +501,7 @@ const WorktreeRow: React.FC<{
         )}
 
         {busy && (
-          <CircleNotch size={13} className="flex-shrink-0 text-muted animate-spin" />
+          <Spinner size={13} className="text-muted" />
         )}
 
         {!renaming && !busy && (

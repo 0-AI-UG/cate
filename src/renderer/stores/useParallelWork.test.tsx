@@ -28,6 +28,7 @@ vi.mock('./useWorktreeActions', () => ({
 
 import { useAppStore } from './appStore'
 import { useSettingsStore } from './settingsStore'
+import { useWindowPanelStore } from './windowPanelStore'
 import {
   runWorktreeContextMenu,
   useParallelWork,
@@ -103,6 +104,7 @@ beforeEach(() => {
     }],
     selectedWorkspaceId: WS,
   }, true)
+  useWindowPanelStore.setState({ panels: [] })
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     gitPush: vi.fn().mockResolvedValue(undefined),
     gitCreatePR: vi.fn(),
@@ -115,6 +117,10 @@ beforeEach(() => {
     ]),
     shellShowInFolder: vi.fn().mockResolvedValue(undefined),
     showContextMenu: vi.fn().mockResolvedValue(null),
+    confirmUnsavedChanges: vi.fn().mockResolvedValue('discard'),
+    confirmCloseTerminal: vi.fn().mockResolvedValue('close'),
+    closeWindowPanel: vi.fn().mockResolvedValue(true),
+    notifyWorktreeRemoved: vi.fn().mockResolvedValue(undefined),
   }
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   host = document.createElement('div')
@@ -138,7 +144,7 @@ describe('useParallelWork handleDelete', () => {
       await actions.handleDelete(worktree)
     })
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('unsaved changes here will be lost'))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('uncommitted changes here will be lost'))
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('2 unpublished commit(s) will be lost'))
     expect(window.electronAPI.gitWorktreeRemove).toHaveBeenCalledWith(
       ROOT,
@@ -191,6 +197,102 @@ describe('useParallelWork handleDelete', () => {
     expect(window.electronAPI.gitWorktreeRemove).not.toHaveBeenCalled()
     expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(true)
     expect(setBusy).not.toHaveBeenCalled()
+  })
+
+  it('stops before disk removal when the dirty-editor gate is cancelled', async () => {
+    useAppStore.setState((state) => ({
+      workspaces: state.workspaces.map((ws) => ws.id === WS ? {
+        ...ws,
+        panels: {
+          dirty: {
+            id: 'dirty', type: 'editor', title: 'draft.ts', isDirty: true,
+            filePath: `${worktree.path}/draft.ts`,
+          },
+        },
+      } : ws),
+    }))
+    vi.mocked(window.electronAPI.confirmUnsavedChanges).mockResolvedValueOnce('cancel')
+
+    await act(async () => {
+      await actions.handleDelete(worktree)
+    })
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('an editor has unsaved changes'))
+    expect(window.electronAPI.gitWorktreeRemove).not.toHaveBeenCalled()
+    expect(workspace().panels.dirty).toBeDefined()
+  })
+
+  it('awaits detached panel confirmation and aborts when its owner cancels', async () => {
+    useWindowPanelStore.setState({
+      panels: [{
+        panelId: 'detached-editor',
+        type: 'editor',
+        title: 'detached.ts',
+        workspaceId: WS,
+        ownerWindowId: 9,
+        ownerWindowType: 'dock',
+        worktreeId: worktree.id,
+      }],
+    })
+    vi.mocked(window.electronAPI.closeWindowPanel).mockResolvedValueOnce(false)
+
+    await act(async () => {
+      await actions.handleDelete(worktree)
+    })
+
+    expect(window.electronAPI.closeWindowPanel).toHaveBeenCalledWith('detached-editor')
+    expect(window.electronAPI.gitWorktreeRemove).not.toHaveBeenCalled()
+    expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(true)
+  })
+
+  it('closes a confirmed dirty editor only after disk removal succeeds', async () => {
+    useAppStore.setState((state) => ({
+      workspaces: state.workspaces.map((ws) => ws.id === WS ? {
+        ...ws,
+        panels: {
+          dirty: {
+            id: 'dirty', type: 'editor', title: 'draft.ts', isDirty: true,
+            filePath: `${worktree.path}/draft.ts`, worktreeId: worktree.id,
+          },
+        },
+      } : ws),
+    }))
+
+    await act(async () => {
+      await actions.handleDelete(worktree)
+    })
+
+    expect(window.electronAPI.confirmUnsavedChanges).toHaveBeenCalled()
+    expect(window.electronAPI.gitWorktreeRemove).toHaveBeenCalledWith(
+      ROOT, worktree.path, { force: true }, WS,
+    )
+    expect(workspace().panels.dirty).toBeUndefined()
+  })
+
+  it('warns but keeps a dirty editor when close-on-delete is disabled', async () => {
+    useSettingsStore.setState({ closeWorktreePanelsOnDelete: false })
+    useAppStore.setState((state) => ({
+      workspaces: state.workspaces.map((ws) => ws.id === WS ? {
+        ...ws,
+        panels: {
+          dirty: {
+            id: 'dirty', type: 'editor', title: 'draft.ts', isDirty: true,
+            filePath: `${worktree.path}/draft.ts`, worktreeId: worktree.id,
+          },
+        },
+      } : ws),
+    }))
+
+    await act(async () => {
+      await actions.handleDelete(worktree)
+    })
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('an editor has unsaved changes'))
+    expect(window.electronAPI.confirmUnsavedChanges).not.toHaveBeenCalled()
+    expect(window.electronAPI.gitWorktreeRemove).toHaveBeenCalledWith(
+      ROOT, worktree.path, { force: true }, WS,
+    )
+    expect(workspace().panels.dirty).toMatchObject({ worktreeId: undefined, isDirty: true })
   })
 
   it('does not offer a destructive confirmation when status cannot be verified', async () => {

@@ -329,6 +329,44 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     secondEndpoint.dispose()
   })
 
+  it('uses cate panel set as the default review target', async () => {
+    windowPanels.push({ panelId: 'review-1', type: 'review', workspaceId: 'ws-1' })
+    const { runtime, output } = makeRuntime()
+    const endpoint = createCateApiReverse({
+      extensionId: 'first-party',
+      workspaceId: 'ws-1',
+      token: TOKEN,
+      runtime,
+      caller: 'first-party',
+      grantedScopes: ['panel'],
+    })
+
+    await request(endpoint, output, {
+      json: {
+        method: 'cate.panel.target.set',
+        args: { panelId: 'review-1' },
+        clientId: 'cli-session',
+      },
+    })
+    const firstResponseBytes = output().length
+    dispatchCateInvoke.mockResolvedValue({ files: [] })
+    const inspected = await request(endpoint, () => output().subarray(firstResponseBytes), {
+      json: {
+        method: 'cate.review.inspect',
+        args: {},
+        clientId: 'cli-session',
+      },
+    })
+
+    expect(inspected.body).toEqual({ result: { files: [] } })
+    expect(dispatchCateInvoke).toHaveBeenLastCalledWith(
+      expect.any(Object),
+      'cate.review.inspect',
+      { panelId: 'review-1' },
+    )
+    endpoint.dispose()
+  })
+
   it('checks panel-target authorization before reading or changing the target', async () => {
     windowPanels.push({ panelId: 'browser-1', type: 'browser', workspaceId: 'ws-1' })
     authorizeCateInvoke.mockReturnValueOnce({

@@ -31,6 +31,7 @@ import {
 } from '../sidebar/gitStatusDecoration'
 import { watchFsRoot } from '../lib/fs/fsWatchManager'
 import { useAppStore } from './appStore'
+import { worktreeForPath } from '../lib/worktreeContext'
 
 // -----------------------------------------------------------------------------
 // Types
@@ -143,6 +144,32 @@ export function workspaceIdForRoot(rootPath: string): string {
   const workspaces = useAppStore.getState().workspaces
   const exact = workspaces.find((w) => norm(w.rootPath) === target)
   if (exact) return exact.id
+  // A linked worktree may be a sibling of the primary checkout, so ancestry
+  // under workspace.rootPath is not sufficient. The live/persisted registry is
+  // the workspace ownership proof on the renderer side; main/runtime still
+  // perform the authoritative scoped-path validation.
+  const worktreeOwner = workspaces.find((w) => worktreeForPath(rootPath, w.worktrees ?? []))
+  if (worktreeOwner) return worktreeOwner.id
+  const additionalOwner = workspaces.find((w) =>
+    worktreeForPath(rootPath, (w.additionalRoots ?? []).map((path) => ({ id: path, path }))),
+  )
+  if (additionalOwner) return additionalOwner.id
+  // Live worktrees do not necessarily have persisted Parallel Work metadata
+  // (for example, a checkout created with the git CLI). A canonical root's
+  // already-loaded git snapshot is still sufficient to route its sibling
+  // checkouts back through that workspace's security scope.
+  for (const entry of roots.values()) {
+    if (!worktreeForPath(rootPath, entry.snapshot.worktrees.map((worktree) => ({
+      id: worktree.path,
+      path: worktree.path,
+    })))) continue
+    const owner = workspaces.find((workspace) => {
+      const ownerRoot = norm(workspace.rootPath)
+      const entryRoot = norm(entry.rootPath)
+      return entryRoot === ownerRoot || entryRoot.startsWith(`${ownerRoot}/`)
+    })
+    if (owner) return owner.id
+  }
   return workspaces.find((w) => w.rootPath && target.startsWith(`${norm(w.rootPath)}/`))?.id ?? ''
 }
 

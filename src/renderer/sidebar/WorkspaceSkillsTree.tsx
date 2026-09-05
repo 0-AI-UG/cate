@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { PuzzlePiece, CaretRight } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { SKILL_TARGETS, type SkillTargetId } from '../../shared/skills'
@@ -58,6 +59,7 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
   rootPath,
 }) => {
   const [groups, setGroups] = useState<SkillTargetGroup[]>([])
+  const showSkillsInWorkspaceOverview = useSettingsStore((s) => s.showSkillsInWorkspaceOverview)
   // Collapse state lives in the persisted sidebar store, not local state: this
   // component unmounts whenever the workspace row folds, so useState would reset
   // every fold and every restart.
@@ -73,7 +75,7 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
   const showSkillsDialog = useUIStore((s) => s.showSkillsDialog)
 
   const refresh = useCallback(async () => {
-    if (!rootPath) {
+    if (!showSkillsInWorkspaceOverview || !rootPath) {
       setGroups([])
       return
     }
@@ -82,7 +84,7 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
     } catch (err) {
       log.warn('[WorkspaceSkillsTree] listInstalled failed', err)
     }
-  }, [rootPath])
+  }, [rootPath, showSkillsInWorkspaceOverview])
 
   useEffect(() => {
     if (showSkillsDialog) return
@@ -94,7 +96,7 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
     useUIStore.getState().setShowSkillsDialog(true)
   }, [workspaceId])
 
-  if (!rootPath || groups.length === 0) return null
+  if (!showSkillsInWorkspaceOverview || !rootPath || groups.length === 0) return null
 
   return (
     <>

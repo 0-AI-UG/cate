@@ -7,7 +7,6 @@ import { pathKey } from '../../../shared/pathUtils'
 import type { AppSet, AppGet, AppStoreActions } from './types'
 import { pickWorktreeColor, setPanelField } from './helpers'
 import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
-import { useSettingsStore } from '../settingsStore'
 
 type WorktreeSliceActions = Pick<
   AppStoreActions,
@@ -76,25 +75,14 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
     },
 
     removeWorktree(wsId, worktreeId) {
-      // Optionally destroy worktree-bound terminal and Agent panels before we
-      // drop the worktree record.
-      // Done outside
-      // the set() updater because closePanel runs its own teardown + set().
-      if (useSettingsStore.getState().closeWorktreePanelsOnDelete) {
-        const ws = get().workspaces.find((w) => w.id === wsId)
-        const doomed = Object.values(ws?.panels ?? {}).filter(
-          (p) => (
-            (p.type === 'terminal' || p.type === 'agent') && p.worktreeId === worktreeId
-          ),
-        )
-        for (const p of doomed) get().closePanel(wsId, p.id)
-      }
+      // Async deletion flows close panels before removing backing files.
+      // Keep this metadata action free of panel teardown.
       set((state) => ({
         workspaces: state.workspaces.map((ws) => {
           if (ws.id !== wsId) return ws
           const list = (ws.worktrees ?? []).filter((w) => w.id !== worktreeId)
-          // Strip the worktreeId from any panel still tagged with it (editors,
-          // browsers, or all panels when the close-on-delete setting is off).
+          // Strip the worktreeId from any checkout-bound panel left open when
+          // close-on-delete is disabled.
           const panels = Object.fromEntries(
             Object.entries(ws.panels).map(([id, p]) => [
               id,
@@ -133,13 +121,9 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
 
     setPanelWorktreeId(wsId, panelId, worktreeId) {
       setPanelField(set, wsId, panelId, (panel) => (
-        panel.type === 'terminal'
-          ? { ...panel, worktreeId }
-          : panel.type === 'agent'
-            // The cwd is derived from this tag. A thread belongs to its old
-            // checkout, so switching worktrees starts a fresh thread.
-            ? { ...panel, worktreeId, cwd: undefined, agentThreadId: undefined }
-            : { ...panel, worktreeId: undefined }
+        panel.type === 'agent'
+          ? { ...panel, worktreeId, cwd: undefined, agentThreadId: undefined }
+          : { ...panel, worktreeId }
       ))
     },
 

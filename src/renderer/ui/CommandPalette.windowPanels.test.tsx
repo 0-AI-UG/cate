@@ -26,6 +26,7 @@ import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import { useWindowPanelStore } from '../stores/windowPanelStore'
 import { recordRecentFile } from '../lib/fs/recentFiles'
+import { gitStatusStore } from '../stores/gitStatusStore'
 import type { CateWindowType, WindowPanelInfo } from '../../shared/types'
 
 let host: HTMLDivElement
@@ -48,12 +49,17 @@ beforeEach(() => {
   // The shared test setup installs a base electronAPI stub; add what the palette
   // touches for detached panels.
   ;(window.electronAPI as unknown as Record<string, unknown>).focusWindowPanel = vi.fn().mockResolvedValue(undefined)
+  ;(window.electronAPI as unknown as Record<string, unknown>).gitIsRepo = vi.fn().mockResolvedValue(false)
+  ;(window.electronAPI as unknown as Record<string, unknown>).onFsWatchEvent = vi.fn(() => () => {})
+  ;(window.electronAPI as unknown as Record<string, unknown>).fsWatchStart = vi.fn().mockResolvedValue(undefined)
+  ;(window.electronAPI as unknown as Record<string, unknown>).fsWatchStop = vi.fn().mockResolvedValue(undefined)
 
   useAppStore.setState({
     workspaces: [{ id: 'ws-A', name: 'Proj', color: '', rootPath: '/tmp/p', panels: {} } as never],
     selectedWorkspaceId: 'ws-A',
   })
   useWindowPanelStore.setState({ panels: [detached] })
+  useUIStore.setState({ navigationWorktreeByWorkspace: {} })
   useUIStore.getState().setShowCommandPalette(true)
 
   host = document.createElement('div')
@@ -65,6 +71,7 @@ afterEach(() => {
   act(() => { root.unmount() })
   host.remove()
   useUIStore.getState().setShowCommandPalette(false)
+  gitStatusStore._reset()
 })
 
 function renderPalette(windowType: CateWindowType) {
@@ -141,6 +148,37 @@ describe('CommandPalette in the main window', () => {
     expect(selectWorkspace).toHaveBeenCalledWith('ws-B')
     expect(useUIStore.getState().showCommandPalette).toBe(false)
     selectWorkspace.mockRestore()
+  })
+
+  it('shows recent files only from the selected navigation worktree', () => {
+    const primary = '/tmp/p'
+    const feature = '/tmp/p/.cate/worktrees/feature'
+    useAppStore.setState({
+      workspaces: [{
+        id: 'ws-A',
+        name: 'Proj',
+        color: '',
+        rootPath: primary,
+        worktrees: [
+          { id: 'primary', path: primary, color: '#111111' },
+          { id: 'feature', path: feature, color: '#222222' },
+        ],
+        panels: {},
+      } as never],
+      selectedWorkspaceId: 'ws-A',
+    })
+    gitStatusStore._seedWorktrees(primary, [
+      { path: primary, branch: 'main', isPrimary: true, isCurrent: true },
+      { path: feature, branch: 'feature', isPrimary: false, isCurrent: false },
+    ])
+    useUIStore.getState().setNavigationWorktree('ws-A', 'feature')
+    recordRecentFile('ws-A', `${primary}/primary-only.ts`)
+    recordRecentFile('ws-A', `${feature}/feature-only.ts`)
+
+    renderPalette('main')
+
+    expect(host.textContent).toContain('feature-only.ts')
+    expect(host.textContent).not.toContain('primary-only.ts')
   })
 
   it('lists panels living in other windows and reveals them via main', () => {

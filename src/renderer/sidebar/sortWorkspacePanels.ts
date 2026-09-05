@@ -2,8 +2,8 @@
 // sortWorkspacePanels — the canonical ordering for a workspace's panels in the
 // sidebar tree (and, via useWorkspacePanelTree, the Cmd+K palette).
 //
-// Panels are grouped by worktree FIRST so every terminal/agent panel that lives
-// on the same git worktree sits together, then by type, then alphabetically by
+// Panels are grouped by worktree FIRST so every checkout-bound panel stays with
+// the worktree it operates on, then by type, then alphabetically by
 // title. The worktree order is: the primary worktree (the checkout at the
 // workspace rootPath) first, then the remaining worktrees in registry order.
 // Panels with no worktree tag — or a tag that resolves to the primary — group

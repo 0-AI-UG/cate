@@ -89,6 +89,10 @@ function buildSnapshot(): { snapshot: SessionSnapshot; canvasSnapshot: CanvasSna
       user: 'anton',
       remotePath: '/srv/my-repo',
     },
+    worktreeViewScopes: {
+      navigationWorktreeId: 'wt-1',
+      sourceControlWorktreeByRepository: { [ROOT]: 'wt-1' },
+    },
   }
   return { snapshot, canvasSnapshot }
 }
@@ -115,6 +119,7 @@ describe('workspace.json + session.json round-trip', () => {
     expect(restored.rootPath).toBe(ROOT)
     expect(restored.connection).toEqual(snapshot.connection)
     expect(restored.worktrees).toEqual(snapshot.worktrees)
+    expect(restored.worktreeViewScopes).toEqual(snapshot.worktreeViewScopes)
 
     // Every placed panel comes back, with machine-local facts re-attached.
     expect(Object.keys(restored.panels!).sort()).toEqual(
@@ -150,6 +155,7 @@ describe('workspace.json + session.json round-trip', () => {
     expect(wsText).not.toContain('SCRATCH-CONTENT')
     expect(wsText).not.toContain('wt-1')
     expect(wsText).not.toContain('workingDirectory')
+    expect(wsText).not.toContain('worktreeViewScopes')
   })
 
   it('keeps shareable metadata OUT of session.json and skips panels with no machine-local facts', () => {
@@ -166,6 +172,7 @@ describe('workspace.json + session.json round-trip', () => {
       worktreeId: 'wt-1',
     })
     const sessText = JSON.stringify(sessFile)
+    expect(sessFile.worktreeViewScopes).toEqual(snapshot.worktreeViewScopes)
     expect(sessText).not.toContain('src/app.ts')
     expect(sessText).not.toContain('localhost:3000')
   })
@@ -265,6 +272,32 @@ describe('workspace.json + session.json round-trip', () => {
     const restored = projectFilesToSnapshot(wsFile, null, ROOT)
 
     expect(restored.panels!['ed-out'].filePath).toBe('/etc/hosts')
+  })
+
+  it('stores a worktree editor as a portable repo-relative path and restores its checkout', () => {
+    const { snapshot } = buildSnapshot()
+    const siblingCheckout = '/Users/dev/checkouts/fix-login'
+    snapshot.worktrees = [
+      { id: 'primary', path: ROOT, color: '#3366ff' },
+      { id: 'wt-sibling', path: siblingCheckout, color: '#ff5555' },
+    ]
+    snapshot.panels!['ed-worktree'] = panel({
+      id: 'ed-worktree',
+      type: 'editor',
+      filePath: `${siblingCheckout}/src/login.ts`,
+    })
+
+    const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+    const sessFile = throughDisk(buildSessionFile(snapshot))
+    const restored = projectFilesToSnapshot(wsFile, sessFile, ROOT)
+
+    expect(wsFile.panels!['ed-worktree'].filePath).toBe('src/login.ts')
+    expect(JSON.stringify(wsFile)).not.toContain(siblingCheckout)
+    expect(sessFile.panels['ed-worktree'].worktreeId).toBe('wt-sibling')
+    expect(restored.panels!['ed-worktree']).toMatchObject({
+      filePath: `${siblingCheckout}/src/login.ts`,
+      worktreeId: 'wt-sibling',
+    })
   })
 
   it('round-trips an extension panel so it re-binds to its extension on reload', () => {

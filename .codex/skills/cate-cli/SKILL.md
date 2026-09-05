@@ -1,6 +1,6 @@
 ---
 name: cate-cli
-description: Drive Cate browser, terminal, editor, panel, and coding-agent orchestration surfaces from a Cate terminal. Browser page automation uses native agent-browser command syntax.
+description: Drive Cate browser, terminal, editor, panel, and coding-agent orchestration surfaces from a Cate terminal. Browser page automation targets Cate's live webviews directly.
 user-invocable: true
 ---
 
@@ -50,10 +50,10 @@ cate browser wait --url '**/dashboard'
 cate browser snapshot -i
 ```
 
-Page commands after `cate browser` use agent-browser's native argv directly:
+Page commands after `cate browser` use Cate's native argv grammar:
 
 ```bash
-cate browser snapshot -i --compact
+cate browser snapshot -i
 cate browser get text @s1e4
 cate browser find role button click
 cate browser fill '#email' user@example.com
@@ -64,8 +64,7 @@ cate browser console
 cate browser errors
 ```
 
-Do not use agent-browser's `open` semantics by assumption: Cate defines
-`browser open` as opening a new tab. Use `navigate` only when replacing the
+Cate defines `browser open` as opening a new tab. Use `navigate` only when replacing the
 active tab is intentional:
 
 ```bash
@@ -83,6 +82,11 @@ cate browser tabs
 cate browser new-tab [url]
 cate browser select-tab <id>
 cate browser close-tab <id>
+cate browser current
+cate browser back
+cate browser forward
+cate browser reload
+cate browser downloads
 cate browser viewport desktop
 cate browser viewport mobile
 cate browser viewport 1024 768
@@ -94,7 +98,7 @@ The default compact viewport renders at 75% scale. Responsive viewport size and
 canvas panel size are independent. `resize` applies only to canvas panels and
 has a 400×300 minimum.
 
-Snapshots come from agent-browser's accessibility tree. Cate wraps engine refs
+Snapshots come from Chromium's accessibility tree. Cate wraps refs
 with an observation revision, for example `@s1e4`. A new snapshot invalidates
 older refs; take a fresh snapshot instead of retrying `stale-ref`.
 

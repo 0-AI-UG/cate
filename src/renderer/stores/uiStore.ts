@@ -81,6 +81,12 @@ interface UIStoreState {
   /** Worktree the focus lens is locked onto — dims non-members, rings members,
    *  and (on entry) frames the camera. Null when the lens is off. */
   focusedWorktreeId: string | null
+  /** Checkout used by file-navigation surfaces (Explorer, Search, Quick Open),
+   *  keyed by workspace. Independent from the transient canvas focus lens. */
+  navigationWorktreeByWorkspace: Record<string, string>
+  /** Checkout whose index/working tree is shown by Source Control's Changes
+   *  section, keyed by repository root so multi-repo workspaces stay isolated. */
+  sourceControlWorktreeByRepository: Record<string, string>
 }
 
 interface UIStoreActions {
@@ -117,6 +123,8 @@ interface UIStoreActions {
   focusWorktree: (id: string | null) => void
   /** Clear both hover highlight and the focus lens. */
   clearWorktreeLens: () => void
+  setNavigationWorktree: (workspaceId: string, worktreeId: string) => void
+  setSourceControlWorktree: (repositoryRoot: string, worktreeId: string) => void
 }
 
 export type UIStore = UIStoreState & UIStoreActions
@@ -144,6 +152,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
   draggingView: null,
   hoveredWorktreeId: null,
   focusedWorktreeId: null,
+  navigationWorktreeByWorkspace: {},
+  sourceControlWorktreeByRepository: {},
 
   // --- Actions ---
 
@@ -285,6 +295,24 @@ export const useUIStore = create<UIStore>((set, get) => ({
     const { hoveredWorktreeId, focusedWorktreeId } = get()
     if (hoveredWorktreeId === null && focusedWorktreeId === null) return
     set({ hoveredWorktreeId: null, focusedWorktreeId: null })
+  },
+
+  setNavigationWorktree(workspaceId, worktreeId) {
+    set((state) => ({
+      navigationWorktreeByWorkspace: {
+        ...state.navigationWorktreeByWorkspace,
+        [workspaceId]: worktreeId,
+      },
+    }))
+  },
+
+  setSourceControlWorktree(repositoryRoot, worktreeId) {
+    set((state) => ({
+      sourceControlWorktreeByRepository: {
+        ...state.sourceControlWorktreeByRepository,
+        [repositoryRoot]: worktreeId,
+      },
+    }))
   },
 
 }))

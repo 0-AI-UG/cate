@@ -25,9 +25,16 @@ import { toAbsolutePath, pathKey } from '../../shared/pathUtils'
 import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { handleBrowserMethod } from '../lib/browser/browserDriver'
 import { handleTerminalMethod } from '../lib/terminal/terminalDriver'
-import { handleCodingAgentMethod } from '../lib/agent/codingAgentDriver'
+import { codingAgentInteractionTargets, handleCodingAgentMethod } from '../lib/agent/codingAgentDriver'
+import {
+  beginPanelInteraction,
+  type PanelInteractionKind,
+  type PanelTargetObserver,
+} from '../lib/panelInteractions'
+import { handleReviewMethod } from '../lib/review/reviewDriver'
 import { browserPanelUrl, isStartPageUrl, type PanelType, type Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
+import { worktreeForPath } from '../lib/worktreeContext'
 
 // Host-API panel creation (CLI + extensions) is always non-interactive: callers
 // may add panels but must not open the placement picker, switch tabs, change
@@ -51,10 +58,63 @@ interface HostActionPayload {
   extensionId: string
   method: string
   args: unknown
+  originCwd?: string
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+const BROWSER_READ_METHODS = new Set([
+  'cate.browser.current',
+  'cate.browser.downloads',
+  'cate.browser.readCommand',
+  'cate.browser.snapshot',
+  'cate.browser.screenshot',
+  'cate.browser.tabs',
+])
+
+function interactionTracker(
+  workspaceId: string,
+  sourcePanelId: string,
+  kind: PanelInteractionKind,
+): { observe: PanelTargetObserver; finish: (succeeded: boolean) => void } {
+  const completions = new Map<string, (succeeded: boolean) => void>()
+  let completed: boolean | undefined
+  return {
+    observe(targetPanelId) {
+      if (completions.has(targetPanelId)) return
+      const complete = beginPanelInteraction({
+        workspaceId,
+        sourcePanelId,
+        targetPanelId,
+        kind,
+      })
+      completions.set(targetPanelId, complete)
+      // Creation calls learn the new panel id from their result, after the
+      // tracked operation itself has completed.
+      if (completed !== undefined) complete(completed)
+    },
+    finish(succeeded) {
+      completed = succeeded
+      for (const complete of completions.values()) complete(succeeded)
+    },
+  }
+}
+
+async function finishTracked<T>(
+  tracker: ReturnType<typeof interactionTracker>,
+  action: () => Promise<T>,
+  succeeded: (value: T) => boolean,
+): Promise<T> {
+  try {
+    const value = await action()
+    tracker.finish(succeeded(value))
+    return value
+  } catch (error) {
+    tracker.finish(false)
+    throw error
+  }
 }
 
 // Extensions address files by a path relative to the workspace root (e.g.
@@ -67,10 +127,11 @@ function asRecord(value: unknown): Record<string, unknown> {
 // SECURITY: confine the resolved path to the workspace root. An extension must
 // not be able to open arbitrary files on disk (e.g. /etc/hosts, ../../secrets)
 // via the reverse API — neither by passing an absolute path that escapes the
-// root nor by a relative path that traverses out of it. Returns null when the
-// resolved path falls outside the verified root (caller rejects the request).
-function resolveWorkspacePath(workspaceId: string, filePath: string): string | null {
-  const rootPath = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)?.rootPath
+// workspace's known checkouts nor by a relative path that traverses out of its
+// caller checkout. Returns null outside those verified roots.
+function resolveWorkspacePath(workspaceId: string, filePath: string, originCwd?: string): string | null {
+  const workspace = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  const rootPath = workspace?.rootPath
   if (!rootPath) return null
   // A REMOTE workspace stores rootPath as a locator URI
   // (cate-runtime://<id>/<path>), but cate.workspace.get hands the extension the
@@ -82,13 +143,52 @@ function resolveWorkspacePath(workspaceId: string, filePath: string): string | n
   // routes to the correct runtime. Local roots have no scheme, so this is a no-op
   // for them (bareRoot === rootPath, runtimeId === 'local').
   const { runtimeId, path: bareRoot } = parseLocator(rootPath)
+  const allowedRoots = [rootPath, ...(workspace?.worktrees ?? []).map((worktree) => worktree.path)]
+    .map(parseLocator)
+    .filter((root) => root.runtimeId === runtimeId)
+    .map((root) => root.path)
+  const originBase = originCwd && allowedRoots.some((root) => {
+    const originKey = pathKey(originCwd)
+    const rootKey = pathKey(root)
+    return originKey === rootKey || originKey.startsWith(`${rootKey}/`)
+  })
+    ? originCwd
+    : bareRoot
   // Collapse `.`/`..` segments before checking containment so a traversal like
   // `../../etc/passwd` can't slip past a naive prefix match.
-  const normalized = normalizeSegments(toAbsolutePath(filePath, bareRoot))
-  const rootKey = pathKey(bareRoot)
+  const normalized = normalizeSegments(toAbsolutePath(filePath, originBase))
   const key = pathKey(normalized)
-  if (key !== rootKey && !key.startsWith(rootKey + '/')) return null
+  if (!allowedRoots.some((root) => {
+    const rootKey = pathKey(root)
+    return key === rootKey || key.startsWith(`${rootKey}/`)
+  })) return null
   return formatLocator({ runtimeId, path: normalized })
+}
+
+/** Resolve a CLI caller cwd to its containing checkout. Worktree metadata from
+ * a remote workspace may carry a bare host path, so attach the workspace's
+ * runtime before using the shared locator-aware containment helper. */
+function worktreeForOrigin(workspaceId: string, originCwd?: string) {
+  if (!originCwd) return undefined
+  const workspace = useAppStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
+  if (!workspace?.rootPath) return undefined
+  const workspaceRoot = parseLocator(workspace.rootPath)
+  const origin = parseLocator(originCwd)
+  const originLocator = formatLocator({
+    runtimeId: origin.runtimeId === 'local' ? workspaceRoot.runtimeId : origin.runtimeId,
+    path: origin.path,
+  })
+  const candidates = (workspace.worktrees ?? []).map((worktree) => {
+    const parsed = parseLocator(worktree.path)
+    return {
+      ...worktree,
+      path: formatLocator({
+        runtimeId: parsed.runtimeId === 'local' ? workspaceRoot.runtimeId : parsed.runtimeId,
+        path: parsed.path,
+      }),
+    }
+  })
+  return worktreeForPath(originLocator, candidates)
 }
 
 /** Resolve `.` / `..` segments in an absolute path WITHOUT touching the fs (this
@@ -124,7 +224,16 @@ export function useCateHostActionResponder(): void {
         // driver, which resolves the target browser panel and drives its live
         // <webview>. Delegating here keeps this switch focused on store mutations.
         if (method.startsWith('cate.browser.')) {
-          const outcome = await handleBrowserMethod(workspaceId, method, args)
+          const tracker = interactionTracker(
+            workspaceId,
+            payload.panelId,
+            BROWSER_READ_METHODS.has(method) ? 'read' : 'control',
+          )
+          const outcome = await finishTracked(
+            tracker,
+            () => handleBrowserMethod(workspaceId, method, args, tracker.observe),
+            (result) => result.ok,
+          )
           return outcome.ok
             ? reply(true, outcome.result !== undefined ? { result: outcome.result } : undefined)
             : reply(false, { error: outcome.error })
@@ -134,14 +243,49 @@ export function useCateHostActionResponder(): void {
         // resolves the target terminal panel and reads its xterm buffer /
         // writes to its PTY via the terminalRegistry.
         if (method.startsWith('cate.terminal.')) {
-          const outcome = await handleTerminalMethod(workspaceId, method, args)
+          const tracker = interactionTracker(
+            workspaceId,
+            payload.panelId,
+            method === 'cate.terminal.read' ? 'read' : 'control',
+          )
+          const outcome = await finishTracked(
+            tracker,
+            () => handleTerminalMethod(workspaceId, method, args, tracker.observe),
+            (result) => result.ok,
+          )
           return outcome.ok
             ? reply(true, outcome.result !== undefined ? { result: outcome.result } : undefined)
             : reply(false, { error: outcome.error })
         }
 
         if (method.startsWith('cate.codingAgent.')) {
-          const outcome = await handleCodingAgentMethod(workspaceId, payload.panelId, method, args)
+          const tracker = interactionTracker(workspaceId, payload.panelId, 'agent')
+          for (const targetPanelId of codingAgentInteractionTargets(
+            workspaceId,
+            payload.panelId,
+            method,
+            args,
+          )) {
+            tracker.observe(targetPanelId)
+          }
+          const outcome = await finishTracked(
+            tracker,
+            () => handleCodingAgentMethod(workspaceId, payload.panelId, method, args),
+            (result) => result.ok,
+          )
+          if (outcome.ok && method === 'cate.codingAgent.create') {
+            const created = outcome.result && typeof outcome.result === 'object'
+              ? outcome.result as Record<string, unknown>
+              : null
+            if (typeof created?.panelId === 'string') tracker.observe(created.panelId)
+          }
+          return outcome.ok
+            ? reply(true, { result: outcome.result })
+            : reply(false, { error: outcome.error })
+        }
+
+        if (method.startsWith('cate.review.')) {
+          const outcome = await handleReviewMethod(workspaceId, payload.panelId, method, args)
           return outcome.ok
             ? reply(true, { result: outcome.result })
             : reply(false, { error: outcome.error })
@@ -151,9 +295,9 @@ export function useCateHostActionResponder(): void {
           case 'cate.editor.openFile': {
             const filePath = typeof args.path === 'string' ? args.path : undefined
             if (!filePath) return reply(false, { error: 'path required' })
-            // Confine the target to the workspace root — reject any path that
-            // escapes it (absolute or traversal).
-            const resolved = resolveWorkspacePath(workspaceId, filePath)
+            // Confine the target to the workspace's known checkouts — reject
+            // any absolute or traversal path that escapes them.
+            const resolved = resolveWorkspacePath(workspaceId, filePath, payload.originCwd)
             if (!resolved) return reply(false, { error: 'path outside workspace' })
             // Reject a nonexistent target instead of opening a healthy-looking
             // panel on it — that silence hides typos from agent callers. (This
@@ -171,6 +315,9 @@ export function useCateHostActionResponder(): void {
               placementFromArgs(workspaceId, args),
             )
             if (!newPanelId) return reply(false, { error: 'open failed' })
+            const tracker = interactionTracker(workspaceId, payload.panelId, 'create')
+            tracker.observe(newPanelId)
+            tracker.finish(true)
             // Honor an optional { line } (and column) by stashing a one-shot
             // editor reveal — the SAME path search results and terminal file
             // links use, consumed by EditorPanel once Monaco mounts.
@@ -192,10 +339,23 @@ export function useCateHostActionResponder(): void {
               const extPanelId = typeof args.extensionPanelId === 'string' ? args.extensionPanelId : undefined
               if (!extPanelId) return reply(false, { error: 'extensionPanelId required' })
               newPanelId = useAppStore.getState().createExtensionPanel(workspaceId, extId, extPanelId, undefined, placement)
+            } else if (type === 'terminal') {
+              const worktree = worktreeForOrigin(workspaceId, payload.originCwd)
+              const store = useAppStore.getState()
+              newPanelId = store.createTerminal(
+                workspaceId,
+                undefined,
+                undefined,
+                placement,
+                worktree?.path,
+              )
+              if (newPanelId && worktree) {
+                store.setPanelWorktreeId(workspaceId, newPanelId, worktree.id)
+              }
             } else {
               let filePath: string | undefined
               if (typeof args.filePath === 'string') {
-                const resolved = resolveWorkspacePath(workspaceId, args.filePath)
+                const resolved = resolveWorkspacePath(workspaceId, args.filePath, payload.originCwd)
                 if (!resolved) return reply(false, { error: 'path outside workspace' })
                 filePath = resolved
               }
@@ -207,6 +367,9 @@ export function useCateHostActionResponder(): void {
               })
             }
             if (!newPanelId) return reply(false, { error: 'panel creation failed' })
+            const tracker = interactionTracker(workspaceId, payload.panelId, 'create')
+            tracker.observe(newPanelId)
+            tracker.finish(true)
             return reply(true, { result: { panelId: newPanelId } })
           }
 
@@ -238,7 +401,9 @@ export function useCateHostActionResponder(): void {
               .getState()
               .workspaces.find((w) => w.id === workspaceId)?.panels?.[targetPanelId]
             if (!panel) return reply(false, { error: 'panel-not-in-window' })
-            const revealed = await revealPanel(workspaceId, targetPanelId)
+            const tracker = interactionTracker(workspaceId, payload.panelId, 'control')
+            tracker.observe(targetPanelId)
+            const revealed = await finishTracked(tracker, () => revealPanel(workspaceId, targetPanelId), Boolean)
             if (!revealed) return reply(false, { error: 'panel-not-revealable' })
             return reply(true)
           }
@@ -250,7 +415,13 @@ export function useCateHostActionResponder(): void {
               .getState()
               .workspaces.find((w) => w.id === workspaceId)?.panels?.[targetPanelId]
             if (!panel) return reply(false, { error: 'panel-not-in-window' })
-            const closed = await closePanelWithConfirm(workspaceId, targetPanelId)
+            const tracker = interactionTracker(workspaceId, payload.panelId, 'control')
+            tracker.observe(targetPanelId)
+            const closed = await finishTracked(
+              tracker,
+              () => closePanelWithConfirm(workspaceId, targetPanelId),
+              Boolean,
+            )
             return closed ? reply(true) : reply(false, { error: 'close-cancelled' })
           }
 

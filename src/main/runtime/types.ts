@@ -370,8 +370,6 @@ export interface WorktreeReviewResult {
   commits: Array<{ hash: string; message: string }>
   files: Array<{ path: string; status: string }>
   workingFiles: string[]
-  diff: string
-  truncated: boolean
   message?: string
 }
 
@@ -424,8 +422,6 @@ export interface VcsHost {
   init(dir: string, access?: FileAccessContext): Promise<void>
   lsFiles(dir: string, access?: FileAccessContext): Promise<string[]>
   status(cwd: string, access?: FileAccessContext): Promise<GitStatusResult>
-  diff(cwd: string, filePath?: string, access?: FileAccessContext): Promise<string>
-  diffStaged(cwd: string, filePath?: string, access?: FileAccessContext): Promise<string>
   compare(cwd: string, spec: GitComparisonSpec, access?: FileAccessContext): Promise<GitComparisonResult>
   fileDiff(
     cwd: string,

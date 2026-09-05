@@ -24,7 +24,7 @@ import { createCanvasStoreCtx } from './canvas/storeCtx'
 import { createHistorySlice } from './canvas/historySlice'
 import { createNodesSlice } from './canvas/nodesSlice'
 import { createViewportSlice } from './canvas/viewportSlice'
-import { createPlacementSlice } from './canvas/placementSlice'
+import { createPanelTargetSlice } from './canvas/panelTargetSlice'
 import { createNavigationSlice } from './canvas/navigationSlice'
 import { createSelectionSlice } from './canvas/selectionSlice'
 import { createArrangeSlice } from './canvas/arrangeSlice'
@@ -37,7 +37,9 @@ export type {
   CanvasStoreState,
   CanvasStoreActions,
   CanvasHistoryEntry,
-  PendingPlacement,
+  PendingPanelTarget,
+  PanelTargetAvailability,
+  CanvasPanelTargetChoice,
 } from './canvas/storeTypes'
 
 // -----------------------------------------------------------------------------
@@ -65,13 +67,13 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
       suppressAutoFocus: false,
       history: [],
       future: [],
-      pendingPlacement: null,
+      pendingPanelTarget: null,
 
       // --- Actions (composed from focused slices) ---
       ...createHistorySlice(set, get),
       ...createNodesSlice(set, get),
       ...createViewportSlice(set, get, ctx),
-      ...createPlacementSlice(set, get, ctx),
+      ...createPanelTargetSlice(set, get, ctx),
       ...createNavigationSlice(set, get, ctx),
       ...createSelectionSlice(set, get),
       ...createArrangeSlice(set, get),
@@ -117,7 +119,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasStore>> {
           nextCreationIndex: maxCreationIndex + 1,
           history: [],
           future: [],
-          pendingPlacement: null,
+          pendingPanelTarget: null,
         })
       },
     }

@@ -17,6 +17,7 @@ import type {
 } from '../../../shared/types'
 import { toRelativePath, toAbsolutePath } from '../../../shared/pathUtils'
 import { collectPanelIds } from '../../../shared/collectPanelIds'
+import { worktreeForPanel } from '../worktreeContext'
 
 // -----------------------------------------------------------------------------
 // Project-local state builders (.cate/workspace.json + .cate/session.json)
@@ -59,10 +60,14 @@ export function buildWorkspaceFile(
   if (snapshot.panels) {
     panels = {}
     for (const [id, p] of Object.entries(snapshot.panels)) {
+      const worktree = worktreeForPanel(p, snapshot.worktrees ?? [])
+      const pathRoot = worktree?.path ?? rootPath
       panels[id] = {
         type: p.type,
         title: p.title,
-        filePath: p.filePath ? toRelativePath(p.filePath, rootPath) : undefined,
+        // File identity is repository-relative in the shareable file. The
+        // machine-local session binding below decides which checkout restores it.
+        filePath: p.filePath ? toRelativePath(p.filePath, pathRoot) : undefined,
         ...pickPassthroughPanelFields(p),
       }
     }
@@ -84,12 +89,12 @@ export function buildSessionFile(
   dockWindows?: DetachedDockWindowSnapshot[],
 ): ProjectSessionFile {
   // Machine-local per-panel facts for every placed panel, keyed by id: the
-  // terminal worktree tag, live working directory, and unsaved scratch
+  // panel worktree tag, live working directory, and unsaved scratch
   // content — all kept out of the committed workspace.json.
   const panels: Record<string, ProjectSessionPanel> = {}
   for (const p of Object.values(snapshot.panels ?? {})) {
     const workingDirectory = snapshot.terminalCwds?.[p.id]
-    const worktreeId = p.type === 'terminal' || p.type === 'agent' ? p.worktreeId : undefined
+    const worktreeId = p.worktreeId ?? worktreeForPanel(p, snapshot.worktrees ?? [])?.id
     if (
       !worktreeId &&
       !workingDirectory &&
@@ -119,6 +124,7 @@ export function buildSessionFile(
     // Worktree registry is machine-local (gitignored checkouts) — kept here, not
     // in the committed workspace.json. Paths are absolute, like workingDirectory.
     worktrees: snapshot.worktrees?.length ? snapshot.worktrees : undefined,
+    worktreeViewScopes: snapshot.worktreeViewScopes,
     // Machine-local reconnect info for a remote workspace (absent ⇒ local).
     connection: snapshot.connection,
   }
@@ -145,15 +151,16 @@ export function projectFilesToSnapshot(
       // Pre-T3 layouts used the old embedded-agent discriminator. Preserve the
       // panel placement while dropping all legacy embedded-chat state.
       const type = (ref.type === 'cateAgent' ? 'agent' : ref.type) as PanelType
+      const pathRoot = sess?.worktrees?.find((worktree) => worktree.id === sp?.worktreeId)?.path ?? rootPath
       panels[id] = {
         id,
         type,
         title: ref.title,
         isDirty: false,
-        filePath: ref.filePath ? toAbsolutePath(ref.filePath, rootPath) : undefined,
+        filePath: ref.filePath ? toAbsolutePath(ref.filePath, pathRoot) : undefined,
         ...pickPassthroughPanelFields(ref),
         // Re-attach the machine-local facts kept out of the committed file.
-        worktreeId: type === 'terminal' || type === 'agent' ? sp?.worktreeId : undefined,
+        worktreeId: sp?.worktreeId,
         agentThreadId: type === 'agent' ? sp?.agentThreadId : undefined,
         unsavedContent: sp?.unsavedContent,
         // The agent session to resume in this terminal — TerminalPanel types
@@ -184,6 +191,7 @@ export function projectFilesToSnapshot(
     // Restore the persisted worktree registry (absolute paths) so colors/labels
     // are stable and panel.worktreeId references resolve after restart.
     worktrees: sess?.worktrees,
+    worktreeViewScopes: sess?.worktreeViewScopes,
     // Restore the machine-local reconnect info (absent ⇒ local). Only the
     // local-disk path carries it here; remote workspaces come straight from the
     // remoteProjects store with their connection already on the snapshot.

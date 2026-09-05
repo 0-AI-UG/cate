@@ -2,7 +2,6 @@ import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
 import { browserPanelUrl, type WorkspaceState, type PanelType, type PanelState, type WindowPanelInfo } from '../../shared/types'
-import { isWorktreePanelType } from '../../shared/panels'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
@@ -19,10 +18,11 @@ import {
 } from '../lib/closePanelWithConfirm'
 import { movePanelToNewWindow } from '../lib/workspace/movePanelToNewWindow'
 import { getActivePanelId } from '../lib/activePanel'
-import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
+import { AgentActivityTitle, AwaitingIndicator } from '../ui/AgentActivityTitle'
 import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { panelRowLabel } from '../lib/panelTitle'
+import { Spinner } from '../ui/Spinner'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { getAgentLogo } from '../lib/agent/agentLogos'
 import { workspaceDisplayName } from '../lib/fs/displayPath'
@@ -31,6 +31,7 @@ import { InlineEditInput } from './InlineEditInput'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
 import { canvasKey, toggleCollapsed, useTreeCollapseStore } from './treeCollapse'
 import { Tooltip } from '../ui/Tooltip'
+import { worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
 
 // Stable empty map so the ports selector returns a referentially-constant value
 // when a workspace has no status entry (a fresh `{}` each render would defeat
@@ -49,7 +50,7 @@ function RuntimeDot({ workspace }: { workspace: WorkspaceState }): JSX.Element |
   if (status === 'local' || status === 'connected') return null
 
   const busy = status === 'installing' || status === 'connecting'
-  const color = busy ? 'bg-amber-400 animate-pulse' : 'bg-red-500 hover:ring-2 hover:ring-red-500/40'
+  const color = busy ? 'bg-amber-400 animate-pulse motion-reduce:animate-none' : 'bg-red-500 hover:ring-2 hover:ring-red-500/40'
   const title =
     status === 'installing' ? 'Installing runtime…'
     : status === 'connecting' ? 'Connecting to runtime…'
@@ -99,12 +100,12 @@ export interface PanelRenameProps {
 // importers of this module.
 export { panelRowLabel }
 
-export interface TerminalPanelRowProps {
+export interface WorkspacePanelRowProps {
   panel: Pick<PanelState, 'id' | 'type' | 'title' | 'filePath' | 'tabs' | 'activeTabId'>
   indent: boolean
-  agentState: AgentState | undefined
+  agentState?: AgentState
   agentLogo?: string | null
-  hasPorts: boolean
+  hasPorts?: boolean
   worktreeColor?: string
   onClick: (e: React.MouseEvent) => void
   /** Middle-click closes the row (mirrors the dock tab behavior). */
@@ -118,9 +119,7 @@ export interface TerminalPanelRowProps {
   titleHint?: string
 }
 
-const AWAIT_COLOR = '#c08a5a'
-
-export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, indent, agentState, agentLogo: agentLogoProp, hasPorts, worktreeColor, onClick, onClose, rename, titleHint, onContextMenu }) => {
+export const WorkspacePanelRow: React.FC<WorkspacePanelRowProps> = ({ panel, indent, agentState, agentLogo: agentLogoProp, hasPorts = false, worktreeColor, onClick, onClose, rename, titleHint, onContextMenu }) => {
   const Icon = PANEL_ICONS[panel.type] ?? TerminalIcon
   const label = panelRowLabel(panel)
 
@@ -166,18 +165,17 @@ export const TerminalPanelRow: React.FC<TerminalPanelRowProps> = ({ panel, inden
       {isRenaming ? (
         <PanelRenameInput rename={rename!} />
       ) : (
-        <span
-          className={`truncate min-w-0 flex-1 ${isRunning ? 'cate-notif-pulse' : ''}`}
-          style={worktreeTitleStyle(worktreeColor, isRunning)}
+        <AgentActivityTitle
+          className="min-w-0 flex-1 truncate"
+          running={isRunning}
+          worktreeColor={worktreeColor}
           onDoubleClick={(e) => { e.stopPropagation(); rename?.onBeginRename() }}
         >
           {label}
-        </span>
+        </AgentActivityTitle>
       )}
       {isAwaiting ? (
-        <span className="cate-await-indicator flex-shrink-0" aria-label="awaiting input">
-          <span className="cate-await-dot" style={{ backgroundColor: AWAIT_COLOR }} />
-        </span>
+        <AwaitingIndicator />
       ) : !isRunning && hasPorts ? (
         <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" />
       ) : null}
@@ -198,21 +196,20 @@ const PanelRenameInput: React.FC<{ rename: PanelRenameProps }> = ({ rename }) =>
     if (el) { el.focus(); el.select() }
   }, [])
   return (
-    <input
+    <InlineEditInput
       ref={inputRef}
       className="flex-1 min-w-0 text-[13px] bg-surface-3 border border-subtle rounded px-1 py-0 outline-none text-primary"
       value={rename.renameValue ?? ''}
-      onChange={(e) => rename.onRenameChange(e.target.value)}
-      onBlur={rename.onRenameSubmit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') rename.onRenameSubmit()
-        if (e.key === 'Escape') rename.onRenameCancel()
-      }}
-      onClick={(e) => e.stopPropagation()}
-      onDoubleClick={(e) => e.stopPropagation()}
+      onChange={rename.onRenameChange}
+      onSubmit={rename.onRenameSubmit}
+      onCancel={rename.onRenameCancel}
     />
   )
 }
+
+/** Backwards-compatible name retained for focused row tests and extensions. */
+export const TerminalPanelRow = WorkspacePanelRow
+export type TerminalPanelRowProps = WorkspacePanelRowProps
 
 const PANEL_ICONS: Record<PanelType, PhosphorIcon> = Object.fromEntries(
   (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].icon]),
@@ -541,7 +538,8 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         title={workspace.rootPathError || 'Click to choose a project folder'}
       >
         <FolderPlus size={14} className="flex-shrink-0 opacity-60" />
-        <span className="flex-1 min-w-0 text-[14px] truncate italic">
+        <span className="flex-1 min-w-0 inline-flex items-center gap-1.5 text-[14px] truncate italic">
+          {workspace.isRootPathPending && <Spinner size={13} />}
           {workspace.isRootPathPending ? 'Connecting…' : 'Add Workspace'}
         </span>
       </div>
@@ -569,9 +567,12 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }
   const worktreeColorFor = (panelId: string): string | undefined => {
     const panel = panels[panelId]
-    return worktreeColorForId(
-      panel?.worktreeId,
-    )
+    if (!showWorktreeAccent) return undefined
+    const wt = worktreeForPanel(panel, worktrees)
+      ?? (panel?.type === 'terminal' || panel?.type === 'agent'
+        ? worktrees.find((worktree) => worktree.path === workspace.rootPath)
+        : undefined)
+    return wt?.color
   }
 
   // A panel living in another window — click focuses that window and reveals it.
@@ -586,39 +587,34 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       void window.electronAPI.focusWindowPanel(p.panelId)
     }
     const titleHint = `${p.title} — in another window`
-    if (isWorktreePanelType(p.type)) {
+    const detachedWorktree = worktrees.find((worktree) => worktree.id === p.worktreeId)
+      ?? worktreeForPath(p.filePath, worktrees)
+    if (detachedWorktree || p.type === 'terminal' || p.type === 'agent') {
       return (
-        <TerminalPanelRow
+        <WorkspacePanelRow
           key={p.panelId}
           panel={{ id: p.panelId, type: p.type, title: p.title }}
           indent={indent}
           agentState={p.agentState}
           agentLogo={getAgentLogo(p.agentName ?? null)}
           hasPorts={!!p.hasPorts}
-          worktreeColor={worktreeColorForId(p.worktreeId)}
+          worktreeColor={detachedWorktree?.color ?? worktreeColorForId(p.worktreeId)}
           onClick={onClick}
           onContextMenu={(e) => handleDetachedContextMenu(e, p.panelId)}
           titleHint={titleHint}
         />
       )
     }
-    const Icon = PANEL_ICONS[p.type] ?? SquaresFour
     return (
-      <button
+      <WorkspacePanelRow
         key={p.panelId}
-        className={`group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
-          indent ? 'pl-10' : 'pl-7'
-        }`}
+        panel={{ id: p.panelId, type: p.type, title: p.title }}
+        indent={indent}
+        hasPorts={p.hasPorts}
         onClick={onClick}
         onContextMenu={(e) => handleDetachedContextMenu(e, p.panelId)}
-        title={titleHint}
-      >
-        <Icon size={11} className="flex-shrink-0 opacity-60" />
-        <span className="truncate min-w-0 flex-1">{p.title}</span>
-        {p.hasPorts && (
-          <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" />
-        )}
-      </button>
+        titleHint={titleHint}
+      />
     )
   }
 
@@ -674,58 +670,21 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       onBeginRename: () => beginPanelRename(p.id, label),
       onContextMenu: (e) => handlePanelContextMenu(e, p.id, label),
     }
-    if (isWorktreePanelType(p.type)) {
-      const info = agentInfoByPanel[p.id]
-      return (
-        <TerminalPanelRow
-          key={p.id}
-          panel={p}
-          indent={indent}
-          agentState={info?.state}
-          agentLogo={info?.logo}
-          hasPorts={(portsByPanel[p.id]?.length ?? 0) > 0}
-          worktreeColor={worktreeColorFor(p.id)}
-          onClick={(e) => handlePanelClick(e, p.id)}
-          onClose={() => handleClosePanel(p.id)}
-          rename={rename}
-        />
-      )
-    }
-    const Icon = PANEL_ICONS[p.type] ?? SquaresFour
+    const info = agentInfoByPanel[p.id]
     const hasPorts = (portsByPanel[p.id]?.length ?? 0) > 0
     return (
-      <button
+      <WorkspacePanelRow
         key={p.id}
-        className={`group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 focus:outline-none ${
-          indent ? 'pl-10' : 'pl-7'
-        }`}
+        panel={p}
+        indent={indent}
+        agentState={info?.state}
+        agentLogo={info?.logo}
+        hasPorts={hasPorts}
+        worktreeColor={worktreeColorFor(p.id)}
         onClick={(e) => handlePanelClick(e, p.id)}
-        onContextMenu={rename.onContextMenu}
-        onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
-        onAuxClick={(e) => {
-          if (isMiddleClick(e)) {
-            e.preventDefault()
-            e.stopPropagation()
-            handleClosePanel(p.id)
-          }
-        }}
-        title={p.filePath || browserPanelUrl(p) || label}
-      >
-        <Icon size={11} className="flex-shrink-0 opacity-60" />
-        {isRenaming ? (
-          <PanelRenameInput rename={rename} />
-        ) : (
-          <span
-            className="truncate min-w-0 flex-1"
-            onDoubleClick={(e) => { e.stopPropagation(); rename.onBeginRename() }}
-          >
-            {label}
-          </span>
-        )}
-        {hasPorts && (
-          <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" />
-        )}
-      </button>
+        onClose={() => handleClosePanel(p.id)}
+        rename={rename}
+      />
     )
   }
 

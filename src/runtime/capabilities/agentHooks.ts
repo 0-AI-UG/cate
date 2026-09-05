@@ -46,6 +46,8 @@ import os from 'os'
 import path from 'path'
 import { chmod, mkdir, open, readFile, stat, unlink, writeFile } from 'fs/promises'
 import { AGENTS, type AgentId } from '../../shared/agents'
+import { AGENT_TITLE_RESOLVERS, createAgentTitleTracker } from './agentTitles'
+import type { AgentTitleResolvers } from './agentTitles/types'
 import {
   AGENT_HOOK_SPECS,
   CATE_HOOK_MARKER,
@@ -104,10 +106,8 @@ export interface AgentHooksDeps {
    *  (process.execPath). Tests point it at a missing path to exercise the
    *  wrapper's fail-soft guard. */
   nodePath?: string
-  /** Poll cadence (ms) of the interrupt transcript tail-watch. Default 600 —
-   *  well under the "a moment after the user hit Esc" tolerance, and it only
-   *  ticks while a false-on-interrupt turn is actually in flight. Tests lower
-   *  it for speed. */
+  /** Poll cadence (ms) of Claude's interrupt transcript tail-watch. Default
+   *  600; tests lower it for speed. */
   interruptPollMs?: number
   /** Called on every AUTHENTICATED post for a known agent — including ones
    *  whose payload normalizes to null — with the poster's lineage claim
@@ -116,6 +116,12 @@ export interface AgentHooksDeps {
    *  out: the presence tracker's ancestry walk needs the bridge's process
    *  chain alive, and the bridge holds it exactly until it hears back. */
   onPost?: (post: { terminalId: string; agentId: AgentId; pid?: number }) => void | Promise<void>
+  /** Tests may replace the filesystem-backed CLI resolvers. */
+  titleResolvers?: AgentTitleResolvers
+  /** Runtime-host home containing each CLI's session store. */
+  homeDir?: string
+  /** Tests shorten the bounded post-hook metadata retry window. */
+  titleRetryDelaysMs?: readonly number[]
 }
 
 interface HookState {
@@ -209,21 +215,24 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
   let ready: Promise<HookState> | null = null
   let disposed = false
 
+  let titleTracker: ReturnType<typeof createAgentTitleTracker> | null = null
   const emit = (event: AgentHookEvent): void => {
     for (const cb of listeners) {
       try { cb(event) } catch { /* a subscriber must not break ingestion */ }
     }
+    titleTracker?.note(event)
   }
+  titleTracker = createAgentTitleTracker({
+    homeDir: deps.homeDir ?? os.homedir(),
+    resolvers: deps.titleResolvers ?? AGENT_TITLE_RESOLVERS,
+    retryDelaysMs: deps.titleRetryDelaysMs,
+    emit,
+  })
 
   // -------------------------------------------------------------------------
-  // Interrupt recovery — the compensating channel for the CLIs that push NO
-  // hook on a user interrupt (claude, codex; see AgentHookSpec.interruptRecovery
-  // in shared/agentHooks.ts). While such an agent's turn is in flight we tail
-  // its transcript; the instant its interrupt MARKER lands we synthesize the
-  // turn-end the CLI never pushed, so the FSM idles just like it does for the
-  // self-healing agents. Deterministic and file-based on purpose: no keystroke
-  // sniffing, no screen scraping, no settle timer that GUESSES idle from
-  // silence — this fires only on a definite marker in the transcript.
+  // Claude interrupt recovery — Claude exposes no user-interrupt hook. While
+  // its turn is in flight we tail its transcript; the deterministic interrupt
+  // marker synthesizes the turn-end that its hook API cannot report.
   // -------------------------------------------------------------------------
   interface InterruptWatch {
     agentId: AgentId
@@ -275,11 +284,13 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
   const scanInterruptWatches = async (): Promise<void> => {
     for (const [terminalId, w] of [...interruptWatches]) {
       const tail = await readTail(w.transcriptPath, w.baseline)
-      if (!tail || !w.marker.test(tail)) continue
-      // Interrupted: the CLI pushed no hook, so emit the turn-end its
-      // transcript now proves. sessionId/cwd carry through from turn-start so
-      // the session-stamp tracker re-stamps the same (correct) session; the
-      // raw marker lets a consumer tell this apart from a real hook turn-end.
+      if (!tail) continue
+      w.marker.lastIndex = 0
+      if (!w.marker.test(tail)) continue
+      // The CLI pushed no hook, so emit the turn-end its transcript now proves.
+      // sessionId/cwd carry through from turn-start so the session-stamp
+      // tracker re-stamps the same (correct) session; the raw marker lets a
+      // consumer tell this apart from a real hook turn-end.
       interruptWatches.delete(terminalId)
       emit({
         terminalId,
@@ -602,6 +613,8 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
 
     dispose() {
       disposed = true
+      titleTracker?.dispose()
+      titleTracker = null
       listeners.clear()
       interruptWatches.clear()
       if (interruptTimer) {

@@ -53,7 +53,6 @@ export interface UseFileSyncParams {
   panelId: string
   filePath: string | undefined
   rootPath: string | undefined
-  diffMode: 'staged' | 'working' | undefined
   /** Live accessor for the panel's Monaco model (owned by EditorPanel). */
   getModel: () => monaco.editor.ITextModel | null
   /** Called when the hook replaces the buffer from disk (reload / merge), so the
@@ -94,7 +93,6 @@ export function useFileSync({
   panelId,
   filePath,
   rootPath,
-  diffMode,
   getModel,
   onExternalReplace,
 }: UseFileSyncParams): FileSync {
@@ -179,7 +177,6 @@ export function useFileSync({
   // ---------------------------------------------------------------------------
 
   const save = useCallback(async (): Promise<boolean> => {
-    if (diffMode) return false
     const model = getModel()
     if (!model || model.isDisposed()) return false
 
@@ -253,7 +250,7 @@ export function useFileSync({
       )
     }
     return true
-  }, [workspaceId, panelId, diffMode, rootPath, getModel, clearDirty])
+  }, [workspaceId, panelId, rootPath, getModel, clearDirty])
 
   // ---------------------------------------------------------------------------
   // Conflict resolutions
@@ -353,7 +350,7 @@ export function useFileSync({
   //   • disk unchanged            → leave the buffer, just restore the dirty dot
   const resyncFromDisk = useCallback(async () => {
     const path = filePathRef.current
-    if (!path || diffMode || isRuntimeLocator(path)) return
+    if (!path || isRuntimeLocator(path)) return
     const model = getModel()
     if (!model || model.isDisposed()) return
     const baseline = getBaseline(path)
@@ -378,14 +375,14 @@ export function useFileSync({
       setBaseline(disk)
       setConflict(null)
     }
-  }, [workspaceId, diffMode, getModel, replaceBuffer, noteUserEdit, setBaseline])
+  }, [workspaceId, getModel, replaceBuffer, noteUserEdit, setBaseline])
 
   // ---------------------------------------------------------------------------
   // Watch the file on disk for external edits / deletion
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!filePath || !rootPath || diffMode) return
+    if (!filePath || !rootPath) return
     // Remote/runtime files live behind a locator the local root watcher can't
     // match; their changes aren't covered here (the save guard still applies).
     if (isRuntimeLocator(filePath)) return
@@ -430,7 +427,7 @@ export function useFileSync({
       disposed = true
       stop()
     }
-  }, [filePath, rootPath, workspaceId, diffMode, applyDiskContent, noteUserEdit])
+  }, [filePath, rootPath, workspaceId, applyDiskContent, noteUserEdit])
 
   // Reset conflict state when the panel switches files (a single EditorPanel
   // mount is reused across dock tabs, so stale conflict UI must not carry over).

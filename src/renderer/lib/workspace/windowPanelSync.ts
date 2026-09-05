@@ -25,6 +25,7 @@ import { useActivePanelStore } from '../activePanel'
 import { parseLocator } from '../../../shared/runtimeLocator'
 import { browserPanelUrl, isStartPageUrl, type WindowPanelReport } from '../../../shared/types'
 import { deriveCodingAgentRunStatus } from '../../../shared/codingAgentRuns'
+import { worktreeForPanel } from '../worktreeContext'
 
 let cleanup: (() => void) | null = null
 
@@ -135,9 +136,12 @@ export function setupWindowPanelSync(): () => void {
           ...(p.type === 'browser'
             ? { url: isStartPageUrl(browserPanelUrl(p)) ? '' : (browserPanelUrl(p) ?? '') }
             : {}),
+          ...(p.type === 'review' && p.reviewState
+            ? { reviewRepoPath: p.reviewState.repoPath }
+            : {}),
           focused: p.id === activePanelId,
           parentCanvasId: childToCanvas.get(p.id),
-          worktreeId: p.type === 'agent' || p.type === 'terminal' ? p.worktreeId : undefined,
+          worktreeId: worktreeForPanel(p, ws.worktrees ?? [])?.id ?? p.worktreeId,
           agentState: agentInfo[p.id]?.state,
           agentName: agentInfo[p.id]?.name ?? null,
           codingAgentRunId: p.codingAgentRun?.id,

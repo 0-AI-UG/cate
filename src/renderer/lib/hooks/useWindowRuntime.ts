@@ -30,9 +30,12 @@ import {
 } from '../agent/agentScreenDetector'
 import { isExternalFileDrag } from '../fs/importExternalEntries'
 import { revealPanel } from '../workspace/panelReveal'
+import { retargetReviewPanel } from '../review/openReviewPanel'
 import { closePanelWithConfirm } from '../closePanelWithConfirm'
 import { setupWindowPanelSync } from '../workspace/windowPanelSync'
 import { useOwnedTerminalTelemetry } from '../../hooks/useProcessMonitor'
+import { terminalRegistry } from '../terminal/terminalRegistry'
+import { workspaceIdForTerminal } from '../../stores/statusStore'
 import type { AgentState } from '../../../shared/types'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../stores/canvasStore'
@@ -73,7 +76,19 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
         applyRemoteAgentScreenState(terminalId, state)
       },
     )
-    const offHook = window.electronAPI?.onShellAgentHookEvent?.((_terminalId, event) => {
+    const offHook = window.electronAPI?.onShellAgentHookEvent?.((terminalId, event) => {
+      if (event.kind === 'session-title' && event.title && event.sessionId) {
+        const workspaceId =
+          workspaceIdForTerminal(terminalId) ?? useAppStore.getState().selectedWorkspaceId
+        if (!workspaceId) return
+        const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
+        useAppStore.getState().updatePanelTitleFromAgent(
+          workspaceId,
+          panelId,
+          event.title,
+        )
+        return
+      }
       noteAgentHookEvent(event)
     })
     return () => {
@@ -143,14 +158,42 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
     })
   }, [])
 
-  // Cross-window close: another window's overview asked to close a panel this
-  // window owns. Runs the same confirm gates as any local close affordance.
   useEffect(() => {
-    return window.electronAPI.onClosePanelInWindow?.((panelId: string) => {
+    return window.electronAPI.onOpenReviewInWindow?.((panelId, request) => {
       const app = useAppStore.getState()
       const owner = app.workspaces.find((w) => panelId in w.panels)
       if (!owner) return
-      void closePanelWithConfirm(owner.id, panelId)
+      void retargetReviewPanel(owner.id, panelId, request)
+    })
+  }, [])
+
+  // Cross-window close: another window's overview asked to close a panel this
+  // window owns. Runs the same confirm gates as any local close affordance.
+  useEffect(() => {
+    return window.electronAPI.onClosePanelInWindow?.((panelId: string, requestId: string) => {
+      void (async () => {
+        let closed = false
+        try {
+          const app = useAppStore.getState()
+          const owner = app.workspaces.find((w) => panelId in w.panels)
+          closed = owner ? await closePanelWithConfirm(owner.id, panelId) : false
+        } catch {
+          closed = false
+        } finally {
+          try {
+            await window.electronAPI.closePanelInWindowResult(requestId, closed)
+          } catch {
+            // The requesting window may have closed while the owner prompt was
+            // open; there is nobody left to acknowledge in that case.
+          }
+        }
+      })()
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.electronAPI.onWorktreeRemoved?.((workspaceId: string, worktreeId: string) => {
+      useAppStore.getState().removeWorktree(workspaceId, worktreeId)
     })
   }, [])
 }

@@ -131,7 +131,11 @@ describe('windowPanelSync — canvas child parentCanvasId', () => {
       workspaces: [{
         id: ws, name: 'W', color: '', rootPath: '/x', rootPathError: null,
         isRootPathPending: false, worktrees: [],
-        panels: { t1: panel('t1', 'terminal', 'wt-feature'), t2: panel('t2', 'terminal') },
+        panels: {
+          t1: panel('t1', 'terminal', 'wt-feature'),
+          t2: panel('t2', 'terminal'),
+          e1: panel('e1', 'editor', 'wt-feature'),
+        },
       } as any],
       selectedWorkspaceId: ws,
     } as any)
@@ -142,6 +146,7 @@ describe('windowPanelSync — canvas child parentCanvasId', () => {
     const byId = Object.fromEntries(reports[reports.length - 1].filter((r) => r.workspaceId === ws).map((r) => [r.panelId, r]))
     expect(byId.t1?.worktreeId).toBe('wt-feature')
     expect(byId.t2?.worktreeId).toBeUndefined()
+    expect(byId.e1?.worktreeId).toBe('wt-feature')
 
     stop()
   })
@@ -289,6 +294,13 @@ describe('windowPanelSync — placed-only report + derived titles', () => {
             activeTabId: 'tab1',
           } as PanelState,
           e1: { id: 'e1', type: 'editor', title: '', isDirty: false, filePath: '/x/src/main.ts' } as PanelState,
+          r1: {
+            id: 'r1', type: 'review', title: 'Diff Review', isDirty: false,
+            reviewState: {
+              repoPath: '/x', spec: { kind: 'uncommitted' },
+              display: { split: false, wordDiff: true, wrap: false, fullFile: false, advancedPreview: true },
+            },
+          } as PanelState,
         },
       } as any],
       selectedWorkspaceId: ws,
@@ -305,6 +317,7 @@ describe('windowPanelSync — placed-only report + derived titles', () => {
     expect(byId.e1?.title).toBe('main.ts')
     expect(byId.e1?.filePath).toBe('/x/src/main.ts')
     expect(byId.e1?.focused).toBe(false)
+    expect(byId.r1?.reviewRepoPath).toBe('/x')
 
     reports.length = 0
     setActivePanel('e1')

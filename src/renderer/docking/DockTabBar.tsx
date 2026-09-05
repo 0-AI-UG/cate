@@ -13,15 +13,48 @@ import { useDragStore, useTabSourceVisibility } from '../drag'
 import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
 import { useAppStore } from '../stores/appStore'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
-import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
+import { AgentActivityTitle, AwaitingIndicator } from '../ui/AgentActivityTitle'
 import { isMiddleClick } from '../lib/mouse'
-import { isWorktreePanelType } from '../../shared/panels'
+import { usePanelInteractionStore } from '../lib/panelInteractions'
+import { worktreeForPanel } from '../lib/worktreeContext'
 
-const AWAIT_COLOR = '#c08a5a'
+function PanelInteractionDot({ panelId }: { panelId: string }) {
+  const signal = usePanelInteractionStore((state) => {
+    let newest: (typeof state.interactions)[string] | undefined
+    let role: 'source' | 'target' = 'source'
+    for (const interaction of Object.values(state.interactions)) {
+      const nextRole = interaction.targetPanelId === panelId
+        ? 'target'
+        : interaction.sourcePanelId === panelId ? 'source' : null
+      if (!nextRole || (newest && newest.updatedAt > interaction.updatedAt)) continue
+      newest = interaction
+      role = nextRole
+    }
+    return newest ? `${newest.phase}\0${newest.pulse}\0${role}` : ''
+  })
+  if (!signal) return null
+  const [phase, _pulse, role] = signal.split('\0')
+  const color = phase === 'failed' ? 'var(--git-deleted)' : 'var(--focus-blue)'
+  return (
+    <span
+      aria-label={`panel interaction ${role}`}
+      data-panel-interaction={role}
+      className={`shrink-0 rounded-full ${phase === 'active' ? 'cate-panel-interaction-dot-active' : ''}`}
+      style={{
+        width: 6,
+        height: 6,
+        transformOrigin: 'center',
+        backgroundColor: role === 'target' ? color : 'transparent',
+        border: role === 'source' ? `1.5px solid ${color}` : undefined,
+      }}
+    />
+  )
+}
 
 // Lookup: panelId → worktree color. Only returns a color when the panel's
-// workspace has 2+ worktrees. Both terminal and Agent tabs retain this light
-// association tint; the interactive title-bar worktree chip is terminal-only.
+// workspace has 2+ worktrees. Terminals, agents, file-backed panels, and review
+// tabs retain this light association tint; the interactive title-bar worktree
+// chip remains terminal-only.
 // The color is applied to the tab's title text, not its icon — the icon may be
 // an agent logo (an <img>, which ignores `color`), and tinting it would clash
 // with the per-agent icon swap.
@@ -36,9 +69,8 @@ function useWorktreeColorByPanel(): Record<string, string> {
       // the one keyed by the workspace's own rootPath.
       const primary = worktrees.find((w) => w.path === ws.rootPath)
       for (const panel of Object.values(ws.panels)) {
-        if (!isWorktreePanelType(panel.type)) continue
-        const worktreeId = panel.worktreeId
-        const wt = worktrees.find((w) => w.id === worktreeId) ?? primary
+        const wt = worktreeForPanel(panel, worktrees)
+          ?? (panel.type === 'terminal' || panel.type === 'agent' ? primary : undefined)
         if (wt?.color) out[panel.id] = wt.color
       }
     }
@@ -259,15 +291,15 @@ export function DockTabBar(props: DockTabBarProps) {
                 style={{ font: 'inherit' }}
               />
             ) : (
-              <span
-                className={`truncate flex-1 min-w-0 ${agentInfoByPanel[panelId]?.state === 'running' ? 'cate-notif-pulse' : ''}`}
-                style={worktreeTitleStyle(worktreeColorByPanel[panelId], agentInfoByPanel[panelId]?.state === 'running')}
-              >{getPanelTitle(panelId)}</span>
+              <AgentActivityTitle
+                className="min-w-0 flex-1 truncate"
+                running={agentInfoByPanel[panelId]?.state === 'running'}
+                worktreeColor={worktreeColorByPanel[panelId]}
+              >{getPanelTitle(panelId)}</AgentActivityTitle>
             )}
+            <PanelInteractionDot panelId={panelId} />
             {agentInfoByPanel[panelId]?.state === 'waitingForInput' && (
-              <span className="cate-await-indicator shrink-0" aria-label="awaiting input">
-                <span className="cate-await-dot" style={{ backgroundColor: AWAIT_COLOR }} />
-              </span>
+              <AwaitingIndicator />
             )}
             {onClosePanel && (
               <span

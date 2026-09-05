@@ -29,6 +29,7 @@ import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { Tooltip } from '../ui/Tooltip'
+import { CanvasToolbarButton } from './CanvasToolbarButton'
 
 interface CanvasToolbarProps {
   canvasPanelId: string
@@ -40,31 +41,21 @@ interface CanvasToolbarProps {
   onNewAgent: () => void
 }
 
-const ToolbarButton: React.FC<{
-  onClick: () => void
-  title: string
-  size?: 'panel' | 'zoom'
-  active?: boolean
-  onMouseDown?: (e: React.MouseEvent) => void
-  placement?: 'top' | 'right'
-  children: React.ReactNode
-}> = ({ onClick, title, size = 'panel', active = false, onMouseDown, placement = 'top', children }) => {
-  const sizeClass = size === 'panel' ? 'w-9 h-9' : 'w-8 h-8'
-  const activeClass = active ? 'bg-hover-strong' : 'bg-transparent'
-  return (
-    <Tooltip label={title} placement={placement}>
-      <button
-        type="button"
-        onClick={onClick}
-        onMouseDown={onMouseDown}
-        aria-label={title}
-        style={{ WebkitTapHighlightColor: 'transparent' }}
-        className={`${sizeClass} ${activeClass} flex items-center justify-center rounded-full text-secondary hover:text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
-      >
-        {children}
-      </button>
-    </Tooltip>
-  )
+function canvasContainerForPanel(panelId: string): HTMLElement | null {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-canvas-container]'))
+    .find((element) => element.dataset.canvasPanelId === panelId) ?? null
+}
+
+function canvasContainerAtPoint(clientX: number, clientY: number): HTMLElement | null {
+  const hit = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+  const direct = hit?.closest<HTMLElement>('[data-canvas-container]')
+  if (direct) return direct
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-canvas-container]'))
+    .find((element) => {
+      const rect = element.getBoundingClientRect()
+      return clientX >= rect.left && clientX <= rect.right
+        && clientY >= rect.top && clientY <= rect.bottom
+    }) ?? null
 }
 
 // Terminal button with drag-to-place: a plain click opens the recommendation
@@ -97,8 +88,7 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
       setGhost(null)
       if (!moved) return // a click — let onClick open the picker
       justDragged.current = true // suppress the click that follows this drag
-      const target = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
-      const container = target?.closest('[data-canvas-container]') as HTMLElement | null
+      const container = canvasContainerAtPoint(ev.clientX, ev.clientY)
       if (!container) return
       const rect = container.getBoundingClientRect()
       const center = canvasApi
@@ -112,7 +102,8 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
       // workspace's primary canvas (matters on secondary/nested canvases), and
       // inherit the selected terminal/agent's worktree like the click path does.
       if (wsId) {
-        const wt = inheritedWorktreeFromSelection(canvasApi.getState(), app.getWorkspace(wsId)?.panels)
+        const workspace = app.getWorkspace(wsId)
+        const wt = inheritedWorktreeFromSelection(canvasApi.getState(), workspace?.panels, workspace?.worktrees)
         const newId = app.createTerminal(wsId, undefined, pos, { target: 'canvas', canvasPanelId }, wt.cwd)
         if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
       }
@@ -123,18 +114,18 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
 
   return (
     <>
-      <ToolbarButton
+      <CanvasToolbarButton
         onClick={() => {
           if (justDragged.current) { justDragged.current = false; return }
           onClick()
         }}
         onMouseDown={handleMouseDown}
-        title="Terminal. Click for recommendations, or drag onto the canvas."
+        label="Terminal. Click for recommendations, or drag onto the canvas."
         size="panel"
-        placement={placement}
+        tooltipPlacement={placement}
       >
         <Terminal size={18} />
-      </ToolbarButton>
+      </CanvasToolbarButton>
       {ghost &&
         createPortal(
           <div
@@ -166,29 +157,6 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
 
 // A tool-mode button that fills when active. The bound shortcut is surfaced on
 // hover via the shared Tooltip (native `title` tooltips are flaky in Electron).
-const ModeButton: React.FC<{
-  onClick: () => void
-  title: string
-  active: boolean
-  placement?: 'top' | 'right'
-  children: React.ReactNode
-}> = ({ onClick, title, active, placement = 'top', children }) => {
-  const activeClass = active ? 'bg-hover-strong' : 'bg-transparent'
-  return (
-    <Tooltip label={title} placement={placement}>
-      <button
-        type="button"
-        onClick={onClick}
-        aria-label={title}
-        style={{ WebkitTapHighlightColor: 'transparent' }}
-        className={`w-9 h-9 ${activeClass} flex items-center justify-center rounded-full ${active ? 'text-primary' : 'text-secondary'} hover:text-primary hover:bg-hover-strong active:bg-hover-strong active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
-      >
-        {children}
-      </button>
-    </Tooltip>
-  )
-}
-
 const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   canvasPanelId,
   workspaceId,
@@ -255,22 +223,22 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const divider = <div className={isHorizontal ? 'w-px h-5 bg-surface-5 mx-1' : 'h-px w-6 bg-surface-5 my-1'} />
   const items = (
     <>
-      <ModeButton
+      <CanvasToolbarButton
         onClick={() => setActiveTool('select')}
-        title={`Select tool (Space, or ${toggleToolKey} inside a panel)`}
+        label={`Select tool (Space, or ${toggleToolKey} inside a panel)`}
         active={activeTool === 'select'}
-        placement={place}
+        tooltipPlacement={place}
       >
         <Cursor size={18} />
-      </ModeButton>
-      <ModeButton
+      </CanvasToolbarButton>
+      <CanvasToolbarButton
         onClick={() => setActiveTool('hand')}
-        title={`Hand tool for panning (Space, or ${toggleToolKey} inside a panel)`}
+        label={`Hand tool for panning (Space, or ${toggleToolKey} inside a panel)`}
         active={activeTool === 'hand'}
-        placement={place}
+        tooltipPlacement={place}
       >
         <Hand size={18} />
-      </ModeButton>
+      </CanvasToolbarButton>
       <WorktreeToolbarMenu
         canvasPanelId={canvasPanelId}
         workspaceId={workspaceId}
@@ -281,15 +249,15 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       />
       {divider}
       <TerminalSpawnButton onClick={onNewTerminal} canvasPanelId={canvasPanelId} placement={place} />
-      <ToolbarButton onClick={onNewBrowser} title={`Browser (${newBrowserKey})`} size="panel" placement={place}>
+      <CanvasToolbarButton onClick={onNewBrowser} label={`Browser (${newBrowserKey})`} size="panel" tooltipPlacement={place}>
         <Globe size={18} />
-      </ToolbarButton>
-      <ToolbarButton onClick={onNewEditor} title={`Editor (${newEditorKey})`} size="panel" placement={place}>
+      </CanvasToolbarButton>
+      <CanvasToolbarButton onClick={onNewEditor} label={`Editor (${newEditorKey})`} size="panel" tooltipPlacement={place}>
         <FileText size={18} />
-      </ToolbarButton>
-      <ToolbarButton onClick={onNewAgent} title="Agent" size="panel" placement={place}>
+      </CanvasToolbarButton>
+      <CanvasToolbarButton onClick={onNewAgent} label="Agent" size="panel" tooltipPlacement={place}>
         <ChatsCircle size={18} />
-      </ToolbarButton>
+      </CanvasToolbarButton>
       <ExtensionToolbarMenu
         canvasPanelId={canvasPanelId}
         workspaceId={workspaceId}
@@ -318,8 +286,8 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     const startY = e.clientY
     minimapDidDragRef.current = false
     // Resolve corners against this canvas's own area so the quadrant split lines
-    // up with where the pill (and the Agent) actually render.
-    const area = minimapPillRef.current?.closest('[data-canvas-area]')
+    // up with where the pill (and the Cate Agent) actually render.
+    const area = canvasContainerForPanel(canvasPanelId)
     const rect = area?.getBoundingClientRect() ??
       { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
     const onMove = (ev: MouseEvent) => {
@@ -364,13 +332,13 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             {items}
             {/* Zoom controls — only in the horizontal bar, where there's room. */}
             <div className="w-px h-5 bg-surface-5 mx-1" />
-            <ToolbarButton
+            <CanvasToolbarButton
               onClick={() => canvasApi.getState().animateZoomTo(zoom - 0.1)}
-              title={`Zoom Out (${zoomOutKey})`}
+              label={`Zoom Out (${zoomOutKey})`}
               size="zoom"
             >
               <Minus size={16} />
-            </ToolbarButton>
+            </CanvasToolbarButton>
             <Tooltip label={`Reset zoom to 100% (${zoomResetKey})`} placement="top">
               <button
                 type="button"
@@ -382,13 +350,13 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
                 {zoomText}
               </button>
             </Tooltip>
-            <ToolbarButton
+            <CanvasToolbarButton
               onClick={() => canvasApi.getState().animateZoomTo(zoom + 0.1)}
-              title={`Zoom In (${zoomInKey})`}
+              label={`Zoom In (${zoomInKey})`}
               size="zoom"
             >
               <Plus size={16} />
-            </ToolbarButton>
+            </CanvasToolbarButton>
           </div>
         </div>
       </div>
@@ -449,7 +417,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         button to re-dock the pill to a different corner. */}
     <div
       ref={minimapPillRef}
-      className="absolute z-50 flex gap-2"
+      className="absolute z-50 flex gap-2 pointer-events-auto"
       style={{
         ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),
         ...(mmRight ? { right: '1rem' } : { left: '1rem' }),

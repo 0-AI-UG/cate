@@ -21,6 +21,12 @@
     { "id": "karpathy-skills", "repo": "multica-ai/andrej-karpathy-skills", "path": "skills" },
     { "id": "openai-skills", "repo": "openai/skills", "path": "skills" },
     { "id": "google-skills", "repo": "google/skills", "path": "skills" },
-    { "id": "huggingface-skills", "repo": "huggingface/skills", "path": "skills" }
+    { "id": "huggingface-skills", "repo": "huggingface/skills", "path": "skills" },
+    { "id": "ponytail", "repo": "DietrichGebert/ponytail", "path": "skills" },
+    { "id": "impeccable", "repo": "pbakaus/impeccable", "path": ".agents/skills" },
+    { "id": "archify", "repo": "tt-a1i/archify", "path": "archify" },
+    { "id": "scientific-agent-skills", "repo": "K-Dense-AI/scientific-agent-skills", "path": "skills" },
+    { "id": "google-workspace-cli", "repo": "googleworkspace/cli", "path": "skills" },
+    { "id": "diagram-design", "repo": "cathrynlavery/diagram-design", "path": "skills" }
   ]
 }

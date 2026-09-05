@@ -1,13 +1,13 @@
 // `cate` is a small client for the per-workspace loopback API injected into
-// Cate terminals. Browser page commands deliberately use agent-browser's
-// native argv. Cate only owns panel/tab lifecycle and canvas presentation.
+// Cate terminals. Browser page commands use Cate's stable argv grammar; the
+// app executes them against the selected live webview through target-bound CDP.
 
 import {
-  isReadOnlyAgentBrowserCommand,
-  validateAgentBrowserCommand,
-} from '../shared/agentBrowserCommand'
+  isReadOnlyBrowserCommand,
+  validateBrowserCommand,
+} from '../shared/browserCommand'
 
-export const CLI_VERSION = '11'
+export const CLI_VERSION = '12'
 export const DEFAULT_TIMEOUT_MS = 30_000
 export const SHORT_ID_LEN = 8
 
@@ -31,6 +31,12 @@ export interface Flags {
   baseRef?: string
   foreground: boolean
   waitTimeout?: string
+  terminalPanelId?: string
+  reviewFile?: string
+  reviewLine?: string
+  reviewSide?: string
+  reviewBody?: string
+  reviewSeverity?: string
 }
 
 export interface Parsed {
@@ -41,7 +47,8 @@ export interface Parsed {
 export interface Request {
   method: string
   args: Record<string, unknown>
-  resolvePanel?: 'browser' | 'terminal' | 'panel'
+  resolvePanel?: 'browser' | 'terminal' | 'review' | 'panel'
+  resolvePanelArg?: 'panelId' | 'terminalPanelId'
   resolveAgentRuns?: boolean
 }
 
@@ -75,11 +82,12 @@ export function parseFileTarget(target: string): Record<string, unknown> {
 }
 
 /** Extract only Cate's four global flags. Everything else remains byte-for-byte
- * native agent-browser argv after `cate browser`. */
+ * native browser argv after `cate browser`. */
 export function parseCli(argv: string[]): Parsed {
   const flags: Flags = { json: false, help: false, version: false, foreground: false }
   const positionals: string[] = []
   const agentCommand = argv[0] === 'agent'
+  const reviewCommand = argv[0] === 'review'
   for (let index = 0; index < argv.length; index += 1) {
     const part = argv[index]
     if (part === '--panel') {
@@ -111,6 +119,24 @@ export function parseCli(argv: string[]): Parsed {
     } else if (agentCommand && part === '--wait-timeout') {
       flags.waitTimeout = need(argv[index + 1], 'wait-timeout')
       index += 1
+    } else if (agentCommand && part === '--terminal') {
+      flags.terminalPanelId = need(argv[index + 1], 'terminal')
+      index += 1
+    } else if (reviewCommand && part === '--file') {
+      flags.reviewFile = need(argv[index + 1], 'file')
+      index += 1
+    } else if (reviewCommand && part === '--line') {
+      flags.reviewLine = need(argv[index + 1], 'line')
+      index += 1
+    } else if (reviewCommand && part === '--side') {
+      flags.reviewSide = need(argv[index + 1], 'side')
+      index += 1
+    } else if (reviewCommand && part === '--body') {
+      flags.reviewBody = need(argv[index + 1], 'body')
+      index += 1
+    } else if (reviewCommand && part === '--severity') {
+      flags.reviewSeverity = need(argv[index + 1], 'severity')
+      index += 1
     } else {
       positionals.push(part)
     }
@@ -123,7 +149,8 @@ function agentRequest(args: string[], flags: Flags): Request {
   const rest = args.slice(1)
   if (flags.panel) throw new UsageError(`--panel is not valid for agent ${command}`)
   const hasCreateOptions = Boolean(
-    flags.agentId || flags.title || flags.worktreeId || flags.newWorktree || flags.baseRef || flags.foreground,
+    flags.agentId || flags.title || flags.worktreeId || flags.newWorktree || flags.baseRef
+      || flags.foreground || flags.terminalPanelId,
   )
   if (command !== 'create' && hasCreateOptions) {
     throw new UsageError(`create options are not valid for agent ${command}`)
@@ -154,7 +181,11 @@ function agentRequest(args: string[], flags: Flags): Request {
         ...(flags.newWorktree ? { newWorktree: flags.newWorktree } : {}),
         ...(flags.baseRef ? { baseRef: flags.baseRef } : {}),
         ...(flags.foreground ? { background: false } : {}),
+        ...(flags.terminalPanelId ? { terminalPanelId: flags.terminalPanelId } : {}),
       },
+      ...(flags.terminalPanelId
+        ? { resolvePanel: 'terminal' as const, resolvePanelArg: 'terminalPanelId' as const }
+        : {}),
     }
   }
   if (command === 'wait') {
@@ -207,6 +238,54 @@ function withPanel(
   return request
 }
 
+function reviewRequest(args: string[], flags: Flags): Request {
+  const command = need(args[0], 'review command')
+  const targeted = (request: Request): Request => flags.panel
+    ? {
+        ...request,
+        args: { ...request.args, panelId: flags.panel },
+        resolvePanel: 'review',
+      }
+    : request
+  if (command === 'inspect') {
+    exact(args.slice(1), 0)
+    return targeted({ method: 'cate.review.inspect', args: {} })
+  }
+  if (command === 'complete') {
+    exact(args.slice(1), 0)
+    return targeted({ method: 'cate.review.complete', args: {} })
+  }
+  if (command === 'note') {
+    const action = need(args[1], 'review note command')
+    if (action === 'add') {
+      exact(args.slice(2), 0)
+      const file = need(flags.reviewFile, 'file')
+      const body = need(flags.reviewBody, 'body')
+      const line = flags.reviewLine === undefined ? undefined : positiveInt(flags.reviewLine, 'line')
+      const side = flags.reviewSide ?? 'new'
+      if (!['old', 'new'].includes(side)) throw new UsageError(`invalid <side>: ${side}`)
+      const severity = flags.reviewSeverity ?? 'warning'
+      if (!['info', 'warning', 'error'].includes(severity)) {
+        throw new UsageError(`invalid <severity>: ${severity}`)
+      }
+      if (line === undefined) throw new UsageError(`--line is required with --side ${side}`)
+      return targeted({
+        method: 'cate.review.note.add',
+        args: { file, body, side, severity, ...(line ? { line } : {}) },
+      })
+    }
+    if (action === 'resolve') {
+      const noteId = need(exact(args.slice(2), 1)[0], 'note-id')
+      return targeted({
+        method: 'cate.review.note.resolve',
+        args: { noteId },
+      })
+    }
+    throw new UsageError(`unknown review note command: ${action}`)
+  }
+  throw new UsageError(`unknown review command: ${command}`)
+}
+
 function browserRequest(args: string[], flags: Flags): Request {
   const command = need(args[0], 'browser command')
   const rest = args.slice(1)
@@ -240,6 +319,10 @@ function browserRequest(args: string[], flags: Flags): Request {
       method: command === 'select-tab' ? 'cate.browser.tabSelect' : 'cate.browser.tabClose',
       args: { tabId },
     }, flags.panel, 'browser')
+  }
+  if (command === 'current' || command === 'back' || command === 'forward' || command === 'reload' || command === 'downloads') {
+    exact(rest, 0)
+    return withPanel({ method: `cate.browser.${command}`, args: {} }, flags.panel, 'browser')
   }
   if (command === 'viewport') {
     const preset = rest[0]
@@ -275,12 +358,12 @@ function browserRequest(args: string[], flags: Flags): Request {
 
   let native: string[]
   try {
-    native = validateAgentBrowserCommand(args)
+    native = validateBrowserCommand(args)
   } catch (error) {
     throw new UsageError(error instanceof Error ? error.message : 'invalid-browser-command')
   }
   return withPanel({
-    method: isReadOnlyAgentBrowserCommand(native)
+    method: isReadOnlyBrowserCommand(native)
       ? 'cate.browser.readCommand'
       : 'cate.browser.command',
     args: { command: native },
@@ -293,6 +376,7 @@ export function buildRequest(positionals: string[], flags: Flags): Request {
 
   if (group === 'browser') return browserRequest(args, flags)
   if (group === 'agent') return agentRequest(args, flags)
+  if (group === 'review') return reviewRequest(args, flags)
   if (group === 'version') {
     exact(args, 0)
     if (flags.panel) throw new UsageError('--panel is not valid for version')
@@ -443,7 +527,7 @@ export function shortId(id: string): string {
 
 export async function resolvePanel(
   prefix: string,
-  kind: 'browser' | 'terminal' | 'panel',
+  kind: 'browser' | 'terminal' | 'review' | 'panel',
   deps: SendDeps,
 ): Promise<string> {
   const listed = await send('cate.panel.list', {}, deps)
@@ -523,7 +607,11 @@ export function formatHuman(method: string, value: unknown): string {
   if (method === 'cate.codingAgent.wait') {
     return renderAgentRuns(asObject(value)?.runs)
   }
-  if (method === 'cate.codingAgent.inspect' || method === 'cate.codingAgent.review') {
+  if (
+    method === 'cate.codingAgent.inspect'
+    || method === 'cate.codingAgent.review'
+    || method === 'cate.review.inspect'
+  ) {
     return JSON.stringify(value, null, 2)
   }
   if (
@@ -561,7 +649,7 @@ export function formatHuman(method: string, value: unknown): string {
 }
 
 const USAGE = `Usage:
-  cate browser <agent-browser-command> [args] [--panel <id>]
+  cate browser <browser-command> [args] [--panel <id>]
   cate browser open|navigate|new-panel <url> [--panel <id>]
   cate browser tabs|new-tab|select-tab|close-tab [args] [--panel <id>]
   cate browser viewport compact|desktop|mobile|<width> <height>
@@ -570,10 +658,11 @@ const USAGE = `Usage:
   cate editor open <path[:line[:column]]>
   cate terminal read|type|press [args] [--panel <id>]
   cate agent list|create|send|wait|inspect|review|apply|keep|discard|stop [args]
+  cate review inspect|note|complete [--panel <id>] [args]
   cate version
 
-Browser page commands use native agent-browser syntax. Cate pins them to the
-selected built-in webview; browser/session startup, native tabs, batch commands,
+Browser page commands use Cate's native syntax. Cate pins them to the
+selected built-in browser session; session startup, native tabs, batch commands,
 and arbitrary host file paths are not exposed.
 
 Global flags: --panel <id> --json -h|--help --version`
@@ -588,10 +677,13 @@ Cate lifecycle:
   new-tab [url]
   select-tab <id>
   close-tab <id>
+  current
+  back|forward|reload
+  downloads
   viewport compact|desktop|mobile|<width> <height>
   resize <width> <height>
 
-Page automation uses native agent-browser syntax, for example:
+Page automation uses Cate's native browser syntax, for example:
   cate browser snapshot -i
   cate browser click @s1e3
   cate browser find role button click --name Save
@@ -606,7 +698,8 @@ snapshot. Use --panel whenever more than one browser could be the target.`
 const AGENT_USAGE = `Usage:
   cate agent list
   cate agent create <prompt...> [--agent <id>] [--title <title>]
-      [--worktree <id> | --new-worktree <name> [--base-ref <ref>]] [--foreground]
+      [--worktree <id> | --new-worktree <name> [--base-ref <ref>]]
+      [--terminal <panel-id>] [--foreground]
   cate agent send <runId> <prompt...>
   cate agent wait [runId...] [--wait-timeout <ms>]
   cate agent inspect|review|apply|keep|discard|stop <runId>
@@ -614,9 +707,19 @@ const AGENT_USAGE = `Usage:
 Run ids may be full ids or unique prefixes from \`cate agent list\`. A worker
 may use the same commands to create and supervise its own workers.`
 
+const REVIEW_USAGE = `Usage:
+  cate review inspect [--panel <id>]
+  cate review note add [--panel <id>] --file <path> --line <number>
+      [--side old|new] --body <text> [--severity info|warning|error]
+  cate review note resolve <note-id> [--panel <id>]
+  cate review complete [--panel <id>]
+
+Without --panel, the target selected by \`cate panel set <id>\` is used.`
+
 function helpFor(positionals: string[]): string {
   if (positionals[0] === 'browser') return BROWSER_USAGE
   if (positionals[0] === 'agent') return AGENT_USAGE
+  if (positionals[0] === 'review') return REVIEW_USAGE
   if (positionals[0] === 'panel') {
     return 'Usage: cate panel list | create terminal|canvas | set <id> | current | clear | close <id>'
   }
@@ -678,8 +781,9 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
   }
   try {
     if (request.resolvePanel) {
-      request.args.panelId = await resolvePanel(
-        String(request.args.panelId),
+      const argument = request.resolvePanelArg ?? 'panelId'
+      request.args[argument] = await resolvePanel(
+        String(request.args[argument]),
         request.resolvePanel,
         sendDeps,
       )

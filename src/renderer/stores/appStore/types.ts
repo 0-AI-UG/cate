@@ -93,7 +93,6 @@ export interface AppStoreActions {
   ) => string
   createBrowser: (workspaceId: string, url?: string, position?: Point, placement?: PanelPlacement, proxyUrl?: string) => string
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
-  createDiffEditor: (workspaceId: string, filePath: string, diffMode: 'staged' | 'working', position?: Point, placement?: PanelPlacement) => string
   createReview: (workspaceId: string, repoPath: string, initial?: Partial<ReviewPanelState>, position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
   createAgent: (
@@ -117,8 +116,8 @@ export interface AppStoreActions {
   // Panel management
   closePanel: (workspaceId: string, panelId: string) => void
   updatePanelTitle: (workspaceId: string, panelId: string, title: string) => void
-  /** Apply a title that came from the running process (xterm OSC 0/1/2). Skips
-   *  the update if the user has manually renamed the tab. */
+  /** Apply a title that came from the running agent. Skips the update if the
+   *  user has manually renamed the tab. */
   updatePanelTitleFromAgent: (workspaceId: string, panelId: string, title: string) => void
   /** User-initiated rename. Marks the panel as user-overridden so OSC updates
    *  no longer fight the chosen name. */
@@ -195,7 +194,8 @@ export interface AppStoreActions {
   setPanelWorktreeId: (wsId: string, panelId: string, worktreeId: string | undefined) => void
   /** Re-spawn a terminal panel's PTY in a new working directory and re-tag its
    *  worktree. Disposes the live terminal and bumps `ptyEpoch` so TerminalPanel
-   *  re-creates the shell rooted at `cwd`. Used by the worktree chip switcher. */
+   *  re-creates the process rooted at `cwd`. Used by the worktree switcher and
+   *  by explicit coding-agent launches into an existing terminal panel. */
   respawnPanelTerminal: (wsId: string, panelId: string, cwd: string, worktreeId: string | undefined) => void
 
   // Cross-window sync: merge metadata from main-process broadcast

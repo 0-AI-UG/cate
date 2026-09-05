@@ -1,6 +1,6 @@
 ---
 name: cate-cli
-description: Drive Cate browser, terminal, editor, panel, and coding-agent orchestration surfaces from a Cate terminal. Browser page automation uses native agent-browser command syntax.
+description: Drive Cate browser, terminal, editor, panel, review, and coding-agent orchestration surfaces from a Cate terminal. Browser page automation targets Cate's live webviews directly.
 user-invocable: true
 ---
 
@@ -50,10 +50,10 @@ cate browser wait --url '**/dashboard'
 cate browser snapshot -i
 ```
 
-Page commands after `cate browser` use agent-browser's native argv directly:
+Page commands after `cate browser` use Cate's native argv grammar:
 
 ```bash
-cate browser snapshot -i --compact
+cate browser snapshot -i
 cate browser get text @s1e4
 cate browser find role button click
 cate browser fill '#email' user@example.com
@@ -64,8 +64,7 @@ cate browser console
 cate browser errors
 ```
 
-Do not use agent-browser's `open` semantics by assumption: Cate defines
-`browser open` as opening a new tab. Use `navigate` only when replacing the
+Cate defines `browser open` as opening a new tab. Use `navigate` only when replacing the
 active tab is intentional:
 
 ```bash
@@ -83,6 +82,11 @@ cate browser tabs
 cate browser new-tab [url]
 cate browser select-tab <id>
 cate browser close-tab <id>
+cate browser current
+cate browser back
+cate browser forward
+cate browser reload
+cate browser downloads
 cate browser viewport desktop
 cate browser viewport mobile
 cate browser viewport 1024 768
@@ -94,7 +98,7 @@ The default compact viewport renders at 75% scale. Responsive viewport size and
 canvas panel size are independent. `resize` applies only to canvas panels and
 has a 400×300 minimum.
 
-Snapshots come from agent-browser's accessibility tree. Cate wraps engine refs
+Snapshots come from Chromium's accessibility tree. Cate wraps refs
 with an observation revision, for example `@s1e4`. A new snapshot invalidates
 older refs; take a fresh snapshot instead of retrying `stale-ref`.
 
@@ -148,7 +152,12 @@ cate agent create "Inspect the API boundary and report risks" --title "API scout
 cate agent create "Implement the parser and run its focused tests" \
   --agent codex --title "Parser" --new-worktree agent/parser
 cate agent create "Review the current worktree changes" --worktree <worktree-id>
+cate agent create "Continue in this terminal" --terminal <terminal-panel-id>
 ```
+
+`--terminal` reuses an idle terminal panel by restarting its PTY with the
+selected agent. It rejects busy terminals, agent-owned terminals, and the
+calling terminal. Omit it to create a new terminal panel.
 
 Workers may recursively create and supervise their own workers with the same
 commands. This naturally forms an agent tree: each terminal owns the workers it
@@ -189,3 +198,22 @@ interactive confirmation. Keep records that the worktree should remain for
 later. Review is read-only: a finished process or successful review does not
 mean its branch has been integrated. The parent remains responsible for
 verification and for reporting any uncommitted or unintegrated work.
+
+## Review panels
+
+Select a Review Panel once, inspect its comparison, and record structured
+findings. `--panel <id>` is an optional one-command override for every review
+command.
+
+```bash
+cate panel set <review-panel-id>
+cate review inspect
+cate review note add --file src/app.ts --line 42 --side new \
+  --severity error --body "Handle the rejected request"
+cate review note resolve <note-id>
+cate review complete
+```
+
+Use `complete` only when running as the review agent assigned by that Review
+Panel. Review commands record findings; they do not modify files, stage,
+commit, or push changes.

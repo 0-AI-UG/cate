@@ -117,8 +117,6 @@ export const Methods = {
   vcsInit: 'vcs.init',
   vcsLsFiles: 'vcs.lsFiles',
   vcsStatus: 'vcs.status',
-  vcsDiff: 'vcs.diff',
-  vcsDiffStaged: 'vcs.diffStaged',
   vcsCompare: 'vcs.compare',
   vcsFileDiff: 'vcs.fileDiff',
   vcsFileContent: 'vcs.fileContent',
