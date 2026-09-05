@@ -125,6 +125,7 @@ export function useNodeResize(
       // Detect shared borders for cardinal edges
       if (isCardinalEdge(edge)) {
         const borders = findSharedBorders(nodeId, edge, state.nodes)
+          .filter((border) => !state.nodes[border.neighborId].isPinned)
         sharedBordersRef.current = borders
 
         // Capture neighbor start state and min sizes
