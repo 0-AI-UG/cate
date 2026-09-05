@@ -7,8 +7,8 @@ dist-runtime/
 *.tsbuildinfo
 .worktrees/
 
-# Build artifacts
-build/
+# Build artifacts (keep signing entitlements tracked)
+build/*
 !build/entitlements.mac.plist
 !build/entitlements.runtime.plist
 # src/runtime/build/ is hand-authored source (the runtime esbuild config used
