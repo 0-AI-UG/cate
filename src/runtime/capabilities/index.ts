@@ -15,11 +15,9 @@ import { createVcsCapability } from './vcs'
 import { createProcessCapability, snapshotProcessTree, type ProcessCapability } from './process'
 import { createAgentPresenceTracker } from './agentPresence'
 import { resolveShell } from './shellResolver'
-import { createAgentCapability } from './agent'
 import { createAgentHooksCapability, type AgentHooksCapability } from './agentHooks'
 import { createServerCapability, type ServerCapability } from './server'
 import { createTunnelCapability, type TunnelCapability } from './tunnel'
-import { ensurePiOnHost, piCliPath } from '../ensurePi'
 import {
   validatePath as validateScopedPath,
   validatePathStrict as validateScopedPathStrict,
@@ -259,15 +257,6 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     },
   }
 
-  // Agent: the daemon pulls the pi tarball to the host and runs it under the
-  // bundled node (process.execPath == the runtime's runtime node here).
-  const agent = createAgentCapability({
-    ensurePi: ensurePiOnHost,
-    piCliPath,
-    nodeBin: () => process.execPath,
-    baseEnv: cleanEnv,
-  })
-
   // Server-backed extensions: spawn the server child on the daemon host, bound
   // to a daemon-loopback port; the tunnel bridges raw TCP to that port. Both are
   // electron-free and share the daemon's clean env.
@@ -277,7 +266,6 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   const runtime: Runtime = {
     id: config.id,
     process: proc,
-    agent,
     agentHooks: {
       subscribe: (onEvent) => agentHooks.subscribe(onEvent),
       inspectWorkspace: (cwd) => agentHooks.inspectWorkspace(cwd),

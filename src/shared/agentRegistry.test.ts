@@ -7,8 +7,8 @@
 //   • the skills targets, because AgentDef.skills is nullable (an agent Cate
 //     installs no skills for is legitimate) — so nothing catches a NEW agent
 //     that silently forgot its skills dir;
-//   • the SkillTargetId union, which must stay exactly `cate-agent` plus the
-//     ids the agents declare, or a target resolves to no skills root;
+//   • the SkillTargetId union, which must stay exactly the ids the agents
+//     declare, or a target resolves to no skills root;
 //   • the logo map, which is renderer-only (it imports SVG assets) and so can
 //     never be keyed by a shared Record.
 //
@@ -49,7 +49,7 @@ describe('agent registry coverage', () => {
   test('SKILL_TARGETS is exactly every integration-declared target', () => {
     const declared = AGENT_INTEGRATIONS.flatMap((a) => (a.skills ? [a.skills.targetId] : []))
     expect([...SKILL_TARGETS].map((t) => t.id).sort()).toEqual(declared.sort())
-    // Every target resolves back to its external or embedded agent integration.
+    // Every target resolves back to its external agent integration.
     for (const t of SKILL_TARGETS) {
       expect(agentForSkillTarget(t.id)?.skills?.targetId, `${t.id} resolves to its agent`).toBe(t.id)
       expect(t.label, `${t.id} has a label`).toBeTruthy()
@@ -68,7 +68,7 @@ describe('agent registry coverage', () => {
   // restatement of the type.
   test('persisted SkillTargetId values never drift', () => {
     const expected: SkillTargetId[] = [
-      'claude-code', 'cate-agent', 'pi-native', 'opencode', 'codex', 'cursor', 'grok', 'kiro',
+      'claude-code', 'opencode', 'codex', 'cursor', 'grok', 'kiro',
     ]
     expect([...SKILL_TARGETS].map((t) => t.id).sort()).toEqual([...expected].sort())
   })
@@ -111,4 +111,13 @@ describe('agent logo coverage', () => {
       expect(body.includes(`${key}:`), `${a.id} has no logo — add one or list it in NO_LOGO`).toBe(true)
     }
   })
+})
+
+test('T3 integrations reuse canonical provider identities and skill targets', async () => {
+  const { T3_AGENTS, TERMINAL_AGENTS } = await import('./agents')
+  expect(T3_AGENTS.map((a) => a.t3.driverId).sort()).toEqual(['claudeAgent', 'codex', 'cursor', 'grok', 'opencode'])
+  for (const provider of T3_AGENTS) {
+    expect(TERMINAL_AGENTS.find((cli) => cli.id === provider.id)).toBe(provider)
+    expect(provider.skills).not.toBeNull()
+  }
 })

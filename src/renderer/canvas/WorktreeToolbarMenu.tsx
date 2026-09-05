@@ -1,3 +1,4 @@
+import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 // WorktreeToolbarMenu — the canvas toolbar's "parallel worktrees" drop-up, and
 // (since the sidebar tab was retired) the single home for worktree tooling.
@@ -27,7 +28,6 @@ import {
   GitPullRequest,
 } from '@phosphor-icons/react'
 import { Tooltip } from '../ui/Tooltip'
-import { CateLogo } from '../ui/CateLogo'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
 import { errorMessage } from '../lib/errorMessage'
 import { useWorktrees, type JoinedWorktree } from '../stores/useWorktrees'
@@ -43,7 +43,6 @@ import {
 } from '../lib/worktreePanelClose'
 import { useWorktreeStatuses, humanStatus, type PrStatus } from '../stores/useWorktreeStatuses'
 import type { WorktreePanelType } from '../../shared/panels'
-import { useActiveChatWorktreeByPanel } from '../../cateAgent/renderer/cateAgentStore'
 import { Spinner } from '../ui/Spinner'
 import { useDismissableLayer } from '../ui/Popover'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
@@ -172,18 +171,17 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
   const setHoveredWorktree = useUIStore((s) => s.setHoveredWorktree)
   // What's already open on the canvas, per worktree.
   const panels = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.panels)
-  const activeChatWorktreeByPanel = useActiveChatWorktreeByPanel()
   const panelCounts = useMemo(() => {
     const counts: Record<string, { terminals: number; agents: number }> = {}
     for (const p of Object.values(panels ?? {})) {
-      const worktreeId = p.type === 'cateAgent' ? activeChatWorktreeByPanel[p.id] : p.worktreeId
+      const worktreeId = p.worktreeId
       if (!worktreeId) continue
       const c = counts[worktreeId] ?? (counts[worktreeId] = { terminals: 0, agents: 0 })
       if (p.type === 'terminal') c.terminals += 1
-      else if (p.type === 'cateAgent') c.agents += 1
+      else if (p.type === 'agent') c.agents += 1
     }
     return counts
-  }, [activeChatWorktreeByPanel, panels])
+  }, [panels])
 
   const { statusByPath, prByPath, refreshPr } = useWorktreeStatuses(rootPath, live)
   const { createWorktree, checkoutPr, launchInWorktree, handlePrune, makeCallbacks } = useParallelWork(
@@ -517,12 +515,12 @@ const WorktreeRow: React.FC<{
               onClick={() => onLaunch('terminal')}
             />
             <SpawnButton
-              icon={<CateLogo size={12} />}
-              title="Cate Agent"
-              panelType="cateAgent"
+              icon={<T3Logo size={12} />}
+              title="Agent"
+              panelType="agent"
               cwd={wt.path}
               worktreeId={wt.id}
-              onClick={() => onLaunch('cateAgent')}
+              onClick={() => onLaunch('agent')}
             />
             <Tooltip label="More actions">
               <button
@@ -553,7 +551,7 @@ const WorktreeRow: React.FC<{
               )}
               {openAgents > 0 && (
                 <span className="flex items-center gap-0.5">
-                  <CateLogo size={10} />
+                  <T3Logo size={10} />
                   {openAgents}
                 </span>
               )}

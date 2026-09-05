@@ -3,7 +3,6 @@ import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { SearchView } from './SearchView'
 import { SourceControlView } from './SourceControlView'
-import { CateAgentSidebarView } from '../../cateAgent/renderer/CateAgentSidebarView'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore, useSidebarLayout } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -20,7 +19,6 @@ import {
 } from '@phosphor-icons/react'
 import pkg from '../../../package.json'
 import { Tooltip } from '../ui/Tooltip'
-import { CateLogo } from '../ui/CateLogo'
 import { IS_MAC } from '../lib/platform'
 import { useWindowFullscreen } from '../lib/useWindowFullscreen'
 import { MAC_CHROME_HEIGHT } from '../shells/MacWindowChrome'
@@ -33,7 +31,7 @@ import { WorktreeScopeSelect } from './WorktreeScopeSelect'
 // ---------------------------------------------------------------------------
 
 // Icons are called as `<Icon size={n} className=… />`; Phosphor icons and the
-// Cate wordmark both satisfy this call signature. A plain function type (rather
+// lightweight local icon wrappers both satisfy this call signature. A plain function type (rather
 // than ComponentType) sidesteps the static propTypes clash between Phosphor's
 // forward-ref icons and a custom SVG component.
 type SidebarViewIcon = (props: { size?: number; className?: string }) => React.ReactNode
@@ -43,7 +41,6 @@ const VIEW_META: Record<SidebarView, { icon: SidebarViewIcon; title: string }> =
   explorer: { icon: FolderOpen, title: 'Explorer' },
   search: { icon: MagnifyingGlass, title: 'Search' },
   git: { icon: GitBranch, title: 'Source Control' },
-  cateAgent: { icon: CateLogo, title: 'Cate Agent' },
 }
 
 // ---------------------------------------------------------------------------
@@ -99,8 +96,6 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
       return <SearchView rootPath={navigationRoot} workspaceId={selectedWorkspaceId} scopeControl={navigationScope} />
     case 'git':
       return <SourceControlView rootPath={rootPath} />
-    case 'cateAgent':
-      return <CateAgentSidebarView wsId={selectedWorkspaceId ?? ''} rootPath={rootPath} />
     default:
       return null
   }

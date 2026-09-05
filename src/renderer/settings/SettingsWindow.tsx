@@ -27,8 +27,7 @@ import { WorktreeSettings } from './WorktreeSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { UpdatesSettings } from './UpdatesSettings'
-import { AgentHooksSettings } from './AgentHooksSettings'
-import { CanvasCateAgentSettings } from './CanvasCateAgentSettings'
+import { AgentSettings } from './AgentSettings'
 import { SkillsSettings } from './SkillsSettings'
 import { ExtensionsSettings } from './ExtensionsSettings'
 import { SettingsSearchContext } from './SettingsSearchContext'
@@ -36,7 +35,6 @@ import { TextInput } from './SettingsComponents'
 
 const SECTIONS = [
   { title: 'General', component: GeneralSettings },
-  { title: 'Agent Hooks', component: AgentHooksSettings },
   { title: 'Appearance', component: AppearanceSettings },
   { title: 'Canvas', component: CanvasSettings },
   { title: 'Terminal', component: TerminalSettings },
@@ -46,7 +44,7 @@ const SECTIONS = [
   { title: 'File Explorer', component: FileExplorerSettings },
   { title: 'Worktrees', component: WorktreeSettings },
   { title: 'Notifications', component: NotificationSettings },
-  { title: 'Cate Agent', component: CanvasCateAgentSettings },
+  { title: 'T3 Code', component: AgentSettings },
   { title: 'Skills', component: SkillsSettings },
   { title: 'Extensions', component: ExtensionsSettings },
   { title: 'Updates', component: UpdatesSettings },
@@ -55,7 +53,7 @@ const SECTIONS = [
 
 // DOM id for a section. Slugify spaces (e.g. "File Explorer") so the result is
 // a valid CSS selector for querySelector/scrollIntoView.
-const sectionId = (title: string): string => `settings-section-${title.toLowerCase().replace(/\s+/g, '-')}`
+const sectionId = (title: string): string => `settings-section-${(title.toLowerCase() === 'agent' ? 't3 code' : title.toLowerCase()).replace(/\s+/g, '-')}`
 
 interface SettingsWindowProps {
   isOpen: boolean
@@ -78,9 +76,8 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
   useEffect(() => {
     if (!isOpen) return
     setRawQuery('')
-    // Keep old deep links working after Providers moved under Cate Agent.
     const requested = (initialTab ?? SECTIONS[0].title).toLowerCase()
-    const target = requested === 'providers' ? 'cate agent' : requested
+    const target = requested === 'providers' ? 'agent' : requested
     setActiveId(target)
     requestAnimationFrame(() => {
       scrollRef.current?.querySelector(`#${sectionId(target)}`)?.scrollIntoView({ block: 'start', behavior: 'auto' })

@@ -1,8 +1,7 @@
 // =============================================================================
 // LF-delimited JSON framing. One JSON object per line; '\n' terminates a frame.
 // A trailing '\r' is tolerated (WSL / Windows pipes), so the decoder is safe
-// over wsl.exe stdio. Mirrors the pi RpcClient framing; copied here so the
-// runtime bundle has no dependency on pi.
+// over wsl.exe stdio. Keeps the runtime framing implementation self-contained.
 // =============================================================================
 
 import type { AnyFrame } from './protocol'

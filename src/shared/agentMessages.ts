@@ -1,4 +1,4 @@
-/** Concatenate the text blocks of one pi message. */
+/** Concatenate the text blocks of one agent message. */
 export function agentMessageText(message: unknown): string {
   const content = (message as { content?: unknown } | null)?.content
   if (!Array.isArray(content)) return ''

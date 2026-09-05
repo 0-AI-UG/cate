@@ -32,7 +32,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'cateAgent' | 'document' | 'review' | 'extension'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'extension'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -234,8 +234,7 @@ export interface PanelState {
   cwd?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
-  /** Checkout affinity for terminals, file-backed panels, and review panels.
-   *  Cate Agent worktrees live on Chat. */
+  /** Checkout affinity for terminals, Agent, file-backed, and review panels. */
   worktreeId?: string
   /** Terminal panels only. Set to true the first time the user renames the
    *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
@@ -253,7 +252,7 @@ export interface PanelState {
    *  fresh shell and retains this until newer agent evidence replaces or
    *  clears it. */
   agentSession?: TerminalAgentSession
-  /** Terminal panels created by Cate Agent carry durable ownership metadata.
+  /** Terminal panels created by agent orchestration carry durable ownership metadata.
    *  This is the native mission/run record; live status is derived from the
    *  terminal registry and agent hooks rather than persisted stale state. */
   codingAgentRun?: CodingAgentRun
@@ -264,11 +263,9 @@ export interface PanelState {
    *  panels this instance renders. */
   extensionId?: string
   extensionPanelId?: string
-  /** Agent panels only: a durable chatsStore chat id to open when the panel first
-   *  mounts (set when a chat is dragged onto the canvas / a dock zone). After the
-   *  panel adopts it, its own state owns the active chat; re-seeding on reload is
-   *  idempotent. */
-  initialChatId?: string
+  /** Agent panels only: the T3 thread rendered by this panel. Machine-local
+   *  because the id belongs to the harness state on this execution host. */
+  agentThreadId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -777,7 +774,7 @@ export const SHORTCUT_DEFINITIONS = {
   newTerminal: { label: 'New Terminal', shortcut: storedShortcut('t', { command: true }) },
   newBrowser: { label: 'New Browser', shortcut: storedShortcut('b', { command: true, shift: true }) },
   newEditor: { label: 'New Editor', shortcut: storedShortcut('e', { command: true, shift: true }) },
-  newAgent: { label: 'New Cate Agent', shortcut: storedShortcut('a', { command: true, shift: true }) },
+  newAgent: { label: 'New T3 Code conversation', shortcut: storedShortcut('a', { command: true, shift: true }) },
   newCanvas: { label: 'New Canvas', shortcut: storedShortcut('c', { command: true, shift: true }) },
   newFile: { label: 'New File', shortcut: storedShortcut('n', { command: true }) },
   closePanel: { label: 'Close Panel', shortcut: storedShortcut('w', { command: true }) },
@@ -1194,6 +1191,8 @@ export interface ProjectWorkspaceFile {
 }
 
 export interface ProjectPanelRef {
+  /** Preserve a manual title across restored terminal and T3 sessions. */
+  titleUserOverridden?: boolean
   type: string
   title: string
   filePath?: string
@@ -1255,6 +1254,8 @@ export interface ProjectSessionPanel {
   worktreeId?: string
   /** Machine-local review query, display preferences, expansion, and notes. */
   reviewState?: ReviewPanelState
+  /** T3 thread displayed by an Agent panel on this machine's harness. */
+  agentThreadId?: string
   /** Agent-CLI session running in this terminal at save time. Machine-local
    *  (session ids reference stores on this machine's runtime host). */
   agentSession?: TerminalAgentSession
@@ -1262,34 +1263,6 @@ export interface ProjectSessionPanel {
    *  deliberately excluded; restoring may resume a stamped CLI session but
    *  never repeats the original task. */
   codingAgentRun?: CodingAgentRun
-}
-
-// -----------------------------------------------------------------------------
-// Cate Agent — durable main-agent chats (.cate/chats.json)
-//
-// Pi owns each chat's transcript in its session JSONL. Cate persists only the
-// metadata needed to reopen that one session and place it in the UI.
-// -----------------------------------------------------------------------------
-
-export interface Chat {
-  id: string
-  title: string
-  createdAt: number
-  updatedAt: number
-  /** The Agent panel that owns this chat. Absence means the workspace Cate
-   *  sidebar owns it. A chat is rendered by exactly one of those hosts. */
-  hostPanelId?: string
-  /** Worktree this chat's agent runs in. Follows the chat between hosts. */
-  worktreeId?: string
-  /** Per-chat model override. The Cate Agent otherwise uses the global default. */
-  model?: CateAgentModelRef
-  /** On-disk Pi transcript for this chat's sole main-agent session. */
-  sessionFile?: string | null
-}
-
-export interface ProjectChatsFile {
-  version: 1
-  chats: Chat[]
 }
 
 // -----------------------------------------------------------------------------
@@ -1333,7 +1306,7 @@ export const FILE_EXCLUSIONS: string[] = [
 ]
 
 /** A sidebar view (left/right rail tabs). */
-export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'search' | 'cateAgent'
+export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'search'
 
 /** Which sidebar views live in the left vs. right rail. Persisted in settings. */
 export interface SidebarLayout {
@@ -1440,8 +1413,8 @@ export interface AppSettings {
    *  output for 2 minutes. SIGCONT is sent on focus/interaction. POSIX-only;
    *  no effect on Windows. */
   autoSuspendIdleTerminals: boolean
-  /** Enable the `cate` command-line control endpoint. When on, terminals and the
-   *  pi agent get a per-workspace CATE_API loopback endpoint + bearer token in
+  /** Enable the `cate` command-line control endpoint. When on, terminals get a
+   *  per-workspace CATE_API loopback endpoint + bearer token in
    *  their env so the `cate` CLI can drive Cate (browser, panels, editor, canvas).
    *  When OFF (fail closed): no endpoint is opened and no env is injected, so the
    *  CLI is unreachable — `cate` stays on PATH but only explains how to enable it.
@@ -1453,8 +1426,7 @@ export interface AppSettings {
   cliEnabled: boolean
   /** Auto-install the bundled cate-cli skill so agents learn the `cate` command:
    *  seeded into each opened workspace through the skills installer, the same
-   *  way for local and remote hosts — Cate's own agent always, other supported
-   *  agents (Claude Code, Pi, OpenCode, Codex) when their tool dir
+   *  way for local and remote hosts. Supported external agents are seeded when their tool dir
    *  exists there (see seedCateCliSkill).
    *  Seeds at most once per workspace/target, never overwrites edits, and an
    *  uninstall sticks. Turning this off stops future installs; it does not
@@ -1559,10 +1531,6 @@ export interface AppSettings {
   customShortcuts: Partial<Record<ShortcutAction, StoredShortcut>>
 
   // Agent
-  /** The user-pinned default model applied to every new agent chat, or null for
-   *  none. Was renderer localStorage (cate.agent.defaultModel.v1) before. */
-  agentDefaultModel: CateAgentModelRef | null
-
   /** Per-workspace, per-agent overrides for repo-local hook-file injection
    *  (push-based agent status/session events — see src/shared/agentHooks.ts).
    *  Keyed by workspace id; each maps an AgentId to 'auto' | 'on' | 'off'.
@@ -1672,7 +1640,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customShortcuts: {},
 
   // Agent
-  agentDefaultModel: null,
   agentHookInjection: {},
 
   // Layout — keep in sync with the sidebar's default arrangement.
@@ -1741,7 +1708,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   browser: { width: 640, height: 440 },
   editor: { width: 540, height: 420 },
   canvas: { width: 640, height: 480 },
-  cateAgent: { width: 520, height: 440 },
+  agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
   review: { width: 820, height: 560 },
   extension: { width: 520, height: 360 },
@@ -1754,223 +1721,6 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
 export const ZOOM_MIN = 0.3
 export const ZOOM_MAX = 3.0
 export const ZOOM_DEFAULT = 1.0
-
-// =============================================================================
-// Pi agent + auth shared types
-// =============================================================================
-
-/** Provider category — drives which form the auth UI shows. */
-export type AuthProviderKind = 'oauth' | 'apiKey'
-
-export interface AuthProviderDescriptor {
-  /** Stable pi-ai provider id (e.g. 'anthropic', 'openai', 'google'). */
-  id: string
-  /** Display name. */
-  name: string
-  kind: AuthProviderKind
-  /** Hint shown under the input (e.g. where to get a key). */
-  helpUrl?: string
-  /** For OAuth providers: whether a local callback server is needed. */
-  usesCallbackServer?: boolean
-}
-
-export interface AuthProviderStatus {
-  id: string
-  connected: boolean
-  /** Last connect time as ISO string, if known. */
-  connectedAt?: string
-  /** Where the credential lives. */
-  source?: 'oauth' | 'env' | 'config'
-}
-
-/** Result of actively verifying that a provider's credential works.
- *  - `ok`         — the credential authenticated (OAuth token minted/refreshed, or a
- *                   live model request succeeded).
- *  - `needsReauth`— an OAuth token could not be refreshed; the user must sign in again.
- *  - `error`      — a live request failed (bad/expired API key, endpoint unreachable, …). */
-export type ProviderHealth = 'ok' | 'needsReauth' | 'error'
-
-export interface ProviderVerification {
-  id: string
-  health: ProviderHealth
-  /** Human-readable failure detail for `needsReauth` / `error`. */
-  error?: string
-}
-
-/** A Cate-managed OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, a
- *  proxy, ...), written to pi's models.json. */
-export interface CustomOpenAIProvider {
-  /** Stable pi provider id. `custom-openai` is retained for legacy configs. */
-  id: string
-  /** Friendly name shown in provider settings. */
-  name: string
-  baseUrl: string
-  /** Empty for local servers that ignore auth; pi gets a placeholder. */
-  apiKey: string
-  /** Model ids exposed by the endpoint, e.g. ['llama3.1:8b']. */
-  models: string[]
-}
-
-export interface CateAgentModelRef {
-  provider: string
-  model: string
-}
-
-/** A selectable model, derived session-independently from the connected
- *  providers in auth.json (plus the custom OpenAI endpoint in models.json). */
-export interface CodingModelDescriptor {
-  provider: string
-  /** Model id passed to pi (e.g. `claude-sonnet-4-6`). */
-  id: string
-  /** Human label for the picker (pi's model name, falling back to the id). */
-  label: string
-  contextWindow: number
-  reasoning: boolean
-}
-
-/** Slash command exposed by pi — a skill, prompt template, or extension cmd. */
-export interface CodingSlashCommand {
-  name: string
-  description?: string
-  source: 'extension' | 'prompt' | 'skill'
-  /** Absolute path to the file that defines this command (if any). */
-  path?: string
-  /** Where it lives — user-installed vs. shipped with a package. */
-  scope?: 'user' | 'project' | 'temporary'
-  /** Whether the file is editable/deletable by the user (true for files under
-   *  ~/.pi/agent, false for things shipped inside packages). */
-  editable?: boolean
-}
-
-export interface CodingCreateOptions {
-  panelId: string
-  workspaceId: string
-  cwd: string
-  model?: CateAgentModelRef
-  systemPrompt?: string
-  /** Resume an existing pi session file (jsonl). When set, pi will load it
-   *  on start instead of creating a fresh session. */
-  sessionFile?: string
-  /** Locator of the WORKSPACE this session belongs to, which may differ from
-   *  `cwd` when the panel is pinned to a worktree. Main resolves the workspace's
-   *  trust state from this to decide whether project MCP config (`.mcp.json` /
-   *  `.pi/mcp.json`) may be honoured — those files are repo-controlled and can
-   *  start local commands (GHSA-8769-jp52-985f). Absent ⇒ treated as untrusted. */
-  workspaceRoot?: string
-}
-
-/** Pi agent events forwarded from main to renderer. We keep the shape loose
- *  since pi's event union is large and may evolve — renderer narrows by `type`. */
-export interface CodingEventEnvelope {
-  panelId: string
-  event: {
-    type: string
-    [key: string]: unknown
-  }
-}
-
-/** Pi's reasoning levels (mirrors `ThinkingLevel` from pi-agent-core). */
-export type CodingThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
-
-/** Image attachment sent alongside a prompt/steer/followUp. Data is raw base64
- *  (no `data:` prefix) so pi can forward it verbatim as `ImageContent`. */
-export interface CodingImageAttachment {
-  data: string
-  mimeType: string
-  /** Optional filename, kept around so the renderer can display a chip. */
-  fileName?: string
-}
-
-/** Snapshot of pi's session stats — fed from `get_session_stats`. */
-export interface CodingSessionStats {
-  sessionFile?: string
-  sessionId?: string
-  userMessages: number
-  assistantMessages: number
-  toolCalls: number
-  toolResults: number
-  totalMessages: number
-  tokens: {
-    input: number
-    output: number
-    cacheRead: number
-    cacheWrite: number
-    total: number
-  }
-  cost: number
-  contextUsage?: {
-    tokens: number | null
-    contextWindow: number
-    percent: number | null
-  }
-}
-
-/** Pi RPC session state snapshot. */
-export interface CodingRpcState {
-  model: { id: string; provider: string; name?: string; contextWindow?: number; reasoning?: boolean } | null
-  thinkingLevel: CodingThinkingLevel
-  isStreaming: boolean
-  isCompacting: boolean
-  steeringMode: 'all' | 'one-at-a-time'
-  followUpMode: 'all' | 'one-at-a-time'
-  sessionFile?: string
-  sessionId?: string
-  sessionName?: string
-  autoCompactionEnabled: boolean
-  messageCount: number
-  pendingMessageCount: number
-}
-
-/** Pi extension UI request — forwarded verbatim through agent:event so the
- *  renderer can render an in-panel dialog. Dialog methods expect a reply via
- *  CODING_UI_RESPONSE; fire-and-forget methods don't. */
-export interface CodingExtensionUIRequest {
-  id: string
-  method: 'select' | 'confirm' | 'input' | 'editor' | 'notify' | 'setStatus' | 'setWidget' | 'setTitle' | 'set_editor_text'
-  [key: string]: unknown
-}
-
-export interface CodingExtensionUIResponse {
-  id: string
-  value?: string
-  confirmed?: boolean
-  cancelled?: boolean
-}
-
-/** A pi session file on disk, parsed enough to populate the chat sidebar. */
-export interface CodingSessionListEntry {
-  /** Absolute path to the .jsonl file. */
-  path: string
-  /** Pi session id (UUID from header). */
-  id: string
-  /** Display title — explicit session_info.sessionName when set, otherwise
-   *  derived from the first user message. */
-  title: string
-  /** True iff title came from `set_session_name`. */
-  named: boolean
-  /** Cwd recorded in the header (so we can filter by workspace). */
-  cwd: string
-  /** Header timestamp (ISO). */
-  createdAt: string
-  /** File mtime (ISO). */
-  updatedAt: string
-  /** Best-effort count of pi `message` entries. */
-  messageCount: number
-  /** Last `model_change` entry recorded in the session, if any. Used to
-   *  restore the chat's prior model selection on resume. */
-  lastModel?: { provider: string; model: string }
-}
-
-/** OAuth UI events forwarded to renderer during a login flow. */
-export type OAuthFlowEvent =
-  | { type: 'auth'; url: string; instructions?: string }
-  | { type: 'deviceCode'; userCode: string; verificationUri: string; intervalSeconds?: number; expiresInSeconds?: number }
-  | { type: 'progress'; message: string }
-  | { type: 'prompt'; promptId: string; message: string; placeholder?: string; allowEmpty?: boolean }
-  | { type: 'select'; promptId: string; message: string; options: Array<{ id: string; label: string }> }
-  | { type: 'manualCode'; promptId: string }
-  | { type: 'done' }
-  | { type: 'error'; message: string }
 
 // -----------------------------------------------------------------------------
 // Performance profiler (CATE_PERF=1) — shared between main sampler and the

@@ -32,7 +32,7 @@ import { shouldAdjustTerminalCoords } from '../lib/terminal/terminalCoordAdjust'
 import { snapRenderScale } from '../lib/terminal/renderScale'
 import { resolveWorktree } from '../../shared/worktrees'
 import { resumeCommandForAgent } from '../../shared/agents'
-import { CATE_FILE_MIME, hasChatDrag, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
+import { CATE_FILE_MIME, readCateFileLocation, readCateFilePaths } from '../drag/fileDragPayload'
 import { parseLocator } from '../../shared/runtimeLocator'
 import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
 import { Spinner } from '../ui/Spinner'
@@ -183,7 +183,7 @@ export default function TerminalPanel({
   )
   // The worktree this terminal is tagged to (the title-bar pill), resolved to its
   // checkout path. This is the AUTHORITATIVE cwd for a tagged terminal — same as
-  // CateAgentPanel — so a restart respawns it inside its worktree regardless of
+  // AgentPanel, so a restart respawns it inside its worktree regardless of
   // whether the live cwd was captured at save time (which is flaky: it depends on
   // a live PTY query). Returns a stable string, so this selector is cheap.
   const taggedWorktreePath = useAppStore((state) => {
@@ -852,7 +852,6 @@ export default function TerminalPanel({
       // A dragged chat isn't a file path to paste — let it bubble to the canvas /
       // dock zone, which opens it as an agent panel. Swallowing it here (the
       // stopPropagation below) is what made a chat dropped over a terminal do nothing.
-      if (hasChatDrag(e.dataTransfer)) return
       e.preventDefault()
       e.stopPropagation()
 

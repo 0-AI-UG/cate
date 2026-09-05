@@ -94,13 +94,13 @@ function snapshotWithWorktrees(): SessionSnapshot {
 describe('worktree session persistence', () => {
   beforeEach(reset)
 
-  it('allows terminal tags but strips Cate Agent panel residue', () => {
+  it('allows terminal and Agent panels to carry Cate-owned worktree tags', () => {
     const ws = useAppStore.getState().addWorkspace('WT', ROOT, 'ws')
     useAppStore.getState().addPanel(ws, {
       id: 'terminal-1', type: 'terminal', title: 'Terminal', isDirty: false,
     })
     useAppStore.getState().addPanel(ws, {
-      id: 'agent-1', type: 'cateAgent', title: 'Agent', isDirty: false, worktreeId: 'legacy',
+      id: 'agent-1', type: 'agent', title: 'Agent', isDirty: false, worktreeId: 'legacy',
     })
 
     useAppStore.getState().setPanelWorktreeId(ws, 'terminal-1', 'wt-x')
@@ -108,7 +108,7 @@ describe('worktree session persistence', () => {
 
     const panels = useAppStore.getState().getWorkspace(ws)!.panels
     expect(panels['terminal-1'].worktreeId).toBe('wt-x')
-    expect(panels['agent-1'].worktreeId).toBeUndefined()
+    expect(panels['agent-1'].worktreeId).toBe('wt-x')
   })
 
   it('tags file panels created inside a sibling worktree', () => {

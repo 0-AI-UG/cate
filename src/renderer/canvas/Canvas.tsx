@@ -22,10 +22,6 @@ import type { Point, PanelType } from '../../shared/types'
 import { isWorktreePanelType, type WorktreePanelType } from '../../shared/panels'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
-import { CHAT_DRAG_MIME, readChatDrag } from '../drag/fileDragPayload'
-import { createSeededChatPanel } from '../drag/openChatDrop'
-import { endChatDrag } from '../drag/chatDragState'
-import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
 import { CanvasTopOverlayContext } from './CanvasTopOverlayContext'
 
 // Module-level style injection — shared across all Canvas instances
@@ -431,11 +427,10 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
     if (
       e.dataTransfer.types.includes('application/cate-file') ||
       e.dataTransfer.types.includes('application/cate-spawn') ||
-      e.dataTransfer.types.includes(CHAT_DRAG_MIME) ||
       e.dataTransfer.types.includes('Files')
     ) {
       e.preventDefault()
-      e.dataTransfer.dropEffect = e.dataTransfer.types.includes(CHAT_DRAG_MIME) ? 'move' : 'copy'
+      e.dataTransfer.dropEffect = 'copy'
     }
   }, [])
 
@@ -458,33 +453,12 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
       const panelId =
         spec.panelType === 'terminal'
           ? store.createTerminal(wsId, undefined, pos, here(), spec.cwd)
-          : store.createCateAgent(wsId, pos, here())
+          : store.createAgent(wsId, pos, here(), spec.cwd, spec.worktreeId)
       if (panelId && spec.worktreeId) {
         if (spec.panelType === 'terminal') {
           store.setPanelWorktreeId(wsId, panelId, spec.worktreeId)
-        } else {
-          const rootPath = store.getWorkspace(wsId)?.rootPath
-          if (rootPath) {
-            await seedAgentPanelWithWorktreeChat(wsId, rootPath, panelId, spec.worktreeId)
-          }
         }
       }
-      return
-    }
-
-    // Chat drop from the sidebar tab strip / a panel's recents — move the chat
-    // into a newly-created Agent panel node at the cursor.
-    const chatDrag = readChatDrag(e.dataTransfer)
-    if (chatDrag) {
-      e.preventDefault()
-      e.stopPropagation()
-      const rect = canvasRef.current?.getBoundingClientRect()
-      if (!rect) return
-      const viewPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-      const { zoomLevel, viewportOffset } = canvasApi.getState()
-      const pos = viewToCanvas(viewPoint, zoomLevel, viewportOffset)
-      createSeededChatPanel(useAppStore.getState().selectedWorkspaceId, chatDrag, pos, here())
-      endChatDrag()
       return
     }
 
@@ -589,7 +563,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
         items.push(
           { id: 'new-editor', label: 'New Editor' },
           { id: 'new-browser', label: 'New Browser' },
-          { id: 'new-agent', label: 'New Agent' },
+          { id: 'new-agent', label: 'New T3 Code conversation' },
           { id: 'new-canvas', label: 'New Canvas' },
           { type: 'separator' as const },
         )
@@ -621,7 +595,8 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
           break
         case 'new-editor': onCreateAtPoint?.('editor', point); break
         case 'new-browser': onCreateAtPoint?.('browser', point); break
-        case 'new-agent': onCreateAtPoint?.('cateAgent', point); break
+        case 'new-agent': onCreateAtPoint?.('agent', point); break
+        case 'new-review': onCreateAtPoint?.('review', point); break
         case 'new-canvas': onCreateAtPoint?.('canvas', point); break
         case 'auto-layout':
           canvasApi.getState().autoLayout()

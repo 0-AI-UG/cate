@@ -30,6 +30,7 @@ import { worktreeForPanel } from '../worktreeContext'
 // here — consulted by both buildWorkspaceFile and projectFilesToSnapshot — so
 // the two paths can't drift and silently drop a field on round-trip.
 const PASSTHROUGH_PANEL_FIELDS = [
+  'titleUserOverridden',
   'tabs',
   'activeTabId',
   'proxyUrl',
@@ -94,16 +95,15 @@ export function buildSessionFile(
   const panels: Record<string, ProjectSessionPanel> = {}
   for (const p of Object.values(snapshot.panels ?? {})) {
     const workingDirectory = snapshot.terminalCwds?.[p.id]
-    const worktreeId = p.type === 'cateAgent'
-      ? undefined
-      : p.worktreeId ?? worktreeForPanel(p, snapshot.worktrees ?? [])?.id
+    const worktreeId = p.worktreeId ?? worktreeForPanel(p, snapshot.worktrees ?? [])?.id
     if (
       !worktreeId &&
       !workingDirectory &&
       !p.unsavedContent &&
       !p.agentSession &&
       !p.codingAgentRun &&
-      !p.reviewState
+      !p.reviewState &&
+      !p.agentThreadId
     ) continue
     panels[p.id] = {
       panelId: p.id,
@@ -113,6 +113,7 @@ export function buildSessionFile(
       agentSession: p.agentSession,
       codingAgentRun: p.codingAgentRun,
       reviewState: p.reviewState,
+      agentThreadId: p.agentThreadId,
     }
   }
 
@@ -148,17 +149,20 @@ export function projectFilesToSnapshot(
     panels = {}
     for (const [id, ref] of Object.entries(ws.panels)) {
       const sp = sess?.panels?.[id]
+      // Pre-T3 layouts used the old embedded-agent discriminator. Preserve the
+      // panel placement while dropping all legacy embedded-chat state.
+      const type = (ref.type === 'cateAgent' ? 'agent' : ref.type) as PanelType
       const pathRoot = sess?.worktrees?.find((worktree) => worktree.id === sp?.worktreeId)?.path ?? rootPath
       panels[id] = {
         id,
-        type: ref.type as PanelType,
+        type,
         title: ref.title,
         isDirty: false,
         filePath: ref.filePath ? toAbsolutePath(ref.filePath, pathRoot) : undefined,
         ...pickPassthroughPanelFields(ref),
         // Re-attach the machine-local facts kept out of the committed file.
-        // Cate Agent affinity is owned by its active Chat, never by the panel.
-        worktreeId: ref.type === 'cateAgent' ? undefined : sp?.worktreeId,
+        worktreeId: sp?.worktreeId,
+        agentThreadId: type === 'agent' ? sp?.agentThreadId : undefined,
         unsavedContent: sp?.unsavedContent,
         // The agent session to resume in this terminal — TerminalPanel types
         // the resume command into the fresh shell and retains the stamp until

@@ -1,4 +1,4 @@
-import { AGENTS, type AgentId } from './agents'
+import { TERMINAL_AGENTS, type AgentId } from './agents'
 
 /** A coding agent process Cate created and owns inside a terminal panel. */
 export interface CodingAgentRun {
@@ -79,6 +79,8 @@ export function deriveCodingAgentRunStatus(
 }
 
 export interface CodingAgentRunSnapshot extends CodingAgentRun {
+  /** Explicit execution surface; optional for older clients and persisted snapshots. */
+  executionSurface?: 'terminal'
   status: CodingAgentRunStatus
   agentName: string
   cwd: string
@@ -95,7 +97,7 @@ const CODING_AGENT_TASK_PREFIX = 'Complete this coding task:\n\n'
 /** Resolve an untrusted tool argument to the closed, canonical agent registry. */
 export function parseCodingAgentId(value: unknown): AgentId | null {
   if (typeof value !== 'string') return null
-  return AGENTS.some((agent) => agent.id === value) ? (value as AgentId) : null
+  return TERMINAL_AGENTS.some((agent) => agent.id === value) ? (value as AgentId) : null
 }
 
 /**
@@ -103,13 +105,13 @@ export function parseCodingAgentId(value: unknown): AgentId | null {
  *
  * No shell is involved, so task text cannot become shell syntax. Prefixing the
  * positional task also prevents option/subcommand injection into the CLI's own
- * argv parser. Every executable comes from AGENTS; callers cannot provide a
+ * argv parser. Every executable comes from TERMINAL_AGENTS; callers cannot provide a
  * path or extra flags. OpenCode's prompt-bearing surface is its `run` command.
  */
 export function codingAgentCommand(
   launch: Pick<CodingAgentLaunch, 'agentId' | 'prompt'>,
 ): { executable: string; args: string[] } {
-  const agent = AGENTS.find((candidate) => candidate.id === launch.agentId)
+  const agent = TERMINAL_AGENTS.find((candidate) => candidate.id === launch.agentId)
   if (!agent) throw new Error(`Unsupported coding agent: ${launch.agentId}`)
   const prompt = launch.prompt.trim()
   if (!prompt) throw new Error('A coding-agent prompt is required')
@@ -121,9 +123,9 @@ export function codingAgentCommand(
 }
 
 export function codingAgentDisplayName(agentId: AgentId): string {
-  return AGENTS.find((agent) => agent.id === agentId)?.displayName ?? agentId
+  return TERMINAL_AGENTS.find((agent) => agent.id === agentId)?.displayName ?? agentId
 }
 
 export function codingAgentSupportsFollowUp(agentId: AgentId): boolean {
-  return AGENTS.find((agent) => agent.id === agentId)?.codingAgentFollowUp ?? false
+  return TERMINAL_AGENTS.find((agent) => agent.id === agentId)?.codingAgentFollowUp ?? false
 }

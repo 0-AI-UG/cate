@@ -1,3 +1,6 @@
+import { useT3ActivityStore } from '../stores/t3ActivityStore'
+import { t3ThreadActivity } from '../lib/t3ThreadState'
+import t3Logo from '../assets/t3-code.svg?url'
 // Per-panel agent status (state + name + logo) for the sidebar tree and dock
 // tabs. Owns the two bits of glue both consumers used to re-derive by hand:
 //   1. the ptyId→panelId translation (status is keyed by ptyId, tabs by panelId)
@@ -11,7 +14,7 @@ import { getAgentLogo } from '../lib/agent/agentLogos'
 import type { AgentState } from '../../shared/types'
 
 export interface AgentPanelInfo {
-  state: AgentState
+  state: AgentState | undefined
   /** Agent display name, or null once the process has exited. */
   name: string | null
   /** Logo asset URL for `name`, or null when unknown / no agent. */
@@ -65,9 +68,23 @@ function agentInfoMapEqual(
  *  equality keeps tabs from re-rendering on every 1s poll tick when nothing
  *  actually changed. */
 export function useAgentInfoByPanel(workspaceId: string | undefined): Record<string, AgentPanelInfo> {
-  return useStoreWithEqualityFn(
+  const terminal = useStoreWithEqualityFn(
     useStatusStore,
     (s) => selectAgentInfoByPanel(s, workspaceId),
     agentInfoMapEqual,
   )
+  const t3 = useT3ActivityStore()
+  return { ...terminal, ...selectT3InfoByPanel(t3, workspaceId) }
+}
+
+export function selectT3InfoByPanel(t3: ReturnType<typeof useT3ActivityStore.getState>, workspaceId: string | undefined): Record<string, AgentPanelInfo> {
+  const result: Record<string, AgentPanelInfo> = {}
+  for (const [id, binding] of Object.entries(t3.panels)) {
+    if (binding.workspaceId !== workspaceId) continue
+    const instance = t3.instances[binding.partition]
+    const thread = binding.threadId ? instance?.threads[binding.threadId] : undefined
+    result[id] = { state: binding.connected && thread ? t3ThreadActivity(thread) : undefined,
+      name: binding.connected ? 'T3 Code' : 'T3 Code (disconnected)', logo: t3Logo }
+  }
+  return result
 }

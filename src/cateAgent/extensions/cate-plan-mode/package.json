@@ -1,8 +1,0 @@
-{
-  "name": "cate-plan-mode",
-  "description": "Plan mode for the Cate agent panel. Runs configurable parallel scouts, a planner synthesis, and main-agent finalization before /apply-plan re-enables writes.",
-  "private": true,
-  "pi": {
-    "extensions": ["./index.ts"]
-  }
-}

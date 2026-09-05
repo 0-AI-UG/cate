@@ -31,7 +31,6 @@ import { InlineEditInput } from './InlineEditInput'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
 import { canvasKey, toggleCollapsed, useTreeCollapseStore } from './treeCollapse'
 import { Tooltip } from '../ui/Tooltip'
-import { useActiveChatWorktreeByPanel } from '../../cateAgent/renderer/cateAgentStore'
 import { worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
 
 // Stable empty map so the ports selector returns a referentially-constant value
@@ -97,7 +96,7 @@ export interface PanelRenameProps {
 }
 
 // Canonical row-label logic lives in lib/panelTitle (shared with the cross-
-// window panel report and the Cate agent chat). Re-exported for existing
+// window panel report and the agent panel). Re-exported for existing
 // importers of this module.
 export { panelRowLabel }
 
@@ -289,7 +288,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     const ws = s.workspaces.find((w) => w.id === workspace.id)
     return ws?.worktrees ?? workspace.worktrees ?? []
   }))
-  const activeChatWorktreeByPanel = useActiveChatWorktreeByPanel()
 
 
   // Ports in the status store are keyed by ptyId, but panel rows are keyed by
@@ -570,8 +568,8 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const worktreeColorFor = (panelId: string): string | undefined => {
     const panel = panels[panelId]
     if (!showWorktreeAccent) return undefined
-    const wt = worktreeForPanel(panel, worktrees, (id) => activeChatWorktreeByPanel[id])
-      ?? (panel?.type === 'terminal' || panel?.type === 'cateAgent'
+    const wt = worktreeForPanel(panel, worktrees)
+      ?? (panel?.type === 'terminal' || panel?.type === 'agent'
         ? worktrees.find((worktree) => worktree.path === workspace.rootPath)
         : undefined)
     return wt?.color
@@ -591,7 +589,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     const titleHint = `${p.title} — in another window`
     const detachedWorktree = worktrees.find((worktree) => worktree.id === p.worktreeId)
       ?? worktreeForPath(p.filePath, worktrees)
-    if (detachedWorktree || p.type === 'terminal' || p.type === 'cateAgent') {
+    if (detachedWorktree || p.type === 'terminal' || p.type === 'agent') {
       return (
         <WorkspacePanelRow
           key={p.panelId}

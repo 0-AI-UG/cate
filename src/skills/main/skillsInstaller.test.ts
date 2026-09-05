@@ -94,21 +94,21 @@ describe('skillsInstaller workspace manifest', () => {
     await writeSkillToWorkspace({
       skillId: entry().id,
       name: entry().name,
-      targetId: 'cate-agent',
+      targetId: 'codex',
       cwd: WS,
       origin: 'local',
       files: [{ relPath: 'SKILL.md', text: 'body' }],
     })
 
-    expect(files.get(`${WS}/.cate/cate-agent/skills/demo-skill/SKILL.md`)).toContain('body')
+    expect(files.get(`${WS}/.codex/skills/demo-skill/SKILL.md`)).toContain('body')
     expect(manifest().skills).toHaveLength(1)
     expect(norm(manifest().skills[0].path)).toBe(
-      `${WS}/.cate/cate-agent/skills/demo-skill/SKILL.md`,
+      `${WS}/.codex/skills/demo-skill/SKILL.md`,
     )
 
-    await uninstall(entry().id, entry().name, 'cate-agent', WS)
+    await uninstall(entry().id, entry().name, 'codex', WS)
     expect(removed).toEqual([
-      `${WS}/.cate/cate-agent/skills/demo-skill`,
+      `${WS}/.codex/skills/demo-skill`,
     ])
   })
 
@@ -118,7 +118,7 @@ describe('skillsInstaller workspace manifest', () => {
         { skillId: entry().id, name: 'old', targetId: 'codex', path: '/old', origin: 'local' },
         { skillId: entry().id, name: 'Demo Skill', targetId: 'claude-code', path: '/claude', origin: 'local' },
       ],
-      seeded: ['cate/cate-cli:cate-agent'],
+      seeded: ['cate/cate-cli:codex'],
     }))
 
     await writeSkillToWorkspace({
@@ -140,7 +140,7 @@ describe('skillsInstaller workspace manifest', () => {
       expect.objectContaining({ targetId: 'claude-code', path: '/claude' }),
       expect.objectContaining({ skillId: entry().id, targetId: 'codex', path: `${WS}/.codex/skills/demo-skill/SKILL.md` }),
     ])
-    expect(manifest().seeded).toEqual(['cate/cate-cli:cate-agent'])
+    expect(manifest().seeded).toEqual(['cate/cate-cli:codex'])
   })
 
   it('removes the manifest entry even when deleting the installed files fails', async () => {

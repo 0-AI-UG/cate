@@ -99,9 +99,8 @@ engine to `jsonStateStore.ts` and keeps the filesystem backend (sync load,
 debounced atomic write, chokidar external-edit watcher, corrupt-file quarantine).
 `workspaceStateStore.ts` uses it for `recent-projects.json`, `sidebar.json`,
 `remote-workspaces.json`, and `layouts.json`. Per-project canvas/session state
-lives in `<project>/.cate/workspace.json` + `session.json`. AI provider credentials are
-global in `userData/pi-agent/auth.json` (+ `models.json`), mirrored into each
-workspace's `.cate/pi-agent/`.
+lives in `<project>/.cate/workspace.json` + `session.json`. Agent provider
+credentials and conversation state are owned by the bundled T3 harness.
 
 ### Key Patterns
 

@@ -1,6 +1,6 @@
 // =============================================================================
-// WorktreePill — the terminal title-bar "worktree chip": shows which parallel
-// branch a terminal belongs to, color-filled in the worktree's color.
+// WorktreePill: the terminal/Agent title-bar "worktree chip" shows which
+// parallel branch a worktree-bound panel belongs to.
 //
 //   • Hover  → highlights every node in that worktree (ring + sludge boost).
 //   • Click  → menu: focus the worktree on canvas, or switch this panel to
@@ -71,16 +71,19 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
     const target = worktrees.find((w) => w.id === choice)
     if (!target) return
 
-    // A terminal is bound to a checkout — switching means a fresh shell in the
-    // new path. Warn first if a foreground process is running.
+    if (panel.type === 'agent') {
+      useAppStore.getState().setPanelWorktreeId(workspaceId, panel.id, target.id)
+      return
+    }
+
+    // A terminal is bound to a checkout. Switching means a fresh shell in the
+    // new path, so warn first if a foreground process is running.
     const ok = await confirmCloseRunningTerminals([panel])
     if (!ok) return
     useAppStore.getState().respawnPanelTerminal(workspaceId, panel.id, target.path, target.id)
   }, [worktrees, current, focusedWorktreeId, panel, workspaceId, focusWorktree])
 
-  // The chip is terminal chrome only. Agent worktree selection lives on Chat
-  // and is rendered below its composer.
-  if (panel.type !== 'terminal') return null
+  if (panel.type !== 'terminal' && panel.type !== 'agent') return null
   if (worktrees.length < 2 || !current) return null
 
   const isFocused = focusedWorktreeId === currentId

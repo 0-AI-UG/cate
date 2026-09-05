@@ -401,21 +401,49 @@ describe('workspace.json + session.json round-trip', () => {
     expect(restored.terminalCwds).toEqual({ 'term-1': WORKTREE_PATH })
   })
 
-  it('drops legacy worktree tags from Cate Agent panel records', () => {
+  it('round-trips Agent worktree and thread bindings through session.json', () => {
     const { snapshot } = buildSnapshot()
     snapshot.panels!['agent-1'] = panel({
       id: 'agent-1',
-      type: 'cateAgent',
-      worktreeId: 'wt-residue',
+      type: 'agent',
+      title: 'My conversation',
+      titleUserOverridden: true,
+      worktreeId: 'wt-agent',
+      agentThreadId: 'thread-1',
     })
 
     const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT))
     const sessFile = throughDisk(buildSessionFile(snapshot))
-    expect(sessFile.panels['agent-1']).toBeUndefined()
-
-    sessFile.panels['agent-1'] = { panelId: 'agent-1', worktreeId: 'wt-residue' }
+    expect(sessFile.panels['agent-1']).toMatchObject({
+      worktreeId: 'wt-agent',
+      agentThreadId: 'thread-1',
+    })
     const restored = projectFilesToSnapshot(wsFile, sessFile, ROOT)
-    expect(restored.panels!['agent-1'].worktreeId).toBeUndefined()
+    expect(restored.panels!['agent-1']).toMatchObject({
+      title: 'My conversation',
+      titleUserOverridden: true,
+      worktreeId: 'wt-agent',
+      agentThreadId: 'thread-1',
+    })
+  })
+
+  it('migrates a legacy embedded-agent panel to the T3 Agent panel', () => {
+    const { snapshot } = buildSnapshot()
+    const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+    wsFile.panels!['legacy-agent'] = { type: 'cateAgent', title: 'Agent' }
+    const sessFile = throughDisk(buildSessionFile(snapshot))
+    sessFile.panels['legacy-agent'] = {
+      panelId: 'legacy-agent',
+      worktreeId: 'wt-agent',
+    }
+
+    const restored = projectFilesToSnapshot(wsFile, sessFile, ROOT)
+
+    expect(restored.panels!['legacy-agent']).toMatchObject({
+      type: 'agent',
+      worktreeId: 'wt-agent',
+    })
+    expect(restored.panels!['legacy-agent'].agentThreadId).toBeUndefined()
   })
 
   it('a Windows-style root round-trips editor paths with native separators', () => {

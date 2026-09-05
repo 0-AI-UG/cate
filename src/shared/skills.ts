@@ -30,8 +30,6 @@ import { AGENT_INTEGRATIONS } from './agents'
  *  here is widening this persisted union. */
 export type SkillTargetId =
   | 'claude-code'
-  | 'cate-agent'
-  | 'pi-native'
   | 'opencode'
   | 'codex'
   | 'cursor'

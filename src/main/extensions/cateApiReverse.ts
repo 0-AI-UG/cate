@@ -16,7 +16,6 @@
 
 import http from 'http'
 import { Duplex } from 'stream'
-import type { WebContents } from 'electron'
 import log from '../logger'
 import type { Runtime } from '../runtime/types'
 import { getWindowPanels } from '../windowPanels'
@@ -37,20 +36,13 @@ export interface ReverseSession {
   workspaceId: string
   token: string
   runtime: Runtime
-  /** First-party (terminal/agent) callers skip the extension-enabled gate and
+  /** First-party terminal callers skip the extension-enabled gate and
    *  browser consent prompt. Absent for extension-server sessions (the default).
    *  `extensionId` may be a sentinel string for first-party sessions. */
-  caller?: 'first-party' | 'cate-agent'
-  /** Owning Cate Agent session/panel for native worktree affinity. */
-  panelId?: string
-  /** Runtime-absolute cwd of the embedded supervisor session. */
-  originCwd?: string
+  caller?: 'first-party'
   /** Scopes granted to a first-party caller (used instead of a manifest's
    *  `cateApi`). Absent for extension-server sessions. */
   grantedScopes?: string[]
-  /** Exact renderer hosting the embedded Cate Agent. Server extensions do not
-   * have one and retain the active-window fallback. */
-  ownerWebContents?: WebContents
 }
 
 export interface CateApiReverseEndpoint {
@@ -144,21 +136,16 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
       const invokeScope = {
         extensionId: session.extensionId,
         workspaceId: session.workspaceId,
-        panelId: session.panelId ?? callerPanelId,
+        panelId: callerPanelId,
         forward: callerWebContents
           ? (payload: Parameters<InvokeScope['forward']>[0]) =>
               forwardToOwner(callerWebContents, payload)
-          : session.ownerWebContents && !session.ownerWebContents.isDestroyed()
-          ? (payload: Parameters<InvokeScope['forward']>[0]) =>
-              forwardToOwner(session.ownerWebContents!, payload)
           : forwardToActiveWindow,
         caller: session.caller,
         grantedScopes: session.grantedScopes,
-        originCwd: session.originCwd ?? (
-          session.caller === 'first-party' && typeof parsed.originCwd === 'string'
-            ? parsed.originCwd
-            : undefined
-        ),
+        originCwd: session.caller === 'first-party' && typeof parsed.originCwd === 'string'
+          ? parsed.originCwd
+          : undefined,
       } as const
 
       if (session.caller === 'first-party' && method.startsWith('cate.panel.target.')) {

@@ -49,7 +49,7 @@ beforeEach(() => {
     workspaces: [{
       id: WS,
       panels: {
-        agent: { id: 'agent', type: 'cateAgent', title: 'Agent' },
+        agent: { id: 'agent', type: 'agent', title: 'Agent' },
         worker: {
           id: 'worker',
           type: 'terminal',

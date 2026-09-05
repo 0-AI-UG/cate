@@ -22,8 +22,6 @@ import {
   type RenamePanelEventDetail,
 } from '../lib/focusedPanel'
 import { worktreeForPanel } from '../lib/worktreeContext'
-import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
-import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
 
 export interface DockTabActionsParams {
   stack: DockTabStackType
@@ -179,7 +177,6 @@ export function useDockTabActions(params: DockTabActionsParams) {
       const worktree = worktreeForPanel(
         activePanel,
         workspace?.worktrees ?? [],
-        activeChatWorktreeIdForPanel,
       )
 
       if (type === 'terminal') {
@@ -192,12 +189,8 @@ export function useDockTabActions(params: DockTabActionsParams) {
         if (panelId && worktree) app.setPanelWorktreeId(wsId, panelId, worktree.id)
         return panelId
       }
-      if (type === 'cateAgent') {
-        const panelId = app.createCateAgent(wsId, undefined, placement)
-        if (panelId && worktree && workspace?.rootPath) {
-          void seedAgentPanelWithWorktreeChat(wsId, workspace.rootPath, panelId, worktree.id)
-        }
-        return panelId
+      if (type === 'agent') {
+        return app.createAgent(wsId, undefined, placement, worktree?.path, worktree?.id)
       }
       if (type === 'review') {
         const repoPath = worktree?.path ?? workspace?.rootPath
@@ -296,7 +289,6 @@ export function useDockTabActions(params: DockTabActionsParams) {
           const root = worktreeForPanel(
             panel,
             ws?.worktrees ?? [],
-            activeChatWorktreeIdForPanel,
           )?.path ?? ws?.rootPath
           navigator.clipboard.writeText(
             root ? relativeDisplayPath(panel.filePath, root) : parseLocator(panel.filePath).path,

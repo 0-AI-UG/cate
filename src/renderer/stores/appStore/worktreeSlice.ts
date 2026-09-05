@@ -7,7 +7,6 @@ import { pathKey } from '../../../shared/pathUtils'
 import type { AppSet, AppGet, AppStoreActions } from './types'
 import { pickWorktreeColor, setPanelField } from './helpers'
 import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
-import { useChatsStore } from '../chatsStore'
 
 type WorktreeSliceActions = Pick<
   AppStoreActions,
@@ -76,18 +75,8 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
     },
 
     removeWorktree(wsId, worktreeId) {
-      // Panel closure is deliberately handled by the async deletion flows
-      // before they remove backing files. This synchronous metadata action must
-      // never bypass dirty-editor or running-terminal confirmation gates.
-      const ws = get().workspaces.find((w) => w.id === wsId)
-      const chats = useChatsStore.getState()
-      if (ws?.rootPath && chats.loadedRoots[ws.rootPath]) {
-        for (const chat of chats.getChats(ws.rootPath)) {
-          if (chat.worktreeId === worktreeId) {
-            chats.patchChat(ws.rootPath, chat.id, { worktreeId: undefined })
-          }
-        }
-      }
+      // Async deletion flows close panels before removing backing files.
+      // Keep this metadata action free of panel teardown.
       set((state) => ({
         workspaces: state.workspaces.map((ws) => {
           if (ws.id !== wsId) return ws
@@ -132,8 +121,8 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
 
     setPanelWorktreeId(wsId, panelId, worktreeId) {
       setPanelField(set, wsId, panelId, (panel) => (
-        panel.type === 'cateAgent'
-          ? { ...panel, worktreeId: undefined }
+        panel.type === 'agent'
+          ? { ...panel, worktreeId, cwd: undefined, agentThreadId: undefined }
           : { ...panel, worktreeId }
       ))
     },

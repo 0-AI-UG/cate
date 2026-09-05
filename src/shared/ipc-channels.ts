@@ -135,10 +135,6 @@ export const WORKSPACE_EXTERNAL_EDIT = 'project:externalEdit' // main -> rendere
 // the current in-app layout overwrites the external edit.
 export const WORKSPACE_EXTERNAL_EDIT_DISMISS = 'project:externalEditDismiss' // renderer -> main
 
-// Per-workspace Cate Agent chats (.cate/chats.json) — the agent's front door.
-export const PROJECT_CHATS_LOAD = 'project:chatsLoad' // renderer -> main
-export const PROJECT_CHATS_SAVE = 'project:chatsSave' // renderer -> main
-
 // Boot snapshot — a tiny JSON file (geometry, theme, last workspace id, native
 // tabs flag) written by the renderer whenever the relevant settings change.
 // Read synchronously at launch by the main process to construct the
@@ -292,6 +288,10 @@ export const NOTIFY_ACTION = 'notify:action' // main -> renderer (OS notificatio
 
 // Window management
 export const WINDOW_SET_TITLE = 'window:setTitle'
+
+export const KEEP_AWAKE_GET = 'keepAwake:get'
+export const KEEP_AWAKE_SET = 'keepAwake:set'
+export const KEEP_AWAKE_CHANGED = 'keepAwake:changed'
 // Custom window controls (frameless Windows/Linux chrome). Each is per-window —
 // the handler resolves the calling window from the IPC event sender.
 export const WINDOW_MINIMIZE = 'window:minimize'              // renderer -> main
@@ -357,37 +357,18 @@ export const WEBVIEW_SCREENSHOT = 'webview:screenshot'
 export const BROWSER_CONTROL = 'browser:control'   // renderer -> main (target-bound webview CDP)
 export const NATIVE_FILE_DRAG = 'native:fileDrag'
 
-// Pi agent (renderer <-> main)
-export const CODING_CREATE = 'coding:create'           // renderer -> main
-export const CODING_PROMPT = 'coding:prompt'           // renderer -> main
-export const CODING_INTERRUPT = 'coding:interrupt'     // renderer -> main
-export const CODING_DISPOSE = 'coding:dispose'         // renderer -> main
-export const CODING_SET_MODEL = 'coding:setModel'      // renderer -> main
-export const CODING_GET_COMMANDS = 'coding:getCommands' // renderer -> main (skills + prompts + extension cmds)
-export const CODING_EVENT = 'coding:event'             // main -> renderer (forwarded pi event)
-
-// Pi agent — extended RPC surface
-export const CODING_STEER = 'coding:steer'                       // renderer -> main
-export const CODING_SET_THINKING_LEVEL = 'coding:setThinkingLevel' // renderer -> main
-export const CODING_COMPACT = 'coding:compact'                   // renderer -> main
-export const CODING_SET_AUTO_COMPACTION = 'coding:setAutoCompaction'
-export const CODING_ABORT_RETRY = 'coding:abortRetry'
-export const CODING_GET_SESSION_STATS = 'coding:getSessionStats'
-export const CODING_GET_STATE = 'coding:getState'
-export const CODING_FORK = 'coding:fork'
-export const CODING_GET_FORK_MESSAGES = 'coding:getForkMessages'
-export const CODING_LIST_MODELS = 'coding:listModels'
-export const CODING_UI_RESPONSE = 'coding:uiResponse'            // renderer -> main (reply to extension_ui_request)
-
-// Disk-backed pi sessions (~/.pi/agent/sessions/<encoded-cwd>/*.jsonl)
-export const CODING_LIST_SESSIONS = 'coding:listSessions'         // renderer -> main
-export const CODING_LOAD_SESSION_MESSAGES = 'coding:loadSessionMessages' // renderer -> main
-export const CODING_DELETE_SESSION = 'coding:deleteSession'       // renderer -> main
-
-// Custom OpenAI-compatible provider (pi models.json)
-export const CODING_CUSTOM_MODELS_GET = 'coding:customModelsGet'   // renderer -> main
-export const CODING_CUSTOM_MODELS_SAVE = 'coding:customModelsSave' // renderer -> main
-export const CODING_CUSTOM_MODELS_DELETE = 'coding:customModelsDelete' // renderer -> main
+// T3 provider harness. Cate owns the workspace/worktree path and panel shell;
+// the harness owns provider conversations, streaming, and approvals.
+export const AGENT_HARNESS_GET_PANEL_URL = 'agentHarness:getPanelUrl'
+export const AGENT_HARNESS_PANEL_CLOSED = 'agentHarness:panelClosed'
+export const AGENT_HARNESS_RESTART = 'agentHarness:restart'
+export const AGENT_HARNESS_GET_STATUS = 'agentHarness:getStatus'
+export const AGENT_PROVIDER_AUTH_START = 'agentProviderAuth:start'
+export const AGENT_PROVIDER_AUTH_GET = 'agentProviderAuth:get'
+export const AGENT_PROVIDER_AUTH_WRITE = 'agentProviderAuth:write'
+export const AGENT_PROVIDER_AUTH_CANCEL = 'agentProviderAuth:cancel'
+export const AGENT_PROVIDER_STATUS_GET = 'agentProviderStatus:get'
+export const AGENT_PROVIDER_SETTINGS = 'agentProvider:settings'
 
 // Skills (cross-agent skill manager)
 export const SKILLS_GET_INDEX = 'skills:getIndex'             // renderer -> main (merged catalog)
@@ -405,17 +386,6 @@ export const SKILLS_ADD_SOURCE = 'skills:addSource'           // renderer -> mai
 export const SKILLS_REMOVE_SOURCE = 'skills:removeSource'     // renderer -> main
 export const SKILLS_GET_TOKEN = 'skills:getToken'             // renderer -> main
 export const SKILLS_SET_TOKEN = 'skills:setToken'             // renderer -> main
-
-// Pi auth / providers
-export const AUTH_LIST_PROVIDERS = 'auth:listProviders'
-export const AUTH_STATUS = 'auth:status'
-export const AUTH_VERIFY = 'auth:verify'
-export const AUTH_OAUTH_START = 'auth:oauthStart'
-export const AUTH_OAUTH_PROMPT_REPLY = 'auth:oauthPromptReply' // renderer -> main
-export const AUTH_OAUTH_EVENT = 'auth:oauthEvent'              // main -> renderer
-export const AUTH_CHANGED = 'auth:changed'                    // main -> renderer (broadcast)
-export const AUTH_SAVE_API_KEY = 'auth:saveApiKey'
-export const AUTH_DELETE = 'auth:delete'
 
 // Workspace management (main process is source of truth)
 export const WORKSPACE_CREATE = 'workspace:create'
@@ -473,3 +443,9 @@ export const CATE_HOST_EVENT = 'cate:event'          // main -> guest: { panelId
 // window and await its reply (editor.openFile, canvas.createPanel, panel.setTitle).
 export const CATE_HOST_FORWARD = 'cate:hostAction'        // main -> renderer: { requestId, workspaceId, panelId, extensionId, method, args, originCwd? }
 export const CATE_HOST_FORWARD_REPLY = 'cate:hostActionReply' // renderer -> main: { requestId, ok, result?, error? }
+
+export const AGENT_HARNESS_LIST_CONVERSATIONS = 'agentHarness:listConversations'
+
+export const AGENT_HARNESS_DELETE_CONVERSATION = 'agentHarness:deleteConversation'
+
+export const AGENT_CONVERSATION_DELETED = 'agentHarness:conversationDeleted'

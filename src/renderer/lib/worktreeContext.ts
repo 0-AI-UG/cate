@@ -41,16 +41,11 @@ export function worktreeForPath<W extends WorktreePathLike>(
 export function worktreeForPanel<W extends WorktreePathLike>(
   panel: PanelState | undefined,
   worktrees: readonly W[],
-  agentWorktreeId?: (panelId: string) => string | undefined,
 ): W | undefined {
   if (!panel) return undefined
-  if (panel.type === 'cateAgent') {
-    const id = agentWorktreeId?.(panel.id)
-    return worktrees.find((worktree) => worktree.id === id)
-  }
   const explicit = worktrees.find((worktree) => worktree.id === panel.worktreeId)
   if (explicit) return explicit
-  if (panel.type === 'terminal') return worktreeForPath(panel.cwd, worktrees)
+  if (panel.type === 'terminal' || panel.type === 'agent') return worktreeForPath(panel.cwd, worktrees)
   if (panel.type === 'editor' || panel.type === 'document') {
     return worktreeForPath(panel.filePath, worktrees)
   }

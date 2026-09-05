@@ -15,7 +15,6 @@ import type { WorktreeMeta } from '../../shared/types'
 import type { CanvasStoreState } from '../stores/canvas/storeTypes'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
-import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
 import { worktreeForPanel } from './worktreeContext'
 
 export interface InheritedWorktree {
@@ -34,7 +33,6 @@ export interface InheritedWorktree {
 export function inheritedWorktreeFromSelection(
   canvasState: Pick<CanvasStoreState, 'selection' | 'selectionActive' | 'nodes'>,
   panels: Record<string, PanelState> | undefined,
-  agentWorktreeIdForPanel: (panelId: string) => string | undefined = activeChatWorktreeIdForPanel,
   worktrees: readonly WorktreeMeta[] = [],
 ): InheritedWorktree {
   const nodeId = focusedNodeId(canvasState)
@@ -42,10 +40,7 @@ export function inheritedWorktreeFromSelection(
   const panelId = activeDockPanelId(canvasState.nodes[nodeId]?.dockLayout)
   const panel = panelId ? panels[panelId] : undefined
   if (!panel) return {}
-  if (panel.type === 'cateAgent') {
-    return { cwd: undefined, worktreeId: agentWorktreeIdForPanel(panel.id) }
-  }
-  if (panel.type === 'terminal') return { cwd: panel.cwd, worktreeId: panel.worktreeId }
-  const worktree = worktreeForPanel(panel, worktrees, agentWorktreeIdForPanel)
+  if (panel.type === 'terminal' || panel.type === 'agent') return { cwd: panel.cwd, worktreeId: panel.worktreeId }
+  const worktree = worktreeForPanel(panel, worktrees)
   return worktree ? { cwd: worktree.path, worktreeId: worktree.id } : {}
 }

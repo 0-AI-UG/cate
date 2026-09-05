@@ -5,7 +5,7 @@
 // captured in src/main/shellEnv.ts), but a remote daemon is launched over a
 // non-interactive SSH exec channel / `wsl.exe -e`, which inherits only the bare
 // system env. That env seeds every non-terminal child the daemon spawns (the
-// pi agent, extension servers, git/gh), so tools on ~/.local/bin, nvm, pyenv
+// T3 harness, extension servers, git/gh), so tools on ~/.local/bin, nvm, pyenv
 // were visible locally and missing remotely for the same setup.
 //
 // Fix: the daemon captures its own login env at startup (`$SHELL -ilc env -0`,

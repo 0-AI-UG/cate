@@ -99,6 +99,7 @@ beforeEach(() => {
         { id: 'primary', path: ROOT, color: '#112233' },
         { id: worktree.id, path: worktree.path, color: '#abcdef' },
       ],
+      additionalRoots: [worktree.path],
       panels: {},
     }],
     selectedWorkspaceId: WS,
@@ -153,6 +154,7 @@ describe('useParallelWork handleDelete', () => {
     )
     expect(window.electronAPI.gitBranchDelete).toHaveBeenCalledWith(ROOT, 'feature', true, WS)
     expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(false)
+    expect(workspace().additionalRoots).not.toContain(worktree.path)
     expect(h.refresh).toHaveBeenCalledWith(ROOT)
     expect(setBusy.mock.calls).toEqual([[worktree.id], [null]])
   })
@@ -165,6 +167,7 @@ describe('useParallelWork handleDelete', () => {
     })
 
     expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(true)
+    expect(workspace().additionalRoots).toContain(worktree.path)
     expect(window.electronAPI.gitBranchDelete).not.toHaveBeenCalled()
     expect(h.refresh).not.toHaveBeenCalled()
     expect(setError).toHaveBeenCalledWith('Discard failed: worktree locked')
@@ -179,6 +182,7 @@ describe('useParallelWork handleDelete', () => {
     })
 
     expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(false)
+    expect(workspace().additionalRoots).not.toContain(worktree.path)
     expect(setError).toHaveBeenCalledWith('Removed, but branch feature could not be deleted: branch protected')
     expect(h.refresh).toHaveBeenCalledWith(ROOT)
   })
@@ -383,5 +387,21 @@ describe('useParallelWork failure handling', () => {
     await vi.waitFor(() => {
       expect(setError).toHaveBeenCalledWith('Couldn’t reveal this worktree: folder missing')
     })
+  })
+
+  it('omits base-dependent actions when the primary branch is unresolved', async () => {
+    vi.mocked(window.electronAPI.showContextMenu).mockResolvedValueOnce(null)
+
+    await runWorktreeContextMenu({
+      isPrimary: false,
+      hasPr: false,
+      primaryLabel: '',
+      cb: actions.makeCallbacks(worktree),
+    })
+
+    const items = vi.mocked(window.electronAPI.showContextMenu).mock.calls.at(-1)?.[0] ?? []
+    expect(items.map((item) => item.id)).not.toContain('update')
+    expect(items.map((item) => item.id)).not.toContain('merge')
+    expect(items.map((item) => item.id)).toContain('delete')
   })
 })

@@ -1,5 +1,5 @@
 // =============================================================================
-// Coding agents Cate recognizes — THE canonical registry. Everything Cate knows
+// Provider identities Cate recognizes — THE canonical registry. Everything Cate knows
 // about an agent CLI is declared here (or in a table this file's AgentId keys),
 // so adding an agent is one entry plus whatever the compiler then demands.
 //
@@ -39,12 +39,8 @@ export type AgentId =
   | 'grok'
   | 'kiro'
   | 'opencode'
-  | 'pi'
 
-/** Every agent integration Cate exposes. External CLIs are AgentId; Cate's
- * embedded agent participates in shared integrations such as skills without
- * pretending to have a shell command, process, or workspace hook. */
-export type AgentIntegrationId = AgentId | 'cate-agent'
+export type AgentIntegrationId = AgentId
 
 /** Where one agent reads project skills from, and how they are written.
  *  Cate follows the open Agent Skills standard (a `SKILL.md` folder), so an
@@ -52,7 +48,7 @@ export type AgentIntegrationId = AgentId | 'cate-agent'
 export interface AgentSkillTarget {
   /** Stable id, PERSISTED in each workspace's `.cate/skills.json`. Renaming one
    *  orphans every recorded install, so these never change — which is why the
-   *  id is spelled out here instead of reusing AgentId (pi's is 'pi-native'). */
+   *  id is spelled out here instead of reusing AgentId. */
   targetId: SkillTargetId
   /** Workspace-relative segments of the skills root (e.g. ['.claude','skills']).
    *  The FIRST segment doubles as the agent's tool dir — its presence in a repo
@@ -74,8 +70,13 @@ export interface AgentSkillTarget {
   beta?: boolean
 }
 
+export type T3ProviderId = 'codex' | 'claude' | 'cursor' | 'grok' | 'opencode'
+export type T3DriverId = 'codex' | 'claudeAgent' | 'cursor' | 'grok' | 'opencode'
+
 export interface AgentDef {
   id: AgentId
+  /** Optional T3 integration of this same provider; readiness is integration-specific. */
+  t3?: { providerId: T3ProviderId; driverId: T3DriverId }
   /** Label shown in panel titles / tooltips. */
   displayName: string
   /** The CLI command that launches this agent in a terminal — usually the same
@@ -97,13 +98,7 @@ export interface AgentDef {
   skills: AgentSkillTarget | null
 }
 
-export interface EmbeddedAgentDef {
-  id: 'cate-agent'
-  displayName: string
-  skills: AgentSkillTarget
-}
-
-export type AgentIntegrationDef = AgentDef | EmbeddedAgentDef
+export type AgentIntegrationDef = AgentDef
 
 /** Shared shape of every agent's skills dir: `<base>/<name>/SKILL.md` with
  *  bundled scripts/references alongside. Only the base dir actually differs. */
@@ -123,6 +118,7 @@ const folderSkills = (
 export const AGENTS: readonly AgentDef[] = [
   {
     id: 'claude-code',
+    t3: { providerId: 'claude', driverId: 'claudeAgent' },
     displayName: 'Claude Code',
     command: 'claude',
     codingAgentArgs: (prompt) => [prompt],
@@ -134,6 +130,7 @@ export const AGENTS: readonly AgentDef[] = [
   },
   {
     id: 'codex',
+    t3: { providerId: 'codex', driverId: 'codex' },
     displayName: 'Codex',
     command: 'codex',
     codingAgentArgs: (prompt) => [prompt],
@@ -147,6 +144,7 @@ export const AGENTS: readonly AgentDef[] = [
   // the process scan basenames), so both spellings show up in the wild.
   {
     id: 'cursor',
+    t3: { providerId: 'cursor', driverId: 'cursor' },
     displayName: 'Cursor',
     command: 'cursor-agent',
     codingAgentArgs: (prompt) => [prompt],
@@ -165,6 +163,7 @@ export const AGENTS: readonly AgentDef[] = [
   // versioned spelling shows up alongside the plain one.
   {
     id: 'grok',
+    t3: { providerId: 'grok', driverId: 'grok' },
     displayName: 'Grok',
     command: 'grok',
     codingAgentArgs: (prompt) => [prompt],
@@ -181,6 +180,7 @@ export const AGENTS: readonly AgentDef[] = [
   },
   {
     id: 'opencode',
+    t3: { providerId: 'opencode', driverId: 'opencode' },
     displayName: 'OpenCode',
     command: 'opencode',
     // Seed the persistent TUI instead of using the one-shot `run` command so
@@ -190,20 +190,6 @@ export const AGENTS: readonly AgentDef[] = [
     matchProcess: (n) => n === 'opencode',
     resumeArgs: (sid) => ['--session', sid],
     skills: folderSkills('opencode', ['.opencode', 'skills']),
-  },
-  // @earendil-works/pi-coding-agent — runs as the `pi` binary.
-  {
-    id: 'pi',
-    displayName: 'PI Agent',
-    command: 'pi',
-    codingAgentArgs: (prompt) => [prompt],
-    codingAgentFollowUp: true,
-    matchProcess: (n) => n === 'pi',
-    // pi's --resume is an interactive picker; --session takes an exact id.
-    resumeArgs: (sid) => ['--session', sid],
-    // `.agents/skills` is the cross-tool shared location pi (and others) read,
-    // so pi's target id is 'pi-native' rather than the dir-derived name.
-    skills: folderSkills('pi-native', ['.agents', 'skills'], { label: 'Pi' }),
   },
   // Kiro CLI with its v3 engine. Standalone workspace hooks require that engine, so select
   // it explicitly for fresh and resumed sessions.
@@ -219,19 +205,7 @@ export const AGENTS: readonly AgentDef[] = [
   },
 ]
 
-/** Cate's embedded agent belongs to the same integration registry as external
- * agent CLIs. Consumers that need a command/process use AGENTS; consumers that
- * need shared capabilities such as skills use AGENT_INTEGRATIONS. */
-export const CATE_AGENT: EmbeddedAgentDef = {
-  id: 'cate-agent',
-  displayName: 'Cate Agent',
-  skills: folderSkills('cate-agent', ['.cate', 'cate-agent', 'skills']),
-}
-
-export const AGENT_INTEGRATIONS: readonly AgentIntegrationDef[] = [
-  ...AGENTS,
-  CATE_AGENT,
-]
+export const AGENT_INTEGRATIONS: readonly AgentIntegrationDef[] = AGENTS
 
 /** The agent whose skills target this is, or null for a non-agent target
  *  retained in persisted data from an older version. */
@@ -293,3 +267,7 @@ export function resumeCommandForAgent(agentId: string, sessionId: string): strin
   if (!def?.resumeArgs || !SAFE_SESSION_ID.test(sessionId)) return null
   return [def.command, ...def.resumeArgs(sessionId)].join(' ')
 }
+
+/** Shared identities, filtered by the execution integration required by the caller. */
+export const TERMINAL_AGENTS = AGENTS
+export const T3_AGENTS = AGENTS.filter((agent): agent is AgentDef & { t3: NonNullable<AgentDef['t3']> } => !!agent.t3)

@@ -19,7 +19,15 @@ import path from 'path'
 import type { RuntimeChannel, RuntimeTransport } from './transport'
 import { RUNTIME_VERSION } from '../../../runtime/version'
 import { LOGIN_ENV_MARKER } from '../../../runtime/loginEnv'
-import { hostRuntimeTarget, localTarballIfPresent, shippedRuntimeTarball, tarballHash, type RuntimeTarget } from '../runtimeArtifacts'
+import {
+  hostRuntimeTarget,
+  isRuntimeDevMode,
+  localRuntimeBundlePath,
+  localTarballIfPresent,
+  shippedRuntimeTarball,
+  tarballHash,
+  type RuntimeTarget,
+} from '../runtimeArtifacts'
 
 const execFileP = promisify(execFile)
 
@@ -31,8 +39,10 @@ export interface LocalSubprocessOptions {
   /** POSIX-only idle-suspend of backgrounded terminals (the user's setting);
    *  appended as `--idle-suspend` to the daemon launch args when true. */
   idleSuspend?: boolean
-  /** Direct mode: explicit node + bundle, no provisioning (tests). */
+  /** Direct mode: explicit node, no provisioning (tests). */
   nodePath?: string
+  /** Explicit daemon bundle. Local dev combines this with the provisioned Node
+   *  and install root so source changes do not require rebuilding a tarball. */
   bundlePath?: string
   /** Provisioned mode: extract this tarball into a content-keyed dir under
    *  `installRoot` (see localInstallRoot / installDir), then run its node. */
@@ -95,9 +105,13 @@ export class LocalSubprocessTransport implements RuntimeTransport {
       ? e2eTarball
       : localTarballIfPresent(RUNTIME_VERSION, target) ?? shippedRuntimeTarball()
     if (!tarballPath) return null
+    const bundlePath = process.env.CATE_E2E !== '1' && isRuntimeDevMode()
+      ? localRuntimeBundlePath() ?? undefined
+      : undefined
     return new LocalSubprocessTransport({
       ...opts,
       id: opts.id ?? 'local',
+      bundlePath,
       tarballPath,
       installRoot: localInstallRoot(),
       target,

@@ -195,6 +195,14 @@ describe('CommandPalette in the main window', () => {
     expect(window.electronAPI.focusWindowPanel).toHaveBeenCalledWith('remote-1')
   })
 
+  it('offers T3 creation and focuses a T3 panel in another window', () => {
+    useWindowPanelStore.setState({ panels: [{ ...detached, type: 'agent', title: 'T3 Conversation' }] })
+    renderPalette('main')
+    expect(host.textContent).toContain('New T3 Code conversation')
+    act(() => { rowWithText('T3 Conversation')!.click() })
+    expect(window.electronAPI.focusWindowPanel).toHaveBeenCalledWith('remote-1')
+  })
+
   it('shows sidebar-only commands', () => {
     renderPalette('main')
     expect(host.textContent).toContain('Toggle Sidebar')

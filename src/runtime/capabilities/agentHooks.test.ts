@@ -370,7 +370,7 @@ describe('agentHooks capability', () => {
     mkdirSync(path.join(cwd, '.git')) // enough of a repo for info/exclude
     // 'auto' (the default) injects only where the agent's config folder already
     // exists — seed every folder so this covers every file writer.
-    for (const id of ['claude-code', 'codex', 'cursor', 'grok', 'pi', 'opencode', 'kiro'] as const) {
+    for (const id of ['claude-code', 'codex', 'cursor', 'grok', 'opencode', 'kiro'] as const) {
       mkdirSync(path.join(cwd, agentHookFolder(id)!))
     }
 
@@ -432,11 +432,6 @@ describe('agentHooks capability', () => {
       timeout: 60,
     })
 
-    // pi's extension is auto-discovered from <cwd>/.pi/extensions — self-gated
-    // on the hook env, so it is inert outside Cate terminals.
-    const piExt = readFileSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'), 'utf-8')
-    expect(piExt).toContain('CATE_HOOK_ENDPOINT')
-
     const kiroHooks = JSON.parse(readFileSync(path.join(cwd, '.kiro', 'hooks', 'cate-hook.json'), 'utf-8')) as {
       version: string
       hooks: Array<{ trigger: string }>
@@ -449,7 +444,6 @@ describe('agentHooks capability', () => {
     expect(exclude).toContain('/.codex/hooks.json')
     expect(exclude).toContain('/.cursor/hooks.json')
     expect(exclude).toContain('/.grok/hooks/cate-hook.json')
-    expect(exclude).toContain('/.pi/extensions/cate-hook.ts')
     expect(exclude).toContain('/.kiro/hooks/cate-hook.json')
 
     // Idempotent: a second prepare does not duplicate exclude lines.
@@ -457,7 +451,6 @@ describe('agentHooks capability', () => {
     const exclude2 = readFileSync(path.join(cwd, '.git', 'info', 'exclude'), 'utf-8')
     expect(exclude2.split('\n').filter((l) => l === '/.claude/settings.local.json').length).toBe(1)
     expect(exclude2.split('\n').filter((l) => l === '/.codex/hooks.json').length).toBe(1)
-    expect(exclude2.split('\n').filter((l) => l === '/.pi/extensions/cate-hook.ts').length).toBe(1)
     expect(exclude2.split('\n').filter((l) => l === '/.kiro/hooks/cate-hook.json').length).toBe(1)
   })
 
@@ -474,7 +467,7 @@ describe('agentHooks capability', () => {
     const cap = makeCap()
     // The guard actually short-circuits prepareWorkspace: forcing every agent
     // 'on' would otherwise write into home, so a clean home subtree proves it.
-    const forceOn = { 'claude-code': 'on', codex: 'on', cursor: 'on', pi: 'on', kiro: 'on' } as const
+    const forceOn = { 'claude-code': 'on', codex: 'on', cursor: 'on', kiro: 'on' } as const
     await cap.prepareWorkspace(home, forceOn)
     await cap.prepareWorkspace('', forceOn)
     expect(existsSync(path.join(home, '.codex', 'hooks.json'))).toBe(false)
@@ -483,21 +476,6 @@ describe('agentHooks capability', () => {
     const cwd = tmpDir('ws-guard')
     await cap.prepareWorkspace(cwd, forceOn)
     expect(existsSync(path.join(cwd, '.codex', 'hooks.json'))).toBe(true)
-  })
-
-  test('prepareWorkspace leaves other files in .pi/extensions alone and reclaims a drifted cate-hook.ts', async () => {
-    const cap = makeCap()
-    const cwd = tmpDir('ws-pi')
-    // .pi already exists here, so 'auto' injects pi.
-    mkdirSync(path.join(cwd, '.pi', 'extensions'), { recursive: true })
-    writeFileSync(path.join(cwd, '.pi', 'extensions', 'user-ext.ts'), '// mine\n')
-    writeFileSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'), '// stale or edited\n')
-
-    await cap.prepareWorkspace(cwd)
-
-    expect(readFileSync(path.join(cwd, '.pi', 'extensions', 'user-ext.ts'), 'utf-8')).toBe('// mine\n')
-    // Cate owns cate-hook.ts outright — drifted content is rewritten.
-    expect(readFileSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'), 'utf-8')).toContain('CATE_HOOK_ENDPOINT')
   })
 
   test('prepareWorkspace never clobbers unparseable user hook files and skips CLIs with no folder', async () => {
@@ -517,7 +495,6 @@ describe('agentHooks capability', () => {
     expect(existsSync(path.join(cwd2, '.claude'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.codex'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.cursor'))).toBe(false)
-    expect(existsSync(path.join(cwd2, '.pi'))).toBe(false)
     expect(existsSync(path.join(cwd2, '.kiro'))).toBe(false)
   })
 
@@ -533,7 +510,6 @@ describe('agentHooks capability', () => {
     // The rest have no folder → auto skips them (no litter).
     expect(existsSync(path.join(cwd, '.claude'))).toBe(false)
     expect(existsSync(path.join(cwd, '.cursor'))).toBe(false)
-    expect(existsSync(path.join(cwd, '.pi'))).toBe(false)
     expect(existsSync(path.join(cwd, '.kiro'))).toBe(false)
   })
 
@@ -551,7 +527,6 @@ describe('agentHooks capability', () => {
     // Other agents remain gated when their folder is absent in both checkouts.
     expect(existsSync(path.join(worktreeCwd, '.codex'))).toBe(false)
     expect(existsSync(path.join(worktreeCwd, '.cursor'))).toBe(false)
-    expect(existsSync(path.join(worktreeCwd, '.pi'))).toBe(false)
     expect(existsSync(path.join(worktreeCwd, '.kiro'))).toBe(false)
   })
 
@@ -585,20 +560,6 @@ describe('agentHooks capability', () => {
     expect(JSON.stringify(settings)).not.toContain('cate-hook') // ours stripped
     expect(settings.permissions.allow).toEqual(['Bash(ls:*)']) // user field survives
     expect(JSON.stringify(settings.hooks.Stop)).toContain('user-thing') // user hook survives
-  })
-
-  test("'off' deletes pi's owned extension but leaves user extensions", async () => {
-    const cap = makeCap()
-    const cwd = tmpDir('ws-pi-off')
-    mkdirSync(path.join(cwd, '.pi', 'extensions'), { recursive: true })
-    writeFileSync(path.join(cwd, '.pi', 'extensions', 'user-ext.ts'), '// mine\n')
-
-    await cap.prepareWorkspace(cwd) // auto: .pi exists → injects pi
-    expect(existsSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'))).toBe(true)
-
-    await cap.prepareWorkspace(cwd, { pi: 'off' })
-    expect(existsSync(path.join(cwd, '.pi', 'extensions', 'cate-hook.ts'))).toBe(false)
-    expect(readFileSync(path.join(cwd, '.pi', 'extensions', 'user-ext.ts'), 'utf-8')).toBe('// mine\n')
   })
 
   test('opencode: auto gates the plugin file on .opencode, off removes it', async () => {
@@ -643,7 +604,6 @@ describe('agentHooks capability', () => {
     expect(byId.codex).toMatchObject({ folderPresent: true, injected: true })
     expect(byId['claude-code']).toMatchObject({ folderPresent: true, injected: false })
     expect(byId.cursor).toMatchObject({ folderPresent: false, injected: false })
-    expect(byId.pi).toMatchObject({ folderPresent: false, injected: false })
     // opencode injects a repo file like every other agent.
     expect(byId.opencode).toMatchObject({ folderPresent: false, injected: false })
     expect(byId.kiro).toMatchObject({ folderPresent: false, injected: false })
@@ -663,11 +623,11 @@ describe('agentHooks capability', () => {
     const { url, tokenFor, dir } = await cap.endpoint()
     const events: AgentHookEvent[] = []
     const unsub = cap.subscribe((e) => events.push(e))
-    const payload = { event: 'agent_end', sessionId: 's-1', sessionFile: '/f', cwd: '/w' }
-    await post(url, tokenFor('t'), { agentId: 'pi', terminalId: 't', payload })
+    const payload = { hook_event_name: 'Stop', session_id: 's-1', transcript_path: '/f', cwd: '/w' }
+    await post(url, tokenFor('t'), { agentId: 'codex', terminalId: 't', payload })
     await waitFor(() => events.length === 1)
     unsub()
-    await post(url, tokenFor('t'), { agentId: 'pi', terminalId: 't', payload })
+    await post(url, tokenFor('t'), { agentId: 'codex', terminalId: 't', payload })
     await new Promise((r) => setTimeout(r, 100))
     expect(events.length).toBe(1)
 

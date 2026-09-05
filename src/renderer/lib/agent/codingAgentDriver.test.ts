@@ -461,7 +461,7 @@ describe('codingAgentDriver mission integration', () => {
     expect(state.app.createTerminal).not.toHaveBeenCalled()
   })
 
-  it('isolates run lookup to the Cate Agent session that created it', async () => {
+  it('isolates run lookup to the Agent session that created it', async () => {
     await handleCodingAgentMethod(
       'ws',
       'supervisor-1',

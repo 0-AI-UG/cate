@@ -16,14 +16,6 @@ export interface CateHostTheme {
   terminal: Record<string, string>
 }
 
-/** Result of one agent turn (`cate.agent.send`): the flattened
- *  `text` for convenience plus the raw final assistant `message` from pi (its role
- *  and content blocks — text, tool calls, etc.), or null if the turn produced none. */
-export interface CodingTurnResult {
-  text: string
-  message: Record<string, unknown> | null
-}
-
 /** Workspace context handed to a guest by `cate.workspace.get()`. */
 export interface CateHostWorkspace {
   rootPath: string | null
@@ -155,22 +147,6 @@ export interface CateHost {
   files: {
     /** Subscribe to drops on this panel. Returns an unsubscribe function. */
     onDrop(cb: (files: CateDroppedFile[]) => void): () => void
-  }
-  /** Drive Cate's bundled agent (requires the `agent` scope + first-use user
-   *  consent). pi owns all conversation state on its session file; the handle
-   *  returned by `open` is that file's path, so a conversation can be resumed
-   *  later with nothing persisted on Cate's side. Turn-based: each `send`
-   *  resolves on the agent's terminal `agent_end` (a turn can take minutes). One
-   *  live session per extension; one turn in flight per session. */
-  agent: {
-    /** Open (or `resume` a previous) session; returns its handle. */
-    open(opts?: { resume?: string }): Promise<{ sessionId: string } | { error: string }>
-    /** Run one turn on an open session; returns the final assistant message. */
-    send(sessionId: string, prompt: string): Promise<CodingTurnResult | { error: string }>
-    /** Tear down the live session (pi's jsonl stays; reopen via `resume`). */
-    dispose(sessionId: string): Promise<unknown>
-    /** Abort the in-flight turn of this extension's session. */
-    cancel(): Promise<unknown>
   }
   /** Drive Cate's browser panels (requires the `browser` scope). These panels
    *  hold the user's real, logged-in browser session — cookies, auth, and all —

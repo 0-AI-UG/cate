@@ -191,7 +191,7 @@ export function useNodeIds(store: StoreApi<CanvasStore>): string[] {
  * and keep-mounted nodes are always included so they keep their live state.
  * `keepMountedPanelIds` is the set of panel ids that must stay mounted
  * off-screen — webview-backed extensions (see keepsMountedOffscreen) and
- * terminals the Cate Agent is driving (their pty boots on mount and the agent
+ * terminals an Agent is driving (their pty boots on mount and the agent
  * reads their rendered screen). A node is exempt from the cull when it hosts any
  * of them. Omitting it skips that exemption entirely (pure geometric cull) — the
  * hook below requires it so a real caller can never accidentally re-enable

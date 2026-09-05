@@ -87,7 +87,7 @@ describe('moveSidebarView', () => {
   })
 
   it('moves a view across rails, persists the layout, and focuses it on the target side', () => {
-    const setSetting = seedLayout({ left: ['workspaces', 'explorer', 'search'], right: ['git', 'cateAgent'] })
+    const setSetting = seedLayout({ left: ['workspaces', 'explorer', 'search'], right: ['git'] })
     useUIStore.setState({ activeLeftSidebarView: 'explorer', activeRightSidebarView: null })
 
     useUIStore.getState().moveSidebarView('explorer', 'right', 0)
@@ -96,14 +96,14 @@ describe('moveSidebarView', () => {
     const [key, value] = setSetting.mock.calls[0]
     expect(key).toBe('sidebarLayout')
     expect((value as SidebarLayout).left).toEqual(['workspaces', 'search'])
-    expect((value as SidebarLayout).right).toEqual(['explorer', 'git', 'cateAgent'])
+    expect((value as SidebarLayout).right).toEqual(['explorer', 'git'])
     // Was active on the source (left) → cleared there, focused on the target.
     expect(useUIStore.getState().activeLeftSidebarView).toBeNull()
     expect(useUIStore.getState().activeRightSidebarView).toBe('explorer')
   })
 
   it('reorders within a rail, adjusting the index for the removed source', () => {
-    seedLayout({ left: ['workspaces', 'explorer', 'search'], right: ['git', 'cateAgent'] })
+    seedLayout({ left: ['workspaces', 'explorer', 'search'], right: ['git'] })
 
     // Move the first icon to the end: source 0 < target 3 → insertAt 2.
     useUIStore.getState().moveSidebarView('workspaces', 'left', 3)
@@ -139,17 +139,15 @@ describe('left sidebar visibility', () => {
   })
 })
 
-describe('normalizeSidebarLayout — cateAgent view', () => {
-  it('appends cateAgent to the right sidebar when a stored layout omits it', () => {
+describe('normalizeSidebarLayout - retired T3 sidebar', () => {
+  it('does not add a T3 sidebar to existing layouts', () => {
     const layout = normalizeSidebarLayout({ left: ['explorer'], right: ['git'] })
-    expect([...layout.left, ...layout.right]).toContain('cateAgent')
-    // Missing views land on the right.
-    expect(layout.right).toContain('cateAgent')
+    expect([...layout.left, ...layout.right]).not.toContain('agent')
   })
 
-  it('preserves an explicit placement of cateAgent on the left', () => {
-    const layout = normalizeSidebarLayout({ left: ['cateAgent', 'explorer'], right: [] })
-    expect(layout.left).toContain('cateAgent')
-    expect(layout.right).not.toContain('cateAgent')
+  it('removes saved T3 entries from either rail', () => {
+    const layout = normalizeSidebarLayout({ left: ['agent', 'explorer'], right: ['agent', 'git'] } as unknown as SidebarLayout)
+    expect(layout.left).toEqual(['explorer'])
+    expect(layout.right).not.toContain('agent')
   })
 })

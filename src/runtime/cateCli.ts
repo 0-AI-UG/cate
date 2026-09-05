@@ -1,7 +1,7 @@
 // =============================================================================
 // cateCli (path helper) — resolves where the bundled `cate` CLI lives on the
 // runtime host. The CLI ships INSIDE the runtime tarball (cate/ next to runtime/
-// and pi/), so it is present the moment the daemon is provisioned. The
+// and t3/), so it is present the moment the daemon is provisioned. The
 // env-injection layer prepends cateBinDir() to a terminal/agent shell's PATH so
 // `cate` is callable there.
 // =============================================================================

@@ -89,7 +89,7 @@ export function CliSettings() {
         />
       </SettingRow>
 
-      <SearchableBlock keywords="cli permissions browser terminal panels editor notifications agents orchestration workers read control screenshot snapshot click type keystrokes create focus close notify apply keep discard">
+      <SearchableBlock keywords="cli permissions browser terminal panels editor notifications agents reviews review inspect note add resolve complete orchestration workers read control screenshot snapshot click type keystrokes create focus close notify apply keep discard">
         <div className={`py-3 border-b border-subtle ${off ? 'opacity-50' : ''}`}>
           <div className="mb-2">
             <span className="text-sm text-primary">Permissions</span>

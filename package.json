@@ -18,11 +18,11 @@
   },
   "main": "dist/main/index.js",
   "engines": {
-    "node": ">=20 <23"
+    "node": ">=22.16 <23"
   },
   "scripts": {
-    "postinstall": "bash scripts/patch-electron-name.sh",
-    "predev": "bash scripts/patch-electron-name.sh",
+    "postinstall": "node scripts/patch-t3.mjs && bash scripts/patch-electron-name.sh",
+    "predev": "node scripts/patch-t3.mjs && npm run build:runtime && bash scripts/patch-electron-name.sh",
     "setup": "bun install && bun run runtime:tarball",
     "dev": "electron-vite dev",
     "dev:dialog": "DEV_FORCE_DIALOG=1 electron-vite dev",
@@ -33,7 +33,7 @@
     "dev:update:patch": "CATE_SIMULATE_UPDATE=patch electron-vite dev",
     "sentry:test": "node scripts/sentry-test.mjs",
     "build": "electron-vite build",
-    "build:runtime": "node src/runtime/build/esbuild.config.mjs",
+    "build:runtime": "node scripts/build-runtime.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
@@ -41,6 +41,7 @@
     "test:runtime:linux-glibc": "node scripts/test-linux-node-pty-baseline.mjs",
     "test:agent-contracts": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts agentHookContracts",
     "test:e2e": "playwright test",
+    "test:e2e:agent": "playwright test e2e/t3-agent.spec.ts",
     "test:e2e:ci": "E2E_SKIP_PERF=1 playwright test",
     "test:e2e:browser": "playwright test e2e/browser-real-flows.spec.ts e2e/browser-advanced-workflows.spec.ts e2e/browser-session-persistence.spec.ts e2e/browser-background-automation.spec.ts",
     "test:e2e:browser:soak": "playwright test e2e/browser-real-flows.spec.ts e2e/browser-advanced-workflows.spec.ts --repeat-each=10",
@@ -48,7 +49,6 @@
     "test:smoke:electron": "node scripts/run-electron-smoke.mjs",
     "icons": "node scripts/generate-icons.js",
     "runtime:tarball": "node scripts/build-runtime-tarball.mjs",
-    "pi:tarball": "node scripts/build-pi-tarball.mjs",
     "package": "node scripts/package.mjs",
     "package:mac": "node scripts/package.mjs --mac",
     "package:win": "node scripts/package.mjs --win",
@@ -75,8 +75,6 @@
     "node-gyp": "^12.4.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.80.6",
-    "@earendil-works/pi-ai": "0.80.6",
     "@parcel/watcher": "^2.5.1",
     "@phosphor-icons/react": "^2.1.10",
     "@sentry/electron": "^7.15.0",
@@ -97,11 +95,12 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "simple-git": "^3.27.0",
+    "t3": "0.0.38",
     "use-sync-external-store": "^1.6.0",
+    "ws": "^8.21.3",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.4",
     "@electron/rebuild": "^4.0.3",
     "@eslint/js": "^9.39.0",
     "@playwright/test": "^1.60.0",

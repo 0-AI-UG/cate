@@ -67,15 +67,6 @@
 //             NO permission hook event exists: beforeShellExecution fires
 //             before EVERY shell command (auto-approved alike, before the
 //             command runs), so it cannot mark "blocked on approval".
-//   pi      · in-process extension auto-discovered from <cwd>/.pi/extensions/
-//             *.ts (project scope — launch-method independent, unlike the -e
-//             argv channel this replaced; moved 2026-07-19).
-//             ctx.sessionManager gives sessionId + sessionFile on every
-//             event; agent_start/agent_end bracket each turn; --session
-//             resumes an exact id. The test launches pi by ABSOLUTE PATH to
-//             pin launch-method independence and registers a fake offline
-//             provider via -e, so pi runs cost nothing and need no
-//             credentials.
 //   opencode· in-process plugin injected as <project>/.opencode/plugin/*.js
 //             (no shared vendor config file); bus events carry sessionID;
 //             session.status
@@ -97,7 +88,7 @@
 // mapping their ordinary pre-tool event would create false notifications.
 //
 // Opt-in only: drives the real, locally-installed CLIs with the user's
-// accounts (a few tiny prompts — cents; pi is offline/free). *.itest.ts is
+// accounts (a few tiny prompts that may incur provider cost). *.itest.ts is
 // excluded from the normal vitest include.
 //
 // Run:  CATE_LIVE_AGENT_CLIS=1 npx vitest run --config vitest.live.config.ts \
@@ -149,7 +140,7 @@ function normalizedKinds(agentId: AgentId, events: BridgeEvent[]): AgentHookEven
     .filter((k): k is AgentHookEventKind => k !== undefined)
 }
 
-/** Headless CLI run with stdin CLOSED — several CLIs (codex exec, pi -p,
+/** Headless CLI run with stdin CLOSED. Several CLIs (codex exec,
  *  opencode run) block reading a never-ending stdin pipe otherwise. PWD is
  *  pinned to the cwd because execFile does not update it and opencode derives
  *  the session's directory from $PWD, not getcwd (a real shell always keeps
@@ -341,7 +332,7 @@ interface Tui {
 interface TuiOpts {
   /** Dismiss "Update available" banners by pressing Esc on every poll tick
    *  (default). Turn this OFF for a test that drives a RUNNING TURN in a CLI
-   *  where Esc is the interrupt key AND the banner never goes away: pi paints
+   *  where Esc is the interrupt key AND the banner never goes away: some CLIs paint
    *  its update banner permanently, so the blind Esc lands on the turn instead
    *  and aborts it ~150ms in (observed: the provider's abort signal tripped at
    *  delta #1, and the test looked like "the CLI never streams"). */
@@ -1363,268 +1354,6 @@ describe.skipIf(!LIVE || !hasBin('cursor-agent'))('cursor hook contract', () => 
     expect(ghostEnd?.session_id, 'unknown id is adopted as a fresh chat').toBe(ghost)
     expect(ghostEvents.some((e) => e.payload.hook_event_name === 'sessionStart'), 'no sessionStart on --resume').toBe(false)
     registerTranscriptCleanup(ghostEnd?.transcript_path as string)
-  })
-})
-
-// =============================================================================
-// pi — in-process extension discovered from <cwd>/.pi/extensions (offline:
-// fake provider via -e, zero cost). pi is launched by ABSOLUTE PATH on
-// purpose: the file channel must fire regardless of how the binary was found
-// (alias, rc-file PATH prepend, absolute invocation).
-// =============================================================================
-
-describe.skipIf(!LIVE || !hasBin('pi'))('pi hook contract', () => {
-  interface PiEvent {
-    event: string
-    sessionId?: string
-    sessionFile?: string
-    cateTerminalId: string | null
-  }
-
-  // The bridge subscribes to the session + turn lifecycle and stamps every
-  // line with the session identity from ctx.sessionManager — the exact API
-  // Cate's bridge extension would use.
-  const BRIDGE_TS = `
-import * as fs from "node:fs";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-
-const OUT = process.env.CATE_EVENTS_FILE as string;
-
-export default function (pi: ExtensionAPI) {
-  for (const name of [
-    "session_start", "session_shutdown",
-    "agent_start", "agent_end", "turn_start", "turn_end",
-  ] as const) {
-    pi.on(name as any, async (event: unknown, ctx: any) => {
-      let sessionId: string | undefined;
-      let sessionFile: string | undefined;
-      try {
-        sessionId = ctx?.sessionManager?.getSessionId?.();
-        sessionFile = ctx?.sessionManager?.getSessionFile?.();
-      } catch {}
-      fs.appendFileSync(OUT, JSON.stringify({
-        event: name, sessionId, sessionFile,
-        cateTerminalId: process.env.CATE_TERMINAL_ID ?? null,
-        payload: event,
-      }, (_k, v) => (typeof v === "bigint" ? String(v) : v)) + "\\n");
-      return undefined;
-    });
-  }
-}
-`
-
-  // Offline provider: the whole pi pipeline runs for real (session store,
-  // events, resume) with no network and no credentials.
-  const FAKE_PROVIDER_TS = `
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type AssistantMessage, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-
-export default function (pi: ExtensionAPI) {
-  pi.registerProvider("fake", {
-    name: "Fake Offline Provider",
-    baseUrl: "http://localhost:0",
-    apiKey: "FAKE_KEY_UNUSED",
-    api: "openai-completions",
-    streamSimple: (model: any) => {
-      const stream = createAssistantMessageEventStream();
-      (async () => {
-        const output: AssistantMessage = {
-          role: "assistant", content: [], api: model.api, provider: model.provider,
-          model: model.id,
-          usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-          stopReason: "stop", timestamp: Date.now(),
-        } as AssistantMessage;
-        stream.push({ type: "start", partial: output });
-        (output.content as any).push({ type: "text", text: "" });
-        stream.push({ type: "text_start", contentIndex: 0, partial: output });
-        (output.content as any)[0].text = "ok";
-        stream.push({ type: "text_delta", contentIndex: 0, delta: "ok", partial: output });
-        stream.push({ type: "text_end", contentIndex: 0, content: "ok", partial: output });
-        stream.push({ type: "done", reason: "stop", message: output });
-        stream.end();
-      })();
-      return stream;
-    },
-    models: [{ id: "fake-1", name: "Fake One", reasoning: false, input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128000, maxTokens: 4096 }],
-  });
-}
-`
-
-  test('print: workspace-file bridge streams identity + turns; --session resumes', { timeout: 300_000 }, async () => {
-    const cwd = makeCwd('pi')
-    // The bridge rides the SHIPPED channel: a project-local extension at
-    // <cwd>/.pi/extensions/cate-hook.ts, discovered by pi itself — no argv.
-    const bridge = join(cwd, '.pi', 'extensions', 'cate-hook.ts')
-    mkdirSync(dirname(bridge), { recursive: true })
-    writeFileSync(bridge, BRIDGE_TS)
-    const fake = join(cwd, 'fake-provider.ts')
-    writeFileSync(fake, FAKE_PROVIDER_TS)
-    const tid = `cate-term-pi-${Date.now()}`
-    // Absolute path — the extension must load regardless of launch method.
-    const piBin = execFileSync('which', ['pi']).toString().trim()
-    const piArgs = ['-p', '-e', fake, '--provider', 'fake', '--model', 'fake-1']
-
-    const eventsFile = join(cwd, 'events.jsonl')
-    await run(piBin, [...piArgs, PROMPT], {
-      cwd,
-      env: cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
-      timeout: 120_000,
-    })
-    const events = readJsonl<PiEvent>(eventsFile)
-    const id = events[0]?.sessionId as string
-    expect(id).toMatch(UUID_RE)
-    // Full lifecycle, every event stamped with the same session identity.
-    for (const name of ['session_start', 'agent_start', 'turn_end', 'agent_end', 'session_shutdown']) {
-      const hit = events.find((e) => e.event === name)
-      expect(hit, `${name} fired`).toBeTruthy()
-      expect(hit?.sessionId, `${name} carries the session id`).toBe(id)
-    }
-    const statusEvents: BridgeEvent[] = events.map((event) => ({
-      terminalId: event.cateTerminalId,
-      payload: event as unknown as Record<string, unknown>,
-    }))
-    expect(
-      replayAgentState('pi', tid, throughFirst(statusEvents, (event) => event.payload.event === 'agent_start')),
-      'the workspace overview is running after Pi starts the turn',
-    ).toBe('running')
-    expect(replayAgentState('pi', tid, statusEvents), 'the workspace overview awaits after Pi ends the turn')
-      .toBe('waitingForInput')
-    const sessionFile = events[0].sessionFile as string
-    expect(sessionFile).toContain(id)
-    cleanups.push(() => rmSync(dirname(sessionFile), { recursive: true, force: true }))
-
-    // The event's sessionFile is a real on-disk session store file.
-    expect(existsSync(sessionFile)).toBe(true)
-    expectEcho(events, tid)
-
-    // Resume via the shipped restore argv (--session <id>): same id, same file.
-    const eventsFile2 = join(cwd, 'events-resume.jsonl')
-    await run(piBin, [...piArgs, '--session', id, PROMPT2], {
-      cwd,
-      env: cleanEnv({ CATE_EVENTS_FILE: eventsFile2, CATE_TERMINAL_ID: tid }),
-      timeout: 120_000,
-    })
-    const resumeEvents = readJsonl<PiEvent>(eventsFile2)
-    const end = resumeEvents.find((e) => e.event === 'agent_end')
-    expect(end, 'agent_end fired on the resumed run').toBeTruthy()
-    expect(end?.sessionId, 'resume re-attaches to the SAME session').toBe(id)
-    expect(end?.sessionFile).toBe(sessionFile)
-    expectEcho(resumeEvents, tid)
-  })
-
-  // The interrupt contract (see the claude suite for the failure it guards).
-  // pi covers itself: Esc aborts the provider stream, and the moment that
-  // stream terminates pi emits turn_end + agent_end (~130ms), which normalize()
-  // maps to turn-end. No compensating signal needed.
-  //
-  // The instant fake provider above is useless here — a turn that is already
-  // over cannot be interrupted — so this test brings a SLOW one that emits a
-  // delta every 150ms and honours options.signal, which is exactly how a real
-  // streaming provider behaves on abort.
-  const SLOW_PROVIDER_TS = `
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type AssistantMessage, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-export default function (pi: ExtensionAPI) {
-  pi.registerProvider("fake", {
-    name: "Fake Slow Offline Provider",
-    baseUrl: "http://localhost:0",
-    apiKey: "FAKE_KEY_UNUSED",
-    api: "openai-completions",
-    streamSimple: (model: any, _ctx: any, options: any) => {
-      const stream = createAssistantMessageEventStream();
-      const signal = options?.signal;
-      const log = (o: any) => { try { require("node:fs").appendFileSync(process.env.CATE_PROVIDER_LOG, JSON.stringify(o) + "\\n") } catch {} };
-      log({ ev: "streamSimple", hasSignal: !!signal });
-      (async () => {
-        const output: AssistantMessage = {
-          role: "assistant", content: [], api: model.api, provider: model.provider,
-          model: model.id,
-          usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-          stopReason: "stop", timestamp: Date.now(),
-        } as AssistantMessage;
-        stream.push({ type: "start", partial: output });
-        (output.content as any).push({ type: "text", text: "" });
-        stream.push({ type: "text_start", contentIndex: 0, partial: output });
-        let text = "";
-        // 400 deltas x 150ms = a full minute of streaming to interrupt into.
-        for (let i = 1; i <= 400; i++) {
-          if (signal?.aborted) { log({ ev: "abort", i }); break; } // the abort path under test
-          await sleep(150);
-          if (signal?.aborted) { log({ ev: "abort_post_sleep", i }); break; }
-          const delta = "DELTA-" + i + " ";
-          text += delta;
-          (output.content as any)[0].text = text;
-          stream.push({ type: "text_delta", contentIndex: 0, delta, partial: output });
-        }
-        log({ ev: "loop_done", aborted: !!signal?.aborted });
-        stream.push({ type: "text_end", contentIndex: 0, content: text, partial: output });
-        stream.push({ type: "done", reason: "stop", message: output });
-        stream.end();
-      })();
-      return stream;
-    },
-    models: [{ id: "fake-1", name: "Fake One", reasoning: false, input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128000, maxTokens: 4096 }],
-  });
-}
-`
-
-  test('TUI: a user interrupt pushes agent_end → turn-end', { retry: 1, timeout: 300_000 }, async () => {
-    const cwd = makeCwd('pi-interrupt')
-    const bridge = join(cwd, '.pi', 'extensions', 'cate-hook.ts')
-    mkdirSync(dirname(bridge), { recursive: true })
-    writeFileSync(bridge, BRIDGE_TS)
-    const slow = join(cwd, 'slow-provider.ts')
-    writeFileSync(slow, SLOW_PROVIDER_TS)
-    const tid = `cate-term-pi-int-${Date.now()}`
-    const eventsFile = join(cwd, 'events.jsonl')
-    const providerLog = join(cwd, 'provider.jsonl')
-    const events = (): PiEvent[] => readJsonl<PiEvent>(eventsFile)
-
-    const tui = await driveTui(
-      execFileSync('which', ['pi']).toString().trim(),
-      ['-e', slow, '--provider', 'fake', '--model', 'fake-1'],
-      cwd,
-      cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid, CATE_PROVIDER_LOG: providerLog }),
-      // Esc is pi's interrupt key and its update banner is permanent — the
-      // driver's banner dismissal would abort the very turn under test.
-      { dismissUpdateBanner: false },
-    )
-    await tui.waitFor(() => events().some((e) => e.event === 'session_start'), 60_000, 'session_start')
-    const id = events()[0].sessionId as string
-    cleanups.push(() => rmSync(dirname(events()[0].sessionFile as string), { recursive: true, force: true }))
-
-    await tui.send('stream please')
-    await tui.waitFor(() => events().some((e) => e.event === 'agent_start'), 60_000, 'agent_start')
-    // Deltas visibly on screen = the turn is in flight right now.
-    try {
-      await tui.waitFor(() => /DELTA-\d+/.test(stripAnsi(tui.peek())), 60_000, 'streaming deltas')
-    } catch (e) {
-      let providerTrace = 'NONE — pi never called the provider'
-      try { providerTrace = readFileSync(providerLog, 'utf8') } catch { /* never written */ }
-      throw new Error(`${(e as Error).message}\nPROVIDER LOG:\n${providerTrace}`)
-    }
-    expect(events().some((e) => e.event === 'agent_end'), 'turn still running').toBe(false)
-
-    tui.press('\x1b') // pi's own footer: "escape interrupt" (ctrl+c is clear/exit)
-    await tui.waitFor(() => events().some((e) => e.event === 'agent_end'), 30_000, 'agent_end after interrupt')
-
-    const ended = events().filter((e) => e.event === 'agent_end' || e.event === 'turn_end')
-    for (const e of ended) expect(e.sessionId, 'the turn end identifies the session').toBe(id)
-    // What the FSM actually receives (pi's normalizer keys on `event`).
-    const asBridge = ended.map((e) => ({ terminalId: tid, payload: e as unknown as Record<string, unknown> }))
-    expect(normalizedKinds('pi', asBridge)).toContain('turn-end')
-    expect(AGENT_HOOK_SPECS.pi.reportsTurnEndOnInterrupt, 'declared self-heal matches reality').toBe(true)
-    expectEcho(events(), tid)
-    tui.kill()
   })
 })
 

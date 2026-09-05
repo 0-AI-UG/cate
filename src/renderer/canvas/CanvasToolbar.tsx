@@ -1,3 +1,4 @@
+import { T3ConversationMenu } from './T3ConversationMenu'
 // =============================================================================
 // CanvasToolbar — floating bottom-center toolbar for panel creation and zoom.
 // Ported from CanvasToolbar.swift.
@@ -16,7 +17,6 @@ import {
   Hand,
   X,
 } from '@phosphor-icons/react'
-import { CateLogo } from '../ui/CateLogo'
 import Minimap from './Minimap'
 import WorktreeToolbarMenu from './WorktreeToolbarMenu'
 import ExtensionToolbarMenu from './ExtensionToolbarMenu'
@@ -30,6 +30,7 @@ import { useAppStore } from '../stores/appStore'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { Tooltip } from '../ui/Tooltip'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
+import { KeepAwakeButton } from './KeepAwakeButton'
 
 interface CanvasToolbarProps {
   canvasPanelId: string
@@ -38,7 +39,6 @@ interface CanvasToolbarProps {
   onNewTerminal: () => void
   onNewBrowser: () => void
   onNewEditor: () => void
-  onNewAgent: () => void
 }
 
 function canvasContainerForPanel(panelId: string): HTMLElement | null {
@@ -103,7 +103,7 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
       // inherit the selected terminal/agent's worktree like the click path does.
       if (wsId) {
         const workspace = app.getWorkspace(wsId)
-        const wt = inheritedWorktreeFromSelection(canvasApi.getState(), workspace?.panels, undefined, workspace?.worktrees)
+        const wt = inheritedWorktreeFromSelection(canvasApi.getState(), workspace?.panels, workspace?.worktrees)
         const newId = app.createTerminal(wsId, undefined, pos, { target: 'canvas', canvasPanelId }, wt.cwd)
         if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
       }
@@ -164,7 +164,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   onNewTerminal,
   onNewBrowser,
   onNewEditor,
-  onNewAgent,
 }) => {
   const canvasApi = useCanvasStoreApi()
   const zoom = useCanvasStoreContext((s) => s.zoomLevel)
@@ -211,7 +210,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   // the pointer can travel to the portaled popover without collapsing the card.
   const [hovered, setHovered] = useState(false)
   const [pinned, setPinned] = useState(false)
-  const [openMenu, setOpenMenu] = useState<'worktree' | 'extension' | null>(null)
+  const [openMenu, setOpenMenu] = useState<'worktree' | 'extension' | 't3' | null>(null)
   const expanded = hovered || pinned || openMenu !== null
   const ToolIcon = activeTool === 'hand' ? Hand : Cursor
 
@@ -223,6 +222,8 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const divider = <div className={isHorizontal ? 'w-px h-5 bg-surface-5 mx-1' : 'h-px w-6 bg-surface-5 my-1'} />
   const items = (
     <>
+      <KeepAwakeButton tooltipPlacement={place} />
+      {divider}
       <CanvasToolbarButton
         onClick={() => setActiveTool('select')}
         label={`Select tool (Space, or ${toggleToolKey} inside a panel)`}
@@ -255,9 +256,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       <CanvasToolbarButton onClick={onNewEditor} label={`Editor (${newEditorKey})`} size="panel" tooltipPlacement={place}>
         <FileText size={18} />
       </CanvasToolbarButton>
-      <CanvasToolbarButton onClick={onNewAgent} label="Cate Agent" size="panel" tooltipPlacement={place}>
-        <CateLogo size={18} />
-      </CanvasToolbarButton>
+      <T3ConversationMenu canvasPanelId={canvasPanelId} workspaceId={workspaceId} rootPath={rootPath} tooltipPlacement={place} menuSide={menuSide} onOpenChange={(open) => setOpenMenu(open ? 't3' : null)} />
       <ExtensionToolbarMenu
         canvasPanelId={canvasPanelId}
         workspaceId={workspaceId}
@@ -269,7 +268,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   )
 
   // Minimap pill docking corner + drag-to-dock handling. The corner is driven
-  // straight from the UI-state store so an external shove (the Cate Agent landing on
+  // straight from the UI-state store so an external shove (an Agent landing on
   // this corner) moves the pill immediately. The toggle button doubles as a
   // drag handle: a click toggles the map, a drag past a small threshold re-docks
   // the pill to whichever corner the cursor ends up in.
@@ -286,7 +285,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
     const startY = e.clientY
     minimapDidDragRef.current = false
     // Resolve corners against this canvas's own area so the quadrant split lines
-    // up with where the pill (and the Cate Agent) actually render.
+    // up with where the pill (and the T3 Code) actually render.
     const area = canvasContainerForPanel(canvasPanelId)
     const rect = area?.getBoundingClientRect() ??
       { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }

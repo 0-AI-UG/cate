@@ -7,7 +7,7 @@
 export const GH_OWNER = '0-AI-UG'
 export const GH_REPO = 'cate'
 
-/** Release tag that hosts the runtime + pi tarballs for an app version. */
+/** Release tag that hosts the runtime tarballs for an app version. */
 export function releaseTag(appVersion: string): string {
   return `v${appVersion}`
 }

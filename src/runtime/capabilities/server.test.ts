@@ -9,6 +9,8 @@
 import { describe, it, expect } from 'vitest'
 import { createServerCapability } from './server'
 import { createTunnelCapability } from './tunnel'
+import { RUNTIME_NODE_EXECUTABLE } from '../../main/runtime/types'
+import { catePathEnv } from '../cateCli'
 
 const HTTP_SERVER_SRC =
   "const http=require('http');http.createServer((q,s)=>s.end('hello-ext')).listen(process.env.PORT,'127.0.0.1')"
@@ -82,5 +84,56 @@ describe('server + tunnel capabilities (e2e)', () => {
         () => {},
       ),
     ).rejects.toThrow(/timed out/)
+  }, 15000)
+
+  it('resolves the bundled-node sentinel and delivers a bootstrap envelope over stdin', async () => {
+    const server = createServerCapability()
+    const source = [
+      "let input=''",
+      "process.stdin.setEncoding('utf8')",
+      "process.stdin.on('data',chunk=>input+=chunk)",
+      "process.stdin.on('end',()=>require('http').createServer((q,s)=>s.end(JSON.parse(input).token)).listen(process.env.PORT,'127.0.0.1'))",
+    ].join(';')
+    const handle = await server.start(
+      {
+        id: 'bootstrap',
+        command: [RUNTIME_NODE_EXECUTABLE, '-e', source],
+        cwd: process.cwd(),
+        env: {},
+        portEnv: 'PORT',
+        readyPath: '/',
+        readyTimeoutMs: 5000,
+        bootstrapStdin: '{"token":"from-stdin"}\n',
+      },
+      () => {},
+      () => {},
+    )
+
+    const response = await fetch(`http://127.0.0.1:${handle.port}/`)
+    expect(await response.text()).toBe('from-stdin')
+    server.stop('bootstrap')
+  }, 15000)
+
+  it('can expose the bundled cate CLI to a trusted server process', async () => {
+    const server = createServerCapability({ baseEnv: () => ({ PATH: '/usr/bin' }) })
+    const source = "require('http').createServer((q,s)=>s.end(process.env.PATH||'')).listen(process.env.PORT,'127.0.0.1')"
+    const handle = await server.start(
+      {
+        id: 'cate-cli-path',
+        command: [RUNTIME_NODE_EXECUTABLE, '-e', source],
+        cwd: process.cwd(),
+        env: {},
+        portEnv: 'PORT',
+        readyPath: '/',
+        readyTimeoutMs: 5000,
+        includeCateCli: true,
+      },
+      () => {},
+      () => {},
+    )
+
+    const response = await fetch(`http://127.0.0.1:${handle.port}/`)
+    expect(await response.text()).toBe(catePathEnv({ PATH: '/usr/bin' }).PATH)
+    server.stop('cate-cli-path')
   }, 15000)
 })

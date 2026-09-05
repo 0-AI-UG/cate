@@ -57,12 +57,6 @@ const fixtures: AgentLifecycleFixture[] = [
     turnEnd: { hookEventName: 'stop', sessionId: SESSION },
   },
   {
-    agentId: 'pi',
-    sessionStart: { event: 'session_start', sessionId: SESSION },
-    turnStart: { event: 'agent_start', sessionId: SESSION },
-    turnEnd: { event: 'agent_end', sessionId: SESSION },
-  },
-  {
     agentId: 'opencode',
     sessionStart: { type: 'session.created', sessionID: SESSION },
     turnStart: { type: 'session.status', sessionID: SESSION, status: { type: 'busy' } },

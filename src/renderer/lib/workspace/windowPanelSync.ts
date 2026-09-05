@@ -1,3 +1,4 @@
+import { useT3ActivityStore } from '../../stores/t3ActivityStore'
 // =============================================================================
 // windowPanelSync — every window reports its own panels to the main process so
 // the cross-window panel union (windowPanelStore) stays current. This is the
@@ -13,7 +14,7 @@
 
 import { useAppStore } from '../../stores/appStore'
 import { useStatusStore } from '../../stores/statusStore'
-import { selectAgentInfoByPanel } from '../../hooks/useAgentPanelInfo'
+import { selectAgentInfoByPanel, selectT3InfoByPanel } from '../../hooks/useAgentPanelInfo'
 import { terminalRegistry } from '../terminal/terminalRegistry'
 import { peekCanvasStoreForPanel, getAllCanvasStores } from '../../stores/canvasStore'
 import { getLiveNodeDockLayout } from '../../panels/nodeDockRegistry'
@@ -24,11 +25,6 @@ import { panelRowLabel } from '../panelTitle'
 import { useActivePanelStore } from '../activePanel'
 import { parseLocator } from '../../../shared/runtimeLocator'
 import { browserPanelUrl, isStartPageUrl, type WindowPanelReport } from '../../../shared/types'
-import {
-  activeChatWorktreeIdForPanel,
-  useCateAgentStore,
-} from '../../../cateAgent/renderer/cateAgentStore'
-import { useChatsStore } from '../../stores/chatsStore'
 import { deriveCodingAgentRunStatus } from '../../../shared/codingAgentRuns'
 import { worktreeForPanel } from '../worktreeContext'
 
@@ -107,7 +103,7 @@ export function setupWindowPanelSync(): () => void {
       // never see it. Riding it on the union is the only way the overview's
       // "Other windows" rows can show the same shimmer/await/port dot as local
       // rows.
-      const agentInfo = selectAgentInfoByPanel(status, ws.id)
+      const agentInfo = { ...selectAgentInfoByPanel(status, ws.id), ...selectT3InfoByPanel(useT3ActivityStore.getState(), ws.id) }
       const withPorts = panelsWithPorts(ws.id)
       const activePanelId = useActivePanelStore.getState().activePanelId
       // Report only PLACED panels, using the same partition rules as the local
@@ -146,9 +142,7 @@ export function setupWindowPanelSync(): () => void {
             : {}),
           focused: p.id === activePanelId,
           parentCanvasId: childToCanvas.get(p.id),
-          worktreeId: p.type === 'cateAgent'
-            ? activeChatWorktreeIdForPanel(p.id)
-            : worktreeForPanel(p, ws.worktrees ?? [])?.id ?? p.worktreeId,
+          worktreeId: worktreeForPanel(p, ws.worktrees ?? [])?.id ?? p.worktreeId,
           agentState: agentInfo[p.id]?.state,
           agentName: agentInfo[p.id]?.name ?? null,
           codingAgentRunId: p.codingAgentRun?.id,
@@ -201,8 +195,6 @@ export function setupWindowPanelSync(): () => void {
     schedule()
   })
   const unsubscribeActivePanel = useActivePanelStore.subscribe(schedule)
-  const unsubscribeActiveChats = useCateAgentStore.subscribe(schedule)
-  const unsubscribeChats = useChatsStore.subscribe(schedule)
   syncCanvasSubscriptions()
 
   // Re-report when agent state / ports change so detached rows track the owner's
@@ -216,14 +208,14 @@ export function setupWindowPanelSync(): () => void {
     lastStatusSig = sig
     schedule()
   })
+  const unsubscribeT3 = useT3ActivityStore.subscribe(schedule)
   const unsubscribeTerminalFailure = terminalRegistry.subscribeFailure(schedule)
 
   cleanup = () => {
     unsubscribeApp()
     unsubscribeActivePanel()
-    unsubscribeActiveChats()
-    unsubscribeChats()
     unsubscribeStatus()
+    unsubscribeT3()
     unsubscribeTerminalFailure()
     for (const unsub of canvasSubs.values()) unsub()
     canvasSubs.clear()

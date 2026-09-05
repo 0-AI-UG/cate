@@ -12,9 +12,7 @@ const sentryDefine = {
 export default defineConfig({
   main: {
     define: sentryDefine,
-    // Externalize node_modules EXCEPT pi packages — they are pure ESM and
-    // must be bundled inline so the CJS main process can load them.
-    plugins: [externalizeDepsPlugin({ exclude: ['@earendil-works/pi-ai', '@earendil-works/pi-agent-core', '@earendil-works/pi-coding-agent'] })],
+    plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'dist/main',
       rollupOptions: {
@@ -25,7 +23,7 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@earendil-works/pi-ai', '@earendil-works/pi-agent-core', '@earendil-works/pi-coding-agent'] })],
+    plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'dist/preload',
       rollupOptions: {

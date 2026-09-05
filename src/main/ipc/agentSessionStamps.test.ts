@@ -107,16 +107,11 @@ describe('kiro resumability gating', () => {
 })
 
 describe('agents whose first sessionId-bearing event is already persisted', () => {
-  it.each(['codex', 'cursor', 'pi', 'opencode'] as const)('%s stamps on session-start', (agentId) => {
+  it.each(['codex', 'cursor', 'opencode'] as const)('%s stamps on session-start', (agentId) => {
     ingestAgentSessionStamp(runtime, ev(tid, agentId, 'session-start', 'id-1', '/w'))
     expect(stamps(tid)).toEqual([{ agentId, sessionId: 'id-1', cwd: '/w' }])
   })
 
-  it('session-end without a follow-up clears the stamp', () => {
-    ingestAgentSessionStamp(runtime, ev(tid, 'pi', 'session-start', 'id-1', '/w'))
-    ingestAgentSessionStamp(runtime, ev(tid, 'pi', 'session-end', 'id-1', '/w'))
-    expect(stamps(tid)).toEqual([{ agentId: 'pi', sessionId: 'id-1', cwd: '/w' }, null])
-  })
 })
 
 describe('cwd fallback (payloads that carry no cwd)', () => {

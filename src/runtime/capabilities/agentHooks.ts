@@ -13,7 +13,7 @@
 //   2. plant the hook env on every PTY (endpoint + per-terminal derived token
 //      + CATE_TERMINAL_ID — the terminal↔event correlation contract);
 //   3. prepare workspace-scoped hook files (claude, codex, cursor, grok, kiro,
-//      pi, opencode) at PTY create time;
+//      opencode) at PTY create time;
 //   4. ingest hook posts on a daemon-owned loopback HTTP endpoint, normalize
 //      them (shared code), and emit AgentHookEvents to subscribers (the
 //      rpcServer forwards them to the client as evt frames).
@@ -25,10 +25,9 @@
 // (they are children of PTYs this daemon spawned), so loopback suffices even
 // for remote workspaces — the daemon ingests locally and the normalized
 // events ride the existing LF-JSON pipe to the app. HTTP over a unix socket
-// was rejected because the in-process injections (the pi extension, the
-// opencode plugin) post with plain `fetch`, which cannot target a unix socket
-// without extra dependencies. Both are workspace files the CLI discovers on
-// its own (<cwd>/.pi/extensions/*.ts, <cwd>/.opencode/plugin/*.js).
+// was rejected because the in-process opencode plugin posts with plain `fetch`,
+// which cannot target a unix socket without extra dependencies. The plugin is
+// a workspace file the CLI discovers on its own.
 //
 // Bridge choice: a tiny wrapper (sh script on POSIX, .cmd on win32) running
 // the daemon's OWN node binary (process.execPath) on a daemon-written JS

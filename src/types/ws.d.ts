@@ -8,7 +8,7 @@ declare module 'ws' {
     static readonly CONNECTING: number
     static readonly OPEN: number
     readonly readyState: number
-    constructor(address: string)
+    constructor(address: string, options?: { headers?: Record<string, string> })
     send(data: RawData | string, options?: { binary?: boolean }): void
     close(code?: number, reason?: string): void
   }

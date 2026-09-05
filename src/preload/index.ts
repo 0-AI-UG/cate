@@ -4,6 +4,9 @@ import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
 try { performance.mark('preload-start') } catch { /* noop */ }
 
 import {
+  KEEP_AWAKE_GET,
+  KEEP_AWAKE_SET,
+  KEEP_AWAKE_CHANGED,
   TERMINAL_CREATE,
   TERMINAL_WRITE,
   TERMINAL_RESIZE,
@@ -83,8 +86,6 @@ import {
   SESSION_FLUSH_SAVE_DONE,
   PROJECT_STATE_SAVE,
   PROJECT_STATE_LOAD,
-  PROJECT_CHATS_LOAD,
-  PROJECT_CHATS_SAVE,
   WORKSPACE_EXTERNAL_EDIT,
   WORKSPACE_EXTERNAL_EDIT_DISMISS,
   BOOT_SNAPSHOT_WRITE,
@@ -210,6 +211,19 @@ import {
   BROWSER_CREDENTIAL_FILL,
   BROWSER_CREDENTIAL_CLEAR,
   NATIVE_FILE_DRAG,
+  AGENT_HARNESS_GET_PANEL_URL,
+  AGENT_HARNESS_LIST_CONVERSATIONS,
+  AGENT_HARNESS_DELETE_CONVERSATION,
+  AGENT_CONVERSATION_DELETED,
+  AGENT_HARNESS_PANEL_CLOSED,
+  AGENT_HARNESS_RESTART,
+  AGENT_HARNESS_GET_STATUS,
+  AGENT_PROVIDER_AUTH_START,
+  AGENT_PROVIDER_AUTH_GET,
+  AGENT_PROVIDER_AUTH_WRITE,
+  AGENT_PROVIDER_AUTH_CANCEL,
+  AGENT_PROVIDER_STATUS_GET,
+  AGENT_PROVIDER_SETTINGS,
   UPDATE_STATUS,
   UPDATE_QUIT_AND_INSTALL,
   UPDATE_GET_STATUS,
@@ -221,30 +235,6 @@ import {
   ANALYTICS_TRACK_USAGE,
   TELEMETRY_ACKNOWLEDGE_NOTICE,
   OPEN_EXTERNAL_URL,
-  CODING_CREATE,
-  CODING_PROMPT,
-  CODING_INTERRUPT,
-  CODING_DISPOSE,
-  CODING_SET_MODEL,
-  CODING_GET_COMMANDS,
-  CODING_EVENT,
-  CODING_STEER,
-  CODING_SET_THINKING_LEVEL,
-  CODING_COMPACT,
-  CODING_SET_AUTO_COMPACTION,
-  CODING_ABORT_RETRY,
-  CODING_GET_SESSION_STATS,
-  CODING_GET_STATE,
-  CODING_FORK,
-  CODING_GET_FORK_MESSAGES,
-  CODING_LIST_MODELS,
-  CODING_UI_RESPONSE,
-  CODING_LIST_SESSIONS,
-  CODING_LOAD_SESSION_MESSAGES,
-  CODING_DELETE_SESSION,
-  CODING_CUSTOM_MODELS_GET,
-  CODING_CUSTOM_MODELS_SAVE,
-  CODING_CUSTOM_MODELS_DELETE,
   SKILLS_GET_INDEX,
   SKILLS_REFRESH,
   SKILLS_GET_PREVIEW,
@@ -260,15 +250,6 @@ import {
   SKILLS_REMOVE_SOURCE,
   SKILLS_GET_TOKEN,
   SKILLS_SET_TOKEN,
-  AUTH_LIST_PROVIDERS,
-  AUTH_STATUS,
-  AUTH_VERIFY,
-  AUTH_OAUTH_START,
-  AUTH_OAUTH_PROMPT_REPLY,
-  AUTH_OAUTH_EVENT,
-  AUTH_CHANGED,
-  AUTH_SAVE_API_KEY,
-  AUTH_DELETE,
   PERF_GET,
   EXTENSION_LIST,
   EXTENSION_ENABLE,
@@ -444,8 +425,6 @@ const invokeForwarders = {
   // Session
   projectStateSave: makeInvoker<'projectStateSave'>(PROJECT_STATE_SAVE),
   projectStateLoad: makeInvoker<'projectStateLoad'>(PROJECT_STATE_LOAD),
-  projectChatsLoad: makeInvoker<'projectChatsLoad'>(PROJECT_CHATS_LOAD),
-  projectChatsSave: makeInvoker<'projectChatsSave'>(PROJECT_CHATS_SAVE),
 
   // Dialog
   openFolderDialog: makeInvoker<'openFolderDialog'>(DIALOG_OPEN_FOLDER),
@@ -504,6 +483,19 @@ const invokeForwarders = {
   browserCredentialFill: makeInvoker<'browserCredentialFill'>(BROWSER_CREDENTIAL_FILL),
   browserCredentialClear: makeInvoker<'browserCredentialClear'>(BROWSER_CREDENTIAL_CLEAR),
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
+
+  // T3 provider harness
+  agentHarnessDeleteConversation: makeInvoker<'agentHarnessDeleteConversation'>(AGENT_HARNESS_DELETE_CONVERSATION),
+  agentHarnessListConversations: makeInvoker<'agentHarnessListConversations'>(AGENT_HARNESS_LIST_CONVERSATIONS),
+  agentHarnessGetPanelUrl: makeInvoker<'agentHarnessGetPanelUrl'>(AGENT_HARNESS_GET_PANEL_URL),
+  agentHarnessRestart: makeInvoker<'agentHarnessRestart'>(AGENT_HARNESS_RESTART),
+  agentHarnessGetStatus: makeInvoker<'agentHarnessGetStatus'>(AGENT_HARNESS_GET_STATUS),
+  agentProviderAuthStart: makeInvoker<'agentProviderAuthStart'>(AGENT_PROVIDER_AUTH_START),
+  agentProviderAuthGet: makeInvoker<'agentProviderAuthGet'>(AGENT_PROVIDER_AUTH_GET),
+  agentProviderAuthWrite: makeInvoker<'agentProviderAuthWrite'>(AGENT_PROVIDER_AUTH_WRITE),
+  agentProviderAuthCancel: makeInvoker<'agentProviderAuthCancel'>(AGENT_PROVIDER_AUTH_CANCEL),
+  agentProviderStatusGet: makeInvoker<'agentProviderStatusGet'>(AGENT_PROVIDER_STATUS_GET),
+  agentProviderSettings: makeInvoker<'agentProviderSettings'>(AGENT_PROVIDER_SETTINGS),
 
   // Shell utilities
   shellShowInFolder: makeInvoker<'shellShowInFolder'>(SHELL_SHOW_IN_FOLDER),
@@ -576,30 +568,6 @@ const invokeForwarders = {
   getPendingFeedback: makeInvoker<'getPendingFeedback'>(ANALYTICS_FEEDBACK_GET_PENDING),
   acknowledgeTelemetryNotice: makeInvoker<'acknowledgeTelemetryNotice'>(TELEMETRY_ACKNOWLEDGE_NOTICE),
 
-  // Pi agent
-  agentCreate: makeInvoker<'agentCreate'>(CODING_CREATE),
-  agentPrompt: makeInvoker<'agentPrompt'>(CODING_PROMPT),
-  agentSteer: makeInvoker<'agentSteer'>(CODING_STEER),
-  agentSetThinkingLevel: makeInvoker<'agentSetThinkingLevel'>(CODING_SET_THINKING_LEVEL),
-  agentCompact: makeInvoker<'agentCompact'>(CODING_COMPACT),
-  agentSetAutoCompaction: makeInvoker<'agentSetAutoCompaction'>(CODING_SET_AUTO_COMPACTION),
-  agentAbortRetry: makeInvoker<'agentAbortRetry'>(CODING_ABORT_RETRY),
-  agentGetSessionStats: makeInvoker<'agentGetSessionStats'>(CODING_GET_SESSION_STATS),
-  agentGetState: makeInvoker<'agentGetState'>(CODING_GET_STATE),
-  agentFork: makeInvoker<'agentFork'>(CODING_FORK),
-  agentGetForkMessages: makeInvoker<'agentGetForkMessages'>(CODING_GET_FORK_MESSAGES),
-  agentListModels: makeInvoker<'agentListModels'>(CODING_LIST_MODELS),
-  agentListSessions: makeInvoker<'agentListSessions'>(CODING_LIST_SESSIONS),
-  agentLoadSessionMessages: makeInvoker<'agentLoadSessionMessages'>(CODING_LOAD_SESSION_MESSAGES),
-  agentDeleteSession: makeInvoker<'agentDeleteSession'>(CODING_DELETE_SESSION),
-  agentInterrupt: makeInvoker<'agentInterrupt'>(CODING_INTERRUPT),
-  agentDispose: makeInvoker<'agentDispose'>(CODING_DISPOSE),
-  agentSetModel: makeInvoker<'agentSetModel'>(CODING_SET_MODEL),
-  agentGetCommands: makeInvoker<'agentGetCommands'>(CODING_GET_COMMANDS),
-  agentCustomModelsGet: makeInvoker<'agentCustomModelsGet'>(CODING_CUSTOM_MODELS_GET),
-  agentCustomModelsSave: makeInvoker<'agentCustomModelsSave'>(CODING_CUSTOM_MODELS_SAVE),
-  agentCustomModelsDelete: makeInvoker<'agentCustomModelsDelete'>(CODING_CUSTOM_MODELS_DELETE),
-
   // Cross-agent skills
   skillsGetIndex: makeInvoker<'skillsGetIndex'>(SKILLS_GET_INDEX),
   skillsRefresh: makeInvoker<'skillsRefresh'>(SKILLS_REFRESH),
@@ -634,20 +602,16 @@ const invokeForwarders = {
   extensionProxyUrl: makeInvoker<'extensionProxyUrl'>(EXTENSION_PROXY_URL),
   extensionServerRestart: makeInvoker<'extensionServerRestart'>(EXTENSION_SERVER_RESTART),
 
-  // Pi auth / providers
-  authListProviders: makeInvoker<'authListProviders'>(AUTH_LIST_PROVIDERS),
-  authStatus: makeInvoker<'authStatus'>(AUTH_STATUS),
-  authVerify: makeInvoker<'authVerify'>(AUTH_VERIFY),
-  authOAuthStart: makeInvoker<'authOAuthStart'>(AUTH_OAUTH_START),
-  authOAuthPromptReply: makeInvoker<'authOAuthPromptReply'>(AUTH_OAUTH_PROMPT_REPLY),
-  authSaveApiKey: makeInvoker<'authSaveApiKey'>(AUTH_SAVE_API_KEY),
-  authDelete: makeInvoker<'authDelete'>(AUTH_DELETE),
 } satisfies Partial<ElectronAPI>
 
 contextBridge.exposeInMainWorld('electronAPI', {
   ...invokeForwarders,
   isE2E: process.env.CATE_E2E === '1',
   isPerf: process.env.CATE_PERF === '1',
+
+  agentHarnessPanelClosed(request: { panelId: string }): void {
+    ipcRenderer.send(AGENT_HARNESS_PANEL_CLOSED, request)
+  },
 
   /** Set this window's UI zoom factor (Cate chrome only — webview content keeps
    *  its own zoom). Applied per-renderer; each window calls this on mount and
@@ -820,6 +784,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(WINDOW_SET_TITLE, title)
   },
 
+  getKeepAwake(): Promise<boolean> {
+    return ipcRenderer.invoke(KEEP_AWAKE_GET)
+  },
+  setKeepAwake(enabled: boolean): Promise<boolean> {
+    return ipcRenderer.invoke(KEEP_AWAKE_SET, enabled)
+  },
+  onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void {
+    return createIpcListener(KEEP_AWAKE_CHANGED, callback)
+  },
+
   // ---------------------------------------------------------------------------
   // Panel transfer (cross-window)
   // ---------------------------------------------------------------------------
@@ -967,6 +941,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return createIpcListener(MENU_LOAD_LAYOUT, callback)
   },
 
+  onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void {
+    return createIpcListener(AGENT_CONVERSATION_DELETED, callback)
+  },
+
   onBrowserShortcut(callback: (action: string) => void): () => void {
     return createIpcListener(BROWSER_SHORTCUT, callback)
   },
@@ -1010,30 +988,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   openExternalUrl(url: string): void {
     ipcRenderer.send(OPEN_EXTERNAL_URL, url)
-  },
-
-  // ---------------------------------------------------------------------------
-  // Pi agent
-  // ---------------------------------------------------------------------------
-
-  agentUiResponse(panelId: string, response: unknown): void {
-    ipcRenderer.send(CODING_UI_RESPONSE, panelId, response)
-  },
-
-  onAgentEvent(callback: (envelope: unknown) => void): () => void {
-    return createIpcListener(CODING_EVENT, callback)
-  },
-
-  // ---------------------------------------------------------------------------
-  // Pi auth / providers
-  // ---------------------------------------------------------------------------
-
-  onAuthOAuthEvent(callback: (providerId: string, event: unknown) => void): () => void {
-    return createIpcListener(AUTH_OAUTH_EVENT, callback)
-  },
-
-  onAuthChanged(callback: () => void): () => void {
-    return createIpcListener(AUTH_CHANGED, callback)
   },
 
   // ---------------------------------------------------------------------------

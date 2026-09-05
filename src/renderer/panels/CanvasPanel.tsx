@@ -32,7 +32,6 @@ import {
 import { getPanelDef } from '../panels/registry'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
-import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
 import { PanelConnectionLayer } from '../canvas/PanelConnectionLayer'
 
 // Re-export the lookup helpers so existing callers (drag dispatcher, drop
@@ -239,7 +238,7 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     // on this canvas (see inheritedWorktreeFromSelection).
     const app = useAppStore.getState()
     const workspace = app.getWorkspace(wsId)
-    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, undefined, workspace?.worktrees)
+    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
     const newId = app.createTerminal(wsId, undefined, undefined, here(), wt.cwd)
     if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
   }, [workspaceId, here, store])
@@ -254,23 +253,11 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     if (!wsId) return
     const app = useAppStore.getState()
     const workspace = app.getWorkspace(wsId)
-    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, undefined, workspace?.worktrees)
+    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
     const panelId = app.createEditor(wsId, undefined, undefined, here())
     if (panelId && wt.worktreeId) app.setPanelWorktreeId(wsId, panelId, wt.worktreeId)
   }, [workspaceId, here, store])
 
-  const onNewAgent = useCallback(async () => {
-    const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (!wsId) return
-    const app = useAppStore.getState()
-    const workspace = app.getWorkspace(wsId)
-    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, undefined, workspace?.worktrees)
-    const newId = app.createCateAgent(wsId, undefined, here())
-    const rootPath = app.getWorkspace(wsId)?.rootPath
-    if (newId && rootPath && wt.worktreeId) {
-      await seedAgentPanelWithWorktreeChat(wsId, rootPath, newId, wt.worktreeId)
-    }
-  }, [workspaceId, here, store])
 
   return (
     <CanvasStoreProvider store={store}>
@@ -305,7 +292,6 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
               onNewTerminal={onNewTerminal}
               onNewBrowser={onNewBrowser}
               onNewEditor={onNewEditor}
-              onNewAgent={onNewAgent}
             />
           ) : null}
         >

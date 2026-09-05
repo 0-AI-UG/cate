@@ -119,34 +119,6 @@ beforeEach(() => {
 })
 
 describe('createCateApiReverse — server-side CATE_API endpoint', () => {
-  it('binds Cate Agent forwarding to its owning renderer', async () => {
-    const host = makeRuntime()
-    const owner = { isDestroyed: () => false } as never
-    const endpoint = createCateApiReverse({
-      extensionId: 'cate-agent',
-      workspaceId: 'ws-1',
-      token: TOKEN,
-      runtime: host.runtime,
-      caller: 'cate-agent',
-      ownerWebContents: owner,
-    })
-    await request(endpoint, host.output, {
-      json: { method: 'cate.codingAgent.create', args: { prompt: 'Implement it' } },
-    })
-
-    const scope = dispatchCateInvoke.mock.calls[0][0]
-    const payload = {
-      extensionId: 'cate-agent',
-      workspaceId: 'ws-1',
-      panelId: '',
-      method: 'cate.codingAgent.create',
-      args: {},
-    }
-    await scope.forward(payload)
-    expect(forwardToOwner).toHaveBeenCalledWith(owner, payload)
-    endpoint.dispose()
-  })
-
   it('round-trips storage.set then storage.get (the Kitchen Sink roundtrip)', async () => {
     // Two requests = two connections (HTTP/1.1 Connection: close). Each endpoint
     // gets its own runtime/output, but both dispatch into the shared store, so

@@ -1,26 +1,23 @@
 import type { PanelState, WindowPanelInfo } from '../../shared/types'
-import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useWindowPanelStore } from '../stores/windowPanelStore'
 import { confirmClosePanels } from './confirmClosePanels'
 import { worktreeForPanel } from './worktreeContext'
 
-const CLOSEABLE_TYPES = new Set(['terminal', 'editor', 'document', 'review'])
+const CLOSEABLE_TYPES = new Set(['agent', 'terminal', 'editor', 'document', 'review'])
 
 function localPanelMatches(
   panel: PanelState,
   worktreeId: string,
   worktrees: readonly { id: string; path: string }[],
 ): boolean {
-  return panel.type === 'cateAgent'
-    ? activeChatWorktreeIdForPanel(panel.id) === worktreeId
-    : CLOSEABLE_TYPES.has(panel.type)
+  return CLOSEABLE_TYPES.has(panel.type)
       && worktreeForPanel(panel, worktrees)?.id === worktreeId
 }
 
 function remotePanelMatches(panel: WindowPanelInfo, worktreeId: string): boolean {
-  return (panel.type === 'cateAgent' || CLOSEABLE_TYPES.has(panel.type))
+  return (panel.type === 'agent' || CLOSEABLE_TYPES.has(panel.type))
     && panel.worktreeId === worktreeId
 }
 
@@ -87,7 +84,10 @@ export function closePreparedWorktreePanels(
 /** Remove local metadata immediately and tell every other renderer to clear
  * the same worktree id from panels and chats it owns. */
 export function removeWorktreeFromAllWindows(workspaceId: string, worktreeId: string): void {
-  useAppStore.getState().removeWorktree(workspaceId, worktreeId)
+  const app = useAppStore.getState()
+  const path = app.workspaces.find((ws) => ws.id === workspaceId)?.worktrees?.find((wt) => wt.id === worktreeId)?.path
+  app.removeWorktree(workspaceId, worktreeId)
+  if (path) app.removeAdditionalRoot(workspaceId, path)
   void window.electronAPI.notifyWorktreeRemoved(workspaceId, worktreeId).catch(() => {
     // Local state is already correct; another renderer will reconcile on the
     // next session load if the best-effort broadcast is unavailable.

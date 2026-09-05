@@ -43,3 +43,5 @@ export interface ExtensionPanelProps extends PanelProps {
   /** Panel id WITHIN the extension's manifest (one extension can declare many). */
   extensionPanelId?: string
 }
+
+export type AgentPanelProps = PanelProps

@@ -36,8 +36,6 @@ import { collectPanelIds } from '../../shared/collectPanelIds'
 import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
-import { useCateAgentStore } from '../../cateAgent/renderer/cateAgentStore'
-import { useChatsStore } from '../stores/chatsStore'
 import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
 import { worktreeForPanel } from '../lib/worktreeContext'
 
@@ -390,29 +388,18 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     if (!id) return primaryPanel
     return currentWorkspace?.panels[id] ?? primaryPanel
   }, [layout, currentWorkspace, primaryPanel])
-  const activeAgentChatId = useCateAgentStore((state) => (
-    activePanel?.type === 'cateAgent' ? state.activeChatByPanel[activePanel.id] : undefined
-  ))
-  const activeAgentChatWorktreeId = useChatsStore((state) => (
-    activeAgentChatId
-      ? (state.chatsByRoot[currentWorkspace?.rootPath ?? ''] ?? [])
-        .find((chat) => chat.id === activeAgentChatId)?.worktreeId
-      : undefined
-  ))
-
   // --- Worktree identity: follows the ACTIVE tab --------------------------
   // The node adopts whichever tab is open. Gated on 2+ worktrees (matching the
   // chip) so single-branch flows show no tint/sludge.
   const worktrees = currentWorkspace?.worktrees ?? []
   const wtEnabled = worktrees.length >= 2
   // Resolve the active tab's worktree. File-backed and review panels derive it
-  // from the path they operate on; terminals use their cwd/tag; Cate Agent
-  // panels use the active chat's tag. An untagged terminal/agent belongs to the
+  // from the path they operate on; terminals and Agent panels use their cwd/tag. An untagged terminal/agent belongs to the
   // primary checkout so the main checkout gets the same visual treatment.
   const primaryWorktree = worktrees.find((w) => w.path === currentWorkspace?.rootPath)
   const activeWorktree = wtEnabled
-    ? worktreeForPanel(activePanel ?? undefined, worktrees, () => activeAgentChatWorktreeId)
-      ?? (activePanel?.type === 'terminal' || activePanel?.type === 'cateAgent' ? primaryWorktree : undefined)
+    ? worktreeForPanel(activePanel ?? undefined, worktrees)
+      ?? (activePanel?.type === 'terminal' || activePanel?.type === 'agent' ? primaryWorktree : undefined)
     : undefined
   const activeWorktreeId = activeWorktree?.id ?? null
   const worktreeColor = activeWorktree?.color ?? null

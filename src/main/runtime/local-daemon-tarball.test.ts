@@ -57,7 +57,7 @@ describe.skipIf(!hasTarball)('local daemon from the real tarball', () => {
 
     // The daemon ran from the extracted tarball's own node.
     expect(existsSync(path.join(installDir, 'runtime.cjs'))).toBe(true)
-    expect(existsSync(path.join(installDir, 'pi', 'dist', 'cli.js'))).toBe(true)
+    expect(existsSync(path.join(installDir, 't3', 'dist', 'bin.mjs'))).toBe(true)
 
     // fs over the wire.
     const dir = await runtime.validatePathStrict(workspace, undefined, 'srv_localtarball')

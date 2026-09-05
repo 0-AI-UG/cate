@@ -134,7 +134,7 @@ export function findFreePosition(
 }
 
 /** Canvas-space gap kept between panels by every non-interactive placement
- *  (auto-place rays, ghost recommendations, the Cate Agent grid). */
+ *  (auto-place rays, ghost recommendations, the Agent grid). */
 export const PLACEMENT_GAP = 40
 /** A recommendation is never smaller than MIN (a gap tighter than this is pruned,
  *  so it gets no recommendation) and, when it mirrors a large neighbor, never

@@ -2,11 +2,12 @@
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
 
-import type { CodingCreateOptions, CodingEventEnvelope, CodingExtensionUIResponse, CodingImageAttachment, CateAgentModelRef, CodingModelDescriptor, CodingRpcState, CodingSessionListEntry, CodingSessionStats, CodingSlashCommand, CodingThinkingLevel, AppSettings, AgentState, AuthProviderDescriptor, AuthProviderStatus, CustomOpenAIProvider, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, GitComparisonResult, GitComparisonSpec, GitFileContent, GitFileDiff, ReviewPanelOpenRequest, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, OAuthFlowEvent, PanelTransferSnapshot, PerfSnapshot, Point, ProviderVerification, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
+import type { AppSettings, AgentState, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, GitComparisonResult, GitComparisonSpec, GitFileContent, GitFileDiff, ReviewPanelOpenRequest, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, PanelTransferSnapshot, PerfSnapshot, Point, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { CodingAgentLaunch } from './codingAgentRuns'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 import type { AgentHookEvent, AgentHookAgentState } from './agentHooks'
 import type { ExtensionListEntry, ExtensionManifest } from './extensions'
+import type { AgentHarnessError, AgentHarnessPanelRequest, AgentHarnessPanelTarget, AgentHarnessStatus, AgentProviderAuthRequest, AgentProviderAuthSession, AgentProviderStatus, AgentProviderStatusRequest } from './t3Agent'
 
 /** Lifecycle state of the auto-updater, surfaced to the renderer for the
  *  in-app "update ready" modal. `downloaded` is the one the modal acts on. */
@@ -488,12 +489,6 @@ export interface ElectronAPI {
     session: import('./types').ProjectSessionFile | null
   } | null>
 
-  /** Load the per-workspace Cate Agent chats from .cate/chats.json (empty if absent). */
-  projectChatsLoad(rootPath: string): Promise<import('./types').Chat[]>
-
-  /** Persist the whole per-workspace Cate Agent chat list to .cate/chats.json. */
-  projectChatsSave(rootPath: string, chats: import('./types').Chat[]): Promise<void>
-
   // ---------------------------------------------------------------------------
   // App
   // ---------------------------------------------------------------------------
@@ -779,6 +774,11 @@ export interface ElectronAPI {
   /** Set the OS title of the calling window. Drives the macOS native tab label. */
   windowSetTitle(title: string): Promise<void>
 
+  /** App-wide idle sleep prevention; resets when Cate quits. */
+  getKeepAwake(): Promise<boolean>
+  setKeepAwake(enabled: boolean): Promise<boolean>
+  onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void
+
   /** Merge a partial into the boot snapshot so the next cold launch constructs
    *  the BrowserWindow with the persisted theme/background/appearance. */
   bootSnapshotWrite(partial: Record<string, unknown>): Promise<void>
@@ -1062,83 +1062,43 @@ export interface ElectronAPI {
   openExternalUrl(url: string): void
 
   // ---------------------------------------------------------------------------
-  // Pi agent
+  // T3 provider harness
   // ---------------------------------------------------------------------------
 
-  /** Create a new agent session bound to a panel. */
-  agentCreate(options: CodingCreateOptions): Promise<{ ok: true } | { ok: false; error: string }>
+  onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void
+  agentHarnessDeleteConversation(request: AgentProviderStatusRequest & { threadId: string }): Promise<{ ok: true } | AgentHarnessError>
+  agentHarnessListConversations(request: AgentProviderStatusRequest): Promise<import('./t3Agent').T3Conversation[] | AgentHarnessError>
 
-  /** Send a user prompt to the panel's agent. Optional images go alongside as
-   *  pi `ImageContent` blocks (base64 + mime). */
-  agentPrompt(panelId: string, text: string, images?: CodingImageAttachment[]): Promise<void>
+  agentHarnessGetPanelUrl(
+    request: AgentHarnessPanelRequest,
+  ): Promise<AgentHarnessPanelTarget | AgentHarnessError>
 
-  /** Queue a steering message to deliver after the current assistant turn. */
-  agentSteer(panelId: string, text: string, images?: CodingImageAttachment[]): Promise<void>
+  agentHarnessPanelClosed(request: { panelId: string }): void
 
-  /** Set the reasoning level (off/minimal/low/medium/high/xhigh). */
-  agentSetThinkingLevel(panelId: string, level: CodingThinkingLevel): Promise<void>
+  agentHarnessRestart(request: { cwd: string }): Promise<{ ok: boolean; error?: string }>
 
-  /** Manually compact session context. */
-  agentCompact(panelId: string, customInstructions?: string): Promise<unknown>
+  agentHarnessGetStatus(request: { cwd: string }): Promise<AgentHarnessStatus>
 
-  /** Enable/disable automatic compaction on context-threshold overflow. */
-  agentSetAutoCompaction(panelId: string, enabled: boolean): Promise<void>
+  agentProviderAuthStart(
+    request: AgentProviderAuthRequest,
+  ): Promise<AgentProviderAuthSession | AgentHarnessError>
 
-  /** Abort an in-progress auto-retry (cancels backoff and stops retrying). */
-  agentAbortRetry(panelId: string): Promise<void>
+  agentProviderAuthGet(request: { id: string }): Promise<AgentProviderAuthSession | AgentHarnessError>
 
-  /** Get token + cost + context-usage stats for the current session. */
-  agentGetSessionStats(panelId: string): Promise<CodingSessionStats>
+  agentProviderAuthWrite(request: { id: string; data: string }): Promise<{ ok: boolean; error?: string }>
 
-  /** Read Cate-managed custom OpenAI-compatible provider configs. */
-  agentCustomModelsGet(): Promise<CustomOpenAIProvider[]>
+  agentProviderAuthCancel(request: { id: string }): Promise<{ ok: boolean; error?: string }>
 
-  /** Add or update a Cate-managed custom OpenAI-compatible provider. */
-  agentCustomModelsSave(cfg: CustomOpenAIProvider): Promise<void>
+  agentProviderSettings(request: AgentProviderStatusRequest & {
+    operation: 'read' | 'save' | 'refresh' | 'update'
+    patch?: Record<string, unknown>
+    provider?: string
+    instanceId?: string
+  }): Promise<{ settings: Record<string, any>; providers: Array<Record<string, any>> } | AgentHarnessError>
 
-  /** Delete one Cate-managed custom OpenAI-compatible provider. */
-  agentCustomModelsDelete(providerId: string): Promise<void>
-
-  /** Get pi's RPC session state snapshot. */
-  agentGetState(panelId: string): Promise<CodingRpcState>
-
-  /** Fork from a specific prior user message. */
-  agentFork(panelId: string, entryId: string): Promise<{ text: string; cancelled: boolean }>
-
-  /** Fork-eligible user messages (entryId + text). */
-  agentGetForkMessages(panelId: string): Promise<Array<{ entryId: string; text: string }>>
-
-  /** Selectable models, derived session-independently from connected providers
-   *  in auth.json + the custom OpenAI endpoint. No agent session required. */
-  agentListModels(): Promise<CodingModelDescriptor[]>
-
-  /** Reply to a pending extension UI request (fire-and-forget). */
-  agentUiResponse(panelId: string, response: CodingExtensionUIResponse): void
-
-  /** List pi sessions on disk for a given workspace cwd. Newest first. */
-  agentListSessions(cwd: string): Promise<CodingSessionListEntry[]>
-
-  /** Load a pi session file from disk and return a renderer-shape transcript. */
-  agentLoadSessionMessages(sessionFile: string): Promise<unknown[]>
-
-  /** Delete a pi session file from disk. Refuses paths outside ~/.pi/agent/sessions. */
-  agentDeleteSession(sessionFile: string): Promise<void>
-
-  /** Interrupt the running agent (cancels current turn). */
-  agentInterrupt(panelId: string): Promise<void>
-
-  /** Dispose the agent session for this panel. Deleting a durable mission chat
-   *  also stops the coding-agent workers owned by that session. */
-  agentDispose(panelId: string, options?: {
-    stopCodingAgents?: boolean
-    workspaceId?: string
-  }): Promise<void>
-
-  /** Change the model used by an existing agent session. */
-  agentSetModel(panelId: string, model: CateAgentModelRef): Promise<void>
-
-  /** Available slash commands (skills, prompt templates, extension commands). */
-  agentGetCommands(panelId: string): Promise<CodingSlashCommand[]>
+  agentProviderStatusGet(
+    request: AgentProviderStatusRequest,
+  ): Promise<AgentProviderStatus[] | AgentHarnessError>
 
   // ---------------------------------------------------------------------------
   // Cross-agent skills
@@ -1175,45 +1135,6 @@ export interface ElectronAPI {
   skillsGetToken(): Promise<{ hasToken: boolean }>
   /** Store or clear the GitHub token. */
   skillsSetToken(token: string | null): Promise<{ ok: boolean }>
-
-  /** Stream of agent events forwarded from the main process. */
-  onAgentEvent(callback: (envelope: CodingEventEnvelope) => void): () => void
-
-  // ---------------------------------------------------------------------------
-  // Pi auth / providers
-  // ---------------------------------------------------------------------------
-
-  /** List all known providers (built-in + custom). */
-  authListProviders(): Promise<AuthProviderDescriptor[]>
-
-  /** Get current connection status for each provider (presence-only, cheap). */
-  authStatus(): Promise<AuthProviderStatus[]>
-
-  /** Verify a provider's credential is usable: refreshes an OAuth token (→
-   *  `needsReauth` if it can't), or reports presence for API-key / env / custom
-   *  providers (→ `error` if no credential). Does not make model requests — that
-   *  runs through the runtime session, not the desktop process. */
-  authVerify(providerId: string): Promise<ProviderVerification>
-
-  /** Begin an OAuth login flow for the given provider. Returns when done or errored. */
-  authOAuthStart(providerId: string): Promise<{ ok: true } | { ok: false; error: string }>
-
-  /** Reply to an OAuth interactive prompt (text or selected option id). */
-  authOAuthPromptReply(promptId: string, value: string | null): Promise<void>
-
-  /** Subscribe to OAuth flow events for the in-app login UI. */
-  onAuthOAuthEvent(callback: (providerId: string, event: OAuthFlowEvent) => void): () => void
-
-  /** Broadcast fired (to every window) after any credential change — OAuth
-   *  sign-in, API-key save, or disconnect — once the shared auth.json has been
-   *  mirrored into live sessions. Renderers re-fetch provider status + models. */
-  onAuthChanged(callback: () => void): () => void
-
-  /** Save an API key for a built-in keyed provider in the shared pi auth config. */
-  authSaveApiKey(providerId: string, apiKey: string): Promise<void>
-
-  /** Disconnect a provider (clears stored credentials). */
-  authDelete(providerId: string): Promise<void>
 
   // ---------------------------------------------------------------------------
   // Extensions

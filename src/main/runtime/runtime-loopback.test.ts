@@ -10,7 +10,7 @@ import { RuntimeRpcClient } from './rpcClient'
 import { RemoteRuntime } from './RemoteRuntime'
 import { buildDaemonRuntime } from '../../runtime/capabilities'
 import { rgPath } from '@vscode/ripgrep'
-import type { Runtime, FileHost, VcsHost, ProcessHost, AgentHost, ServerHost, TunnelHost } from './types'
+import type { Runtime, FileHost, VcsHost, ProcessHost, ServerHost, TunnelHost } from './types'
 
 /** The real daemon capability set over the wire — same FileHost/VcsHost the
  *  local workspace daemon hosts. rgPath is injected because tests don't run under
@@ -20,7 +20,6 @@ function daemonApi(): Runtime {
 }
 
 const stubProcess = {} as unknown as ProcessHost
-const stubAgent = {} as unknown as AgentHost
 const stubServer = {} as unknown as ServerHost
 const stubTunnel = {} as unknown as TunnelHost
 const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {}, inspectWorkspace: async () => [] }
@@ -362,7 +361,6 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
     const api = {
       id: 'srv_test',
       process: stubProcess,
-      agent: stubAgent,
       agentHooks: stubAgentHooks,
       server: stubServer,
       tunnel: stubTunnel,
@@ -390,7 +388,6 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
     const api = {
       id: 'srv_test',
       process: stubProcess,
-      agent: stubAgent,
       agentHooks: stubAgentHooks,
       server: stubServer,
       tunnel: stubTunnel,
@@ -435,7 +432,6 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
     const api = {
       id: 'srv_test',
       process: stubProcess,
-      agent: stubAgent,
       agentHooks: {
         subscribe: (onEvent: (e: import('../../shared/agentHooks').AgentHookEvent) => void) => {
           emit = onEvent
@@ -490,7 +486,6 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
     const api = {
       id: 'srv_test',
       process: stubProcess,
-      agent: stubAgent,
       agentHooks: stubAgentHooks,
       server: stubServer,
       tunnel: stubTunnel,
@@ -544,7 +539,6 @@ function localRuntimeLike(): Runtime {
   return {
     id: 'srv_test',
     process: stubProcess,
-    agent: stubAgent,
     agentHooks: stubAgentHooks,
     server: stubServer,
     tunnel: stubTunnel,

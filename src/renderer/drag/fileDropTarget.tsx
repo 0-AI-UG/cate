@@ -10,9 +10,9 @@
 
 import React, { useEffect } from 'react'
 import { create } from 'zustand'
-import { CATE_FILE_MIME, CATE_FILES_MIME, CHAT_DRAG_MIME } from './fileDragPayload'
+import { CATE_FILE_MIME, CATE_FILES_MIME } from './fileDragPayload'
 
-export type FileDropKind = 'canvas' | 'dock' | 'cateAgent' | 'terminal' | 'extension'
+export type FileDropKind = 'canvas' | 'dock' | 'terminal' | 'extension'
 
 interface FileDropTarget {
   kind: FileDropKind
@@ -45,13 +45,6 @@ export function isFileDrag(e: DragEvent): boolean {
 export function useFileDropTracker(): void {
   useEffect(() => {
     const onDragOver = (e: DragEvent): void => {
-      // Chats have a destination-list ghost of their own. Never paint the
-      // generic whole-panel/file/canvas overlay for them.
-      if (e.dataTransfer?.types.includes(CHAT_DRAG_MIME)) {
-        const store = useFileDropStore.getState()
-        if (store.target) store.set(null)
-        return
-      }
       if (!isFileDrag(e)) return
       e.preventDefault() // allow dropping anywhere a [data-filedrop] target exists
       const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
@@ -93,7 +86,6 @@ export function useFileDropTracker(): void {
 const LABEL: Record<FileDropKind, string> = {
   canvas: 'Drop to open on canvas',
   dock: 'Drop to open here',
-  cateAgent: 'Drop file to add to chat',
   terminal: 'Drop to paste path',
   extension: 'Drop file here',
 }

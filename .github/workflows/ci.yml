@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22.22.2
 
       - uses: actions/setup-python@v7
         with:
@@ -36,8 +36,8 @@ jobs:
         run: pip install setuptools
 
       # npm ci honors the committed package-lock.json so PR runs are
-      # deterministic — a fresh upstream release (pi publishes often) can't
-      # break an unrelated PR. It fails loudly if package.json and the
+      # deterministic, so a fresh upstream release cannot break an unrelated
+      # PR. It fails loudly if package.json and the
       # lockfile drift out of sync; regenerate with `npm install` locally.
       - name: Install dependencies
         run: npm ci
@@ -118,8 +118,16 @@ jobs:
         env:
           E2E_SKIP_PERF: "1"
 
-      # NOTE: the remaining Playwright specs are intentionally NOT run here. The
-      # content-search specs drive the real local runtime daemon, whose ripgrep
-      # ships in the runtime tarball — building that tarball (node-pty compile +
-      # node/rg download + pi bundle) adds ~5min to every PR. Browser E2E above is
-      # self-contained, so it can remain a normal PR gate.
+      # T3 uses the real bundled server and an isolated deterministic provider
+      # CLI. Provision the host runtime tarball just as packaged Cate does.
+      - name: Build runtime tarball for T3 integration tests (macOS)
+        if: runner.os == 'macOS'
+        run: npm run runtime:tarball
+
+      - name: T3 integration E2E (macOS)
+        if: runner.os == 'macOS'
+        run: npm run test:e2e:agent
+
+      # The remaining Playwright specs stay outside this gate: broader runtime,
+      # drag, and performance scenarios have separate infrastructure/timing needs.
+      # T3 pays the runtime-build cost on macOS; browser E2E stays cross-platform.

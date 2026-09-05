@@ -20,12 +20,11 @@
 //   - Anything else: { error: 'unsupported', method }
 //
 // Every invoke validates the extension is enabled before serving, EXCEPT
-// first-party (terminal/agent) callers, which are trusted and bypass that gate.
+// first-party terminal callers, which are trusted and bypass that gate.
 // =============================================================================
 
 import { ipcMain, app, dialog, type WebContents } from 'electron'
 import { randomUUID } from 'crypto'
-import path from 'path'
 import log from '../logger'
 import {
   cliPermissionCellByKey,
@@ -61,7 +60,6 @@ import { extensionManager } from './ExtensionManager'
 import { getCachedCatalog } from './catalog'
 import { getProxyUrlFor, identityForGuestUrl } from './proxyServer'
 import { extensionServerManager } from './ExtensionServerManager'
-import { codingManager } from '../../cateAgent/main/codingManager'
 import { codingAgentAdmission } from './codingAgentAdmission'
 import { getExtensionStorage } from './storage'
 import { getWorkspaceInfo } from '../workspaceManager'
@@ -73,7 +71,7 @@ import {
   subscribeWindowPanels,
   upsertWindowPanel,
 } from '../windowPanels'
-import { parseLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
+import { parseLocator } from '../../shared/runtimeLocator'
 import { getAllSettings, getSetting } from '../settingsFile'
 import { resolveActiveTheme } from '../themeBootCache'
 import { showOsNotification } from '../ipc/notifications'
@@ -141,10 +139,10 @@ export interface InvokeScope {
   workspaceId: string
   panelId: string | undefined
   forward: (payload: InvokePayload) => Promise<InvokeResult>
-  /** Who is calling. First-party (terminal/agent via the CLI/reverse endpoint)
+  /** Who is calling. First-party terminals using the CLI/reverse endpoint
    *  callers are trusted: they skip the extension-enabled gate and the browser
    *  consent prompt. Undefined is treated as 'extension'. */
-  caller?: 'extension' | 'first-party' | 'cate-agent'
+  caller?: 'extension' | 'first-party'
   /** Scopes the caller was granted. For first-party callers this is supplied by
    *  the env-manager instead of a manifest; when absent the extension manifest's
    *  `cateApi` is used. */
@@ -428,41 +426,6 @@ function waitForCrossWindowCodingAgents(args: {
   })
 }
 
-/** Stop every live worker owned by a mission before its durable chat is
- * deleted. The supervisor renderer is always included to catch a worker whose
- * discovery report has not landed yet; reported detached windows are added so
- * transferred workers are stopped in their current owner renderer. This is an
- * internal lifecycle command, not part of the public cate.codingAgent surface. */
-export async function stopCodingAgentsForMission(
-  workspaceId: string,
-  ownerPanelId: string,
-  supervisor: WebContents,
-): Promise<void> {
-  const targets = new Map<number, WebContents>()
-  if (!supervisor.isDestroyed()) targets.set(supervisor.id, supervisor)
-  for (const report of getWindowPanels()) {
-    if (
-      report.workspaceId !== workspaceId ||
-      report.type !== 'terminal' ||
-      report.codingAgentOwnerPanelId !== ownerPanelId
-    ) continue
-    const win = getWindow(report.ownerWindowId)
-    if (win && !win.isDestroyed()) targets.set(win.webContents.id, win.webContents)
-  }
-  await Promise.all([...targets.values()].map(async (target) => {
-    const result = await forwardToOwner(target, {
-      extensionId: 'cate-agent',
-      workspaceId,
-      panelId: ownerPanelId,
-      method: 'cate.codingAgent.stopAll',
-      args: {},
-    })
-    if (result && typeof result === 'object' && 'error' in result) {
-      log.warn('[coding-agent] mission cleanup failed owner=%s: %s', ownerPanelId, result.error)
-    }
-  }))
-}
-
 // ---------------------------------------------------------------------------
 // Method dispatch
 // ---------------------------------------------------------------------------
@@ -527,7 +490,6 @@ export function requiredScopeFor(method: string): string | null | undefined {
       if (method.startsWith('cate.panel.')) return null
       if (method.startsWith('cate.storage.')) return 'storage'
       if (method.startsWith('cate.canvas.')) return 'canvas'
-      if (method.startsWith('cate.agent.')) return 'agent'
       if (method.startsWith('cate.editor.')) return 'editor.read'
       if (method.startsWith('cate.browser.')) return 'browser'
       if (method.startsWith('cate.terminal.')) return 'terminal'
@@ -550,18 +512,11 @@ function scopeGranted(declared: string[] | undefined, required: string): boolean
 // grant). First-party callers are trusted and never reach the prompt.
 const consentGranted = new Map<ConsentCapability, Set<string>>()
 
-type ConsentCapability = 'agent' | 'browser'
+type ConsentCapability = 'browser'
 
 /** Per-capability prompt copy — the only thing that differs between capabilities.
  *  `message` takes the extension's display name. */
 const CONSENT_PROMPTS: Record<ConsentCapability, { title: string; message: (name: string) => string; detail: string }> = {
-  agent: {
-    title: 'Run agent?',
-    message: (name) => `Allow “${name}” to run the agent?`,
-    detail:
-      'This extension wants to run agent tasks on your behalf using your configured model and credentials. ' +
-      'The agent can read and modify files in this workspace. You can watch and stop a run in the Agent panel.',
-  },
   browser: {
     title: 'Control the browser?',
     message: (name) => `Allow “${name}” to control the browser?`,
@@ -569,60 +524,6 @@ const CONSENT_PROMPTS: Record<ConsentCapability, { title: string; message: (name
       'This extension wants to control the browser panel (navigate, go back/forward, run actions), ' +
       'which may act on your logged-in sessions. You can revoke this by disabling the extension.',
   },
-}
-
-/** The active main window the agent run is attached to, or undefined if none. */
-function requireHostWindow(): ReturnType<typeof getActiveMainWindow> {
-  const win = getActiveMainWindow()
-  return win && !win.isDestroyed() ? win : undefined
-}
-
-/** Map an codingManager rejection to an InvokeResult error. Known lifecycle codes
- *  pass through as-is; anything else is the agent's own failure reason (e.g. an
- *  unsupported-model or auth message from pi), surfaced so the extension can show
- *  it instead of a useless generic code. */
-function agentError(err: unknown, method: string): InvokeResult {
-  const message = err instanceof Error ? err.message : String(err)
-  if (message === 'agent-busy') return { error: 'agent-busy', method }
-  if (message === 'no-session') return { error: 'no-session', method }
-  return { error: message || 'agent-failed', method }
-}
-
-/**
- * Bound a guest-supplied `cate.agent.open({ resume })` handle to the caller's own
- * workspace so an extension can't resume/read another workspace's (or an arbitrary
- * host file's) pi conversation.
- *
- * The `resume` handle IS pi's session-jsonl path — the value `open` returned to
- * this extension for this workspace — and pi (via codingManager) consumes it as a
- * full `--session <path>` argument, so we can't accept a bare id here (codingManager
- * doesn't resolve one; that would need an off-limits codingManager change). Instead
- * we canonicalize the path and require it to live inside this workspace's
- * `<cwd>/.cate/cate-agent/` dir — the ONLY place pi writes session jsonl for this
- * workspace (see agentDir.ts hostCodingDir/hostSessionsDir). Anything absolute-but-
- * outside, traversing (`..`), or NUL-bearing is rejected.
- *
- * Invariant relied on: every session file a legitimate `open` hands back is an
- * absolute path under `<cwd>/.cate/cate-agent/`, and pi never writes this
- * workspace's sessions elsewhere. Residual gap: the cate-agent dir is shared by ALL
- * extensions in a workspace (session files are keyed by cwd, not extensionId), so
- * this stops cross-WORKSPACE / arbitrary-file reads but not one consented
- * extension resuming another extension's session within the SAME workspace. Fully
- * closing that would require per-extension session keying inside codingManager
- * (out of scope for this file) and remains advisable.
- *
- * Returns the canonicalized path when valid, or null to reject.
- */
-function boundedResumePath(resume: string, runtimeId: string, cwd: string): string | null {
-  if (resume.includes('\0')) return null
-  // Session paths live on the host that runs pi: native separators for the local
-  // runtime, POSIX for a remote host. Match hostCodingDir's flavor choice.
-  const p = runtimeId === LOCAL_RUNTIME_ID ? path : path.posix
-  if (!p.isAbsolute(resume)) return null
-  const normalized = p.normalize(resume)
-  const root = p.join(cwd, '.cate', 'cate-agent')
-  if (normalized !== root && !normalized.startsWith(root + p.sep)) return null
-  return normalized
 }
 
 /** Ask the user (once per app session) whether `extensionId` may use
@@ -660,10 +561,10 @@ export function authorizeCateInvoke(
   args: unknown,
 ): InvokeResult | null {
   const { extensionId, panelId } = scope
-  const trustedCaller = scope.caller === 'first-party' || scope.caller === 'cate-agent'
+  const trustedCaller = scope.caller === 'first-party'
 
   // Security: only enabled, known extensions may call the host. First-party
-  // terminals and the embedded Cate Agent are trusted and skip this gate.
+  // terminals are trusted and skip this gate.
   if (!trustedCaller && (!extensionManager.isKnown(extensionId) || !extensionManager.isEnabled(extensionId))) {
     return { error: 'not-enabled', method }
   }
@@ -675,7 +576,7 @@ export function authorizeCateInvoke(
     return { error: 'first-party-only', method }
   }
 
-  // The terminal/agent endpoint must never move the user's window, panel focus,
+  // The terminal endpoint must never move the user's window, panel focus,
   // or canvas camera. Extensions retain panel.focus behind their panel scope.
   if (trustedCaller && method === 'cate.panel.focus') {
     return unsupported(method)
@@ -701,11 +602,8 @@ export function authorizeCateInvoke(
     }
   }
 
-  // Security: direct CLI calls and the embedded supervisor share the same
-  // Settings → CLI gates, including the Agents row. The supervisor endpoint
-  // remains available for session lifecycle, but cannot use host capabilities
-  // while the master switch or relevant cell is off. Extensions remain
-  // governed by manifest scopes plus capability consent.
+  // Security: direct CLI calls use the Settings → CLI gates, including the
+  // Agents row. Extensions remain governed by manifest scopes and consent.
   const usesCliPermissions = trustedCaller
   if (usesCliPermissions) {
     if (getSetting('cliEnabled') !== true) {
@@ -738,7 +636,7 @@ export async function dispatchCateInvoke(
   if (denied) return denied
 
   const { extensionId, workspaceId, panelId } = scope
-  const trustedCaller = scope.caller === 'first-party' || scope.caller === 'cate-agent'
+  const trustedCaller = scope.caller === 'first-party'
 
   if (method.startsWith('cate.codingAgent.')) {
     const routedArgs: Record<string, unknown> = {
@@ -983,63 +881,6 @@ export async function dispatchCateInvoke(
         removeWindowPanel(targetPanelId)
       }
       return result
-    }
-
-    // --- Agent: drive a pi session through the bundled pi --------------------
-    // pi owns all conversation state on its session jsonl; Cate only holds the
-    // live client. `open` returns a handle (the jsonl path) the extension reuses
-    // for `send` and can persist to `resume` later. There is no one-shot `run`
-    // sugar — compose open -> send -> dispose.
-    case 'cate.agent.open': {
-      const a = (args ?? {}) as { resume?: unknown }
-      const rawResume = typeof a.resume === 'string' && a.resume ? a.resume : undefined
-      const info = getWorkspaceInfo(workspaceId)
-      if (!info) return { error: 'no-workspace', method }
-      // Security: a `resume` handle is forwarded to pi as a full session-file path,
-      // so bound it to THIS workspace's cate-agent dir before it can reach the agent
-      // (or prompt for consent) — reject cross-workspace / arbitrary-file handles.
-      let resume: string | undefined
-      if (rawResume !== undefined) {
-        const { runtimeId, path: cwd } = parseLocator(info.rootPath)
-        const bounded = boundedResumePath(rawResume, runtimeId, cwd)
-        if (!bounded) return { error: 'invalid-resume', method }
-        resume = bounded
-      }
-      const win = requireHostWindow()
-      if (!win) return { error: 'no-host-window', method }
-      if (!(await ensureConsent(extensionId, 'agent'))) return { error: 'consent-denied', method }
-      try {
-        return await codingManager.openForExtension({
-          workspaceId, locator: info.rootPath, extensionId, sender: win.webContents, resume,
-        })
-      } catch (err) {
-        return agentError(err, method)
-      }
-    }
-
-    case 'cate.agent.send': {
-      const a = (args ?? {}) as { sessionId?: unknown; prompt?: unknown }
-      const sessionId = typeof a.sessionId === 'string' ? a.sessionId : ''
-      const promptText = typeof a.prompt === 'string' ? a.prompt.trim() : ''
-      if (!sessionId || !promptText) return { error: 'bad-args', method }
-      try {
-        return await codingManager.sendForExtension({ extensionId, sessionId, text: promptText })
-      } catch (err) {
-        return agentError(err, method)
-      }
-    }
-
-    case 'cate.agent.dispose': {
-      const a = (args ?? {}) as { sessionId?: unknown }
-      const sessionId = typeof a.sessionId === 'string' ? a.sessionId : ''
-      if (!sessionId) return { error: 'bad-args', method }
-      await codingManager.disposeForExtension({ extensionId, sessionId })
-      return { ok: true }
-    }
-
-    case 'cate.agent.cancel': {
-      await codingManager.cancelForExtension(extensionId)
-      return { ok: true }
     }
 
     default:

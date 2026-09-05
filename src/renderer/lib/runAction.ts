@@ -22,7 +22,6 @@ import { provideAppStoreForHistory } from '../stores/canvas/historySlice'
 import { inheritedWorktreeFromSelection } from './inheritWorktree'
 import { closePanelWithConfirm } from './closePanelWithConfirm'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
-import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
 import { getFocusedLeafPanelId, requestPanelRename } from './focusedPanel'
 
 /**
@@ -99,7 +98,7 @@ export async function runAction(
         // worktree opens the new terminal in that same worktree.
         const canvas = canvasStore()
         const workspace = appStore().getWorkspace(wsId)
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, undefined, workspace?.worktrees) : {}
+        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, workspace?.worktrees) : {}
         const panelId = appStore().createTerminal(wsId, undefined, undefined, placement, wt.cwd)
         if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
       }
@@ -118,7 +117,7 @@ export async function runAction(
       if (wsId) {
         const canvas = canvasStore()
         const workspace = appStore().getWorkspace(wsId)
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, undefined, workspace?.worktrees) : {}
+        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, workspace?.worktrees) : {}
         const panelId = appStore().createEditor(wsId, undefined, undefined, placement)
         if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
       }
@@ -128,16 +127,12 @@ export async function runAction(
       const placement = placementForActivePanel()
       const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
       if (wsId) {
-        // Same worktree inheritance as newTerminal, but the target belongs to
-        // the new agent's first chat rather than its panel record.
+        // Same worktree inheritance as newTerminal. Cate remains the sole
+        // authority for the Agent panel's cwd.
         const canvas = canvasStore()
         const workspace = appStore().getWorkspace(wsId)
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, undefined, workspace?.worktrees) : {}
-        const panelId = appStore().createCateAgent(wsId, undefined, placement)
-        const rootPath = appStore().getWorkspace(wsId)?.rootPath
-        if (panelId && rootPath && wt.worktreeId) {
-          await seedAgentPanelWithWorktreeChat(wsId, rootPath, panelId, wt.worktreeId)
-        }
+        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, workspace?.worktrees) : {}
+        appStore().createAgent(wsId, undefined, placement, wt.cwd, wt.worktreeId)
       }
       break
     }

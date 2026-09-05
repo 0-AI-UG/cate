@@ -11,7 +11,7 @@
 //   - every async method awaits `ready` then delegates. If `ready` rejects
 //     (daemon failed to start) the async methods reject with that error — a
 //     clear failure, not a confusing "No runtime registered".
-//   - void-returning process/agent ops are fire-and-forget after ready.
+//   - void-returning process ops are fire-and-forget after ready.
 //   - the two sync-returning streaming ops (file.watch / file.searchContent)
 //     return a handle immediately and start the real op once ready, exactly as
 //     RemoteRuntime does for its own async start.
@@ -22,7 +22,6 @@ import type {
   Runtime,
   FileHost,
   ProcessHost,
-  AgentHost,
   AgentHookHost,
   ServerHost,
   TunnelHost,
@@ -31,7 +30,6 @@ import type {
 
 export class DeferredRuntime implements Runtime {
   readonly process: ProcessHost
-  readonly agent: AgentHost
   readonly agentHooks: AgentHookHost
   readonly file: FileHost
   readonly vcs: VcsHost
@@ -55,13 +53,6 @@ export class DeferredRuntime implements Runtime {
       setVisibility: (id, visible) => { void ready_.then((c) => c.process.setVisibility(id, visible)).catch(() => {}) },
       scanActivity: (ids) => d((c) => c.process.scanActivity(ids)),
       scanPorts: (ids) => d((c) => c.process.scanPorts(ids)),
-    }
-
-    this.agent = {
-      ensurePi: () => d((c) => c.agent.ensurePi()),
-      start: (opts, onLine, onExit) => d((c) => c.agent.start(opts, onLine, onExit)),
-      writeLine: (id, line) => { void ready_.then((c) => c.agent.writeLine(id, line)).catch(() => {}) },
-      stop: (id) => { void ready_.then((c) => c.agent.stop(id)).catch(() => {}) },
     }
 
     this.agentHooks = {

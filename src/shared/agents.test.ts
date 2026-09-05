@@ -41,7 +41,6 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('codex', uuid)).toBe(`codex resume ${uuid}`)
     expect(resumeCommandForAgent('cursor', uuid)).toBe(`cursor-agent --resume ${uuid}`)
     expect(resumeCommandForAgent('grok', uuid)).toBe(`grok --resume ${uuid}`)
-    expect(resumeCommandForAgent('pi', uuid)).toBe(`pi --session ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
     expect(resumeCommandForAgent('kiro', uuid)).toBe(`kiro-cli chat --v3 --resume-id ${uuid}`)
   })

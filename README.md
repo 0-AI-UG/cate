@@ -55,7 +55,8 @@ brew install --cask cate
 
 ## What's inside
 
-- **Agent-aware terminals.** Claude Code, Codex, Cursor, Grok, OpenCode and Pi report turn start, turn end, and permission prompts, so each panel shows running / waiting / finished and pings you when it needs an answer.
+- **Integrated agent chats.** T3 Code runs Codex, Claude Code, Cursor, Grok, OpenCode and Antigravity in a full chat panel with streaming output, tool calls and approvals.
+- **Agent-aware terminals.** Supported agent CLIs report turn start, turn end, and permission prompts, so each panel shows running / waiting / finished and pings you when it needs an answer.
 - **Agent sessions survive restarts.** Reopen the project and terminals come back with their scrollback, each agent reattached with its own resume command.
 - **Worktrees for parallel branches.** Type what you're working on and Cate creates the worktree and branch, off a local branch, a remote branch, or an open PR.
 - **Panels on a canvas or in a dock.** Terminals, Monaco editors, browsers, PDF/image/DOCX viewers, extension webviews, nested canvases. Float, dock into tabs and splits, or detach into their own window. Layout persists per project.

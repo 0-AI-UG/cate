@@ -171,7 +171,7 @@ export function getWorkspaceCanvasStore(workspaceId: string): StoreApi<CanvasSto
   return null
 }
 
-/** The canvas store the Cate Agent should act on for a pinned run: the pinned
+/** The canvas store an Agent should act on for a pinned run: the pinned
  *  `canvasPanelId` if it's still a live canvas panel of the workspace, else the
  *  workspace's primary canvas. Pinning lets a running job keep acting on the canvas
  *  it started on even if the primary changes or the user navigates away. */

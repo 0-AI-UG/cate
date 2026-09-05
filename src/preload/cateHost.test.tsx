@@ -40,38 +40,8 @@ describe('cateHost preload — invoke wire contract', () => {
   it('exposes the cate global', () => {
     // (call history is cleared between tests; assert on the captured object.)
     expect(cate).toBeTypeOf('object')
-    expect(cate.agent.send).toBeTypeOf('function')
-  })
-
-  it('agent.open maps a resume handle', async () => {
-    await cate.agent.open({ resume: 'h-1' })
-    expect(invoke).toHaveBeenCalledWith('cate:invoke', { ...IDENTITY, method: 'cate.agent.open', args: { resume: 'h-1' } })
-  })
-
-  it('agent.open with no opts sends resume undefined', async () => {
-    await cate.agent.open()
-    expect(invoke).toHaveBeenCalledWith('cate:invoke', { ...IDENTITY, method: 'cate.agent.open', args: { resume: undefined } })
-  })
-
-  it('agent.send carries { sessionId, prompt } in order', async () => {
-    await cate.agent.send('s1', 'hello')
-    expect(invoke).toHaveBeenCalledWith('cate:invoke', {
-      ...IDENTITY,
-      method: 'cate.agent.send',
-      args: { sessionId: 's1', prompt: 'hello' },
-    })
-  })
-
-  it('agent.dispose maps the sessionId', async () => {
-    await cate.agent.dispose('s1')
-    expect(invoke).toHaveBeenCalledWith('cate:invoke', { ...IDENTITY, method: 'cate.agent.dispose', args: { sessionId: 's1' } })
-  })
-
-  it('cancel takes no args; the removed methods are off the bridge entirely', async () => {
-    await cate.agent.cancel()
-    expect(invoke).toHaveBeenCalledWith('cate:invoke', { ...IDENTITY, method: 'cate.agent.cancel', args: undefined })
-    // v3 cuts: not present at all, so feature detection is a simple `in` check.
-    expect(cate.agent.run).toBeUndefined()
+    expect(cate.agent).toBeUndefined()
+    // Removed methods remain absent so feature detection is a simple `in` check.
     expect(cate.browser.list).toBeUndefined()
     expect(cate.browser.back).toBeUndefined()
     expect(cate.browser.forward).toBeUndefined()

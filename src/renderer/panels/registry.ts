@@ -1,3 +1,4 @@
+import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 // Panel registry (renderer side)
 //
@@ -27,7 +28,6 @@ import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
 import { PANEL_DEFINITIONS, type SharedPanelDefinition } from '../../shared/panels'
-import { CateLogo } from '../ui/CateLogo'
 import { PanelErrorBoundary } from '../ui/PanelErrorBoundary'
 import type { PanelProps } from './types'
 
@@ -41,7 +41,7 @@ const TerminalPanel = React.lazy(() => import('./TerminalPanel'))
 const EditorPanel = React.lazy(() => import('./EditorPanel'))
 const BrowserPanel = React.lazy(() => import('./BrowserPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
-const CateAgentPanel = React.lazy(() => import('../../cateAgent/renderer/CateAgentPanel'))
+const AgentPanel = React.lazy(() => import('./AgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
 const ReviewPanel = React.lazy(() => import('./ReviewPanel'))
 const ExtensionPanel = React.lazy(() => import('./ExtensionPanel'))
@@ -142,12 +142,12 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
       trackCreated('canvas', useAppStore.getState().createCanvas(workspaceId, canvasPoint, placement) || null),
     props: (panel, ctx) => ({ ...baseProps(panel, ctx), renderPanelContent: ctx.renderPanelContent }),
   },
-  cateAgent: {
-    ...PANEL_DEFINITIONS.cateAgent,
-    icon: CateLogo,
-    Component: CateAgentPanel,
+  agent: {
+    ...PANEL_DEFINITIONS.agent,
+    icon: T3Logo,
+    Component: AgentPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
-      trackCreated('cateAgent', useAppStore.getState().createCateAgent(workspaceId, canvasPoint, placement) || null),
+      trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null),
     props: baseProps,
   },
   document: {

@@ -1,3 +1,4 @@
+import { T3Logo } from './T3Logo'
 // =============================================================================
 // CommandPalette — Unified searchable command launcher + workspace navigator.
 // A single Cmd+K overlay listing all commands, workspaces, open panels, and
@@ -31,7 +32,6 @@ import {
   CaretRight,
   GitDiff,
 } from '@phosphor-icons/react'
-import { CateLogo } from './CateLogo'
 import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { isNavigablePanelType } from '../../shared/panels'
 import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
@@ -53,7 +53,6 @@ import { PaletteTextInput } from './PaletteTextInput'
 import { useWorktrees } from '../stores/useWorktrees'
 import { selectedWorktree, worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
 import { getActivePanelId } from '../lib/activePanel'
-import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
 
 // -----------------------------------------------------------------------------
 // Command definitions
@@ -84,7 +83,7 @@ const ReloadIcon = () => <ArrowsClockwise size={ICON_SIZE} />
 const DeleteRuntimeIcon = () => <Trash size={ICON_SIZE} />
 const TutorialIcon = () => <GraduationCap size={ICON_SIZE} />
 const SkillsIcon = () => <PuzzlePiece size={ICON_SIZE} />
-const AgentIcon = () => <CateLogo size={ICON_SIZE} />
+const AgentIcon = () => <T3Logo size={ICON_SIZE} />
 const CloseIcon = () => <X size={ICON_SIZE} />
 const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
 const RedoIcon = () => <ArrowUUpRight size={ICON_SIZE} />
@@ -256,7 +255,7 @@ export const CommandPalette: React.FC = () => {
   // checkout; the main window retains the primary-checkout default.
   const activePanel = panels[getActivePanelId() ?? '']
   const detachedPanelWorktree = !isMainWindow
-    ? worktreeForPanel(activePanel, worktrees, activeChatWorktreeIdForPanel)
+    ? worktreeForPanel(activePanel, worktrees)
     : undefined
   const navigationWorktree = savedNavigationWorktree
     ?? detachedPanelWorktree
@@ -299,7 +298,7 @@ export const CommandPalette: React.FC = () => {
         panelId: panel.id,
         title,
         type: panel.type,
-        secondary: panel.filePath ?? browserPanelUrl(panel) ?? panel.type,
+        secondary: panel.filePath ?? browserPanelUrl(panel) ?? (panel.type === 'agent' ? 'T3 Code' : panel.type),
       })
     }
     for (const panel of otherWindowPanels) {
@@ -669,7 +668,7 @@ function PanelIcon({ type }: { type: PanelType }) {
   if (type === 'terminal') return <span className={`${cls} text-emerald-400`}><Terminal size={ICON_SIZE} /></span>
   if (type === 'browser')  return <span className={`${cls} text-sky-400`}><Globe size={ICON_SIZE} /></span>
   if (type === 'editor' || type === 'document') return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
-  if (type === 'cateAgent') return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><CateLogo size={ICON_SIZE} /></span>
+  if (type === 'agent') return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><T3Logo size={ICON_SIZE} /></span>
   if (type === 'review')   return <span className={`${cls} text-green-400`}><GitDiff size={ICON_SIZE} /></span>
   return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
 }

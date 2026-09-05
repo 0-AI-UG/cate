@@ -32,7 +32,7 @@ export type PanelPlacement =
    *  `size` pins the node's size (used by layout restore to reproduce the saved
    *  geometry exactly); without it the panel type's default size is used.
    *  `focus: false` adds the node WITHOUT focusing it or moving the viewport —
-   *  for background creates (Cate Agent terminals). An off-view unfocused node
+   *  for background terminal creates. An off-view unfocused node
    *  is culled, so a creator that needs it mounted (a terminal booting its pty)
    *  must keep it exempt itself (see useVisibleNodeIds' alwaysMount). */
   | {
@@ -95,7 +95,14 @@ export interface AppStoreActions {
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createReview: (workspaceId: string, repoPath: string, initial?: Partial<ReviewPanelState>, position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
-  createCateAgent: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
+  createAgent: (
+    workspaceId: string,
+    position?: Point,
+    placement?: PanelPlacement,
+    cwd?: string,
+    worktreeId?: string,
+    threadId?: string,
+  ) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
   /** Open an extension-hosted panel on the canvas. `extensionPanelId` selects
    *  which panel from the extension's manifest. `title` defaults to the panel
@@ -126,7 +133,7 @@ export interface AppStoreActions {
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
-  setPanelInitialChat: (workspaceId: string, panelId: string, chatId: string) => void
+  setPanelAgentThreadId: (workspaceId: string, panelId: string, threadId: string | undefined) => void
   setPanelReviewState: (workspaceId: string, panelId: string, reviewState: ReviewPanelState) => void
   setPanelAgentSession: (workspaceId: string, panelId: string, session: TerminalAgentSession | null) => void
   setPanelCodingAgentLaunch: (workspaceId: string, panelId: string, launch: CodingAgentLaunch | undefined) => void

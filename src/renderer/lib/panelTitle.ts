@@ -5,7 +5,7 @@ import { pathDisplayName } from './fs/displayPath'
 /** Display label for a panel: explicit title, else the file basename, else the
  *  active browser tab URL, else the panel type. Param is the minimal shape
  *  shared by sidebar row props and a full PanelState. Used by the workspace
- *  overview rows, the Cate agent chat, and the cross-window panel report — so
+ *  overview rows, the agent panel, and the cross-window panel report, so
  *  a panel reads the same everywhere. */
 export function panelRowLabel(
   panel: Pick<PanelState, 'type' | 'title' | 'filePath' | 'tabs' | 'activeTabId'>,
