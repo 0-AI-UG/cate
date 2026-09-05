@@ -770,7 +770,7 @@ export const SHORTCUT_DEFINITIONS = {
   newTerminal: { label: 'New Terminal', shortcut: storedShortcut('t', { command: true }) },
   newBrowser: { label: 'New Browser', shortcut: storedShortcut('b', { command: true, shift: true }) },
   newEditor: { label: 'New Editor', shortcut: storedShortcut('e', { command: true, shift: true }) },
-  newAgent: { label: 'New Agent', shortcut: storedShortcut('a', { command: true, shift: true }) },
+  newAgent: { label: 'New T3 Code conversation', shortcut: storedShortcut('a', { command: true, shift: true }) },
   newCanvas: { label: 'New Canvas', shortcut: storedShortcut('c', { command: true, shift: true }) },
   newFile: { label: 'New File', shortcut: storedShortcut('n', { command: true }) },
   closePanel: { label: 'Close Panel', shortcut: storedShortcut('w', { command: true }) },
@@ -1187,6 +1187,8 @@ export interface ProjectWorkspaceFile {
 }
 
 export interface ProjectPanelRef {
+  /** Preserve a manual title across restored terminal and T3 sessions. */
+  titleUserOverridden?: boolean
   type: string
   title: string
   filePath?: string
@@ -1294,7 +1296,7 @@ export const FILE_EXCLUSIONS: string[] = [
 ]
 
 /** A sidebar view (left/right rail tabs). */
-export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'search' | 'agent'
+export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'search'
 
 /** Which sidebar views live in the left vs. right rail. Persisted in settings. */
 export interface SidebarLayout {

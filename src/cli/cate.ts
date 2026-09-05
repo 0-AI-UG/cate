@@ -704,6 +704,9 @@ const AGENT_USAGE = `Usage:
   cate agent wait [runId...] [--wait-timeout <ms>]
   cate agent inspect|review|apply|keep|discard|stop <runId>
 
+These commands launch and control terminal CLI workers, not T3 Code conversations.
+Provider ids refer to the shared provider registry; execution here is always in a terminal.
+
 Run ids may be full ids or unique prefixes from \`cate agent list\`. A worker
 may use the same commands to create and supervise its own workers.`
 

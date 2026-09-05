@@ -62,6 +62,6 @@ describe('panel capabilities', () => {
   })
 
   it('owns the ordered generic split-menu catalog', () => {
-    expect(SPLIT_MENU_PANEL_TYPES).toEqual(['editor', 'terminal', 'browser', 'canvas'])
+    expect(SPLIT_MENU_PANEL_TYPES).toEqual(['editor', 'terminal', 'browser', 'canvas', 'agent'])
   })
 })

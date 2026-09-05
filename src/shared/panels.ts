@@ -1,3 +1,4 @@
+import { T3_LOGO_PATH, T3_LOGO_VIEW_BOX } from './t3Logo'
 // =============================================================================
 // Panel definitions — per-type data shared between main and renderer.
 //
@@ -130,16 +131,17 @@ export const PANEL_DEFINITIONS = {
   },
   agent: {
     type: 'agent',
-    label: 'Agent',
+    label: 'T3 Code',
     brandColor: '#4A9EFF',
     mutedColor: '#3a7acc',
     tintClass: 'text-blue-400',
     defaultSize: { width: 760, height: 480 },
     minimumSize: { width: 360, height: 320 },
-    ghostSvg: ghost('rgb(74,158,255)', '<path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z"/><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z"/>'),
+    ghostSvg: `<svg width="12" height="12" viewBox="${T3_LOGO_VIEW_BOX}"><path fill="rgb(74,158,255)" d="${T3_LOGO_PATH}"/></svg>`,
     canLiveOnCanvas: true,
     worktreeBinding: true,
     navigable: true,
+    splitMenuOrder: 4,
     keepMountedOffscreen: true,
     keepMountedWhenTabHidden: true,
   },

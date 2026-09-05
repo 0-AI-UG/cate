@@ -12,6 +12,7 @@ import { PanelChromeProvider, type PanelChromeApi } from '../panels/panelChrome'
 import { Columns, Plus } from '@phosphor-icons/react'
 import { DockTabBar } from './DockTabBar'
 import { WorktreePill } from '../canvas/WorktreePill'
+import { T3ConversationPill } from '../canvas/T3ConversationPill'
 import { DockTabContextMenu, SPLIT_MENU_ITEMS } from './DockTabContextMenu'
 import type { SplitMenuItem } from './DockTabContextMenu'
 import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
@@ -421,7 +422,8 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           // scrollbar lane (overflow-y: scroll). Offset
           // past it so the chip clears the scrollbar and leaves a 6px gap that
           // matches the 6px top inset (top-1.5).
-          <div className="absolute top-1.5 right-3 z-10">
+          <div className="absolute top-1.5 right-3 z-10 flex items-center gap-1">
+            {activePanel.type === 'agent' && <T3ConversationPill key={activePanel.id} panel={activePanel} workspaceId={effectiveWorkspaceId} />}
             <WorktreePill panel={activePanel} workspaceId={effectiveWorkspaceId} />
           </div>
         )}

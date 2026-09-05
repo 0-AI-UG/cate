@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+vi.mock('./settingsFile', () => ({ getSetting: () => ({}) }))
 vi.mock('./featureFlags', () => ({ disableWebviewHardening: () => false }))
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 

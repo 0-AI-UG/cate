@@ -220,19 +220,21 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
           x: cs.width || viewportSize.width,
           y: cs.height || viewportSize.height,
         })
-        const padding = 20 / state.zoomLevel
+        // The canvas tab bar floats over the viewport (32px tall). Leave
+        // another 8px below it, but fill the left, right, and bottom edges.
+        const topInset = 40 / state.zoomLevel
 
         updated = {
           ...node,
           preMaximizeOrigin: { ...node.origin },
           preMaximizeSize: { ...node.size },
           origin: {
-            x: topLeft.x + padding,
-            y: topLeft.y + padding,
+            x: topLeft.x,
+            y: topLeft.y + topInset,
           },
           size: {
-            width: (bottomRight.x - topLeft.x) - padding * 2,
-            height: (bottomRight.y - topLeft.y) - padding * 2,
+            width: bottomRight.x - topLeft.x,
+            height: (bottomRight.y - topLeft.y) - topInset,
           },
         }
       }

@@ -1,3 +1,4 @@
+import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 // Panel registry (renderer side)
 //
@@ -20,7 +21,6 @@ import {
   SquaresFour,
   FileDoc,
   GitDiff,
-  ChatsCircle,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
@@ -138,7 +138,7 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
   },
   agent: {
     ...PANEL_DEFINITIONS.agent,
-    icon: ChatsCircle,
+    icon: T3Logo,
     Component: AgentPanel,
     create: ({ workspaceId, canvasPoint, placement }) =>
       trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null),

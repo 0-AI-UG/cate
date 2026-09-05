@@ -7,7 +7,7 @@
 // registry's deterministic order, and owns driver-agent selection.
 // =============================================================================
 
-import { AGENTS, type AgentDef } from '../../../shared/agents'
+import { TERMINAL_AGENTS, type AgentDef } from '../../../shared/agents'
 import type { AgentHookAgentState } from '../../../shared/agentHooks'
 import {
   resolveAgentHookMode,
@@ -52,7 +52,7 @@ export async function inspectAgentCliHooks(locator: string): Promise<AgentCliHoo
     )
   }
   const byId = new Map(live.map((state) => [state.agentId, state]))
-  return AGENTS.map((agent) => {
+  return TERMINAL_AGENTS.map((agent) => {
     const state = byId.get(agent.id)
     return {
       agent,
@@ -110,7 +110,7 @@ export async function resolveDriverAgentCli(
       fallbackById.get(state.agent.id),
     ).ready
   if (normalized) {
-    const preferred = AGENTS.find((agent) => agent.id === normalized)
+    const preferred = TERMINAL_AGENTS.find((agent) => agent.id === normalized)
     if (!preferred) {
       throw new AgentCliHookError(
         'unknown-preference',

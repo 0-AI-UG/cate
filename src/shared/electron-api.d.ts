@@ -772,6 +772,11 @@ export interface ElectronAPI {
   /** Set the OS title of the calling window. Drives the macOS native tab label. */
   windowSetTitle(title: string): Promise<void>
 
+  /** App-wide idle sleep prevention; resets when Cate quits. */
+  getKeepAwake(): Promise<boolean>
+  setKeepAwake(enabled: boolean): Promise<boolean>
+  onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void
+
   /** Merge a partial into the boot snapshot so the next cold launch constructs
    *  the BrowserWindow with the persisted theme/background/appearance. */
   bootSnapshotWrite(partial: Record<string, unknown>): Promise<void>
@@ -1057,6 +1062,10 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
   // T3 provider harness
   // ---------------------------------------------------------------------------
+
+  onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void
+  agentHarnessDeleteConversation(request: AgentProviderStatusRequest & { threadId: string }): Promise<{ ok: true } | AgentHarnessError>
+  agentHarnessListConversations(request: AgentProviderStatusRequest): Promise<import('./t3Agent').T3Conversation[] | AgentHarnessError>
 
   agentHarnessGetPanelUrl(
     request: AgentHarnessPanelRequest,

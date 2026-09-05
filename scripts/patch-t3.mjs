@@ -15,9 +15,24 @@ export function patchT3Source(source) {
   return source.replace(probe, safeProbe)
 }
 
+// Cate owns chat selection. T3's auto-bootstrap otherwise creates/resumes the
+// first server thread and redirects every new guest away from its draft.
+export function patchT3ProjectBootstrap(source) {
+  const marker = 'bootstrapProjectId = nextProjectId; /* cate: project-only bootstrap */'
+  const start = '\t\tconst existingThreadId = yield* projectionReadModelQuery.getFirstActiveThreadIdByProjectId(nextProjectId);'
+  const end = '\n\t});\n\treturn {\n\t\t...bootstrapProjectId'
+  if (source.includes(marker) && !source.includes(start)) return source
+  const from = source.indexOf(start)
+  const to = source.indexOf(end, from)
+  if (from === -1 || to === -1 || source.indexOf(start, from + 1) !== -1) {
+    throw new Error('T3 project bootstrap changed; review chat creation before shipping')
+  }
+  return source.slice(0, from) + '\t\t' + marker + source.slice(to)
+}
+
 export function patchT3(entryPath) {
   const source = readFileSync(entryPath, 'utf8')
-  const patched = patchT3Source(source)
+  const patched = patchT3ProjectBootstrap(patchT3Source(source))
   if (patched !== source) writeFileSync(entryPath, patched)
 }
 

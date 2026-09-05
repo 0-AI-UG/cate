@@ -13,8 +13,8 @@ describe('provider update feedback', () => {
     expect(providerUpdateFeedback().error).toBe(true)
   })
   it('keeps failed updates as failures and neutralizes product copy', () => {
-    expect(providerUpdateFeedback({ updateState: { status: 'failed', message: 'T3 Code could not update.' } })).toEqual({ error: true, message: 'Cate Agent could not update.' })
-    expect(agentProductCopy('T3Code and T3 Code')).toBe('Cate Agent and Cate Agent')
+    expect(providerUpdateFeedback({ updateState: { status: 'failed', message: 'T3 Code could not update.' } })).toEqual({ error: true, message: 'T3 Code could not update.' })
+    expect(agentProductCopy('T3Code and T3 Code')).toBe('T3 Code and T3 Code')
   })
   it('reports verified completion', () => {
     expect(providerUpdateFeedback({ updateState: { status: 'succeeded', message: 'Provider updated.' } })).toEqual({ error: false, message: 'Provider updated.' })

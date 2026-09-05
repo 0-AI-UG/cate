@@ -31,6 +31,7 @@ import { worktreeForPanel } from '../worktreeContext'
 // here — consulted by both buildWorkspaceFile and projectFilesToSnapshot — so
 // the two paths can't drift and silently drop a field on round-trip.
 const PASSTHROUGH_PANEL_FIELDS = [
+  'titleUserOverridden',
   'tabs',
   'activeTabId',
   'proxyUrl',

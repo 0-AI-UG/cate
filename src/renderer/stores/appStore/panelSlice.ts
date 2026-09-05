@@ -211,14 +211,15 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
     },
 
-    createAgent(workspaceId, position?, placement?, cwd?, worktreeId?) {
+    createAgent(workspaceId, position?, placement?, cwd?, worktreeId?, threadId?) {
       // Auto-number agent panels (same scheme as terminals) so multiple agents are
       // addressable and distinct — unique across ALL windows, not just this one.
       const panel: PanelState = {
         id: generateId(),
         type: 'agent',
-        title: nextNumberedTitle(get, workspaceId, 'agent', 'Agent'),
+        title: nextNumberedTitle(get, workspaceId, 'agent', 'T3 Code'),
         isDirty: false,
+        ...(threadId ? { agentThreadId: threadId } : {}),
         ...(cwd ? { cwd } : {}),
         ...(worktreeId ? { worktreeId } : {}),
       }

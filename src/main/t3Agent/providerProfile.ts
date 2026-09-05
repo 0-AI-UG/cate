@@ -1,3 +1,5 @@
+import { T3_AGENTS } from '../../shared/agents'
+
 const PROVIDER_SETTING_KEYS = [
   'providers',
   'providerInstances',
@@ -9,13 +11,7 @@ const PROVIDER_SETTING_KEYS = [
   'sourceControlWriterModelSelection',
 ] as const
 
-const CATE_DEFAULT_PROVIDER_KEYS = [
-  'codex',
-  'claudeAgent',
-  'cursor',
-  'grok',
-  'opencode',
-] as const
+const CATE_DEFAULT_PROVIDER_KEYS = T3_AGENTS.map((agent) => agent.t3.driverId)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
