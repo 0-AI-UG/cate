@@ -563,10 +563,9 @@ async function stageT3(outRoot) {
 }
 
 function copyInstalledPackage(name, outModules) {
-  const requireFromRoot = createRequire(path.join(repoRoot, 'package.json'))
   let entry
   try {
-    entry = requireFromRoot.resolve(name)
+    entry = fileURLToPath(import.meta.resolve(name))
   } catch {
     throw new Error(`T3 runtime dependency "${name}" is not installed; run \`npm install\` first`)
   }
