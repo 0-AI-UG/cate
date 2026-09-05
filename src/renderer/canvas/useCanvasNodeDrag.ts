@@ -42,13 +42,14 @@ export function useCanvasNodeDrag(
     if (!panel) return
     const state = canvasApi.getState()
     const node = state.nodes[nodeId]
+    if (!node || node.isPinned) return
     const grouped = node && isGroupDragMember(state.selection, nodeId)
     const startOrigin = grouped ? { x: node.origin.x, y: node.origin.y } : undefined
     const members = grouped
       ? state.selection
           .filter((id) => id !== nodeId)
           .map((id) => state.nodes[id])
-          .filter((n): n is NonNullable<typeof n> => !!n)
+          .filter((n): n is NonNullable<typeof n> => !!n && !n.isPinned)
           .map((n) => ({ nodeId: n.id, startOrigin: { x: n.origin.x, y: n.origin.y } }))
       : undefined
     rawHandleDragStart(e, {
