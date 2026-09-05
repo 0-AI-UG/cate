@@ -297,6 +297,39 @@ export class T3HarnessManager {
     return { settings: config.settings, providers: config.providers }
   }
 
+  async deleteConversation(request: AgentProviderStatusRequest & { threadId: string }, ownerWindowId: number): Promise<string> {
+    const resolved = resolveLocator(request.cwd)
+    const cwd = await resolved.runtime.validatePathStrict(resolved.path, ownerWindowId, request.workspaceId)
+    const key = harnessKey(resolved.runtimeId, cwd)
+    const instance = await this.ensureInstance(key, resolved.runtimeId, resolved.runtime, cwd, request.workspaceId)
+    const url = `http://127.0.0.1:${instance.proxyPort}`
+    const cookies = await session.fromPartition(partitionFor(key)).cookies.get({ url })
+    const response = await fetch(`${url}/api/orchestration/dispatch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
+      body: JSON.stringify({ type: 'thread.delete', commandId: randomUUID(), threadId: request.threadId }),
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) throw new Error(`T3 conversation deletion returned HTTP ${response.status}`)
+    return partitionFor(key)
+  }
+
+  async listConversations(request: AgentProviderStatusRequest, ownerWindowId: number): Promise<import('../../shared/t3Agent').T3Conversation[]> {
+    const resolved = resolveLocator(request.cwd)
+    const cwd = await resolved.runtime.validatePathStrict(resolved.path, ownerWindowId, request.workspaceId)
+    const key = harnessKey(resolved.runtimeId, cwd)
+    const instance = await this.ensureInstance(key, resolved.runtimeId, resolved.runtime, cwd, request.workspaceId)
+    const url = `http://127.0.0.1:${instance.proxyPort}`
+    const cookies = await session.fromPartition(partitionFor(key)).cookies.get({ url })
+    const response = await fetch(`${url}/api/orchestration/shell`, {
+      headers: { Cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) throw new Error(`T3 conversations returned HTTP ${response.status}`)
+    const snapshot = await response.json() as { threads: Array<{ id: string; title: string; updatedAt: string }> }
+    return snapshot.threads.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
+  }
+
   async getPanelTarget(
     request: AgentHarnessPanelRequest,
     ownerWindowId: number,

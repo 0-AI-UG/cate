@@ -12,6 +12,8 @@ const path = require('node:path')
 const { WebSocketServer } = require('ws')
 
 const environmentId = 'e2e-env'
+const threads = new Map()
+let sequence = 0
 const port = Number(process.env.T3CODE_PORT)
 const t3Home = process.env.T3CODE_HOME
 
@@ -126,7 +128,7 @@ function pageHtml(route) {
       </head>
       <body>
         <div id="shell" data-slot="sidebar-inset">
-          <aside>
+          <aside data-slot="sidebar">
             <div data-slot="sidebar-header">
               <a href="/" aria-label="Go to threads"><svg aria-label="T3"></svg>T3 Code</a>
               <button aria-label="New project">New project</button>
@@ -144,7 +146,7 @@ function pageHtml(route) {
           picker?.addEventListener('click', () => {
             document.querySelector('#model-options')?.removeAttribute('hidden')
           })
-          document.querySelector('#composer')?.addEventListener('submit', (event) => {
+          document.querySelector('#composer')?.addEventListener('submit', async (event) => {
             event.preventDefault()
             const textarea = document.querySelector('textarea')
             const value = textarea?.value.trim()
@@ -157,6 +159,7 @@ function pageHtml(route) {
             assistantMessage.textContent = 'Test reply'
             document.querySelector('#messages').append(userMessage, assistantMessage)
             textarea.value = ''
+            await fetch('/api/orchestration/dispatch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'thread.create', threadId: 'thread-e2e', title: value }) })
             history.pushState({}, '', '/${environmentId}/thread-e2e')
           })
         </script>
@@ -205,6 +208,26 @@ process.stdin.on('end', () => {
       response.end('Unauthorized')
       return
     }
+    if (url.pathname === '/api/orchestration/shell') {
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ snapshotSequence: sequence, threads: [...threads.values()] }))
+      return
+    }
+    if (request.method === 'POST' && url.pathname === '/api/orchestration/dispatch') {
+      let body = ''
+      request.on('data', chunk => { body += chunk })
+      request.on('end', () => {
+        const command = JSON.parse(body)
+        if (command.type === 'thread.create') threads.set(command.threadId, { id: command.threadId, title: command.title, updatedAt: new Date().toISOString() })
+        else if (command.type === 'thread.delete') threads.delete(command.threadId)
+        else { response.statusCode = 400; response.end('Unsupported command'); return }
+        sequence++
+        for (const socket of ws.clients) if (socket.shellRequestId) sendShell(socket)
+        response.setHeader('content-type', 'application/json')
+        response.end(JSON.stringify({ sequence }))
+      })
+      return
+    }
     const send = () => {
       response.setHeader('content-type', 'text/html; charset=utf-8')
       response.end(pageHtml(url.pathname))
@@ -213,11 +236,16 @@ process.stdin.on('end', () => {
     else send()
   })
   const ws = new WebSocketServer({ server, path: '/ws' })
+  function sendShell(socket) {
+    socket.send(JSON.stringify({ _tag: 'Chunk', requestId: socket.shellRequestId, values: [{ kind: 'snapshot', snapshot: { snapshotSequence: sequence, threads: [...threads.values()] } }] }))
+  }
   ws.on('connection', (socket, request) => {
     if (!request.headers.cookie?.includes('cate_e2e_session=ok')) return socket.close()
     socket.on('message', (bytes) => {
       const message = JSON.parse(bytes.toString())
+      if (message._tag === 'Ping') { socket.send(JSON.stringify({ _tag: 'Pong' })); return }
       if (message._tag !== 'Request') return
+      if (message.tag === 'orchestration.subscribeShell') { socket.shellRequestId = message.id; sendShell(socket); return }
       const settingsPath = path.join(t3Home, 'userdata', 'settings.json')
       let settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
       if (message.tag === 'server.updateSettings') {

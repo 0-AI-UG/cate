@@ -1,3 +1,4 @@
+import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 // WorktreeToolbarMenu — the canvas toolbar's "parallel worktrees" drop-up, and
 // (since the sidebar tab was retired) the single home for worktree tooling.
@@ -25,7 +26,6 @@ import {
   Warning,
   X,
   GitPullRequest,
-  ChatsCircle,
 } from '@phosphor-icons/react'
 import { Tooltip } from '../ui/Tooltip'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
@@ -515,7 +515,7 @@ const WorktreeRow: React.FC<{
               onClick={() => onLaunch('terminal')}
             />
             <SpawnButton
-              icon={<ChatsCircle size={12} />}
+              icon={<T3Logo size={12} />}
               title="Agent"
               panelType="agent"
               cwd={wt.path}
@@ -551,7 +551,7 @@ const WorktreeRow: React.FC<{
               )}
               {openAgents > 0 && (
                 <span className="flex items-center gap-0.5">
-                  <ChatsCircle size={10} />
+                  <T3Logo size={10} />
                   {openAgents}
                 </span>
               )}

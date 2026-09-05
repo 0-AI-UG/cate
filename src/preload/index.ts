@@ -209,6 +209,9 @@ import {
   BROWSER_CREDENTIAL_CLEAR,
   NATIVE_FILE_DRAG,
   AGENT_HARNESS_GET_PANEL_URL,
+  AGENT_HARNESS_LIST_CONVERSATIONS,
+  AGENT_HARNESS_DELETE_CONVERSATION,
+  AGENT_CONVERSATION_DELETED,
   AGENT_HARNESS_PANEL_CLOSED,
   AGENT_HARNESS_RESTART,
   AGENT_HARNESS_GET_STATUS,
@@ -479,6 +482,8 @@ const invokeForwarders = {
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
 
   // T3 provider harness
+  agentHarnessDeleteConversation: makeInvoker<'agentHarnessDeleteConversation'>(AGENT_HARNESS_DELETE_CONVERSATION),
+  agentHarnessListConversations: makeInvoker<'agentHarnessListConversations'>(AGENT_HARNESS_LIST_CONVERSATIONS),
   agentHarnessGetPanelUrl: makeInvoker<'agentHarnessGetPanelUrl'>(AGENT_HARNESS_GET_PANEL_URL),
   agentHarnessRestart: makeInvoker<'agentHarnessRestart'>(AGENT_HARNESS_RESTART),
   agentHarnessGetStatus: makeInvoker<'agentHarnessGetStatus'>(AGENT_HARNESS_GET_STATUS),
@@ -921,6 +926,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onMenuLoadLayout(callback: (name: string) => void): () => void {
     return createIpcListener(MENU_LOAD_LAYOUT, callback)
+  },
+
+  onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void {
+    return createIpcListener(AGENT_CONVERSATION_DELETED, callback)
   },
 
   onBrowserShortcut(callback: (action: string) => void): () => void {

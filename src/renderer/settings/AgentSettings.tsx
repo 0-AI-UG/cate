@@ -129,7 +129,7 @@ export function AgentSettings() {
   }, [authSession?.phase, authSession?.providerId, refreshProviderStatuses])
 
   return (
-    <SearchableBlock keywords="agent providers models sign in authentication codex claude cursor grok opencode">
+    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok opencode">
       <div className="flex flex-col gap-4">
         <AgentProviderConfiguration workspaceId={workspaceId} cwd={cwd} onChanged={refreshProviderStatuses} authentication={(driver) => (
           <div>
@@ -181,7 +181,7 @@ export function AgentSettings() {
         )} />
 
         <p className="text-xs text-muted">
-          The Agent chat and provider harness are powered by{' '}
+          Conversations run in{' '}
           <button
             type="button"
             onClick={() => window.electronAPI.openExternalUrl('https://github.com/pingdotgg/t3code')}

@@ -15,6 +15,8 @@ vi.hoisted(() => {
 
 import { useAppStore } from '../stores/appStore'
 import AgentPanel from './AgentPanel'
+import { useActivePanelStore } from '../lib/activePanel'
+import { useUIStore } from '../stores/uiStore'
 
 const initialState = useAppStore.getState()
 let host: HTMLDivElement
@@ -26,6 +28,8 @@ beforeEach(() => {
   document.body.appendChild(host)
   root = createRoot(host)
   getPanelUrl = vi.fn()
+  useActivePanelStore.setState({ activePanelId: null })
+  useUIStore.setState({ showCommandPalette: false })
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     agentHarnessGetPanelUrl: getPanelUrl,
     agentHarnessPanelClosed: vi.fn(),
@@ -57,7 +61,7 @@ describe('AgentPanel', () => {
 
     await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
 
-    expect(host.textContent).toContain('Starting agent')
+    expect(host.textContent).toContain('Starting T3 Code')
   })
 
   it('shows an error when the harness fails', async () => {
@@ -68,7 +72,7 @@ describe('AgentPanel', () => {
       await Promise.resolve()
     })
 
-    expect(host.textContent).toContain('Agent unavailable')
+    expect(host.textContent).toContain('T3 Code unavailable')
     expect(host.textContent).toContain('runtime unavailable')
   })
 
@@ -110,7 +114,21 @@ describe('AgentPanel', () => {
     })
     expect(webview.classList.contains('visible')).toBe(true)
 
-    await act(async () => webview.dispatchEvent(new Event('did-start-loading')))
+    await act(async () => webview.dispatchEvent(Object.assign(new Event('did-start-navigation'), { isMainFrame: true, isInPlace: true })))
+    expect(webview.classList.contains('visible')).toBe(true)
+
+    const focus = vi.spyOn(webview, 'focus')
+    await act(async () => {
+      useUIStore.setState({ showCommandPalette: true })
+      useActivePanelStore.setState({ activePanelId: 'agent' })
+    })
+    expect(focus).not.toHaveBeenCalled()
+    await act(async () => useUIStore.setState({ showCommandPalette: false }))
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)) })
+    expect(focus).toHaveBeenCalledOnce()
+
+
+    await act(async () => webview.dispatchEvent(Object.assign(new Event('did-start-navigation'), { isMainFrame: true, isInPlace: false })))
     expect(webview.classList.contains('invisible')).toBe(true)
   })
 })

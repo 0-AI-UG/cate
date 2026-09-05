@@ -1,5 +1,5 @@
 // =============================================================================
-// Coding agents Cate recognizes — THE canonical registry. Everything Cate knows
+// Provider identities Cate recognizes — THE canonical registry. Everything Cate knows
 // about an agent CLI is declared here (or in a table this file's AgentId keys),
 // so adding an agent is one entry plus whatever the compiler then demands.
 //
@@ -70,8 +70,13 @@ export interface AgentSkillTarget {
   beta?: boolean
 }
 
+export type T3ProviderId = 'codex' | 'claude' | 'cursor' | 'grok' | 'opencode'
+export type T3DriverId = 'codex' | 'claudeAgent' | 'cursor' | 'grok' | 'opencode'
+
 export interface AgentDef {
   id: AgentId
+  /** Optional T3 integration of this same provider; readiness is integration-specific. */
+  t3?: { providerId: T3ProviderId; driverId: T3DriverId }
   /** Label shown in panel titles / tooltips. */
   displayName: string
   /** The CLI command that launches this agent in a terminal — usually the same
@@ -113,6 +118,7 @@ const folderSkills = (
 export const AGENTS: readonly AgentDef[] = [
   {
     id: 'claude-code',
+    t3: { providerId: 'claude', driverId: 'claudeAgent' },
     displayName: 'Claude Code',
     command: 'claude',
     codingAgentArgs: (prompt) => [prompt],
@@ -124,6 +130,7 @@ export const AGENTS: readonly AgentDef[] = [
   },
   {
     id: 'codex',
+    t3: { providerId: 'codex', driverId: 'codex' },
     displayName: 'Codex',
     command: 'codex',
     codingAgentArgs: (prompt) => [prompt],
@@ -137,6 +144,7 @@ export const AGENTS: readonly AgentDef[] = [
   // the process scan basenames), so both spellings show up in the wild.
   {
     id: 'cursor',
+    t3: { providerId: 'cursor', driverId: 'cursor' },
     displayName: 'Cursor',
     command: 'cursor-agent',
     codingAgentArgs: (prompt) => [prompt],
@@ -155,6 +163,7 @@ export const AGENTS: readonly AgentDef[] = [
   // versioned spelling shows up alongside the plain one.
   {
     id: 'grok',
+    t3: { providerId: 'grok', driverId: 'grok' },
     displayName: 'Grok',
     command: 'grok',
     codingAgentArgs: (prompt) => [prompt],
@@ -171,6 +180,7 @@ export const AGENTS: readonly AgentDef[] = [
   },
   {
     id: 'opencode',
+    t3: { providerId: 'opencode', driverId: 'opencode' },
     displayName: 'OpenCode',
     command: 'opencode',
     // Seed the persistent TUI instead of using the one-shot `run` command so
@@ -257,3 +267,7 @@ export function resumeCommandForAgent(agentId: string, sessionId: string): strin
   if (!def?.resumeArgs || !SAFE_SESSION_ID.test(sessionId)) return null
   return [def.command, ...def.resumeArgs(sessionId)].join(' ')
 }
+
+/** Shared identities, filtered by the execution integration required by the caller. */
+export const TERMINAL_AGENTS = AGENTS
+export const T3_AGENTS = AGENTS.filter((agent): agent is AgentDef & { t3: NonNullable<AgentDef['t3']> } => !!agent.t3)

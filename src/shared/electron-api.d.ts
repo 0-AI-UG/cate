@@ -1060,6 +1060,10 @@ export interface ElectronAPI {
   // T3 provider harness
   // ---------------------------------------------------------------------------
 
+  onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void
+  agentHarnessDeleteConversation(request: AgentProviderStatusRequest & { threadId: string }): Promise<{ ok: true } | AgentHarnessError>
+  agentHarnessListConversations(request: AgentProviderStatusRequest): Promise<import('./t3Agent').T3Conversation[] | AgentHarnessError>
+
   agentHarnessGetPanelUrl(
     request: AgentHarnessPanelRequest,
   ): Promise<AgentHarnessPanelTarget | AgentHarnessError>

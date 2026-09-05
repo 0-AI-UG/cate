@@ -11,11 +11,13 @@ const HARNESS = 'http://127.0.0.1:49152/pair#secret'
 const ENV = 'local-env'
 
 describe('Agent harness chat-only surface', () => {
-  it('keeps the T3 thread list while hiding project navigation, terminal, preview, and right-panel controls', () => {
-    expect(AGENT_CHAT_ONLY_CSS).not.toContain('[data-slot="sidebar"],')
-    expect(AGENT_CHAT_ONLY_CSS).not.toContain('[data-slot="sidebar-gap"]')
-    expect(AGENT_CHAT_ONLY_CSS).not.toContain('[data-app-sidebar]')
+  it('hides embedded navigation and Cate-owned controls', () => {
+    expect(AGENT_CHAT_ONLY_CSS).toContain('[data-slot="sidebar"],')
+    expect(AGENT_CHAT_ONLY_CSS).toContain('[data-slot="sidebar-gap"]')
+    expect(AGENT_CHAT_ONLY_CSS).toContain('[data-app-sidebar]')
     expect(AGENT_CHAT_ONLY_CSS).toContain('[data-slot="sidebar-header"]')
+    expect(AGENT_CHAT_ONLY_CSS).toContain('[data-sidebar="trigger"]')
+    expect(AGENT_CHAT_ONLY_CSS).not.toContain('[data-sidebar="group"] > div')
     expect(AGENT_CHAT_ONLY_CSS).toContain('[data-slot="sidebar-footer"]')
     expect(AGENT_CHAT_ONLY_CSS).toContain('svg[aria-label="T3"]')
     expect(AGENT_CHAT_ONLY_CSS).toContain('button[aria-label="Filter threads by project"]')
@@ -36,7 +38,7 @@ describe('Agent harness chat-only surface', () => {
     const threadScript = agentHarnessBrandingScript('thread')
     const providerScript = agentHarnessBrandingScript('providers')
 
-    expect(threadScript).toContain("document.title !== 'Cate Agent'")
+    expect(threadScript).toContain("document.title !== 'T3 Code'")
     expect(threadScript).toContain('MutationObserver(removeProductChrome)')
     expect(threadScript).toContain('observe(document.documentElement')
     expect(threadScript).toContain("if (\"thread\" !== 'providers') return")
@@ -48,6 +50,7 @@ describe('Agent harness chat-only surface', () => {
   it('allows pairing, drafts, bound-environment threads, and provider settings only', () => {
     expect(isAllowedAgentHarnessNavigation(HARNESS, HARNESS, ENV, 'thread')).toBe(true)
     expect(isAllowedAgentHarnessNavigation('http://127.0.0.1:49152/', HARNESS, ENV, 'thread')).toBe(true)
+    expect(isAllowedAgentHarnessNavigation('http://127.0.0.1:49152/', HARNESS, ENV, 'thread', 'existing-thread')).toBe(false)
     expect(isAllowedAgentHarnessNavigation('http://127.0.0.1:49152/draft/draft-1', HARNESS, ENV, 'thread')).toBe(true)
     expect(isAllowedAgentHarnessNavigation('http://127.0.0.1:49152/local-env/thread-1', HARNESS, ENV, 'thread')).toBe(true)
     expect(isAllowedAgentHarnessNavigation('http://127.0.0.1:49152/pull-requests', HARNESS, ENV, 'thread')).toBe(false)
@@ -78,14 +81,14 @@ describe('Agent harness chat-only surface', () => {
       ENV,
       'thread',
       'thread-1',
-    )).toBe(true)
+    )).toBe(false)
     expect(isAllowedAgentHarnessNavigation(
       'http://127.0.0.1:49152/draft/draft-2',
       HARNESS,
       ENV,
       'thread',
       'thread-1',
-    )).toBe(true)
+    )).toBe(false)
     expect(isAllowedAgentHarnessNavigation(
       'http://127.0.0.1:49152/other-env/thread-2',
       HARNESS,

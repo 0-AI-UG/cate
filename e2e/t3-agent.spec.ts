@@ -121,7 +121,7 @@ test('real T3 exposes provider settings through the native Cate RPC bridge', asy
   await page.screenshot({ path: 'output/playwright/agent-settings-redesign.png' })
 })
 
-test('boots the authenticated chat surface, removes product chrome, and keeps the chat list', async () => {
+test('boots the authenticated chat surface, removes the embedded sidebar and product chrome', async () => {
   const surface = await guestEval<{
     title: string
     hasT3Logo: boolean
@@ -131,15 +131,15 @@ test('boots the authenticated chat surface, removes product chrome, and keeps th
   }>(agentWebview(), `(() => ({
     title: document.title,
     hasT3Logo: Boolean(document.querySelector('svg[aria-label="T3"]')),
-    threadListVisible: getComputedStyle(document.querySelector('[data-testid="thread-list"]')).display !== 'none',
+    threadListVisible: getComputedStyle(document.querySelector('[data-slot="sidebar"]')).display !== 'none',
     upstreamHeaderHidden: getComputedStyle(document.querySelector('[data-chat-header]')).display === 'none',
     newProjectHidden: getComputedStyle(document.querySelector('button[aria-label="New project"]')).display === 'none',
   }))()`)
 
   expect(surface).toEqual({
-    title: 'Cate Agent',
+    title: 'T3 Code',
     hasT3Logo: false,
-    threadListVisible: true,
+    threadListVisible: false,
     upstreamHeaderHidden: true,
     newProjectHidden: true,
   })
@@ -277,11 +277,95 @@ test('keeps the webview hidden during reload until Cate branding is reapplied', 
   expect(await guestEval(agentWebview(), `({
     title: document.title,
     hasT3Logo: Boolean(document.querySelector('svg[aria-label="T3"]')),
-  })`)).toEqual({ title: 'Cate Agent', hasT3Logo: false })
+  })`)).toEqual({ title: 'T3 Code', hasT3Logo: false })
   await guestEval(agentWebview(), `(() => {
     const toast = document.createElement('div'); toast.setAttribute('data-sonner-toast', ''); toast.id = 'brand-toast'; toast.textContent = 'T3 Code update failed'; document.body.append(toast);
     const message = document.createElement('p'); message.id = 'user-copy'; message.textContent = 'Explain T3 Code'; document.body.append(message);
   })()`)
-  await expect.poll(() => guestEval(agentWebview(), `document.querySelector('#brand-toast').textContent`)).toBe('Cate Agent update failed')
+  await expect.poll(() => guestEval(agentWebview(), `document.querySelector('#brand-toast').textContent`)).toBe('T3 Code update failed')
   expect(await guestEval(agentWebview(), `document.querySelector('#user-copy').textContent`)).toBe('Explain T3 Code')
+})
+
+async function seedConversation(title: string): Promise<void> {
+  await guestEval(agentWebview(), `(() => {
+    document.querySelector('textarea').value = ${JSON.stringify(title)}
+    document.querySelector('#composer').requestSubmit()
+  })()`)
+  await expect.poll(() => page.evaluate((id) => window.__cateE2E!.agentPanelSnapshot(id)?.threadId, agent.panelId)).toBe('thread-e2e')
+  await expect.poll(async () => {
+    const state = await guestEval(agentWebview(), 'JSON.stringify(window.__cateT3Threads)')
+    return state
+  }).toContain(title)
+  await expect(page.locator(`[data-tab-panel-id="${agent.panelId}"]`)).toContainText(title)
+}
+
+async function guestKey(webview: Locator, key: string, modifiers: string[] = []): Promise<void> {
+  const id = await webview.evaluate((element) => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())
+  await electronApp!.evaluate(({ webContents }, input) => {
+    const guest = webContents.fromId(input.id)!
+    guest.focus()
+    guest.sendInputEvent({ type: 'keyDown', keyCode: input.key, modifiers: input.modifiers as never })
+    guest.sendInputEvent({ type: 'keyUp', keyCode: input.key, modifiers: input.modifiers as never })
+  }, { id, key, modifiers })
+}
+
+async function detachAgent(): Promise<Page> {
+  const tab = page.locator(`[data-tab-panel-id="${agent.panelId}"]`)
+  const box = (await tab.boundingBox())!
+  const width = await page.evaluate(() => innerWidth)
+  await page.mouse.move(box.x + 35, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 135, box.y + box.height / 2, { steps: 10 })
+  await page.mouse.move(width + 120, box.y + box.height / 2)
+  await page.waitForTimeout(300)
+  await page.mouse.up()
+  let target: Page | undefined
+  await expect.poll(async () => {
+    for (const candidate of electronApp!.windows()) {
+      if (candidate !== page && await candidate.locator(`[data-agent-panel-id="${agent.panelId}"]`).count().catch(() => 0)) target = candidate
+    }
+    return !!target
+  }, { timeout: 20_000 }).toBe(true)
+  await expect(target!.locator('webview[data-agent-webview]')).toHaveAttribute('data-agent-guest-ready', 'true')
+  return target!
+}
+
+test('T3 panel parity: Command+K from a focused guest returns keyboard focus to the chat', async () => {
+  await seedConversation('Keyboard focus conversation')
+  await guestEval(agentWebview(), `document.querySelector('textarea').focus()`)
+  await guestKey(agentWebview(), 'k', [process.platform === 'darwin' ? 'meta' : 'control'])
+  const search = page.getByPlaceholder('Search commands, workspaces, panels and files')
+  await expect(search).toBeFocused()
+  await search.fill('Keyboard focus conversation')
+  await search.press('Enter')
+  await expect(search).not.toBeVisible()
+  await expect.poll(() => guestEval<boolean>(agentWebview(), 'document.hasFocus()')).toBe(true)
+  await guestKey(agentWebview(), 'x')
+  // insertText goes through the actual focused guest, not a DOM value assignment.
+  const id = await agentWebview().evaluate((el) => (el as HTMLElement & { getWebContentsId(): number }).getWebContentsId())
+  await electronApp!.evaluate(({ webContents }, id) => webContents.fromId(id)!.insertText('typing after palette'), id)
+  expect(await guestEval(agentWebview(), `document.querySelector('textarea').value`)).toContain('typing after palette')
+})
+
+test('T3 panel parity: Command+K reveals a detached chat and popup deletion closes its other-window panel', async () => {
+  await seedConversation('Detached conversation')
+  const detached = await detachAgent()
+  await page.bringToFront()
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k')
+  const search = page.getByPlaceholder('Search commands, workspaces, panels and files')
+  await expect(search).toBeVisible()
+  await search.fill('Detached conversation')
+  await expect(page.getByText('Other window', { exact: true })).toBeVisible()
+  await search.press('Enter')
+  await expect.poll(() => guestEval<boolean>(detached.locator('webview[data-agent-webview]'), 'document.hasFocus()')).toBe(true)
+
+  await page.bringToFront()
+  await page.getByRole('button', { name: 'T3 Code conversations', exact: true }).click()
+  const popup = page.getByRole('dialog', { name: 'T3 Code conversations' })
+  await popup.getByRole('button', { name: 'Delete Detached conversation', exact: true }).click()
+  await popup.getByRole('button', { name: 'Delete', exact: true }).click()
+  await expect(popup.getByRole('button', { name: 'Detached conversation', exact: true })).toHaveCount(0)
+  await expect.poll(() => detached.isClosed()).toBe(true)
+  const remaining = await page.evaluate(({ workspaceId, cwd }) => window.electronAPI.agentHarnessListConversations({ workspaceId, cwd }), { workspaceId: agent.workspaceId, cwd: workspaceRoot })
+  expect(remaining).toEqual([])
 })

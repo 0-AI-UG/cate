@@ -112,3 +112,12 @@ describe('agent logo coverage', () => {
     }
   })
 })
+
+test('T3 integrations reuse canonical provider identities and skill targets', async () => {
+  const { T3_AGENTS, TERMINAL_AGENTS } = await import('./agents')
+  expect(T3_AGENTS.map((a) => a.t3.driverId).sort()).toEqual(['claudeAgent', 'codex', 'cursor', 'grok', 'opencode'])
+  for (const provider of T3_AGENTS) {
+    expect(TERMINAL_AGENTS.find((cli) => cli.id === provider.id)).toBe(provider)
+    expect(provider.skills).not.toBeNull()
+  }
+})

@@ -1,3 +1,4 @@
+import { AgentHooksSettings } from './AgentHooksSettings'
 import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, TextInput, NumberInput, Toggle, Slider } from './SettingsComponents'
 import { IS_MAC } from '../lib/platform'
@@ -85,6 +86,7 @@ export function TerminalSettings() {
           onChange={(v) => store.setSetting('autoSuspendIdleTerminals', v)}
         />
       </SettingRow>
+      <section className="mt-6 border-t border-subtle pt-4"><h3 className="text-sm font-medium text-primary mb-2">CLI agent hooks</h3><AgentHooksSettings /></section>
     </div>
   )
 }

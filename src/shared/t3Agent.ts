@@ -28,7 +28,7 @@ export interface AgentHarnessStatus {
   message?: string
 }
 
-export type AgentProviderId = 'codex' | 'claude' | 'cursor' | 'grok' | 'opencode'
+export type AgentProviderId = import('./agents').T3ProviderId
 
 export type AgentProviderAuthPhase = 'running' | 'succeeded' | 'failed' | 'cancelled'
 
@@ -73,4 +73,10 @@ export interface AgentProviderStatus {
     canUpdate: boolean
     message?: string
   }
+}
+
+export interface T3Conversation {
+  id: string
+  title: string
+  updatedAt: string
 }

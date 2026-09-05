@@ -258,14 +258,6 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     if (panelId && wt.worktreeId) app.setPanelWorktreeId(wsId, panelId, wt.worktreeId)
   }, [workspaceId, here, store])
 
-  const onNewAgent = useCallback(async () => {
-    const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (!wsId) return
-    const app = useAppStore.getState()
-    const workspace = app.getWorkspace(wsId)
-    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
-    app.createAgent(wsId, undefined, here(), wt.cwd, wt.worktreeId)
-  }, [workspaceId, here, store])
 
   return (
     <CanvasStoreProvider store={store}>
@@ -300,7 +292,6 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
               onNewTerminal={onNewTerminal}
               onNewBrowser={onNewBrowser}
               onNewEditor={onNewEditor}
-              onNewAgent={onNewAgent}
             />
           ) : null}
         >

@@ -15,6 +15,7 @@ vi.mock('./extensions/proxyServer', () => ({
   getProxyOrigin: () => PROXY_ORIGIN,
   getCateHostPreloadPath: () => CANONICAL_PRELOAD,
 }))
+vi.mock('./settingsFile', () => ({ getSetting: () => ({}) }))
 vi.mock('./featureFlags', () => ({ disableWebviewHardening: () => false }))
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 

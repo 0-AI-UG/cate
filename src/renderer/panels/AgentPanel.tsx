@@ -1,3 +1,5 @@
+import { T3_THREAD_SUBSCRIPTION_SCRIPT } from '../lib/t3ThreadState'
+import { useT3ActivityStore, type T3Snapshot } from '../stores/t3ActivityStore'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowClockwise, ChatsCircle, CircleNotch } from '@phosphor-icons/react'
 import type { AgentPanelProps } from './types'
@@ -10,6 +12,9 @@ import {
   isAgentProviderSettingsNavigation,
   isAllowedAgentHarnessNavigation,
 } from '../lib/agentHarnessSurface'
+import { useActivePanelStore } from '../lib/activePanel'
+import { useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
+import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { useUIStore } from '../stores/uiStore'
 
 interface WebviewElement extends HTMLElement {
@@ -36,11 +41,24 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : 'The agent harness could not be started.'
 }
 
-export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
+export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelProps) {
   const webviewRef = useRef<WebviewElement | null>(null)
   const [state, setState] = useState<ResolveState>({ phase: 'loading' })
   const [retryNonce, setRetryNonce] = useState(0)
   const [guestReady, setGuestReady] = useState(false)
+
+  const activePanelId = useActivePanelStore((s) => s.activePanelId)
+  const canvasFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
+  const focusEpoch = useOptionalCanvasStoreContext((s) => s.focusEpoch, 0)
+  const isFocused = nodeId ? canvasFocused : activePanelId === panelId
+  const paletteOpen = useUIStore((s) => s.showCommandPalette)
+  useEffect(() => {
+    if (!isFocused || !guestReady || paletteOpen) return
+    const frame = requestAnimationFrame(() => {
+      if (!document.body.classList.contains('canvas-dragging')) webviewRef.current?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [isFocused, guestReady, focusEpoch, paletteOpen])
 
   const workspace = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId))
   const panel = workspace?.panels[panelId]
@@ -50,6 +68,14 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
     return worktree?.path ?? workspace?.rootPath ?? ''
   }, [panel?.cwd, panel?.worktreeId, workspace?.rootPath, workspace?.worktrees])
   const threadId = panel?.agentThreadId
+  useEffect(() => window.electronAPI.onAgentConversationDeleted?.((event) => {
+    if (state.phase === 'ready' && event.partition === state.partition && event.workspaceId === workspaceId && event.threadId === threadId) {
+      void window.electronAPI.closeWindowPanel(panelId)
+    }
+  }), [workspaceId, threadId, panelId, state])
+  const restoreThreadId = useRef(threadId)
+  restoreThreadId.current = threadId
+  const t3Connection = useT3ActivityStore((s) => s.panels[panelId]?.connected)
 
   useEffect(() => {
     if (!cwd) {
@@ -64,7 +90,7 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
       workspaceId,
       panelId,
       cwd,
-      threadId,
+      threadId: restoreThreadId.current,
       route: 'thread',
     }).then((result) => {
       if (cancelled) return
@@ -75,7 +101,7 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
     })
 
     return () => { cancelled = true }
-  }, [cwd, panelId, retryNonce, threadId, workspaceId])
+  }, [cwd, panelId, retryNonce, workspaceId])
 
   useEffect(() => {
     return () => { window.electronAPI.agentHarnessPanelClosed({ panelId }) }
@@ -101,14 +127,17 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
     const webview = webviewRef.current
     if (!webview) return
 
+    const boundUrl = threadId
+      ? `${new URL(state.url).origin}/${encodeURIComponent(state.environmentId)}/${encodeURIComponent(threadId)}`
+      : state.url
     const persistThreadFromLocation = (event?: { url?: string }): void => {
       // did-navigate-in-page can arrive before webview.getURL() reflects a
       // history.pushState route. Prefer Electron's event URL when available so
       // a freshly-created T3 thread is persisted on the first navigation.
       const navigatedUrl = event?.url ?? webview.getURL()
       if (isAgentProviderSettingsNavigation(navigatedUrl, state.url)) {
-        useUIStore.getState().openSettings('agent')
-        void webview.loadURL(state.url)
+        useUIStore.getState().openSettings('t3 code')
+        void webview.loadURL(boundUrl)
         return
       }
       if (!isAllowedAgentHarnessNavigation(
@@ -118,18 +147,18 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
         'thread',
         threadId,
       )) {
-        void webview.loadURL(state.url)
+        void webview.loadURL(boundUrl)
         return
       }
-      const nextThreadId = agentThreadIdFromUrl(navigatedUrl, state.environmentId)
-      if (nextThreadId && nextThreadId !== threadId) {
+      const nextThreadId = agentThreadIdFromUrl(navigatedUrl, state.environmentId) ?? undefined
+      if (nextThreadId !== threadId) {
         useAppStore.getState().setPanelAgentThreadId(workspaceId, panelId, nextThreadId)
       }
     }
     const onWillNavigate = (event: { url?: string; preventDefault?: () => void }): void => {
       if (event.url && isAgentProviderSettingsNavigation(event.url, state.url)) {
         event.preventDefault?.()
-        useUIStore.getState().openSettings('agent')
+        useUIStore.getState().openSettings('t3 code')
         return
       }
       if (!event.url || isAllowedAgentHarnessNavigation(
@@ -144,8 +173,10 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
     const onNewWindow = (event: { preventDefault?: () => void }): void => {
       event.preventDefault?.()
     }
-    const onStartedLoading = (): void => {
-      setGuestReady(false)
+    const onStartedLoading = (event: { isInPlace?: boolean; isMainFrame?: boolean }): void => {
+      // SPA pushState also emits loading events, but never another dom-ready.
+      // Only a new top-level document needs branding and readiness gating.
+      if (event.isMainFrame && !event.isInPlace) setGuestReady(false)
     }
     const onReady = (): void => {
       void (async () => {
@@ -164,7 +195,7 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
     webview.addEventListener('new-window', onNewWindow)
     webview.addEventListener('did-navigate', persistThreadFromLocation)
     webview.addEventListener('did-navigate-in-page', persistThreadFromLocation)
-    webview.addEventListener('did-start-loading', onStartedLoading)
+    webview.addEventListener('did-start-navigation', onStartedLoading)
     webview.addEventListener('dom-ready', onReady)
     webview.addEventListener('did-fail-load', onFailed)
     return () => {
@@ -172,11 +203,45 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
       webview.removeEventListener('new-window', onNewWindow)
       webview.removeEventListener('did-navigate', persistThreadFromLocation)
       webview.removeEventListener('did-navigate-in-page', persistThreadFromLocation)
-      webview.removeEventListener('did-start-loading', onStartedLoading)
+      webview.removeEventListener('did-start-navigation', onStartedLoading)
       webview.removeEventListener('dom-ready', onReady)
       webview.removeEventListener('did-fail-load', onFailed)
     }
   }, [panelId, state, threadId, workspaceId])
+
+  useEffect(() => {
+    if (state.phase !== 'ready') return
+    if (!threadId) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, 'T3 Code')
+    const store = useT3ActivityStore.getState()
+    store.bind(panelId, { workspaceId, partition: state.partition, threadId })
+    return () => store.unbind(panelId)
+  }, [state, panelId, workspaceId, threadId])
+
+  useEffect(() => {
+    if (state.phase !== 'ready' || !guestReady) return
+    const guest = webviewRef.current
+    if (!guest) return
+    const store = useT3ActivityStore.getState()
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      try {
+        await guest.executeJavaScript(T3_THREAD_SUBSCRIPTION_SCRIPT)
+        const snapshot = await guest.executeJavaScript('window.__cateT3Threads && ({ connected: window.__cateT3Threads.connected, threads: window.__cateT3Threads.threads, revision: window.__cateT3Threads.revision, sequence: window.__cateT3Threads.sequence })') as T3Snapshot | undefined
+        if (cancelled) return
+        if (snapshot) {
+          store.update(state.partition, snapshot, panelId)
+          const thread = threadId ? snapshot.threads[threadId] : undefined
+          if (snapshot.connected && thread?.title) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, thread.title)
+        }
+      } catch {
+        if (!cancelled) store.update(state.partition, { connected: false, threads: {}, revision: -1 }, panelId)
+      }
+      if (!cancelled) timer = setTimeout(poll, 1000)
+    }
+    void poll()
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [state, guestReady, threadId, panelId, workspaceId])
 
   return (
     <div
@@ -185,10 +250,13 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
       data-agent-phase={state.phase}
     >
       <div className="relative min-h-0 flex-1">
+        {state.phase === 'ready' && guestReady && t3Connection === false && (
+          <div role="status" className="absolute bottom-1 left-2 z-20 rounded bg-surface-2 px-2 py-1 text-xs text-muted">T3 Code activity disconnected — reconnecting…</div>
+        )}
         {state.phase === 'error' ? (
           <div className="flex h-full flex-col items-center justify-center p-6 text-center">
             <ChatsCircle size={28} className="mb-2 text-muted" />
-            <p className="text-sm font-medium text-primary">Agent unavailable</p>
+            <p className="text-sm font-medium text-primary">T3 Code unavailable</p>
             <p className="mt-1 max-w-md whitespace-pre-wrap text-xs text-muted">{agentProductCopy(state.message)}</p>
             <button
               type="button"
@@ -202,7 +270,7 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
         ) : state.phase === 'loading' ? (
           <div className="flex h-full flex-col items-center justify-center text-muted">
             <CircleNotch size={24} className="mb-2 animate-spin" />
-            <p className="text-xs">Starting agent…</p>
+            <p className="text-xs">Starting T3 Code…</p>
           </div>
         ) : (
           <>

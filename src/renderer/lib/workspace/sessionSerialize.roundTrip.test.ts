@@ -406,6 +406,8 @@ describe('workspace.json + session.json round-trip', () => {
     snapshot.panels!['agent-1'] = panel({
       id: 'agent-1',
       type: 'agent',
+      title: 'My conversation',
+      titleUserOverridden: true,
       worktreeId: 'wt-agent',
       agentThreadId: 'thread-1',
     })
@@ -418,6 +420,8 @@ describe('workspace.json + session.json round-trip', () => {
     })
     const restored = projectFilesToSnapshot(wsFile, sessFile, ROOT)
     expect(restored.panels!['agent-1']).toMatchObject({
+      title: 'My conversation',
+      titleUserOverridden: true,
       worktreeId: 'wt-agent',
       agentThreadId: 'thread-1',
     })

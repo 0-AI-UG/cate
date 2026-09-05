@@ -101,6 +101,7 @@ export interface AppStoreActions {
     placement?: PanelPlacement,
     cwd?: string,
     worktreeId?: string,
+    threadId?: string,
   ) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
   /** Open an extension-hosted panel on the canvas. `extensionPanelId` selects
@@ -132,7 +133,7 @@ export interface AppStoreActions {
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void
-  setPanelAgentThreadId: (workspaceId: string, panelId: string, threadId: string) => void
+  setPanelAgentThreadId: (workspaceId: string, panelId: string, threadId: string | undefined) => void
   setPanelReviewState: (workspaceId: string, panelId: string, reviewState: ReviewPanelState) => void
   setPanelAgentSession: (workspaceId: string, panelId: string, session: TerminalAgentSession | null) => void
   setPanelCodingAgentLaunch: (workspaceId: string, panelId: string, launch: CodingAgentLaunch | undefined) => void

@@ -155,6 +155,7 @@ export function codingAgentSnapshot(
       : undefined
   return {
     ...run,
+    executionSurface: 'terminal',
     status,
     agentName: codingAgentDisplayName(run.agentId),
     cwd: panel.cwd ?? workspace(workspaceId)?.rootPath ?? '',

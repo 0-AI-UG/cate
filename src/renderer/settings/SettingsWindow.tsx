@@ -44,7 +44,7 @@ const SECTIONS = [
   { title: 'File Explorer', component: FileExplorerSettings },
   { title: 'Worktrees', component: WorktreeSettings },
   { title: 'Notifications', component: NotificationSettings },
-  { title: 'Agent', component: AgentSettings },
+  { title: 'T3 Code', component: AgentSettings },
   { title: 'Skills', component: SkillsSettings },
   { title: 'Extensions', component: ExtensionsSettings },
   { title: 'Updates', component: UpdatesSettings },
@@ -53,7 +53,7 @@ const SECTIONS = [
 
 // DOM id for a section. Slugify spaces (e.g. "File Explorer") so the result is
 // a valid CSS selector for querySelector/scrollIntoView.
-const sectionId = (title: string): string => `settings-section-${title.toLowerCase().replace(/\s+/g, '-')}`
+const sectionId = (title: string): string => `settings-section-${(title.toLowerCase() === 'agent' ? 't3 code' : title.toLowerCase()).replace(/\s+/g, '-')}`
 
 interface SettingsWindowProps {
   isOpen: boolean

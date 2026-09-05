@@ -563,7 +563,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
         items.push(
           { id: 'new-editor', label: 'New Editor' },
           { id: 'new-browser', label: 'New Browser' },
-          { id: 'new-agent', label: 'New Agent' },
+          { id: 'new-agent', label: 'New T3 Code conversation' },
           { id: 'new-canvas', label: 'New Canvas' },
           { type: 'separator' as const },
         )

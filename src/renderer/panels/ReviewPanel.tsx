@@ -388,16 +388,16 @@ function AgentPickerPopover({
   onConfirm: () => void
 }) {
   return (
-    <div role="dialog" aria-label={action.kind === 'review' ? 'Choose review agent' : 'Choose changes agent'} className="absolute right-0 top-9 z-50 w-64 rounded-lg border border-subtle bg-surface-2 p-1.5 shadow-xl">
+    <div role="dialog" aria-label={action.kind === 'review' ? 'Choose terminal review CLI' : 'Choose terminal changes CLI'} className="absolute right-0 top-9 z-50 w-64 rounded-lg border border-subtle bg-surface-2 p-1.5 shadow-xl">
       <p className="px-1 pb-1.5 text-[10px] text-muted">
         {action.kind === 'review'
-          ? 'Choose an agent to review this diff.'
-          : 'Choose an agent to address the open review notes.'}
+          ? 'Choose a terminal CLI to review this diff.'
+          : 'Choose a terminal CLI to address the open review notes.'}
       </p>
       {choices === null ? (
-        <div className="py-4 text-center text-[10px] text-muted">Checking available agents…</div>
+        <div className="py-4 text-center text-[10px] text-muted">Checking terminal CLIs…</div>
       ) : (
-        <div role="radiogroup" aria-label="Agent" className="grid grid-cols-3 gap-1">
+        <div role="radiogroup" aria-label="Terminal CLI" className="grid grid-cols-3 gap-1">
           {choices.map(({ agent, ready }) => {
             const selected = selectedAgentId === agent.id
             const logo = getAgentLogoById(agent.id)
@@ -1401,7 +1401,7 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
         <div className="flex items-center gap-1 ml-auto">
           {reviewState.agentReview && (
             <span className={`text-[10px] mr-1 ${reviewState.agentReview.status === 'complete' ? 'text-green-400' : reviewState.agentReview.status === 'failed' ? 'text-red-400' : 'text-blue-400'}`}>
-              Agent review: {reviewState.agentReview.status}
+              Terminal review: {reviewState.agentReview.status}
             </span>
           )}
           <span className="text-[11px] text-muted tabular-nums mr-1">
@@ -1412,7 +1412,7 @@ export default function ReviewPanel({ panelId, workspaceId }: PanelProps) {
           <ToolbarButton label="Refresh" onClick={() => void refresh()} disabled={loading}><ArrowClockwise size={14} className={loading ? 'animate-spin' : ''} /></ToolbarButton>
           <div ref={agentAction?.kind === 'review' ? agentPopoverRef : undefined} className="relative">
             <ReviewActionButton
-              label="Review"
+              label="Review in terminal"
               onClick={() => {
                 if (agentAction?.kind === 'review') { setAgentAction(null); return }
                 setAgentChoices(null)

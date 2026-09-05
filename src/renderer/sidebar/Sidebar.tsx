@@ -3,7 +3,6 @@ import { ProjectList } from './ProjectList'
 import { FileExplorer } from './FileExplorer'
 import { SearchView } from './SearchView'
 import { SourceControlView } from './SourceControlView'
-import { AgentSidebarView } from './AgentSidebarView'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore, useSidebarLayout } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -17,7 +16,6 @@ import {
   FloppyDisk,
   PuzzlePiece,
   SidebarSimple,
-  ChatsCircle,
 } from '@phosphor-icons/react'
 import pkg from '../../../package.json'
 import { Tooltip } from '../ui/Tooltip'
@@ -43,7 +41,6 @@ const VIEW_META: Record<SidebarView, { icon: SidebarViewIcon; title: string }> =
   explorer: { icon: FolderOpen, title: 'Explorer' },
   search: { icon: MagnifyingGlass, title: 'Search' },
   git: { icon: GitBranch, title: 'Source Control' },
-  agent: { icon: ChatsCircle, title: 'Agent' },
 }
 
 // ---------------------------------------------------------------------------
@@ -99,8 +96,6 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
       return <SearchView rootPath={navigationRoot} workspaceId={selectedWorkspaceId} scopeControl={navigationScope} />
     case 'git':
       return <SourceControlView rootPath={rootPath} />
-    case 'agent':
-      return <AgentSidebarView workspaceId={selectedWorkspaceId ?? ''} />
     default:
       return null
   }

@@ -439,3 +439,9 @@ export const CATE_HOST_EVENT = 'cate:event'          // main -> guest: { panelId
 // window and await its reply (editor.openFile, canvas.createPanel, panel.setTitle).
 export const CATE_HOST_FORWARD = 'cate:hostAction'        // main -> renderer: { requestId, workspaceId, panelId, extensionId, method, args, originCwd? }
 export const CATE_HOST_FORWARD_REPLY = 'cate:hostActionReply' // renderer -> main: { requestId, ok, result?, error? }
+
+export const AGENT_HARNESS_LIST_CONVERSATIONS = 'agentHarness:listConversations'
+
+export const AGENT_HARNESS_DELETE_CONVERSATION = 'agentHarness:deleteConversation'
+
+export const AGENT_CONVERSATION_DELETED = 'agentHarness:conversationDeleted'
