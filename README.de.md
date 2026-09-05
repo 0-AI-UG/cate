@@ -68,10 +68,6 @@ brew install --cask cate
 - **Eine CLI, die Agenten aufrufen können:** In einem Cate-Terminal steuert `cate` ein Browser-Panel (`open`, `screenshot`, `snapshot`, `click`, `type`), liest ein anderes Terminal, öffnet Dateien, verwaltet Panels. Einstellungen → CLI gibt jede Fläche getrennt für Lesen und Steuern frei.
 - **Lokal und remote gehen denselben Weg:** Ein einziger Runtime-Daemon bedient jeden Arbeitsbereich. Zeigen Sie Cate per SSH oder WSL auf einen Host: Terminals, Git, Suche und Agenten laufen dort; Editoren, Browser und Fläche bleiben lokal.
 
-## Erweiterungen
-
-Cate hat ein Erweiterungssystem für Panels von Drittanbietern (MCP-Server, Diagramme und mehr), jedes in einer eigenen isolierten Webview. Stöbern und bauen Sie im Begleit-Repo: [0-AI-UG/cate-extensions](https://github.com/0-AI-UG/cate-extensions).
-
 ## Tastenkürzel
 
 Unten macOS; unter Windows/Linux `Ctrl` statt `Cmd`.

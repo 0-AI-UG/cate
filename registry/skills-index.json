@@ -833,21 +833,6 @@
       "firstParty": true
     },
     {
-      "id": "cate/cate-extension",
-      "name": "cate-extension",
-      "description": "Build, test, and publish a Cate extension, a web panel (optionally backed by a local server) that runs on Cate's canvas. Use when the user wants to create or scaffold a Cate extension, add a panel to Cate, work with the extension manifest, cateApi scopes, or the window.cate host API, or submit an extension to the cate-extensions catalog.",
-      "tags": [],
-      "format": "skill-md",
-      "source": {
-        "repo": "0-AI-UG/cate",
-        "ref": "main",
-        "path": "skills/cate-extension"
-      },
-      "provenance": "curated",
-      "sourceId": "cate",
-      "firstParty": true
-    },
-    {
       "id": "cate/cate-theme",
       "name": "cate-theme",
       "description": "Author or edit a Cate IDE theme — one data-driven theme covering app chrome colors, the terminal ANSI palette, and Monaco editor syntax tokens. Use when the user asks to create, customize, recolor, or generate a Cate theme, mentions a color scheme (Dracula, Nord, \"make Cate look like X\"), or wants a new light/dark theme.",

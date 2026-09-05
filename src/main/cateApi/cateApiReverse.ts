@@ -1,19 +1,3 @@
-// =============================================================================
-// CATE_API reverse endpoint — the server half of Phase 3C. A server-backed
-// extension's server process runs on the daemon host and can't reach the client
-// directly, so the daemon opens a 127.0.0.1 listener there, injects
-// env.CATE_API='http://127.0.0.1:<port>', and tunnels inbound connections BACK
-// over the runtime pipe (mirror of 3B's forward tunnel).
-//
-// This module owns the MAIN-PROCESS side: a non-listening http.Server whose
-// request handler validates `Authorization: Bearer <token>` and dispatches the
-// `cate.*` method via the shared dispatch core (cateApiHandlers.dispatchCateInvoke).
-// `feedConnection(connId)` wraps an already-accepted reverse-tunnel connection in
-// a Duplex and feeds it to the http.Server via emit('connection'), so Node parses
-// requests off the tunneled socket. The manager pushes inbound bytes into the
-// returned duplex.
-// =============================================================================
-
 import http from 'http'
 import { Duplex } from 'stream'
 import log from '../logger'
@@ -32,17 +16,9 @@ import { reverseDuplex } from './serverTunnel'
 const MAX_BODY_BYTES = 1 * 1024 * 1024
 
 export interface ReverseSession {
-  extensionId: string
   workspaceId: string
   token: string
   runtime: Runtime
-  /** First-party terminal callers skip the extension-enabled gate and
-   *  browser consent prompt. Absent for extension-server sessions (the default).
-   *  `extensionId` may be a sentinel string for first-party sessions. */
-  caller?: 'first-party'
-  /** Scopes granted to a first-party caller (used instead of a manifest's
-   *  `cateApi`). Absent for extension-server sessions. */
-  grantedScopes?: string[]
 }
 
 export interface CateApiReverseEndpoint {
@@ -86,7 +62,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
   // The server only ever receives synthetic connections; swallow its errors so a
   // malformed tunneled request never crashes main.
   server.on('clientError', (_err, socket) => { try { socket.destroy() } catch { /* gone */ } })
-  server.on('error', (err) => { log.warn('[ext-cateapi] server error %s: %O', session.extensionId, err) })
+  server.on('error', (err) => { log.warn('[cate-api] server error ws=%s: %O', session.workspaceId, err) })
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const send = (status: number, body: unknown): void => {
@@ -95,7 +71,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
       res.end(json)
     }
     try {
-      // Validate the bearer token (mirrors the proxy's forward injection).
+      // Authenticate every request with the workspace endpoint token.
       const auth = req.headers['authorization'] || ''
       if (!session.token || auth !== `Bearer ${session.token}`) {
         send(401, { error: 'unauthorized' })
@@ -119,7 +95,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
       const args = parsed.args && typeof parsed.args === 'object'
         ? parsed.args as Record<string, unknown>
         : {}
-      const callerPanelId = session.caller === 'first-party' && typeof parsed.callerPanelId === 'string'
+      const callerPanelId = typeof parsed.callerPanelId === 'string'
         ? parsed.callerPanelId
         : undefined
       const callerPanel = callerPanelId
@@ -134,22 +110,19 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
         ? callerWindow.webContents
         : undefined
       const invokeScope = {
-        extensionId: session.extensionId,
         workspaceId: session.workspaceId,
         panelId: callerPanelId,
         forward: callerWebContents
           ? (payload: Parameters<InvokeScope['forward']>[0]) =>
               forwardToOwner(callerWebContents, payload)
           : forwardToActiveWindow,
-        caller: session.caller,
-        grantedScopes: session.grantedScopes,
-        originCwd: session.caller === 'first-party' && typeof parsed.originCwd === 'string'
+        originCwd: typeof parsed.originCwd === 'string'
           ? parsed.originCwd
           : undefined,
       } as const
 
-      if (session.caller === 'first-party' && method.startsWith('cate.panel.target.')) {
-        const denied = authorizeCateInvoke(invokeScope, method, args)
+      if (method.startsWith('cate.panel.target.')) {
+        const denied = authorizeCateInvoke(method, args)
         if (denied) {
           send(200, { result: denied })
           return
@@ -225,7 +198,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
       // reports a successful void call as 'malformed response'.
       send(200, { result: result ?? null })
     } catch (err) {
-      log.warn('[ext-cateapi] invoke failed %s: %O', session.extensionId, err)
+      log.warn('[cate-api] invoke failed ws=%s: %O', session.workspaceId, err)
       send(500, { error: 'internal' })
     }
   }
@@ -255,18 +228,6 @@ export interface ReverseTunnelBinding {
   dispose(): void
 }
 
-/**
- * Wire a reverse endpoint to a runtime tunnel listener and start listening.
- * OWNS the per-connId inbound duplex map: an inbound connection is fed to the
- * endpoint (feedConnection), inbound bytes are base64-decoded and pushed into
- * its duplex (crediting the daemon's reverse-tunnel window via tunnel.ack, so a
- * paused accepted socket resumes), and a close pushes EOF.
- *
- * A `listen` failure PROPAGATES — this helper does not catch/log/dispose. The
- * caller owns that policy (ExtensionServerManager is fail-hard; the workspace
- * first-party endpoint is fail-soft), so on throw the caller must dispose the
- * endpoint it created.
- */
 export async function bindReverseTunnel(
   runtime: Runtime,
   reverse: CateApiReverseEndpoint,

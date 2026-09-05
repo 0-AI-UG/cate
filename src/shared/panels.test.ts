@@ -23,7 +23,6 @@ describe('resolvePanelSize', () => {
 describe('keepsMountedWhenTabHidden', () => {
   it('is true for webview panels whose live state cannot survive a remount', () => {
     expect(keepsMountedWhenTabHidden('browser')).toBe(true)
-    expect(keepsMountedWhenTabHidden('extension')).toBe(true)
     expect(keepsMountedWhenTabHidden('agent')).toBe(true)
   })
 
@@ -42,7 +41,6 @@ describe('keepsMountedWhenTabHidden', () => {
 describe('keepsMountedOffscreen', () => {
   it('keeps browsers mounted so the live guest remains authoritative', () => {
     expect(keepsMountedOffscreen('browser')).toBe(true)
-    expect(keepsMountedOffscreen('extension')).toBe(true)
     expect(keepsMountedOffscreen('agent')).toBe(true)
     expect(keepsMountedOffscreen('editor')).toBe(false)
   })
@@ -60,7 +58,6 @@ describe('panel capabilities', () => {
     expect(isNavigablePanelType('terminal')).toBe(true)
     expect(isNavigablePanelType('document')).toBe(true)
     expect(isNavigablePanelType('canvas')).toBe(false)
-    expect(isNavigablePanelType('extension')).toBe(false)
     expect(isNavigablePanelType('unknown')).toBe(false)
   })
 

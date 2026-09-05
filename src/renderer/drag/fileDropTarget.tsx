@@ -12,7 +12,7 @@ import React, { useEffect } from 'react'
 import { create } from 'zustand'
 import { CATE_FILE_MIME, CATE_FILES_MIME } from './fileDragPayload'
 
-export type FileDropKind = 'canvas' | 'dock' | 'terminal' | 'extension'
+export type FileDropKind = 'canvas' | 'dock' | 'terminal'
 
 interface FileDropTarget {
   kind: FileDropKind
@@ -87,7 +87,6 @@ const LABEL: Record<FileDropKind, string> = {
   canvas: 'Drop to open on canvas',
   dock: 'Drop to open here',
   terminal: 'Drop to paste path',
-  extension: 'Drop file here',
 }
 
 /** Single indicator for the active file-drop target. Mirrors the internal

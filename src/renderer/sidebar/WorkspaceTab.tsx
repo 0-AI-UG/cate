@@ -207,14 +207,13 @@ const PanelRenameInput: React.FC<{ rename: PanelRenameProps }> = ({ rename }) =>
   )
 }
 
-/** Backwards-compatible name retained for focused row tests and extensions. */
+/** Backwards-compatible name retained for focused row tests. */
 export const TerminalPanelRow = WorkspacePanelRow
 export type TerminalPanelRowProps = WorkspacePanelRowProps
 
 const PANEL_ICONS: Record<PanelType, PhosphorIcon> = Object.fromEntries(
   (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].icon]),
 ) as Record<PanelType, PhosphorIcon>
-
 
 interface WorkspaceTabProps {
   workspace: WorkspaceState
@@ -250,7 +249,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     )
   }))
   const agentInfoByPanel = useAgentInfoByPanel(workspace.id)
-
 
   // The shared panel tree: ws.panels joined against every canvas store + the
   // dock store, multi-canvas/dock-aware and ghost-filtered. The Cmd+K palette
@@ -288,7 +286,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     const ws = s.workspaces.find((w) => w.id === workspace.id)
     return ws?.worktrees ?? workspace.worktrees ?? []
   }))
-
 
   // Ports in the status store are keyed by ptyId, but panel rows are keyed by
   // panelId. Translate via terminalRegistry so the indicators on the workspace

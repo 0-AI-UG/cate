@@ -16,7 +16,6 @@ import CanvasGrid from './CanvasGrid'
 import CanvasBackgroundImage from './CanvasBackgroundImage'
 import SnapGuides from './SnapGuides'
 import PanelTargetLayer from './PanelTargetLayer'
-import PlacementVizOverlay from './placementViz/PlacementVizOverlay'
 import { WorktreeTerritoryLayer } from './worktree'
 import type { Point, PanelType } from '../../shared/types'
 import { isWorktreePanelType, type WorktreePanelType } from '../../shared/panels'
@@ -718,7 +717,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
             >
               {marqueeElement}
             <PanelTargetLayer canvasRef={canvasRef} />
-            {(import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV && <PlacementVizOverlay />}
           </div>
           {overlayChildren}
         </div>,

@@ -4,7 +4,7 @@ import { CATE_GITIGNORE_CONTENT } from '../../main/cateGitignore'
 import { parseLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import type { Runtime } from '../../main/runtime/types'
-import { hostJoin } from '../../main/extensions/hostPath'
+import { hostJoin } from '../../main/cateApi/hostPath'
 import {
   isKnownSkillTarget,
   slugifySkillName,

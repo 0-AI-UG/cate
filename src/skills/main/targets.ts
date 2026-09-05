@@ -11,7 +11,7 @@
 // for the write logic.
 // =============================================================================
 
-import { hostJoin } from '../../main/extensions/hostPath'
+import { hostJoin } from '../../main/cateApi/hostPath'
 import { agentForSkillTarget } from '../../shared/agents'
 import { getSkillTarget, type SkillTargetId, type SkillTargetInfo } from '../../shared/skills'
 

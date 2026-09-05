@@ -1,3 +1,4 @@
+import { removedExtensionPanelIds } from '../../shared/pruneRemovedPanels'
 import type { StoreApi } from 'zustand'
 import type { CanvasNodeState, DockLayoutNode, PanelState, Point } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
@@ -106,8 +107,9 @@ function instantiateSnapshot(snapshot: LayoutSnapshot): {
   nodes: Record<string, CanvasNodeState>
   panels: PanelState[]
 } {
-  const panelIds = new Map(Object.keys(snapshot.panels).map((id) => [id, generateId()]))
-  const panels = Object.values(snapshot.panels).map((panel) => ({
+  const removed = removedExtensionPanelIds(snapshot.panels)
+  const panelIds = new Map(Object.keys(snapshot.panels).filter((id) => !removed.has(id)).map((id) => [id, generateId()]))
+  const panels = Object.values(snapshot.panels).filter((panel) => !removed.has(panel.id)).map((panel) => ({
     ...panel,
     id: panelIds.get(panel.id)!,
   }))

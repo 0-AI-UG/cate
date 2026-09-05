@@ -1,10 +1,10 @@
 // =============================================================================
-// useCateHostActionResponder — renderer half of the extension reverse API,
+// useCateHostActionResponder — renderer half of the caller reverse API,
 // rendered. Main forwards a guest's state-mutating cate.* call here; this hook
 // executes it against the app store and replies. We drive each Kitchen Sink
 // action (editor.openFile, canvas.createPanel, panel.setTitle) through the
 // captured CATE_HOST_ACTION callback and assert it reuses the SAME panel-open
-// path the file explorer uses — including resolving an extension's relative
+// path the file explorer uses — including resolving a caller's relative
 // path to an absolute one (the "blank panel" regression).
 // =============================================================================
 
@@ -19,8 +19,8 @@ const ROOT = '/Users/dev/repo'
 const WS = 'ws-1'
 const WORKTREE_ROOT = '/Users/dev/checkouts/feature'
 // A REMOTE workspace: the store holds a locator URI as rootPath, but
-// cate.workspace.get hands the extension the BARE path (/srv/proj). An absolute
-// path the extension echoes back must resolve against the bare form.
+// cate.workspace.get hands the caller the BARE path (/srv/proj). An absolute
+// path the caller echoes back must resolve against the bare form.
 const REMOTE_WS = 'ws-remote'
 const REMOTE_ROOT_BARE = '/srv/proj'
 const REMOTE_ROOT_LOCATOR = `cate-runtime://srv_a1${REMOTE_ROOT_BARE}`
@@ -29,7 +29,6 @@ const h = vi.hoisted(() => ({
   openFileAsPanel: vi.fn(() => 'new-editor-id'),
   revealPanel: vi.fn(async () => true),
   closePanelWithConfirm: vi.fn(async () => true),
-  createExtensionPanel: vi.fn(() => 'new-ext-id'),
   updatePanelTitle: vi.fn(),
   editorCreate: vi.fn(() => 'reg-editor-id'),
   createTerminal: vi.fn(() => 'new-terminal-id'),
@@ -63,7 +62,6 @@ vi.mock('../panels/registry', () => ({
   PANEL_REGISTRY: {
     terminal: { create: vi.fn() },
     editor: { create: h.editorCreate },
-    extension: { create: vi.fn() },
   },
 }))
 vi.mock('../stores/appStore', () => ({
@@ -97,7 +95,6 @@ vi.mock('../stores/appStore', () => ({
         },
         { id: REMOTE_WS, rootPath: REMOTE_ROOT_LOCATOR, panels: {} },
       ],
-      createExtensionPanel: h.createExtensionPanel,
       createTerminal: h.createTerminal,
       setPanelWorktreeId: h.setPanelWorktreeId,
       updatePanelTitle: h.updatePanelTitle,
@@ -137,13 +134,12 @@ let container: HTMLDivElement
 let root: Root
 
 /** Fire one forwarded action and wait for the hook's async handler + reply. */
-async function fire(method: string, args: unknown, extra?: Partial<{ panelId: string; extensionId: string; workspaceId: string; originCwd: string }>): Promise<void> {
+async function fire(method: string, args: unknown, extra?: Partial<{ panelId: string; workspaceId: string; originCwd: string }>): Promise<void> {
   await act(async () => {
     await actionCb!({
       requestId: `req-${method}`,
       workspaceId: extra?.workspaceId ?? WS,
       panelId: extra?.panelId ?? 'host-panel',
-      extensionId: extra?.extensionId ?? 'cate.kitchensink',
       method,
       args,
       originCwd: extra?.originCwd,
@@ -259,7 +255,7 @@ describe('useCateHostActionResponder', () => {
 
   it('accepts an absolute path inside a REMOTE workspace (locator rootPath) and re-attaches the scheme', async () => {
     // Regression: for a remote workspace the store's rootPath is a locator URI,
-    // but workspace.get gives the extension the BARE path. An absolute path the
+    // but workspace.get gives the caller the BARE path. An absolute path the
     // extension echoes back (/srv/proj/src/app.ts) must clear the containment
     // check against the bare root — not be rejected as "outside workspace" — and
     // must reach the open path re-encoded as a locator so it routes to the runtime.
@@ -279,29 +275,7 @@ describe('useCateHostActionResponder', () => {
     expect(replies).toContainEqual({ requestId: 'req-cate.editor.openFile', ok: false, error: 'path required' })
   })
 
-  it('creates an extension panel via canvas.createPanel(extension)', async () => {
-    await fire('cate.canvas.createPanel', { type: 'extension', extensionPanelId: 'main' })
-
-    expect(h.createExtensionPanel).toHaveBeenCalledWith(WS, 'cate.kitchensink', 'main', undefined, BACKGROUND_PLACEMENT)
-    expect(h.revealPanel).not.toHaveBeenCalled()
-    expect(replies).toContainEqual({ requestId: 'req-cate.canvas.createPanel', ok: true, result: { panelId: 'new-ext-id' } })
-  })
-
-  it('honors an explicit { position } by placing on the canvas at that point', async () => {
-    await fire('cate.canvas.createPanel', { type: 'extension', extensionPanelId: 'main', position: { x: 120, y: 80 } })
-    expect(h.createExtensionPanel).toHaveBeenCalledWith(WS, 'cate.kitchensink', 'main', undefined, {
-      ...BACKGROUND_PLACEMENT,
-      position: { x: 120, y: 80 },
-    })
-  })
-
-  it('rejects a createPanel(extension) with no extensionPanelId', async () => {
-    await fire('cate.canvas.createPanel', { type: 'extension' })
-    expect(h.createExtensionPanel).not.toHaveBeenCalled()
-    expect(replies).toContainEqual({ requestId: 'req-cate.canvas.createPanel', ok: false, error: 'extensionPanelId required' })
-  })
-
-  it('resolves a relative filePath when createPanel spawns a non-extension type', async () => {
+  it('resolves a relative filePath when createPanel spawns a browser panel', async () => {
     await fire('cate.canvas.createPanel', { type: 'editor', filePath: 'src/index.ts' })
     expect(h.editorCreate).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: WS, placement: BACKGROUND_PLACEMENT, filePath: `${ROOT}/src/index.ts` }),
@@ -350,7 +324,7 @@ describe('useCateHostActionResponder', () => {
   it('rejects panel.setTitle for a panel not in this window (e.g. detached), instead of a silent no-op', async () => {
     // A panel detached into another window was removed from THIS window's store,
     // so updatePanelTitle would no-op. The responder must report the failure
-    // rather than reply ok:true (a silent lie to the extension).
+    // rather than reply ok:true (a silent lie to the caller).
     await fire('cate.panel.setTitle', { title: 'Renamed' }, { panelId: 'detached-panel' })
     expect(h.updatePanelTitle).not.toHaveBeenCalled()
     expect(replies).toContainEqual({ requestId: 'req-cate.panel.setTitle', ok: false, error: 'panel-not-in-window' })

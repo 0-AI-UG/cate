@@ -37,11 +37,4 @@ export interface BrowserPanelProps extends PanelProps {
   activeTabId: string
 }
 
-export interface ExtensionPanelProps extends PanelProps {
-  /** Manifest id of the extension hosting this panel. */
-  extensionId?: string
-  /** Panel id WITHIN the extension's manifest (one extension can declare many). */
-  extensionPanelId?: string
-}
-
 export type AgentPanelProps = PanelProps

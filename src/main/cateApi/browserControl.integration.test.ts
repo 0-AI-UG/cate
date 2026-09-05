@@ -1,31 +1,9 @@
-// =============================================================================
-// Browser-control INTEGRATION test — proves the cross-layer chain works WITHOUT
-// mocking the layer under test. Every existing unit test mocks its neighbor
-// (cateApiReverse.test.ts mocks ./cateApiHandlers; cateApiHandlers.test.ts drives
-// dispatch directly), so the contract BETWEEN the reverse HTTP responder and the
-// real dispatch/forward core is unverified. This closes that:
-//
-//   raw HTTP POST → createCateApiReverse (real http parse off a tunnel Duplex)
-//     → REAL dispatchCateInvoke (unmocked) → scope gate → resolveBrowserTargetWindow
-//     → REAL forwardToOwner (sends CATE_HOST_FORWARD to a window's webContents)
-//     → a SIMULATED renderer reply (CATE_HOST_FORWARD_REPLY through the fake ipcMain)
-//     → the result flows back out as the HTTP 200 { result }.
-//
-// Only the leaf boundaries are faked (electron, window registry/panels, extension
-// registry, storage, logger, agent) — mirroring cateApiHandlers.test.ts's mock set.
-// The dispatch, forward round-trip, and HTTP framing are the REAL code.
-//
-// NOT covered here: a real webview / browser panel, the real runtime tunnel bytes
-// (the runtime is a capture fake), and extension-server consent prompts (we drive
-// the trusted first-party path). Those live in their own unit tests.
-// =============================================================================
-
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { CATE_HOST_FORWARD, CATE_HOST_FORWARD_REPLY } from '../../shared/ipc-channels'
 
 // --- electron: a fake ipcMain that records .on handlers so the test can drive
 // the CATE_HOST_FORWARD_REPLY that the REAL forwardToOwner awaits. `handle`/`app`/
-// `dialog` are inert — first-party callers never reach the consent dialog. --------
+// app lifecycle events are inert in this test.
 const { ipcMain, onHandlers } = vi.hoisted(() => {
   const onHandlers = new Map<string, Array<(...a: unknown[]) => void>>()
   return {
@@ -43,7 +21,6 @@ const { ipcMain, onHandlers } = vi.hoisted(() => {
 vi.mock('electron', () => ({
   ipcMain,
   app: { on: vi.fn() },
-  dialog: { showMessageBox: vi.fn(async () => ({ response: 0 })) },
 }))
 
 // --- window registry + panel union: the FAKE windows the forward targets. --------
@@ -61,38 +38,20 @@ vi.mock('../windowPanels', () => ({
   getWindowPanels: () => windowPanelList.value,
   upsertWindowPanel,
 }))
-
-// --- remaining leaf boundaries cateApiHandlers imports (mirror its own test). -----
-vi.mock('./ExtensionManager', () => ({
-  extensionManager: {
-    // First-party callers skip the enabled gate, but registerExtensionHandlers
-    // still calls these at startup, so keep them inert.
-    isKnown: () => true,
-    isEnabled: () => true,
-    getManifest: () => undefined,
-    init: vi.fn(),
-    refresh: vi.fn(async () => {}),
-    getCatalogSources: () => [],
-    refreshCatalog: vi.fn(async () => {}),
-  },
-}))
-vi.mock('./catalog', () => ({ getCachedCatalog: vi.fn(async () => []) }))
-vi.mock('./proxyServer', () => ({ getProxyUrlFor: vi.fn(), identityForGuestUrl: vi.fn() }))
-vi.mock('./ExtensionServerManager', () => ({ extensionServerManager: {} }))
-vi.mock('./storage', () => ({ getExtensionStorage: vi.fn() }))
 vi.mock('../workspaceManager', () => ({ getWorkspaceInfo: vi.fn(() => ({ rootPath: '/ws/root' })) }))
 vi.mock('../../shared/runtimeLocator', () => ({
   LOCAL_RUNTIME_ID: 'local',
   parseLocator: (raw: string) => ({ runtimeId: 'local', path: raw }),
 }))
-vi.mock('../settingsFile', () => ({ getAllSettings: () => ({}), getSetting: () => true }))
+const settings = vi.hoisted(() => ({ cliBrowserControlEnabled: true }))
+vi.mock('../settingsFile', () => ({ getSetting: (key: string) => key === 'cliBrowserControlEnabled' ? settings.cliBrowserControlEnabled : true }))
 vi.mock('../themeBootCache', () => ({ resolveActiveTheme: () => ({ id: 'x', type: 'dark', app: {}, terminal: {} }) }))
 vi.mock('../ipc/notifications', () => ({ showOsNotification: vi.fn() }))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
 // REAL modules under test — no mock of ./cateApiHandlers.
 import { createCateApiReverse } from './cateApiReverse'
-import { registerExtensionHandlers } from './cateApiHandlers'
+import { registerCateApiHandlers } from './cateApiHandlers'
 import type { Runtime } from '../runtime/types'
 
 const TOKEN = 'secret-bearer-token'
@@ -115,7 +74,6 @@ interface CapturedForward {
   requestId: string
   workspaceId: string
   panelId: string
-  extensionId: string
   method: string
   args: unknown
 }
@@ -184,25 +142,23 @@ function request(
   })
 }
 
-/** Build a first-party reverse session with the given granted scopes. */
-function firstPartySession(runtime: Runtime, grantedScopes: string[]) {
+/** Build a CLI reverse endpoint. */
+function firstPartySession(runtime: Runtime) {
   return createCateApiReverse({
-    extensionId: 'first-party',
     workspaceId: WS,
     token: TOKEN,
     runtime,
-    caller: 'first-party',
-    grantedScopes,
   })
 }
 
 // Wire the REAL ipcMain.on(CATE_HOST_FORWARD_REPLY) resolver once — it's the sole
 // path that completes a pending forward.
 beforeAll(() => {
-  registerExtensionHandlers()
+  registerCateApiHandlers()
 })
 
 beforeEach(() => {
+  settings.cliBrowserControlEnabled = true
   activeWindow.value = undefined
   windowsById.clear()
   windowPanelList.value = []
@@ -215,7 +171,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     activeWindow.value = owner.win
 
     const { runtime, output } = makeRuntime()
-    const endpoint = firstPartySession(runtime, ['browser'])
+    const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
       json: { method: 'cate.browser.open', args: { url: 'https://x.test' } },
     })
@@ -240,7 +196,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     windowPanelList.value = [{ panelId: 'b1', type: 'browser', ownerWindowId: 100 }]
 
     const { runtime, output } = makeRuntime()
-    const endpoint = firstPartySession(runtime, ['browser'])
+    const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
       json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'b1' } },
     })
@@ -269,7 +225,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     windowPanelList.value = [{ panelId: 'b2', type: 'browser', ownerWindowId: 2 }]
 
     const { runtime, output } = makeRuntime()
-    const endpoint = firstPartySession(runtime, ['browser'])
+    const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
       json: { method: 'cate.browser.back', args: { panelId: 'b2' } },
     })
@@ -292,7 +248,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     const { runtime, output } = makeRuntime()
 
     // Unknown panelId.
-    const ep1 = firstPartySession(runtime, ['browser'])
+    const ep1 = firstPartySession(runtime)
     const unknown = await request(ep1, output, {
       json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'nope' } },
       connId: 'rev-a',
@@ -303,7 +259,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
 
     // A real panel id that is NOT a browser → same error.
     const two = makeRuntime()
-    const ep2 = firstPartySession(two.runtime, ['browser'])
+    const ep2 = firstPartySession(two.runtime)
     const nonBrowser = await request(ep2, two.output, {
       json: { method: 'cate.browser.open', args: { panelId: 'term1' } },
       connId: 'rev-b',
@@ -314,20 +270,21 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     expect(active.send).not.toHaveBeenCalled()
   })
 
-  it('scope denied: a session without the browser scope is rejected before any forward', async () => {
+  it('a disabled CLI browser permission rejects the request before forwarding', async () => {
     const owner = makeWindow()
     activeWindow.value = owner.win
     windowsById.set(100, owner.win)
     windowPanelList.value = [{ panelId: 'b1', type: 'browser', ownerWindowId: 100 }]
 
     const { runtime, output } = makeRuntime()
-    const endpoint = firstPartySession(runtime, ['storage']) // no 'browser'
+    settings.cliBrowserControlEnabled = false
+    const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
       json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'b1' } },
     })
 
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ result: { error: 'scope-denied', method: 'cate.browser.open' } })
+    expect(res.body).toEqual({ result: { error: expect.stringContaining('disabled'), method: 'cate.browser.open' } })
     expect(owner.send).not.toHaveBeenCalled()
     endpoint.dispose()
   })
@@ -339,7 +296,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     windowPanelList.value = [{ panelId: 'b1', type: 'browser', ownerWindowId: 100 }]
 
     const { runtime, output } = makeRuntime()
-    const endpoint = firstPartySession(runtime, ['browser'])
+    const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
       token: null,
       json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'b1' } },
@@ -358,7 +315,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     windowPanelList.value = [{ panelId: 'b1', type: 'browser', ownerWindowId: 100 }]
 
     const { runtime, output } = makeRuntime()
-    const endpoint = firstPartySession(runtime, ['browser'])
+    const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
       token: 'wrong-token',
       json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'b1' } },

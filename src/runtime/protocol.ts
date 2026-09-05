@@ -13,7 +13,7 @@ import type { SearchFileResult, SearchStats } from '../shared/types'
 import type { AgentHookEvent } from '../shared/agentHooks'
 
 /** Bumped only on a wire-incompatible change. A mismatch is a hard failure. */
-export const RUNTIME_PROTOCOL_VERSION = 1
+export const RUNTIME_PROTOCOL_VERSION = 2
 
 // ---- Handshake -------------------------------------------------------------
 
@@ -89,8 +89,7 @@ export const Methods = {
   fileCopy: 'file.copy',
   fileImportEntries: 'file.importEntries',
   fileSearch: 'file.search',
-  fileExtensionsRoot: 'file.extensionsRoot',   // returns the host's ~/.cate/extensions, registering it as an allowed root
-  fileExtractArtifact: 'file.extractArtifact', // validate + untar a host-resident .tgz into a versioned dir
+  fileHarnessRoot: 'file.harnessRoot',   // returns the host T3 state directory, registering it as an allowed root
   fileSearchContentStart: 'file.searchContent.start', // returns a streamId; batch/done arrive as evt frames
   fileSearchContentStop: 'file.searchContent.stop',
   fileWatchStart: 'file.watch.start', // returns a streamId; events arrive as evt frames
@@ -149,7 +148,7 @@ export const Methods = {
   vcsPrStatus: 'vcs.prStatus',
   vcsPrList: 'vcs.prList',
 
-  // --- server (long-lived HTTP server children for server-backed extensions) ---
+  // --- server (long-lived HTTP server children for provider harnesses) ---
   // stdout/stderr + exit stream back as evt frames keyed by the caller-generated
   // id. server.start resolves only after the daemon's ready probe passes.
   serverStart: 'server.start', // params [opts incl. id]; output/exit arrive as evt frames keyed by id

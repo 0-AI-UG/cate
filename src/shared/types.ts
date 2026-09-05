@@ -32,7 +32,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'extension'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -259,10 +259,6 @@ export interface PanelState {
   /** One-shot direct-process launch. Cleared immediately after PTY creation so
    *  restoring a workspace never repeats an already-started task. */
   codingAgentLaunch?: CodingAgentLaunch
-  /** Extension panels only: which installed extension + which of its declared
-   *  panels this instance renders. */
-  extensionId?: string
-  extensionPanelId?: string
   /** Agent panels only: the T3 thread rendered by this panel. Machine-local
    *  because the id belongs to the harness state on this execution host. */
   agentThreadId?: string
@@ -1201,11 +1197,6 @@ export interface ProjectPanelRef {
   proxyUrl?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
-  /** Extension panels only: which installed extension + which of its declared
-   *  panels this instance renders. Persisted so a restored extension panel
-   *  re-binds to its extension instead of coming back as "unavailable". */
-  extensionId?: string
-  extensionPanelId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -1282,7 +1273,6 @@ export type NotificationAction =
 // Terminal theme data — both built-in presets and user-imported palettes use
 // this shape. `theme` mirrors xterm.js's ITheme.
 // -----------------------------------------------------------------------------
-
 
 // -----------------------------------------------------------------------------
 // File exclusions — folder/file names hidden in the file explorer by default.
@@ -1541,13 +1531,6 @@ export interface AppSettings {
    *  localStorage (cate.sidebarLayout.v3) before. */
   sidebarLayout: SidebarLayout
 
-  // Extensions
-  /** Ids of enabled extensions. */
-  enabledExtensions: string[]
-  /** Catalog index URLs (used in Phase 2). */
-  extensionCatalogSources: string[]
-  /** Absolute local folders sideloaded for dev. */
-  extensionSideloadPaths: string[]
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -1646,15 +1629,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     right: ['git'],
   },
 
-  // Extensions
-  enabledExtensions: [],
-  // The official Cate extensions catalog (0-AI-UG/cate-extensions). That repo's
-  // CI hosts index.json + artifact tarballs as assets on a rolling `catalog`
-  // GitHub Release. Users can add more sources or remove this.
-  extensionCatalogSources: [
-    'https://github.com/0-AI-UG/cate-extensions/releases/download/catalog/index.json',
-  ],
-  extensionSideloadPaths: [],
 }
 
 // -----------------------------------------------------------------------------
@@ -1709,7 +1683,6 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
   review: { width: 820, height: 560 },
-  extension: { width: 520, height: 360 },
 }
 
 // -----------------------------------------------------------------------------

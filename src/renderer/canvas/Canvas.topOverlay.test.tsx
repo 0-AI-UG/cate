@@ -19,7 +19,6 @@ vi.mock('./CanvasGrid', () => ({ default: () => null }))
 vi.mock('./CanvasBackgroundImage', () => ({ default: () => null }))
 vi.mock('./SnapGuides', () => ({ default: () => null }))
 vi.mock('./PanelTargetLayer', () => ({ default: () => null }))
-vi.mock('./placementViz/PlacementVizOverlay', () => ({ default: () => null }))
 vi.mock('./worktree', () => ({ WorktreeTerritoryLayer: () => null }))
 
 import Canvas from './Canvas'

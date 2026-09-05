@@ -81,7 +81,7 @@ vi.mock('../logger', () => ({ default: { warn: diag.warn, info: () => {}, error:
 // injects CATE_API/CATE_TOKEN into the spawned PTY env. Mock it so the env
 // tests can drive both the endpoint-present and gated (null) paths.
 const cateApi = vi.hoisted(() => ({ ensureEndpoint: vi.fn() }))
-vi.mock('../extensions/workspaceCateApi', () => ({
+vi.mock('../cateApi/workspaceCateApi', () => ({
   workspaceCateApi: { ensureEndpoint: cateApi.ensureEndpoint },
 }))
 const workspaceInfo = vi.hoisted(() => ({

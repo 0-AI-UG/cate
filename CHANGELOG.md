@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Removed
+
+- **Placement debugging overlay**: removed the development-only visualization, its keyboard toggle, and placement trace collection.
+
+- **Third-party extensions**: removed the extension catalog, settings, panels, installation, and server runtime. Existing extension panels are discarded when loading saved layouts; Cate CLI control and T3 agent state are preserved.
+
 ### Added
 
 - **Browser password saving**: Cate can save or update credentials submitted by users or agents after explicit native confirmation, with manual entry available in the password manager.

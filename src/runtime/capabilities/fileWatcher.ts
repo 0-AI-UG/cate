@@ -125,7 +125,7 @@ export function createWatchPool(
   // its native ignore globs (buildIgnorePatterns) prune any path that crosses a
   // hidden or excluded segment below the root. Such a tree must not be reused
   // as a covering root — the subscriber would attach and silently get nothing
-  // (e.g. a `.cate/extensions/<id>` subscriber under a workspace-root tree).
+  // (e.g. a `.cate/cateApi/<id>` subscriber under a workspace-root tree).
   const prunedUnder = (root: string, prefix: string): boolean => {
     if (prefix === root) return false
     const excluded = new Set(getExclusions())

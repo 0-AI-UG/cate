@@ -2,7 +2,7 @@
 // keepMountedPanels — which panel INSTANCES are exempt from the canvas viewport
 // cull.
 //
-// Webview-backed panels (extensions) render a guest whose live state only exists
+// Webview-backed panels (browsers) render a guest whose live state only exists
 // in-page; unmounting destroys it unrecoverably, so they stay mounted when their
 // canvas node scrolls off-screen. `keepsMountedOffscreen()` in shared/panels.ts
 // answers this per panel TYPE; this module maps it over a workspace's panels and

@@ -160,16 +160,6 @@ export interface AgentHookHost {
   inspectWorkspace(cwd: string): Promise<AgentHookAgentState[]>
 }
 
-// ---------------------------------------------------------------------------
-// Server host (long-lived HTTP server children for server-backed extensions)
-//
-// Spawns an extension's server process on whichever host owns the files (local
-// or daemon), allocates a loopback port for it, injects that port via env, and
-// resolves only once the server answers an HTTP ready probe. stdout/stderr +
-// exit stream back via callbacks keyed by the caller-generated id. The tunnel
-// host then proxies raw TCP bytes to the bound loopback port.
-// ---------------------------------------------------------------------------
-
 export interface ServerStartOptions {
   id: string                      // caller-generated; stdout/stderr+exit evt stream key
   command: string[]               // argv, e.g. ['node','dist/server.js']
@@ -195,15 +185,6 @@ export interface ServerHost {
   ): Promise<ServerHandle>   // resolves only AFTER the ready probe passes
   stop(id: string): void     // SIGTERM then SIGKILL
 }
-
-// ---------------------------------------------------------------------------
-// Tunnel host (raw TCP bridge to a server child's loopback port)
-//
-// Opens a TCP connection on the daemon host to 127.0.0.1:port and bridges its
-// bytes (base64) over the runtime pipe, so a server-backed extension's traffic
-// can reach a daemon-bound server from the client. Mirrors agent.start's
-// register-the-stream-before-start pattern.
-// ---------------------------------------------------------------------------
 
 export interface TunnelHost {
   // Open a TCP connection on the daemon host to 127.0.0.1:port. connId is the evt
@@ -265,15 +246,8 @@ export interface FileHost {
   mkdir(safePath: string, access?: FileAccessContext): Promise<void>
   /** Copy into a directory, auto-naming on collision; returns the final path. */
   copy(safeSrcPath: string, safeDestDir: string, access?: FileAccessContext): Promise<string>
-  /** The host's per-host extensions install root (~/.cate/extensions), resolved
-   *  daemon-side (only the daemon knows its home dir) and registered as an
-   *  allowed root. Lets the install flow place an extension on whichever host
-   *  owns the workspace — local or remote — with no client-side path guessing. */
-  extensionsRoot(): Promise<string>
-  /** Validate + untar a host-resident, client-verified .tgz (written via
-   *  writeBinary) into `safeDestDir`, atomically; returns `safeDestDir`. The
-   *  daemon rejects unsafe (zip-slip / symlink) members and removes the .tgz. */
-  extractArtifact(safeTgzPath: string, safeDestDir: string): Promise<string>
+  /** Host-owned T3 state directory, registered as an allowed root. */
+  harnessRoot(): Promise<string>
   importEntries(
     sources: string[],
     safeDestDir: string,

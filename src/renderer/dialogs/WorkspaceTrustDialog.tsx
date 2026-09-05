@@ -49,7 +49,7 @@ export function WorkspaceTrustDialog(): JSX.Element | null {
     >
       <p className="text-[13px] leading-relaxed text-secondary">
         Opening a project restores its saved layout, which can start terminals, agents and
-        extensions from that folder. Opening it can run its code on your machine.
+        tools from that folder. Opening it can run its code on your machine.
       </p>
 
       {/* The path is the one thing that tells the user WHICH project is asking,

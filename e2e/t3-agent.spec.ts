@@ -75,7 +75,7 @@ test.beforeEach(async ({}, testInfo) => {
   const launched = await launchApp({
     userDataDir: path.join(tempRoot, 'userdata'),
     env: {
-      CATE_EXTENSIONS_ROOT: path.join(tempRoot, 'extensions'),
+      CATE_HARNESS_ROOT: path.join(tempRoot, 'harness'),
       CATE_E2E_PATH_PREPEND: binDir,
       CATE_E2E_UPDATE_UNCHANGED: testInfo.title.includes('Homebrew') ? '1' : '0',
       ...(testInfo.title.startsWith('real T3') ? {} : { CATE_E2E_T3_ENTRY_PATH: fakeT3Entry }),

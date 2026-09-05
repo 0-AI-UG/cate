@@ -98,8 +98,7 @@ export class DeferredRuntime implements Runtime {
       rename: (oldP, newP, access) => d((c) => c.file.rename(oldP, newP, access)),
       mkdir: (p, access) => d((c) => c.file.mkdir(p, access)),
       copy: (src, destDir, access) => d((c) => c.file.copy(src, destDir, access)),
-      extensionsRoot: () => d((c) => c.file.extensionsRoot()),
-      extractArtifact: (tgz, destDir) => d((c) => c.file.extractArtifact(tgz, destDir)),
+      harnessRoot: () => d((c) => c.file.harnessRoot()),
       importEntries: (sources, destDir, mode, access) => d((c) => c.file.importEntries(sources, destDir, mode, access)),
       search: (root, query, opts, access) => d((c) => c.file.search(root, query, opts, access)),
       // Start-after-ready: return the cancel handle now; start the real search

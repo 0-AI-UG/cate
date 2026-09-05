@@ -1,20 +1,5 @@
-// =============================================================================
-// CLI permission matrix — the single source of truth for what the first-party
-// `cate` CLI may do, shared by the main-process gate (cateApiHandlers) and the
-// settings UI (Settings → CLI).
-//
-// Shape: surface (row) × access level (column). Read observes, Control acts.
-// Each cell is one boolean setting; a method is matched to its cell by
-// namespace prefix, and anything in a covered namespace that is not listed as a
-// read method counts as control — so a NEW verb lands in the stricter cell
-// rather than escaping the matrix.
-//
-// This is the fine-grained first-party layer on top of the extension scope
-// system (see requiredScopeFor / GRANTED_SCOPES): scopes say which namespaces a
-// caller may touch at all, permissions say which half of a namespace the user
-// has allowed the CLI. Extensions are unaffected — they are governed by their
-// manifest scopes plus consent prompts.
-// =============================================================================
+// CLI permissions shared by the host API and Settings → CLI.
+// Unknown verbs in a covered namespace use its stricter Control permission.
 
 import type { AppSettings } from './types'
 import { isReadOnlyBrowserCommand, validateBrowserCommand } from './browserCommand'

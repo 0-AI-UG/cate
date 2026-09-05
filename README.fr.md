@@ -63,14 +63,10 @@ brew install --cask cate
 - **Terminaux conscients des agents :** les CLI d'agents prises en charge signalent le début et la fin d'un tour ainsi que les demandes d'autorisation. C'est ce qui alimente l'état du panneau (en cours, en attente, terminé) et la notification quand un agent attend votre réponse. Un agent qui n'envoie aucun hook n'affiche aucun état.
 - **Les sessions d'agent survivent aux redémarrages :** le flux de hooks transporte l'identifiant de session de chaque CLI. Rouvrez le projet : les terminaux reviennent avec leur historique et l'agent est rattaché via sa propre commande de reprise. Un identifiant périmé retombe sur un simple shell plutôt que de reprendre la mauvaise conversation.
 - **Worktrees pour branches parallèles :** décrivez ce sur quoi vous travaillez et Cate crée un worktree et une branche, à partir d'une branche locale ou distante ou d'une PR ouverte. Chacun reçoit une couleur qui le suit dans la barre latérale, les onglets du dock et un territoire dessiné derrière ses panneaux sur le canevas.
-- **Des panneaux sur le canevas ou dans le dock :** terminaux, éditeurs Monaco, navigateurs, visionneuses PDF/image/DOCX, webviews d'extensions, canevas imbriqués. Faites-les flotter sur le canevas, ancrez-les en onglets et divisions, ou glissez-les dans leur propre fenêtre. La disposition est conservée par projet.
+- **Des panneaux sur le canevas ou dans le dock :** terminaux, éditeurs Monaco, navigateurs, visionneuses PDF/image/DOCX, canevas imbriqués. Faites-les flotter sur le canevas, ancrez-les en onglets et divisions, ou glissez-les dans leur propre fenêtre. La disposition est conservée par projet.
 - **Git et recherche :** barre latérale de contrôle de source pour l'index, les commits, les branches, le stash et l'historique, sur plusieurs dépôts ; badges git dans l'arborescence ; diffs côte à côte. Recherche ripgrep sur l'espace de travail, et `Cmd+K` pour les commandes, les panneaux et les fichiers.
 - **Une CLI que les agents peuvent appeler :** dans un terminal Cate, `cate` pilote un panneau navigateur (`open`, `screenshot`, `snapshot`, `click`, `type`), lit un autre terminal, ouvre des fichiers, gère les panneaux. Réglages → CLI autorise chaque surface séparément en lecture et en contrôle.
 - **Local et distant suivent le même chemin :** un seul démon runtime sert tous les espaces de travail. Pointez Cate vers une machine en SSH ou WSL : terminaux, git, recherche et agents s'y exécutent ; éditeurs, navigateur et canevas restent en local.
-
-## Extensions
-
-Cate dispose d'un système d'extensions pour panneaux tiers (serveurs MCP, diagrammes et plus), chacun servi dans sa propre webview isolée. Parcourez-les et créez-les dans le dépôt compagnon : [0-AI-UG/cate-extensions](https://github.com/0-AI-UG/cate-extensions).
 
 ## Raccourcis clavier
 

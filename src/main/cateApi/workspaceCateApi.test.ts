@@ -1,9 +1,3 @@
-// Coverage for WorkspaceCateApiManager: the cliEnabled gate (null when off),
-// endpoint minting + caching when on, the first-party reverse session shape
-// (caller + granted scopes), and the GRANTED_SCOPES contract. Uses a FAKE
-// runtime (stubbed tunnel.*) and a stubbed createCateApiReverse so nothing real
-// is opened.
-
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ReverseSession } from './cateApiReverse'
 
@@ -44,7 +38,6 @@ vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi
 
 import {
   WorkspaceCateApiManager,
-  GRANTED_SCOPES,
 } from './workspaceCateApi'
 
 beforeEach(() => {
@@ -57,19 +50,6 @@ beforeEach(() => {
   reverseDispose.mockClear()
   feedConnection.mockClear()
   ack.mockClear()
-})
-
-describe('GRANTED_SCOPES contract', () => {
-  it('grants exactly the scopes the CLI has verbs for', () => {
-    expect(GRANTED_SCOPES).toContain('browser')
-    expect(GRANTED_SCOPES).not.toContain('storage')
-    expect(GRANTED_SCOPES).not.toContain('agent')
-    expect(GRANTED_SCOPES).toContain('coding-agent')
-    // workspace.read/theme are extension-only: a terminal's cwd IS the
-    // workspace root, so the CLI has no verbs (and thus no grants) for them.
-    expect([...GRANTED_SCOPES]).toEqual(['browser', 'ui', 'editor', 'canvas', 'panel', 'terminal', 'coding-agent'])
-  })
-
 })
 
 describe('WorkspaceCateApiManager.ensureEndpoint', () => {
@@ -89,7 +69,7 @@ describe('WorkspaceCateApiManager.ensureEndpoint', () => {
     expect(listen).not.toHaveBeenCalled()
   })
 
-  it('mints a first-party endpoint with the granted browser scope when enabled', async () => {
+  it('mints an authenticated CLI endpoint when enabled', async () => {
     const mgr = new WorkspaceCateApiManager()
     const ep = await mgr.ensureEndpoint('ws1')
     expect(ep).toEqual({ port: 54321, token: expect.any(String) })
@@ -97,14 +77,8 @@ describe('WorkspaceCateApiManager.ensureEndpoint', () => {
     expect(listen).toHaveBeenCalledTimes(1)
     expect(listen.mock.calls[0][0]).toBe('cateapi-terminal-ws1')
 
-    // First-party reverse session: caller + granted scopes (not a manifest).
     expect(reverseCalls).toHaveLength(1)
     const session = reverseCalls[0]
-    expect(session.caller).toBe('first-party')
-    expect(session.grantedScopes).toContain('browser')
-    expect(session.grantedScopes).toContain('coding-agent')
-    expect(session.grantedScopes).not.toContain('storage')
-    expect(session.grantedScopes).not.toContain('agent')
     expect(session.token).toBe(ep!.token)
     expect(session.workspaceId).toBe('ws1')
   })
@@ -208,7 +182,6 @@ describe('WorkspaceCateApiManager tunnel connection callbacks', () => {
     onData('c1', payload.toString('base64'))
 
     expect(duplex.push).toHaveBeenCalledWith(payload)
-    // ack is credited with the DECODED byte length (mirror of ExtensionServerManager).
     expect(ack).toHaveBeenCalledWith('c1', payload.length)
   })
 

@@ -3,7 +3,7 @@
 // declarations in src/shared/agentHooks.ts into a live push event stream:
 //
 //   1. materialize a STABLE per-user hooks dir (~/.cate/agent-hooks — same
-//      convention as the extensions root): the stdin→HTTP bridge, per-agent
+//      convention as the harness root): the stdin→HTTP bridge, per-agent
 //      bridge wrappers. Stable on purpose: the bridge paths are embedded in
 //      repo-scoped hook files (.codex/hooks.json,
 //      .claude/settings.local.json), where a per-boot

@@ -146,8 +146,7 @@ export class RpcServer {
       case Methods.fileRemove: return api.file.remove(s(0), p[1] as FileAccessContext | undefined)
       case Methods.fileRename: return api.file.rename(s(0), s(1), p[2] as FileAccessContext | undefined)
       case Methods.fileMkdir: return api.file.mkdir(s(0), p[1] as FileAccessContext | undefined)
-      case Methods.fileExtensionsRoot: return api.file.extensionsRoot()
-      case Methods.fileExtractArtifact: return api.file.extractArtifact(s(0), s(1))
+      case Methods.fileHarnessRoot: return api.file.harnessRoot()
       case Methods.fileCopy: return api.file.copy(s(0), s(1), p[2] as FileAccessContext | undefined)
       case Methods.fileImportEntries:
         return api.file.importEntries(p[0] as string[], s(1), p[2] as 'copy' | 'move', p[3] as FileAccessContext | undefined)
@@ -180,7 +179,7 @@ export class RpcServer {
       case Methods.agentHooksUnsubscribe: return this.stopAgentHooks(s(0))
       case Methods.agentHooksInspect: return api.agentHooks.inspectWorkspace(s(0))
 
-      // --- server (server-backed extensions) --- output/exit stream back keyed by the server id ---
+      // --- server (provider harnesses) --- output/exit stream back keyed by the server id ---
       case Methods.serverStart:
         return api.server.start(
           p[0] as never,

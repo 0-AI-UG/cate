@@ -92,9 +92,6 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   agentHookInjection: 'object',
   sidebarLayout: 'object',
   customShortcuts: 'object',
-  enabledExtensions: 'array',
-  extensionCatalogSources: 'array',
-  extensionSideloadPaths: 'array',
 }
 
 const SETTINGS_KEYS = Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>
@@ -113,9 +110,6 @@ function valueMatchesSchema(key: keyof AppSettings, value: unknown): boolean {
 // or any non-string element) falls back to the default [] rather than poisoning
 // state with garbage that downstream consumers would have to defend against.
 const STRING_ARRAY_KEYS = new Set<keyof AppSettings>([
-  'enabledExtensions',
-  'extensionCatalogSources',
-  'extensionSideloadPaths',
 ])
 
 /** Merge only known, type-correct keys from a parsed object into `target`. */

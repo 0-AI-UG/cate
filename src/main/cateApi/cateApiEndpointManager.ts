@@ -6,7 +6,6 @@ import { runtimes } from '../runtime/runtimeManager'
 import type { Runtime } from '../runtime/types'
 import { getWorkspaceInfo } from '../workspaceManager'
 import type { ReverseTunnelBinding } from './cateApiReverse'
-type CateApiEndpointOwner = 'extension' | 'first-party'
 
 interface CateApiEndpoint {
   runtime: Runtime
@@ -17,18 +16,13 @@ interface CateApiEndpoint {
 
 interface EndpointSession extends CateApiEndpoint {
   key: string
-  owner: CateApiEndpointOwner
   binding: ReverseTunnelBinding
 }
 
 interface CateApiEndpointOptions {
   key: string
-  owner: CateApiEndpointOwner
-  extensionId: string
   workspaceId: string
   listenerId: string
-  caller?: 'first-party'
-  grantedScopes?: string[]
 }
 
 export function resolveWorkspaceRuntime(workspaceId: string): { runtime: Runtime; cwd: string } {
@@ -37,15 +31,12 @@ export function resolveWorkspaceRuntime(workspaceId: string): { runtime: Runtime
   return { runtime: runtimes.resolve(runtimeId), cwd }
 }
 
-/** Owns every reverse CATE_API endpoint, regardless of whether the caller is an
- * extension server, terminal, or agent. Token minting, runtime resolution,
- * listener binding, caching, serialization, and teardown all live here. */
 export class CateApiEndpointManager {
   private readonly sessions = new Map<string, EndpointSession>()
   private readonly locks = new KeyedLock()
   private lifecycleGeneration = 0
   private readonly disposedKeys = new Map<string, number>()
-  private readonly disposedOwners = new Map<CateApiEndpointOwner, number>()
+  private disposedAllAt = 0
   private readonly disposedRuntimes = new Map<string, number>()
 
   ensure(options: CateApiEndpointOptions): Promise<CateApiEndpoint> {
@@ -62,17 +53,11 @@ export class CateApiEndpointManager {
         throw new Error(`CATE_API endpoint disposed while opening: ${options.key}`)
       }
       const token = randomBytes(32).toString('base64url')
-      // cateApiReverse reaches the extension dispatch layer, which imports the
-      // global managers. Load it only after construction to keep that graph
-      // acyclic.
       const { bindReverseTunnel, createCateApiReverse } = await import('./cateApiReverse')
       const reverse = createCateApiReverse({
-        extensionId: options.extensionId,
         workspaceId: options.workspaceId,
         token,
         runtime,
-        caller: options.caller,
-        grantedScopes: options.grantedScopes,
       })
       let binding: ReverseTunnelBinding
       try {
@@ -93,7 +78,6 @@ export class CateApiEndpointManager {
       }
       const session: EndpointSession = {
         key: options.key,
-        owner: options.owner,
         runtime,
         cwd,
         port: binding.port,
@@ -115,14 +99,14 @@ export class CateApiEndpointManager {
     }
   }
 
-  disposeForRuntime(owner: CateApiEndpointOwner, runtimeId: string): void {
-    this.disposedRuntimes.set(this.runtimeDisposalKey(owner, runtimeId), ++this.lifecycleGeneration)
-    this.disposeWhere((session) => session.owner === owner && session.runtime.id === runtimeId)
+  disposeForRuntime(runtimeId: string): void {
+    this.disposedRuntimes.set(runtimeId, ++this.lifecycleGeneration)
+    this.disposeWhere((session) => session.runtime.id === runtimeId)
   }
 
-  disposeAll(owner: CateApiEndpointOwner): void {
-    this.disposedOwners.set(owner, ++this.lifecycleGeneration)
-    this.disposeWhere((session) => session.owner === owner)
+  disposeAll(): void {
+    this.disposedAllAt = ++this.lifecycleGeneration
+    this.disposeWhere(() => true)
   }
 
   private wasDisposedSince(
@@ -131,12 +115,8 @@ export class CateApiEndpointManager {
     generation: number,
   ): boolean {
     return (this.disposedKeys.get(options.key) ?? 0) > generation
-      || (this.disposedOwners.get(options.owner) ?? 0) > generation
-      || (this.disposedRuntimes.get(this.runtimeDisposalKey(options.owner, runtimeId)) ?? 0) > generation
-  }
-
-  private runtimeDisposalKey(owner: CateApiEndpointOwner, runtimeId: string): string {
-    return `${owner}\0${runtimeId}`
+      || this.disposedAllAt > generation
+      || (this.disposedRuntimes.get(runtimeId) ?? 0) > generation
   }
 
   private disposeWhere(predicate: (session: EndpointSession) => boolean): void {

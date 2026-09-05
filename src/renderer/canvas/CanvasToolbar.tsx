@@ -19,7 +19,6 @@ import {
 } from '@phosphor-icons/react'
 import Minimap from './Minimap'
 import WorktreeToolbarMenu from './WorktreeToolbarMenu'
-import ExtensionToolbarMenu from './ExtensionToolbarMenu'
 import { useCanvasStoreApi, useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { useUIStore } from '../stores/uiStore'
 import { useUIStateStore } from '../stores/uiStateStore'
@@ -207,11 +206,11 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const isHorizontal = mode === 'horizontal'
 
   // In 'compact' mode: hovering reveals the vertical bar, clicking the resting
-  // button pins it open, and an open worktree/extension fly-out keeps it open so
+  // button pins it open, and an open worktree fly-out keeps it open so
   // the pointer can travel to the portaled popover without collapsing the card.
   const [hovered, setHovered] = useState(false)
   const [pinned, setPinned] = useState(false)
-  const [openMenu, setOpenMenu] = useState<'worktree' | 'extension' | null>(null)
+  const [openMenu, setOpenMenu] = useState<'worktree' | null>(null)
   const expanded = hovered || pinned || openMenu !== null
   const ToolIcon = activeTool === 'hand' ? Hand : Cursor
 
@@ -258,13 +257,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       <CanvasToolbarButton onClick={onNewAgent} label="Agent" size="panel" tooltipPlacement={place}>
         <ChatsCircle size={18} />
       </CanvasToolbarButton>
-      <ExtensionToolbarMenu
-        canvasPanelId={canvasPanelId}
-        workspaceId={workspaceId}
-        tooltipPlacement={place}
-        menuSide={menuSide}
-        onOpenChange={(o) => setOpenMenu(o ? 'extension' : null)}
-      />
     </>
   )
 

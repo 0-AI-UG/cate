@@ -12,7 +12,7 @@ describe('T3 harness identity', () => {
 
   it('uses host-native local paths and POSIX remote paths', () => {
     const local = harnessPaths('local', path.join('/tmp', 'extensions'), path.join('/tmp', 'repo'))
-    const remote = harnessPaths('remote-a', '/home/user/.cate/extensions', '/work/repo')
+    const remote = harnessPaths('remote-a', '/home/user/.cate/extensions/.cate-t3', '/work/repo')
 
     expect(local.baseDir.startsWith(local.instancesRoot + path.sep)).toBe(true)
     expect(remote.baseDir).toMatch(/^\/home\/user\/\.cate\/extensions\/\.cate-t3\/instances\/[a-f0-9]{16}$/)

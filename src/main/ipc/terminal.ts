@@ -45,7 +45,7 @@ import { parseLocator, type RuntimeId } from '../../shared/runtimeLocator'
 import { runtimes } from '../runtime/runtimeManager'
 import type { Runtime } from '../runtime/types'
 import { createStringDispatcher } from './batchedDispatcher'
-import { workspaceCateApi } from '../extensions/workspaceCateApi'
+import { workspaceCateApi } from '../cateApi/workspaceCateApi'
 import { getWorkspaceInfo } from '../workspaceManager'
 import { syncWorkspaceSkills } from '../../skills/main/skillsMirror'
 import {

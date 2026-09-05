@@ -21,27 +21,6 @@ export interface PlacementCandidate {
   size: Size
 }
 
-/** One packing iteration's inputs and decision — diagnostics for the picker only. */
-export interface PlacementTraceStep {
-  free: Rect[]
-  chosen: Rect
-  matchedWidth: number | null
-  matchedHeight: number | null
-  filled: boolean
-  size: Size
-  point: Point
-}
-
-/** Optional out-param capturing the full reasoning of a recommendPlacements run. */
-export interface PlacementTrace {
-  area: Rect
-  rankAt: Point
-  inflated: Rect[]
-  guides: { xs: number[]; ys: number[] }
-  steps: PlacementTraceStep[]
-}
-
-
 /**
  * Find a free position for a new node that does not overlap any existing node.
  * From the reference node (focused, else most recently created) search outward
@@ -310,7 +289,6 @@ export function recommendPlacements(
   anchor: Point | null,
   max = 6,
   sizeOverride?: Size,
-  trace?: PlacementTrace,
 ): PlacementCandidate[] {
   const grid = CANVAS_GRID_SIZE
   const snapPt = (p: Point): Point => snapToGrid(p, grid)
@@ -443,18 +421,11 @@ export function recommendPlacements(
   const obstacles: Rect[] = [...inflated]
 
   const guides = deriveGuides(nodes, gap)
-  if (trace) {
-    trace.area = area
-    trace.rankAt = rankAt
-    trace.inflated = inflated
-    trace.guides = guides
-  }
 
   const raw: Raw[] = []
   for (let n = 0; n < max && free.length > 0; n++) {
-    const freeSnapshot = free.slice()
     let best:
-      | { point: Point; size: Size; score: number; meta: PlacementTraceStep }
+      | { point: Point; size: Size; score: number }
       | null = null
     for (const f of free) {
       const ix0 = Math.ceil(f.origin.x / grid) * grid
@@ -515,21 +486,11 @@ export function recommendPlacements(
           point,
           size: { width: w, height: h },
           score,
-          meta: {
-            free: freeSnapshot,
-            chosen: f,
-            matchedWidth: mirrorFits ? neighbor!.width : null,
-            matchedHeight: mirrorFits ? neighbor!.height : null,
-            filled,
-            size: { width: w, height: h },
-            point,
-          },
         }
       }
     }
     if (!best) break
     raw.push({ point: best.point, size: best.size })
-    if (trace) trace.steps.push(best.meta)
     const placed = inflateRect({ origin: best.point, size: best.size }, gap)
     obstacles.push(placed)
     free = pruneFreeRects(free.flatMap((f) => splitFree(f, placed)))

@@ -1,7 +1,7 @@
 // Shared in-memory authority for JSON-backed main-process state.
 //
 // Filesystem-specific concerns stay in a tiny backend: jsonStateFile supplies
-// local atomic I/O + chokidar, while extension storage supplies runtime.file.
+// local atomic I/O + chokidar, with the storage engine independent of its filesystem backend.
 // Debouncing, serialized writes, echo suppression, external reloads, and
 // subscriber delivery live here once.
 

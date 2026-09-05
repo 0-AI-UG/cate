@@ -35,7 +35,7 @@ function prefersDark(): boolean {
 }
 
 /** Resolve the active Theme with its app palette fully merged over the base, so
- *  callers (e.g. the extension `cate.theme.get` bridge) get a complete token map
+ *  callers (e.g. the theme preview) get a complete token map
  *  rather than a partial override set. */
 export function resolveActiveTheme(settings: AppSettings): Theme {
   const theme = resolveTheme(settings, settings.activeThemeId, prefersDark())

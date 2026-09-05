@@ -92,6 +92,14 @@ describe('saveProjectState — issue #220 empty-overwrite guard', () => {
     expect(nodeCount(await readWorkspaceJson(root))).toBe(2)
   })
 
+  it('allows removal of an extension-only canvas without triggering the data-loss guard', async () => {
+    const legacy = makeWorkspace([makeNode('obsolete')])
+    legacy.panels = { obsolete: { type: 'extension', title: 'Old extension' } }
+    await saveProjectStateLocal(root, legacy, makeSession())
+    await saveProjectStateLocal(root, makeWorkspace([]), makeSession())
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(0)
+  })
+
   it('refuses to overwrite a non-empty canvas with an empty one', async () => {
     await saveProjectStateLocal(root, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
     // A racey activation save serializes an empty canvas — must be rejected.
