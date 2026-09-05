@@ -31,6 +31,7 @@ const h = vi.hoisted(() => ({
   settingsOpen: false,
   useOwnedTerminalTelemetry: vi.fn(),
   updatePanelTitleFromAgent: vi.fn(),
+  retargetReviewPanel: vi.fn(),
 }))
 vi.mock('../../hooks/useShortcuts', () => ({ useShortcuts: h.useShortcuts }))
 vi.mock('./useThemeAndScaleHydration', () => ({ useThemeAndScaleHydration: h.useThemeAndScaleHydration }))
@@ -41,6 +42,7 @@ vi.mock('../agent/agentScreenDetector', () => ({
   noteAgentHookEvent: h.noteAgentHookEvent,
 }))
 vi.mock('../workspace/panelReveal', () => ({ revealPanel: h.revealPanel }))
+vi.mock('../review/openReviewPanel', () => ({ retargetReviewPanel: h.retargetReviewPanel }))
 vi.mock('../../hooks/useProcessMonitor', () => ({ useOwnedTerminalTelemetry: h.useOwnedTerminalTelemetry }))
 vi.mock('../../stores/settingsStore', () => ({
   useSettingsStore: { getState: () => ({ loadSettings: h.loadSettings }), subscribe: () => () => {} },
@@ -91,6 +93,7 @@ beforeEach(() => {
     onAgentScreenStateUpdate: vi.fn((cb: (...a: unknown[]) => void) => { captured.agent = cb; return () => {} }),
     onShellAgentHookEvent: vi.fn((cb: (...a: unknown[]) => void) => { captured.hook = cb; return () => {} }),
     onRevealPanelInWindow: vi.fn((cb: (id: string) => void) => { captured.reveal = cb as never; return () => {} }),
+    onOpenReviewInWindow: vi.fn((cb: (...a: unknown[]) => void) => { captured.openReview = cb; return () => {} }),
     onWindowPanelsChanged: vi.fn((cb: (...a: unknown[]) => void) => { captured.union = cb; return () => {} }),
   }
   host = document.createElement('div')
@@ -162,6 +165,13 @@ describe('useWindowRuntime', () => {
     mount()
     act(() => { captured.reveal('p9') })
     expect(h.revealPanel).toHaveBeenCalledWith('ws-X', 'p9', { retry: true })
+  })
+
+  it('retargets a Review panel in this window when another window deep-links it', () => {
+    mount()
+    const request = { spec: { kind: 'unstaged' }, focusedFile: 'src/a.ts' }
+    act(() => { captured.openReview('p9', request) })
+    expect(h.retargetReviewPanel).toHaveBeenCalledWith('ws-X', 'p9', request)
   })
 
   it('swallows external OS file drops so the window cannot navigate to file://', () => {

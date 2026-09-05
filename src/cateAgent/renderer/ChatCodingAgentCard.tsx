@@ -16,6 +16,7 @@ import {
   applyCodingAgentWorktree,
   discardCodingAgentWorktree,
   keepCodingAgentWorktree,
+  openCodingAgentReviewPanel,
   reviewCodingAgentWorktree,
   type CodingAgentWorktreeReview,
 } from '../../renderer/lib/agent/codingAgentIntegration'
@@ -169,16 +170,14 @@ function CodingAgentIntegrationActions({
   kept: boolean
 }) {
   const [review, setReview] = useState<CodingAgentWorktreeReview | null>(null)
-  const [reviewExpanded, setReviewExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const loadReview = useCallback(async (expand = false) => {
+  const loadReview = useCallback(async () => {
     setBusy(true)
     setError(null)
     try {
       setReview(await reviewCodingAgentWorktree(workspaceId, panelId))
-      if (expand) setReviewExpanded(true)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not review this worker.')
     } finally {
@@ -190,6 +189,20 @@ function CodingAgentIntegrationActions({
     if (!review && !appliedToBranch) void loadReview()
   }, [appliedToBranch, loadReview, review])
 
+  const openReview = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      const current = review ?? await reviewCodingAgentWorktree(workspaceId, panelId)
+      setReview(current)
+      await openCodingAgentReviewPanel(workspaceId, panelId, current)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not open this review.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const apply = async (): Promise<void> => {
     setBusy(true)
     setError(null)
@@ -199,7 +212,6 @@ function CodingAgentIntegrationActions({
       setReview(current)
       if (!current.canApply) {
         setError(current.message ?? 'This worker is not ready to apply.')
-        setReviewExpanded(true)
         return
       }
       if (!window.confirm(
@@ -243,7 +255,7 @@ function CodingAgentIntegrationActions({
         <button
           className="inline-flex items-center gap-1 rounded bg-surface-2 px-2 py-1 text-primary hover:bg-hover-strong disabled:opacity-50"
           disabled={busy}
-          onClick={() => { void loadReview(true) }}
+          onClick={() => { void openReview() }}
         >
           {busy && !review && <Spinner size={12} />}
           {busy && !review ? 'Reviewing…' : 'Review changes'}
@@ -281,32 +293,6 @@ function CodingAgentIntegrationActions({
       </div>
       {notice && <div className="mt-1.5 text-[#34C759]">{notice}</div>}
       {error && <div className="mt-1.5 text-danger">{error}</div>}
-      {reviewExpanded && review && (
-        <div className="mt-2 space-y-1 border-t border-subtle pt-2 text-muted">
-          <div>
-            {review.commits.length} commit{review.commits.length === 1 ? '' : 's'} · {' '}
-            {review.files.length} changed file{review.files.length === 1 ? '' : 's'}
-            {review.dirty ? ` · ${review.workingFiles.length} uncommitted` : ''}
-          </div>
-          {review.message && <div className="text-warning">{review.message}</div>}
-          {review.commits.length > 0 && (
-            <ul className="space-y-0.5 font-mono">
-              {review.commits.map((commit) => (
-                <li key={commit.hash}>{commit.hash.slice(0, 8)} {commit.message}</li>
-              ))}
-            </ul>
-          )}
-          {review.files.length > 0 && (
-            <div className="font-mono">{review.files.map((file) => `${file.status} ${file.path}`).join('\n')}</div>
-          )}
-          {review.diff && (
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-surface-2 p-2 text-[10px] text-primary">
-              {review.diff}
-            </pre>
-          )}
-          {review.truncated && <div>Diff preview was truncated.</div>}
-        </div>
-      )}
     </div>
   )
 }

@@ -18,7 +18,6 @@ import {
   X,
   Check,
   GitDiff,
-  FileMagnifyingGlass,
 } from '@phosphor-icons/react'
 import { useAppStore } from '../stores/appStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
@@ -28,7 +27,7 @@ import { Spinner } from '../ui/Spinner'
 import { useGitStatusSnapshot, gitStatusStore, workspaceIdForRoot } from '../stores/gitStatusStore'
 import { useWorktrees } from '../stores/useWorktrees'
 import { errorMessage } from '../lib/errorMessage'
-import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
+import { parseLocator } from '../../shared/runtimeLocator'
 import { openReviewPanel } from '../lib/review/openReviewPanel'
 import type { GitComparisonSpec } from '../../shared/types'
 
@@ -162,8 +161,7 @@ const FileEntry: React.FC<{
   onUnstage?: () => void
   onDiscard?: () => void
   onClick?: () => void
-  onStandaloneDiff?: () => void
-}> = ({ file, statusChar, onStage, onUnstage, onDiscard, onClick, onStandaloneDiff }) => {
+}> = ({ file, statusChar, onStage, onUnstage, onDiscard, onClick }) => {
   const dir = dirName(file.path)
   return (
     <div
@@ -178,17 +176,6 @@ const FileEntry: React.FC<{
         {dir && <span className="text-muted ml-1">{dir}</span>}
       </span>
       <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
-        {onStandaloneDiff && (
-          <Tooltip label="Open standalone diff">
-            <button
-              className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
-              onClick={(e) => { e.stopPropagation(); onStandaloneDiff() }}
-              aria-label="Open standalone diff"
-            >
-              <FileMagnifyingGlass size={13} />
-            </button>
-          </Tooltip>
-        )}
         {onDiscard && (
           <Tooltip label="Discard changes">
             <button
@@ -461,8 +448,6 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
   const [actionError, setActionError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const createDiffEditor = useAppStore((s) => s.createDiffEditor)
-
   // -------------------------------------------------------------------------
   // Data fetching — kick the shared git store and refresh the local commit log.
   // The store's own loop already refreshes on fs-watch / focus / branch-update,
@@ -488,22 +473,6 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
   useEffect(() => {
     refresh()
   }, [refresh])
-
-  // -------------------------------------------------------------------------
-  // Open diff on canvas
-  // -------------------------------------------------------------------------
-
-  const openFileDiff = useCallback((filePath: string, staged: boolean) => {
-    // filePath is git-relative (POSIX). Join onto the DECODED host root and
-    // re-encode through formatLocator — concatenating onto the raw locator
-    // string corrupts remote filenames whose bytes collide with the percent
-    // encoding. For local roots formatLocator returns the bare path unchanged.
-    const { runtimeId, path: root } = parseLocator(rootPath)
-    const hostPath = filePath.startsWith('/')
-      ? filePath
-      : `${root.replace(/\/+$/, '')}/${filePath}`
-    createDiffEditor(selectedWorkspaceId, formatLocator({ runtimeId, path: hostPath }), staged ? 'staged' : 'working')
-  }, [rootPath, selectedWorkspaceId, createDiffEditor])
 
   const openReview = useCallback((
     spec: GitComparisonSpec,
@@ -824,7 +793,6 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
               statusChar={f.index}
               onUnstage={() => unstageFile(f.path)}
               onClick={() => openReview({ kind: 'staged' }, f.path)}
-              onStandaloneDiff={() => openFileDiff(f.path, true)}
             />
           ))}
         </Section>
@@ -835,8 +803,8 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           count={changedFiles.length}
           actions={
             <>
-              <Tooltip label="Review unstaged changes">
-                <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={() => openReview({ kind: 'unstaged' })} aria-label="Review unstaged changes"><GitDiff size={13} /></button>
+              <Tooltip label="Review changes">
+                <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={() => openReview({ kind: 'unstaged' })} aria-label="Review changes"><GitDiff size={13} /></button>
               </Tooltip>
               <Tooltip label="Stage all">
                 <button
@@ -858,7 +826,6 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
               onStage={() => stageFile(f.path)}
               onDiscard={() => discardFile(f.path)}
               onClick={() => openReview({ kind: 'unstaged' }, f.path)}
-              onStandaloneDiff={() => openFileDiff(f.path, false)}
             />
           ))}
         </Section>
@@ -887,7 +854,6 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
               statusChar="?"
               onStage={() => stageFile(f.path)}
               onClick={() => openReview({ kind: 'unstaged' }, f.path)}
-              onStandaloneDiff={() => openFileDiff(f.path, false)}
             />
           ))}
         </Section>

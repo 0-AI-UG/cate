@@ -157,26 +157,27 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
   },
   {
     label: 'Agents',
-    prefixes: ['cate.codingAgent.'],
+    prefixes: ['cate.codingAgent.', 'cate.review.'],
     readMethods: [
       'cate.codingAgent.list',
       'cate.codingAgent.wait',
       'cate.codingAgent.inspect',
       'cate.codingAgent.review',
+      'cate.review.inspect',
     ],
     read: {
       key: 'cliAgentReadEnabled',
       access: 'Read',
       code: 'agent-read-disabled',
       detail:
-        '`cate agent list / wait / inspect / review` — observe workers, their terminal output, and isolated worktree changes.',
+        '`cate agent list / wait / inspect / review` and `cate review inspect` — observe workers, terminal output, and review state.',
     },
     control: {
       key: 'cliAgentControlEnabled',
       access: 'Control',
       code: 'agent-control-disabled',
       detail:
-        '`cate agent create / send / apply / keep / discard / stop` — run and steer workers or integrate and remove their worktrees.',
+        '`cate agent create / send / apply / keep / discard / stop` and `cate review note / complete` — steer workers and record review results.',
     },
   },
 ]

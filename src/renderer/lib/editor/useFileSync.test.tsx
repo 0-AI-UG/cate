@@ -90,7 +90,6 @@ function mount(model: FakeModel, overrides: Partial<UseFileSyncParams> = {}) {
     panelId: 'p1',
     filePath: FILE,
     rootPath: '/proj',
-    diffMode: undefined,
     getModel: () => model as unknown as NonNullable<ReturnType<UseFileSyncParams['getModel']>>,
     ...overrides,
   }

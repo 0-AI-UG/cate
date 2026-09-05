@@ -21,14 +21,8 @@ export interface CanvasOperations {
   /** Add a node and focus+center it. `focus: false` adds it in place without
    *  touching focus or the viewport (background creates). */
   addNodeAndFocus: (panelId: string, panelType: PanelType, position?: Point, size?: Size, focus?: boolean) => void
-  /** Begin interactive ghost placement. Returns true if ghosts are shown (the
-   *  caller must NOT also place the node). `onCancelled` rolls the panel back. */
-  beginPlacement: (
-    panelId: string,
-    panelType: PanelType,
-    onCancelled: (panelId: string) => void,
-    size?: Size,
-  ) => boolean
+  /** Start the canonical new/existing panel-target transaction. */
+  beginPanelTarget: CanvasStore['beginPanelTarget']
   removeNodeForPanel: (panelId: string) => void
   loadWorkspaceCanvas: (
     nodes: Record<CanvasNodeId, CanvasNodeState>,
@@ -60,13 +54,8 @@ export function createCanvasOps(storeApi: StoreApi<CanvasStore>): CanvasOperatio
       else if (previousSelection) storeApi.setState(previousSelection)
     },
 
-    beginPlacement(
-      panelId: string,
-      panelType: PanelType,
-      onCancelled: (panelId: string) => void,
-      size?: Size,
-    ) {
-      return storeApi.getState().beginPlacement(panelId, panelType, onCancelled, size)
+    beginPanelTarget(request) {
+      return storeApi.getState().beginPanelTarget(request)
     },
 
     removeNodeForPanel(panelId: string) {

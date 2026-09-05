@@ -33,7 +33,6 @@ import {
   GIT_MONITOR_START,
   GIT_MONITOR_STOP,
   GIT_STATUS,
-  GIT_DIFF,
   GIT_COMPARE,
   GIT_FILE_DIFF,
   GIT_FILE_CONTENT,
@@ -61,7 +60,6 @@ import {
   GIT_BRANCH_CREATE,
   GIT_BRANCH_DELETE,
   GIT_CHECKOUT,
-  GIT_DIFF_STAGED,
   GIT_STASH,
   GIT_STASH_POP,
   GIT_DISCARD_FILE,
@@ -172,6 +170,8 @@ import {
   WINDOW_PANELS_CHANGED,
   FOCUS_WINDOW_PANEL,
   REVEAL_PANEL_IN_WINDOW,
+  OPEN_WINDOW_REVIEW,
+  OPEN_REVIEW_IN_WINDOW,
   CLOSE_WINDOW_PANEL,
   CLOSE_PANEL_IN_WINDOW,
   WINDOW_PANELS_REPORT,
@@ -396,7 +396,6 @@ const invokeForwarders = {
   gitInit: makeInvoker<'gitInit'>(GIT_INIT),
   gitLsFiles: makeInvoker<'gitLsFiles'>(GIT_LS_FILES),
   gitStatus: makeInvoker<'gitStatus'>(GIT_STATUS),
-  gitDiff: makeInvoker<'gitDiff'>(GIT_DIFF),
   gitCompare: makeInvoker<'gitCompare'>(GIT_COMPARE),
   gitFileDiff: makeInvoker<'gitFileDiff'>(GIT_FILE_DIFF),
   gitFileContent: makeInvoker<'gitFileContent'>(GIT_FILE_CONTENT),
@@ -424,7 +423,6 @@ const invokeForwarders = {
   gitBranchCreate: makeInvoker<'gitBranchCreate'>(GIT_BRANCH_CREATE),
   gitBranchDelete: makeInvoker<'gitBranchDelete'>(GIT_BRANCH_DELETE),
   gitCheckout: makeInvoker<'gitCheckout'>(GIT_CHECKOUT),
-  gitDiffStaged: makeInvoker<'gitDiffStaged'>(GIT_DIFF_STAGED),
   gitStash: makeInvoker<'gitStash'>(GIT_STASH),
   gitStashPop: makeInvoker<'gitStashPop'>(GIT_STASH_POP),
   gitDiscardFile: makeInvoker<'gitDiscardFile'>(GIT_DISCARD_FILE),
@@ -534,6 +532,7 @@ const invokeForwarders = {
 
   // Cross-window panel discovery
   focusWindowPanel: makeInvoker<'focusWindowPanel'>(FOCUS_WINDOW_PANEL),
+  openWindowReviewPanel: makeInvoker<'openWindowReviewPanel'>(OPEN_WINDOW_REVIEW),
   closeWindowPanel: makeInvoker<'closeWindowPanel'>(CLOSE_WINDOW_PANEL),
   reportWindowPanels: makeInvoker<'reportWindowPanels'>(WINDOW_PANELS_REPORT),
 
@@ -899,6 +898,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onRevealPanelInWindow(callback: (panelId: string) => void): () => void {
     return createIpcListener(REVEAL_PANEL_IN_WINDOW, callback)
+  },
+
+  onOpenReviewInWindow(callback: (panelId: string, request: unknown) => void): () => void {
+    return createIpcListener(OPEN_REVIEW_IN_WINDOW, callback)
   },
 
   onClosePanelInWindow(callback: (panelId: string) => void): () => void {

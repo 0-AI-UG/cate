@@ -140,6 +140,12 @@ describe('codingAgentDriver mission integration', () => {
         return 'worker'
       }),
       setPanelWorktreeId: vi.fn(),
+      respawnPanelTerminal: vi.fn((_ws: string, panelId: string, cwd: string, worktreeId?: string) => {
+        panels[panelId] = { ...panels[panelId], cwd, worktreeId }
+      }),
+      setPanelCodingAgentLaunch: vi.fn((_ws: string, panelId: string, launch: unknown) => {
+        panels[panelId].codingAgentLaunch = launch
+      }),
       setPanelCodingAgentRun: vi.fn((_ws: string, panelId: string, run: unknown) => {
         panels[panelId].codingAgentRun = run
       }),
@@ -220,6 +226,80 @@ describe('codingAgentDriver mission integration', () => {
       cwd: '/repo',
       codingAgentLaunch: expect.objectContaining({ ownerPanelId: 'supervisor-1' }),
     }))
+  })
+
+  it('forwards a dock placement when a docked consumer creates an agent terminal', async () => {
+    const placement = { target: 'dock' as const, zone: 'right' as const, stackId: 'review-stack' }
+
+    const outcome = await handleCodingAgentMethod(
+      'ws',
+      'review-panel',
+      'cate.codingAgent.create',
+      { prompt: 'Review it' },
+      { placement },
+    )
+
+    expect(outcome.ok).toBe(true)
+    expect(state.app.createTerminal).toHaveBeenCalledWith(
+      'ws',
+      undefined,
+      undefined,
+      placement,
+      '/repo',
+      expect.objectContaining({ ownerPanelId: 'review-panel' }),
+    )
+  })
+
+  it('reuses an idle terminal panel for a new coding agent', async () => {
+    const panels = state.app.workspaces[0].panels
+    panels.existing = { id: 'existing', type: 'terminal', title: 'Terminal 2', cwd: '/repo' }
+    state.status = {
+      workspaces: {
+        ws: { terminals: { 'pty-1': { activity: { type: 'idle' }, agentPresent: false } } },
+      },
+    }
+
+    const outcome = await handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.create',
+      { prompt: 'Review it', terminalPanelId: 'existing' },
+    )
+
+    expect(outcome).toMatchObject({ ok: true, result: { panelId: 'existing' } })
+    expect(state.app.createTerminal).not.toHaveBeenCalled()
+    expect(state.app.respawnPanelTerminal).toHaveBeenCalledWith('ws', 'existing', '/repo', undefined)
+    expect(state.app.setPanelCodingAgentLaunch).toHaveBeenCalledWith(
+      'ws',
+      'existing',
+      expect.objectContaining({ prompt: 'Review it', ownerPanelId: 'supervisor-1' }),
+    )
+    expect(getOrCreate).toHaveBeenCalledWith('existing', expect.objectContaining({
+      cwd: '/repo',
+      codingAgentLaunch: expect.objectContaining({ prompt: 'Review it' }),
+    }))
+  })
+
+  it('rejects busy, owned, and caller terminal targets', async () => {
+    const panels = state.app.workspaces[0].panels
+    panels.busy = { id: 'busy', type: 'terminal', title: 'Busy' }
+    state.status = {
+      workspaces: {
+        ws: { terminals: { 'pty-1': { activity: { type: 'running' }, agentPresent: false } } },
+      },
+    }
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor', 'cate.codingAgent.create', { prompt: 'Review', terminalPanelId: 'busy' },
+    )).resolves.toEqual({ ok: false, error: 'terminal-busy' })
+
+    panels.busy.codingAgentRun = { id: 'old' }
+    await expect(handleCodingAgentMethod(
+      'ws', 'supervisor', 'cate.codingAgent.create', { prompt: 'Review', terminalPanelId: 'busy' },
+    )).resolves.toEqual({ ok: false, error: 'terminal-already-has-agent' })
+
+    await expect(handleCodingAgentMethod(
+      'ws', 'busy', 'cate.codingAgent.create', { prompt: 'Review', terminalPanelId: 'busy' },
+    )).resolves.toEqual({ ok: false, error: 'agent-cannot-replace-caller-terminal' })
   })
 
   it('keeps a short responsibility title with the worker launch and snapshot', async () => {

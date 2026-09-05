@@ -342,7 +342,14 @@ function placePanel(
   // focus steal, no camera move; the node is just added at its position.
   const focus = placement?.target !== 'canvas' || placement.focus !== false
   if (focus && isActiveWorkspace && canvasPosition == null && onGhostCancel && useSettingsStore.getState().placementPicker) {
-    const shown = ops.beginPlacement(panelId, panelType, onGhostCancel, canvasSize)
+    const shown = ops.beginPanelTarget({
+      panelId,
+      panelType,
+      availability: 'new',
+      existing: [],
+      onCancelled: () => onGhostCancel(panelId),
+      size: canvasSize,
+    })
     if (shown) return
   }
   ops.addNodeAndFocus(panelId, panelType, canvasPosition, canvasSize, focus)

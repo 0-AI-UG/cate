@@ -6,11 +6,13 @@ import { useAppStore } from '../../renderer/stores/appStore'
 import { CodingAgentCard } from './ChatCodingAgentCard'
 
 const reviewCodingAgentWorktree = vi.hoisted(() => vi.fn())
+const openCodingAgentReviewPanel = vi.hoisted(() => vi.fn())
 const keepCodingAgentWorktree = vi.hoisted(() => vi.fn())
 const terminalStatus = vi.hoisted(() => ({ runStatus: 'starting' as string | null, line: '' }))
 
 vi.mock('../../renderer/lib/agent/codingAgentIntegration', () => ({
   reviewCodingAgentWorktree,
+  openCodingAgentReviewPanel,
   applyCodingAgentWorktree: vi.fn(),
   discardCodingAgentWorktree: vi.fn(),
   keepCodingAgentWorktree,
@@ -56,6 +58,7 @@ describe('coding agent launch presentation', () => {
 
   beforeEach(() => {
     reviewCodingAgentWorktree.mockReset()
+    openCodingAgentReviewPanel.mockReset()
     keepCodingAgentWorktree.mockReset()
     terminalStatus.runStatus = 'starting'
     useAppStore.setState({
@@ -155,8 +158,6 @@ describe('coding agent launch presentation', () => {
       commits: [{ hash: 'abcdef123', message: 'Add deterministic tests' }],
       files: [{ status: 'M', path: 'tests.ts' }],
       workingFiles: [],
-      diff: 'diff --git a/tests.ts b/tests.ts',
-      truncated: false,
     })
     useAppStore.getState().setPanelCodingAgentRun('workspace-1', 'panel-1', {
       id: 'run-1',
@@ -178,6 +179,15 @@ describe('coding agent launch presentation', () => {
     expect(host.textContent).toContain('Apply to main')
     expect(host.textContent).toContain('Keep worktree')
     expect(host.textContent).toContain('Discard')
+
+    const review = Array.from(host.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Review changes')!
+    await act(async () => review.click())
+    expect(openCodingAgentReviewPanel).toHaveBeenCalledWith(
+      'workspace-1',
+      'panel-1',
+      expect.objectContaining({ branch: 'agent/tests', baseBranch: 'main' }),
+    )
 
     const keep = Array.from(host.querySelectorAll('button'))
       .find((button) => button.textContent === 'Keep worktree')!
