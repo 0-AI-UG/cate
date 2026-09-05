@@ -6,19 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-### Removed
+## [1.6.1-beta.6] - 2026-09-05
 
-- **Placement debugging overlay**: removed the development-only visualization, its keyboard toggle, and placement trace collection.
-
-- **Third-party extensions**: removed the extension catalog, settings, panels, installation, and server runtime. Existing extension panels are discarded when loading saved layouts; Cate CLI control and T3 agent state are preserved.
+This beta brings T3 conversations into Cate, improves worktree-aware panels and reviews, and removes the third-party extension system.
 
 ### Added
 
-- **Browser password saving**: Cate can save or update credentials submitted by users or agents after explicit native confirmation, with manual entry available in the password manager.
+- **T3 chat panels**: use the bundled T3 chat interface with native provider settings, authentication, custom models, and separate provider accounts.
+- **Conversation switching**: start or resume chats from the canvas action bar or the compact selector beside a panel's worktree selector.
+- **Keep awake**: prevent automatic system sleep while Cate is running with a session-only canvas control shared across windows.
+- **Browser password saving**: save or update submitted credentials after explicit native confirmation, or add credentials manually in the password manager.
+- **More skill sources**: browse additional popular skill repositories from Cate's skill catalog.
 
 ### Changed
 
-- **Single-surface browser architecture**: browser panels now keep one persistent live webview per tab and run automation against that exact guest through target-bound Chromium DevTools sessions, removing the separate agent-browser process and hidden-window path.
+- **Worktree-aware surfaces**: panel actions and workspace surfaces use the selected checkout's context.
+- **Unified reviews**: review panels share panel targeting and support detached-window workflows.
+- **Live browser automation**: browser panels and automation use the same persistent webview, keeping agent actions visible in the user's tab.
+- **Provider settings**: advanced configuration is grouped into collapsible sections, with clearer provider selection and settings feedback.
+
+### Fixed
+
+- **Fresh T3 conversations**: starting a new chat no longer returns to the existing conversation; switching and restart preserve the selected chat.
+- **Provider configuration**: multiline launch arguments use T3's expected format, and secret settings save correctly through symlinked storage paths.
+- **Panel geometry**: maximizing canvas panels respects spacing, and locked panels retain their geometry during drag and resize actions.
+- **Browser transitions**: active browser guests remain synchronized when changing panels.
+- **Agent status and titles**: improved CLI hook lifecycle handling and native title synchronization.
+- **Linux runtime compatibility**: native terminal dependencies are built for older glibc versions.
+
+### Removed
+
+- **Third-party extensions**: removed the extension catalog, settings, panels, installation, and server runtime. Obsolete extension panels are discarded from saved layouts; Cate CLI control and existing T3 credentials and conversations are preserved.
+- **Placement debugging overlay**: removed its development-only visualization, keyboard toggle, and trace collection.
 
 ## [1.6.1-beta.5] - 2026-09-03
 
