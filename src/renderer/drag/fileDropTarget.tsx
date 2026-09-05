@@ -9,6 +9,7 @@
 // =============================================================================
 
 import React, { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { create } from 'zustand'
 import { CATE_FILE_MIME, CATE_FILES_MIME } from './fileDragPayload'
 
@@ -17,7 +18,7 @@ export type FileDropKind = 'canvas' | 'dock' | 'terminal'
 interface FileDropTarget {
   kind: FileDropKind
   id: string
-  rect: { left: number; top: number; width: number; height: number }
+  host: HTMLElement
 }
 
 interface FileDropState {
@@ -56,10 +57,8 @@ export function useFileDropTracker(): void {
       }
       const kind = host.getAttribute('data-filedrop') as FileDropKind
       const id = host.getAttribute('data-filedrop-id') ?? ''
-      // Avoid churn: only recompute the rect when the target element changes.
-      if (store.target && store.target.kind === kind && store.target.id === id) return
-      const r = host.getBoundingClientRect()
-      store.set({ kind, id, rect: { left: r.left, top: r.top, width: r.width, height: r.height } })
+      if (store.target?.host === host) return
+      store.set({ kind, id, host })
     }
     const clear = (): void => {
       if (useFileDropStore.getState().target) useFileDropStore.getState().set(null)
@@ -94,16 +93,15 @@ const LABEL: Record<FileDropKind, string> = {
 export const FileDropOverlay: React.FC = () => {
   const target = useFileDropStore((s) => s.target)
   if (!target) return null
-  const { rect, kind } = target
-  return (
+  const { host, kind } = target
+  // All file-drop hosts are positioned containers. Render inside the target so
+  // the indicator inherits its clipping, transforms, and panel stacking order.
+  return createPortal(
     <div
       data-file-drop-indicator={kind}
       style={{
-        position: 'fixed',
-        left: rect.left,
-        top: rect.top,
-        width: rect.width,
-        height: rect.height,
+        position: 'absolute',
+        inset: 0,
         pointerEvents: 'none',
         zIndex: 60,
         boxSizing: 'border-box',
@@ -128,6 +126,7 @@ export const FileDropOverlay: React.FC = () => {
       >
         {LABEL[kind]}
       </span>
-    </div>
+    </div>,
+    host,
   )
 }

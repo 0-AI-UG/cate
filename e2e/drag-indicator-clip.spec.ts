@@ -69,3 +69,50 @@ test('dock-split indicator is clamped to the canvas, never over the sidebar', as
   expect(diag.indicatorLeft).not.toBeNull()
   expect(diag.indicatorLeft!).toBeGreaterThanOrEqual(diag.sidebarRight - 1)
 })
+
+// Native image drags use a separate overlay from panel drags. It must inherit
+// the terminal's clipping and stacking order, including the hidden left half.
+test('image drop indicator stays behind the sidebar covering its terminal', async () => {
+  const target = await seedTerminal(page, { x: -250, y: 100 })
+  await resetViewport(page)
+  const terminal = page.locator(`[data-node-id="${target}"] [data-filedrop="terminal"]`)
+  await expect(terminal).toBeVisible()
+
+  const points = await terminal.evaluate((host) => {
+    const rect = host.getBoundingClientRect()
+    const canvas = host.closest('[data-canvas-container]')!.getBoundingClientRect()
+    const sidebar = document.querySelector('[data-app-sidebar="left"]')!.getBoundingClientRect()
+    const y = rect.top + rect.height / 2
+    return {
+      visible: { x: Math.max(rect.left, canvas.left) + 30, y },
+      covered: { x: (Math.max(rect.left, sidebar.left) + Math.min(rect.right, sidebar.right)) / 2, y },
+    }
+  })
+  await page.evaluate(({ visible }) => {
+    const dataTransfer = new DataTransfer()
+    dataTransfer.items.add(new File(['image'], 'example.png', { type: 'image/png' }))
+    document.elementFromPoint(visible.x, visible.y)!.dispatchEvent(new DragEvent('dragover', {
+      bubbles: true, cancelable: true, clientX: visible.x, clientY: visible.y, dataTransfer,
+    }))
+  }, points)
+  const indicator = page.locator('[data-file-drop-indicator="terminal"]')
+  await expect(indicator).toBeVisible()
+  await expect(indicator).toHaveText('Drop to paste path')
+
+  const hit = await page.evaluate(({ visible, covered }) => {
+    const indicator = document.querySelector<HTMLElement>('[data-file-drop-indicator="terminal"]')!
+    // Opt the visual into hit-testing to inspect the browser's paint order.
+    indicator.style.pointerEvents = 'auto'
+    const visibleHit = document.elementFromPoint(visible.x, visible.y)
+    const coveredHit = document.elementFromPoint(covered.x, covered.y)
+    indicator.style.pointerEvents = 'none'
+    return {
+      visibleIndicator: !!visibleHit?.closest('[data-file-drop-indicator]'),
+      coveredSidebar: !!coveredHit?.closest('[data-app-sidebar="left"]'),
+    }
+  }, points)
+  expect(hit.visibleIndicator).toBe(true)
+  expect(hit.coveredSidebar).toBe(true)
+  await page.evaluate(() => window.dispatchEvent(new Event('dragend')))
+  await expect(indicator).toHaveCount(0)
+})
