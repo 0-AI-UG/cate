@@ -13,10 +13,6 @@ vi.hoisted(() => {
   })
 })
 
-vi.mock('./AgentWorkspaceBar', () => ({
-  AgentWorkspaceBar: () => <div data-testid="workspace-bar">Workspace bar</div>,
-}))
-
 import { useAppStore } from '../stores/appStore'
 import AgentPanel from './AgentPanel'
 
@@ -55,17 +51,16 @@ afterEach(async () => {
   host.remove()
 })
 
-describe('AgentPanel workspace bar', () => {
-  it('stays available while the harness is starting', async () => {
+describe('AgentPanel', () => {
+  it('shows loading feedback while the harness is starting', async () => {
     getPanelUrl.mockReturnValue(new Promise(() => {}))
 
     await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
 
-    expect(host.querySelector('[data-testid="workspace-bar"]')).not.toBeNull()
     expect(host.textContent).toContain('Starting agent')
   })
 
-  it('stays available when the harness fails', async () => {
+  it('shows an error when the harness fails', async () => {
     getPanelUrl.mockResolvedValue({ error: 'runtime unavailable' })
 
     await act(async () => {
@@ -73,7 +68,6 @@ describe('AgentPanel workspace bar', () => {
       await Promise.resolve()
     })
 
-    expect(host.querySelector('[data-testid="workspace-bar"]')).not.toBeNull()
     expect(host.textContent).toContain('Agent unavailable')
     expect(host.textContent).toContain('runtime unavailable')
   })

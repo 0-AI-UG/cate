@@ -410,13 +410,13 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             No panel
           </div>
         )}
-        {/* Terminal worktree chip — overlaid on the panel's top-right rather than crammed
+        {/* Terminal/Agent worktree chip — overlaid on the panel's top-right rather than crammed
             into the tab strip (where it starved the title). Collapsed to its icon
             until hovered so it covers almost no content (#370). Self-hides for
             single-worktree workspaces, and stands
             down while the panel claims the corner for its own UI (see
             panelChrome) rather than sitting on top of it. */}
-        {activePanel?.type === 'terminal' && effectiveWorkspaceId && !cornerClaimed && (
+        {(activePanel?.type === 'terminal' || activePanel?.type === 'agent') && effectiveWorkspaceId && !cornerClaimed && (
           // right-3 (12px), not right-1.5: terminal panels reserve a 6px
           // scrollbar lane (overflow-y: scroll). Offset
           // past it so the chip clears the scrollbar and leaves a 6px gap that

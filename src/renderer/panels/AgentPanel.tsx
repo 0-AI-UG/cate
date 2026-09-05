@@ -10,7 +10,6 @@ import {
   isAgentProviderSettingsNavigation,
   isAllowedAgentHarnessNavigation,
 } from '../lib/agentHarnessSurface'
-import { AgentWorkspaceBar } from './AgentWorkspaceBar'
 import { useUIStore } from '../stores/uiStore'
 
 interface WebviewElement extends HTMLElement {
@@ -185,7 +184,6 @@ export default function AgentPanel({ panelId, workspaceId }: AgentPanelProps) {
       data-agent-panel-id={panelId}
       data-agent-phase={state.phase}
     >
-      <AgentWorkspaceBar panelId={panelId} workspaceId={workspaceId} />
       <div className="relative min-h-0 flex-1">
         {state.phase === 'error' ? (
           <div className="flex h-full flex-col items-center justify-center p-6 text-center">
