@@ -169,11 +169,7 @@ jobs:
             rm -rf "$tmp"
           done
 
-      # Note: the functional + content-search e2e suite used to gate the macOS
-      # release here, but the hosted mac runner flaked on the synthetic-mouse
-      # drag/detach specs often enough to redden otherwise-green releases (the
-      # suite passes reliably locally). It no longer blocks the release; run
-      # `npm run test:e2e:ci` locally to exercise it against a real window server.
+      # E2E tests run locally only and do not gate release packaging.
 
       - name: Package (macOS)
         if: matrix.platform == 'mac'
