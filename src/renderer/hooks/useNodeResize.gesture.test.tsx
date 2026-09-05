@@ -245,6 +245,23 @@ describe('useNodeResize — gesture', () => {
     expect(store.getState().nodes['A'].size.width).toBe(513)
   })
 
+  it('leaves a locked shared-border neighbor unchanged', () => {
+    const store = setupScene(
+      [
+        { id: 'A', origin: { x: 100, y: 100 }, size: { width: 400, height: 400 } },
+        { id: 'B', origin: { x: 500, y: 100 }, size: { width: 700, height: 400 } },
+      ],
+      { nodeId: 'A', edge: 'right' },
+    )
+    act(() => store.getState().togglePin('B'))
+    down(500, 300)
+    move(513, 300)
+    up(513, 300, { altKey: true })
+    expect(store.getState().nodes['A'].size.width).toBe(413)
+    expect(store.getState().nodes['B'].origin).toEqual({ x: 500, y: 100 })
+    expect(store.getState().nodes['B'].size).toEqual({ width: 700, height: 400 })
+  })
+
   it('snaps a shared-border neighbor together with the primary on release', () => {
     useSettingsStore.setState({ snapToGrid: true })
     // A.right and B.left share the border at x = 500 over the y-range [100,500].

@@ -186,6 +186,37 @@ describe('CanvasNode — group drag from the title bar', () => {
     dispatchMouse(window, 'mouseup', { x: 60, y: 10 })
   })
 
+  it.each(['A', 'B'])('respects locked node %s when dragging a selection', (lockedId) => {
+    const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-locked')
+    useAppStore.getState().addPanel(wsId, { id: 'panel-A', type: 'editor', title: 'A', isDirty: false })
+    const store = freshCanvasStore()
+    addNode(store, 'A', 'panel-A', { x: 0, y: 0 }, { width: 200, height: 150 })
+    addNode(store, 'B', 'panel-B', { x: 400, y: 0 }, { width: 200, height: 150 })
+    act(() => {
+      store.getState().togglePin(lockedId)
+      store.getState().selectNodes(['A', 'B'], false)
+      root.render(
+        <CanvasStoreProvider store={store}>
+          <CanvasNode nodeId="A" isFocused={false} dockStoreApi={tabsDockStore('panel-A')}
+            renderPanel={() => <div />} />
+        </CanvasStoreProvider>,
+      )
+    })
+    const tabBar = container.querySelector<HTMLElement>('.dock-tab-bar')!
+    dispatchMouse(tabBar, 'mousedown', { x: 50, y: 10 })
+    dispatchMouse(window, 'mousemove', { x: 60, y: 10 })
+    const source = useDragStore.getState().source
+    if (lockedId === 'A') {
+      expect(source).toBeNull()
+    } else {
+      expect(source?.origin.kind).toBe('canvas-node')
+      if (source?.origin.kind !== 'canvas-node') throw new Error('expected canvas-node source')
+      expect(source.origin.members).toEqual([])
+    }
+    dispatchMouse(window, 'mouseup', { x: 60, y: 10 })
+    expect(store.getState().nodes[lockedId].origin).toEqual({ x: lockedId === 'A' ? 0 : 400, y: 0 })
+  })
+
   it('clicking an already-focused node keeps it active (no blue-ring de-focus on the second click)', () => {
     const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-refocus')
     useAppStore.getState().addPanel(wsId, { id: 'panel-A', type: 'editor', title: 'A', isDirty: false })
