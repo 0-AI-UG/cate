@@ -6,6 +6,7 @@
 
 import log from '../logger'
 import { useAppStore } from '../../stores/appStore'
+import { useUIStore } from '../../stores/uiStore'
 import {
   getWorkspaceDockSnapshot,
   getWorkspaceCanvasPanelIds,
@@ -14,7 +15,7 @@ import {
 import { captureAndSaveScrollback } from '../terminal/captureAndSaveScrollback'
 import { deferredSnapshots } from './deferredRestore'
 import { terminalRegistry } from '../terminal/terminalRegistry'
-import { isLocalLocator } from '../../../shared/runtimeLocator'
+import { isLocalLocator, parseLocator } from '../../../shared/runtimeLocator'
 import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
 import { deriveSidebarSession } from './sidebarSession'
 import { isProjectTrusted } from '../../stores/workspaceTrustStore'
@@ -26,6 +27,7 @@ import type {
   RemoteProjectEntry,
   CanvasSnapshot,
 } from '../../../shared/types'
+import { pathKey } from '../../../shared/pathUtils'
 
 // Last serialized session payload — used to skip disk writes when nothing
 // actually changed, so the periodic auto-save doesn't rewrite an identical file
@@ -45,6 +47,7 @@ let lastRemoteProjectsSerialized: string | null = null
 
 export async function saveSession(): Promise<void> {
   const updatedState = useAppStore.getState()
+  const uiState = useUIStore.getState()
 
   const snapshots: SessionSnapshot[] = []
 
@@ -136,6 +139,22 @@ export async function saveSession(): Promise<void> {
       }
     }
 
+    const sourceControlWorktreeByRepository = workspace.rootPath
+      ? Object.fromEntries(
+          Object.entries(uiState.sourceControlWorktreeByRepository).filter(([repositoryRoot]) => {
+            const workspaceRoot = parseLocator(workspace.rootPath)
+            const repository = parseLocator(repositoryRoot)
+            const workspaceKey = pathKey(workspaceRoot.path)
+            const repositoryKey = pathKey(repository.path)
+            return repository.runtimeId === workspaceRoot.runtimeId && (
+              repositoryKey === workspaceKey || repositoryKey.startsWith(`${workspaceKey}/`)
+            )
+          }),
+        )
+      : {}
+    const navigationWorktreeId = uiState.navigationWorktreeByWorkspace[workspace.id]
+    const hasWorktreeViewScopes = !!navigationWorktreeId || Object.keys(sourceControlWorktreeByRepository).length > 0
+
     snapshots.push({
       workspaceId: workspace.id,
       workspaceName: workspace.name,
@@ -148,6 +167,12 @@ export async function saveSession(): Promise<void> {
       // Persist the worktree registry (colors/labels) so they're stable across
       // restarts instead of re-assigned from the palette on rediscovery.
       worktrees: workspace.worktrees?.length ? workspace.worktrees : undefined,
+      worktreeViewScopes: hasWorktreeViewScopes ? {
+        navigationWorktreeId,
+        sourceControlWorktreeByRepository: Object.keys(sourceControlWorktreeByRepository).length
+          ? sourceControlWorktreeByRepository
+          : undefined,
+      } : undefined,
       // Carry the remote reconnect info so it survives restart (Finding 2).
       connection: workspace.connection,
     })

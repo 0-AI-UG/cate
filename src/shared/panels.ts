@@ -39,8 +39,8 @@ export interface SharedPanelDefinition {
   /** Whether a panel of this type can be placed as a canvas node. Canvas
    *  panels themselves live only in dock zones. */
   canLiveOnCanvas: boolean
-  /** Whether this panel participates in the git-worktree UI and can carry a
-   *  `worktreeId`/working-directory binding. */
+  /** Whether this panel supports an explicit checkout switch/create action.
+   *  File-backed panels can still derive passive checkout affinity by path. */
   worktreeBinding: boolean
   /** Whether this panel is exposed as a destination in the command palette. */
   navigable: boolean
@@ -228,8 +228,8 @@ export function keepsMountedWhenTabHidden(type: PanelType | string | undefined):
   return !!type && getSharedPanelDef(type).keepMountedWhenTabHidden
 }
 
-/** Panel types whose records carry a worktree/cwd binding, derived from the
- *  definitions so runtime policy and the narrow launch type cannot drift. */
+/** Panel types supporting explicit worktree launch/switch behavior, derived
+ *  from the definitions so runtime policy and the narrow launch type cannot drift. */
 export type WorktreePanelType = {
   [Type in PanelType]: (typeof PANEL_DEFINITIONS)[Type]['worktreeBinding'] extends true
     ? Type

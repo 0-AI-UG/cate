@@ -238,7 +238,8 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     // Open the new terminal in the same worktree as the terminal/agent selected
     // on this canvas (see inheritedWorktreeFromSelection).
     const app = useAppStore.getState()
-    const wt = inheritedWorktreeFromSelection(store.getState(), app.getWorkspace(wsId)?.panels)
+    const workspace = app.getWorkspace(wsId)
+    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, undefined, workspace?.worktrees)
     const newId = app.createTerminal(wsId, undefined, undefined, here(), wt.cwd)
     if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
   }, [workspaceId, here, store])
@@ -250,14 +251,20 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
 
   const onNewEditor = useCallback(async () => {
     const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (wsId) useAppStore.getState().createEditor(wsId, undefined, undefined, here())
-  }, [workspaceId, here])
+    if (!wsId) return
+    const app = useAppStore.getState()
+    const workspace = app.getWorkspace(wsId)
+    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, undefined, workspace?.worktrees)
+    const panelId = app.createEditor(wsId, undefined, undefined, here())
+    if (panelId && wt.worktreeId) app.setPanelWorktreeId(wsId, panelId, wt.worktreeId)
+  }, [workspaceId, here, store])
 
   const onNewAgent = useCallback(async () => {
     const wsId = await ensureWorkspaceFolder(workspaceId)
     if (!wsId) return
     const app = useAppStore.getState()
-    const wt = inheritedWorktreeFromSelection(store.getState(), app.getWorkspace(wsId)?.panels)
+    const workspace = app.getWorkspace(wsId)
+    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, undefined, workspace?.worktrees)
     const newId = app.createCateAgent(wsId, undefined, here())
     const rootPath = app.getWorkspace(wsId)?.rootPath
     if (newId && rootPath && wt.worktreeId) {

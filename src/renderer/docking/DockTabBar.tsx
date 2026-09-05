@@ -15,9 +15,9 @@ import { useAppStore } from '../stores/appStore'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { AgentActivityTitle, AwaitingIndicator } from '../ui/AgentActivityTitle'
 import { isMiddleClick } from '../lib/mouse'
-import { isWorktreePanelType } from '../../shared/panels'
 import { useActiveChatWorktreeByPanel } from '../../cateAgent/renderer/cateAgentStore'
 import { usePanelInteractionStore } from '../lib/panelInteractions'
+import { worktreeForPanel } from '../lib/worktreeContext'
 
 function PanelInteractionDot({ panelId }: { panelId: string }) {
   const signal = usePanelInteractionStore((state) => {
@@ -53,8 +53,9 @@ function PanelInteractionDot({ panelId }: { panelId: string }) {
 }
 
 // Lookup: panelId → worktree color. Only returns a color when the panel's
-// workspace has 2+ worktrees. Both terminal and Agent tabs retain this light
-// association tint; the interactive title-bar worktree chip is terminal-only.
+// workspace has 2+ worktrees. Terminals, agents, file-backed panels, and review
+// tabs retain this light association tint; the interactive title-bar worktree
+// chip remains terminal-only.
 // The color is applied to the tab's title text, not its icon — the icon may be
 // an agent logo (an <img>, which ignores `color`), and tinting it would clash
 // with the per-agent icon swap.
@@ -70,11 +71,8 @@ function useWorktreeColorByPanel(): Record<string, string> {
       // the one keyed by the workspace's own rootPath.
       const primary = worktrees.find((w) => w.path === ws.rootPath)
       for (const panel of Object.values(ws.panels)) {
-        if (!isWorktreePanelType(panel.type)) continue
-        const worktreeId = panel.type === 'cateAgent'
-          ? activeChatWorktreeByPanel[panel.id]
-          : panel.worktreeId
-        const wt = worktrees.find((w) => w.id === worktreeId) ?? primary
+        const wt = worktreeForPanel(panel, worktrees, (id) => activeChatWorktreeByPanel[id])
+          ?? (panel.type === 'terminal' || panel.type === 'cateAgent' ? primary : undefined)
         if (wt?.color) out[panel.id] = wt.color
       }
     }

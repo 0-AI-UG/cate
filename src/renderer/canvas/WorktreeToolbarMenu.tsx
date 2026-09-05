@@ -35,6 +35,12 @@ import { useGitStatusSnapshot, gitStatusStore } from '../stores/gitStatusStore'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore, getWorktreeColorPalette } from '../stores/appStore'
 import { useParallelWork, runWorktreeContextMenu, type CardCallbacks } from '../stores/useParallelWork'
+import {
+  closePreparedWorktreePanels,
+  prepareWorktreePanelsForClose,
+  removeWorktreeFromAllWindows,
+  worktreePanelCloseTargets,
+} from '../lib/worktreePanelClose'
 import { useWorktreeStatuses, humanStatus, type PrStatus } from '../stores/useWorktreeStatuses'
 import type { WorktreePanelType } from '../../shared/panels'
 import { useActiveChatWorktreeByPanel } from '../../cateAgent/renderer/cateAgentStore'
@@ -164,8 +170,6 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
   const focusWorktree = useUIStore((s) => s.focusWorktree)
   const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
   const setHoveredWorktree = useUIStore((s) => s.setHoveredWorktree)
-  const removeWorktree = useAppStore((s) => s.removeWorktree)
-
   // What's already open on the canvas, per worktree.
   const panels = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.panels)
   const activeChatWorktreeByPanel = useActiveChatWorktreeByPanel()
@@ -212,6 +216,13 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
       setError(`Couldn’t initialize git: ${errorMessage(err, 'The operation failed.')}`)
     }
   }, [rootPath, workspaceId])
+
+  const removeOrphan = useCallback(async (worktreeId: string) => {
+    const targets = worktreePanelCloseTargets(workspaceId, worktreeId)
+    if (!(await prepareWorktreePanelsForClose(workspaceId, targets))) return
+    closePreparedWorktreePanels(workspaceId, targets)
+    removeWorktreeFromAllWindows(workspaceId, worktreeId)
+  }, [workspaceId])
 
   return (
     <div
@@ -318,7 +329,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
                   />
                   <span className="flex-1 min-w-0 text-[12px] truncate">{wt.label || wt.branch}</span>
                   <button
-                    onClick={() => removeWorktree(workspaceId, wt.id)}
+                    onClick={() => void removeOrphan(wt.id)}
                     className="text-[11px] text-muted hover:text-red-400"
                   >
                     Remove

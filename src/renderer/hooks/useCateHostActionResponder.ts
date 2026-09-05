@@ -34,6 +34,7 @@ import {
 import { handleReviewMethod } from '../lib/review/reviewDriver'
 import { browserPanelUrl, isStartPageUrl, type PanelType, type Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
+import { worktreeForPath } from '../lib/worktreeContext'
 
 // Host-API panel creation (CLI + extensions) is always non-interactive: callers
 // may add panels but must not open the placement picker, switch tabs, change
@@ -57,6 +58,7 @@ interface HostActionPayload {
   extensionId: string
   method: string
   args: unknown
+  originCwd?: string
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -125,10 +127,11 @@ async function finishTracked<T>(
 // SECURITY: confine the resolved path to the workspace root. An extension must
 // not be able to open arbitrary files on disk (e.g. /etc/hosts, ../../secrets)
 // via the reverse API — neither by passing an absolute path that escapes the
-// root nor by a relative path that traverses out of it. Returns null when the
-// resolved path falls outside the verified root (caller rejects the request).
-function resolveWorkspacePath(workspaceId: string, filePath: string): string | null {
-  const rootPath = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)?.rootPath
+// workspace's known checkouts nor by a relative path that traverses out of its
+// caller checkout. Returns null outside those verified roots.
+function resolveWorkspacePath(workspaceId: string, filePath: string, originCwd?: string): string | null {
+  const workspace = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  const rootPath = workspace?.rootPath
   if (!rootPath) return null
   // A REMOTE workspace stores rootPath as a locator URI
   // (cate-runtime://<id>/<path>), but cate.workspace.get hands the extension the
@@ -140,13 +143,52 @@ function resolveWorkspacePath(workspaceId: string, filePath: string): string | n
   // routes to the correct runtime. Local roots have no scheme, so this is a no-op
   // for them (bareRoot === rootPath, runtimeId === 'local').
   const { runtimeId, path: bareRoot } = parseLocator(rootPath)
+  const allowedRoots = [rootPath, ...(workspace?.worktrees ?? []).map((worktree) => worktree.path)]
+    .map(parseLocator)
+    .filter((root) => root.runtimeId === runtimeId)
+    .map((root) => root.path)
+  const originBase = originCwd && allowedRoots.some((root) => {
+    const originKey = pathKey(originCwd)
+    const rootKey = pathKey(root)
+    return originKey === rootKey || originKey.startsWith(`${rootKey}/`)
+  })
+    ? originCwd
+    : bareRoot
   // Collapse `.`/`..` segments before checking containment so a traversal like
   // `../../etc/passwd` can't slip past a naive prefix match.
-  const normalized = normalizeSegments(toAbsolutePath(filePath, bareRoot))
-  const rootKey = pathKey(bareRoot)
+  const normalized = normalizeSegments(toAbsolutePath(filePath, originBase))
   const key = pathKey(normalized)
-  if (key !== rootKey && !key.startsWith(rootKey + '/')) return null
+  if (!allowedRoots.some((root) => {
+    const rootKey = pathKey(root)
+    return key === rootKey || key.startsWith(`${rootKey}/`)
+  })) return null
   return formatLocator({ runtimeId, path: normalized })
+}
+
+/** Resolve a CLI caller cwd to its containing checkout. Worktree metadata from
+ * a remote workspace may carry a bare host path, so attach the workspace's
+ * runtime before using the shared locator-aware containment helper. */
+function worktreeForOrigin(workspaceId: string, originCwd?: string) {
+  if (!originCwd) return undefined
+  const workspace = useAppStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
+  if (!workspace?.rootPath) return undefined
+  const workspaceRoot = parseLocator(workspace.rootPath)
+  const origin = parseLocator(originCwd)
+  const originLocator = formatLocator({
+    runtimeId: origin.runtimeId === 'local' ? workspaceRoot.runtimeId : origin.runtimeId,
+    path: origin.path,
+  })
+  const candidates = (workspace.worktrees ?? []).map((worktree) => {
+    const parsed = parseLocator(worktree.path)
+    return {
+      ...worktree,
+      path: formatLocator({
+        runtimeId: parsed.runtimeId === 'local' ? workspaceRoot.runtimeId : parsed.runtimeId,
+        path: parsed.path,
+      }),
+    }
+  })
+  return worktreeForPath(originLocator, candidates)
 }
 
 /** Resolve `.` / `..` segments in an absolute path WITHOUT touching the fs (this
@@ -253,9 +295,9 @@ export function useCateHostActionResponder(): void {
           case 'cate.editor.openFile': {
             const filePath = typeof args.path === 'string' ? args.path : undefined
             if (!filePath) return reply(false, { error: 'path required' })
-            // Confine the target to the workspace root — reject any path that
-            // escapes it (absolute or traversal).
-            const resolved = resolveWorkspacePath(workspaceId, filePath)
+            // Confine the target to the workspace's known checkouts — reject
+            // any absolute or traversal path that escapes them.
+            const resolved = resolveWorkspacePath(workspaceId, filePath, payload.originCwd)
             if (!resolved) return reply(false, { error: 'path outside workspace' })
             // Reject a nonexistent target instead of opening a healthy-looking
             // panel on it — that silence hides typos from agent callers. (This
@@ -297,10 +339,23 @@ export function useCateHostActionResponder(): void {
               const extPanelId = typeof args.extensionPanelId === 'string' ? args.extensionPanelId : undefined
               if (!extPanelId) return reply(false, { error: 'extensionPanelId required' })
               newPanelId = useAppStore.getState().createExtensionPanel(workspaceId, extId, extPanelId, undefined, placement)
+            } else if (type === 'terminal') {
+              const worktree = worktreeForOrigin(workspaceId, payload.originCwd)
+              const store = useAppStore.getState()
+              newPanelId = store.createTerminal(
+                workspaceId,
+                undefined,
+                undefined,
+                placement,
+                worktree?.path,
+              )
+              if (newPanelId && worktree) {
+                store.setPanelWorktreeId(workspaceId, newPanelId, worktree.id)
+              }
             } else {
               let filePath: string | undefined
               if (typeof args.filePath === 'string') {
-                const resolved = resolveWorkspacePath(workspaceId, args.filePath)
+                const resolved = resolveWorkspacePath(workspaceId, args.filePath, payload.originCwd)
                 if (!resolved) return reply(false, { error: 'path outside workspace' })
                 filePath = resolved
               }

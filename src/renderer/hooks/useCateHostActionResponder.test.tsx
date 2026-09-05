@@ -17,6 +17,7 @@ import { act } from 'react'
 
 const ROOT = '/Users/dev/repo'
 const WS = 'ws-1'
+const WORKTREE_ROOT = '/Users/dev/checkouts/feature'
 // A REMOTE workspace: the store holds a locator URI as rootPath, but
 // cate.workspace.get hands the extension the BARE path (/srv/proj). An absolute
 // path the extension echoes back must resolve against the bare form.
@@ -31,6 +32,8 @@ const h = vi.hoisted(() => ({
   createExtensionPanel: vi.fn(() => 'new-ext-id'),
   updatePanelTitle: vi.fn(),
   editorCreate: vi.fn(() => 'reg-editor-id'),
+  createTerminal: vi.fn(() => 'new-terminal-id'),
+  setPanelWorktreeId: vi.fn(),
   placementForBackgroundPanel: vi.fn(),
   setPendingReveal: vi.fn(),
   activePanelId: null as string | null,
@@ -58,6 +61,7 @@ vi.mock('../lib/activePanel', () => ({ getActivePanelId: () => h.activePanelId }
 vi.mock('../lib/logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../panels/registry', () => ({
   PANEL_REGISTRY: {
+    terminal: { create: vi.fn() },
     editor: { create: h.editorCreate },
     extension: { create: vi.fn() },
   },
@@ -71,6 +75,7 @@ vi.mock('../stores/appStore', () => ({
         {
           id: WS,
           rootPath: ROOT,
+          worktrees: [{ id: 'wt-feature', path: WORKTREE_ROOT }],
           panels: {
             'host-panel': { id: 'host-panel', type: 'terminal', title: 'Term' },
             'ed-1': { id: 'ed-1', type: 'editor', title: 'a.ts', filePath: `${ROOT}/src/a.ts` },
@@ -93,6 +98,8 @@ vi.mock('../stores/appStore', () => ({
         { id: REMOTE_WS, rootPath: REMOTE_ROOT_LOCATOR, panels: {} },
       ],
       createExtensionPanel: h.createExtensionPanel,
+      createTerminal: h.createTerminal,
+      setPanelWorktreeId: h.setPanelWorktreeId,
       updatePanelTitle: h.updatePanelTitle,
     }),
   },
@@ -130,7 +137,7 @@ let container: HTMLDivElement
 let root: Root
 
 /** Fire one forwarded action and wait for the hook's async handler + reply. */
-async function fire(method: string, args: unknown, extra?: Partial<{ panelId: string; extensionId: string; workspaceId: string }>): Promise<void> {
+async function fire(method: string, args: unknown, extra?: Partial<{ panelId: string; extensionId: string; workspaceId: string; originCwd: string }>): Promise<void> {
   await act(async () => {
     await actionCb!({
       requestId: `req-${method}`,
@@ -139,6 +146,7 @@ async function fire(method: string, args: unknown, extra?: Partial<{ panelId: st
       extensionId: extra?.extensionId ?? 'cate.kitchensink',
       method,
       args,
+      originCwd: extra?.originCwd,
     })
   })
 }
@@ -227,6 +235,28 @@ describe('useCateHostActionResponder', () => {
     expect(h.openFileAsPanel).toHaveBeenCalledWith(WS, `${ROOT}/src/app.ts`, undefined, BACKGROUND_PLACEMENT)
   })
 
+  it('resolves a CLI-relative file from the caller worktree instead of the primary checkout', async () => {
+    await fire('cate.editor.openFile', { path: 'src/app.ts' }, {
+      originCwd: `${WORKTREE_ROOT}/packages/client`,
+    })
+    expect(h.openFileAsPanel).toHaveBeenCalledWith(
+      WS,
+      `${WORKTREE_ROOT}/packages/client/src/app.ts`,
+      undefined,
+      BACKGROUND_PLACEMENT,
+    )
+  })
+
+  it('allows an absolute path inside a registered sibling worktree', async () => {
+    await fire('cate.editor.openFile', { path: `${WORKTREE_ROOT}/src/app.ts` })
+    expect(h.openFileAsPanel).toHaveBeenCalledWith(
+      WS,
+      `${WORKTREE_ROOT}/src/app.ts`,
+      undefined,
+      BACKGROUND_PLACEMENT,
+    )
+  })
+
   it('accepts an absolute path inside a REMOTE workspace (locator rootPath) and re-attaches the scheme', async () => {
     // Regression: for a remote workspace the store's rootPath is a locator URI,
     // but workspace.get gives the extension the BARE path. An absolute path the
@@ -276,6 +306,34 @@ describe('useCateHostActionResponder', () => {
     expect(h.editorCreate).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: WS, placement: BACKGROUND_PLACEMENT, filePath: `${ROOT}/src/index.ts` }),
     )
+  })
+
+  it('resolves createPanel file paths from a CLI caller worktree', async () => {
+    await fire('cate.canvas.createPanel', { type: 'editor', filePath: 'src/index.ts' }, {
+      originCwd: WORKTREE_ROOT,
+    })
+    expect(h.editorCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: WS,
+        placement: BACKGROUND_PLACEMENT,
+        filePath: `${WORKTREE_ROOT}/src/index.ts`,
+      }),
+    )
+  })
+
+  it('creates a terminal at the containing CLI caller worktree', async () => {
+    await fire('cate.canvas.createPanel', { type: 'terminal' }, {
+      originCwd: `${WORKTREE_ROOT}/packages/client`,
+    })
+
+    expect(h.createTerminal).toHaveBeenCalledWith(
+      WS,
+      undefined,
+      undefined,
+      BACKGROUND_PLACEMENT,
+      WORKTREE_ROOT,
+    )
+    expect(h.setPanelWorktreeId).toHaveBeenCalledWith(WS, 'new-terminal-id', 'wt-feature')
   })
 
   it('rejects an unknown panel type', async () => {

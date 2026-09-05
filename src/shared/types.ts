@@ -234,8 +234,8 @@ export interface PanelState {
   cwd?: string
   /** Document panels only: sub-type discriminator for the viewer. */
   documentType?: 'pdf' | 'docx' | 'image'
-  /** Terminal panels only: id of the WorktreeMeta in the parent workspace that
-   *  this terminal is associated with. Cate Agent worktrees live on Chat. */
+  /** Checkout affinity for terminals, file-backed panels, and review panels.
+   *  Cate Agent worktrees live on Chat. */
   worktreeId?: string
   /** Terminal panels only. Set to true the first time the user renames the
    *  tab so that subsequent OSC-0/1/2 title escapes from the running agent
@@ -1115,6 +1115,8 @@ export interface SessionSnapshot {
    *  stay stable across restarts instead of being re-assigned round-robin from
    *  the palette, and so panel.worktreeId references still resolve. */
   worktrees?: WorktreeMeta[]
+  /** Machine-local checkout selections for navigation and Source Control. */
+  worktreeViewScopes?: WorktreeViewScopes
   /** Resolved runtime connection for a remote/WSL workspace (absent ⇒ local).
    *  Persisted so the runtime can be reconnected on restore before any
    *  fs/git/terminal op runs. Mirrors WorkspaceState.connection. */
@@ -1230,10 +1232,17 @@ export interface ProjectSessionFile {
    *  here (not in committed workspace.json) so colors/labels survive a restart.
    *  Paths are absolute, matching `ProjectSessionPanel.workingDirectory`. */
   worktrees?: WorktreeMeta[]
+  /** Last checkout selected in worktree-aware views on this machine. */
+  worktreeViewScopes?: WorktreeViewScopes
   /** Resolved runtime connection for THIS workspace on THIS machine. Machine-
    *  local on purpose — a server/wsl choice is the opener's, not the repo's, so
    *  it lives here and never in the VCS-committed workspace.json. Absent ⇒ local. */
   connection?: RuntimeConnection
+}
+
+export interface WorktreeViewScopes {
+  navigationWorktreeId?: string
+  sourceControlWorktreeByRepository?: Record<string, string>
 }
 
 export interface ProjectSessionPanel {
@@ -1241,11 +1250,11 @@ export interface ProjectSessionPanel {
   ptyId?: string
   workingDirectory?: string
   unsavedContent?: string
-  /** Worktree this terminal panel is tagged with. Machine-local (worktree ids
-   *  are runtime uuids), so it lives in session.json, not workspace.json. */
+  /** Worktree this panel is associated with. Machine-local (worktree ids are
+   *  runtime uuids), so it lives in session.json, not workspace.json. */
+  worktreeId?: string
   /** Machine-local review query, display preferences, expansion, and notes. */
   reviewState?: ReviewPanelState
-  worktreeId?: string
   /** Agent-CLI session running in this terminal at save time. Machine-local
    *  (session ids reference stores on this machine's runtime host). */
   agentSession?: TerminalAgentSession

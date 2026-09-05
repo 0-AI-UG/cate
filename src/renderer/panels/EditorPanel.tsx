@@ -41,6 +41,8 @@ import { isRuntimeLocator } from '../../shared/runtimeLocator'
 import { useUIStore } from '../stores/uiStore'
 import { LoadingState } from '../ui/Spinner'
 import { PanelCenteredState } from '../ui/PanelCenteredState'
+import { worktreeForPanel } from '../lib/worktreeContext'
+import { toRelativePath } from '../../shared/pathUtils'
 
 // -----------------------------------------------------------------------------
 // Editor font
@@ -244,6 +246,7 @@ export default function EditorPanel({
 
   const workspaces = useAppStore((s) => s.workspaces)
   const ws = workspaces.find((w) => w.id === workspaceId)
+  const panel = ws?.panels[panelId]
   // Preview mode is kept per-panel in the store rather than as local state: a
   // single EditorPanel mount is reused across dock tabs (renderPanelComponent
   // creates the element without a key), so local state would leak the toggle
@@ -275,7 +278,9 @@ export default function EditorPanel({
     raf = requestAnimationFrame(tryFocus)
     return () => cancelAnimationFrame(raf)
   }, [isFocused, markdownPreview])
-  const rootPath = ws?.rootPath
+  // File-backed panels operate on their own checkout. This controls Git diff
+  // cwd, file-watch scope, and the default folder for saving an untitled file.
+  const checkoutRoot = worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath
   const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
   const isDirty = !!ws?.panels[panelId]?.isDirty
   const openFilePalette = useUIStore((s) => s.openFilePalette)
@@ -299,7 +304,7 @@ export default function EditorPanel({
     workspaceId,
     panelId,
     filePath,
-    rootPath,
+    rootPath: checkoutRoot,
     getModel,
     onExternalReplace,
   })

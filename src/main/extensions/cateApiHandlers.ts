@@ -127,6 +127,8 @@ interface InvokePayload {
   panelId: string
   method: string
   args: unknown
+  /** Runtime-absolute cwd of a trusted terminal/agent caller. */
+  originCwd?: string
 }
 
 type InvokeResult = unknown | { error: string; method?: string }
@@ -204,6 +206,7 @@ export function forwardToOwner(
         extensionId: payload.extensionId,
         method: payload.method,
         args: payload.args,
+        originCwd: payload.originCwd,
       })
     } catch (err) {
       clearTimeout(timer)
@@ -1042,7 +1045,14 @@ export async function dispatchCateInvoke(
     default:
       // Forward state-mutating methods (strip the leading `cate.`) to the owner.
       if (FORWARDED_METHODS.has(method.replace(/^cate\./, ''))) {
-        const result = await scope.forward({ extensionId, workspaceId, panelId: panelId ?? '', method, args })
+        const result = await scope.forward({
+          extensionId,
+          workspaceId,
+          panelId: panelId ?? '',
+          method,
+          args,
+          originCwd: scope.originCwd,
+        })
         // A create result is meant to be used immediately by the next CLI
         // command. The renderer's full panel report is debounced, so register a
         // provisional row now; otherwise `panel create browser` followed by

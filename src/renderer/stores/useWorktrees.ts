@@ -20,6 +20,8 @@ import { useMemo } from 'react'
 import { useAppStore } from './appStore'
 import { useGitStatusSnapshot, type GitWorktreeEntry } from './gitStatusStore'
 import type { WorktreeMeta } from '../../shared/types'
+import { pathKey } from '../../shared/pathUtils'
+import { parseLocator } from '../../shared/runtimeLocator'
 
 /** A worktree as the UI should see it: live git facts joined with persisted UI
  *  metadata. Live facts (branch/isPrimary/isCurrent) win over the denormalized
@@ -50,18 +52,26 @@ export interface JoinedWorktree {
 export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorktree[] {
   const snapshot = useGitStatusSnapshot(rootPath)
   const workspace = useAppStore((s) => s.workspaces.find((w) => w.id === workspaceId))
-  const meta = workspace?.worktrees
+  // Parallel Work owns metadata for the workspace's canonical repository. A
+  // multi-repo parent can mount Source Control for nested repositories too;
+  // do not leak the canonical repo's orphan metadata into those lists.
+  const workspaceRoot = workspace?.rootPath ? parseLocator(workspace.rootPath) : undefined
+  const requestedRoot = parseLocator(rootPath)
+  const isCanonicalRepository = workspaceRoot?.runtimeId === requestedRoot.runtimeId
+    && pathKey(workspaceRoot.path) === pathKey(requestedRoot.path)
+  const meta = isCanonicalRepository ? workspace?.worktrees : undefined
   // The primary worktree is the one keyed by the workspace's own rootPath.
-  const primaryPath = workspace?.rootPath ?? rootPath
+  const primaryPath = rootPath
 
   return useMemo(() => {
     const metaByPath = new Map<string, WorktreeMeta>()
-    for (const m of meta ?? []) metaByPath.set(m.path, m)
+    for (const m of meta ?? []) metaByPath.set(pathKey(m.path), m)
 
     const seen = new Set<string>()
     const joined: JoinedWorktree[] = snapshot.worktrees.map((g: GitWorktreeEntry) => {
-      seen.add(g.path)
-      const m = metaByPath.get(g.path)
+      const key = pathKey(g.path)
+      seen.add(key)
+      const m = metaByPath.get(key)
       return {
         id: m?.id ?? g.path,
         path: g.path,
@@ -79,7 +89,7 @@ export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorkt
     // is never an orphan even if git hasn't reported it yet (e.g. before the
     // first snapshot lands), so it's identified by path, not a persisted flag.
     for (const m of meta ?? []) {
-      if (seen.has(m.path) || m.path === primaryPath) continue
+      if (seen.has(pathKey(m.path)) || pathKey(m.path) === pathKey(primaryPath)) continue
       joined.push({
         id: m.id,
         path: m.path,

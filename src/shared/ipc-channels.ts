@@ -341,6 +341,8 @@ export const OPEN_WINDOW_REVIEW = 'window:openReview'         // renderer -> mai
 export const OPEN_REVIEW_IN_WINDOW = 'detached:openReviewInWindow' // main -> owning renderer
 export const CLOSE_WINDOW_PANEL = 'window:closePanel'         // renderer -> main
 export const CLOSE_PANEL_IN_WINDOW = 'detached:closePanelInWindow' // main -> owning renderer
+export const CLOSE_PANEL_IN_WINDOW_RESULT = 'window:closePanelResult' // owning renderer -> main
+export const WORKTREE_REMOVED = 'window:worktreeRemoved'       // renderer -> main -> all renderers
 export const WINDOW_PANELS_REPORT = 'window:panelsReport'     // renderer -> main (this window's panels)
 
 // Cross-window drag coordination
@@ -469,5 +471,5 @@ export const CATE_HOST_EVENT = 'cate:event'          // main -> guest: { panelId
 
 // Forward a reverse-API call that mutates renderer state to the guest's owner
 // window and await its reply (editor.openFile, canvas.createPanel, panel.setTitle).
-export const CATE_HOST_FORWARD = 'cate:hostAction'        // main -> renderer: { requestId, workspaceId, panelId, extensionId, method, args }
+export const CATE_HOST_FORWARD = 'cate:hostAction'        // main -> renderer: { requestId, workspaceId, panelId, extensionId, method, args, originCwd? }
 export const CATE_HOST_FORWARD_REPLY = 'cate:hostActionReply' // renderer -> main: { requestId, ok, result?, error? }

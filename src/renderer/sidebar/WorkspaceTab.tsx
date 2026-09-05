@@ -2,7 +2,6 @@ import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
 import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
 import { browserPanelUrl, type WorkspaceState, type PanelType, type PanelState, type WindowPanelInfo } from '../../shared/types'
-import { isWorktreePanelType } from '../../shared/panels'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
 import { ACCENT_COLOR_NAMES } from '../../shared/colors'
@@ -33,6 +32,7 @@ import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
 import { canvasKey, toggleCollapsed, useTreeCollapseStore } from './treeCollapse'
 import { Tooltip } from '../ui/Tooltip'
 import { useActiveChatWorktreeByPanel } from '../../cateAgent/renderer/cateAgentStore'
+import { worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
 
 // Stable empty map so the ports selector returns a referentially-constant value
 // when a workspace has no status entry (a fresh `{}` each render would defeat
@@ -569,9 +569,12 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   }
   const worktreeColorFor = (panelId: string): string | undefined => {
     const panel = panels[panelId]
-    return worktreeColorForId(
-      panel?.type === 'cateAgent' ? activeChatWorktreeByPanel[panelId] : panel?.worktreeId,
-    )
+    if (!showWorktreeAccent) return undefined
+    const wt = worktreeForPanel(panel, worktrees, (id) => activeChatWorktreeByPanel[id])
+      ?? (panel?.type === 'terminal' || panel?.type === 'cateAgent'
+        ? worktrees.find((worktree) => worktree.path === workspace.rootPath)
+        : undefined)
+    return wt?.color
   }
 
   // A panel living in another window — click focuses that window and reveals it.
@@ -586,7 +589,9 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       void window.electronAPI.focusWindowPanel(p.panelId)
     }
     const titleHint = `${p.title} — in another window`
-    if (isWorktreePanelType(p.type)) {
+    const detachedWorktree = worktrees.find((worktree) => worktree.id === p.worktreeId)
+      ?? worktreeForPath(p.filePath, worktrees)
+    if (detachedWorktree || p.type === 'terminal' || p.type === 'cateAgent') {
       return (
         <WorkspacePanelRow
           key={p.panelId}
@@ -595,7 +600,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           agentState={p.agentState}
           agentLogo={getAgentLogo(p.agentName ?? null)}
           hasPorts={!!p.hasPorts}
-          worktreeColor={worktreeColorForId(p.worktreeId)}
+          worktreeColor={detachedWorktree?.color ?? worktreeColorForId(p.worktreeId)}
           onClick={onClick}
           onContextMenu={(e) => handleDetachedContextMenu(e, p.panelId)}
           titleHint={titleHint}
@@ -667,30 +672,17 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       onBeginRename: () => beginPanelRename(p.id, label),
       onContextMenu: (e) => handlePanelContextMenu(e, p.id, label),
     }
-    if (isWorktreePanelType(p.type)) {
-      const info = agentInfoByPanel[p.id]
-      return (
-        <WorkspacePanelRow
-          key={p.id}
-          panel={p}
-          indent={indent}
-          agentState={info?.state}
-          agentLogo={info?.logo}
-          hasPorts={(portsByPanel[p.id]?.length ?? 0) > 0}
-          worktreeColor={worktreeColorFor(p.id)}
-          onClick={(e) => handlePanelClick(e, p.id)}
-          onClose={() => handleClosePanel(p.id)}
-          rename={rename}
-        />
-      )
-    }
+    const info = agentInfoByPanel[p.id]
     const hasPorts = (portsByPanel[p.id]?.length ?? 0) > 0
     return (
       <WorkspacePanelRow
         key={p.id}
         panel={p}
         indent={indent}
+        agentState={info?.state}
+        agentLogo={info?.logo}
         hasPorts={hasPorts}
+        worktreeColor={worktreeColorFor(p.id)}
         onClick={(e) => handlePanelClick(e, p.id)}
         onClose={() => handleClosePanel(p.id)}
         rename={rename}

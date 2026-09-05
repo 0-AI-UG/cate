@@ -6,6 +6,7 @@ import { terminalBufferTail } from '../terminal/terminalBuffer'
 import { submitTerminalText } from '../terminal/terminalDriver'
 import { placementForBackgroundPanel } from '../workspace/canvasAccess'
 import { parseLocator, formatLocator } from '../../../shared/runtimeLocator'
+import { worktreeForPath } from '../worktreeContext'
 import { pathKey } from '../../../shared/pathUtils'
 import {
   createWorktreeForWorkspace,
@@ -201,8 +202,15 @@ function resolveTarget(
   const origin = typeof args._cateOriginCwd === 'string' ? args._cateOriginCwd : ''
   const rootPath = parseLocator(ws.rootPath).path
   if (origin && pathKey(origin) === pathKey(rootPath)) return { cwd: ws.rootPath }
-  const inherited = worktrees.find((candidate) =>
-    pathKey(parseLocator(candidate.path).path) === pathKey(origin),
+  const originLocator = runtimeLocatorForPath(ws.rootPath, origin)
+  const inherited = worktreeForPath(
+    originLocator,
+    worktrees
+      .filter((candidate) => pathKey(parseLocator(candidate.path).path) !== pathKey(rootPath))
+      .map((candidate) => ({
+        ...candidate,
+        path: runtimeLocatorForPath(ws.rootPath, candidate.path),
+      })),
   )
   if (inherited) {
     return { cwd: runtimeLocatorForPath(ws.rootPath, inherited.path), worktreeId: inherited.id }

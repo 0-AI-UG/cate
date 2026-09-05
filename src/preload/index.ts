@@ -174,6 +174,8 @@ import {
   OPEN_REVIEW_IN_WINDOW,
   CLOSE_WINDOW_PANEL,
   CLOSE_PANEL_IN_WINDOW,
+  CLOSE_PANEL_IN_WINDOW_RESULT,
+  WORKTREE_REMOVED,
   WINDOW_PANELS_REPORT,
   CROSS_WINDOW_DRAG_START,
   CROSS_WINDOW_DRAG_UPDATE,
@@ -534,6 +536,8 @@ const invokeForwarders = {
   focusWindowPanel: makeInvoker<'focusWindowPanel'>(FOCUS_WINDOW_PANEL),
   openWindowReviewPanel: makeInvoker<'openWindowReviewPanel'>(OPEN_WINDOW_REVIEW),
   closeWindowPanel: makeInvoker<'closeWindowPanel'>(CLOSE_WINDOW_PANEL),
+  closePanelInWindowResult: makeInvoker<'closePanelInWindowResult'>(CLOSE_PANEL_IN_WINDOW_RESULT),
+  notifyWorktreeRemoved: makeInvoker<'notifyWorktreeRemoved'>(WORKTREE_REMOVED),
   reportWindowPanels: makeInvoker<'reportWindowPanels'>(WINDOW_PANELS_REPORT),
 
   // Cross-window drag coordination
@@ -904,8 +908,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return createIpcListener(OPEN_REVIEW_IN_WINDOW, callback)
   },
 
-  onClosePanelInWindow(callback: (panelId: string) => void): () => void {
+  onClosePanelInWindow(callback: (panelId: string, requestId: string) => void): () => void {
     return createIpcListener(CLOSE_PANEL_IN_WINDOW, callback)
+  },
+
+  onWorktreeRemoved(callback: (workspaceId: string, worktreeId: string) => void): () => void {
+    return createIpcListener(WORKTREE_REMOVED, callback)
   },
 
   // ---------------------------------------------------------------------------
@@ -1054,6 +1062,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       extensionId: string
       method: string
       args: unknown
+      originCwd?: string
     }) => void,
   ): () => void {
     return createIpcListener(CATE_HOST_FORWARD, callback)

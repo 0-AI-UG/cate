@@ -21,6 +21,9 @@ import {
   RENAME_PANEL_EVENT,
   type RenamePanelEventDetail,
 } from '../lib/focusedPanel'
+import { worktreeForPanel } from '../lib/worktreeContext'
+import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
+import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
 
 export interface DockTabActionsParams {
   stack: DockTabStackType
@@ -165,13 +168,44 @@ export function useDockTabActions(params: DockTabActionsParams) {
   // --- Create / add / split helpers ----------------------------------------
   const createPanelOfType = useCallback(
     (type: PanelType): string | null => {
-      const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
+      const app = useAppStore.getState()
+      const wsId = workspaceId ?? app.selectedWorkspaceId
       const placement: import('../stores/appStore').PanelPlacement = localOnly
         ? { target: 'none' }
         : { target: 'dock', zone }
+      const workspace = app.getWorkspace(wsId)
+      const activeId = stack.panelIds[stack.activeIndex]
+      const activePanel = activeId ? getPanelLocal(activeId) : undefined
+      const worktree = worktreeForPanel(
+        activePanel,
+        workspace?.worktrees ?? [],
+        activeChatWorktreeIdForPanel,
+      )
+
+      if (type === 'terminal') {
+        const panelId = app.createTerminal(wsId, undefined, undefined, placement, worktree?.path)
+        if (panelId && worktree) app.setPanelWorktreeId(wsId, panelId, worktree.id)
+        return panelId
+      }
+      if (type === 'editor') {
+        const panelId = app.createEditor(wsId, undefined, undefined, placement)
+        if (panelId && worktree) app.setPanelWorktreeId(wsId, panelId, worktree.id)
+        return panelId
+      }
+      if (type === 'cateAgent') {
+        const panelId = app.createCateAgent(wsId, undefined, placement)
+        if (panelId && worktree && workspace?.rootPath) {
+          void seedAgentPanelWithWorktreeChat(wsId, workspace.rootPath, panelId, worktree.id)
+        }
+        return panelId
+      }
+      if (type === 'review') {
+        const repoPath = worktree?.path ?? workspace?.rootPath
+        return repoPath ? app.createReview(wsId, repoPath, undefined, undefined, placement) : null
+      }
       return getPanelDef(type).create({ workspaceId: wsId, placement })
     },
-    [workspaceId, zone, localOnly],
+    [workspaceId, zone, localOnly, stack.panelIds, stack.activeIndex, getPanelLocal],
   )
 
   const addTabOfType = useCallback(
@@ -258,7 +292,12 @@ export function useDockTabActions(params: DockTabActionsParams) {
         case 'copy-rel-path': {
           if (!panel?.filePath) break
           const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
-          const root = useAppStore.getState().workspaces.find((w) => w.id === wsId)?.rootPath
+          const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
+          const root = worktreeForPanel(
+            panel,
+            ws?.worktrees ?? [],
+            activeChatWorktreeIdForPanel,
+          )?.path ?? ws?.rootPath
           navigator.clipboard.writeText(
             root ? relativeDisplayPath(panel.filePath, root) : parseLocator(panel.filePath).path,
           )

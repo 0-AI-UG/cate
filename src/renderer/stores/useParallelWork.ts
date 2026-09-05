@@ -11,7 +11,6 @@
 
 import { useCallback } from 'react'
 import { useAppStore } from './appStore'
-import { useSettingsStore } from './settingsStore'
 import type { PanelPlacement } from './appStore'
 import { gitStatusStore } from './gitStatusStore'
 import { useWorktreeActions } from './useWorktreeActions'
@@ -24,7 +23,12 @@ import type { WorktreePanelType } from '../../shared/panels'
 import { errorMessage } from '../lib/errorMessage'
 import { pathKey } from '../../shared/pathUtils'
 import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
-import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
+import {
+  closePreparedWorktreePanels,
+  prepareWorktreePanelsForClose,
+  removeWorktreeFromAllWindows,
+  worktreePanelCloseTargets,
+} from '../lib/worktreePanelClose'
 
 /** Apply a color/label change to a worktree's UI metadata, creating the metadata
  *  record when none exists yet (a worktree discovered only from git has its path
@@ -153,7 +157,6 @@ export function useParallelWork(
   },
 ): UseParallelWork {
   const { createWorktree, checkoutPr } = useWorktreeActions(rootPath, workspaceId)
-  const removeWorktree = useAppStore((s) => s.removeWorktree)
   const { setError, onPrCreated, setBusy } = opts
 
   const reconcile = useCallback(() => {
@@ -291,32 +294,41 @@ export function useParallelWork(
       }
       const dirty = !!status?.dirty
       const branchAhead = (status?.ahead ?? 0) > 0
-      // When close-on-delete is on, count terminals by their panel tag and
-      // agents by their active chat tag.
-      const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-      const panelCount = useSettingsStore.getState().closeWorktreePanelsOnDelete
-        ? Object.values(ws?.panels ?? {}).filter(
-            (p) => (
-              (p.type === 'terminal' && p.worktreeId === wt.id) ||
-              (p.type === 'cateAgent' && activeChatWorktreeIdForPanel(p.id) === wt.id)
-            ),
-          ).length
-        : 0
+      const panelTargets = worktreePanelCloseTargets(workspaceId, wt.id)
+      const panelCount = panelTargets.localPanelIds.length + panelTargets.otherWindowPanelIds.length
       const ok = window.confirm(
         `Discard “${label}”?\n\n` +
           `This deletes the parallel branch and everything in it.\n` +
           (panelCount
-            ? `\nIts ${panelCount} open ${panelCount === 1 ? 'terminal/agent panel' : 'terminal/agent panels'} will be closed.`
+            ? `\nIts ${panelCount} open ${panelCount === 1 ? 'panel' : 'panels'} will be closed.`
             : '') +
-          (dirty ? '\nWARNING: unsaved changes here will be lost.' : '') +
+          (dirty ? '\nWARNING: uncommitted changes here will be lost.' : '') +
+          (panelTargets.hasDirtyEditor ? '\nWARNING: an editor has unsaved changes.' : '') +
           (branchAhead ? `\nWARNING: ${status?.ahead} unpublished commit(s) will be lost.` : ''),
       )
       if (!ok) return
+      if (!(await prepareWorktreePanelsForClose(workspaceId, panelTargets))) return
+      // A dirty editor in another window may have been saved by its close gate,
+      // after the first status check. Re-read before choosing Git's force flag
+      // so that newly-written content cannot make an otherwise approved discard
+      // fail halfway through cleanup.
+      let removalDirty = dirty
+      try {
+        removalDirty = !!(await window.electronAPI.gitWorktreeStatus(wt.path, workspaceId))?.dirty
+      } catch (err: unknown) {
+        setError(`Couldn’t re-verify this worktree before discarding it: ${errorMessage(err, 'Status is unavailable.')}`)
+        return
+      }
       // Removing a worktree shells out to git and can take several seconds, so
       // flag the row as busy to drive its inline spinner.
       setBusy?.(wt.id)
       try {
-        await window.electronAPI.gitWorktreeRemove(rootPath, wt.path, { force: dirty }, workspaceId)
+        await window.electronAPI.gitWorktreeRemove(
+          rootPath,
+          wt.path,
+          { force: dirty || removalDirty || panelTargets.hasDirtyEditor },
+          workspaceId,
+        )
         if (wt.branch) {
           try {
             await window.electronAPI.gitBranchDelete(rootPath, wt.branch, true, workspaceId)
@@ -324,7 +336,8 @@ export function useParallelWork(
             setError(`Removed, but branch ${wt.branch} could not be deleted: ${errorMessage(err, 'Branch deletion failed.')}`)
           }
         }
-        removeWorktree(workspaceId, wt.id)
+        closePreparedWorktreePanels(workspaceId, panelTargets)
+        removeWorktreeFromAllWindows(workspaceId, wt.id)
         reconcile()
       } catch (err: unknown) {
         setError(`Discard failed: ${errorMessage(err, 'The worktree was not removed.')}`)
@@ -332,7 +345,7 @@ export function useParallelWork(
         setBusy?.(null)
       }
     },
-    [rootPath, workspaceId, removeWorktree, reconcile, setBusy, setError],
+    [rootPath, workspaceId, reconcile, setBusy, setError],
   )
 
   const handlePrune = useCallback(async () => {
@@ -353,13 +366,17 @@ export function useParallelWork(
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       for (const w of ws?.worktrees ?? []) {
         const worktreeKey = pathKey(w.path)
-        if (worktreeKey !== rootKey && !livePaths.has(worktreeKey)) removeWorktree(workspaceId, w.id)
+        if (worktreeKey === rootKey || livePaths.has(worktreeKey)) continue
+        const targets = worktreePanelCloseTargets(workspaceId, w.id)
+        if (!(await prepareWorktreePanelsForClose(workspaceId, targets))) continue
+        closePreparedWorktreePanels(workspaceId, targets)
+        removeWorktreeFromAllWindows(workspaceId, w.id)
       }
       reconcile()
     } catch (err: unknown) {
       setError(`Cleanup failed: ${errorMessage(err, 'No saved entries were removed.')}`)
     }
-  }, [rootPath, workspaceId, removeWorktree, reconcile, setError])
+  }, [rootPath, workspaceId, reconcile, setError])
 
   const makeCallbacks = useCallback(
     (wt: JoinedWorktree): CardCallbacks => ({

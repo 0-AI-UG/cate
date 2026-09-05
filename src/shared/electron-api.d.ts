@@ -870,8 +870,17 @@ export interface ElectronAPI {
   openWindowReviewPanel(panelId: string, request: ReviewPanelOpenRequest): Promise<boolean>
 
   /** Ask main to have the window that owns `panelId` close it (behind that
-   *  window's own dirty/running confirmation gates). */
-  closeWindowPanel(panelId: string): Promise<void>
+   *  window's own dirty/running confirmation gates). Returns false when the
+   *  owner is gone or the user cancels. */
+  closeWindowPanel(panelId: string): Promise<boolean>
+
+  /** Reply to a cross-window close request after running the owner window's
+   *  confirmation gates. */
+  closePanelInWindowResult(requestId: string, closed: boolean): Promise<void>
+
+  /** Tell every live window to remove a deleted worktree's metadata and clear
+   *  any panel/chat affinity that remains open there. */
+  notifyWorktreeRemoved(workspaceId: string, worktreeId: string): Promise<void>
 
   /** Report this window's panels (across its workspaces) for cross-window discovery. */
   reportWindowPanels(report: WindowPanelReport[]): Promise<void>
@@ -883,7 +892,11 @@ export interface ElectronAPI {
   onOpenReviewInWindow(callback: (panelId: string, request: ReviewPanelOpenRequest) => void): () => void
 
   /** This window owns `panelId` — close it (with the usual confirmation gates). */
-  onClosePanelInWindow(callback: (panelId: string) => void): () => void
+  onClosePanelInWindow(callback: (panelId: string, requestId: string) => void): () => void
+
+  /** A worktree was removed by another renderer; clear local metadata and
+   *  affinity without initiating another broadcast. */
+  onWorktreeRemoved(callback: (workspaceId: string, worktreeId: string) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Cross-window drag coordination
@@ -1284,6 +1297,7 @@ export interface ElectronAPI {
       extensionId: string
       method: string
       args: unknown
+      originCwd?: string
     }) => void,
   ): () => void
 

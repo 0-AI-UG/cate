@@ -1,11 +1,12 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import {
   sendToWindow,
+  broadcastToAll,
   setDockWindowState,
   listDockWindows,
   windowFromEvent,
 } from '../windowRegistry'
-import { revealWindowPanel, openWindowReviewPanel, closeWindowPanel } from '../windowPanels'
+import { revealWindowPanel, openWindowReviewPanel, closeWindowPanel, completeWindowPanelClose } from '../windowPanels'
 import { collectTopLevelPanelIds } from '../windows/dockState'
 import { revealWindow } from '../windows/reveal'
 import type {
@@ -22,6 +23,8 @@ import {
   FOCUS_WINDOW_PANEL,
   OPEN_WINDOW_REVIEW,
   CLOSE_WINDOW_PANEL,
+  CLOSE_PANEL_IN_WINDOW_RESULT,
+  WORKTREE_REMOVED,
 } from '../../shared/ipc-channels'
 import type { ReviewPanelOpenRequest } from '../../shared/types'
 
@@ -59,7 +62,17 @@ export function registerDockWindowHandlers({ createWindow }: DockWindowDeps): vo
   // Close a panel that lives in another window: route the request to its owner,
   // which runs its own dirty/running confirmation gates before closing.
   ipcMain.handle(CLOSE_WINDOW_PANEL, async (_event, panelId: string) => {
-    closeWindowPanel(panelId)
+    return closeWindowPanel(panelId)
+  })
+
+  ipcMain.handle(CLOSE_PANEL_IN_WINDOW_RESULT, async (event, requestId: string, closed: boolean) => {
+    const win = windowFromEvent(event)
+    if (!win) return
+    completeWindowPanelClose(win.id, requestId, closed)
+  })
+
+  ipcMain.handle(WORKTREE_REMOVED, async (_event, workspaceId: string, worktreeId: string) => {
+    broadcastToAll(WORKTREE_REMOVED, workspaceId, worktreeId)
   })
 
   // Session restore of a detached dock window — rebuilds the FULL window (every

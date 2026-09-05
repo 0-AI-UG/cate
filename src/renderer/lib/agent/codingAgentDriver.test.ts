@@ -566,6 +566,32 @@ describe('codingAgentDriver mission integration', () => {
     expect(state.app.setPanelWorktreeId).toHaveBeenCalledWith('ws', 'worker', 'wt-1')
   })
 
+  it('inherits the containing worktree when the CLI caller is in a nested directory', async () => {
+    state.app.workspaces[0].worktrees = [{ id: 'wt-1', path: '/repo-wt' }]
+
+    const outcome = await handleCodingAgentMethod(
+      'ws',
+      'supervisor-1',
+      'cate.codingAgent.create',
+      {
+        agentId: 'codex',
+        prompt: 'Implement from a package',
+        _cateOriginCwd: '/repo-wt/packages/client',
+      },
+    )
+
+    expect(outcome.ok).toBe(true)
+    expect(state.app.createTerminal).toHaveBeenCalledWith(
+      'ws',
+      undefined,
+      undefined,
+      expect.objectContaining({ placementGroupId: 'coding-agent:wt-1' }),
+      '/repo-wt',
+      expect.any(Object),
+    )
+    expect(state.app.setPanelWorktreeId).toHaveBeenCalledWith('ws', 'worker', 'wt-1')
+  })
+
   it('creates a requested worktree and launches the worker inside it', async () => {
     state.app.workspaces[0].worktrees = [{ id: 'wt-new', path: '/repo/.cate-wt/new' }]
     createWorktreeForWorkspace.mockResolvedValue({ id: 'wt-new' })

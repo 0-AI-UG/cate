@@ -24,6 +24,9 @@ import { CateLogo } from '../ui/CateLogo'
 import { IS_MAC } from '../lib/platform'
 import { useWindowFullscreen } from '../lib/useWindowFullscreen'
 import { MAC_CHROME_HEIGHT } from '../shells/MacWindowChrome'
+import { useWorktrees } from '../stores/useWorktrees'
+import { selectedWorktree } from '../lib/worktreeContext'
+import { WorktreeScopeSelect } from './WorktreeScopeSelect'
 
 // ---------------------------------------------------------------------------
 // View metadata — icon + title for each possible sidebar view
@@ -53,13 +56,28 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
 }) => {
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const setWorkspaceRootPath = useAppStore((s) => s.setWorkspaceRootPath)
+  const worktrees = useWorktrees(rootPath, selectedWorkspaceId ?? '')
+  const navigationWorktreeId = useUIStore(
+    (s) => s.navigationWorktreeByWorkspace[selectedWorkspaceId ?? ''],
+  )
+  const setNavigationWorktree = useUIStore((s) => s.setNavigationWorktree)
+  const navigationWorktree = selectedWorktree(worktrees, navigationWorktreeId)
+  const navigationRoot = navigationWorktree?.path ?? rootPath
+  const navigationScope = selectedWorkspaceId ? (
+    <WorktreeScopeSelect
+      worktrees={worktrees}
+      value={navigationWorktree?.id}
+      onChange={(id) => setNavigationWorktree(selectedWorkspaceId, id)}
+      title="File navigation worktree"
+    />
+  ) : null
 
   switch (view) {
     case 'workspaces':
       return <ProjectList />
     case 'explorer':
       return rootPath ? (
-        <FileExplorer rootPath={rootPath} />
+        <FileExplorer rootPath={navigationRoot} scopeControl={navigationScope} />
       ) : (
         <div className="flex flex-col items-center justify-center h-full text-muted text-xs gap-3 p-4">
           <span>No folder open</span>
@@ -78,7 +96,7 @@ const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string }> = ({
         </div>
       )
     case 'search':
-      return <SearchView rootPath={rootPath} workspaceId={selectedWorkspaceId} />
+      return <SearchView rootPath={navigationRoot} workspaceId={selectedWorkspaceId} scopeControl={navigationScope} />
     case 'git':
       return <SourceControlView rootPath={rootPath} />
     case 'cateAgent':

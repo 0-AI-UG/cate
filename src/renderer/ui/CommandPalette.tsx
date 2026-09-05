@@ -50,6 +50,10 @@ import { getRecentFiles, recordRecentFile } from '../lib/fs/recentFiles'
 import { pathDisplayName, relativeDisplayPath } from '../lib/fs/displayPath'
 import { LoadingState } from './Spinner'
 import { PaletteTextInput } from './PaletteTextInput'
+import { useWorktrees } from '../stores/useWorktrees'
+import { selectedWorktree, worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
+import { getActivePanelId } from '../lib/activePanel'
+import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
 
 // -----------------------------------------------------------------------------
 // Command definitions
@@ -240,6 +244,24 @@ export const CommandPalette: React.FC = () => {
   const otherWindowPanels = useOtherWindowPanels(selectedWorkspaceId, Object.keys(panels))
 
   const rootPath = useAppStore((s) => s.workspaces.find((w) => w.id === s.selectedWorkspaceId)?.rootPath)
+  const worktrees = useWorktrees(rootPath ?? '', selectedWorkspaceId)
+  const navigationWorktreeId = useUIStore(
+    (s) => s.navigationWorktreeByWorkspace[selectedWorkspaceId],
+  )
+  const savedNavigationWorktree = navigationWorktreeId
+    ? selectedWorktree(worktrees, navigationWorktreeId)
+    : undefined
+  // Detached windows have no sidebar selector of their own. Until a saved
+  // navigation scope exists there, Quick Open follows the active panel's
+  // checkout; the main window retains the primary-checkout default.
+  const activePanel = panels[getActivePanelId() ?? '']
+  const detachedPanelWorktree = !isMainWindow
+    ? worktreeForPanel(activePanel, worktrees, activeChatWorktreeIdForPanel)
+    : undefined
+  const navigationWorktree = savedNavigationWorktree
+    ?? detachedPanelWorktree
+    ?? selectedWorktree(worktrees, undefined)
+  const navigationRoot = navigationWorktree?.path ?? rootPath
 
   const query = searchText.trim().toLowerCase()
 
@@ -306,7 +328,7 @@ export const CommandPalette: React.FC = () => {
     setSearching(true)
     const timer = setTimeout(async () => {
       try {
-        const hits = await window.electronAPI.fsSearch(ws.rootPath!, searchText, { maxResults: 50 }, ws.id)
+        const hits = await window.electronAPI.fsSearch(navigationRoot!, searchText, { maxResults: 50 }, ws.id)
         setFileResults(
           hits
             .filter((h) => !h.isDirectory)
@@ -319,7 +341,7 @@ export const CommandPalette: React.FC = () => {
     }, 200)
 
     return () => { clearTimeout(timer); setSearching(false) }
-  }, [searchText, query, showCommandPalette])
+  }, [searchText, query, showCommandPalette, navigationRoot])
 
   // Recently-opened files, shown when the search box is empty. Skip files that
   // are already open (they appear under Panels), and resolve a display name/path.
@@ -328,12 +350,18 @@ export const CommandPalette: React.FC = () => {
     const openPaths = new Set(Object.values(panels).map((p) => p.filePath).filter(Boolean) as string[])
     return getRecentFiles(selectedWorkspaceId)
       .filter((p) => !openPaths.has(p))
+      .filter((p) => {
+        if (!navigationRoot) return false
+        if (!worktreeForPath(p, [{ id: 'navigation-scope', path: navigationRoot }])) return false
+        return !navigationWorktree
+          || worktreeForPath(p, worktrees)?.id === navigationWorktree.id
+      })
       .map((p) => ({
         path: p,
         name: pathDisplayName(p) || p,
-        relativePath: relativeDisplayPath(p, rootPath ?? ''),
+        relativePath: relativeDisplayPath(p, navigationRoot ?? ''),
       }))
-  }, [query, panels, selectedWorkspaceId, rootPath])
+  }, [query, panels, selectedWorkspaceId, navigationRoot, navigationWorktree, worktrees])
 
   const displayedFiles = query ? fileResults : recentFileResults
 
