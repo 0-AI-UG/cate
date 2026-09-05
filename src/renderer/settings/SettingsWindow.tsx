@@ -29,7 +29,6 @@ import { NotificationSettings } from './NotificationSettings'
 import { UpdatesSettings } from './UpdatesSettings'
 import { AgentSettings } from './AgentSettings'
 import { SkillsSettings } from './SkillsSettings'
-import { ExtensionsSettings } from './ExtensionsSettings'
 import { SettingsSearchContext } from './SettingsSearchContext'
 import { TextInput } from './SettingsComponents'
 
@@ -46,7 +45,6 @@ const SECTIONS = [
   { title: 'Notifications', component: NotificationSettings },
   { title: 'T3 Code', component: AgentSettings },
   { title: 'Skills', component: SkillsSettings },
-  { title: 'Extensions', component: ExtensionsSettings },
   { title: 'Updates', component: UpdatesSettings },
   { title: 'Shortcuts', component: ShortcutSettings },
 ] as const

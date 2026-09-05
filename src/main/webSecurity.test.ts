@@ -1,20 +1,5 @@
-// =============================================================================
-// webSecurity.installWebContentsSecurity — the will-attach-webview hardening.
-// Focus: the preload pinning for extension-proxy guests. An extension guest must
-// run the CANONICAL cateHost preload, never whatever preload path the renderer
-// supplied (a compromised renderer could point it at an arbitrary file). A plain
-// guest receives only the canonical one-way browser focus observer.
-// =============================================================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const PROXY_ORIGIN = 'http://127.0.0.1:5555'
-const CANONICAL_PRELOAD = '/app/dist/preload/cateHost.js'
-
-vi.mock('./extensions/proxyServer', () => ({
-  getProxyOrigin: () => PROXY_ORIGIN,
-  getCateHostPreloadPath: () => CANONICAL_PRELOAD,
-}))
 vi.mock('./settingsFile', () => ({ getSetting: () => ({}) }))
 vi.mock('./featureFlags', () => ({ disableWebviewHardening: () => false }))
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
@@ -70,18 +55,6 @@ beforeEach(() => {
 })
 
 describe('will-attach-webview — extension-proxy preload pinning', () => {
-  it('overwrites an attacker-supplied preload with the canonical cateHost path for a proxy-origin guest', () => {
-    const handler = attachHandlerForWebview()
-    const webPreferences: Record<string, unknown> = { preload: '/tmp/evil.js', preloadURL: 'file:///tmp/evil.js' }
-    const params: Record<string, unknown> = { src: `${PROXY_ORIGIN}/ext/abc123/index.html` }
-    handler({ preventDefault: vi.fn() }, webPreferences, params)
-    expect(webPreferences.preload).toBe(CANONICAL_PRELOAD)
-    expect(webPreferences.preloadURL).toBeUndefined()
-    // Standard hardening still applied.
-    expect(webPreferences.nodeIntegration).toBe(false)
-    expect(webPreferences.contextIsolation).toBe(true)
-    expect(webPreferences.sandbox).toBe(true)
-  })
 
   it('pins the minimal browser preload for a plain guest', () => {
     const handler = attachHandlerForWebview()
@@ -130,17 +103,6 @@ describe('browser popup policy', () => {
       url: 'https://accounts.google.com/o/oauth2/auth',
     })
     expect(handler({ url: 'javascript:alert(1)' })).toEqual({ action: 'deny' })
-  })
-
-  it('does not grant browser popups to extension webviews', () => {
-    const { contents, listeners } = webviewHarness()
-    const params: Record<string, unknown> = { src: `${PROXY_ORIGIN}/ext/abc123/index.html` }
-    listeners['will-attach-webview']({ preventDefault: vi.fn() }, {}, params)
-    const handler = contents.setWindowOpenHandler.mock.calls[0][0] as
-      (details: { url: string }) => { action: 'allow' | 'deny' }
-
-    expect(handler({ url: 'https://example.com' })).toEqual({ action: 'deny' })
-    expect(params.allowpopups).toBeUndefined()
   })
 })
 

@@ -51,7 +51,7 @@ export interface SharedPanelDefinition {
   /** When true, a canvas node hosting this panel is exempt from viewport
    *  culling — it stays mounted even when scrolled off-screen. Set for panels
    *  whose live state lives in an isolated `<webview>` guest process and cannot
-   *  be reconstructed on remount (extensions hold session state in-page).
+   *  be reconstructed on remount (browsers hold session state in-page).
    *  Terminals/editors leave this false: their backing state is in the main
    *  process (PTY) or trivially rehydrated (Monaco), so culling them is safe. */
   keepMountedOffscreen: boolean
@@ -190,21 +190,6 @@ export const PANEL_DEFINITIONS = {
     splitMenuOrder: 3,
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
-  },
-  extension: {
-    type: 'extension',
-    label: 'Extension',
-    brandColor: '#8E8E93',
-    mutedColor: '#6a6a6e',
-    tintClass: 'text-zinc-400',
-    defaultSize: { width: 600, height: 400 },
-    minimumSize: { width: 320, height: 200 },
-    ghostSvg: ghost('rgb(142,142,147)', '<path d="M16 4h2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 0 0 4 2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2 2 2 0 0 0-4 0 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2 2 2 0 0 0 0-4 2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2 2 2 0 0 0 4 0 2 2 0 0 1 2-2z"/>'),
-    canLiveOnCanvas: true,
-    worktreeBinding: false,
-    navigable: false,
-    keepMountedOffscreen: true,
-    keepMountedWhenTabHidden: true,
   },
 } satisfies Record<PanelType, SharedPanelDefinition>
 

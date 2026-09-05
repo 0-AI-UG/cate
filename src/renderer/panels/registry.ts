@@ -20,7 +20,6 @@ import {
   FileText,
   SquaresFour,
   FileDoc,
-  PuzzlePiece,
   GitDiff,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react'
@@ -44,7 +43,6 @@ const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const AgentPanel = React.lazy(() => import('./AgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
 const ReviewPanel = React.lazy(() => import('./ReviewPanel'))
-const ExtensionPanel = React.lazy(() => import('./ExtensionPanel'))
 
 // -----------------------------------------------------------------------------
 // Renderer definition
@@ -64,10 +62,6 @@ export interface PanelCreateArgs {
   initialInput?: string
   /** Document only. */
   documentType?: 'pdf' | 'docx' | 'image'
-  /** Extension only. */
-  extensionId?: string
-  /** Extension only — panel id within the extension's manifest. */
-  extensionPanelId?: string
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
@@ -169,20 +163,6 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
         : null
     },
     props: baseProps,
-  },
-  extension: {
-    ...PANEL_DEFINITIONS.extension,
-    icon: PuzzlePiece,
-    Component: ExtensionPanel,
-    create: ({ workspaceId, canvasPoint, placement, extensionId, extensionPanelId }) =>
-      extensionId && extensionPanelId
-        ? trackCreated('extension', useAppStore.getState().createExtensionPanel(workspaceId, extensionId, extensionPanelId, canvasPoint, placement) || null)
-        : null,
-    props: (panel, ctx) => ({
-      ...baseProps(panel, ctx),
-      extensionId: panel.extensionId,
-      extensionPanelId: panel.extensionPanelId,
-    }),
   },
 }
 

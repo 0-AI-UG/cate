@@ -11,7 +11,6 @@ import {
   nudgeToFree,
   recommendPlacements,
   type PlacementCandidate,
-  type PlacementTrace,
 } from '../../canvas/placement'
 import type {
   CanvasGet,
@@ -37,25 +36,11 @@ type PanelTargetActions = Pick<
   | 'cancelPanelTarget'
 >
 
-function buildTrace(): PlacementTrace | undefined {
-  const isDev = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV
-  return isDev
-    ? {
-        area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
-        rankAt: { x: 0, y: 0 },
-        inflated: [],
-        guides: { xs: [], ys: [] },
-        steps: [],
-      }
-    : undefined
-}
-
 function computeCandidates(
   state: CanvasStoreState,
   ctx: CanvasStoreCtx,
   panelType: PanelType,
   size: Size,
-  trace?: PlacementTrace,
 ): PlacementCandidate[] {
   return recommendPlacements(
     state.nodes,
@@ -65,7 +50,6 @@ function computeCandidates(
     ctx.lastPointerCanvasPos,
     undefined,
     size,
-    trace,
   )
 }
 
@@ -124,9 +108,8 @@ export function createPanelTargetSlice(
     const size = request.size ?? PANEL_DEFAULT_SIZES[request.panelType]
     const allowNew = request.availability !== 'existing'
     const allowExisting = request.availability !== 'new'
-    const trace = allowNew ? buildTrace() : undefined
     const candidates = allowNew
-      ? computeCandidates(state, ctx, request.panelType, size, trace)
+      ? computeCandidates(state, ctx, request.panelType, size)
       : []
     const existing = allowExisting
       ? request.existing.flatMap((candidate) => {
@@ -148,7 +131,6 @@ export function createPanelTargetSlice(
       freeArmed: false,
       freeGhost: null,
       size,
-      trace,
       prevZoom: state.zoomLevel,
       prevOffset: state.viewportOffset,
       onSelected: request.onSelected,
@@ -229,12 +211,11 @@ export function createPanelTargetSlice(
       const state = get()
       const pending = state.pendingPanelTarget
       if (!pending || pending.freeArmed || pending.availability === 'existing') return
-      const trace = buildTrace()
-      const candidates = computeCandidates(state, ctx, pending.panelType, pending.size, trace)
+      const candidates = computeCandidates(state, ctx, pending.panelType, pending.size)
       if (candidates.length === 0) return
       const camera = fitCamera(state, candidates, existingRects(state, pending))
       set({
-        pendingPanelTarget: { ...pending, candidates, hoveredIndex: null, trace },
+        pendingPanelTarget: { ...pending, candidates, hoveredIndex: null },
         zoomLevel: camera.zoom,
         viewportOffset: camera.offset,
       })

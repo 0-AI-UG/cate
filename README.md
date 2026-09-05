@@ -59,16 +59,12 @@ brew install --cask cate
 - **Agent-aware terminals.** Supported agent CLIs report turn start, turn end, and permission prompts, so each panel shows running / waiting / finished and pings you when it needs an answer.
 - **Agent sessions survive restarts.** Reopen the project and terminals come back with their scrollback, each agent reattached with its own resume command.
 - **Worktrees for parallel branches.** Type what you're working on and Cate creates the worktree and branch, off a local branch, a remote branch, or an open PR.
-- **Panels on a canvas or in a dock.** Terminals, Monaco editors, browsers, PDF/image/DOCX viewers, extension webviews, nested canvases. Float, dock into tabs and splits, or detach into their own window. Layout persists per project.
+- **Panels on a canvas or in a dock.** Terminals, Monaco editors, browsers, PDF/image/DOCX viewers, nested canvases. Float, dock into tabs and splits, or detach into their own window. Layout persists per project.
 - **Git and search.** Multi-repo source control, git badges in the file tree, side-by-side diffs, ripgrep search, and `Cmd+K` for commands, panels, and files.
 - **A CLI agents can call.** In a Cate terminal, `cate` drives a browser panel, reads another terminal, opens files, manages panels.
 - **Local and remote are the same path.** Point Cate at a host over SSH or WSL and terminals, git, search, and agents run there; editors, browser, and canvas stay local.
 
 Press `Cmd+K` for everything else. Shortcuts are rebindable in Settings.
-
-## Extensions
-
-Cate has an extension system for third-party panels (MCP servers, diagrams, and more), each served in its own isolated webview. Browse and build them in the companion repo: [0-AI-UG/cate-extensions](https://github.com/0-AI-UG/cate-extensions).
 
 ## Contributing
 

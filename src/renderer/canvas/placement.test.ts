@@ -17,7 +17,6 @@ import {
   deriveGuides,
   matchedNeighborSize,
   snapAxis,
-  type PlacementTrace,
 } from './placement'
 import { CANVAS_GRID_SIZE, rectsOverlap } from './layoutEngine'
 import { PANEL_DEFAULT_SIZES } from '../../shared/types'
@@ -666,11 +665,7 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     const below = node(0, 880, 1500, 200)
     const ns = nodesOf(above, left, right, below)
     const vp = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1500, height: 1080 } }
-    const trace: PlacementTrace = {
-      area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
-      rankAt: { x: 0, y: 0 }, inflated: [], guides: { xs: [], ys: [] }, steps: [],
-    }
-    const out = recommendPlacements(ns, null, 'editor', vp, { x: 750, y: 540 }, 6, undefined, trace)
+    const out = recommendPlacements(ns, null, 'editor', vp, { x: 750, y: 540 }, 6)
     // A candidate appears in the center gap, sized to (approximately) the gap.
     const gapCand = out.find(
       (c) => c.point.x >= 300 && c.point.x + c.size.width <= 1200 &&
@@ -685,11 +680,6 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     const ar = gapCand!.size.width / gapCand!.size.height
     expect(ar).toBeGreaterThan(1.0)
     expect(ar).toBeLessThan(2.56)
-    // The trace marks the step as a fill (no mirror match).
-    const filledStep = trace.steps.find((s) => s.filled)
-    expect(filledStep, 'a filled step is recorded').toBeTruthy()
-    expect(filledStep!.matchedWidth).toBeNull()
-    expect(filledStep!.matchedHeight).toBeNull()
   })
 
   it('skips a grow-to-fill gap with an awkward aspect ratio (tall/narrow)', () => {
@@ -706,20 +696,15 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     const below = node(0, 1180, 1600, 200) // raw channel y 200..1180 -> post-gap 900 tall
     const ns = nodesOf(above, left, right, below)
     const vp = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1600, height: 1380 } }
-    const trace: PlacementTrace = {
-      area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
-      rankAt: { x: 0, y: 0 }, inflated: [], guides: { xs: [], ys: [] }, steps: [],
-    }
-    const out = recommendPlacements(ns, null, 'terminal', vp, { x: 770, y: 690 }, 6, undefined, trace)
+    const out = recommendPlacements(ns, null, 'terminal', vp, { x: 770, y: 690 }, 6)
     // No candidate sits inside the tall/narrow channel.
     const channelCand = out.find(
       (c) => c.point.x >= 500 && c.point.x + c.size.width <= 1040 &&
              c.point.y >= 200 && c.point.y + c.size.height <= 1180,
     )
     expect(channelCand, `no fill candidate expected in the awkward channel: ${JSON.stringify(out)}`).toBeUndefined()
-    // No candidate has the bad-AR 460x900 fill size, and no fill step was recorded.
+    // No candidate has the bad-AR 460x900 fill size.
     expect(out.some((c) => c.size.width === 460 && c.size.height === 900)).toBe(false)
-    expect(trace.steps.some((s) => s.filled)).toBe(false)
   })
 
   it('skips a thin sliver gap (one dimension below USEFUL_MIN) — no grow-to-fill', () => {
@@ -740,19 +725,5 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
              c.point.y > 340 && c.point.y + c.size.height < 940,
     )
     expect(sliver, `no sliver candidate expected: ${JSON.stringify(out)}`).toBeUndefined()
-  })
-
-  it('fills a trace when one is provided', () => {
-    const ns = nodesOf(node(1000, 1000, 600, 400))
-    const trace: PlacementTrace = {
-      area: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } },
-      rankAt: { x: 0, y: 0 }, inflated: [], guides: { xs: [], ys: [] }, steps: [],
-    }
-    recommendPlacements(ns, null, 'editor', VP, { x: 1300, y: 1600 }, 6, undefined, trace)
-    expect(trace.steps.length).toBeGreaterThan(0)
-    expect(trace.guides.xs).toContain(1000)
-    const s = trace.steps[0]
-    expect(s.matchedWidth).toBe(600)
-    expect(s.matchedHeight).toBe(400) // mirror rule now sizes BOTH axes from the neighbor
   })
 })

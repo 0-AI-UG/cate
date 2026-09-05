@@ -8,8 +8,8 @@ import {
   RUNTIME_INSTALL_ROOT_PLACEHOLDER,
   type Runtime,
 } from '../runtime/types'
-import { openTunnelDuplex } from '../extensions/serverTunnel'
-import { workspaceCateApi } from '../extensions/workspaceCateApi'
+import { openTunnelDuplex } from '../cateApi/serverTunnel'
+import { workspaceCateApi } from '../cateApi/workspaceCateApi'
 import { onWindowClosed } from '../windowRegistry'
 import {
   harnessKey,
@@ -484,8 +484,8 @@ export class T3HarnessManager {
     cwd: string,
     workspaceId: string,
   ): Promise<HarnessInstance> {
-    const extensionsRoot = await runtime.file.extensionsRoot()
-    const paths = harnessPaths(runtimeId, extensionsRoot, cwd)
+    const harnessRoot = await runtime.file.harnessRoot()
+    const paths = harnessPaths(runtimeId, harnessRoot, cwd)
     // FileHost validates the immediate parent before a recursive mkdir, so
     // create this host-owned state hierarchy one level at a time.
     await runtime.file.mkdir(paths.harnessRoot)

@@ -13,10 +13,8 @@ import { flushBrowserStateSync } from '../browserStateStore'
 import { flushUIStateSync } from '../uiStateStore'
 import { releaseAllProjectLocks } from '../projectLock'
 import { runtimes } from '../runtime/runtimeManager'
-import { extensionServerManager } from '../extensions/ExtensionServerManager'
 import { t3HarnessManager } from '../t3Agent/T3HarnessManager'
-import { workspaceCateApi } from '../extensions/workspaceCateApi'
-import { flushAllPendingWritesSync as flushExtensionStoragesSync } from '../extensions/storage'
+import { workspaceCateApi } from '../cateApi/workspaceCateApi'
 import { isUpdatePendingInstall } from '../auto-updater'
 import {
   SESSION_FLUSH_SAVE,
@@ -50,9 +48,6 @@ const FLUSH_TIMEOUT_MS = 1500
 // stall quit. Kept short relative to FLUSH_TIMEOUT_MS — it runs BEFORE the main
 // renderer's session flush, so dock sync + session save share the quit budget.
 const DOCK_FLUSH_TIMEOUT_MS = 600
-// Bound the await of extension-server / runtime teardown on will-quit before the
-// hard reallyExit(). Long enough for a clean local SIGTERM, short enough that an
-// unresponsive remote socket can't stall quit (the daemon reaps orphans anyway).
 const EXIT_DISPOSE_TIMEOUT_MS = 800
 
 const SHARED_BROWSER_PARTITION = 'persist:browser-shared'
@@ -73,21 +68,8 @@ export async function flushPersistentBrowserSession(
 // exit timer). Set once, checked in the handler.
 let hardExitStarted = false
 
-/**
- * Prevent Electron's natural quit teardown, run a bounded async dispose of the
- * extension servers + runtimes, then hard-exit via `exit(0)`. Extracted from the
- * will-quit handler so it is unit-testable.
- *
- * `event.preventDefault()` is REQUIRED here: without it Electron proceeds with
- * node::FreeEnvironment → CleanupHandles → uv_run synchronously after the handler
- * returns, which drains node-pty's ThreadSafeFunction callbacks in a torn-down
- * context and SIGABRTs the process — and it also races (and can truncate) the
- * awaited SIGTERM to the extension-server children below. So we take over the
- * quit: prevent the natural path, await the dispose (bounded), then reallyExit.
- *
- * `exit(0)` ALWAYS runs — on a clean dispose AND on timeout — so quit can never
- * hang on an unresponsive runtime/remote socket.
- */
+/** Prevent natural Electron teardown while stopping harnesses and runtimes.
+ * Natural teardown can destroy node-pty callbacks before their children exit. */
 export async function runHardExit(
   event: { preventDefault: () => void },
   deps: {
@@ -250,11 +232,6 @@ export function registerLifecycleHandlers(): void {
     flushBrowserStateSync()
     // And the ui-state.json file (minimap placement).
     flushUIStateSync()
-    // And every live extension storage: a panel/server set() within the debounce
-    // window resolved its promise but hadn't hit disk yet — persist it now.
-    flushExtensionStoragesSync()
-    // Drop per-project locks so a co-running instance can take over immediately
-    // (a crash skips this; the next instance reclaims the stale lock by pid).
     releaseAllProjectLocks()
     // Kill all PTYs now — AFTER session save so the renderer had access to live
     // PTY data (CWD, scrollback) during the flush triggered in before-quit.
@@ -262,30 +239,13 @@ export function registerLifecycleHandlers(): void {
     // during Environment::CleanupHandles, node-pty's ThreadSafeFunction exit
     // callback throws into a torn-down context and SIGABRTs the process.
     killAllTerminals()
-    // An update has been downloaded and is queued to install on quit. DO NOT
-    // reallyExit — electron-updater's install-on-quit hook runs on the 'quit'
-    // event (which fires AFTER will-quit), so reallyExit (libc exit()) would kill
-    // the process first and the update would never apply. Let the natural quit
-    // path run; the installer takes over the process shortly. (Stop the extension
-    // servers + runtimes first, fire-and-forget — the daemon kills its children
-    // on transport close anyway, and we must not block the install handoff.)
     if (isUpdatePendingInstall()) {
       workspaceCateApi.disposeAll()
       void t3HarnessManager.disposeAll()
-      void extensionServerManager.disposeAll()
       void runtimes.disposeAll()
       log.info('will-quit: update staged, yielding to electron-updater install-on-quit')
       return
     }
-    // Stop any server-backed extension servers + runtimes BEFORE the hard exit,
-    // AWAITED and bounded. We MUST preventDefault first (see runHardExit): letting
-    // Electron continue its natural teardown after this synchronous handler returns
-    // both SIGABRTs via node-pty's ThreadSafeFunction and races/truncates the
-    // awaited SIGTERM to the server children (an earlier `void`-before-reallyExit
-    // version leaked them for exactly that reason). The daemon also reaps on
-    // transport close + on its next startup (reapOrphanServers), so this is the
-    // clean primary path, not the only safety net. reallyExit(0) always runs (on
-    // clean dispose AND on timeout) so quit can't hang.
     if (hardExitStarted) {
       // Re-entrant will-quit fire — keep preventing natural teardown, but the
       // dispose + exit is already in flight; don't start it twice.
@@ -299,7 +259,7 @@ export function registerLifecycleHandlers(): void {
         // is fire-and-forget + reverse.dispose closes the http server), then the
         // bounded async server/runtime dispose.
         workspaceCateApi.disposeAll()
-        return Promise.allSettled([t3HarnessManager.disposeAll(), extensionServerManager.disposeAll(), runtimes.disposeAll()])
+        return Promise.allSettled([t3HarnessManager.disposeAll(), runtimes.disposeAll()])
       },
       // process.reallyExit is Node's binding to libc exit() — it skips the 'exit'
       // event and the cleanup path app.exit/process.exit would run, bypassing

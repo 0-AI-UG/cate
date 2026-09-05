@@ -16,7 +16,7 @@ const liveNotifications = new Set<Notification>()
 /**
  * Show one OS notification with the GC-reference guard (above) and the macOS
  * dock bounce, the single place that talks to Electron's Notification API.
- * Shared by the NOTIFY_OS IPC handler and the extension `cate.ui.notify` reverse
+ * Shared by the NOTIFY_OS IPC handler and the CLI `cate.ui.notify` reverse
  * call so both behave identically (and neither re-introduces the click GC bug).
  */
 export function showOsNotification(opts: {

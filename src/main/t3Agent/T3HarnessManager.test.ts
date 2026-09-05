@@ -7,8 +7,8 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('electron', () => ({ app: {}, session: {} }))
 vi.mock('../runtime/runtimeManager', () => ({ resolveLocator: mocks.resolve, runtimes: { onDisconnected: mocks.disconnected } }))
-vi.mock('../extensions/serverTunnel', () => ({ openTunnelDuplex: vi.fn() }))
-vi.mock('../extensions/workspaceCateApi', () => ({ workspaceCateApi: {} }))
+vi.mock('../cateApi/serverTunnel', () => ({ openTunnelDuplex: vi.fn() }))
+vi.mock('../cateApi/workspaceCateApi', () => ({ workspaceCateApi: {} }))
 vi.mock('../windowRegistry', () => ({ onWindowClosed: mocks.windowClosed }))
 
 function runtime() {

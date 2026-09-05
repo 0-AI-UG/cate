@@ -24,7 +24,7 @@ export function harnessNodeExecutable(
   return devNodeExecutable?.trim() || 'node'
 }
 
-export function harnessPaths(runtimeId: string, extensionsRoot: string, cwd: string): {
+export function harnessPaths(runtimeId: string, harnessRoot: string, cwd: string): {
   harnessRoot: string
   instancesRoot: string
   baseDir: string
@@ -32,7 +32,6 @@ export function harnessPaths(runtimeId: string, extensionsRoot: string, cwd: str
   providerSecretsDir: string
 } {
   const cwdHash = createHash('sha256').update(cwd).digest('hex').slice(0, 16)
-  const harnessRoot = runtimePath(runtimeId, extensionsRoot, '.cate-t3')
   const instancesRoot = runtimePath(runtimeId, harnessRoot, 'instances')
   return {
     harnessRoot,

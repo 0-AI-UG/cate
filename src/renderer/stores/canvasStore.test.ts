@@ -85,7 +85,7 @@ describe('canvasStore.addNode — canvas-on-canvas is rejected', () => {
 })
 
 // Viewport culling unmounts off-screen nodes to free terminal/editor resources.
-// Webview-backed nodes (extensions) hold non-reconstructible in-page state, so
+// Webview-backed nodes (browsers) hold non-reconstructible in-page state, so
 // they must stay mounted even off-screen — otherwise panning away resets them.
 // selectVisibleNodeIds is the pure cull core; `keepMountedPanelIds` is the set of
 // panel ids whose type must stay mounted off-screen (derived by the caller).
@@ -97,13 +97,13 @@ describe('canvasStore.selectVisibleNodeIds — keep-mounted webview nodes', () =
     store.setState({ zoomLevel: 1, viewportOffset: { x: 0, y: 0 }, selection: [], selectionActive: false })
   }
 
-  it('culls an off-screen editor but keeps an off-screen extension', () => {
+  it('culls an off-screen editor but keeps an off-screen browser', () => {
     const store = createCanvasStore()
     const editorId = store.getState().addNode('p-editor', 'editor', { x: 5000, y: 5000 }, { width: 100, height: 80 })
-    const extId = store.getState().addNode('p-ext', 'extension', { x: 5000, y: 6000 }, { width: 100, height: 80 })
+    const extId = store.getState().addNode('p-ext', 'browser', { x: 5000, y: 6000 }, { width: 100, height: 80 })
     offscreen(store)
 
-    // Only the extension panel keeps mounted off-screen.
+    // Only the browser panel keeps mounted off-screen.
     const keepMounted = new Set(['p-ext'])
     const visible = selectVisibleNodeIds(store.getState(), keepMounted)
 
@@ -111,19 +111,19 @@ describe('canvasStore.selectVisibleNodeIds — keep-mounted webview nodes', () =
     expect(visible).not.toContain(editorId)
   })
 
-  it('without a keep-mounted set, the extension is culled like any other node', () => {
+  it('without a keep-mounted set, the browser is culled like any other node', () => {
     const store = createCanvasStore()
-    const extId = store.getState().addNode('p-ext', 'extension', { x: 5000, y: 6000 }, { width: 100, height: 80 })
+    const extId = store.getState().addNode('p-ext', 'browser', { x: 5000, y: 6000 }, { width: 100, height: 80 })
     offscreen(store)
 
     // No keep-mounted set → no exemption → pure geometric cull.
     expect(selectVisibleNodeIds(store.getState())).not.toContain(extId)
   })
 
-  it('keeps an extension node keep-alive (regression: keep-mounted membership)', () => {
+  it('keeps an browser node keep-alive (regression: keep-mounted membership)', () => {
     const store = createCanvasStore()
     const editorId = store.getState().addNode('p-editor', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
-    const extId = store.getState().addNode('p-ext', 'extension', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const extId = store.getState().addNode('p-ext', 'browser', { x: 0, y: 0 }, { width: 100, height: 80 })
 
     const keepAlive = __keepAliveNodeIdsForTest(store.getState().nodes, new Set(['p-ext']))
     expect(keepAlive.has(extId)).toBe(true)
@@ -132,7 +132,7 @@ describe('canvasStore.selectVisibleNodeIds — keep-mounted webview nodes', () =
 
   it('does not recompute the keep-alive set when a stable set is reused (title churn)', () => {
     const store = createCanvasStore()
-    store.getState().addNode('p-ext', 'extension', { x: 0, y: 0 }, { width: 100, height: 80 })
+    store.getState().addNode('p-ext', 'browser', { x: 0, y: 0 }, { width: 100, height: 80 })
     const nodes = store.getState().nodes
 
     // The caller's equality-checked selector hands back the SAME set object when
@@ -151,22 +151,22 @@ describe('canvasStore.selectVisibleNodeIds — keep-mounted webview nodes', () =
   it('rebuilds the keep-alive set when a node is added later (async-restore ordering)', () => {
     const store = createCanvasStore()
     const keepMounted = new Set(['p-ext']) // stable set identity across both calls
-    // Set computed BEFORE the extension node exists (panel restored first).
+    // Set computed BEFORE the browser node exists (panel restored first).
     const before = __keepAliveNodeIdsForTest(store.getState().nodes, keepMounted)
     expect(before.size).toBe(0)
 
-    // Extension node lands afterwards — node count changes, so the cache rebuilds
+    // Browser node lands afterwards — node count changes, so the cache rebuilds
     // even though the keep-mounted set identity is unchanged.
-    const extId = store.getState().addNode('p-ext', 'extension', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const extId = store.getState().addNode('p-ext', 'browser', { x: 0, y: 0 }, { width: 100, height: 80 })
     const after = __keepAliveNodeIdsForTest(store.getState().nodes, keepMounted)
     expect(after.has(extId)).toBe(true)
   })
 
   it('rebuilds when a keep-mounted panel moves between two existing nodes (count unchanged)', () => {
-    // Regression: dragging a keep-mounted extension tab from one existing node's
+    // Regression: dragging a keep-mounted browser tab from one existing node's
     // dockLayout into another changes neither the node count nor the keep-mounted
     // set identity, so a count-keyed cache returned a stale set naming the OLD
-    // node — culling then destroyed the extension webview on the destination.
+    // node — culling then destroyed the browser webview on the destination.
     const tabs = (panelIds: string[]) => ({
       type: 'tabs' as const,
       id: `stack-${panelIds.join('-')}`,
@@ -174,7 +174,7 @@ describe('canvasStore.selectVisibleNodeIds — keep-mounted webview nodes', () =
       activeIndex: 0,
     })
     const store = createCanvasStore()
-    const nodeA = store.getState().addNode('p-ext', 'extension', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const nodeA = store.getState().addNode('p-ext', 'browser', { x: 0, y: 0 }, { width: 100, height: 80 })
     const nodeB = store.getState().addNode('p-b', 'editor', { x: 0, y: 0 }, { width: 100, height: 80 })
     // Node A hosts the keep-mounted tab alongside another; Node B hosts only its own.
     store.getState().setNodeDockLayout(nodeA, tabs(['p-ext', 'p-a']))
@@ -891,18 +891,6 @@ describe('canvasStore ghost placement actions', () => {
     expect(pending).not.toBeNull()
     expect(pending!.panelId).toBe('p1')
     expect(pending!.candidates.length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('beginPanelTarget captures the dev placement trace on pendingPanelTarget', () => {
-    // Vitest runs with import.meta.env.DEV truthy, so the dev-only trace capture
-    // is active here. (Verified: import.meta.env.DEV === true under vitest.)
-    const store = setup()
-    beginNewTarget(store, 'p1')
-    const pending = store.getState().pendingPanelTarget
-    expect(pending).not.toBeNull()
-    expect(pending!.trace).toBeDefined()
-    expect(pending!.trace!.steps.length).toBeGreaterThan(0)
-    expect(pending!.trace!.guides).toBeDefined()
   })
 
   it('beginPanelTarget on an empty canvas skips the picker and drops the panel at the camera centre', () => {

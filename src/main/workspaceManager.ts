@@ -21,7 +21,7 @@ import { resolveTrustedWorkspaceRoot } from './workspaceRoots'
 import { acquireProjectLock, releaseProjectLock } from './projectLock'
 import { isLocalLocator, parseLocator } from '../shared/runtimeLocator'
 import { runtimes } from './runtime/runtimeManager'
-import { workspaceCateApi } from './extensions/workspaceCateApi'
+import { workspaceCateApi } from './cateApi/workspaceCateApi'
 import { seedCateCliSkill } from '../skills/main/seedCateCliSkill'
 import type { RuntimeConnection } from '../shared/types'
 
@@ -134,7 +134,7 @@ function listWorkspaces(): WorkspaceInfo[] {
 }
 
 /** Look up a workspace's metadata by id, or undefined if unknown. Exported for
- *  consumers outside the IPC layer (e.g. the extension reverse-API bridge that
+ *  consumers outside the IPC layer (e.g. the CLI host API that
  *  resolves a workspace's rootPath/locator). */
 export function getWorkspaceInfo(id: string): WorkspaceInfo | undefined {
   return workspaces.get(id)

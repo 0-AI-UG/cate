@@ -204,3 +204,16 @@ describe('loadLayoutIntoActiveCanvas', () => {
     expect(Object.values(targetStore.getState().nodes)).toHaveLength(0)
   })
 })
+
+it('discards obsolete extension panels and their canvas nodes from saved templates', async () => {
+  const legacy = snapshot([
+    { panelType: 'browser', origin: { x: 0, y: 0 }, size: { width: 300, height: 200 } },
+    { panelType: 'editor', origin: { x: 400, y: 0 }, size: { width: 300, height: 200 } },
+  ])
+  Object.assign(legacy.panels['saved-panel-0'], { type: 'extension' })
+  mockLayout(legacy)
+  const store = ensureCanvasOpsForPanel(TARGET).storeApi
+  expect(await loadLayoutIntoCanvas('legacy', WS, TARGET, store)).toBe(true)
+  expect(Object.values(store.getState().nodes)).toHaveLength(1)
+  expect(Object.values(useAppStore.getState().workspaces[0].panels).map((panel) => panel.type)).toEqual(['canvas', 'canvas', 'editor'])
+})

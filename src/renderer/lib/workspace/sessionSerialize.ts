@@ -4,6 +4,7 @@
 // shared dock-state panel-id collector. No store/IPC access.
 // =============================================================================
 
+import { removedExtensionPanelIds, pruneDockState, pruneCanvasNodes } from '../../../shared/pruneRemovedPanels'
 import type {
   SessionSnapshot,
   DetachedDockWindowSnapshot,
@@ -35,8 +36,6 @@ const PASSTHROUGH_PANEL_FIELDS = [
   'activeTabId',
   'proxyUrl',
   'documentType',
-  'extensionId',
-  'extensionPanelId',
 ] as const
 
 type PassthroughPanelFields = Pick<ProjectPanelRef, (typeof PASSTHROUGH_PANEL_FIELDS)[number]>
@@ -141,6 +140,7 @@ export function projectFilesToSnapshot(
   sess: ProjectSessionFile | null,
   rootPath: string,
 ): SessionSnapshot {
+  const removed = removedExtensionPanelIds(ws.panels ?? {})
   // Recreate each panel record by id, merging the committed shareable metadata
   // with the machine-local session facts (worktree tag, unsaved scratch content).
   let panels: Record<string, PanelState> | undefined
@@ -148,6 +148,7 @@ export function projectFilesToSnapshot(
   if (ws.panels) {
     panels = {}
     for (const [id, ref] of Object.entries(ws.panels)) {
+      if (removed.has(id)) continue
       const sp = sess?.panels?.[id]
       // Pre-T3 layouts used the old embedded-agent discriminator. Preserve the
       // panel placement while dropping all legacy embedded-chat state.
@@ -183,11 +184,13 @@ export function projectFilesToSnapshot(
     workspaceId: sess?.workspaceId,
     workspaceName: ws.name,
     rootPath,
-    dockState: ws.dockState,
+    dockState: pruneDockState(ws.dockState, removed),
     panels,
     // Canvas geometry carries no file paths (only node geometry referencing panel
     // ids), so it passes through verbatim.
-    canvases: ws.canvases,
+    canvases: ws.canvases && Object.fromEntries(Object.entries(ws.canvases).map(([id, canvas]) => [id, {
+      ...canvas, canvasNodes: pruneCanvasNodes(canvas.canvasNodes, removed),
+    }])),
     terminalCwds: Object.keys(terminalCwds).length ? terminalCwds : undefined,
     // Restore the persisted worktree registry (absolute paths) so colors/labels
     // are stable and panel.worktreeId references resolve after restart.

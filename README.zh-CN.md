@@ -68,10 +68,6 @@ brew install --cask cate
 - **智能体可调用的 CLI：** 在 Cate 终端里，`cate` 可以驱动浏览器面板（`open`、`screenshot`、`snapshot`、`click`、`type`）、读取其他终端、打开文件、管理面板。设置 → CLI 中可分别授予每个能力的读取与控制权限。
 - **本地与远程走同一条路：** 同一个运行时守护进程服务所有工作区。通过 SSH 或 WSL 指向一台主机，终端、git、搜索和智能体都在那边运行；编辑器、浏览器和画布留在本地。
 
-## 扩展
-
-Cate 提供第三方面板的扩展系统（MCP 服务器、图表等），每个扩展运行在独立的隔离 webview 中。在配套仓库浏览和开发：[0-AI-UG/cate-extensions](https://github.com/0-AI-UG/cate-extensions)。
-
 ## 键盘快捷键
 
 下表为 macOS；Windows/Linux 上用 `Ctrl` 代替 `Cmd`。

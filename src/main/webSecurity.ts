@@ -6,20 +6,6 @@ import { disableWebviewHardening } from './featureFlags'
 import { BROWSER_OPEN_TAB_REQUEST, BROWSER_SHORTCUT, MENU_TRIGGER_ACTION } from '../shared/ipc-channels'
 import { getSetting } from './settingsFile'
 import { resolveShortcuts, type BrowserShortcutAction } from '../shared/types'
-import { getProxyOrigin, getCateHostPreloadPath } from './extensions/proxyServer'
-
-/** True iff `url` is served by the local extension proxy (an extension guest).
- *  Such guests keep their cateHost preload (the reverse-API bridge) rather than
- *  having it stripped like a plain browser-panel webview. */
-function isExtensionProxyUrl(url: string): boolean {
-  const origin = getProxyOrigin()
-  if (!origin) return false
-  try {
-    return new URL(url).origin === origin
-  } catch {
-    return false
-  }
-}
 
 function getBrowserGuestPreloadPath(): string {
   const base =
@@ -241,19 +227,9 @@ export function installWebContentsSecurity(): void {
         return
       }
 
-      // Never trust the preload path supplied by the renderer. Extension guests
-      // get the canonical cateHost bridge; ordinary browser guests get a
-      // separate one-way focus observer used by password autofill. Neither
-      // preload exposes Node or app APIs to remote page JavaScript.
-      const extensionGuest = isExtensionProxyUrl(src)
-      if (extensionGuest) {
-        ;(webPreferences as { preload?: string }).preload = getCateHostPreloadPath()
-        delete (webPreferences as { preloadURL?: string }).preloadURL
-        log.info('[webview] Pinned cateHost preload for extension guest %s', src)
-      } else {
-        ;(webPreferences as { preload?: string }).preload = getBrowserGuestPreloadPath()
-        delete (webPreferences as { preloadURL?: string }).preloadURL
-      }
+      // Pin the one-way browser observer; never trust renderer-supplied preloads.
+      ;(webPreferences as { preload?: string }).preload = getBrowserGuestPreloadPath()
+      delete (webPreferences as { preloadURL?: string }).preloadURL
       webPreferences.nodeIntegration = false
       webPreferences.contextIsolation = true
       webPreferences.sandbox = true
@@ -264,11 +240,11 @@ export function installWebContentsSecurity(): void {
       // browser panel. The setWindowOpenHandler
       // installed when the guest's webContents is created strictly filters
       // which URLs are actually allowed; this just removes the blanket veto.
-      if (!extensionGuest) params.allowpopups = 'true'
+      params.allowpopups = 'true'
 
       const partition = typeof webPreferences.partition === 'string' ? webPreferences.partition : undefined
       const targetSession = guestSessionFor(contents, partition)
-      configureGuestSessionPolicies(targetSession, !extensionGuest)
+      configureGuestSessionPolicies(targetSession, true)
     })
   })
 }

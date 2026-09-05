@@ -15,7 +15,7 @@ import type {
   Size,
   PanelType,
 } from '../../../shared/types'
-import type { PlacementCandidate, PlacementTrace } from '../../canvas/placement'
+import type { PlacementCandidate } from '../../canvas/placement'
 
 export type PanelTargetAvailability = 'new' | 'existing' | 'both'
 
@@ -34,8 +34,6 @@ export interface PendingPanelTarget {
   freeArmed: boolean
   freeGhost: { point: Point; size: Size } | null
   size: Size
-  /** Dev-only trace for the placement visualization overlay. */
-  trace?: PlacementTrace
   prevZoom: number
   prevOffset: Point
   onSelected?: (choice: CanvasPanelTargetChoice) => void

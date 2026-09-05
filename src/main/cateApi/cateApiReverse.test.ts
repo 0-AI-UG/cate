@@ -1,17 +1,5 @@
-// =============================================================================
-// CATE_API reverse endpoint (server -> Cate) — the channel the Kitchen Sink's
-// POST /api/cate-roundtrip drives: the extension SERVER calls back into Cate
-// over a loopback the daemon tunnels into this endpoint. This is a real http
-// server parsing real HTTP bytes off a reverse-tunnel Duplex; only the dispatch
-// core + runtime tunnel are faked (the dispatch contract has its own test in
-// cateApiHandlers.test.ts). We assert: bearer auth, JSON parsing, the storage
-// set+get round-trip the Kitchen Sink performs, and the malformed-input guards.
-// =============================================================================
-
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Dispatch core: an in-memory storage impl so the set->get round-trip is real.
-const store = vi.hoisted(() => new Map<string, unknown>())
 const dispatchCateInvoke = vi.hoisted(() => vi.fn())
 const forwardToOwner = vi.hoisted(() => vi.fn(async () => ({ ok: true })))
 const authorizeCateInvoke = vi.hoisted(() => vi.fn((): unknown => null))
@@ -104,45 +92,21 @@ function request(
 }
 
 beforeEach(() => {
-  store.clear()
   windowPanels.length = 0
   windows.clear()
   dispatchCateInvoke.mockReset()
   authorizeCateInvoke.mockReset()
   authorizeCateInvoke.mockReturnValue(null)
-  // Mirror the real dispatch for the two storage methods the round-trip uses.
-  dispatchCateInvoke.mockImplementation(async (_scope, method: string, args: { key?: string; value?: unknown }) => {
-    if (method === 'cate.storage.set') { store.set(String(args.key), args.value); return { ok: true } }
-    if (method === 'cate.storage.get') return store.get(String(args.key))
-    return { error: 'unsupported', method }
-  })
+  dispatchCateInvoke.mockResolvedValue({ ok: true })
 })
 
 describe('createCateApiReverse — server-side CATE_API endpoint', () => {
-  it('round-trips storage.set then storage.get (the Kitchen Sink roundtrip)', async () => {
-    // Two requests = two connections (HTTP/1.1 Connection: close). Each endpoint
-    // gets its own runtime/output, but both dispatch into the shared store, so
-    // the second read sees what the first write persisted.
-    const set = makeRuntime()
-    const setEp = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime: set.runtime })
-    const setRes = await request(setEp, set.output, { json: { method: 'cate.storage.set', args: { key: 'kitchensink:roundtrip', value: 'stamp-42' } } })
-    expect(setRes.status).toBe(200)
-    expect(setRes.body).toEqual({ result: { ok: true } })
-    setEp.dispose()
-
-    const get = makeRuntime()
-    const getEp = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime: get.runtime })
-    const getRes = await request(getEp, get.output, { json: { method: 'cate.storage.get', args: { key: 'kitchensink:roundtrip' } } })
-    expect(getRes.status).toBe(200)
-    expect(getRes.body).toEqual({ result: 'stamp-42' })
-    getEp.dispose()
-  })
 
   it('rejects a request with no bearer token (401, no dispatch)', async () => {
     const { runtime, output } = makeRuntime()
-    const endpoint = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime })
+    const endpoint = createCateApiReverse({ workspaceId: 'ws-1', token: TOKEN, runtime })
 
-    const res = await request(endpoint, output, { token: null, json: { method: 'cate.storage.get', args: { key: 'x' } } })
+    const res = await request(endpoint, output, { token: null, json: { method: 'cate.panel.list', args: { key: 'x' } } })
     expect(res.status).toBe(401)
     expect(res.body).toEqual({ error: 'unauthorized' })
     expect(dispatchCateInvoke).not.toHaveBeenCalled()
@@ -151,9 +115,9 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
 
   it('rejects a wrong bearer token (401)', async () => {
     const { runtime, output } = makeRuntime()
-    const endpoint = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime })
+    const endpoint = createCateApiReverse({ workspaceId: 'ws-1', token: TOKEN, runtime })
 
-    const res = await request(endpoint, output, { token: 'wrong', json: { method: 'cate.storage.get', args: {} } })
+    const res = await request(endpoint, output, { token: 'wrong', json: { method: 'cate.panel.list', args: {} } })
     expect(res.status).toBe(401)
     expect(dispatchCateInvoke).not.toHaveBeenCalled()
     endpoint.dispose()
@@ -161,7 +125,7 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
 
   it('400s a body that is not valid JSON', async () => {
     const { runtime, output } = makeRuntime()
-    const endpoint = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime })
+    const endpoint = createCateApiReverse({ workspaceId: 'ws-1', token: TOKEN, runtime })
 
     // Hand-roll a request with a non-JSON body but a correct Content-Length.
     const body = 'not json{'
@@ -191,21 +155,6 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     endpoint.dispose()
   })
 
-  it('threads first-party caller + grantedScopes into the dispatch scope', async () => {
-    const { runtime, output } = makeRuntime()
-    const endpoint = createCateApiReverse({
-      extensionId: 'first-party', workspaceId: 'ws-1', token: TOKEN, runtime,
-      caller: 'first-party', grantedScopes: ['browser'],
-    })
-    await request(endpoint, output, { json: { method: 'cate.storage.get', args: { key: 'x' } } })
-    expect(dispatchCateInvoke).toHaveBeenCalledWith(
-      expect.objectContaining({ caller: 'first-party', grantedScopes: ['browser'] }),
-      'cate.storage.get',
-      { key: 'x' },
-    )
-    endpoint.dispose()
-  })
-
   it('binds first-party orchestration to the calling terminal and cwd', async () => {
     windowPanels.push({
       panelId: 'terminal-parent',
@@ -217,12 +166,9 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     windows.set(7, { isDestroyed: () => false, webContents: owner })
     const host = makeRuntime()
     const endpoint = createCateApiReverse({
-      extensionId: 'terminal',
       workspaceId: 'ws-1',
       token: TOKEN,
       runtime: host.runtime,
-      caller: 'first-party',
-      grantedScopes: ['coding-agent'],
     })
 
     await request(endpoint, host.output, {
@@ -236,24 +182,11 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
 
     const scope = dispatchCateInvoke.mock.calls[0][0]
     expect(scope).toMatchObject({
-      caller: 'first-party',
       panelId: 'terminal-parent',
       originCwd: '/ws/worktree',
     })
     await scope.forward({ method: 'cate.codingAgent.create' })
     expect(forwardToOwner).toHaveBeenCalledWith(owner, { method: 'cate.codingAgent.create' })
-    endpoint.dispose()
-  })
-
-  it('leaves caller/grantedScopes undefined for an extension-server session', async () => {
-    const { runtime, output } = makeRuntime()
-    const endpoint = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime })
-    await request(endpoint, output, { json: { method: 'cate.storage.get', args: { key: 'x' } } })
-    expect(dispatchCateInvoke).toHaveBeenCalledWith(
-      expect.objectContaining({ caller: undefined, grantedScopes: undefined }),
-      'cate.storage.get',
-      { key: 'x' },
-    )
     endpoint.dispose()
   })
 
@@ -264,7 +197,7 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     // response' on a request that actually succeeded.
     dispatchCateInvoke.mockResolvedValue(undefined)
     const { runtime, output } = makeRuntime()
-    const endpoint = createCateApiReverse({ extensionId: 'first-party', workspaceId: 'ws-1', token: TOKEN, runtime, caller: 'first-party', grantedScopes: ['panel'] })
+    const endpoint = createCateApiReverse({ workspaceId: 'ws-1', token: TOKEN, runtime, })
 
     const res = await request(endpoint, output, { json: { method: 'cate.panel.setTitle', args: { title: 'x' } } })
     expect(res.status).toBe(200)
@@ -281,12 +214,9 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     windowPanels.push({ panelId: 'browser-1', type: 'browser', workspaceId: 'ws-1' })
     const first = makeRuntime()
     const endpoint = createCateApiReverse({
-      extensionId: 'first-party',
       workspaceId: 'ws-1',
       token: TOKEN,
       runtime: first.runtime,
-      caller: 'first-party',
-      grantedScopes: ['browser', 'panel'],
     })
 
     const selected = await request(endpoint, first.output, {
@@ -304,12 +234,9 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     dispatchCateInvoke.mockResolvedValue({ snapshot: '- document' })
     const second = makeRuntime()
     const secondEndpoint = createCateApiReverse({
-      extensionId: 'first-party',
       workspaceId: 'ws-1',
       token: TOKEN,
       runtime: second.runtime,
-      caller: 'first-party',
-      grantedScopes: ['browser', 'panel'],
     })
     const snapshot = await request(secondEndpoint, second.output, {
       json: {
@@ -333,12 +260,9 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     windowPanels.push({ panelId: 'review-1', type: 'review', workspaceId: 'ws-1' })
     const { runtime, output } = makeRuntime()
     const endpoint = createCateApiReverse({
-      extensionId: 'first-party',
       workspaceId: 'ws-1',
       token: TOKEN,
       runtime,
-      caller: 'first-party',
-      grantedScopes: ['panel'],
     })
 
     await request(endpoint, output, {
@@ -375,12 +299,9 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     })
     const first = makeRuntime()
     const endpoint = createCateApiReverse({
-      extensionId: 'first-party',
       workspaceId: 'ws-1',
       token: TOKEN,
       runtime: first.runtime,
-      caller: 'first-party',
-      grantedScopes: ['panel'],
     })
 
     const denied = await request(endpoint, first.output, {
@@ -399,19 +320,15 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
 
     const second = makeRuntime()
     const secondEndpoint = createCateApiReverse({
-      extensionId: 'first-party',
       workspaceId: 'ws-1',
       token: TOKEN,
       runtime: second.runtime,
-      caller: 'first-party',
-      grantedScopes: ['panel'],
     })
     const current = await request(secondEndpoint, second.output, {
       json: { method: 'cate.panel.target.current', args: {}, clientId: 'cli-session' },
     })
     expect(current.body).toEqual({ result: { panelId: null } })
     expect(authorizeCateInvoke).toHaveBeenCalledWith(
-      expect.objectContaining({ caller: 'first-party', grantedScopes: ['panel'] }),
       'cate.panel.target.set',
       { panelId: 'browser-1' },
     )
@@ -421,7 +338,7 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
 
   it('400s when no method is supplied', async () => {
     const { runtime, output } = makeRuntime()
-    const endpoint = createCateApiReverse({ extensionId: 'cate.kitchensink', workspaceId: 'ws-1', token: TOKEN, runtime })
+    const endpoint = createCateApiReverse({ workspaceId: 'ws-1', token: TOKEN, runtime })
 
     const res = await request(endpoint, output, { json: { args: { key: 'x' } } })
     expect(res.status).toBe(400)

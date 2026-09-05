@@ -36,16 +36,9 @@ export class RuntimeManager {
   /** Dedupe concurrent connects to the same id (mirrors CodingManager.withLock). */
   private readonly connecting = new Map<RuntimeId, Promise<Runtime>>()
   private statusListener: ((id: RuntimeId, state: RuntimePhase, message?: string) => void) | null = null
-  /** Fired when a runtime reaches the fully-`connected` step (a live
-   *  RemoteRuntime). Used to eagerly provision enabled extensions onto a newly
-   *  reachable host. Separate from the single statusListener so it can have many
-   *  subscribers without contending with the IPC status broadcast. */
+
   private readonly connectedListeners = new Set<(id: RuntimeId, runtime: Runtime) => void>()
-  /** Fired when a runtime is REMOVED on transport close (a live drop — crash /
-   *  network / daemon exit), for both remote and the LOCAL path. Mirrors
-   *  connectedListeners so subscribers can release any per-runtime state that
-   *  became stale (extension server sessions, reverse endpoints, provisioned
-   *  caches) instead of stranding it against a dead handle. */
+
   private readonly disconnectedListeners = new Set<(id: RuntimeId) => void>()
   /** The opts the LOCAL daemon was launched with, kept so a crash can be
    *  re-provisioned + relaunched identically. Set by ensureLocalRuntime. */
@@ -508,11 +501,6 @@ export class RuntimeManager {
       if (this.connections.get(id) !== conn) return
       this.connections.delete(id)
       this.runtimes.delete(id)
-      // Notify subscribers the runtime is gone (both LOCAL and remote reach
-      // here). Fires exactly once per live drop — the intentional-teardown case
-      // returned above (disposeConnection removed the connection first). Lets the
-      // extension layer release the stranded server sessions / reverse endpoints
-      // that were bound to this now-dead runtime handle.
       this.emitDisconnected(id)
       // The LOCAL workspace runs as a daemon subprocess. A remote drop is the
       // user's to reconnect, but a LOCAL crash leaves the whole workspace dead

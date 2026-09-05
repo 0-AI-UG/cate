@@ -52,6 +52,12 @@ function agentWebview(): Locator {
   return page.locator(`webview[data-agent-webview="${agent.panelId}"]`)
 }
 
+async function guestPath(): Promise<string> {
+  // Route polling must not queue JavaScript in a guest being replaced. Electron
+  // exposes the committed URL synchronously even while the document is loading.
+  return agentWebview().evaluate(element => new URL((element as HTMLElement & { getURL(): string }).getURL()).pathname)
+}
+
 async function guestEval<T>(webview: Locator, source: string): Promise<T> {
   return await webview.evaluate(
     (element, script) => (element as HTMLElement & { executeJavaScript(code: string): Promise<T> })
@@ -76,7 +82,7 @@ test.beforeEach(async ({}, testInfo) => {
   mkdirSync(workspaceRoot)
   const binDir = installFakeProviderCommands(tempRoot, testInfo.title.startsWith('real T3 lifecycle'))
   if (testInfo.title.startsWith('real T3 lifecycle')) {
-    const harnessRoot = path.join(tempRoot, 'extensions', '.cate-t3')
+    const harnessRoot = path.join(tempRoot, 'harness')
     mkdirSync(harnessRoot, { recursive: true })
     const homePath = path.join(tempRoot, 'codex-home')
     mkdirSync(homePath)
@@ -92,7 +98,7 @@ test.beforeEach(async ({}, testInfo) => {
   launchOptions = {
     userDataDir: path.join(tempRoot, 'userdata'),
     env: {
-      CATE_EXTENSIONS_ROOT: path.join(tempRoot, 'extensions'),
+      CATE_HARNESS_ROOT: path.join(tempRoot, 'harness'),
       CATE_E2E_PATH_PREPEND: binDir,
       CATE_E2E_CODEX_STATE: path.join(tempRoot, 'codex-state.json'),
       CATE_E2E_UPDATE_UNCHANGED: testInfo.title.includes('Homebrew') ? '1' : '0',
@@ -197,7 +203,7 @@ test('persists a new chat thread and contains project and settings navigation', 
     document.querySelector('#composer').requestSubmit()
     return true
   })()`)
-  await expect.poll(() => guestEval<string>(agentWebview(), 'location.pathname'))
+  await expect.poll(() => guestPath())
     .toBe('/e2e-env/thread-e2e')
 
   await expect.poll(async () => {
@@ -205,15 +211,15 @@ test('persists a new chat thread and contains project and settings navigation', 
     return snapshot?.threadId
   }).toBe('thread-e2e')
 
-  const before = await guestEval<string>(agentWebview(), 'location.pathname')
+  const before = await guestPath()
   await guestEval(agentWebview(), `(() => {
     document.querySelector('[data-testid="project-link"]')?.click()
     return true
   })()`)
-  await expect.poll(() => guestEval<string>(agentWebview(), 'location.pathname')).toBe(before)
+  await expect.poll(() => guestPath()).toBe(before)
 
   await openAgentSettingsFromGuest()
-  expect(await guestEval<string>(agentWebview(), 'location.pathname')).not.toBe('/settings/providers')
+  expect(await guestPath()).not.toBe('/settings/providers')
 })
 
 test('shows provider connection, version, update, and login state in Cate settings', async () => {
@@ -445,7 +451,7 @@ for (const entry of ['overlay', 'action bar'] as const) {
     await expect.poll(() => page.evaluate((id) => window.__cateE2E!.agentPanelSnapshot(id)?.threadId, agent.panelId)).toBe('saved-chat')
     // Switching remounts the guest asynchronously; poll through its detached/loading phase.
     await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true')
-    await expect.poll(() => guestEval<string>(agentWebview(), 'location.pathname').catch(() => '')).toMatch(/\/saved-chat$/)
+    await expect.poll(() => guestPath().catch(() => '')).toMatch(/\/saved-chat$/)
 
     const originalPanelId = agent.panelId
     if (entry === 'overlay') {
@@ -459,7 +465,9 @@ for (const entry of ['overlay', 'action bar'] as const) {
       agent = { ...agent, panelId: (await fresh.getAttribute('data-agent-webview'))! }
     }
     await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true')
-    await expect.poll(() => guestEval<string>(agentWebview(), 'location.pathname').catch(() => ''), { timeout: 30_000 }).toMatch(/^\/draft\//)
+    // T3 can keep a fresh composer at / until allocating a draft route.
+    // Both are unbound; a saved conversation route must never return here.
+    await expect.poll(() => guestPath().catch(() => ''), { timeout: 30_000 }).toMatch(/^(?:\/|\/draft\/[^/]+)$/)
     // Reload the fresh guest too: a delayed welcome/bootstrap must not restore
     // the saved chat after the empty composer briefly appears.
     await agentWebview().evaluate((element) => new Promise<void>((resolve) => {
@@ -467,7 +475,7 @@ for (const entry of ['overlay', 'action bar'] as const) {
       ;(element as HTMLElement & { reload(): void }).reload()
     }))
     await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true')
-    await expect.poll(() => guestEval<string>(agentWebview(), 'location.pathname').catch(() => '')).toMatch(/^\/draft\//)
+    await expect.poll(() => guestPath().catch(() => '')).toMatch(/^(?:\/|\/draft\/[^/]+)$/)
     await expect.poll(() => guestEval<number>(agentWebview(), 'document.querySelectorAll("[contenteditable=true]").length')).toBeGreaterThan(0)
     expect(await page.evaluate((id) => window.__cateE2E!.agentPanelSnapshot(id)?.threadId, agent.panelId)).toBeFalsy()
     const conversations = await page.evaluate(({ workspaceId, cwd }) => window.electronAPI.agentHarnessListConversations({ workspaceId, cwd }), { workspaceId: agent.workspaceId, cwd: workspaceRoot })
@@ -513,7 +521,7 @@ test('real T3 lifecycle sends, streams, switches chats, restarts Cate and resume
   const firstThread = (await realThreadState())!.id
   await expect.poll(() => page.evaluate((id) => window.__cateE2E!.agentPanelSnapshot(id)?.threadId, agent.panelId)).toBe(firstThread)
   await selectOverlay('New conversation')
-  await expect.poll(() => guestEval<string>(agentWebview(), 'location.pathname').catch(() => '')).toMatch(/^\/draft\//)
+  await expect.poll(() => guestPath().catch(() => '')).toMatch(/^\/draft\//)
   await submitRealChat('second lifecycle message')
   await waitForRealReply('second lifecycle message')
   const secondThread = (await realThreadState())!.id

@@ -129,10 +129,6 @@ export class RemoteRuntime implements Runtime {
       inspectWorkspace: (cwd) => call<AgentHookAgentState[]>(Methods.agentHooksInspect, [cwd]),
     }
 
-    // Server: the extension's server child runs on the daemon's host; its
-    // stdout/stderr + exit stream back keyed by the caller-generated id (register
-    // before start, like ptyCreate). start uses longCall — the ready probe can
-    // take seconds (well past the default 30s deadline on a cold server).
     this.server = {
       start: async (opts, onOutput, onExit) => {
         this.rpc.registerStream(opts.id, (payload) => {
@@ -217,10 +213,7 @@ export class RemoteRuntime implements Runtime {
       rename: (oldP, newP, access) => call<string>(Methods.fileRename, [oldP, newP, scoped(access)]),
       mkdir: (p, access) => call<void>(Methods.fileMkdir, [p, scoped(access)]),
       copy: (src, destDir, access) => call<string>(Methods.fileCopy, [src, destDir, scoped(access)]),
-      extensionsRoot: () => call<string>(Methods.fileExtensionsRoot, []),
-      // longCall (no deadline): extraction shells `tar` on the host and can run
-      // past the default 30s call timeout for a large extension.
-      extractArtifact: (tgz, destDir) => longCall<string>(Methods.fileExtractArtifact, [tgz, destDir]),
+      harnessRoot: () => call<string>(Methods.fileHarnessRoot, []),
       importEntries: (sources, destDir, mode, access) =>
         call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, scoped(access)]),
       search: (root, query, opts, access) =>

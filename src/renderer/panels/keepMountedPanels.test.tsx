@@ -1,7 +1,7 @@
 // =============================================================================
 // keepMountedPanels — which panel instances survive the canvas viewport cull.
 //
-// Extension panels must stay mounted off-screen: unmounting destroys the
+// Browser panels must stay mounted off-screen: unmounting destroys the
 // <webview> guest and its in-page state unrecoverably. Everything else is
 // cullable.
 //
@@ -21,12 +21,11 @@ import { createCanvasStore, selectVisibleNodeIds } from '../stores/canvasStore'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const panel = (id: string, extensionId?: string): PanelState => ({
+const panel = (id: string, browser?: string): PanelState => ({
   id,
-  type: extensionId ? 'extension' : 'editor',
+  type: browser ? 'browser' : 'editor',
   title: id,
   isDirty: false,
-  ...(extensionId ? { extensionId, extensionPanelId: 'main' } : {}),
 })
 
 describe('keepMountedOffscreenPanelIds', () => {
@@ -35,7 +34,7 @@ describe('keepMountedOffscreenPanelIds', () => {
     'p-ext': panel('p-ext', 'acme.local'),
   }
 
-  it('exempts extension panels', () => {
+  it('exempts browser panels', () => {
     expect(keepMountedOffscreenPanelIds(panels).has('p-ext')).toBe(true)
   })
 
@@ -75,13 +74,13 @@ describe('keepMountedOffscreenPanelIds', () => {
   })
 })
 
-// End-to-end through the actual cull core: an off-screen extension node survives
+// End-to-end through the actual cull core: an off-screen browser node survives
 // while an off-screen editor node is culled.
 describe('viewport cull with keep-mounted panels', () => {
-  it('keeps the extension node and culls the editor node', () => {
+  it('keeps the browser node and culls the editor node', () => {
     const store = createCanvasStore()
     const editorNode = store.getState().addNode('p-editor', 'editor', { x: 5000, y: 5000 }, { width: 100, height: 80 })
-    const extNode = store.getState().addNode('p-ext', 'extension', { x: 5000, y: 6000 }, { width: 100, height: 80 })
+    const extNode = store.getState().addNode('p-ext', 'browser', { x: 5000, y: 6000 }, { width: 100, height: 80 })
     store.getState().setContainerSize({ width: 800, height: 600 })
     store.setState({ zoomLevel: 1, viewportOffset: { x: 0, y: 0 }, selection: [], selectionActive: false })
 
@@ -155,7 +154,7 @@ describe('useKeepMountedPanelIds — referential stability', () => {
     expect(seen.length).toBe(2)
     for (const s of seen) expect(s).toBe(seen[0])
 
-    // A real membership change (a second extension panel) DOES produce a new set.
+    // A real membership change (a second browser panel) DOES produce a new set.
     act(() => {
       useAppStore.setState((s) => ({
         workspaces: s.workspaces.map((w) =>

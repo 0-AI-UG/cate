@@ -8,7 +8,7 @@
 
 import path from 'path'
 import * as fileLeaf from './file'
-import { hostExtensionsRoot, extractArtifact } from './extensions'
+import { hostHarnessRoot } from './harnessRoot'
 import { createWatchPool } from './fileWatcher'
 import { runRipgrepSearch } from '../search/engine'
 import { createVcsCapability } from './vcs'
@@ -79,7 +79,7 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   // an empty root set (only per-window grants can still admit it), so a caller
   // that omits its workspace scope is rejected instead of being silently
   // widened to the daemon's own root. Callers that legitimately operate at the
-  // daemon scope pass config.id explicitly (see extensionsRoot/extractArtifact
+  // daemon scope pass config.id explicitly (see harnessRoot
   // below, and RemoteRuntime's trusted-caller default on the client side).
   const validatePath = (p: string, ownerWindowId?: number, scopeId?: string) =>
     validateScopedPath(p, ownerWindowId, scopeId)
@@ -146,26 +146,11 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
         mode,
         () => { /* errors counted, not logged */ },
       ),
-    // Per-host extensions root (~/.cate/extensions). Register it as an allowed
-    // root here too (it's also registered at daemon startup) so the very first
-    // install on a fresh daemon, or any test driving buildDaemonRuntime directly,
-    // can read/write/extract under it. Idempotent. Extension installs are
-    // per-host (shared across workspaces), so this root lives at the daemon's
-    // own scope — explicitly, since there is no fallback anymore.
-    extensionsRoot: async () => {
-      const root = hostExtensionsRoot()
+    harnessRoot: async () => {
+      const root = hostHarnessRoot()
       addRoot(root, config.id)
       return root
     },
-    // Extract a host-resident, client-verified .tgz into destDir. validatePathStrict
-    // on the tgz (it exists), validatePathForCreation on dest (it may not yet) —
-    // both must resolve under an allowed root (extensionsRoot above / startup).
-    // Provisioning is a per-host concern, hence the explicit daemon scope.
-    extractArtifact: async (tgz, destDir) =>
-      extractArtifact(
-        await validatePathStrict(tgz, undefined, config.id),
-        await validatePathForCreation(destDir, undefined, config.id),
-      ),
     search: async (root, query, opts, access) =>
       fileLeaf.searchFiles(await validatePathStrict(root, access?.ownerWindowId, access?.scopeId), query, exclusionSet, opts),
     // Content search spawns the ripgrep shipped beside the daemon's node
@@ -219,20 +204,6 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     agentPresence,
   })
 
-  // The daemon is the AUTHORITATIVE cwd check (RemoteRuntime.validateCwd is a
-  // client-side pass-through), so validate the terminal cwd here before spawning,
-  // matching what terminal.ts does for a local runtime. Throwing rejects create.
-  //
-  // The cwd is accepted under EITHER scope:
-  //   - the CALLING WORKSPACE's scope (`opts.scopeId`), which is where
-  //     workspaceManager registers each opened workspace root. Without this, a
-  //     workspace outside the daemon's own root — e.g. a project on D:\ while
-  //     the local daemon roots at the home dir (see ensureLocalRuntime) — could
-  //     never start a terminal.
-  //   - the DAEMON's own scope, which covers ptys with no workspace (the daemon
-  //     root, its extensions dir, tmp). This was the only accepted scope before.
-  // Keep it a ProcessCapability (spread carries killAllGroups) so the daemon
-  // entry can reap process groups on shutdown.
   const validatePtyCwd = (cwd: string, scopeId?: string): void => {
     if (scopeId) {
       try {
@@ -257,9 +228,6 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     },
   }
 
-  // Server-backed extensions: spawn the server child on the daemon host, bound
-  // to a daemon-loopback port; the tunnel bridges raw TCP to that port. Both are
-  // electron-free and share the daemon's clean env.
   const server = createServerCapability({ baseEnv: cleanEnv, daemonId: config.id })
   const tunnel = createTunnelCapability()
 

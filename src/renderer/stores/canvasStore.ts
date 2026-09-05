@@ -190,7 +190,7 @@ export function useNodeIds(store: StoreApi<CanvasStore>): string[] {
  * margin so panning doesn't thrash mount state at the edges). Focused, pinned,
  * and keep-mounted nodes are always included so they keep their live state.
  * `keepMountedPanelIds` is the set of panel ids that must stay mounted
- * off-screen — webview-backed extensions (see keepsMountedOffscreen) and
+ * off-screen — webview-backed browsers (see keepsMountedOffscreen) and
  * terminals an Agent is driving (their pty boots on mount and the agent
  * reads their rendered screen). A node is exempt from the cull when it hosts any
  * of them. Omitting it skips that exemption entirely (pure geometric cull) — the
@@ -218,7 +218,7 @@ function sortedNodesByZOrder(nodes: Record<CanvasNodeId, CanvasNodeState>): Canv
 }
 
 // Nodes that host a panel which must stay mounted off-screen (webview-backed
-// extensions — see keepsMountedOffscreen). Geometric culling unmounts off-screen
+// browsers — see keepsMountedOffscreen). Geometric culling unmounts off-screen
 // nodes, which destroys a <webview>'s guest process and resets all its in-page
 // state; these nodes opt out so panning away and back preserves the session.
 //

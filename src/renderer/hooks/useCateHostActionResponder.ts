@@ -1,14 +1,14 @@
 // =============================================================================
-// useCateHostActionResponder — renderer side of the extension "reverse API".
+// useCateHostActionResponder — renderer side of the caller "reverse API".
 //
-// Extensions ask Cate to do things (open a file, create a panel, retitle a
+// CLI callers ask Cate to do things (open a file, create a panel, retitle a
 // panel) through their preload's cate.* bridge. Those calls are forwarded by
 // the main process to the renderer over CATE_HOST_ACTION; this hook is the
 // single subscriber that executes them against the app store and replies with
 // the outcome over CATE_HOST_ACTION_REPLY.
 //
 // Mounted once from the top-level workspace shell (MainApp). Whatever workspace
-// the extension targets is honored verbatim — the payload carries workspaceId.
+// the caller targets is honored verbatim — the payload carries workspaceId.
 // =============================================================================
 
 import { useEffect } from 'react'
@@ -36,7 +36,7 @@ import { browserPanelUrl, isStartPageUrl, type PanelType, type Point } from '../
 import type { PanelPlacement } from '../stores/appStore'
 import { worktreeForPath } from '../lib/worktreeContext'
 
-// Host-API panel creation (CLI + extensions) is always non-interactive: callers
+// Host-API panel creation (CLI) is always non-interactive: callers
 // may add panels but must not open the placement picker, switch tabs, change
 // selection/focus, or move the user's camera. An explicit { position } still
 // chooses the canvas point while preserving those background semantics.
@@ -55,7 +55,6 @@ interface HostActionPayload {
   requestId: string
   workspaceId: string
   panelId: string
-  extensionId: string
   method: string
   args: unknown
   originCwd?: string
@@ -117,14 +116,14 @@ async function finishTracked<T>(
   }
 }
 
-// Extensions address files by a path relative to the workspace root (e.g.
+// CLI callers address files by a path relative to the workspace root (e.g.
 // `cate.editor.openFile('package.json')`). The panel-open path expects an
 // ABSOLUTE path — a relative one creates an editor that resolves to nothing and
 // renders blank. Resolve against the workspace root (no-op for an already
 // absolute path) so the reverse API reuses the exact open behavior the file
 // explorer gets.
 //
-// SECURITY: confine the resolved path to the workspace root. An extension must
+// SECURITY: confine the resolved path to the workspace root. A caller must
 // not be able to open arbitrary files on disk (e.g. /etc/hosts, ../../secrets)
 // via the reverse API — neither by passing an absolute path that escapes the
 // workspace's known checkouts nor by a relative path that traverses out of its
@@ -133,15 +132,8 @@ function resolveWorkspacePath(workspaceId: string, filePath: string, originCwd?:
   const workspace = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
   const rootPath = workspace?.rootPath
   if (!rootPath) return null
-  // A REMOTE workspace stores rootPath as a locator URI
-  // (cate-runtime://<id>/<path>), but cate.workspace.get hands the extension the
-  // BARE path. So an extension that round-trips workspace.get and passes back an
-  // absolute path lands us here with a bare path to compare against a locator
-  // root — the containment check would wrongly reject it. Normalize BOTH sides to
-  // the same bare-path form (the runtime-native path) before comparing, then
-  // re-attach the locator scheme on the way out so downstream open code still
-  // routes to the correct runtime. Local roots have no scheme, so this is a no-op
-  // for them (bareRoot === rootPath, runtimeId === 'local').
+  // Remote roots are locator URIs while CLI paths are runtime-native. Compare
+  // bare paths, then reattach the runtime scheme before opening the file.
   const { runtimeId, path: bareRoot } = parseLocator(rootPath)
   const allowedRoots = [rootPath, ...(workspace?.worktrees ?? []).map((worktree) => worktree.path)]
     .map(parseLocator)
@@ -334,12 +326,7 @@ export function useCateHostActionResponder(): void {
             if (!type || !PANEL_REGISTRY[type]) return reply(false, { error: 'unknown panel type' })
             const placement = placementFromArgs(workspaceId, args)
             let newPanelId: string | null
-            if (type === 'extension') {
-              const extId = typeof args.extensionId === 'string' ? args.extensionId : payload.extensionId
-              const extPanelId = typeof args.extensionPanelId === 'string' ? args.extensionPanelId : undefined
-              if (!extPanelId) return reply(false, { error: 'extensionPanelId required' })
-              newPanelId = useAppStore.getState().createExtensionPanel(workspaceId, extId, extPanelId, undefined, placement)
-            } else if (type === 'terminal') {
+            if (type === 'terminal') {
               const worktree = worktreeForOrigin(workspaceId, payload.originCwd)
               const store = useAppStore.getState()
               newPanelId = store.createTerminal(
@@ -431,7 +418,7 @@ export function useCateHostActionResponder(): void {
             if (!title) return reply(false, { error: 'title required' })
             // This responder mutates ONLY this window's app store. A panel that was
             // detached into a separate dock/panel window is no longer in this store,
-            // so updatePanelTitle would silently no-op — don't tell the extension the
+            // so updatePanelTitle would silently no-op — don't tell the caller the
             // (non-)op succeeded. Reject instead of reporting a lie. (Full
             // cross-window routing is a larger change.)
             const panelInWindow = useAppStore

@@ -377,7 +377,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
 
           Ordinary panels render only while active and unmount otherwise (freeing
           xterm/WebGL, Monaco, etc.). Webview-backed panels
-          (keepsMountedWhenTabHidden: browser/extension) instead stay MOUNTED but
+          (keepsMountedWhenTabHidden: browser/agent) instead stay MOUNTED but
           hidden when inactive, so their live `<webview>` guest process survives a
           tab switch — unmounting and remounting would reload the page and lose all
           in-page state (#459). Because each keep-alive panel keeps its stable

@@ -1,6 +1,6 @@
 // =============================================================================
 // Server capability — electron-free runner for long-lived HTTP server children
-// (server-backed extensions and provider harnesses). Spawns a child with
+// (provider harnesses). Spawns a child with
 // PIPED stdio, streams stdout/stderr verbatim, and reports error vs close. The
 // extra job here is port management + a readiness probe: it allocates a loopback
 // port, injects it via env[portEnv], spawns the server, then polls an HTTP ready
@@ -122,7 +122,7 @@ export function createServerCapability(deps: ServerDeps = {}): ServerCapability 
   const pidFile = serverPidFilePath(deps.daemonId ?? 'default')
 
   // Pid-file bookkeeping: append on spawn, remove on exit. Rewrites the whole
-  // file each mutation (the live set is tiny — a handful of extension servers).
+  // file each mutation (the live set is tiny — a handful of harness servers).
   const recordPid = (rec: PidRecord): void => {
     const all = readPidFile(pidFile)
     all.push(rec)

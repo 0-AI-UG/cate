@@ -3,6 +3,7 @@
 // MultiWorkspaceSession for restore.
 // =============================================================================
 
+import { removedExtensionPanelIds, pruneDockState, pruneCanvasNodes } from '../../../shared/pruneRemovedPanels'
 import log from '../logger'
 import { isLocalLocator } from '../../../shared/runtimeLocator'
 import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
@@ -23,7 +24,20 @@ export async function loadSession(): Promise<MultiWorkspaceSession | null> {
 }
 
 export function dockWindowsFromSession(sess: ProjectSessionFile | null): DetachedDockWindowSnapshot[] {
-  return sess?.dockWindows ?? []
+  return (sess?.dockWindows ?? []).flatMap((window) => {
+    const removed = removedExtensionPanelIds(window.panels)
+    if (!removed.size) return [window]
+    const panels = Object.fromEntries(Object.entries(window.panels).filter(([id]) => !removed.has(id)))
+    if (!Object.keys(panels).length) return []
+    return [{
+      ...window,
+      panels,
+      dockState: pruneDockState(window.dockState, removed)!,
+      canvasStates: Object.fromEntries(Object.entries(window.canvasStates ?? {}).map(([id, canvas]) => [id, {
+        ...canvas, nodes: pruneCanvasNodes(canvas.nodes, removed),
+      }])),
+    }]
+  })
 }
 
 /** Drop a declined project from the recents list. "Don't open" is also "stop

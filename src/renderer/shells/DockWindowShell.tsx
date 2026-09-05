@@ -60,7 +60,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   const syncTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hadPanelsRef = useRef(false)
 
-  // Track file drags so docked extension panels can arm their webview drop overlay
+  // Track file drags for the dock and terminal drop indicators
   // (mirrors the main window — App.tsx installs the same tracker there).
   useFileDropTracker()
 

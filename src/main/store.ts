@@ -293,7 +293,6 @@ function broadcastSettingsReloaded(): void {
   rebuildBootThemeCache()
 }
 
-
 export function registerHandlers(): void {
   // Settings — backed by settings.json (see ./settingsFile). The file is the
   // source of truth; these handlers read/write it and fan out side effects.
@@ -365,7 +364,7 @@ export function registerHandlers(): void {
 
   // Flush a pending debounced boot.json write before the process exits, so a
   // window move / theme change just before quit survives to the next launch.
-  // Registered by boot.json's owner (like extension storage does) rather than
+  // Registered by boot.json's owner (like other JSON state owners) rather than
   // shutdown.ts's flush list; will-quit listeners all run synchronously before
   // the hard exit.
   app.on('will-quit', () => flushBootSnapshotSync())
