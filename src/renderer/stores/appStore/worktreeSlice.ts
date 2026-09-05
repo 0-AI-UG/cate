@@ -8,8 +8,6 @@ import type { AppSet, AppGet, AppStoreActions } from './types'
 import { pickWorktreeColor, setPanelField } from './helpers'
 import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
 import { useSettingsStore } from '../settingsStore'
-import { activeChatWorktreeIdForPanel } from '../../../cateAgent/renderer/cateAgentStore'
-import { useChatsStore } from '../chatsStore'
 
 type WorktreeSliceActions = Pick<
   AppStoreActions,
@@ -78,28 +76,18 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
     },
 
     removeWorktree(wsId, worktreeId) {
-      // Optionally destroy the worktree's terminal panels (PTYs killed) before
-      // we drop the worktree record. Agent targets live on chats, not panels.
+      // Optionally destroy worktree-bound terminal and Agent panels before we
+      // drop the worktree record.
       // Done outside
       // the set() updater because closePanel runs its own teardown + set().
       if (useSettingsStore.getState().closeWorktreePanelsOnDelete) {
         const ws = get().workspaces.find((w) => w.id === wsId)
         const doomed = Object.values(ws?.panels ?? {}).filter(
           (p) => (
-            (p.type === 'terminal' && p.worktreeId === worktreeId) ||
-            (p.type === 'cateAgent' && activeChatWorktreeIdForPanel(p.id) === worktreeId)
+            (p.type === 'terminal' || p.type === 'agent') && p.worktreeId === worktreeId
           ),
         )
         for (const p of doomed) get().closePanel(wsId, p.id)
-      }
-      const ws = get().workspaces.find((w) => w.id === wsId)
-      const chats = useChatsStore.getState()
-      if (ws?.rootPath && chats.loadedRoots[ws.rootPath]) {
-        for (const chat of chats.getChats(ws.rootPath)) {
-          if (chat.worktreeId === worktreeId) {
-            chats.patchChat(ws.rootPath, chat.id, { worktreeId: undefined })
-          }
-        }
       }
       set((state) => ({
         workspaces: state.workspaces.map((ws) => {
@@ -147,7 +135,11 @@ export function createWorktreeSlice(set: AppSet, get: AppGet): WorktreeSliceActi
       setPanelField(set, wsId, panelId, (panel) => (
         panel.type === 'terminal'
           ? { ...panel, worktreeId }
-          : { ...panel, worktreeId: undefined }
+          : panel.type === 'agent'
+            // The cwd is derived from this tag. A thread belongs to its old
+            // checkout, so switching worktrees starts a fresh thread.
+            ? { ...panel, worktreeId, cwd: undefined, agentThreadId: undefined }
+            : { ...panel, worktreeId: undefined }
       ))
     },
 

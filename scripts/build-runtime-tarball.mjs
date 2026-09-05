@@ -9,7 +9,7 @@
 //                                          — workspace-tree file watching)
 //     runtime/bin/node[.exe]              (bundled Node runtime for the target)
 //     runtime/bin/rg[.exe]                 (bundled ripgrep for content search)
-//     pi/dist/cli.js                       (bundled pi coding agent, cross-platform)
+//     t3/dist/bin.mjs                      (T3 server + web client)
 //     cate/dist/cli.cjs                    (bundled `cate` in-terminal CLI)
 //     cate/bin/cate[.cmd]                  (launcher shims → bundled node)
 //
@@ -43,12 +43,11 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
-import { runtimeBuildOptions, syncRuntimeVersion } from '../src/runtime/build/esbuild.config.mjs'
+import { runtimeBuildOptions, syncRuntimeVersion } from './build-runtime.mjs'
 
-// Bundled runtime version. MUST satisfy pi's `engines.node` (currently
-// >=22.19.0 — its undici build calls webidl APIs absent on Node 20, which
-// crashes pi on launch under an older runtime). Keep on a 22.x LTS line.
-const NODE_VERSION = '22.19.0'
+// Bundled runtime version. MUST satisfy T3's `engines.node` requirement
+// (^22.16 || ^23.11 || >=24.10). Keep on a 22.x LTS line.
+const NODE_VERSION = '22.22.2'
 const NODE_PTY_VERSION = '1.1.0' // must match package.json
 // ripgrep for the daemon's content search. Prebuilt static binaries from the
 // upstream GitHub release (no CI build needed) — fetched like the node runtime.
@@ -91,7 +90,7 @@ mkdirSync(stageDir, { recursive: true })
 // Delete the previous tarball UP FRONT (before staging), not just before the
 // tar below. A staging step that throws partway (e.g. a ripgrep download
 // failure) used to exit here leaving the OLD .tgz in place — a misleading
-// "valid but incomplete" artifact (it shipped with no rg/pi, so the dev
+// "valid but incomplete" artifact (it shipped with no rg/T3, so the dev
 // isInstalled probe failed forever → reinstall on every connect). Now an
 // aborted build leaves no tarball at all.
 const exe = targetPlatform === 'win32' ? '.exe' : ''
@@ -105,7 +104,7 @@ await stageNodePty(stageDir)
 await stageParcelWatcher(stageDir)
 await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime', 'bin', `node${exe}`))
 await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
-stagePi(path.join(stageDir, 'pi'))
+await stageT3(path.join(stageDir, 't3'))
 await stageCateCli(path.join(stageDir, 'cate'))
 signMacNatives(stageDir)
 
@@ -117,7 +116,7 @@ const required = [
   `runtime.cjs`,
   path.join('runtime', 'bin', `node${exe}`),
   path.join('runtime', 'bin', `rg${exe}`),
-  path.join('pi', 'dist', 'cli.js'),
+  path.join('t3', 'dist', 'bin.mjs'),
   path.join('cate', 'dist', 'cli.cjs'),
   path.join('cate', 'bin', 'cate'),
   path.join('cate', 'bin', 'cate.cmd'),
@@ -507,35 +506,118 @@ async function stageRipgrep(target, outBin) {
   console.log(`[runtime] staged ripgrep ${RIPGREP_VERSION} for ${target}`)
 }
 
-/** Stage the cross-platform pi coding agent into <outRoot> (pi/dist/cli.js …).
- *  pi rides in the runtime tarball so node + node-pty + rg + pi all ship as
- *  ONE per-target artifact — the daemon resolves pi from here, no on-demand
- *  download or air-gapped push. Builds the pi tarball first if it's absent. */
-function stagePi(outRoot) {
-  const piVersion = JSON.parse(
-    readFileSync(path.join(repoRoot, 'node_modules', '@earendil-works', 'pi-coding-agent', 'package.json'), 'utf-8'),
-  ).version
-  const tar = path.join(dist, `cate-pi-${piVersion}.tgz`)
-  if (!existsSync(tar)) {
-    console.log('[runtime] pi tarball missing; building it…')
-    execFileSync('node', [path.join(repoRoot, 'scripts', 'build-pi-tarball.mjs')], { stdio: 'inherit' })
-  }
-  if (!existsSync(tar)) throw new Error(`pi tarball not found at ${tar}`)
+/** Stage the published T3 server and web client into a target runtime.
+ *
+ * T3 bundles almost all JavaScript into dist/, but leaves its file finder,
+ * msgpack accelerator and PTY adapter external. node-pty already lives at the
+ * runtime root with the correct target binary, so this nested tree contains
+ * only the other runtime dependencies and their target-specific N-API/FFI
+ * packages. Source maps and non-target resource monitors are omitted.
+ */
+async function stageT3(outRoot) {
+  const src = path.join(repoRoot, 'node_modules', 't3')
+  if (!existsSync(src)) throw new Error('t3 not found in node_modules; run `npm install` first')
+  const t3Package = JSON.parse(readFileSync(path.join(src, 'package.json'), 'utf-8'))
+
   rmSync(outRoot, { recursive: true, force: true })
-  mkdirSync(outRoot, { recursive: true })
-  // Basename archive + relative -C (cwd = the tarball's dir) — see `fwd`. The msys2
-  // GNU tar in the release job's bash step can't chdir into a backslashed `D:\` -C.
-  execFileSync('tar', ['-xzf', path.basename(tar), '-C', fwd(path.dirname(tar), outRoot)], { stdio: 'ignore', cwd: path.dirname(tar) })
-  if (!existsSync(path.join(outRoot, 'dist', 'cli.js'))) throw new Error('staged pi missing dist/cli.js')
-  console.log(`[runtime] staged pi ${piVersion}`)
+  cpSync(src, outRoot, {
+    recursive: true,
+    dereference: true,
+    filter: (candidate) => {
+      if (candidate.endsWith('.map')) return false
+      const rel = path.relative(src, candidate).split(path.sep).join('/')
+      const monitorPrefix = 'dist/resource-monitor/'
+      if (!rel.startsWith(monitorPrefix)) return true
+      const monitorTarget = rel.slice(monitorPrefix.length).split('/')[0]
+      return !monitorTarget || monitorTarget === targetArg
+    },
+  })
+
+  const nestedModules = path.join(outRoot, 'node_modules')
+  const runtimePackages = [
+    '@ff-labs/fff-node',
+    'ffi-rs',
+    'msgpackr-extract',
+    'node-gyp-build-optional-packages',
+    'detect-libc',
+  ]
+  for (const name of runtimePackages) copyInstalledPackage(name, nestedModules)
+
+  const nativePackages = targetT3NativePackages(targetArg)
+  for (const { owner, name } of nativePackages) {
+    const ownerDir = path.join(nestedModules, ...owner.split('/'))
+    const ownerPackage = JSON.parse(readFileSync(path.join(ownerDir, 'package.json'), 'utf-8'))
+    const version = ownerPackage.optionalDependencies?.[name]
+    if (!version) throw new Error(`${owner} does not declare target package ${name}`)
+    const dest = path.join(nestedModules, ...name.split('/'))
+    const installed = path.join(repoRoot, 'node_modules', ...name.split('/'))
+    if (existsSync(path.join(installed, 'package.json'))) {
+      cpSync(installed, dest, { recursive: true, dereference: true })
+    } else {
+      await npmPackInto(`${name}@${version}`, dest)
+    }
+  }
+
+  if (!existsSync(path.join(outRoot, 'dist', 'bin.mjs'))) throw new Error('staged T3 is missing dist/bin.mjs')
+  console.log(`[runtime] staged T3 ${t3Package.version} for ${targetArg}`)
+}
+
+function copyInstalledPackage(name, outModules) {
+  const requireFromRoot = createRequire(path.join(repoRoot, 'package.json'))
+  let entry
+  try {
+    entry = requireFromRoot.resolve(name)
+  } catch {
+    throw new Error(`T3 runtime dependency "${name}" is not installed; run \`npm install\` first`)
+  }
+  let src = path.dirname(entry)
+  while (!existsSync(path.join(src, 'package.json'))) {
+    const parent = path.dirname(src)
+    if (parent === src) throw new Error(`cannot find package root for T3 runtime dependency "${name}"`)
+    src = parent
+  }
+  const dest = path.join(outModules, ...name.split('/'))
+  mkdirSync(path.dirname(dest), { recursive: true })
+  cpSync(src, dest, { recursive: true, dereference: true })
+}
+
+function targetT3NativePackages(target) {
+  const packages = {
+    'darwin-arm64': [
+      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-darwin-arm64' },
+      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-darwin-arm64' },
+      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-darwin-arm64' },
+    ],
+    'darwin-x64': [
+      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-darwin-x64' },
+      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-darwin-x64' },
+      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-darwin-x64' },
+    ],
+    'linux-arm64': [
+      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-linux-arm64-gnu' },
+      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-linux-arm64-gnu' },
+      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-linux-arm64' },
+    ],
+    'linux-x64': [
+      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-linux-x64-gnu' },
+      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-linux-x64-gnu' },
+      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-linux-x64' },
+    ],
+    'win32-x64': [
+      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-win32-x64' },
+      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-win32-x64-msvc' },
+      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-win32-x64' },
+    ],
+  }
+  const selected = packages[target]
+  if (!selected) throw new Error(`no T3 native dependency mapping for target "${target}"`)
+  return selected
 }
 
 /** Stage the `cate` in-terminal CLI into <outRoot> (cate/dist/cli.cjs + the two
- *  launcher shims under cate/bin/). The CLI rides in the runtime tarball exactly
- *  like pi, so it lands on every host — local + remote/WSL — the moment the
- *  daemon is provisioned; the env-injection layer prepends cate/bin to a shell's
- *  PATH. Bundled to a single self-contained CJS file (node built-ins + global
- *  fetch only), so the bundled node runs it directly. */
+ *  launcher shims under cate/bin/). The CLI lands on every local, remote and WSL
+ *  host when the daemon is provisioned; the env-injection layer prepends
+ *  cate/bin to a shell's PATH. Bundled to a single self-contained CJS file. */
 async function stageCateCli(outRoot) {
   rmSync(outRoot, { recursive: true, force: true })
   mkdirSync(path.join(outRoot, 'dist'), { recursive: true })
@@ -564,10 +646,8 @@ async function stageCateCli(outRoot) {
  * pty.node/spawn-helper and @parcel/watcher's watcher.node must be signed like
  * the app. node also gets the runtime entitlements (JIT + disable-library-
  * validation) so it still runs and can load the native addons once hardened.
- * The bundled pi tree (staged cross-platform, so it carries BOTH darwin arches)
- * also ships native addons — e.g. @earendil-works/pi-tui's darwin-modifiers.node
- * — so we discover every Mach-O .node under it and sign those too; a hard-coded
- * list silently missed them and broke notarization when pi added the addon.
+ * The bundled T3 tree also ships target-specific native addons and a resource
+ * monitor executable, so those are discovered and signed too.
  * No-op unless we're building a darwin tarball on a darwin host with
  * CATE_MAC_SIGN_IDENTITY set (see ci-mac-signing-keychain.sh); when absent the
  * binaries stay unsigned and notarization fails loudly.
@@ -583,10 +663,7 @@ function signMacNatives(stageDir) {
     path.join(pbDir, 'pty.node'),
     path.join(pbDir, 'spawn-helper'),
     path.join('node_modules', '@parcel', parcelBinaryDir(targetPlatform, targetArch), 'watcher.node'),
-    // pi's own native addons (both darwin arches ride in the cross-platform pi
-    // tarball). win32/linux prebuilds under the same tree are skipped: the
-    // finder keeps only Mach-O files, so codesign never sees a PE/ELF .node.
-    ...findMachONodes(path.join(stageDir, 'pi')).map((abs) => path.relative(stageDir, abs)),
+    ...findMachOBinaries(path.join(stageDir, 't3')).map((abs) => path.relative(stageDir, abs)),
   ]
   // The identity is found via the keychain search list (ci-mac-signing-keychain.sh
   // adds the signing keychain to it); codesign --keychain alone is unreliable.
@@ -604,23 +681,22 @@ function signMacNatives(stageDir) {
   console.log(`[runtime] signed darwin natives for ${targetArg} (Developer ID ${identity})`)
 }
 
-/** Recursively collect absolute paths of Mach-O `.node` addons under `root`.
- *  Reads each candidate's 4-byte magic so win32 PE / linux ELF prebuilds that
- *  share the tree (e.g. pi-tui's win32-console-mode.node) are skipped — only
- *  darwin binaries that notarytool would flag get returned. Missing root → []. */
-function findMachONodes(root) {
+/** Recursively collect Mach-O executables and libraries under `root`.
+ *  T3 ships `.node`, `.dylib`, and resource-monitor binaries. Reading the magic
+ *  keeps source files and non-darwin prebuilts out of codesign. */
+function findMachOBinaries(root) {
   const out = []
   const walk = (dir) => {
     let entries
     try {
       entries = readdirSync(dir, { withFileTypes: true })
     } catch {
-      return // dir absent (e.g. no pi staged) — nothing to sign
+      return
     }
     for (const e of entries) {
       const p = path.join(dir, e.name)
       if (e.isDirectory()) walk(p)
-      else if (e.isFile() && e.name.endsWith('.node') && isMachO(p)) out.push(p)
+      else if (e.isFile() && isMachO(p)) out.push(p)
     }
   }
   walk(root)

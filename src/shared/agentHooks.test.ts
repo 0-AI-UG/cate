@@ -328,48 +328,6 @@ describe('cursor spec', () => {
   })
 })
 
-describe('pi spec', () => {
-  const spec = AGENT_HOOK_SPECS.pi
-  const file = spec.projectFiles![0]
-
-  test('owns .pi/extensions/cate-hook.ts outright: created when absent, rewritten on any drift', () => {
-    expect(file.relPath).toBe('.pi/extensions/cate-hook.ts')
-    const src = file.build(null, ctx)!
-    // Marker in the header — prepareWorkspace re-recognizes the file as ours.
-    expect(src).toContain(CATE_HOOK_MARKER)
-    // The extension posts identity from ctx.sessionManager, echoes the env,
-    // and self-gates on the Cate env vars (inert in a teammate's checkout).
-    expect(src).toContain('getSessionId')
-    expect(src).toContain('CATE_TERMINAL_ID')
-    expect(src).toContain('CATE_HOOK_ENDPOINT')
-    for (const ev of ['session_start', 'agent_start', 'agent_end', 'session_shutdown']) {
-      expect(src).toContain(ev)
-    }
-    // Content is boot-independent: up-to-date file untouched, ANY drift
-    // (even a user edit — Cate owns this file) rewritten.
-    expect(file.build(src, ctx)).toBeNull()
-    expect(file.build('// user-edited\n' + src, ctx)).toBe(src)
-  })
-
-  test('normalizes the extension-posted lifecycle', () => {
-    const base = {
-      sessionId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
-      sessionFile: '/home/u/.pi/agent/sessions/slug/aaaa.jsonl',
-      cwd: '/w',
-    }
-    expect(norm('pi', { event: 'session_start', ...base })).toMatchObject({
-      kind: 'session-start',
-      sessionId: base.sessionId,
-      transcriptPath: base.sessionFile,
-      cwd: '/w',
-    })
-    expect(norm('pi', { event: 'agent_start', ...base })?.kind).toBe('turn-start')
-    expect(norm('pi', { event: 'agent_end', ...base })?.kind).toBe('turn-end')
-    expect(norm('pi', { event: 'session_shutdown', ...base })?.kind).toBe('session-end')
-    expect(norm('pi', { event: 'turn_start', ...base })).toBeNull()
-  })
-})
-
 describe('grok spec', () => {
   const spec = AGENT_HOOK_SPECS.grok
   const file = spec.projectFiles![0]
@@ -577,7 +535,6 @@ describe('reportsTurnEndOnInterrupt', () => {
       codex: false,
       // Push a mapped turn-end on interrupt (verified live) — self-heal.
       cursor: true,
-      pi: true,
       opencode: true,
       // Expected self-heal via stop{cancelled}; streaming path not yet
       // observed live (test account quota) — see grokSpec.

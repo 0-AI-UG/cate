@@ -24,12 +24,12 @@ describe('keepsMountedWhenTabHidden', () => {
   it('is true for webview-backed panels whose live state cannot survive a remount (#459)', () => {
     expect(keepsMountedWhenTabHidden('browser')).toBe(true)
     expect(keepsMountedWhenTabHidden('extension')).toBe(true)
+    expect(keepsMountedWhenTabHidden('agent')).toBe(true)
   })
 
   it('is false for panels whose state is cheap to rehydrate or lives in main', () => {
     expect(keepsMountedWhenTabHidden('terminal')).toBe(false)
     expect(keepsMountedWhenTabHidden('editor')).toBe(false)
-    expect(keepsMountedWhenTabHidden('cateAgent')).toBe(false)
     expect(keepsMountedWhenTabHidden('canvas')).toBe(false)
   })
 
@@ -43,6 +43,7 @@ describe('keepsMountedOffscreen', () => {
   it('keeps browsers mounted so background API automation remains reachable', () => {
     expect(keepsMountedOffscreen('browser')).toBe(true)
     expect(keepsMountedOffscreen('extension')).toBe(true)
+    expect(keepsMountedOffscreen('agent')).toBe(true)
     expect(keepsMountedOffscreen('editor')).toBe(false)
   })
 })
@@ -50,7 +51,7 @@ describe('keepsMountedOffscreen', () => {
 describe('panel capabilities', () => {
   it('owns the worktree-bearing panel policy', () => {
     expect(isWorktreePanelType('terminal')).toBe(true)
-    expect(isWorktreePanelType('cateAgent')).toBe(true)
+    expect(isWorktreePanelType('agent')).toBe(true)
     expect(isWorktreePanelType('editor')).toBe(false)
     expect(isWorktreePanelType('unknown')).toBe(false)
   })

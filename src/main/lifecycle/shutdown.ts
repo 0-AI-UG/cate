@@ -14,6 +14,7 @@ import { flushUIStateSync } from '../uiStateStore'
 import { releaseAllProjectLocks } from '../projectLock'
 import { runtimes } from '../runtime/runtimeManager'
 import { extensionServerManager } from '../extensions/ExtensionServerManager'
+import { t3HarnessManager } from '../t3Agent/T3HarnessManager'
 import { workspaceCateApi } from '../extensions/workspaceCateApi'
 import { flushAllPendingWritesSync as flushExtensionStoragesSync } from '../extensions/storage'
 import { isUpdatePendingInstall } from '../auto-updater'
@@ -250,6 +251,7 @@ export function registerLifecycleHandlers(): void {
     // on transport close anyway, and we must not block the install handoff.)
     if (isUpdatePendingInstall()) {
       workspaceCateApi.disposeAll()
+      void t3HarnessManager.disposeAll()
       void extensionServerManager.disposeAll()
       void runtimes.disposeAll()
       log.info('will-quit: update staged, yielding to electron-updater install-on-quit')
@@ -277,7 +279,7 @@ export function registerLifecycleHandlers(): void {
         // is fire-and-forget + reverse.dispose closes the http server), then the
         // bounded async server/runtime dispose.
         workspaceCateApi.disposeAll()
-        return Promise.allSettled([extensionServerManager.disposeAll(), runtimes.disposeAll()])
+        return Promise.allSettled([t3HarnessManager.disposeAll(), extensionServerManager.disposeAll(), runtimes.disposeAll()])
       },
       // process.reallyExit is Node's binding to libc exit() — it skips the 'exit'
       // event and the cleanup path app.exit/process.exit would run, bypassing

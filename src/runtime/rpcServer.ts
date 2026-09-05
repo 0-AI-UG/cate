@@ -180,17 +180,6 @@ export class RpcServer {
       case Methods.agentHooksUnsubscribe: return this.stopAgentHooks(s(0))
       case Methods.agentHooksInspect: return api.agentHooks.inspectWorkspace(s(0))
 
-      // --- agent (pi) --- line/exit stream back keyed by the agent id ---
-      case Methods.agentEnsurePi: return api.agent.ensurePi()
-      case Methods.agentStart:
-        return api.agent.start(
-          p[0] as never,
-          (id, line) => this.write(serializeFrame({ t: 'evt', streamId: id, payload: { kind: 'line', line } })),
-          (id, code, stderr) => this.write(serializeFrame({ t: 'evt', streamId: id, payload: { kind: 'exit', code, stderr } })),
-        )
-      case Methods.agentWriteLine: return api.agent.writeLine(s(0), s(1))
-      case Methods.agentStop: return api.agent.stop(s(0))
-
       // --- server (server-backed extensions) --- output/exit stream back keyed by the server id ---
       case Methods.serverStart:
         return api.server.start(

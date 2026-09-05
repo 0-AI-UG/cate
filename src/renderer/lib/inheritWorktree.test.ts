@@ -40,11 +40,11 @@ describe('inheritedWorktreeFromSelection', () => {
     expect(inheritedWorktreeFromSelection(state, ps)).toEqual({ cwd: '/repo/wt', worktreeId: 'wt-a' })
   })
 
-  it('inherits the active chat worktree from a selected agent, ignoring panel residue', () => {
+  it('inherits cwd and worktree from a selected agent panel', () => {
     const state = canvasState(['n1'], true, { n1: node('a1') })
-    const ps = panels([{ id: 'a1', type: 'cateAgent', title: 'Agent 1', isDirty: false, worktreeId: 'wt-residue' }])
-    expect(inheritedWorktreeFromSelection(state, ps, () => 'wt-chat'))
-      .toEqual({ cwd: undefined, worktreeId: 'wt-chat' })
+    const ps = panels([{ id: 'a1', type: 'agent', title: 'Agent 1', isDirty: false, cwd: '/repo/wt', worktreeId: 'wt-a' }])
+    expect(inheritedWorktreeFromSelection(state, ps))
+      .toEqual({ cwd: '/repo/wt', worktreeId: 'wt-a' })
   })
 
   it('returns {} when the selected node is not a terminal or agent', () => {

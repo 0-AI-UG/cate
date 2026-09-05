@@ -59,7 +59,8 @@ brew install --cask cate
 
 ## Ce qu'il contient
 
-- **Terminaux conscients des agents :** Cate installe ses hooks dans les CLI d'agents prises en charge (Claude Code, Codex, Cursor, Grok, OpenCode, Pi) : l'agent signale lui-même le début et la fin d'un tour ainsi que les demandes d'autorisation. C'est ce qui alimente l'état du panneau (en cours, en attente, terminé) et la notification quand un agent attend votre réponse. Un agent qui n'envoie aucun hook n'affiche aucun état.
+- **Chats d'agents intégrés :** T3 Code exécute Codex, Claude Code, Cursor, Grok, OpenCode et Antigravity dans un panneau de chat complet avec sortie en continu, appels d'outils et autorisations.
+- **Terminaux conscients des agents :** les CLI d'agents prises en charge signalent le début et la fin d'un tour ainsi que les demandes d'autorisation. C'est ce qui alimente l'état du panneau (en cours, en attente, terminé) et la notification quand un agent attend votre réponse. Un agent qui n'envoie aucun hook n'affiche aucun état.
 - **Les sessions d'agent survivent aux redémarrages :** le flux de hooks transporte l'identifiant de session de chaque CLI. Rouvrez le projet : les terminaux reviennent avec leur historique et l'agent est rattaché via sa propre commande de reprise. Un identifiant périmé retombe sur un simple shell plutôt que de reprendre la mauvaise conversation.
 - **Worktrees pour branches parallèles :** décrivez ce sur quoi vous travaillez et Cate crée un worktree et une branche, à partir d'une branche locale ou distante ou d'une PR ouverte. Chacun reçoit une couleur qui le suit dans la barre latérale, les onglets du dock et un territoire dessiné derrière ses panneaux sur le canevas.
 - **Des panneaux sur le canevas ou dans le dock :** terminaux, éditeurs Monaco, navigateurs, visionneuses PDF/image/DOCX, webviews d'extensions, canevas imbriqués. Faites-les flotter sur le canevas, ancrez-les en onglets et divisions, ou glissez-les dans leur propre fenêtre. La disposition est conservée par projet.
@@ -104,7 +105,7 @@ Pour les contributeurs. Sinon, utilisez la version ci-dessus.
 
 **Prérequis :**
 - [Bun](https://bun.sh) : gestionnaire de paquets et lanceur de scripts.
-- [Node.js](https://nodejs.org/) 20 ou 22 LTS (voir `.nvmrc`) sur votre PATH. Les scripts de build s'exécutent avec ; le démon runtime embarque son propre Node 22.
+- [Node.js](https://nodejs.org/) 22.16 ou version ultérieure (voir `.nvmrc`) sur votre PATH. Les scripts de build s'exécutent avec ; le démon runtime embarque son propre Node 22.
 - **Linux uniquement :** `node-pty` fournit des binaires précompilés pour macOS et Windows, mais pas pour Linux, donc il compile depuis les sources. Installez Python 3 et une chaîne d'outils C++ :
   - Debian/Ubuntu : `sudo apt install build-essential python3`
   - Fedora/RHEL : `sudo dnf install @development-tools gcc-c++ make python3`
@@ -135,7 +136,6 @@ Les binaires packagés se retrouvent dans `release/`. Le démon runtime se recon
 
 ```text
 src/
-├── agent/      # Agent de code Pi intégré : gestionnaire de processus, auth, marketplace, UI du panneau
 ├── cli/        # La CLI `cate` disponible dans les terminaux Cate (contrôle du navigateur, panneaux, éditeur)
 ├── main/       # Processus principal Electron : IPC, espaces de travail, fenêtres, updater, sécurité
 ├── preload/    # Pont IPC à isolation de contexte
@@ -146,7 +146,7 @@ src/
 
 Cate fait passer toute l'IPC par un pont preload à isolation de contexte. L'accès au système de fichiers est limité aux racines d'espace de travail enregistrées, les panneaux navigateur désactivent l'intégration Node, et les terminaux ne peuvent pas s'ouvrir hors des répertoires approuvés.
 
-**Stack :** Electron 41, React 18, Zustand 5, Monaco 0.52, xterm.js 5.5 + node-pty 1.0, Tailwind 3.4, electron-vite, electron-builder, electron-updater, Sentry. PDF et DOCX via pdf.js et mammoth, git via simple-git, surveillance des fichiers via `@parcel/watcher` et chokidar. L'agent de code intégré repose sur `@earendil-works/pi`, livré comme runtime à la demande avec l'application.
+**Stack :** Electron 41, React 18, Zustand 5, Monaco 0.52, xterm.js 5.5 + node-pty 1.1, Tailwind 3.4, electron-vite, electron-builder, electron-updater, Sentry. PDF et DOCX via pdf.js et mammoth, git via simple-git, surveillance des fichiers via `@parcel/watcher` et chokidar. T3 Code fournit le moteur d'agents, les processus des fournisseurs et l'interface de chat, livrés avec le runtime Cate.
 
 ## Contribuer
 

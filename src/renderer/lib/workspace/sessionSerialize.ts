@@ -89,14 +89,15 @@ export function buildSessionFile(
   const panels: Record<string, ProjectSessionPanel> = {}
   for (const p of Object.values(snapshot.panels ?? {})) {
     const workingDirectory = snapshot.terminalCwds?.[p.id]
-    const worktreeId = p.type === 'terminal' ? p.worktreeId : undefined
+    const worktreeId = p.type === 'terminal' || p.type === 'agent' ? p.worktreeId : undefined
     if (
       !worktreeId &&
       !workingDirectory &&
       !p.unsavedContent &&
       !p.agentSession &&
       !p.codingAgentRun &&
-      !p.reviewState
+      !p.reviewState &&
+      !p.agentThreadId
     ) continue
     panels[p.id] = {
       panelId: p.id,
@@ -106,6 +107,7 @@ export function buildSessionFile(
       agentSession: p.agentSession,
       codingAgentRun: p.codingAgentRun,
       reviewState: p.reviewState,
+      agentThreadId: p.agentThreadId,
     }
   }
 
@@ -140,15 +142,19 @@ export function projectFilesToSnapshot(
     panels = {}
     for (const [id, ref] of Object.entries(ws.panels)) {
       const sp = sess?.panels?.[id]
+      // Pre-T3 layouts used the old embedded-agent discriminator. Preserve the
+      // panel placement while dropping all legacy embedded-chat state.
+      const type = (ref.type === 'cateAgent' ? 'agent' : ref.type) as PanelType
       panels[id] = {
         id,
-        type: ref.type as PanelType,
+        type,
         title: ref.title,
         isDirty: false,
         filePath: ref.filePath ? toAbsolutePath(ref.filePath, rootPath) : undefined,
         ...pickPassthroughPanelFields(ref),
         // Re-attach the machine-local facts kept out of the committed file.
-        worktreeId: ref.type === 'terminal' ? sp?.worktreeId : undefined,
+        worktreeId: type === 'terminal' || type === 'agent' ? sp?.worktreeId : undefined,
+        agentThreadId: type === 'agent' ? sp?.agentThreadId : undefined,
         unsavedContent: sp?.unsavedContent,
         // The agent session to resume in this terminal — TerminalPanel types
         // the resume command into the fresh shell and retains the stamp until

@@ -30,6 +30,12 @@ import type {
 import type { AgentHookAgentState, AgentHookConfig, AgentHookEvent } from '../../shared/agentHooks'
 import type { RuntimeId } from '../../shared/runtimeLocator'
 
+/** Trusted command sentinel resolved by the runtime host to its bundled Node. */
+export const RUNTIME_NODE_EXECUTABLE = '$CATE_RUNTIME_NODE'
+
+/** Trusted argv placeholder resolved to the runtime's versioned install root. */
+export const RUNTIME_INSTALL_ROOT_PLACEHOLDER = '$CATE_RUNTIME_INSTALL_ROOT'
+
 // ---------------------------------------------------------------------------
 // Process host (terminals / node-pty)
 // ---------------------------------------------------------------------------
@@ -155,53 +161,6 @@ export interface AgentHookHost {
 }
 
 // ---------------------------------------------------------------------------
-// Agent host (the pi coding agent, run in `--mode rpc`)
-//
-// A duplex line channel per session. The host (local or daemon) spawns pi where
-// the files are, after ensuring the pi tarball is installed on that host. It is
-// a DUMB PIPE: it forwards pi's stdout lines verbatim and writes lines to pi's
-// stdin — it never parses pi's JSONL protocol (that lives in PiRpcClient). This
-// is what lets the agent run identically local and remote, with pi shipped on
-// demand rather than bundled in the app.
-// ---------------------------------------------------------------------------
-
-export interface AgentStartOptions {
-  /** Caller-generated id; also the evt stream key (register before start). */
-  id: string
-  /** Runtime-absolute working directory (the daemon validates it). */
-  cwd: string
-  /** PI_CODING_AGENT_DIR + any extra env for pi. */
-  env?: Record<string, string>
-  provider?: string
-  model?: string
-  /** Extra pi CLI args (e.g. --session <file>). */
-  args?: string[]
-}
-
-export interface AgentHandle {
-  id: string
-  pid: number
-}
-
-export interface AgentHost {
-  /** Ensure the pi runtime is installed on this host (pull/extract the tarball).
-   *  Safe to call repeatedly; resolves once pi is ready to spawn. */
-  ensurePi(): Promise<void>
-  /**
-   * Spawn pi in `--mode rpc`. `onLine` fires for each raw JSONL line pi writes;
-   * `onExit` fires once. Both window-agnostic — the agent layer routes them.
-   */
-  start(
-    opts: AgentStartOptions,
-    onLine: (id: string, line: string) => void,
-    /** `stderr` carries pi's recent stderr (its crash reason on an early exit). */
-    onExit: (id: string, code: number, stderr?: string) => void,
-  ): Promise<AgentHandle>
-  writeLine(id: string, line: string): void
-  stop(id: string): void
-}
-
-// ---------------------------------------------------------------------------
 // Server host (long-lived HTTP server children for server-backed extensions)
 //
 // Spawns an extension's server process on whichever host owns the files (local
@@ -219,6 +178,11 @@ export interface ServerStartOptions {
   portEnv: string                 // daemon injects the allocated port as env[portEnv]
   readyPath: string               // HTTP path polled until ready
   readyTimeoutMs: number
+  /** Optional one-shot bootstrap envelope. Written to stdin and then closed. */
+  bootstrapStdin?: string
+  /** Prepend the runtime-bundled `cate` CLI to PATH for trusted first-party
+   *  servers whose child processes need to call back into Cate. */
+  includeCateCli?: boolean
 }
 
 export interface ServerHandle { id: string; pid: number; port: number } // port bound 127.0.0.1 on the daemon host
@@ -530,7 +494,6 @@ export interface VcsHost {
 export interface Runtime {
   readonly id: RuntimeId
   readonly process: ProcessHost
-  readonly agent: AgentHost
   readonly agentHooks: AgentHookHost
   readonly file: FileHost
   readonly vcs: VcsHost

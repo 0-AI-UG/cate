@@ -44,7 +44,6 @@ vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi
 
 import {
   WorkspaceCateApiManager,
-  CATE_AGENT_GRANTED_SCOPES,
   GRANTED_SCOPES,
 } from './workspaceCateApi'
 
@@ -71,10 +70,6 @@ describe('GRANTED_SCOPES contract', () => {
     expect([...GRANTED_SCOPES]).toEqual(['browser', 'ui', 'editor', 'canvas', 'panel', 'terminal', 'coding-agent'])
   })
 
-  it('uses the same coding-agent scope for terminal and embedded callers', () => {
-    expect(GRANTED_SCOPES).toContain('coding-agent')
-    expect(CATE_AGENT_GRANTED_SCOPES).toContain('coding-agent')
-  })
 })
 
 describe('WorkspaceCateApiManager.ensureEndpoint', () => {
@@ -186,25 +181,6 @@ describe('WorkspaceCateApiManager.ensureEndpoint', () => {
     // Every endpoint is gone: a subsequent ensure rebuilds from scratch.
     await mgr.ensureEndpoint('ws1')
     expect(listen).toHaveBeenCalledTimes(3)
-  })
-})
-
-describe('WorkspaceCateApiManager.ensureCateAgentEndpoint', () => {
-  it('mints a panel-bound endpoint even when the terminal CLI is disabled', async () => {
-    settingsState.cliEnabled = false
-    const mgr = new WorkspaceCateApiManager()
-    const owner = { id: 42 } as never
-    const endpoint = await mgr.ensureCateAgentEndpoint('ws1', 'chat-1', '/ws/worktree', owner)
-
-    expect(endpoint).toEqual({ port: 54321, token: expect.any(String) })
-    expect(reverseCalls).toHaveLength(1)
-    expect(reverseCalls[0]).toMatchObject({
-      caller: 'cate-agent',
-      panelId: 'chat-1',
-      originCwd: '/ws/worktree',
-      ownerWebContents: owner,
-      grantedScopes: expect.arrayContaining(['coding-agent']),
-    })
   })
 })
 

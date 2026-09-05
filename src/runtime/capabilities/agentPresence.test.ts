@@ -52,13 +52,6 @@ describe('notePost → presenceFor', () => {
     expect(tracker.presenceFor(T, TMUX_TREE)).toEqual({ agentName: 'Claude Code', agentPresent: true })
   })
 
-  test('an in-process agent posting its own pid registers directly', async () => {
-    const t = tree([[10, 1, 'zsh'], [50, 10, 'pi']])
-    const { tracker } = makeTracker(t)
-    await tracker.notePost(T, 'pi', 50)
-    expect(tracker.presenceFor(T, t)).toEqual({ agentName: 'PI Agent', agentPresent: true })
-  })
-
   test('no hook post → never present, whatever the process tree shows', () => {
     // The one-authority rule: a direct-child agent that never spoke hooks
     // reads absent (the old child-scan behaviour is deliberately gone).

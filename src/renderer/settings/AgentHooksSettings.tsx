@@ -72,7 +72,7 @@ export function AgentHooksSettings() {
 
   return (
     <div className="flex flex-col gap-1">
-      <SearchableBlock keywords="agent hooks injection claude codex cursor grok kiro pi opencode status presence auto on off">
+      <SearchableBlock keywords="agent hooks injection claude codex cursor grok kiro opencode status presence auto on off">
         <p className="text-xs text-muted py-2 leading-relaxed">
           Cate writes tiny git-ignored hook files so agent CLIs report session and turn status
           back to it. <span className="text-secondary">Auto</span> injects only where an agent&apos;s

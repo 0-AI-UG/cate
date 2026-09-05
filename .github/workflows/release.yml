@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22.22.2
 
       - uses: actions/setup-python@v7
         with:
@@ -75,19 +75,15 @@ jobs:
       - name: Generate icons
         run: npm run icons
 
-      # Regenerate the embedded runtime + pi version strings (src/runtime/
-      # version.ts, piVersion.ts) from package.json / the installed pi BEFORE
-      # building the app. `npm run build` bakes RUNTIME_VERSION/PI_VERSION into
-      # the app, and the daemon resolves its tarball by that version
+      # Regenerate the embedded runtime version string from package.json before
+      # building the app. The daemon resolves its tarball by that version
       # (cate-runtime-<RUNTIME_VERSION>-<target>.tgz). A release whose version
       # bump only touched package.json (e.g. a beta tag) otherwise leaves the
       # committed version.ts stale, so the app looks for the wrong tarball name —
       # in dev/e2e that means no ripgrep and 0-result content search (which gates
-      # the macOS release), and in the shipped app a missing runtime/pi pull.
-      - name: Sync runtime + pi versions to package.json
-        run: |
-          npm run build:runtime
-          npm run pi:tarball
+      # the macOS release), and in the shipped app a missing runtime pull.
+      - name: Sync runtime version to package.json
+        run: npm run build:runtime
 
       - name: Build app
         run: npm run build
@@ -99,7 +95,7 @@ jobs:
       # and never populates build/Release, so compile from source here. On Linux
       # node-pty ships NO prebuild, so `npm install` already built it from source
       # into build/Release — a rebuild would just duplicate that, so skip it.
-      # (node-pty is N-API: the node-20 binary runs under the bundled node-22.)
+      # (node-pty is N-API, so it remains compatible with the bundled Node.)
       - name: Compile node-pty from source (mac/win; Linux builds it at install)
         if: runner.os != 'Linux'
         run: npm rebuild node-pty --build-from-source
@@ -273,7 +269,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22.22.2
 
       - uses: actions/setup-python@v7
         with:
@@ -325,33 +321,8 @@ jobs:
             --repo "${{ github.repository }}" \
             --clobber
 
-  # The pi coding agent tarball — cross-platform (no native deps in --mode rpc),
-  # so a single runner builds the one artifact for every host. Pulled on demand
-  # when the agent is first used on a host (local or remote).
-  pi:
-    needs: create-release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-      - name: Install dependencies
-        run: npm ci
-      - name: Build pi tarball
-        run: node scripts/build-pi-tarball.mjs
-      - name: Upload pi tarball
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
-        run: |
-          gh release upload "$TAG_NAME" dist-runtime/cate-pi-*.tgz \
-            --repo "${{ github.repository }}" \
-            --clobber
-
   publish-release:
-    needs: [release, runtime, pi]
+    needs: [release, runtime]
     runs-on: ubuntu-latest
     steps:
       - name: Publish release (remove draft)

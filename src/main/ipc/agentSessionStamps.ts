@@ -50,7 +50,6 @@ const RESUMABLE_FROM_SESSION_START: Record<AgentId, boolean> = {
   // Kiro documents that sessions are saved on each conversation turn; its
   // agentSpawn event precedes that first turn, so stamp from prompt submit.
   kiro: false,
-  pi: true,
   opencode: true,
 }
 
@@ -93,7 +92,7 @@ function emit(terminalId: string, session: TerminalAgentSession | null): void {
  * sessionId-bearing event stamps, except a session-start for an agent whose
  * sessions aren't resumable yet at that point.
  *
- * cwd: the event's own cwd when the payload carries one (claude/codex/pi/
+ * cwd: the event's own cwd when the payload carries one (claude/codex/
  * opencode); when an event doesn't, the terminal's current cwd is fetched
  * from its runtime. Restore only types `<cli> <resume-args>` into the
  * respawned shell (worktree respawn drops the stamp wholesale rather than

@@ -4,7 +4,7 @@
 // two things a className swap can still break at runtime: the component must
 // render without throwing, and the pills must carry the intended styling classes
 // (rounded-md; active = bg-surface-2; close X present when closeable). Renderer-
-// only, so it is unaffected by the main-process pi-ai build breakage that blocks
+// only, so it is unaffected by main-process build failures that block
 // launching the full app.
 // =============================================================================
 

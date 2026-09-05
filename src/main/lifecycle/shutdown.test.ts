@@ -33,6 +33,9 @@ vi.mock('../runtime/runtimeManager', () => ({ runtimes: { disposeAll: () => Prom
 vi.mock('../extensions/ExtensionServerManager', () => ({
   extensionServerManager: { disposeAll: () => Promise.resolve() },
 }))
+vi.mock('../t3Agent/T3HarnessManager', () => ({
+  t3HarnessManager: { disposeAll: () => Promise.resolve() },
+}))
 vi.mock('../extensions/storage', () => ({ flushAllPendingWritesSync: () => {} }))
 vi.mock('../auto-updater', () => ({ isUpdatePendingInstall: () => false }))
 

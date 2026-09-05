@@ -28,7 +28,7 @@ export interface WorktreeSyncResult {
 }
 
 /** Unique id for a WorktreeMeta record. Shared by every worktree-creating path
- *  (sync reconcile, sidebar/toolbar actions, cate-agent tools). */
+ *  (sync reconcile, sidebar/toolbar actions, and agent tools). */
 export function newWorktreeId(): string {
   return `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }

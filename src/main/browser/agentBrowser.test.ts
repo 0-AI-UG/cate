@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({
   app: {
     commandLine: { hasSwitch: vi.fn(() => false), getSwitchValue: vi.fn(() => ''), appendSwitch: vi.fn() },
-    getPath: vi.fn(() => '/tmp/cate-agent-browser-test'),
+    getPath: vi.fn(() => '/tmp/cate-browser-test'),
   },
 }))
 

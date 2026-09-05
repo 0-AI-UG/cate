@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22.22.2
 
       - uses: actions/setup-python@v7
         with:
@@ -36,8 +36,8 @@ jobs:
         run: pip install setuptools
 
       # npm ci honors the committed package-lock.json so PR runs are
-      # deterministic — a fresh upstream release (pi publishes often) can't
-      # break an unrelated PR. It fails loudly if package.json and the
+      # deterministic, so a fresh upstream release cannot break an unrelated
+      # PR. It fails loudly if package.json and the
       # lockfile drift out of sync; regenerate with `npm install` locally.
       - name: Install dependencies
         run: npm ci
@@ -91,6 +91,6 @@ jobs:
       # NOTE: the Playwright e2e suite is intentionally NOT run here. The content-
       # search specs drive the real local runtime daemon, whose ripgrep ships in
       # the runtime tarball — building that tarball (node-pty compile + node/rg
-      # download + pi bundle) adds ~5min to every PR. The release workflow builds
+      # download + T3 bundle) adds ~5min to every PR. The release workflow builds
       # the tarball anyway, so e2e runs there instead (see release.yml). Keep this
       # PR gate fast: build + typecheck + unit + smoke.

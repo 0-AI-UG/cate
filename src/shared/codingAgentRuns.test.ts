@@ -20,7 +20,6 @@ describe('codingAgentCommand', () => {
       { id: 'cursor', command: { executable: 'cursor-agent', args: [prefixed] }, followUp: true },
       { id: 'grok', command: { executable: 'grok', args: [prefixed] }, followUp: true },
       { id: 'opencode', command: { executable: 'opencode', args: ['--prompt', prefixed] }, followUp: true },
-      { id: 'pi', command: { executable: 'pi', args: [prefixed] }, followUp: true },
       { id: 'kiro', command: { executable: 'kiro-cli', args: ['chat', '--v3', prefixed] }, followUp: true },
     ])
   })
@@ -46,7 +45,7 @@ describe('codingAgentCommand', () => {
   it('rejects unknown ids and blank tasks', () => {
     expect(parseCodingAgentId('/tmp/fake-agent')).toBeNull()
     expect(parseCodingAgentId('codex')).toBe('codex')
-    expect(() => codingAgentCommand({ agentId: 'pi', prompt: '   ' })).toThrow(
+    expect(() => codingAgentCommand({ agentId: 'codex', prompt: '   ' })).toThrow(
       'A coding-agent prompt is required',
     )
   })

@@ -14,7 +14,7 @@
 import log from '../../main/logger'
 import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
-import { hostJoin } from '../../cateAgent/main/codingDir'
+import { hostJoin } from '../../main/extensions/hostPath'
 import type { Runtime } from '../../main/runtime/types'
 import { skillsRootDir, skillsRootDirs, targetInfo } from './targets'
 import { ensureSkillName } from './frontmatter'

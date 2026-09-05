@@ -128,9 +128,9 @@ export const PANEL_DEFINITIONS = {
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
   },
-  cateAgent: {
-    type: 'cateAgent',
-    label: 'Cate Agent',
+  agent: {
+    type: 'agent',
+    label: 'Agent',
     brandColor: '#4A9EFF',
     mutedColor: '#3a7acc',
     tintClass: 'text-blue-400',
@@ -140,8 +140,8 @@ export const PANEL_DEFINITIONS = {
     canLiveOnCanvas: true,
     worktreeBinding: true,
     navigable: true,
-    keepMountedOffscreen: false,
-    keepMountedWhenTabHidden: false,
+    keepMountedOffscreen: true,
+    keepMountedWhenTabHidden: true,
   },
   document: {
     type: 'document',

@@ -1,8 +1,0 @@
-{
-  "name": "cate-ask-user",
-  "description": "Lets the Cate agent pause and ask you a question mid-task via the ask_user tool — a choice between options or a free-text answer — rendered as an inline question card in the agent panel.",
-  "private": true,
-  "pi": {
-    "extensions": ["./index.ts"]
-  }
-}

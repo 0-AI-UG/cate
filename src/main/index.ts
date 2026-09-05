@@ -14,15 +14,9 @@ import { registerHandlers as registerGitMonitorHandlers } from './ipc/git-monito
 import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, getSettingSync, setSettingsFromMain } from './store'
 import { registerUIStateHandlers } from './uiStateStore'
 import { registerProjectStateHandlers } from './projectWorkspaceStore'
-import { registerProjectChatsHandlers } from './projectChatsStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
-import { registerCodingHandlers } from '../cateAgent/main/ipcCoding'
 import { registerSkillHandlers } from '../skills/main/ipcSkills'
-import { registerAuthHandlers } from '../cateAgent/main/ipcAuth'
-import { authManager } from '../cateAgent/main/authManager'
-// Shared singletons for pi agent + auth (constructed at module load).
-import { codingManager } from '../cateAgent/main/codingManager'
 import { registerWorkspaceHandlers } from './workspaceManager'
 import { buildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv, getShellEnv } from './shellEnv'
@@ -51,6 +45,7 @@ import { registerDragHandlers } from './ipc/dragHandlers'
 import { setMainWindowReady, flushPendingOpenPaths, registerOpenFileHandler } from './lifecycle/openPath'
 import { fireStartupTelemetry, registerTelemetryNoticeHandler } from './lifecycle/telemetry'
 import { registerLifecycleHandlers } from './lifecycle/shutdown'
+import { registerT3AgentHandlers } from './ipc/t3Agent'
 
 // NOTE: runSmokeAssertions only ever runs when CATE_SMOKE_TEST=1. The 1200 ms
 // wait below is part of the smoke-only branch in mainWin.once('ready-to-show')
@@ -90,7 +85,6 @@ function registerCriticalHandlers(): void {
   registerStoreHandlers()
   registerUIStateHandlers()
   registerProjectStateHandlers()
-  registerProjectChatsHandlers()
   registerWorkspaceHandlers()
   registerFilesystemHandlers()
   registerTerminalHandlers()
@@ -121,10 +115,9 @@ function registerDeferredHandlers(): void {
   registerSearchHandlers()
   registerGitMonitorHandlers()
   registerNotificationHandlers()
-  registerAuthHandlers(authManager)
-  registerCodingHandlers(authManager, codingManager)
   registerSkillHandlers()
   registerRuntimeHandlers()
+  registerT3AgentHandlers()
   registerExtensionHandlers()
 }
 

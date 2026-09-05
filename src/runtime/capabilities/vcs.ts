@@ -197,7 +197,7 @@ export interface VcsCapabilityDeps {
 }
 
 // Every git op fails with a raw `spawn git ENOENT` on a host without git — the
-// only runtime dependency that is NOT bundled into the tarball (node, rg, pi
+// only runtime dependency that is NOT bundled into the tarball (node, rg, T3
 // are). Detect that case and replace it with an actionable message; a probe
 // failure is not cached, so installing git mid-session recovers on the next op.
 const GIT_MISSING_MESSAGE =

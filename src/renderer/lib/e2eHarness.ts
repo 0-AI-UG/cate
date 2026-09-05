@@ -53,6 +53,14 @@ declare global {
       createTerminal(point: Point): string
       createEditor(point: Point): string
       createCanvasPanel(point: Point): string
+      createAgent(point?: Point): { workspaceId: string; panelId: string; nodeId: string | null }
+      agentPanelSnapshot(panelId: string): {
+        workspaceId: string
+        threadId: string | null
+        cwd: string | null
+        worktreeId: string | null
+      } | null
+      openSettings(tab?: string): void
       createBrowser(url: string, point?: Point): { workspaceId: string; panelId: string }
       browserInvoke(
         workspaceId: string,
@@ -196,6 +204,41 @@ export function installE2EHarness(): void {
     if (!cs) return ''
     const nodes = Object.values(cs.getState().nodes)
     return nodes.length ? nodes[nodes.length - 1].id : ''
+  }
+
+  const createAgent = (point?: Point): {
+    workspaceId: string
+    panelId: string
+    nodeId: string | null
+  } => {
+    const workspaceId = useAppStore.getState().selectedWorkspaceId
+    const panelId = useAppStore.getState().createAgent(
+      workspaceId,
+      point,
+      point ? { target: 'canvas', position: point } : undefined,
+    )
+    return {
+      workspaceId,
+      panelId,
+      nodeId: activeCanvasStore()?.getState().nodeForPanel(panelId) ?? null,
+    }
+  }
+
+  const agentPanelSnapshot = (panelId: string) => {
+    const state = useAppStore.getState()
+    const workspace = state.workspaces.find((item) => item.panels[panelId])
+    const panel = workspace?.panels[panelId]
+    if (!workspace || panel?.type !== 'agent') return null
+    return {
+      workspaceId: workspace.id,
+      threadId: panel.agentThreadId ?? null,
+      cwd: panel.cwd ?? workspace.rootPath ?? null,
+      worktreeId: panel.worktreeId ?? null,
+    }
+  }
+
+  const openSettings = (tab?: string): void => {
+    useUIStore.getState().openSettings(tab)
   }
 
   const createBrowser = (url: string, point?: Point): { workspaceId: string; panelId: string } => {
@@ -487,6 +530,9 @@ export function installE2EHarness(): void {
     createTerminal,
     createEditor,
     createCanvasPanel,
+    createAgent,
+    agentPanelSnapshot,
+    openSettings,
     createBrowser,
     browserInvoke,
     browserWebContentsId,

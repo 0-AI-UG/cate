@@ -4,7 +4,6 @@ export default {
   content: [
     './index.html',
     './src/renderer/**/*.{ts,tsx}',
-    './src/cateAgent/renderer/**/*.{ts,tsx}',
     './src/skills/renderer/**/*.{ts,tsx}',
   ],
   darkMode: 'class',

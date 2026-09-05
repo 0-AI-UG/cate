@@ -32,7 +32,6 @@ import {
 import { getPanelDef } from '../panels/registry'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
-import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
 
 // Re-export the lookup helpers so existing callers (drag dispatcher, drop
 // resolver) keep working through the same import path. New code should import
@@ -257,11 +256,7 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     if (!wsId) return
     const app = useAppStore.getState()
     const wt = inheritedWorktreeFromSelection(store.getState(), app.getWorkspace(wsId)?.panels)
-    const newId = app.createCateAgent(wsId, undefined, here())
-    const rootPath = app.getWorkspace(wsId)?.rootPath
-    if (newId && rootPath && wt.worktreeId) {
-      await seedAgentPanelWithWorktreeChat(wsId, rootPath, newId, wt.worktreeId)
-    }
+    app.createAgent(wsId, undefined, here(), wt.cwd, wt.worktreeId)
   }, [workspaceId, here, store])
 
   return (

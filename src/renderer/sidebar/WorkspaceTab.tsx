@@ -31,7 +31,6 @@ import { InlineEditInput } from './InlineEditInput'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
 import { canvasKey, toggleCollapsed, useTreeCollapseStore } from './treeCollapse'
 import { Tooltip } from '../ui/Tooltip'
-import { useActiveChatWorktreeByPanel } from '../../cateAgent/renderer/cateAgentStore'
 
 // Stable empty map so the ports selector returns a referentially-constant value
 // when a workspace has no status entry (a fresh `{}` each render would defeat
@@ -96,7 +95,7 @@ export interface PanelRenameProps {
 }
 
 // Canonical row-label logic lives in lib/panelTitle (shared with the cross-
-// window panel report and the Cate agent chat). Re-exported for existing
+// window panel report and the agent panel). Re-exported for existing
 // importers of this module.
 export { panelRowLabel }
 
@@ -292,7 +291,6 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     const ws = s.workspaces.find((w) => w.id === workspace.id)
     return ws?.worktrees ?? workspace.worktrees ?? []
   }))
-  const activeChatWorktreeByPanel = useActiveChatWorktreeByPanel()
 
 
   // Ports in the status store are keyed by ptyId, but panel rows are keyed by
@@ -572,7 +570,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   const worktreeColorFor = (panelId: string): string | undefined => {
     const panel = panels[panelId]
     return worktreeColorForId(
-      panel?.type === 'cateAgent' ? activeChatWorktreeByPanel[panelId] : panel?.worktreeId,
+      panel?.worktreeId,
     )
   }
 

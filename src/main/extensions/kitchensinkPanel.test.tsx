@@ -1,8 +1,7 @@
 // =============================================================================
 // Kitchen Sink panel client (cate.kitchensink dist/public/app.js) — runs the
 // REAL shipped panel script in a DOM with a faked `window.cate` bridge and
-// asserts it drives every reachable bridge feature, including the turn-based
-// agent conversation (open/send/dispose). This is the frontend-only counterpart
+// asserts it drives every reachable bridge feature. This is the frontend-only counterpart
 // to kitchensinkServer.test.ts: that spawns the kitchen sink's server and hits
 // its routes; this loads the panel's own client code and exercises it.
 //
@@ -27,7 +26,6 @@ const APP_JS = path.join(EXT_DIR, 'dist/public/app.js')
 const HAS_EXT = existsSync(MANIFEST)
 
 const NOTES_KEY = 'kitchensink:notes'
-const SESSION_KEY = 'kitchensink:agent-session'
 
 // dist/ is build output (gitignored); compile it on demand if a fresh checkout
 // hasn't built the extension yet.
@@ -79,13 +77,6 @@ function makeBridge() {
       keys: vi.fn(async () => [NOTES_KEY]),
       panel: { get: vi.fn(async () => 3), set: vi.fn(async () => {}) },
       onChange: vi.fn(() => () => {}),
-    },
-    agent: {
-      open: vi.fn(async (_opts?: { resume?: string }) => ({ sessionId: 's1' })),
-      send: vi.fn(async (_id: string, _prompt: string) => ({ text: 'pong', message: { role: 'assistant' } })),
-      dispose: vi.fn(async (_id: string) => {}),
-      run: vi.fn(async () => ({ text: 'pong', message: null })),
-      cancel: vi.fn(async () => {}),
     },
   }
 }
@@ -205,73 +196,4 @@ describe.skipIf(!HAS_EXT)('cate.kitchensink panel client (app.js)', () => {
     expect(cate.ui.notify).toHaveBeenCalledWith('Hello from Kitchen Sink', 'info')
   })
 
-  // --- agent conversation (open -> send -> dispose) --------------------------
-
-  it('opens a session on first send, persists the handle, and renders the reply', async () => {
-    ;(document.getElementById('agent-input') as HTMLInputElement).value = 'hello there'
-    click('agent-run')
-    await tick()
-
-    // No stored handle -> open with no resume, then persist the returned id.
-    expect(cate.storage.get).toHaveBeenCalledWith(SESSION_KEY)
-    expect(cate.agent.open).toHaveBeenCalledWith(undefined)
-    expect(cate.storage.set).toHaveBeenCalledWith(SESSION_KEY, 's1')
-    expect(cate.agent.send).toHaveBeenCalledWith('s1', 'hello there')
-    expect(out('agent-out')).toContain('you: hello there')
-    expect(out('agent-out')).toContain('agent: pong')
-  })
-
-  it('reuses the open session for a follow-up turn (no second open)', async () => {
-    const input = document.getElementById('agent-input') as HTMLInputElement
-    input.value = 'first'
-    click('agent-run')
-    await tick()
-    input.value = 'second'
-    click('agent-run')
-    await tick()
-
-    expect(cate.agent.open).toHaveBeenCalledTimes(1)
-    expect(cate.agent.send).toHaveBeenNthCalledWith(1, 's1', 'first')
-    expect(cate.agent.send).toHaveBeenNthCalledWith(2, 's1', 'second')
-  })
-
-  it('resumes a stored session handle instead of opening fresh', async () => {
-    cate.storage.get.mockImplementation(async (key: string) =>
-      key === SESSION_KEY ? 'prior-handle' : key === NOTES_KEY ? 'restored notes' : undefined,
-    )
-    ;(document.getElementById('agent-input') as HTMLInputElement).value = 'again'
-    click('agent-run')
-    await tick()
-
-    expect(cate.agent.open).toHaveBeenCalledWith({ resume: 'prior-handle' })
-  })
-
-  it('renders a failed turn as an error, not silent empty text', async () => {
-    cate.agent.send.mockResolvedValueOnce({ error: 'model not supported' } as never)
-    ;(document.getElementById('agent-input') as HTMLInputElement).value = 'boom'
-    click('agent-run')
-    await tick()
-
-    expect(out('agent-out')).toContain('error: model not supported')
-  })
-
-  it('disposes the session and clears the stored handle on end', async () => {
-    ;(document.getElementById('agent-input') as HTMLInputElement).value = 'hi'
-    click('agent-run')
-    await tick()
-
-    click('agent-end')
-    await tick()
-    expect(cate.agent.dispose).toHaveBeenCalledWith('s1')
-    expect(cate.storage.delete).toHaveBeenCalledWith(SESSION_KEY)
-    expect(out('agent-out')).toContain('(session ended)')
-  })
-
-  it('ignores an empty prompt (no session opened)', async () => {
-    ;(document.getElementById('agent-input') as HTMLInputElement).value = '   '
-    click('agent-run')
-    await tick()
-    expect(cate.agent.open).not.toHaveBeenCalled()
-    expect(cate.agent.send).not.toHaveBeenCalled()
-  })
 })

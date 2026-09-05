@@ -12,9 +12,7 @@ import type {
   FileHost,
   ProcessHost,
   PtyActivity,
-  AgentHost,
   AgentHookHost,
-  AgentHandle,
   PtyHandle,
   ServerHost,
   ServerHandle,
@@ -35,13 +33,12 @@ import type {
 } from './types'
 import type { FileAccessContext } from './types'
 import type { RuntimeRpcClient } from './rpcClient'
-import type { FsWatchEvtPayload, PtyEvtPayload, AgentEvtPayload, AgentHookEvtPayload, SearchEvtPayload, ServerEvtPayload, TunnelEvtPayload, TunnelListenEvtPayload } from '../../runtime/protocol'
+import type { FsWatchEvtPayload, PtyEvtPayload, AgentHookEvtPayload, SearchEvtPayload, ServerEvtPayload, TunnelEvtPayload, TunnelListenEvtPayload } from '../../runtime/protocol'
 import type { FileTreeNode, FileSearchResult, GitComparisonResult, GitFileContent, GitFileDiff } from '../../shared/types'
 import type { AgentHookAgentState } from '../../shared/agentHooks'
 
 export class RemoteRuntime implements Runtime {
   readonly process: ProcessHost
-  readonly agent: AgentHost
   readonly agentHooks: AgentHookHost
   readonly file: FileHost
   readonly vcs: VcsHost
@@ -102,30 +99,6 @@ export class RemoteRuntime implements Runtime {
       setVisibility: (id, visible) => { void this.rpc.call(Methods.ptySetVisibility, [id, visible]).catch(() => {}) },
       scanActivity: (ids) => call<Record<string, PtyActivity>>(Methods.ptyScanActivity, [ids]),
       scanPorts: (ids) => call<Record<string, number[]>>(Methods.ptyScanPorts, [ids]),
-    }
-
-    // Agent: pi runs on the daemon's host; lines/exit stream back keyed by the
-    // caller-generated id (PiRpcClient registers before start, like ptyCreate).
-    this.agent = {
-      ensurePi: () => longCall<void>(Methods.agentEnsurePi, []),
-      start: async (opts, onLine, onExit) => {
-        this.rpc.registerStream(opts.id, (payload) => {
-          const p = payload as AgentEvtPayload
-          if (p.kind === 'line') onLine(opts.id, p.line)
-          else { onExit(opts.id, p.code, p.stderr); this.rpc.unregisterStream(opts.id) }
-        })
-        try {
-          return await call<AgentHandle>(Methods.agentStart, [opts])
-        } catch (err) {
-          this.rpc.unregisterStream(opts.id)
-          throw err
-        }
-      },
-      writeLine: (id, line) => { void this.rpc.call(Methods.agentWriteLine, [id, line]).catch(() => {}) },
-      stop: (id) => {
-        void this.rpc.call(Methods.agentStop, [id]).catch(() => {})
-        this.rpc.unregisterStream(id)
-      },
     }
 
     // Agent hooks: server-assigned streamId, like watch — subscribe, then

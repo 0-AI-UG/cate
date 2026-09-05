@@ -2,25 +2,30 @@ appId: com.cate.app
 productName: Cate
 directories:
   output: release
+# T3 is carried once inside runtime-host*.tgz. Exclude its npm copy and the
+# large T3-only dependency families from app.asar to avoid duplicating several
+# hundred megabytes in every installer.
+files:
+  - "!node_modules/t3/**/*"
+  - "!node_modules/@anthropic-ai/**/*"
+  - "!node_modules/@effect/**/*"
+  - "!node_modules/@ff-labs/**/*"
+  - "!node_modules/@msgpackr-extract/**/*"
+  - "!node_modules/@opencode-ai/**/*"
+  - "!node_modules/@pierre/**/*"
+  - "!node_modules/@yuuang/**/*"
+  - "!node_modules/effect/**/*"
+  - "!node_modules/ffi-rs/**/*"
+  - "!node_modules/msgpackr-extract/**/*"
 # The cate-runtime daemon is NOT bundled in the app. One self-contained
 # tarball per target is built in CI and uploaded to the GitHub release
 # `v<version>`; on connect the remote pulls its own tarball (with a client-side
 # fallback). See runtimeArtifacts.ts + .github/workflows/release.yml.
 #
-# @earendil-works/pi-coding-agent (the agent runtime, ~271MB) is NO LONGER
-# bundled — it's a devDependency, shipped on demand as the cate-pi tarball and
-# run by the runtime (local or remote). See build-pi-tarball.mjs + ensurePi.ts.
-# @earendil-works/pi-ai stays a production dependency (authManager uses /oauth
-# for cate's own login flow) and is unpacked here. The @earendil-works glob now
-# only matches pi-ai + pi-agent-core. Its pure-JS SDK closure (AWS/Google/Mistral/
-# OpenAI, zod, yaml, protobufjs, etc.) is NOT unpacked: it loads fine from inside
-# app.asar. Unpacking the whole tree pushed codesign toward EMFILE on macOS
-# (issue #150) and left ~11k loose sealed files in the bundle, so asarUnpack is
-# kept to the native/WASM floor below.
+# The T3 server and web client are staged inside each target-specific Cate
+# runtime tarball below. They run under that runtime's bundled Node, outside
+# app.asar, so no T3 package files need to be unpacked here.
 asarUnpack:
-  - "node_modules/@earendil-works/**"
-  - "node_modules/.bin/pi"
-  - "node_modules/.bin/pi.cmd"
   # Native + WASM modules only: these can't be dlopen'd / instantiated from inside
   # app.asar. The pure-JS deps that used to be listed here (the AWS/Google/Mistral/
   # OpenAI SDK closure, zod, yaml, protobufjs, etc.) load fine straight out of the
@@ -50,21 +55,6 @@ asarUnpack:
   # host-platform binary directly, so it must live outside app.asar.
   - "node_modules/agent-browser/bin/agent-browser-*"
 extraResources:
-  # Ship bundled pi extensions (e.g. cate-plan-mode) into the packaged app so
-  # installPlanModeExtension can copy them into ~/.pi/agent/extensions/ on
-  # first use. The src/ tree itself isn't packaged, so we mirror the files
-  # under resources/cate-extensions/.
-  - from: src/cateAgent/extensions
-    to: cate-extensions
-    filter:
-      - "**/*"
-  # Pi ships its subagent tool as a supported example rather than a built-in.
-  # Cate installs these two source files into every workspace-scoped agent home.
-  - from: node_modules/@earendil-works/pi-coding-agent/examples/extensions/subagent
-    to: cate-subagent-runtime
-    filter:
-      - "index.ts"
-      - "agents.ts"
   # Ship the cate-theme authoring skill so installThemeSkill can copy it into
   # ~/.claude/skills/cate-theme/ on first launch.
   - from: skills

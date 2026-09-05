@@ -1,6 +1,6 @@
 // =============================================================================
 // Server capability — electron-free runner for long-lived HTTP server children
-// (server-backed extensions). Mirrors createAgentCapability: spawns a child with
+// (server-backed extensions and provider harnesses). Spawns a child with
 // PIPED stdio, streams stdout/stderr verbatim, and reports error vs close. The
 // extra job here is port management + a readiness probe: it allocates a loopback
 // port, injects it via env[portEnv], spawns the server, then polls an HTTP ready
@@ -17,7 +17,15 @@ import http from 'http'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import type { ServerHost, ServerStartOptions, ServerHandle } from '../../main/runtime/types'
+import {
+  RUNTIME_INSTALL_ROOT_PLACEHOLDER,
+  RUNTIME_NODE_EXECUTABLE,
+  type ServerHost,
+  type ServerStartOptions,
+  type ServerHandle,
+} from '../../main/runtime/types'
+import { installRoot } from '../installRoot'
+import { catePathEnv } from '../cateCli'
 
 export interface ServerDeps {
   /** Base environment for the server (merged under opts.env). Defaults to process.env. */
@@ -134,11 +142,29 @@ export function createServerCapability(deps: ServerDeps = {}): ServerCapability 
     async start(opts: ServerStartOptions, onOutput, onExit): Promise<ServerHandle> {
       const port = await allocatePort()
 
-      const child = spawn(opts.command[0], opts.command.slice(1), {
+      const resolveArg = (value: string): string =>
+        value.replaceAll(RUNTIME_INSTALL_ROOT_PLACEHOLDER, installRoot())
+      const executable = opts.command[0] === RUNTIME_NODE_EXECUTABLE
+        ? process.execPath
+        : resolveArg(opts.command[0])
+      const args = opts.command.slice(1).map(resolveArg)
+
+      const mergedEnv = Object.fromEntries(
+        Object.entries({ ...baseEnv(), ...opts.env, [opts.portEnv]: String(port) })
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+      )
+      const child = spawn(executable, args, {
         cwd: opts.cwd,
-        env: { ...baseEnv(), ...opts.env, [opts.portEnv]: String(port) } as NodeJS.ProcessEnv,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        env: (opts.includeCateCli ? catePathEnv(mergedEnv) : mergedEnv) as NodeJS.ProcessEnv,
+        stdio: [opts.bootstrapStdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       })
+      if (opts.bootstrapStdin !== undefined) {
+        // A spawn failure can close stdin before the write lands. The child
+        // `error` handler below reports the useful launch error, so suppress
+        // the secondary EPIPE from this one-shot bootstrap stream.
+        child.stdin?.on('error', () => {})
+        child.stdin?.end(opts.bootstrapStdin)
+      }
       children.set(opts.id, child)
       // Record the live pid so a NEXT daemon run can reap it if we crash without
       // running killAll(). Removed on exit (below) and by killAll() on shutdown.

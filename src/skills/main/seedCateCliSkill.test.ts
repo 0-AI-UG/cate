@@ -1,5 +1,5 @@
-// Coverage for seedCateCliSkill: the cliSkillInstallEnabled gate, cate-agent
-// always seeded, dir-presence gating for other targets, version-hashed seed
+// Coverage for seedCateCliSkill: the cliSkillInstallEnabled gate,
+// dir-presence gating for targets, version-hashed seed
 // markers (a changed bundle refreshes an unedited copy; edits are never
 // clobbered, uninstalls stick), and marker-only handling of a pre-existing
 // manual install. Uses an in-memory fake runtime.file and the REAL bundled
@@ -22,7 +22,6 @@ import { seedCateCliSkill } from './seedCateCliSkill'
 
 const WS = '/ws'
 const MANIFEST = `${WS}/.cate/skills.json`
-const CATE_AGENT_SKILL = `${WS}/.cate/cate-agent/skills/cate-cli/SKILL.md`
 const CLAUDE_SKILL = `${WS}/.claude/skills/cate-cli/SKILL.md`
 /** Versioned seed marker for a target: `<skillId>:<target>@<12-hex hash>`. */
 const markerFor = (target: string) => new RegExp(`^cate/cate-cli:${target}@[0-9a-f]{12}$`)
@@ -99,13 +98,12 @@ describe('seedCateCliSkill', () => {
     expect(files.size).toBe(0)
   })
 
-  it('seeds cate-agent always, skips targets whose tool dir is absent', async () => {
+  it('skips targets whose tool dir is absent', async () => {
     await seedCateCliSkill(WS)
-    expect(files.get(CATE_AGENT_SKILL)).toContain('name: cate-cli')
     expect(files.has(CLAUDE_SKILL)).toBe(false)
     const m = manifest()
-    expect(m.skills).toEqual([expect.objectContaining({ skillId: 'cate/cate-cli', targetId: 'cate-agent' })])
-    expect(m.seeded).toEqual([expect.stringMatching(markerFor('cate-agent'))])
+    expect(m.skills).toEqual([])
+    expect(m.seeded).toBeUndefined()
   })
 
   it('seeds a target once its tool dir exists', async () => {
@@ -115,7 +113,6 @@ describe('seedCateCliSkill', () => {
     const m = manifest()
     expect(m.seeded).toEqual(expect.arrayContaining([
       expect.stringMatching(markerFor('claude-code')),
-      expect.stringMatching(markerFor('cate-agent')),
     ]))
   })
 
@@ -128,66 +125,72 @@ describe('seedCateCliSkill', () => {
   })
 
   it('never rewrites a seeded copy (edits survive re-open)', async () => {
+    dirs.add(`${WS}/.claude`)
     await seedCateCliSkill(WS)
-    files.set(CATE_AGENT_SKILL, 'user edited')
+    files.set(CLAUDE_SKILL, 'user edited')
     await seedCateCliSkill(WS)
-    expect(files.get(CATE_AGENT_SKILL)).toBe('user edited')
+    expect(files.get(CLAUDE_SKILL)).toBe('user edited')
   })
 
   it('an uninstall sticks: marker present but skill gone -> not reinstalled', async () => {
+    dirs.add(`${WS}/.claude`)
     await seedCateCliSkill(WS)
     // Simulate the modal's uninstall: file and manifest entry removed, marker kept.
-    files.delete(CATE_AGENT_SKILL)
-    files.set(MANIFEST, JSON.stringify({ skills: [], seeded: ['cate/cate-cli:cate-agent'] }))
+    files.delete(CLAUDE_SKILL)
+    files.set(MANIFEST, JSON.stringify({ skills: [], seeded: ['cate/cate-cli:claude-code'] }))
     await seedCateCliSkill(WS)
-    expect(files.has(CATE_AGENT_SKILL)).toBe(false)
+    expect(files.has(CLAUDE_SKILL)).toBe(false)
   })
 
   it('a pre-existing manual install just gets its marker, no overwrite', async () => {
-    files.set(CATE_AGENT_SKILL, 'manually installed, edited')
+    dirs.add(`${WS}/.claude`)
+    files.set(CLAUDE_SKILL, 'manually installed, edited')
     files.set(
       MANIFEST,
-      JSON.stringify({ skills: [{ skillId: 'cate/cate-cli', name: 'cate-cli', targetId: 'cate-agent', path: CATE_AGENT_SKILL, origin: 'local' }] }),
+      JSON.stringify({ skills: [{ skillId: 'cate/cate-cli', name: 'cate-cli', targetId: 'claude-code', path: CLAUDE_SKILL, origin: 'local' }] }),
     )
     await seedCateCliSkill(WS)
-    expect(files.get(CATE_AGENT_SKILL)).toBe('manually installed, edited')
-    expect(manifest().seeded).toEqual(expect.arrayContaining([expect.stringMatching(markerFor('cate-agent'))]))
+    expect(files.get(CLAUDE_SKILL)).toBe('manually installed, edited')
+    expect(manifest().seeded).toEqual(expect.arrayContaining([expect.stringMatching(markerFor('claude-code'))]))
   })
 
   it('refreshes an unedited copy from an older bundle', async () => {
+    dirs.add(`${WS}/.claude`)
     await seedCateCliSkill(WS)
     // Rewind the install to an "older bundle": old content plus a marker
     // carrying that content's hash (what the older app would have written).
     const old = 'old bundle content'
     const m = manifest()
-    files.set(CATE_AGENT_SKILL, old)
-    files.set(MANIFEST, JSON.stringify({ skills: m.skills, seeded: [`cate/cate-cli:cate-agent@${hashOf(old)}`] }))
+    files.set(CLAUDE_SKILL, old)
+    files.set(MANIFEST, JSON.stringify({ skills: m.skills, seeded: [`cate/cate-cli:claude-code@${hashOf(old)}`] }))
     await seedCateCliSkill(WS)
-    expect(files.get(CATE_AGENT_SKILL)).toContain('name: cate-cli')
-    expect(manifest().seeded).toEqual([expect.stringMatching(markerFor('cate-agent'))])
+    expect(files.get(CLAUDE_SKILL)).toContain('name: cate-cli')
+    expect(manifest().seeded).toEqual([expect.stringMatching(markerFor('claude-code'))])
     expect(manifest().seeded![0]).not.toContain(hashOf(old))
   })
 
   it('never overwrites an edited copy, even across bundle versions', async () => {
+    dirs.add(`${WS}/.claude`)
     await seedCateCliSkill(WS)
     // Seeded by an old bundle (marker hash ≠ current bundle) and then edited by
     // the user (content hash ≠ marker hash): the edit wins, the marker stays.
     const m = manifest()
-    files.set(CATE_AGENT_SKILL, 'user edited')
-    files.set(MANIFEST, JSON.stringify({ skills: m.skills, seeded: ['cate/cate-cli:cate-agent@000000000000'] }))
+    files.set(CLAUDE_SKILL, 'user edited')
+    files.set(MANIFEST, JSON.stringify({ skills: m.skills, seeded: ['cate/cate-cli:claude-code@000000000000'] }))
     await seedCateCliSkill(WS)
-    expect(files.get(CATE_AGENT_SKILL)).toBe('user edited')
-    expect(manifest().seeded).toEqual(['cate/cate-cli:cate-agent@000000000000'])
+    expect(files.get(CLAUDE_SKILL)).toBe('user edited')
+    expect(manifest().seeded).toEqual(['cate/cate-cli:claude-code@000000000000'])
   })
 
   it('a pre-hash marker migrates: the copy is refreshed and the marker gains a hash', async () => {
+    dirs.add(`${WS}/.claude`)
     await seedCateCliSkill(WS)
     const m = manifest()
-    files.set(CATE_AGENT_SKILL, 'stale pre-rework doc')
-    files.set(MANIFEST, JSON.stringify({ skills: m.skills, seeded: ['cate/cate-cli:cate-agent'] }))
+    files.set(CLAUDE_SKILL, 'stale pre-rework doc')
+    files.set(MANIFEST, JSON.stringify({ skills: m.skills, seeded: ['cate/cate-cli:claude-code'] }))
     await seedCateCliSkill(WS)
-    expect(files.get(CATE_AGENT_SKILL)).toContain('name: cate-cli')
-    expect(manifest().seeded).toEqual([expect.stringMatching(markerFor('cate-agent'))])
+    expect(files.get(CLAUDE_SKILL)).toContain('name: cate-cli')
+    expect(manifest().seeded).toEqual([expect.stringMatching(markerFor('claude-code'))])
   })
 
   it('is a no-op when the runtime is not connected yet', async () => {

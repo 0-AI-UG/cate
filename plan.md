@@ -244,7 +244,7 @@ Recommended limits:
 | Explicit workspace stop | PTYs are gone; files remain |
 | EC2 host failure | Instance restarts from EBS; processes are gone |
 
-For Cate Agent panels, v1 can resume from the persisted agent session file after
+For Agent panels, the harness can resume from persisted conversation state after
 a full application restart. Reattaching to an already-running in-flight agent
 turn is a later protocol extension.
 

@@ -2,7 +2,7 @@
 // Runtime wire protocol — LF-delimited JSON frames over a duplex stdio pipe.
 // The same protocol is spoken whether the daemon runs locally (child process),
 // on a server (over SSH exec), or in WSL (over wsl.exe). Generalized from the
-// pi RpcClient pattern; client correlates responses by id, the daemon pushes
+// runtime RPC pattern; client correlates responses by id, the daemon pushes
 // unsolicited `evt` frames for streams (PTY data, fs-watch events).
 //
 // This module is part of the standalone runtime bundle, so it must stay
@@ -151,14 +151,6 @@ export const Methods = {
   vcsPrStatus: 'vcs.prStatus',
   vcsPrList: 'vcs.prList',
 
-  // --- agent (pi coding agent) --- pi's stdout lines / exit stream back as evt
-  // frames keyed by the agent id; the daemon is a dumb pipe (never parses pi's
-  // protocol). ensurePi installs the pi tarball on the host before the first start.
-  agentEnsurePi: 'agent.ensurePi',
-  agentStart: 'agent.start', // params [opts incl. id]; lines/exit arrive as evt frames keyed by id
-  agentWriteLine: 'agent.writeLine',
-  agentStop: 'agent.stop',
-
   // --- server (long-lived HTTP server children for server-backed extensions) ---
   // stdout/stderr + exit stream back as evt frames keyed by the caller-generated
   // id. server.start resolves only after the daemon's ready probe passes.
@@ -194,12 +186,6 @@ export interface FsWatchEvtPayload {
   changedPath: string
   type: FsChangeType
 }
-
-/** Payload carried by an `agent.start` stream's evt frames (keyed by agent id).
- *  `line` is one raw JSONL line of pi's stdout; the client parses pi's protocol. */
-export type AgentEvtPayload =
-  | { kind: 'line'; line: string }
-  | { kind: 'exit'; code: number; stderr?: string }
 
 /** Payload carried by an `agentHooks.subscribe` stream's evt frames: one
  *  normalized agent-CLI hook event (session identity / turn status /

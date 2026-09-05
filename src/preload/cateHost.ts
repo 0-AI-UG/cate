@@ -13,7 +13,6 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
-  CodingTurnResult,
   CateBrowserSnapshot,
   CateDroppedFile,
   CateHost,
@@ -81,15 +80,6 @@ const api: CateHost = {
   ui: {
     notify: (message: string, level?: 'info' | 'warn' | 'error') =>
       invoke('cate.ui.notify', { message, level }),
-  },
-
-  agent: {
-    open: (opts?: { resume?: string }) =>
-      invoke('cate.agent.open', { resume: opts?.resume }) as Promise<{ sessionId: string } | { error: string }>,
-    send: (sessionId: string, prompt: string) =>
-      invoke('cate.agent.send', { sessionId, prompt }) as Promise<CodingTurnResult | { error: string }>,
-    dispose: (sessionId: string) => invoke('cate.agent.dispose', { sessionId }),
-    cancel: () => invoke('cate.agent.cancel'),
   },
 
   browser: {

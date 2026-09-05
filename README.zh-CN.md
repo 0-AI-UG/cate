@@ -59,7 +59,8 @@ brew install --cask cate
 
 ## 包含什么
 
-- **感知智能体的终端：** Cate 会为支持的智能体 CLI（Claude Code、Codex、Cursor、Grok、OpenCode、Pi）安装钩子，由智能体自己上报一轮对话的开始、结束以及权限询问。面板的运行中／等待／已完成状态，以及智能体需要你回应时的通知，都由此驱动。不发送钩子的智能体不会显示任何状态。
+- **集成智能体聊天：** T3 Code 可在完整的聊天面板中运行 Codex、Claude Code、Cursor、Grok、OpenCode 和 Antigravity，并显示流式输出、工具调用和授权请求。
+- **感知智能体的终端：** 支持的智能体 CLI 会上报一轮对话的开始、结束以及权限询问。面板的运行中／等待／已完成状态，以及智能体需要你回应时的通知，都由此驱动。不发送钩子的智能体不会显示任何状态。
 - **智能体会话在重启后延续：** 钩子流会带上每个 CLI 的会话 ID。重新打开项目，终端会带着回滚缓冲回来，并用智能体自己的恢复命令重新接上会话。ID 已失效时会退回普通 shell，而不是恢复错误的会话。
 - **为并行分支准备的 worktree：** 描述你要做什么，Cate 就会基于本地分支、远程分支或一个开放的 PR 创建 worktree 和分支。每个 worktree 都有专属颜色，贯穿侧边栏、停靠标签，以及画布上绘制在其面板背后的领地。
 - **画布上或停靠区里的面板：** 终端、Monaco 编辑器、浏览器、PDF／图片／DOCX 查看器、扩展 webview、嵌套画布。可以浮在画布上、停靠成标签和分屏，或拖进独立窗口。布局按项目保存。
@@ -104,7 +105,7 @@ Cate 提供第三方面板的扩展系统（MCP 服务器、图表等），每�
 
 **前置条件：**
 - [Bun](https://bun.sh)：包管理器和脚本运行器。
-- [Node.js](https://nodejs.org/) 20 或 22 LTS（见 `.nvmrc`），需在 PATH 中。构建脚本在其下运行；运行时守护进程自带 Node 22。
+- [Node.js](https://nodejs.org/) 22.16 或更高版本（见 `.nvmrc`），需在 PATH 中。构建脚本在其下运行；运行时守护进程自带 Node 22。
 - **仅 Linux：** `node-pty` 为 macOS 和 Windows 提供预构建二进制，但不含 Linux，因此需要从源码编译。请安装 Python 3 和 C++ 工具链：
   - Debian/Ubuntu：`sudo apt install build-essential python3`
   - Fedora/RHEL：`sudo dnf install @development-tools gcc-c++ make python3`
@@ -135,7 +136,6 @@ bun run package      # 打包分发（:mac、:win、:linux）
 
 ```text
 src/
-├── agent/      # 内置 Pi 编码智能体：进程管理、鉴权、市场、面板 UI
 ├── cli/        # Cate 终端内可用的 `cate` CLI（浏览器控制、面板、编辑器）
 ├── main/       # Electron 主进程：IPC、工作区、窗口、更新器、安全
 ├── preload/    # 上下文隔离的 IPC 桥
@@ -146,7 +146,7 @@ src/
 
 Cate 的所有 IPC 都经过上下文隔离的 preload 桥。文件系统访问限定在已注册的工作区根目录，浏览器面板禁用 Node 集成，终端无法在批准目录之外启动。
 
-**技术栈：** Electron 41、React 18、Zustand 5、Monaco 0.52、xterm.js 5.5 + node-pty 1.0、Tailwind 3.4、electron-vite、electron-builder、electron-updater、Sentry。PDF 和 DOCX 用 pdf.js 与 mammoth，git 用 simple-git，文件监听用 `@parcel/watcher` 与 chokidar。内置编码智能体基于 `@earendil-works/pi`，作为按需运行时随应用分发。
+**技术栈：** Electron 41、React 18、Zustand 5、Monaco 0.52、xterm.js 5.5 + node-pty 1.1、Tailwind 3.4、electron-vite、electron-builder、electron-updater、Sentry。PDF 和 DOCX 用 pdf.js 与 mammoth，git 用 simple-git，文件监听用 `@parcel/watcher` 与 chokidar。T3 Code 提供智能体执行框架、模型提供商进程和聊天界面，并随 Cate 运行时一起分发。
 
 ## 贡献
 

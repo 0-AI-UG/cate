@@ -19,11 +19,11 @@ describe('toSkillTargetGroups', () => {
     const groups = toSkillTargetGroups([
       row('a/x', 'x', 'claude-code'),
       row('a/y', 'y', 'claude-code'),
-      row('a/x', 'x', 'cate-agent'),
+      row('a/x', 'x', 'codex'),
     ])
     expect(groups).toEqual([
       { targetId: 'claude-code', skills: [{ skillId: 'a/x', name: 'x' }, { skillId: 'a/y', name: 'y' }] },
-      { targetId: 'cate-agent', skills: [{ skillId: 'a/x', name: 'x' }] },
+      { targetId: 'codex', skills: [{ skillId: 'a/x', name: 'x' }] },
     ])
   })
 

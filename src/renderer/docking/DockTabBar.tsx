@@ -16,7 +16,6 @@ import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 import { isMiddleClick } from '../lib/mouse'
 import { isWorktreePanelType } from '../../shared/panels'
-import { useActiveChatWorktreeByPanel } from '../../cateAgent/renderer/cateAgentStore'
 
 const AWAIT_COLOR = '#c08a5a'
 
@@ -28,7 +27,6 @@ const AWAIT_COLOR = '#c08a5a'
 // with the per-agent icon swap.
 function useWorktreeColorByPanel(): Record<string, string> {
   const workspaces = useAppStore(useShallow((s) => s.workspaces))
-  const activeChatWorktreeByPanel = useActiveChatWorktreeByPanel()
   return React.useMemo(() => {
     const out: Record<string, string> = {}
     for (const ws of workspaces) {
@@ -39,15 +37,13 @@ function useWorktreeColorByPanel(): Record<string, string> {
       const primary = worktrees.find((w) => w.path === ws.rootPath)
       for (const panel of Object.values(ws.panels)) {
         if (!isWorktreePanelType(panel.type)) continue
-        const worktreeId = panel.type === 'cateAgent'
-          ? activeChatWorktreeByPanel[panel.id]
-          : panel.worktreeId
+        const worktreeId = panel.worktreeId
         const wt = worktrees.find((w) => w.id === worktreeId) ?? primary
         if (wt?.color) out[panel.id] = wt.color
       }
     }
     return out
-  }, [activeChatWorktreeByPanel, workspaces])
+  }, [workspaces])
 }
 
 // Type → icon/tint mirrors the Spotlight overlay so tabs, search results, and

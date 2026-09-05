@@ -97,13 +97,12 @@ describe('removePanelFromWindow', () => {
     expect(releaseCanvasStoreForPanel).toHaveBeenCalledWith('canvasA')
   })
 
-  it('transfer: treats a Cate Agent child as panel-only state', () => {
+  it('transfer: treats an Agent child as panel-only state', () => {
     setCanvasNodes(['term1', 'agent1'])
-    setPanelTypes({ term1: 'terminal', agent1: 'cateAgent' })
+    setPanelTypes({ term1: 'terminal', agent1: 'agent' })
     removePanelFromWindow('ws-1', 'canvasA', 'canvas', 'transfer')
 
-    // Cate Agent sessions are workspace-owned, so moving a view has no agent
-    // teardown beyond the registry's harmless non-terminal release.
+    // The harness process is main-owned, so moving a view only releases local content.
     expect(release).toHaveBeenCalledWith('term1')
     expect(release).toHaveBeenCalledWith('agent1')
     expect(removePanelRecord).toHaveBeenCalledWith('ws-1', 'agent1')
@@ -111,7 +110,7 @@ describe('removePanelFromWindow', () => {
 
   it('close: disposes (kills PTY) instead of releasing, for the panel and canvas children', () => {
     setCanvasNodes(['term1', 'agent1'])
-    setPanelTypes({ term1: 'terminal', agent1: 'cateAgent' })
+    setPanelTypes({ term1: 'terminal', agent1: 'agent' })
     removePanelFromWindow('ws-1', 'canvasA', 'canvas', 'close')
 
     expect(dispose).toHaveBeenCalledWith('term1')

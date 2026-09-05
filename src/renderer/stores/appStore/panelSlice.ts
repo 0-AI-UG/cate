@@ -30,7 +30,6 @@ import {
 import { clearActivePanelIfMatches } from '../../lib/activePanel'
 import { pathDisplayName } from '../../lib/fs/displayPath'
 import { recordRecentFile } from '../../lib/fs/recentFiles'
-import { releasePanelChatsToSidebar } from '../chatsStore'
 
 type PanelSliceActions = Pick<
   AppStoreActions,
@@ -40,7 +39,7 @@ type PanelSliceActions = Pick<
   | 'createDiffEditor'
   | 'createReview'
   | 'createCanvas'
-  | 'createCateAgent'
+  | 'createAgent'
   | 'createDocument'
   | 'createExtensionPanel'
   | 'closePanel'
@@ -54,7 +53,7 @@ type PanelSliceActions = Pick<
   | 'setPanelDirty'
   | 'setPanelMarkdownPreview'
   | 'setPanelUnsavedContent'
-  | 'setPanelInitialChat'
+  | 'setPanelAgentThreadId'
   | 'setPanelReviewState'
   | 'setPanelAgentSession'
   | 'setPanelCodingAgentLaunch'
@@ -213,16 +212,18 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
     },
 
-    createCateAgent(workspaceId, position?, placement?) {
+    createAgent(workspaceId, position?, placement?, cwd?, worktreeId?) {
       // Auto-number agent panels (same scheme as terminals) so multiple agents are
       // addressable and distinct — unique across ALL windows, not just this one.
       const panel: PanelState = {
         id: generateId(),
-        type: 'cateAgent',
-        title: nextNumberedTitle(get, workspaceId, 'cateAgent', 'Cate Agent'),
+        type: 'agent',
+        title: nextNumberedTitle(get, workspaceId, 'agent', 'Agent'),
         isDirty: false,
+        ...(cwd ? { cwd } : {}),
+        ...(worktreeId ? { worktreeId } : {}),
       }
-      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('cateAgent', placement), position)
+      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('agent', placement), position)
     },
 
     createExtensionPanel(workspaceId, extensionId, extensionPanelId, position?, placement?, title?) {
@@ -252,12 +253,6 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         (id) => ws?.panels[id]?.type,
       )
       for (const id of childIds) clearActivePanelIfMatches(id)
-      const closingAgentIds = [
-        ...(panel?.type === 'cateAgent' ? [panelId] : []),
-        ...[...childIds].filter((id) => ws?.panels[id]?.type === 'cateAgent'),
-      ]
-      releasePanelChatsToSidebar(ws?.rootPath ?? '', closingAgentIds)
-
       // Remove from dock/canvas first (less critical — log errors but continue).
       // resolvePanelLocation is the canonical probe (dock tree, then every canvas
       // of the workspace) shared with panelReveal — so close removes the panel from
@@ -364,8 +359,10 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, unsavedContent: content }))
     },
 
-    setPanelInitialChat(workspaceId, panelId, chatId) {
-      setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, initialChatId: chatId }))
+    setPanelAgentThreadId(workspaceId, panelId, threadId) {
+      setPanelField(set, workspaceId, panelId, (panel) => (
+        panel.type === 'agent' ? { ...panel, agentThreadId: threadId } : panel
+      ))
     },
 
     setPanelAgentSession(workspaceId, panelId, session) {
@@ -429,18 +426,13 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       if (!ws) return
 
       // Tear down every panel's content (PTY kill, xterm disposal, listener
-      // cleanup, pi sessions), and release the workspace's canvas stores since
+      // cleanup), and release the workspace's canvas stores since
       // their panels are about to be wiped.
       const canvasPanelIds: string[] = []
       for (const panel of Object.values(ws.panels)) {
         teardownPanelContent(panel.id, panel.type, 'close')
         if (panel.type === 'canvas') canvasPanelIds.push(panel.id)
       }
-      releasePanelChatsToSidebar(
-        ws.rootPath,
-        Object.values(ws.panels).filter((panel) => panel.type === 'cateAgent').map((panel) => panel.id),
-      )
-
       set((state) => ({
         workspaces: state.workspaces.map((w) =>
           w.id === wsId ? { ...w, panels: {} } : w,
@@ -483,10 +475,6 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       for (const pid of panelIds) {
         teardownPanelContent(pid, ws?.panels[pid]?.type, 'close')
       }
-      releasePanelChatsToSidebar(
-        ws?.rootPath ?? '',
-        [...panelIds].filter((pid) => ws?.panels[pid]?.type === 'cateAgent'),
-      )
       set((s) => ({
         workspaces: s.workspaces.map((w) => {
           if (w.id !== wsId) return w

@@ -10,11 +10,9 @@
 // last one is what makes remote workspaces behave like local ones, since their
 // runtime connects only after create/attach.
 //   - gated by the cliSkillInstallEnabled setting (Settings → CLI);
-//   - `cate-agent` is always seeded — it is Cate's own agent and `.cate/` is
-//     already Cate-managed;
-//   - every other target (one per agent CLI that declares `skills` in
+//   - every target (one per agent CLI that declares `skills` in
 //     src/shared/agents.ts — claude-code, codex, cursor, grok, kiro, opencode,
-//     pi-native) is seeded only when its tool dir (`.claude`, `.agents`, …)
+//     is seeded only when its tool dir (`.claude`, `.codex`, etc.)
 //     already exists in the workspace, so repos don't grow dot-dirs for agents
 //     nobody uses there. A tool dir created later is picked up on a subsequent
 //     open. The loop is over SKILL_TARGETS, so a newly declared agent target is
@@ -41,7 +39,7 @@ import log from '../../main/logger'
 import { getSetting } from '../../main/settingsFile'
 import { parseLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
-import { hostJoin } from '../../cateAgent/main/codingDir'
+import { hostJoin } from '../../main/extensions/hostPath'
 import type { Runtime } from '../../main/runtime/types'
 import { SKILL_TARGETS, slugifySkillName, type SkillTargetId } from '../../shared/skills'
 import { targetInfo, toolDirSegment } from './targets'
@@ -148,8 +146,7 @@ export async function reinstallCateCliSkill(cwd: string): Promise<number> {
     const targetId = target.id
     const existing = installed.some((entry) => entry.skillId === SKILL_ID && entry.targetId === targetId)
     if (
-      targetId !== 'cate-agent'
-      && !existing
+      !existing
       && !(await dirExists(runtime, hostJoin(runtimeId, hostCwd, toolDirSegment(targetId))))
     ) {
       continue
@@ -232,12 +229,8 @@ async function seed(cwd: string): Promise<void> {
       continue
     }
 
-    // Never seeded here: cate-agent always, other targets only once their tool
-    // dir exists (a dir created later is picked up on a subsequent open).
-    if (
-      targetId !== 'cate-agent' &&
-      !(await dirExists(runtime, hostJoin(runtimeId, hostCwd, toolDirSegment(targetId))))
-    ) {
+    // Never seeded here: targets are picked up once their tool directory exists.
+    if (!(await dirExists(runtime, hostJoin(runtimeId, hostCwd, toolDirSegment(targetId))))) {
       continue
     }
     // Already installed (e.g. manually via the modal before seeding existed):

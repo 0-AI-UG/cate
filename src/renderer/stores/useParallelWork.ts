@@ -23,8 +23,6 @@ import { isLocalLocator } from '../../shared/runtimeLocator'
 import type { WorktreePanelType } from '../../shared/panels'
 import { errorMessage } from '../lib/errorMessage'
 import { pathKey } from '../../shared/pathUtils'
-import { seedAgentPanelWithWorktreeChat } from '../../cateAgent/renderer/seedWorktreeChat'
-import { activeChatWorktreeIdForPanel } from '../../cateAgent/renderer/cateAgentStore'
 
 /** Apply a color/label change to a worktree's UI metadata, creating the metadata
  *  record when none exists yet (a worktree discovered only from git has its path
@@ -85,20 +83,20 @@ export async function runWorktreeContextMenu(opts: {
   prUrl?: string
   primaryLabel: string
   cb: CardCallbacks
-  beginRename: () => void
-  beginRecolor: () => void
+  beginRename?: () => void
+  beginRecolor?: () => void
 }): Promise<void> {
   const items: NativeContextMenuItem[] = [
     { id: 'publish', label: 'Publish branch' },
     { id: 'pr', label: opts.hasPr ? 'Open pull request' : 'Create pull request' },
   ]
-  if (!opts.isPrimary) {
+  if (!opts.isPrimary && opts.primaryLabel) {
     items.push({ id: 'update', label: `Update from ${opts.primaryLabel}` })
     items.push({ id: 'merge', label: `Merge into ${opts.primaryLabel}` })
   }
   items.push({ type: 'separator' })
-  items.push({ id: 'rename', label: 'Rename…' })
-  items.push({ id: 'color', label: 'Change color…' })
+  if (opts.beginRename) items.push({ id: 'rename', label: 'Rename…' })
+  if (opts.beginRecolor) items.push({ id: 'color', label: 'Change color…' })
   if (opts.cb.canReveal) items.push({ id: 'reveal', label: 'Reveal in Finder' })
   if (!opts.isPrimary) {
     items.push({ type: 'separator' })
@@ -117,8 +115,8 @@ export async function runWorktreeContextMenu(opts: {
     case 'update': opts.cb.onUpdateFromMain(); break
     case 'merge': opts.cb.onMerge(); break
     case 'reveal': opts.cb.onReveal(); break
-    case 'rename': opts.beginRename(); break
-    case 'color': opts.beginRecolor(); break
+    case 'rename': opts.beginRename?.(); break
+    case 'color': opts.beginRecolor?.(); break
     case 'delete': opts.cb.onDelete(); break
   }
 }
@@ -154,6 +152,7 @@ export function useParallelWork(
 ): UseParallelWork {
   const { createWorktree, checkoutPr } = useWorktreeActions(rootPath, workspaceId)
   const removeWorktree = useAppStore((s) => s.removeWorktree)
+  const removeAdditionalRoot = useAppStore((s) => s.removeAdditionalRoot)
   const { setError, onPrCreated, setBusy } = opts
 
   const reconcile = useCallback(() => {
@@ -167,12 +166,11 @@ export function useParallelWork(
       const panelId =
         type === 'terminal'
           ? s.createTerminal(workspaceId, undefined, undefined, placement, wt.path)
-          : s.createCateAgent(workspaceId, undefined, placement)
+          : s.createAgent(workspaceId, undefined, placement, wt.path, wt.id)
       if (!panelId) return
       if (type === 'terminal') s.setPanelWorktreeId(workspaceId, panelId, wt.id)
-      else void seedAgentPanelWithWorktreeChat(workspaceId, rootPath, panelId, wt.id)
     },
-    [rootPath, workspaceId],
+    [workspaceId],
   )
 
   const handlePublish = useCallback(
@@ -222,6 +220,10 @@ export function useParallelWork(
     async (wt: JoinedWorktree) => {
       if (wt.isPrimary || !wt.branch) return
       const target = primaryLabel
+      if (!target) {
+        setError('Could not resolve the base branch. Open Source Control once to refresh.')
+        return
+      }
       setBusy?.(wt.id)
       try {
         const result = await window.electronAPI.gitWorktreeUpdateFrom(wt.path, target, workspaceId ?? '')
@@ -292,13 +294,12 @@ export function useParallelWork(
       const dirty = !!status?.dirty
       const branchAhead = (status?.ahead ?? 0) > 0
       // When close-on-delete is on, count terminals by their panel tag and
-      // agents by their active chat tag.
+      // Agent and terminal bindings both live on their panel records.
       const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
       const panelCount = useSettingsStore.getState().closeWorktreePanelsOnDelete
         ? Object.values(ws?.panels ?? {}).filter(
             (p) => (
-              (p.type === 'terminal' && p.worktreeId === wt.id) ||
-              (p.type === 'cateAgent' && activeChatWorktreeIdForPanel(p.id) === wt.id)
+              (p.type === 'terminal' || p.type === 'agent') && p.worktreeId === wt.id
             ),
           ).length
         : 0
@@ -325,6 +326,7 @@ export function useParallelWork(
           }
         }
         removeWorktree(workspaceId, wt.id)
+        removeAdditionalRoot(workspaceId, wt.path)
         reconcile()
       } catch (err: unknown) {
         setError(`Discard failed: ${errorMessage(err, 'The worktree was not removed.')}`)
@@ -332,7 +334,7 @@ export function useParallelWork(
         setBusy?.(null)
       }
     },
-    [rootPath, workspaceId, removeWorktree, reconcile, setBusy, setError],
+    [rootPath, workspaceId, removeWorktree, removeAdditionalRoot, reconcile, setBusy, setError],
   )
 
   const handlePrune = useCallback(async () => {

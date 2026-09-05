@@ -14,7 +14,6 @@
 // =============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import path from 'path'
 
 // --- electron: only app is touched at module load (will-quit handler) --------
 const { showMessageBox } = vi.hoisted(() => ({ showMessageBox: vi.fn(async () => ({ response: 0 })) }))
@@ -22,19 +21,6 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   app: { on: vi.fn() },
   dialog: { showMessageBox },
-}))
-
-// Agent runtime is a heavy singleton; stub it so importing cateApiHandlers
-// stays light and cate.agent.* dispatch is observable.
-const { openForExtension, sendForExtension, disposeForExtension, cancelForExtension } =
-  vi.hoisted(() => ({
-    openForExtension: vi.fn(async () => ({ sessionId: 'sess-1' })),
-    sendForExtension: vi.fn(async () => ({ text: 'reply', message: { role: 'assistant' } })),
-    disposeForExtension: vi.fn(async () => {}),
-    cancelForExtension: vi.fn(async () => {}),
-  }))
-vi.mock('../../cateAgent/main/codingManager', () => ({
-  codingManager: { openForExtension, sendForExtension, disposeForExtension, cancelForExtension },
 }))
 
 // cate.ui.notify reuses the shared OS-notification path; spy on it + the setting.
@@ -148,7 +134,6 @@ import {
   dispatchCateInvoke,
   forwardTimeoutMs,
   requiredScopeFor,
-  stopCodingAgentsForMission,
   TERMINAL_INPUT_DISABLED,
   TERMINAL_READ_DISABLED,
   BROWSER_CONTROL_DISABLED,
@@ -160,7 +145,7 @@ import {
   cliPermissionDenied,
   cliPermissionForMethod,
 } from '../../shared/cliPermissions'
-import { CATE_AGENT_GRANTED_SCOPES, GRANTED_SCOPES } from './workspaceCateApi'
+import { GRANTED_SCOPES } from './workspaceCateApi'
 
 const EXT = 'cate.kitchensink'
 const WS = 'ws-1'
@@ -199,12 +184,6 @@ beforeEach(() => {
   showOsNotification.mockClear()
   showMessageBox.mockClear()
   showMessageBox.mockResolvedValue({ response: 0 })
-  openForExtension.mockClear()
-  openForExtension.mockResolvedValue({ sessionId: 'sess-1' })
-  sendForExtension.mockClear()
-  sendForExtension.mockResolvedValue({ text: 'reply', message: { role: 'assistant' } })
-  disposeForExtension.mockClear()
-  cancelForExtension.mockClear()
 })
 
 describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
@@ -369,50 +348,7 @@ describe('dispatchCateInvoke — Kitchen Sink reverse API', () => {
   })
 })
 
-describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
-  it('stops mission workers in the supervisor and every detached owner window', async () => {
-    const supervisorSend = vi.fn(() => { throw new Error('closed for test') })
-    const detachedSend = vi.fn(() => { throw new Error('closed for test') })
-    const unrelatedSend = vi.fn(() => { throw new Error('closed for test') })
-    const supervisor = { id: 1, isDestroyed: () => false, send: supervisorSend }
-    windowsById.set(7, {
-      isDestroyed: () => false,
-      webContents: { id: 7, send: detachedSend },
-    })
-    windowsById.set(8, {
-      isDestroyed: () => false,
-      webContents: { id: 8, send: unrelatedSend },
-    })
-    windowPanelList.value = [
-      {
-        panelId: 'worker-panel',
-        type: 'terminal',
-        workspaceId: WS,
-        ownerWindowId: 7,
-        codingAgentOwnerPanelId: 'supervisor-1',
-      },
-      {
-        panelId: 'other-worker',
-        type: 'terminal',
-        workspaceId: 'other-workspace',
-        ownerWindowId: 8,
-        codingAgentOwnerPanelId: 'supervisor-1',
-      },
-    ]
-
-    await stopCodingAgentsForMission(WS, 'supervisor-1', supervisor as never)
-
-    for (const send of [supervisorSend, detachedSend]) {
-      expect(send).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-        workspaceId: WS,
-        panelId: 'supervisor-1',
-        method: 'cate.codingAgent.stopAll',
-        args: {},
-      }))
-    }
-    expect(unrelatedSend).not.toHaveBeenCalled()
-  })
-
+describe('dispatchCateInvoke: coding agent orchestration boundary', () => {
   it('allows a long monitor call without extending unrelated host actions', () => {
     expect(forwardTimeoutMs('cate.codingAgent.wait')).toBe(65_000)
     expect(forwardTimeoutMs('cate.codingAgent.apply')).toBe(10_000)
@@ -428,40 +364,16 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
     }
   })
 
-  it('forwards orchestration only for the embedded Cate Agent and carries its cwd', async () => {
-    const forward = vi.fn(async () => ({ id: 'run-1' }))
-    const result = await dispatchCateInvoke({
-      extensionId: 'cate-agent',
-      workspaceId: WS,
-      panelId: 'cate-direct:chat-1',
-      caller: 'cate-agent',
-      originCwd: '/ws/worktrees/feature',
-      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
-      forward,
-    }, 'cate.codingAgent.create', { agentId: 'codex', prompt: 'Implement it' })
-
-    expect(result).toEqual({ id: 'run-1' })
-    expect(forward).toHaveBeenCalledWith(expect.objectContaining({
-      method: 'cate.codingAgent.create',
-      panelId: 'cate-direct:chat-1',
-      args: {
-        agentId: 'codex',
-        prompt: 'Implement it',
-        _cateOriginCwd: '/ws/worktrees/feature',
-      },
-    }))
-  })
-
-  it('applies the CLI master switch to Cate Agent orchestration', async () => {
+  it('applies the CLI master switch to terminal orchestration', async () => {
     settings.cliEnabled = false
     const forward = vi.fn()
 
     expect(await dispatchCateInvoke({
-      extensionId: 'cate-agent',
+      extensionId: 'terminal',
       workspaceId: WS,
       panelId: 'supervisor-cli-off',
-      caller: 'cate-agent',
-      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      caller: 'first-party',
+      grantedScopes: [...GRANTED_SCOPES],
       forward,
     }, 'cate.codingAgent.create', { agentId: 'codex', prompt: 'Implement it' })).toEqual({
       error: 'cli-disabled: enable Command-line control (cate CLI) in Cate Settings → CLI',
@@ -470,16 +382,16 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
     expect(forward).not.toHaveBeenCalled()
   })
 
-  it('applies the CLI master switch to Cate Agent host capabilities', async () => {
+  it('applies the CLI master switch to terminal host capabilities', async () => {
     settings.cliEnabled = false
     const forward = vi.fn()
 
     expect(await dispatchCateInvoke({
-      extensionId: 'cate-agent',
+      extensionId: 'terminal',
       workspaceId: WS,
       panelId: 'supervisor-cli-gate',
-      caller: 'cate-agent',
-      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      caller: 'first-party',
+      grantedScopes: [...GRANTED_SCOPES],
       forward,
     }, 'cate.terminal.press', { key: 'enter' })).toEqual({
       error: 'cli-disabled: enable Command-line control (cate CLI) in Cate Settings → CLI',
@@ -488,16 +400,16 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
     expect(forward).not.toHaveBeenCalled()
   })
 
-  it('applies per-capability CLI permissions to Cate Agent host capabilities', async () => {
+  it('applies per-capability CLI permissions to terminal host capabilities', async () => {
     settings.cliTerminalInputEnabled = false
     const forward = vi.fn()
 
     expect(await dispatchCateInvoke({
-      extensionId: 'cate-agent',
+      extensionId: 'terminal',
       workspaceId: WS,
       panelId: 'supervisor-cell-gate',
-      caller: 'cate-agent',
-      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      caller: 'first-party',
+      grantedScopes: [...GRANTED_SCOPES],
       forward,
     }, 'cate.terminal.press', { key: 'enter' })).toEqual({
       error: TERMINAL_INPUT_DISABLED,
@@ -545,11 +457,11 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
     const fallback = vi.fn()
 
     const result = await dispatchCateInvoke({
-      extensionId: 'cate-agent',
+      extensionId: 'terminal',
       workspaceId: WS,
       panelId: 'supervisor-1',
-      caller: 'cate-agent',
-      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      caller: 'first-party',
+      grantedScopes: [...GRANTED_SCOPES],
       forward: fallback,
     }, 'cate.codingAgent.inspect', { runId: 'run-1' })
 
@@ -613,11 +525,11 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
     ]
 
     const result = await dispatchCateInvoke({
-      extensionId: 'cate-agent',
+      extensionId: 'terminal',
       workspaceId: WS,
       panelId: 'supervisor-1',
-      caller: 'cate-agent',
-      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      caller: 'first-party',
+      grantedScopes: [...GRANTED_SCOPES],
       forward: vi.fn(),
     }, 'cate.codingAgent.wait', { runIds: ['run-a', 'run-b'] })
 
@@ -656,11 +568,11 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
       },
     ]
     const waiting = dispatchCateInvoke({
-      extensionId: 'cate-agent',
+      extensionId: 'terminal',
       workspaceId: WS,
       panelId: 'supervisor-1',
-      caller: 'cate-agent',
-      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
+      caller: 'first-party',
+      grantedScopes: [...GRANTED_SCOPES],
       forward: vi.fn(),
     }, 'cate.codingAgent.wait', { runIds: ['run-a', 'run-b'] })
 
@@ -673,164 +585,6 @@ describe('dispatchCateInvoke — Cate Agent orchestration boundary', () => {
       changedRunIds: ['run-b'],
     })
     expect(windowPanelListener.value).toBeNull()
-  })
-})
-
-describe('dispatchCateInvoke — cate.agent.* (open/send/dispose; run is gone)', () => {
-  const fakeWin = { isDestroyed: () => false, webContents: {} }
-  // Consent is granted once per extension for the app session, so each test
-  // uses a fresh extension id to stay isolated.
-  let seq = 0
-  const agentScope = (): InvokeScope => ({
-    extensionId: `cate.agent-test-${++seq}`,
-    workspaceId: WS,
-    panelId: PANEL,
-    forward: vi.fn(),
-  })
-
-  it('cate.agent.run is no longer a method (compose open -> send -> dispose)', async () => {
-    state.scopes = ['agent']
-    activeWindow.value = fakeWin
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.run', { prompt: 'hi' }))
-      .toEqual({ error: 'unsupported', method: 'cate.agent.run' })
-  })
-
-  it('denies cate.agent.open when the manifest lacks the agent scope', async () => {
-    // default scopes (no `agent`)
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.open', {}))
-      .toEqual({ error: 'scope-denied', method: 'cate.agent.open' })
-    expect(openForExtension).not.toHaveBeenCalled()
-  })
-
-  it('opens a session after consent and sends one turn', async () => {
-    state.scopes = ['agent']
-    activeWindow.value = fakeWin
-    const s = agentScope()
-    const opened = await dispatchCateInvoke(s, 'cate.agent.open', {})
-    expect(opened).toEqual({ sessionId: 'sess-1' })
-    expect(showMessageBox).toHaveBeenCalledTimes(1) // first-use consent
-    expect(openForExtension).toHaveBeenCalledWith({
-      workspaceId: WS,
-      locator: '/ws/root',
-      extensionId: s.extensionId,
-      sender: fakeWin.webContents,
-      resume: undefined,
-    })
-    const res = await dispatchCateInvoke(s, 'cate.agent.send', { sessionId: 'sess-1', prompt: 'build it' })
-    expect(res).toEqual({ text: 'reply', message: { role: 'assistant' } })
-    expect(sendForExtension).toHaveBeenCalledWith({ extensionId: s.extensionId, sessionId: 'sess-1', text: 'build it' })
-  })
-
-  it('rejects a send without a prompt or session before touching the agent', async () => {
-    state.scopes = ['agent']
-    activeWindow.value = fakeWin
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.send', { sessionId: 'sess-1', prompt: '   ' }))
-      .toEqual({ error: 'bad-args', method: 'cate.agent.send' })
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.send', { prompt: 'hi' }))
-      .toEqual({ error: 'bad-args', method: 'cate.agent.send' })
-    expect(sendForExtension).not.toHaveBeenCalled()
-  })
-
-  it('does not open when the user denies consent', async () => {
-    state.scopes = ['agent']
-    activeWindow.value = fakeWin
-    showMessageBox.mockResolvedValue({ response: 1 }) // Deny
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.open', {}))
-      .toEqual({ error: 'consent-denied', method: 'cate.agent.open' })
-    expect(openForExtension).not.toHaveBeenCalled()
-  })
-
-  it('surfaces the one-turn-at-a-time guard as agent-busy', async () => {
-    state.scopes = ['agent']
-    activeWindow.value = fakeWin
-    sendForExtension.mockRejectedValueOnce(new Error('agent-busy'))
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.send', { sessionId: 'sess-1', prompt: 'hi' }))
-      .toEqual({ error: 'agent-busy', method: 'cate.agent.send' })
-  })
-
-  it('cancels this extension\'s in-flight run', async () => {
-    state.scopes = ['agent']
-    const s = agentScope()
-    expect(await dispatchCateInvoke(s, 'cate.agent.cancel', undefined)).toEqual({ ok: true })
-    expect(cancelForExtension).toHaveBeenCalledWith(s.extensionId)
-  })
-
-  it('opens a session after consent and returns its handle', async () => {
-    state.scopes = ['agent']
-    activeWindow.value = fakeWin
-    const s = agentScope()
-    // A valid resume handle is a session-jsonl path inside this workspace's
-    // .cate/cate-agent dir (getWorkspaceInfo → rootPath '/ws/root').
-    const validResume = '/ws/root/.cate/cate-agent/sessions/-ws-root--/abc.jsonl'
-    const res = await dispatchCateInvoke(s, 'cate.agent.open', { resume: validResume })
-    expect(res).toEqual({ sessionId: 'sess-1' })
-    expect(showMessageBox).toHaveBeenCalledTimes(1) // first-use consent
-    expect(openForExtension).toHaveBeenCalledWith({
-      workspaceId: WS,
-      locator: '/ws/root',
-      extensionId: s.extensionId,
-      sender: fakeWin.webContents,
-      // boundedResumePath canonicalizes via the local host's path flavor, so on
-      // Windows the accepted handle comes back with native separators.
-      resume: path.normalize(validResume),
-    })
-  })
-
-  it('opens a fresh session when no resume is supplied', async () => {
-    state.scopes = ['agent']
-    activeWindow.value = fakeWin
-    const s = agentScope()
-    const res = await dispatchCateInvoke(s, 'cate.agent.open', {})
-    expect(res).toEqual({ sessionId: 'sess-1' })
-    expect(openForExtension).toHaveBeenCalledWith(
-      expect.objectContaining({ extensionId: s.extensionId, resume: undefined }),
-    )
-  })
-
-  it.each([
-    ['a parent-traversal resume', '/ws/root/.cate/cate-agent/../../../etc/passwd'],
-    ['an absolute resume outside the workspace', '/etc/x'],
-    ['another workspace\'s session', '/other/project/.cate/cate-agent/sessions/s/x.jsonl'],
-    ['a relative resume (not an absolute session path)', '../../other/session.jsonl'],
-    ['a bare basename (codingManager needs a full path)', 'abc.jsonl'],
-  ])('rejects %s before reaching codingManager', async (_label, resume) => {
-    state.scopes = ['agent']
-    activeWindow.value = fakeWin
-    const res = await dispatchCateInvoke(agentScope(), 'cate.agent.open', { resume })
-    expect(res).toEqual({ error: 'invalid-resume', method: 'cate.agent.open' })
-    expect(openForExtension).not.toHaveBeenCalled()
-    // Rejected before the consent prompt, too.
-    expect(showMessageBox).not.toHaveBeenCalled()
-  })
-
-  it('sends a turn to an open session without re-prompting consent', async () => {
-    state.scopes = ['agent']
-    const s = agentScope()
-    const res = await dispatchCateInvoke(s, 'cate.agent.send', { sessionId: 'sess-1', prompt: '  hi  ' })
-    expect(res).toEqual({ text: 'reply', message: { role: 'assistant' } })
-    expect(sendForExtension).toHaveBeenCalledWith({ extensionId: s.extensionId, sessionId: 'sess-1', text: 'hi' })
-    expect(showMessageBox).not.toHaveBeenCalled() // no consent gate on send
-  })
-
-  it('rejects a send with no sessionId or prompt', async () => {
-    state.scopes = ['agent']
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.send', { prompt: 'hi' }))
-      .toEqual({ error: 'bad-args', method: 'cate.agent.send' })
-    expect(sendForExtension).not.toHaveBeenCalled()
-  })
-
-  it('maps an unknown/foreign session to no-session', async () => {
-    state.scopes = ['agent']
-    sendForExtension.mockRejectedValueOnce(new Error('no-session'))
-    expect(await dispatchCateInvoke(agentScope(), 'cate.agent.send', { sessionId: 'x', prompt: 'hi' }))
-      .toEqual({ error: 'no-session', method: 'cate.agent.send' })
-  })
-
-  it('disposes an open session', async () => {
-    state.scopes = ['agent']
-    const s = agentScope()
-    expect(await dispatchCateInvoke(s, 'cate.agent.dispose', { sessionId: 'sess-1' })).toEqual({ ok: true })
-    expect(disposeForExtension).toHaveBeenCalledWith({ extensionId: s.extensionId, sessionId: 'sess-1' })
   })
 })
 
@@ -1149,7 +903,7 @@ describe('dispatchCateInvoke — cate.terminal.* namespace', () => {
 // =============================================================================
 // TRUST-BOUNDARY CHARACTERIZATION
 //
-// First-party callers (interactive terminals + the pi agent, reaching dispatch
+// First-party callers (interactive terminals reaching dispatch
 // through the per-workspace CATE_API loopback) are DELIBERATELY trusted: they
 // skip BOTH the extension-enabled/known gate (cateApiHandlers.ts ~376-380) and
 // the browser consent prompt (~408-412), and carry GRANTED_SCOPES that include
@@ -1319,23 +1073,6 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
     settings.cliAgentReadEnabled = true
     settings.cliAgentControlEnabled = false
     expect(await dispatchCateInvoke(s, 'cate.codingAgent.create', { prompt: 'Do it' })).toEqual({
-      error: cliPermissionDenied(cliPermissionCellByKey('cliAgentControlEnabled')),
-      method: 'cate.codingAgent.create',
-    })
-    expect(forward).not.toHaveBeenCalled()
-  })
-
-  it('applies the Agents permission cells to Cate Agent orchestration too', async () => {
-    settings.cliAgentControlEnabled = false
-    const forward = vi.fn()
-    expect(await dispatchCateInvoke({
-      extensionId: 'cate-agent',
-      workspaceId: WS,
-      panelId: 'cate-direct:chat-1',
-      caller: 'cate-agent',
-      grantedScopes: [...CATE_AGENT_GRANTED_SCOPES],
-      forward,
-    }, 'cate.codingAgent.create', { prompt: 'Do it' })).toEqual({
       error: cliPermissionDenied(cliPermissionCellByKey('cliAgentControlEnabled')),
       method: 'cate.codingAgent.create',
     })

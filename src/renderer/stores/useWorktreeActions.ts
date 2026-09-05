@@ -50,7 +50,7 @@ export interface WorktreeActions {
   checkoutPr: (pr: PrListItem) => Promise<WorktreeMeta | null>
 }
 
-/** Imperative core shared by the React hook and Cate Agent's orchestration
+/** Imperative core shared by the React hook and agent orchestration
  * driver. Keeping one path preserves branch sanitization, symlink settings,
  * metadata colors, additional-root registration, and git refresh behavior. */
 export async function createWorktreeForWorkspace(

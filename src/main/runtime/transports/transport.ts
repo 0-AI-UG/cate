@@ -90,10 +90,10 @@ export function buildRemotePullCommand(installDir: string, url: string, version:
   )
 }
 
-/** sh test that the heavy parts are provisioned (runtime + rg + pi + cjs +
+/** sh test that the heavy parts are provisioned (runtime + rg + T3 + cjs +
  *  node_modules). Echoes CATE_PROVISIONED when all present. `D` must be shell-quoted. */
 export function provisionedProbe(quotedInstallDir: string): string {
-  return `test -x ${quotedInstallDir}/runtime/bin/node && test -x ${quotedInstallDir}/runtime/bin/rg && test -f ${quotedInstallDir}/pi/dist/cli.js && test -f ${quotedInstallDir}/runtime.cjs && test -d ${quotedInstallDir}/node_modules && echo CATE_PROVISIONED`
+  return `test -x ${quotedInstallDir}/runtime/bin/node && test -x ${quotedInstallDir}/runtime/bin/rg && test -f ${quotedInstallDir}/t3/dist/bin.mjs && test -f ${quotedInstallDir}/runtime.cjs && test -d ${quotedInstallDir}/node_modules && echo CATE_PROVISIONED`
 }
 
 /** Transport-specific bits the shared dev provisioner needs. */
