@@ -27,7 +27,7 @@ This beta brings T3 conversations into Cate, improves worktree-aware panels and 
 
 ### Fixed
 
-- **macOS packaging**: restored the signing entitlements required to build Apple silicon and Intel releases.
+- **macOS packaging**: restored the signing entitlements required to build Apple silicon and Intel releases, and fixed app signing to reuse the imported certificate keychain.
 - **Fresh T3 conversations**: starting a new chat no longer returns to the existing conversation; switching and restart preserve the selected chat.
 - **Provider configuration**: multiline launch arguments use T3's expected format, and secret settings save correctly through symlinked storage paths.
 - **Panel geometry**: maximizing canvas panels respects spacing, and locked panels retain their geometry during drag and resize actions.
