@@ -11,8 +11,8 @@
 # binaries must carry a Developer ID + hardened-runtime signature like the app.
 #
 # The keychain is added to the search list so codesign can locate the identity
-# (codesign --keychain alone is unreliable). electron-builder later signs the app
-# with its OWN --keychain, so this extra keychain doesn't make that ambiguous.
+# (codesign --keychain alone is unreliable). electron-builder reuses this
+# imported keychain through CSC_KEYCHAIN instead of importing the cert again.
 #
 # No-op (exit 0, no identity exported) when MAC_CERTS is absent — the build then
 # stays unsigned and notarization fails loudly, same as before.
@@ -46,8 +46,8 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KPASS" "
 # login keychain) so codesign can locate the identity. `codesign --keychain
 # <path>` alone is unreliable for a keychain not in the search list ("The
 # specified item could not be found in the keychain"), so the build script signs
-# via the search list. electron-builder later signs the app with its OWN
-# `--keychain`, so this extra keychain doesn't make its lookup ambiguous.
+# via the search list. electron-builder also receives this exact keychain
+# through CSC_KEYCHAIN when it signs the app.
 security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed 's/"//g')
 
 IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
@@ -59,4 +59,5 @@ if [ -z "$IDENTITY" ]; then
 fi
 
 echo "CATE_MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+echo "CSC_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 echo "Runtime natives will be signed with Developer ID identity $IDENTITY"
