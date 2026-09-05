@@ -44,6 +44,7 @@ import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { runtimeBuildOptions, syncRuntimeVersion } from './build-runtime.mjs'
+import { patchT3 } from './patch-t3.mjs'
 
 // Bundled runtime version. MUST satisfy T3's `engines.node` requirement
 // (^22.16 || ^23.11 || >=24.10). Keep on a 22.x LTS line.
@@ -532,6 +533,8 @@ async function stageT3(outRoot) {
       return !monitorTarget || monitorTarget === targetArg
     },
   })
+
+  patchT3(path.join(outRoot, 'dist', 'bin.mjs'))
 
   const nestedModules = path.join(outRoot, 'node_modules')
   const runtimePackages = [

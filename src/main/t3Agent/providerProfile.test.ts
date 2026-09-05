@@ -38,7 +38,7 @@ describe('T3 provider profile', () => {
     })
   })
 
-  it('shows every bundled provider by default without overriding explicit user choices', () => {
+  it('preserves explicit provider choices', () => {
     expect(applyCateProviderDefaults({
       providers: {
         codex: { binaryPath: '/bin/codex' },
@@ -60,5 +60,12 @@ describe('T3 provider profile', () => {
     expect(isProviderSecretFile('usage-limit-source-example.bin')).toBe(true)
     expect(isProviderSecretFile('desktop-bootstrap-token.bin')).toBe(false)
     expect(isProviderSecretFile('provider-env-example.txt')).toBe(false)
+  })
+
+  it('makes Grok opt-in and preserves subsequent explicit enablement', () => {
+    const defaults = applyCateProviderDefaults({})
+    expect(defaults.providers).toMatchObject({ grok: { enabled: false }, codex: { enabled: true } })
+    expect(applyCateProviderDefaults({ providers: { grok: { enabled: true } } }).providers)
+      .toMatchObject({ grok: { enabled: true } })
   })
 })

@@ -21,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-/** Cate exposes every bundled provider in the model picker by default. Keep
+/** Grok is opt-in because its CLI can launch interactive authentication. Keep
  * explicit user choices intact once a provider has been configured. */
 export function applyCateProviderDefaults(settings: Record<string, unknown>): Record<string, unknown> {
   const currentProviders = isRecord(settings.providers) ? settings.providers : {}
@@ -31,7 +31,7 @@ export function applyCateProviderDefaults(settings: Record<string, unknown>): Re
   for (const key of CATE_DEFAULT_PROVIDER_KEYS) {
     const current = providers[key]
     if (isRecord(current) && typeof current.enabled === 'boolean') continue
-    providers[key] = { ...(isRecord(current) ? current : {}), enabled: true }
+    providers[key] = { ...(isRecord(current) ? current : {}), enabled: key !== 'grok' }
     changed = true
   }
 
