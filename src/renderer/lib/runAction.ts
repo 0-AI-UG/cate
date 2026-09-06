@@ -11,16 +11,18 @@ import type { StoreApi } from 'zustand'
 import {
   useAppStore,
   getActiveCanvasOps,
+  getActiveCanvasPanelId,
   placementForActivePanel,
 } from '../stores/appStore'
 import { useUIStore, getSidebarLayout } from '../stores/uiStore'
 import { useSearchStore } from '../stores/searchStore'
-import type { MenuActionId, ShortcutAction } from '../../shared/types'
+import type { MenuActionId } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
 import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
 import { provideAppStoreForHistory } from '../stores/canvas/historySlice'
 import { inheritedWorktreeFromSelection } from './inheritWorktree'
 import { closePanelWithConfirm } from './closePanelWithConfirm'
+import { setActivePanel } from './activePanel'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
 import { getFocusedLeafPanelId, requestPanelRename } from './focusedPanel'
 
@@ -89,7 +91,7 @@ export async function runAction(
     return
   }
 
-  switch (action as ShortcutAction) {
+  switch (action) {
     case 'newTerminal': {
       const placement = placementForActivePanel()
       const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
@@ -228,17 +230,24 @@ export async function runAction(
       break
     }
     case 'navigateUp':
-      canvasStore()?.navigateSelect('up')
-      break
     case 'navigateDown':
-      canvasStore()?.navigateSelect('down')
-      break
     case 'navigateLeft':
-      canvasStore()?.navigateSelect('left')
+    case 'navigateRight': {
+      if (useUIStore.getState().showCommandPalette) break
+      const canvas = canvasStore()
+      if (!canvas) break
+      // Release the source surface for chained jumps and Enter-to-activate.
+      // This must also run for shortcuts forwarded from webview guests.
+      const canvasPanelId = getActiveCanvasPanelId()
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      setActivePanel(canvasPanelId)
+      const direction = {
+        navigateUp: 'up', navigateDown: 'down',
+        navigateLeft: 'left', navigateRight: 'right',
+      } as const
+      canvas.navigateSelect(direction[action])
       break
-    case 'navigateRight':
-      canvasStore()?.navigateSelect('right')
-      break
+    }
     case 'panUp':
       canvasStore()?.panViewport('up')
       break
