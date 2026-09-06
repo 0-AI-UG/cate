@@ -15,7 +15,9 @@ export interface T3Thread {
 export function t3ThreadActivity(thread: T3Thread): AgentState {
   if (thread.hasPendingApprovals || thread.hasPendingUserInput || thread.hasActionableProposedPlan) return 'waitingForInput'
   if (thread.session?.status === 'starting' || thread.latestTurn?.state === 'running' || thread.session?.activeTurnId || thread.backgroundLiveness) return 'running'
-  return thread.latestTurn ? 'finished' : 'notRunning'
+  // A stopped turn leaves the conversation ready for the user's next message,
+  // just like a terminal agent returning to its prompt.
+  return thread.latestTurn ? 'waitingForInput' : 'notRunning'
 }
 
 /** A separate authenticated subscription in the guest's persistent session.
