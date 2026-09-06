@@ -226,6 +226,7 @@ beforeEach(() => {
   replayTerminalLog.mockClear()
   replayTerminalLog.mockImplementation(async () => {})
   noteAgentInputSubmitted.mockClear()
+  noteAgentInterruptSubmitted.mockClear()
 })
 
 // ===========================================================================
@@ -272,23 +273,23 @@ describe('spawn → wire → dispose happy path', () => {
     expect(dataDisposers[0]).toHaveBeenCalledTimes(1)
   })
 
-  it('reports a submitted terminal line to the agent status coordinator', async () => {
+  it('forwards Enter without racing the runtime hook stream', async () => {
     terminalCreate.mockResolvedValueOnce('pty-input')
     await LC.getOrCreate('panel-input', { workspaceId: 'ws-1' })
 
     terminalInstances[0].emitData('\r')
 
-    expect(noteAgentInputSubmitted).toHaveBeenCalledWith('pty-input')
+    expect(noteAgentInputSubmitted).not.toHaveBeenCalled()
     expect(terminalWrite).toHaveBeenCalledWith('pty-input', '\r')
   })
 
-  it('reports Ctrl-C to the agent status coordinator', async () => {
+  it('forwards Ctrl-C without racing the runtime hook stream', async () => {
     terminalCreate.mockResolvedValueOnce('pty-interrupt')
     await LC.getOrCreate('panel-interrupt', { workspaceId: 'ws-1' })
 
     terminalInstances[0].emitData('\x03')
 
-    expect(noteAgentInterruptSubmitted).toHaveBeenCalledWith('pty-interrupt')
+    expect(noteAgentInterruptSubmitted).not.toHaveBeenCalled()
     expect(terminalWrite).toHaveBeenCalledWith('pty-interrupt', '\x03')
   })
 

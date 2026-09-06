@@ -40,7 +40,6 @@ import { useStatusStore } from '../../stores/statusStore'
 import { awaitWorkspaceSync, useAppStore } from '../../stores/appStore'
 import { replayTerminalLog } from '../workspace/session'
 import type { CodingAgentLaunch } from '../../../shared/codingAgentRuns'
-import { noteAgentInputSubmitted, noteAgentInterruptSubmitted } from '../agent/agentScreenDetector'
 
 interface CreateOpts {
   workspaceId: string
@@ -217,12 +216,8 @@ export function wireTerminalListeners(args: {
 
   // xterm -> PTY: keystrokes (standard path for all other input)
   const dataDisposable = terminal.onData((data) => {
-    // Permission hooks report the wait, but several CLIs expose no matching
-    // "user answered" event until after the approved tool finishes. Enter is
-    // the real resume edge; the detector ignores it unless this terminal is
-    // currently parked on a permission prompt.
-    if (data.includes('\r')) noteAgentInputSubmitted(ptyId)
-    if (data.includes('\x03')) noteAgentInterruptSubmitted(ptyId)
+    // The runtime reports submission/interrupt edges alongside hooks, for
+    // every write path (including automated input) and in delivery order.
     electronAPI.terminalWrite(ptyId, data)
   })
   cleanupListeners.push(() => dataDisposable.dispose())

@@ -198,6 +198,8 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     getEnv: cleanEnv,
     idleSuspend: config.idleSuspend,
     hooks: {
+      noteInput: (ptyId, data) => agentHooks.noteInput(ptyId, data),
+      forgetTerminal: (ptyId) => agentHooks.forgetTerminal(ptyId),
       envForPty: (ptyId, env) => agentHooks.envForPty(ptyId, env),
       prepareWorkspace: (cwd, config, baseCwd) => agentHooks.prepareWorkspace(cwd, config, baseCwd),
     },

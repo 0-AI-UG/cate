@@ -107,7 +107,7 @@ export function createAgentTitleTracker(options: AgentTitleTrackerOptions): Agen
 
   return {
     note(event) {
-      if (disposed || event.kind === 'session-title') return
+      if (disposed || event.kind === 'session-title' || event.kind === 'input-submit' || event.kind === 'input-interrupt') return
       if (event.kind === 'session-end') {
         clearTimer(event.terminalId)
         generations.set(event.terminalId, (generations.get(event.terminalId) ?? 0) + 1)
