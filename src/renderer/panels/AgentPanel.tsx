@@ -17,6 +17,8 @@ import { useActivePanelStore } from '../lib/activePanel'
 import { useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { useUIStore } from '../stores/uiStore'
+import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
+import { agentHarnessThemeScript } from '../lib/agentHarnessTheme'
 
 interface WebviewElement extends HTMLElement {
   getURL(): string
@@ -195,6 +197,8 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
         if (webviewRef.current !== webview) return
         await webview.executeJavaScript(agentHarnessBrandingScript('thread')).catch(() => undefined)
         if (webviewRef.current !== webview) return
+        await webview.executeJavaScript(agentHarnessThemeScript(getActiveTheme())).catch(() => undefined)
+        if (webviewRef.current !== webview) return
         persistThreadFromLocation()
         setGuestReady(true)
       })()
@@ -221,6 +225,15 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       webview.removeEventListener('did-fail-load', onFailed)
     }
   }, [panelId, state, threadId, workspaceId])
+
+  useEffect(() => {
+    if (state.phase !== 'ready' || !guestReady) return
+    const guest = webviewRef.current
+    if (!guest) return
+    const apply = () => { void guest.executeJavaScript(agentHarnessThemeScript(getActiveTheme())).catch(() => undefined) }
+    apply()
+    return subscribeTheme(apply)
+  }, [state, guestReady])
 
   useEffect(() => {
     if (state.phase !== 'ready') return

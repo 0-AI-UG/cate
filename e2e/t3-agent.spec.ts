@@ -306,6 +306,43 @@ test('explains an unchanged Homebrew update once without claiming success', asyn
   await expect(native.getByRole('button', { name: 'Update provider', exact: true })).toBeVisible()
 })
 
+test('real T3 follows Cate theme changes without reloading the conversation', async () => {
+  await expect.poll(() => guestEval(agentWebview(), `Boolean(document.querySelector('[contenteditable=true]'))`)).toBe(true)
+  await guestEval(agentWebview(), `(() => {
+    window.__themeSurvival = 'same guest';
+    document.querySelector('[contenteditable=true]').focus();
+  })()`)
+  const guestId = await agentWebview().evaluate(element => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())
+  await electronApp!.evaluate(({ webContents }, id) => webContents.fromId(id)!.insertText('Draft through theme changes'), guestId)
+  await expect.poll(() => guestEval(agentWebview(), `document.querySelector('[contenteditable=true]').textContent`)).toBe('Draft through theme changes')
+  for (const id of ['dark-cold', 'light-subtle', 'dracula']) {
+    const expected = await page.evaluate((themeId) => {
+      window.__cateE2E!.setTheme(themeId)
+      const root = document.documentElement
+      return {
+        background: root.style.getPropertyValue('--surface-4'),
+        foreground: root.style.getPropertyValue('--text-primary'),
+        primary: root.style.getPropertyValue('--focus-blue'),
+        mode: root.dataset.theme,
+      }
+    }, id)
+    await expect.poll(() => guestEval(agentWebview(), `(() => {
+      const css = getComputedStyle(document.documentElement);
+      return { background: css.getPropertyValue('--background').trim(), foreground: css.getPropertyValue('--foreground').trim(),
+        primary: css.getPropertyValue('--primary').trim(), mode: css.colorScheme };
+    })()`)).toEqual(expected)
+    expect(await guestEval(agentWebview(), `({ marker: window.__themeSurvival, draft: document.querySelector('[contenteditable=true]').textContent })`))
+      .toEqual({ marker: 'same guest', draft: 'Draft through theme changes' })
+    await guestEval(agentWebview(), `new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))`)
+    // Buttons animate their color; wait for the theme transition before QA.
+    await expect.poll(() => guestEval(agentWebview(), `(() => {
+      const button = document.querySelector('button[aria-label="Change project"]');
+      return getComputedStyle(button).color === getComputedStyle(document.querySelector('h1')).color;
+    })()`)).toBe(true)
+    await page.screenshot({ path: test.info().outputPath(`t3-theme-${id}.png`) })
+  }
+})
+
 test('docked T3 hides when switching to its sibling canvas tab and preserves the conversation', async () => {
   expect(agent.nodeId).toBeNull()
   const agentTab = page.locator(`[data-tab-panel-id="${agent.panelId}"]`)
