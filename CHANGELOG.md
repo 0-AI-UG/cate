@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-06
+
+Cate 1.7 brings T3 conversations into the canvas, adds multi-file change reviews, and makes browser and agent panels more seamless across focus, tabs, and workspaces. This stable release includes the improvements from the 1.6.1 beta series.
+
+### Added
+
+- **T3 chat panels**: use the bundled T3 chat interface with native provider settings, authentication, custom models, and separate provider accounts. Start or resume conversations from the canvas action bar or a panel's conversation selector.
+- **Multi-file Diff Review**: inspect working-tree, staged, unstaged, commit, and branch changes in one panel, with unified or split diffs, file filtering, image previews, and exportable local review notes.
+- **Review-time Git actions**: stage, unstage, discard, commit, push, and open pull requests from eligible reviews across local, SSH, and WSL workspaces.
+- **Terminal-agent orchestration**: use Cate CLI to create, inspect, message, review, and manage visible coding-agent workers, including nested workers and isolated worktrees, with separate read and control permissions.
+- **Kiro CLI support**: detect and orchestrate Kiro alongside the other supported terminal coding agents, including follow-ups and session resume.
+- **Keep awake**: prevent automatic system sleep while Cate is running with a session-only canvas control shared across windows.
+- **Browser password saving**: save or update submitted credentials after explicit confirmation, or add credentials manually in the password manager.
+- **Panel shortcuts and skill sources**: rename focused panels with a customizable shortcut, copy absolute or workspace-relative paths from tab menus, and browse additional popular skill repositories.
+
+### Changed
+
+- **T3 follows Cate's theme**: chat backgrounds, composer, text, controls, and status colors update live with built-in and custom themes, preserving the conversation and unsent draft.
+- **Persistent browser panels**: browser panels and automation share the same live webview, preserving page state across workspace changes and keeping background automation available.
+- **Worktree-aware surfaces**: panel actions, reviews, and workspace surfaces use the selected checkout's context, including detached-window workflows.
+- **Provider settings**: advanced configuration uses collapsible sections with clearer provider selection and settings feedback.
+
+### Fixed
+
+- **T3 focus and tab switching**: focusing a canvas panel no longer reloads its conversation, and switching from a docked T3 tab to Canvas hides the guest correctly while preserving its state.
+- **T3 conversation lifecycle**: fresh chats no longer return to an existing conversation; selected chats survive restart, inactive sibling panels do not steal keyboard focus, and stale loading work cannot reveal the next conversation prematurely.
+- **Embedded content failures**: iframe navigation and load errors no longer reload or replace the whole T3 conversation.
+- **Canvas interactions**: placement and target controls preserve focus and selection; file-drop indicators stay within the target panel's stacking and clipping context. Maximizing respects spacing, and locked panels retain their geometry.
+- **Browser alignment**: webviews stay synchronized during pan, zoom, resize, focus, and workspace transitions, with correct clipping and pointer targeting.
+- **Remote workspaces and terminals**: disconnected terminals recover their PTYs, mapped and UNC network paths are handled consistently, and existing files can open in clean untitled editors without duplicate panels.
+- **Worktree and review paths**: managed skills mirror only into real linked worktrees, and reviews work when a workspace is nested inside a repository.
+- **Provider configuration and agent status**: multiline launch arguments and symlinked secret storage save correctly, with improved CLI lifecycle hooks, follow-ups, and title synchronization.
+- **Platform compatibility**: macOS signing and entitlements are restored, and Linux terminal dependencies support older glibc versions.
+
+### Removed
+
+- **Third-party extensions**: removed the extension catalog, settings, panels, installation, and server runtime. Obsolete extension panels are discarded from saved layouts; Cate CLI control and existing T3 credentials and conversations are preserved.
+- **Placement debugging overlay**: removed its development-only visualization, keyboard toggle, and trace collection.
+
 ## [1.6.1-beta.6] - 2026-09-05
 
 This beta brings T3 conversations into Cate, improves worktree-aware panels and reviews, and removes the third-party extension system.
