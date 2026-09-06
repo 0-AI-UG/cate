@@ -23,12 +23,10 @@ a[aria-label="Go to threads"]:has(svg[aria-label="T3"]),
 svg[aria-label="T3"],
 [data-workspace-titlebar-controls],
 [data-composer-context-control],
-[data-preview-panel-mode],
 [data-preview-mini-player],
 [data-terminal-owner],
 [data-right-panel-tabbar],
-[data-right-panel-surface-content],
-button[aria-label="Open diff"] {
+[data-surface-launcher-keys] {
   display: none !important;
 }
 
@@ -36,6 +34,13 @@ button[aria-label="Filter threads by project"],
 button[aria-label="New project"],
 [data-slot="composer-context-strip"] {
   display: none !important;
+}
+
+/* The draft headline may name the current project, but Cate owns its selection. */
+[data-cate-project-label] {
+  pointer-events: none !important;
+  border: none !important;
+  cursor: default !important;
 }
 
 [data-slot="composer-shell"][data-with-context="true"]::before,
@@ -81,6 +86,14 @@ export function agentHarnessBrandingScript(route: AgentHarnessRoute): string {
     }
     const removeProductChrome = () => {
       if (document.title !== 'T3 Code') document.title = 'T3 Code'
+      document.querySelectorAll('h1').forEach((heading) => {
+        if (!heading.textContent?.startsWith('What should we build in ') && !/^(Add a project|Choose a project).*to start$/.test(heading.textContent || '')) return
+        heading.querySelectorAll('button').forEach((button) => {
+          button.disabled = true
+          button.tabIndex = -1
+          if (!button.hasAttribute('data-cate-project-label')) button.setAttribute('data-cate-project-label', '')
+        })
+      })
       document.querySelectorAll('a[aria-label="Go to threads"]:has(svg[aria-label="T3"]), svg[aria-label="T3"]').forEach((element) => element.remove())
       // Restrict copy changes to product chrome, never the conversation body.
       document.querySelectorAll('[data-sonner-toast], [role="tooltip"], [role="menu"], [data-slot="sidebar-footer"], [data-slot="sidebar-header"]').forEach(rewriteChrome)

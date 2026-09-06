@@ -440,6 +440,8 @@ export interface ElectronAPI {
   /** Inspect a workspace's per-agent hook-file injection state (for the
    *  Settings UI). `locator` is the workspace's rootPath locator. */
   agentHooksInspect(locator: string): Promise<AgentHookAgentState[]>
+  agentChangesList(locator: string, workspaceId: string): Promise<import('./agentChanges').AgentChangeRecord[]>
+  agentChangesBind(locator: string, workspaceId: string, threadId: string, panelId: string): Promise<void>
 
   /** Get all settings. */
   settingsGetAll(): Promise<AppSettings>
@@ -1065,6 +1067,7 @@ export interface ElectronAPI {
 
   onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void
   agentHarnessDeleteConversation(request: AgentProviderStatusRequest & { threadId: string }): Promise<{ ok: true } | AgentHarnessError>
+  agentHarnessRenameConversation(request: AgentProviderStatusRequest & { threadId: string; title: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessListConversations(request: AgentProviderStatusRequest): Promise<import('./t3Agent').T3Conversation[] | AgentHarnessError>
 
   agentHarnessGetPanelUrl(

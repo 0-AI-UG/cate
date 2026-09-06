@@ -152,6 +152,8 @@ export interface ProcessHost {
 // ---------------------------------------------------------------------------
 
 export interface AgentHookHost {
+  listChanges(cwd: string, access?: FileAccessContext): Promise<import('../../shared/agentChanges').AgentChangeRecord[]>
+  bindChanges(cwd: string, threadId: string, panelId: string, access?: FileAccessContext): Promise<void>
   /** Subscribe to normalized agent hook events from this host's terminals.
    *  Returns an unsubscribe. */
   subscribe(onEvent: (event: AgentHookEvent) => void): () => void
@@ -173,6 +175,8 @@ export interface ServerStartOptions {
   /** Prepend the runtime-bundled `cate` CLI to PATH for trusted first-party
    *  servers whose child processes need to call back into Cate. */
   includeCateCli?: boolean
+  /** First-party T3 server: enable the authenticated reported-edit bridge. */
+  captureAgentChanges?: boolean
 }
 
 export interface ServerHandle { id: string; pid: number; port: number } // port bound 127.0.0.1 on the daemon host

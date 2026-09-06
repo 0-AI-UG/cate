@@ -178,6 +178,8 @@ export class RpcServer {
       case Methods.agentHooksSubscribe: return this.startAgentHooks()
       case Methods.agentHooksUnsubscribe: return this.stopAgentHooks(s(0))
       case Methods.agentHooksInspect: return api.agentHooks.inspectWorkspace(s(0))
+      case Methods.agentChangesList: return api.agentHooks.listChanges(s(0), a(1))
+      case Methods.agentChangesBind: return api.agentHooks.bindChanges(s(0), s(1), s(2), a(3))
 
       // --- server (provider harnesses) --- output/exit stream back keyed by the server id ---
       case Methods.serverStart:

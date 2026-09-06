@@ -167,6 +167,8 @@ export interface GitReviewNote {
 }
 
 export interface ReviewPanelState {
+  /** Present only for saved agent edits; absent means an ordinary Git comparison. */
+  agentChanges?: import('./agentChanges').AgentChangesFilter
   repoPath: string
   spec: GitComparisonSpec
   focusedFile?: string
@@ -194,6 +196,7 @@ export interface ReviewPanelState {
  * from another surface. The owning renderer merges this into its local panel
  * state so display preferences and notes remain authoritative there. */
 export interface ReviewPanelOpenRequest {
+  agentChanges?: import('./agentChanges').AgentChangesFilter
   spec: GitComparisonSpec
   focusedFile?: string
   sourceAgent?: ReviewPanelState['sourceAgent']

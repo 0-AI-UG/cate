@@ -19,6 +19,13 @@ import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { useUIStore } from '../stores/uiStore'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
 import { agentHarnessThemeScript } from '../lib/agentHarnessTheme'
+import { agentHarnessHostBridgeScript } from '../lib/agentHarnessHostBridge'
+import { requestPanelTarget, type PanelTarget } from '../lib/panelTargetPicker'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
+import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
+import { openAgentChanges } from '../lib/review/openAgentChanges'
+import { useAgentChanges } from '../lib/useAgentChanges'
+import { summarizeAgentChanges } from '../../shared/agentChanges'
 
 interface WebviewElement extends HTMLElement {
   getURL(): string
@@ -49,6 +56,8 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
   const [state, setState] = useState<ResolveState>({ phase: 'loading' })
   const [retryNonce, setRetryNonce] = useState(0)
   const [guestReady, setGuestReady] = useState(false)
+  const [hostError, setHostError] = useState('')
+  const bridgeTokenRef = useRef(crypto.randomUUID())
 
   const activePanelId = useActivePanelStore((s) => s.activePanelId)
   const canvasFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
@@ -71,6 +80,19 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     return worktree?.path ?? workspace?.rootPath ?? ''
   })
   const threadId = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId)?.panels[panelId]?.agentThreadId)
+  const worktreeId = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId)?.panels[panelId]?.worktreeId)
+  const changes = useAgentChanges(cwd, workspaceId)
+  useEffect(() => {
+    if (threadId && cwd) void window.electronAPI.agentChangesBind?.(cwd, workspaceId, threadId, panelId).catch((cause) => setHostError(errorText(cause)))
+  }, [cwd, workspaceId, threadId, panelId])
+  useEffect(() => {
+    if (!guestReady || !threadId) return
+    const records = changes.records.filter((r) => r.source === 't3' && r.sourceId === threadId)
+    const turns = Object.fromEntries([...new Set(records.map((r) => r.turnId))].map((turnId) => [turnId,
+      summarizeAgentChanges(records.filter((r) => r.turnId === turnId)),
+    ]))
+    void webviewRef.current?.executeJavaScript(`window.__cateChanges = ${JSON.stringify({ threadId, turns })}; window.dispatchEvent(new Event('cate-changes'));`).catch(() => {})
+  }, [changes.records, guestReady, threadId])
   useEffect(() => window.electronAPI.onAgentConversationDeleted?.((event) => {
     if (state.phase === 'ready' && event.partition === state.partition && event.workspaceId === workspaceId && event.threadId === threadId) {
       void window.electronAPI.closeWindowPanel(panelId)
@@ -135,8 +157,71 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     if (state.phase !== 'ready') return
     const webview = webviewRef.current
     if (!webview) return
-
+    const bridgeToken = bridgeTokenRef.current
+    const placements = new Map<string, PanelTarget>()
     let disposed = false
+    let choosing = false
+    const onHostMessage = (event: { message?: string }): void => {
+      if (!event.message?.startsWith('cate-chat-host:')) return
+      let request: { token: string; id: string; action: string; payload: Record<string, unknown> }
+      try { request = JSON.parse(event.message.slice('cate-chat-host:'.length)) } catch { return }
+      if (request.token !== bridgeToken || typeof request.id !== 'string' || !request.payload) return
+      const reply = (result: unknown, error?: string) => {
+        if (!disposed) void webview.executeJavaScript(`window.__cateHost?.reply(${JSON.stringify(request.id)}, ${JSON.stringify(result)}, ${JSON.stringify(error ?? null)})`).catch(() => undefined)
+      }
+      void (async () => {
+        const payload = request.payload
+        if (request.action === 'external' && typeof payload.url === 'string') {
+          const url = new URL(payload.url)
+          if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Unsupported link.')
+          window.electronAPI.openExternalUrl(url.href)
+          return true
+        }
+        if (payload.threadId && request.action !== 'open-agent' && payload.threadId !== threadId) throw new Error('Conversation changed. Please try again.')
+        const relativePath = typeof payload.filePath === 'string' ? payload.filePath : undefined
+        if (relativePath && (/^[\\/]|^[A-Za-z]:/.test(relativePath) || relativePath.split(/[\\/]/).includes('..'))) throw new Error('File is outside this project.')
+        if (request.action === 'open-agent') {
+          const target = placements.get(String(payload.placementId))
+          if (!target || target.kind !== 'new' || typeof payload.threadId !== 'string') throw new Error('Panel placement expired.')
+          const app = useAppStore.getState()
+          const id = app.createAgent(workspaceId, undefined, target.placement, cwd, worktreeId, payload.threadId)
+          if (typeof payload.title === 'string') app.updatePanelTitleFromAgent(workspaceId, id, payload.title)
+          placements.delete(String(payload.placementId))
+          return true
+        }
+        if (!['diff', 'file', 'place-agent'].includes(request.action)) throw new Error('Unsupported chat action.')
+        if (choosing) return null
+        if (request.action === 'diff') {
+          choosing = true
+          try {
+            return await openAgentChanges({ workspaceId, panelId, cwd, focusedFile: relativePath,
+              sessionId: threadId, turnId: typeof payload.turnId === 'string' ? payload.turnId : undefined })
+          } finally { choosing = false }
+        }
+        choosing = true
+        let target: PanelTarget | null
+        try {
+          target = await requestPanelTarget({ workspaceId, sourcePanelId: panelId, panelType: request.action === 'file' ? 'editor' : 'agent', availability: 'new' })
+        } finally { choosing = false }
+        if (!target || disposed || target.kind !== 'new') return null
+        setHostError('')
+        if (request.action === 'place-agent') {
+          const id = crypto.randomUUID()
+          placements.set(id, target)
+          return id
+        }
+        if (relativePath) {
+          const root = parseLocator(cwd)
+          openFileAsPanel(workspaceId, formatLocator({ ...root, path: `${root.path.replace(/[\\/]+$/, '')}/${relativePath}` }), undefined, target.placement)
+        }
+        return true
+      })().then((result) => reply(result)).catch((cause: unknown) => {
+        const message = cause instanceof Error ? cause.message : 'Could not open panel.'
+        if (!disposed) setHostError(message)
+        reply(null, message)
+      })
+    }
+
     const boundUrl = threadId
       ? `${new URL(state.url).origin}/${encodeURIComponent(state.environmentId)}/${encodeURIComponent(threadId)}`
       : state.url
@@ -197,6 +282,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
         // guest call, and reveal only after both styling and setup finish.
         const setup = [
           agentHarnessBrandingScript('thread'),
+          agentHarnessHostBridgeScript(bridgeToken),
           agentHarnessThemeScript(getActiveTheme()),
         ].map((script) => `try { ${script}; } catch {}`).join('\n')
         await Promise.allSettled([
@@ -214,6 +300,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     }
 
     webview.addEventListener('will-navigate', onWillNavigate)
+    webview.addEventListener('console-message', onHostMessage)
     webview.addEventListener('new-window', onNewWindow)
     webview.addEventListener('did-navigate', persistThreadFromLocation)
     webview.addEventListener('did-navigate-in-page', persistThreadFromLocation)
@@ -222,6 +309,8 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     webview.addEventListener('did-fail-load', onFailed)
     return () => {
       disposed = true
+      placements.clear()
+      webview.removeEventListener('console-message', onHostMessage)
       webview.removeEventListener('will-navigate', onWillNavigate)
       webview.removeEventListener('new-window', onNewWindow)
       webview.removeEventListener('did-navigate', persistThreadFromLocation)
@@ -230,7 +319,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       webview.removeEventListener('dom-ready', onReady)
       webview.removeEventListener('did-fail-load', onFailed)
     }
-  }, [panelId, state, threadId, workspaceId])
+  }, [panelId, state, threadId, workspaceId, cwd, worktreeId])
 
   useEffect(() => {
     if (state.phase !== 'ready' || !guestReady) return
@@ -284,6 +373,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       data-agent-phase={state.phase}
     >
       <div className="relative min-h-0 flex-1">
+        {hostError && <div role="alert" className="absolute bottom-2 left-2 right-2 z-30 rounded bg-surface-2 p-2 text-xs text-primary">{hostError}<button className="ml-2 text-muted" onClick={() => setHostError('')}>Dismiss</button></div>}
         {state.phase === 'ready' && guestReady && t3Connection === false && (
           <div role="status" className="absolute bottom-1 left-2 z-20 rounded bg-surface-2 px-2 py-1 text-xs text-muted">
             T3 Code activity disconnected — reconnecting…

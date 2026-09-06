@@ -32,7 +32,7 @@ it('lists chats for the checkout and switches the existing panel', async () => {
   menu.mockResolvedValue('two')
   await open()
   expect(list).toHaveBeenCalledWith({ workspaceId: 'ws', cwd: '/repo/feature' })
-  expect(menu.mock.calls[0][0].slice(2)).toEqual([{ id: 'two', label: 'Other chat' }, { id: 'one', label: 'Current chat  ✓' }])
+  expect(menu.mock.calls[0][0].slice(3)).toEqual([{ id: 'two', label: 'Other chat' }, { id: 'one', label: 'Current chat  ✓' }])
   expect(select).toHaveBeenCalledWith('ws', 'agent', 'two')
   expect(title).toHaveBeenCalledWith('ws', 'agent', 'Other chat')
 })

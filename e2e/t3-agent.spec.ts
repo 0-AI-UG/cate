@@ -3,6 +3,7 @@ import type { ElectronApplication, Locator, Page } from 'playwright'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { closeApp, launchApp } from './fixtures/electron-app'
 
 interface AgentSeed {
@@ -600,6 +601,69 @@ async function waitForRealReply(text: string) {
   await expect.poll(() => guestEval<string>(agentWebview(), 'document.body.innerText').catch(() => ''), { timeout: 30_000 }).toContain('Fixture streaming reply: ' + text)
   await expect.poll(async () => (await realThreadState())?.latestTurn?.state).toBe('completed')
 }
+
+test('real T3 lifecycle delegates workspace actions to Cate and retains subagents', async () => {
+  await submitRealChat('Check the chat host boundary')
+  await waitForRealReply('Check the chat host boundary')
+  const originalPath = await guestPath()
+  await expect.poll(() => guestEval<boolean>(agentWebview(), '!!window.__cateChat?.threadRef')).toBe(true)
+  expect(await guestEval(agentWebview(), '!!document.querySelector("[data-cate-agents-control]")')).toBe(false)
+  await guestEval(agentWebview(), 'window.__cateChat.openAgents(); true')
+  await expect.poll(() => guestEval<string>(agentWebview(), 'document.body.innerText')).toContain('No agents')
+  await guestEval(agentWebview(), 'window.__cateChat.closeAgents(); true')
+  await guestEval(agentWebview(), 'window.__cateChat.store.getState().open(window.__cateChat.threadRef, "diff"); true')
+  await expect(page.getByRole('button', { name: 'Create new review at position 1', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Create new review at position 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  await expect(page.getByLabel('Filter by panel')).toHaveValue(agent.panelId)
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  expect(await guestPath()).toBe(originalPath)
+  const renamed = await page.evaluate(({ workspaceId, cwd, threadId }) => window.electronAPI.agentHarnessRenameConversation({ workspaceId, cwd, threadId, title: 'Renamed from Cate' }), { workspaceId: agent.workspaceId, cwd: workspaceRoot, threadId: (await realThreadState())!.id })
+  expect(renamed).toEqual({ ok: true })
+  await expect.poll(() => page.evaluate(({ workspaceId, cwd }) => window.electronAPI.agentHarnessListConversations({ workspaceId, cwd }), { workspaceId: agent.workspaceId, cwd: workspaceRoot })).toEqual([expect.objectContaining({ title: 'Renamed from Cate' })])
+})
+
+test('real T3 lifecycle uses recorded changes for native files and filtered diff placement', async () => {
+  execFileSync('git', ['init'], { cwd: workspaceRoot })
+  writeFileSync(path.join(workspaceRoot, 'baseline.ts'), 'baseline\n')
+  execFileSync('git', ['add', 'baseline.ts'], { cwd: workspaceRoot })
+  execFileSync('git', ['-c', 'user.name=Cate Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'baseline'], { cwd: workspaceRoot })
+  writeFileSync(path.join(workspaceRoot, 'unrelated.ts'), 'not made by this agent\n')
+  await submitRealChat('fixture:diff first.ts')
+  await waitForRealReply('fixture:diff first.ts')
+  const first = (await realThreadState())!.id
+  await expect.poll(() => guestEval<string>(agentWebview(), 'JSON.stringify(window.__cateChanges)')).toContain('first.ts')
+  await expect.poll(() => guestEval<string>(agentWebview(), 'document.body.innerText')).toContain('1 changed file')
+  expect(await guestEval<string>(agentWebview(), 'document.body.innerText')).not.toContain('unrelated.ts')
+  await guestEval(agentWebview(), `document.querySelector('button[aria-label="Open diff"]').click()`)
+  await page.getByRole('button', { name: 'Create new review at position 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  await expect(page.getByLabel('Filter by panel')).toHaveValue(agent.panelId)
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(page.locator('[data-review-file="first.ts"]')).toBeVisible()
+  await expect(page.locator('[data-review-file="unrelated.ts"]')).toHaveCount(0)
+  const records = await page.evaluate(({ cwd, workspaceId }) => window.electronAPI.agentChangesList(cwd, workspaceId), { cwd: workspaceRoot, workspaceId: agent.workspaceId })
+  expect(records.filter((r) => r.sourceId === first).flatMap((r) => r.files.map((f) => f.path))).toEqual(['first.ts'])
+  await selectOverlay('New conversation')
+  await expect.poll(() => guestPath().catch(() => '')).toMatch(/^\/draft\//)
+  await submitRealChat('fixture:diff second.ts')
+  await waitForRealReply('fixture:diff second.ts')
+  await expect.poll(() => guestEval<string>(agentWebview(), 'JSON.stringify(window.__cateChanges)')).toContain('second.ts')
+  const nativeText = await guestEval<string>(agentWebview(), 'document.body.innerText')
+  expect(nativeText).not.toContain('first.ts')
+  expect(nativeText).not.toContain('unrelated.ts')
+  // The already-open review remains scoped to the original turn until asked
+  // to retarget. No chat navigation silently changes another panel's filters.
+  await expect(page.locator('[data-review-file="first.ts"]')).toBeVisible()
+  await expect(page.locator('[data-review-file="second.ts"]')).toHaveCount(0)
+  await guestEval(agentWebview(), `Array.from(document.querySelectorAll('button')).find(button => button.innerText.includes('second.ts')).click()`)
+  await page.getByRole('button', { name: /Use Agent changes/ }).click()
+  await expect(page.locator('[data-review-file="second.ts"]')).toBeVisible()
+  await expect(page.locator('[data-review-file="first.ts"]')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Filters', exact: true })).toHaveCount(1)
+  await expect(page.getByLabel('Filter by panel')).toHaveCount(0)
+  await page.screenshot({ path: test.info().outputPath('recorded-agent-diff.png') })
+})
 
 test('real T3 lifecycle sends, streams, switches chats, restarts Cate and resumes the same provider thread', async () => {
   // T3 buffers messages by default. Explicitly exercise its streaming mode.

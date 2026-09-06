@@ -27,11 +27,14 @@ describe('Agent harness chat-only surface', () => {
     expect(AGENT_CHAT_ONLY_CSS).toContain('[data-slot="composer-host"]::after')
     expect(AGENT_CHAT_ONLY_CSS).toContain('[data-composer-context-control]')
     expect(AGENT_CHAT_ONLY_CSS).toContain('[data-workspace-titlebar-controls]')
-    expect(AGENT_CHAT_ONLY_CSS).toContain('[data-preview-panel-mode]')
+    expect(AGENT_CHAT_ONLY_CSS).not.toContain('[data-preview-panel-mode]')
     expect(AGENT_CHAT_ONLY_CSS).toContain('[data-terminal-owner]')
     expect(AGENT_CHAT_ONLY_CSS).not.toContain('[data-testid*=')
     expect(AGENT_CHAT_ONLY_CSS).toContain('[data-right-panel-tabbar]')
-    expect(AGENT_CHAT_ONLY_CSS).toContain('button[aria-label="Open diff"]')
+    expect(AGENT_CHAT_ONLY_CSS).not.toContain('[data-cate-agents-control]')
+    expect(AGENT_CHAT_ONLY_CSS).toContain('[data-chat-header]')
+    expect(AGENT_CHAT_ONLY_CSS).not.toContain('button[aria-label="Open diff"]')
+    expect(AGENT_CHAT_ONLY_CSS).not.toContain('[data-right-panel-surface-content]')
   })
 
   it('removes upstream product chrome without rewriting chat content', () => {

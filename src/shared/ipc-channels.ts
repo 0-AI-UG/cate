@@ -101,6 +101,8 @@ export const SHELL_AGENT_HOOK_EVENT = 'shell:agentHookEvent'
 // Inspect a workspace's per-agent hook-file injection state (folder present /
 // injected) for the Settings UI — renderer -> main (invoke).
 export const AGENT_HOOKS_INSPECT = 'agentHooks:inspect'
+export const AGENT_CHANGES_LIST = 'agentChanges:list'
+export const AGENT_CHANGES_BIND = 'agentChanges:bind'
 
 // Settings
 export const SETTINGS_GET = 'settings:get'
@@ -359,6 +361,7 @@ export const NATIVE_FILE_DRAG = 'native:fileDrag'
 // T3 provider harness. Cate owns the workspace/worktree path and panel shell;
 // the harness owns provider conversations, streaming, and approvals.
 export const AGENT_HARNESS_GET_PANEL_URL = 'agentHarness:getPanelUrl'
+export const AGENT_HARNESS_RENAME_CONVERSATION = 'agentHarness:renameConversation'
 export const AGENT_HARNESS_PANEL_CLOSED = 'agentHarness:panelClosed'
 export const AGENT_HARNESS_RESTART = 'agentHarness:restart'
 export const AGENT_HARNESS_GET_STATUS = 'agentHarness:getStatus'

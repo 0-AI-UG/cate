@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
 try { performance.mark('preload-start') } catch { /* noop */ }
 
 import {
+  AGENT_HARNESS_RENAME_CONVERSATION,
   KEEP_AWAKE_GET,
   KEEP_AWAKE_SET,
   KEEP_AWAKE_CHANGED,
@@ -73,6 +74,8 @@ import {
   SHELL_AGENT_SCREEN_STATE,
   SHELL_AGENT_HOOK_EVENT,
   AGENT_HOOKS_INSPECT,
+  AGENT_CHANGES_LIST,
+  AGENT_CHANGES_BIND,
   SETTINGS_GET,
   SETTINGS_SET,
   SETTINGS_GET_ALL,
@@ -397,6 +400,8 @@ const invokeForwarders = {
 
   // Settings
   agentHooksInspect: makeInvoker<'agentHooksInspect'>(AGENT_HOOKS_INSPECT),
+  agentChangesList: makeInvoker<'agentChangesList'>(AGENT_CHANGES_LIST),
+  agentChangesBind: makeInvoker<'agentChangesBind'>(AGENT_CHANGES_BIND),
   settingsGet: makeInvoker<'settingsGet'>(SETTINGS_GET),
   settingsSet: makeInvoker<'settingsSet'>(SETTINGS_SET),
   settingsGetAll: makeInvoker<'settingsGetAll'>(SETTINGS_GET_ALL),
@@ -468,6 +473,7 @@ const invokeForwarders = {
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
 
   // T3 provider harness
+  agentHarnessRenameConversation: makeInvoker<'agentHarnessRenameConversation'>(AGENT_HARNESS_RENAME_CONVERSATION),
   agentHarnessDeleteConversation: makeInvoker<'agentHarnessDeleteConversation'>(AGENT_HARNESS_DELETE_CONVERSATION),
   agentHarnessListConversations: makeInvoker<'agentHarnessListConversations'>(AGENT_HARNESS_LIST_CONVERSATIONS),
   agentHarnessGetPanelUrl: makeInvoker<'agentHarnessGetPanelUrl'>(AGENT_HARNESS_GET_PANEL_URL),

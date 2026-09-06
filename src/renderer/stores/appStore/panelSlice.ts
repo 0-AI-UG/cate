@@ -189,6 +189,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         notes: initial?.notes ?? [],
         sourceAgent: initial?.sourceAgent,
         agentReview: initial?.agentReview,
+        agentChanges: initial?.agentChanges,
       }
       const panel: PanelState = {
         id: panelId,

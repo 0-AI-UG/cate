@@ -46,6 +46,7 @@ import os from 'os'
 import path from 'path'
 import { chmod, mkdir, open, readFile, stat, unlink, writeFile } from 'fs/promises'
 import { AGENTS, type AgentId } from '../../shared/agents'
+import { createAgentChangesStore, type AgentChangeSource } from './agentChanges'
 import { AGENT_TITLE_RESOLVERS, createAgentTitleTracker } from './agentTitles'
 import type { AgentTitleResolvers } from './agentTitles/types'
 import {
@@ -63,9 +64,13 @@ import {
   type HookInjectionContext,
 } from '../../shared/agentHooks'
 
-const MAX_BODY_BYTES = 512 * 1024
+const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 export interface AgentHooksCapability {
+  registerChangeSource(id: string, source: AgentChangeSource): void
+  unregisterChangeSource(id: string): void
+  listChanges(cwd: string): Promise<import('../../shared/agentChanges').AgentChangeRecord[]>
+  bindChanges(cwd: string, threadId: string, panelId: string): Promise<void>
   /** The full spawn env for a PTY: hook endpoint + this terminal's derived
    *  token + CATE_TERMINAL_ID=ptyId. Agent-agnostic (the per-agent tri-state
    *  is enforced by prepareWorkspace, the only injection channel) and repo-free,
@@ -105,6 +110,7 @@ export interface AgentHooksCapability {
 }
 
 export interface AgentHooksDeps {
+  changesDir?: string
   /** Override the stable hooks dir (tests). Default: ~/.cate/agent-hooks. */
   hooksDir?: string
   /** The node binary the bridge wrappers exec. Default: this daemon's own
@@ -216,6 +222,7 @@ setTimeout(() => process.exit(0), 10000)
 `
 
 export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHooksCapability {
+  const changes = createAgentChangesStore(deps.changesDir ?? (deps.hooksDir ? path.join(deps.hooksDir, 'changes') : undefined))
   const listeners = new Set<(event: AgentHookEvent) => void>()
   let ready: Promise<HookState> | null = null
   let disposed = false
@@ -379,6 +386,19 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
             terminalId?: unknown
             pid?: unknown
             payload?: unknown
+            threadId?: string
+            turnId?: string
+          }
+          if (req.url === '/t3-changes' || req.url === '/t3-changes/summary') {
+            if (typeof body.terminalId !== 'string' || !tokenMatches(req.headers.authorization, secret, body.terminalId)) {
+              res.statusCode = 401; res.end(); return
+            }
+            if (req.url === '/t3-changes') await changes.ingestT3(body.terminalId, body.payload)
+            const files = req.url.endsWith('/summary')
+              ? await changes.summary(body.terminalId, String(body.threadId ?? ''), String(body.turnId ?? '')) : []
+            res.setHeader('content-type', 'application/json')
+            res.end(JSON.stringify(files))
+            return
           }
           if (
             typeof body.agentId === 'string' &&
@@ -409,6 +429,10 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
               } catch { /* presence tracking must never fail the hook */ }
             }
             const event = normalizeAgentHookPayload(body.agentId, body.terminalId, body.payload as Record<string, unknown>)
+            if (body.agentId in AGENT_HOOK_SPECS) {
+              try { await changes.ingestHook(body.terminalId, body.agentId as AgentId, body.payload as Record<string, unknown>, event) }
+              catch (error) { console.warn('[agent changes] Could not save reported edit', error) }
+            }
             if (event) {
               emit(event)
               // Awaited (a cheap local stat) so the watch is armed by the time
@@ -505,6 +529,10 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     forgetTerminal(terminalId) {
       inputSessions.delete(terminalId)
     },
+    registerChangeSource: (id, source) => changes.registerSource(id, source),
+    unregisterChangeSource: (id) => changes.unregisterSource(id),
+    listChanges: (cwd) => changes.list(cwd),
+    bindChanges: (cwd, threadId, panelId) => changes.bind(cwd, threadId, panelId),
     async envForPty(ptyId, env) {
       if (disposed) return env
       let state: HookState

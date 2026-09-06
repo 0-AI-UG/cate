@@ -21,6 +21,7 @@ export interface PanelTargetRequest {
   existingPanelIds?: string[]
   /** Prefer the canvas containing this panel; otherwise use the active or primary canvas. */
   sourcePanelId?: string
+  chooseExistingInDock?: boolean
 }
 
 export function requestPanelTarget(request: PanelTargetRequest): Promise<PanelTarget | null> {
@@ -32,6 +33,16 @@ export function requestPanelTarget(request: PanelTargetRequest): Promise<PanelTa
     ? placementForPanel(request.workspaceId, request.sourcePanelId)
     : undefined
   if (sourcePlacement?.target === 'dock') {
+    if (request.chooseExistingInDock && request.availability === 'both') {
+      const existing = Object.values(workspace.panels).filter((panel) => panel.type === request.panelType
+        && (!request.existingPanelIds || request.existingPanelIds.includes(panel.id)))
+      return window.electronAPI.showContextMenu([
+        { id: '__new', label: 'New diff panel' },
+        ...existing.map((panel) => ({ id: panel.id, label: panel.title })),
+      ]).then((id) => !id ? null : id === '__new'
+        ? { kind: 'new' as const, placement: sourcePlacement }
+        : { kind: 'existing' as const, panelId: id })
+    }
     if (request.availability === 'existing') return Promise.resolve(null)
     return Promise.resolve({
       kind: 'new',

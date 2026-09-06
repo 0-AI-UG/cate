@@ -22,7 +22,7 @@ function daemonApi(): Runtime {
 const stubProcess = {} as unknown as ProcessHost
 const stubServer = {} as unknown as ServerHost
 const stubTunnel = {} as unknown as TunnelHost
-const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {}, inspectWorkspace: async () => [] }
+const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {}, inspectWorkspace: async () => [], listChanges: async () => [], bindChanges: async () => {} }
 
 // Wire an RpcServer and a RuntimeRpcClient back-to-back, in-process, over the
 // real LF-JSON framing. This proves the entire wire stack (framing, req/res
@@ -406,6 +406,8 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
           return () => { emit = null }
         },
         inspectWorkspace: async () => [],
+        listChanges: async () => [],
+        bindChanges: async () => {},
       },
       server: stubServer,
       tunnel: stubTunnel,

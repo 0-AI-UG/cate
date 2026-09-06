@@ -58,7 +58,7 @@ function PanelInteractionDot({ panelId }: { panelId: string }) {
 // The color is applied to the tab's title text, not its icon — the icon may be
 // an agent logo (an <img>, which ignores `color`), and tinting it would clash
 // with the per-agent icon swap.
-function useWorktreeColorByPanel(): Record<string, string> {
+export function useWorktreeColorByPanel(): Record<string, string> {
   const workspaces = useAppStore(useShallow((s) => s.workspaces))
   return React.useMemo(() => {
     const out: Record<string, string> = {}
