@@ -1,4 +1,5 @@
 import { app, session } from 'electron'
+import type { Duplex } from 'stream'
 import { createHash, randomBytes, randomUUID } from 'crypto'
 import net, { type Server as NetServer, type Socket } from 'net'
 import path from 'path'
@@ -104,28 +105,40 @@ async function closeServer(server: NetServer): Promise<void> {
 
 /** Full-origin TCP proxy. Keeping T3 at the origin root preserves assets,
  * cookies, HTTP APIs, and WebSocket upgrades without rewriting its protocol. */
-async function createRuntimeProxy(runtime: Runtime, remotePort: number): Promise<{ server: NetServer; port: number }> {
+async function createRuntimeProxy(runtime: Runtime, resolvePort: () => Promise<number>): Promise<{ server: NetServer; port: number }> {
   const sockets = new Set<Socket>()
   const server = net.createServer((client) => {
+    let upstream: Duplex | undefined
     sockets.add(client)
-    client.once('close', () => sockets.delete(client))
-    void openTunnelDuplex(runtime, remotePort).then((upstream) => {
-      client.on('error', () => upstream.destroy())
-      upstream.on('error', () => client.destroy())
-      client.pipe(upstream).pipe(client)
+    client.on('error', () => upstream?.destroy())
+    client.once('close', () => {
+      sockets.delete(client)
+      upstream?.destroy()
+    })
+    void resolvePort().then((port) => openTunnelDuplex(runtime, port)).then((stream) => {
+      upstream = stream
+      if (client.destroyed) { stream.destroy(); return }
+      stream.on('error', () => client.destroy())
+      stream.once('close', () => client.destroy())
+      client.pipe(stream).pipe(client)
     }).catch((error) => {
       log.warn('[t3] failed to open runtime tunnel: %s', errorMessage(error))
       client.destroy()
     })
   })
-  server.on('close', () => {
+  // net.Server.close waits for clients; destroy them before waiting, not in
+  // the close event (which cannot fire while a WebSocket is still connected).
+  Object.assign(server, { closeAllConnections: () => {
     for (const socket of sockets) socket.destroy()
     sockets.clear()
-  })
+  } })
   return { server, port: await listen(server) }
 }
 
 export class T3HarnessManager {
+  private readonly proxies = new Map<string, {
+    server: NetServer; port: number; remotePort: number | null; restarts: number[]
+  }>()
   private readonly states = new Map<string, InstanceState>()
   private readonly panelHarness = new Map<string, string>()
   private readonly panelRoute = new Map<string, AgentHarnessPanelRequest['route']>()
@@ -408,7 +421,17 @@ export class T3HarnessManager {
   async restart(cwdLocator: string): Promise<void> {
     const { runtimeId, path: resolvedPath } = resolveLocator(cwdLocator)
     const rawKey = harnessKey(runtimeId, resolvedPath)
-    await this.stopHarness(this.locatorHarness.get(rawKey) ?? rawKey)
+    const key = this.locatorHarness.get(rawKey) ?? rawKey
+    const proxy = this.proxies.get(key)
+    if (!proxy) { await this.stopHarness(key); return }
+    const state = this.states.get(key)
+    const instance = state?.instance ?? (state?.start ? await state.start.catch(() => undefined) : undefined)
+    // Explicit Retry resets the crash budget but keeps every sibling panel's
+    // origin. Runtime disconnect and app shutdown still dispose the endpoint.
+    this.states.set(key, { runtimeId, phase: 'stopped' })
+    proxy.remotePort = null
+    proxy.restarts = []
+    if (instance) instance.runtime.server.stop(instance.serverId)
   }
 
   async disposeAll(): Promise<void> {
@@ -511,7 +534,7 @@ export class T3HarnessManager {
       entryPath,
       bootstrapToken,
       environmentId: null,
-      panels: new Set(),
+      panels: new Set([...this.panelHarness].filter(([, owner]) => owner === key).map(([panel]) => panel)),
     }
     await this.ensureLocalThreadMode(seed)
     const cateApi = await workspaceCateApi.ensureEndpoint(workspaceId)
@@ -564,13 +587,35 @@ export class T3HarnessManager {
       if (state?.instance?.serverId !== serverId) return
       state.phase = 'error'
       state.message = `T3 exited (code ${code ?? 'unknown'}, signal ${signal ?? 'none'})${outputTail.trim() ? `: ${outputTail.trim().slice(-500)}` : ''}`
-      void closeServer(state.instance.proxy).catch(() => {})
+      log.warn('[t3] server exited runtime=%s server=%s code=%s signal=%s panels=%d',
+        runtimeId, serverId, code ?? 'unknown', signal ?? 'none', state.instance.panels.size)
+      const proxy = this.proxies.get(key)
+      if (proxy) proxy.remotePort = null
       state.instance = undefined
     })
 
-    let proxy: Awaited<ReturnType<typeof createRuntimeProxy>>
+    let proxy = this.proxies.get(key)
     try {
-      proxy = await createRuntimeProxy(runtime, handle.port)
+      if (!proxy) {
+        const endpoint = await createRuntimeProxy(runtime, async () => {
+          const route = this.proxies.get(key)
+          if (!route || !this.states.has(key)) throw new Error('T3 endpoint is closed')
+          if (route.remotePort !== null) return route.remotePort
+          // Reconnecting guests reuse their origin, cookies and draft storage.
+          // Recover a dead server on demand, with a bounded crash-loop budget.
+          if (!this.states.get(key)?.start) {
+            const now = Date.now()
+            route.restarts = route.restarts.filter((time) => now - time < 60_000)
+            if (route.restarts.length >= 3) throw new Error('T3 repeatedly exited; use Retry to restart it')
+            route.restarts.push(now)
+          }
+          return (await this.ensureInstance(key, runtimeId, runtime, cwd, workspaceId)).remotePort
+        })
+        proxy = { ...endpoint, remotePort: handle.port, restarts: [] }
+        this.proxies.set(key, proxy)
+      } else {
+        proxy.remotePort = handle.port
+      }
     } catch (error) {
       runtime.server.stop(serverId)
       throw error
@@ -587,7 +632,7 @@ export class T3HarnessManager {
       log.info('[t3] running runtime=%s pid=%d remotePort=%d proxyPort=%d', runtimeId, handle.pid, handle.port, proxy.port)
       return instance
     } catch (error) {
-      await closeServer(proxy.server).catch(() => {})
+      proxy.remotePort = null
       runtime.server.stop(serverId)
       throw error
     }
@@ -775,9 +820,11 @@ export class T3HarnessManager {
       if (ownerKey === key) this.locatorHarness.delete(locatorKey)
     }
     const instance = state?.instance ?? (state?.start ? await state.start.catch(() => undefined) : undefined)
-    if (!instance) return
-    await closeServer(instance.proxy).catch(() => {})
-    instance.runtime.server.stop(instance.serverId)
+    const proxy = this.proxies.get(key)
+    this.proxies.delete(key)
+    if (proxy) await closeServer(proxy.server).catch(() => {})
+    else if (instance) await closeServer(instance.proxy).catch(() => {})
+    if (instance) instance.runtime.server.stop(instance.serverId)
   }
 }
 

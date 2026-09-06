@@ -45,7 +45,10 @@ export function serverPidFilePath(daemonId: string): string {
   // Sanitize the id into a safe filename component (ids are app-controlled, but
   // keep it defensive — they can contain path-ish characters).
   const safe = daemonId.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'default'
-  return path.join(os.tmpdir(), 'cate-runtime', `ext-servers-${safe}.json`)
+  const pidRoot = process.env.CATE_E2E === '1' && process.env.CATE_E2E_USER_DATA
+    ? process.env.CATE_E2E_USER_DATA
+    : os.tmpdir()
+  return path.join(pidRoot, 'cate-runtime', `ext-servers-${safe}.json`)
 }
 
 interface PidRecord { pid: number; id: string; startedAt: number }

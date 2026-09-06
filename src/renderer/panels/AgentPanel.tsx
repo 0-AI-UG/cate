@@ -285,7 +285,10 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     >
       <div className="relative min-h-0 flex-1">
         {state.phase === 'ready' && guestReady && t3Connection === false && (
-          <div role="status" className="absolute bottom-1 left-2 z-20 rounded bg-surface-2 px-2 py-1 text-xs text-muted">T3 Code activity disconnected — reconnecting…</div>
+          <div role="status" className="absolute bottom-1 left-2 z-20 rounded bg-surface-2 px-2 py-1 text-xs text-muted">
+            T3 Code activity disconnected — reconnecting…
+            <button type="button" onClick={() => { void retry() }} className="ml-2 text-secondary hover:text-primary">Retry</button>
+          </div>
         )}
         {state.phase === 'error' ? (
           <div className="flex h-full flex-col items-center justify-center p-6 text-center">

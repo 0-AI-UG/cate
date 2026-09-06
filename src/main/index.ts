@@ -198,6 +198,10 @@ if (process.env.CATE_E2E === '1') {
     : fs.mkdtempSync(path.join(os.tmpdir(), 'cate-e2e-'))
   fs.mkdirSync(tmp, { recursive: true })
   app.setPath('userData', tmp)
+  // Propagate the isolated identity to the daemon, including tests that let
+  // Electron allocate their userData directory automatically.
+  process.env.CATE_E2E_USER_DATA = tmp
+  process.env.CATE_HARNESS_ROOT ??= path.join(tmp, 't3-harness')
   // Keep the e2e app out of the macOS dock / app-switcher so launching it never
   // foregrounds the shared Electron bundle (and a running `npm run dev`).
   app.dock?.hide()

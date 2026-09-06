@@ -5,7 +5,7 @@
 // stale/nonexistent pid is ignored without throwing.
 // =============================================================================
 
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { spawn, type ChildProcess } from 'child_process'
 import fs from 'fs'
 import path from 'path'
@@ -26,6 +26,7 @@ const spawned: ChildProcess[] = []
 afterEach(() => {
   for (const c of spawned) { try { c.kill('SIGKILL') } catch { /* gone */ } }
   spawned.length = 0
+  vi.unstubAllEnvs()
   try { fs.rmSync(serverPidFilePath(DAEMON_ID), { force: true }) } catch { /* gone */ }
 })
 
@@ -69,4 +70,15 @@ describe('reapOrphanServers', () => {
     try { fs.rmSync(file, { force: true }) } catch { /* gone */ }
     expect(() => reapOrphanServers('never-existed')).not.toThrow()
   })
+})
+
+
+it('isolates E2E server bookkeeping from the installed app even with the same daemon id', () => {
+  vi.stubEnv('CATE_E2E', '')
+  const installed = serverPidFilePath('local')
+  vi.stubEnv('CATE_E2E', '1')
+  vi.stubEnv('CATE_E2E_USER_DATA', '/tmp/cate-private-test/userdata')
+  const testApp = serverPidFilePath('local')
+  expect(testApp).not.toBe(installed)
+  expect(testApp).toBe(path.join('/tmp/cate-private-test/userdata', 'cate-runtime', 'ext-servers-local.json'))
 })
