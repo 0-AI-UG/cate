@@ -113,7 +113,9 @@ test.beforeEach(async ({}, testInfo) => {
   const trust = page.getByRole('button', { name: 'Trust and open' })
   if (await trust.isVisible({ timeout: 2_000 }).catch(() => false)) await trust.click()
   expect(await opened).toBe(true)
-  agent = await page.evaluate(() => window.__cateE2E!.createAgent({ x: 24, y: 24 }))
+  agent = await page.evaluate((docked) => docked
+    ? window.__cateE2E!.createAgent(undefined, { target: 'dock', zone: 'center' })
+    : window.__cateE2E!.createAgent({ x: 24, y: 24 }), testInfo.title.startsWith('docked T3'))
   expect(agent.panelId).toBeTruthy()
   await page.locator(`[data-agent-panel-id="${agent.panelId}"][data-agent-phase="ready"]`).waitFor()
   await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', { timeout: 30_000 })
@@ -304,6 +306,58 @@ test('explains an unchanged Homebrew update once without claiming success', asyn
   await expect(native.getByRole('button', { name: 'Update provider', exact: true })).toBeVisible()
 })
 
+test('docked T3 hides when switching to its sibling canvas tab and preserves the conversation', async () => {
+  expect(agent.nodeId).toBeNull()
+  const agentTab = page.locator(`[data-tab-panel-id="${agent.panelId}"]`)
+  const canvasTab = page.locator('[data-tab-panel-id]').filter({ hasText: 'Canvas' })
+  const canvasId = await canvasTab.getAttribute('data-tab-panel-id')
+  const stackId = (tab: Locator) => tab.evaluate(element => element.closest('[data-dock-stack-id]')?.getAttribute('data-dock-stack-id'))
+  expect(await stackId(agentTab)).toBe(await stackId(canvasTab))
+  await guestEval(agentWebview(), `(() => {
+    window.__tabSurvival = 'same conversation';
+    document.querySelector('textarea').value = 'Unsent dock draft';
+  })()`)
+  const guestId = await agentWebview().evaluate(element => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())
+
+  for (let i = 0; i < 2; i++) {
+    await canvasTab.click()
+    await expect(page.locator(`[data-canvas-panel-id="${canvasId}"]`)).toBeVisible()
+    await expect(agentWebview()).toBeAttached()
+    await expect(agentWebview()).toBeHidden()
+    await expect(agentWebview()).toHaveCSS('visibility', 'hidden')
+
+    await agentTab.click()
+    await expect(agentWebview()).toBeVisible()
+    await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true')
+    expect(await agentWebview().evaluate(element => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())).toBe(guestId)
+    expect(await guestEval(agentWebview(), `({ marker: window.__tabSurvival, draft: document.querySelector('textarea').value })`))
+      .toEqual({ marker: 'same conversation', draft: 'Unsent dock draft' })
+  }
+})
+
+test('preserves the T3 guest and unsent draft across canvas focus changes', async () => {
+  await guestEval(agentWebview(), `(() => {
+    window.__focusSurvival = 'still here';
+    document.querySelector('textarea').value = 'Unsent draft';
+  })()`)
+  const otherNodeId = await page.evaluate(() => window.__cateE2E!.createEditor({ x: 700, y: 24 }))
+  await agentWebview().evaluate((element) => {
+    element.setAttribute('data-test-navigations', '0')
+    element.addEventListener('did-start-navigation', () => {
+      element.setAttribute('data-test-navigations', String(Number(element.getAttribute('data-test-navigations')) + 1))
+    })
+  })
+  for (const nodeId of [agent.nodeId!, otherNodeId, agent.nodeId!, otherNodeId, agent.nodeId!]) {
+    // Exercise the same focus/bring-to-front handler as a click on the dim layer.
+    await page.locator(`[data-node-id="${nodeId}"] [data-unfocused-overlay]`).dispatchEvent('click', { button: 0 })
+    await expect(page.locator(`[data-node-id="${nodeId}"]`)).toHaveAttribute('data-node-active', 'true')
+    await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true')
+    expect(await guestEval(agentWebview(), `({ marker: window.__focusSurvival, draft: document.querySelector('textarea').value })`))
+      .toEqual({ marker: 'still here', draft: 'Unsent draft' })
+    await expect(agentWebview()).toHaveAttribute('data-test-navigations', '0')
+  }
+})
+
 test('keeps the webview hidden during reload until Cate branding is reapplied', async () => {
   await agentWebview().evaluate((element) => {
     const webview = element as HTMLElement & { getURL(): string; loadURL(url: string): Promise<void> }
@@ -314,7 +368,7 @@ test('keeps the webview hidden during reload until Cate branding is reapplied', 
   await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'false')
   await expect(agentWebview()).toHaveClass(/invisible/)
   await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', { timeout: 30_000 })
-  await expect(agentWebview()).toHaveClass(/visible/)
+  await expect(agentWebview()).toBeVisible()
   expect(await guestEval(agentWebview(), `({
     title: document.title,
     hasT3Logo: Boolean(document.querySelector('svg[aria-label="T3"]')),

@@ -90,6 +90,24 @@ describe('canvasStore.addNode — canvas-on-canvas is rejected', () => {
 // selectVisibleNodeIds is the pure cull core; `keepMountedPanelIds` is the set of
 // panel ids whose type must stay mounted off-screen (derived by the caller).
 describe('canvasStore.selectVisibleNodeIds — keep-mounted webview nodes', () => {
+  it('keeps render order stable while focus changes visual stacking', () => {
+    const store = createCanvasStore()
+    const agentId = store.getState().addNode('p-agent', 'agent', { x: 0, y: 0 }, { width: 100, height: 80 })
+    const editorId = store.getState().addNode('p-editor', 'editor', { x: 200, y: 0 }, { width: 100, height: 80 })
+    const order = selectVisibleNodeIds(store.getState())
+    expect(order).toEqual([agentId, editorId])
+
+    for (const size of [{ width: 0, height: 0 }, { width: 800, height: 600 }]) {
+      store.getState().setContainerSize(size)
+      for (const id of [agentId, editorId, agentId]) {
+        store.getState().focusNode(id)
+        expect(selectVisibleNodeIds(store.getState())).toEqual(order)
+        const otherId = id === agentId ? editorId : agentId
+        expect(store.getState().nodes[id].zOrder).toBeGreaterThan(store.getState().nodes[otherId].zOrder)
+      }
+    }
+  })
+
   // A viewport that places nothing on-screen: far-away nodes are culled unless
   // exempt. zoom 1, 800x600 → margin-expanded rect is x:[-800,1600] y:[-600,1200].
   const offscreen = (store: ReturnType<typeof createCanvasStore>) => {

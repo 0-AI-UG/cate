@@ -5,7 +5,7 @@
 // positions, known zoom) and assertions against canvas-space state. Driving
 // the UI for setup is brittle; reaching into stores is reliable.
 
-import { useAppStore } from '../stores/appStore'
+import { useAppStore, type PanelPlacement } from '../stores/appStore'
 import { useUIStore, type SidebarView } from '../stores/uiStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { gitStatusStore, type GitWorktreeEntry } from '../stores/gitStatusStore'
@@ -53,7 +53,7 @@ declare global {
       createTerminal(point: Point): string
       createEditor(point: Point): string
       createCanvasPanel(point: Point): string
-      createAgent(point?: Point): { workspaceId: string; panelId: string; nodeId: string | null }
+      createAgent(point?: Point, placement?: PanelPlacement): { workspaceId: string; panelId: string; nodeId: string | null }
       agentPanelSnapshot(panelId: string): {
         workspaceId: string
         threadId: string | null
@@ -206,7 +206,7 @@ export function installE2EHarness(): void {
     return nodes.length ? nodes[nodes.length - 1].id : ''
   }
 
-  const createAgent = (point?: Point): {
+  const createAgent = (point?: Point, placement?: PanelPlacement): {
     workspaceId: string
     panelId: string
     nodeId: string | null
@@ -215,7 +215,7 @@ export function installE2EHarness(): void {
     const panelId = useAppStore.getState().createAgent(
       workspaceId,
       point,
-      point ? { target: 'canvas', position: point } : undefined,
+      placement ?? (point ? { target: 'canvas', position: point } : undefined),
     )
     return {
       workspaceId,

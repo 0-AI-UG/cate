@@ -51,7 +51,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
   const activePanelId = useActivePanelStore((s) => s.activePanelId)
   const canvasFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
   const focusEpoch = useOptionalCanvasStoreContext((s) => s.focusEpoch, 0)
-  const isFocused = nodeId ? canvasFocused : activePanelId === panelId
+  const isFocused = activePanelId === panelId && (!nodeId || canvasFocused)
   const paletteOpen = useUIStore((s) => s.showCommandPalette)
   useEffect(() => {
     if (!isFocused || !guestReady || paletteOpen) return
@@ -137,7 +137,8 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     const boundUrl = threadId
       ? `${new URL(state.url).origin}/${encodeURIComponent(state.environmentId)}/${encodeURIComponent(threadId)}`
       : state.url
-    const persistThreadFromLocation = (event?: { url?: string }): void => {
+    const persistThreadFromLocation = (event?: { url?: string; isMainFrame?: boolean }): void => {
+      if (event?.isMainFrame === false) return
       // did-navigate-in-page can arrive before webview.getURL() reflects a
       // history.pushState route. Prefer Electron's event URL when available so
       // a freshly-created T3 thread is persisted on the first navigation.
@@ -190,13 +191,16 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     const onReady = (): void => {
       void (async () => {
         await webview.insertCSS(AGENT_CHAT_ONLY_CSS).catch(() => undefined)
+        // A host chat selection can replace the guest while branding is pending.
+        if (webviewRef.current !== webview) return
         await webview.executeJavaScript(agentHarnessBrandingScript('thread')).catch(() => undefined)
+        if (webviewRef.current !== webview) return
         persistThreadFromLocation()
         setGuestReady(true)
       })()
     }
-    const onFailed = (event: { errorCode?: number; errorDescription?: string }): void => {
-      if (event.errorCode === -3) return
+    const onFailed = (event: { errorCode?: number; errorDescription?: string; isMainFrame?: boolean }): void => {
+      if (event.isMainFrame === false || event.errorCode === -3) return
       setState({ phase: 'error', message: event.errorDescription ?? 'The agent page failed to load.' })
     }
 
@@ -290,7 +294,9 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
                 partition={state.partition}
                 data-agent-webview={panelId}
                 data-agent-guest-ready={guestReady ? 'true' : 'false'}
-                className={`h-full w-full ${guestReady ? 'visible' : 'invisible'}`}
+                // Once ready, inherit visibility so an inactive dock tab can
+                // hide the guest without unmounting it or losing its state.
+                className={`h-full w-full${guestReady ? '' : ' invisible'}`}
               />
           </>
         )}

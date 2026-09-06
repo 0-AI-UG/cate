@@ -17,6 +17,8 @@ import { useAppStore } from '../stores/appStore'
 import AgentPanel from './AgentPanel'
 import { useActivePanelStore } from '../lib/activePanel'
 import { useUIStore } from '../stores/uiStore'
+import { createCanvasStore } from '../stores/canvasStore'
+import { CanvasStoreProvider } from '../stores/CanvasStoreContext'
 
 const initialState = useAppStore.getState()
 let host: HTMLDivElement
@@ -56,6 +58,92 @@ afterEach(async () => {
 })
 
 describe('AgentPanel', () => {
+  function mockGuest() {
+    return Object.assign(host.querySelector<HTMLElement>('webview')!, {
+      getURL: vi.fn(() => 'http://127.0.0.1:49152/'),
+      insertCSS: vi.fn().mockResolvedValue('css'),
+      executeJavaScript: vi.fn().mockResolvedValue(undefined),
+      loadURL: vi.fn().mockResolvedValue(undefined),
+    })
+  }
+
+  const readyHarness = {
+    url: 'http://127.0.0.1:49152/', partition: 'persist:t3-test', runtimeId: 'local', environmentId: 'local-env',
+  }
+
+  it('focuses only the active leaf panel inside a focused canvas node', async () => {
+    getPanelUrl.mockResolvedValue(readyHarness)
+    const canvas = createCanvasStore()
+    const nodeId = canvas.getState().addNode('agent', 'agent', { x: 0, y: 0 })
+    canvas.getState().focusNode(nodeId)
+    useActivePanelStore.setState({ activePanelId: 'sibling-panel' })
+    await act(async () => root.render(
+      <CanvasStoreProvider store={canvas}>
+        <AgentPanel panelId="agent" workspaceId="ws" nodeId={nodeId} />
+      </CanvasStoreProvider>,
+    ))
+    const guest = mockGuest()
+    const focus = vi.spyOn(guest, 'focus')
+    await act(async () => guest.dispatchEvent(new Event('dom-ready')))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
+    expect(focus).not.toHaveBeenCalled()
+
+    await act(async () => useActivePanelStore.setState({ activePanelId: 'agent' }))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
+    expect(focus).toHaveBeenCalledOnce()
+    focus.mockClear()
+
+    await act(async () => {
+      useActivePanelStore.setState({ activePanelId: 'sibling-panel' })
+      canvas.getState().focusNode(nodeId)
+    })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
+    expect(focus).not.toHaveBeenCalled()
+  })
+
+  it('ignores subframe navigation instead of reloading the conversation', async () => {
+    getPanelUrl.mockResolvedValue(readyHarness)
+    await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
+    const guest = mockGuest()
+    await act(async () => guest.dispatchEvent(Object.assign(new Event('did-navigate-in-page'), {
+      url: 'https://embedded.example/#section', isMainFrame: false,
+    })))
+    expect(guest.loadURL).not.toHaveBeenCalled()
+    expect(useAppStore.getState().workspaces[0].panels.agent.agentThreadId).toBeUndefined()
+  })
+
+  it('ignores subframe load failures but still reports a main document failure', async () => {
+    getPanelUrl.mockResolvedValue(readyHarness)
+    await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
+    const guest = mockGuest()
+    await act(async () => guest.dispatchEvent(Object.assign(new Event('did-fail-load'), {
+      errorCode: -105, errorDescription: 'ERR_NAME_NOT_RESOLVED', isMainFrame: false,
+    })))
+    expect(host.querySelector('webview')).toBe(guest)
+    expect(host.textContent).not.toContain('T3 Code unavailable')
+    await act(async () => guest.dispatchEvent(Object.assign(new Event('did-fail-load'), {
+      errorCode: -105, errorDescription: 'ERR_NAME_NOT_RESOLVED', isMainFrame: true,
+    })))
+    expect(host.textContent).toContain('T3 Code unavailable')
+  })
+
+  it('does not let an old guest reveal a newly selected conversation before branding', async () => {
+    getPanelUrl.mockImplementation(({ threadId }) => Promise.resolve({
+      ...readyHarness, url: threadId ? `${readyHarness.url}local-env/${threadId}` : readyHarness.url,
+    }))
+    await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
+    const oldGuest = mockGuest()
+    let finishCss!: (key: string) => void
+    oldGuest.insertCSS.mockImplementation(() => new Promise(resolve => { finishCss = resolve }))
+    await act(async () => oldGuest.dispatchEvent(new Event('dom-ready')))
+    await act(async () => useAppStore.getState().setPanelAgentThreadId('ws', 'agent', 'next-chat'))
+    const nextGuest = mockGuest()
+    expect(nextGuest).not.toBe(oldGuest)
+    await act(async () => finishCss('css'))
+    expect(nextGuest.getAttribute('data-agent-guest-ready')).toBe('false')
+    expect(oldGuest.executeJavaScript).not.toHaveBeenCalled()
+  })
+
   it('shows loading feedback while the harness is starting', async () => {
     getPanelUrl.mockReturnValue(new Promise(() => {}))
 
@@ -139,10 +227,10 @@ describe('AgentPanel', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(webview.classList.contains('visible')).toBe(true)
+    expect(webview.classList.contains('invisible')).toBe(false)
 
     await act(async () => webview.dispatchEvent(Object.assign(new Event('did-start-navigation'), { isMainFrame: true, isInPlace: true })))
-    expect(webview.classList.contains('visible')).toBe(true)
+    expect(webview.classList.contains('invisible')).toBe(false)
 
     const focus = vi.spyOn(webview, 'focus')
     await act(async () => {

@@ -200,19 +200,21 @@ export function useNodeIds(store: StoreApi<CanvasStore>): string[] {
  * This is the primary lever for reducing memory/CPU when many terminals or
  * editors are open on a canvas — off-screen nodes don't mount at all.
  */
-// z-order-sorted node list, cached by the `nodes` object identity. The cull
-// selector below runs on EVERY store update — including every pan/zoom frame,
+// Creation-ordered node list, cached by the `nodes` object identity. Keep DOM
+// order independent of focus/zOrder: moving a mounted Electron webview in the
+// DOM reloads its guest. CanvasNode's CSS z-index owns visual stacking.
+// The cull selector below runs on EVERY store update — including every pan/zoom frame,
 // where only viewportOffset/zoomLevel changed and `nodes` is the same object.
 // Without this cache that path re-allocated Object.values() and re-sorted the
 // whole node set 60×/s during a drag. zustand replaces `nodes` immutably on any
 // real node change, so identity equality is a safe cache key; a WeakMap also
 // keeps it correct across multiple per-panel canvas stores (and never leaks).
 const sortedNodeCache = new WeakMap<object, CanvasNodeState[]>()
-function sortedNodesByZOrder(nodes: Record<CanvasNodeId, CanvasNodeState>): CanvasNodeState[] {
+function sortedNodesByCreation(nodes: Record<CanvasNodeId, CanvasNodeState>): CanvasNodeState[] {
   const cached = sortedNodeCache.get(nodes)
   if (cached) return cached
   perfCount('canvasCullSort')
-  const sorted = Object.values(nodes).sort((a, b) => a.zOrder - b.zOrder)
+  const sorted = Object.values(nodes).sort((a, b) => a.creationIndex - b.creationIndex || a.id.localeCompare(b.id))
   sortedNodeCache.set(nodes, sorted)
   return sorted
 }
@@ -295,7 +297,7 @@ function keepAliveNodeIds(
 /** Exported for unit testing: the raw keep-alive set builder (memoized). */
 export { keepAliveNodeIds as __keepAliveNodeIdsForTest }
 
-/** Pure core of {@link useVisibleNodeIds}. Returns the z-ordered ids of nodes
+/** Pure core of {@link useVisibleNodeIds}. Returns the creation-ordered ids of nodes
  *  that should be mounted: those intersecting the margin-expanded viewport, plus
  *  the always-mounted exemptions (focused, pinned, keep-mounted webview nodes).
  *  Exported for unit testing. */
@@ -313,7 +315,7 @@ export function selectVisibleNodeIds(
   const cw = containerSize.width
   const ch = containerSize.height
 
-  const sorted = sortedNodesByZOrder(nodes)
+  const sorted = sortedNodesByCreation(nodes)
 
   // Before the container size is known, render everything — prevents an
   // initial flash where no nodes appear while the ResizeObserver settles.
