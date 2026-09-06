@@ -61,3 +61,15 @@ export const T3_THREAD_SUBSCRIPTION_SCRIPT = `(() => {
   window.addEventListener('pagehide', () => { clearTimeout(timer); socket.onclose = null; socket.close(); }, { once: true });
   connect();
 })()`
+
+
+/** Keep unchanged thread lists inside the guest instead of cloning them over
+ * IPC on every tick. A fresh consumer (or a failed read) requests a full copy. */
+export function t3ThreadPollScript(previousRevision?: number): string {
+  return `/* cate-t3-poll */ (() => {
+    ${T3_THREAD_SUBSCRIPTION_SCRIPT};
+    const state = window.__cateT3Threads;
+    if (state.revision === ${previousRevision === undefined ? 'null' : JSON.stringify(previousRevision)}) return;
+    return { connected: state.connected, threads: state.threads, revision: state.revision, sequence: state.sequence };
+  })()`
+}

@@ -65,6 +65,19 @@ describe('T3 harness lifecycle', () => {
     expect(manager.getStatus('/alias').phase).toBe('running')
   })
 
+  it('reopens a conversation without repeating provider file synchronization', async () => {
+    const boundary = manager as unknown as { ensureLocalThreadMode(): Promise<void> }
+    const first = await manager.getPanelTarget({ ...request, threadId: 'saved' }, 1)
+    manager.panelClosed(request.panelId)
+    const reopened = await manager.getPanelTarget({ ...request, threadId: 'saved' }, 1)
+    expect(reopened).toEqual(first)
+    expect(start).toHaveBeenCalledOnce()
+    // startInstance is mocked above; settings sync belongs inside startup,
+    // never on the per-panel URL resolution path.
+    expect(boundary.ensureLocalThreadMode).not.toHaveBeenCalled()
+    expect(local.validatePathStrict).toHaveBeenCalledTimes(2)
+  })
+
   it('isolates worktrees and remote runtimes, including disconnect and reconnect', async () => {
     const main = await manager.getPanelTarget(request, 1)
     const worktree = await manager.getPanelTarget({ ...request, panelId: 'worktree', cwd: '/feature' }, 1)

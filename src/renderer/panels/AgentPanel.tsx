@@ -1,7 +1,7 @@
 import { LoadingState } from '../ui/Spinner'
-import { T3_THREAD_SUBSCRIPTION_SCRIPT } from '../lib/t3ThreadState'
+import { t3ThreadPollScript } from '../lib/t3ThreadState'
 import { useT3ActivityStore, type T3Snapshot } from '../stores/t3ActivityStore'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowClockwise, ChatsCircle } from '@phosphor-icons/react'
 import type { AgentPanelProps } from './types'
 import { agentProductCopy } from '../../shared/agentProductCopy'
@@ -63,14 +63,14 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     return () => cancelAnimationFrame(frame)
   }, [isFocused, guestReady, focusEpoch, paletteOpen])
 
-  const workspace = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId))
-  const panel = workspace?.panels[panelId]
-  const cwd = useMemo(() => {
+  const cwd = useAppStore((s) => {
+    const workspace = s.workspaces.find((item) => item.id === workspaceId)
+    const panel = workspace?.panels[panelId]
     if (panel?.cwd) return panel.cwd
     const worktree = workspace?.worktrees?.find((item) => item.id === panel?.worktreeId)
     return worktree?.path ?? workspace?.rootPath ?? ''
-  }, [panel?.cwd, panel?.worktreeId, workspace?.rootPath, workspace?.worktrees])
-  const threadId = panel?.agentThreadId
+  })
+  const threadId = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId)?.panels[panelId]?.agentThreadId)
   useEffect(() => window.electronAPI.onAgentConversationDeleted?.((event) => {
     if (state.phase === 'ready' && event.partition === state.partition && event.workspaceId === workspaceId && event.threadId === threadId) {
       void window.electronAPI.closeWindowPanel(panelId)
@@ -136,6 +136,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     const webview = webviewRef.current
     if (!webview) return
 
+    let disposed = false
     const boundUrl = threadId
       ? `${new URL(state.url).origin}/${encodeURIComponent(state.environmentId)}/${encodeURIComponent(threadId)}`
       : state.url
@@ -192,13 +193,17 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     }
     const onReady = (): void => {
       void (async () => {
-        await webview.insertCSS(AGENT_CHAT_ONLY_CSS).catch(() => undefined)
-        // A host chat selection can replace the guest while branding is pending.
-        if (webviewRef.current !== webview) return
-        await webview.executeJavaScript(agentHarnessBrandingScript('thread')).catch(() => undefined)
-        if (webviewRef.current !== webview) return
-        await webview.executeJavaScript(agentHarnessThemeScript(getActiveTheme())).catch(() => undefined)
-        if (webviewRef.current !== webview) return
+        // CSS and guest setup are independent. Batch the scripts into one
+        // guest call, and reveal only after both styling and setup finish.
+        const setup = [
+          agentHarnessBrandingScript('thread'),
+          agentHarnessThemeScript(getActiveTheme()),
+        ].map((script) => `try { ${script}; } catch {}`).join('\n')
+        await Promise.allSettled([
+          webview.insertCSS(AGENT_CHAT_ONLY_CSS),
+          webview.executeJavaScript(setup),
+        ])
+        if (disposed || webviewRef.current !== webview) return
         persistThreadFromLocation()
         setGuestReady(true)
       })()
@@ -216,6 +221,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     webview.addEventListener('dom-ready', onReady)
     webview.addEventListener('did-fail-load', onFailed)
     return () => {
+      disposed = true
       webview.removeEventListener('will-navigate', onWillNavigate)
       webview.removeEventListener('new-window', onNewWindow)
       webview.removeEventListener('did-navigate', persistThreadFromLocation)
@@ -250,17 +256,19 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     const store = useT3ActivityStore.getState()
     let cancelled = false
     let timer: ReturnType<typeof setTimeout>
+    let previousRevision: number | undefined
     const poll = async () => {
       try {
-        await guest.executeJavaScript(T3_THREAD_SUBSCRIPTION_SCRIPT)
-        const snapshot = await guest.executeJavaScript('window.__cateT3Threads && ({ connected: window.__cateT3Threads.connected, threads: window.__cateT3Threads.threads, revision: window.__cateT3Threads.revision, sequence: window.__cateT3Threads.sequence })') as T3Snapshot | undefined
+        const snapshot = await guest.executeJavaScript(t3ThreadPollScript(previousRevision)) as T3Snapshot | undefined
         if (cancelled) return
         if (snapshot) {
+          previousRevision = snapshot.revision
           store.update(state.partition, snapshot, panelId)
           const thread = threadId ? snapshot.threads[threadId] : undefined
           if (snapshot.connected && thread?.title) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, thread.title)
         }
       } catch {
+        previousRevision = undefined
         if (!cancelled) store.update(state.partition, { connected: false, threads: {}, revision: -1 }, panelId)
       }
       if (!cancelled) timer = setTimeout(poll, 1000)

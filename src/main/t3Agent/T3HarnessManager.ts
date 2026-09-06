@@ -349,7 +349,8 @@ export class T3HarnessManager {
       cwd,
       request.workspaceId,
     )
-    await this.ensureLocalThreadMode(instance)
+    // Startup and provider-profile publication already synchronize settings.
+    // Reopening a webview must not recopy provider secrets (especially over SSH).
     if (!instance.environmentId) throw new Error('T3 environment descriptor did not include an environment ID')
 
     const previousKey = this.panelHarness.get(request.panelId)
