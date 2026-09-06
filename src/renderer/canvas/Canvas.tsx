@@ -691,7 +691,11 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
         <SnapGuides />
         {children}
       </div>
+      </div>
 
+      {/* Portals retain React event ancestry. Keep chrome and target controls
+          outside the gesture container so their clicks cannot clear selection
+          or start background marquee/pan gestures before an action runs. */}
       {createPortal(
         <div
           ref={topOverlayRef}
@@ -724,7 +728,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
       )}
 
       <PlacementHint canvasRef={canvasRef} />
-      </div>
     </CanvasTopOverlayContext.Provider>
   )
 }
