@@ -1,5 +1,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { patchT3Client } from './patch-t3-client.mjs'
+import path from 'node:path'
+import { patchT3Changes } from './patch-t3-changes.mjs'
 
 // T3 0.0.38 discovers Grok models by starting an ACP session, which calls
 // authenticate and can open OAuth on every background health refresh. Use
@@ -32,8 +35,9 @@ export function patchT3ProjectBootstrap(source) {
 
 export function patchT3(entryPath) {
   const source = readFileSync(entryPath, 'utf8')
-  const patched = patchT3ProjectBootstrap(patchT3Source(source))
+  const patched = patchT3Changes(patchT3ProjectBootstrap(patchT3Source(source)))
   if (patched !== source) writeFileSync(entryPath, patched)
+  patchT3Client(path.join(path.dirname(entryPath), 'client', 'assets'))
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

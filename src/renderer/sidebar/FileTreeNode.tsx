@@ -104,6 +104,8 @@ interface CreateRequest {
 }
 
 interface FileTreeNodeProps {
+  flat?: boolean
+  onEditingChange?: (path: string, editing: boolean) => void
   node: FileTreeNodeType
   depth: number
   /** Git decorations for the whole tree (undefined outside a git repo). */
@@ -138,6 +140,8 @@ interface FileTreeNodeProps {
 }
 
 export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
+  flat = false,
+  onEditingChange,
   node,
   depth,
   git,
@@ -163,6 +167,10 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   const isLoading = loadingPaths.has(node.path)
   const [isRenaming, setIsRenaming] = useState(false)
   const [isCreating, setIsCreating] = useState<'file' | 'folder' | null>(null)
+  useEffect(() => {
+    onEditingChange?.(node.path, isRenaming || Boolean(isCreating))
+    return () => onEditingChange?.(node.path, false)
+  }, [node.path, isRenaming, isCreating, onEditingChange])
   const [renameValue, setRenameValue] = useState(node.name)
   const [createValue, setCreateValue] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
@@ -318,10 +326,11 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     if (node.isDirectory) {
       void onExpand(node.path)
     }
+    onEditingChange?.(node.path, true)
     setCreateValue('')
     setIsCreating(type)
     setTimeout(() => createInputRef.current?.focus(), 0)
-  }, [node.isDirectory, node.path, onExpand])
+  }, [node.isDirectory, node.path, onExpand, onEditingChange])
 
   // Handle external create requests (from header buttons targeting a selected folder)
   const lastHandledSeqRef = useRef(0)
@@ -469,7 +478,10 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   if (isPathVisible && !isPathVisible(node.path)) return null
 
   return (
-    <div>
+    <div className={flat ? 'relative' : undefined}>
+      {flat && Array.from({ length: depth }, (_, index) => (
+        <div key={index} className="absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none" style={{ left: index * 16 + 13 }} />
+      ))}
       {/* Node row */}
       <div
         data-filepath={node.path}
@@ -561,7 +573,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       )}
 
       {/* Expanded children */}
-      {node.isDirectory && isExpanded && (
+      {!flat && node.isDirectory && isExpanded && (
         <div className="relative">
           <div
             className="absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none"

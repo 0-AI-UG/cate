@@ -7,7 +7,7 @@ import { useAppStore } from '../stores/appStore'
 import { useUIStore, useSidebarLayout } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import type { SidebarView, SidebarSide } from '../stores/uiStore'
-import { FolderOpen, GitBranch, Layers as Stack, Settings as Gear, Search as MagnifyingGlass, Save as FloppyDisk, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple } from 'lucide-react'
+import { FolderOpen, GitBranch, Layers as Stack, Settings as Gear, Search as MagnifyingGlass, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple } from 'lucide-react'
 import pkg from '../../../package.json'
 import { Tooltip } from '../ui/Tooltip'
 import { IS_MAC } from '../lib/platform'
@@ -378,16 +378,6 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
               <PuzzlePiece size={16} className="pointer-events-none" />
             </button>
           </Tooltip>
-          <Tooltip label="Saved Layouts" placement="left">
-            <button
-              type="button"
-              className="flex items-center justify-center w-8 h-8 my-1 rounded-lg text-muted hover:text-secondary transition-colors"
-              onClick={() => useUIStore.getState().setShowLayoutsDialog(true)}
-              aria-label="Saved Layouts"
-            >
-              <FloppyDisk size={16} className="pointer-events-none" />
-            </button>
-          </Tooltip>
           <Tooltip label="Settings" placement="left">
             <button
               type="button"
@@ -440,7 +430,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ side, defaultWi
   // Both rails share the three-state model: fully hidden (0), rail-only
   // (BAR_WIDTH), or opened (BAR_WIDTH + content width). An empty rail collapses
   // to 0 unless a drag revealed it as a drop target. The right rail also hosts
-  // the skills/layouts/settings actions; the left does not.
+  // the skills/settings actions; the left does not.
   const sidebarWidth =
     sidebarHidden || (isEmpty && !dragRevealed)
       ? 0

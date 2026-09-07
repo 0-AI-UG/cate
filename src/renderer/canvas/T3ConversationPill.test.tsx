@@ -32,7 +32,7 @@ it('lists chats for the checkout and switches the existing panel', async () => {
   menu.mockResolvedValue('two')
   await open()
   expect(list).toHaveBeenCalledWith({ workspaceId: 'ws', cwd: '/repo/feature' })
-  expect(menu.mock.calls[0][0].slice(2)).toEqual([{ id: 'two', label: 'Other chat' }, { id: 'one', label: 'Current chat  ✓' }])
+  expect(menu.mock.calls[0][0].slice(3)).toEqual([{ id: 'two', label: 'Other chat' }, { id: 'one', label: 'Current chat  ✓' }])
   expect(select).toHaveBeenCalledWith('ws', 'agent', 'two')
   expect(title).toHaveBeenCalledWith('ws', 'agent', 'Other chat')
 })
@@ -45,4 +45,14 @@ it('leaves the chat unchanged when the menu is dismissed', async () => {
   menu.mockResolvedValue(null)
   await open()
   expect(select).not.toHaveBeenCalled()
+})
+
+it('uses a modal and dismisses rename with Escape from its buttons', async () => {
+  menu.mockResolvedValue('__rename')
+  await open()
+  expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBe('true')
+  const cancel = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent === 'Cancel')!
+  cancel.focus()
+  await act(async () => cancel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
 })

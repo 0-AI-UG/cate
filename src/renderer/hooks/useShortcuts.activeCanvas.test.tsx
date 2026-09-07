@@ -64,7 +64,6 @@ beforeEach(() => {
   // electronAPI is consumed in useShortcuts' effect (menu subscriptions).
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     onMenuTriggerAction: (callback: typeof menuAction) => { menuAction = callback; return () => {} },
-    onMenuLoadLayout: () => () => {},
   }
 
   // First panel inherits the legacy singleton; the second gets a fresh store.
@@ -123,6 +122,28 @@ describe('useShortcuts active-canvas routing', () => {
 
 
 describe('navigation from panel content', () => {
+  it.each(['keyboard', 'menu'] as const)('keeps %s navigation inside a dialog', (source) => {
+    const left = active.getState().addNode('source', 'editor', { x: 0, y: 0 })
+    active.getState().addNode('destination', 'editor', { x: 2000, y: 0 })
+    act(() => { active.getState().selectNodes([left]) })
+    const dialog = document.createElement('form')
+    dialog.setAttribute('role', 'dialog')
+    const input = document.createElement('input')
+    dialog.appendChild(input)
+    container.appendChild(dialog)
+    input.focus()
+    const event = new KeyboardEvent('keydown', { key: 'ArrowRight', metaKey: true, bubbles: true, cancelable: true })
+
+    act(() => {
+      if (source === 'keyboard') input.dispatchEvent(event)
+      else menuAction('navigateRight')
+    })
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(input)
+    expect(active.getState().selection).toEqual([left])
+  })
+
   it.each<PanelType>(['agent', 'browser', 'terminal', 'editor', 'canvas', 'document', 'review'])(
     'supports chained jumps starting from a %s panel', (type) => {
       const left = active.getState().addNode('source', type, { x: 0, y: 0 })

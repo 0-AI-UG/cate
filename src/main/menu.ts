@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { BrowserWindow, Menu, shell, app } from 'electron'
-import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION, MENU_LOAD_LAYOUT, BROWSER_SHORTCUT } from '../shared/ipc-channels'
+import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION, BROWSER_SHORTCUT } from '../shared/ipc-channels'
 import {
   SHORTCUT_DISPLAY_NAMES,
   resolveShortcuts,
@@ -56,22 +56,6 @@ function dispatchBrowser(action: BrowserShortcutAction): () => void {
     const win = getFocusedWindow()
     if (win) sendToWindow(win.id, BROWSER_SHORTCUT, action)
   }
-}
-
-/** Tell the focused renderer to load a named saved layout (replacing the workspace). */
-function dispatchLoadLayout(name: string): () => void {
-  return (): void => {
-    const win = getFocusedWindow()
-    if (win) sendToWindow(win.id, MENU_LOAD_LAYOUT, name)
-  }
-}
-
-// Saved-layout names, kept in sync by store.ts so the Layouts menu can list
-// them. Mutating it triggers a menu rebuild.
-let layoutNames: string[] = []
-export function setLayoutNames(names: string[]): void {
-  layoutNames = names
-  buildApplicationMenu()
 }
 
 // Injected from main/index.ts to avoid a circular import. The menu's
@@ -226,21 +210,6 @@ export function buildApplicationMenu(): void {
         { type: 'separator' },
         { ...actionMeta('previousWorkspace'), click: dispatch('previousWorkspace') },
         { ...actionMeta('nextWorkspace'), click: dispatch('nextWorkspace') },
-      ],
-    },
-    // Layouts menu — save / manage / load named canvas layouts. The list is
-    // populated from store.ts via setLayoutNames().
-    {
-      label: 'Layouts',
-      submenu: [
-        { label: 'Save Current Canvas…', click: dispatch('manageLayouts') },
-        { label: 'Manage Layouts…', click: dispatch('manageLayouts') },
-        ...(layoutNames.length > 0
-          ? [
-              { type: 'separator' as const },
-              ...layoutNames.map((name) => ({ label: name, click: dispatchLoadLayout(name) })),
-            ]
-          : []),
       ],
     },
     // Browser menu — acts on the focused browser panel. No accelerators: the

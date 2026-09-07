@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Search as MagnifyingGlass, Trash } from 'lucide-react'
+import { Plus, Search as MagnifyingGlass, Trash, Pencil as PencilSimple } from 'lucide-react'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 import { Spinner } from '../ui/Spinner'
 import { T3Logo } from '../ui/T3Logo'
@@ -27,6 +27,9 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
   const [error, setError] = useState('')
   const [deleting, setDeleting] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [title, setTitle] = useState('')
+  const [saving, setSaving] = useState(false)
   const close = () => { setPosition(null); onOpenChange(false) }
   useDismissableLayer({ open: !!position, contentRef: content, triggerRefs: [trigger], onDismiss: close })
   useEffect(() => {
@@ -58,6 +61,18 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not delete conversation.') }
     finally { setDeleting(null) }
   }
+  const rename = async (thread: T3Conversation) => {
+    if (!title.trim() || saving) return
+    setSaving(true); setError('')
+    try {
+      const nextTitle = title.trim()
+      const result = await window.electronAPI.agentHarnessRenameConversation({ workspaceId, cwd, threadId: thread.id, title: nextTitle })
+      if ('error' in result) { setError(result.error); return }
+      setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, title: nextTitle } : item))
+      setRenaming(null)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename conversation.') }
+    finally { setSaving(false) }
+  }
   const filtered = threads.filter((thread) => thread.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
   return <>
     <CanvasToolbarButton ref={trigger} active={!!position} label="T3 Code conversations" tooltipPlacement={tooltipPlacement} size="panel" onClick={() => {
@@ -69,6 +84,7 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
       setCheckout({ ...inherited, cwd: inherited.cwd ?? workspace?.worktrees?.find((wt) => wt.id === inherited.worktreeId)?.path })
       setSearch('')
       setConfirmDelete(null)
+      setRenaming(null)
       setPosition({ left: Math.max(8, Math.min(menuSide === 'right' ? rect.right + 8 : rect.left + rect.width / 2 - 110, window.innerWidth - 228)), bottom: Math.max(8, menuSide === 'right' ? window.innerHeight - rect.bottom : window.innerHeight - rect.top + 10) })
       onOpenChange(true)
     }}><T3Logo size={18} /></CanvasToolbarButton>
@@ -84,12 +100,16 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
       <div className="min-h-0 overflow-y-auto">
         {error && <p role="alert" className="px-2.5 py-2 text-[11px] text-red-400">{error}</p>}
         {loading ? <div className="flex justify-center px-2.5 py-3"><Spinner size={16} label="Loading conversations" className="text-muted" /></div> : filtered.length === 0 ? <p className="px-2.5 py-3 text-[11px] text-muted">{search ? 'No matching conversations.' : 'No saved conversations.'}</p> : filtered.map((thread) => <div key={thread.id} className="group mx-1 rounded-lg hover:bg-surface-4">
-          {confirmDelete === thread.id ? <div className="px-1.5 py-1 text-[11px]">
+          {renaming === thread.id ? <form className="px-1.5 py-1" onSubmit={(event) => { event.preventDefault(); void rename(thread) }}>
+            <input autoFocus aria-label="Conversation name" value={title} disabled={saving} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setRenaming(null) } }} className="w-full rounded bg-surface-3 px-1 py-1 text-primary" />
+            <div className="flex gap-3 py-1"><button disabled={saving || !title.trim()} className="text-secondary disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button><button type="button" disabled={saving} onClick={() => setRenaming(null)} className="text-muted">Cancel</button></div>
+          </form> : confirmDelete === thread.id ? <div className="px-1.5 py-1 text-[11px]">
             <p className="text-secondary">Delete “{thread.title}”?</p>
             <div className="flex gap-3 py-1"><button disabled={!!deleting} onClick={() => void remove(thread)} className="text-red-400 disabled:opacity-50">{deleting === thread.id ? <Spinner size={12} label="Deleting conversation" /> : 'Delete'}</button><button disabled={!!deleting} onClick={() => setConfirmDelete(null)} className="text-muted">Cancel</button></div>
           </div> : <div className="flex items-center">
             <button onClick={() => create(thread)} className="min-w-0 flex flex-1 items-center gap-2 h-[26px] px-1.5 text-[12px] text-secondary hover:text-primary transition-colors" title={thread.title}><T3Logo size={13} className="shrink-0 text-muted" /><span className="truncate">{thread.title}</span></button>
             <button aria-label={`Delete ${thread.title}`} disabled={!!deleting} onClick={() => setConfirmDelete(thread.id)} className="p-1.5 text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-400"><Trash size={12} /></button>
+            <button aria-label={`Rename ${thread.title}`} onClick={() => { setTitle(thread.title); setRenaming(thread.id) }} className="p-1.5 text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-primary"><PencilSimple size={12} /></button>
           </div>}
         </div>)}
       </div>

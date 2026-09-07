@@ -176,7 +176,6 @@ export const CommandPalette: React.FC = () => {
       { id: 'autoLayout', title: shortcutTitle('autoLayout'), icon: <LayersIcon />, action: run('autoLayout') },
       { id: 'undo', title: shortcutTitle('undo'), icon: <UndoIcon />, action: run('undo') },
       { id: 'redo', title: shortcutTitle('redo'), icon: <RedoIcon />, action: run('redo') },
-      { id: 'manageLayouts', title: 'Saved Layouts…', icon: <SaveIcon />, action: run('manageLayouts') },
       {
         id: 'skills',
         title: 'Skills…',

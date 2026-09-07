@@ -21,6 +21,7 @@ import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { Tooltip } from '../ui/Tooltip'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 import { KeepAwakeButton } from './KeepAwakeButton'
+import { RecentScreenshotButton } from './RecentScreenshotButton'
 
 interface CanvasToolbarProps {
   canvasPanelId: string
@@ -213,6 +214,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const items = (
     <>
       <KeepAwakeButton tooltipPlacement={place} />
+      <RecentScreenshotButton tooltipPlacement={place} />
       {divider}
       <CanvasToolbarButton
         onClick={() => setActiveTool('select')}

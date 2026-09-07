@@ -89,6 +89,12 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     active = { thread, turn }
     reply({ turn })
     notify('turn/started', { threadId: thread.id, turn })
+    const diffFile = text.match(/fixture:diff ([a-z0-9-]+\.ts)/)?.[1]
+    if (diffFile) {
+      fs.writeFileSync(require('node:path').join(thread.cwd, diffFile), 'export const changed = true\n')
+      notify('turn/diff/updated', { threadId: thread.id, turnId: turn.id,
+        diff: `diff --git a/${diffFile} b/${diffFile}\nnew file mode 100644\n--- /dev/null\n+++ b/${diffFile}\n@@ -0,0 +1 @@\n+export const changed = true\n` })
+    }
     if (text.includes('fixture:approval')) {
       const approvalId = randomUUID()
       pending.set(approvalId, { thread, turn })

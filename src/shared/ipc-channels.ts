@@ -101,6 +101,9 @@ export const SHELL_AGENT_HOOK_EVENT = 'shell:agentHookEvent'
 // Inspect a workspace's per-agent hook-file injection state (folder present /
 // injected) for the Settings UI — renderer -> main (invoke).
 export const AGENT_HOOKS_INSPECT = 'agentHooks:inspect'
+export const AGENT_CHANGES_LIST = 'agentChanges:list'
+export const AGENT_CHANGES_READ = 'agentChanges:read'
+export const AGENT_CHANGES_BIND = 'agentChanges:bind'
 
 // Settings
 export const SETTINGS_GET = 'settings:get'
@@ -182,10 +185,6 @@ export const MENU_OPEN_SETTINGS = 'menu:openSettings'
 /** Generic menu-action dispatch — main sends a MenuActionId and the focused
  *  renderer runs the matching handler (via useShortcuts). */
 export const MENU_TRIGGER_ACTION = 'menu:triggerAction'
-/** Load a named saved layout — main sends the layout name and the focused
- *  renderer restores it (replacing the workspace). */
-export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
-
 /** Browser navigation shortcut (main -> renderer). Sent when a webview guest
  *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the
  *  Browser menu. The focused BrowserPanel acts on it. */
@@ -275,12 +274,6 @@ export const BROWSER_BOOKMARKS_REMOVE = 'browser-bookmarks:remove'
 export const BROWSER_BOOKMARKS_CHANGED = 'browser-bookmarks:changed' // main -> renderer broadcast
 export const BROWSER_CLEAR_DATA = 'browser:clearData' // clear shared-session cookies/cache/storage + history
 
-// Layouts
-export const LAYOUT_SAVE = 'layout:save'
-export const LAYOUT_LIST = 'layout:list'
-export const LAYOUT_LOAD = 'layout:load'
-export const LAYOUT_DELETE = 'layout:delete'
-
 // Notifications
 export const NOTIFY_OS = 'notify:os'
 export const NOTIFY_ACTION = 'notify:action' // main -> renderer (OS notification clicked)
@@ -359,6 +352,7 @@ export const NATIVE_FILE_DRAG = 'native:fileDrag'
 // T3 provider harness. Cate owns the workspace/worktree path and panel shell;
 // the harness owns provider conversations, streaming, and approvals.
 export const AGENT_HARNESS_GET_PANEL_URL = 'agentHarness:getPanelUrl'
+export const AGENT_HARNESS_RENAME_CONVERSATION = 'agentHarness:renameConversation'
 export const AGENT_HARNESS_PANEL_CLOSED = 'agentHarness:panelClosed'
 export const AGENT_HARNESS_RESTART = 'agentHarness:restart'
 export const AGENT_HARNESS_GET_STATUS = 'agentHarness:getStatus'
@@ -426,3 +420,7 @@ export const AGENT_HARNESS_LIST_CONVERSATIONS = 'agentHarness:listConversations'
 export const AGENT_HARNESS_DELETE_CONVERSATION = 'agentHarness:deleteConversation'
 
 export const AGENT_CONVERSATION_DELETED = 'agentHarness:conversationDeleted'
+
+export const RECENT_SCREENSHOT_GET = 'recentScreenshot:get'
+export const RECENT_SCREENSHOT_CHANGED = 'recentScreenshot:changed'
+export const RECENT_SCREENSHOT_DRAG = 'recentScreenshot:drag'

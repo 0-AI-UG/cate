@@ -161,14 +161,20 @@ const WorktreeTerritoryLayer: React.FC<Props> = ({ containerWidth, containerHeig
     if (backendRef.current === 'gl') {
       const c = glCanvasRef.current
       if (c) {
-        c.width = dw; c.height = dh
+        // Assigning an unchanged dimension still resets the backing store.
+        // Setup calls sizeActive repeatedly; allocate only on a real resize.
+        if (c.width !== dw) c.width = dw
+        if (c.height !== dh) c.height = dh
         c.style.width = w + 'px'; c.style.height = h + 'px'
         glRef.current?.resize(dw, dh)
       }
     } else {
       const c = cpuCanvasRef.current
       if (c) {
-        c.width = dw; c.height = dh
+        // Assigning an unchanged dimension still resets the backing store.
+        // Setup calls sizeActive repeatedly; allocate only on a real resize.
+        if (c.width !== dw) c.width = dw
+        if (c.height !== dh) c.height = dh
         c.style.width = w + 'px'; c.style.height = h + 'px'
         c.getContext('2d')?.setTransform(dpr, 0, 0, dpr, 0, 0)
       }

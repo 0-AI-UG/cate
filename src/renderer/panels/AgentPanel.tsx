@@ -1,6 +1,6 @@
 import { LoadingState } from '../ui/Spinner'
-import { t3ThreadPollScript } from '../lib/t3ThreadState'
-import { useT3ActivityStore, type T3Snapshot } from '../stores/t3ActivityStore'
+import { subscribeT3Activity } from '../lib/t3ActivitySubscription'
+import { useT3ActivityStore } from '../stores/t3ActivityStore'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle } from 'lucide-react'
 import type { AgentPanelProps } from './types'
@@ -19,6 +19,14 @@ import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { useUIStore } from '../stores/uiStore'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
 import { agentHarnessThemeScript } from '../lib/agentHarnessTheme'
+import { agentHarnessHostBridgeScript } from '../lib/agentHarnessHostBridge'
+import { requestPanelTarget } from '../lib/panelTargetPicker'
+import { createAgentHarnessHostDispatcher } from '../lib/agentHarnessHostDispatcher'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
+import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
+import { openAgentChanges } from '../lib/review/openAgentChanges'
+import { useAgentChanges } from '../lib/useAgentChanges'
+import { summarizeAgentChanges } from '../../shared/agentChanges'
 
 interface WebviewElement extends HTMLElement {
   getURL(): string
@@ -49,6 +57,8 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
   const [state, setState] = useState<ResolveState>({ phase: 'loading' })
   const [retryNonce, setRetryNonce] = useState(0)
   const [guestReady, setGuestReady] = useState(false)
+  const [hostError, setHostError] = useState('')
+  const bridgeTokenRef = useRef(crypto.randomUUID())
 
   const activePanelId = useActivePanelStore((s) => s.activePanelId)
   const canvasFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
@@ -71,6 +81,19 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     return worktree?.path ?? workspace?.rootPath ?? ''
   })
   const threadId = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId)?.panels[panelId]?.agentThreadId)
+  const worktreeId = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId)?.panels[panelId]?.worktreeId)
+  const changes = useAgentChanges(cwd, workspaceId)
+  useEffect(() => {
+    if (threadId && cwd) void window.electronAPI.agentChangesBind?.(cwd, workspaceId, threadId, panelId).catch((cause) => setHostError(errorText(cause)))
+  }, [cwd, workspaceId, threadId, panelId])
+  useEffect(() => {
+    if (!guestReady || !threadId) return
+    const records = changes.records.filter((r) => r.source === 't3' && r.sourceId === threadId)
+    const turns = Object.fromEntries([...new Set(records.map((r) => r.turnId))].map((turnId) => [turnId,
+      summarizeAgentChanges(records.filter((r) => r.turnId === turnId)),
+    ]))
+    void webviewRef.current?.executeJavaScript(`window.__cateChanges = ${JSON.stringify({ threadId, turns })}; window.dispatchEvent(new Event('cate-changes'));`).catch(() => {})
+  }, [changes.records, guestReady, threadId])
   useEffect(() => window.electronAPI.onAgentConversationDeleted?.((event) => {
     if (state.phase === 'ready' && event.partition === state.partition && event.workspaceId === workspaceId && event.threadId === threadId) {
       void window.electronAPI.closeWindowPanel(panelId)
@@ -135,8 +158,41 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     if (state.phase !== 'ready') return
     const webview = webviewRef.current
     if (!webview) return
-
+    const bridgeToken = bridgeTokenRef.current
     let disposed = false
+    const dispatcher = createAgentHarnessHostDispatcher(threadId, {
+      pick: (panelType) => requestPanelTarget({ workspaceId, sourcePanelId: panelId, panelType, availability: 'new' }),
+      openDiff: (focusedFile, turnId, isActive) => openAgentChanges({ workspaceId, panelId, cwd, focusedFile, sessionId: threadId, turnId, isActive }),
+      openExternal: (url) => { window.electronAPI.openExternalUrl(url) },
+      createAgent: (nextThreadId, title, target) => {
+        const app = useAppStore.getState()
+        const id = app.createAgent(workspaceId, undefined, target.placement, cwd, worktreeId, nextThreadId)
+        if (title !== undefined) app.updatePanelTitleFromAgent(workspaceId, id, title)
+      },
+      openFile: (relativePath, target) => {
+        const root = parseLocator(cwd)
+        openFileAsPanel(workspaceId, formatLocator({ ...root, path: `${root.path.replace(/[\\/]+$/, '')}/${relativePath}` }), undefined, target.placement)
+      },
+    })
+    const onHostMessage = (event: { message?: string }): void => {
+      if (!event.message?.startsWith('cate-chat-host:')) return
+      let request: { token: string; id: string; action: string; payload: Record<string, unknown> }
+      try { request = JSON.parse(event.message.slice('cate-chat-host:'.length)) } catch { return }
+      if (!request || request.token !== bridgeToken || typeof request.id !== 'string' || typeof request.action !== 'string'
+        || !request.payload || typeof request.payload !== 'object' || Array.isArray(request.payload)) return
+      const reply = (result: unknown, error?: string) => {
+        if (!disposed) void webview.executeJavaScript(`window.__cateHost?.reply(${JSON.stringify(request.id)}, ${JSON.stringify(result)}, ${JSON.stringify(error ?? null)})`).catch(() => undefined)
+      }
+      void dispatcher.handle(request.action, request.payload).then((result) => {
+        if (!disposed) setHostError('')
+        reply(result)
+      }).catch((cause: unknown) => {
+        const message = cause instanceof Error ? cause.message : 'Could not open panel.'
+        if (!disposed) setHostError(message)
+        reply(null, message)
+      })
+    }
+
     const boundUrl = threadId
       ? `${new URL(state.url).origin}/${encodeURIComponent(state.environmentId)}/${encodeURIComponent(threadId)}`
       : state.url
@@ -197,6 +253,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
         // guest call, and reveal only after both styling and setup finish.
         const setup = [
           agentHarnessBrandingScript('thread'),
+          agentHarnessHostBridgeScript(bridgeToken),
           agentHarnessThemeScript(getActiveTheme()),
         ].map((script) => `try { ${script}; } catch {}`).join('\n')
         await Promise.allSettled([
@@ -214,6 +271,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     }
 
     webview.addEventListener('will-navigate', onWillNavigate)
+    webview.addEventListener('console-message', onHostMessage)
     webview.addEventListener('new-window', onNewWindow)
     webview.addEventListener('did-navigate', persistThreadFromLocation)
     webview.addEventListener('did-navigate-in-page', persistThreadFromLocation)
@@ -222,6 +280,11 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     webview.addEventListener('did-fail-load', onFailed)
     return () => {
       disposed = true
+      dispatcher.dispose()
+      try {
+        void webview.executeJavaScript('window.__cateHost?.cancelPending()').catch(() => undefined)
+      } catch { /* A detached guest can throw before returning a promise. */ }
+      webview.removeEventListener('console-message', onHostMessage)
       webview.removeEventListener('will-navigate', onWillNavigate)
       webview.removeEventListener('new-window', onNewWindow)
       webview.removeEventListener('did-navigate', persistThreadFromLocation)
@@ -230,7 +293,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       webview.removeEventListener('dom-ready', onReady)
       webview.removeEventListener('did-fail-load', onFailed)
     }
-  }, [panelId, state, threadId, workspaceId])
+  }, [panelId, state, threadId, workspaceId, cwd, worktreeId])
 
   useEffect(() => {
     if (state.phase !== 'ready' || !guestReady) return
@@ -253,28 +316,13 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     if (state.phase !== 'ready' || !guestReady) return
     const guest = webviewRef.current
     if (!guest) return
-    const store = useT3ActivityStore.getState()
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout>
-    let previousRevision: number | undefined
-    const poll = async () => {
-      try {
-        const snapshot = await guest.executeJavaScript(t3ThreadPollScript(previousRevision)) as T3Snapshot | undefined
-        if (cancelled) return
-        if (snapshot) {
-          previousRevision = snapshot.revision
-          store.update(state.partition, snapshot, panelId)
-          const thread = threadId ? snapshot.threads[threadId] : undefined
-          if (snapshot.connected && thread?.title) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, thread.title)
-        }
-      } catch {
-        previousRevision = undefined
-        if (!cancelled) store.update(state.partition, { connected: false, threads: {}, revision: -1 }, panelId)
-      }
-      if (!cancelled) timer = setTimeout(poll, 1000)
-    }
-    void poll()
-    return () => { cancelled = true; clearTimeout(timer) }
+    return subscribeT3Activity(state.partition, {
+      panelId, guest,
+      onSnapshot: (snapshot) => {
+        const thread = threadId ? snapshot.threads[threadId] : undefined
+        if (thread?.title) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, thread.title)
+      },
+    })
   }, [state, guestReady, threadId, panelId, workspaceId])
 
   return (
@@ -282,8 +330,10 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       className="flex h-full w-full flex-col bg-surface-4"
       data-agent-panel-id={panelId}
       data-agent-phase={state.phase}
+      data-agent-connected={t3Connection === true}
     >
       <div className="relative min-h-0 flex-1">
+        {hostError && <div role="alert" className="absolute bottom-2 left-2 right-2 z-30 rounded bg-surface-2 p-2 text-xs text-primary">{hostError}<button className="ml-2 text-muted" onClick={() => setHostError('')}>Dismiss</button></div>}
         {state.phase === 'ready' && guestReady && t3Connection === false && (
           <div role="status" className="absolute bottom-1 left-2 z-20 rounded bg-surface-2 px-2 py-1 text-xs text-muted">
             T3 Code activity disconnected — reconnecting…

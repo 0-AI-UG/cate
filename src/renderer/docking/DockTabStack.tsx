@@ -12,6 +12,7 @@ import { PanelChromeProvider, type PanelChromeApi } from '../panels/panelChrome'
 import { Columns2 as Columns, Plus } from 'lucide-react'
 import { DockTabBar } from './DockTabBar'
 import { WorktreePill } from '../canvas/WorktreePill'
+import { AgentChangesPill } from '../canvas/AgentChangesPill'
 import { T3ConversationPill } from '../canvas/T3ConversationPill'
 import { DockTabContextMenu, SPLIT_MENU_ITEMS } from './DockTabContextMenu'
 import type { SplitMenuItem } from './DockTabContextMenu'
@@ -425,6 +426,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           <div className="absolute top-1.5 right-3 z-10 flex items-center gap-1">
             {activePanel.type === 'agent' && <T3ConversationPill key={activePanel.id} panel={activePanel} workspaceId={effectiveWorkspaceId} />}
             <WorktreePill panel={activePanel} workspaceId={effectiveWorkspaceId} />
+            <AgentChangesPill key={`changes:${activePanel.id}`} panel={activePanel} workspaceId={effectiveWorkspaceId} />
           </div>
         )}
       </div>

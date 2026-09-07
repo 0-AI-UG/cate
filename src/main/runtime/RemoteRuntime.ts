@@ -105,6 +105,9 @@ export class RemoteRuntime implements Runtime {
     // register the stream when the round-trip resolves. Normalized events
     // arrive as evt frames.
     this.agentHooks = {
+      readChanges: (cwd, knownRevision, access) => call(Methods.agentChangesRead, [cwd, knownRevision, scoped(access)]),
+      listChanges: (cwd, access) => call(Methods.agentChangesList, [cwd, scoped(access)]),
+      bindChanges: (cwd, threadId, panelId, access) => call(Methods.agentChangesBind, [cwd, threadId, panelId, scoped(access)]),
       subscribe: (onEvent) => {
         let streamId: string | null = null
         let stopped = false
@@ -356,6 +359,10 @@ export class RemoteRuntime implements Runtime {
 
   removeAllowedRoot(root: string, scopeId?: string): Promise<void> {
     return this.rpc.call(Methods.removeAllowedRoot, [root, scopeId]) as Promise<void>
+  }
+
+  samplePerf(): Promise<import('../../shared/types').RuntimePerfSample> {
+    return this.rpc.call(Methods.perfSnapshot, [], { timeoutMs: 1000 }) as Promise<import('../../shared/types').RuntimePerfSample>
   }
 
   setExclusions(names: string[]): Promise<void> {

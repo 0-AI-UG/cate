@@ -6,6 +6,8 @@ import type { WorkspaceState } from '../../shared/types'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+vi.mock('./AgentPanel', () => ({ default: ({ panelId }: { panelId: string }) => <div data-retained-agent={panelId} /> }))
+
 vi.mock('./BrowserPanel', () => ({
   default: ({ panelId, workspaceId }: { panelId: string; workspaceId: string }) => (
     <div data-browser-panel={panelId} data-workspace={workspaceId} />
@@ -70,13 +72,14 @@ function ClippedStackedBrowserSlot(): React.ReactElement {
   )
 }
 
-function renderHost(): void {
+async function renderHost(): Promise<void> {
   act(() => root.render(
     <PersistentBrowserHostContext.Provider value>
       <VisibleBrowserSlot />
       <BackgroundBrowserHost />
     </PersistentBrowserHostContext.Provider>,
   ))
+  await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
 }
 
 function workspace(id: string): WorkspaceState {
@@ -121,8 +124,8 @@ afterEach(() => {
 })
 
 describe('BackgroundBrowserHost', () => {
-  it('mounts every browser once and aligns only the selected surface to its slot', () => {
-    renderHost()
+  it('mounts every browser once and aligns only the selected surface to its slot', async () => {
+    await renderHost()
 
     expect(container.querySelector('[data-browser-surface="browser-one"]')
       ?.getAttribute('data-browser-surface-visible')).toBe('true')
@@ -131,24 +134,26 @@ describe('BackgroundBrowserHost', () => {
     expect(container.querySelector('[data-browser-panel="terminal-two"]')).toBeNull()
   })
 
-  it('preserves the same browser component while switching away and back', () => {
-    renderHost()
+  it('preserves the same browser component while switching away and back', async () => {
+    await renderHost()
     const original = container.querySelector('[data-browser-panel="browser-one"]')
 
     act(() => useAppStore.setState({ selectedWorkspaceId: 'two' }))
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
     expect(container.querySelector('[data-browser-surface="browser-one"]')
       ?.getAttribute('data-browser-surface-visible')).toBe('false')
     expect(container.querySelector('[data-browser-surface="browser-two"]')
       ?.getAttribute('data-browser-surface-visible')).toBe('true')
 
     act(() => useAppStore.setState({ selectedWorkspaceId: 'one' }))
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
 
     expect(container.querySelector('[data-browser-panel="browser-one"]')).toBe(original)
     expect(container.querySelector('[data-browser-surface="browser-one"]')
       ?.getAttribute('data-browser-surface-visible')).toBe('true')
   })
 
-  it('clips a persistent surface to its canvas and punches out higher canvas nodes', () => {
+  it('clips a persistent surface to its canvas and punches out higher canvas nodes', async () => {
     act(() => root.render(
       <PersistentBrowserHostContext.Provider value>
         <ClippedStackedBrowserSlot />
@@ -156,6 +161,7 @@ describe('BackgroundBrowserHost', () => {
       </PersistentBrowserHostContext.Provider>,
     ))
 
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
     const surface = container.querySelector<HTMLElement>('[data-browser-surface="browser-one"]')
     expect(surface?.style.clipPath).toBe(
       'path(evenodd, "M 90 0 H 200 V 100 H 90 Z M 140 20 H 200 V 80 H 140 Z")',
@@ -172,6 +178,7 @@ describe('BackgroundBrowserHost', () => {
 
     const slot = container.querySelector<HTMLElement>('[data-browser-surface-slot="browser-one"]')!
     const world = container.querySelector<HTMLElement>('[data-canvas-world]')!
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
     const surface = container.querySelector<HTMLElement>('[data-browser-surface="browser-one"]')!
     slot.dataset.testRect = '120,40,420,190'
 
@@ -194,6 +201,7 @@ describe('BackgroundBrowserHost', () => {
       </PersistentBrowserHostContext.Provider>,
     ))
     const node = container.querySelector<HTMLElement>('[data-node-id="browser-node"]')!
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
     const surface = container.querySelector<HTMLElement>('[data-browser-surface="browser-one"]')!
     act(() => {
       node.dataset.testRect = '10,0,210,120'
@@ -215,4 +223,20 @@ describe('BackgroundBrowserHost', () => {
       expect(surface.style.borderRadius).toBe('0px 0px 0px 12px')
     })
   })
+})
+
+it('retains T3 for a warm return and evicts the least recent workspace', async () => {
+  const all = ['one', 'two', 'three'].map((id) => ({ ...workspace(id), panels: {
+    [`agent-${id}`]: { id: `agent-${id}`, type: 'agent' as const, title: 'Agent', isDirty: false },
+  } }))
+  act(() => { useAppStore.setState({ workspaces: all }); root.render(<BackgroundBrowserHost />) })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  const original = container.querySelector('[data-retained-agent="agent-one"]')
+  expect(original).not.toBeNull()
+  act(() => useAppStore.setState({ selectedWorkspaceId: 'two' }))
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
+  act(() => useAppStore.setState({ selectedWorkspaceId: 'one' }))
+  expect(container.querySelector('[data-retained-agent="agent-one"]')).toBe(original)
+  act(() => useAppStore.setState({ selectedWorkspaceId: 'three' }))
+  expect(container.querySelector('[data-retained-agent="agent-two"]')).toBeNull()
 })

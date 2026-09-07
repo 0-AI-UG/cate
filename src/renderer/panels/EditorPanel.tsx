@@ -5,7 +5,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Check, Copy, FolderOpen } from 'lucide-react'
-import { useRenderCount } from '../lib/perf/perfClient'
+import { perfCount, useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
 import ReactMarkdown from 'react-markdown'
@@ -333,6 +333,7 @@ export default function EditorPanel({
     const fontSize = useSettingsStore.getState().editorFontSize
     const fontFamily = resolveEditorFontFamily(useSettingsStore.getState().editorFontFamily)
 
+    perfCount('editorCreate')
     const editor = monaco.editor.create(containerRef.current, {
       theme: CATE_MONACO_THEME,
       fontFamily,

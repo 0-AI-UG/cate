@@ -1,21 +1,23 @@
 // =============================================================================
-// BackgroundBrowserHost — owns each main-window browser guest for its lifetime.
+// BackgroundBrowserHost — persistent browser guests and recently used T3 guests.
 //
 // BrowserPanel renders once into a stable external container which never moves
 // or disconnects. The visible shell contributes only a geometry slot; the
 // registry aligns the fixed container to it, including the canvas transform.
-// Inactive surfaces are moved off-screen visually, keeping the same guest
+// Inactive surfaces are parked without resizing, keeping the same guest
 // webContents, DOM, history and form state across workspace transitions.
 // =============================================================================
 
-import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '../stores/appStore'
 import BrowserPanel from './BrowserPanel'
 import { registerBrowserSurface } from './browserSurfaceRegistry'
 import type { PanelState } from '../../shared/types'
 
-function PersistentBrowserSurface({
+const AgentPanel = lazy(() => import('./AgentPanel'))
+
+const PersistentBrowserSurface = memo(function PersistentBrowserSurface({
   workspaceId,
   panel,
   backgroundRoot,
@@ -38,7 +40,7 @@ function PersistentBrowserSurface({
   useLayoutEffect(() => () => container.remove(), [container])
 
   return createPortal(
-    <BrowserPanel
+    panel.type === 'agent' ? <Suspense fallback={null}><AgentPanel panelId={panel.id} workspaceId={workspaceId} /></Suspense> : <BrowserPanel
       panelId={panel.id}
       workspaceId={workspaceId}
       tabs={panel.tabs!}
@@ -47,10 +49,14 @@ function PersistentBrowserSurface({
     />,
     container,
   )
-}
+})
 
-export default function BackgroundBrowserHost(): React.ReactElement | null {
+export default function BackgroundBrowserHost({ workspaceId }: { workspaceId?: string }): React.ReactElement | null {
   const workspaces = useAppStore((state) => state.workspaces)
+  const selected = useAppStore((state) => workspaceId ?? state.selectedWorkspaceId)
+  // Bound retained T3 UIs. Closing/removing panels still unmounts immediately.
+  const [recent, setRecent] = useState([selected])
+  if (recent[0] !== selected) setRecent([selected, ...recent.filter((id) => id !== selected)].slice(0, 2))
   const [backgroundRoot, setBackgroundRoot] = useState<HTMLDivElement | null>(null)
   const setRootRef = useCallback((element: HTMLDivElement | null) => {
     setBackgroundRoot(element)
@@ -58,12 +64,11 @@ export default function BackgroundBrowserHost(): React.ReactElement | null {
   const browsers = useMemo(() => workspaces.flatMap((workspace) => (
     Object.values(workspace.panels)
       .filter((panel) => (
-        panel.type === 'browser'
-        && Boolean(panel.tabs?.length)
-        && Boolean(panel.activeTabId)
+        (panel.type === 'browser' && Boolean(panel.tabs?.length) && Boolean(panel.activeTabId))
+        || (panel.type === 'agent' && recent.includes(workspace.id))
       ))
       .map((panel) => ({ workspaceId: workspace.id, panel }))
-  )), [workspaces])
+  )), [workspaces, recent])
 
   if (browsers.length === 0) return null
 

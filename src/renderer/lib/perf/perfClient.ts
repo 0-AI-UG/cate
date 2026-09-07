@@ -14,6 +14,7 @@
 // =============================================================================
 
 import { useEffect } from 'react'
+import { createMeasurementWindow } from './measurementWindow'
 
 export const PERF_ENABLED = Boolean(
   typeof window !== 'undefined' &&
@@ -56,33 +57,18 @@ export function useRenderCount(name: string): void {
   })
 }
 
-// --- Long tasks --------------------------------------------------------------
-let longTaskCount = 0
-let longTaskMaxMs = 0
-let longTaskObserver: PerformanceObserver | null = null
+const hudWindow = createMeasurementWindow()
+const testWindow = createMeasurementWindow()
+let longTasksSupported = false
 
-export function getLongTasks(): { count: number; maxMs: number } {
-  return { count: longTaskCount, maxMs: longTaskMaxMs }
-}
-
-// --- FPS ---------------------------------------------------------------------
-let fps = 0
-let frameCount = 0
-let lastFpsAt = 0
-
-export function getFps(): number {
-  return fps
-}
+export const isLongTaskObserverSupported = (): boolean => longTasksSupported
+export const getLongTasks = hudWindow.longTasks
+export const getFrameTimes = hudWindow.frames
+export const getFps = (): number => Math.round(hudWindow.frames().fps)
 
 function frameTick(now: number): void {
-  frameCount++
-  if (lastFpsAt === 0) lastFpsAt = now
-  const elapsed = now - lastFpsAt
-  if (elapsed >= 1000) {
-    fps = Math.round((frameCount * 1000) / elapsed)
-    frameCount = 0
-    lastFpsAt = now
-  }
+  hudWindow.frame(now)
+  testWindow.frame(now)
   requestAnimationFrame(frameTick)
 }
 
@@ -92,6 +78,8 @@ declare global {
   interface Window {
     /** Exposed only under CATE_PERF=1 — read by the e2e perf-stress harness. */
     __catePerf?: {
+      frames(): ReturnType<ReturnType<typeof createMeasurementWindow>['frames']>
+      longTasksSupported(): boolean
       fps(): number
       longTasks(): { count: number; maxMs: number }
       renderCounts(): Record<string, number>
@@ -107,20 +95,23 @@ export function initPerfClient(): void {
 
   // Expose a read API for the e2e perf-stress test (page.evaluate reads these).
   window.__catePerf = {
-    fps: () => fps,
-    longTasks: () => ({ count: longTaskCount, maxMs: longTaskMaxMs }),
+    frames: testWindow.frames,
+    longTasksSupported: () => longTasksSupported,
+    fps: () => Math.round(testWindow.frames().fps),
+    longTasks: testWindow.longTasks,
     renderCounts: () => Object.fromEntries(renderCounts),
-    resetWindow: () => resetPerfWindow(),
+    resetWindow: () => testWindow.reset(performance.now()),
   }
 
   try {
-    longTaskObserver = new PerformanceObserver((list) => {
+    const longTaskObserver = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
-        longTaskCount++
-        if (entry.duration > longTaskMaxMs) longTaskMaxMs = entry.duration
+        hudWindow.longTask(entry.startTime, entry.duration)
+        testWindow.longTask(entry.startTime, entry.duration)
       }
     })
     longTaskObserver.observe({ entryTypes: ['longtask'] })
+    longTasksSupported = PerformanceObserver.supportedEntryTypes.includes('longtask')
   } catch {
     // longtask not supported in this Chromium build — skip silently.
   }
@@ -130,6 +121,5 @@ export function initPerfClient(): void {
 
 /** Reset the per-second rolling counters. The HUD calls this after each read. */
 export function resetPerfWindow(): void {
-  longTaskCount = 0
-  longTaskMaxMs = 0
+  hudWindow.reset(performance.now())
 }

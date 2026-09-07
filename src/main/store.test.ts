@@ -40,8 +40,6 @@ vi.mock('./logger', () => ({
 // settingsFile + jsonStateFile start chokidar watchers; stub it so the test
 // doesn't create real filesystem watchers on the temp userData dir.
 vi.mock('chokidar', () => ({ watch: () => ({ on: vi.fn(), close: vi.fn() }) }))
-// ./menu pulls in the auto-updater graph; stub the one function store.ts uses.
-vi.mock('./menu', () => ({ setLayoutNames: vi.fn() }))
 
 const { registerHandlers, readBootSnapshot, writeBootSnapshot, flushBootSnapshotSync } = await import('./store')
 const { SETTINGS_SET, SETTINGS_RESET, SETTINGS_RELOADED } = await import('../shared/ipc-channels')

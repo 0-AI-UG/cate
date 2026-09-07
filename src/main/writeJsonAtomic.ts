@@ -18,6 +18,7 @@
 import fs from 'fs'
 import fsp from 'fs/promises'
 import path from 'path'
+import { retryFilePublish } from '../shared/atomicFile'
 
 // Per-write unique temp suffix. A shared `<file>.tmp` is unsafe when two writes
 // to the same path overlap: one consumes the tmp, the other's rename races and
@@ -48,14 +49,7 @@ function isRetryableRename(err: unknown, attempt: number): boolean {
 }
 
 async function renameWithRetry(from: string, to: string): Promise<void> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fsp.rename(from, to)
-    } catch (err) {
-      if (!isRetryableRename(err, attempt)) throw err
-      await new Promise((r) => setTimeout(r, RENAME_RETRY_STEP_MS * (attempt + 1)))
-    }
-  }
+  await retryFilePublish(() => fsp.rename(from, to))
 }
 
 function renameWithRetrySync(from: string, to: string): void {

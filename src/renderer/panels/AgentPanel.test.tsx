@@ -57,16 +57,16 @@ afterEach(async () => {
   host.remove()
 })
 
-describe('AgentPanel', () => {
-  function mockGuest() {
-    return Object.assign(host.querySelector<HTMLElement>('webview')!, {
-      getURL: vi.fn(() => 'http://127.0.0.1:49152/'),
-      insertCSS: vi.fn().mockResolvedValue('css'),
-      executeJavaScript: vi.fn().mockResolvedValue(undefined),
-      loadURL: vi.fn().mockResolvedValue(undefined),
-    })
-  }
+function mockGuest() {
+  return Object.assign(host.querySelector<HTMLElement>('webview')!, {
+    getURL: vi.fn(() => 'http://127.0.0.1:49152/'),
+    insertCSS: vi.fn().mockResolvedValue('css'),
+    executeJavaScript: vi.fn().mockResolvedValue(undefined),
+    loadURL: vi.fn().mockResolvedValue(undefined),
+  })
+}
 
+describe('AgentPanel', () => {
   const readyHarness = {
     url: 'http://127.0.0.1:49152/', partition: 'persist:t3-test', runtimeId: 'local', environmentId: 'local-env',
   }
@@ -143,7 +143,21 @@ describe('AgentPanel', () => {
     expect(nextGuest).not.toBe(oldGuest)
     await act(async () => finishCss('css'))
     expect(nextGuest.getAttribute('data-agent-guest-ready')).toBe('false')
-    expect(oldGuest.executeJavaScript).not.toHaveBeenCalled()
+    expect(oldGuest.executeJavaScript.mock.calls.length).toBeGreaterThan(0)
+    expect(oldGuest.executeJavaScript.mock.calls.every(([script]) => script === 'window.__cateHost?.cancelPending()')).toBe(true)
+    expect(nextGuest.executeJavaScript).not.toHaveBeenCalled()
+  })
+
+  it('finishes cleanup when a destroyed guest throws synchronously during cancellation', async () => {
+    getPanelUrl.mockResolvedValue(readyHarness)
+    await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
+    const guest = mockGuest()
+    await act(async () => guest.dispatchEvent(new Event('dom-ready')))
+    const remove = vi.spyOn(guest, 'removeEventListener')
+    guest.executeJavaScript.mockImplementation(() => { throw new Error('WebContents was destroyed') })
+    await act(async () => root.render(null))
+    expect(remove).toHaveBeenCalledWith('console-message', expect.any(Function))
+    expect(remove).toHaveBeenCalledWith('dom-ready', expect.any(Function))
   })
 
   it('shows loading feedback while the harness is starting', async () => {
@@ -172,10 +186,14 @@ describe('AgentPanel', () => {
       partition: 'persist:t3-test', runtimeId: 'local', environmentId: 'local-env',
     }))
     await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
+    const originalGuest = mockGuest()
     await act(async () => useAppStore.getState().setPanelAgentThreadId('ws', 'agent', 'saved-chat'))
+    mockGuest()
+    expect(originalGuest.executeJavaScript).toHaveBeenCalledWith('window.__cateHost?.cancelPending()')
     expect(getPanelUrl).toHaveBeenLastCalledWith(expect.objectContaining({ panelId: 'agent', threadId: 'saved-chat' }))
     expect(host.querySelector('webview')?.getAttribute('src')).toBe('http://127.0.0.1:49152/local-env/saved-chat')
     await act(async () => useAppStore.getState().setPanelAgentThreadId('ws', 'agent', undefined))
+    mockGuest()
     expect(host.querySelector('webview')?.getAttribute('src')).toBe('http://127.0.0.1:49152/local-env/new')
   })
 
@@ -184,7 +202,7 @@ describe('AgentPanel', () => {
       url: 'http://127.0.0.1:49152/', partition: 'persist:t3-test', runtimeId: 'local', environmentId: 'local-env',
     })
     await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
-    const webview = host.querySelector('webview')!
+    const webview = mockGuest()
     await act(async () => webview.dispatchEvent(Object.assign(new Event('did-navigate-in-page'), {
       url: 'http://127.0.0.1:49152/local-env/created-chat',
     })))
@@ -282,6 +300,7 @@ it('uses only the bound connected thread title, preserves user titles, and ignor
     await act(async () => vi.advanceTimersByTimeAsync(1000))
     expect(release).toBeDefined()
     await act(async () => useAppStore.getState().setPanelAgentThreadId('ws', 'agent', 'other'))
+    mockGuest()
     const update = vi.spyOn(useAppStore.getState(), 'updatePanelTitleFromAgent')
     await act(async () => release!(snapshot))
     expect(update).not.toHaveBeenCalled()

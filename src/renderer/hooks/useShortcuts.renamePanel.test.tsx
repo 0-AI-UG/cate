@@ -39,7 +39,6 @@ function dispatchKey(init: KeyboardEventInit): KeyboardEvent {
 beforeEach(() => {
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     onMenuTriggerAction: () => () => {},
-    onMenuLoadLayout: () => () => {},
   }
   useSettingsStore.setState({ customShortcuts: {} })
   useAppStore.setState({

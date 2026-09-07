@@ -9,6 +9,7 @@
 
 import fs from 'fs/promises'
 import path from 'path'
+import { retryFilePublish } from '../../shared/atomicFile'
 import type { FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
 
 export async function readFile(filePath: string): Promise<string> {
@@ -49,25 +50,8 @@ function uniqueTmpPath(filePath: string): string {
   return `${filePath}.${process.pid}.${tmpSeq}.tmp`
 }
 
-const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
-const RENAME_MAX_RETRIES = 10
-const RENAME_RETRY_STEP_MS = 20
-
 async function renameWithRetry(from: string, to: string): Promise<void> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fs.rename(from, to)
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code
-      const retryable =
-        process.platform === 'win32' &&
-        attempt < RENAME_MAX_RETRIES &&
-        code !== undefined &&
-        RENAME_RETRY_CODES.has(code)
-      if (!retryable) throw err
-      await new Promise((r) => setTimeout(r, RENAME_RETRY_STEP_MS * (attempt + 1)))
-    }
-  }
+  await retryFilePublish(() => fs.rename(from, to))
 }
 
 async function writeAtomic(filePath: string, data: string | Buffer): Promise<void> {

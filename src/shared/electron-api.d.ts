@@ -1,3 +1,4 @@
+import type { RecentScreenshot } from './recentScreenshot'
 // =============================================================================
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
@@ -466,6 +467,9 @@ export interface ElectronAPI {
   /** Inspect a workspace's per-agent hook-file injection state (for the
    *  Settings UI). `locator` is the workspace's rootPath locator. */
   agentHooksInspect(locator: string): Promise<AgentHookAgentState[]>
+  agentChangesList(locator: string, workspaceId: string): Promise<import('./agentChanges').AgentChangeRecord[]>
+  agentChangesRead(locator: string, workspaceId: string, knownRevision?: string): Promise<import('./agentChanges').AgentChangesSnapshot>
+  agentChangesBind(locator: string, workspaceId: string, threadId: string, panelId: string): Promise<void>
 
   /** Get all settings. */
   settingsGetAll(): Promise<AppSettings>
@@ -660,22 +664,6 @@ export interface ElectronAPI {
   /** Persist remote-workspace restore entries (cate-runtime:// only). */
   remoteProjectsSet(entries: RemoteProjectEntry[]): Promise<void>
 
-  // ---------------------------------------------------------------------------
-  // Layouts
-  // ---------------------------------------------------------------------------
-
-  /** Save a named layout snapshot. */
-  layoutSave(name: string, layout: unknown): Promise<void>
-
-  /** List names of all saved layouts. */
-  layoutList(): Promise<string[]>
-
-  /** Load a named layout snapshot. Returns null if not found. */
-  layoutLoad(name: string): Promise<unknown>
-
-  /** Delete a named layout. */
-  layoutDelete(name: string): Promise<void>
-
   /** Capture a webview's content and save as PNG. Returns file path + data URL or
    *  null. Pass `{ wantDataUrl: false }` (CLI/agent path) to skip the base64
    *  encode and get back only the file path; `saveTo: 'temp'` writes into the OS
@@ -747,6 +735,9 @@ export interface ElectronAPI {
   }): Promise<{ ok?: true; error?: string }>
   browserCredentialClear(): Promise<void>
 
+  getRecentScreenshot(): Promise<RecentScreenshot | null>
+  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot | null) => void): () => void
+  dragRecentScreenshot(id: string): Promise<void>
   /** Initiate a native OS file drag from the renderer. */
   nativeFileDrag(filePath: string): Promise<void>
 
@@ -1023,9 +1014,6 @@ export interface ElectronAPI {
   /** Subscribe to native menu action dispatches (File, Edit, etc.). */
   onMenuTriggerAction(callback: (action: import('./types').MenuActionId) => void): () => void
 
-  /** Subscribe to "load this saved layout" dispatches from the native Layouts menu. */
-  onMenuLoadLayout(callback: (name: string) => void): () => void
-
   /** Subscribe to browser navigation shortcuts forwarded from a focused webview
    *  guest (Cmd+R/[/]/L) or the Browser menu. */
   onBrowserShortcut(callback: (action: import('./types').BrowserShortcutAction) => void): () => void
@@ -1091,6 +1079,7 @@ export interface ElectronAPI {
 
   onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void
   agentHarnessDeleteConversation(request: AgentProviderStatusRequest & { threadId: string }): Promise<{ ok: true } | AgentHarnessError>
+  agentHarnessRenameConversation(request: AgentProviderStatusRequest & { threadId: string; title: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessListConversations(request: AgentProviderStatusRequest): Promise<import('./t3Agent').T3Conversation[] | AgentHarnessError>
 
   agentHarnessGetPanelUrl(

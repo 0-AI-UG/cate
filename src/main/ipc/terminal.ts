@@ -322,7 +322,7 @@ async function spawnTerminal(
     if (shuttingDown) return
     terminalId = id
     sawData = true
-    countTerminalData(data.length)
+    countTerminalData(data)
     getOrCreateLogger(id).append(data)
 
     const transferState = transferStates.get(id)
@@ -411,7 +411,9 @@ async function spawnTerminal(
       ...(options.codingAgentLaunch
         ? { command: codingAgentCommand(options.codingAgentLaunch) }
         : {}),
-      env: cateApiEnv,
+      env: cateApiEnv || options.panelId
+        ? { ...cateApiEnv, ...(options.panelId ? { CATE_PANEL_ID: options.panelId } : {}) }
+        : undefined,
       agentHooks: true,
       agentHookConfig,
       workspaceBaseCwd: worktree?.base.path,

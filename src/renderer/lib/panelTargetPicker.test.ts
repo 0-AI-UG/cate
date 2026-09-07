@@ -31,6 +31,22 @@ vi.mock('./workspace/canvasAccess', () => ({
 import { requestPanelTarget } from './panelTargetPicker'
 
 describe('generic panel target picker', () => {
+  it('offers detached candidates alongside local panels', async () => {
+    state.begin.mockImplementationOnce((request) => { request.onSelected({ kind: 'existing', panelId: 'detached' }); return true })
+    expect(await requestPanelTarget({ workspaceId: 'ws', panelType: 'review', availability: 'both', additionalExisting: [{ panelId: 'detached', title: 'Other window' }] })).toEqual({ kind: 'existing', panelId: 'detached' })
+    expect(state.begin).toHaveBeenCalledWith(expect.objectContaining({ existing: [{ panelId: 'review', title: 'Review' }, { panelId: 'detached', title: 'Other window' }] }))
+  })
+  it('offers new, existing, and cancel choices for a docked diff consumer', async () => {
+    state.location = { kind: 'dock', zone: 'right', stackId: 'stack' }
+    const showContextMenu = vi.fn().mockResolvedValueOnce('review').mockResolvedValueOnce('__new').mockResolvedValueOnce(null)
+    vi.stubGlobal('window', { electronAPI: { showContextMenu } })
+    try {
+      const request = { workspaceId: 'ws', sourcePanelId: 'terminal', panelType: 'review' as const, availability: 'both' as const, chooseExistingInDock: true }
+      expect(await requestPanelTarget(request)).toEqual({ kind: 'existing', panelId: 'review' })
+      expect(await requestPanelTarget(request)).toEqual({ kind: 'new', placement: { target: 'dock', zone: 'right', stackId: 'stack' } })
+      expect(await requestPanelTarget(request)).toBeNull()
+    } finally { vi.unstubAllGlobals() }
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     state.location = { kind: 'canvas', canvasPanelId: 'canvas-1' }

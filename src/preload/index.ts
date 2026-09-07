@@ -1,9 +1,11 @@
+import type { RecentScreenshot } from '../shared/recentScreenshot'
 import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
 
 // Phase 0 perf marker — capture preload entry as early as possible.
 try { performance.mark('preload-start') } catch { /* noop */ }
 
 import {
+  AGENT_HARNESS_RENAME_CONVERSATION,
   KEEP_AWAKE_GET,
   KEEP_AWAKE_SET,
   KEEP_AWAKE_CHANGED,
@@ -73,6 +75,9 @@ import {
   SHELL_AGENT_SCREEN_STATE,
   SHELL_AGENT_HOOK_EVENT,
   AGENT_HOOKS_INSPECT,
+  AGENT_CHANGES_LIST,
+  AGENT_CHANGES_READ,
+  AGENT_CHANGES_BIND,
   SETTINGS_GET,
   SETTINGS_SET,
   SETTINGS_GET_ALL,
@@ -92,7 +97,6 @@ import {
   APP_OPEN_PATH,
   MENU_OPEN_SETTINGS,
   MENU_TRIGGER_ACTION,
-  MENU_LOAD_LAYOUT,
   BROWSER_SHORTCUT,
   BROWSER_OPEN_TAB_REQUEST,
   BROWSER_DOWNLOADS_CHANGED,
@@ -120,10 +124,6 @@ import {
   SIDEBAR_SESSION_SET,
   REMOTE_PROJECTS_GET,
   REMOTE_PROJECTS_SET,
-  LAYOUT_SAVE,
-  LAYOUT_LIST,
-  LAYOUT_LOAD,
-  LAYOUT_DELETE,
   BROWSER_HISTORY_RECORD,
   BROWSER_HISTORY_GET,
   BROWSER_HISTORY_QUERY,
@@ -211,6 +211,9 @@ import {
   BROWSER_CREDENTIAL_FILL,
   BROWSER_CREDENTIAL_CLEAR,
   NATIVE_FILE_DRAG,
+  RECENT_SCREENSHOT_GET,
+  RECENT_SCREENSHOT_CHANGED,
+  RECENT_SCREENSHOT_DRAG,
   AGENT_HARNESS_GET_PANEL_URL,
   AGENT_HARNESS_LIST_CONVERSATIONS,
   AGENT_HARNESS_DELETE_CONVERSATION,
@@ -403,6 +406,9 @@ const invokeForwarders = {
 
   // Settings
   agentHooksInspect: makeInvoker<'agentHooksInspect'>(AGENT_HOOKS_INSPECT),
+  agentChangesList: makeInvoker<'agentChangesList'>(AGENT_CHANGES_LIST),
+  agentChangesRead: makeInvoker<'agentChangesRead'>(AGENT_CHANGES_READ),
+  agentChangesBind: makeInvoker<'agentChangesBind'>(AGENT_CHANGES_BIND),
   settingsGet: makeInvoker<'settingsGet'>(SETTINGS_GET),
   settingsSet: makeInvoker<'settingsSet'>(SETTINGS_SET),
   settingsGetAll: makeInvoker<'settingsGetAll'>(SETTINGS_GET_ALL),
@@ -452,12 +458,6 @@ const invokeForwarders = {
   remoteProjectsGet: makeInvoker<'remoteProjectsGet'>(REMOTE_PROJECTS_GET),
   remoteProjectsSet: makeInvoker<'remoteProjectsSet'>(REMOTE_PROJECTS_SET),
 
-  // Layouts
-  layoutSave: makeInvoker<'layoutSave'>(LAYOUT_SAVE),
-  layoutList: makeInvoker<'layoutList'>(LAYOUT_LIST),
-  layoutLoad: makeInvoker<'layoutLoad'>(LAYOUT_LOAD),
-  layoutDelete: makeInvoker<'layoutDelete'>(LAYOUT_DELETE),
-
   // Capture / browser
   webviewScreenshot: makeInvoker<'webviewScreenshot'>(WEBVIEW_SCREENSHOT),
   browserControl: makeInvoker<'browserControl'>(BROWSER_CONTROL),
@@ -472,8 +472,14 @@ const invokeForwarders = {
   browserCredentialFill: makeInvoker<'browserCredentialFill'>(BROWSER_CREDENTIAL_FILL),
   browserCredentialClear: makeInvoker<'browserCredentialClear'>(BROWSER_CREDENTIAL_CLEAR),
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
+  getRecentScreenshot: makeInvoker<'getRecentScreenshot'>(RECENT_SCREENSHOT_GET),
+  dragRecentScreenshot: makeInvoker<'dragRecentScreenshot'>(RECENT_SCREENSHOT_DRAG),
+  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot | null) => void): () => void {
+    return createIpcListener(RECENT_SCREENSHOT_CHANGED, callback)
+  },
 
   // T3 provider harness
+  agentHarnessRenameConversation: makeInvoker<'agentHarnessRenameConversation'>(AGENT_HARNESS_RENAME_CONVERSATION),
   agentHarnessDeleteConversation: makeInvoker<'agentHarnessDeleteConversation'>(AGENT_HARNESS_DELETE_CONVERSATION),
   agentHarnessListConversations: makeInvoker<'agentHarnessListConversations'>(AGENT_HARNESS_LIST_CONVERSATIONS),
   agentHarnessGetPanelUrl: makeInvoker<'agentHarnessGetPanelUrl'>(AGENT_HARNESS_GET_PANEL_URL),
@@ -929,10 +935,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onMenuTriggerAction(callback: (action: string) => void): () => void {
     return createIpcListener(MENU_TRIGGER_ACTION, callback)
-  },
-
-  onMenuLoadLayout(callback: (name: string) => void): () => void {
-    return createIpcListener(MENU_LOAD_LAYOUT, callback)
   },
 
   onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void {

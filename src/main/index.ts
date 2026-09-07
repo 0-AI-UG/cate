@@ -35,6 +35,7 @@ import { createWindow } from './windows/windowFactory'
 import { IS_E2E } from './windows/reveal'
 import { registerDialogHandlers } from './ipc/dialogs'
 import { registerCaptureHandlers } from './ipc/capture'
+import { registerRecentScreenshotHandlers } from './ipc/recentScreenshot'
 import { registerBrowserControlHandlers } from './ipc/browserControl'
 import { registerBrowserCredentialHandlers } from './ipc/browserCredentials'
 import { registerNativeAppHandlers } from './ipc/nativeApp'
@@ -95,6 +96,7 @@ function registerCriticalHandlers(): void {
   // modules; the panel/dock/drag handlers need the window factory injected.
   registerDialogHandlers()
   registerCaptureHandlers()
+  registerRecentScreenshotHandlers()
   registerBrowserControlHandlers()
   registerBrowserCredentialHandlers()
   registerWindowControlHandlers()

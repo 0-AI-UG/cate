@@ -167,6 +167,8 @@ export interface GitReviewNote {
 }
 
 export interface ReviewPanelState {
+  /** Present only for saved agent edits; absent means an ordinary Git comparison. */
+  agentChanges?: import('./agentChanges').AgentChangesFilter
   repoPath: string
   spec: GitComparisonSpec
   focusedFile?: string
@@ -194,6 +196,7 @@ export interface ReviewPanelState {
  * from another surface. The owning renderer merges this into its local panel
  * state so display preferences and notes remain authoritative there. */
 export interface ReviewPanelOpenRequest {
+  agentChanges?: import('./agentChanges').AgentChangesFilter
   spec: GitComparisonSpec
   focusedFile?: string
   sourceAgent?: ReviewPanelState['sourceAgent']
@@ -817,7 +820,7 @@ export type ShortcutAction = keyof typeof SHORTCUT_DEFINITIONS
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
  *  binding. */
-export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace' | 'manageLayouts'
+export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace'
 
 /** Browser-panel navigation actions. These are panel-scoped (handled by the
  *  focused BrowserPanel) rather than global shortcuts, so they don't collide
@@ -1716,13 +1719,30 @@ export interface PerfProcSample {
   memMB: number
 }
 
+/** Runtime-daemon CPU uses one core = 100%; remote hosts stay separate from
+ * Electron app metrics. Spawn counts cover ps/lsof process-monitor commands. */
+export interface RuntimePerfSample {
+  pid: number
+  platform: string
+  windowMs: number
+  cpu: number
+  rssMB: number
+  monitorSpawnsPerSec: Record<string, number>
+  monitorScansPerSec: Record<string, number>
+  eventLoop: { p95Ms: number; maxMs: number }
+}
+
 export interface PerfSnapshot {
+  /** Wall-clock sample boundary; distinguishes fresh samples from repeated reads. */
+  sampledAt?: number
   /** Sampling window in ms; all rates below are per-second. */
   windowMs: number
   focused: boolean
   totalCpu: number
   procs: PerfProcSample[]
+  /** Actual runtime process-monitor launches, summed across sampled hosts. */
   spawnsPerSec: Record<string, number>
+  runtimes?: Array<{ id: string; sample: RuntimePerfSample | null; error?: string }>
   ipc: Array<{ channel: string; kbPerSec: number; callsPerSec: number }>
   terminal: { kbPerSec: number; chunksPerSec: number }
 }
