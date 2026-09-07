@@ -92,7 +92,6 @@ import {
   APP_OPEN_PATH,
   MENU_OPEN_SETTINGS,
   MENU_TRIGGER_ACTION,
-  MENU_LOAD_LAYOUT,
   BROWSER_SHORTCUT,
   BROWSER_OPEN_TAB_REQUEST,
   BROWSER_DOWNLOADS_CHANGED,
@@ -120,10 +119,6 @@ import {
   SIDEBAR_SESSION_SET,
   REMOTE_PROJECTS_GET,
   REMOTE_PROJECTS_SET,
-  LAYOUT_SAVE,
-  LAYOUT_LIST,
-  LAYOUT_LOAD,
-  LAYOUT_DELETE,
   BROWSER_HISTORY_RECORD,
   BROWSER_HISTORY_GET,
   BROWSER_HISTORY_QUERY,
@@ -445,12 +440,6 @@ const invokeForwarders = {
   sidebarSessionSet: makeInvoker<'sidebarSessionSet'>(SIDEBAR_SESSION_SET),
   remoteProjectsGet: makeInvoker<'remoteProjectsGet'>(REMOTE_PROJECTS_GET),
   remoteProjectsSet: makeInvoker<'remoteProjectsSet'>(REMOTE_PROJECTS_SET),
-
-  // Layouts
-  layoutSave: makeInvoker<'layoutSave'>(LAYOUT_SAVE),
-  layoutList: makeInvoker<'layoutList'>(LAYOUT_LIST),
-  layoutLoad: makeInvoker<'layoutLoad'>(LAYOUT_LOAD),
-  layoutDelete: makeInvoker<'layoutDelete'>(LAYOUT_DELETE),
 
   // Capture / browser
   webviewScreenshot: makeInvoker<'webviewScreenshot'>(WEBVIEW_SCREENSHOT),
@@ -900,10 +889,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onMenuTriggerAction(callback: (action: string) => void): () => void {
     return createIpcListener(MENU_TRIGGER_ACTION, callback)
-  },
-
-  onMenuLoadLayout(callback: (name: string) => void): () => void {
-    return createIpcListener(MENU_LOAD_LAYOUT, callback)
   },
 
   onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void {

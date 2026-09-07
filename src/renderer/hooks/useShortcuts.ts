@@ -110,13 +110,6 @@ export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
       runAction(action, windowCanvasStore).catch(() => { /* noop — menu actions are best-effort */ })
     })
 
-    // Native "Layouts" menu → load a saved layout into the active canvas.
-    const unsubscribeLoadLayout = window.electronAPI.onMenuLoadLayout((name) => {
-      import('../lib/layouts')
-        .then((m) => m.loadLayoutIntoActiveCanvas(name))
-        .catch(() => { /* best-effort */ })
-    })
-
     function handleKeyDown(e: KeyboardEvent) {
       // --- Detect whether a terminal panel is focused ---
       // When a terminal has focus, most keyboard events must pass through to
@@ -336,7 +329,6 @@ export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
     return () => {
       document.removeEventListener('keydown', handleKeyDown, { capture: true })
       unsubscribeMenu()
-      unsubscribeLoadLayout()
     }
   }, [windowCanvasStore])
 }

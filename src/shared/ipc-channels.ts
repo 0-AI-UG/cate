@@ -182,10 +182,6 @@ export const MENU_OPEN_SETTINGS = 'menu:openSettings'
 /** Generic menu-action dispatch — main sends a MenuActionId and the focused
  *  renderer runs the matching handler (via useShortcuts). */
 export const MENU_TRIGGER_ACTION = 'menu:triggerAction'
-/** Load a named saved layout — main sends the layout name and the focused
- *  renderer restores it (replacing the workspace). */
-export const MENU_LOAD_LAYOUT = 'menu:loadLayout'
-
 /** Browser navigation shortcut (main -> renderer). Sent when a webview guest
  *  swallows a browser key (Cmd+R/[/]/L) via before-input-event, or from the
  *  Browser menu. The focused BrowserPanel acts on it. */
@@ -274,12 +270,6 @@ export const BROWSER_BOOKMARKS_ADD = 'browser-bookmarks:add'
 export const BROWSER_BOOKMARKS_REMOVE = 'browser-bookmarks:remove'
 export const BROWSER_BOOKMARKS_CHANGED = 'browser-bookmarks:changed' // main -> renderer broadcast
 export const BROWSER_CLEAR_DATA = 'browser:clearData' // clear shared-session cookies/cache/storage + history
-
-// Layouts
-export const LAYOUT_SAVE = 'layout:save'
-export const LAYOUT_LIST = 'layout:list'
-export const LAYOUT_LOAD = 'layout:load'
-export const LAYOUT_DELETE = 'layout:delete'
 
 // Notifications
 export const NOTIFY_OS = 'notify:os'

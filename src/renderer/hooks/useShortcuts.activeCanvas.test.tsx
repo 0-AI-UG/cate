@@ -64,7 +64,6 @@ beforeEach(() => {
   // electronAPI is consumed in useShortcuts' effect (menu subscriptions).
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     onMenuTriggerAction: (callback: typeof menuAction) => { menuAction = callback; return () => {} },
-    onMenuLoadLayout: () => () => {},
   }
 
   // First panel inherits the legacy singleton; the second gets a fresh store.
