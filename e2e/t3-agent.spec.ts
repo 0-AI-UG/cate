@@ -583,11 +583,20 @@ for (const entry of ['overlay', 'action bar'] as const) {
 }
 
 
-async function submitRealChat(text: string): Promise<void> {
+async function waitForRealSendReady(): Promise<void> {
+  // This is the native client's readiness, unlike Cate's independent shell socket.
+  await expect.poll(() => guestEval<boolean>(agentWebview(), '!!document.querySelector(\'button[aria-label="Send message"]:not(:disabled)\')').catch(() => false), { timeout: 30_000 }).toBe(true)
+}
+
+async function submitRealChat(text: string, waitForReady = false): Promise<void> {
   await expect.poll(() => guestEval<number>(agentWebview(), 'document.querySelectorAll("[contenteditable=true]").length').catch(() => 0), { timeout: 30_000 }).toBeGreaterThan(0)
   await guestEval(agentWebview(), `document.querySelector('[contenteditable=true]').focus()`)
   const id = await agentWebview().evaluate((element) => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())
   await electronApp!.evaluate(({ webContents }, { id, text }) => webContents.fromId(id)!.insertText(text), { id, text })
+  if (waitForReady) {
+    await waitForRealSendReady()
+    await guestEval(agentWebview(), "document.querySelector('[contenteditable=true]').focus()")
+  }
   await guestKey(agentWebview(), 'Enter')
 }
 async function realThreadState() {
@@ -1012,23 +1021,34 @@ test('real T3 lifecycle recovers a mounted panel after its server process exits'
   await electronApp!.evaluate(({ webContents }, id) => webContents.fromId(id)!.insertText('after server failure'), guestId)
   const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
   const [{ pid }] = JSON.parse(readFileSync(pidPath, 'utf8'))
+  const currentPid = (): number | undefined => existsSync(pidPath) ? JSON.parse(readFileSync(pidPath, 'utf8'))[0]?.pid : undefined
   // This PID comes exclusively from this test's private runtime directory.
   process.kill(pid, 'SIGKILL')
-  await expect.poll(() => page.evaluate(cwd => window.electronAPI.agentHarnessGetStatus({ cwd }), workspaceRoot)).toMatchObject({ phase: 'error' })
-  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false)).toBe(false)
+  // Recovery can finish between polls. A new server PID proves the crash was
+  // handled without requiring observation of a transient disconnected phase.
+  await expect.poll(() => {
+    const replacement = currentPid()
+    return replacement !== undefined && replacement !== pid
+  }, { timeout: 15_000 }).toBe(true)
   await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), {timeout: 15_000}).toBe(true)
   expect((await realThreadState())?.id).toBe(threadId)
   expect(await guestEval<string>(agentWebview(), 'location.origin')).toBe(origin)
   expect(await agentWebview().evaluate(el => (el as any).getWebContentsId())).toBe(guestId)
   expect(await guestEval<string>(agentWebview(), "document.querySelector('[contenteditable=true]').innerText")).toBe('after server failure')
+  await waitForRealSendReady()
+  await guestEval(agentWebview(), "document.querySelector('[contenteditable=true]').focus()")
   await guestKey(agentWebview(), 'Enter')
   await waitForRealReply('after server failure')
   await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true')).toBe(true)
   expect(await siblingView.evaluate(el => (el as any).getWebContentsId())).toBe(siblingId)
   expect(JSON.parse(readFileSync(pidPath, 'utf8'))).toHaveLength(1)
   // Explicit retry must also preserve the endpoint for other mounted panels.
+  const recoveredPid = currentPid()
   await page.evaluate(cwd => window.electronAPI.agentHarnessRestart({ cwd }), workspaceRoot)
-  await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true')).toBe(false)
+  await expect.poll(() => {
+    const replacement = currentPid()
+    return replacement !== undefined && replacement !== recoveredPid
+  }, { timeout: 15_000 }).toBe(true)
   await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true'), {timeout: 15_000}).toBe(true)
   expect(await siblingView.evaluate(el => (el as any).getWebContentsId())).toBe(siblingId)
   expect(await guestEval<string>(siblingView, 'location.origin')).toBe(origin)
@@ -1055,6 +1075,7 @@ test('real T3 lifecycle reconnects after transient socket loss without restartin
 test('real T3 lifecycle bounds automatic crash recovery and allows an explicit retry', async () => {
   await submitRealChat('before repeated failures')
   await waitForRealReply('before repeated failures')
+  const threadId = (await realThreadState())!.id
   const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
   const currentPid = (): number | undefined => existsSync(pidPath) ? JSON.parse(readFileSync(pidPath, 'utf8'))[0]?.pid : undefined
   for (let crash = 0; crash < 3; crash++) {
@@ -1069,6 +1090,10 @@ test('real T3 lifecycle bounds automatic crash recovery and allows an explicit r
   expect(currentPid()).toBeUndefined()
   await page.getByRole('status').filter({ hasText: 'T3 Code activity disconnected' }).getByRole('button', {name: 'Retry', exact: true}).click()
   await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', {timeout: 15_000})
-  await submitRealChat('after explicit retry')
+  // DOM branding readiness precedes the restored server's WebSocket handshake.
+  await expect.poll(() => currentPid(), { timeout: 15_000 }).toBeDefined()
+  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), { timeout: 15_000 }).toBe(true)
+  await expect.poll(async () => (await realThreadState())?.id, { timeout: 15_000 }).toBe(threadId)
+  await submitRealChat('after explicit retry', true)
   await waitForRealReply('after explicit retry')
 })
