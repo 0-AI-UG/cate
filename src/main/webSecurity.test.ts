@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('./settingsFile', () => ({ getSetting: () => ({}) }))
+const { customShortcuts } = vi.hoisted(() => ({ customShortcuts: { value: {} as Record<string, unknown> } }))
+vi.mock('./settingsFile', () => ({ getSetting: () => customShortcuts.value }))
 vi.mock('./featureFlags', () => ({ disableWebviewHardening: () => false }))
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
@@ -50,6 +51,7 @@ function attachHandlerForWebview(): (event: unknown, wp: Record<string, unknown>
 }
 
 beforeEach(() => {
+  customShortcuts.value = {}
   createdHandlers.length = 0
   installWebContentsSecurity()
 })
@@ -124,5 +126,52 @@ describe('app-window navigation', () => {
     const unsafeNavigation = { preventDefault: vi.fn() }
     listeners['will-navigate'](unsafeNavigation, 'javascript:alert(1)')
     expect(unsafeNavigation.preventDefault).toHaveBeenCalledOnce()
+  })
+})
+
+// Both T3 and BrowserPanel use this shared webview input boundary.
+describe('webview canvas navigation shortcuts', () => {
+  function input(key: string, extra = {}) {
+    return {
+      type: 'keyDown', key, code: key,
+      meta: process.platform === 'darwin',
+      control: process.platform !== 'darwin', alt: false, shift: false,
+      ...extra,
+    }
+  }
+
+  it.each([
+    ['ArrowUp', 'navigateUp'], ['ArrowDown', 'navigateDown'],
+    ['ArrowLeft', 'navigateLeft'], ['ArrowRight', 'navigateRight'],
+  ])('forwards Command+%s to the host', (key, action) => {
+    const { contents, listeners } = webviewHarness()
+    const event = { preventDefault: vi.fn() }
+    listeners['before-input-event'](event, input(key))
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    expect(contents.hostWebContents.send).toHaveBeenCalledWith('menu:triggerAction', action)
+  })
+
+  it('respects remapped and disabled navigation bindings', () => {
+    customShortcuts.value = {
+      navigateRight: { key: 'j', command: true, control: false, option: false, shift: false },
+      navigateLeft: { key: '', command: false, control: false, option: false, shift: false },
+    }
+    const { contents, listeners } = webviewHarness()
+    const event = { preventDefault: vi.fn() }
+    listeners['before-input-event'](event, input('ArrowRight'))
+    listeners['before-input-event'](event, input('ArrowLeft'))
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    listeners['before-input-event'](event, input('j'))
+    expect(contents.hostWebContents.send).toHaveBeenCalledWith('menu:triggerAction', 'navigateRight')
+  })
+
+  it('leaves bare arrows, text selection and key-up events in the guest', () => {
+    const { contents, listeners } = webviewHarness()
+    const event = { preventDefault: vi.fn() }
+    listeners['before-input-event'](event, input('ArrowRight', { meta: false, control: false }))
+    listeners['before-input-event'](event, input('ArrowRight', { meta: false, control: false, shift: true }))
+    listeners['before-input-event'](event, input('ArrowRight', { type: 'keyUp' }))
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(contents.hostWebContents.send).not.toHaveBeenCalled()
   })
 })

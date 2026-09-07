@@ -14,7 +14,7 @@ import {
   getWorkspaceCanvasStore,
 } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
-import { getActivePanelId, setActivePanel } from '../lib/activePanel'
+import { getActivePanelId } from '../lib/activePanel'
 import { resolvePanelById } from '../lib/workspace/panelReveal'
 import { getNodeActivePanelId } from '../panels/nodeDockRegistry'
 import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
@@ -245,23 +245,9 @@ export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
         // Let a keyboard-navigable list (e.g. the Search results tree, marked
         // data-keynav) keep its own arrow keys instead of moving the canvas.
         if (isKeyNavFocused()) return
-        // Defer to a real text editor (Monaco / input / textarea /
-        // contenteditable) so its own Cmd/Shift+Arrow editing keys keep
-        // working. Terminals don't rely on those chords, so canvas navigation
-        // overrides a focused terminal — letting the user jump/pan straight out
-        // of one and keep going.
-        if (!terminalHasFocus && isTextSurfaceFocused()) return
-        // Navigating deliberately doesn't activate the destination, so drop
-        // keyboard focus out of a focused terminal — otherwise its cursor keeps
-        // capturing input and the next arrow never reaches the canvas. Also
-        // repoint the canonical active panel at the canvas itself: the leaf
-        // pointer otherwise stays on the terminal, so computeTerminalHasFocus
-        // keeps reporting a focused terminal and bare-key shortcuts (Enter to
-        // activate the jump target, Delete, Escape) wrongly stand down.
-        if (NAVIGATE_ACTIONS.has(action) && terminalHasFocus) {
-          ;(document.activeElement as HTMLElement | null)?.blur()
-          setActivePanel(getActiveCanvasPanelId())
-        }
+        // Panel navigation works from every surface. Shift+Arrow panning
+        // still yields to text selection in editors and inputs.
+        if (PAN_ACTIONS.has(action) && !terminalHasFocus && isTextSurfaceFocused()) return
       }
       // Context-aware guard: when a real text editor (Monaco, input, textarea,
       // contenteditable) has focus, let Cmd+Z/Y fall through to it natively.

@@ -5,7 +5,7 @@ import log from './logger'
 import { disableWebviewHardening } from './featureFlags'
 import { BROWSER_OPEN_TAB_REQUEST, BROWSER_SHORTCUT, MENU_TRIGGER_ACTION } from '../shared/ipc-channels'
 import { getSetting } from './settingsFile'
-import { resolveShortcuts, type BrowserShortcutAction } from '../shared/types'
+import { normaliseShortcutKey, resolveShortcuts, type BrowserShortcutAction } from '../shared/types'
 
 function getBrowserGuestPreloadPath(): string {
   const base =
@@ -185,15 +185,22 @@ export function installWebContentsSecurity(): void {
       // focused BrowserPanel can act. Scoped to webview guests, so Monaco's
       // Cmd+[ / Cmd+] / Cmd+L are never affected.
       contents.on('before-input-event', (event, input) => {
-        const palette = resolveShortcuts(getSetting('customShortcuts')).commandPalette
+        // Guest key events never bubble to the host document. Forward canvas
+        // navigation from both browser and T3 guests using the user's bindings.
+        const shortcuts = resolveShortcuts(getSetting('customShortcuts'))
         const command = process.platform === 'darwin' ? input.meta : input.control
         const control = process.platform === 'darwin' ? input.control : false
-        if (input.type === 'keyDown' && palette.key && input.key.toLowerCase() === palette.key.toLowerCase()
-          && !!command === palette.command && !!control === palette.control
-          && !!input.alt === palette.option && !!input.shift === palette.shift) {
-          event.preventDefault()
-          contents.hostWebContents?.send(MENU_TRIGGER_ACTION, 'commandPalette')
-          return
+        if (input.type === 'keyDown') {
+          for (const action of ['commandPalette', 'navigateUp', 'navigateDown', 'navigateLeft', 'navigateRight'] as const) {
+            const shortcut = shortcuts[action]
+            if (shortcut.key && normaliseShortcutKey(input.key) === shortcut.key
+              && !!command === shortcut.command && !!control === shortcut.control
+              && !!input.alt === shortcut.option && !!input.shift === shortcut.shift) {
+              event.preventDefault()
+              contents.hostWebContents?.send(MENU_TRIGGER_ACTION, action)
+              return
+            }
+          }
         }
         const action = browserActionForInput(input)
         if (!action) return

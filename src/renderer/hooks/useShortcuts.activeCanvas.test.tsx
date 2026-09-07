@@ -34,7 +34,8 @@ import {
   releaseCanvasStoreForPanel,
   type CanvasStore,
 } from '../stores/canvasStore'
-import { setActivePanel } from '../lib/activePanel'
+import type { MenuActionId, PanelType } from '../../shared/types'
+import { getActivePanelId, setActivePanel } from '../lib/activePanel'
 
 // Tell React this is an act() environment (silences the act warning + flushes effects).
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -46,6 +47,7 @@ let primary: StoreApi<CanvasStore>
 let active: StoreApi<CanvasStore>
 let container: HTMLDivElement
 let root: Root
+let menuAction: (action: MenuActionId) => void
 
 function Harness({ store }: { store: StoreApi<CanvasStore> }) {
   useShortcuts(store)
@@ -61,7 +63,7 @@ function dispatchKey(init: Partial<KeyboardEventInit> & { key: string }) {
 beforeEach(() => {
   // electronAPI is consumed in useShortcuts' effect (menu subscriptions).
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
-    onMenuTriggerAction: () => () => {},
+    onMenuTriggerAction: (callback: typeof menuAction) => { menuAction = callback; return () => {} },
     onMenuLoadLayout: () => () => {},
   }
 
@@ -116,5 +118,45 @@ describe('useShortcuts active-canvas routing', () => {
     expect(primary.getState().suppressAutoFocus).toBe(false)
     expect(primaryBefore).toBe(primary.getState().viewportOffset)
     void before
+  })
+})
+
+
+describe('navigation from panel content', () => {
+  it.each<PanelType>(['agent', 'browser', 'terminal', 'editor', 'canvas', 'document', 'review'])(
+    'supports chained jumps starting from a %s panel', (type) => {
+      const left = active.getState().addNode('source', type, { x: 0, y: 0 })
+      const middle = active.getState().addNode('middle', 'editor', { x: 2000, y: 0 })
+      const right = active.getState().addNode('right', 'editor', { x: 4000, y: 0 })
+      act(() => { active.getState().selectNodes([left]) })
+      const surface = document.createElement(type === 'agent' || type === 'browser' ? 'webview' : 'textarea')
+      surface.tabIndex = 0
+      container.appendChild(surface)
+      surface.focus()
+      expect(document.activeElement).toBe(surface)
+
+      if (type === 'agent' || type === 'browser') {
+        act(() => { menuAction('navigateRight') })
+      } else {
+        act(() => { surface.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', metaKey: true, bubbles: true })) })
+      }
+      expect(active.getState().selection).toEqual([middle])
+      expect(document.activeElement).not.toBe(surface)
+      expect(getActivePanelId()).toBe(ACTIVE)
+      dispatchKey({ key: 'ArrowRight', metaKey: true })
+      expect(active.getState().selection).toEqual([right])
+      dispatchKey({ key: 'Enter' })
+      expect(active.getState().selectionActive).toBe(true)
+    },
+  )
+
+  it('preserves Shift+Arrow text selection', () => {
+    const surface = document.createElement('textarea')
+    container.appendChild(surface)
+    surface.focus()
+    const pan = vi.spyOn(active.getState(), 'panViewport')
+    dispatchKey({ key: 'ArrowRight', shiftKey: true })
+    expect(pan).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(surface)
   })
 })
