@@ -4,6 +4,7 @@
 
 import type { AppSettings, AgentState, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, GitComparisonResult, GitComparisonSpec, GitFileContent, GitFileDiff, ReviewPanelOpenRequest, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, PanelTransferSnapshot, PerfSnapshot, Point, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { CodingAgentLaunch } from './codingAgentRuns'
+import type { NativeAppAcquireOptions, NativeAppAcquireResult, NativeAppControlMessage, NativeAppInputEvent } from './types'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 import type { AgentHookEvent, AgentHookAgentState } from './agentHooks'
 import type { AgentHarnessError, AgentHarnessPanelRequest, AgentHarnessPanelTarget, AgentHarnessStatus, AgentProviderAuthRequest, AgentProviderAuthSession, AgentProviderStatus, AgentProviderStatusRequest } from './t3Agent'
@@ -104,6 +105,31 @@ export interface ElectronAPI {
 
   /** Release a terminal panel's WebGL context slot (on context loss / dispose). */
   webglReleaseGrant(panelId: string): Promise<void>
+
+  // ---------------------------------------------------------------------------
+  // Native app capture (cate-nativehost sidecar) — see
+  // src/main/nativeApp/NativeAppBroker.ts and native/nativehost/PROTOCOL.md.
+  // ---------------------------------------------------------------------------
+
+  /** Acquire a capture session for a native app bundle. Resolves once the
+   *  sidecar's `ready` control message arrives, or with an `error` if it
+   *  exits early or never becomes ready in time. */
+  nativeAppAcquire(options: NativeAppAcquireOptions): Promise<NativeAppAcquireResult>
+
+  /** Release a capture session — stops the sidecar and frees its socket. */
+  nativeAppRelease(sessionId: string): Promise<void>
+
+  /** Subscribe to JPEG frames for any active session (main -> renderer). */
+  onNativeAppFrame(callback: (payload: { sessionId: string; jpeg: Uint8Array }) => void): () => void
+
+  /** Subscribe to control messages for any active session (main -> renderer). */
+  onNativeAppStatus(callback: (payload: { sessionId: string; control: NativeAppControlMessage }) => void): () => void
+
+  /** Forward a mouse/keyboard/scroll event to a session's captured app. */
+  nativeAppInput(sessionId: string, event: NativeAppInputEvent): void
+
+  /** Ask a session's captured app window to resize to width×height points. */
+  nativeAppResize(sessionId: string, width: number, height: number): void
 
   // ---------------------------------------------------------------------------
   // Filesystem

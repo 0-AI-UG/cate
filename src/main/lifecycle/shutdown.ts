@@ -6,6 +6,7 @@ import { getActiveMainWindow, sendToWindow, listDockWindowIds, listWindows, wind
 import { flushDockWindowsBeforeQuit } from '../dockWindowFlush'
 import { flushAllLoggers, killAllTerminals } from '../ipc/terminal'
 import { guardQuit, isQuitCommitted, markQuitCommitted } from './quitConfirm'
+import { releaseAll as releaseAllNativeAppSessions } from '../nativeApp/NativeAppBroker'
 import { saveProjectStateSync } from '../projectWorkspaceStore'
 import { flushPendingWritesSync as flushSettingsPendingWritesSync } from '../settingsFile'
 import { flushWorkspaceStateSync } from '../workspaceStateStore'
@@ -243,6 +244,7 @@ export function registerLifecycleHandlers(): void {
       workspaceCateApi.disposeAll()
       void t3HarnessManager.disposeAll()
       void runtimes.disposeAll()
+      void releaseAllNativeAppSessions()
       log.info('will-quit: update staged, yielding to electron-updater install-on-quit')
       return
     }
@@ -259,7 +261,7 @@ export function registerLifecycleHandlers(): void {
         // is fire-and-forget + reverse.dispose closes the http server), then the
         // bounded async server/runtime dispose.
         workspaceCateApi.disposeAll()
-        return Promise.allSettled([t3HarnessManager.disposeAll(), runtimes.disposeAll()])
+        return Promise.allSettled([t3HarnessManager.disposeAll(), runtimes.disposeAll(), releaseAllNativeAppSessions()])
       },
       // process.reallyExit is Node's binding to libc exit() — it skips the 'exit'
       // event and the cleanup path app.exit/process.exit would run, bypassing

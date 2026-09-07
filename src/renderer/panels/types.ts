@@ -38,3 +38,8 @@ export interface BrowserPanelProps extends PanelProps {
 }
 
 export type AgentPanelProps = PanelProps
+export interface NativeAppPanelProps extends PanelProps {
+  /** macOS bundle id to capture (e.g. "com.apple.Safari"). Unset until the
+   *  user picks an app from the panel's launcher. */
+  nativeAppBundleId?: string
+}

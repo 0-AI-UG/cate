@@ -15,6 +15,7 @@ import { T3Logo } from '../ui/T3Logo'
 
 import React, { type LazyExoticComponent, type ComponentType } from 'react'
 import { Terminal, Globe, FileText, Grid2X2 as SquaresFour, FileText as FileDoc, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
+import { AppWindow } from 'lucide-react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
@@ -35,6 +36,7 @@ const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const AgentPanel = React.lazy(() => import('./AgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
 const ReviewPanel = React.lazy(() => import('./ReviewPanel'))
+const NativeAppPanel = React.lazy(() => import('./nativeApp/NativeAppPanel'))
 
 // -----------------------------------------------------------------------------
 // Renderer definition
@@ -54,6 +56,8 @@ export interface PanelCreateArgs {
   initialInput?: string
   /** Document only. */
   documentType?: 'pdf' | 'docx' | 'image'
+  /** Native app only: macOS bundle id to capture. */
+  bundleId?: string
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
@@ -155,6 +159,17 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
         : null
     },
     props: baseProps,
+  },
+  nativeApp: {
+    ...PANEL_DEFINITIONS.nativeApp,
+    icon: AppWindow,
+    Component: NativeAppPanel,
+    create: ({ workspaceId, canvasPoint, placement, bundleId }) =>
+      trackCreated('nativeApp', useAppStore.getState().createNativeApp(workspaceId, bundleId, canvasPoint, placement) || null),
+    props: (panel, ctx) => ({
+      ...baseProps(panel, ctx),
+      nativeAppBundleId: panel.nativeAppBundleId,
+    }),
   },
 }
 

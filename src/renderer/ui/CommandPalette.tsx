@@ -10,6 +10,7 @@ import { T3Logo } from './T3Logo'
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Terminal, Globe, FileText, Sidebar, FolderOpen, Square, Trash, GraduationCap, X, Scan as Selection, Undo2 as ArrowUUpLeft, Redo2 as ArrowUUpRight, ChevronLeft as CaretLeft, ChevronRight as CaretRight, GitCompareArrows as GitDiff } from 'lucide-react'
 import { Grid2X2 as SquaresFour, Layers as Stack, Search as MagnifyingGlass, Maximize as ArrowsOutSimple, Save as FloppyDisk, RefreshCw as ArrowsClockwise, Puzzle as PuzzlePiece } from 'lucide-react'
+import { AppWindow } from 'lucide-react'
 import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { isNavigablePanelType } from '../../shared/panels'
 import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
@@ -62,6 +63,7 @@ const DeleteRuntimeIcon = () => <Trash size={ICON_SIZE} />
 const TutorialIcon = () => <GraduationCap size={ICON_SIZE} />
 const SkillsIcon = () => <PuzzlePiece size={ICON_SIZE} />
 const AgentIcon = () => <T3Logo size={ICON_SIZE} />
+const NativeAppIcon = () => <AppWindow size={ICON_SIZE} />
 const CloseIcon = () => <X size={ICON_SIZE} />
 const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
 const RedoIcon = () => <ArrowUUpRight size={ICON_SIZE} />
@@ -155,6 +157,7 @@ export const CommandPalette: React.FC = () => {
       { id: 'newBrowser', title: shortcutTitle('newBrowser'), icon: <GlobeIcon />, action: run('newBrowser') },
       { id: 'newEditor', title: shortcutTitle('newEditor'), icon: <FileTextIcon />, action: run('newEditor') },
       { id: 'newAgent', title: shortcutTitle('newAgent'), icon: <AgentIcon />, action: run('newAgent') },
+      { id: 'newNativeApp', title: shortcutTitle('newNativeApp'), icon: <NativeAppIcon />, action: run('newNativeApp') },
       { id: 'newCanvas', title: shortcutTitle('newCanvas'), icon: <LayoutIcon />, action: run('newCanvas') },
       { id: 'closePanel', title: shortcutTitle('closePanel'), icon: <CloseIcon />, action: run('closePanel') },
       { id: 'renamePanel', title: shortcutTitle('renamePanel'), icon: <FileText size={18} />, action: run('renamePanel') },
@@ -276,7 +279,7 @@ export const CommandPalette: React.FC = () => {
         panelId: panel.id,
         title,
         type: panel.type,
-        secondary: panel.filePath ?? browserPanelUrl(panel) ?? (panel.type === 'agent' ? 'T3 Code' : panel.type),
+        secondary: panel.filePath ?? browserPanelUrl(panel) ?? panel.nativeAppBundleId ?? (panel.type === 'agent' ? 'T3 Code' : panel.type),
       })
     }
     for (const panel of otherWindowPanels) {
@@ -648,5 +651,6 @@ function PanelIcon({ type }: { type: PanelType }) {
   if (type === 'editor' || type === 'document') return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
   if (type === 'agent') return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><T3Logo size={ICON_SIZE} /></span>
   if (type === 'review')   return <span className={`${cls} text-green-400`}><GitDiff size={ICON_SIZE} /></span>
+  if (type === 'nativeApp') return <span className={`${cls} text-teal-400`}><AppWindow size={ICON_SIZE} /></span>
   return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
 }

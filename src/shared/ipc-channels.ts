@@ -368,6 +368,15 @@ export const AGENT_PROVIDER_AUTH_WRITE = 'agentProviderAuth:write'
 export const AGENT_PROVIDER_AUTH_CANCEL = 'agentProviderAuth:cancel'
 export const AGENT_PROVIDER_STATUS_GET = 'agentProviderStatus:get'
 export const AGENT_PROVIDER_SETTINGS = 'agentProvider:settings'
+// Native app capture — sessions brokered to the cate-nativehost sidecar
+// (see src/main/nativeApp/NativeAppBroker.ts, native/nativehost/PROTOCOL.md).
+export const NATIVE_APP_ACQUIRE = 'nativeApp:acquire' // renderer -> main
+export const NATIVE_APP_RELEASE = 'nativeApp:release' // renderer -> main
+export const NATIVE_APP_FRAME = 'nativeApp:frame'     // main -> renderer: { sessionId, jpeg }
+export const NATIVE_APP_STATUS = 'nativeApp:status'   // main -> renderer: { sessionId, control }
+export const NATIVE_APP_INPUT = 'nativeApp:input'     // renderer -> main: { sessionId, event }
+export const NATIVE_APP_RESIZE = 'nativeApp:resize'   // renderer -> main: { sessionId, width, height }
+
 
 // Skills (cross-agent skill manager)
 export const SKILLS_GET_INDEX = 'skills:getIndex'             // renderer -> main (merged catalog)

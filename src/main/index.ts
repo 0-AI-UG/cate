@@ -37,6 +37,7 @@ import { registerDialogHandlers } from './ipc/dialogs'
 import { registerCaptureHandlers } from './ipc/capture'
 import { registerBrowserControlHandlers } from './ipc/browserControl'
 import { registerBrowserCredentialHandlers } from './ipc/browserCredentials'
+import { registerNativeAppHandlers } from './ipc/nativeApp'
 import { registerWindowControlHandlers } from './ipc/windowControls'
 import { registerKeepAwakeHandlers } from './ipc/keepAwake'
 import { registerDockWindowHandlers } from './ipc/dockWindows'
@@ -120,6 +121,7 @@ function registerDeferredHandlers(): void {
   registerRuntimeHandlers()
   registerT3AgentHandlers()
   registerCateApiHandlers()
+  registerNativeAppHandlers()
 }
 
 // =============================================================================

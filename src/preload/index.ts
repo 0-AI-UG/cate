@@ -224,6 +224,12 @@ import {
   AGENT_PROVIDER_AUTH_CANCEL,
   AGENT_PROVIDER_STATUS_GET,
   AGENT_PROVIDER_SETTINGS,
+  NATIVE_APP_ACQUIRE,
+  NATIVE_APP_RELEASE,
+  NATIVE_APP_FRAME,
+  NATIVE_APP_STATUS,
+  NATIVE_APP_INPUT,
+  NATIVE_APP_RESIZE,
   UPDATE_STATUS,
   UPDATE_QUIT_AND_INSTALL,
   UPDATE_GET_STATUS,
@@ -254,7 +260,7 @@ import {
   CATE_HOST_FORWARD,
   CATE_HOST_FORWARD_REPLY,
 } from '../shared/ipc-channels'
-import type { AppSettings, SearchResultBatch, SearchDoneEvent } from '../shared/types'
+import type { AppSettings, SearchResultBatch, SearchDoneEvent, NativeAppControlMessage, NativeAppInputEvent } from '../shared/types'
 import type { ElectronAPI, UpdateStatus } from '../shared/electron-api'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
@@ -479,6 +485,9 @@ const invokeForwarders = {
   agentProviderAuthCancel: makeInvoker<'agentProviderAuthCancel'>(AGENT_PROVIDER_AUTH_CANCEL),
   agentProviderStatusGet: makeInvoker<'agentProviderStatusGet'>(AGENT_PROVIDER_STATUS_GET),
   agentProviderSettings: makeInvoker<'agentProviderSettings'>(AGENT_PROVIDER_SETTINGS),
+  // Native app capture (cate-nativehost sidecar)
+  nativeAppAcquire: makeInvoker<'nativeAppAcquire'>(NATIVE_APP_ACQUIRE),
+  nativeAppRelease: makeInvoker<'nativeAppRelease'>(NATIVE_APP_RELEASE),
 
   // Shell utilities
   shellShowInFolder: makeInvoker<'shellShowInFolder'>(SHELL_SHOW_IN_FOLDER),
@@ -596,6 +605,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onTerminalExit(callback: (terminalId: string, exitCode: number) => void): () => void {
     return createIpcListener(TERMINAL_EXIT, callback)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Native app capture (cate-nativehost sidecar)
+  // ---------------------------------------------------------------------------
+
+  onNativeAppFrame(callback: (payload: { sessionId: string; jpeg: Uint8Array }) => void): () => void {
+    return createIpcListener(NATIVE_APP_FRAME, callback)
+  },
+
+  onNativeAppStatus(callback: (payload: { sessionId: string; control: NativeAppControlMessage }) => void): () => void {
+    return createIpcListener(NATIVE_APP_STATUS, callback)
+  },
+
+  nativeAppInput(sessionId: string, event: NativeAppInputEvent): void {
+    ipcRenderer.send(NATIVE_APP_INPUT, sessionId, event)
+  },
+
+  nativeAppResize(sessionId: string, width: number, height: number): void {
+    ipcRenderer.send(NATIVE_APP_RESIZE, sessionId, width, height)
   },
 
   // ---------------------------------------------------------------------------

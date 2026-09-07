@@ -32,7 +32,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'nativeApp'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -262,6 +262,11 @@ export interface PanelState {
   /** Agent panels only: the T3 thread rendered by this panel. Machine-local
    *  because the id belongs to the harness state on this execution host. */
   agentThreadId?: string
+  /** Native app panels only: the macOS bundle id captured by the
+   *  cate-nativehost sidecar (e.g. "com.apple.Safari"). Unset until the user
+   *  picks an app from the panel's launcher. Persisted so the capture session
+   *  is re-acquired for the right app across remounts/restarts. */
+  nativeAppBundleId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -772,6 +777,7 @@ export const SHORTCUT_DEFINITIONS = {
   newEditor: { label: 'New Editor', shortcut: storedShortcut('e', { command: true, shift: true }) },
   newAgent: { label: 'New T3 Code conversation', shortcut: storedShortcut('a', { command: true, shift: true }) },
   newCanvas: { label: 'New Canvas', shortcut: storedShortcut('c', { command: true, shift: true }) },
+  newNativeApp: { label: 'New Native App', shortcut: storedShortcut('g', { command: true, shift: true }) },
   newFile: { label: 'New File', shortcut: storedShortcut('n', { command: true }) },
   closePanel: { label: 'Close Panel', shortcut: storedShortcut('w', { command: true }) },
   toggleSidebar: { label: 'Toggle Sidebar', shortcut: storedShortcut('b', { command: true }) },
@@ -1685,6 +1691,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
   review: { width: 820, height: 560 },
+  nativeApp: { width: 640, height: 440 },
 }
 
 // -----------------------------------------------------------------------------
@@ -1719,3 +1726,39 @@ export interface PerfSnapshot {
   ipc: Array<{ channel: string; kbPerSec: number; callsPerSec: number }>
   terminal: { kbPerSec: number; chunksPerSec: number }
 }
+
+// -----------------------------------------------------------------------------
+// Native app capture — sessions brokered to the cate-nativehost sidecar
+// (native/nativehost/PROTOCOL.md). NativeAppBroker owns the socket + sidecar
+// process; these types describe what crosses the main -> renderer IPC.
+// -----------------------------------------------------------------------------
+
+/** JSON control messages from cate-nativehost (wire type 0x01). Mirrors
+ *  PROTOCOL.md's control-message table. Forward-compatible clients ignore
+ *  unrecognized `t` values rather than erroring — the catch-all member covers
+ *  those. */
+export type NativeAppControlMessage =
+  | { t: 'ready'; displayId: number; appPid: number }
+  | { t: 'placed'; onDisplay: boolean }
+  | { t: 'status'; frames: number; complete: number; idle: number; suspended: number }
+  | { t: 'error'; message: string }
+  | { t: string; [key: string]: unknown }
+
+export interface NativeAppAcquireOptions {
+  bundleId: string
+  width?: number
+  height?: number
+  fps?: number
+}
+
+export type NativeAppAcquireResult = { sessionId: string } | { error: string }
+
+/** Input events forwarded renderer → main → sidecar for a captured app.
+ *  Pointer positions are NORMALIZED (0…1) over the captured window content, so
+ *  they're independent of panel/window pixel size. Modifier booleans and (for
+ *  keys) a macOS virtual key `code` let the sidecar reproduce shortcuts + text.
+ *  Compact keys keep the per-event JSON small at interaction frequency. */
+export type NativeAppInputEvent =
+  | { k: 'm'; a: 'down' | 'up' | 'move' | 'drag'; nx: number; ny: number; b?: 0 | 1; clicks?: number; cmd?: boolean; shift?: boolean; opt?: boolean; ctrl?: boolean }
+  | { k: 's'; nx: number; ny: number; dx: number; dy: number }
+  | { k: 'k'; a: 'down' | 'up'; code?: number; text?: string; cmd?: boolean; shift?: boolean; opt?: boolean; ctrl?: boolean }
