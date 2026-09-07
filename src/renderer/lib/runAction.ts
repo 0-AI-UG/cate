@@ -26,6 +26,12 @@ import { setActivePanel } from './activePanel'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
 import { getFocusedLeafPanelId, requestPanelRename } from './focusedPanel'
 
+/** Dialogs and keyboard lists retain navigation for both DOM and guest/menu dispatch. */
+export function isCanvasNavigationBlocked(): boolean {
+  return useUIStore.getState().showCommandPalette
+    || !!document.activeElement?.closest('[role="dialog"], [role="alertdialog"], [data-keynav]')
+}
+
 /**
  * Ensures the workspace has a rootPath before proceeding.
  * If no rootPath is set, opens the folder dialog first.
@@ -228,7 +234,7 @@ export async function runAction(
     case 'navigateDown':
     case 'navigateLeft':
     case 'navigateRight': {
-      if (useUIStore.getState().showCommandPalette) break
+      if (isCanvasNavigationBlocked()) break
       const canvas = canvasStore()
       if (!canvas) break
       // Release the source surface for chained jumps and Enter-to-activate.

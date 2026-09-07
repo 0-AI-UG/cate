@@ -111,6 +111,9 @@ export const Methods = {
   agentHooksUnsubscribe: 'agentHooks.unsubscribe',
   // inspect a workspace's per-agent hook-file injection state (Settings UI).
   agentHooksInspect: 'agentHooks.inspect',
+  agentChangesList: 'agentChanges.list',
+  agentChangesRead: 'agentChanges.read',
+  agentChangesBind: 'agentChanges.bind',
 
   vcsIsRepo: 'vcs.isRepo',
   vcsFindRepos: 'vcs.findRepos',

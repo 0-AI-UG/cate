@@ -84,3 +84,23 @@ it('keeps the conversation when deletion fails', async () => {
   await act(async () => [...document.querySelectorAll('button')].find((button) => button.textContent === 'Cancel')!.click())
   expect(document.querySelector('button[title="Fix login"]')).not.toBeNull()
 })
+
+it('renames the saved conversation in Cate and keeps editing when saving fails', async () => {
+  const rename = vi.fn().mockResolvedValueOnce({ error: 'Save failed' }).mockResolvedValueOnce({ ok: true })
+  window.electronAPI.agentHarnessRenameConversation = rename
+  await open()
+  await act(async () => (document.querySelector('button[aria-label="Rename Fix login"]') as HTMLButtonElement).click())
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="Conversation name"]')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '  Login repaired  ')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const submit = () => document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await act(async () => { submit() })
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe('Save failed')
+  expect(input.value).toBe('  Login repaired  ')
+  await act(async () => { submit() })
+  expect(rename).toHaveBeenLastCalledWith({ workspaceId: 'ws', cwd: '/repo', threadId: 'one', title: 'Login repaired' })
+  expect(document.querySelector('button[title="Login repaired"]')).not.toBeNull()
+  expect(createAgent).not.toHaveBeenCalled()
+})

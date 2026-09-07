@@ -7,6 +7,7 @@
 // =============================================================================
 
 import path from 'path'
+import { randomUUID } from 'crypto'
 import * as fileLeaf from './file'
 import { hostHarnessRoot } from './harnessRoot'
 import { createWatchPool } from './fileWatcher'
@@ -226,7 +227,14 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
         if (!opts.scopeId) throw new Error('A path scope is required for the workspace base cwd')
         validateCwd(opts.workspaceBaseCwd, undefined, opts.scopeId)
       }
-      return innerProc.create(opts, onData, onExit)
+      const id = opts.id ?? randomUUID()
+      agentHooks.registerChangeSource(id, { cwd: opts.cwd, panelId: opts.env?.CATE_PANEL_ID, kind: 'terminal' })
+      try {
+        return await innerProc.create({ ...opts, id }, onData, (ptyId, code) => {
+          agentHooks.unregisterChangeSource(ptyId)
+          onExit(ptyId, code)
+        })
+      } catch (error) { agentHooks.unregisterChangeSource(id); throw error }
     },
   }
 
@@ -237,12 +245,32 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     id: config.id,
     process: proc,
     agentHooks: {
+      listChanges: (cwd, access) => agentHooks.listChanges(validateCwd(cwd, access?.ownerWindowId, access?.scopeId)),
+      readChanges: (cwd, knownRevision, access) => agentHooks.readChanges(validateCwd(cwd, access?.ownerWindowId, access?.scopeId), knownRevision),
+      bindChanges: (cwd, threadId, panelId, access) => agentHooks.bindChanges(validateCwd(cwd, access?.ownerWindowId, access?.scopeId), threadId, panelId),
       subscribe: (onEvent) => agentHooks.subscribe(onEvent),
       inspectWorkspace: (cwd) => agentHooks.inspectWorkspace(cwd),
     },
     file,
     vcs,
-    server,
+    server: {
+      start: async (opts, onOutput, onExit) => {
+        if (!opts.captureAgentChanges) return server.start(opts, onOutput, onExit)
+        agentHooks.registerChangeSource(opts.id, { cwd: opts.cwd, kind: 't3' })
+        const endpoint = await agentHooks.endpoint()
+        try {
+          return await server.start({ ...opts, env: { ...opts.env,
+            CATE_CHANGES_ENDPOINT: endpoint.url,
+            CATE_CHANGES_TOKEN: endpoint.tokenFor(opts.id),
+            CATE_CHANGES_SOURCE: opts.id,
+          } }, onOutput, (id, code, signal) => {
+            agentHooks.unregisterChangeSource(id)
+            onExit(id, code, signal)
+          })
+        } catch (error) { agentHooks.unregisterChangeSource(opts.id); throw error }
+      },
+      stop: (id) => server.stop(id),
+    },
     tunnel,
     validatePath,
     validatePathStrict,

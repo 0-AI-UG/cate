@@ -22,7 +22,7 @@ function daemonApi(): Runtime {
 const stubProcess = {} as unknown as ProcessHost
 const stubServer = {} as unknown as ServerHost
 const stubTunnel = {} as unknown as TunnelHost
-const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {}, inspectWorkspace: async () => [] }
+const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {}, inspectWorkspace: async () => [], listChanges: async () => [], readChanges: async () => ({ revision: '', records: [] }), bindChanges: async () => {} }
 
 // Wire an RpcServer and a RuntimeRpcClient back-to-back, in-process, over the
 // real LF-JSON framing. This proves the entire wire stack (framing, req/res
@@ -83,6 +83,15 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
     const { client } = loopback(daemonApi())
     await client.ready
     expect(await client.call('ping')).toBe('pong')
+  })
+
+  test('conditional history reads omit unchanged records and enforce the workspace scope', async () => {
+    const { remote } = loopback(daemonApi())
+    const first = await remote.agentHooks.readChanges(rootDir)
+    expect(first.records).toEqual([])
+    expect(first.revision).toBeTypeOf('string')
+    expect(await remote.agentHooks.readChanges(rootDir, first.revision)).toEqual({ revision: first.revision })
+    await expect(remote.agentHooks.readChanges(rootDir, undefined, { scopeId: 'unknown-workspace' })).rejects.toThrow()
   })
 
   test('file.readDir over the wire matches the local function', async () => {
@@ -406,6 +415,9 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
           return () => { emit = null }
         },
         inspectWorkspace: async () => [],
+        listChanges: async () => [],
+        readChanges: async () => ({ revision: '', records: [] }),
+        bindChanges: async () => {},
       },
       server: stubServer,
       tunnel: stubTunnel,

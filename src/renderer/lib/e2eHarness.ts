@@ -528,7 +528,6 @@ export function installE2EHarness(): void {
   window.__cateE2E = {
     ready: true,
     activeCanvasPanelId,
-    selectedWorkspaceId: () => useAppStore.getState().selectedWorkspaceId,
     createTerminal,
     createEditor,
     createCanvasPanel,
@@ -546,6 +545,7 @@ export function installE2EHarness(): void {
     moveNode,
     clearCanvas,
     addWorkspace,
+    selectedWorkspaceId: () => useAppStore.getState().selectedWorkspaceId,
     selectWorkspace,
     panelTypes,
     seedWorktrees,

@@ -311,6 +311,14 @@ export class T3HarnessManager {
   }
 
   async deleteConversation(request: AgentProviderStatusRequest & { threadId: string }, ownerWindowId: number): Promise<string> {
+    return this.mutateConversation(request, ownerWindowId, { type: 'thread.delete' })
+  }
+
+  async renameConversation(request: AgentProviderStatusRequest & { threadId: string; title: string }, ownerWindowId: number): Promise<string> {
+    return this.mutateConversation(request, ownerWindowId, { type: 'thread.meta.update', title: request.title })
+  }
+
+  private async mutateConversation(request: AgentProviderStatusRequest & { threadId: string }, ownerWindowId: number, command: Record<string, string>): Promise<string> {
     const resolved = resolveLocator(request.cwd)
     const cwd = await resolved.runtime.validatePathStrict(resolved.path, ownerWindowId, request.workspaceId)
     const key = harnessKey(resolved.runtimeId, cwd)
@@ -320,10 +328,10 @@ export class T3HarnessManager {
     const response = await fetch(`${url}/api/orchestration/dispatch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
-      body: JSON.stringify({ type: 'thread.delete', commandId: randomUUID(), threadId: request.threadId }),
+      body: JSON.stringify({ ...command, commandId: randomUUID(), threadId: request.threadId }),
       signal: AbortSignal.timeout(10_000),
     })
-    if (!response.ok) throw new Error(`T3 conversation deletion returned HTTP ${response.status}`)
+    if (!response.ok) throw new Error(`T3 conversation update returned HTTP ${response.status}`)
     return partitionFor(key)
   }
 
@@ -579,6 +587,7 @@ export class T3HarnessManager {
       readyTimeoutMs: START_TIMEOUT_MS,
       bootstrapStdin: bootstrap,
       includeCateCli: true,
+      captureAgentChanges: true,
     }, (_id, stream, chunk) => {
       outputTail = `${outputTail}${chunk}`.slice(-8192)
       if (stream === 'stderr') log.debug('[t3:%s] %s', runtimeId, chunk.trimEnd())

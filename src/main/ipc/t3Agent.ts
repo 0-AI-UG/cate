@@ -1,5 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import {
+  AGENT_HARNESS_RENAME_CONVERSATION,
   AGENT_HARNESS_GET_PANEL_URL,
   AGENT_HARNESS_LIST_CONVERSATIONS,
   AGENT_HARNESS_DELETE_CONVERSATION,
@@ -75,6 +76,15 @@ function requireWindowId(event: IpcMainInvokeEvent): number {
 }
 
 export function registerT3AgentHandlers(): void {
+  ipcMain.handle(AGENT_HARNESS_RENAME_CONVERSATION, async (event, input: unknown) => {
+    try {
+      const request = validateProviderStatusRequest(input)
+      const threadId = requireText((input as { threadId?: unknown }).threadId, 'threadId')
+      const title = requireText((input as { title?: unknown }).title, 'title').trim()
+      await t3HarnessManager.renameConversation({ ...request, threadId, title }, requireWindowId(event))
+      return { ok: true }
+    } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
+  })
   ipcMain.handle(AGENT_HARNESS_DELETE_CONVERSATION, async (event, input: unknown) => {
     try {
       const request = validateProviderStatusRequest(input)

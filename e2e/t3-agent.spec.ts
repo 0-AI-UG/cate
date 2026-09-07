@@ -3,6 +3,7 @@ import type { ElectronApplication, Locator, Page } from 'playwright'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { closeApp, launchApp } from './fixtures/electron-app'
 
 interface AgentSeed {
@@ -583,11 +584,20 @@ for (const entry of ['overlay', 'action bar'] as const) {
 }
 
 
-async function submitRealChat(text: string): Promise<void> {
+async function waitForRealSendReady(): Promise<void> {
+  // This is the native client's readiness, unlike Cate's independent shell socket.
+  await expect.poll(() => guestEval<boolean>(agentWebview(), '!!document.querySelector(\'button[aria-label="Send message"]:not(:disabled)\')').catch(() => false), { timeout: 30_000 }).toBe(true)
+}
+
+async function submitRealChat(text: string, waitForReady = false): Promise<void> {
   await expect.poll(() => guestEval<number>(agentWebview(), 'document.querySelectorAll("[contenteditable=true]").length').catch(() => 0), { timeout: 30_000 }).toBeGreaterThan(0)
   await guestEval(agentWebview(), `document.querySelector('[contenteditable=true]').focus()`)
   const id = await agentWebview().evaluate((element) => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())
   await electronApp!.evaluate(({ webContents }, { id, text }) => webContents.fromId(id)!.insertText(text), { id, text })
+  if (waitForReady) {
+    await waitForRealSendReady()
+    await guestEval(agentWebview(), "document.querySelector('[contenteditable=true]').focus()")
+  }
   await guestKey(agentWebview(), 'Enter')
 }
 async function realThreadState() {
@@ -601,6 +611,77 @@ async function waitForRealReply(text: string) {
   await expect.poll(() => guestEval<string>(agentWebview(), 'document.body.innerText').catch(() => ''), { timeout: 30_000 }).toContain('Fixture streaming reply: ' + text)
   await expect.poll(async () => (await realThreadState())?.latestTurn?.state).toBe('completed')
 }
+
+test('real T3 lifecycle delegates workspace actions to Cate and retains subagents', async () => {
+  await submitRealChat('Check the chat host boundary')
+  await waitForRealReply('Check the chat host boundary')
+  const originalPath = await guestPath()
+  await expect.poll(() => guestEval<boolean>(agentWebview(), '!!window.__cateChat?.threadRef')).toBe(true)
+  expect(await guestEval(agentWebview(), '!!document.querySelector("[data-cate-agents-control]")')).toBe(false)
+  await guestEval(agentWebview(), 'window.__cateChat.openAgents(); true')
+  await expect.poll(() => guestEval<string>(agentWebview(), 'document.body.innerText')).toContain('No agents')
+  await guestEval(agentWebview(), 'window.__cateChat.closeAgents(); true')
+  await guestEval(agentWebview(), 'window.__cateChat.store.getState().open(window.__cateChat.threadRef, "diff"); true')
+  await expect(page.getByRole('button', { name: 'Create new review at position 1', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Create new review at position 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  await expect(page.getByLabel('Filter by panel')).toHaveValue(agent.panelId)
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  expect(await guestPath()).toBe(originalPath)
+  const renamed = await page.evaluate(({ workspaceId, cwd, threadId }) => window.electronAPI.agentHarnessRenameConversation({ workspaceId, cwd, threadId, title: 'Renamed from Cate' }), { workspaceId: agent.workspaceId, cwd: workspaceRoot, threadId: (await realThreadState())!.id })
+  expect(renamed).toEqual({ ok: true })
+  await expect.poll(() => page.evaluate(({ workspaceId, cwd }) => window.electronAPI.agentHarnessListConversations({ workspaceId, cwd }), { workspaceId: agent.workspaceId, cwd: workspaceRoot })).toEqual([expect.objectContaining({ title: 'Renamed from Cate' })])
+})
+
+test('real T3 lifecycle uses recorded changes for native files and filtered diff placement', async () => {
+  execFileSync('git', ['init'], { cwd: workspaceRoot })
+  writeFileSync(path.join(workspaceRoot, 'baseline.ts'), 'baseline\n')
+  execFileSync('git', ['add', 'baseline.ts'], { cwd: workspaceRoot })
+  execFileSync('git', ['-c', 'user.name=Cate Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'baseline'], { cwd: workspaceRoot })
+  writeFileSync(path.join(workspaceRoot, 'unrelated.ts'), 'not made by this agent\n')
+  await submitRealChat('fixture:diff first.ts')
+  await waitForRealReply('fixture:diff first.ts')
+  const first = (await realThreadState())!.id
+  await expect.poll(() => guestEval<string>(agentWebview(), 'JSON.stringify(window.__cateChanges)')).toContain('first.ts')
+  await expect.poll(() => guestEval<string>(agentWebview(), 'document.body.innerText')).toContain('1 changed file')
+  expect(await guestEval<string>(agentWebview(), 'document.body.innerText')).not.toContain('unrelated.ts')
+  await guestEval(agentWebview(), `document.querySelector('button[aria-label="Open diff"]').click()`)
+  await page.getByRole('button', { name: 'Create new review at position 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  await expect(page.getByLabel('Filter by panel')).toHaveValue(agent.panelId)
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(page.locator('[data-review-file="first.ts"]')).toBeVisible()
+  await expect(page.locator('[data-review-file="unrelated.ts"]')).toHaveCount(0)
+  const records = await page.evaluate(({ cwd, workspaceId }) => window.electronAPI.agentChangesList(cwd, workspaceId), { cwd: workspaceRoot, workspaceId: agent.workspaceId })
+  expect(records.filter((r) => r.sourceId === first).flatMap((r) => r.files.map((f) => f.path))).toEqual(['first.ts'])
+  await selectOverlay('New conversation')
+  await expect.poll(() => guestPath().catch(() => '')).toMatch(/^\/draft\//)
+  await submitRealChat('fixture:diff second.ts')
+  await waitForRealReply('fixture:diff second.ts')
+  await expect.poll(() => guestEval<string>(agentWebview(), 'JSON.stringify(window.__cateChanges)')).toContain('second.ts')
+  const nativeText = await guestEval<string>(agentWebview(), 'document.body.innerText')
+  expect(nativeText).not.toContain('first.ts')
+  expect(nativeText).not.toContain('unrelated.ts')
+  // The already-open review remains scoped to the original turn until asked
+  // to retarget. No chat navigation silently changes another panel's filters.
+  await expect(page.locator('[data-review-file="first.ts"]')).toBeVisible()
+  await expect(page.locator('[data-review-file="second.ts"]')).toHaveCount(0)
+  await guestEval(agentWebview(), `Array.from(document.querySelectorAll('button')).find(button => button.innerText.includes('second.ts')).click()`)
+  await page.getByRole('button', { name: /Use Agent changes/ }).click()
+  await expect(page.locator('[data-review-file="second.ts"]')).toBeVisible()
+  await expect(page.locator('[data-review-file="first.ts"]')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Filters', exact: true })).toHaveCount(1)
+  await expect(page.getByLabel('Filter by panel')).toHaveCount(0)
+  const fileToggle = page.locator('[data-review-file="second.ts"] button[aria-expanded]')
+  await fileToggle.click()
+  await expect(fileToggle).toHaveAttribute('aria-expanded', 'false')
+  // Repeating the same native deep link must reveal its content, even when
+  // the existing review already has that file/turn selected.
+  await guestEval(agentWebview(), `Array.from(document.querySelectorAll('button')).find(button => button.innerText.includes('second.ts')).click()`)
+  await page.getByRole('button', { name: /Use Agent changes/ }).click()
+  await expect(fileToggle).toHaveAttribute('aria-expanded', 'true')
+  await page.screenshot({ path: test.info().outputPath('recorded-agent-diff.png') })
+})
 
 test('real T3 lifecycle sends, streams, switches chats, restarts Cate and resumes the same provider thread', async () => {
   // T3 buffers messages by default. Explicitly exercise its streaming mode.
@@ -942,23 +1023,34 @@ test('real T3 lifecycle recovers a mounted panel after its server process exits'
   await electronApp!.evaluate(({ webContents }, id) => webContents.fromId(id)!.insertText('after server failure'), guestId)
   const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
   const [{ pid }] = JSON.parse(readFileSync(pidPath, 'utf8'))
+  const currentPid = (): number | undefined => existsSync(pidPath) ? JSON.parse(readFileSync(pidPath, 'utf8'))[0]?.pid : undefined
   // This PID comes exclusively from this test's private runtime directory.
   process.kill(pid, 'SIGKILL')
-  await expect.poll(() => page.evaluate(cwd => window.electronAPI.agentHarnessGetStatus({ cwd }), workspaceRoot)).toMatchObject({ phase: 'error' })
-  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false)).toBe(false)
+  // Recovery can finish between polls. A new server PID proves the crash was
+  // handled without requiring observation of a transient disconnected phase.
+  await expect.poll(() => {
+    const replacement = currentPid()
+    return replacement !== undefined && replacement !== pid
+  }, { timeout: 15_000 }).toBe(true)
   await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), {timeout: 15_000}).toBe(true)
   expect((await realThreadState())?.id).toBe(threadId)
   expect(await guestEval<string>(agentWebview(), 'location.origin')).toBe(origin)
   expect(await agentWebview().evaluate(el => (el as any).getWebContentsId())).toBe(guestId)
   expect(await guestEval<string>(agentWebview(), "document.querySelector('[contenteditable=true]').innerText")).toBe('after server failure')
+  await waitForRealSendReady()
+  await guestEval(agentWebview(), "document.querySelector('[contenteditable=true]').focus()")
   await guestKey(agentWebview(), 'Enter')
   await waitForRealReply('after server failure')
   await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true')).toBe(true)
   expect(await siblingView.evaluate(el => (el as any).getWebContentsId())).toBe(siblingId)
   expect(JSON.parse(readFileSync(pidPath, 'utf8'))).toHaveLength(1)
   // Explicit retry must also preserve the endpoint for other mounted panels.
+  const recoveredPid = currentPid()
   await page.evaluate(cwd => window.electronAPI.agentHarnessRestart({ cwd }), workspaceRoot)
-  await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true')).toBe(false)
+  await expect.poll(() => {
+    const replacement = currentPid()
+    return replacement !== undefined && replacement !== recoveredPid
+  }, { timeout: 15_000 }).toBe(true)
   await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true'), {timeout: 15_000}).toBe(true)
   expect(await siblingView.evaluate(el => (el as any).getWebContentsId())).toBe(siblingId)
   expect(await guestEval<string>(siblingView, 'location.origin')).toBe(origin)
@@ -985,6 +1077,7 @@ test('real T3 lifecycle reconnects after transient socket loss without restartin
 test('real T3 lifecycle bounds automatic crash recovery and allows an explicit retry', async () => {
   await submitRealChat('before repeated failures')
   await waitForRealReply('before repeated failures')
+  const threadId = (await realThreadState())!.id
   const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
   const currentPid = (): number | undefined => existsSync(pidPath) ? JSON.parse(readFileSync(pidPath, 'utf8'))[0]?.pid : undefined
   for (let crash = 0; crash < 3; crash++) {
@@ -999,7 +1092,11 @@ test('real T3 lifecycle bounds automatic crash recovery and allows an explicit r
   expect(currentPid()).toBeUndefined()
   await page.getByRole('status').filter({ hasText: 'T3 Code activity disconnected' }).getByRole('button', {name: 'Retry', exact: true}).click()
   await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', {timeout: 15_000})
-  await submitRealChat('after explicit retry')
+  // DOM branding readiness precedes the restored server's WebSocket handshake.
+  await expect.poll(() => currentPid(), { timeout: 15_000 }).toBeDefined()
+  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), { timeout: 15_000 }).toBe(true)
+  await expect.poll(async () => (await realThreadState())?.id, { timeout: 15_000 }).toBe(threadId)
+  await submitRealChat('after explicit retry', true)
   await waitForRealReply('after explicit retry')
 })
 

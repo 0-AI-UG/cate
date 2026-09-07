@@ -21,17 +21,17 @@ describe('T3 conversation state', () => {
   })
 
   it('subscribes once, tracks multiple conversations, and clears connectivity on disconnect', () => {
-    let socket: any
+    const sockets: any[] = []
     class FakeSocket {
       send = vi.fn()
       close = vi.fn()
-      // Capture the guest-created socket so the test can drive server events.
-      // eslint-disable-next-line @typescript-eslint/no-this-alias
-      constructor() { socket = this }
+      // Capture guest-created sockets so the test can drive server events.
+      constructor() { sockets.push(this) }
     }
     const window: any = { addEventListener: vi.fn() }
     const context = { window, WebSocket: FakeSocket, location: { origin: 'http://127.0.0.1:1234' }, setTimeout: vi.fn(), clearTimeout: vi.fn() }
     runInNewContext(T3_THREAD_SUBSCRIPTION_SCRIPT, context)
+    const socket = sockets[0]
     socket.onopen()
     expect(JSON.parse(socket.send.mock.calls[0][0]).tag).toBe('orchestration.subscribeShell')
     const emit = (event: unknown) => socket.onmessage({ data: JSON.stringify({ _tag: 'Chunk', requestId: 'cate-shell', values: [event] }) })
@@ -43,7 +43,7 @@ describe('T3 conversation state', () => {
     expect(JSON.parse(socket.send.mock.calls.at(-1)[0])).toEqual({ _tag: 'Ack', requestId: 'cate-shell' })
     const firstSocket = socket
     runInNewContext(T3_THREAD_SUBSCRIPTION_SCRIPT, context)
-    expect(socket).toBe(firstSocket)
+    expect(sockets).toEqual([firstSocket])
     emit({ kind: 'thread-removed', threadId: 'a' })
     expect(window.__cateT3Threads.threads.a).toBeUndefined()
     socket.onclose()
