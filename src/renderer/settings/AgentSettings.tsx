@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowBendDownLeft, ArrowSquareOut, CaretDown, CaretUp, Check, CheckCircle, CircleNotch, Copy, SignIn } from '@phosphor-icons/react'
+import { CornerDownLeft as ArrowBendDownLeft, SquareArrowOutUpRight as ArrowSquareOut, ChevronDown as CaretDown, ChevronUp as CaretUp, Check, CircleCheck as CheckCircle, LoaderCircle as CircleNotch, Copy, LogIn as SignIn } from 'lucide-react'
 import { btn, inputCls, Modal } from '../ui/Modal'
 import { useAppStore } from '../stores/appStore'
 import { SearchableBlock, SecondaryButton } from './SettingsComponents'
@@ -159,7 +159,7 @@ export function AgentSettings() {
                       <h3 className="text-sm font-medium text-primary">Provider authentication</h3>
                       <p className="mt-0.5 text-xs text-muted">{provider.description}</p>
                       <p className={`mt-1 flex items-center gap-1 text-xs ${connected ? 'text-green-400' : 'text-muted'}`}>
-                        {connected && <CheckCircle size={13} weight="fill" />}
+                        {connected && <CheckCircle size={13} />}
                         {statusLabel}
                         {versionLabel && <span className="text-muted">· {versionLabel}</span>}
                       </p>

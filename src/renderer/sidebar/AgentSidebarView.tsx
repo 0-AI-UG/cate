@@ -1,4 +1,4 @@
-import { ChatsCircle, Gear, Plus } from '@phosphor-icons/react'
+import { MessageCircleMore as ChatsCircle, Settings as Gear, Plus } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useActivePanelStore } from '../lib/activePanel'
 import { revealPanel } from '../lib/workspace/panelReveal'

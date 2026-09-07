@@ -1,4 +1,4 @@
-import { Check } from '@phosphor-icons/react'
+import { Check } from 'lucide-react'
 import { useState } from 'react'
 import { CLI_PERMISSIONS, type CliPermissionCell } from '../../shared/cliPermissions'
 import { useSelectedWorkspace } from '../stores/appStore'
@@ -31,7 +31,7 @@ function PermissionCheckbox({ checked, onChange, title, disabled }: CheckboxProp
           : 'bg-surface-5 border-subtle hover:border-focus-blue'
       }`}
     >
-      {checked && <Check size={12} weight="bold" />}
+      {checked && <Check size={12} />}
     </button>
   )
 }

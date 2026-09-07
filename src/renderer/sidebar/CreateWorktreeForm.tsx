@@ -16,10 +16,10 @@ import {
   GitBranch,
   Check,
   X,
-  CaretRight,
-  CaretDown,
+  ChevronRight as CaretRight,
+  ChevronDown as CaretDown,
   GitPullRequest,
-} from '@phosphor-icons/react'
+} from 'lucide-react'
 
 export interface PrListItem {
   number: number

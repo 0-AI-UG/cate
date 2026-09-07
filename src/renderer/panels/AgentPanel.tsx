@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowClockwise, ChatsCircle, CircleNotch } from '@phosphor-icons/react'
+import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle, LoaderCircle as CircleNotch } from 'lucide-react'
 import type { AgentPanelProps } from './types'
 import { agentProductCopy } from '../../shared/agentProductCopy'
 import { useAppStore } from '../stores/appStore'

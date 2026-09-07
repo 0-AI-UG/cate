@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { CaretDoubleDown, CaretDoubleUp, Plus } from '@phosphor-icons/react'
+import { ChevronsDown as CaretDoubleDown, ChevronsUp as CaretDoubleUp, Plus } from 'lucide-react'
 import { useAppStore, useWorkspaceList } from '../stores/appStore'
 import { removeWorkspacesWithConfirm } from '../lib/closePanelWithConfirm'
 import { WorkspaceTab } from './WorkspaceTab'

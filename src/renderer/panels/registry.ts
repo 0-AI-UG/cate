@@ -2,7 +2,7 @@
 // Panel registry (renderer side)
 //
 // Extends the shared per-type data in `src/shared/panels.ts` with renderer-only
-// concerns: the Phosphor icon component, the lazy panel component, and a
+// concerns: the Lucide icon component, the lazy panel component, and a
 // factory that maps to the right `appStore.createXxx()` call.
 //
 // Every place that used to switch on `panel.type` should read from
@@ -17,13 +17,13 @@ import {
   Terminal,
   Globe,
   FileText,
-  SquaresFour,
-  FileDoc,
-  PuzzlePiece,
-  GitDiff,
-  ChatsCircle,
-  type Icon as PhosphorIcon,
-} from '@phosphor-icons/react'
+  Grid2X2 as SquaresFour,
+  FileText as FileDoc,
+  Puzzle as PuzzlePiece,
+  GitCompareArrows as GitDiff,
+  MessageCircleMore as ChatsCircle,
+  type LucideIcon,
+} from 'lucide-react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
@@ -71,7 +71,7 @@ export interface PanelCreateArgs {
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
-  icon: PhosphorIcon | ComponentType<{ size?: number; className?: string }>
+  icon: LucideIcon | ComponentType<{ size?: number; className?: string }>
   /** React.lazy() wrapped panel component. Accepts the standard PanelProps
    *  plus optional per-type extras (filePath/url/zoomLevel) — the dispatcher
    *  reads those off the PanelState. */

@@ -11,12 +11,12 @@ import {
   FileText,
   Minus,
   Plus,
-  MapTrifold,
-  Cursor,
+  Map as MapTrifold,
+  MousePointer2 as Cursor,
   Hand,
   X,
-  ChatsCircle,
-} from '@phosphor-icons/react'
+  MessageCircleMore as ChatsCircle,
+} from 'lucide-react'
 import Minimap from './Minimap'
 import WorktreeToolbarMenu from './WorktreeToolbarMenu'
 import ExtensionToolbarMenu from './ExtensionToolbarMenu'
@@ -491,7 +491,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           }}
           className="w-[44px] h-[44px] flex items-center justify-center text-secondary hover:text-primary active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100 z-10"
         >
-          {minimapOpen ? <X size={14} weight="bold" /> : <MapTrifold size={18} />}
+          {minimapOpen ? <X size={14} /> : <MapTrifold size={18} />}
         </button>
       </div>
     </div>

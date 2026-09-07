@@ -9,9 +9,17 @@
 // collapse, and the sidebar lists only sections that still have matches.
 // =============================================================================
 
-import { MagnifyingGlass, BracketsCurly } from '@phosphor-icons/react'
+import {
+  ArrowLeft,
+  Braces as BracketsCurly,
+  LayoutDashboard,
+  Search as MagnifyingGlass,
+  Settings2,
+  Sparkles,
+  Wrench,
+} from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Modal } from '../ui/Modal'
+import { createPortal } from 'react-dom'
 import log from '../lib/logger'
 import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
@@ -49,6 +57,13 @@ const SECTIONS = [
   { title: 'Extensions', component: ExtensionsSettings },
   { title: 'Updates', component: UpdatesSettings },
   { title: 'Shortcuts', component: ShortcutSettings },
+] as const
+
+const NAV_GROUPS = [
+  { title: 'General', icon: Settings2, sections: ['General', 'Appearance', 'Notifications', 'Updates'] },
+  { title: 'Workspace', icon: LayoutDashboard, sections: ['Canvas', 'Sidebar', 'File Explorer', 'Worktrees'] },
+  { title: 'Tools', icon: Wrench, sections: ['Terminal', 'Browser', 'CLI', 'Shortcuts'] },
+  { title: 'Agents', icon: Sparkles, sections: ['Agent', 'Skills', 'Extensions'] },
 ] as const
 
 // DOM id for a section. Slugify spaces (e.g. "File Explorer") so the result is
@@ -173,98 +188,141 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
 
   const navSections = SECTIONS.filter(({ title }) => query === '' || visibleSections.has(title.toLowerCase()))
 
-  return (
-    <Modal
-      onClose={onClose}
-      width="min(900px,92vw)"
-      height="80vh"
-      zClassName="z-[100001]"
-      closeOnEscape={false}
-      title="Settings"
-      bodyClassName="contents"
-      headerActions={
-        <button
-          onClick={openSettingsJson}
-          title="Open settings.json in an editor to edit and export your settings directly"
-          className="flex items-center gap-1.5 px-2 h-7 rounded-md border border-subtle text-secondary hover:bg-hover hover:text-primary text-xs"
-        >
-          <BracketsCurly size={14} />
-          Open settings.json
-        </button>
-      }
-    >
-      {/* Body: sidebar + scrollable content */}
-      <div className="flex flex-1 min-h-0" data-sidebar-scrollarea>
-          {/* Sidebar */}
-          <div className="w-[208px] flex-shrink-0 flex flex-col bg-surface-0/30">
-            <div className="p-3 flex-shrink-0">
-              <div className="relative">
-                <MagnifyingGlass
-                  size={13}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
-                />
-                <TextInput
-                  value={rawQuery}
-                  onChange={setRawQuery}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape' && rawQuery) {
-                      e.stopPropagation()
-                      setRawQuery('')
-                    }
-                  }}
-                  placeholder="Search settings…"
-                  layoutClassName="w-full pl-7 pr-2"
-                />
-              </div>
-            </div>
-            <nav className="flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-0.5">
-              {navSections.map(({ title }) => {
-                const id = title.toLowerCase()
-                const active = id === activeId
-                return (
-                  <button
-                    key={title}
-                    onClick={() => jumpTo(id)}
-                    className={`text-left px-2.5 py-1.5 rounded-md text-sm transition-colors ${
-                      active ? 'bg-surface-3 text-primary' : 'text-secondary hover:bg-hover hover:text-primary'
-                    }`}
-                  >
-                    {title}
-                  </button>
-                )
-              })}
-              {navSections.length === 0 && (
-                <span className="px-2.5 py-1.5 text-xs text-muted">No matches</span>
-              )}
-            </nav>
-          </div>
+  const activeGroup = NAV_GROUPS.find((group) =>
+    group.sections.some((title) => title.toLowerCase() === activeId),
+  ) ?? NAV_GROUPS[0]
 
-          {/* Scrollable sections */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
-            <div className="flex flex-col gap-6">
-              {SECTIONS.map(({ title, component: Component }) => {
-                const id = title.toLowerCase()
-                const sectionMatched = query !== '' && title.toLowerCase().includes(query)
-                const hidden = query !== '' && !visibleSections.has(id)
-                return (
-                  <section key={title} id={sectionId(title)} data-section-id={id} hidden={hidden}>
-                    <h3 className="text-sm font-semibold text-primary mb-2">
-                      {title}
-                    </h3>
-                    <SettingsSearchContext.Provider value={{ query, sectionMatched }}>
-                      <Component />
-                    </SettingsSearchContext.Provider>
-                  </section>
-                )
-              })}
-              {query !== '' && visibleSections.size === 0 && (
-                <div className="py-10 text-center text-sm text-muted">
-                  No settings match “{rawQuery.trim()}”.
-                </div>
-              )}
-            </div>
+  return createPortal(
+    <div className="fixed inset-0 z-[100001] flex bg-surface-1 text-primary">
+      <aside className="w-[280px] shrink-0 flex flex-col border-r border-subtle bg-surface-0/55">
+        <div className="h-16 shrink-0 flex items-center px-5 text-[15px] font-semibold">
+          Settings
+        </div>
+
+        <div className="px-3 pb-3">
+          <div className="relative">
+            <MagnifyingGlass
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none"
+            />
+            <TextInput
+              value={rawQuery}
+              onChange={setRawQuery}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && rawQuery) {
+                  e.stopPropagation()
+                  setRawQuery('')
+                }
+              }}
+              placeholder="Search settings…"
+              layoutClassName="w-full h-9 pl-9 pr-3"
+            />
           </div>
-      </div>
-    </Modal>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto px-3 pb-4 space-y-1">
+          {NAV_GROUPS.map(({ title, icon: Icon, sections }) => {
+            const visibleChildren = sections.filter((section) =>
+              navSections.some((item) => item.title === section),
+            )
+            if (visibleChildren.length === 0) return null
+            const groupActive = title === activeGroup.title
+            return (
+              <div key={title}>
+                <button
+                  type="button"
+                  onClick={() => jumpTo(visibleChildren[0].toLowerCase())}
+                  aria-current={groupActive ? 'true' : undefined}
+                  className={`w-full h-10 px-3 flex items-center gap-3 rounded-lg text-sm font-medium transition-colors ${
+                    groupActive ? 'bg-surface-3 text-primary' : 'text-secondary hover:bg-hover hover:text-primary'
+                  }`}
+                >
+                  <Icon size={17} />
+                  {title}
+                </button>
+                {groupActive && (
+                  <div className="ml-8 mt-1 mb-2 flex flex-col gap-0.5">
+                    {visibleChildren.map((section) => {
+                      const id = section.toLowerCase()
+                      const active = id === activeId
+                      return (
+                        <button
+                          type="button"
+                          key={section}
+                          onClick={() => jumpTo(id)}
+                          aria-current={active ? 'page' : undefined}
+                          className={`text-left px-3 py-1.5 rounded-md text-[13px] transition-colors ${
+                            active ? 'bg-surface-3 text-primary' : 'text-muted hover:bg-hover hover:text-secondary'
+                          }`}
+                        >
+                          {section}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {navSections.length === 0 && (
+            <span className="block px-3 py-2 text-xs text-muted">No matches</span>
+          )}
+        </nav>
+
+        <div className="shrink-0 border-t border-subtle p-3 space-y-1">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full h-10 px-3 flex items-center gap-3 rounded-lg text-sm text-secondary hover:bg-hover hover:text-primary transition-colors"
+          >
+            <ArrowLeft size={17} />
+            Back
+          </button>
+        </div>
+      </aside>
+
+      <main className="min-w-0 flex-1 flex flex-col bg-surface-1">
+        <header className="h-16 shrink-0 flex items-center gap-2 border-b border-subtle px-8">
+          <span className="text-sm text-muted">{activeGroup.title}</span>
+          <span className="text-muted">/</span>
+          <span className="text-sm font-medium text-primary">
+            {SECTIONS.find(({ title }) => title.toLowerCase() === activeId)?.title ?? activeGroup.title}
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={openSettingsJson}
+            title="Open settings.json in an editor to edit and export your settings directly"
+            className="flex items-center gap-1.5 px-2 h-7 rounded-md text-secondary hover:bg-hover hover:text-primary text-xs"
+          >
+            <BracketsCurly size={14} />
+            Open settings.json
+          </button>
+        </header>
+
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-8">
+          <div className="w-full max-w-[960px] mx-auto flex flex-col gap-10 pb-16">
+            {SECTIONS.map(({ title, component: Component }) => {
+              const id = title.toLowerCase()
+              const sectionMatched = query !== '' && title.toLowerCase().includes(query)
+              const hidden = query !== '' && !visibleSections.has(id)
+              return (
+                <section key={title} id={sectionId(title)} data-section-id={id} hidden={hidden} className="scroll-mt-8">
+                  <h2 className="text-base font-semibold text-primary mb-3">{title}</h2>
+                  <SettingsSearchContext.Provider value={{ query, sectionMatched }}>
+                    <Component />
+                  </SettingsSearchContext.Provider>
+                </section>
+              )
+            })}
+            {query !== '' && visibleSections.size === 0 && (
+              <div className="py-10 text-center text-sm text-muted">
+                No settings match “{rawQuery.trim()}”.
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>,
+    document.body,
   )
 }

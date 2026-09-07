@@ -2,24 +2,24 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import log from '../lib/logger'
 import {
   GitBranch,
-  ArrowClockwise,
-  CaretDown,
-  CaretRight,
+  RotateCw as ArrowClockwise,
+  ChevronDown as CaretDown,
+  ChevronRight as CaretRight,
   Plus,
   Minus,
   ArrowUp,
   ArrowDown,
   Download,
   Trash,
-  ArrowUUpLeft,
+  Undo2 as ArrowUUpLeft,
   Archive,
-  BoxArrowUp,
-  ClockCounterClockwise,
+  SquareArrowOutUpRight as BoxArrowUp,
+  History as ClockCounterClockwise,
   X,
   Check,
-  GitDiff,
-  FileMagnifyingGlass,
-} from '@phosphor-icons/react'
+  GitCompareArrows as GitDiff,
+  FileSearch as FileMagnifyingGlass,
+} from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { pathDisplayName } from '../lib/fs/displayPath'

@@ -10,7 +10,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState } from 'react'
-import { PuzzlePiece } from '@phosphor-icons/react'
+import { Puzzle as PuzzlePiece } from 'lucide-react'
 import { portalRegistry } from '../lib/portalRegistry'
 import { useExtensionsStore, ensureExtensionsStarted } from '../stores/extensionsStore'
 import { CATE_HOST_EVENT } from '../../shared/ipc-channels'

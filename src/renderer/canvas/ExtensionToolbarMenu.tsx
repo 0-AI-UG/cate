@@ -11,7 +11,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { SquaresFour } from '@phosphor-icons/react'
+import { Grid2X2 as SquaresFour } from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
 import { useAppStore } from '../stores/appStore'
 import {

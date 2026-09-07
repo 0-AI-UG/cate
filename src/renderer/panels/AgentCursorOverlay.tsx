@@ -21,6 +21,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState } from 'react'
+import { MousePointer2 } from 'lucide-react'
 import { subscribeAgentCursor, type AgentCursorEvent } from '../lib/browser/agentCursor'
 
 /** A click ripple's lifetime — purely decorative feedback for "it happened". */
@@ -88,15 +89,6 @@ export function AgentCursorOverlay({
   const boxHeight = rawBoxHeight === undefined ? undefined : rawBoxHeight * scale
   const pointX = typeof event.x === 'number' ? event.x * scale : undefined
   const pointY = typeof event.y === 'number' ? event.y * scale : undefined
-  const pointerAnimation = event.kind === 'click' || event.kind === 'dblclick'
-    ? 'cate-agent-pointer-click 220ms ease-out'
-    : event.kind === 'type' || event.kind === 'press'
-      ? 'cate-agent-pointer-type 520ms ease-out'
-      : event.kind === 'scroll'
-        ? 'cate-agent-pointer-scroll 520ms ease-in-out'
-        : event.kind === 'hover'
-          ? 'cate-agent-pointer-hover 700ms ease-in-out'
-          : undefined
   const targetAnimation = event.kind === 'type' || event.kind === 'press'
     ? 'cate-agent-target-type 650ms ease-out'
     : event.kind === 'hover'
@@ -171,21 +163,17 @@ export function AgentCursorOverlay({
             transition: 'left 220ms cubic-bezier(0.22, 1, 0.36, 1), top 220ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         >
-          {/* Drawn rather than using an emoji/system cursor so it looks
-              identical on every platform and reads as "not your cursor". */}
-          <svg
-            key={`pointer-${activitySerial}`}
-            width="18"
-            height="22"
-            viewBox="0 0 18 22"
+          <MousePointer2
+            className="cate-agent-pointer"
+            size={28}
+            stroke="rgba(255,255,255,0.95)"
+            strokeWidth={2}
+            fill="rgba(255,255,255,0.12)"
             style={{
-              filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.5))',
-              animation: pointerAnimation,
-              transformOrigin: '2px 1px',
+              filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.35))',
+              transformOrigin: '4px 4px',
             }}
-          >
-            <path d="M2 1 L2 17 L6.2 13.2 L9 20 L12 18.6 L9.2 12 L14.5 12 Z" fill="#4A9EFF" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
-          </svg>
+          />
         </div>
       )}
 
@@ -194,22 +182,15 @@ export function AgentCursorOverlay({
           from { transform: scale(1); opacity: 0.9; }
           to { transform: scale(3.4); opacity: 0; }
         }
-        @keyframes cate-agent-pointer-click {
-          0%, 100% { transform: scale(1); }
-          45% { transform: translate(1px, 1px) scale(0.78); }
+        .cate-agent-pointer {
+          animation: cate-agent-pointer-sway 3.6s ease-in-out infinite;
         }
-        @keyframes cate-agent-pointer-type {
-          0%, 100% { transform: rotate(0deg); }
-          35% { transform: rotate(-7deg); }
-          70% { transform: rotate(4deg); }
+        @keyframes cate-agent-pointer-sway {
+          0%, 100% { transform: rotate(-5deg); }
+          50% { transform: rotate(5deg); }
         }
-        @keyframes cate-agent-pointer-scroll {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(8px); }
-        }
-        @keyframes cate-agent-pointer-hover {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-3px); }
+        @media (prefers-reduced-motion: reduce) {
+          .cate-agent-pointer { animation: none; }
         }
         @keyframes cate-agent-target-click {
           0% { opacity: 1; transform: scale(1); }

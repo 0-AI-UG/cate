@@ -9,7 +9,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import type { StoreApi } from 'zustand'
-import { SquaresFour, X } from '@phosphor-icons/react'
+import { Grid2X2 as SquaresFour, X } from 'lucide-react'
 import type { CanvasStore } from '../stores/canvasStore'
 import { useUIStore } from '../stores/uiStore'
 import { listLayouts, loadLayoutIntoCanvas } from '../lib/layouts'

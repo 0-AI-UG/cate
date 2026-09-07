@@ -12,7 +12,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { PuzzlePiece, CaretRight } from '@phosphor-icons/react'
+import { Puzzle as PuzzlePiece, ChevronRight as CaretRight } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { getAgentLogoById } from '../lib/agent/agentLogos'

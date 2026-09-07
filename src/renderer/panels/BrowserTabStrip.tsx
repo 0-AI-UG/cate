@@ -6,7 +6,7 @@
 // its pinned state (keeping the gestures the old vertical sidebar used).
 // =============================================================================
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { Plus, X } from '@phosphor-icons/react'
+import { Plus, X } from 'lucide-react'
 import { isStartPageUrl, type BrowserTab } from '../../shared/types'
 import { BrowserFavicon } from './BrowserFavicon'
 import { faviconForUrl } from './browserUrl'

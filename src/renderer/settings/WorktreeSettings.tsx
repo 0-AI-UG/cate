@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, X } from '@phosphor-icons/react'
+import { Plus, X } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, Toggle, SearchableBlock, TextInput } from './SettingsComponents'
 

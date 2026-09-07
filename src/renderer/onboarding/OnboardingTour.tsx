@@ -12,7 +12,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
-import { ArrowLeft, ArrowRight, X } from '@phosphor-icons/react'
+import { ArrowLeft, ArrowRight, X } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { ONBOARDING_STEPS, type OnboardingStep } from './steps'

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
-import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
+import { ChevronRight as CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, Grid2X2 as SquaresFour, Ellipsis as DotsThree, type LucideIcon } from 'lucide-react'
 import { browserPanelUrl, type WorkspaceState, type PanelType, type PanelState, type WindowPanelInfo } from '../../shared/types'
 import { isWorktreePanelType } from '../../shared/panels'
 import { useStatusStore } from '../stores/statusStore'
@@ -214,9 +214,9 @@ const PanelRenameInput: React.FC<{ rename: PanelRenameProps }> = ({ rename }) =>
   )
 }
 
-const PANEL_ICONS: Record<PanelType, PhosphorIcon> = Object.fromEntries(
+const PANEL_ICONS: Record<PanelType, LucideIcon> = Object.fromEntries(
   (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].icon]),
-) as Record<PanelType, PhosphorIcon>
+) as Record<PanelType, LucideIcon>
 
 
 interface WorkspaceTabProps {

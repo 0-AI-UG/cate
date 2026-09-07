@@ -4,7 +4,7 @@
 // known yet) it falls back to a globe glyph so the tab always has an icon.
 // =============================================================================
 import { useEffect, useState } from 'react'
-import { Globe } from '@phosphor-icons/react'
+import { Globe } from 'lucide-react'
 
 interface Props {
   src?: string

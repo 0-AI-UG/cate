@@ -182,4 +182,34 @@ describe('BackgroundBrowserHost', () => {
       expect(surface.style.transform).toBe('translate3d(120px, 40px, 0) scale(1.5, 1.5)')
     })
   })
+
+  it('copies only the node corners touched by the browser slot while retaining occlusion', async () => {
+    act(() => root.render(
+      <PersistentBrowserHostContext.Provider value>
+        <ClippedStackedBrowserSlot />
+        <BackgroundBrowserHost />
+      </PersistentBrowserHostContext.Provider>,
+    ))
+    const node = container.querySelector<HTMLElement>('[data-node-id="browser-node"]')!
+    const surface = container.querySelector<HTMLElement>('[data-browser-surface="browser-one"]')!
+    act(() => {
+      node.dataset.testRect = '10,0,210,120'
+      node.style.borderRadius = '12px'
+      node.style.borderBottomLeftRadius = '12px'
+      node.style.borderBottomRightRadius = '12px'
+    })
+    await vi.waitFor(() => {
+      expect(surface.style.borderRadius).toBe('0px 0px 12px 12px')
+      expect(surface.style.overflow).toBe('hidden')
+      expect(surface.style.clipPath).toContain('path(evenodd,')
+    })
+    // A browser in the left half of a split must not round the internal seam.
+    act(() => {
+      node.dataset.testRect = '10,0,410,120'
+      node.style.width = '400px'
+    })
+    await vi.waitFor(() => {
+      expect(surface.style.borderRadius).toBe('0px 0px 0px 12px')
+    })
+  })
 })

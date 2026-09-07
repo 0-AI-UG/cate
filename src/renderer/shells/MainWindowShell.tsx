@@ -21,7 +21,7 @@ import { IS_MAC } from '../lib/platform'
 import { useWindowFullscreen } from '../lib/useWindowFullscreen'
 import { MAC_CHROME_WIDTH, TRAFFIC_LIGHTS_WIDTH } from './MacWindowChrome'
 import { BAR_WIDTH } from '../sidebar/Sidebar'
-import { SidebarSimple } from '@phosphor-icons/react'
+import { PanelLeft as SidebarSimple } from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
 
 interface MainWindowShellProps {

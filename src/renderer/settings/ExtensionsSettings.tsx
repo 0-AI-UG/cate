@@ -19,7 +19,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Plus, Trash, CircleNotch, ArrowsClockwise, ArrowCircleUp, Warning, CaretRight, CaretLeft } from '@phosphor-icons/react'
+import { Plus, Trash, LoaderCircle as CircleNotch, RefreshCw as ArrowsClockwise, CircleArrowUp as ArrowCircleUp, TriangleAlert as Warning, ChevronRight as CaretRight, ChevronLeft as CaretLeft } from 'lucide-react'
 import { SettingRow, SearchableBlock, SecondaryButton, Toggle, TextInput } from './SettingsComponents'
 import { Tooltip } from '../ui/Tooltip'
 import { errorMessage } from '../lib/errorMessage'

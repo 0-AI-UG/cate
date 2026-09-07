@@ -5,18 +5,18 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  CaretRight,
+  ChevronRight as CaretRight,
   Folder,
   FolderOpen,
   File,
   FileCode,
   Code,
   FileText,
-  BracketsCurly,
+  Braces as BracketsCurly,
   Globe,
-  PaintBrush,
+  Paintbrush as PaintBrush,
   Image as ImageIcon,
-} from '@phosphor-icons/react'
+} from 'lucide-react'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
@@ -75,7 +75,7 @@ export function getFileIcon(extension: string, isDirectory: boolean, isExpanded:
 }
 
 // -----------------------------------------------------------------------------
-// Pre-created phosphor icon elements (sized 14)
+// Pre-created icon elements (sized 14)
 // -----------------------------------------------------------------------------
 
 const ICON_PROPS = { size: 14 } as const

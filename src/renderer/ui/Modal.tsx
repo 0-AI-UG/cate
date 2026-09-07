@@ -19,7 +19,7 @@
 
 import { useEffect, useState, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { X } from '@phosphor-icons/react'
+import { X } from 'lucide-react'
 import { Tooltip } from './Tooltip'
 
 /** Dimmed, blurred backdrop shared by every full-screen modal. */

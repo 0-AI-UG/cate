@@ -73,7 +73,6 @@
   },
   "dependencies": {
     "@parcel/watcher": "^2.5.1",
-    "@phosphor-icons/react": "^2.1.10",
     "@sentry/electron": "^7.15.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
@@ -85,6 +84,7 @@
     "chokidar": "^4.0.0",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
+    "lucide-react": "^0.564.0",
     "mammoth": "^1.12.0",
     "monaco-editor": "^0.52.0",
     "pdfjs-dist": "^6.2.108",

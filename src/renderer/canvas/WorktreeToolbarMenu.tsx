@@ -17,17 +17,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  ArrowsSplit,
+  GitFork as ArrowsSplit,
   Terminal as TerminalIcon,
   Plus,
   Check,
-  DotsThree,
-  Warning,
+  Ellipsis as DotsThree,
+  TriangleAlert as Warning,
   X,
   GitPullRequest,
-  CircleNotch,
-  ChatsCircle,
-} from '@phosphor-icons/react'
+  LoaderCircle as CircleNotch,
+  MessageCircleMore as ChatsCircle,
+} from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
 import { errorMessage } from '../lib/errorMessage'

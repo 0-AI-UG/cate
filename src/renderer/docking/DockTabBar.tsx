@@ -8,7 +8,7 @@
 import React from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { PanelState, PanelType, DockTabStack as DockTabStackType } from '../../shared/types'
-import { X } from '@phosphor-icons/react'
+import { X } from 'lucide-react'
 import { useDragStore, useTabSourceVisibility } from '../drag'
 import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
 import { useAppStore } from '../stores/appStore'
@@ -191,7 +191,7 @@ export function DockTabBar(props: DockTabBarProps) {
             panelId={panelId}
             className={`
               group relative flex items-center gap-1.5 whitespace-nowrap
-              cursor-grab select-none min-w-0 shrink rounded-[10px] transition-colors
+              cursor-grab select-none min-w-0 shrink rounded-[var(--node-tab-radius,10px)] transition-colors
               ${compact ? 'h-[22px] max-w-[160px] pl-2 text-[11px]' : 'h-6 max-w-[200px] pl-2.5 text-[12px]'}
               ${onClosePanel ? 'pr-1' : compact ? 'pr-2' : 'pr-2.5'}
               ${isActive ? 'bg-surface-2 text-primary' : 'text-muted hover:text-secondary hover:bg-hover dock-tab-inactive'}

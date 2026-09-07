@@ -8,8 +8,8 @@ import {
   FileCode,
   FolderOpen,
   Folder,
-  CloudArrowUp,
-} from '@phosphor-icons/react'
+  CloudUpload as CloudArrowUp,
+} from 'lucide-react'
 import { abbreviateLocalPath, workspaceDisplayName } from '../lib/fs/displayPath'
 import { parseLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'

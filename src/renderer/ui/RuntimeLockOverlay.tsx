@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { CloudWarning, CloudArrowDown, CircleNotch, PlugsConnected } from '@phosphor-icons/react'
+import { CloudAlert as CloudWarning, CloudDownload as CloudArrowDown, LoaderCircle as CircleNotch, PlugZap as PlugsConnected } from 'lucide-react'
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
@@ -131,9 +131,9 @@ export function RuntimeLockOverlay(): JSX.Element | null {
           {view.icon === 'spin' ? (
             <CircleNotch size={24} className="text-muted animate-spin" />
           ) : view.icon === 'install' ? (
-            <CloudArrowDown size={24} weight="fill" className="text-focus-blue animate-pulse" />
+            <CloudArrowDown size={24} className="text-focus-blue animate-pulse" />
           ) : (
-            <CloudWarning size={24} weight="fill" className="text-red-400" />
+            <CloudWarning size={24} className="text-red-400" />
           )}
 
           <div className="text-[13px] font-medium text-primary text-center">{view.title}</div>

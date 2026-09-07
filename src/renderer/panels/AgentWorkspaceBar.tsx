@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  CaretDown,
-  ChatsCircle,
-  CircleNotch,
-  DotsThree,
+  ChevronDown as CaretDown,
+  MessageCircleMore as ChatsCircle,
+  LoaderCircle as CircleNotch,
+  Ellipsis as DotsThree,
   GitBranch,
-  GitDiff,
+  GitCompareArrows as GitDiff,
   Plus,
   X,
-} from '@phosphor-icons/react'
+} from 'lucide-react'
 import type { GitComparisonSpec, PanelState, WorktreeMeta } from '../../shared/types'
 import type { JoinedWorktree } from '../stores/useWorktrees'
 import type { WorktreeStatus } from '../stores/useParallelWork'

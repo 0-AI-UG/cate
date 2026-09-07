@@ -5,7 +5,7 @@
 // =============================================================================
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { CaretRight, CaretDown, X } from '@phosphor-icons/react'
+import { ChevronRight as CaretRight, ChevronDown as CaretDown, X } from 'lucide-react'
 import type { SearchFileResult, SearchMatchRange } from '../../shared/types'
 import { getFileIcon } from './FileTreeNode'
 import { trimLeading } from './searchDisplay'

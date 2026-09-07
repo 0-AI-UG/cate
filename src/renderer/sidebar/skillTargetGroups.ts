@@ -1,6 +1,6 @@
 // Pure helper for WorkspaceSkillsTree — kept React-free so it can be unit-tested
 // in the node test environment (a `.test.ts` whose import graph reaches React /
-// phosphor / the logger would break or hang the node worker).
+// the icon library / the logger would break or hang the node worker).
 
 import { SKILL_TARGETS, type InstalledSkill, type SkillTargetId } from '../../shared/skills'
 

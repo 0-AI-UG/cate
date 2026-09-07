@@ -7,7 +7,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useState } from 'react'
-import { GithubLogo, Plus, Trash } from '@phosphor-icons/react'
+import { Github as GithubLogo, Plus, Trash } from 'lucide-react'
 import { SettingRow, SearchableBlock, SecondaryButton, TextInput } from './SettingsComponents'
 import { errorMessage } from '../lib/errorMessage'
 import type { SkillSource } from '../../shared/skills'

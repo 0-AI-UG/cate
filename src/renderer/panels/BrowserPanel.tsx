@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, ArrowUpRight, Camera, Key, Star, DotsThreeVertical } from '@phosphor-icons/react'
+import { Globe, ArrowLeft, ArrowRight, RotateCw as ArrowClockwise, ArrowUpRight, Camera, Key, Star, EllipsisVertical as DotsThreeVertical } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
@@ -184,6 +184,8 @@ function BrowserWebviewSlot({
         className={hidden ? 'invisible' : ''}
         style={{
           ...webviewStyle,
+          // Transparent pages need a browser canvas, not Cate's themed surface.
+          backgroundColor: '#fff',
           display: active ? 'flex' : 'none',
           transform: `scale(${displayScale})`,
           transformOrigin: 'top left',
@@ -1089,7 +1091,7 @@ export default function BrowserPanel({
                 }`}
                 aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
               >
-                <Star size={13} weight={isBookmarked ? 'fill' : 'regular'} />
+                <Star size={13} />
               </button>
             </Tooltip>
 

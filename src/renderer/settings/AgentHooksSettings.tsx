@@ -10,7 +10,7 @@
 // The live state readout is inspected from the workspace's files on open.
 // =============================================================================
 
-import { Warning } from '@phosphor-icons/react'
+import { TriangleAlert as Warning } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSelectedWorkspace } from '../stores/appStore'
@@ -97,7 +97,7 @@ export function AgentHooksSettings() {
                 <span className="text-sm text-primary truncate">{a.agent.displayName}</span>
                 {evaluation.autoSkipped && (
                   <span className="flex items-center gap-1 text-[11px] text-amber-400 mt-1">
-                    <Warning size={12} weight="fill" className="shrink-0" />
+                    <Warning size={12} className="shrink-0" />
                     Hooks aren&apos;t installed. Auto waits for this agent&apos;s config folder; choose On to install them.
                   </span>
                 )}

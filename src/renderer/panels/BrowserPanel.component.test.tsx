@@ -156,6 +156,13 @@ afterEach(() => {
 })
 
 describe('BrowserPanel DOM webview', () => {
+  it('backs transparent guest pages with white independently of the app theme', () => {
+    mount()
+
+    const webview = host.querySelector('webview') as HTMLElement
+    expect(webview.style.backgroundColor).toBe('rgb(255, 255, 255)')
+  })
+
   it('uses one CSS transform for the guest viewport and overlay coordinate space', () => {
     mount()
 

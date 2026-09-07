@@ -9,7 +9,7 @@
 // =============================================================================
 
 import React from 'react'
-import { ArrowClockwise, Warning } from '@phosphor-icons/react'
+import { RotateCw as ArrowClockwise, TriangleAlert as Warning } from 'lucide-react'
 import log from '../lib/logger'
 import { BaseErrorBoundary } from './BaseErrorBoundary'
 
@@ -41,7 +41,7 @@ export function PanelErrorBoundary({ children, panelType, panelId }: Props): Rea
         const label = panelType ? `This ${panelType} panel` : 'This panel'
         return (
           <div className="w-full h-full flex flex-col items-center justify-center bg-surface-4 text-secondary p-4 text-center select-none">
-            <Warning size={30} className="mb-2 text-muted" weight="duotone" />
+            <Warning size={30} className="mb-2 text-muted" />
             <p className="text-sm font-medium mb-1">{label} hit an error</p>
             <p className="text-xs text-muted max-w-[28ch] truncate" title={error.message}>
               {error.message}

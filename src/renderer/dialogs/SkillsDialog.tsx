@@ -21,16 +21,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  MagnifyingGlass,
-  ArrowsClockwise,
+  Search as MagnifyingGlass,
+  RefreshCw as ArrowsClockwise,
   SlidersHorizontal,
   X,
-  BookmarkSimple,
+  Bookmark as BookmarkSimple,
   Check,
-  CircleNotch,
-  CaretDown,
-  ArrowSquareOut,
-} from '@phosphor-icons/react'
+  LoaderCircle as CircleNotch,
+  ChevronDown as CaretDown,
+  SquareArrowOutUpRight as ArrowSquareOut,
+} from 'lucide-react'
 import { PaletteDialogShell } from '../ui/Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
@@ -426,7 +426,7 @@ function SkillRow({
         ) : (
           <BookmarkSimple
             size={15}
-            weight={saved ? 'fill' : 'regular'}
+
             className={saved ? 'text-accent' : 'text-muted hover:text-secondary'}
           />
         )}
