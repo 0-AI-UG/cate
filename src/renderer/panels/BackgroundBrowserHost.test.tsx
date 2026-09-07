@@ -6,6 +6,8 @@ import type { WorkspaceState } from '../../shared/types'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+vi.mock('./AgentPanel', () => ({ default: ({ panelId }: { panelId: string }) => <div data-retained-agent={panelId} /> }))
+
 vi.mock('./BrowserPanel', () => ({
   default: ({ panelId, workspaceId }: { panelId: string; workspaceId: string }) => (
     <div data-browser-panel={panelId} data-workspace={workspaceId} />
@@ -56,13 +58,14 @@ afterEach(() => {
 })
 
 describe('BackgroundBrowserHost', () => {
-  it('mounts every browser once and exposes only the surface with a visible slot', () => {
+  it('mounts every browser once and exposes only the surface with a visible slot', async () => {
     act(() => root.render(
       <PersistentBrowserHostContext.Provider value>
         <SurfaceSlot />
         <BackgroundBrowserHost />
       </PersistentBrowserHostContext.Provider>,
     ))
+    await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
     expect(host.querySelector('[data-browser-surface="browser-one"]')?.getAttribute('data-browser-surface-visible')).toBe('true')
     expect(host.querySelector('[data-browser-surface="browser-two"]')?.getAttribute('data-browser-surface-visible')).toBe('false')
   })
@@ -79,4 +82,19 @@ describe('BackgroundBrowserHost', () => {
     act(() => useAppStore.setState({ selectedWorkspaceId: 'one' }))
     expect(host.querySelector('[data-browser-panel="browser-one"]')).toBe(original)
   })
+})
+
+it('retains T3 for a warm return and evicts the least recent workspace', async () => {
+  const all = ['one', 'two', 'three'].map((id) => ({ ...workspace(id), panels: {
+    [`agent-${id}`]: { id: `agent-${id}`, type: 'agent' as const, title: 'Agent', isDirty: false },
+  } }))
+  act(() => { useAppStore.setState({ workspaces: all }); root.render(<BackgroundBrowserHost />) })
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  const original = host.querySelector('[data-retained-agent="agent-one"]')
+  expect(original).not.toBeNull()
+  act(() => useAppStore.setState({ selectedWorkspaceId: 'two' }))
+  act(() => useAppStore.setState({ selectedWorkspaceId: 'one' }))
+  expect(host.querySelector('[data-retained-agent="agent-one"]')).toBe(original)
+  act(() => useAppStore.setState({ selectedWorkspaceId: 'three' }))
+  expect(host.querySelector('[data-retained-agent="agent-two"]')).toBeNull()
 })

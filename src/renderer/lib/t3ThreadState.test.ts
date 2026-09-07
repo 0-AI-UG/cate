@@ -25,6 +25,7 @@ describe('T3 conversation state', () => {
     class FakeSocket {
       send = vi.fn()
       close = vi.fn()
+      // Capture guest-created sockets so the test can drive server events.
       constructor() { sockets.push(this) }
     }
     const window: any = { addEventListener: vi.fn() }
@@ -55,17 +56,17 @@ describe('T3 conversation state', () => {
 it('copies thread metadata only when changed and can force a fresh read', () => {
   const state = { connected: true, revision: 7, sequence: 12, threads: { a: { id: 'a', title: 'First' } } }
   const context = { window: { __cateT3Threads: state } }
-  expect(runInNewContext(t3ThreadPollScript(), context)).toEqual(state)
+  expect(runInNewContext(t3ThreadPollScript(), context)).toEqual({ connected: state.connected, revision: state.revision, sequence: state.sequence, threads: state.threads })
   expect(runInNewContext(t3ThreadPollScript(7), context)).toBeUndefined()
   state.threads.a.title = 'Updated'
   state.revision++
-  expect(runInNewContext(t3ThreadPollScript(7), context)).toEqual(state)
+  expect(runInNewContext(t3ThreadPollScript(7), context)).toEqual({ connected: state.connected, revision: state.revision, sequence: state.sequence, threads: state.threads })
   expect(runInNewContext(t3ThreadPollScript(8), context)).toBeUndefined()
   // Disconnects must still reach the host, even with unchanged thread content.
   state.connected = false
   state.revision++
   expect(runInNewContext(t3ThreadPollScript(8), context)?.connected).toBe(false)
-  expect(runInNewContext(t3ThreadPollScript(), context)).toEqual(state)
+  expect(runInNewContext(t3ThreadPollScript(), context)).toEqual({ connected: state.connected, revision: state.revision, sequence: state.sequence, threads: state.threads })
 })
 
 it('installs a single subscription when polling an uninitialized guest', () => {
@@ -78,4 +79,26 @@ it('installs a single subscription when polling an uninitialized guest', () => {
   expect(runInNewContext(t3ThreadPollScript(), context)?.revision).toBe(0)
   for (let i = 0; i < 20; i++) expect(runInNewContext(t3ThreadPollScript(0), context)).toBeUndefined()
   expect(sockets).toHaveBeenCalledOnce()
+})
+
+it('sends changed threads only, includes removals, and recovers a lost poll with a full snapshot', () => {
+  let socket: any
+  // Capture the guest-created socket so the test can drive server events.
+  // eslint-disable-next-line @typescript-eslint/no-this-alias
+  class FakeSocket { send = vi.fn(); close = vi.fn(); constructor() { socket = this } }
+  const context = { window: { addEventListener: vi.fn(), removeEventListener: vi.fn() }, WebSocket: FakeSocket,
+    location: { origin: 'http://localhost' }, setTimeout: vi.fn(), clearTimeout: vi.fn() }
+  runInNewContext(t3ThreadPollScript(), context)
+  const emit = (event: unknown) => socket.onmessage({ data: JSON.stringify({ _tag: 'Chunk', requestId: 'cate-shell', values: [event] }) })
+  emit({ kind: 'snapshot', snapshot: { snapshotSequence: 1, threads: [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }] } })
+  const initial = runInNewContext(t3ThreadPollScript(0), context)
+  expect(Object.keys(initial.threads)).toEqual(['a', 'b'])
+  emit({ kind: 'thread-upserted', sequence: 2, thread: { id: 'b', title: 'Changed' } })
+  const delta = runInNewContext(t3ThreadPollScript(initial.revision), context)
+  expect(delta).toMatchObject({ full: false, threads: { b: { title: 'Changed' } }, sequence: 2 })
+  expect(Object.keys(delta.threads)).toEqual(['b'])
+  // Pretend delivery of the delta failed: the next read must not lose b.
+  expect(Object.keys(runInNewContext(t3ThreadPollScript(initial.revision), context).threads)).toEqual(['a', 'b'])
+  emit({ kind: 'thread-removed', sequence: 3, threadId: 'a' })
+  expect(runInNewContext(t3ThreadPollScript(delta.revision), context)).toMatchObject({ full: false, removed: ['a'], threads: {} })
 })

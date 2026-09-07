@@ -10,9 +10,9 @@ import { PERF_ENABLED, countIpc } from './perf/perfMonitor'
 function ipcPayloadBytes(args: unknown[]): number {
   let n = 0
   for (const a of args) {
-    if (typeof a === 'string') n += a.length
+    if (typeof a === 'string') n += Buffer.byteLength(a)
     else if (a == null) continue
-    else { try { n += JSON.stringify(a).length } catch { /* circular/unserialisable */ } }
+    else { try { n += Buffer.byteLength(JSON.stringify(a)) } catch { /* circular/unserialisable */ } }
   }
   return n
 }
@@ -191,9 +191,10 @@ export function sendToWindow(windowId: number, channel: string, ...args: unknown
  * Broadcast an IPC message to ALL tracked windows.
  */
 export function broadcastToAll(channel: string, ...args: unknown[]): void {
-  if (PERF_ENABLED) countIpc(channel, ipcPayloadBytes(args))
+  const bytes = PERF_ENABLED ? ipcPayloadBytes(args) : 0
   for (const win of windows.values()) {
     if (!win.isDestroyed()) {
+      if (PERF_ENABLED) countIpc(channel, bytes)
       win.webContents.send(channel, ...args)
     }
   }
@@ -203,8 +204,10 @@ export function broadcastToAll(channel: string, ...args: unknown[]): void {
  * Broadcast an IPC message to all windows EXCEPT the specified one.
  */
 export function broadcastToAllExcept(excludeId: number, channel: string, ...args: unknown[]): void {
+  const bytes = PERF_ENABLED ? ipcPayloadBytes(args) : 0
   for (const [id, win] of windows.entries()) {
     if (id !== excludeId && !win.isDestroyed()) {
+      if (PERF_ENABLED) countIpc(channel, bytes)
       win.webContents.send(channel, ...args)
     }
   }

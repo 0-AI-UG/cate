@@ -1712,13 +1712,30 @@ export interface PerfProcSample {
   memMB: number
 }
 
+/** Runtime-daemon CPU uses one core = 100%; remote hosts stay separate from
+ * Electron app metrics. Spawn counts cover ps/lsof process-monitor commands. */
+export interface RuntimePerfSample {
+  pid: number
+  platform: string
+  windowMs: number
+  cpu: number
+  rssMB: number
+  monitorSpawnsPerSec: Record<string, number>
+  monitorScansPerSec: Record<string, number>
+  eventLoop: { p95Ms: number; maxMs: number }
+}
+
 export interface PerfSnapshot {
+  /** Wall-clock sample boundary; distinguishes fresh samples from repeated reads. */
+  sampledAt?: number
   /** Sampling window in ms; all rates below are per-second. */
   windowMs: number
   focused: boolean
   totalCpu: number
   procs: PerfProcSample[]
+  /** Actual runtime process-monitor launches, summed across sampled hosts. */
   spawnsPerSec: Record<string, number>
+  runtimes?: Array<{ id: string; sample: RuntimePerfSample | null; error?: string }>
   ipc: Array<{ channel: string; kbPerSec: number; callsPerSec: number }>
   terminal: { kbPerSec: number; chunksPerSec: number }
 }
