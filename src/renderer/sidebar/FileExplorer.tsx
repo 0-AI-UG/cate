@@ -4,9 +4,11 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import log from '../lib/logger'
 import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X } from '@phosphor-icons/react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
+import { VirtualFileRows, type VirtualFileRowsHandle } from './VirtualFileRows'
+import { createExplorerRefresh } from './explorerRefresh'
+import { perfCount } from '../lib/perf/perfClient'
 import { FileTreeNode } from './FileTreeNode'
 import { CreateFileForm } from './CreateFileForm'
 import { isNavKey, resolveTreeNavAction } from './treeKeyboardNav'
@@ -58,7 +60,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
   //  - expandedPaths: directory paths the user has expanded.
   //  - childrenCache: each loaded directory's children (one fsReadDir level),
   //    keyed by stable path so it survives root re-renders. Re-read on reload by
-  //    refreshExpandedChildren so a move/create/delete reflects on-disk state
+  //    the refresh queue so a move/create/delete reflects on-disk state
   //    instead of showing stale children (e.g. a moved file lingering as a copy).
   //  - loadingPaths: directories currently being read (drives the "…" spinner).
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set())
@@ -74,16 +76,23 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
   const rootCreateInputRef = useRef<HTMLInputElement>(null)
   const lastSelectedPath = useRef<string | null>(null)
   const treeContainerRef = useRef<HTMLDivElement>(null)
-  const cleanupRef = useRef<(() => void) | null>(null)
-  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const virtualRowsRef = useRef<VirtualFileRowsHandle>(null)
+  const [editingPaths, setEditingPaths] = useState<Set<string>>(new Set())
+  const onEditingChange = useCallback((path: string, editing: boolean) => {
+    setEditingPaths((previous) => {
+      if (previous.has(path) === editing) return previous
+      const next = new Set(previous)
+      if (editing) next.add(path); else next.delete(path)
+      return next
+    })
+  }, [])
+
   const rootPathRef = useRef(rootPath)
+  const childrenCacheRef = useRef(childrenCache)
+  const childRequests = useRef(new Map<string, Promise<void>>())
+  childrenCacheRef.current = childrenCache
+  const refreshRef = useRef<ReturnType<typeof createExplorerRefresh<FileTreeNodeType[]>> | null>(null)
   const createSeqRef = useRef(0)
-  const loadRetryTimerRef = useRef<number | null>(null)
-  // Mirror of expandedPaths so the stable loadTree/refresh callbacks can read the
-  // current set without taking it as a dependency (which would re-create the
-  // fs-watch effect on every expand/collapse).
-  const expandedPathsRef = useRef(expandedPaths)
-  useEffect(() => { expandedPathsRef.current = expandedPaths }, [expandedPaths])
 
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
 
@@ -158,10 +167,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
     return merged
   }, [filter, expandedPaths])
 
-  const isPathVisible = useMemo(
-    () => (filter ? (path: string) => filter.visible.has(path) : undefined),
-    [filter],
-  )
 
   // Flat, top-to-bottom list of every visible row: root nodes plus the children
   // of each expanded folder. Drives keyboard navigation and shift-click ranges.
@@ -183,6 +188,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
     return out
   }, [nodes, effectiveExpanded, childrenCache, filter])
 
+  const flatPaths = useMemo(() => flatRows.map((row) => row.path), [flatRows])
+
   const flatIndexByPath = useMemo(
     () => new Map(flatRows.map((r, i) => [r.path, i] as const)),
     [flatRows],
@@ -193,23 +200,23 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
   // ---------------------------------------------------------------------------
 
   // Lazily read a directory's children into the cache (one fsReadDir level).
-  const ensureChildrenLoaded = useCallback(async (path: string) => {
-    if (!window.electronAPI || childrenCache.has(path)) return
-    setLoadingPaths((s) => new Set(s).add(path))
-    try {
-      const entries = await window.electronAPI.fsReadDir(path, selectedWorkspaceId)
-      setChildrenCache((prev) => new Map(prev).set(path, entries))
-    } catch {
-      // Cache an empty array so an unreadable folder doesn't retry-loop.
-      setChildrenCache((prev) => new Map(prev).set(path, []))
-    } finally {
-      setLoadingPaths((s) => {
-        const n = new Set(s)
-        n.delete(path)
-        return n
+  const ensureChildrenLoaded = useCallback((path: string): Promise<void> => {
+    if (childrenCacheRef.current.has(path)) return Promise.resolve()
+    const pending = childRequests.current.get(path)
+    if (pending) return pending
+    const refresh = refreshRef.current
+    if (!refresh) return Promise.resolve()
+    setLoadingPaths((previous) => new Set(previous).add(path))
+    const request = refresh.request(path).finally(() => {
+      if (refreshRef.current !== refresh) return
+      childRequests.current.delete(path)
+      setLoadingPaths((previous) => {
+        const next = new Set(previous); next.delete(path); return next
       })
-    }
-  }, [childrenCache, selectedWorkspaceId])
+    })
+    childRequests.current.set(path, request)
+    return request
+  }, [])
 
   const expand = useCallback(async (path: string) => {
     setExpandedPaths((s) => (s.has(path) ? s : new Set(s).add(path)))
@@ -230,151 +237,76 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
     else void expand(path)
   }, [expandedPaths, expand, collapse])
 
-  // Re-read the children of every currently-expanded folder from disk and prune
-  // any expanded paths that no longer exist. Called after a (re)load so reloads,
-  // fs-watch events, and create/move/delete reflect on-disk state. Expansion
-  // itself is preserved across reloads (only vanished paths are dropped). Reads
-  // expandedPaths via a ref so this callback stays stable for loadTree.
-  const refreshExpandedChildren = useCallback(async () => {
-    if (!window.electronAPI) return
-    const paths = [...expandedPathsRef.current]
-    if (paths.length === 0) {
-      // Nothing expanded → drop stale cache so a later expand reads fresh.
-      setChildrenCache((prev) => (prev.size === 0 ? prev : new Map()))
-      return
-    }
-    const results = await Promise.all(
-      paths.map(async (p) => {
-        try {
-          return [p, await window.electronAPI!.fsReadDir(p, selectedWorkspaceId)] as const
-        } catch {
-          return [p, null] as const // null = path gone / unreadable
-        }
-      }),
-    )
-    // Rebuild the cache from the expanded set only; collapsed folders re-read on
-    // next expand. Orphaned entries (parent pruned) are simply not walked.
-    setChildrenCache(() => {
-      const next = new Map<string, FileTreeNodeType[]>()
-      for (const [p, kids] of results) {
-        if (kids) next.set(p, kids)
-      }
-      return next
-    })
-    setExpandedPaths((prev) => {
-      let changed = false
-      const next = new Set(prev)
-      for (const [p, kids] of results) {
-        if (kids === null && next.has(p)) {
-          next.delete(p)
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [selectedWorkspaceId])
-
-  // ---------------------------------------------------------------------------
-  // Load tree
-  // ---------------------------------------------------------------------------
-
-  const loadTree = useCallback(async (dirPath: string, attempt = 0) => {
-    if (!window.electronAPI) return
-
-    setIsLoading(true)
-    try {
-      const entries = await window.electronAPI.fsReadDir(dirPath, selectedWorkspaceId)
-
-      // Git decorations are owned by gitStatusStore (see useGitTreeFor above);
-      // loadTree only refreshes the on-disk file structure now.
-      setNodes(entries)
-      // Re-read every expanded folder so the refreshed root read propagates the
-      // whole way down the tree (and prune folders that vanished on disk).
-      void refreshExpandedChildren()
-      setIsLoading(false)
-    } catch (err) {
-      // The read was rejected (e.g. the root path isn't registered as an allowed
-      // root in main yet — see FS_READ_RETRIES note). Retry a few times before
-      // giving up, but bail if the root changed underneath us in the meantime.
-      if (attempt < FS_READ_RETRIES && rootPathRef.current === dirPath) {
-        loadRetryTimerRef.current = window.setTimeout(
-          () => loadTree(dirPath, attempt + 1),
-          FS_READ_RETRY_DELAY_MS,
-        )
-        return
-      }
-      log.warn('[file-explorer] Load tree failed:', err)
-      setNodes([])
-      setIsLoading(false)
-    }
-  }, [refreshExpandedChildren, selectedWorkspaceId])
-
-  // ---------------------------------------------------------------------------
-  // Watch for filesystem changes
-  // ---------------------------------------------------------------------------
-
+  // All filesystem-triggered reads share one queue. Preserve untouched cache
+  // entries so unrelated branches retain their identities.
   useEffect(() => {
     rootPathRef.current = rootPath
-
-    // Clean up previous watcher
-    if (cleanupRef.current) {
-      cleanupRef.current()
-      cleanupRef.current = null
-    }
-
-    // Cancel any in-flight load retry from a previous root.
-    if (loadRetryTimerRef.current !== null) {
-      window.clearTimeout(loadRetryTimerRef.current)
-      loadRetryTimerRef.current = null
-    }
-
+    childRequests.current.clear()
+    setNodes([])
+    setChildrenCache(new Map())
+    setExpandedPaths(new Set())
+    setSelectedPaths(new Set())
+    setLoadingPaths(new Set())
     if (!rootPath || !window.electronAPI) return
-
-    // Initial load
-    loadTree(rootPath)
-
-    // Watch via the shared refcounted manager (one underlying watcher per root,
-    // multiplexed) so the Explorer and the Search view's git-tree watcher don't
-    // tear down each other's subscription. Coalesce bursts (e.g. a build writing
-    // many files) with a short trailing debounce.
-    const scheduleReload = () => {
-      if (rootPathRef.current !== rootPath) return
-      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
-      reloadTimerRef.current = setTimeout(() => {
-        reloadTimerRef.current = null
-        if (rootPathRef.current === rootPath) loadTree(rootPath)
-      }, 150)
-    }
-    const releaseWatch = watchFsRoot(rootPath, scheduleReload, selectedWorkspaceId)
-
-    // Reload when the exclusions list changes so hidden/shown folders update
-    // without a relaunch.
-    const unsubscribeSettings = window.electronAPI.onSettingsChanged((key) => {
-      if (key === 'fileExclusions' && rootPathRef.current === rootPath) {
-        loadTree(rootPath)
-      }
+    let disposed = false
+    setIsLoading(true)
+    const refresh = createExplorerRefresh<FileTreeNodeType[]>({
+      root: rootPath,
+      loaded: () => [...childrenCacheRef.current.keys(), ...childRequests.current.keys()],
+      read: async (path) => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            perfCount('explorerDirectoryRead')
+            if (disposed) return []
+            return await window.electronAPI.fsReadDir(path, selectedWorkspaceId)
+          } catch (error) {
+            if (disposed || path !== rootPath || attempt >= FS_READ_RETRIES) throw error
+            await new Promise<void>((resolve) => setTimeout(resolve, FS_READ_RETRY_DELAY_MS))
+          }
+        }
+      },
+      apply: (path, entries) => {
+        if (path === rootPath) { setNodes(entries ?? []); setIsLoading(false) }
+        else setChildrenCache((previous) => {
+          const next = new Map(previous)
+          if (entries) next.set(path, entries)
+          else next.delete(path)
+          childrenCacheRef.current = next
+          return next
+        })
+        if (!entries) setExpandedPaths((previous) => {
+          if (!previous.has(path)) return previous
+          const next = new Set(previous); next.delete(path); return next
+        })
+      },
+      remove: (path) => {
+        const normalized = path.replace(/\\/g, '/')
+        const under = (key: string) => {
+          const value = key.replace(/\\/g, '/')
+          return value === normalized || value.startsWith(normalized + '/')
+        }
+        setChildrenCache((previous) => new Map([...previous].filter(([key]) => !under(key))))
+        setExpandedPaths((previous) => new Set([...previous].filter((key) => !under(key))))
+      },
     })
-
-    cleanupRef.current = () => {
-      if (reloadTimerRef.current) {
-        clearTimeout(reloadTimerRef.current)
-        reloadTimerRef.current = null
-      }
+    refreshRef.current = refresh
+    refresh.refresh([rootPath])
+    const releaseWatch = watchFsRoot(rootPath, refresh.event, selectedWorkspaceId)
+    const unsubscribeSettings = window.electronAPI.onSettingsChanged((key) => {
+      if (key === 'fileExclusions') refresh.refresh([rootPath, ...childrenCacheRef.current.keys()])
+    })
+    return () => {
+      disposed = true
+      refresh.dispose()
+      refreshRef.current = null
       releaseWatch()
       unsubscribeSettings()
     }
+  }, [rootPath, selectedWorkspaceId])
 
-    return () => {
-      if (cleanupRef.current) {
-        cleanupRef.current()
-        cleanupRef.current = null
-      }
-      if (loadRetryTimerRef.current !== null) {
-        window.clearTimeout(loadRetryTimerRef.current)
-        loadRetryTimerRef.current = null
-      }
-    }
-  }, [rootPath, loadTree, selectedWorkspaceId])
+  const loadTree = useCallback((_dirPath: string) => {
+    refreshRef.current?.refresh([rootPath, ...childrenCacheRef.current.keys()])
+  }, [rootPath])
 
   // Inline Explorer search is a lightweight name-only tree filter ("filter on
   // type"). Full content search now lives in the dedicated Search view.
@@ -433,11 +365,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
   const moveCursorTo = useCallback((path: string) => {
     setSelectedPaths(new Set([path]))
     lastSelectedPath.current = path
-    requestAnimationFrame(() => {
-      treeContainerRef.current
-        ?.querySelector<HTMLElement>(`[data-filepath="${CSS.escape(path)}"]`)
-        ?.scrollIntoView({ block: 'nearest' })
-    })
+    virtualRowsRef.current?.reveal(path)
   }, [])
 
   const handleFileOpen = useCallback(
@@ -536,6 +464,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
     const targetDir = getSelectedDir()
     if (targetDir && targetDir !== rootPath) {
       // Delegate creation to the selected folder's FileTreeNode
+      virtualRowsRef.current?.reveal(targetDir)
       createSeqRef.current++
       setCreateRequest({ type, targetDir, seq: createSeqRef.current })
     } else {
@@ -740,7 +669,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
       ) : (
         <div
           ref={treeContainerRef}
-          className="flex-1 overflow-y-auto py-1 outline-none"
+          className="relative flex-1 overflow-y-auto py-1 outline-none"
           // Focusable + tagged so Delete/Backspace (incl. Cmd+Backspace) deletes
           // the selection here instead of being swallowed by the canvas-level
           // shortcut handler. Focused explicitly from onSelect (draggable rows
@@ -781,29 +710,37 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
           {isFiltering && flatRows.length === 0 ? (
             <div className="flex items-center justify-center py-4 text-xs text-muted">No matches</div>
           ) : (
-            nodes.map((node) => (
-              <FileTreeNode
-                key={node.path}
-                node={node}
-                depth={0}
-                git={gitTree}
-                selectedPaths={selectedPaths}
-                expandedPaths={effectiveExpanded}
-                childrenCache={childrenCache}
-                loadingPaths={loadingPaths}
-                onSelect={handleSelect}
-                onFileOpen={handleFileOpen}
-                onToggleExpand={toggleExpand}
-                onExpand={expand}
-                onDeletePaths={deletePaths}
-                onTreeChanged={handleReload}
-                rootPath={rootPath}
-                workspaceId={selectedWorkspaceId}
-                isPathVisible={isPathVisible}
-                createRequest={createRequest}
-                onCreateRequestHandled={() => setCreateRequest(null)}
-              />
-            ))
+            <VirtualFileRows
+              ref={virtualRowsRef}
+              scrollRef={treeContainerRef}
+              paths={flatPaths}
+              pinned={new Set([...editingPaths, ...(createRequest ? [createRequest.targetDir] : [])])}
+              renderRow={(index) => {
+                const { node, depth } = flatRows[index]
+                return <FileTreeNode
+                  key={node.path}
+                  flat
+                  onEditingChange={onEditingChange}
+                  node={node}
+                  depth={depth}
+                  git={gitTree}
+                  selectedPaths={selectedPaths}
+                  expandedPaths={effectiveExpanded}
+                  childrenCache={childrenCache}
+                  loadingPaths={loadingPaths}
+                  onSelect={handleSelect}
+                  onFileOpen={handleFileOpen}
+                  onToggleExpand={toggleExpand}
+                  onExpand={expand}
+                  onDeletePaths={deletePaths}
+                  onTreeChanged={handleReload}
+                  rootPath={rootPath}
+                  workspaceId={selectedWorkspaceId}
+                  createRequest={createRequest}
+                  onCreateRequestHandled={() => setCreateRequest(null)}
+                />
+              }}
+            />
           )}
 
           {/* Inline create input for root-level creation (from empty space context menu) */}

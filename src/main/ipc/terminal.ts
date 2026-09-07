@@ -322,7 +322,7 @@ async function spawnTerminal(
     if (shuttingDown) return
     terminalId = id
     sawData = true
-    countTerminalData(data.length)
+    countTerminalData(data)
     getOrCreateLogger(id).append(data)
 
     const transferState = transferStates.get(id)

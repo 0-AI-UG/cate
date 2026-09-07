@@ -15,7 +15,9 @@ import {
   PERF_ENABLED,
   getRenderCounts,
   getLongTasks,
+  isLongTaskObserverSupported,
   getFps,
+  getFrameTimes,
   resetPerfWindow,
 } from '../lib/perf/perfClient'
 
@@ -40,6 +42,7 @@ export default function PerfHud(): JSX.Element | null {
   const [visible, setVisible] = useState(true)
   const [snap, setSnap] = useState<PerfSnapshot | null>(null)
   const [fps, setFps] = useState(0)
+  const [frames, setFrames] = useState({ p95Ms: 0, maxMs: 0 })
   const [longTasks, setLongTasks] = useState({ count: 0, maxMs: 0 })
   const [renderRates, setRenderRates] = useState<RenderRate[]>([])
 
@@ -72,6 +75,7 @@ export default function PerfHud(): JSX.Element | null {
       const lt = getLongTasks()
       if (alive) {
         setFps(getFps())
+        setFrames(getFrameTimes())
         setLongTasks(lt)
         setRenderRates(rates.slice(0, 8))
       }
@@ -112,7 +116,7 @@ export default function PerfHud(): JSX.Element | null {
       <div className="flex gap-3 mb-1">
         <span className={fpsColor}>{fps} fps</span>
         <span className={longTasks.count > 0 ? 'text-amber-300' : 'text-zinc-400'}>
-          longtasks {longTasks.count}{longTasks.maxMs ? ` (max ${Math.round(longTasks.maxMs)}ms)` : ''}
+          {isLongTaskObserverSupported() ? `longtasks ${longTasks.count}` : 'longtasks unavailable'}{longTasks.maxMs ? ` (max ${Math.round(longTasks.maxMs)}ms)` : ''}
         </span>
       </div>
 
@@ -120,7 +124,7 @@ export default function PerfHud(): JSX.Element | null {
       {snap ? (
         <>
           <div className="text-zinc-400 mt-1.5 border-t border-subtle pt-1">
-            main · cpu <span className="text-zinc-100">{snap.totalCpu}%</span> ·{' '}
+            Electron · cpu <span className="text-zinc-100">{snap.totalCpu}%</span> ·{' '}
             {snap.focused ? 'focused' : <span className="text-amber-300">backgrounded</span>}
           </div>
           {snap.procs.slice(0, 5).map((p) => (
@@ -135,7 +139,7 @@ export default function PerfHud(): JSX.Element | null {
 
           {Object.keys(snap.spawnsPerSec).length > 0 && (
             <>
-              <div className="text-zinc-400 mt-1.5">subprocess spawns/s</div>
+              <div className="text-zinc-400 mt-1.5">runtime monitor spawns/s</div>
               {Object.entries(snap.spawnsPerSec).map(([k, v]) => (
                 <div key={k} className="flex justify-between text-zinc-300">
                   <span>{k}</span><span className={v > 2 ? 'text-amber-300' : 'text-zinc-400'}>{v}</span>
@@ -160,10 +164,17 @@ export default function PerfHud(): JSX.Element | null {
         <div className="text-zinc-500 mt-1">sampling main process…</div>
       )}
 
+      <div className="text-zinc-400">frame p95 {frames.p95Ms.toFixed(1)}ms · max {frames.maxMs.toFixed(1)}ms</div>
+      {snap?.runtimes?.map(({ id, sample, error }) => (
+        <div key={id} className="text-zinc-400 mt-1">
+          {id}: {sample ? `${sample.cpu.toFixed(1)}% core · ${Math.round(sample.rssMB)}MB RSS · loop p95 ${sample.eventLoop.p95Ms.toFixed(1)}ms` : `unavailable (${error})`}
+        </div>
+      ))}
+
       {/* Renderer render rates */}
       {renderRates.length > 0 && (
         <>
-          <div className="text-zinc-400 mt-1.5 border-t border-subtle pt-1">renders/s</div>
+          <div className="text-zinc-400 mt-1.5 border-t border-subtle pt-1">renders / work counters per second</div>
           {renderRates.map((r) => (
             <div key={r.name} className="flex justify-between text-zinc-300">
               <span className="truncate mr-2">{r.name}</span>

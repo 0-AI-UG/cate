@@ -9,6 +9,7 @@
 // shell + env). lsof-based cwd resolution is POSIX-only (null elsewhere).
 // =============================================================================
 
+import { countMonitorScan, countMonitorSpawn } from '../perf'
 import type { IPty } from 'node-pty'
 import os from 'os'
 import { execFile } from 'child_process'
@@ -40,6 +41,7 @@ const isLinux = process.platform === 'linux'
 /** ONE `ps` snapshot of the whole process table, indexed for tree walks. */
 function snapshotProcessTreePs(): Promise<ProcTree> {
   return new Promise((resolve) => {
+    countMonitorSpawn('ps')
     execFile('ps', ['-axo', 'pid=,ppid=,comm='], {
       encoding: 'utf-8',
       timeout: 3000,
@@ -81,6 +83,7 @@ function cwdForPid(pid: number): Promise<string | null> {
   if (process.platform === 'win32') return Promise.resolve(null)
   if (isLinux) return getCwdProc(pid)
   return new Promise((resolve) => {
+    countMonitorSpawn('lsof')
     execFile('lsof', ['-a', '-d', 'cwd', '-p', `${pid}`, '-Fn'], { encoding: 'utf-8', timeout: 2000 }, (err, stdout) => {
       if (err || !stdout) { return resolve(null) }
       const nameLine = stdout.split('\n').find((l) => l.startsWith('n'))
@@ -374,6 +377,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
     },
 
     async scanActivity(ids: string[]): Promise<Record<string, PtyActivity>> {
+      countMonitorScan('activity')
       const owned = ids
         // A suspended pty's process tree is frozen (SIGSTOP) — skip it so we
         // don't scan a stale snapshot of a stopped tree.
@@ -395,6 +399,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
     },
 
     async scanPorts(ids: string[]): Promise<Record<string, number[]>> {
+      countMonitorScan('ports')
       const owned = ids
         .map((id) => ({ id, pid: ptys.get(id)?.pid }))
         .filter((e): e is { id: string; pid: number } => e.pid != null)
@@ -426,6 +431,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       return new Promise((resolve) => {
         // `-a` ANDs the network filter with `-p <pids>` so lsof inspects ONLY
         // these process trees (without it lsof ORs the filters → whole system).
+        countMonitorSpawn('lsof')
         execFile('lsof', ['-iTCP', '-sTCP:LISTEN', '-P', '-n', '-a', '-p', pids.join(','), '-F', 'pn'], {
           timeout: 5000,
         }, (err, stdout) => {

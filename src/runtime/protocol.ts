@@ -63,6 +63,7 @@ export type AnyFrame = ClientFrame | ServerFrame
 
 export const Methods = {
   ping: 'ping',
+  perfSnapshot: 'perf.snapshot',
 
   validatePath: 'validatePath',
   validatePathStrict: 'validatePathStrict',
