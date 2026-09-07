@@ -127,3 +127,39 @@ test('user clicks and types directly in the live webview at non-default zoom', a
     workspaceId, 'readCommand', { panelId, command: ['get', 'attr', 'body', 'data-saved'] },
   ), browser), { timeout: 20_000 }).toMatchObject({ ok: true, result: { value: 'Typed inside Cate' } })
 })
+
+test('snapshots omit hidden and boxless links while keeping off-screen links clickable', async () => {
+  const url = `data:text/html,${encodeURIComponent(`
+    <title>Snapshot visibility</title>
+    <a href="#" onclick="event.preventDefault();document.body.dataset.clicked='yes'">Visible link</a>
+    <a href="#" hidden>Hidden attribute</a>
+    <div style="display:none"><a href="#">Hidden ancestor</a></div>
+    <a href="#" style="visibility:hidden">Hidden visibility</a>
+    <a href="#" style="opacity:0">Transparent link</a>
+    <a href="#" style="display:contents">Boxless link</a>
+    <a href="#" style="display:block;width:0;height:0;overflow:hidden">Zero size link</a>
+    <a href="#" style="position:absolute;top:3000px" onclick="event.preventDefault();document.body.dataset.clicked='offscreen'">Offscreen link</a>
+  `)}`
+  const browser = await page.evaluate((fixtureUrl) => window.__cateE2E!.createBrowser(fixtureUrl, { x: 120, y: 120 }), url)
+  await expect.poll(
+    () => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId),
+    { timeout: 20_000 },
+  ).not.toBeNull()
+  for (const command of [['snapshot'], ['snapshot', '-i']]) {
+    const snapshot = await page.evaluate(({ browser, command }) => window.__cateE2E!.browserInvoke(
+      browser.workspaceId, 'readCommand', { panelId: browser.panelId, command },
+    ), { browser, command })
+    expect(snapshot.ok).toBe(true)
+    const refs = (snapshot.result as { refs: Array<{ ref: string; role: string; name: string }> }).refs
+    const links = refs.filter((ref) => ref.role === 'link')
+    expect(links.map((ref) => ref.name)).toEqual(['Visible link', 'Offscreen link'])
+    for (const [index, link] of links.entries()) {
+      expect(await page.evaluate(({ browser, ref }) => window.__cateE2E!.browserInvoke(
+        browser.workspaceId, 'command', { panelId: browser.panelId, command: ['click', ref] },
+      ), { browser, ref: link.ref })).toMatchObject({ ok: true })
+      expect(await page.evaluate((browser) => window.__cateE2E!.browserInvoke(
+        browser.workspaceId, 'readCommand', { panelId: browser.panelId, command: ['get', 'attr', 'body', 'data-clicked'] },
+      ), browser)).toMatchObject({ ok: true, result: { value: index === 0 ? 'yes' : 'offscreen' } })
+    }
+  }
+})

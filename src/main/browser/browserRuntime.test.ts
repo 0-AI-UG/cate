@@ -13,6 +13,8 @@ function guest(id: number, command?: (method: string, params?: Record<string, un
     if (method === 'Accessibility.getFullAXTree') return {
       nodes: [{ role: { value: 'button' }, name: { value: 'Save' }, backendDOMNodeId: 7 }],
     }
+    if (method === 'DOM.resolveNode') return { object: { objectId: 'save' } }
+    if (method === 'Runtime.callFunctionOn') return { result: { value: true } }
     return {}
   })
   return {
@@ -78,6 +80,30 @@ describe('BrowserRuntimeRegistry', () => {
       .resolves.toEqual({ error: 'stale-browser-ref' })
   })
 
+  it.each([false, true])('omits invisible and detached interactive refs (interactiveOnly=%s)', async (interactiveOnly) => {
+    const contents = guest(48, async (method, params) => {
+      if (method === 'Accessibility.getFullAXTree') return {
+        nodes: ['Hidden', 'Detached', 'Visible'].map((name, index) => ({
+          role: { value: 'link' }, name: { value: name }, backendDOMNodeId: index + 1,
+        })),
+      }
+      if (method === 'DOM.resolveNode') {
+        if (params?.backendNodeId === 2) throw new Error('No node with given id found')
+        return { object: { objectId: String(params?.backendNodeId) } }
+      }
+      if (method === 'Runtime.callFunctionOn') return { result: { value: params?.objectId === '3' } }
+      return {}
+    })
+    const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }
+    await runtime.attach(contents as never, identity)
+    await expect(runtime.execute(48, identity, 'snapshot', { interactiveOnly })).resolves.toMatchObject({
+      result: {
+        refs: [{ ref: '@s1e1', role: 'link', name: 'Visible' }],
+        snapshot: '- link "Visible" [ref=s1e1]',
+      },
+    })
+  })
+
   it('merges same-origin and cross-origin frame trees and keeps refs session-bound', async () => {
     const contents = guest(45, async (method, params, sessionId) => {
       if (method === 'Page.getFrameTree') return {
@@ -95,7 +121,7 @@ describe('BrowserRuntimeRegistry', () => {
         return { nodes: [] }
       }
       if (method === 'DOM.resolveNode') return { object: { objectId: sessionId === 'cross-session' ? 'cross-object' : 'same-object' } }
-      if (method === 'Runtime.callFunctionOn') return { result: { value: 'yes' } }
+      if (method === 'Runtime.callFunctionOn') return { result: { value: String(params?.functionDeclaration).includes('checkVisibility') ? true : 'yes' } }
       return {}
     })
     const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }

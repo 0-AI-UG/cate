@@ -675,6 +675,21 @@ class BrowserTargetRuntime {
         const identity = `${source.sessionId ?? 'root'}:${backendNodeId}`
         if (seen.has(identity)) continue
         seen.add(identity)
+        // AX can expose interactive nodes without a rendered box (for example
+        // display:contents links), which cannot be targeted by box()/click.
+        // Keep off-screen controls: visibility here does not mean in-viewport.
+        if (INTERACTIVE_ROLES.has(role)) {
+          try {
+            const visible = await this.callOn({ backendNodeId, sessionId: source.sessionId }, `function () {
+              if (!(this instanceof Element) || !this.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
+              return Array.from(this.getClientRects()).some(rect => rect.width > 0 && rect.height > 0);
+            }`)
+            if (visible.value !== true) continue
+          } catch {
+            // The node/frame may disappear between the AX query and this check.
+            continue
+          }
+        }
         index += 1
         const ref = `@${snapshotId}e${index}`
         this.refs.set(ref, {
