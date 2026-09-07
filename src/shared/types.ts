@@ -811,7 +811,7 @@ export type ShortcutAction = keyof typeof SHORTCUT_DEFINITIONS
 /** Actions the native menu can dispatch into the renderer. Superset of
  *  ShortcutAction — includes a few menu-only items that have no keyboard
  *  binding. */
-export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace' | 'manageLayouts'
+export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace'
 
 /** Browser-panel navigation actions. These are panel-scoped (handled by the
  *  focused BrowserPanel) rather than global shortcuts, so they don't collide

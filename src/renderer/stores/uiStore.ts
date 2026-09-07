@@ -44,11 +44,7 @@ interface UIStoreState {
   showCommandPalette: boolean
   /** Untitled editor to reuse when the palette was opened as an Open File picker. */
   openFileTargetPanelId: string | null
-  showLayoutsDialog: boolean
   showSkillsDialog: boolean
-  /** Bumped whenever a saved layout is created/deleted, so open surfaces
-   *  (dialog, empty-canvas overlay) can re-list. */
-  layoutsVersion: number
   /** Whether the minimap is currently expanded. */
   minimapOpen: boolean
   showSettings: boolean
@@ -92,9 +88,7 @@ interface UIStoreState {
 interface UIStoreActions {
   setShowCommandPalette: (show: boolean) => void
   openFilePalette: (targetPanelId: string) => void
-  setShowLayoutsDialog: (show: boolean) => void
   setShowSkillsDialog: (show: boolean) => void
-  bumpLayoutsVersion: () => void
   setMinimapOpen: (open: boolean) => void
   toggleMinimapOpen: () => void
   openSettings: (initialTab?: string) => void
@@ -137,9 +131,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   // --- State ---
   showCommandPalette: false,
   openFileTargetPanelId: null,
-  showLayoutsDialog: false,
   showSkillsDialog: false,
-  layoutsVersion: 0,
   minimapOpen: false,
   showSettings: false,
   settingsInitialTab: null,
@@ -165,16 +157,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
     set({ showCommandPalette: true, openFileTargetPanelId: targetPanelId })
   },
 
-  setShowLayoutsDialog(show) {
-    set({ showLayoutsDialog: show })
-  },
-
   setShowSkillsDialog(show) {
     set({ showSkillsDialog: show })
-  },
-
-  bumpLayoutsVersion() {
-    set((s) => ({ layoutsVersion: s.layoutsVersion + 1 }))
   },
 
   setMinimapOpen(open) {

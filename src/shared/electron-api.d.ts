@@ -634,22 +634,6 @@ export interface ElectronAPI {
   /** Persist remote-workspace restore entries (cate-runtime:// only). */
   remoteProjectsSet(entries: RemoteProjectEntry[]): Promise<void>
 
-  // ---------------------------------------------------------------------------
-  // Layouts
-  // ---------------------------------------------------------------------------
-
-  /** Save a named layout snapshot. */
-  layoutSave(name: string, layout: unknown): Promise<void>
-
-  /** List names of all saved layouts. */
-  layoutList(): Promise<string[]>
-
-  /** Load a named layout snapshot. Returns null if not found. */
-  layoutLoad(name: string): Promise<unknown>
-
-  /** Delete a named layout. */
-  layoutDelete(name: string): Promise<void>
-
   /** Capture a webview's content and save as PNG. Returns file path + data URL or
    *  null. Pass `{ wantDataUrl: false }` (CLI/agent path) to skip the base64
    *  encode and get back only the file path; `saveTo: 'temp'` writes into the OS
@@ -996,9 +980,6 @@ export interface ElectronAPI {
 
   /** Subscribe to native menu action dispatches (File, Edit, etc.). */
   onMenuTriggerAction(callback: (action: import('./types').MenuActionId) => void): () => void
-
-  /** Subscribe to "load this saved layout" dispatches from the native Layouts menu. */
-  onMenuLoadLayout(callback: (name: string) => void): () => void
 
   /** Subscribe to browser navigation shortcuts forwarded from a focused webview
    *  guest (Cmd+R/[/]/L) or the Browser menu. */
