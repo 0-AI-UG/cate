@@ -171,3 +171,52 @@ it('captures apply_patch rename destinations and original paths', () => {
   expect(filesFromTool('/repo', 'apply_patch', patch)).toMatchObject([{ path: 'new.ts', oldPath: 'old.ts', additions: 1, deletions: 1 }])
   expect(filesFromTool('/repo', 'apply_patch', patch.replace('new.ts', '../outside.ts'))).toEqual([])
 })
+
+it('captures the command-wrapped apply_patch input emitted by real Codex CLI 0.153.4', async () => {
+  const store = createAgentChangesStore(directory)
+  store.registerSource('pty', { cwd: '/repo', panelId: 'panel', kind: 'terminal' })
+  // Observed through the shipped bridge during agentChanges.claudeCodex.itest.
+  // Only session/turn/cwd are anonymized. Codex wraps native patch text in
+  // `command`, even though this is an apply_patch call rather than Bash.
+  const payload = {
+    session_id: 'live-session', turn_id: 'live-turn', transcript_path: null, cwd: '/repo',
+    hook_event_name: 'PostToolUse', model: 'gpt-5.4-mini', permission_mode: 'bypassPermissions',
+    tool_name: 'apply_patch', tool_input: { command: '*** Begin Patch\n*** Add File: target.txt\n+after\n*** End Patch\n' },
+    tool_response: 'Exit code: 0\nWall time: 0 seconds\nOutput:\nSuccess. Updated the following files:\nA target.txt\n',
+    tool_use_id: 'live-call',
+  }
+  await store.ingestHook('pty', 'codex', payload, normalizeAgentHookPayload('codex', 'pty', payload))
+  expect(await store.list('/repo')).toMatchObject([{ agentId: 'codex', sessionId: 'live-session', turnId: 'live-turn', panelId: 'panel',
+    files: [{ path: 'target.txt', additions: 1, deletions: 0, coverage: 'fragment' }] }])
+  expect(filesFromTool('/repo', 'Bash', payload.tool_input, payload.tool_response)).toEqual([])
+})
+
+it('marks native patch deletion without a before image as unavailable', () => {
+  const input = { command: '*** Begin Patch\n*** Delete File: obsolete.txt\n*** End Patch\n' }
+  expect(filesFromTool('/repo', 'apply_patch', input)).toMatchObject([{ path: 'obsolete.txt', coverage: 'unavailable', hunks: [], additions: 0, deletions: 0 }])
+})
+
+it('does not invent a before image for the real OpenCode whole-file write payload', () => {
+  // OpenCode 1.18.29 reported exists:true, but no previous text, after writing
+  // target.txt during the live suite. A prior Read is not authorship evidence.
+  const input = { filePath: '/repo/target.txt', content: 'after\n' }
+  const metadata = { diagnostics: {}, filepath: '/repo/target.txt', exists: true, truncated: false }
+  expect(filesFromTool('/repo', 'write', input, metadata)).toMatchObject([
+    { path: 'target.txt', coverage: 'unavailable', hunks: [], additions: 0, deletions: 0 },
+  ])
+})
+
+it.each([
+  ['before\n', 'after\n', ['before'], ['after']],
+  ['before\n\n', 'after\n\n', ['before', ''], ['after', '']],
+  ['\nbefore\n', '\nafter\n', ['', 'before'], ['', 'after']],
+  ['before', 'after', ['before'], ['after']],
+  ['before\r\n', 'after\r\n', ['before'], ['after']],
+  ['\n', '', [''], []],
+])('counts actual fragment lines without a phantom newline sentinel (%j -> %j)', (before, after, deleted, added) => {
+  const [file] = filesFromTool('/repo', 'edit', { filePath: 'target.txt', oldString: before, newString: after })
+  const lines = file.hunks.flatMap((hunk) => hunk.lines)
+  expect(lines.filter((line) => line.kind === 'delete').map((line) => line.text)).toEqual(deleted)
+  expect(lines.filter((line) => line.kind === 'add').map((line) => line.text)).toEqual(added)
+  expect(file).toMatchObject({ additions: added.length, deletions: deleted.length })
+})

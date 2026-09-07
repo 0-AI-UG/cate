@@ -27,3 +27,54 @@ The capture matrix covers Claude Code, Codex, Cursor, Grok, Kiro and OpenCode:
 - Poll subscription lifecycle, joined refresh requests, unchanged-record identity, batched file rendering, and large-diff opt-in.
 
 These are deterministic adapter-contract tests, not live vendor CLI smoke tests. They require no provider credentials and do not claim that a future vendor release still emits the same payloads. The command-wrapper subprocess tests are POSIX-only; HTTP/store tests are platform-independent. The Electron tests use the runtime artifact selected by `fixtures/electron-app.ts`; rebuild that artifact when changing runtime capture code.
+
+## Actual installed CLI tests
+
+The separate `agentChanges.*.itest.ts` suites invoke installed vendor binaries
+with real providers and the local user's authentication. They may incur small
+provider charges. They do not mock models or replay fabricated hook events.
+
+```sh
+CATE_LIVE_AGENT_CLIS=1 npx vitest run --config vitest.live.config.ts agentChanges.
+# Select one CLI while signing into the others:
+CATE_LIVE_AGENT_CLIS=1 npx vitest run --config vitest.live.config.ts agentChanges. -t Codex
+```
+
+Each fixture creates a temporary Git repository, installs Cate's production
+workspace hooks/plugin, and uses its real authenticated HTTP receiver. Assertions
+check actual filesystem contents, recorded before/after hunks, panel/session
+attribution, and persisted history. The tests do not directly edit global
+authentication or trust files; permission overrides are scoped to the test
+invocation/repository. Missing binaries and expired/missing authentication fail when
+selected; they are not silently counted as passing integrations.
+
+Model overrides: `CATE_LIVE_CLAUDE_MODEL`, `CATE_LIVE_CODEX_MODEL`, and
+`CATE_LIVE_OPENCODE_MODEL`. Set `CATE_LIVE_KEEP_FIXTURES=1` to retain fixture
+directories for diagnosis; otherwise temporary repositories/history are removed.
+Vendor-owned session records may remain in the CLI's normal account storage.
+
+### Live validation snapshot — 2026-09-07
+
+| CLI | Installed version | Observed result |
+| --- | --- | --- |
+| Codex | 0.153.4 | Real `gpt-5.4-mini` calls passed single-file and Unicode/multiline/create/delete/rename scenarios after fixing command-wrapped patch inputs. |
+| OpenCode | 1.18.29 | Real `opencode/mimo-v2.5-free` calls passed native-edit and nested Unicode/multiline scenarios. A whole-file `write` supplied no before image and produced unavailable coverage. Configured OpenAI OAuth separately failed refresh (401). |
+| Claude Code | 2.1.263 | Blocked before edits: expired OAuth could not refresh. |
+| Cursor | 2026.07.20-8cc9c0b | Blocked before edits: authentication required. |
+| Grok | 1.0.13 | Blocked before edits: not signed in. |
+| Kiro | Not found | Unavailable executable (`ENOENT`); no live compatibility claim. |
+
+To reproduce the two authenticated integrations used for this snapshot:
+
+```sh
+CATE_LIVE_AGENT_CLIS=1 CATE_LIVE_OPENCODE_MODEL=opencode/mimo-v2.5-free npx vitest run --config vitest.live.config.ts agentChanges. -t 'Codex|OpenCode'
+```
+
+These are observed runs, not a claim that authentication, models, or vendor
+contracts remain unchanged. Native delete operations that report no deleted
+contents are recorded with unavailable patch coverage, not fabricated before
+images. The live Codex failure exposed `apply_patch` input under `command`;
+the captured shape is now also covered by a deterministic regression.
+The stricter OpenCode run also exposed a phantom blank line from splitting a
+newline-terminated edit string; regression cases distinguish the terminal
+newline from real leading/trailing blank lines.
