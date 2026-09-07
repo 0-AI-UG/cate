@@ -64,6 +64,6 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     id: 'done',
     hero: true,
     title: 'You’re all set',
-    body: 'Build your first layout: drag panels around, then save and reuse layouts later. Replay this tour anytime from **⌘K → “Show Tutorial”**.',
+    body: 'Make the canvas your own: drag panels around to arrange your workspace. Replay this tour anytime from **⌘K → “Show Tutorial”**.',
   },
 ]

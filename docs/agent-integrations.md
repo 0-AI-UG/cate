@@ -44,7 +44,7 @@ snapshot; a running server is never treated as a running conversation.
 
 Hook injection settings live under Terminal. T3 Code settings configure T3-owned
 provider instances with Cate's shared settings controls. Internal `agent` panel
-ids and existing `cate agent` command names remain compatible with saved layouts
+ids and existing `cate agent` command names remain compatible with saved workspace sessions
 and scripts. Those names do not imply a common session-control protocol.
 
 Command+K offers new T3 conversations and existing local/other-window panels.

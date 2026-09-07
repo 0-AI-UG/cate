@@ -2,7 +2,7 @@
 // Settings store and session persistence.
 //
 // AppSettings live in settings.json (see ./settingsFile). The workspace/session
-// state — recent projects, sidebar session, remote workspaces, saved layouts —
+// state — recent projects, sidebar session, remote workspaces, trusted projects —
 // lives in dedicated hand-editable JSON files (see ./workspaceStateStore).
 // =============================================================================
 
@@ -29,10 +29,6 @@ import {
   SIDEBAR_SESSION_SET,
   REMOTE_PROJECTS_GET,
   REMOTE_PROJECTS_SET,
-  LAYOUT_SAVE,
-  LAYOUT_LIST,
-  LAYOUT_LOAD,
-  LAYOUT_DELETE,
   BROWSER_HISTORY_RECORD,
   BROWSER_HISTORY_GET,
   BROWSER_HISTORY_QUERY,
@@ -67,10 +63,6 @@ import {
   setSidebarSession,
   getRemoteProjects,
   setRemoteProjects,
-  saveLayout,
-  listLayoutNames,
-  loadLayout,
-  deleteLayout,
   startWatchingWorkspaceState,
 } from './workspaceStateStore'
 import {
@@ -87,18 +79,6 @@ import {
 import { grantFileAccess } from './ipc/pathValidation'
 import { recordPersistentGrant } from './grantedPathStore'
 import { computeThemeBootFields } from './themeBootCache'
-
-/** Push saved-layout names to the native Layouts menu. Imported lazily so the
- *  static module graph (and anything that pulls in ./store, e.g. terminal IPC)
- *  doesn't drag in ./menu → ./auto-updater at load time. */
-async function pushLayoutNamesToMenu(names: string[]): Promise<void> {
-  try {
-    const { setLayoutNames } = await import('./menu')
-    setLayoutNames(names)
-  } catch (err) {
-    log.warn('Layout menu update failed: %O', err)
-  }
-}
 
 /**
  * Apply the main-process side effects of a single settings change. Shared by
@@ -399,10 +379,8 @@ export function registerHandlers(): void {
     }
   })
 
-  // Workspace/session state files (recent projects, sidebar, remote workspaces,
-  // layouts) — watch the files for external edits, re-pushing the native Layouts
-  // menu when layouts.json is hand-edited.
-  startWatchingWorkspaceState((names) => { void pushLayoutNamesToMenu(names) })
+  // Watch workspace/session state files for external edits.
+  startWatchingWorkspaceState()
 
   // Browser history/bookmarks files — watch for external hand-edits and
   // re-broadcast so open browser panels reflect the change immediately.
@@ -464,28 +442,6 @@ export function registerHandlers(): void {
   ipcMain.handle(REMOTE_PROJECTS_SET, async (_event, entries: RemoteProjectEntry[]) => {
     setRemoteProjects(entries)
   })
-
-  // Layouts
-  ipcMain.handle(LAYOUT_SAVE, async (_event, name: string, layout: unknown) => {
-    const names = saveLayout(name, layout)
-    void pushLayoutNamesToMenu(names)
-  })
-
-  ipcMain.handle(LAYOUT_LIST, async () => {
-    return listLayoutNames()
-  })
-
-  ipcMain.handle(LAYOUT_LOAD, async (_event, name: string) => {
-    return loadLayout(name)
-  })
-
-  ipcMain.handle(LAYOUT_DELETE, async (_event, name: string) => {
-    const names = deleteLayout(name)
-    void pushLayoutNamesToMenu(names)
-  })
-
-  // Seed the native Layouts menu with whatever is already saved.
-  void pushLayoutNamesToMenu(listLayoutNames())
 
   // Browser history + bookmarks (global). Mutations broadcast a "changed" event
   // to every window so all browser panels (and detached windows) stay consistent.
