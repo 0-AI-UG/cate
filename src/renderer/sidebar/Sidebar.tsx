@@ -7,16 +7,7 @@ import { useAppStore } from '../stores/appStore'
 import { useUIStore, useSidebarLayout } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import type { SidebarView, SidebarSide } from '../stores/uiStore'
-import {
-  FolderOpen,
-  GitBranch,
-  Stack,
-  Gear,
-  MagnifyingGlass,
-  FloppyDisk,
-  PuzzlePiece,
-  SidebarSimple,
-} from '@phosphor-icons/react'
+import { FolderOpen, GitBranch, Layers as Stack, Settings as Gear, Search as MagnifyingGlass, Save as FloppyDisk, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple } from 'lucide-react'
 import pkg from '../../../package.json'
 import { Tooltip } from '../ui/Tooltip'
 import { IS_MAC } from '../lib/platform'

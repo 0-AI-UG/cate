@@ -6,7 +6,7 @@
 // active tab; the × (or right-click) removes a bookmark. Toggled by the URL-bar
 // sidebar button.
 // =============================================================================
-import { X, BookmarkSimple } from '@phosphor-icons/react'
+import { X, Bookmark as BookmarkSimple } from 'lucide-react'
 import { useBrowserStore } from '../stores/browserStore'
 import { BrowserFavicon } from './BrowserFavicon'
 import { faviconForUrl } from './browserUrl'

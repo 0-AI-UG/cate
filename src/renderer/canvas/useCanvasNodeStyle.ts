@@ -102,6 +102,8 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       height: node.size.height,
       zIndex: 1000 + node.zOrder,
       borderRadius: CORNER_RADIUS,
+      ['--node-inner-radius' as any]: `calc(${CORNER_RADIUS}px - var(--hairline))`,
+      ['--node-tab-radius' as any]: `calc(${CORNER_RADIUS}px - var(--hairline) - 2px)`,
       overflow: 'hidden',
       border: `var(--hairline) solid var(--border-subtle)`,
       boxShadow: boxShadow(isHovered),

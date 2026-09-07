@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CaretRight } from '@phosphor-icons/react'
+import { ChevronRight as CaretRight } from 'lucide-react'
 import type { RemoteConnectSpec, SshHostEntry } from '../../shared/types'
 import {
   ABSOLUTE_RUNTIME_PATH_ERROR,

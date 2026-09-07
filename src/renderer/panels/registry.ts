@@ -3,7 +3,7 @@ import { T3Logo } from '../ui/T3Logo'
 // Panel registry (renderer side)
 //
 // Extends the shared per-type data in `src/shared/panels.ts` with renderer-only
-// concerns: the Phosphor icon component, the lazy panel component, and a
+// concerns: the Lucide icon component, the lazy panel component, and a
 // factory that maps to the right `appStore.createXxx()` call.
 //
 // Every place that used to switch on `panel.type` should read from
@@ -14,15 +14,7 @@ import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 
 import React, { type LazyExoticComponent, type ComponentType } from 'react'
-import {
-  Terminal,
-  Globe,
-  FileText,
-  SquaresFour,
-  FileDoc,
-  GitDiff,
-  type Icon as PhosphorIcon,
-} from '@phosphor-icons/react'
+import { Terminal, Globe, FileText, Grid2X2 as SquaresFour, FileText as FileDoc, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
@@ -65,7 +57,7 @@ export interface PanelCreateArgs {
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
-  icon: PhosphorIcon | ComponentType<{ size?: number; className?: string }>
+  icon: LucideIcon | ComponentType<{ size?: number; className?: string }>
   /** React.lazy() wrapped panel component. Accepts the standard PanelProps
    *  plus optional per-type extras (filePath/url/zoomLevel) — the dispatcher
    *  reads those off the PanelState. */

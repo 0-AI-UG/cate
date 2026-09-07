@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, MagnifyingGlass, Trash } from '@phosphor-icons/react'
+import { Plus, Search as MagnifyingGlass, Trash } from 'lucide-react'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 import { Spinner } from '../ui/Spinner'
 import { T3Logo } from '../ui/T3Logo'

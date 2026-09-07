@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ClockCounterClockwise, MagnifyingGlass, Trash } from '@phosphor-icons/react'
+import { History as ClockCounterClockwise, Search as MagnifyingGlass, Trash } from 'lucide-react'
 import { useBrowserStore } from '../stores/browserStore'
 import { SecondaryButton } from '../settings/SettingsComponents'
 import { BrowserFavicon } from './BrowserFavicon'

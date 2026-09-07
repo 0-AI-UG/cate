@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { ArrowClockwise } from '@phosphor-icons/react'
+import { RotateCw as ArrowClockwise } from 'lucide-react'
 import type { UpdateStatus } from '../../shared/electron-api'
 import { CateLogo } from '../ui/CateLogo'
 import headerImg from '../assets/welcome-header.jpg'

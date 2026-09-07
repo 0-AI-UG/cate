@@ -17,16 +17,8 @@ import { T3Logo } from '../ui/T3Logo'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  ArrowsSplit,
-  Terminal as TerminalIcon,
-  Plus,
-  Check,
-  DotsThree,
-  Warning,
-  X,
-  GitPullRequest,
-} from '@phosphor-icons/react'
+import { Plus, Check, X, GitPullRequest } from 'lucide-react'
+import { GitFork as ArrowsSplit, Terminal as TerminalIcon, Ellipsis as DotsThree, TriangleAlert as Warning } from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
 import { errorMessage } from '../lib/errorMessage'

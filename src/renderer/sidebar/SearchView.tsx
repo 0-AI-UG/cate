@@ -4,7 +4,7 @@
 // =============================================================================
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { MagnifyingGlass, DotsThree, Gear, Eraser } from '@phosphor-icons/react'
+import { Search as MagnifyingGlass, Ellipsis as DotsThree, Settings as Gear, Eraser } from 'lucide-react'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { SearchResultsTree } from './SearchResultsTree'
 import { Tooltip } from '../ui/Tooltip'

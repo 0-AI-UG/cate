@@ -62,6 +62,27 @@ function cssNumber(value: number): string {
   return String(Math.round(value * 1000) / 1000)
 }
 
+function surfaceBorderRadius(slot: HTMLElement, rect: DOMRect, scale: number): string {
+  const node = slot.closest<HTMLElement>('[data-node-id]')
+  if (!node) return '0px'
+  const bounds = node.getBoundingClientRect()
+  const style = getComputedStyle(node)
+  const border = (side: string): number => Number.parseFloat(style.getPropertyValue(`border-${side}-width`)) || 0
+  const left = Math.abs((rect.left - bounds.left) / scale - border('left')) < 1
+  const right = Math.abs((bounds.right - rect.right) / scale - border('right')) < 1
+  const top = Math.abs((rect.top - bounds.top) / scale - border('top')) < 1
+  const bottom = Math.abs((bounds.bottom - rect.bottom) / scale - border('bottom')) < 1
+  const corner = (touches: boolean, radius: string, a: string, b: string): string => (
+    `${cssNumber(touches ? Math.max(0, (Number.parseFloat(radius) || 0) - Math.max(border(a), border(b))) : 0)}px`
+  )
+  return [
+    corner(top && left, style.borderTopLeftRadius || style.borderRadius, 'top', 'left'),
+    corner(top && right, style.borderTopRightRadius || style.borderRadius, 'top', 'right'),
+    corner(bottom && right, style.borderBottomRightRadius || style.borderRadius, 'bottom', 'right'),
+    corner(bottom && left, style.borderBottomLeftRadius || style.borderRadius, 'bottom', 'left'),
+  ].join(' ')
+}
+
 function surfaceClipPath(
   slot: HTMLElement,
   rect: DOMRect,
@@ -173,6 +194,10 @@ function updateSurface(panelId: string): void {
   container.style.transformOrigin = '0 0'
   container.style.transform = `scale(${rect.width / logicalWidth}, ${rect.height / logicalHeight})`
   container.style.clipPath = clipPath
+  // This surface is portaled outside the node, so it must reproduce the node's
+  // rounded corners independently of viewport clipping and occlusion holes.
+  container.style.borderRadius = surfaceBorderRadius(slot, rect, rect.width / logicalWidth)
+  container.style.overflow = 'hidden'
   container.style.zIndex = nodeZIndex === 'auto' ? '1' : nodeZIndex
   container.style.opacity = '1'
   container.style.pointerEvents = 'auto'

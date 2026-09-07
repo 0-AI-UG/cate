@@ -8,30 +8,8 @@ import { T3Logo } from './T3Logo'
 // =============================================================================
 
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Terminal,
-  Globe,
-  FileText,
-  SquaresFour,
-  Sidebar,
-  FolderOpen,
-  Stack,
-  MagnifyingGlass,
-  ArrowsOutSimple,
-  Square,
-  FloppyDisk,
-  ArrowsClockwise,
-  Trash,
-  GraduationCap,
-  PuzzlePiece,
-  X,
-  Selection,
-  ArrowUUpLeft,
-  ArrowUUpRight,
-  CaretLeft,
-  CaretRight,
-  GitDiff,
-} from '@phosphor-icons/react'
+import { Terminal, Globe, FileText, Sidebar, FolderOpen, Square, Trash, GraduationCap, X, Scan as Selection, Undo2 as ArrowUUpLeft, Redo2 as ArrowUUpRight, ChevronLeft as CaretLeft, ChevronRight as CaretRight, GitCompareArrows as GitDiff } from 'lucide-react'
+import { Grid2X2 as SquaresFour, Layers as Stack, Search as MagnifyingGlass, Maximize as ArrowsOutSimple, Save as FloppyDisk, RefreshCw as ArrowsClockwise, Puzzle as PuzzlePiece } from 'lucide-react'
 import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { isNavigablePanelType } from '../../shared/panels'
 import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'

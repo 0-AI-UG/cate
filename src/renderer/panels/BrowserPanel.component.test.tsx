@@ -80,6 +80,10 @@ function mount(tabs = [{ id: 'tab-1', url: 'https://example.test/', title: 'Exam
 }
 
 describe('BrowserPanel live webview', () => {
+  it('backs transparent guest pages with white independently of the app theme', () => {
+    mount()
+    expect((host.querySelector('webview') as HTMLElement).style.backgroundColor).toBe('rgb(255, 255, 255)')
+  })
   it('renders browsing history as an internal full page', () => {
     mount([{ id: 'tab-1', url: 'chrome://history/', title: 'History' }])
     expect(host.querySelector('[data-testid="browser-history"]')).not.toBeNull()

@@ -1,24 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import log from '../lib/logger'
-import {
-  GitBranch,
-  ArrowClockwise,
-  CaretDown,
-  CaretRight,
-  Plus,
-  Minus,
-  ArrowUp,
-  ArrowDown,
-  Download,
-  Trash,
-  ArrowUUpLeft,
-  Archive,
-  BoxArrowUp,
-  ClockCounterClockwise,
-  X,
-  Check,
-  GitDiff,
-} from '@phosphor-icons/react'
+import { GitBranch, Plus, Minus, ArrowUp, ArrowDown, Download, Trash, Archive, X, Check, GitCompareArrows as GitDiff } from 'lucide-react'
+import { RotateCw as ArrowClockwise, ChevronDown as CaretDown, ChevronRight as CaretRight, Undo2 as ArrowUUpLeft, SquareArrowOutUpRight as BoxArrowUp, History as ClockCounterClockwise } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { pathDisplayName } from '../lib/fs/displayPath'

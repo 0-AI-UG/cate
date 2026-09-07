@@ -1,5 +1,5 @@
 import { useRef, type RefObject } from 'react'
-import { CheckCircle, DownloadSimple, FolderOpen, WarningCircle, X } from '@phosphor-icons/react'
+import { CircleCheck as CheckCircle, Download as DownloadSimple, FolderOpen, CircleAlert as WarningCircle, X } from 'lucide-react'
 import type { BrowserDownloadEntry } from '../../shared/types'
 import { useDismissableLayer } from '../ui/Popover'
 
@@ -65,7 +65,7 @@ export function BrowserDownloadsPopover({ downloads, onAction, onClose, triggerR
           return (
             <div key={download.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-hover">
               {download.state === 'completed' ? (
-                <CheckCircle size={20} weight="fill" className="shrink-0 text-agent" />
+                <CheckCircle size={20} className="shrink-0 text-agent" />
               ) : download.state === 'interrupted' ? (
                 <WarningCircle size={20} className="shrink-0 text-red-400" />
               ) : (

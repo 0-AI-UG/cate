@@ -12,14 +12,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip } from '../ui/Tooltip'
 import { workspaceIdForRoot } from '../stores/gitStatusStore'
 import { errorMessage } from '../lib/errorMessage'
-import {
-  GitBranch,
-  Check,
-  X,
-  CaretRight,
-  CaretDown,
-  GitPullRequest,
-} from '@phosphor-icons/react'
+import { GitBranch, Check, X, GitPullRequest } from 'lucide-react'
+import { ChevronRight as CaretRight, ChevronDown as CaretDown } from 'lucide-react'
 import { Spinner } from '../ui/Spinner'
 
 export interface PrListItem {

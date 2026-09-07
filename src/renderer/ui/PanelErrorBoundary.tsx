@@ -9,7 +9,7 @@
 // =============================================================================
 
 import React from 'react'
-import { ArrowClockwise, Warning } from '@phosphor-icons/react'
+import { RotateCw as ArrowClockwise, TriangleAlert as Warning } from 'lucide-react'
 import log from '../lib/logger'
 import { BaseErrorBoundary } from './BaseErrorBoundary'
 import { Button } from './Button'
@@ -44,7 +44,7 @@ export function PanelErrorBoundary({ children, panelType, panelId }: Props): Rea
         return (
           <PanelCenteredState
             className="select-none"
-            icon={<Warning size={30} weight="duotone" />}
+            icon={<Warning size={30} />}
             title={`${label} hit an error`}
             description={<span className="block max-w-[28ch] truncate" title={error.message}>
               {error.message}

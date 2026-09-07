@@ -33,7 +33,7 @@ import DockLayoutRenderer from '../docking/DockLayoutRenderer'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
 import { collectPanelIds } from '../../shared/collectPanelIds'
-import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
+import { Maximize as ArrowsOutSimple, Minimize as ArrowsInSimple, X, Lock, LockOpen } from 'lucide-react'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
 import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
@@ -734,6 +734,11 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           position: 'relative',
           height: rootIsTabs ? '100%' : `calc(100% - ${GRAB_STRIP_HEIGHT}px)`,
           overflow: 'hidden',
+          // The content sits inside the border, so its radius must shrink by
+          // that inset to stay concentric with the outer panel.
+          clipPath: rootIsTabs
+            ? 'inset(0 round var(--node-inner-radius))'
+            : 'inset(0 round 0 0 var(--node-inner-radius) var(--node-inner-radius))',
         }}
       >
         {/* Unfocused dim overlay — intercepts pointer events until node is focused. */}

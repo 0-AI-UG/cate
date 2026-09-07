@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { ArrowClockwise, CaretRight, Plus } from '@phosphor-icons/react'
+import { RotateCw as ArrowClockwise, ChevronRight as CaretRight, Plus } from 'lucide-react'
 import { inputCls } from '../ui/Modal'
 import { SettingRow, Toggle, TextInput, Select, SecondaryButton } from './SettingsComponents'
 import { useSettingsSearch } from './SettingsSearchContext'

@@ -6,17 +6,8 @@ import { T3ConversationMenu } from './T3ConversationMenu'
 
 import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  Terminal,
-  Globe,
-  FileText,
-  Minus,
-  Plus,
-  MapTrifold,
-  Cursor,
-  Hand,
-  X,
-} from '@phosphor-icons/react'
+import { Terminal, Globe, FileText, Minus, Plus, Hand, X } from 'lucide-react'
+import { Map as MapTrifold, MousePointer2 as Cursor } from 'lucide-react'
 import Minimap from './Minimap'
 import WorktreeToolbarMenu from './WorktreeToolbarMenu'
 import { useCanvasStoreApi, useCanvasStoreContext } from '../stores/CanvasStoreContext'
@@ -450,7 +441,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           }}
           className="w-[44px] h-[44px] flex items-center justify-center text-secondary hover:text-primary active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100 z-10"
         >
-          {minimapOpen ? <X size={14} weight="bold" /> : <MapTrifold size={18} />}
+          {minimapOpen ? <X size={14} /> : <MapTrifold size={18} />}
         </button>
       </div>
     </div>

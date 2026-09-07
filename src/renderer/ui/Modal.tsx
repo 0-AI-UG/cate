@@ -19,7 +19,7 @@
 
 import { useEffect, useId, useRef, useState, type CSSProperties, type HTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { X } from '@phosphor-icons/react'
+import { X } from 'lucide-react'
 import { Tooltip } from './Tooltip'
 import { buttonClassName } from './Button'
 

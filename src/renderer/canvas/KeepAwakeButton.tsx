@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Coffee } from '@phosphor-icons/react'
+import { Coffee } from 'lucide-react'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 
 export function KeepAwakeButton({ tooltipPlacement }: { tooltipPlacement: 'top' | 'right' }) {
@@ -60,7 +60,7 @@ export function KeepAwakeButton({ tooltipPlacement }: { tooltipPlacement: 'top' 
       tooltipPlacement={tooltipPlacement}
     >
       <span ref={iconRef} className="flex" aria-hidden="true">
-        <Coffee size={18} weight={enabled ? 'fill' : 'regular'} />
+        <Coffee size={18} fill={enabled ? 'currentColor' : 'none'} />
       </span>
     </CanvasToolbarButton>
   )

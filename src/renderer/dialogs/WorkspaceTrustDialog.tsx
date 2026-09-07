@@ -20,7 +20,7 @@
 // =============================================================================
 
 import { useState } from 'react'
-import { ShieldWarning } from '@phosphor-icons/react'
+import { ShieldAlert as ShieldWarning } from 'lucide-react'
 import { Modal, btn } from '../ui/Modal'
 import { useWorkspaceTrustStore } from '../stores/workspaceTrustStore'
 import { Spinner } from '../ui/Spinner'
@@ -42,7 +42,7 @@ export function WorkspaceTrustDialog(): JSX.Element | null {
     <Modal
       onClose={() => answer(false)}
       width={420}
-      icon={<ShieldWarning size={16} weight="fill" className="text-amber-400" />}
+      icon={<ShieldWarning size={16} className="text-amber-400" />}
       title="Do you trust this project?"
       dismissable={!busy}
       bodyClassName="px-5 py-4"

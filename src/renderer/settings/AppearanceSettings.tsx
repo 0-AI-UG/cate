@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Trash, Upload, DownloadSimple, Sparkle } from '@phosphor-icons/react'
+import { Check, Trash, Upload, Download as DownloadSimple, Sparkles as Sparkle } from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
 import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, Select, NumberInput, TextInput, Toggle, SearchableBlock, SecondaryButton } from './SettingsComponents'
@@ -169,7 +169,7 @@ export function AppearanceSettings() {
         className="mt-4 flex w-full items-center gap-3 rounded-xl border border-subtle bg-surface-2 px-3.5 py-3 text-left hover:bg-surface-1"
       >
         <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-agent/15 text-focus-blue">
-          <Sparkle size={16} weight="fill" />
+          <Sparkle size={16} />
         </div>
         <h4 className="text-[13px] font-semibold text-primary">Create your own theme</h4>
       </button>

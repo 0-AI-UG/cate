@@ -5,7 +5,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import log from '../lib/logger'
-import { ArrowClockwise, FilePlus, FolderPlus, MagnifyingGlass, X } from '@phosphor-icons/react'
+import { RotateCw as ArrowClockwise, FilePlus, FolderPlus, Search as MagnifyingGlass, X } from 'lucide-react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { FileTreeNode } from './FileTreeNode'
 import { CreateFileForm } from './CreateFileForm'

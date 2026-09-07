@@ -1,4 +1,4 @@
-import { CloudArrowUp } from '@phosphor-icons/react'
+import { CloudUpload as CloudArrowUp } from 'lucide-react'
 import type { RemoteConnectSpec } from '../../shared/types'
 import { Modal } from '../ui/Modal'
 import { RemoteConnect, type RemoteConnectInitial } from '../ui/RemoteConnect'
@@ -23,7 +23,7 @@ export function RemoteConnectDialog({
     <Modal
       onClose={onClose}
       width={380}
-      icon={<CloudArrowUp size={16} weight="fill" className="text-focus-blue" />}
+      icon={<CloudArrowUp size={16} className="text-focus-blue" />}
       title={initial ? 'Edit connection' : 'Connect to remote'}
       dismissable={!pending}
     >

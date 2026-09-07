@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Check, Copy, FolderOpen } from '@phosphor-icons/react'
+import { Check, Copy, FolderOpen } from 'lucide-react'
 import { useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'

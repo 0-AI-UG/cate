@@ -1,6 +1,5 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { IconContext } from '@phosphor-icons/react'
 import log from './lib/logger'
 import { mark } from './lib/perfMarks'
 import { initRendererSentry, captureRendererException } from './lib/sentry'
@@ -73,13 +72,8 @@ class ErrorBoundary extends React.Component<
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {/* Default icon weight for all chrome (headers, panels, cards, dock
-        toolbar, etc.). Icons that set an explicit `weight` prop
-        (bold/fill/duotone) override this. */}
-    <IconContext.Provider value={{ weight: 'regular' }}>
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
-    </IconContext.Provider>
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 )

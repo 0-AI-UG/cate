@@ -1,28 +1,28 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowClockwise,
-  CaretDown,
-  CaretDoubleDown,
-  CaretDoubleUp,
-  CaretRight,
+  RotateCw as ArrowClockwise,
+  ChevronDown as CaretDown,
+  ChevronsDown as CaretDoubleDown,
+  ChevronsUp as CaretDoubleUp,
+  ChevronRight as CaretRight,
   Check,
-  ClipboardText,
+  Clipboard as ClipboardText,
   Code,
-  DotsThree,
+  Ellipsis as DotsThree,
   File,
-  FileMagnifyingGlass,
-  GitDiff,
+  FileSearch as FileMagnifyingGlass,
+  GitCompareArrows as GitDiff,
   GitPullRequest,
-  ImageSquare,
+  ImageIcon as ImageSquare,
   Minus,
-  NotePencil,
-  PaperPlaneTilt,
+  NotebookPen as NotePencil,
+  Send as PaperPlaneTilt,
   Plus,
-  PushPin,
-  Rows,
-  SplitHorizontal,
+  Pin as PushPin,
+  Rows2 as Rows,
+  Split as SplitHorizontal,
   Trash,
-} from '@phosphor-icons/react'
+} from 'lucide-react'
 import type {
   GitChangedFile,
   GitComparisonResult,
@@ -608,7 +608,7 @@ function ReviewNoteRow({ note, toggleNote }: { note: GitReviewNote; toggleNote: 
         className="mt-[2px] w-3.5 h-3.5 shrink-0 rounded-full flex items-center justify-center text-blue-400 hover:bg-hover hover:text-primary"
       >
         {note.status === 'resolved'
-          ? <Check size={9} weight="bold" />
+          ? <Check size={9} />
           : <span className="w-2 h-2 rounded-full border border-current" />}
       </button>
       <span title={note.severity ?? 'warning'} className={`mt-[5px] w-1.5 h-1.5 shrink-0 rounded-full ${severityColor}`} />

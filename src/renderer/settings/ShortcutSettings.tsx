@@ -7,7 +7,7 @@ import {
 } from '../stores/shortcutStore'
 import { SHORTCUT_ACTIONS, SHORTCUT_DISPLAY_NAMES } from '../../shared/types'
 import { ShortcutRecorder } from './ShortcutRecorder'
-import { ArrowCounterClockwise, X } from '@phosphor-icons/react'
+import { RotateCcw as ArrowCounterClockwise, X } from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
 import { useSettingsSearch, matchesQuery } from './SettingsSearchContext'
 

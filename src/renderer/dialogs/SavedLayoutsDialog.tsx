@@ -5,7 +5,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { FloppyDisk, Trash, FolderOpen, SquaresFour } from '@phosphor-icons/react'
+import { Save as FloppyDisk, Trash, FolderOpen, Grid2X2 as SquaresFour } from 'lucide-react'
 import { PaletteDialogShell } from '../ui/Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useOptionalCanvasStoreApi } from '../stores/CanvasStoreContext'

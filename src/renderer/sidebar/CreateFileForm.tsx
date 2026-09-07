@@ -8,7 +8,7 @@
 // =============================================================================
 
 import React, { forwardRef } from 'react'
-import { Folder, File } from '@phosphor-icons/react'
+import { Folder, File } from 'lucide-react'
 import { InlineEditInput } from './InlineEditInput'
 
 export interface CreateFileFormProps {

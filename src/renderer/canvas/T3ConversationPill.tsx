@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChatsCircle } from '@phosphor-icons/react'
+import { MessageCircleMore as ChatsCircle } from 'lucide-react'
 import type { PanelState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 

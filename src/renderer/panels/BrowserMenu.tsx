@@ -2,7 +2,7 @@
 // BrowserMenu — the URL-bar overflow (⋮) dropdown for a browser panel.
 // =============================================================================
 import { useRef, useState, type RefObject } from 'react'
-import { BookmarkSimple, CaretLeft, ClockCounterClockwise, Minus, Plus, Gear, Key } from '@phosphor-icons/react'
+import { Bookmark as BookmarkSimple, ChevronLeft as CaretLeft, History as ClockCounterClockwise, Minus, Plus, Settings as Gear, Key } from 'lucide-react'
 import { useBrowserStore } from '../stores/browserStore'
 import { useUIStore } from '../stores/uiStore'
 import { BrowserFavicon } from './BrowserFavicon'

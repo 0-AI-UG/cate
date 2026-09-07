@@ -1,5 +1,5 @@
 import React from 'react'
-import { GitBranch } from '@phosphor-icons/react'
+import { GitBranch } from 'lucide-react'
 import type { JoinedWorktree } from '../stores/useWorktrees'
 
 function label(worktree: JoinedWorktree): string {

@@ -12,7 +12,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { ArrowsSplit } from '@phosphor-icons/react'
+import { GitFork as ArrowsSplit } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { useWorktrees } from '../stores/useWorktrees'

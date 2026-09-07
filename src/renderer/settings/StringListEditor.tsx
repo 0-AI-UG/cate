@@ -1,4 +1,4 @@
-import { Plus, X } from '@phosphor-icons/react'
+import { Plus, X } from 'lucide-react'
 import { Button, IconButton } from '../ui/Button'
 import { InlineNotice } from '../ui/InlineNotice'
 import { TextInput } from './SettingsComponents'

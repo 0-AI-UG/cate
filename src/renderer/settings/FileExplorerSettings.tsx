@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowCounterClockwise } from '@phosphor-icons/react'
+import { RotateCcw as ArrowCounterClockwise } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { DEFAULT_SETTINGS } from '../../shared/types'
 import { SearchableBlock, SecondaryButton } from './SettingsComponents'
