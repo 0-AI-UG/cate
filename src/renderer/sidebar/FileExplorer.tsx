@@ -51,6 +51,16 @@ interface FlatRow {
   node: FileTreeNodeType
 }
 
+interface ExplorerView {
+  nodes: FileTreeNodeType[]
+  children: Map<string, FileTreeNodeType[]>
+  expanded: Set<string>
+  selected: Set<string>
+}
+// Two recently visited roots paint immediately while their loaded directories
+// revalidate. Keep the cache bounded independently of the number of workspaces.
+const recentExplorerViews = new Map<string, ExplorerView>()
+
 export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeControl }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -239,17 +249,21 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
 
   // All filesystem-triggered reads share one queue. Preserve untouched cache
   // entries so unrelated branches retain their identities.
+  const viewRef = useRef<ExplorerView>({ nodes, children: childrenCache, expanded: expandedPaths, selected: selectedPaths })
   useEffect(() => {
     rootPathRef.current = rootPath
+    const cacheKey = `${selectedWorkspaceId}:${rootPath}`
+    const cached = recentExplorerViews.get(cacheKey)
     childRequests.current.clear()
-    setNodes([])
-    setChildrenCache(new Map())
-    setExpandedPaths(new Set())
-    setSelectedPaths(new Set())
+    setNodes(cached?.nodes ?? [])
+    setChildrenCache(cached?.children ?? new Map())
+    childrenCacheRef.current = cached?.children ?? new Map()
+    setExpandedPaths(cached?.expanded ?? new Set())
+    setSelectedPaths(cached?.selected ?? new Set())
     setLoadingPaths(new Set())
     if (!rootPath || !window.electronAPI) return
     let disposed = false
-    setIsLoading(true)
+    setIsLoading(!cached)
     const refresh = createExplorerRefresh<FileTreeNodeType[]>({
       root: rootPath,
       loaded: () => [...childrenCacheRef.current.keys(), ...childRequests.current.keys()],
@@ -290,12 +304,16 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
       },
     })
     refreshRef.current = refresh
-    refresh.refresh([rootPath])
+    void refresh.request(rootPath)
+    if (cached) refresh.refresh(cached.children.keys())
     const releaseWatch = watchFsRoot(rootPath, refresh.event, selectedWorkspaceId)
     const unsubscribeSettings = window.electronAPI.onSettingsChanged((key) => {
       if (key === 'fileExclusions') refresh.refresh([rootPath, ...childrenCacheRef.current.keys()])
     })
     return () => {
+      recentExplorerViews.delete(cacheKey)
+      recentExplorerViews.set(cacheKey, viewRef.current)
+      while (recentExplorerViews.size > 2) recentExplorerViews.delete(recentExplorerViews.keys().next().value!)
       disposed = true
       refresh.dispose()
       refreshRef.current = null
@@ -303,6 +321,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
       unsubscribeSettings()
     }
   }, [rootPath, selectedWorkspaceId])
+  useEffect(() => {
+    viewRef.current = { nodes, children: childrenCache, expanded: expandedPaths, selected: selectedPaths }
+  }, [nodes, childrenCache, expandedPaths, selectedPaths])
 
   const loadTree = useCallback((_dirPath: string) => {
     refreshRef.current?.refresh([rootPath, ...childrenCacheRef.current.keys()])

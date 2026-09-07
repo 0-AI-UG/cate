@@ -53,7 +53,7 @@ const PanelContent = memo(function PanelContent({
 
   if (!panel) return null
   if (!allowCanvas && !getPanelDef(panel.type).canLiveOnCanvas) return null
-  if (panel.type === 'browser' && persistentBrowserHost) {
+  if ((panel.type === 'browser' || panel.type === 'agent') && persistentBrowserHost) {
     return <BrowserPanelSurfaceSlot panelId={panel.id} />
   }
   const content = renderPanelComponent(panel, {

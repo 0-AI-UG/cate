@@ -267,6 +267,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       className="flex h-full w-full flex-col bg-surface-4"
       data-agent-panel-id={panelId}
       data-agent-phase={state.phase}
+      data-agent-connected={t3Connection === true}
     >
       <div className="relative min-h-0 flex-1">
         {state.phase === 'ready' && guestReady && t3Connection === false && (

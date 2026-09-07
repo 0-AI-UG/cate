@@ -150,7 +150,7 @@ function surfaceClipPath(
 
 type SurfaceStyles = Pick<CSSStyleDeclaration,
   'position' | 'left' | 'top' | 'width' | 'height' | 'transform' | 'transformOrigin'
-  | 'clipPath' | 'opacity' | 'pointerEvents' | 'zIndex'>
+  | 'clipPath' | 'opacity' | 'pointerEvents' | 'zIndex' | 'visibility'>
 
 function writeSurface(surface: SurfaceEntry, visible: boolean, styles: Partial<SurfaceStyles>): void {
   const { container } = surface
@@ -166,8 +166,8 @@ function writeSurface(surface: SurfaceEntry, visible: boolean, styles: Partial<S
 
 function parkSurface(surface: SurfaceEntry): void {
   writeSurface(surface, false, {
-    position: 'fixed', left: '-20000px', top: '0', width: '1200px', height: '800px',
-    transform: 'none', clipPath: 'none', opacity: '0', pointerEvents: 'none',
+    position: 'fixed', left: '-20000px', top: '0', width: surface.styles.width ?? '1200px', height: surface.styles.height ?? '800px',
+    transform: 'none', clipPath: 'none', opacity: '0', pointerEvents: 'none', visibility: 'hidden',
   })
 }
 
@@ -196,6 +196,7 @@ function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
   const node = slot.closest<HTMLElement>('[data-node-id]')
   const nodeZIndex = node ? geometry.style(node).zIndex : 'auto'
   return () => writeSurface(surface, true, {
+    visibility: 'visible',
     position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
     width: `${logicalWidth}px`, height: `${logicalHeight}px`, transformOrigin: '0 0',
     transform: `scale(${rect.width / logicalWidth}, ${rect.height / logicalHeight})`,
@@ -308,9 +309,10 @@ function watchSurfaces(): void {
 }
 
 function refreshSurfaces(panelId: string): void {
-  // Only this lifecycle edge needs an immediate write; batch shared observer
-  // rebuilding and all other surfaces into the next frame.
-  if (surfaces.has(panelId)) measureSurface(panelId, frameGeometry())()
+  // Hide removed/new slots immediately, but measure all incoming slots together
+  // before the next paint. Per-slot reads here bypassed the shared frame cache.
+  const surface = surfaces.get(panelId)
+  if (surface && (!slots.has(panelId) || !surface.styles.width)) parkSurface(surface)
   rebuildTracking = true
   if (surfaces.size === 0) watchSurfaces()
   else schedule()

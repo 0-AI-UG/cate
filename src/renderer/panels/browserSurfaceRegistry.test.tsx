@@ -171,3 +171,12 @@ describe('browser surface layout tracking', () => {
     expect(observers.every((observer) => observer.targets.size === 0)).toBe(true)
   })
 })
+
+it('parks a mounted guest without changing its logical viewport size', async () => {
+  await frame()
+  const width = surface.style.width, height = surface.style.height
+  act(() => root.render(<div />))
+  expect(surface.dataset.browserSurfaceVisible).toBe('false')
+  expect(surface.style.width).toBe(width)
+  expect(surface.style.height).toBe(height)
+})

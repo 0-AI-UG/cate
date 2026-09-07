@@ -47,3 +47,33 @@ it('expands through the shared queue, refreshes one directory, and navigates vir
     expect(host.querySelector('[data-filepath="/repo/a/39.ts"]')).not.toBeNull()
   } finally { await act(async () => root.unmount()); host.remove() }
 })
+
+it('paints a warm expanded tree while revalidation is still pending', async () => {
+  const file = (path: string, isDirectory = false) => ({ path, name: path.split('/').pop(), isDirectory, fileExtension: 'ts' })
+  mocks.watch.mockReturnValue(vi.fn())
+  let hold = false
+  const pending: Array<(value: unknown[]) => void> = []
+  mocks.read.mockImplementation((path: string) => {
+    if (hold) return new Promise((resolve) => pending.push(resolve))
+    return Promise.resolve(path === '/warm-a' ? [file('/warm-a/sub', true)]
+      : path === '/warm-a/sub' ? [file('/warm-a/sub/leaf.ts')] : [file('/warm-b/other.ts')])
+  })
+  Object.assign(window, { electronAPI: { fsReadDir: mocks.read, onSettingsChanged: () => vi.fn() } })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<FileExplorer rootPath="/warm-a" />))
+    await act(async () => host.querySelector<HTMLElement>('[data-filepath="/warm-a/sub"]')!.click())
+    expect(host.querySelector('[data-filepath="/warm-a/sub/leaf.ts"]')).not.toBeNull()
+    await act(async () => root.render(<FileExplorer rootPath="/warm-b" />))
+    hold = true
+    await act(async () => root.render(<FileExplorer rootPath="/warm-a" />))
+    expect(pending.length).toBeGreaterThan(0)
+    expect(host.querySelector('[data-filepath="/warm-a/sub/leaf.ts"]')).not.toBeNull()
+  } finally {
+    await act(async () => root.unmount())
+    pending.forEach((resolve) => resolve([]))
+    host.remove()
+  }
+})

@@ -905,12 +905,13 @@ test('real T3 lifecycle keeps multiple panels connected across repeated workspac
     agent = i % 2 === 0 ? first : second
     await page.evaluate(id => window.__cateE2E!.selectWorkspace(id), agent.workspaceId)
     await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', { timeout: 15_000 })
-    await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), {timeout: 15_000}).toBe(true)
+    await expect(page.locator(`[data-agent-panel-id="${agent.panelId}"]`)).toHaveAttribute('data-agent-connected', 'true', { timeout: 15_000 })
     expect((await realThreadState())?.id).toBe(i % 2 === 0 ? firstThread : secondThread)
     expect(await guestEval<string>(agentWebview(), 'document.body.innerText')).not.toMatch(/did not survive a server restart|could not establish a WebSocket|Failed to connect/)
     for (const panel of [agent, i % 2 === 0 ? extraFirst : extraSecond]) {
-      const view = page.locator(`webview[data-agent-webview="${panel.panelId}"]`)
-      await expect.poll(() => guestEval<boolean>(view, 'window.__cateT3Threads?.connected === true').catch(() => false)).toBe(true)
+      // Metadata is shared per partition; only its owner has a guest socket.
+      // Verify every consumer receives connected state through the host store.
+      await expect(page.locator(`[data-agent-panel-id="${panel.panelId}"]`)).toHaveAttribute('data-agent-connected', 'true')
     }
     const livePids = JSON.parse(readFileSync(pidPath, 'utf8')).map((r: {pid: number}) => r.pid)
     expect(livePids).toEqual(expect.arrayContaining(originalPids))

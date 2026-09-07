@@ -59,3 +59,39 @@ When comparing runs, keep hardware, display refresh rate, app build, panel
 counts, viewport, and workload consistent. Record cold-start and warmed-up
 measurements separately. Short samples and high host-renderer FPS cannot prove
 that a large browser/agent workspace has low memory use or responsive guest UIs.
+
+## Workspace transitions
+
+```sh
+npx playwright test e2e/workspace-transition-perf.spec.ts --reporter=list,html
+```
+
+This baseline creates two real local Git workspaces with 200 files each and
+18 visible panels per workspace: eight terminals, six scratch editors with
+200 lines of content, three browser guests, and one T3 guest. After warming both
+workspaces, it measures eight alternating switches and checks panel readiness,
+browser guest identity, and PTY identity. T3 uses the deterministic `fake-t3`
+server, so this does not benchmark production conversation-history rendering.
+
+`workspace-transitions.json` contains each switch's selection-promise duration,
+second animation-frame boundary, panel-ready duration, full-window frame and
+long-task statistics, renderer counter deltas, and guest recreation results.
+Readiness includes automation polling latency; the frame boundary is not a
+presented-frame or input-to-photon measurement. Frame statistics include one
+second of settling after readiness to capture delayed fit/repaint work.
+`runtime-snapshots.json` contains resource samples before and after the sequence,
+not per-transition CPU peaks. Focus events are simulated because test windows
+remain hidden. The test is excluded when `E2E_SKIP_PERF=1`.
+
+For a diagnostic CPU profile of the first warm switch:
+
+```sh
+CATE_TRANSITION_CPU_PROFILE=1 npx playwright test e2e/workspace-transition-perf.spec.ts --reporter=list,html
+```
+
+Open the attached `transition.cpuprofile` in Chromium DevTools' Performance/CPU
+profiler. Sampling adds overhead; compare latency using runs without this flag.
+The transition counters now include `editorCreate`, `terminalWebglCreate`, and
+`terminalAtlasPass`. They distinguish editor reconstruction, GPU context creation,
+and window-wide atlas recovery from React render counts. The test asserts that
+T3 guests survive a warm return and bounds atlas recovery passes.
