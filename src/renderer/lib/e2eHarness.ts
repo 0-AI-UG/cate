@@ -50,6 +50,7 @@ declare global {
     __cateE2E?: {
       ready: true
       activeCanvasPanelId(): string | null
+      selectedWorkspaceId(): string
       createTerminal(point: Point): string
       createEditor(point: Point): string
       createCanvasPanel(point: Point): string
@@ -527,6 +528,7 @@ export function installE2EHarness(): void {
   window.__cateE2E = {
     ready: true,
     activeCanvasPanelId,
+    selectedWorkspaceId: () => useAppStore.getState().selectedWorkspaceId,
     createTerminal,
     createEditor,
     createCanvasPanel,

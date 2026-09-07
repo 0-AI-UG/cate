@@ -1,6 +1,6 @@
 import { LoadingState } from '../ui/Spinner'
-import { t3ThreadPollScript } from '../lib/t3ThreadState'
-import { useT3ActivityStore, type T3Snapshot } from '../stores/t3ActivityStore'
+import { subscribeT3Activity } from '../lib/t3ActivitySubscription'
+import { useT3ActivityStore } from '../stores/t3ActivityStore'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowClockwise, ChatsCircle } from '@phosphor-icons/react'
 import type { AgentPanelProps } from './types'
@@ -253,28 +253,13 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     if (state.phase !== 'ready' || !guestReady) return
     const guest = webviewRef.current
     if (!guest) return
-    const store = useT3ActivityStore.getState()
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout>
-    let previousRevision: number | undefined
-    const poll = async () => {
-      try {
-        const snapshot = await guest.executeJavaScript(t3ThreadPollScript(previousRevision)) as T3Snapshot | undefined
-        if (cancelled) return
-        if (snapshot) {
-          previousRevision = snapshot.revision
-          store.update(state.partition, snapshot, panelId)
-          const thread = threadId ? snapshot.threads[threadId] : undefined
-          if (snapshot.connected && thread?.title) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, thread.title)
-        }
-      } catch {
-        previousRevision = undefined
-        if (!cancelled) store.update(state.partition, { connected: false, threads: {}, revision: -1 }, panelId)
-      }
-      if (!cancelled) timer = setTimeout(poll, 1000)
-    }
-    void poll()
-    return () => { cancelled = true; clearTimeout(timer) }
+    return subscribeT3Activity(state.partition, {
+      panelId, guest,
+      onSnapshot: (snapshot) => {
+        const thread = threadId ? snapshot.threads[threadId] : undefined
+        if (thread?.title) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, thread.title)
+      },
+    })
   }, [state, guestReady, threadId, panelId, workspaceId])
 
   return (
@@ -282,6 +267,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       className="flex h-full w-full flex-col bg-surface-4"
       data-agent-panel-id={panelId}
       data-agent-phase={state.phase}
+      data-agent-connected={t3Connection === true}
     >
       <div className="relative min-h-0 flex-1">
         {state.phase === 'ready' && guestReady && t3Connection === false && (

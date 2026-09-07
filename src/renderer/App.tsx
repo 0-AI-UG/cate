@@ -93,7 +93,7 @@ export default function App() {
         <PersistentBrowserHostContext.Provider value>
           <DockWindowShell workspaceId={windowParams.workspaceId} />
           <React.Suspense fallback={null}>
-            <BackgroundBrowserHost />
+            <BackgroundBrowserHost workspaceId={windowParams.workspaceId} />
           </React.Suspense>
         </PersistentBrowserHostContext.Provider>
       </WindowTypeContext.Provider>

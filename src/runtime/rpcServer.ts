@@ -10,6 +10,7 @@
 // capability set built inside the daemon (see index.ts / buildDaemonRuntime).
 // =============================================================================
 
+import { sampleRuntimePerf } from './perf'
 import { FrameDecoder, serializeFrame } from './jsonl'
 import {
   RUNTIME_PROTOCOL_VERSION,
@@ -114,6 +115,7 @@ export class RpcServer {
     const a = (i: number) => (p[i] ?? undefined) as FileAccessContext | undefined
 
     switch (method) {
+      case Methods.perfSnapshot: return sampleRuntimePerf()
       case Methods.ping:
         return 'pong'
 

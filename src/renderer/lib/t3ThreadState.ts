@@ -26,7 +26,7 @@ export function t3ThreadActivity(thread: T3Thread): AgentState {
  */
 export const T3_THREAD_SUBSCRIPTION_SCRIPT = `(() => {
   if (window.__cateT3Threads) return;
-  const state = window.__cateT3Threads = { connected: false, threads: {}, revision: 0, sequence: 0 };
+  const state = window.__cateT3Threads = { connected: false, threads: {}, revision: 0, sequence: 0, dirty: new Set(), removed: new Set(), fullPending: true };
   let socket;
   let timer;
   const connect = () => {
@@ -46,10 +46,17 @@ export const T3_THREAD_SUBSCRIPTION_SCRIPT = `(() => {
               hasActionableProposedPlan: t.hasActionableProposedPlan, backgroundLiveness: t.backgroundLiveness });
             if (event.kind === 'snapshot') {
               state.threads = Object.fromEntries(event.snapshot.threads.map(t => [t.id, pick(t)]));
-              state.sequence = event.snapshot.snapshotSequence;
+              state.sequence = event.snapshot.snapshotSequence ?? 0;
+              state.fullPending = true;
+              state.dirty.clear(); state.removed.clear();
               state.connected = true;
-            } else if (event.kind === 'thread-upserted') state.threads[event.thread.id] = pick(event.thread);
-            else if (event.kind === 'thread-removed') delete state.threads[event.threadId];
+            } else if (event.kind === 'thread-upserted') {
+              state.threads[event.thread.id] = pick(event.thread);
+              state.dirty.add(event.thread.id); state.removed.delete(event.thread.id);
+            } else if (event.kind === 'thread-removed') {
+              delete state.threads[event.threadId];
+              state.dirty.delete(event.threadId); state.removed.add(event.threadId);
+            }
             if (typeof event.sequence === 'number') state.sequence = event.sequence;
             state.revision++;
           }
@@ -60,7 +67,12 @@ export const T3_THREAD_SUBSCRIPTION_SCRIPT = `(() => {
     socket.onclose = () => { state.connected = false; state.revision++; timer = setTimeout(connect, 2000); };
     socket.onerror = () => socket.close();
   };
-  window.addEventListener('pagehide', () => { clearTimeout(timer); socket.onclose = null; socket.close(); }, { once: true });
+  const dispose = state.dispose = () => {
+    clearTimeout(timer); socket.onclose = null; socket.close();
+    window.removeEventListener('pagehide', dispose);
+    delete window.__cateT3Threads;
+  };
+  window.addEventListener('pagehide', dispose, { once: true });
   connect();
 })()`
 
@@ -72,6 +84,13 @@ export function t3ThreadPollScript(previousRevision?: number): string {
     ${T3_THREAD_SUBSCRIPTION_SCRIPT};
     const state = window.__cateT3Threads;
     if (state.revision === ${previousRevision === undefined ? 'null' : JSON.stringify(previousRevision)}) return;
-    return { connected: state.connected, threads: state.threads, revision: state.revision, sequence: state.sequence };
+    const previous = ${previousRevision === undefined ? 'null' : JSON.stringify(previousRevision)};
+    const full = previous === null || previous !== state.lastReadRevision || state.fullPending || !state.dirty;
+    const threads = full ? state.threads : Object.fromEntries([...state.dirty].map(id => [id, state.threads[id]]));
+    const result = { connected: state.connected, threads, revision: state.revision, sequence: state.sequence,
+      ...(full ? {} : { full: false, removed: [...state.removed] }) };
+    state.lastReadRevision = state.revision; state.fullPending = false;
+    state.dirty?.clear(); state.removed?.clear();
+    return result;
   })()`
 }

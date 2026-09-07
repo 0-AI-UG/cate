@@ -9,6 +9,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { registry, has, type RegistryEntry } from './registryState'
 import { finalizeReconnect } from './terminalLifecycle'
+import { perfCount } from '../perf/perfClient'
 
 /** Panels whose WebGL context was lost — Chromium caps simultaneous WebGL
  *  contexts (~16), and many open terminals (e.g. an agent driving several at
@@ -88,6 +89,7 @@ function webglCeilingReached(): boolean {
  * (besides a cheap refresh) on the canvas renderer fallback.
  */
 export function forceWebglRepaint(): void {
+  perfCount('terminalAtlasPass')
   for (const entry of registry.values()) {
     try {
       entry.webglAddon?.clearTextureAtlas()
@@ -96,6 +98,21 @@ export function forceWebglRepaint(): void {
       /* renderer mid-dispose — ignore */
     }
   }
+}
+
+// Recovery must still clear all users of the shared atlas, but simultaneous
+// attaches share one pass per frame instead of each clearing the entire window.
+let repaintFrame: number | null = null
+let repaintFramesRemaining = 0
+function scheduleWebglRepaint(frames = 1): void {
+  repaintFramesRemaining = Math.max(repaintFramesRemaining, frames)
+  if (repaintFrame !== null) return
+  const repaint = () => {
+    repaintFrame = null
+    forceWebglRepaint()
+    if (--repaintFramesRemaining > 0) repaintFrame = requestAnimationFrame(repaint)
+  }
+  repaintFrame = requestAnimationFrame(repaint)
 }
 
 /**
@@ -131,6 +148,7 @@ function createWebglAddon(panelId: string): void {
   const entry = registry.get(panelId)
   if (!entry || entry.webglAddon) return
   try {
+    perfCount('terminalWebglCreate')
     const newWebgl = new WebglAddon()
     newWebgl.onContextLoss(() => {
       try { newWebgl.dispose() } catch { /* ignore */ }
@@ -147,12 +165,32 @@ function createWebglAddon(panelId: string): void {
     entry.webglAddon = newWebgl
     // The DOM renderer may have laid out the shared glyph atlas differently;
     // resync every terminal so this fresh WebGL renderer doesn't start desynced.
-    forceWebglRepaint()
+    scheduleWebglRepaint()
   } catch {
     // Context creation failed outright — DOM fallback; don't retry, release slot.
     webglDisabledPanels.add(panelId)
     releaseWebglGrant(panelId)
   }
+}
+
+// Context/shader creation is synchronous even when a grant is already held.
+// On workspace return, spread optional GPU upgrades across frames; xterm's
+// fallback renderer remains usable throughout. Coalesce repeated attaches.
+const queuedWebglUpgrades = new Set<string>()
+let upgradeFrame: number | null = null
+function scheduleWebglUpgrade(panelId: string): void {
+  queuedWebglUpgrades.add(panelId)
+  if (upgradeFrame !== null) return
+  const next = () => {
+    upgradeFrame = null
+    const id = queuedWebglUpgrades.values().next().value
+    if (id === undefined) return
+    queuedWebglUpgrades.delete(id)
+    const entry = registry.get(id)
+    if (entry?.terminal.element?.isConnected) void maybeUpgradeToWebgl(id)
+    if (queuedWebglUpgrades.size) upgradeFrame = requestAnimationFrame(next)
+  }
+  upgradeFrame = requestAnimationFrame(next)
 }
 
 /**
@@ -350,7 +388,7 @@ export function attach(panelId: string, container: HTMLDivElement): void {
   // context grant from main, so we never create a context we weren't allotted —
   // that's what used to leave over-limit terminals blank. Denied grants stay on
   // the DOM renderer. Fire-and-forget: attach() must stay synchronous.
-  void maybeUpgradeToWebgl(panelId)
+  scheduleWebglUpgrade(panelId)
 
   // Fit after the next frame — the container may still be mid-layout during
   // the sync DOM append (e.g. WebGL canvas initialization).  Retry up to 5
@@ -403,11 +441,7 @@ export function attach(panelId: string, container: HTMLDivElement): void {
     // while hidden against a stale DPR/size, so the first paint can be blank or
     // garbled until the atlas is rebuilt at the live DPR. The extra frames
     // cover a window still settling its size/DPR on the first painted frame.
-    forceWebglRepaint()
-    requestAnimationFrame(() => {
-      forceWebglRepaint()
-      requestAnimationFrame(() => forceWebglRepaint())
-    })
+    scheduleWebglRepaint(3)
 
     // Now that the xterm is sized to its real container, replay captured
     // scrollback and release the main-side PTY buffer. Order matters:
