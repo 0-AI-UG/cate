@@ -6,12 +6,22 @@ import path from 'node:path'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { expect } from 'vitest'
+import { stripVTControlCharacters } from 'node:util'
 import type { AgentId } from '../../shared/agents'
 import { createAgentHooksCapability } from './agentHooks'
 import { createAgentChangesStore } from './agentChanges'
 
 export const LIVE_AGENT_CHANGES = process.env.CATE_LIVE_AGENT_CLIS === '1'
 export const LIVE_EDIT_PROMPT = 'Read target.txt, then use your native file editing tool (not a shell command) to replace its entire contents with exactly after followed by one newline. Change no other file. Do the edit now, then reply only done.'
+
+function terminateLiveProcessTree(pid: number | undefined): Promise<void> {
+  if (!pid) return Promise.resolve()
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 }, () => resolve()))
+  }
+  try { process.kill(-pid, 'SIGKILL') } catch { /* Owned group already exited. */ }
+  return Promise.resolve()
+}
 
 /** Real installed CLI, closed stdin, finite output and process lifetime. Never
  * logs the inherited environment or provider credentials. */
@@ -36,13 +46,7 @@ export function runLiveCli(binary: string, args: string[], options: { cwd: strin
         if (error) reject(new Error(`${binary} failed (${error.message}): ${result.stderr.slice(-4000)}\n${result.stdout.slice(-4000)}`))
         else resolve(result)
       }
-      if (child.pid && process.platform === 'win32') {
-        // /PID scopes tree termination to the process we just created.
-        execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { timeout: 5000 }, () => complete())
-      } else {
-        if (child.pid) { try { process.kill(-child.pid, 'SIGKILL') } catch { /* Group already exited. */ } }
-        complete()
-      }
+      void terminateLiveProcessTree(child.pid).then(complete)
     }
     const timer = setTimeout(() => finish(new Error('timeout')), options.timeout ?? 120_000)
     const collect = (target: Buffer[], chunk: Buffer) => {
@@ -58,6 +62,45 @@ export function runLiveCli(binary: string, args: string[], options: { cwd: strin
     child.stdin.on('error', () => {}) // A CLI may exit before reading stdin.
     child.stdin.end()
   })
+}
+
+/** Some providers emit workspace hooks only in their real terminal UI, not
+ * print mode. Callers explicitly recognize the one prompt they may approve;
+ * this runner never auto-accepts trust, updates, or arbitrary tool requests. */
+export async function runLiveTui(binary: string, args: string[], options: {
+  cwd: string
+  env: Record<string, string>
+  timeout?: number
+  complete: () => boolean | Promise<boolean>
+  respond?: (screen: string) => string | undefined
+}): Promise<void> {
+  const { spawn } = await import('node-pty')
+  // POSIX forkpty creates a session/process group owned by the returned pid.
+  const terminal = spawn(binary, args, { cwd: options.cwd, env: { ...options.env, PWD: options.cwd }, name: 'xterm-256color', cols: 120, rows: 40 })
+  let screen = '', bytes = 0, exited = false
+  const data = terminal.onData((chunk) => {
+    bytes += Buffer.byteLength(chunk)
+    screen = (screen + chunk).slice(-64 * 1024)
+  })
+  const exit = terminal.onExit(() => { exited = true })
+  try {
+    const deadline = Date.now() + (options.timeout ?? 120_000)
+    while (true) {
+      if (bytes > 4 * 1024 * 1024) throw new Error('output exceeded 4 MiB')
+      if (await options.complete()) return
+      if (exited) throw new Error('exited before the expected completion event')
+      if (Date.now() >= deadline) throw new Error('timeout')
+      const response = options.respond?.(stripVTControlCharacters(screen))
+      if (response) terminal.write(response)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+  } catch (error) {
+    throw new Error(`${binary} failed (${String(error)}): ${stripVTControlCharacters(screen).slice(-2000)}`)
+  } finally {
+    await terminateLiveProcessTree(terminal.pid)
+    try { terminal.kill() } catch { /* Terminal already exited. */ }
+    data.dispose(); exit.dispose()
+  }
 }
 
 /** Isolated repository and the actual production hook receiver/config/bridge.

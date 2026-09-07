@@ -144,8 +144,8 @@ export function filesFromTool(cwd: string, toolName: string, inputValue: unknown
   const edits = Array.isArray(input.edits) ? input.edits : [input]
   const hunks = edits.flatMap((value) => {
     const edit = object(value)
-    const before = string(edit.old_string ?? edit.oldString ?? edit.old_str)
-    const after = string(edit.new_string ?? edit.newString ?? edit.new_str)
+    const before = string(edit.old_string ?? edit.oldString ?? edit.old_str ?? edit.oldStr)
+    const after = string(edit.new_string ?? edit.newString ?? edit.new_str ?? edit.newStr)
     if (before === undefined || after === undefined) return []
     const lines = [...fragmentLines(before).map((line) => '-' + line), ...fragmentLines(after).map((line) => '+' + line)]
     return parseReviewPatch(`@@ -1 +1 @@\n${lines.join('\n')}`)

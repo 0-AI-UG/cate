@@ -7,7 +7,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('real CLI recorded cha
   test('Cursor native edit reaches durable attributed history', { timeout: 180_000 }, async () => {
     const fixture = await createLiveChangeFixture('cursor')
     try {
-      const result = await runLiveCli('cursor-agent', ['--print', '--force', '--trust', '--output-format', 'json', prompt], fixture)
+      const result = await runLiveCli('cursor-agent', ['--print', '--force', '--trust', '--model', process.env.CATE_LIVE_CURSOR_MODEL ?? 'auto', '--output-format', 'json', prompt], fixture)
       expect(result.stdout).toBeTruthy()
       await assertCapturedEdit(fixture, 'cursor')
     } finally { await fixture.close() }

@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { createAgentChangesStore } from './agentChanges'
-import { assertCapturedEdit, createLiveChangeFixture, runLiveCli, LIVE_AGENT_CHANGES, LIVE_EDIT_PROMPT } from './agentChanges.liveHarness'
+import { assertCapturedEdit, createLiveChangeFixture, runLiveCli, runLiveTui, LIVE_AGENT_CHANGES } from './agentChanges.liveHarness'
 
 // Opt-in paid provider calls. Missing executables/authentication are failures
 // when selected, never evidence of a successful live capture integration.
@@ -59,10 +59,19 @@ describe.skipIf(!LIVE_AGENT_CHANGES)('real CLI recorded changes', () => {
   test('Kiro real provider edit reaches shipped capture and recorded diff', { timeout: 180_000 }, async () => {
     const fixture = await createLiveChangeFixture('kiro')
     try {
-      // Headless flags: https://kiro.dev/docs/cli/headless/ . Cate's workspace
-      // hook integration selects the v3 engine for fresh/resumed sessions.
-      await runLiveCli('kiro-cli', ['chat', '--v3', '--no-interactive', '--trust-tools=read,write', LIVE_EDIT_PROMPT], {
+      // Kiro 2.21.1 headless performs edits but emits no workspace hooks.
+      // Exercise the same v3 TUI Cate launches, approving only this one edit.
+      const prompt = 'Read target.txt, then use the native str_replace tool to replace before with after, preserving the newline. Do not use write_file, fs_write, or shell tools. Change no other file. Then stop.'
+      let approved = false
+      await runLiveTui('kiro-cli', ['chat', '--v3', prompt], {
         cwd: fixture.cwd, env: fixture.env, timeout: 150_000,
+        complete: () => fixture.posts.some((post) => (post.body as { payload?: { hook_event_name?: string } }).payload?.hook_event_name === 'Stop'),
+        respond: (screen) => {
+          if (!approved && /Replace in File requires approval\s+fs_write → target\.txt\s+❯ Allow/.test(screen)) {
+            approved = true
+            return '\r'
+          }
+        },
       })
       await assertCapturedEdit(fixture, 'kiro')
     } finally { await fixture.close() }

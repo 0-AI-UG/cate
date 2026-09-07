@@ -485,7 +485,7 @@ const codexSpec: AgentHookSpec = {
 // the user answers; postToolUse (turn-resume) re-asserts the turn afterwards.
 // ---------------------------------------------------------------------------
 
-const CURSOR_EVENTS = ['sessionStart', 'beforeSubmitPrompt', 'postToolUse', 'stop', 'sessionEnd']
+const CURSOR_EVENTS = ['sessionStart', 'beforeSubmitPrompt', 'postToolUse', 'afterFileEdit', 'stop', 'sessionEnd']
 
 interface CursorHooksJson {
   version?: unknown
@@ -570,6 +570,7 @@ const cursorSpec: AgentHookSpec = {
       case 'beforeSubmitPrompt': return { kind: 'turn-start', ...base }
       // Fires after EVERY executed tool call — the idempotent "turn is
       // running" re-assertion (and the only turn signal print mode has).
+      case 'afterFileEdit':
       case 'postToolUse': return { kind: 'turn-resume', ...base }
       case 'stop': return { kind: 'turn-end', ...base }
       case 'sessionEnd': return { kind: 'session-end', ...base }
