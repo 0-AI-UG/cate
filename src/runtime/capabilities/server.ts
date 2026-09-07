@@ -45,10 +45,13 @@ export function serverPidFilePath(daemonId: string): string {
   // Sanitize the id into a safe filename component (ids are app-controlled, but
   // keep it defensive — they can contain path-ish characters).
   const safe = daemonId.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'default'
-  return path.join(os.tmpdir(), 'cate-runtime', `ext-servers-${safe}.json`)
+  const pidRoot = process.env.CATE_E2E === '1' && process.env.CATE_E2E_USER_DATA
+    ? process.env.CATE_E2E_USER_DATA
+    : os.tmpdir()
+  return path.join(pidRoot, 'cate-runtime', `ext-servers-${safe}.json`)
 }
 
-interface PidRecord { pid: number; id: string; startedAt: number }
+interface PidRecord { pid: number; id: string; startedAt: number; ownerPid?: number }
 
 function readPidFile(file: string): PidRecord[] {
   try {
@@ -68,25 +71,30 @@ function writePidFile(file: string, records: PidRecord[]): void {
   } catch { /* best-effort: a failed write just means a stale pid may linger */ }
 }
 
-/**
- * On daemon startup, reap any server children a PREVIOUS run of this daemon
- * (same id) left behind — e.g. after a hard crash that never ran killAll().
- * Best-effort SIGKILL of each recorded pid (ESRCH = already gone, ignored), then
- * clears the file. Pid-reuse caveat: between the crash and this reap the OS may
- * have recycled a pid onto an unrelated process; we cannot fully distinguish it
- * (the recorded `startedAt` is the only signal, and there's no portable cheap way
- * to read a pid's actual start time here). The window is small (same boot, temp
- * dir cleared on reboot) and the alternative — leaking real orphans — is worse,
- * so we accept it. Documented limitation.
- */
+/** Reap servers whose owning daemon has exited. Preserve live owners even if
+ * another daemon uses the same id. Legacy records without an owner retain the
+ * previous cleanup behavior. PID reuse can conservatively defer orphan cleanup. */
 export function reapOrphanServers(daemonId: string): void {
   const file = serverPidFilePath(daemonId)
-  const records = readPidFile(file)
-  for (const rec of records) {
+  const retained: PidRecord[] = []
+  for (const rec of readPidFile(file)) {
     if (rec.pid <= 0) continue
+    if (rec.ownerPid && rec.ownerPid > 0) {
+      try {
+        process.kill(rec.ownerPid, 0)
+        retained.push(rec)
+        continue
+      } catch (error) {
+        // Only ESRCH proves the owner is gone; lack of permission does not.
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+          retained.push(rec)
+          continue
+        }
+      }
+    }
     try { process.kill(rec.pid, 'SIGKILL') } catch { /* ESRCH or perms: already gone */ }
   }
-  writePidFile(file, [])
+  writePidFile(file, retained)
 }
 
 /** A built server capability plus a killAll() so the daemon reaps every live
@@ -168,7 +176,7 @@ export function createServerCapability(deps: ServerDeps = {}): ServerCapability 
       children.set(opts.id, child)
       // Record the live pid so a NEXT daemon run can reap it if we crash without
       // running killAll(). Removed on exit (below) and by killAll() on shutdown.
-      if (child.pid) recordPid({ pid: child.pid, id: opts.id, startedAt: Date.now() })
+      if (child.pid) recordPid({ pid: child.pid, id: opts.id, startedAt: Date.now(), ownerPid: process.pid })
 
       // Ring-buffer the last ~8KB of COMBINED output so an early exit / failed
       // ready probe can report WHY the server died (its output is otherwise lost

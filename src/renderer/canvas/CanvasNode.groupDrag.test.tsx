@@ -135,6 +135,47 @@ function dispatchMouse(el: EventTarget, type: string, client: Point, button = 0)
 
 // =============================================================================
 
+describe('CanvasNode — file drags into an unfocused webview', () => {
+  it.each(['agent', 'browser'] as const)('keeps the %s overlay transparent across the guest boundary and restores it after leaving or dropping', (type) => {
+    const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-file-drag')
+    useAppStore.getState().addPanel(wsId, { id: 'panel-A', type, title: type, isDirty: false })
+    const store = freshCanvasStore()
+    addNode(store, 'A', 'panel-A', { x: 0, y: 0 }, { width: 200, height: 150 })
+    act(() => root.render(
+      <CanvasStoreProvider store={store}>
+        <CanvasNode nodeId="A" isFocused={false} dockStoreApi={tabsDockStore('panel-A')}
+          renderPanel={() => <div data-testid="guest" />} />
+      </CanvasStoreProvider>,
+    ))
+    const overlay = container.querySelector<HTMLElement>('[data-unfocused-overlay]')!
+    const content = overlay.parentElement!
+    const node = container.querySelector<HTMLElement>('[data-node-id="A"]')!
+    const rect = { left: 0, top: 0, right: 200, bottom: 150 } as DOMRect
+    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue(rect)
+    vi.spyOn(node, 'getBoundingClientRect').mockReturnValue(rect)
+    const drag = (target: EventTarget, type: string, x = 50) => act(() => {
+      const event = new MouseEvent(type, { bubbles: true, clientX: x, clientY: 50, relatedTarget: null })
+      Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'] } })
+      target.dispatchEvent(event)
+    })
+
+    expect(overlay.style.pointerEvents).toBe('auto')
+    drag(overlay, 'dragenter')
+    expect(overlay.style.pointerEvents).toBe('none')
+    drag(overlay, 'dragleave') // Chromium hands the drag to the guest.
+    expect(overlay.style.pointerEvents).toBe('none')
+    drag(window, 'dragover', 250) // Guest events don't bubble; host sees the exit.
+    expect(overlay.style.pointerEvents).toBe('auto')
+    drag(overlay, 'dragenter')
+    drag(overlay, 'dragleave')
+    dispatchMouse(window, 'mousemove', { x: 50, y: 50 }) // After a guest drop.
+    expect(overlay.style.pointerEvents).toBe('auto')
+    drag(overlay, 'dragenter')
+    drag(window, 'drop')
+    expect(overlay.style.pointerEvents).toBe('auto')
+  })
+})
+
 describe('CanvasNode — group drag from the title bar', () => {
   it('grabbing a multi-selected node by its tab bar arms a GROUP drag carrying the whole selection', () => {
     const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-group-drag')

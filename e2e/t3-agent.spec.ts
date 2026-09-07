@@ -135,7 +135,11 @@ test.afterEach(async ({}, testInfo) => {
     const body = page && !page.isClosed() ? await guestEval<string>(agentWebview(), 'document.body.innerText').catch(() => '') : ''
     await testInfo.attach('guest-text', { body, contentType: 'text/plain' })
   }
-  if (electronApp) await closeApp(electronApp)
+  if (electronApp) {
+    const events = await electronApp.evaluate(() => (globalThis as any).__t3ConnectionEvents ?? []).catch(() => [])
+    await testInfo.attach('connection-events', { body: JSON.stringify(events, null, 2), contentType: 'application/json' })
+    await closeApp(electronApp)
+  }
   electronApp = undefined
   rmSync(tempRoot, { recursive: true, force: true })
 })
@@ -835,4 +839,164 @@ test('real T3 lifecycle retains the message title and usable chat when title gen
   await assertChatTitle(message)
   await submitRealChat('continue after title generation failed')
   await waitForRealReply('continue after title generation failed')
+})
+
+
+test('real T3 lifecycle keeps multiple panels connected across repeated workspace switches after the first message', async () => {
+  test.setTimeout(180_000)
+  await electronApp!.evaluate(({ app, webContents }) => {
+    const events: unknown[] = []
+    ;(globalThis as any).__t3ConnectionEvents = events
+    const watch = (guest: Electron.WebContents) => {
+      if (guest.getType() !== 'webview') return
+      const id = guest.id
+      guest.on('render-process-gone', (_e, detail) => events.push({ id, event: 'render-process-gone', detail }))
+      guest.on('destroyed', () => events.push({ id, event: 'destroyed' }))
+      try {
+        guest.debugger.attach('1.3')
+        guest.debugger.on('message', (_e, method, params) => {
+          if (method === 'Network.webSocketHandshakeResponseReceived') events.push({ id, event: method, status: params.response.status })
+          if (method === 'Network.webSocketFrameError') events.push({ id, event: method, error: params.errorMessage })
+          if (method === 'Network.webSocketClosed') events.push({ id, event: method })
+        })
+        void guest.debugger.sendCommand('Network.enable')
+      } catch {}
+    }
+    webContents.getAllWebContents().forEach(watch)
+    app.on('web-contents-created', (_e, guest) => watch(guest))
+  })
+  const first = agent
+  const firstOrigin = await guestEval<string>(agentWebview(), 'location.origin')
+  await submitRealChat('fixture:stream workspace switching')
+  await expect.poll(async () => (await realThreadState())?.latestTurn?.state).toBe('running')
+  const firstThread = (await realThreadState())!.id
+  const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
+  expect(existsSync(pidPath), 'test runtime must use isolated server bookkeeping').toBe(true)
+  const originalPids = JSON.parse(readFileSync(pidPath, 'utf8')).map((r: {pid: number}) => r.pid)
+  const extraFirst = await page.evaluate(() => window.__cateE2E!.createAgent({ x: 700, y: 24 }))
+  agent = extraFirst
+  await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true')
+  await submitRealChat('same workspace second panel')
+  await waitForRealReply('same workspace second panel')
+  expect(JSON.parse(readFileSync(pidPath, 'utf8')).map((r: {pid: number}) => r.pid)).toEqual(originalPids)
+
+  const otherRoot = path.join(tempRoot, 'other-workspace')
+  mkdirSync(otherRoot)
+  const otherWorkspace = await page.evaluate(() => window.__cateE2E!.addWorkspace('Second workspace'))
+  await page.evaluate(id => window.__cateE2E!.selectWorkspace(id), otherWorkspace)
+  const openingSecond = page.evaluate(root => window.__cateE2E!.setWorkspaceRoot(root), otherRoot)
+  const secondTrust = page.getByRole('button', { name: 'Trust and open' })
+  await secondTrust.waitFor({ state: 'visible', timeout: 2_000 }).then(() => secondTrust.click()).catch(() => {})
+  expect(await openingSecond).toBe(true)
+  const second = await page.evaluate(() => window.__cateE2E!.createAgent({ x: 24, y: 24 }))
+  agent = second
+  await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', { timeout: 30_000 })
+  await submitRealChat('second workspace first message')
+  await waitForRealReply('second workspace first message')
+  const secondThread = (await realThreadState())!.id
+  const extraSecond = await page.evaluate(() => window.__cateE2E!.createAgent({ x: 700, y: 24 }))
+  agent = extraSecond
+  await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true')
+  await submitRealChat('second workspace second panel')
+  await waitForRealReply('second workspace second panel')
+
+  for (let i = 0; i < 12; i++) {
+    agent = i % 2 === 0 ? first : second
+    await page.evaluate(id => window.__cateE2E!.selectWorkspace(id), agent.workspaceId)
+    await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', { timeout: 15_000 })
+    await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), {timeout: 15_000}).toBe(true)
+    expect((await realThreadState())?.id).toBe(i % 2 === 0 ? firstThread : secondThread)
+    expect(await guestEval<string>(agentWebview(), 'document.body.innerText')).not.toMatch(/did not survive a server restart|could not establish a WebSocket|Failed to connect/)
+    for (const panel of [agent, i % 2 === 0 ? extraFirst : extraSecond]) {
+      const view = page.locator(`webview[data-agent-webview="${panel.panelId}"]`)
+      await expect.poll(() => guestEval<boolean>(view, 'window.__cateT3Threads?.connected === true').catch(() => false)).toBe(true)
+    }
+    const livePids = JSON.parse(readFileSync(pidPath, 'utf8')).map((r: {pid: number}) => r.pid)
+    expect(livePids).toEqual(expect.arrayContaining(originalPids))
+  }
+  agent = first
+  await page.evaluate(id => window.__cateE2E!.selectWorkspace(id), first.workspaceId)
+  await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true')
+  expect(await guestEval<string>(agentWebview(), 'location.origin')).toBe(firstOrigin)
+  writeFileSync(path.join(tempRoot, 'codex-state.json.release-stream'), '')
+  await waitForRealReply('fixture:stream workspace switching')
+  await submitRealChat('after workspace switching')
+  await waitForRealReply('after workspace switching')
+})
+
+
+test('real T3 lifecycle recovers a mounted panel after its server process exits', async () => {
+  await submitRealChat('before server failure')
+  await waitForRealReply('before server failure')
+  const threadId = (await realThreadState())!.id
+  const origin = await guestEval<string>(agentWebview(), 'location.origin')
+  const sibling = await page.evaluate(() => window.__cateE2E!.createAgent({ x: 700, y: 24 }))
+  const siblingView = page.locator(`webview[data-agent-webview="${sibling.panelId}"]`)
+  await expect(siblingView).toHaveAttribute('data-agent-guest-ready', 'true')
+  await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true')).toBe(true)
+  const siblingId = await siblingView.evaluate(el => (el as any).getWebContentsId())
+  const guestId = await agentWebview().evaluate(el => (el as any).getWebContentsId())
+  await guestEval(agentWebview(), "document.querySelector('[contenteditable=true]').focus()")
+  await electronApp!.evaluate(({ webContents }, id) => webContents.fromId(id)!.insertText('after server failure'), guestId)
+  const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
+  const [{ pid }] = JSON.parse(readFileSync(pidPath, 'utf8'))
+  // This PID comes exclusively from this test's private runtime directory.
+  process.kill(pid, 'SIGKILL')
+  await expect.poll(() => page.evaluate(cwd => window.electronAPI.agentHarnessGetStatus({ cwd }), workspaceRoot)).toMatchObject({ phase: 'error' })
+  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false)).toBe(false)
+  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), {timeout: 15_000}).toBe(true)
+  expect((await realThreadState())?.id).toBe(threadId)
+  expect(await guestEval<string>(agentWebview(), 'location.origin')).toBe(origin)
+  expect(await agentWebview().evaluate(el => (el as any).getWebContentsId())).toBe(guestId)
+  expect(await guestEval<string>(agentWebview(), "document.querySelector('[contenteditable=true]').innerText")).toBe('after server failure')
+  await guestKey(agentWebview(), 'Enter')
+  await waitForRealReply('after server failure')
+  await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true')).toBe(true)
+  expect(await siblingView.evaluate(el => (el as any).getWebContentsId())).toBe(siblingId)
+  expect(JSON.parse(readFileSync(pidPath, 'utf8'))).toHaveLength(1)
+  // Explicit retry must also preserve the endpoint for other mounted panels.
+  await page.evaluate(cwd => window.electronAPI.agentHarnessRestart({ cwd }), workspaceRoot)
+  await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true')).toBe(false)
+  await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true'), {timeout: 15_000}).toBe(true)
+  expect(await siblingView.evaluate(el => (el as any).getWebContentsId())).toBe(siblingId)
+  expect(await guestEval<string>(siblingView, 'location.origin')).toBe(origin)
+})
+
+
+test('real T3 lifecycle reconnects after transient socket loss without restarting the server', async () => {
+  await submitRealChat('before socket loss')
+  await waitForRealReply('before socket loss')
+  const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
+  const before = readFileSync(pidPath, 'utf8')
+  const id = await agentWebview().evaluate(el => (el as any).getWebContentsId())
+  await electronApp!.evaluate(async ({ webContents }, id) => {
+    await webContents.fromId(id)!.session.closeAllConnections()
+  }, id)
+  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), {timeout: 15_000}).toBe(true)
+  expect(await agentWebview().evaluate(el => (el as any).getWebContentsId())).toBe(id)
+  expect(readFileSync(pidPath, 'utf8')).toBe(before)
+  await submitRealChat('after socket loss')
+  await waitForRealReply('after socket loss')
+})
+
+
+test('real T3 lifecycle bounds automatic crash recovery and allows an explicit retry', async () => {
+  await submitRealChat('before repeated failures')
+  await waitForRealReply('before repeated failures')
+  const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
+  const currentPid = (): number | undefined => existsSync(pidPath) ? JSON.parse(readFileSync(pidPath, 'utf8'))[0]?.pid : undefined
+  for (let crash = 0; crash < 3; crash++) {
+    const oldPid = currentPid()!
+    process.kill(oldPid, 'SIGKILL')
+    await expect.poll(() => Boolean(currentPid() && currentPid() !== oldPid), {timeout: 15_000}).toBe(true)
+    await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true'), {timeout: 15_000}).toBe(true)
+  }
+  process.kill(currentPid()!, 'SIGKILL')
+  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true')).toBe(false)
+  await page.waitForTimeout(3_000)
+  expect(currentPid()).toBeUndefined()
+  await page.getByRole('status').filter({ hasText: 'T3 Code activity disconnected' }).getByRole('button', {name: 'Retry', exact: true}).click()
+  await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', {timeout: 15_000})
+  await submitRealChat('after explicit retry')
+  await waitForRealReply('after explicit retry')
 })

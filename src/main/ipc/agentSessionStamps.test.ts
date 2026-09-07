@@ -144,9 +144,9 @@ describe('cwd fallback (payloads that carry no cwd)', () => {
 })
 
 describe('emit mechanics', () => {
-  it('ignores title metadata because it does not change resume identity', () => {
+  it.each(['session-title', 'input-submit', 'input-interrupt'] as const)('ignores %s because it does not change resume identity', (kind) => {
     ingestAgentSessionStamp(runtime, {
-      ...ev(tid, 'codex', 'session-title', 'id-1', '/w'),
+      ...ev(tid, 'codex', kind, 'id-1', '/w'),
       title: 'Fix terminal titles',
     })
     expect(stamps(tid)).toEqual([])

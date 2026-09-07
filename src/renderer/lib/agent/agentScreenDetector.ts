@@ -10,9 +10,9 @@
 // flips to 'waitingForInput' immediately with a "needs permission"
 // notification whose body carries the blocked command; turn-resume (the
 // CLI reported a permission reply or a tool completed) flips back to 'running'
-// silently. For CLIs with no approval-reply hook, terminal Enter supplies the
-// earlier resume edge. The signals are authoritative, so no settle timer is
-// involved.
+// silently. For CLIs with no approval-reply hook, runtime PTY input supplies the
+// earlier resume edge on the same ordered stream as the hooks. The signals
+// are authoritative, so no settle timer is involved.
 //
 // Presence (noteAgentPresence, fed 1 Hz from main's activity scan) stays
 // authoritative for EXISTENCE — but it is itself hook-anchored now: the
@@ -175,6 +175,12 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
   const t = trackerFor(event.terminalId)
   t.agentId = event.agentId
   switch (event.kind) {
+    case 'input-submit':
+      noteAgentInputSubmitted(event.terminalId)
+      break
+    case 'input-interrupt':
+      noteAgentInterruptSubmitted(event.terminalId)
+      break
     case 'turn-start':
       t.sessionId = event.sessionId
       t.activeTurnId = event.turnId ?? null
@@ -241,8 +247,8 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
 /** The user submitted a response while the CLI was parked on a permission
  *  prompt. Claude, Codex, and Grok do not expose an "approval answered" hook:
  *  their next hook is PostToolUse, after the approved tool has FINISHED. The
- *  terminal Enter is therefore the earliest truthful resume edge. A denial
- *  also resumes the agent while it processes that answer, before its Stop. */
+ *  runtime-observed Enter supplies the earlier resume edge. A denial also
+ *  resumes the agent while it processes that answer, before its Stop. */
 export function noteAgentInputSubmitted(terminalId: string): void {
   const t = trackers.get(terminalId)
   if (!t?.hookPermissionWait) return

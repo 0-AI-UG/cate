@@ -100,7 +100,7 @@ function emit(terminalId: string, session: TerminalAgentSession | null): void {
  */
 export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent): void {
   const { terminalId } = event
-  if (event.kind === 'session-title') return
+  if (event.kind === 'session-title' || event.kind === 'input-submit' || event.kind === 'input-interrupt') return
   const st = stateFor(terminalId)
   st.seq++
   if (event.kind === 'session-end') {

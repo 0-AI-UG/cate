@@ -89,6 +89,11 @@ export interface AgentHooksCapability {
    *  folder is already in the repo (the 'auto' signal), and whether Cate has
    *  injected there. Read-only; runs on the host that owns the workspace. */
   inspectWorkspace(cwd: string): Promise<AgentHookAgentState[]>
+  /** Report accepted PTY input on the same ordered stream as lifecycle hooks.
+   *  Only terminals identified by a hook emit events; typed text is never sent. */
+  noteInput(terminalId: string, data: string): void
+  /** Forget the input correlation when a PTY exits or is killed. */
+  forgetTerminal(terminalId: string): void
   /** Subscribe to normalized hook events. Returns an unsubscribe. */
   subscribe(onEvent: (event: AgentHookEvent) => void): () => void
   /** The ingestion endpoint (boots it if needed) — for tests/diagnostics.
@@ -214,9 +219,14 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
   const listeners = new Set<(event: AgentHookEvent) => void>()
   let ready: Promise<HookState> | null = null
   let disposed = false
+  const inputSessions = new Map<string, Pick<AgentHookEvent, 'agentId' | 'sessionId'>>()
 
   let titleTracker: ReturnType<typeof createAgentTitleTracker> | null = null
   const emit = (event: AgentHookEvent): void => {
+    if (event.kind === 'session-end') inputSessions.delete(event.terminalId)
+    else if (event.kind !== 'session-title' && event.kind !== 'input-submit' && event.kind !== 'input-interrupt') {
+      inputSessions.set(event.terminalId, { agentId: event.agentId, sessionId: event.sessionId })
+    }
     for (const cb of listeners) {
       try { cb(event) } catch { /* a subscriber must not break ingestion */ }
     }
@@ -483,6 +493,18 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
   }
 
   return {
+    noteInput(terminalId, data) {
+      const session = inputSessions.get(terminalId)
+      if (!session || disposed) return
+      // The PTY write and hook ingestion run on this host. A busy renderer
+      // therefore receives permission-wait before its corresponding input,
+      // even when both events are still queued for delivery.
+      if (data.includes('\r')) emit({ terminalId, ...session, kind: 'input-submit', raw: {} })
+      if (data.includes('\x03')) emit({ terminalId, ...session, kind: 'input-interrupt', raw: {} })
+    },
+    forgetTerminal(terminalId) {
+      inputSessions.delete(terminalId)
+    },
     async envForPty(ptyId, env) {
       if (disposed) return env
       let state: HookState
@@ -616,6 +638,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       titleTracker?.dispose()
       titleTracker = null
       listeners.clear()
+      inputSessions.clear()
       interruptWatches.clear()
       if (interruptTimer) {
         clearInterval(interruptTimer)

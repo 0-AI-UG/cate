@@ -53,9 +53,13 @@ export type AgentHookEventKind =
   | 'permission-wait'
   /** An idempotent "the turn is running" re-assertion. OpenCode emits it when
    *  a permission reply arrives; other CLIs emit it after a tool completes.
-   *  Claude/Codex/Grok do not hook the actual approval reply, so renderer
-   *  terminal input supplies that earlier resume edge. */
+   *  Claude/Codex/Grok do not hook the actual approval reply, so
+   *  runtime PTY input supplies that earlier resume edge. */
   | 'turn-resume'
+  /** Runtime-observed PTY input, ordered with hooks rather than guessed in
+   *  the renderer. These events carry no typed text. */
+  | 'input-submit'
+  | 'input-interrupt'
 
 export interface AgentHookEvent {
   /** The pty id whose env the hook echoed back (CATE_TERMINAL_ID). */

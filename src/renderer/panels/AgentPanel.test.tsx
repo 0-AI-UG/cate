@@ -136,6 +136,8 @@ describe('AgentPanel', () => {
     let finishCss!: (key: string) => void
     oldGuest.insertCSS.mockImplementation(() => new Promise(resolve => { finishCss = resolve }))
     await act(async () => oldGuest.dispatchEvent(new Event('dom-ready')))
+    expect(oldGuest.executeJavaScript).toHaveBeenCalledOnce()
+    oldGuest.executeJavaScript.mockClear()
     await act(async () => useAppStore.getState().setPanelAgentThreadId('ws', 'agent', 'next-chat'))
     const nextGuest = mockGuest()
     expect(nextGuest).not.toBe(oldGuest)
@@ -221,6 +223,9 @@ describe('AgentPanel', () => {
     expect(webview.classList.contains('invisible')).toBe(true)
     await act(async () => webview.dispatchEvent(new Event('dom-ready')))
     expect(webview.classList.contains('invisible')).toBe(true)
+    // Guest setup starts while CSS is still pending, in a single round trip.
+    expect(webview.executeJavaScript).toHaveBeenCalledTimes(1)
+    expect(() => new Function(webview.executeJavaScript.mock.calls[0][0])).not.toThrow()
 
     await act(async () => {
       finishCss?.()
@@ -258,7 +263,7 @@ it('uses only the bound connected thread title, preserves user titles, and ignor
     let snapshot = { connected: true, revision: 1, threads: { first: { id: 'first', title: 'Extracted title' }, other: { id: 'other', title: 'Wrong conversation' } } }
     guest.getURL = () => 'http://127.0.0.1:49152/local-env/first'
     guest.insertCSS = vi.fn().mockResolvedValue('css')
-    guest.executeJavaScript = vi.fn(async (script: string) => script.startsWith('window.__cateT3Threads &&') ? snapshot : undefined)
+    guest.executeJavaScript = vi.fn(async (script: string) => script.startsWith('/* cate-t3-poll */') ? snapshot : undefined)
     const title = () => useAppStore.getState().workspaces[0].panels.agent.title
     await act(async () => guest.dispatchEvent(new Event('dom-ready')))
     expect(title()).toBe('Extracted title')
@@ -273,7 +278,7 @@ it('uses only the bound connected thread title, preserves user titles, and ignor
     await act(async () => vi.advanceTimersByTimeAsync(1000))
     expect(title()).toBe('My chosen title')
     let release: ((value: unknown) => void) | undefined
-    guest.executeJavaScript.mockImplementation((script: string) => script.startsWith('window.__cateT3Threads &&') ? new Promise(resolve => { release = resolve }) : Promise.resolve())
+    guest.executeJavaScript.mockImplementation((script: string) => script.startsWith('/* cate-t3-poll */') ? new Promise(resolve => { release = resolve }) : Promise.resolve())
     await act(async () => vi.advanceTimersByTimeAsync(1000))
     expect(release).toBeDefined()
     await act(async () => useAppStore.getState().setPanelAgentThreadId('ws', 'agent', 'other'))

@@ -185,6 +185,8 @@ export interface ProcessDeps {
   hooks?: {
     envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
     prepareWorkspace(cwd: string, config?: AgentHookConfig, baseCwd?: string): Promise<void>
+    noteInput?(ptyId: string, data: string): void
+    forgetTerminal?(ptyId: string): void
   }
   /**
    * Hook-anchored agent presence (agentPresence.ts): scanActivity reads each
@@ -314,6 +316,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
         ptys.delete(id)
         idle.delete(id)
         deps.agentPresence?.drop(id)
+        deps.hooks?.forgetTerminal?.(id)
         onExit(id, exitCode)
       })
       return {
@@ -328,7 +331,8 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       const pty = ptys.get(id)
       if (!pty) return
       if (idle.get(id)?.suspended) resume(id)
-      try { pty.write(data) } catch { /* fd closed between exit and write */ }
+      try { pty.write(data) } catch { return /* fd closed between exit and write */ }
+      deps.hooks?.noteInput?.(id, data)
     },
 
     resize(id: string, cols: number, rows: number): void {
@@ -350,6 +354,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       ptys.delete(id)
       idle.delete(id)
       deps.agentPresence?.drop(id)
+      deps.hooks?.forgetTerminal?.(id)
     },
 
     async getCwd(id: string): Promise<string | null> {

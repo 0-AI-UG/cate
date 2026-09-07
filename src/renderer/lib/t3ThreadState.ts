@@ -15,7 +15,9 @@ export interface T3Thread {
 export function t3ThreadActivity(thread: T3Thread): AgentState {
   if (thread.hasPendingApprovals || thread.hasPendingUserInput || thread.hasActionableProposedPlan) return 'waitingForInput'
   if (thread.session?.status === 'starting' || thread.latestTurn?.state === 'running' || thread.session?.activeTurnId || thread.backgroundLiveness) return 'running'
-  return thread.latestTurn ? 'finished' : 'notRunning'
+  // A stopped turn leaves the conversation ready for the user's next message,
+  // just like a terminal agent returning to its prompt.
+  return thread.latestTurn ? 'waitingForInput' : 'notRunning'
 }
 
 /** A separate authenticated subscription in the guest's persistent session.
@@ -61,3 +63,15 @@ export const T3_THREAD_SUBSCRIPTION_SCRIPT = `(() => {
   window.addEventListener('pagehide', () => { clearTimeout(timer); socket.onclose = null; socket.close(); }, { once: true });
   connect();
 })()`
+
+
+/** Keep unchanged thread lists inside the guest instead of cloning them over
+ * IPC on every tick. A fresh consumer (or a failed read) requests a full copy. */
+export function t3ThreadPollScript(previousRevision?: number): string {
+  return `/* cate-t3-poll */ (() => {
+    ${T3_THREAD_SUBSCRIPTION_SCRIPT};
+    const state = window.__cateT3Threads;
+    if (state.revision === ${previousRevision === undefined ? 'null' : JSON.stringify(previousRevision)}) return;
+    return { connected: state.connected, threads: state.threads, revision: state.revision, sequence: state.sequence };
+  })()`
+}

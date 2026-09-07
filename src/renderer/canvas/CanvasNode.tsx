@@ -166,6 +166,27 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   // True while a file/panel drag is hovering an unfocused node, so the dim
   // overlay lets the drop fall through to the panel content that owns it.
   const [fileDragOver, setFileDragOver] = useState(false)
+  useEffect(() => {
+    if (!fileDragOver) return
+    const clear = () => setFileDragOver(false)
+    // Guest webviews don't bubble their drop/leave events into this document.
+    // Restore click-to-focus when the drag returns outside this node, ends in
+    // the host, or ordinary mouse movement resumes after a guest drop.
+    const onDragOver = (e: DragEvent) => {
+      const rect = nodeRef.current?.getBoundingClientRect()
+      if (!rect || e.clientX < rect.left || e.clientX >= rect.right || e.clientY < rect.top || e.clientY >= rect.bottom) clear()
+    }
+    window.addEventListener('dragover', onDragOver, true)
+    window.addEventListener('drop', clear, true)
+    window.addEventListener('dragend', clear, true)
+    window.addEventListener('mousemove', clear, true)
+    return () => {
+      window.removeEventListener('dragover', onDragOver, true)
+      window.removeEventListener('drop', clear, true)
+      window.removeEventListener('dragend', clear, true)
+      window.removeEventListener('mousemove', clear, true)
+    }
+  }, [fileDragOver])
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const node = useCanvasStoreContext(
@@ -701,6 +722,11 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         onDragLeave={(e) => {
           // Left the panel entirely (not just moving between children): the
           // overlay goes back to blocking so an unfocused node stays click-to-focus.
+          // Entering a webview reports relatedTarget=null even inside the panel.
+          if (!e.relatedTarget) {
+            const rect = e.currentTarget.getBoundingClientRect()
+            if (e.clientX >= rect.left && e.clientX < rect.right && e.clientY >= rect.top && e.clientY < rect.bottom) return
+          }
           if (!e.currentTarget.contains(e.relatedTarget as Node)) setFileDragOver(false)
         }}
         onDrop={() => setFileDragOver(false)}
