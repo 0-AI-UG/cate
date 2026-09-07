@@ -1,3 +1,4 @@
+import type { RecentScreenshot } from './recentScreenshot'
 // =============================================================================
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
@@ -705,6 +706,9 @@ export interface ElectronAPI {
   }): Promise<{ ok?: true; error?: string }>
   browserCredentialClear(): Promise<void>
 
+  getRecentScreenshot(): Promise<RecentScreenshot | null>
+  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot | null) => void): () => void
+  dragRecentScreenshot(id: string): Promise<void>
   /** Initiate a native OS file drag from the renderer. */
   nativeFileDrag(filePath: string): Promise<void>
 

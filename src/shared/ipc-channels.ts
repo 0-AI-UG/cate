@@ -407,3 +407,7 @@ export const AGENT_HARNESS_LIST_CONVERSATIONS = 'agentHarness:listConversations'
 export const AGENT_HARNESS_DELETE_CONVERSATION = 'agentHarness:deleteConversation'
 
 export const AGENT_CONVERSATION_DELETED = 'agentHarness:conversationDeleted'
+
+export const RECENT_SCREENSHOT_GET = 'recentScreenshot:get'
+export const RECENT_SCREENSHOT_CHANGED = 'recentScreenshot:changed'
+export const RECENT_SCREENSHOT_DRAG = 'recentScreenshot:drag'

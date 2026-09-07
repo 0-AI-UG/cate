@@ -1,3 +1,4 @@
+import type { RecentScreenshot } from '../shared/recentScreenshot'
 import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
 
 // Phase 0 perf marker — capture preload entry as early as possible.
@@ -206,6 +207,9 @@ import {
   BROWSER_CREDENTIAL_FILL,
   BROWSER_CREDENTIAL_CLEAR,
   NATIVE_FILE_DRAG,
+  RECENT_SCREENSHOT_GET,
+  RECENT_SCREENSHOT_CHANGED,
+  RECENT_SCREENSHOT_DRAG,
   AGENT_HARNESS_GET_PANEL_URL,
   AGENT_HARNESS_LIST_CONVERSATIONS,
   AGENT_HARNESS_DELETE_CONVERSATION,
@@ -455,6 +459,11 @@ const invokeForwarders = {
   browserCredentialFill: makeInvoker<'browserCredentialFill'>(BROWSER_CREDENTIAL_FILL),
   browserCredentialClear: makeInvoker<'browserCredentialClear'>(BROWSER_CREDENTIAL_CLEAR),
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
+  getRecentScreenshot: makeInvoker<'getRecentScreenshot'>(RECENT_SCREENSHOT_GET),
+  dragRecentScreenshot: makeInvoker<'dragRecentScreenshot'>(RECENT_SCREENSHOT_DRAG),
+  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot | null) => void): () => void {
+    return createIpcListener(RECENT_SCREENSHOT_CHANGED, callback)
+  },
 
   // T3 provider harness
   agentHarnessDeleteConversation: makeInvoker<'agentHarnessDeleteConversation'>(AGENT_HARNESS_DELETE_CONVERSATION),
