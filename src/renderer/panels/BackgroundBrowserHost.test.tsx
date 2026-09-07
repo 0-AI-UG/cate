@@ -180,7 +180,9 @@ describe('BackgroundBrowserHost', () => {
     })
 
     await vi.waitFor(() => {
-      expect(surface.style.transform).toBe('translate3d(120px, 40px, 0) scale(1.5, 1.5)')
+      expect(surface.style.left).toBe('120px')
+      expect(surface.style.top).toBe('40px')
+      expect(surface.style.transform).toBe('scale(1.5, 1.5)')
     })
   })
 
