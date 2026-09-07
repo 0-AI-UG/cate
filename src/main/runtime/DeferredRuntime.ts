@@ -56,6 +56,7 @@ export class DeferredRuntime implements Runtime {
     }
 
     this.agentHooks = {
+      readChanges: (cwd, knownRevision, access) => d((c) => c.agentHooks.readChanges(cwd, knownRevision, access)),
       listChanges: (cwd, access) => d((c) => c.agentHooks.listChanges(cwd, access)),
       bindChanges: (cwd, threadId, panelId, access) => d((c) => c.agentHooks.bindChanges(cwd, threadId, panelId, access)),
       // Start-after-ready: return the unsub now; start the real subscription

@@ -8,10 +8,9 @@ import { parseLocator } from '../../../shared/runtimeLocator'
 import { pathKey } from '../../../shared/pathUtils'
 
 export async function inspectReviewAgents(cwd: string, workspaceId: string, fallbackPath?: string) {
-  const repoPath = parseLocator(cwd).path
   const [states, fallbackStates] = await Promise.all([
-    inspectAgentCliHooks(repoPath),
-    fallbackPath && fallbackPath !== repoPath ? inspectAgentCliHooks(fallbackPath) : Promise.resolve([]),
+    inspectAgentCliHooks(cwd),
+    fallbackPath && fallbackPath !== cwd ? inspectAgentCliHooks(fallbackPath) : Promise.resolve([]),
   ])
   const fallbackById = new Map(fallbackStates.map((state) => [state.agent.id, state]))
   const hookConfig = useSettingsStore.getState().agentHookInjection[workspaceId]
@@ -38,8 +37,11 @@ export async function launchReviewAgent(workspaceId: string, panelId: string, cw
   const result = outcome.result as { id?: unknown; panelId?: unknown } | null
   if (typeof result?.id !== 'string' || typeof result.panelId !== 'string') throw new Error('Agent launch did not return a run')
   const launched = { runId: result.id, terminalPanelId: result.panelId }
+  return launched
+}
+
+export function trackReviewAgent(workspaceId: string, panelId: string, launched: { runId: string; terminalPanelId: string }) {
   const app = useAppStore.getState()
   const state = app.getWorkspace(workspaceId)?.panels[panelId]?.reviewState
   if (state) app.setPanelReviewState(workspaceId, panelId, { ...state, agentReview: { ...launched, status: 'working', startedAt: Date.now() } })
-  return launched
 }

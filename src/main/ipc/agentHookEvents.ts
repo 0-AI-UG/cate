@@ -13,7 +13,7 @@
 // =============================================================================
 
 import { ipcMain } from 'electron'
-import { AGENT_CHANGES_BIND, AGENT_CHANGES_LIST, AGENT_HOOKS_INSPECT, SHELL_AGENT_HOOK_EVENT } from '../../shared/ipc-channels'
+import { AGENT_CHANGES_BIND, AGENT_CHANGES_LIST, AGENT_CHANGES_READ, AGENT_HOOKS_INSPECT, SHELL_AGENT_HOOK_EVENT } from '../../shared/ipc-channels'
 import type { AgentHookAgentState, AgentHookEvent } from '../../shared/agentHooks'
 import { runtimes } from '../runtime/runtimeManager'
 import { parseLocator, type RuntimeId } from '../../shared/runtimeLocator'
@@ -43,6 +43,10 @@ async function inspectAgentHooks(locator: string): Promise<AgentHookAgentState[]
  *  alike; a reconnect resubscribes on the fresh RemoteRuntime). Call once at
  *  startup, before ensureLocalRuntime kicks off the LOCAL connect. */
 export function registerAgentHookForwarding(): void {
+  ipcMain.handle(AGENT_CHANGES_READ, (event, locator: string, workspaceId: string, knownRevision?: string) => {
+    const { runtimeId, path: cwd } = parseLocator(locator)
+    return runtimes.resolve(runtimeId).agentHooks.readChanges(cwd, knownRevision, { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId })
+  })
   ipcMain.handle(AGENT_CHANGES_BIND, (event, locator: string, workspaceId: string, threadId: string, panelId: string) => {
     if (typeof threadId !== 'string' || !threadId || typeof panelId !== 'string' || !panelId) throw new Error('A conversation and panel are required')
     const { runtimeId, path: cwd } = parseLocator(locator)

@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowClockwise, CaretDown, CaretRight, DotsThree, Funnel, Info, Rows, SplitHorizontal, X } from '@phosphor-icons/react'
 import { ReviewToolbar } from './ReviewToolbar'
 import { RecordedReviewButton } from './RecordedReviewButton'
-import { RecordedDiffHunk, ReviewDisplayOptions, ReviewFileFilter, ReviewRunStatus, ReviewStats, ToolbarButton } from './GitReviewPanel'
+import { RecordedDiffHunk } from './ReviewDiff'
+import { ReviewDisplayOptions, ReviewFileFilter, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
 import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { PopoverSurface, useDismissableLayer, useViewportPopoverPosition } from '../ui/Popover'
 import { AGENTS } from '../../shared/agents'
 import { filterAgentChanges } from '../../shared/agentChanges'
-import type { AgentChangesFilter } from '../../shared/agentChanges'
+import type { AgentChangedFile, AgentChangesFilter } from '../../shared/agentChanges'
 import type { PanelProps } from './types'
 import type { ReviewPanelState, WorkspaceState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
@@ -29,7 +30,7 @@ export default function AgentChangesView({ workspaceId, panelId }: PanelProps) {
 function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelProps & { workspace: WorkspaceState; state: ReviewPanelState }) {
   const titleColors = useWorktreeColorByPanel()
   const agentInfo = useAgentInfoByPanel(workspaceId)
-  const filter = state.agentChanges ?? {}
+  const filter = useMemo(() => state.agentChanges ?? {}, [state.agentChanges])
   const { records, loading, error } = useAgentChanges(state.repoPath, workspaceId)
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -38,16 +39,13 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
   const [moreOpen, setMoreOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const morePopover = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!moreOpen) return
-    const close = (event: PointerEvent) => { if (!morePopover.current?.contains(event.target as Node)) setMoreOpen(false) }
-    window.addEventListener('pointerdown', close)
-    return () => window.removeEventListener('pointerdown', close)
-  }, [moreOpen])
+  useDismissableLayer({ open: moreOpen, contentRef: morePopover, onDismiss: () => setMoreOpen(false) })
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [visibleCount, setVisibleCount] = useState(50)
   const { pos, portalTarget } = useViewportPopoverPosition(trigger, open, (rect) => ({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 264)), gap: 6, height: 180 }), popover)
   useDismissableLayer({ open, contentRef: popover, triggerRefs: [trigger], onDismiss: () => setOpen(false) })
-  useEffect(() => { if (open && pos) popover.current?.querySelector('select')?.focus() }, [open, !!pos])
+  const positioned = !!pos
+  useEffect(() => { if (open && positioned) popover.current?.querySelector('select')?.focus() }, [open, positioned])
   const update = (patch: Partial<AgentChangesFilter>) => useAppStore.getState().setPanelReviewState(workspaceId, panelId, {
     ...state, agentChanges: { ...filter, ...patch },
   })
@@ -59,14 +57,20 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
   if (filter.panelId && !panelChoices.has(filter.panelId)) panelChoices.set(filter.panelId, 'Source panel (closed)')
   const query = (state.fileFilter ?? '').toLowerCase()
   const files = selected.flatMap((record) => record.files.filter((file) => !query || file.path.toLowerCase().includes(query)).map((file) => ({ record, file })))
+  const focusedIndex = state.focusedFile ? files.findIndex(({ file }) => file.path === state.focusedFile) : -1
+  const shownCount = Math.max(visibleCount, focusedIndex + 1)
   const totals = files.reduce((sum, { file }) => ({ additions: sum.additions + file.additions, deletions: sum.deletions + file.deletions }), { additions: 0, deletions: 0 })
   const display = state.display ?? { split: false, wordDiff: true, wrap: false }
   const updateDisplay = (patch: Partial<typeof display>) => useAppStore.getState().setPanelReviewState(workspaceId, panelId, { ...state, display: { ...display, ...patch } })
   const allCollapsed = files.length > 0 && files.every(({ record, file }) => collapsed.has(`${record.id}:${file.path}`))
   useEffect(() => {
     if (!state.focusedFile) return
+    setCollapsed((previous) => new Set([...previous].filter((key) => !key.endsWith(`:${state.focusedFile}`))))
+  }, [state.focusedFile, state.agentChanges])
+  useEffect(() => {
+    if (!state.focusedFile) return
     root.current?.querySelector(`[data-review-file="${encodeURIComponent(state.focusedFile)}"]`)?.scrollIntoView?.({ block: 'start' })
-  }, [state.focusedFile, selected])
+  }, [state.focusedFile, selected, shownCount])
   const chips = [
     filter.agentId && { label: AGENTS.find((a) => a.id === filter.agentId)?.displayName ?? 'Agent', patch: { agentId: undefined } },
     filter.panelId && { label: panelChoices.get(filter.panelId)!, patch: { panelId: undefined, sessionId: undefined, turnId: undefined } },
@@ -112,7 +116,7 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
     <div ref={root} className="min-h-0 flex-1 overflow-auto">
       {loading && <LoadingState label="Loading recorded changes…" className="h-full p-4 text-xs" />}
       {!loading && !files.length && <p className="p-4 text-xs text-muted">No recorded edits match these filters. This does not mean the agent made no changes.</p>}
-      {files.map(({ record, file }) => {
+      {files.slice(0, shownCount).map(({ record, file }) => {
         const key = `${record.id}:${file.path}`
         const logo = getAgentLogoById(record.agentId)
         const agent = AGENTS.find((a) => a.id === record.agentId)?.displayName ?? 'Agent'
@@ -132,12 +136,31 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
             <span className="text-[10px] tabular-nums text-diff-add">+{file.additions}</span><span className="text-[10px] tabular-nums text-diff-del">−{file.deletions}</span>
             {file.coverage === 'fragment' && <span title="Reported edit fragment; full-file context and line numbers are unavailable." className="text-muted"><Info size={12} /></span>}
           </div>
-          {!collapsed.has(key) && <div className={`font-mono text-[11px] leading-[1.45] ${display.wrap ? 'w-full min-w-0 whitespace-pre-wrap break-all' : 'w-max min-w-full whitespace-pre'}`}>
-            {file.coverage === 'unavailable' && <p className="px-3 py-2 text-muted">No patch was reported for this file.</p>}
-            {file.hunks.map((hunk, index) => <RecordedDiffHunk key={index} split={display.split} wordDiff={display.wordDiff} wrap={display.wrap} hunk={file.coverage === 'fragment' ? { ...hunk, lines: hunk.lines.map((line) => ({ ...line, oldLine: null, newLine: null })) } : hunk} />)}
-          </div>}
+          {!collapsed.has(key) && <RecordedFileBody file={file} display={display} />}
         </section>
       })}
+      {shownCount < files.length && <button className="m-3 rounded bg-surface-2 px-3 py-2 text-xs" onClick={() => setVisibleCount(shownCount + 50)}>Show more recorded files ({files.length - shownCount} remaining)</button>}
     </div>
+  </div>
+}
+
+function RecordedFileBody({ file, display }: { file: AgentChangedFile; display: Pick<ReviewPanelState['display'], 'split' | 'wordDiff' | 'wrap'> }) {
+  const root = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(typeof IntersectionObserver === 'undefined')
+  const [allowLarge, setAllowLarge] = useState(false)
+  useEffect(() => {
+    if (visible || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) { setVisible(true); observer.disconnect() }
+    }, { rootMargin: '600px' })
+    if (root.current) observer.observe(root.current)
+    return () => observer.disconnect()
+  }, [visible])
+  const large = file.hunks.reduce((count, hunk) => count + hunk.lines.length, 0) > 5000
+  return <div ref={root} className={`font-mono text-[11px] leading-[1.45] ${display.wrap ? 'w-full min-w-0 whitespace-pre-wrap break-all' : 'w-max min-w-full whitespace-pre'}`}>
+    {!visible ? <LoadingState label="Loading recorded diff…" className="h-20" /> : large && !allowLarge ? <button className="m-3 rounded bg-surface-2 px-3 py-2" onClick={() => setAllowLarge(true)}>Load large recorded diff</button> : <>
+      {file.coverage === 'unavailable' && <p className="px-3 py-2 text-muted">No patch was reported for this file.</p>}
+      {file.hunks.map((hunk, index) => <RecordedDiffHunk key={index} split={display.split} wordDiff={display.wordDiff} wrap={display.wrap} hunk={file.coverage === 'fragment' ? { ...hunk, lines: hunk.lines.map((line) => ({ ...line, oldLine: null, newLine: null })) } : hunk} />)}
+    </>}
   </div>
 }

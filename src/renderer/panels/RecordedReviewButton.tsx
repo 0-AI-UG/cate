@@ -2,8 +2,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import type { AgentChangeRecord } from '../../shared/agentChanges'
 import type { AgentId } from '../../shared/agents'
 import { useAppStore } from '../stores/appStore'
-import { inspectReviewAgents, launchReviewAgent, unavailableReviewAgents } from '../lib/review/reviewAgent'
-import { AgentPickerPopover, ReviewActionButton, type AgentChoice } from './GitReviewPanel'
+import { inspectReviewAgents, launchReviewAgent, trackReviewAgent, unavailableReviewAgents } from '../lib/review/reviewAgent'
+import { useDismissableLayer } from '../ui/Popover'
+import { AgentPickerPopover, ReviewActionButton, type AgentChoice } from './ReviewControls'
 
 export function recordedReviewPrompt(records: AgentChangeRecord[], panelId?: string): string {
   return ['Review only the recorded agent edits below. These are historical reported edits, not the current working-tree diff. Other agents may have changed the checkout since capture. Do not attribute unrelated Git changes to this review. Report findings without editing files. Fragments and unavailable patches are incomplete evidence; do not invent missing context.',
@@ -19,12 +20,7 @@ export function RecordedReviewButton({ records, cwd, workspaceId, panelId, worki
   const [choices, setChoices] = useState<AgentChoice[] | null>(null)
   const [agentId, setAgentId] = useState<AgentId | null>(null)
   const content = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (event: PointerEvent) => { if (!busy && !content.current?.contains(event.target as Node)) setOpen(false) }
-    window.addEventListener('pointerdown', close)
-    return () => window.removeEventListener('pointerdown', close)
-  }, [open, busy])
+  useDismissableLayer({ open: open && !busy, contentRef: content, onDismiss: () => setOpen(false) })
   useEffect(() => {
     if (!open) return
     let active = true
@@ -43,6 +39,7 @@ export function RecordedReviewButton({ records, cwd, workspaceId, panelId, worki
     try {
       const launched = await launchReviewAgent(workspaceId, panelId, cwd, prompt, 'Review changes', agentId)
       if (!launched) return
+      trackReviewAgent(workspaceId, panelId, launched)
       setOpen(false)
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not start review') }
     finally { setBusy(false) }

@@ -46,3 +46,13 @@ it('leaves the chat unchanged when the menu is dismissed', async () => {
   await open()
   expect(select).not.toHaveBeenCalled()
 })
+
+it('uses a modal and dismisses rename with Escape from its buttons', async () => {
+  menu.mockResolvedValue('__rename')
+  await open()
+  expect(document.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBe('true')
+  const cancel = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent === 'Cancel')!
+  cancel.focus()
+  await act(async () => cancel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+})

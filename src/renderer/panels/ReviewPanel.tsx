@@ -5,7 +5,8 @@ import AgentChangesView from './AgentChangesView'
 import GitReviewPanel from './GitReviewPanel'
 import { LoadingState } from '../ui/Spinner'
 
-export { collapsedHunkGaps, ReviewNoteComposer, UnifiedLine } from './GitReviewPanel'
+export { collapsedHunkGaps } from './GitReviewPanel'
+export { ReviewNoteComposer, UnifiedLine } from './ReviewDiff'
 
 export default function ReviewPanel(props: PanelProps) {
   const panel = useAppStore((s) => s.workspaces.find((w) => w.id === props.workspaceId)?.panels[props.panelId])

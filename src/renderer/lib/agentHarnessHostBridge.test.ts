@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { agentHarnessHostBridgeScript } from './agentHarnessHostBridge'
 
 function guest() {
@@ -24,6 +24,25 @@ function guest() {
 }
 
 describe('embedded chat host bridge', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers() })
+
+  it('settles pending placement requests when the host binding is disposed', async () => {
+    const g = guest()
+    const pending = g.window.__cateHost.request('place-agent', {})
+    const assertion = expect(pending).rejects.toThrow('Conversation changed')
+    g.window.__cateHost.cancelPending()
+    await assertion
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('bounds requests that never receive a reply', async () => {
+    const g = guest()
+    const pending = g.window.__cateHost.request('place-agent', {})
+    const assertion = expect(pending).rejects.toThrow('timed out')
+    await vi.advanceTimersByTimeAsync(120000)
+    await assertion
+  })
   it('keeps subagent controls in T3 and routes every diff/file entry point to Cate', () => {
     const g = guest()
     g.window.__cateChat.openAgents()

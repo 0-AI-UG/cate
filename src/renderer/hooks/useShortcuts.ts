@@ -19,7 +19,7 @@ import { resolvePanelById } from '../lib/workspace/panelReveal'
 import { getNodeActivePanelId } from '../panels/nodeDockRegistry'
 import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
 import type { ShortcutAction } from '../../shared/types'
-import { runAction } from '../lib/runAction'
+import { isCanvasNavigationBlocked, runAction } from '../lib/runAction'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
 import { getFocusedLeafPanelId } from '../lib/focusedPanel'
 
@@ -229,8 +229,6 @@ export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
       const action = matchShortcutEvent(e)
       if (!action) return
 
-      const ui = useUIStore.getState()
-
       // toggleTool (⌃Space by default) intentionally has no typing-suppression
       // guard: it's the gesture that switches Select/Hand even while a
       // terminal/editor/input is focused. The capture-phase preventDefault below
@@ -241,10 +239,7 @@ export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
       // Cmd+Arrow navigation / Shift+Arrow panning.
       if (NAVIGATE_ACTIONS.has(action) || PAN_ACTIONS.has(action)) {
         // Let an open overlay own the arrow keys.
-        if (ui.showCommandPalette) return
-        // Let a keyboard-navigable list (e.g. the Search results tree, marked
-        // data-keynav) keep its own arrow keys instead of moving the canvas.
-        if (isKeyNavFocused()) return
+        if (isCanvasNavigationBlocked()) return
         // Panel navigation works from every surface. Shift+Arrow panning
         // still yields to text selection in editors and inputs.
         if (PAN_ACTIONS.has(action) && !terminalHasFocus && isTextSurfaceFocused()) return

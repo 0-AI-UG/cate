@@ -37,6 +37,12 @@ export interface AgentChangesFilter {
   turnId?: string
 }
 
+/** An unchanged revision omits records so idle polling stays small. */
+export interface AgentChangesSnapshot {
+  revision: string
+  records?: AgentChangeRecord[]
+}
+
 export function effectiveAgentChanges(records: readonly AgentChangeRecord[]): AgentChangeRecord[] {
   const snapshots = new Map<string, AgentChangeRecord>()
   const key = (r: AgentChangeRecord) => JSON.stringify([r.source, r.agentId, r.sessionId, r.turnId])

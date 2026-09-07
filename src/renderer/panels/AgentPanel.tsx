@@ -20,7 +20,8 @@ import { useUIStore } from '../stores/uiStore'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
 import { agentHarnessThemeScript } from '../lib/agentHarnessTheme'
 import { agentHarnessHostBridgeScript } from '../lib/agentHarnessHostBridge'
-import { requestPanelTarget, type PanelTarget } from '../lib/panelTargetPicker'
+import { requestPanelTarget } from '../lib/panelTargetPicker'
+import { createAgentHarnessHostDispatcher } from '../lib/agentHarnessHostDispatcher'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { openAgentChanges } from '../lib/review/openAgentChanges'
@@ -158,64 +159,34 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     const webview = webviewRef.current
     if (!webview) return
     const bridgeToken = bridgeTokenRef.current
-    const placements = new Map<string, PanelTarget>()
     let disposed = false
-    let choosing = false
+    const dispatcher = createAgentHarnessHostDispatcher(threadId, {
+      pick: (panelType) => requestPanelTarget({ workspaceId, sourcePanelId: panelId, panelType, availability: 'new' }),
+      openDiff: (focusedFile, turnId, isActive) => openAgentChanges({ workspaceId, panelId, cwd, focusedFile, sessionId: threadId, turnId, isActive }),
+      openExternal: (url) => { window.electronAPI.openExternalUrl(url) },
+      createAgent: (nextThreadId, title, target) => {
+        const app = useAppStore.getState()
+        const id = app.createAgent(workspaceId, undefined, target.placement, cwd, worktreeId, nextThreadId)
+        if (title !== undefined) app.updatePanelTitleFromAgent(workspaceId, id, title)
+      },
+      openFile: (relativePath, target) => {
+        const root = parseLocator(cwd)
+        openFileAsPanel(workspaceId, formatLocator({ ...root, path: `${root.path.replace(/[\\/]+$/, '')}/${relativePath}` }), undefined, target.placement)
+      },
+    })
     const onHostMessage = (event: { message?: string }): void => {
       if (!event.message?.startsWith('cate-chat-host:')) return
       let request: { token: string; id: string; action: string; payload: Record<string, unknown> }
       try { request = JSON.parse(event.message.slice('cate-chat-host:'.length)) } catch { return }
-      if (request.token !== bridgeToken || typeof request.id !== 'string' || !request.payload) return
+      if (!request || request.token !== bridgeToken || typeof request.id !== 'string' || typeof request.action !== 'string'
+        || !request.payload || typeof request.payload !== 'object' || Array.isArray(request.payload)) return
       const reply = (result: unknown, error?: string) => {
         if (!disposed) void webview.executeJavaScript(`window.__cateHost?.reply(${JSON.stringify(request.id)}, ${JSON.stringify(result)}, ${JSON.stringify(error ?? null)})`).catch(() => undefined)
       }
-      void (async () => {
-        const payload = request.payload
-        if (request.action === 'external' && typeof payload.url === 'string') {
-          const url = new URL(payload.url)
-          if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Unsupported link.')
-          window.electronAPI.openExternalUrl(url.href)
-          return true
-        }
-        if (payload.threadId && request.action !== 'open-agent' && payload.threadId !== threadId) throw new Error('Conversation changed. Please try again.')
-        const relativePath = typeof payload.filePath === 'string' ? payload.filePath : undefined
-        if (relativePath && (/^[\\/]|^[A-Za-z]:/.test(relativePath) || relativePath.split(/[\\/]/).includes('..'))) throw new Error('File is outside this project.')
-        if (request.action === 'open-agent') {
-          const target = placements.get(String(payload.placementId))
-          if (!target || target.kind !== 'new' || typeof payload.threadId !== 'string') throw new Error('Panel placement expired.')
-          const app = useAppStore.getState()
-          const id = app.createAgent(workspaceId, undefined, target.placement, cwd, worktreeId, payload.threadId)
-          if (typeof payload.title === 'string') app.updatePanelTitleFromAgent(workspaceId, id, payload.title)
-          placements.delete(String(payload.placementId))
-          return true
-        }
-        if (!['diff', 'file', 'place-agent'].includes(request.action)) throw new Error('Unsupported chat action.')
-        if (choosing) return null
-        if (request.action === 'diff') {
-          choosing = true
-          try {
-            return await openAgentChanges({ workspaceId, panelId, cwd, focusedFile: relativePath,
-              sessionId: threadId, turnId: typeof payload.turnId === 'string' ? payload.turnId : undefined })
-          } finally { choosing = false }
-        }
-        choosing = true
-        let target: PanelTarget | null
-        try {
-          target = await requestPanelTarget({ workspaceId, sourcePanelId: panelId, panelType: request.action === 'file' ? 'editor' : 'agent', availability: 'new' })
-        } finally { choosing = false }
-        if (!target || disposed || target.kind !== 'new') return null
-        setHostError('')
-        if (request.action === 'place-agent') {
-          const id = crypto.randomUUID()
-          placements.set(id, target)
-          return id
-        }
-        if (relativePath) {
-          const root = parseLocator(cwd)
-          openFileAsPanel(workspaceId, formatLocator({ ...root, path: `${root.path.replace(/[\\/]+$/, '')}/${relativePath}` }), undefined, target.placement)
-        }
-        return true
-      })().then((result) => reply(result)).catch((cause: unknown) => {
+      void dispatcher.handle(request.action, request.payload).then((result) => {
+        if (!disposed) setHostError('')
+        reply(result)
+      }).catch((cause: unknown) => {
         const message = cause instanceof Error ? cause.message : 'Could not open panel.'
         if (!disposed) setHostError(message)
         reply(null, message)
@@ -309,7 +280,10 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     webview.addEventListener('did-fail-load', onFailed)
     return () => {
       disposed = true
-      placements.clear()
+      dispatcher.dispose()
+      try {
+        void webview.executeJavaScript('window.__cateHost?.cancelPending()').catch(() => undefined)
+      } catch { /* A detached guest can throw before returning a promise. */ }
       webview.removeEventListener('console-message', onHostMessage)
       webview.removeEventListener('will-navigate', onWillNavigate)
       webview.removeEventListener('new-window', onNewWindow)

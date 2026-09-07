@@ -69,7 +69,9 @@ describe.each(adapters)('$id capture contract', (adapter) => {
     expect(filterAgentChanges(records, { panelId: 'panel-two' })).toHaveLength(1)
     expect(await createAgentChangesStore(path.join(directory, 'history')).list('/repo')).toEqual(records)
     expect(await hooks.listChanges('/other-repo')).toEqual([])
-    for (const file of await readdir(path.join(directory, 'history'))) expect(await readFile(path.join(directory, 'history', file), 'utf8')).not.toContain('DO_NOT_PERSIST')
+    for (const file of await readdir(path.join(directory, 'history'), { recursive: true, withFileTypes: true })) {
+      if (file.isFile()) expect(await readFile(path.join(file.parentPath, file.name), 'utf8')).not.toContain('DO_NOT_PERSIST')
+    }
   })
 
   it('rejects unsuccessful, out-of-workspace and sessionless changes', async () => {
@@ -84,9 +86,10 @@ describe.each(adapters)('$id capture contract', (adapter) => {
     await post(adapter.id, adapter.wrap({ file_path: 'unknown.ts', content: 'new contents' }, {}, 'session', 'write'))
     await post(adapter.id, adapter.wrap({}, { content: [{ type: 'diff', path: 'exact.ts', oldText: 'old\nunchanged\n', newText: 'new\nunchanged\n' }] }, 'session', 'exact'))
     const files = (await hooks.listChanges('/repo')).flatMap((r) => r.files)
-    expect(files[0]).toMatchObject({ path: 'unknown.ts', coverage: 'unavailable', hunks: [], additions: 0, deletions: 0 })
-    expect(files[1]).toMatchObject({ path: 'exact.ts', coverage: 'patch', additions: 1, deletions: 1 })
-    expect(files[1].hunks.flatMap((h) => h.lines).filter((l) => l.kind === 'context').map((l) => l.text)).toContain('unchanged')
+    expect(files.find((file) => file.path === 'unknown.ts')).toMatchObject({ coverage: 'unavailable', hunks: [], additions: 0, deletions: 0 })
+    const exact = files.find((file) => file.path === 'exact.ts')!
+    expect(exact).toMatchObject({ coverage: 'patch', additions: 1, deletions: 1 })
+    expect(exact.hunks.flatMap((h) => h.lines).filter((l) => l.kind === 'context').map((l) => l.text)).toContain('unchanged')
   })
 
   if (adapter.id !== 'opencode') it.skipIf(process.platform === 'win32')('runs the materialized stdin bridge through HTTP to durable capture', async () => {

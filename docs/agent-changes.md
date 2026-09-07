@@ -18,8 +18,13 @@ for filtering, not authorship claims.
   E2E runs use their isolated user-data directory. Raw prompts/tool outputs
   are not persisted by this system.
 - Canonical checkout paths share one history, including symlink aliases.
-  Updates are serialized and atomically renamed. T3 panel/conversation
-  associations persist across restarts and conversation switches.
+  Immutable records are published atomically so independent runtime processes
+  cannot overwrite each other's edits. Existing history remains readable. T3
+  panel/conversation associations persist across restarts and conversation switches.
+  Conditional reads omit records when history has not changed.
+- T3 capture runs outside the shared provider event worker, preserves per-turn
+  ordering and retries transient failures. Its bounded queue logs overflow and
+  exhausted retries; it is not a durable delivery outbox across server restarts.
 
 ## Coverage
 

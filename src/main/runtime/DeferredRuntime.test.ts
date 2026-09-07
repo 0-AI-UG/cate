@@ -8,7 +8,7 @@ function makeReal(overrides: Partial<Runtime> = {}): Runtime {
   return {
     id: 'srv_real',
     process: {} as Runtime['process'],
-    agentHooks: { subscribe: () => () => {}, inspectWorkspace: async () => [], listChanges: async () => [], bindChanges: async () => {} },
+    agentHooks: { subscribe: () => () => {}, inspectWorkspace: async () => [], listChanges: async () => [], readChanges: async () => ({ revision: '', records: [] }), bindChanges: async () => {} },
     file: {} as Runtime['file'],
     vcs: {} as Runtime['vcs'],
     server: {} as Runtime['server'],

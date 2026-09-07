@@ -441,6 +441,7 @@ export interface ElectronAPI {
    *  Settings UI). `locator` is the workspace's rootPath locator. */
   agentHooksInspect(locator: string): Promise<AgentHookAgentState[]>
   agentChangesList(locator: string, workspaceId: string): Promise<import('./agentChanges').AgentChangeRecord[]>
+  agentChangesRead(locator: string, workspaceId: string, knownRevision?: string): Promise<import('./agentChanges').AgentChangesSnapshot>
   agentChangesBind(locator: string, workspaceId: string, threadId: string, panelId: string): Promise<void>
 
   /** Get all settings. */

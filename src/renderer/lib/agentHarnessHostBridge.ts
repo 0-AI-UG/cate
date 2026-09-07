@@ -6,10 +6,10 @@ export function agentHarnessHostBridgeScript(token: string): string {
     const pending = new Map();
     const request = (action, payload) => new Promise((resolve, reject) => {
       const id = crypto.randomUUID();
-      const timer = action === 'open-agent' ? setTimeout(() => {
+      const timer = setTimeout(() => {
         pending.delete(id);
         reject(new Error('Panel handoff timed out. The conversation is available in the conversation picker.'));
-      }, 30000) : undefined;
+      }, ['place-agent', 'file', 'diff'].includes(action) ? 120000 : 30000);
       pending.set(id, { resolve, reject, timer });
       console.info('cate-chat-host:' + JSON.stringify({ token: ${JSON.stringify(token)}, id, action, payload }));
     });
@@ -26,6 +26,13 @@ export function agentHarnessHostBridgeScript(token: string): string {
     }, true);
     window.__cateHost = {
       request,
+      cancelPending() {
+        for (const entry of pending.values()) {
+          clearTimeout(entry.timer);
+          entry.reject(new Error('Conversation changed. Please try again.'));
+        }
+        pending.clear();
+      },
       reply(id, result, error) {
         const entry = pending.get(id);
         if (!entry) return;

@@ -194,3 +194,46 @@ it('waits for the panel and review state to restore in separate updates', () => 
   expect(host.textContent).toContain('a.ts')
   expect(h.setState).not.toHaveBeenCalled()
 })
+
+it('expands a collapsed recorded file when a deep link targets it again', () => {
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
+  act(() => host.querySelector<HTMLButtonElement>('section button')!.click())
+  expect(host.querySelector('section button')?.getAttribute('aria-expanded')).toBe('false')
+  h.workspace.panels.review.reviewState = { ...h.workspace.panels.review.reviewState, focusedFile: 'a.ts', agentChanges: { panelId: 'a' } }
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
+  expect(host.querySelector('section button')?.getAttribute('aria-expanded')).toBe('true')
+})
+
+it('pages long histories while allowing a deep link beyond the first page', () => {
+  h.records = Array.from({ length: 75 }, (_, index) => ({ ...h.records[0], id: `record-${index}`, files: [{ ...h.records[0].files[0], path: `${index}.ts` }] }))
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
+  expect(host.querySelectorAll('section')).toHaveLength(50)
+  h.workspace.panels.review.reviewState = { ...h.workspace.panels.review.reviewState, focusedFile: '70.ts', agentChanges: { panelId: 'a' } }
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
+  expect(host.querySelector('[data-review-file="70.ts"]')).not.toBeNull()
+})
+
+it('waits until a recorded diff approaches the viewport before rendering its lines', () => {
+  let intersect!: IntersectionObserverCallback
+  const disconnect = vi.fn()
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: IntersectionObserverCallback) { intersect = callback }
+    observe() {}
+    disconnect = disconnect
+  })
+  try {
+    h.records[0].files[0].hunks = [{ lines: [{ kind: 'add', text: 'deferred-line', newLine: 1, oldLine: null }] }]
+    act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
+    expect(host.textContent).not.toContain('deferred-line')
+    act(() => intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+    expect(host.textContent).toContain('deferred-line')
+    expect(disconnect).toHaveBeenCalled()
+  } finally { vi.unstubAllGlobals() }
+})
+
+it('requires an explicit load before rendering a very large recorded diff', () => {
+  h.records[0].files[0].hunks = [{ lines: Array.from({ length: 5001 }, () => ({ kind: 'add', text: 'large-line', newLine: null, oldLine: null })) }]
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
+  expect(host.textContent).not.toContain('large-line')
+  expect([...host.querySelectorAll('button')].some((button) => button.textContent === 'Load large recorded diff')).toBe(true)
+})

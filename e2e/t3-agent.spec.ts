@@ -662,6 +662,14 @@ test('real T3 lifecycle uses recorded changes for native files and filtered diff
   await expect(page.locator('[data-review-file="first.ts"]')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Filters', exact: true })).toHaveCount(1)
   await expect(page.getByLabel('Filter by panel')).toHaveCount(0)
+  const fileToggle = page.locator('[data-review-file="second.ts"] button[aria-expanded]')
+  await fileToggle.click()
+  await expect(fileToggle).toHaveAttribute('aria-expanded', 'false')
+  // Repeating the same native deep link must reveal its content, even when
+  // the existing review already has that file/turn selected.
+  await guestEval(agentWebview(), `Array.from(document.querySelectorAll('button')).find(button => button.innerText.includes('second.ts')).click()`)
+  await page.getByRole('button', { name: /Use Agent changes/ }).click()
+  await expect(fileToggle).toHaveAttribute('aria-expanded', 'true')
   await page.screenshot({ path: test.info().outputPath('recorded-agent-diff.png') })
 })
 

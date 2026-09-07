@@ -20,7 +20,7 @@ function makeStub(id: string, calls: string[]): Runtime {
   return {
     id,
     process: {} as unknown as ProcessHost,
-    agentHooks: { subscribe: () => () => {}, inspectWorkspace: async () => [], listChanges: async () => [], bindChanges: async () => {} },
+    agentHooks: { subscribe: () => () => {}, inspectWorkspace: async () => [], listChanges: async () => [], readChanges: async () => ({ revision: '', records: [] }), bindChanges: async () => {} },
     file,
     vcs,
     server: {} as unknown as ServerHost,

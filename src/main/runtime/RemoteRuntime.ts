@@ -105,6 +105,7 @@ export class RemoteRuntime implements Runtime {
     // register the stream when the round-trip resolves. Normalized events
     // arrive as evt frames.
     this.agentHooks = {
+      readChanges: (cwd, knownRevision, access) => call(Methods.agentChangesRead, [cwd, knownRevision, scoped(access)]),
       listChanges: (cwd, access) => call(Methods.agentChangesList, [cwd, scoped(access)]),
       bindChanges: (cwd, threadId, panelId, access) => call(Methods.agentChangesBind, [cwd, threadId, panelId, scoped(access)]),
       subscribe: (onEvent) => {

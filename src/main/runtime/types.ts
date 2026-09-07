@@ -152,6 +152,7 @@ export interface ProcessHost {
 // ---------------------------------------------------------------------------
 
 export interface AgentHookHost {
+  readChanges(cwd: string, knownRevision?: string, access?: FileAccessContext): Promise<import('../../shared/agentChanges').AgentChangesSnapshot>
   listChanges(cwd: string, access?: FileAccessContext): Promise<import('../../shared/agentChanges').AgentChangeRecord[]>
   bindChanges(cwd: string, threadId: string, panelId: string, access?: FileAccessContext): Promise<void>
   /** Subscribe to normalized agent hook events from this host's terminals.

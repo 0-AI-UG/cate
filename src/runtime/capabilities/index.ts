@@ -246,6 +246,7 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     process: proc,
     agentHooks: {
       listChanges: (cwd, access) => agentHooks.listChanges(validateCwd(cwd, access?.ownerWindowId, access?.scopeId)),
+      readChanges: (cwd, knownRevision, access) => agentHooks.readChanges(validateCwd(cwd, access?.ownerWindowId, access?.scopeId), knownRevision),
       bindChanges: (cwd, threadId, panelId, access) => agentHooks.bindChanges(validateCwd(cwd, access?.ownerWindowId, access?.scopeId), threadId, panelId),
       subscribe: (onEvent) => agentHooks.subscribe(onEvent),
       inspectWorkspace: (cwd) => agentHooks.inspectWorkspace(cwd),

@@ -75,6 +75,7 @@ import {
   SHELL_AGENT_HOOK_EVENT,
   AGENT_HOOKS_INSPECT,
   AGENT_CHANGES_LIST,
+  AGENT_CHANGES_READ,
   AGENT_CHANGES_BIND,
   SETTINGS_GET,
   SETTINGS_SET,
@@ -401,6 +402,7 @@ const invokeForwarders = {
   // Settings
   agentHooksInspect: makeInvoker<'agentHooksInspect'>(AGENT_HOOKS_INSPECT),
   agentChangesList: makeInvoker<'agentChangesList'>(AGENT_CHANGES_LIST),
+  agentChangesRead: makeInvoker<'agentChangesRead'>(AGENT_CHANGES_READ),
   agentChangesBind: makeInvoker<'agentChangesBind'>(AGENT_CHANGES_BIND),
   settingsGet: makeInvoker<'settingsGet'>(SETTINGS_GET),
   settingsSet: makeInvoker<'settingsSet'>(SETTINGS_SET),

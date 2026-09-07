@@ -102,6 +102,7 @@ export const SHELL_AGENT_HOOK_EVENT = 'shell:agentHookEvent'
 // injected) for the Settings UI — renderer -> main (invoke).
 export const AGENT_HOOKS_INSPECT = 'agentHooks:inspect'
 export const AGENT_CHANGES_LIST = 'agentChanges:list'
+export const AGENT_CHANGES_READ = 'agentChanges:read'
 export const AGENT_CHANGES_BIND = 'agentChanges:bind'
 
 // Settings

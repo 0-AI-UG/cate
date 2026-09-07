@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
+import { readFile, readdir, stat, unlink } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -8,6 +8,7 @@ import { AGENTS } from '../../shared/agents'
 import type { AgentHookEvent } from '../../shared/agentHooks'
 import { summarizeAgentChanges, type AgentChangeRecord } from '../../shared/agentChanges'
 import { filesFromPatch, filesFromTool, object, string } from './agentChangeEdits'
+import { writeJsonExclusive } from '../../shared/atomicFile'
 
 export interface AgentChangeSource { cwd: string; panelId?: string; kind: 'terminal' | 't3' }
 
@@ -20,47 +21,112 @@ export function createAgentChangesStore(directory = path.join(
   const canonical = (cwd: string) => { try { return realpathSync.native(cwd) } catch { return path.resolve(cwd) } }
   const sources = new Map<string, AgentChangeSource>()
   const turns = new Map<string, string>()
-  const queues = new Map<string, Promise<unknown>>()
+  const queues = new Map<string, Set<Promise<void>>>()
   const filename = (cwd: string) => path.join(directory, createHash('sha256').update(canonical(cwd)).digest('hex') + '.json')
   type History = { version: 1; records: AgentChangeRecord[]; bindings: Record<string, string[]> }
-  const read = async (cwd: string): Promise<History> => {
+  type Entry = { record: AgentChangeRecord; receivedAt: number } | { threadId: string; panelId: string }
+  const entries = new Map<string, Entry>()
+  const legacy = new Map<string, { revision: string; data: History }>()
+  const readLegacy = async (cwd: string): Promise<{ revision: string; data: History }> => {
+    const file = filename(cwd)
     try {
-      const data = JSON.parse(await readFile(filename(cwd), 'utf8'))
+      const info = await stat(file)
+      const revision = `${info.mtimeMs}:${info.ctimeMs}:${info.size}`
+      const cached = legacy.get(file)
+      if (cached?.revision === revision) return cached
+      const data = JSON.parse(await readFile(file, 'utf8'))
       if (data.version !== 1 || !Array.isArray(data.records)) throw new Error('Unsupported agent change history')
-      return { ...data, bindings: data.bindings ?? {} }
+      const result = { revision, data: { ...data, bindings: data.bindings ?? {} } as History }
+      legacy.set(file, result)
+      return result
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, records: [], bindings: {} }
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { revision: '', data: { version: 1, records: [], bindings: {} } }
       throw error // Never overwrite a corrupt history with an empty one.
     }
   }
-  const mutate = async (cwd: string, change: (data: History) => boolean): Promise<void> => {
-    const previous = queues.get(cwd) ?? Promise.resolve()
-    const pending = previous.catch(() => {}).then(async () => {
-      const data = await read(cwd)
-      if (!change(data)) return
-      await mkdir(directory, { recursive: true, mode: 0o700 })
-      const file = filename(cwd)
-      const temporary = `${file}.${randomUUID()}.tmp`
-      await writeFile(temporary, JSON.stringify(data), { mode: 0o600 })
-      await rename(temporary, file)
-    })
-    queues.set(cwd, pending)
-    try { await pending } finally { if (queues.get(cwd) === pending) queues.delete(cwd) }
+  const publish = async (cwd: string, name: string, entry: Entry): Promise<void> => {
+    const pending = (async () => {
+      await readLegacy(cwd)
+      await writeJsonExclusive(path.join(filename(cwd) + '.d', name), entry)
+    })()
+    const active = queues.get(cwd) ?? new Set<Promise<void>>()
+    active.add(pending)
+    queues.set(cwd, active)
+    try { await pending } finally {
+      active.delete(pending)
+      if (!active.size) queues.delete(cwd)
+    }
   }
-  const save = (record: AgentChangeRecord) => mutate(record.cwd, (data) => {
-    const index = data.records.findIndex((r) => r.id === record.id)
-    if (index >= 0) {
-      if (record.mode !== 'snapshot' || data.records[index].createdAt > record.createdAt) return false
-      data.records[index] = record
-    } else data.records.push(record)
-    return true
-  })
-  const list = async (cwd: string) => {
+  const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+  const save = (record: AgentChangeRecord) => {
+    // Provider timestamps have millisecond precision; consecutive cumulative
+    // snapshots can share one timestamp. Preserve their local receipt order.
+    const receivedAt = performance.timeOrigin + performance.now()
+    return publish(record.cwd, `${record.id}${record.mode === 'snapshot' ? '-' + hash(JSON.stringify([record, receivedAt])) : ''}.json`, { record, receivedAt })
+  }
+  const readChanges = async (cwd: string, knownRevision?: string, attempt = 0): Promise<{ revision: string; records?: AgentChangeRecord[] }> => {
     cwd = canonical(cwd)
-    await queues.get(cwd)
-    const data = await read(cwd)
-    return data.records.map((record) => record.source === 't3' ? { ...record, panelIds: Object.hasOwn(data.bindings, record.sourceId) ? data.bindings[record.sourceId] : [] } : record)
+    await Promise.all(queues.get(cwd) ?? [])
+    const previous = await readLegacy(cwd)
+    const folder = filename(cwd) + '.d'
+    const names = (await readdir(folder).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return [] as string[]
+      throw error
+    })).filter((name) => name.endsWith('.json')).sort()
+    const revision = hash(JSON.stringify([previous.revision, names]))
+    if (knownRevision === revision) return { revision }
+    const records = new Map(previous.data.records.map((record) => [record.id, record]))
+    const bindings = new Map(Object.entries(previous.data.bindings).map(([thread, panels]) => [thread, new Set(panels)]))
+    const receivedTimes = new Map<string, number>()
+    const latestSnapshots = new Map<string, { file: string; record: AgentChangeRecord; receivedAt: number }>()
+    const superseded: string[] = []
+    for (const name of names) {
+      const file = path.join(folder, name)
+      let entry = entries.get(file)
+      if (!entry) {
+        const raw = await readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return null // Another reader compacted a superseded snapshot.
+          throw error
+        })
+        if (raw === null) {
+          if (attempt >= 3) throw new Error('Agent change history changed while reading; retry the request')
+          return readChanges(cwd, knownRevision, attempt + 1)
+        }
+        entry = JSON.parse(raw) as Entry
+        entries.set(file, entry)
+      }
+      if ('record' in entry) {
+        const record = entry.record
+        const old = records.get(record.id)
+        if (!old || (record.mode === 'snapshot' && (old.createdAt < record.createdAt
+          || (old.createdAt === record.createdAt && (receivedTimes.get(record.id) ?? 0) <= entry.receivedAt)))) {
+          records.set(record.id, record)
+          receivedTimes.set(record.id, entry.receivedAt)
+        }
+        if (record.mode === 'snapshot') {
+          const latest = latestSnapshots.get(record.id)
+          if (!latest || latest.record.createdAt < record.createdAt
+            || (latest.record.createdAt === record.createdAt && latest.receivedAt < entry.receivedAt)) {
+            if (latest) superseded.push(latest.file)
+            latestSnapshots.set(record.id, { file, record, receivedAt: entry.receivedAt })
+          } else superseded.push(file)
+        }
+      } else {
+        const panels = bindings.get(entry.threadId) ?? new Set<string>()
+        panels.add(entry.panelId)
+        bindings.set(entry.threadId, panels)
+      }
+    }
+    // Delete only immutable versions proven older than a version already read.
+    // Concurrent writers publish different paths, so this cannot delete a newer update.
+    for (const file of superseded) {
+      await unlink(file).catch(() => {})
+      entries.delete(file)
+    }
+    return { revision, records: [...records.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .map((record) => record.source === 't3' ? { ...record, panelIds: [...(bindings.get(record.sourceId) ?? [])].sort() } : record) }
   }
+  const list = async (cwd: string) => (await readChanges(cwd)).records!
   const identity = (agentId: AgentId, sessionId: string, turnId: string, eventId: string) =>
     createHash('sha256').update(JSON.stringify([agentId, sessionId, turnId, eventId])).digest('hex')
 
@@ -68,12 +134,8 @@ export function createAgentChangesStore(directory = path.join(
     registerSource(id: string, source: AgentChangeSource) { sources.set(id, { ...source, cwd: canonical(source.cwd) }) },
     unregisterSource(id: string) { sources.delete(id) },
     list,
-    bind: (cwd: string, threadId: string, panelId: string) => mutate(canonical(cwd), (data) => {
-      const panels = Object.hasOwn(data.bindings, threadId) ? data.bindings[threadId] : []
-      if (panels.includes(panelId)) return false
-      data.bindings = { ...data.bindings, [threadId]: [...panels, panelId] }
-      return true
-    }),
+    readChanges,
+    bind: (cwd: string, threadId: string, panelId: string) => publish(canonical(cwd), `binding-${hash(JSON.stringify([threadId, panelId]))}.json`, { threadId, panelId }),
     async summary(sourceId: string, threadId: string, turnId: string) {
       const source = sources.get(sourceId)
       if (!source || source.kind !== 't3') throw new Error('Unknown chat change source')
@@ -105,7 +167,12 @@ export function createAgentChangesStore(directory = path.join(
         || ['error', 'failed', 'declined'].includes(String(object(output).status ?? raw.status))) return
       const toolName = string(raw.tool_name ?? raw.toolName ?? part.tool) ?? ''
       const input = raw.tool_input ?? raw.toolInput ?? raw.input ?? partState.input
-      const files = filesFromTool(source.cwd, toolName, input, output)
+      const reportedCwd = event?.cwd ?? string(raw.cwd ?? raw.directory)
+      if (reportedCwd && (!path.isAbsolute(reportedCwd) || reportedCwd.includes('\0'))) return
+      const executionCwd = reportedCwd ? canonical(reportedCwd) : source.cwd
+      const relativeCwd = path.relative(source.cwd, executionCwd)
+      if (relativeCwd === '..' || relativeCwd.startsWith('..' + path.sep) || path.isAbsolute(relativeCwd)) return
+      const files = filesFromTool(source.cwd, toolName, input, output, executionCwd)
       if (!files.length) return
       const turnId = explicitTurn ?? turns.get(sessionKey) ?? `unscoped:${sessionId}`
       const eventId = string(raw.tool_use_id ?? raw.toolUseId ?? raw.tool_call_id ?? part.callID ?? raw.event_id) ?? randomUUID()

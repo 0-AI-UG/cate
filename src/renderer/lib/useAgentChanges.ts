@@ -22,28 +22,30 @@ export function useAgentChanges(cwd: string, workspaceId: string): Snapshot {
     if (!entry.stop && cwd) {
       let stopped = false
       let timer: ReturnType<typeof setTimeout>
-      let serialized = ''
-      let pending = false
-      const poll = async () => {
-        if (pending) return
-        pending = true
+      let revision: string | undefined
+      let pending: Promise<void> | undefined
+      const poll = (): Promise<void> => {
+        if (pending) return pending
         clearTimeout(timer)
-        try {
-          const records = await window.electronAPI.agentChangesList(cwd, workspaceId)
-          if (stopped) return
-          const next = JSON.stringify(records)
-          if (next !== serialized || entry.snapshot.error || entry.snapshot.loading) {
-            serialized = next
-            entry.snapshot = { records, loading: false }
+        pending = (async () => {
+          try {
+            const result = await window.electronAPI.agentChangesRead(cwd, workspaceId, revision)
+            if (stopped) return
+            revision = result.revision
+            if (result.records || entry.snapshot.error || entry.snapshot.loading) {
+              entry.snapshot = { records: result.records ?? entry.snapshot.records, loading: false }
+              entry.listeners.forEach((notify) => notify())
+            }
+          } catch (cause) {
+            if (stopped) return
+            entry.snapshot = { ...entry.snapshot, loading: false, error: cause instanceof Error ? cause.message : 'Could not load recorded changes' }
             entry.listeners.forEach((notify) => notify())
+          } finally {
+            pending = undefined
+            if (!stopped) timer = setTimeout(poll, 2000)
           }
-        } catch (cause) {
-          if (stopped) return
-          entry.snapshot = { ...entry.snapshot, loading: false, error: cause instanceof Error ? cause.message : 'Could not load recorded changes' }
-          entry.listeners.forEach((notify) => notify())
-        }
-        pending = false
-        if (!stopped) timer = setTimeout(poll, 2000)
+        })()
+        return pending
       }
       entry.refresh = poll
       entry.stop = () => { stopped = true; clearTimeout(timer); entry.stop = undefined; entry.refresh = undefined }

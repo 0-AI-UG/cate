@@ -70,6 +70,7 @@ export interface AgentHooksCapability {
   registerChangeSource(id: string, source: AgentChangeSource): void
   unregisterChangeSource(id: string): void
   listChanges(cwd: string): Promise<import('../../shared/agentChanges').AgentChangeRecord[]>
+  readChanges(cwd: string, knownRevision?: string): Promise<import('../../shared/agentChanges').AgentChangesSnapshot>
   bindChanges(cwd: string, threadId: string, panelId: string): Promise<void>
   /** The full spawn env for a PTY: hook endpoint + this terminal's derived
    *  token + CATE_TERMINAL_ID=ptyId. Agent-agnostic (the per-agent tri-state
@@ -532,6 +533,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     registerChangeSource: (id, source) => changes.registerSource(id, source),
     unregisterChangeSource: (id) => changes.unregisterSource(id),
     listChanges: (cwd) => changes.list(cwd),
+    readChanges: (cwd, knownRevision) => changes.readChanges(cwd, knownRevision),
     bindChanges: (cwd, threadId, panelId) => changes.bind(cwd, threadId, panelId),
     async envForPty(ptyId, env) {
       if (disposed) return env
