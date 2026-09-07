@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RECENT_SCREENSHOT_GET, RECENT_SCREENSHOT_DRAG, RECENT_SCREENSHOT_CHANGED } from '../../shared/ipc-channels'
 import { registerRecentScreenshotHandlers } from './recentScreenshot'
@@ -89,7 +90,7 @@ describe('recent macOS screenshot', () => {
   it('switches to a custom screenshot directory and closes watchers on quit', async () => {
     mocks.run.mockImplementation((_command, _args, _options, callback) => callback(null, '~/Pictures/Shots\n', ''))
     await vi.advanceTimersByTimeAsync(5000)
-    expect(mocks.watch).toHaveBeenLastCalledWith('/home/Pictures/Shots', expect.anything())
+    expect(mocks.watch).toHaveBeenLastCalledWith(path.join('/home', 'Pictures/Shots'), expect.anything())
     expect(mocks.close).toHaveBeenCalledTimes(1)
     mocks.on.mock.calls.find(([name]) => name === 'will-quit')![1]()
     expect(mocks.close).toHaveBeenCalledTimes(2)
