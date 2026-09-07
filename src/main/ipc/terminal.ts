@@ -411,7 +411,9 @@ async function spawnTerminal(
       ...(options.codingAgentLaunch
         ? { command: codingAgentCommand(options.codingAgentLaunch) }
         : {}),
-      env: { ...cateApiEnv, ...(options.panelId ? { CATE_PANEL_ID: options.panelId } : {}) },
+      env: cateApiEnv || options.panelId
+        ? { ...cateApiEnv, ...(options.panelId ? { CATE_PANEL_ID: options.panelId } : {}) }
+        : undefined,
       agentHooks: true,
       agentHookConfig,
       workspaceBaseCwd: worktree?.base.path,

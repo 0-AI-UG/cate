@@ -1,3 +1,5 @@
+/* global process, require, fetch, console */
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Deterministic CLI stand-in. Runs inside Cate's real PTY, using only the
 // source-bound hook credentials inherited by agent child processes.
 const fs = require('node:fs')

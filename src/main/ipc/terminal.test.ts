@@ -612,6 +612,19 @@ describe('CATE_API env injection into spawned terminals', () => {
     })
   })
 
+  it('injects CATE_PANEL_ID when the Cate API is disabled', async () => {
+    cateApi.ensureEndpoint.mockResolvedValue(null)
+
+    const env = await spawnAndGetEnv({
+      cols: 80,
+      rows: 24,
+      workspaceId: 'ws-1',
+      panelId: 'panel-123',
+    })
+
+    expect(env).toEqual({ CATE_PANEL_ID: 'panel-123' })
+  })
+
   it('passes an opaque panel placement group into the spawned shell', async () => {
     cateApi.ensureEndpoint.mockResolvedValue({ port: 9876, token: 'tok-abc' })
 
