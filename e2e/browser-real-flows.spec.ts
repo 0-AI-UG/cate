@@ -15,6 +15,7 @@ let shopServer: Server
 let docsServer: Server
 let shopOrigin: string
 let docsOrigin: string
+let receivedUploads: Array<{ name: string; bytes: Buffer }> = []
 
 function html(response: ServerResponse, body: string, status = 200): void {
   response.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
@@ -120,8 +121,22 @@ test.beforeAll(async () => {
       html(response, `<title>Large DOM</title><main><h1>Large DOM</h1>${controls}</main>`)
       return
     }
+    if (request.method === 'POST' && url.pathname === '/upload-receive') {
+      void (async () => {
+        const chunks: Buffer[] = []
+        for await (const chunk of request) chunks.push(Buffer.from(chunk))
+        const form = await new Response(Buffer.concat(chunks), {
+          headers: { 'content-type': request.headers['content-type'] ?? '' },
+        }).formData()
+        const file = form.get('attachment')
+        if (!file || typeof file === 'string') { response.writeHead(400).end('Missing attachment'); return }
+        receivedUploads.push({ name: file.name, bytes: Buffer.from(await file.arrayBuffer()) })
+        html(response, '<title>Upload received</title><main><h1>Upload received</h1></main>')
+      })().catch(() => { response.writeHead(400).end('Invalid upload') })
+      return
+    }
     if (url.pathname === '/upload') {
-      html(response, `<title>Upload fixture</title><main><h1>Upload a document</h1><label>Attachment <input id="attachment" type="file"></label><output id="selected">Nothing selected</output></main><script>
+      html(response, `<title>Upload fixture</title><main><h1>Upload a document</h1><form method="post" action="/upload-receive" enctype="multipart/form-data"><label>Attachment <input id="attachment" name="attachment" type="file"></label><button>Submit attachment</button></form><output id="selected">Nothing selected</output></main><script>
         document.querySelector('#attachment').addEventListener('change', (event) => {
           document.querySelector('#selected').textContent = event.target.files[0]?.name ?? 'Nothing selected';
         });
@@ -450,15 +465,23 @@ test('does not silently lose a click after a responsive viewport round trip', as
   })
 })
 
-test('uploads a user-granted local file into a page file input', async () => {
+test('uploads an authorized local file and verifies the server receives its exact bytes', async () => {
   const uploadDir = mkdtempSync(path.join(tmpdir(), 'cate-browser-upload-'))
   const uploadPath = path.join(uploadDir, 'browser-upload-fixture.txt')
-  writeFileSync(uploadPath, 'uploaded through Cate\n')
+  const expectedBytes = Buffer.concat([Buffer.from('Uploaded through Cate: Grüße 日本語\r\n'), Buffer.from(Array.from({ length: 256 }, (_, i) => i))])
+  writeFileSync(uploadPath, expectedBytes)
+  receivedUploads = []
   try {
     const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/upload`)
     await expect.poll(() => target(page, browser, "Attachment").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
     await expect(act(page, browser, 'upload', "Attachment", { filePath: uploadPath })).resolves.toMatchObject({ ok: true })
     await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#selected\")?.textContent ?? ''", 'text')).resolves.toMatchObject({ ok: true, result: { text: 'browser-upload-fixture.txt' } })
+    await expect(act(page, browser, 'click', 'Submit attachment')).resolves.toMatchObject({ ok: true })
+    // Independent server-side oracle: selecting a filename alone cannot pass.
+    await expect.poll(() => receivedUploads.length).toBe(1)
+    expect(receivedUploads[0].name).toBe(path.basename(uploadPath))
+    expect(receivedUploads[0].bytes).toEqual(expectedBytes)
+    await expect.poll(() => waitForText(page, browser, 'Upload received')).toMatchObject({ ok: true })
   } finally {
     rmSync(uploadDir, { recursive: true, force: true })
   }
