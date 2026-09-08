@@ -186,3 +186,31 @@ test('actions return changed state while IDs remain stable within one document',
   expect(after.elements.find((element) => element.name === 'Name' && element.role === 'textbox')?.id).toBe(name.id)
   expect(await evaluate(`document.querySelector('#name').value`)).toBe('changed')
 })
+
+test('typing follows current focus after a prior observation', async () => {
+  await evaluate("document.querySelector('#name').focus()")
+  const prior = await observe(page, browser)
+  await evaluate("document.querySelector('#multiline').focus()")
+  expect(await browserInvoke(page, browser, 'typeText', { observationId: prior.observationId, text: 'HELLO' })).toMatchObject({ ok: true })
+  expect(await evaluate("document.querySelector('#name').value")).toBe('abcdef')
+  expect(await evaluate("document.querySelector('#multiline').value")).toContain('HELLO')
+})
+
+for (const destination of ['closed-shadow', 'frame']) {
+  test(`typing follows focus into a ${destination} after a prior observation`, async () => {
+    await evaluate("document.querySelector('#name').focus()")
+    const prior = await observe(page, browser)
+    await evaluate(destination === 'closed-shadow' ? `(() => {
+      const host=document.createElement('div');document.body.append(host);
+      const root=host.attachShadow({mode:'closed'});root.innerHTML='<input aria-label="New focus">';
+      window.focusTarget=root.querySelector('input');window.focusTarget.focus();
+    })()` : `new Promise(resolve => {
+      const frame=document.createElement('iframe');
+      frame.onload=()=>{window.focusTarget=frame.contentDocument.querySelector('input');window.focusTarget.focus();resolve(true);};
+      frame.srcdoc='<input aria-label="New focus">';document.body.append(frame);
+    })`)
+    expect(await browserInvoke(page, browser, 'typeText', { observationId: prior.observationId, text: 'HELLO' })).toMatchObject({ ok: true })
+    expect(await evaluate("document.querySelector('#name').value")).toBe('abcdef')
+    expect(await evaluate('window.focusTarget.value')).toBe('HELLO')
+  })
+}

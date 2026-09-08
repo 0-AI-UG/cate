@@ -82,8 +82,8 @@ describe('browser code session', () => {
     const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation() : { action: 'click', observation: observation('o2') })
     const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await tab.click(42); await tab.setValue(17,"hello")', invoke)
     expect(result.isError).toBeUndefined()
-    expect(invoke.mock.calls[1]).toEqual(['cate.browser.click', { panelId: 'p1', tabId: 't1', observationId: 'o1', target: 42 }])
-    expect(invoke.mock.calls[2]).toEqual(['cate.browser.setValue', { panelId: 'p1', tabId: 't1', observationId: 'o2', target: 17, value: 'hello' }])
+    expect(invoke.mock.calls[1]).toEqual(['cate.browser.click', { panelId: 'p1', tabId: 't1', observationId: 'o1', target: 42, _codeCellId: expect.any(String) }])
+    expect(invoke.mock.calls[2]).toEqual(['cate.browser.setValue', { panelId: 'p1', tabId: 't1', observationId: 'o2', target: 17, value: 'hello', _codeCellId: expect.any(String) }])
     expect(result.content).toHaveLength(3)
     expect(JSON.parse((result.content[1] as { text: string }).text)).toMatchObject({ action: 'click', observationId: 'o2' })
     expect(JSON.parse((result.content[1] as { text: string }).text)).not.toHaveProperty('elements')
@@ -94,7 +94,7 @@ describe('browser code session', () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? { panelId: 'p1', tabId: 't1' } : observation())
     const result = await sessions.run('a', 'await cua.getTab({panelId:"p1"})', invoke)
-    expect(invoke.mock.calls).toEqual([['cate.browser.getTab', { panelId: 'p1' }], ['cate.browser.getAXState', { panelId: 'p1', tabId: 't1' }]])
+    expect(invoke.mock.calls).toEqual([['cate.browser.getTab', { panelId: 'p1', _codeCellId: expect.any(String) }], ['cate.browser.getAXState', { panelId: 'p1', tabId: 't1', _codeCellId: expect.any(String) }]])
     expect(result.content).toHaveLength(1)
     sessions.dispose()
   })
@@ -210,4 +210,31 @@ describe('browser code session', () => {
     expect(mocks.windows[0].destroyed).toBe(true)
     await expect(mocks.handler({ sender: {}, senderFrame: {} }, '{}')).rejects.toThrow('Unregistered')
   })
+})
+
+it.each(['timeout', 'reset'])('cancels browser actions already queued when the cell ends by %s', async reason => {
+  vi.useFakeTimers()
+  const sessions = new BrowserCodeSessions(reason === 'timeout' ? 50 : 1000)
+  try {
+    const { setupGuest } = await import('./browserRuntime.testSupport')
+    const guest = await setupGuest()
+    let queued!: () => void
+    const submitted = new Promise<void>(resolve => { queued = resolve })
+    const operations: Promise<unknown>[] = []
+    const invoke = (method: string, args: Record<string, unknown>) => {
+      const operation = method.endsWith('getTab') ? guest.observe() : guest.execute(method.slice('cate.browser.'.length), args)
+        .then(result => result.error ? result : result.result)
+      operations.push(operation)
+      if (method.endsWith('setChecked')) queued()
+      return operation
+    }
+    const running = sessions.run('cancel', 'var tab=await cua.getTab({panelId:"browser"}); await Promise.all([tab.waitFor({text:"never"},{timeoutMs:150}),tab.setChecked(1,true)])', invoke)
+    await submitted
+    if (reason === 'reset') sessions.reset('cancel')
+    await vi.advanceTimersByTimeAsync(250)
+    expect((await running).isError).toBe(true)
+    await Promise.allSettled(operations)
+    expect(guest.state.checked).toBe(false)
+    expect(guest.contents.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
+  } finally { sessions.dispose(); vi.useRealTimers() }
 })

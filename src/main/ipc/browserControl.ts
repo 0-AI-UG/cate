@@ -10,15 +10,16 @@ import { BROWSER_CONTROL } from '../../shared/ipc-channels'
 import { browserRuntime, type BrowserTargetIdentity } from '../browser/browserRuntime'
 import { actOnBrowserDownload, downloadsForWebContents, watchDownloadsForSession } from '../browser/browserDownloads'
 import { authorizeBrowserUpload } from '../browser/browserUpload'
+import { assertBrowserCodeCell } from '../browser/browserCodeExecution'
 
 export { watchDownloadsForSession }
 
-export interface BrowserControlRequest extends Partial<BrowserTargetIdentity> {
+export type BrowserControlRequest = { op: 'checkCodeCell'; codeCellId: string } | (Partial<BrowserTargetIdentity> & {
   op: 'attach' | 'execute' | 'downloads' | 'downloadAction'
   webContentsId: number
   method?: string
   args?: Record<string, unknown>
-}
+})
 
 /** Resolve the target guest, enforcing that it belongs to the calling window. */
 export function resolveBrowserGuest(event: Electron.IpcMainInvokeEvent, webContentsId: number): WebContents | null {
@@ -32,7 +33,7 @@ export function resolveBrowserGuest(event: Electron.IpcMainInvokeEvent, webConte
   return contents
 }
 
-function identity(req: BrowserControlRequest): BrowserTargetIdentity | null {
+function identity(req: Partial<BrowserTargetIdentity>): BrowserTargetIdentity | null {
   return req.workspaceId && req.panelId && req.tabId
     ? { workspaceId: req.workspaceId, panelId: req.panelId, tabId: req.tabId }
     : null
@@ -45,6 +46,10 @@ export function registerBrowserControlHandlers(): void {
     if (event.sender.getType() === 'webview') browserRuntime.noteUserInput(event.sender.id)
   })
   ipcMain.handle(BROWSER_CONTROL, wrapHandler(`[${BROWSER_CONTROL}]`, async (event, req: BrowserControlRequest) => {
+    if (req.op === 'checkCodeCell') {
+      try { assertBrowserCodeCell(req.codeCellId); return { ok: true } }
+      catch { return { error: 'browser-code-cell-cancelled' } }
+    }
     const contents = resolveBrowserGuest(event, req.webContentsId)
     if (!contents) return { error: 'no-guest' }
     const target = identity(req)

@@ -134,6 +134,13 @@ export async function handleBrowserMethod(
 ): Promise<BrowserOutcome> {
   const name = method.slice('cate.browser.'.length)
 
+  const checkCell = async (): Promise<void> => {
+    if (typeof args._codeCellId !== 'string') return
+    const result = await window.electronAPI.browserControl({ op: 'checkCodeCell', codeCellId: args._codeCellId })
+    if (result.error) throw new Error(result.error)
+  }
+  await checkCell()
+
   if (!BROWSER_METHODS.has(name)) return { ok: false, error: 'unknown-browser-method' }
   if (name === 'listTabs') {
     const workspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
@@ -149,27 +156,32 @@ export async function handleBrowserMethod(
   }
   const target = resolveTargetPanel(workspaceId, args)
   if ('error' in target) return { ok: false, error: target.error }
-  let panel = target.panel
+  const panel = target.panel
   if (!panel.activeTabId) return { ok: false, error: 'invalid-browser-tab-state' }
   onTargetResolved?.(panel.id)
   if (name === 'getTab' || name === 'createTab') {
     const controller = await waitForController(panel.id)
     if (!controller) return { ok: false, error: 'panel-not-mounted' }
+    await checkCell()
+    if (currentPanel(workspaceId, panel.id)?.activeTabId !== panel.activeTabId) return { ok: false, error: 'browser-tab-changed' }
     const previous = portalRegistry.get(panel.id)
-    if (name === 'createTab') controller.newTab(stringArg(args, 'url'))
+    let tabId = stringArg(args, 'tabId') ?? panel.activeTabId
+    if (name === 'createTab') tabId = controller.newTab(stringArg(args, 'url'))
     else if (args.tabId && args.tabId !== panel.activeTabId) {
       if (!controller.selectTab(String(args.tabId))) return { ok: false, error: 'no-such-tab' }
     }
     const switched = name === 'createTab' || Boolean(args.tabId && args.tabId !== panel.activeTabId)
     const guest = await waitForWebview(panel.id, 8_000, switched ? previous : undefined)
     if (!guest || !await waitForGuestReady(guest)) return { ok: false, error: 'webview-not-ready' }
-    panel = currentPanel(workspaceId, panel.id)!
-    return { ok: true, result: { panelId: panel.id, tabId: panel.activeTabId, url: guest.getURL(), title: guest.getTitle() } }
+    await checkCell()
+    if (currentPanel(workspaceId, panel.id)?.activeTabId !== tabId || portalRegistry.get(panel.id) !== guest) return { ok: false, error: 'browser-tab-changed' }
+    return { ok: true, result: { panelId: panel.id, tabId, url: guest.getURL(), title: guest.getTitle() } }
   }
   if (typeof args.tabId !== 'string') return { ok: false, error: 'tabId-required' }
   if (args.tabId !== panel.activeTabId) return { ok: false, error: 'browser-tab-changed' }
   if (name === 'close') {
     const controller = await waitForController(panel.id)
+    await checkCell()
     return controller?.closeTab(args.tabId) ? { ok: true, result: { closed: true } } : { ok: false, error: 'no-such-tab' }
   }
 
@@ -190,6 +202,8 @@ export async function handleBrowserMethod(
 
   const webview = await waitForWebview(panel.id)
   if (!webview) return { ok: false, error: 'webview-not-ready' }
+  await checkCell()
+  if (currentPanel(workspaceId, panel.id)?.activeTabId !== panel.activeTabId || portalRegistry.get(panel.id) !== webview) return { ok: false, error: 'browser-tab-changed' }
 
   if (name === 'setViewport') {
     const preset = stringArg(args, 'preset')
@@ -199,6 +213,8 @@ export async function handleBrowserMethod(
     const controller = await waitForController(panel.id)
     if (!controller) return { ok: false, error: 'panel-not-mounted' }
     await waitForGuestReady(webview)
+    await checkCell()
+    if (currentPanel(workspaceId, panel.id)?.activeTabId !== panel.activeTabId) return { ok: false, error: 'browser-tab-changed' }
     await controller.setViewport({ preset: preset === 'compact' ? 'compact' : preset === 'mobile' ? 'mobile' : preset === 'desktop' ? 'desktop' : 'custom', width, height } as Parameters<typeof controller.setViewport>[0])
     const response = await control(workspaceId, panel, webview, { op: 'execute', method: 'getAXState', args })
     return response.error ? { ok: false, error: response.error } : { ok: true, result: { preset, width, height, observation: response.result } }
@@ -210,6 +226,8 @@ export async function handleBrowserMethod(
       if (!url) return { ok: false, error: 'url-required' }
       const controller = await waitForController(panel.id)
       if (!controller) return { ok: false, error: 'panel-not-mounted' }
+      await checkCell()
+      if (currentPanel(workspaceId, panel.id)?.activeTabId !== panel.activeTabId) return { ok: false, error: 'browser-tab-changed' }
       controller.navigate(url)
     }
     if (name === 'reload') webview.reload()
@@ -226,7 +244,7 @@ export async function handleBrowserMethod(
       return response.error ? { ok: false, error: response.error } : { ok: true, result: { downloads: response.downloads ?? [] } }
     }
     await waitForGuestReady(webview)
-    const response = await control(workspaceId, panel, webview, { op: 'execute', method: 'getAXState', args: { disableDiffing: true } })
+    const response = await control(workspaceId, panel, webview, { op: 'execute', method: 'getAXState', args: { ...args, disableDiffing: true } })
     return response.error ? { ok: false, error: response.error } : { ok: true, result: response.result }
   }
 

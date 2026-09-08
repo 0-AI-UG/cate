@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
+import { beginBrowserCodeCell, endBrowserCodeCell } from './browserCodeExecution'
 import { BROWSER_METHODS, type BrowserCodeResult, type BrowserContent, type BrowserImage } from '../../shared/browserAutomation'
 
 const BROWSER_CODE_DATA_LIMIT = 16_000_000
@@ -137,6 +138,7 @@ export class BrowserCodeSessions {
     this.generations.set(key, (this.generations.get(key) ?? 0) + 1)
     const session = this.sessions.get(key)
     if (!session) return
+    if (session.cell) endBrowserCodeCell(session.cell.id)
     session.cell = undefined
     this.sessions.delete(key)
     if (!session.window.isDestroyed()) session.window.destroy()
@@ -193,7 +195,7 @@ export class BrowserCodeSessions {
     if (++cell.calls > 100) throw new Error('Browser code action limit exceeded')
     cell.pending++
     try {
-      const result = await cell.invoke(`cate.browser.${method}`, args)
+      const result = await cell.invoke(`cate.browser.${method}`, { ...args, _codeCellId: cell.id })
       if (session.cell !== cell) throw new Error('Browser code cell is no longer active')
       if (result && typeof result === 'object' && 'error' in result) throw new Error([String(result.error), 'recovery' in result ? String(result.recovery) : ''].filter(Boolean).join(' — '))
       const value = result as any
@@ -238,6 +240,7 @@ export class BrowserCodeSessions {
 
   private async execute(key: string, code: string, invoke: BrowserCodeInvoke): Promise<BrowserCodeResult> {
     if (typeof code !== 'string' || code.length > 100_000) return { content: [{ type: 'text', text: 'Browser code must be at most 100000 characters' }], isError: true }
+    const deadline = Date.now() + this.deadlineMs
     let timer: ReturnType<typeof setTimeout> | undefined
     let session: CodeSession | undefined
     let activeCell: Cell | undefined
@@ -246,6 +249,7 @@ export class BrowserCodeSessions {
         session = this.sessions.get(key) ?? await this.create(key)
         const cell: Cell = { id: randomUUID(), invoke, content: [], observations: new Map(), images: new Set(), calls: 0, bytes: 0, pending: 0, retainedBytes: 0 }
         activeCell = cell
+        beginBrowserCodeCell(cell.id, deadline)
         session.cell = cell
         await session.window.webContents.debugger.sendCommand('Runtime.evaluate', { expression: `__cateBeginCell(${JSON.stringify(cell.id)})` })
         const result = await session.window.webContents.debugger.sendCommand('Runtime.evaluate', { expression: code, replMode: true, awaitPromise: true, returnByValue: false, objectGroup: cell.id })
@@ -267,6 +271,7 @@ export class BrowserCodeSessions {
       return { content: [...content, { type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true }
     } finally {
       if (timer) clearTimeout(timer)
+      if (activeCell) endBrowserCodeCell(activeCell.id)
       if (activeCell && session && !session.window.isDestroyed()) {
         // Release protocol handles only; persistent JavaScript bindings remain.
         await session.window.webContents.debugger.sendCommand('Runtime.releaseObjectGroup', { objectGroup: activeCell.id }).catch(() => {})

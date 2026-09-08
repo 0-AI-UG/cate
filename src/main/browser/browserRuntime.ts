@@ -2,6 +2,7 @@ import { type WebContents } from 'electron'
 import { BROWSER_ACTION_METHODS, BROWSER_OBSERVATION_METHODS, type BrowserObservation, type BrowserObservationPerformance, type BrowserElement, type BrowserViewportState, type BrowserImage } from '../../shared/browserAutomation'
 import { BrowserObservationCache, type CachedBrowserObservation } from './browserObservationCache'
 import { readBrowserAX } from './browserAX'
+import { assertBrowserCodeCell } from './browserCodeExecution'
 
 type BrowserArgs = Record<string, unknown>
 
@@ -155,13 +156,14 @@ class BrowserTargetRuntime {
   }
 
   execute(method: string, args: BrowserArgs): Promise<BrowserRuntimeResult> {
-    return this.enqueue(() => this.executeBound(method, args)).catch((error) => ({ error: error instanceof Error ? error.message : 'browser-command-failed', recovery: 'Observe the bound tab again before retrying; input may already have been dispatched.' }))
+    return this.enqueue(() => this.executeBound(method, args), args._codeCellId).catch((error) => ({ error: error instanceof Error ? error.message : 'browser-command-failed', recovery: 'Observe the bound tab again before retrying; input may already have been dispatched.' }))
   }
 
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+  private enqueue<T>(operation: () => Promise<T>, codeCellId?: unknown): Promise<T> {
     // Capture takeover at submission, so input also invalidates waiting work.
     const epoch = this.userInputEpoch
     const guard = (): void => {
+      assertBrowserCodeCell(codeCellId)
       if (this.contents.isDestroyed()) throw new Error('browser-target-destroyed')
       if (this.userInputEpoch !== epoch) throw new Error('browser-action-preempted-by-user')
     }
@@ -561,11 +563,11 @@ class BrowserTargetRuntime {
   private async typeElement(target: ElementTarget | null, text: string, guard: () => void): Promise<void> {
     if (!target) throw new Error('type-target-required')
     await this.assertEditable(target)
-    await this.focusElement(target)
     guard()
     // Chromium's editing command respects the document selection and undo stack
     // even when this guest is not the OS-focused widget.
     const inserted = await this.callOn(target, `function () {
+      if (!this.matches(':focus')) return false;
       return this.ownerDocument.execCommand('insertText', false, ${JSON.stringify(text)});
     }`)
     if (inserted.value !== true && text !== '') throw new Error('browser-type-failed')
@@ -815,6 +817,10 @@ class BrowserTargetRuntime {
 
   private async activeElement(observation: CachedBrowserObservation): Promise<ElementTarget> {
     if (observation.kind !== 'ax') throw new Error('browser-ax-observation-required')
+    // Focus can move between cells, including into frames and closed shadows.
+    const fresh = await this.observe()
+    if (fresh.documentId !== observation.documentId) throw new Error('stale-browser-observation')
+    observation = this.requireObservation({ observationId: fresh.observationId })
     if (observation.focusedElementId !== undefined) return this.element(observation.focusedElementId, observation)
     const active = objectValue((await this.send('Runtime.evaluate', { expression: 'document.activeElement', returnByValue: false, objectGroup: 'cate-browser' })).result)
     if (typeof active.objectId !== 'string') throw new Error('browser-focused-element-required')
