@@ -242,7 +242,7 @@ describe('cursor spec', () => {
     transcript_path: '/home/u/.cursor/projects/slug/agent-transcripts/abcd/abcd.jsonl',
   }
 
-  test('creates .cursor/hooks.json (version 1, flat [{command}] handlers) on all five events', () => {
+  test('creates .cursor/hooks.json (version 1, flat [{command}] handlers) including edit capture', () => {
     expect(file.relPath).toBe('.cursor/hooks.json')
     const parsed = JSON.parse(file.build(null, ctx)!) as {
       version: number
@@ -250,11 +250,17 @@ describe('cursor spec', () => {
     }
     expect(parsed.version).toBe(1)
     expect(Object.keys(parsed.hooks).sort()).toEqual(
-      ['beforeSubmitPrompt', 'postToolUse', 'sessionEnd', 'sessionStart', 'stop'].sort(),
+      ['afterFileEdit', 'beforeSubmitPrompt', 'postToolUse', 'sessionEnd', 'sessionStart', 'stop'].sort(),
     )
     for (const handlers of Object.values(parsed.hooks)) {
       expect(handlers).toEqual([{ command: ctx.bridgeCommand }])
     }
+  })
+
+  test('normalizes dedicated file edits with the same session and workspace ownership', () => {
+    expect(norm('cursor', { ...base, hook_event_name: 'afterFileEdit', file_path: '/repo/a.ts', edits: [{ old_string: 'a', new_string: 'b' }] })).toMatchObject({
+      kind: 'turn-resume', sessionId: base.session_id, cwd: base.workspace_roots[0],
+    })
   })
 
   test('merges into an existing hooks.json: user hooks/fields kept, stale Cate entries refreshed', () => {

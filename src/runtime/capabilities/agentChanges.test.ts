@@ -15,6 +15,37 @@ beforeEach(async () => { directory = await mkdtemp(path.join(os.tmpdir(), 'cate-
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
 describe('reported agent changes', () => {
+  it.each([false, true])('captures Cursor afterFileEdit once alongside its Write completion (reverse=%s)', async (reverse) => {
+    const store = createAgentChangesStore(directory)
+    store.registerSource('pty', { cwd: '/repo', panelId: 'panel', kind: 'terminal' })
+    const base = { session_id: 'cursor-session', workspace_roots: ['/repo'] }
+    const payloads = [
+      { ...base, hook_event_name: 'afterFileEdit', file_path: '/repo/target.txt', edits: [{ old_string: 'before', new_string: 'after' }] },
+      { ...base, hook_event_name: 'postToolUse', tool_name: 'Write', tool_use_id: 'call', tool_input: { file_path: '/repo/target.txt', content: 'after\n' }, tool_output: '{"success":true}' },
+    ]
+    for (const raw of reverse ? payloads.reverse() : payloads) await store.ingestHook('pty', 'cursor', raw, normalizeAgentHookPayload('cursor', 'pty', raw))
+    const records = await createAgentChangesStore(directory).list('/repo')
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({ agentId: 'cursor', sessionId: 'cursor-session', panelId: 'panel', files: [{ path: 'target.txt', coverage: 'fragment', additions: 1, deletions: 1 }] })
+    expect(records[0].files[0].hunks[0].lines.map((line) => line.text)).toEqual(['before', 'after'])
+  })
+  it('preserves repeated Cursor edits to the same path without unsafe path-based deduplication', async () => {
+    const store = createAgentChangesStore(directory)
+    store.registerSource('pty', { cwd: '/repo', kind: 'terminal' })
+    for (const [before, after] of [['before', 'middle'], ['middle', 'after'], ['before', 'middle']]) {
+      const raw = { session_id: 'cursor-session', hook_event_name: 'afterFileEdit', file_path: '/repo/target.txt', edits: [{ old_string: before, new_string: after }] }
+      await store.ingestHook('pty', 'cursor', raw, normalizeAgentHookPayload('cursor', 'pty', raw))
+    }
+    expect(await createAgentChangesStore(directory).list('/repo')).toHaveLength(3)
+  })
+  it('uses the dedicated Cursor edit hook instead of generic Write, while retaining other tools', async () => {
+    const store = createAgentChangesStore(directory)
+    store.registerSource('pty', { cwd: '/repo', kind: 'terminal' })
+    await store.ingestHook('pty', 'cursor', { session_id: 'session', hook_event_name: 'postToolUse', tool_name: 'Write', tool_input: { file_path: 'target.txt', content: 'after' } }, null)
+    expect(await store.list('/repo')).toEqual([])
+    await store.ingestHook('pty', 'cursor', { session_id: 'session', hook_event_name: 'postToolUse', tool_name: 'apply_patch', tool_input: { patch: patch('target.txt') } }, null)
+    expect(await store.list('/repo')).toHaveLength(1)
+  })
   it('joins canonical and symlinked checkout paths into one history', async () => {
     const cwd = path.join(directory, 'repo')
     const alias = path.join(directory, 'alias')

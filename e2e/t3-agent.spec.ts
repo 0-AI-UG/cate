@@ -582,11 +582,20 @@ for (const entry of ['overlay', 'action bar'] as const) {
 }
 
 
-async function submitRealChat(text: string): Promise<void> {
+async function waitForRealSendReady(): Promise<void> {
+  // This is the native client's readiness, unlike Cate's independent shell socket.
+  await expect.poll(() => guestEval<boolean>(agentWebview(), '!!document.querySelector(\'button[aria-label="Send message"]:not(:disabled)\')').catch(() => false), { timeout: 30_000 }).toBe(true)
+}
+
+async function submitRealChat(text: string, waitForReady = false): Promise<void> {
   await expect.poll(() => guestEval<number>(agentWebview(), 'document.querySelectorAll("[contenteditable=true]").length').catch(() => 0), { timeout: 30_000 }).toBeGreaterThan(0)
   await guestEval(agentWebview(), `document.querySelector('[contenteditable=true]').focus()`)
   const id = await agentWebview().evaluate((element) => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())
   await electronApp!.evaluate(({ webContents }, { id, text }) => webContents.fromId(id)!.insertText(text), { id, text })
+  if (waitForReady) {
+    await waitForRealSendReady()
+    await guestEval(agentWebview(), "document.querySelector('[contenteditable=true]').focus()")
+  }
   await guestKey(agentWebview(), 'Enter')
 }
 async function realThreadState() {
@@ -1112,6 +1121,7 @@ test('real T3 lifecycle reconnects after transient socket loss without restartin
 test('real T3 lifecycle bounds automatic crash recovery and allows an explicit retry', async () => {
   await submitRealChat('before repeated failures')
   await waitForRealReply('before repeated failures')
+  const threadId = (await realThreadState())!.id
   const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
   const currentPid = (): number | undefined => existsSync(pidPath) ? JSON.parse(readFileSync(pidPath, 'utf8'))[0]?.pid : undefined
   for (let crash = 0; crash < 3; crash++) {
@@ -1131,6 +1141,7 @@ test('real T3 lifecycle bounds automatic crash recovery and allows an explicit r
   await expect.poll(() => page.evaluate(cwd => window.electronAPI.agentHarnessGetStatus({ cwd }), workspaceRoot),
     { timeout: 15_000 }).toMatchObject({ phase: 'running' })
   await expect(page.locator(`[data-agent-panel-id="${agent.panelId}"]`)).toHaveAttribute('data-agent-connected', 'true', { timeout: 15_000 })
+  await expect.poll(async () => (await realThreadState())?.id, { timeout: 15_000 }).toBe(threadId)
   await sendRecoveredDraft('after explicit retry')
   await waitForRealReply('after explicit retry')
 })

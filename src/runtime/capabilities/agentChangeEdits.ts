@@ -28,6 +28,15 @@ function fileFromHunks(filePath: string, hunks: GitDiffHunk[], coverage: AgentCh
     deletions: lines.filter((line) => line.kind === 'delete').length }
 }
 
+function fragmentLines(text: string): string[] {
+  if (!text) return []
+  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  // A terminating newline closes the last line; it does not add a blank line.
+  // Remove exactly that sentinel so real leading/trailing blank lines survive.
+  if (lines[lines.length - 1] === '') lines.pop()
+  return lines
+}
+
 /** Git quotes paths using C escapes, including octal UTF-8 bytes (not JSON). */
 function unquoteGitPath(value: string): string {
   if (!value.startsWith('"')) return value
@@ -95,6 +104,7 @@ export function filesFromTool(cwd: string, toolName: string, inputValue: unknown
   })
   if (acpFiles.length) return acpFiles
   const patch = string(output.diff) ?? string(output.patch) ?? string(input.patch) ?? string(input.patchText)
+    ?? (toolName === 'apply_patch' ? string(input.command) : undefined)
     ?? (typeof inputValue === 'string' && inputValue.includes('*** Begin Patch') ? inputValue : undefined)
   if (patch?.includes('diff --git ')) return filesFromPatch(cwd, patch)
   if (patch?.includes('*** Begin Patch')) {
@@ -105,8 +115,8 @@ export function filesFromTool(cwd: string, toolName: string, inputValue: unknown
       const filePath = move === undefined ? oldPath : toolPath(move)
       if (!filePath || !oldPath) return []
       const lines = section.split('\n').filter((line) => /^[+ -]/.test(line) && !line.startsWith('***'))
-      const hunks = parseReviewPatch(`@@ -1 +1 @@\n${lines.join('\n')}`)
-      return [{ ...fileFromHunks(filePath, hunks, 'fragment'), ...(move === undefined ? {} : { oldPath }) }]
+      const hunks = lines.length ? parseReviewPatch(`@@ -1 +1 @@\n${lines.join('\n')}`) : []
+      return [{ ...fileFromHunks(filePath, hunks, hunks.length ? 'fragment' : 'unavailable'), ...(move === undefined ? {} : { oldPath }) }]
     })
   }
   // Codex app-server fileChange items carry a path and unified diff per file.
@@ -134,10 +144,10 @@ export function filesFromTool(cwd: string, toolName: string, inputValue: unknown
   const edits = Array.isArray(input.edits) ? input.edits : [input]
   const hunks = edits.flatMap((value) => {
     const edit = object(value)
-    const before = string(edit.old_string ?? edit.oldString ?? edit.old_str)
-    const after = string(edit.new_string ?? edit.newString ?? edit.new_str)
+    const before = string(edit.old_string ?? edit.oldString ?? edit.old_str ?? edit.oldStr)
+    const after = string(edit.new_string ?? edit.newString ?? edit.new_str ?? edit.newStr)
     if (before === undefined || after === undefined) return []
-    const lines = [...(before ? before.split('\n').map((line) => '-' + line) : []), ...(after ? after.split('\n').map((line) => '+' + line) : [])]
+    const lines = [...fragmentLines(before).map((line) => '-' + line), ...fragmentLines(after).map((line) => '+' + line)]
     return parseReviewPatch(`@@ -1 +1 @@\n${lines.join('\n')}`)
   })
   // A Write input does not include the old file. Do not present it as a new
