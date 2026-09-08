@@ -61,7 +61,9 @@ session. There is no public DOM evaluation or selector/argv compatibility layer.
 The API contract and model-facing documentation live in
 `src/shared/browserAutomation.ts`.
 
-Terminal agents use `cate browser run '<JavaScript>'` and `cate browser reset`.
+Terminal agents use `cate browser observe`, `cate browser run '<JavaScript>'`
+and `cate browser reset`. Observe binds the selected tab as `tab` and emits one
+full paired AX/screenshot observation; `--panel` chooses a specific panel.
 `CATE_CLI_SESSION_ID` isolates persistent bindings by terminal/agent. The `cua`
 object offers `getTab`, `createBrowserTab`, and `listTabs`; a bound tab offers
 accessibility observations, viewport screenshots, input actions, explicit waits,
@@ -75,13 +77,11 @@ SDK keeps its viewport identity separate from the last AX observation used for
 numeric targets. `getAXStateAndScreenshot` refreshes both together. Observation
 options accept `profile:true` for phase timings and cache/image size diagnostics.
 
-`cate browser mcp` is a stdio bridge to the authenticated `${CATE_API}/mcp`
-endpoint. Its `browser` tool takes `{code:string}` and returns native text/image
-content; `browser_reset` clears the code session. T3 Codex and Claude integrations
-receive the `cate_browser` MCP server through `scripts/patch-t3-browser.mjs`.
-Human CLI output writes screenshots to temporary paths, while `--json` preserves
-structured content and base64 images. Agents must load CLI image artifacts before
-reasoning visually; MCP delivers images directly.
+CLI output writes screenshots to temporary PNG paths and explicitly instructs the
+agent to open them with its image-viewing tool. Shell output is text, so it cannot
+directly attach an image to the model. `--json` preserves structured content and
+base64 images for callers that can convert them to image input. There is no
+browser MCP server or automatic provider MCP injection.
 
 Use `getAXState` for ordinary controls and `getAXStateAndScreenshot` when visual
 context matters. Actions return fresh observations or diffs. A click result

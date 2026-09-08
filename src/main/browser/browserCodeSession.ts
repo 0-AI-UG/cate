@@ -32,7 +32,7 @@ export function installBrowserCodeSdk(): void {
     const observation = result?.observation ?? result
     if (!observation?.panelId || !observation?.tabId) throw new Error('Browser binding did not resolve a panel and tab')
     const binding = { panelId: observation.panelId, tabId: observation.tabId }
-    const initial = observation.observationId ? observation : await rpc('getAXState', binding)
+    const initial = observation.observationId ? observation : await rpc(args.screenshot === true ? 'getAXStateAndScreenshot' : 'getAXState', binding)
     let observationId = initial.observationId
     let axObservationId = initial.kind === 'image' ? undefined : initial.observationId
     let documentId = initial.documentId

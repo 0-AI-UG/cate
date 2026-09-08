@@ -40,11 +40,12 @@ panel. If a selected panel was closed, select another panel before continuing.
 
 Browser control uses persistent JavaScript with the `cua` tab API. The old argv
 actions, selectors, page evaluation, and revisioned string refs have been removed.
-Start by binding a tab and inspecting its accessibility state:
+Start with a full accessibility observation and screenshot. This creates or
+replaces the persistent `tab` binding for subsequent code:
 
 ```bash
-cate browser run 'var tab = await cua.getTab({panelId:"<full-panel-id>"});'
-cate browser run 'await tab.getAXStateAndScreenshot();'
+cate browser observe --panel <panel-id>
+cate browser run 'await tab.getAXState();'
 ```
 
 Use full panel IDs inside JavaScript. `--panel <id>` supports short IDs as an
@@ -108,11 +109,13 @@ no Node.js, filesystem, network, or DOM evaluation access. Await every action.
 bindings without closing tabs. Sessions are isolated per terminal/agent through
 `CATE_CLI_SESSION_ID`; timed-out sessions reset.
 
-For native image delivery, use `cate browser mcp` as a stdio MCP server. Its
-`browser` tool accepts `{code:"..."}` and returns text and image content;
-`browser_reset` resets the session. Human CLI output saves screenshots to managed
-temporary paths; `--json` returns structured content with base64 images. When
-using CLI image paths, explicitly load the image before visual reasoning.
+`cate browser observe` returns full AX state and saves a screenshot to a temporary
+PNG file. Open the printed path with your image-viewing tool before visual
+reasoning. Shell output cannot itself attach pixels to the model. `--json`
+returns structured content with base64 image data; base64 text is not visual
+input. The same screenshot output works from `tab.getScreenshot()` in code.
+`cua.getTab({panelId:"...", screenshot:true})` binds with a paired observation.
+AX reads remain available in code for deterministic branches and extraction.
 
 Agent actions display a cursor/highlight in the browser panel. User input takes
 control back and cancels pending automation. Responsive viewport size and canvas

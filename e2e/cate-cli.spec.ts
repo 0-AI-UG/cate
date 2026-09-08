@@ -229,7 +229,10 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   expect(await runCate(controlNode, 'panel', 'list')).toContain(secondDataUrl)
   await runBrowser('await tab.back(); await tab.back();')
 
-  const state = await runBrowser('await tab.getAXState({disableDiffing:true});')
+  const state = await runCate(controlNode, 'browser', 'observe', '--panel', browserId)
+  expect(state).toContain('Screenshot: ')
+  const retiredMcp = await runInCateTerminal(controlNode, cate('browser', 'mcp'))
+  expect(retiredMcp.code).toBe(2)
   expect(state).toContain('Form Ready')
   expect(state).toContain('••••••••')
   expect(state).not.toContain('never-expose-me')
@@ -271,7 +274,7 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   expect(await oracle('document.body.dataset.mouse')).toBe('40,50')
 
   const screenshots = await runBrowser('await tab.getAXStateAndScreenshot();')
-  const imagePath = screenshots.split('\n').find((line) => line.trim().endsWith('.png'))?.trim()
+  const imagePath = screenshots.split('\n').find((line) => line.trim().endsWith('.png'))?.trim().replace(/^Screenshot: /, '')
   expect(imagePath).toBeTruthy()
   expect(existsSync(imagePath!)).toBe(true)
   expect(readFileSync(imagePath!).subarray(1, 4).toString()).toBe('PNG')

@@ -283,6 +283,10 @@ function reviewRequest(args: string[], flags: Flags): Request {
 
 function browserRequest(args: string[], flags: Flags): Request {
   const command = need(args[0], 'browser command')
+  if (command === 'observe') {
+    exact(args.slice(1), 0)
+    return withPanel({ method: 'cate.browser.run', args: { code: 'var tab = await cua.getTab({screenshot:true});' } }, flags.panel, 'browser')
+  }
   if (command === 'run') {
     const code = need(exact(args.slice(1), 1)[0], 'JavaScript code')
     return withPanel({ method: 'cate.browser.run', args: { code } }, flags.panel, 'browser')
@@ -291,7 +295,7 @@ function browserRequest(args: string[], flags: Flags): Request {
     exact(args.slice(1), 0)
     return { method: 'cate.browser.reset', args: {} }
   }
-  throw new UsageError('Use cate browser run <JavaScript> or cate browser reset. See cate browser --help.')
+  throw new UsageError('Use cate browser run <JavaScript>, cate browser observe or cate browser reset. See cate browser --help.')
 }
 
 export function buildRequest(positionals: string[], flags: Flags): Request {
@@ -518,7 +522,7 @@ export function formatHuman(method: string, value: unknown): string {
   const content = asObject(value)?.content
   if ((method === 'cate.browser.run' || method === 'cate.browser.reset') && Array.isArray(content)) return content.map((item) => {
     const block = asObject(item)
-    return block?.type === 'text' ? String(block.text ?? '') : block?.path ? String(block.path) : '[Browser image: use --json for image data]'
+    return block?.type === 'text' ? String(block.text ?? '') : block?.path ? `Screenshot: ${String(block.path)}\nOpen this file with your image-viewing tool to inspect the page visually.` : '[Browser image: use --json for image data]'
   }).join('\n')
   if (method === 'cate.panel.list') return renderPanelList(value)
   if (method === 'cate.codingAgent.list') return renderAgentRuns(value)
@@ -560,7 +564,7 @@ export function formatHuman(method: string, value: unknown): string {
 const USAGE = `Usage:
   cate browser run <JavaScript> [--panel <id>]
   cate browser reset
-  cate browser mcp
+  cate browser observe [--panel <id>]
   cate panel list|create|set|current|clear|close [args]
   cate editor open <path[:line[:column]]>
   cate terminal read|type|press [args] [--panel <id>]
@@ -574,7 +578,7 @@ Global flags: --panel <id> --json -h|--help --version`
 
 const BROWSER_USAGE = `Usage: cate browser run <JavaScript> [--panel <id>]
        cate browser reset
-       cate browser mcp   (stdio MCP server with native image responses)
+       cate browser observe [--panel <id>]   (AX state and screenshot; binds tab)
 
 ${BROWSER_API_DOCUMENTATION}`
 
@@ -706,9 +710,7 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
 }
 
 if (typeof require !== 'undefined' && require.main === module) {
-  if (process.argv[2] === 'browser' && process.argv[3] === 'mcp') {
-    void import('./browserMcp').then(({ runBrowserMcp }) => runBrowserMcp())
-  } else run(process.argv.slice(2), {
+  run(process.argv.slice(2), {
     fetch: globalThis.fetch,
     env: process.env,
     cwd: process.cwd(),

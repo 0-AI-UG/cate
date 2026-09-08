@@ -1,4 +1,3 @@
-import { createBrowserMcp } from './browserMcp'
 import { browserCodeSessions } from '../browser/browserCodeSession'
 import { randomUUID } from 'node:crypto'
 import http from 'http'
@@ -55,7 +54,6 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
   const duplexes = new Set<Duplex>()
   const panelTargets = new Map<string, string>()
   const codePrefix = `browser:${session.workspaceId}:${randomUUID()}:`
-  const mcp = createBrowserMcp(`${codePrefix}mcp:`)
 
   function panelTargetKey(workspaceId: string, clientId: string): string {
     return `${workspaceId}\0${clientId}`
@@ -80,22 +78,6 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
       const auth = req.headers['authorization'] || ''
       if (!session.token || auth !== `Bearer ${session.token}`) {
         send(401, { error: 'unauthorized' })
-        return
-      }
-      if (req.url?.split('?')[0] === '/mcp') {
-        const scope = { workspaceId: session.workspaceId, panelId: undefined, forward: forwardToActiveWindow }
-        const sessionId = typeof req.headers['mcp-session-id'] === 'string' ? req.headers['mcp-session-id'] : undefined
-        if (req.method === 'DELETE') {
-          send(sessionId && await mcp.remove(sessionId) ? 200 : 404, {})
-          return
-        }
-        if (req.method !== 'POST') { send(405, { error: 'method-not-allowed' }); return }
-        let message: Record<string, unknown>
-        try { message = JSON.parse(await readBody(req)) } catch { send(400, { error: 'bad-json' }); return }
-        const response = await mcp.handle(message, sessionId, scope)
-        if (response.sessionId) res.setHeader('Mcp-Session-Id', response.sessionId)
-        if (response.status === 202) { res.writeHead(202); res.end(); return }
-        send(response.status ?? 200, response.body)
         return
       }
       const raw = await readBody(req)
@@ -256,7 +238,6 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
       for (const d of duplexes) { try { d.destroy() } catch { /* gone */ } }
       duplexes.clear()
       panelTargets.clear()
-      mcp.dispose()
       browserCodeSessions.dispose(codePrefix)
       try { server.close() } catch { /* gone */ }
     },

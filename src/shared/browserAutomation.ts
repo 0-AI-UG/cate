@@ -75,9 +75,12 @@ export const BROWSER_READ_METHODS = new Set([...BROWSER_OBSERVATION_METHODS, 'li
 
 export const BROWSER_API_DOCUMENTATION = `Cate browser control runs JavaScript in a persistent, isolated session. No Node.js, filesystem, network, DOM evaluation, or browser engine access is exposed. Use only cua and output helpers.
 
+CLI shortcut: cate browser observe [--panel <id>] returns full AX state and a screenshot path, and binds tab for later code. Open the PNG with your image-viewing tool to see pixels; shell text/base64 is not visual input.
+
 Start with: var tab = await cua.getTab({panelId: "..."});
 Or: var tab = await cua.createBrowserTab("https://example.com");
 await cua.listTabs(); // discover panelId and tabId
+Use cua.getTab({panelId:"...", screenshot:true}) to bind with AX and screenshot together.
 Tab bindings pin panel and tab; they never follow a user's tab switch.
 
 Observation methods return structured observations and emit their state/images automatically:
@@ -86,7 +89,7 @@ await tab.getScreenshot();
 await tab.getAXStateAndScreenshot();
 Options: emit:false suppresses output. disableDiffing:true requests a full tree.
 Each cell has a 16-million-character retained-observation budget, including emit:false; split long screenshot loops across cells.
-Observations contain kind, observationId, documentId, url, title and viewport. AX observations (kind:"ax") contain elements with numeric id, role, name, value and states. getScreenshot returns kind:"image": only viewport pixels/identity, empty state/elements, no AX scan. It does not refresh numeric IDs; the SDK retains the last AX observation separately and uses the latest visual observation for coordinates. getAXStateAndScreenshot refreshes both together. Images are returned directly to the model.
+Observations contain kind, observationId, documentId, url, title and viewport. AX observations (kind:"ax") contain elements with numeric id, role, name, value and states. getScreenshot returns kind:"image": only viewport pixels/identity, empty state/elements, no AX scan. It does not refresh numeric IDs; the SDK retains the last AX observation separately and uses the latest visual observation for coordinates. getAXStateAndScreenshot refreshes both together. CLI output saves image artifacts; open them with an image-viewing tool.
 Optional profile:true reports observation phase timings, encoded image bytes and estimated retained-cache bytes. The cache retains up to 32 compact observations within an 8 MiB estimated allocation budget; an evicted baseline requires observing again.
 
 Act using IDs from the latest AX observation:
@@ -105,5 +108,5 @@ await tab.waitFor({text:"Saved"}); // or url glob, element:number + state: visib
 Actions return and emit fresh state; input dispatch is not proof of business completion. Use waitFor or inspect resulting state to verify. Numeric IDs survive observations within a document; navigation requires fresh IDs. Coordinates use the latest screenshot/observation and are rejected after viewport changes. Do not guess IDs or coordinates.
 
 Lifecycle: tab.goto(url), tab.back(), tab.forward(), tab.reload(), tab.close(), tab.setViewport({width:1280,height:800}), tab.resize({width:800,height:600}), tab.downloads().
-Use var for reusable bindings; top-level await is supported. Batch only deterministic actions, then inspect state before deciding again. Each code call has a deadline; await every action. A timed-out session resets. Use nodeRepl.write(value) for additional text. The browser tool returns actual images; CLI prints image artifact paths instead.
+Use var for reusable bindings; top-level await is supported. Batch only deterministic actions, then inspect state before deciding again. Each code call has a deadline; await every action. A timed-out session resets. Use nodeRepl.write(value) for additional text. CLI prints labeled image artifact paths; --json includes base64 data for structured consumers.
 `
