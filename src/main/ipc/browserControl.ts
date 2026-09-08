@@ -6,11 +6,10 @@
 import { BrowserWindow, ipcMain, webContents, type WebContents } from 'electron'
 import log from '../logger'
 import { wrapHandler } from './handlerError'
-import { grantFileAccess } from './pathValidation'
 import { BROWSER_CONTROL } from '../../shared/ipc-channels'
 import { browserRuntime, type BrowserTargetIdentity } from '../browser/browserRuntime'
 import { actOnBrowserDownload, downloadsForWebContents, watchDownloadsForSession } from '../browser/browserDownloads'
-import { authorizeBrowserUploadCommand } from '../browser/browserUpload'
+import { authorizeBrowserUpload } from '../browser/browserUpload'
 
 export { watchDownloadsForSession }
 
@@ -73,20 +72,15 @@ export function registerBrowserControlHandlers(): void {
       if (!req.method) return { error: 'browser-method-required' }
       const callerWindowId = BrowserWindow.fromWebContents(event.sender)?.id
       let args = req.args ?? {}
-      if (req.method === 'command' && Array.isArray(args.command) && args.command[0] === 'upload') {
+      if (req.method === 'upload') {
         if (callerWindowId === undefined) return { error: 'browser-upload-owner-required' }
         try {
-          args = { ...args, command: await authorizeBrowserUploadCommand(args.command as string[], callerWindowId, target.workspaceId) }
+          args = { ...args, filePath: await authorizeBrowserUpload(args.filePath, callerWindowId, target.workspaceId) }
         } catch (error) {
           return { error: error instanceof Error ? error.message : 'browser-upload-path-denied' }
         }
       }
       const response = await browserRuntime.execute(contents.id, target, req.method, args)
-      const result = response.result
-      if (callerWindowId !== undefined && result && typeof result === 'object') {
-        const filePath = (result as { path?: unknown }).path
-        if (typeof filePath === 'string') await grantFileAccess(callerWindowId, filePath)
-      }
       return response
     }
     return { error: 'unsupported-op' }

@@ -1,3 +1,4 @@
+import { act, inspectFixture } from './fixtures/browser-control'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import {
@@ -21,7 +22,7 @@ test.afterEach(async () => {
 
 test('moves a browser panel by its canvas title bar', async () => {
   const browser = await page.evaluate(() => window.__cateE2E!.createBrowser(
-    `data:text/html,${encodeURIComponent('<title>Draggable browser</title><h1>Browser page</h1><input id="name"><button id="save" onclick="document.body.dataset.saved=document.querySelector(\'#name\').value">Save</button>')}`,
+    `data:text/html,${encodeURIComponent('<title>Draggable browser</title><h1>Browser page</h1><input id="name" aria-label="Name"><button id="save" onclick="document.body.dataset.saved=document.querySelector(\'#name\').value">Save</button>')}`,
     { x: 120, y: 120 },
   ))
   const nodeId = await expect.poll(() => page.evaluate(
@@ -45,15 +46,9 @@ test('moves a browser panel by its canvas title bar', async () => {
     y: before!.y + 120,
   })
 
-  await expect(page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'command', { panelId, command: ['fill', '#name', 'Moved workflow'] },
-  ), browser)).resolves.toMatchObject({ ok: true })
-  await expect(page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'command', { panelId, command: ['click', '#save'] },
-  ), browser)).resolves.toMatchObject({ ok: true })
-  await expect(page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'readCommand', { panelId, command: ['get', 'attr', 'body', 'data-saved'] },
-  ), browser)).resolves.toMatchObject({ ok: true, result: { value: 'Moved workflow' } })
+  await expect(act(page, browser, 'setValue', "Name", { value: 'Moved workflow' })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'click', "Save")).resolves.toMatchObject({ ok: true })
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"body\")?.getAttribute(\"data-saved\")")).resolves.toMatchObject({ ok: true, result: { value: 'Moved workflow' } })
 })
 
 test('does not focus the address bar while dragging a browser panel', async () => {

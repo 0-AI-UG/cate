@@ -15,7 +15,7 @@ export function registerKeepAwakeHandlers(): void {
   ipcMain.handle(KEEP_AWAKE_SET, (_event, enabled: boolean) => {
     if (typeof enabled !== 'boolean') throw new TypeError('Expected a boolean')
     if (enabled) {
-      if (!isEnabled()) blockerId = powerSaveBlocker.start('prevent-app-suspension')
+      if (!isEnabled()) blockerId = powerSaveBlocker.start('prevent-display-sleep')
     } else {
       stop()
     }

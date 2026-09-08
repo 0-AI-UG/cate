@@ -1,3 +1,4 @@
+import { browserInvoke, popupBinding, target, act, activeAction, waitForText, fixtureEvaluate, inspectFixture } from './fixtures/browser-control'
 // Deterministic browser-control conformance for the workflows most likely to
 // expose a difference between a toy DOM driver and a production browser agent.
 // Public-network compatibility and long-running repetition live in their own
@@ -34,15 +35,6 @@ async function listen(server: Server): Promise<string> {
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 }
 
-async function invoke(
-  browser: { workspaceId: string; panelId: string },
-  method: string,
-  args: Record<string, unknown> = {},
-) {
-  return page.evaluate(({ browser, method, args }) => window.__cateE2E!.browserInvoke(
-    browser.workspaceId, method, { panelId: browser.panelId, ...args },
-  ), { browser, method, args })
-}
 
 async function createBrowser(pathname: string, x = 100) {
   return page.evaluate(({ url, x }) => window.__cateE2E!.createBrowser(url, { x, y: 100 }), {
@@ -56,7 +48,7 @@ test.beforeAll(async () => {
     const url = new URL(request.url ?? '/', 'http://frames.test')
     if (url.pathname === '/nested-action') {
       const version = url.searchParams.get('version') ?? '1'
-      html(response, `<title>Nested frame ${version}</title><button id="nested-action" onclick="this.dataset.clicked='yes'">Nested action ${version}</button>`)
+      html(response, `<title>Nested frame ${version}</title><button id="nested-action" onclick="this.dataset.clicked='yes';this.textContent+=' complete'">Nested action ${version}</button>`)
       return
     }
     response.writeHead(404).end('not found')
@@ -135,7 +127,7 @@ test.beforeAll(async () => {
         #virtual { height: 180px; overflow: auto; border: 1px solid; position: relative }
         #virtual-space { height: 6000px }
         #virtual-window { position: absolute; inset: 0 auto auto 0 }
-      </style><main><h1>Dynamic content lab</h1><div id="editor" role="textbox" contenteditable="true">Draft</div><section id="feed"></section><div id="virtual"><div id="virtual-space"></div><div id="virtual-window"></div></div></main><script>
+      </style><main><h1>Dynamic content lab</h1><div id="editor" aria-label="Editor" role="textbox" contenteditable="true">Draft</div><section id="feed"></section><div id="virtual"><div id="virtual-space"></div><div id="virtual-window"></div></div></main><script>
         let loaded=0;
         function appendFeed(){for(let i=0;i<20;i++){const row=document.createElement('button');row.textContent='Feed item '+(++loaded);feed.append(row)}}
         appendFeed();
@@ -151,7 +143,7 @@ test.beforeAll(async () => {
       return
     }
     if (url.pathname === '/uploads') {
-      html(response, `<title>Advanced uploads</title><main><h1>Advanced uploads</h1><input id="files" type="file" multiple><output id="selected">none</output><div id="drop-zone">Drop files here</div><output id="dropped">none</output></main><script>
+      html(response, `<title>Advanced uploads</title><main><h1>Advanced uploads</h1><input id="files" aria-label="Files" type="file" multiple><output id="selected">none</output><div id="drop-zone">Drop files here</div><output id="dropped">none</output></main><script>
         files.addEventListener('change',()=>selected.textContent=Array.from(files.files).map(file=>file.name).join(','));
         dropZone=document.querySelector('#drop-zone'); dropZone.addEventListener('dragover',event=>event.preventDefault());
         dropZone.addEventListener('drop',event=>{event.preventDefault();dropped.textContent=Array.from(event.dataTransfer.files).map(file=>file.name).join(',')});
@@ -181,131 +173,110 @@ test.afterEach(async () => {
 test('controls a nested cross-origin iframe after its parent frame is replaced', async () => {
   const browser = await createBrowser('/frames')
   const first = await expect.poll(async () => {
-    const result = await invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as {
+    const result = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
       ok: boolean
-      result?: { refs: Array<{ ref: string; name: string }> }
+      result?: { elements: Array<{ id: number; name: string }> }
     }
-    return result.result?.refs.find((ref) => ref.name === 'Nested action 1')
-  }, { timeout: 20_000 }).toBeTruthy().then(() => invoke(browser, 'readCommand', {
-    command: ['snapshot', '-i'],
-  }) as Promise<{ ok: boolean; result: { refs: Array<{ ref: string; name: string }> } }>)
-  const oldRef = first.result.refs.find((ref) => ref.name === 'Nested action 1')!.ref
-  await expect(invoke(browser, 'command', { command: ['click', oldRef] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'readCommand', { command: ['get', 'attr', oldRef, 'data-clicked'] })).resolves
-    .toMatchObject({ ok: true, result: { value: 'yes' } })
+    return result.result?.elements.find((ref) => ref.name === 'Nested action 1')
+  }, { timeout: 20_000 }).toBeTruthy().then(() => browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as Promise<{ ok: boolean; result: { elements: Array<{ id: number; name: string }> } }>)
+  const oldRef = first.result.elements.find((ref) => ref.name === 'Nested action 1')!.id
+  await expect(activeAction(page, browser, 'click', { target: oldRef })).resolves.toMatchObject({ ok: true })
+  await expect(target(page, browser, 'Nested action 1 complete', 'button').then(() => ({ ok: true }))).resolves.toMatchObject({ ok: true })
 
-  await expect(invoke(browser, 'command', { command: ['click', '#replace-frame'] })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'click', "Replace frame")).resolves.toMatchObject({ ok: true })
   const second = await expect.poll(async () => {
-    const result = await invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as {
+    const result = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
       ok: boolean
-      result?: { refs: Array<{ ref: string; name: string }> }
+      result?: { elements: Array<{ id: number; name: string }> }
     }
-    return result.result?.refs.find((ref) => ref.name === 'Nested action 2')
-  }, { timeout: 20_000 }).toBeTruthy().then(() => invoke(browser, 'readCommand', {
-    command: ['snapshot', '-i'],
-  }) as Promise<{ ok: boolean; result: { refs: Array<{ ref: string; name: string }> } }>)
-  await expect(invoke(browser, 'command', { command: ['click', oldRef] })).resolves.toMatchObject({ ok: false })
-  const newRef = second.result.refs.find((ref) => ref.name === 'Nested action 2')!.ref
-  await expect(invoke(browser, 'command', { command: ['click', newRef] })).resolves.toMatchObject({ ok: true })
+    return result.result?.elements.find((ref) => ref.name === 'Nested action 2')
+  }, { timeout: 20_000 }).toBeTruthy().then(() => browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as Promise<{ ok: boolean; result: { elements: Array<{ id: number; name: string }> } }>)
+  await expect(activeAction(page, browser, 'click', { target: oldRef })).resolves.toMatchObject({ ok: false })
+  const newRef = second.result.elements.find((ref) => ref.name === 'Nested action 2')!.id
+  await expect(activeAction(page, browser, 'click', { target: newRef })).resolves.toMatchObject({ ok: true })
 })
 
 test('handles modal UI, denied permissions, and popup ownership across panels', async () => {
   const [first, second] = await Promise.all([createBrowser('/policy', 80), createBrowser('/policy', 760)])
-  await expect.poll(() => invoke(first, 'readCommand', {
-    command: ['wait', '#open-modal', '--state', 'visible'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect.poll(() => target(page, first, "Open modal").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 
-  await invoke(first, 'command', { command: ['click', '#open-modal'] })
-  await invoke(first, 'command', { command: ['fill', '#approval-note', 'approved by workflow'] })
-  await invoke(first, 'command', { command: ['click', '#approve'] })
-  await expect(invoke(first, 'readCommand', { command: ['get', 'text', '#decision'] })).resolves
+  await act(page, first, 'click', "Open modal")
+  await act(page, first, 'setValue', "Approval note", { value: 'approved by workflow' })
+  await act(page, first, 'click', "Approve")
+  await expect(inspectFixture(app!, page, first, "document.querySelector(\"#decision\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'approved by workflow' } })
 
-  await invoke(first, 'command', { command: ['click', '#permission'] })
-  await expect.poll(() => invoke(first, 'readCommand', {
-    command: ['get', 'text', '#permission-result'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true, result: { text: 'denied:1' } })
+  await act(page, first, 'click', "Request location")
+  await expect.poll(() => inspectFixture(app!, page, first, "document.querySelector(\"#permission-result\")?.textContent ?? ''", 'text'), { timeout: 20_000 }).toMatchObject({ ok: true, result: { text: 'denied:1' } })
 
-  await invoke(first, 'command', { command: ['click', '#popup'] })
-  await expect.poll(() => invoke(first, 'current'), { timeout: 20_000 })
+  await act(page, first, 'click', "Open popup")
+  const popup = await popupBinding(page, first, `${appOrigin}/popup-result`)
+  await expect.poll(() => browserInvoke(page, popup, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${appOrigin}/popup-result` } })
-  await expect(invoke(first, 'command', { command: ['click', '#popup-action'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(first, 'readCommand', { command: ['get', 'text', '#popup-action'] })).resolves
+  await expect(act(page, popup, 'click', "Finish popup")).resolves.toMatchObject({ ok: true })
+  await expect(inspectFixture(app!, page, popup, "document.querySelector(\"#popup-action\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'Popup complete' } })
-  await expect(invoke(first, 'tabs')).resolves.toMatchObject({ ok: true, result: { tabs: expect.arrayContaining([
+  await expect(browserInvoke(page, first, 'listTabs')).resolves.toMatchObject({ ok: true, result: { tabs: expect.arrayContaining([
     expect.objectContaining({ url: `${appOrigin}/policy` }),
     expect.objectContaining({ url: `${appOrigin}/popup-result` }),
   ]) } })
-  await expect(invoke(second, 'tabs')).resolves.toMatchObject({ ok: true, result: { tabs: [expect.objectContaining({ url: `${appOrigin}/policy` })] } })
+  await expect(browserInvoke(page, second, 'listTabs')).resolves.toMatchObject({ ok: true, result: { tabs: [expect.objectContaining({ url: `${appOrigin}/policy` })] } })
 })
 
 test('keeps clicks and navigation correct while the page and canvas layout move', async () => {
   const browser = await createBrowser('/moving')
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '#moving', '--state', 'visible'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect.poll(() => target(page, browser, "Moving action").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 
-  await expect(invoke(browser, 'command', { command: ['click', '#moving'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'readCommand', { command: ['get', 'text', '#count'] })).resolves
+  await expect(act(page, browser, 'click', "Moving action")).resolves.toMatchObject({ ok: false })
+  await expect(inspectFixture(app!, page, browser, "document.querySelector('#count').textContent")).resolves.toMatchObject({ result: { value: '0' } })
+  await fixtureEvaluate(app, page, browser, "document.querySelector('#moving').style.animation='none'")
+  await expect(act(page, browser, 'click', "Moving action")).resolves.toMatchObject({ ok: true })
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#count\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: '1' } })
 
-  const snapshot = await invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as {
+  const snapshot = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
     ok: boolean
-    result: { refs: Array<{ ref: string; name: string }> }
+    result: { elements: Array<{ id: number; name: string }> }
   }
-  const navigationRef = snapshot.result.refs.find((ref) => ref.name === 'Continue workflow')!.ref
+  const navigationRef = snapshot.result.elements.find((ref) => ref.name === 'Continue workflow')!.id
   const node = await page.evaluate((panelId) => window.__cateE2E!.nodes().find((item) => item.panelId === panelId), browser.panelId)
   expect(node).toBeTruthy()
-  const navigation = invoke(browser, 'command', { command: ['click', navigationRef] })
+  const navigation = activeAction(page, browser, 'click', { target: navigationRef })
   await page.evaluate((nodeId) => {
     window.__cateE2E!.moveNode(nodeId, { x: 520, y: 360 })
     window.__cateE2E!.setViewport({ x: -180, y: -120 })
     window.__cateE2E!.setZoom(0.72)
   }, node!.id)
   await expect(navigation).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${appOrigin}/navigation-result` } })
-  await expect(invoke(browser, 'command', { command: ['click', navigationRef] })).resolves.toMatchObject({ ok: false })
-  await expect(invoke(browser, 'command', { command: ['fill', '#next-step', 'continue safely'] })).resolves.toMatchObject({ ok: true })
+  await expect(activeAction(page, browser, 'click', { target: navigationRef })).resolves.toMatchObject({ ok: false })
+  await expect(act(page, browser, 'setValue', "Next step", { value: 'continue safely' })).resolves.toMatchObject({ ok: true })
 })
 
 test('controls streaming, infinite, virtualized, and content-editable interfaces', async () => {
   const browser = await createBrowser('/stream')
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '--text', 'Stream item 4', '--timeout', '5000'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', {
-    command: ['find', 'role', 'button', 'click', '--name', 'Stream item 4', '--exact'],
-  })).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => waitForText(page, browser, 'Stream item 4'), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect(act(page, browser, 'click', 'Stream item 4', {}, 'button')).resolves.toMatchObject({ ok: true })
 
-  await expect(invoke(browser, 'open', { url: `${appOrigin}/dynamic-content` })).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '#editor', '--state', 'visible'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
-  await invoke(browser, 'command', { command: ['fill', '#editor', 'Rich workflow'] })
-  await invoke(browser, 'command', { command: ['type', '#editor', ' content'] })
-  await expect(invoke(browser, 'readCommand', { command: ['get', 'text', '#editor'] })).resolves
+  await expect(browserInvoke(page, browser, 'goto', { url: `${appOrigin}/dynamic-content` })).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => target(page, browser, "Editor").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await act(page, browser, 'setValue', "Editor", { value: 'Rich workflow' })
+  await activeAction(page, browser, 'typeText', { text: ' content' })
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#editor\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'Rich workflow content' } })
 
-  await invoke(browser, 'command', { command: ['scroll', 'bottom'] })
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '--text', 'Feed item 40', '--timeout', '5000'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
-  await invoke(browser, 'command', { command: ['eval', "document.querySelector('#virtual').scrollTop=5400; true"] })
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '--text', 'Virtual item 180', '--timeout', '5000'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', {
-    command: ['find', 'role', 'button', 'click', '--name', 'Virtual item 180', '--exact'],
-  })).resolves.toMatchObject({ ok: true })
+  await activeAction(page, browser, 'scroll', { target: [600, 400], direction: 'down', pages: 10 })
+  await expect.poll(() => waitForText(page, browser, 'Feed item 40'), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await inspectFixture(app!, page, browser, "document.querySelector('#virtual').scrollTop=5400; true")
+  await expect.poll(() => waitForText(page, browser, 'Virtual item 180'), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect(act(page, browser, 'click', 'Virtual item 180', {}, 'button')).resolves.toMatchObject({ ok: true })
 })
 
 test('shows recovery UI and reloads after the browser guest renderer crashes', async () => {
   test.skip(process.platform === 'linux', 'Electron does not reliably surface webview renderer crashes under Xvfb')
   const browser = await createBrowser('/crash')
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '#alive', '--state', 'visible'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect.poll(() => target(page, browser, "Browser is alive").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
   const webContentsId = await page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId)
   expect(webContentsId).toBeTruthy()
   const crashed = await app.evaluate(({ webContents }, id) => {
@@ -319,9 +290,7 @@ test('shows recovery UI and reloads after the browser guest renderer crashes', a
   const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
   await expect(surface.getByText('This page crashed')).toBeVisible({ timeout: 20_000 })
   await surface.getByRole('button', { name: 'Reload Page' }).click()
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '#alive', '--state', 'visible'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect.poll(() => target(page, browser, "Browser is alive").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 })
 
 test.fixme('selects multiple user-granted files with one browser-control action', async () => {
@@ -332,13 +301,9 @@ test.fixme('selects multiple user-granted files with one browser-control action'
   writeFileSync(secondPath, 'second\n')
   try {
     const browser = await createBrowser('/uploads')
-    await expect.poll(() => invoke(browser, 'readCommand', {
-      command: ['wait', '#files', '--state', 'visible'],
-    }), { timeout: 20_000 }).toMatchObject({ ok: true })
-    await expect(invoke(browser, 'command', {
-      command: ['upload', '#files', firstPath, secondPath],
-    })).resolves.toMatchObject({ ok: true, result: { files: ['first.txt', 'second.txt'] } })
-    await expect(invoke(browser, 'readCommand', { command: ['get', 'text', '#selected'] })).resolves
+    await expect.poll(() => target(page, browser, "Files").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+    await expect(act(page, browser, 'upload', 'Files', { filePaths: [firstPath, secondPath] })).resolves.toMatchObject({ ok: true, result: { files: ['first.txt', 'second.txt'] } })
+    await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#selected\")?.textContent ?? ''", 'text')).resolves
       .toMatchObject({ ok: true, result: { text: 'first.txt,second.txt' } })
   } finally {
     rmSync(uploadDir, { recursive: true, force: true })
@@ -351,13 +316,10 @@ test.fixme('drops user-granted files onto a page drop target', async () => {
   writeFileSync(filePath, 'dropped\n')
   try {
     const browser = await createBrowser('/uploads')
-    await expect.poll(() => invoke(browser, 'readCommand', {
-      command: ['wait', '#drop-zone', '--state', 'visible'],
-    }), { timeout: 20_000 }).toMatchObject({ ok: true })
-    await expect(invoke(browser, 'command', {
-      command: ['dropfiles', '#drop-zone', filePath],
-    })).resolves.toMatchObject({ ok: true, result: { files: ['dropped.txt'] } })
-    await expect(invoke(browser, 'readCommand', { command: ['get', 'text', '#dropped'] })).resolves
+    await expect.poll(() => target(page, browser, "Drop files here").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+    // Future extension: file-backed drag/drop, intentionally not in the current public API.
+    await expect(activeAction(page, browser, 'drag', { from: { filePath }, to: (await target(page, browser, 'Drop files here')).target })).resolves.toMatchObject({ ok: true, result: { files: ['dropped.txt'] } })
+    await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#dropped\")?.textContent ?? ''", 'text')).resolves
       .toMatchObject({ ok: true, result: { text: 'dropped.txt' } })
   } finally {
     rmSync(uploadDir, { recursive: true, force: true })
@@ -366,9 +328,7 @@ test.fixme('drops user-granted files onto a page drop target', async () => {
 
 test.fixme('recovers an individual out-of-process iframe after its renderer crashes', async () => {
   const browser = await createBrowser('/frames')
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '--text', 'Nested action 1', '--timeout', '5000'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect.poll(() => waitForText(page, browser, 'Nested action 1'), { timeout: 20_000 }).toMatchObject({ ok: true })
   const webContentsId = await page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId)
   const crashed = await app.evaluate(async ({ webContents }, { id, targetUrl }) => {
     const guest = webContents.fromId(id)
@@ -386,16 +346,14 @@ test.fixme('recovers an individual out-of-process iframe after its renderer cras
     return true
   }, { id: webContentsId!, targetUrl: `${frameOrigin}/nested-action?version=1` })
   expect(crashed).toBe(true)
-  await invoke(browser, 'command', { command: ['click', '#replace-frame'] })
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '--text', 'Nested action 2', '--timeout', '5000'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await act(page, browser, 'click', "Replace frame")
+  await expect.poll(() => waitForText(page, browser, 'Nested action 2'), { timeout: 20_000 }).toMatchObject({ ok: true })
 })
 
 test.fixme('recovers requests after Chromium restarts its network service', async () => {
   const browser = await createBrowser('/crash')
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
-    .toMatchObject({ ok: true, result: { url: `${appOrigin}/crash`, loading: false } })
+  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+    .toMatchObject({ ok: true, result: { url: `${appOrigin}/crash` } })
   const killed = await app.evaluate(({ app: electronApp }) => {
     const network = electronApp.getAppMetrics().find((metric) => (
       metric.type === 'Utility'
@@ -406,25 +364,23 @@ test.fixme('recovers requests after Chromium restarts its network service', asyn
     return true
   })
   expect(killed).toBe(true)
-  await expect(invoke(browser, 'open', { url: `${appOrigin}/navigation-result` })).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '#next-step', '--state', 'visible'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect(browserInvoke(page, browser, 'goto', { url: `${appOrigin}/navigation-result` })).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => target(page, browser, "Next step").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 })
 
 test.fixme('applies an explicit policy to JavaScript alert, confirm, and prompt dialogs', async () => {
   const browser = await createBrowser('/js-dialogs')
-  const confirmClick = invoke(browser, 'command', { command: ['click', '#confirm'] })
-  await expect(invoke(browser, 'dialog', { action: 'accept' })).resolves.toMatchObject({ ok: true })
+  const confirmClick = act(page, browser, 'click', "Confirm")
+  await expect(browserInvoke(page, browser, 'dialog', { action: 'accept' })).resolves.toMatchObject({ ok: true })
   await expect(confirmClick).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'readCommand', { command: ['get', 'text', '#confirm-result'] })).resolves
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#confirm-result\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'accepted' } })
 
-  const promptClick = invoke(browser, 'command', { command: ['click', '#prompt'] })
-  await expect(invoke(browser, 'dialog', { action: 'accept', promptText: 'release-ready' })).resolves
+  const promptClick = act(page, browser, 'click', "Prompt")
+  await expect(browserInvoke(page, browser, 'dialog', { action: 'accept', promptText: 'release-ready' })).resolves
     .toMatchObject({ ok: true })
   await expect(promptClick).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'readCommand', { command: ['get', 'text', '#prompt-result'] })).resolves
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#prompt-result\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'release-ready' } })
 })
 
@@ -442,7 +398,5 @@ test.fixme('keeps browser control bound after a panel detaches into another Elec
   const detached = app.windows().find((candidate) => candidate.url().includes('type=dock'))
   expect(detached).toBeTruthy()
   await detached!.waitForFunction(() => window.__cateE2E?.ready === true)
-  await expect(detached!.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'command', { panelId, command: ['fill', '#next-step', 'detached control'] },
-  ), browser)).resolves.toMatchObject({ ok: true })
+  await expect(act(detached!, browser, 'setValue', 'Next step', { value: 'detached control' })).resolves.toMatchObject({ ok: true })
 })

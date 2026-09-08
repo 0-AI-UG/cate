@@ -106,3 +106,16 @@ describe('PanelHost', () => {
     })
   })
 })
+
+it('updates only changed leaf content without invalidating the canvas render callback', () => {
+  const panels = { canvas: panel('canvas', 'canvas'), a: panel('a', 'editor'), b: panel('b', 'editor') }
+  registryMocks.renderPanelComponent.mockImplementation((record: PanelState, context: PanelRenderContext) => {
+    if (record.type === 'canvas') return <>{context.renderPanelContent?.('a', 'na', 1)}{context.renderPanelContent?.('b', 'nb', 1)}</>
+    return <span>{record.title}</span>
+  })
+  act(() => root.render(<PanelHost panelId="canvas" panels={panels} workspaceId="ws" />))
+  registryMocks.renderPanelComponent.mockClear()
+  act(() => root.render(<PanelHost panelId="canvas" panels={{ ...panels, a: { ...panels.a, title: 'Changed' } }} workspaceId="ws" />))
+  expect(registryMocks.renderPanelComponent.mock.calls.map(([record]) => record.id)).toEqual(['a'])
+  expect(host.textContent).toBe('Changedb')
+})

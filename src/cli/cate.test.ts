@@ -21,122 +21,39 @@ import {
 
 const flags: Flags = { json: false, help: false, version: false, foreground: false }
 
-describe('thin browser CLI', () => {
-  it('makes open a new tab and keeps replacement navigation explicit', () => {
-    expect(buildRequest(['browser', 'open', 'https://a.test'], flags)).toEqual({
-      method: 'cate.browser.open',
-      args: { url: 'https://a.test', newTab: true },
+describe('browser code CLI', () => {
+  it('passes one code cell intact and supports reset', () => {
+    expect(buildRequest(['browser', 'run', 'var tab = await cua.getTab({panelId:"p"});'], flags)).toEqual({
+      method: 'cate.browser.run', args: { code: 'var tab = await cua.getTab({panelId:"p"});' },
     })
-    expect(buildRequest(['browser', 'navigate', 'https://b.test'], flags)).toEqual({
-      method: 'cate.browser.open',
-      args: { url: 'https://b.test' },
-    })
-    expect(buildRequest(['browser', 'new-panel', 'https://c.test'], flags)).toEqual({
-      method: 'cate.browser.open',
-      args: { url: 'https://c.test', newPanel: true },
+    expect(buildRequest(['browser', 'reset'], flags)).toEqual({ method: 'cate.browser.reset', args: {} })
+  })
+  it('resolves explicit panel affinity before executing code', () => {
+    expect(buildRequest(['browser', 'run', 'await cua.listTabs()'], { ...flags, panel: 'abcd1234' })).toEqual({
+      method: 'cate.browser.run', args: { code: 'await cua.listTabs()', panelId: 'abcd1234' }, resolvePanel: 'browser',
     })
   })
-
-  it('passes Cate read commands through without translating their grammar', () => {
-    expect(buildRequest(
-      ['browser', 'snapshot', '-i'],
-      flags,
-    )).toEqual({
-      method: 'cate.browser.readCommand',
-      args: { command: ['snapshot', '-i'] },
-    })
-    expect(buildRequest(['browser', 'get', 'text', '@s2e7'], flags)).toEqual({
-      method: 'cate.browser.readCommand',
-      args: { command: ['get', 'text', '@s2e7'] },
-    })
-  })
-
-  it('passes Cate acting commands through without CLI-side locator parsing', () => {
-    expect(buildRequest(
-      ['browser', 'find', 'role', 'button', 'click', '--name', 'Save'],
-      flags,
-    )).toEqual({
-      method: 'cate.browser.command',
-      args: { command: ['find', 'role', 'button', 'click', '--name', 'Save'] },
-    })
-    expect(buildRequest(['browser', 'fill', '@s1e3', 'hello world'], flags)).toEqual({
-      method: 'cate.browser.command',
-      args: { command: ['fill', '@s1e3', 'hello world'] },
-    })
-  })
-
-  it('keeps Cate-owned tab and presentation operations small and explicit', () => {
-    expect(buildRequest(['browser', 'tabs'], flags).method).toBe('cate.browser.tabs')
-    expect(buildRequest(['browser', 'new-tab'], flags)).toEqual({
-      method: 'cate.browser.tabNew',
-      args: {},
-    })
-    expect(buildRequest(['browser', 'select-tab', 'abcd'], flags).args).toEqual({ tabId: 'abcd' })
-    expect(buildRequest(['browser', 'close-tab', 'abcd'], flags).method).toBe('cate.browser.tabClose')
-    expect(buildRequest(['browser', 'back'], flags).method).toBe('cate.browser.back')
-    expect(buildRequest(['browser', 'reload'], flags).method).toBe('cate.browser.reload')
-    expect(buildRequest(['browser', 'downloads'], flags).method).toBe('cate.browser.downloads')
-    expect(buildRequest(['browser', 'viewport', 'mobile'], flags).args).toEqual({
-      preset: 'mobile',
-      width: 390,
-      height: 844,
-    })
-    expect(buildRequest(['browser', 'viewport', '1024', '700'], flags).args).toEqual({
-      preset: 'custom',
-      width: 1024,
-      height: 700,
-    })
-    expect(buildRequest(['browser', 'resize', '640', '480'], flags).args).toEqual({
-      width: 640,
-      height: 480,
-    })
-  })
-
-  it('targets browser commands with a uniquely resolved panel prefix', () => {
-    expect(buildRequest(
-      ['browser', 'click', '@s1e1'],
-      { ...flags, panel: 'abcd1234' },
-    )).toEqual({
-      method: 'cate.browser.command',
-      args: { command: ['click', '@s1e1'], panelId: 'abcd1234' },
-      resolvePanel: 'browser',
-    })
-  })
-
-  it('rejects native surfaces that can escape Cate ownership', () => {
-    for (const command of [
-      ['browser', 'tab', 'list'],
-      ['browser', 'connect', '9222'],
-      ['browser', 'batch', 'click @e1'],
-      ['browser', 'click', '#x', '--session', 'other'],
-      ['browser', 'screenshot', '/tmp/owned.png'],
-    ]) {
-      expect(() => buildRequest(command, flags)).toThrow(UsageError)
+  it('rejects the old command grammar and empty cells', () => {
+    for (const args of [['snapshot'], ['click', '#x'], ['open', 'https://example.test'], ['connect', '9222'], ['run']]) {
+      expect(() => buildRequest(['browser', ...args], flags)).toThrow(UsageError)
     }
-  })
-
-  it('does not retain compatibility aliases or the custom locator grammar', () => {
-    expect(() => buildRequest(['browser', 'tab', 'new'], flags)).toThrow(/unsupported-browser-command/)
-    expect(buildRequest(['browser', 'click', 'role=button'], flags).args).toEqual({
-      command: ['click', 'role=button'],
-    })
   })
 })
 
 describe('global parsing', () => {
   it('extracts only Cate global flags and preserves browser argv', () => {
     expect(parseCli([
-      'browser', 'wait', '#done', '--timeout', '5000',
+      'browser', 'run', 'await tab.waitFor({text: "--done"})',
       '--panel', 'abc', '--json',
     ])).toEqual({
-      positionals: ['browser', 'wait', '#done', '--timeout', '5000'],
+      positionals: ['browser', 'run', 'await tab.waitFor({text: "--done"})'],
       flags: { panel: 'abc', json: true, help: false, version: false, foreground: false },
     })
   })
 
   it('keeps option-looking action values intact', () => {
-    expect(parseCli(['browser', 'fill', '#input', '--literal-value']).positionals)
-      .toEqual(['browser', 'fill', '#input', '--literal-value'])
+    expect(parseCli(['browser', 'run', 'await tab.typeText("--literal-value")']).positionals)
+      .toEqual(['browser', 'run', 'await tab.typeText("--literal-value")'])
   })
 })
 
@@ -308,7 +225,7 @@ describe('transport and panel resolution', () => {
 
   it('sends auth and placement affinity', async () => {
     const fetch = vi.fn(async () => response({ result: 'ok' }))
-    await expect(send('cate.browser.command', { command: ['click', '#x'] }, {
+    await expect(send('cate.browser.run', { code: 'await tab.click(1)' }, {
       fetch: fetch as typeof globalThis.fetch,
       env: {
         CATE_API: 'http://127.0.0.1:1',
@@ -319,8 +236,8 @@ describe('transport and panel resolution', () => {
     })).resolves.toBe('ok')
     const call = fetch.mock.calls[0] as unknown as [string, RequestInit]
     expect(JSON.parse(call[1].body as string)).toEqual({
-      method: 'cate.browser.command',
-      args: { command: ['click', '#x'], placementGroupId: 'group-1' },
+      method: 'cate.browser.run',
+      args: { code: 'await tab.click(1)', placementGroupId: 'group-1' },
       clientId: 'group-1',
     })
     expect(call[1].headers).toMatchObject({
@@ -330,7 +247,7 @@ describe('transport and panel resolution', () => {
 
   it('uses a dedicated CLI session id independently of placement affinity', async () => {
     const fetch = vi.fn(async () => response({ result: 'ok' }))
-    await send('cate.browser.command', { command: ['snapshot', '-i'] }, {
+    await send('cate.browser.run', { code: 'await tab.getAXState()' }, {
       fetch: fetch as typeof globalThis.fetch,
       env: {
         CATE_API: 'http://127.0.0.1:1',
@@ -343,8 +260,8 @@ describe('transport and panel resolution', () => {
 
     const call = fetch.mock.calls[0] as unknown as [string, RequestInit]
     expect(JSON.parse(call[1].body as string)).toEqual({
-      method: 'cate.browser.command',
-      args: { command: ['snapshot', '-i'], placementGroupId: 'origin-panel' },
+      method: 'cate.browser.run',
+      args: { code: 'await tab.getAXState()', placementGroupId: 'origin-panel' },
       clientId: 'cli-session',
       callerPanelId: 'origin-panel',
     })
@@ -397,13 +314,7 @@ describe('transport and panel resolution', () => {
 describe('output and run loop', () => {
   it('keeps only useful human rendering', () => {
     expect(shortId('abcdefgh-more')).toBe('abcdefgh')
-    expect(formatHuman('cate.browser.readCommand', {
-      url: 'https://x.test',
-      title: 'X',
-      snapshotId: 's1',
-      snapshot: '- button "Save" [ref=s1e1]',
-    })).toContain('- button "Save" [ref=s1e1]')
-    expect(formatHuman('cate.browser.readCommand', { path: '/tmp/shot.png' })).toBe('/tmp/shot.png')
+    expect(formatHuman('cate.browser.run', { content: [{ type: 'text', text: 'button "Save" [42]' }] })).toContain('button "Save" [42]')
     expect(formatHuman('cate.terminal.read', { text: 'one\ntwo' })).toBe('one\ntwo')
     expect(formatHuman('cate.codingAgent.list', [
       { id: 'abcdefgh-more', status: 'working', title: 'Tests' },
@@ -433,20 +344,20 @@ describe('output and run loop', () => {
     expect(deps.fetch).not.toHaveBeenCalled()
   })
 
-  it('sends native browser argv in one request', async () => {
+  it('sends a complete code cell in one request', async () => {
     const deps = runDeps({ result: { clicked: true } })
-    expect(await run(['browser', 'click', '@s1e1'], deps)).toBe(0)
+    expect(await run(['browser', 'run', 'await tab.click(1)'], deps)).toBe(0)
     const request = JSON.parse((deps.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body)
     expect(request).toEqual({
-      method: 'cate.browser.command',
-      args: { command: ['click', '@s1e1'] },
+      method: 'cate.browser.run',
+      args: { code: 'await tab.click(1)' },
     })
   })
 
   it('returns usage errors before transport', async () => {
     const deps = runDeps()
     expect(await run(['browser', 'tab', 'list'], deps)).toBe(2)
-    expect(deps.err.join('\n')).toContain('unsupported-browser-command:tab')
+    expect(deps.err.join('\n')).toContain('Use cate browser run')
     expect(deps.fetch).not.toHaveBeenCalled()
   })
 

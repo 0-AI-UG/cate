@@ -270,6 +270,10 @@ export class RuntimeManager {
     return runtime
   }
 
+  connectedRuntimes(): Runtime[] {
+    return [...this.runtimes.values()].filter((runtime) => this.isConnected(runtime.id))
+  }
+
   has(id: RuntimeId): boolean {
     return this.runtimes.has(id)
   }

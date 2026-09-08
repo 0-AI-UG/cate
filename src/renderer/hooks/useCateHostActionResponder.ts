@@ -1,3 +1,4 @@
+import { BROWSER_READ_METHODS } from '../../shared/browserAutomation'
 // =============================================================================
 // useCateHostActionResponder — renderer side of the caller "reverse API".
 //
@@ -64,14 +65,7 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
-const BROWSER_READ_METHODS = new Set([
-  'cate.browser.current',
-  'cate.browser.downloads',
-  'cate.browser.readCommand',
-  'cate.browser.snapshot',
-  'cate.browser.screenshot',
-  'cate.browser.tabs',
-])
+
 
 function interactionTracker(
   workspaceId: string,
@@ -219,7 +213,7 @@ export function useCateHostActionResponder(): void {
           const tracker = interactionTracker(
             workspaceId,
             payload.panelId,
-            BROWSER_READ_METHODS.has(method) ? 'read' : 'control',
+            BROWSER_READ_METHODS.has(method.slice('cate.browser.'.length)) ? 'read' : 'control',
           )
           const outcome = await finishTracked(
             tracker,
@@ -228,7 +222,7 @@ export function useCateHostActionResponder(): void {
           )
           return outcome.ok
             ? reply(true, outcome.result !== undefined ? { result: outcome.result } : undefined)
-            : reply(false, { error: outcome.error })
+            : reply(false, { error: outcome.error, ...('recovery' in outcome ? { recovery: outcome.recovery } : {}) })
         }
 
         // Terminal-control surface (cate.terminal.*): the terminal driver

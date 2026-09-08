@@ -44,7 +44,7 @@ snapshot; a running server is never treated as a running conversation.
 
 Hook injection settings live under Terminal. T3 Code settings configure T3-owned
 provider instances with Cate's shared settings controls. Internal `agent` panel
-ids and existing `cate agent` command names remain compatible with saved layouts
+ids and existing `cate agent` command names remain compatible with saved workspace sessions
 and scripts. Those names do not imply a common session-control protocol.
 
 Command+K offers new T3 conversations and existing local/other-window panels.
@@ -52,3 +52,40 @@ T3 participates in the shared split menu, and selecting it restores guest focus
 after the palette closes. The conversation popup supports confirmed deletion
 through T3's authenticated thread.delete command; ordinary panel close preserves
 the saved conversation.
+
+## Browser control
+
+Cate owns browser execution in its live Electron webviews. All agent integrations
+use the same typed, observation-bound protocol through a persistent JavaScript
+session. There is no public DOM evaluation or selector/argv compatibility layer.
+The API contract and model-facing documentation live in
+`src/shared/browserAutomation.ts`.
+
+Terminal agents use `cate browser run '<JavaScript>'` and `cate browser reset`.
+`CATE_CLI_SESSION_ID` isolates persistent bindings by terminal/agent. The `cua`
+object offers `getTab`, `createBrowserTab`, and `listTabs`; a bound tab offers
+accessibility observations, viewport screenshots, input actions, explicit waits,
+and navigation. The SDK retains observation IDs, pins panel/tab identity, and
+emits resulting state. Code execution is isolated from Node.js, network, filesystem,
+and page JavaScript. Native runtime operations continue to enforce workspace
+permissions, target validation, user takeover, and upload authorization.
+
+`getScreenshot` returns an image observation without rebuilding AX state; the
+SDK keeps its viewport identity separate from the last AX observation used for
+numeric targets. `getAXStateAndScreenshot` refreshes both together. Observation
+options accept `profile:true` for phase timings and cache/image size diagnostics.
+
+`cate browser mcp` is a stdio bridge to the authenticated `${CATE_API}/mcp`
+endpoint. Its `browser` tool takes `{code:string}` and returns native text/image
+content; `browser_reset` clears the code session. T3 Codex and Claude integrations
+receive the `cate_browser` MCP server through `scripts/patch-t3-browser.mjs`.
+Human CLI output writes screenshots to temporary paths, while `--json` preserves
+structured content and base64 images. Agents must load CLI image artifacts before
+reasoning visually; MCP delivers images directly.
+
+Use `getAXState` for ordinary controls and `getAXStateAndScreenshot` when visual
+context matters. Actions return fresh observations or diffs. A click result
+reports dispatch, while business completion needs an explicit condition or a
+fresh observation. Numeric IDs are document-bound; coordinates are additionally
+bound to the observed viewport. An old binding never silently targets a different
+tab selected by the user.

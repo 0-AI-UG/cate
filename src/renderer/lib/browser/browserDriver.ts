@@ -8,19 +8,10 @@ import { portalRegistry, type PortalWebview } from '../portalRegistry'
 import { getCanvasOpsById, placementForBackgroundPanel, resolvePanelLocation } from '../workspace/canvasAccess'
 import { emitAgentCursor } from './agentCursor'
 import { PANEL_MINIMUM_SIZES, type PanelState } from '../../../shared/types'
-import {
-  browserActivityLabel,
-  browserCommandShowsActivity,
-  validateBrowserCommand,
-} from '../../../shared/browserCommand'
+import { BROWSER_METHODS, BROWSER_ACTION_METHODS } from '../../../shared/browserAutomation'
 import type { PanelTargetObserver } from '../panelInteractions'
 
-export type BrowserOutcome = { ok: true; result?: unknown } | { ok: false; error: string }
-
-const ACTING_METHODS = new Set([
-  'click', 'dblclick', 'hover', 'fill', 'type', 'press', 'select', 'check',
-  'uncheck', 'drag', 'scroll', 'mouse',
-])
+export type BrowserOutcome = { ok: true; result?: unknown } | { ok: false; error: string; recovery?: string }
 
 export function findBrowserPanelId(workspaceId: string): string | null {
   const workspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
@@ -106,6 +97,8 @@ async function control(
   webview: PortalWebview,
   request: { op: 'execute'; method: string; args: Record<string, unknown> } | { op: 'downloads' },
 ) {
+  const stillBound = () => currentPanel(workspaceId, panel.id)?.activeTabId === panel.activeTabId && portalRegistry.get(panel.id) === webview
+  if (!stillBound()) return { error: 'browser-tab-changed' }
   const target = {
     webContentsId: webview.getWebContentsId(),
     workspaceId,
@@ -114,6 +107,7 @@ async function control(
   }
   const attached = await window.electronAPI.browserControl({ ...target, op: 'attach' })
   if (attached.error) return attached
+  if (!stillBound()) return { error: 'browser-tab-changed' }
   return window.electronAPI.browserControl({ ...target, ...request })
 }
 
@@ -132,14 +126,6 @@ async function createBrowserPanel(workspaceId: string, url: string, args: Record
   return { ok: true, result: { panelId, tabId: currentPanel(workspaceId, panelId)?.activeTabId, url: webview.getURL() || url } }
 }
 
-function activityLabel(method: string, args: Record<string, unknown>): string {
-  if (method === 'fill' || method === 'type') {
-    const clean = String(args.text ?? '').replace(/\s+/g, ' ').trim()
-    return `${method} ${JSON.stringify(clean.length > 28 ? `${clean.slice(0, 27)}…` : clean)}`
-  }
-  return method === 'press' ? `press ${String(args.key ?? '')}`.trim() : method
-}
-
 export async function handleBrowserMethod(
   workspaceId: string,
   method: string,
@@ -148,72 +134,43 @@ export async function handleBrowserMethod(
 ): Promise<BrowserOutcome> {
   const name = method.slice('cate.browser.'.length)
 
-  if (name === 'open') {
-    const url = stringArg(args, 'url')
-    if (!url) return { ok: false, error: 'url-required' }
-    if (args.newPanel === true) {
-      const created = await createBrowserPanel(workspaceId, url, args)
-      if (created.ok && created.result && typeof created.result === 'object') onTargetResolved?.((created.result as { panelId: string }).panelId)
-      return created
-    }
-    const target = resolveTargetPanel(workspaceId, args)
-    if ('error' in target) {
-      if (target.error === 'no-browser') return createBrowserPanel(workspaceId, url, args)
-      return { ok: false, error: target.error }
-    }
-    onTargetResolved?.(target.panel.id)
-    const controller = await waitForController(target.panel.id)
-    if (!controller) return { ok: false, error: 'panel-not-mounted' }
-    if (args.newTab === true) {
-      const previous = portalRegistry.get(target.panel.id)
-      const tabId = controller.newTab(url)
-      const webview = await waitForWebview(target.panel.id, 8_000, previous)
-      if (!webview) return { ok: false, error: 'webview-not-ready' }
-      await waitForGuestReady(webview)
-      return { ok: true, result: { panelId: target.panel.id, tabId, url: webview.getURL() || url } }
-    }
-    controller.navigate(url)
-    const webview = await waitForWebview(target.panel.id)
-    if (!webview) return { ok: false, error: 'webview-not-ready' }
-    await waitForGuestReady(webview)
-    return { ok: true, result: { panelId: target.panel.id, tabId: target.panel.activeTabId, url: webview.getURL() || url } }
+  if (!BROWSER_METHODS.has(name)) return { ok: false, error: 'unknown-browser-method' }
+  if (name === 'listTabs') {
+    const workspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
+    const panels = Object.values(workspace?.panels ?? {}).filter((panel) => panel.type === 'browser' && (!args.panelId || panel.id === args.panelId))
+    const tabs = panels.flatMap((panel) => (panel.tabs ?? []).map((tab) => ({ ...tab, panelId: panel.id, tabId: tab.id, active: panel.activeTabId === tab.id })))
+    return { ok: true, result: { tabs } }
   }
-
+  const initialTarget = resolveTargetPanel(workspaceId, args)
+  if (name === 'createTab' && (args.newPanel === true || 'error' in initialTarget && initialTarget.error === 'no-browser')) {
+    const created = await createBrowserPanel(workspaceId, stringArg(args, 'url') ?? 'about:blank', args)
+    if (created.ok) onTargetResolved?.((created.result as { panelId: string }).panelId)
+    return created
+  }
   const target = resolveTargetPanel(workspaceId, args)
   if ('error' in target) return { ok: false, error: target.error }
-  const panel = target.panel
+  let panel = target.panel
   if (!panel.activeTabId) return { ok: false, error: 'invalid-browser-tab-state' }
   onTargetResolved?.(panel.id)
-
-  if (name === 'tabs' || name === 'tabNew' || name === 'tabSelect' || name === 'tabClose') {
+  if (name === 'getTab' || name === 'createTab') {
     const controller = await waitForController(panel.id)
     if (!controller) return { ok: false, error: 'panel-not-mounted' }
-    if (name === 'tabs') return { ok: true, result: { panelId: panel.id, tabs: controller.listTabs() } }
-    if (name === 'tabNew') {
-      const previous = portalRegistry.get(panel.id)
-      const tabId = controller.newTab(stringArg(args, 'url'))
-      const webview = await waitForWebview(panel.id, 8_000, previous)
-      if (!webview) return { ok: false, error: 'webview-not-ready' }
-      await waitForGuestReady(webview)
-      return { ok: true, result: { panelId: panel.id, tabId } }
-    }
-    const tabId = stringArg(args, 'tabId')
-    if (!tabId) return { ok: false, error: 'tabId-required' }
-    const tabs = controller.listTabs()
-    const exact = tabs.find((tab) => tab.id === tabId)
-    const matches = exact ? [exact] : tabs.filter((tab) => tab.id.startsWith(tabId))
-    if (matches.length !== 1) return { ok: false, error: matches.length ? 'ambiguous-tab' : 'no-such-tab' }
     const previous = portalRegistry.get(panel.id)
-    const wasActive = matches[0].active
-    const ok = name === 'tabSelect' ? controller.selectTab(matches[0].id) : controller.closeTab(matches[0].id)
-    if (!ok) return { ok: false, error: 'no-such-tab' }
-    if ((name === 'tabSelect' && !wasActive) || (name === 'tabClose' && wasActive)) {
-      const webview = await waitForWebview(panel.id, 8_000, previous)
-      if (!webview || !await waitForGuestReady(webview)) return { ok: false, error: 'webview-not-ready' }
-    } else if (name === 'tabSelect' && previous && !await waitForGuestReady(previous)) {
-      return { ok: false, error: 'webview-not-ready' }
+    if (name === 'createTab') controller.newTab(stringArg(args, 'url'))
+    else if (args.tabId && args.tabId !== panel.activeTabId) {
+      if (!controller.selectTab(String(args.tabId))) return { ok: false, error: 'no-such-tab' }
     }
-    return { ok: true, result: { tabId: matches[0].id } }
+    const switched = name === 'createTab' || Boolean(args.tabId && args.tabId !== panel.activeTabId)
+    const guest = await waitForWebview(panel.id, 8_000, switched ? previous : undefined)
+    if (!guest || !await waitForGuestReady(guest)) return { ok: false, error: 'webview-not-ready' }
+    panel = currentPanel(workspaceId, panel.id)!
+    return { ok: true, result: { panelId: panel.id, tabId: panel.activeTabId, url: guest.getURL(), title: guest.getTitle() } }
+  }
+  if (typeof args.tabId !== 'string') return { ok: false, error: 'tabId-required' }
+  if (args.tabId !== panel.activeTabId) return { ok: false, error: 'browser-tab-changed' }
+  if (name === 'close') {
+    const controller = await waitForController(panel.id)
+    return controller?.closeTab(args.tabId) ? { ok: true, result: { closed: true } } : { ok: false, error: 'no-such-tab' }
   }
 
   if (name === 'resize') {
@@ -234,7 +191,7 @@ export async function handleBrowserMethod(
   const webview = await waitForWebview(panel.id)
   if (!webview) return { ok: false, error: 'webview-not-ready' }
 
-  if (name === 'viewport') {
+  if (name === 'setViewport') {
     const preset = stringArg(args, 'preset')
     const width = preset === 'compact' ? 640 : positiveNumberArg(args, 'width')
     const height = preset === 'compact' ? 480 : positiveNumberArg(args, 'height')
@@ -243,10 +200,18 @@ export async function handleBrowserMethod(
     if (!controller) return { ok: false, error: 'panel-not-mounted' }
     await waitForGuestReady(webview)
     await controller.setViewport({ preset: preset === 'compact' ? 'compact' : preset === 'mobile' ? 'mobile' : preset === 'desktop' ? 'desktop' : 'custom', width, height } as Parameters<typeof controller.setViewport>[0])
-    return { ok: true, result: { preset, width, height } }
+    const response = await control(workspaceId, panel, webview, { op: 'execute', method: 'getAXState', args })
+    return response.error ? { ok: false, error: response.error } : { ok: true, result: { preset, width, height, observation: response.result } }
   }
 
-  if (name === 'reload' || name === 'back' || name === 'forward' || name === 'current' || name === 'downloads') {
+  if (name === 'goto' || name === 'reload' || name === 'back' || name === 'forward' || name === 'downloads') {
+    if (name === 'goto') {
+      const url = stringArg(args, 'url')
+      if (!url) return { ok: false, error: 'url-required' }
+      const controller = await waitForController(panel.id)
+      if (!controller) return { ok: false, error: 'panel-not-mounted' }
+      controller.navigate(url)
+    }
     if (name === 'reload') webview.reload()
     if (name === 'back') {
       if (!webview.canGoBack()) return { ok: false, error: 'no-history' }
@@ -260,24 +225,16 @@ export async function handleBrowserMethod(
       const response = await control(workspaceId, panel, webview, { op: 'downloads' })
       return response.error ? { ok: false, error: response.error } : { ok: true, result: { downloads: response.downloads ?? [] } }
     }
-    if (name !== 'current') await waitForGuestReady(webview)
-    return { ok: true, result: name === 'current' ? { panelId: panel.id, tabId: panel.activeTabId, url: webview.getURL(), title: webview.getTitle(), loading: webview.isLoading() } : { url: webview.getURL() } }
+    await waitForGuestReady(webview)
+    const response = await control(workspaceId, panel, webview, { op: 'execute', method: 'getAXState', args: { disableDiffing: true } })
+    return response.error ? { ok: false, error: response.error } : { ok: true, result: response.result }
   }
 
-  let commandActivity: string[] | null = null
-  if (name === 'command' || name === 'readCommand') {
-    try { commandActivity = validateBrowserCommand(args.command) } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : 'invalid-browser-command' }
-    }
-  }
-  if (ACTING_METHODS.has(name) || Boolean(commandActivity && browserCommandShowsActivity(commandActivity))) {
-    emitAgentCursor(panel.id, {
-      kind: name === 'press' ? 'press' : name === 'scroll' ? 'scroll' : 'move',
-      label: commandActivity ? browserActivityLabel(commandActivity) : activityLabel(name, args),
-    })
-  }
+  if (BROWSER_ACTION_METHODS.has(name)) emitAgentCursor(panel.id, {
+    kind: name === 'pressKey' ? 'press' : name === 'scroll' ? 'scroll' : 'move', label: name,
+  })
   const response = await control(workspaceId, panel, webview, { op: 'execute', method: name, args })
-  if (response.error) return { ok: false, error: response.error }
+  if (response.error) return { ok: false, error: response.error, recovery: response.recovery }
   if (response.cursor) emitAgentCursor(panel.id, response.cursor)
   return response.result === undefined ? { ok: true } : { ok: true, result: response.result }
 }

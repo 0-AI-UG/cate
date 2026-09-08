@@ -1,3 +1,4 @@
+import { browserInvoke, target, act, inspectFixture } from './fixtures/browser-control'
 import { once } from 'node:events'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
@@ -40,18 +41,6 @@ test.afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 
-async function invoke(
-  page: Page,
-  browser: { workspaceId: string; panelId: string },
-  method: string,
-  command?: string[],
-) {
-  return page.evaluate(({ browser, method, command }) => window.__cateE2E!.browserInvoke(
-    browser.workspaceId,
-    method,
-    { panelId: browser.panelId, ...(command ? { command } : {}) },
-  ), { browser, method, command })
-}
 
 test('shares cookies across panels and preserves the authenticated session across app restarts', async () => {
   test.setTimeout(90_000)
@@ -62,18 +51,18 @@ test('shares cookies across panels and preserves the authenticated session acros
     app = launched.electronApp
     let page = launched.mainWindow
     const login = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${origin}/login`)
-    await expect.poll(() => invoke(page, login, 'current'), { timeout: 20_000 })
-      .toMatchObject({ ok: true, result: { url: `${origin}/login`, loading: false } })
-    await expect(invoke(page, login, 'readCommand', ['get', 'attr', '#email', 'id'])).resolves
+    await expect.poll(() => browserInvoke(page, login, 'getTab'), { timeout: 20_000 })
+      .toMatchObject({ ok: true, result: { url: `${origin}/login` } })
+    await expect(inspectFixture(app!, page, login, "document.querySelector(\"#email\")?.getAttribute(\"id\")")).resolves
       .toMatchObject({ ok: true, result: { value: 'email' } })
-    await expect(invoke(page, login, 'command', ['fill', '#email', 'session@example.test'])).resolves.toMatchObject({ ok: true })
-    await expect(invoke(page, login, 'command', ['fill', '#password', 'persistent secret'])).resolves.toMatchObject({ ok: true })
-    await expect(invoke(page, login, 'command', ['click', '#login'])).resolves.toMatchObject({ ok: true })
-    await expect.poll(() => invoke(page, login, 'readCommand', ['get', 'text', 'h1']), { timeout: 20_000 })
+    await expect(act(page, login, 'setValue', "Email", { value: 'session@example.test' })).resolves.toMatchObject({ ok: true })
+    await expect(act(page, login, 'setValue', "Password", { value: 'persistent secret' })).resolves.toMatchObject({ ok: true })
+    await expect(act(page, login, 'click', "Sign in", {}, 'button')).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => inspectFixture(app!, page, login, "document.querySelector(\"h1\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
       .toMatchObject({ ok: true, result: { text: 'Persistent session' } })
 
     const secondPanel = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 760, y: 100 }), `${origin}/account`)
-    await expect.poll(() => invoke(page, secondPanel, 'readCommand', ['get', 'text', 'h1']), { timeout: 20_000 })
+    await expect.poll(() => inspectFixture(app!, page, secondPanel, "document.querySelector(\"h1\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
       .toMatchObject({ ok: true, result: { text: 'Persistent session' } })
 
     await closeApp(app)
@@ -83,7 +72,7 @@ test('shares cookies across panels and preserves the authenticated session acros
     app = launched.electronApp
     page = launched.mainWindow
     const afterRestart = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${origin}/account`)
-    await expect.poll(() => invoke(page, afterRestart, 'readCommand', ['get', 'text', 'h1']), { timeout: 20_000 })
+    await expect.poll(() => inspectFixture(app!, page, afterRestart, "document.querySelector(\"h1\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
       .toMatchObject({ ok: true, result: { text: 'Persistent session' } })
   } finally {
     if (app) await closeApp(app)
@@ -126,12 +115,8 @@ test('lists a saved password and autofills username and password without exposin
     ).not.toBeNull().then(() => page.evaluate(
       (panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId,
     ))
-    await expect(page.evaluate(({ browser }) => window.__cateE2E!.browserInvoke(
-      browser.workspaceId,
-      'evaluate',
-      { panelId: browser.panelId, expression: 'document.querySelector("#password").focus(); true' },
-    ), { browser })).resolves.toMatchObject({ ok: true })
-    const target = await invoke(page, browser, 'readCommand', ['get', 'attr', '#password', 'data-cate-autofill-target']) as {
+    await expect(inspectFixture(app!, page, browser, 'document.querySelector("#password").focus(); true')).resolves.toMatchObject({ ok: true })
+    const target = await inspectFixture(app!, page, browser, "document.querySelector(\"#password\")?.getAttribute(\"data-cate-autofill-target\")") as {
       ok: boolean
       result: { value: string }
     }
@@ -149,13 +134,9 @@ test('lists a saved password and autofills username and password without exposin
       credentialId,
       targetId: target.result.value,
     })).resolves.toMatchObject({ ok: true })
-    await expect(invoke(page, browser, 'readCommand', ['get', 'value', '#email'])).resolves
+    await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#email\")?.value")).resolves
       .toMatchObject({ ok: true, result: { value: 'saved@example.test' } })
-    await expect(page.evaluate(({ browser }) => window.__cateE2E!.browserInvoke(
-      browser.workspaceId,
-      'evaluate',
-      { panelId: browser.panelId, expression: 'document.querySelector("#password").value' },
-    ), { browser })).resolves.toMatchObject({ ok: true, result: { value: 'autofill secret' } })
+    await expect(inspectFixture(app!, page, browser, 'document.querySelector("#password").value')).resolves.toMatchObject({ ok: true, result: { value: 'autofill secret' } })
 
     const manager = await page.evaluate(() => window.__cateE2E!.createBrowser(
       'chrome://password-manager/passwords', { x: 760, y: 100 },

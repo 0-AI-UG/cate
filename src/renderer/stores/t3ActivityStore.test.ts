@@ -27,3 +27,16 @@ it('rejects stale snapshots and isolates a disconnected guest from sibling panel
   expect(state.panels.a.connected).toBe(true)
   expect(state.panels.b.connected).toBe(false)
 })
+
+it('applies ordered deltas without replacing unchanged threads or notifying on duplicate sequences', () => {
+  const store = useT3ActivityStore.getState()
+  store.update('repo', { connected: true, revision: 1, sequence: 1, threads: { a: { id: 'a', title: 'A' }, b: { id: 'b', title: 'B' } } })
+  const a = useT3ActivityStore.getState().instances.repo.threads.a
+  store.update('repo', { connected: true, revision: 2, sequence: 2, full: false, threads: { b: { id: 'b', title: 'New' } } })
+  expect(useT3ActivityStore.getState().instances.repo.threads.a).toBe(a)
+  const previous = useT3ActivityStore.getState()
+  store.update('repo', { connected: true, revision: 99, sequence: 2, threads: {} })
+  expect(useT3ActivityStore.getState()).toBe(previous)
+  store.update('repo', { connected: true, revision: 3, sequence: 3, full: false, threads: {}, removed: ['b'] })
+  expect(useT3ActivityStore.getState().instances.repo.threads).toEqual({ a })
+})

@@ -7,8 +7,8 @@
 // `dom-ready` fires (which is when getWebContentsId() returns a stable id),
 // and unregisters on unmount.
 //
-// Snapshot refs are generation-scoped tokens (for example @s2e4) resolved by
-// the target-bound main-process runtime on subsequent commands.
+// Numeric element IDs are scoped to a document and resolved by the bound
+// main-process runtime using the caller’s latest observation.
 // =============================================================================
 
 /** Minimal subset of the DOM <webview> surface that browser automation uses. */

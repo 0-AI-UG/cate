@@ -2,7 +2,7 @@
 // Unknown verbs in a covered namespace use its stricter Control permission.
 
 import type { AppSettings } from './types'
-import { isReadOnlyBrowserCommand, validateBrowserCommand } from './browserCommand'
+import { BROWSER_READ_METHODS } from './browserAutomation'
 
 export type CliPermissionKey = Extract<
   keyof AppSettings,
@@ -44,26 +44,20 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
   {
     label: 'Browser',
     prefixes: ['cate.browser.'],
-    // Observation only. Anything that can change the page, the guest's
-    // environment, or the machine's clipboard is control — including
-    // `evaluate`, which cannot be proven read-only from its text.
-    readMethods: [
-      'cate.browser.readCommand',
-      'cate.browser.tabs',
-    ],
+    readMethods: [...BROWSER_READ_METHODS].map((method) => `cate.browser.${method}`),
     read: {
       key: 'cliBrowserReadEnabled',
       access: 'Read',
       code: 'browser-read-disabled',
       detail:
-        '`cate browser snapshot / get / is / console / screenshot / wait` — inspect the page in the built-in browser panel, which shows your live logged-in sessions.',
+        'Accessibility state, screenshots, tabs, and waits — inspect the page in the built-in browser panel, which shows your live logged-in sessions.',
     },
     control: {
       key: 'cliBrowserControlEnabled',
       access: 'Control',
       code: 'browser-control-disabled',
       detail:
-        '`cate browser open / click / fill / type / press / eval` — act on the page through the selected live browser webview.',
+        'Browser JavaScript sessions and actions — act on the page through the selected live browser webview.',
     },
   },
   {
@@ -182,24 +176,7 @@ export function cliPermissionForMethod(method: string): CliPermissionCell | unde
   return undefined
 }
 
-/** Request-aware variant used by the first-party gate. It prevents a caller
- * from placing an acting native command inside the read-only method envelope. */
-export function cliPermissionForRequest(
-  method: string,
-  args: unknown,
-): CliPermissionCell | undefined {
-  if (method === 'cate.browser.readCommand') {
-    try {
-      const raw = args && typeof args === 'object'
-        ? (args as { command?: unknown }).command
-        : undefined
-      if (!isReadOnlyBrowserCommand(validateBrowserCommand(raw))) {
-        return CLI_PERMISSIONS[0].control
-      }
-    } catch {
-      return CLI_PERMISSIONS[0].control
-    }
-  }
+export function cliPermissionForRequest(method: string, _args: unknown): CliPermissionCell | undefined {
   return cliPermissionForMethod(method)
 }
 

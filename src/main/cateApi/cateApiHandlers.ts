@@ -26,12 +26,13 @@ import { showOsNotification } from '../ipc/notifications'
 import type { PanelType, WindowPanelInfo } from '../../shared/types'
 import type { CodingAgentRunStatus } from '../../shared/codingAgentRuns'
 
-const CATE_API_VERSION = 7
+const CATE_API_VERSION = 8
 
 const FORWARD_TIMEOUT_MS = 10_000
 const CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS = 65_000
 
 export function forwardTimeoutMs(method: string): number {
+  if (method.startsWith('cate.browser.')) return 35_000
   if (method === 'cate.codingAgent.wait') return CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS
   return FORWARD_TIMEOUT_MS
 }
@@ -446,7 +447,7 @@ export async function dispatchCateInvoke(
     const target = resolvePanelTargetWindow(typeof a.panelId === 'string' ? a.panelId : undefined, 'browser')
     if ('error' in target) return { error: target.error, method }
     const result = await forwardToOwner(target.wc, { workspaceId, panelId: panelId ?? '', method, args })
-    if (method === 'cate.browser.open' && !a.panelId && result && typeof result === 'object') {
+    if (method === 'cate.browser.createTab' && !a.panelId && result && typeof result === 'object') {
       const opened = result as { panelId?: unknown; url?: unknown }
       if (typeof opened.panelId === 'string') {
         upsertWindowPanel(target.ownerWindowId, {
@@ -553,7 +554,7 @@ export async function dispatchCateInvoke(
         // A create result is meant to be used immediately by the next CLI
         // command. The renderer's full panel report is debounced, so register a
         // provisional row now; otherwise `panel create browser` followed by
-        // `browser open --panel <returned-id>` (and the terminal equivalent)
+        // `browser run <code> --panel <returned-id>` (and the terminal equivalent)
         // races the owner lookup and returns no-such-browser/terminal. The next
         // normal report replaces this row with the complete panel metadata.
         if (method === 'cate.canvas.createPanel' && result && typeof result === 'object') {

@@ -93,7 +93,7 @@ export default function App() {
         <PersistentBrowserHostContext.Provider value>
           <DockWindowShell workspaceId={windowParams.workspaceId} />
           <React.Suspense fallback={null}>
-            <BackgroundBrowserHost />
+            <BackgroundBrowserHost workspaceId={windowParams.workspaceId} />
           </React.Suspense>
         </PersistentBrowserHostContext.Provider>
       </WindowTypeContext.Provider>
@@ -431,8 +431,8 @@ function MainApp() {
       {/* Single shared file-drag drop indicator (canvas / dock / agent) */}
       <FileDropOverlay />
 
-      {/* Shared overlay chrome (command palette + settings + skills +
-          saved-layouts dialogs + drag overlay) — rendered for every window. */}
+      {/* Shared overlay chrome (command palette + settings + skills
+          dialog + drag overlay) — rendered for every window. */}
       <WindowChrome />
 
       {/* Main-only modal overlays */}

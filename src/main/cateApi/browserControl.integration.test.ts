@@ -173,7 +173,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     const { runtime, output } = makeRuntime()
     const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
-      json: { method: 'cate.browser.open', args: { url: 'https://x.test' } },
+      json: { method: 'cate.browser.createTab', args: { url: 'https://x.test' } },
     })
 
     expect(res.body).toEqual({ result: { panelId: 'new-browser', url: 'https://x.test' } })
@@ -188,7 +188,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     endpoint.dispose()
   })
 
-  it('happy path: cate.browser.open reaches the owner renderer and the reply flows back as HTTP 200', async () => {
+  it('happy path: cate.browser.createTab reaches the owner renderer and the reply flows back as HTTP 200', async () => {
     // A browser panel 'b1' owned by the same fake window that is active.
     const owner = makeWindow({ replyResult: { ok: true, navigated: 'https://x.test' } })
     activeWindow.value = owner.win
@@ -198,13 +198,13 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     const { runtime, output } = makeRuntime()
     const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
-      json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'b1' } },
+      json: { method: 'cate.browser.createTab', args: { url: 'https://x.test', panelId: 'b1' } },
     })
 
     // The renderer received exactly the documented CATE_HOST_FORWARD payload.
     expect(owner.forwards).toHaveLength(1)
     const fwd = owner.forwards[0]!
-    expect(fwd.method).toBe('cate.browser.open') // keeps the cate. prefix
+    expect(fwd.method).toBe('cate.browser.createTab') // keeps the cate. prefix
     expect((fwd.args as { panelId?: string }).panelId).toBe('b1') // addressed panel in args
     expect(fwd.panelId).toBe('') // caller origin (server has no owning panel)
     expect(fwd.workspaceId).toBe(WS)
@@ -250,21 +250,21 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     // Unknown panelId.
     const ep1 = firstPartySession(runtime)
     const unknown = await request(ep1, output, {
-      json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'nope' } },
+      json: { method: 'cate.browser.createTab', args: { url: 'https://x.test', panelId: 'nope' } },
       connId: 'rev-a',
     })
     expect(unknown.status).toBe(200)
-    expect(unknown.body).toEqual({ result: { error: 'no-such-browser', method: 'cate.browser.open' } })
+    expect(unknown.body).toEqual({ result: { error: 'no-such-browser', method: 'cate.browser.createTab' } })
     ep1.dispose()
 
     // A real panel id that is NOT a browser → same error.
     const two = makeRuntime()
     const ep2 = firstPartySession(two.runtime)
     const nonBrowser = await request(ep2, two.output, {
-      json: { method: 'cate.browser.open', args: { panelId: 'term1' } },
+      json: { method: 'cate.browser.createTab', args: { panelId: 'term1' } },
       connId: 'rev-b',
     })
-    expect(nonBrowser.body).toEqual({ result: { error: 'no-such-browser', method: 'cate.browser.open' } })
+    expect(nonBrowser.body).toEqual({ result: { error: 'no-such-browser', method: 'cate.browser.createTab' } })
     ep2.dispose()
 
     expect(active.send).not.toHaveBeenCalled()
@@ -280,11 +280,11 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     settings.cliBrowserControlEnabled = false
     const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
-      json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'b1' } },
+      json: { method: 'cate.browser.createTab', args: { url: 'https://x.test', panelId: 'b1' } },
     })
 
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ result: { error: expect.stringContaining('disabled'), method: 'cate.browser.open' } })
+    expect(res.body).toEqual({ result: { error: expect.stringContaining('disabled'), method: 'cate.browser.createTab' } })
     expect(owner.send).not.toHaveBeenCalled()
     endpoint.dispose()
   })
@@ -299,7 +299,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
       token: null,
-      json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'b1' } },
+      json: { method: 'cate.browser.createTab', args: { url: 'https://x.test', panelId: 'b1' } },
     })
 
     expect(res.status).toBe(401)
@@ -318,7 +318,7 @@ describe('browser-control integration — HTTP → real dispatch → forward →
     const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
       token: 'wrong-token',
-      json: { method: 'cate.browser.open', args: { url: 'https://x.test', panelId: 'b1' } },
+      json: { method: 'cate.browser.createTab', args: { url: 'https://x.test', panelId: 'b1' } },
     })
 
     expect(res.status).toBe(401)

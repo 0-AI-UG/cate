@@ -92,11 +92,6 @@ export async function runAction(
     await reloadActiveWorkspaceFromDisk()
     return
   }
-  if (action === 'manageLayouts') {
-    useUIStore.getState().setShowLayoutsDialog(true)
-    return
-  }
-
   switch (action) {
     case 'newTerminal': {
       const placement = placementForActivePanel()

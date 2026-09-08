@@ -1,12 +1,7 @@
-import fs from 'fs'
-import path from 'path'
-import { app, type WebContents } from 'electron'
-import {
-  browserActivityLabel,
-  browserCommandShowsActivity,
-  isReadOnlyBrowserCommand,
-  validateBrowserCommand,
-} from '../../shared/browserCommand'
+import { type WebContents } from 'electron'
+import { BROWSER_ACTION_METHODS, BROWSER_OBSERVATION_METHODS, type BrowserObservation, type BrowserObservationPerformance, type BrowserElement, type BrowserViewportState, type BrowserImage } from '../../shared/browserAutomation'
+import { BrowserObservationCache, type CachedBrowserObservation } from './browserObservationCache'
+import { readBrowserAX } from './browserAX'
 
 type BrowserArgs = Record<string, unknown>
 
@@ -26,6 +21,8 @@ export interface BrowserRuntimeResult {
     kind: 'move' | 'click' | 'dblclick' | 'hover' | 'drag' | 'scroll' | 'type' | 'press'
   }
   error?: string
+  recovery?: string
+  observation?: BrowserObservation
 }
 
 type CursorKind = NonNullable<BrowserRuntimeResult['cursor']>['kind']
@@ -50,11 +47,6 @@ interface CdpEvent {
   sessionId?: string
 }
 
-const INTERACTIVE_ROLES = new Set([
-  'button', 'checkbox', 'combobox', 'link', 'listbox', 'menuitem', 'option',
-  'radio', 'searchbox', 'slider', 'spinbutton', 'switch', 'tab', 'textbox',
-])
-
 const KEY_DATA: Record<string, { key: string; code: string; windowsVirtualKeyCode: number; nativeVirtualKeyCode: number; text?: string; unmodifiedText?: string }> = {
   Enter: { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' },
   Tab: { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 },
@@ -76,39 +68,6 @@ function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
 
-function stringArg(args: BrowserArgs, key: string): string | undefined {
-  return typeof args[key] === 'string' ? args[key] as string : undefined
-}
-
-function numberArg(args: BrowserArgs, key: string, fallback = 0): number {
-  const value = args[key]
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-function boolArg(args: BrowserArgs, key: string): boolean {
-  return args[key] === true
-}
-
-function cursorKind(command: string): CursorKind {
-  if (command === 'click') return 'click'
-  if (command === 'dblclick') return 'dblclick'
-  if (command === 'hover') return 'hover'
-  if (command === 'drag') return 'drag'
-  if (command === 'scroll') return 'scroll'
-  if (command === 'fill' || command === 'type' || command === 'upload') return 'type'
-  if (command === 'press') return 'press'
-  return 'move'
-}
-
-function targetLabel(method: string, args: BrowserArgs): string {
-  if (method === 'fill' || method === 'type') {
-    const clean = String(args.text ?? '').replace(/\s+/g, ' ').trim()
-    return `${method} ${JSON.stringify(clean.length > 28 ? `${clean.slice(0, 27)}…` : clean)}`
-  }
-  if (method === 'press') return `press ${String(args.key ?? '')}`.trim()
-  return method
-}
-
 function globMatches(value: string, pattern: string): boolean {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*')
   return new RegExp(`^${escaped}$`).test(value)
@@ -117,14 +76,16 @@ function globMatches(value: string, pattern: string): boolean {
 class BrowserTargetRuntime {
   readonly contents: WebContents
   identity: BrowserTargetIdentity
-  private refs = new Map<string, RefTarget>()
-  private snapshotRevision = 0
+  private refs = new Map<number, RefTarget>()
+  private stableIds = new Map<string, number>()
+  private elementCounter = 0
+  private observationCounter = 0
+  private observations = new BrowserObservationCache()
   private documentEpoch = 0
   private userInputEpoch = 0
   private agentInputDepth = 0
   private queue: Promise<unknown> = Promise.resolve()
-  private consoleEntries: unknown[] = []
-  private pageErrors: unknown[] = []
+  private activeGuard?: () => void
   private frameParents = new Map<string, string | undefined>()
   private frameSessions = new Map<string, string>()
   private sessionFrames = new Map<string, string>()
@@ -179,6 +140,8 @@ class BrowserTargetRuntime {
 
   dispose(): void {
     this.refs.clear()
+    this.stableIds.clear()
+    this.observations.clear()
     this.frameParents.clear()
     this.frameSessions.clear()
     this.sessionFrames.clear()
@@ -192,13 +155,40 @@ class BrowserTargetRuntime {
   }
 
   execute(method: string, args: BrowserArgs): Promise<BrowserRuntimeResult> {
-    const run = this.queue.then(() => this.executeBound(method, args), () => this.executeBound(method, args))
+    return this.enqueue(() => this.executeBound(method, args)).catch((error) => ({ error: error instanceof Error ? error.message : 'browser-command-failed', recovery: 'Observe the bound tab again before retrying; input may already have been dispatched.' }))
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    // Capture takeover at submission, so input also invalidates waiting work.
+    const epoch = this.userInputEpoch
+    const guard = (): void => {
+      if (this.contents.isDestroyed()) throw new Error('browser-target-destroyed')
+      if (this.userInputEpoch !== epoch) throw new Error('browser-action-preempted-by-user')
+    }
+    const run = this.queue.then(async () => {
+      guard()
+      this.activeGuard = guard
+      try {
+        const result = await operation()
+        guard()
+        return result
+      } finally {
+        // Observations retain backend node IDs, never temporary remote objects.
+        // Cleanup must also run after takeover or a failed action.
+        if (!this.contents.isDestroyed() && this.attached) {
+          await Promise.allSettled([undefined, ...this.sessionFrames.keys()].map(async sessionId => {
+            await this.contents.debugger.sendCommand('Runtime.releaseObjectGroup', { objectGroup: 'cate-browser' }, sessionId)
+          }))
+        }
+        this.activeGuard = undefined
+      }
+    })
     this.queue = run.catch(() => undefined)
-    return run.catch((error) => ({ error: error instanceof Error ? error.message : 'browser-command-failed' }))
+    return run
   }
 
   async fillCredential(targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
-    return this.executeExclusive(async (guard) => {
+    return this.enqueue(() => this.executeExclusive(async (guard) => {
       const selector = `[data-cate-autofill-target=${JSON.stringify(targetId)}]`
       const password = await this.resolveSelector(selector)
       const usernameResult = await this.callOn(password, `function () {
@@ -220,7 +210,7 @@ class BrowserTargetRuntime {
       }
       await this.fillElement(password, credential.password, guard)
       return { ok: true as const }
-    }).catch((error) => ({ error: error instanceof Error ? error.message : 'credential-fill-failed' }))
+    })).catch((error) => ({ error: error instanceof Error ? error.message : 'credential-fill-failed' }))
   }
 
   private handleEvent(event: CdpEvent): void {
@@ -258,21 +248,13 @@ class BrowserTargetRuntime {
       if (!event.sessionId && !parentId) {
         this.documentEpoch += 1
         this.refs.clear()
+        this.stableIds.clear()
         this.frameParents.clear()
       } else if (frameId) {
         this.frameParents.set(frameId, parentId)
         this.dropRefsForFrame(frameId, event.sessionId)
       }
       return
-    }
-    if (event.method === 'Runtime.consoleAPICalled') {
-      this.consoleEntries.push(event.params)
-      if (this.consoleEntries.length > 100) this.consoleEntries.shift()
-      return
-    }
-    if (event.method === 'Runtime.exceptionThrown') {
-      this.pageErrors.push(event.params)
-      if (this.pageErrors.length > 100) this.pageErrors.shift()
     }
   }
 
@@ -291,7 +273,10 @@ class BrowserTargetRuntime {
 
   private dropRefsForFrame(frameId: string, sessionId?: string): void {
     for (const [ref, target] of this.refs) {
-      if (target.frameId === frameId || (sessionId && target.sessionId === sessionId)) this.refs.delete(ref)
+      if (target.frameId === frameId || (sessionId && target.sessionId === sessionId)) {
+        this.refs.delete(ref)
+        this.stableIds.delete(`${target.sessionId ?? 'root'}:${target.backendNodeId}`)
+      }
     }
   }
 
@@ -307,12 +292,17 @@ class BrowserTargetRuntime {
     const frameId = this.sessionFrames.get(sessionId)
     if (frameId) this.dropFrame(frameId)
     else {
-      for (const [ref, target] of this.refs) if (target.sessionId === sessionId) this.refs.delete(ref)
+      for (const [ref, target] of this.refs) if (target.sessionId === sessionId) { this.refs.delete(ref); this.stableIds.delete(`${sessionId}:${target.backendNodeId}`) }
     }
   }
 
   private async send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<Record<string, unknown>> {
     await this.attach()
+    // Always allow paired releases so takeover cannot leave a button/key held.
+    // Session setup also runs from debugger events, independently of commands.
+    const releasingInput = (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased')
+      || (method === 'Input.dispatchKeyEvent' && params.type === 'keyUp')
+    if (!releasingInput && !method.endsWith('.enable') && method !== 'Target.setAutoAttach') this.activeGuard?.()
     try {
       return objectValue(await this.contents.debugger.sendCommand(method, params, sessionId))
     } catch (error) {
@@ -328,11 +318,63 @@ class BrowserTargetRuntime {
     this.agentInputDepth += 1
     this.contents.send('cate-browser-automation-input', true)
     try {
-      await this.send('Input.dispatchMouseEvent', params)
+      if (params.type === 'mouseWheel') await this.dispatchWheel(params)
+      else await this.send('Input.dispatchMouseEvent', params)
     } finally {
       await new Promise<void>((resolve) => setImmediate(resolve))
       if (!this.contents.isDestroyed()) this.contents.send('cate-browser-automation-input', false)
       this.agentInputDepth -= 1
+    }
+  }
+
+  private async dispatchWheel(params: Record<string, unknown>): Promise<void> {
+    const watches: Array<{ objectId: string; sessionId?: string }> = []
+    try {
+      // A queued wheel command can return before the trusted event reaches a
+      // hidden guest. Listen in each frame's isolated world before dispatch,
+      // then keep input marked until the receiving document finishes handling it.
+      for (const frameId of await this.currentFrameIds()) {
+        const sessionId = this.frameSessions.get(frameId)
+        const world = await this.send('Page.createIsolatedWorld', { frameId, worldName: 'cate-browser-input' }, sessionId)
+        const response = await this.send('Runtime.evaluate', {
+          contextId: world.executionContextId, objectGroup: 'cate-browser', returnByValue: false,
+          expression: `(() => {
+            let listener, timer, finish;
+            const promise=new Promise(resolve=>{
+              finish=value=>{clearTimeout(timer);document.removeEventListener('wheel',listener,true);resolve(value);};
+              listener=event=>{
+                if(!event.isTrusted)return;
+                document.removeEventListener('wheel',listener,true);
+                // The next task runs after this event's default handling.
+                clearTimeout(timer);timer=setTimeout(()=>finish(true),0);
+              };
+              document.addEventListener('wheel',listener,{capture:true,passive:true});
+              timer=setTimeout(()=>finish(false),5000);
+            });
+            return {promise,cancel:()=>finish(false)};
+          })()`,
+        }, sessionId)
+        const objectId = objectValue(response.result).objectId
+        if (typeof objectId !== 'string') throw new Error('browser-wheel-listener-failed')
+        watches.push({ objectId, sessionId })
+      }
+      if (!watches.length) throw new Error('browser-wheel-frame-required')
+      const completion = Promise.any(watches.map(async watch => {
+        const response = await this.send('Runtime.callFunctionOn', {
+          objectId: watch.objectId, functionDeclaration: 'function () { return this.promise; }', awaitPromise: true, returnByValue: true,
+        }, watch.sessionId)
+        if (objectValue(response.result).value !== true) throw new Error('browser-wheel-event-timeout')
+      }))
+      // Install rejection handling even when input dispatch itself fails.
+      void completion.catch(() => {})
+      await this.send('Input.dispatchMouseEvent', params)
+      try { await completion } catch { throw new Error('browser-wheel-event-timeout') }
+    } finally {
+      await Promise.allSettled(watches.map(async watch => {
+        await this.contents.debugger.sendCommand('Runtime.callFunctionOn', {
+          objectId: watch.objectId, functionDeclaration: 'function () { this.cancel(); }', returnByValue: true,
+        }, watch.sessionId)
+      }))
     }
   }
 
@@ -350,11 +392,7 @@ class BrowserTargetRuntime {
 
   private async executeExclusive<T>(operation: (guard: () => void) => Promise<T>): Promise<T> {
     await this.attach()
-    const epoch = this.userInputEpoch
-    const guard = (): void => {
-      if (this.contents.isDestroyed()) throw new Error('browser-target-destroyed')
-      if (this.userInputEpoch !== epoch) throw new Error('browser-action-preempted-by-user')
-    }
+    const guard = this.activeGuard!
     guard()
     const result = await operation(guard)
     guard()
@@ -376,58 +414,10 @@ class BrowserTargetRuntime {
     return { objectId, backendNodeId: node.backendNodeId }
   }
 
-  private async resolveRef(ref: unknown): Promise<ElementTarget> {
-    if (typeof ref !== 'string') throw new Error('ref-required')
-    const normalized = ref.startsWith('@') ? ref : `@${ref}`
-    const stored = this.refs.get(normalized)
-    if (!stored || stored.documentEpoch !== this.documentEpoch) throw new Error('stale-browser-ref')
-    return { backendNodeId: stored.backendNodeId, frameId: stored.frameId, sessionId: stored.sessionId }
-  }
-
-  private async resolveTarget(raw: unknown): Promise<ElementTarget> {
-    return typeof raw === 'string' && /^@?s\d+e\d+$/.test(raw)
-      ? this.resolveRef(raw)
-      : this.resolveSelector(String(raw ?? ''))
-  }
-
-  private async resolveArgsTarget(args: BrowserArgs): Promise<ElementTarget> {
-    if (args.ref !== undefined) return this.resolveRef(args.ref)
-    if (stringArg(args, 'by') === 'css') return this.resolveSelector(stringArg(args, 'value') ?? '')
-    const by = stringArg(args, 'by')
-    const value = stringArg(args, 'value')
-    if (!by || value === undefined) throw new Error('ref-or-locator-required')
-    const selector = await this.semanticSelector(by, value, boolArg(args, 'exact'), numberArg(args, 'nth', -1))
-    return this.resolveSelector(selector)
-  }
-
-  private async semanticSelector(by: string, value: string, exact: boolean, nth: number, accessibleName?: string): Promise<string> {
-    const marker = `data-cate-runtime-target-${Date.now()}-${Math.random().toString(16).slice(2)}`
-    const expression = `(() => {
-      const needle=${JSON.stringify(value)}, nameNeedle=${JSON.stringify(accessibleName ?? '')}, exact=${JSON.stringify(exact)};
-      const text=(v)=>String(v||'').trim(); const match=(v)=>exact?text(v)===needle:text(v).toLowerCase().includes(needle.toLowerCase());
-      const nameMatch=(v)=>!nameNeedle||(exact?text(v)===nameNeedle:text(v).toLowerCase().includes(nameNeedle.toLowerCase()));
-      const labelFor=(el)=>el.labels?.[0]?.innerText||el.getAttribute('aria-label')||'';
-      let nodes=[];
-      switch(${JSON.stringify(by)}) {
-        case 'role': nodes=Array.from(document.querySelectorAll('[role="'+CSS.escape(needle)+'"],button,a,input,select,textarea')); nodes=nodes.filter(el=>(el.getAttribute('role')||({BUTTON:'button',A:'link',SELECT:'combobox',TEXTAREA:'textbox',INPUT:el.type==='search'?'searchbox':el.type==='checkbox'?'checkbox':el.type==='radio'?'radio':'textbox'}[el.tagName]))===needle&&nameMatch(el.getAttribute('aria-label')||el.innerText||el.value)); break;
-        case 'label': nodes=Array.from(document.querySelectorAll('input,select,textarea,button')).filter(el=>match(labelFor(el))); break;
-        case 'placeholder': nodes=Array.from(document.querySelectorAll('[placeholder]')).filter(el=>match(el.getAttribute('placeholder'))); break;
-        case 'testid': nodes=Array.from(document.querySelectorAll('[data-testid]')).filter(el=>match(el.getAttribute('data-testid'))); break;
-        case 'altText': case 'alt': nodes=Array.from(document.querySelectorAll('[alt]')).filter(el=>match(el.getAttribute('alt'))); break;
-        case 'title': nodes=Array.from(document.querySelectorAll('[title]')).filter(el=>match(el.getAttribute('title'))); break;
-        case 'text': nodes=Array.from(document.querySelectorAll('button,a,label,h1,h2,h3,p,span,div')).filter(el=>match(el.innerText)); break;
-      }
-      const target=nodes[${nth >= 0 ? nth : 0}]||null; if(!target)return false; target.setAttribute(${JSON.stringify(marker)},''); return true;
-    })()`
-    const result = objectValue((await this.send('Runtime.evaluate', { expression, returnByValue: true })).result)
-    if (result.value !== true) throw new Error('element-not-found')
-    return `[${marker}]`
-  }
-
-  private async callOn(target: ElementTarget, functionDeclaration: string, returnByValue = true): Promise<Record<string, unknown>> {
+  private async callOn(target: ElementTarget, functionDeclaration: string, returnByValue = true, executionContextId?: number): Promise<Record<string, unknown>> {
     let objectId = target.objectId
     if (!objectId) {
-      const resolved = await this.send('DOM.resolveNode', { backendNodeId: target.backendNodeId, objectGroup: 'cate-browser' }, target.sessionId)
+      const resolved = await this.send('DOM.resolveNode', { backendNodeId: target.backendNodeId, objectGroup: 'cate-browser', ...(executionContextId === undefined ? {} : { executionContextId }) }, target.sessionId)
       objectId = typeof objectValue(resolved.object).objectId === 'string'
         ? objectValue(resolved.object).objectId as string
         : undefined
@@ -444,8 +434,8 @@ class BrowserTargetRuntime {
     return objectValue(response.result)
   }
 
-  private async box(target: ElementTarget): Promise<{ x: number; y: number; width: number; height: number }> {
-    await this.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: target.backendNodeId }, target.sessionId)
+  private async box(target: ElementTarget, scroll = true): Promise<{ x: number; y: number; width: number; height: number }> {
+    if (scroll) await this.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: target.backendNodeId }, target.sessionId)
     const response = await this.send('DOM.getBoxModel', { backendNodeId: target.backendNodeId }, target.sessionId)
     const content = objectValue(response.model).content
     if (!Array.isArray(content) || content.length < 8) throw new Error('element-has-no-actionable-box')
@@ -456,11 +446,11 @@ class BrowserTargetRuntime {
       width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys),
     }
     if (!target.sessionId || !target.frameId) return local
-    const offset = await this.frameOffset(target.frameId)
+    const offset = await this.frameOffset(target.frameId, scroll)
     return { ...local, x: local.x + offset.x, y: local.y + offset.y }
   }
 
-  private async frameOffset(frameId: string): Promise<{ x: number; y: number }> {
+  private async frameOffset(frameId: string, scroll: boolean): Promise<{ x: number; y: number }> {
     let x = 0, y = 0, current: string | undefined = frameId
     const seen = new Set<string>()
     while (current && !seen.has(current)) {
@@ -471,7 +461,7 @@ class BrowserTargetRuntime {
       const owner = await this.send('DOM.getFrameOwner', { frameId: current }, parentSession)
       const backendNodeId = objectValue(owner).backendNodeId
       if (typeof backendNodeId !== 'number') break
-      await this.send('DOM.scrollIntoViewIfNeeded', { backendNodeId }, parentSession)
+      if (scroll) await this.send('DOM.scrollIntoViewIfNeeded', { backendNodeId }, parentSession)
       const model = await this.send('DOM.getBoxModel', { backendNodeId }, parentSession)
       const content = objectValue(model.model).content
       if (!Array.isArray(content) || content.length < 8) break
@@ -494,14 +484,47 @@ class BrowserTargetRuntime {
 
   private async clickElement(target: ElementTarget, count = 1, button = 'left', guard: () => void): Promise<ReturnType<BrowserTargetRuntime['cursor']>> {
     const box = await this.box(target)
+    await new Promise((resolve) => setTimeout(resolve, 50))
     guard()
-    const x = box.x + box.width / 2
-    const y = box.y + box.height / 2
+    const settled = await this.box(target, false)
+    if (Object.keys(box).some((key) => Math.abs(box[key as keyof typeof box] - settled[key as keyof typeof settled]) > 0.5)) {
+      throw new Error('element-not-stable')
+    }
+    const actionable = await this.callOn(target, `function () {
+      if (!this.isConnected || !this.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return 'element-not-visible';
+      if (this.matches(':disabled') || this.closest('[aria-disabled="true"],[inert]')) return 'element-disabled';
+      const rect=this.getBoundingClientRect(), x=rect.x+rect.width/2, y=rect.y+rect.height/2;
+      if (rect.width<=0 || rect.height<=0) return 'element-has-no-actionable-box';
+      for(let target=this;target;) {
+        const root=target.getRootNode(), hit=root.elementFromPoint(x,y);
+        if(!hit || (hit!==target && !target.contains(hit))) return 'element-obscured';
+        target=root.host;
+      }
+      return true;
+    }`)
+    if (actionable.value !== true) throw new Error(typeof actionable.value === 'string' ? actionable.value : 'element-not-actionable')
+    guard()
+    const x = settled.x + settled.width / 2
+    const y = settled.y + settled.height / 2
     await this.dispatchInput({ type: 'mouseMoved', x, y })
-    await this.dispatchInput({ type: 'mousePressed', x, y, button, clickCount: count })
     guard()
-    await this.dispatchInput({ type: 'mouseReleased', x, y, button, clickCount: count })
-    return this.cursor(box, count === 2 ? 'dblclick' : 'click', count === 2 ? 'dblclick' : 'click')
+    try {
+      await this.dispatchInput({ type: 'mousePressed', x, y, button, clickCount: count })
+    } finally {
+      await this.dispatchInput({ type: 'mouseReleased', x, y, button, clickCount: count })
+    }
+    guard()
+    return this.cursor(settled, count === 2 ? 'dblclick' : 'click', count === 2 ? 'dblclick' : 'click')
+  }
+
+  private async assertEditable(target: ElementTarget): Promise<void> {
+    const result = await this.callOn(target, `function () {
+      if(this.matches(':disabled') || this.closest('[aria-disabled="true"],[inert]')) return 'element-disabled';
+      if(this.readOnly || this.getAttribute('aria-readonly')==='true') return 'element-readonly';
+      if(this.isContentEditable || this instanceof HTMLTextAreaElement || (this instanceof HTMLInputElement && !['button','checkbox','color','file','hidden','image','radio','range','reset','submit'].includes(this.type))) return true;
+      return 'element-not-editable';
+    }`)
+    if (result.value !== true) throw new Error(typeof result.value === 'string' ? result.value : 'element-not-editable')
   }
 
   private async focusElement(target: ElementTarget): Promise<void> {
@@ -509,6 +532,7 @@ class BrowserTargetRuntime {
   }
 
   private async fillElement(target: ElementTarget, text: string, guard: () => void): Promise<void> {
+    await this.assertEditable(target)
     await this.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: target.backendNodeId }, target.sessionId)
     // Focus stays inside this CDP target's document. It does not activate the
     // Electron window, so xterm/Monaco focus in the host remains untouched.
@@ -516,7 +540,11 @@ class BrowserTargetRuntime {
     guard()
     await this.callOn(target, `function () {
       const text=${JSON.stringify(text)};
-      if (this.isContentEditable) this.textContent=text;
+      if (this.isContentEditable) {
+        this.textContent=text;
+        const range=this.ownerDocument.createRange();range.selectNodeContents(this);range.collapse(false);
+        const selection=this.ownerDocument.getSelection();selection.removeAllRanges();selection.addRange(range);
+      }
       else {
         const proto=this instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
         const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
@@ -532,19 +560,16 @@ class BrowserTargetRuntime {
 
   private async typeElement(target: ElementTarget | null, text: string, guard: () => void): Promise<void> {
     if (!target) throw new Error('type-target-required')
+    await this.assertEditable(target)
     await this.focusElement(target)
     guard()
-    await this.callOn(target, `function () {
-      const addition=${JSON.stringify(text)};
-      if (this.isContentEditable) this.textContent=(this.textContent||'')+addition;
-      else {
-        const next=String(this.value||'')+addition;
-        const proto=this instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
-        if (setter) setter.call(this,next); else this.value=next;
-      }
-      this.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:addition}));
+    // Chromium's editing command respects the document selection and undo stack
+    // even when this guest is not the OS-focused widget.
+    const inserted = await this.callOn(target, `function () {
+      return this.ownerDocument.execCommand('insertText', false, ${JSON.stringify(text)});
     }`)
+    if (inserted.value !== true && text !== '') throw new Error('browser-type-failed')
+    guard()
   }
 
   private async uploadFile(target: ElementTarget, filePath: string, guard: () => void): Promise<string> {
@@ -566,7 +591,7 @@ class BrowserTargetRuntime {
   }
 
   private async pressKey(keySpec: string, guard: () => void): Promise<void> {
-    const parts = keySpec.replace(/^cmd\+/i, 'Meta+').split('+')
+    const parts = keySpec.replace(/^cmd\+/i, 'Meta+').replace(/^Return$/, 'Enter').split('+')
     const keyName = parts.pop() || ''
     const data = KEY_DATA[keyName] ?? (keyName.length === 1
       ? {
@@ -590,8 +615,12 @@ class BrowserTargetRuntime {
         if (!(target instanceof HTMLElement)) return false;
         const allowed=target.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,bubbles:true,cancelable:true}));
         if (allowed) {
-          if (target instanceof HTMLButtonElement) target.click();
-          else if (!(target instanceof HTMLTextAreaElement) && target.form) target.form.requestSubmit();
+          if (!target.matches(':disabled') && !target.closest('[inert],[aria-disabled="true"]')) {
+            if (target instanceof HTMLTextAreaElement && !target.readOnly) document.execCommand('insertText',false,'\\n');
+            else if (target.isContentEditable) document.execCommand('insertParagraph');
+            else if (target instanceof HTMLButtonElement) target.click();
+            else if (!(target instanceof HTMLTextAreaElement) && target.form) target.form.requestSubmit();
+          }
         }
         target.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,bubbles:true}));
         return true;
@@ -608,9 +637,12 @@ class BrowserTargetRuntime {
     if (parts.includes('Control') || parts.includes('Ctrl')) modifiers |= 2
     if (parts.includes('Meta')) modifiers |= 4
     if (parts.includes('Shift')) modifiers |= 8
-    await this.dispatchKey({ type: 'rawKeyDown', ...data, modifiers })
+    try {
+      await this.dispatchKey({ type: 'rawKeyDown', ...data, modifiers })
+    } finally {
+      await this.dispatchKey({ type: 'keyUp', ...data, modifiers })
+    }
     guard()
-    await this.dispatchKey({ type: 'keyUp', ...data, modifiers })
   }
 
   private recordFrameTree(raw: unknown, parentId: string | undefined, frameIds: string[]): void {
@@ -632,77 +664,33 @@ class BrowserTargetRuntime {
     return frameIds
   }
 
-  private async snapshot(args: BrowserArgs = {}): Promise<Record<string, unknown>> {
+  private async readAXState(): Promise<{ state: string; elements: BrowserElement[] }> {
     const frameIds = await this.currentFrameIds()
-    const mainFrameId = frameIds[0]
-    const trees: Array<{ nodes: Record<string, unknown>[]; frameId?: string; sessionId?: string }> = []
-    const rootTree = await this.send('Accessibility.getFullAXTree')
-    trees.push({
-      nodes: Array.isArray(rootTree.nodes) ? rootTree.nodes.map(objectValue) : [],
-      frameId: mainFrameId,
-    })
-    for (const frameId of frameIds.slice(1)) {
-      const sessionId = this.frameSessions.get(frameId)
-      try {
-        const tree = sessionId
-          ? await this.send('Accessibility.getFullAXTree', {}, sessionId)
-          : await this.send('Accessibility.getFullAXTree', { frameId })
-        trees.push({
-          nodes: Array.isArray(tree.nodes) ? tree.nodes.map(objectValue) : [],
-          frameId,
-          sessionId,
-        })
-      } catch {
-        // A frame can detach between Page.getFrameTree and the AX query.
-      }
-    }
-    this.snapshotRevision += 1
-    this.refs.clear()
-    const snapshotId = `s${this.snapshotRevision}`
-    const refs: Array<{ ref: string; role: string; name: string }> = []
-    const lines: string[] = []
-    const interactiveOnly = args.interactiveOnly === true
-      || (Array.isArray(args.command) && (args.command as unknown[]).includes('-i'))
-    let index = 0
-    const seen = new Set<string>()
-    for (const source of trees) {
-      for (const node of source.nodes) {
-        const role = String(objectValue(node.role).value ?? '')
-        const name = String(objectValue(node.name).value ?? '')
-        const backendNodeId = typeof node.backendDOMNodeId === 'number' ? node.backendDOMNodeId : undefined
-        if (!backendNodeId || !role || role === 'RootWebArea' || (interactiveOnly && !INTERACTIVE_ROLES.has(role))) continue
-        if (node.ignored === true) continue
-        const identity = `${source.sessionId ?? 'root'}:${backendNodeId}`
-        if (seen.has(identity)) continue
-        seen.add(identity)
-        index += 1
-        const ref = `@${snapshotId}e${index}`
-        this.refs.set(ref, {
-          backendNodeId,
-          documentEpoch: this.documentEpoch,
-          frameId: source.frameId,
-          sessionId: source.sessionId,
-        })
-        refs.push({ ref, role, name })
-        let suffix = ''
-        if (role === 'textbox' || role === 'searchbox') {
-          const described = await this.send('DOM.describeNode', { backendNodeId }, source.sessionId)
-          const attrs = objectValue(described.node).attributes
-          if (Array.isArray(attrs)) {
-            const typeAt = attrs.findIndex((part) => part === 'type')
-            if (typeAt >= 0 && attrs[typeAt + 1] === 'password') suffix = ' value="••••••••"'
-          }
+    if (!frameIds.length) throw new Error('browser-frame-unavailable')
+    const worlds = new Map<string, Promise<number>>()
+    return readBrowserAX({
+      frames: frameIds.map(frameId => ({ frameId, sessionId: this.frameSessions.get(frameId) })),
+      send: (method, params, sessionId) => this.send(method, params, sessionId),
+      callOn: async (target, declaration) => {
+        const key = `${target.sessionId ?? 'root'}:${target.frameId}`
+        let world = worlds.get(key)
+        if (!world) {
+          world = this.send('Page.createIsolatedWorld', { frameId: target.frameId, worldName: 'cate-browser-observation' }, target.sessionId).then(result => {
+            if (typeof result.executionContextId !== 'number') throw new Error('browser-inspection-context-unavailable')
+            return result.executionContextId
+          })
+          worlds.set(key, world)
         }
-        lines.push(`- ${role}${name ? ` ${JSON.stringify(name)}` : ''}${suffix} [ref=${ref.slice(1)}]`)
-      }
-    }
-    return {
-      snapshotId,
-      url: this.contents.getURL(),
-      title: this.contents.getTitle(),
-      refs,
-      snapshot: lines.join('\n'),
-    }
+        return this.callOn(target, declaration, true, await world)
+      },
+      register: target => {
+        const identity = `${target.sessionId ?? 'root'}:${target.backendNodeId}`
+        let id = this.stableIds.get(identity)
+        if (id === undefined) { id = ++this.elementCounter; this.stableIds.set(identity, id) }
+        this.refs.set(id, { ...target, documentEpoch: this.documentEpoch })
+        return id
+      },
+    })
   }
 
   private async evaluate(expression: string): Promise<unknown> {
@@ -711,274 +699,284 @@ class BrowserTargetRuntime {
     return objectValue(response.result).value ?? null
   }
 
-  private async getValue(kind: string, targetRaw?: unknown, attr?: string): Promise<Record<string, unknown>> {
-    if (kind === 'url') return { origin: this.contents.getURL(), url: this.contents.getURL() }
-    if (kind === 'title') return { origin: this.contents.getURL(), title: this.contents.getTitle() }
-    const target = await this.resolveTarget(targetRaw)
-    let expression: string
-    if (kind === 'text') expression = 'function () { return this.innerText ?? this.textContent ?? ""; }'
-    else if (kind === 'value') expression = 'function () { return this.type === "password" ? "" : (this.value ?? ""); }'
-    else if (kind === 'html') expression = 'function () { return this.outerHTML; }'
-    else if (kind === 'attr') expression = `function () { return this.getAttribute(${JSON.stringify(attr ?? '')}); }`
-    else if (kind === 'box') {
-      const box = await this.box(target)
-      return { origin: this.contents.getURL(), ...box }
-    } else throw new Error(`unsupported-get:${kind}`)
-    const result = await this.callOn(target, expression)
-    return { origin: this.contents.getURL(), value: result.value ?? null, ...(kind === 'text' ? { text: result.value ?? '' } : {}) }
-  }
+  private get documentId(): string { return `${this.contents.id}:d${this.documentEpoch}` }
 
-  private async state(kind: string, targetRaw: unknown): Promise<Record<string, unknown>> {
-    const target = await this.resolveTarget(targetRaw)
-    const result = await this.callOn(target, `function () {
-      const style=getComputedStyle(this), rect=this.getBoundingClientRect();
-      return { visible:style.display!=='none'&&style.visibility!=='hidden'&&rect.width>0&&rect.height>0,
-        enabled:!this.disabled, checked:Boolean(this.checked) };
-    }`)
-    const value = objectValue(result.value)
-    return { origin: this.contents.getURL(), [kind]: value[kind] ?? false }
-  }
-
-  private async screenshot(fullPage = false, targetRaw?: unknown): Promise<{ path: string }> {
-    const filePath = path.join(app.getPath('temp'), 'cate-screenshots', `screenshot-${Date.now()}.png`)
-    await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
-    let params: Record<string, unknown> = { format: 'png', captureBeyondViewport: fullPage }
-    if (targetRaw !== undefined) {
-      const box = await this.box(await this.resolveTarget(targetRaw))
-      params = { ...params, clip: { ...box, scale: 1 } }
-    } else if (fullPage) {
-      const metrics = await this.send('Page.getLayoutMetrics')
-      const size = objectValue(metrics.cssContentSize)
-      if (typeof size.width === 'number' && typeof size.height === 'number') {
-        params = { ...params, clip: { x: 0, y: 0, width: size.width, height: size.height, scale: 1 } }
-      }
+  private async viewport(): Promise<BrowserViewportState> {
+    const value = objectValue(await this.evaluate('({width:innerWidth,height:innerHeight,deviceScaleFactor:devicePixelRatio,scrollX,scrollY})'))
+    return {
+      width: Number(value.width), height: Number(value.height), deviceScaleFactor: Number(value.deviceScaleFactor),
+      zoom: this.contents.getZoomFactor(), scrollX: Number(value.scrollX), scrollY: Number(value.scrollY),
     }
-    const response = await this.send('Page.captureScreenshot', params)
-    if (typeof response.data !== 'string') throw new Error('browser-screenshot-failed')
-    await fs.promises.writeFile(filePath, Buffer.from(response.data, 'base64'))
-    return { path: filePath }
   }
 
-  private async waitFor(command: string[], timeoutMs: number): Promise<void> {
-    const deadline = Date.now() + Math.min(Math.max(timeoutMs, 1), 30_000)
+  private sameViewport(a: BrowserViewportState, b: BrowserViewportState): boolean {
+    return Object.keys(a).every(key => a[key as keyof BrowserViewportState] === b[key as keyof BrowserViewportState])
+  }
+
+  private async captureViewport(viewport: BrowserViewportState, profile?: BrowserObservationPerformance): Promise<BrowserImage> {
+    // Layout/zoom values can update before Chromium submits their pixels.
+    // One rAF runs before paint; the next gives that frame a chance to submit
+    // before Electron immediately copies the current compositor surface.
+    let started = performance.now()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        this.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))'),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error('browser-render-frame-timeout')), 5000)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+    if (profile) profile.frameWaitMs += performance.now() - started
+    this.activeGuard?.()
+    started = performance.now()
+    const capture = await this.contents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+    if (profile) profile.captureMs += performance.now() - started
+    started = performance.now()
+    const resized = capture.resize({ width: Math.round(viewport.width), height: Math.round(viewport.height) })
+    if (profile) profile.resizeMs += performance.now() - started
+    started = performance.now()
+    const data = resized.toPNG()
+    if (profile) { profile.pngMs += performance.now() - started; profile.imageBytes = data.length }
+    started = performance.now()
+    const encoded = data.toString('base64')
+    if (profile) profile.base64Ms += performance.now() - started
+    return { mimeType: 'image/png', data: encoded, width: data.readUInt32BE(16), height: data.readUInt32BE(20) }
+  }
+
+  private async observe(args: BrowserArgs = {}, screenshot = false, imageOnly = false): Promise<BrowserObservation> {
+    const started = performance.now()
+    const profile: BrowserObservationPerformance | undefined = args.profile === true ? {
+      axMs: 0, frameWaitMs: 0, captureMs: 0, resizeMs: 0, pngMs: 0, base64Ms: 0,
+      totalMs: 0, imageBytes: 0, cacheEntries: 0, cacheEstimatedBytes: 0,
+    } : undefined
+    const baseline = typeof args.observationId === 'string' ? this.observations.get(args.observationId) : undefined
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const documentId = this.documentId
+      const before = await this.viewport()
+      const axStarted = performance.now()
+      const ax = imageOnly ? { state: '', elements: [] } : await this.readAXState()
+      if (profile && !imageOnly) profile.axMs += performance.now() - axStarted
+      const image = screenshot ? await this.captureViewport(before, profile) : undefined
+      const after = await this.viewport()
+      if (documentId !== this.documentId || !this.sameViewport(before, after)) continue
+      let state = ax.state
+      const diff = !imageOnly && args.disableDiffing !== true && baseline?.kind === 'ax' && baseline.documentId === documentId
+      if (diff) {
+        const old = new Set(baseline.state.split('\n'))
+        const current = new Set(state.split('\n'))
+        const removed = [...old].filter(line => !current.has(line)).map(line => `- ${line}`)
+        const added = [...current].filter(line => !old.has(line)).map(line => `+ ${line}`)
+        state = [...removed, ...added].join('\n') || 'No changes.'
+      }
+      const observation: BrowserObservation = {
+        kind: imageOnly ? 'image' : 'ax',
+        panelId: this.identity.panelId, tabId: this.identity.tabId, observationId: `${documentId}:o${++this.observationCounter}`,
+        documentId, url: this.contents.getURL(), title: this.contents.getTitle(), viewport: after,
+        state, elements: ax.elements, diff: Boolean(diff), ...(image ? { screenshot: image } : {}), ...(profile ? { performance: profile } : {}),
+      }
+      this.observations.set(observation, ax.state)
+      if (profile) {
+        profile.cacheEntries = this.observations.size
+        profile.cacheEstimatedBytes = this.observations.estimatedBytes
+        profile.totalMs = performance.now() - started
+      }
+      return observation
+    }
+    throw new Error('browser-observation-changed-during-capture')
+  }
+
+  private requireObservation(args: BrowserArgs): CachedBrowserObservation {
+    const observation = typeof args.observationId === 'string' ? this.observations.get(args.observationId) : undefined
+    if (!observation) throw new Error('browser-observation-required')
+    if (observation.documentId !== this.documentId) throw new Error('stale-browser-observation')
+    return observation
+  }
+
+  private element(id: unknown, observation: CachedBrowserObservation): ElementTarget {
+    if (observation.kind !== 'ax') throw new Error('browser-ax-observation-required')
+    if (!Number.isSafeInteger(id) || !observation.elementIds.has(id as number)) throw new Error('browser-element-not-in-observation')
+    const ref = this.refs.get(id as number)
+    if (!ref || ref.documentEpoch !== this.documentEpoch) throw new Error('stale-browser-element')
+    return { backendNodeId: ref.backendNodeId, frameId: ref.frameId, sessionId: ref.sessionId }
+  }
+
+  private async point(raw: unknown, observation: CachedBrowserObservation): Promise<[number, number]> {
+    if (!Array.isArray(raw) || raw.length !== 2 || !raw.every(value => typeof value === 'number' && Number.isFinite(value))) throw new Error('browser-point-required')
+    const viewport = await this.viewport()
+    if (observation.documentId !== this.documentId) throw new Error('stale-browser-observation')
+    if (!this.sameViewport(observation.viewport, viewport)) throw new Error('stale-browser-coordinates')
+    const [x, y] = raw as [number, number]
+    if (x < 0 || y < 0 || x >= viewport.width || y >= viewport.height) throw new Error('browser-point-outside-viewport')
+    return [x, y]
+  }
+
+  private async activeElement(observation: CachedBrowserObservation): Promise<ElementTarget> {
+    if (observation.kind !== 'ax') throw new Error('browser-ax-observation-required')
+    if (observation.focusedElementId !== undefined) return this.element(observation.focusedElementId, observation)
+    const active = objectValue((await this.send('Runtime.evaluate', { expression: 'document.activeElement', returnByValue: false, objectGroup: 'cate-browser' })).result)
+    if (typeof active.objectId !== 'string') throw new Error('browser-focused-element-required')
+    const described = await this.send('DOM.describeNode', { objectId: active.objectId })
+    const backendNodeId = objectValue(described.node).backendNodeId
+    if (typeof backendNodeId !== 'number') throw new Error('browser-focused-element-required')
+    return { objectId: active.objectId, backendNodeId }
+  }
+
+  private async waitCondition(args: BrowserArgs, observation: CachedBrowserObservation): Promise<void> {
+    const condition = objectValue(args.condition)
+    const keys = ['text', 'url', 'element'].filter(key => condition[key] !== undefined)
+    if (keys.length !== 1) throw new Error('browser-wait-requires-one-condition')
+    const timeout = args.timeoutMs === undefined ? 5000 : Number(args.timeoutMs)
+    if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 30000) throw new Error('invalid-browser-timeout')
+    const deadline = Date.now() + timeout
     for (;;) {
+      this.activeGuard?.()
+      if (observation.documentId !== this.documentId && condition.element !== undefined) throw new Error('stale-browser-observation')
       let ready = false
-      if (command[0] === '--text') ready = String(await this.evaluate('document.body?.innerText ?? ""')).includes(command[1] ?? '')
-      else if (command[0] === '--url') ready = globMatches(this.contents.getURL(), command[1] ?? '')
-      else if (command[0] === '--load') ready = !this.contents.isLoading()
-      else if (command[0] === '--fn') ready = Boolean(await this.evaluate(command.slice(1).join(' ')))
-      else if (command[0]) {
+      if (typeof condition.text === 'string') ready = String(await this.evaluate('document.body?.innerText ?? ""')).includes(condition.text)
+      else if (typeof condition.url === 'string') ready = globMatches(this.contents.getURL(), condition.url)
+      else if (condition.element !== undefined) {
+        const state = condition.state ?? 'visible'
+        if (!['visible', 'hidden', 'checked', 'unchecked', 'enabled', 'disabled'].includes(String(state))) throw new Error('unsupported-browser-wait-state')
         try {
-          const target = await this.resolveTarget(command[0])
-          const state = command.includes('--state') ? command[command.indexOf('--state') + 1] : 'visible'
-          const visible = (await this.callOn(target, `function () { const s=getComputedStyle(this),r=this.getBoundingClientRect(); return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0; }`)).value
-          ready = state === 'attached' || (state === 'visible' && visible === true) || (state === 'hidden' && visible !== true)
-        } catch {
-          const state = command.includes('--state') ? command[command.indexOf('--state') + 1] : 'visible'
-          ready = state === 'hidden' || state === 'detached'
+          const target = this.element(condition.element, observation)
+          const result = objectValue((await this.callOn(target, `function () {
+            return { visible:this.isConnected && this.checkVisibility({opacityProperty:true,visibilityProperty:true}) && Array.from(this.getClientRects()).some(r=>r.width>0&&r.height>0), checked:Boolean(this.checked), enabled:!this.matches(':disabled') && !this.closest('[aria-disabled="true"],[inert]') };
+          }`)).value)
+          ready = state === 'visible' ? result.visible === true : state === 'hidden' ? result.visible !== true : state === 'checked' ? result.checked === true : state === 'unchecked' ? result.checked === false : state === 'enabled' ? result.enabled === true : result.enabled === false
+        } catch (error) {
+          this.activeGuard?.()
+          if (state === 'hidden' && error instanceof Error && !['browser-element-not-in-observation', 'stale-browser-observation'].includes(error.message)) ready = true
+          else throw error
         }
-      } else ready = !this.contents.isLoading()
+      } else throw new Error('invalid-browser-wait-condition')
+      this.activeGuard?.()
       if (ready) return
       if (Date.now() >= deadline) throw new Error('browser-wait-timeout')
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await new Promise(resolve => setTimeout(resolve, 50))
     }
-  }
-
-  private async rawCommand(method: 'command' | 'readCommand', raw: unknown): Promise<BrowserRuntimeResult> {
-    const command = validateBrowserCommand(raw)
-    if (method === 'readCommand' && !isReadOnlyBrowserCommand(command)) return { error: 'browser-command-requires-control' }
-    const [root, ...rest] = command
-    if (root === 'snapshot') return { result: await this.snapshot({ command }) }
-    if (root === 'get') return { result: await this.getValue(rest[0], rest[1], rest[2]) }
-    if (root === 'is') return { result: await this.state(rest[0], rest[1]) }
-    if (root === 'eval') return { result: { result: await this.evaluate(rest.join(' ')) } }
-    if (root === 'console') {
-      const result = { messages: [...this.consoleEntries] }
-      if (rest.includes('--clear')) this.consoleEntries = []
-      return { result }
-    }
-    if (root === 'errors') {
-      const result = { errors: [...this.pageErrors] }
-      if (rest.includes('--clear')) this.pageErrors = []
-      return { result }
-    }
-    if (root === 'screenshot') {
-      const target = rest.find((part) => /^@s\d+e\d+$/.test(part))
-      return { result: await this.screenshot(rest.includes('--full') || rest.includes('-f'), target) }
-    }
-    if (root === 'wait') {
-      const timeoutIndex = rest.indexOf('--timeout')
-      const timeout = timeoutIndex >= 0 ? Number(rest[timeoutIndex + 1]) : (rest[0] && /^\d+$/.test(rest[0]) ? Number(rest[0]) : 5_000)
-      const condition = rest.filter((_part, index) => (timeoutIndex < 0 || (index !== timeoutIndex && index !== timeoutIndex + 1)) && !(/^\d+$/.test(rest[0]) && index === 0))
-      await this.waitFor(condition, timeout)
-      return { result: { url: this.contents.getURL(), title: this.contents.getTitle(), loading: this.contents.isLoading() } }
-    }
-
-    if (root === 'find') {
-      const exact = rest.includes('--exact')
-      const nameIndex = rest.indexOf('--name')
-      const accessibleName = nameIndex >= 0 ? rest[nameIndex + 1] : undefined
-      const findArgs = rest.filter((_part, index) => (nameIndex < 0 || (index !== nameIndex && index !== nameIndex + 1)) && rest[index] !== '--exact')
-      const [by, value, action, ...actionArgs] = findArgs
-      if (!by || value === undefined || !action) return { error: 'find-requires-locator-and-action' }
-      const selector = await this.semanticSelector(by, value, exact, -1, accessibleName)
-      if (action === 'text') return { result: await this.getValue('text', selector) }
-      return this.rawCommand(method, [action, selector, ...actionArgs])
-    }
-
-    return this.executeExclusive(async (guard) => {
-      let cursor: BrowserRuntimeResult['cursor']
-      if (root === 'click' || root === 'dblclick') {
-        const target = await this.resolveTarget(rest[0])
-        cursor = await this.clickElement(target, root === 'dblclick' ? 2 : 1, 'left', guard)
-      } else if (root === 'hover' || root === 'focus' || root === 'scrollintoview') {
-        const target = await this.resolveTarget(rest[0])
-        const box = await this.box(target)
-        if (root === 'hover') await this.dispatchInput({ type: 'mouseMoved', x: box.x + box.width / 2, y: box.y + box.height / 2 })
-        if (root === 'focus') await this.focusElement(target)
-        cursor = this.cursor(box, root, root === 'hover' ? 'hover' : 'move')
-      } else if (root === 'fill' || root === 'type') {
-        const target = await this.resolveTarget(rest[0])
-        const box = await this.box(target)
-        if (root === 'fill') await this.fillElement(target, rest[1] ?? '', guard)
-        else await this.typeElement(target, rest[1] ?? '', guard)
-        cursor = this.cursor(box, browserActivityLabel(command), 'type')
-      } else if (root === 'upload') {
-        const target = await this.resolveTarget(rest[0])
-        const box = await this.box(target)
-        const name = await this.uploadFile(target, rest[1], guard)
-        return { result: { ok: true, files: [name] }, cursor: this.cursor(box, 'upload', 'type') }
-      } else if (root === 'press') {
-        await this.pressKey(rest[0] ?? '', guard)
-        cursor = { label: browserActivityLabel(command), kind: 'press' }
-      } else if (root === 'keyboard' && (rest[0] === 'type' || rest[0] === 'inserttext')) {
-        const active = objectValue((await this.send('Runtime.evaluate', { expression: 'document.activeElement', returnByValue: false, objectGroup: 'cate-browser' })).result)
-        if (typeof active.objectId !== 'string') throw new Error('type-target-required')
-        const described = await this.send('DOM.describeNode', { objectId: active.objectId })
-        const backendNodeId = objectValue(described.node).backendNodeId
-        if (typeof backendNodeId !== 'number') throw new Error('type-target-required')
-        await this.typeElement({ objectId: active.objectId, backendNodeId }, rest.slice(1).join(' '), guard)
-      } else if (root === 'select') {
-        const target = await this.resolveTarget(rest[0])
-        await this.callOn(target, `function () { const values=${JSON.stringify(rest.slice(1))}; for(const option of this.options||[]) option.selected=values.includes(option.value)||values.includes(option.text); this.dispatchEvent(new Event('input',{bubbles:true})); this.dispatchEvent(new Event('change',{bubbles:true})); }`)
-      } else if (root === 'check' || root === 'uncheck') {
-        const target = await this.resolveTarget(rest[0])
-        const checked = (await this.callOn(target, 'function () { return Boolean(this.checked); }')).value === true
-        if ((root === 'check') !== checked) cursor = await this.clickElement(target, 1, 'left', guard)
-      } else if (root === 'scroll') {
-        if (rest[0] === 'top' || rest[0] === 'bottom') await this.evaluate(`scrollTo(0,${rest[0] === 'top' ? '0' : 'document.documentElement.scrollHeight'})`)
-        else {
-          const distance = Number(rest[1] ?? rest[0] ?? 0)
-          await this.dispatchInput({ type: 'mouseWheel', x: 1, y: 1, deltaY: rest[0] === 'up' ? -distance : distance, deltaX: 0 })
-        }
-      } else if (root === 'mouse') {
-        const action = rest[0]
-        if (action === 'move') await this.dispatchInput({ type: 'mouseMoved', x: Number(rest[1]), y: Number(rest[2]) })
-        else if (action === 'wheel') await this.dispatchInput({ type: 'mouseWheel', x: 1, y: 1, deltaY: Number(rest[1]), deltaX: Number(rest[2] ?? 0) })
-        else throw new Error(`unsupported-mouse-action:${action}`)
-      } else {
-        throw new Error(`unsupported-browser-command:${root}`)
-      }
-      return { result: { ok: true }, ...(browserCommandShowsActivity(command) ? { cursor: { ...cursor, label: cursor?.label || browserActivityLabel(command), kind: cursor?.kind || cursorKind(root) } } : {}) }
-    })
   }
 
   private async executeBound(method: string, args: BrowserArgs): Promise<BrowserRuntimeResult> {
-    if (method === 'command' || method === 'readCommand') return this.rawCommand(method, args.command)
-    if (method === 'snapshot') return { result: await this.snapshot(args) }
-    if (method === 'evaluate') {
-      const expression = stringArg(args, 'expression')
-      return expression ? { result: { value: await this.evaluate(expression) } } : { error: 'expression-required' }
-    }
-    if (method === 'screenshot') return { result: await this.screenshot(stringArg(args, 'mode') === 'fullPage', stringArg(args, 'mode') === 'element' ? args.ref : undefined) }
-    if (method === 'console') return { result: { messages: [...this.consoleEntries] } }
-    if (method === 'consoleClear') { this.consoleEntries = []; return {}
-    }
-    if (method === 'text') return { result: await this.getValue('text', args.ref ?? 'body') }
-    if (method === 'attrs') return { result: await this.getValue('html', args.ref) }
-    if (method === 'state') {
-      const target = await this.resolveArgsTarget(args)
-      const value = objectValue((await this.callOn(target, 'function () { const s=getComputedStyle(this),r=this.getBoundingClientRect(); return {visible:s.display!=="none"&&s.visibility!=="hidden"&&r.width>0&&r.height>0,enabled:!this.disabled,checked:Boolean(this.checked)}; }')).value)
-      return { result: value }
-    }
-    if (method === 'assets') return { result: await this.evaluate(`Array.from(document.images).slice(0,${Math.max(0, numberArg(args, 'max', 50))}).map(i=>({src:i.currentSrc||i.src,alt:i.alt,width:i.naturalWidth,height:i.naturalHeight}))`) }
-    if (method === 'wait') {
-      const condition = objectValue(args.condition)
-      let command: string[] = []
-      if (condition.kind === 'text') command = ['--text', String(condition.value)]
-      else if (condition.kind === 'textGone') {
-        const deadline = Date.now() + Math.min(Math.max(numberArg(args, 'timeoutMs', 5_000), 1), 30_000)
-        while (String(await this.evaluate('document.body?.innerText ?? ""')).includes(String(condition.value))) {
-          if (Date.now() >= deadline) throw new Error('browser-wait-timeout')
-          await new Promise((resolve) => setTimeout(resolve, 50))
+    if (BROWSER_OBSERVATION_METHODS.has(method)) return { result: await this.observe(args, method !== 'getAXState', method === 'getScreenshot') }
+    if (!BROWSER_ACTION_METHODS.has(method) && method !== 'waitFor') throw new Error('unsupported-browser-method')
+    const observation = this.requireObservation(args)
+    const guard = this.activeGuard!
+    let verified = false
+    let cursor: BrowserRuntimeResult['cursor']
+    if (method === 'waitFor') {
+      await this.waitCondition(args, observation)
+      verified = true
+    } else if (method === 'click') {
+      const count = args.clickCount === undefined ? 1 : args.clickCount
+      const button = args.mouseButton ?? 'left'
+      if (![1, 2, 3].includes(Number(count)) || !['left', 'middle', 'right'].includes(String(button))) throw new Error('invalid-browser-click-options')
+      if (Array.isArray(args.target)) {
+        const [x, y] = await this.point(args.target, observation)
+        await this.dispatchInput({ type: 'mouseMoved', x, y }); guard()
+        try { await this.dispatchInput({ type: 'mousePressed', x, y, button, clickCount: count }) }
+        finally { await this.dispatchInput({ type: 'mouseReleased', x, y, button, clickCount: count }) }
+        cursor = { x, y, label: 'click', kind: 'click' }
+      } else cursor = await this.clickElement(this.element(args.target, observation), Number(count), String(button), guard)
+    } else if (method === 'setValue' || method === 'typeText') {
+      const text = method === 'setValue' ? args.value : args.text
+      if (typeof text !== 'string') throw new Error('browser-text-required')
+      const target = args.target === undefined && method === 'typeText' ? await this.activeElement(observation) : this.element(args.target, observation)
+      if (method === 'setValue') { await this.fillElement(target, text, guard); verified = true }
+      else await this.typeElement(target, text, guard)
+    } else if (method === 'pressKey') {
+      if (typeof args.key !== 'string') throw new Error('browser-key-required')
+      if (args.target !== undefined) await this.focusElement(this.element(args.target, observation))
+      await this.pressKey(args.key, guard)
+    } else if (method === 'setChecked') {
+      if (typeof args.checked !== 'boolean') throw new Error('browser-checked-required')
+      const target = this.element(args.target, observation)
+      const checked = (await this.callOn(target, 'function () { return typeof this.checked === "boolean" ? this.checked : null; }')).value
+      if (typeof checked !== 'boolean') throw new Error('browser-checkbox-required')
+      if (checked !== args.checked) cursor = await this.clickElement(target, 1, 'left', guard)
+      if ((await this.callOn(target, 'function () { return Boolean(this.checked); }')).value !== args.checked) throw new Error('browser-check-postcondition-failed')
+      verified = true
+    } else if (method === 'selectOption') {
+      if (!Array.isArray(args.values) || !args.values.every(value => typeof value === 'string')) throw new Error('browser-option-values-required')
+      const target = this.element(args.target, observation)
+      const result = await this.callOn(target, `function () {
+        if(!(this instanceof HTMLSelectElement)) return 'browser-select-required';
+        if(this.matches(':disabled')) return 'element-disabled';
+        const values=${JSON.stringify(args.values)};
+        if(!this.multiple && values.length!==1) return 'browser-single-select-requires-one-value';
+        if(values.some(value=>!Array.from(this.options).some(option=>option.value===value && !option.disabled))) return 'browser-option-not-found';
+        for(const option of this.options) option.selected=values.includes(option.value);
+        this.dispatchEvent(new Event('input',{bubbles:true}));this.dispatchEvent(new Event('change',{bubbles:true}));
+        return Array.from(this.selectedOptions).map(option=>option.value).sort().join('\\0')===values.slice().sort().join('\\0');
+      }`)
+      if (result.value !== true) throw new Error(typeof result.value === 'string' ? result.value : 'browser-select-postcondition-failed')
+      verified = true
+    } else if (method === 'upload') {
+      if (typeof args.filePath !== 'string') throw new Error('browser-upload-file-required')
+      await this.uploadFile(this.element(args.target, observation), args.filePath, guard)
+      verified = true
+    } else if (method === 'scroll') {
+      const direction = args.direction ?? 'down'
+      const pages = args.pages ?? 1
+      if (!['up', 'down', 'left', 'right'].includes(String(direction)) || typeof pages !== 'number' || !Number.isFinite(pages) || pages <= 0 || pages > 100) throw new Error('invalid-browser-scroll')
+      const viewport = await this.viewport()
+      let x: number, y: number
+      if (Array.isArray(args.target)) [x, y] = await this.point(args.target, observation)
+      else { const box = await this.box(this.element(args.target, observation)); x = box.x + box.width / 2; y = box.y + box.height / 2 }
+      const vertical = direction === 'up' || direction === 'down'
+      const amount = (vertical ? viewport.height : viewport.width) * pages * (direction === 'up' || direction === 'left' ? -1 : 1)
+      await this.dispatchInput({ type: 'mouseWheel', x, y, deltaX: vertical ? 0 : amount, deltaY: vertical ? amount : 0 })
+      cursor = { x, y, label: 'scroll', kind: 'scroll' }
+    } else if (method === 'drag') {
+      const from = await this.point(args.from, observation), to = await this.point(args.to, observation)
+      await this.dispatchInput({ type: 'mouseMoved', x: from[0], y: from[1] }); guard()
+      try {
+        await this.dispatchInput({ type: 'mousePressed', x: from[0], y: from[1], button: 'left', clickCount: 1 })
+        for (let step = 1; step <= 10; step++) {
+          guard()
+          await this.dispatchInput({ type: 'mouseMoved', x: from[0] + (to[0] - from[0]) * step / 10, y: from[1] + (to[1] - from[1]) * step / 10, button: 'left', buttons: 1 })
         }
-      } else if (condition.kind === 'url') command = ['--url', String(condition.value)]
-      else if (condition.kind === 'load') command = ['--load', 'load']
-      else if (condition.kind === 'ref') command = [String(condition.ref), '--state', String(condition.state ?? 'visible')]
-      if (condition.kind !== 'textGone') await this.waitFor(command, numberArg(args, 'timeoutMs', 5_000))
-      const base = { url: this.contents.getURL(), title: this.contents.getTitle(), loading: this.contents.isLoading() }
-      return { result: boolArg(args, 'includeSnapshot') ? { ...base, snapshot: await this.snapshot() } : base }
+      } finally { await this.dispatchInput({ type: 'mouseReleased', x: to[0], y: to[1], button: 'left', clickCount: 1 }) }
+      cursor = { x: to[0], y: to[1], label: 'drag', kind: 'drag' }
+    } else if (method === 'selectText') {
+      if (typeof args.text !== 'string') throw new Error('browser-text-required')
+      if ((args.prefix !== undefined && typeof args.prefix !== 'string') || (args.suffix !== undefined && typeof args.suffix !== 'string')) throw new Error('invalid-browser-selection-context')
+      const selectionType = args.selectionType ?? 'text'
+      if (!['text', 'cursor_before', 'cursor_after'].includes(String(selectionType))) throw new Error('invalid-browser-selection-type')
+      const target = this.element(args.target, observation)
+      await this.focusElement(target)
+      const result = await this.callOn(target, `function () {
+        const text=${JSON.stringify(args.text)}, mode=${JSON.stringify(selectionType)}, prefix=${JSON.stringify(args.prefix ?? '')}, suffix=${JSON.stringify(args.suffix ?? '')};
+        const find=(content)=>{
+          const matches=[];
+          for(let at=content.indexOf(text);at>=0;at=content.indexOf(text,at+1)) {
+            if((!prefix || content.slice(0,at).endsWith(prefix)) && (!suffix || content.slice(at+text.length).startsWith(suffix))) matches.push(at);
+            if(at===content.length)break;
+          }
+          return matches.length===1 ? matches[0] : matches.length ? 'browser-selection-ambiguous' : 'browser-selection-text-not-found';
+        };
+        if(this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
+          const start=find(this.value); if(typeof start!=='number')return start;
+          const end=start+text.length;
+          this.setSelectionRange(mode==='cursor_after'?end:start,mode==='cursor_before'?start:end); return true;
+        }
+        const walker=this.ownerDocument.createTreeWalker(this,NodeFilter.SHOW_TEXT),nodes=[];let node,content='';
+        while(node=walker.nextNode()){nodes.push({node,start:content.length});content+=node.textContent;}
+        const start=find(content);if(typeof start!=='number')return start;const end=start+text.length;
+        const boundary=(at)=>{const match=nodes.find(item=>at<=item.start+item.node.textContent.length);return match?[match.node,at-match.start]:[this,0];};
+        const range=this.ownerDocument.createRange();range.setStart(...boundary(mode==='cursor_after'?end:start));range.setEnd(...boundary(mode==='cursor_before'?start:end));
+        const selection=this.ownerDocument.getSelection();selection.removeAllRanges();selection.addRange(range);return true;
+      }`)
+      if (result.value !== true) throw new Error(typeof result.value === 'string' ? result.value : 'browser-selection-text-not-found')
+      verified = true
     }
-
-    return this.executeExclusive(async (guard) => {
-      if (method === 'press') {
-        if (args.ref !== undefined || args.by !== undefined) await this.focusElement(await this.resolveArgsTarget(args))
-        const key = stringArg(args, 'key')
-        if (!key) return { error: 'key-required' }
-        await this.pressKey(key, guard)
-        return this.complete(method, args, undefined)
-      }
-      if (method === 'scroll') {
-        if (args.ref !== undefined) {
-          const target = await this.resolveRef(args.ref)
-          await this.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: target.backendNodeId }, target.sessionId)
-        }
-        const to = stringArg(args, 'to')
-        if (to) await this.evaluate(`scrollTo(0,${to === 'top' ? '0' : 'document.documentElement.scrollHeight'})`)
-        else await this.dispatchInput({ type: 'mouseWheel', x: 1, y: 1, deltaY: numberArg(args, 'dy'), deltaX: numberArg(args, 'dx') })
-        return this.complete(method, args, undefined)
-      }
-      if (method === 'mouse') {
-        const x = numberArg(args, 'x', -1), y = numberArg(args, 'y', -1)
-        if (x < 0 || y < 0) return { error: 'x-and-y-required' }
-        await this.dispatchInput({ type: 'mouseMoved', x, y })
-        if (stringArg(args, 'action') !== 'move') {
-          const button = stringArg(args, 'button') ?? 'left'
-          await this.dispatchInput({ type: 'mousePressed', x, y, button, clickCount: 1 })
-          await this.dispatchInput({ type: 'mouseReleased', x, y, button, clickCount: 1 })
-        }
-        return this.complete(method, args, undefined)
-      }
-      if (method === 'clickAt') {
-        const x = numberArg(args, 'x', -1), y = numberArg(args, 'y', -1)
-        if (x < 0 || y < 0) return { error: 'x-and-y-required' }
-        await this.dispatchInput({ type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
-        await this.dispatchInput({ type: 'mouseReleased', x, y, button: 'left', clickCount: 1 })
-        return { result: { ok: true } }
-      }
-      const target = await this.resolveArgsTarget(args)
-      const box = await this.box(target)
-      if (method === 'click' || method === 'dblclick' || method === 'hover') {
-        if (method === 'hover') await this.dispatchInput({ type: 'mouseMoved', x: box.x + box.width / 2, y: box.y + box.height / 2 })
-        else await this.clickElement(target, method === 'dblclick' ? 2 : numberArg(args, 'count', 1), stringArg(args, 'button') ?? 'left', guard)
-      } else if (method === 'fill') await this.fillElement(target, stringArg(args, 'text') ?? '', guard)
-      else if (method === 'type') await this.typeElement(target, stringArg(args, 'text') ?? '', guard)
-      else if (method === 'focus') await this.focusElement(target)
-      else if (method === 'select') {
-        const values = Array.isArray(args.values) ? args.values.filter((value): value is string => typeof value === 'string') : []
-        await this.callOn(target, `function () { const values=${JSON.stringify(values)}; for(const option of this.options||[]) option.selected=values.includes(option.value)||values.includes(option.text); this.dispatchEvent(new Event('input',{bubbles:true})); this.dispatchEvent(new Event('change',{bubbles:true})); }`)
-      } else if (method === 'check' || method === 'uncheck') {
-        const checked = (await this.callOn(target, 'function () { return Boolean(this.checked); }')).value === true
-        if ((method === 'check') !== checked) await this.clickElement(target, 1, 'left', guard)
-      } else return { error: 'unsupported' }
-      return this.complete(method, args, box)
-    })
+    guard()
+    const fresh = await this.observe({ observationId: observation.observationId })
+    return { result: { action: { method, status: verified ? 'verified' : 'dispatched' }, observation: fresh }, ...(cursor ? { cursor } : {}) }
   }
 
-  private async complete(method: string, args: BrowserArgs, box?: { x: number; y: number; width: number; height: number }): Promise<BrowserRuntimeResult> {
-    const result = boolArg(args, 'includeSnapshot') ? { ok: true, snapshot: await this.snapshot() } : { ok: true }
-    return { result, cursor: box ? this.cursor(box, targetLabel(method, args), cursorKind(method)) : { label: targetLabel(method, args), kind: cursorKind(method) } }
-  }
 }
 
 export class BrowserRuntimeRegistry {

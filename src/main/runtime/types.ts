@@ -467,6 +467,8 @@ export interface VcsHost {
 // ---------------------------------------------------------------------------
 
 export interface Runtime {
+  /** Optional diagnostics; called only while CATE_PERF is enabled. */
+  samplePerf?(): Promise<import('../../shared/types').RuntimePerfSample>
   readonly id: RuntimeId
   readonly process: ProcessHost
   readonly agentHooks: AgentHookHost

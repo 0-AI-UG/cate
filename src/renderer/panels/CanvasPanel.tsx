@@ -14,9 +14,8 @@ import CanvasNode from '../canvas/CanvasNode'
 import CanvasToolbar from '../canvas/CanvasToolbar'
 import WelcomePage from '../ui/WelcomePage'
 import { NodeErrorBoundary } from '../ui/NodeErrorBoundary'
-import { EmptyCanvasOverlay } from './EmptyCanvasOverlay'
 import type { PanelType, Point, DockLayoutNode, WindowDockState } from '../../shared/types'
-import { useAppStore, useSelectedWorkspace, type PanelPlacement } from '../stores/appStore'
+import { useAppStore, type PanelPlacement } from '../stores/appStore'
 import type { StoreApi } from 'zustand'
 import { useKeepMountedPanelIds } from './keepMountedPanels'
 import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
@@ -31,6 +30,7 @@ import {
 } from './nodeDockRegistry'
 import { getPanelDef } from '../panels/registry'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
+import { useShallow } from 'zustand/react/shallow'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
 import { PanelConnectionLayer } from '../canvas/PanelConnectionLayer'
 
@@ -51,15 +51,17 @@ interface CanvasPanelProps {
 // CanvasNodeWrapper — reads its own node slice so re-renders stay local
 // ---------------------------------------------------------------------------
 
-const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelContent }: {
+const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, workspaceId, renderPanelContent }: {
   nodeId: string
   canvasPanelId: string
+  workspaceId: string
   renderPanelContent?: (panelId: string, nodeId: string, zoomLevel: number) => React.ReactNode
 }) => {
   useRenderCount('CanvasNodeWrapper')
   const node = useCanvasStoreContext((s) => s.nodes[nodeId])
   const isFocused = useCanvasStoreContext((s) => focusedNodeId(s) === nodeId)
-  const currentWorkspace = useSelectedWorkspace()
+  const firstPanelId = node ? activeDockPanelId(node.dockLayout) : undefined
+  const title = useAppStore((s) => firstPanelId ? s.workspaces.find((w) => w.id === workspaceId)?.panels[firstPanelId]?.title : undefined)
   const canvasStoreApi = useCanvasStoreApi()
 
   // ------------------------------------------------------------------
@@ -129,25 +131,22 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
   // Watch the workspace's panels record reactively so a panel that's
   // added later (e.g. async restore) doesn't get pruned by an early run.
   // ------------------------------------------------------------------
-  const workspacePanels = useAppStore(
-    (s) => s.workspaces.find((w) => w.id === useAppStore.getState().selectedWorkspaceId)?.panels,
-  )
-  useEffect(() => {
-    if (!workspacePanels) return
-    const layout = dockStoreApi.getState().zones.center.layout
-    if (!layout) return
-    const collectOrphans = (n: DockLayoutNode): string[] => {
-      if (n.type === 'tabs') return n.panelIds.filter((id) => !workspacePanels[id])
-      const out: string[] = []
-      for (const c of n.children) out.push(...collectOrphans(c))
-      return out
+  const orphans = useAppStore(useShallow((s) => {
+    const panels = s.workspaces.find((w) => w.id === workspaceId)?.panels
+    const missing: string[] = []
+    const visit = (layout: DockLayoutNode): void => {
+      if (layout.type === 'tabs') {
+        for (const id of layout.panelIds) if (panels && !panels[id]) missing.push(id)
+      } else for (const child of layout.children) visit(child)
     }
-    const orphans = collectOrphans(layout)
-    if (orphans.length === 0) return
+    if (node?.dockLayout) visit(node.dockLayout)
+    return missing
+  }))
+  useEffect(() => {
     for (const id of orphans) {
       try { dockStoreApi.getState().undockPanel(id) } catch { /* ignore */ }
     }
-  }, [workspacePanels, dockStoreApi])
+  }, [orphans, dockStoreApi])
 
   // Read the live zoom lazily so this callback identity stays STABLE across
   // zoom frames — re-rendering it on every frame would re-render CanvasNode.
@@ -161,8 +160,6 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
 
   if (!node) return null
 
-  const firstPanelId = activeDockPanelId(node.dockLayout)
-  const firstPanel = firstPanelId ? currentWorkspace?.panels[firstPanelId] : undefined
 
   return (
     <NodeErrorBoundary nodeId={node.id}>
@@ -171,7 +168,7 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, renderPanelConten
         isFocused={isFocused}
         dockStoreApi={dockStoreApi}
         renderPanel={renderPanel}
-        title={firstPanel?.title}
+        title={title}
       />
     </NodeErrorBoundary>
   )
@@ -274,13 +271,6 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
           <WelcomePage workspaceId={workspaceId} />
         )}
 
-        {/* Empty canvas with a folder open (e.g. a freshly-added 2nd canvas):
-            offer one-click loading of a saved layout into this canvas. Self-
-            hides when there are no saved layouts. */}
-        {nodeIds.length === 0 && workspaceRootPath && (
-          <EmptyCanvasOverlay workspaceId={workspaceId} panelId={panelId} canvasApi={store} />
-        )}
-
         <Canvas
           onCreateAtPoint={onCreateAtPoint}
           panelId={panelId}
@@ -301,6 +291,7 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
               key={nId}
               nodeId={nId}
               canvasPanelId={panelId}
+              workspaceId={workspaceId}
               renderPanelContent={renderPanelContent}
             />
           ))}

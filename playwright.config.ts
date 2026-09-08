@@ -7,7 +7,7 @@ export default defineConfig({
   // E2E_SKIP_PERF=1 to run only the functional (smoke/drag/dock) specs.
   testIgnore: [
     ...(process.env.E2E_SKIP_PERF
-      ? ['**/perf-stress.spec.ts', '**/worktree-territory-perf.spec.ts']
+      ? ['**/perf-stress.spec.ts', '**/worktree-territory-perf.spec.ts', '**/workspace-transition-perf.spec.ts']
       : []),
     // Public-internet smoke coverage is intentionally opt-in: it verifies the
     // packaged browser against third-party TLS/DNS/HTTP, but external uptime

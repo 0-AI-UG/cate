@@ -60,6 +60,7 @@ function clearTimer(entry: MonitorEntry): void {
 
 function scheduleNext(entry: MonitorEntry, delayMs: number): void {
   clearTimer(entry)
+  if (activeMonitors.get(entry.workspaceId) !== entry) return
   if (!anyWindowFocused) {
     // Paused while no window has focus — focus handler will re-schedule.
     return
@@ -71,8 +72,10 @@ function scheduleNext(entry: MonitorEntry, delayMs: number): void {
 
 async function tick(entry: MonitorEntry): Promise<void> {
   entry.timer = null
+  if (activeMonitors.get(entry.workspaceId) !== entry) return
   if (!anyWindowFocused) return
   const changed = await pollGitStatus(entry)
+  if (activeMonitors.get(entry.workspaceId) !== entry) return
   if (changed) {
     entry.nextDelayMs = POLL_INTERVAL_MIN_MS
   } else {
@@ -100,7 +103,7 @@ async function pollGitStatus(entry: MonitorEntry): Promise<boolean> {
     const { branch, dirty: isDirty, branches } = await runtime.vcs.monitorStatus(rootPath, { scopeId: workspaceId })
 
     // Stale: a fresher poll started, or the monitor was torn down/restarted.
-    if (entry.pollEpoch !== epoch || !activeMonitors.has(workspaceId)) return false
+    if (entry.pollEpoch !== epoch || activeMonitors.get(workspaceId) !== entry) return false
 
     if (!branch) return false
 
@@ -243,7 +246,7 @@ export function registerHandlers(): void {
       // Coalesce the inbound burst on the next tick before kicking a poll.
       setImmediate(() => {
         entry.fsKickPending = false
-        if (!activeMonitors.has(workspaceId)) return
+        if (activeMonitors.get(workspaceId) !== entry) return
         entry.nextDelayMs = POLL_INTERVAL_MIN_MS
         clearTimer(entry)
         void tick(entry)

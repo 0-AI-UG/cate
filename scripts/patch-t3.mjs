@@ -1,3 +1,4 @@
+import { patchT3Browser } from './patch-t3-browser.mjs'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { patchT3Client } from './patch-t3-client.mjs'
@@ -35,7 +36,7 @@ export function patchT3ProjectBootstrap(source) {
 
 export function patchT3(entryPath) {
   const source = readFileSync(entryPath, 'utf8')
-  const patched = patchT3Changes(patchT3ProjectBootstrap(patchT3Source(source)))
+  const patched = patchT3Browser(patchT3Changes(patchT3ProjectBootstrap(patchT3Source(source))))
   if (patched !== source) writeFileSync(entryPath, patched)
   patchT3Client(path.join(path.dirname(entryPath), 'client', 'assets'))
 }

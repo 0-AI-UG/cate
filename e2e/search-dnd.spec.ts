@@ -1,3 +1,4 @@
+import { openTrustedWorkspace } from './fixtures/workspace'
 // E2E: drag & drop from Search results. Uses synthetic HTML5 DragEvents with a
 // shared DataTransfer (the only way to exercise the application/cate-file MIME
 // payload — Playwright's mouse drag produces an empty dataTransfer). Dispatches
@@ -5,16 +6,12 @@
 // then drop on the target, exercising the full source→target chain.
 
 import { test, expect, type Page } from '@playwright/test'
-import path from 'node:path'
+import { rmSync } from 'node:fs'
+import { createSearchProject } from './fixtures/search-project'
 import { launchApp, closeApp, type LaunchResult } from './fixtures/electron-app'
 
-const REPO_ROOT = path.resolve(__dirname, '..')
-
-async function openSearch(page: Page) {
-  const opened = page.evaluate((root) => window.__cateE2E!.setWorkspaceRoot(root), REPO_ROOT)
-  const trust = page.getByRole('button', { name: 'Trust and open' })
-  if (await trust.isVisible({ timeout: 2_000 }).catch(() => false)) await trust.click()
-  expect(await opened).toBe(true)
+async function openSearch(page: Page, root: string) {
+  await openTrustedWorkspace(page, root)
   await page.evaluate(() => window.__cateE2E!.openSidebarView('search'))
   const input = page.locator('input[aria-label="Search"]')
   await input.waitFor({ state: 'visible', timeout: 30_000 })
@@ -52,16 +49,19 @@ async function dragRowToTarget(page: Page, rowTestId: string, targetSelector: st
 
 test.describe('search drag & drop', () => {
   let app: LaunchResult
+  let fixtureRoot: string
   test.beforeEach(async () => {
+    fixtureRoot = createSearchProject()
     app = await launchApp()
   })
   test.afterEach(async () => {
-    await closeApp(app.electronApp)
+    try { await closeApp(app.electronApp) }
+    finally { rmSync(fixtureRoot, { recursive: true, force: true }) }
   })
 
   test('dragging a file result onto the canvas opens a floating editor', async () => {
     const page = app.mainWindow
-    await openSearch(page)
+    await openSearch(page, fixtureRoot)
     const before = await page.evaluate(() => window.__cateE2E!.nodes().length)
 
     await dragRowToTarget(page, 'search-file', '[data-canvas-panel-id]')
@@ -73,7 +73,7 @@ test.describe('search drag & drop', () => {
 
   test('dragging a match line onto the canvas opens it at that line', async () => {
     const page = app.mainWindow
-    await openSearch(page)
+    await openSearch(page, fixtureRoot)
     const lineNo = Number(
       await page.locator('[data-testid="search-line"]').first().getAttribute('data-line'),
     )
@@ -88,7 +88,7 @@ test.describe('search drag & drop', () => {
 
   test('dragging a file result onto the dock center zone opens an editor tab', async () => {
     const page = app.mainWindow
-    await openSearch(page)
+    await openSearch(page, fixtureRoot)
     const before = await page.evaluate(() => window.__cateE2E!.editorPaths().length)
 
     await dragRowToTarget(page, 'search-file', '[data-dock-zone="center"]')

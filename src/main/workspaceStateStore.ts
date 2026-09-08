@@ -5,7 +5,6 @@
 //   recent-projects.json   { projects: string[] }            recency-ordered list
 //   sidebar.json           { session: SidebarSession|null }  sidebar order + active
 //   remote-workspaces.json { workspaces: RemoteProjectEntry[] } cate-runtime:// restore snapshots
-//   layouts.json           { layouts: Record<string, unknown> } named saved canvas layouts
 //   trusted-projects.json  { projects: string[] }            locators trusted to auto-restore
 //
 // trusted-projects.json lives HERE, in userData, and never in the project — a
@@ -38,7 +37,6 @@ function isRemoteProjectEntry(value: unknown): value is RemoteProjectEntry {
 interface RecentProjectsFile { projects: string[] }
 interface SidebarFile { session: SidebarSession | null }
 interface RemoteWorkspacesFile { workspaces: RemoteProjectEntry[] }
-interface LayoutsFile { layouts: Record<string, unknown> }
 interface TrustedProjectsFile { projects: string[] }
 
 function asObject(parsed: unknown): Record<string, unknown> {
@@ -78,16 +76,6 @@ const remoteWorkspacesStore = createJsonStateFile<RemoteWorkspacesFile>({
       ? o.workspaces.filter(isRemoteProjectEntry)
       : defaults.workspaces
     return { workspaces }
-  },
-})
-
-const layoutsStore = createJsonStateFile<LayoutsFile>({
-  filename: 'layouts.json',
-  defaults: { layouts: {} },
-  normalize: (parsed, defaults) => {
-    const o = asObject(parsed)
-    const layouts = isPlainObject(o.layouts) ? o.layouts : defaults.layouts
-    return { layouts }
   },
 })
 
@@ -140,28 +128,6 @@ export function setRemoteProjects(entries: RemoteProjectEntry[]): void {
   remoteWorkspacesStore.set({ workspaces: Array.isArray(entries) ? entries : [] })
 }
 
-export function saveLayout(name: string, layout: unknown): string[] {
-  layoutsStore.update((cur) => ({ layouts: { ...cur.layouts, [name]: layout } }))
-  return listLayoutNames()
-}
-
-export function listLayoutNames(): string[] {
-  return Object.keys(layoutsStore.get().layouts)
-}
-
-export function loadLayout(name: string): unknown {
-  return layoutsStore.get().layouts[name] ?? null
-}
-
-export function deleteLayout(name: string): string[] {
-  layoutsStore.update((cur) => {
-    const layouts = { ...cur.layouts }
-    delete layouts[name]
-    return { layouts }
-  })
-  return listLayoutNames()
-}
-
 /** Locators (local paths or cate-runtime:// URLs) the user has explicitly
  *  trusted to auto-restore process-bearing panels and load project MCP config. */
 export function getTrustedProjects(): string[] {
@@ -181,13 +147,11 @@ export function setProjectTrusted(locator: string, trusted: boolean): void {
   })
 }
 
-/** Start watching all five files for external edits. `onLayoutsChanged` lets the
- *  caller re-push the native Layouts menu when layouts.json is hand-edited. */
-export function startWatchingWorkspaceState(onLayoutsChanged: (names: string[]) => void): void {
+/** Start watching all four files for external edits. */
+export function startWatchingWorkspaceState(): void {
   recentProjectsStore.startWatching(() => { /* read on demand */ })
   sidebarStore.startWatching(() => { /* read on demand */ })
   remoteWorkspacesStore.startWatching(() => { /* read on demand */ })
-  layoutsStore.startWatching((next) => onLayoutsChanged(Object.keys(next.layouts)))
   trustedProjectsStore.startWatching(() => { /* read on demand */ })
 }
 
@@ -196,6 +160,5 @@ export function flushWorkspaceStateSync(): void {
   recentProjectsStore.flushPendingWritesSync()
   sidebarStore.flushPendingWritesSync()
   remoteWorkspacesStore.flushPendingWritesSync()
-  layoutsStore.flushPendingWritesSync()
   trustedProjectsStore.flushPendingWritesSync()
 }

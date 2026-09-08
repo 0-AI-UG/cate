@@ -1,6 +1,6 @@
 // =============================================================================
 // WindowChrome — the shared overlay chrome every Cate window renders: the Cmd+K
-// command palette, the settings window, the skills + saved-layouts dialogs, and
+// command palette, the settings window, the skills dialog, and
 // the cross-window drag overlay.
 //
 // Mounted by each shell INSIDE its store providers (so the palette's
@@ -9,17 +9,16 @@
 // provider sign-in open settings). Replaces the per-shell copies that previously
 // drifted between the main window and the detached shells.
 //
-// The skills + saved-layouts dialogs live here (not just in MainApp) because the
-// command palette — which every window has — can open them; without them mounted
+// The skills dialog lives here (not just in MainApp) because the
+// command palette — which every window has — can open it; without it mounted
 // here, that action in a detached window would flip the flag and show nothing.
-// Both self-gate on their uiStore `show` flag, so they're inert until opened.
+// It self-gates on its uiStore `show` flag, so it is inert until opened.
 // =============================================================================
 
 import React from 'react'
 import { useUIStore } from '../stores/uiStore'
 import { CommandPalette } from '../ui/CommandPalette'
 import { SettingsWindow } from '../settings/SettingsWindow'
-import { SavedLayoutsDialog } from '../dialogs/SavedLayoutsDialog'
 import { SkillsDialog } from '../dialogs/SkillsDialog'
 import { DragOverlay } from '../drag'
 
@@ -39,7 +38,6 @@ export default function WindowChrome(): React.JSX.Element {
           initialTab={settingsInitialTab ?? undefined}
         />
       )}
-      <SavedLayoutsDialog />
       <SkillsDialog />
       <DragOverlay />
     </>
