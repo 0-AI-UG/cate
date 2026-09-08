@@ -106,8 +106,11 @@ Keep deterministic batches short and inspect unexpected changes before continuin
 Use `var` for reusable bindings; top-level `await` is supported. The session has
 no Node.js, filesystem, network, or DOM evaluation access. Await every action.
 `nodeRepl.write(value)` adds text output. `cate browser reset` clears JavaScript
-bindings without closing tabs. Sessions are isolated per terminal/agent through
-`CATE_CLI_SESSION_ID`; timed-out sessions reset.
+bindings without closing tabs. Reset and timeout cancel queued and pending browser
+actions; input already dispatched cannot be undone. Sessions are isolated per
+terminal/agent through `CATE_CLI_SESSION_ID`; timed-out sessions reset.
+`typeText` resolves current focus before inserting at the current selection,
+including fields inside frames and shadow roots.
 
 `cate browser run 'await tab.getAXStateAndScreenshot();'` returns AX state and
 saves a screenshot to a temporary PNG file. Open the printed path with your image-viewing tool before visual
@@ -116,8 +119,9 @@ returns structured content with base64 image data; base64 text is not visual
 input. The same screenshot output works from `tab.getScreenshot()` in code.
 AX reads remain available in code for deterministic branches and extraction.
 
-Agent actions display a cursor/highlight in the browser panel. User input takes
-control back and cancels pending automation. Responsive viewport size and canvas
+Agent actions display a cursor and click ripples in the browser panel, without
+field bounding-box highlights. Filling and typing animate the cursor at the
+edited field. User input takes control back and cancels pending automation. Responsive viewport size and canvas
 panel size are independent; `resize` applies only to canvas panels with a 400×300
 minimum.
 
