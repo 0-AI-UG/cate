@@ -229,10 +229,12 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   expect(await runCate(controlNode, 'panel', 'list')).toContain(secondDataUrl)
   await runBrowser('await tab.back(); await tab.back();')
 
-  const state = await runCate(controlNode, 'browser', 'observe', '--panel', browserId)
+  const state = await runBrowser('await tab.getAXStateAndScreenshot({disableDiffing:true});')
   expect(state).toContain('Screenshot: ')
   const retiredMcp = await runInCateTerminal(controlNode, cate('browser', 'mcp'))
   expect(retiredMcp.code).toBe(2)
+  const retiredObserve = await runInCateTerminal(controlNode, cate('browser', 'observe'))
+  expect(retiredObserve.code).toBe(2)
   expect(state).toContain('Form Ready')
   expect(state).toContain('••••••••')
   expect(state).not.toContain('never-expose-me')

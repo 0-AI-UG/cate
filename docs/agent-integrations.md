@@ -61,9 +61,10 @@ session. There is no public DOM evaluation or selector/argv compatibility layer.
 The API contract and model-facing documentation live in
 `src/shared/browserAutomation.ts`.
 
-Terminal agents use `cate browser observe`, `cate browser run '<JavaScript>'`
-and `cate browser reset`. Observe binds the selected tab as `tab` and emits one
-full paired AX/screenshot observation; `--panel` chooses a specific panel.
+Terminal agents use `cate browser run '<JavaScript>'` and `cate browser reset`.
+Bind with `var tab = await cua.getTab({panelId:"..."})`; request observations
+inside code with `tab.getAXState()`, `tab.getScreenshot()`, or
+`tab.getAXStateAndScreenshot()`. `--panel` chooses the default browser panel.
 `CATE_CLI_SESSION_ID` isolates persistent bindings by terminal/agent. The `cua`
 object offers `getTab`, `createBrowserTab`, and `listTabs`; a bound tab offers
 accessibility observations, viewport screenshots, input actions, explicit waits,

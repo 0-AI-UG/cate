@@ -75,12 +75,9 @@ export const BROWSER_READ_METHODS = new Set([...BROWSER_OBSERVATION_METHODS, 'li
 
 export const BROWSER_API_DOCUMENTATION = `Cate browser control runs JavaScript in a persistent, isolated session. No Node.js, filesystem, network, DOM evaluation, or browser engine access is exposed. Use only cua and output helpers.
 
-CLI shortcut: cate browser observe [--panel <id>] returns full AX state and a screenshot path, and binds tab for later code. Open the PNG with your image-viewing tool to see pixels; shell text/base64 is not visual input.
-
 Start with: var tab = await cua.getTab({panelId: "..."});
 Or: var tab = await cua.createBrowserTab("https://example.com");
 await cua.listTabs(); // discover panelId and tabId
-Use cua.getTab({panelId:"...", screenshot:true}) to bind with AX and screenshot together.
 Tab bindings pin panel and tab; they never follow a user's tab switch.
 
 Observation methods return structured observations and emit their state/images automatically:

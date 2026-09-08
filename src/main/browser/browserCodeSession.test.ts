@@ -36,17 +36,6 @@ const observation = (id = 'o1', image = false) => ({ panelId: 'p1', tabId: 't1',
 
 beforeEach(() => { mocks.windows.length = 0 })
 describe('browser code session', () => {
-  it('binds observe with a single paired observation and emits the actual image', async () => {
-    const sessions = new BrowserCodeSessions()
-    const invoke = vi.fn(async (method: string) => method.endsWith('getTab')
-      ? { panelId: 'p1', tabId: 't1' } : observation('paired', true))
-    const result = await sessions.run('a', 'var tab = await cua.getTab({screenshot:true});', invoke)
-    expect(invoke.mock.calls.map(([method]) => method)).toEqual(['cate.browser.getTab', 'cate.browser.getAXStateAndScreenshot'])
-    expect(result.content).toHaveLength(2)
-    expect(result.content[1]).toMatchObject({ type: 'image', data: 'aGVsbG8=' })
-    sessions.dispose()
-  })
-
   it('keeps AX targeting and diff baselines separate from screenshot coordinates', async () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async (method: string, _args?: Record<string, unknown>) => {

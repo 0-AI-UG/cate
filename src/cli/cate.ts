@@ -283,10 +283,6 @@ function reviewRequest(args: string[], flags: Flags): Request {
 
 function browserRequest(args: string[], flags: Flags): Request {
   const command = need(args[0], 'browser command')
-  if (command === 'observe') {
-    exact(args.slice(1), 0)
-    return withPanel({ method: 'cate.browser.run', args: { code: 'var tab = await cua.getTab({screenshot:true});' } }, flags.panel, 'browser')
-  }
   if (command === 'run') {
     const code = need(exact(args.slice(1), 1)[0], 'JavaScript code')
     return withPanel({ method: 'cate.browser.run', args: { code } }, flags.panel, 'browser')
@@ -295,7 +291,7 @@ function browserRequest(args: string[], flags: Flags): Request {
     exact(args.slice(1), 0)
     return { method: 'cate.browser.reset', args: {} }
   }
-  throw new UsageError('Use cate browser run <JavaScript>, cate browser observe or cate browser reset. See cate browser --help.')
+  throw new UsageError('Use cate browser run <JavaScript> or cate browser reset. See cate browser --help.')
 }
 
 export function buildRequest(positionals: string[], flags: Flags): Request {
@@ -564,7 +560,6 @@ export function formatHuman(method: string, value: unknown): string {
 const USAGE = `Usage:
   cate browser run <JavaScript> [--panel <id>]
   cate browser reset
-  cate browser observe [--panel <id>]
   cate panel list|create|set|current|clear|close [args]
   cate editor open <path[:line[:column]]>
   cate terminal read|type|press [args] [--panel <id>]
@@ -578,7 +573,6 @@ Global flags: --panel <id> --json -h|--help --version`
 
 const BROWSER_USAGE = `Usage: cate browser run <JavaScript> [--panel <id>]
        cate browser reset
-       cate browser observe [--panel <id>]   (AX state and screenshot; binds tab)
 
 ${BROWSER_API_DOCUMENTATION}`
 

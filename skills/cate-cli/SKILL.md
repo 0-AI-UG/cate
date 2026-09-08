@@ -40,12 +40,12 @@ panel. If a selected panel was closed, select another panel before continuing.
 
 Browser control uses persistent JavaScript with the `cua` tab API. The old argv
 actions, selectors, page evaluation, and revisioned string refs have been removed.
-Start with a full accessibility observation and screenshot. This creates or
-replaces the persistent `tab` binding for subsequent code:
+Start by binding a tab to get its accessibility state, then request a screenshot
+when visual context is useful:
 
 ```bash
-cate browser observe --panel <panel-id>
-cate browser run 'await tab.getAXState();'
+cate browser run 'var tab = await cua.getTab({panelId:"<full-panel-id>"});'
+cate browser run 'await tab.getAXStateAndScreenshot();'
 ```
 
 Use full panel IDs inside JavaScript. `--panel <id>` supports short IDs as an
@@ -109,12 +109,11 @@ no Node.js, filesystem, network, or DOM evaluation access. Await every action.
 bindings without closing tabs. Sessions are isolated per terminal/agent through
 `CATE_CLI_SESSION_ID`; timed-out sessions reset.
 
-`cate browser observe` returns full AX state and saves a screenshot to a temporary
-PNG file. Open the printed path with your image-viewing tool before visual
+`cate browser run 'await tab.getAXStateAndScreenshot();'` returns AX state and
+saves a screenshot to a temporary PNG file. Open the printed path with your image-viewing tool before visual
 reasoning. Shell output cannot itself attach pixels to the model. `--json`
 returns structured content with base64 image data; base64 text is not visual
 input. The same screenshot output works from `tab.getScreenshot()` in code.
-`cua.getTab({panelId:"...", screenshot:true})` binds with a paired observation.
 AX reads remain available in code for deterministic branches and extraction.
 
 Agent actions display a cursor/highlight in the browser panel. User input takes

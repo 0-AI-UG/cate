@@ -22,11 +22,8 @@ import {
 const flags: Flags = { json: false, help: false, version: false, foreground: false }
 
 describe('browser code CLI', () => {
-  it('observes with one paired read and leaves a reusable tab binding', () => {
-    expect(buildRequest(['browser', 'observe'], flags)).toEqual({
-      method: 'cate.browser.run', args: { code: 'var tab = await cua.getTab({screenshot:true});' },
-    })
-    expect(() => buildRequest(['browser', 'observe', 'extra'], flags)).toThrow(UsageError)
+  it('rejects the removed observe shortcut', () => {
+    expect(() => buildRequest(['browser', 'observe'], flags)).toThrow(UsageError)
   })
 
   it('passes one code cell intact and supports reset', () => {
@@ -344,18 +341,20 @@ describe('output and run loop', () => {
     }
   }
 
-  it('observe writes an image artifact beside AX output and help omits MCP', async () => {
+  it('run writes an image artifact beside AX output and help omits removed commands', async () => {
     const deps = runDeps({ result: { content: [
       { type: 'text', text: 'button Save [42]' }, { type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' },
     ] } })
     const writeImage = vi.fn(async () => '/tmp/observation.png')
-    expect(await run(['browser', 'observe'], { ...deps, writeImage })).toBe(0)
+    expect(await run(['browser', 'run', 'await tab.getAXStateAndScreenshot();'], { ...deps, writeImage })).toBe(0)
     expect(writeImage).toHaveBeenCalledWith('aGVsbG8=')
     expect(deps.out.join('\n')).toContain('/tmp/observation.png')
     expect(deps.out.join('\n')).toContain('button Save [42]')
     const help = runDeps()
     await run(['browser', '--help'], help)
-    expect(help.out.join('\n')).toContain('cate browser observe')
+    expect(help.out.join('\n')).not.toContain('cate browser observe')
+    expect(help.out.join('\n')).toContain('cate browser run')
+    expect(help.out.join('\n')).toContain('cate browser reset')
     expect(help.out.join('\n')).not.toContain('cate browser mcp')
   })
 
