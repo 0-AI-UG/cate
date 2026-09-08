@@ -91,3 +91,20 @@ it('releases temporary CDP handles after every operation while numeric IDs stay 
   expect(await execute('click', { target: 999, observationId: observation.observationId })).toHaveProperty('error')
   expect(contents.debugger.sendCommand.mock.calls.filter(([method]) => method === 'Runtime.releaseObjectGroup')).toHaveLength(before + 2)
 })
+
+it.each(['setValue', 'typeText'])('returns positional typing feedback for %s without exposing entered text', async method => {
+  const { observe, execute } = await setupGuest()
+  const observation = await observe()
+  const result = await execute(method, { observationId: observation.observationId, target: observation.elements[0].id, value: 'private text', text: 'private text' })
+  expect(result).toMatchObject({ cursor: { x: 70, y: 40, kind: 'type', label: method } })
+  expect(JSON.stringify(result.cursor)).not.toContain('private text')
+})
+
+it('keeps a successful edit when the field no longer has cursor geometry', async () => {
+  const { observe, execute } = await setupGuest(async method => {
+    if (method === 'DOM.getBoxModel') throw new Error('Node has been removed')
+  })
+  const observation = await observe()
+  expect(await execute('setValue', { observationId: observation.observationId, target: observation.elements[0].id, value: 'text' }))
+    .toMatchObject({ result: { action: { status: 'verified' } } })
+})

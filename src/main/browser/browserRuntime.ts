@@ -892,6 +892,10 @@ class BrowserTargetRuntime {
       const target = args.target === undefined && method === 'typeText' ? await this.activeElement(observation) : this.element(args.target, observation)
       if (method === 'setValue') { await this.fillElement(target, text, guard); verified = true }
       else await this.typeElement(target, text, guard)
+      // Measure after editing so focus/scroll/layout changes are reflected.
+      // A removed field must not turn a successful edit into a feedback error.
+      const box = await this.box(target, false).catch(() => undefined)
+      if (box) cursor = this.cursor(box, method, 'type')
     } else if (method === 'pressKey') {
       if (typeof args.key !== 'string') throw new Error('browser-key-required')
       if (args.target !== undefined) await this.focusElement(this.element(args.target, observation))

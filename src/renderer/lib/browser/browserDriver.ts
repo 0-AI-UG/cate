@@ -249,7 +249,7 @@ export async function handleBrowserMethod(
   }
 
   if (BROWSER_ACTION_METHODS.has(name)) emitAgentCursor(panel.id, {
-    kind: name === 'pressKey' ? 'press' : name === 'scroll' ? 'scroll' : 'move', label: name,
+    kind: name === 'setValue' || name === 'typeText' ? 'type' : name === 'pressKey' ? 'press' : name === 'scroll' ? 'scroll' : 'move', label: name,
   })
   const response = await control(workspaceId, panel, webview, { op: 'execute', method: name, args })
   if (response.error) return { ok: false, error: response.error, recovery: response.recovery }

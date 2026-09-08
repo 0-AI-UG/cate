@@ -214,3 +214,26 @@ for (const destination of ['closed-shadow', 'frame']) {
     expect(await evaluate('window.focusTarget.value')).toBe('HELLO')
   })
 }
+
+for (const method of ['setValue', 'typeText']) {
+  test(`${method} renders typing feedback at the field without a preceding click`, async () => {
+    if (method === 'typeText') await evaluate("document.querySelector('#name').focus()")
+    const result = method === 'setValue'
+      ? await act(page, browser, method, 'Name', { value: 'private text' })
+      : await activeAction(page, browser, method, { text: 'private text' })
+    expect(result).toMatchObject({ ok: true })
+    const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
+    const cursor = surface.locator('[data-agent-cursor]')
+    await expect(cursor).toBeVisible()
+    await expect(cursor.locator('svg')).toHaveCSS('animation-name', 'cate-agent-pointer-type')
+    const field = await evaluate(`(() => {const r=document.querySelector('#name').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,width:innerWidth};})()`)
+    const guest = await surface.locator('webview').boundingBox()
+    expect(guest).not.toBeNull()
+    await expect.poll(async () => {
+      const pointer = await cursor.boundingBox()
+      const scale = guest!.width / field.width
+      return Math.max(Math.abs(pointer!.x - (guest!.x + field.x * scale)), Math.abs(pointer!.y - (guest!.y + field.y * scale)))
+    }).toBeLessThan(2)
+    await page.screenshot({ path: test.info().outputPath(`${method}-cursor.png`) })
+  })
+}
