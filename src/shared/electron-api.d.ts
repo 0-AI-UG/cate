@@ -663,7 +663,6 @@ export interface ElectronAPI {
       kind: 'move' | 'click' | 'dblclick' | 'hover' | 'drag' | 'scroll' | 'type' | 'press'
       x?: number
       y?: number
-      rect?: [number, number, number, number]
       label: string
     }
     downloads?: import('./types').BrowserDownloadEntry[]

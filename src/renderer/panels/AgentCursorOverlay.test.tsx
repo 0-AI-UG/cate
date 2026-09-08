@@ -40,7 +40,6 @@ describe('AgentCursorOverlay', () => {
         kind: 'click',
         x: 80,
         y: 60,
-        rect: [20, 30, 100, 40],
         label: 'click',
       })
     })
@@ -62,7 +61,6 @@ describe('AgentCursorOverlay', () => {
         kind: 'click',
         x: 40,
         y: 30,
-        rect: [20, 20, 80, 24],
         label: 'click @s2e5',
       })
     })
@@ -81,7 +79,6 @@ describe('AgentCursorOverlay', () => {
         kind: 'type',
         x: 60,
         y: 50,
-        rect: [25, 35, 120, 30],
         label: 'type "private value"',
       })
     })

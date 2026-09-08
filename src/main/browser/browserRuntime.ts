@@ -17,7 +17,6 @@ export interface BrowserRuntimeResult {
   cursor?: {
     x?: number
     y?: number
-    rect?: [number, number, number, number]
     label: string
     kind: 'move' | 'click' | 'dblclick' | 'hover' | 'drag' | 'scroll' | 'type' | 'press'
   }
@@ -478,7 +477,6 @@ class BrowserTargetRuntime {
     return {
       x: box.x + box.width / 2,
       y: box.y + box.height / 2,
-      rect: [box.x, box.y, box.width, box.height],
       label,
       kind,
     }

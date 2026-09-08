@@ -29,9 +29,6 @@ export interface AgentCursorEvent {
    *  actions (a `press` with no ref goes to whatever holds focus). */
   x?: number
   y?: number
-  /** Target box in guest viewport pixels: [left, top, width, height]. Drawn as
-   *  the highlight the pointer is acting on. */
-  rect?: [number, number, number, number]
   /** Drag/scroll destination, when the action moves from x,y to here. */
   toX?: number
   toY?: number

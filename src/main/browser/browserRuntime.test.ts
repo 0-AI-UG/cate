@@ -98,6 +98,7 @@ it.each(['setValue', 'typeText'])('returns positional typing feedback for %s wit
   const result = await execute(method, { observationId: observation.observationId, target: observation.elements[0].id, value: 'private text', text: 'private text' })
   expect(result).toMatchObject({ cursor: { x: 70, y: 40, kind: 'type', label: method } })
   expect(JSON.stringify(result.cursor)).not.toContain('private text')
+  expect(result.cursor).not.toHaveProperty('rect')
 })
 
 it('keeps a successful edit when the field no longer has cursor geometry', async () => {
