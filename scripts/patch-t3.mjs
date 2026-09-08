@@ -33,9 +33,17 @@ export function patchT3ProjectBootstrap(source) {
   return source.slice(0, from) + '\t\t' + marker + source.slice(to)
 }
 
+// Remove the retired Cate-only injection from already-patched installations.
+// Fresh upstream bundles are unchanged; other configured MCP servers survive.
+export function removeLegacyBrowserMcp(source) {
+  return source
+    .replace(/\n\t\t\/\* cate: browser MCP \*\/[\s\S]*?(?=\n\t\tyield\* annotateCurrentSpan)/, '')
+    .replace(/\n\t\tif \(process\.env\.CATE_API && process\.env\.CATE_TOKEN\) \{\n\t\t\truntimeInput\.environment =[^\n]*\n\t\t\truntimeInput\.appServerArgs = \[\.\.\.runtimeInput\.appServerArgs \?\? \[\],[\s\S]*?mcp_servers\.cate_browser[\s\S]*?\n\t\t\}\n(?=\n\t\tconst sessionScope)/, '')
+}
+
 export function patchT3(entryPath) {
   const source = readFileSync(entryPath, 'utf8')
-  const patched = patchT3Changes(patchT3ProjectBootstrap(patchT3Source(source)))
+  const patched = removeLegacyBrowserMcp(patchT3Changes(patchT3ProjectBootstrap(patchT3Source(source))))
   if (patched !== source) writeFileSync(entryPath, patched)
   patchT3Client(path.join(path.dirname(entryPath), 'client', 'assets'))
 }

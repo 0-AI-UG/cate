@@ -38,73 +38,92 @@ panel. If a selected panel was closed, select another panel before continuing.
 
 ## Browser workflow
 
-Inspect, act, wait, then inspect again:
+Browser control uses persistent JavaScript with the `cua` tab API. The old argv
+actions, selectors, page evaluation, and revisioned string refs have been removed.
+Start by binding a tab to get its accessibility state, then request a screenshot
+when visual context is useful:
 
 ```bash
-cate panel set 1a2b3c4d
-cate browser open https://example.com
-cate browser snapshot -i
-cate browser fill @s1e2 user@example.com
-cate browser click @s1e3
-cate browser wait --url '**/dashboard'
-cate browser snapshot -i
+cate browser run 'var tab = await cua.getTab({panelId:"<full-panel-id>"});'
+cate browser run 'await tab.getAXStateAndScreenshot();'
 ```
 
-Page commands after `cate browser` use Cate's native argv grammar:
+Use full panel IDs inside JavaScript. `--panel <id>` supports short IDs as an
+override for CLI panel resolution. Discover tabs with `await cua.listTabs()`.
+Create a tab with `await cua.createBrowserTab("https://example.com")`, or pass
+`{panelId:tab.panelId}` as the second argument to choose its panel. Pass
+`{newPanel:true}` to create a separate panel; Cate also creates one when needed.
+Bindings pin both panel and tab; they never silently follow a user's tab switch.
+
+Use numeric IDs from the latest AX observation. For example, after observing a form
+containing textbox 17 and button 42:
 
 ```bash
-cate browser snapshot -i
-cate browser get text @s1e4
-cate browser find role button click
-cate browser fill '#email' user@example.com
-cate browser press Enter
-cate browser scroll down 600
-cate browser screenshot --full
-cate browser console
-cate browser errors
+cate browser run 'await tab.setValue(17,"user@example.com"); await tab.click(42); await tab.waitFor({url:"**/dashboard"});'
+cate browser run 'await tab.getAXStateAndScreenshot();'
 ```
 
-Cate defines `browser open` as opening a new tab. Use `navigate` only when replacing the
-active tab is intentional:
+Do not guess IDs or coordinates. Observations contain `kind`, `observationId`,
+`documentId`, URL, title and viewport. AX observations (`kind:"ax"`) also contain
+accessibility state and structured elements with role, name, value and states.
+`getAXState()` normally emits a concise diff; `getAXState({disableDiffing:true})`
+emits the full tree. `getScreenshot()` returns only viewport pixels/identity
+(`kind:"image"`, empty state/elements), avoiding an AX scan. It does not refresh
+numeric IDs. `getAXStateAndScreenshot()` refreshes both together. The SDK keeps
+the last AX observation for numeric targets and the latest visual observation
+for coordinates. `{emit:false}` suppresses automatic output. `{profile:true}`
+adds phase timings, image bytes and estimated retained-cache usage. Each code
+cell retains at most 16 million serialized observation characters, including
+`emit:false`; split long screenshot loops across cells.
 
-```bash
-cate browser open https://second.example
-cate browser navigate https://replacement.example
-cate browser new-panel https://separate.example
+The SDK carries the latest observation through each action and emits fresh state.
+Numeric IDs persist within one document; navigation requires fresh IDs. Coordinate
+actions use `[x,y]` in observed viewport CSS pixels and reject stale viewport
+coordinates. A dispatched click is not proof that a business operation completed:
+use `waitFor` or inspect the resulting state.
+
+```javascript
+await tab.click(42);                         // or [x,y]
+await tab.setValue(17, "replacement");
+await tab.typeText("insert at selection");
+await tab.pressKey("Return");
+await tab.selectText(17, "text", {selectionType:"cursor_after"});
+await tab.scroll([400,300], "down", 1);
+await tab.drag([100,100], [300,200]);
+await tab.setChecked(42, true);
+await tab.selectOption(42, ["DE"]);
+await tab.upload(42, "/authorized/file");
+await tab.waitFor({text:"Saved"});
+await tab.waitFor({element:42, state:"enabled"});
+await tab.goto("https://example.com");
+await tab.back(); await tab.forward(); await tab.reload();
+await tab.setViewport({width:1280,height:800});
+await tab.resize({width:800,height:600});
+await tab.downloads(); await tab.close();
 ```
 
-Cate owns browser identity and presentation. Native session/CDP switching,
-native tab management, upload/download paths, batch, setup, servers, and browser
-startup flags are unavailable. Use Cate's lifecycle commands:
+Keep deterministic batches short and inspect unexpected changes before continuing.
+Use `var` for reusable bindings; top-level `await` is supported. The session has
+no Node.js, filesystem, network, or DOM evaluation access. Await every action.
+`nodeRepl.write(value)` adds text output. `cate browser reset` clears JavaScript
+bindings without closing tabs. Reset and timeout cancel queued and pending browser
+actions; input already dispatched cannot be undone. Sessions are isolated per
+terminal/agent through `CATE_CLI_SESSION_ID`; timed-out sessions reset.
+`typeText` resolves current focus before inserting at the current selection,
+including fields inside frames and shadow roots.
 
-```bash
-cate browser tabs
-cate browser new-tab [url]
-cate browser select-tab <id>
-cate browser close-tab <id>
-cate browser current
-cate browser back
-cate browser forward
-cate browser reload
-cate browser downloads
-cate browser viewport desktop
-cate browser viewport mobile
-cate browser viewport 1024 768
-cate browser viewport compact
-cate browser resize 640 480
-```
+`cate browser run 'await tab.getAXStateAndScreenshot();'` returns AX state and
+saves a screenshot to a temporary PNG file. Open the printed path with your image-viewing tool before visual
+reasoning. Shell output cannot itself attach pixels to the model. `--json`
+returns structured content with base64 image data; base64 text is not visual
+input. The same screenshot output works from `tab.getScreenshot()` in code.
+AX reads remain available in code for deterministic branches and extraction.
 
-The default compact viewport renders at 75% scale. Responsive viewport size and
-canvas panel size are independent. `resize` applies only to canvas panels and
-has a 400×300 minimum.
-
-Snapshots come from Chromium's accessibility tree. Cate wraps refs
-with an observation revision, for example `@s1e4`. A new snapshot invalidates
-older refs; take a fresh snapshot instead of retrying `stale-ref`.
-
-Agent actions display a persistent cursor/highlight in the browser panel. User
-input immediately takes control back. Screenshots are saved to a Cate-managed
-temporary path and the CLI prints that path.
+Agent actions display a cursor and click ripples in the browser panel, without
+field bounding-box highlights. Filling and typing animate the cursor at the
+edited field. User input takes control back and cancels pending automation. Responsive viewport size and canvas
+panel size are independent; `resize` applies only to canvas panels with a 400×300
+minimum.
 
 ## Other surfaces
 

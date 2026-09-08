@@ -1,13 +1,13 @@
+import { openTrustedWorkspace } from './fixtures/workspace'
 // E2E: the VS Code-style content Search view, end-to-end against the real
-// ripgrep engine. Points the workspace at the repo, opens the Search view, and
+// ripgrep engine. Points the workspace at an isolated fixture project, opens the Search view, and
 // exercises query, match options, filters, dismissal, keyboard nav, and
 // open-at-match.
 
 import { test, expect, type Page } from '@playwright/test'
-import path from 'node:path'
+import { rmSync } from 'node:fs'
+import { createSearchProject } from './fixtures/search-project'
 import { launchApp, closeApp, type LaunchResult } from './fixtures/electron-app'
-
-const REPO_ROOT = path.resolve(__dirname, '..')
 
 type Snapshot = {
   query: string
@@ -29,12 +29,9 @@ type Snapshot = {
 const snap = (page: Page): Promise<Snapshot> =>
   page.evaluate(() => window.__cateE2E!.getSearchSnapshot() as unknown) as Promise<Snapshot>
 
-/** Open the Search view rooted at the repo; returns the query input locator. */
-async function openSearch(page: Page) {
-  const opened = page.evaluate((root) => window.__cateE2E!.setWorkspaceRoot(root), REPO_ROOT)
-  const trust = page.getByRole('button', { name: 'Trust and open' })
-  if (await trust.isVisible({ timeout: 2_000 }).catch(() => false)) await trust.click()
-  expect(await opened).toBe(true)
+/** Open the Search view rooted at the fixture project; returns the query input locator. */
+async function openSearch(page: Page, root: string) {
+  await openTrustedWorkspace(page, root)
   await page.evaluate(() => window.__cateE2E!.openSidebarView('search'))
   const input = page.locator('input[aria-label="Search"]')
   await input.waitFor({ state: 'visible', timeout: 30_000 })
@@ -64,17 +61,20 @@ async function search(page: Page, input: ReturnType<Page['locator']>, query: str
 
 test.describe('content search', () => {
   let app: LaunchResult
+  let fixtureRoot: string
 
   test.beforeEach(async () => {
+    fixtureRoot = createSearchProject()
     app = await launchApp()
   })
   test.afterEach(async () => {
-    await closeApp(app.electronApp)
+    try { await closeApp(app.electronApp) }
+    finally { rmSync(fixtureRoot, { recursive: true, force: true }) }
   })
 
-  test('searches the repo, highlights matches, and opens a result', async () => {
+  test('searches the fixture project, highlights matches, and opens a result', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await input.fill('registerSearchHandlers')
 
     await expect(page.getByText(/results in .* files?/i)).toBeVisible({ timeout: 30_000 })
@@ -89,16 +89,15 @@ test.describe('content search', () => {
 
   test('shows "No results" for a query that matches nothing', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await input.fill('zzz_no_such_token_qwerty_12345')
     await expect(page.getByText('No results')).toBeVisible({ timeout: 30_000 })
   })
 
   test('regex toggle changes literal vs pattern matching', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
-    // Built at runtime so the contiguous literal isn't in this source file
-    // (otherwise ripgrep would self-match it during the literal search).
+    const input = await openSearch(page, fixtureRoot)
+    // Fixture files contain both hook names, but never the literal alternation.
     const pattern = ['useState', 'useEffect'].join('|')
     await search(page, input, pattern) // literal — no such contiguous text
     expect((await snap(page)).totalMatches).toBe(0)
@@ -113,7 +112,7 @@ test.describe('content search', () => {
 
   test('invalid regex surfaces an inline error', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await page.locator('button[aria-label="Use Regular Expression"]').click()
     await search(page, input, '(unclosed')
     expect((await snap(page)).error).toBeTruthy()
@@ -122,7 +121,7 @@ test.describe('content search', () => {
 
   test('whole-word toggle narrows matches', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'use')
     const loose = (await snap(page)).totalMatches
     expect(loose).toBeGreaterThan(0)
@@ -137,7 +136,7 @@ test.describe('content search', () => {
 
   test('match-case toggle flips state and re-runs', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'usestate') // lowercase
     const loose = (await snap(page)).totalMatches
 
@@ -151,7 +150,7 @@ test.describe('content search', () => {
 
   test('files-to-include glob restricts results', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'useState')
 
     await page.locator('button[aria-label="Toggle search details"]').click()
@@ -165,7 +164,7 @@ test.describe('content search', () => {
 
   test('files-to-exclude glob removes results', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'useState')
     expect((await snap(page)).filePaths.some((p) => p.endsWith('.tsx'))).toBe(true)
 
@@ -178,9 +177,11 @@ test.describe('content search', () => {
 
   test('"use ignore files" gear toggle flips and re-runs', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'registerSearchHandlers')
-    expect((await snap(page)).respectIgnore).toBe(true)
+    const initial = await snap(page)
+    expect(initial.respectIgnore).toBe(true)
+    expect(initial.filePaths.some((file) => file.includes('ignored'))).toBe(false)
 
     await page.locator('button[aria-label="Toggle search details"]').click()
     const prior = (await snap(page)).searchId
@@ -189,34 +190,36 @@ test.describe('content search', () => {
     const s = await snap(page)
     expect(s.respectIgnore).toBe(false)
     expect(s.error).toBeNull()
+    expect(s.totalMatches).toBeGreaterThan(initial.totalMatches)
+    expect(s.filePaths.some((file) => file.includes('ignored'))).toBe(true)
   })
 
   test('dismissing a match decrements the count', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'registerSearchHandlers')
     expect((await snap(page)).totalMatches).toBeGreaterThan(0)
 
     const line = page.locator('[data-testid="search-line"]').first()
     await line.hover()
-    await line.locator('button[title="Dismiss match"]').click()
+    await line.getByRole('button', { name: 'Dismiss match' }).click()
     await expect.poll(async () => (await snap(page)).dismissedLines).toBe(1)
   })
 
   test('dismissing a file removes it from results', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'registerSearchHandlers')
 
     const file = page.locator('[data-testid="search-file"]').first()
     await file.hover()
-    await file.locator('button[title="Dismiss file"]').click()
+    await file.getByRole('button', { name: 'Dismiss file' }).click()
     await expect.poll(async () => (await snap(page)).dismissedFiles).toBe(1)
   })
 
   test('keyboard: ArrowDown + Enter opens the focused match', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'registerSearchHandlers')
 
     const tree = page.locator('[data-testid="search-results"]')
@@ -231,7 +234,7 @@ test.describe('content search', () => {
 
   test('clicking a match opens the editor at that line', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'registerSearchHandlers')
 
     const line = page.locator('[data-testid="search-line"]').first()
@@ -245,7 +248,7 @@ test.describe('content search', () => {
 
   test('clear button resets the query and results', async () => {
     const page = app.mainWindow
-    const input = await openSearch(page)
+    const input = await openSearch(page, fixtureRoot)
     await search(page, input, 'useState')
     expect((await snap(page)).fileCount).toBeGreaterThan(0)
 

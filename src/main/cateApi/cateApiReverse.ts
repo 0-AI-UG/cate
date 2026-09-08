@@ -1,3 +1,5 @@
+import { browserCodeSessions } from '../browser/browserCodeSession'
+import { randomUUID } from 'node:crypto'
 import http from 'http'
 import { Duplex } from 'stream'
 import log from '../logger'
@@ -51,6 +53,7 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 export function createCateApiReverse(session: ReverseSession): CateApiReverseEndpoint {
   const duplexes = new Set<Duplex>()
   const panelTargets = new Map<string, string>()
+  const codePrefix = `browser:${session.workspaceId}:${randomUUID()}:`
 
   function panelTargetKey(workspaceId: string, clientId: string): string {
     return `${workspaceId}\0${clientId}`
@@ -172,9 +175,10 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
             ? 'review'
           : undefined
       const usesSelectedPanel = targetType
+        && method !== 'cate.browser.run' && method !== 'cate.browser.reset'
         && selectedPanelId
         && args.panelId === undefined
-        && !(method === 'cate.browser.open' && args.newPanel === true)
+        && !(method === 'cate.browser.createTab' && args.newPanel === true)
       if (usesSelectedPanel) {
         const panel = getWindowPanels().find(
           (candidate) => candidate.panelId === selectedPanelId && candidate.workspaceId === session.workspaceId,
@@ -191,6 +195,24 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
         }
       }
 
+      if (method === 'cate.browser.run' || method === 'cate.browser.reset') {
+        const denied = authorizeCateInvoke(method, args)
+        if (denied) { send(200, { result: denied }); return }
+        if (!clientId) { send(200, { result: { error: 'cli-session-unavailable' } }); return }
+        const key = `${codePrefix}cli:${clientId}`
+        if (method === 'cate.browser.reset') {
+          await browserCodeSessions.reset(key)
+          send(200, { result: { content: [{ type: 'text', text: 'Browser code session reset.' }] } })
+          return
+        }
+        if (typeof args.code !== 'string') { send(200, { result: { error: 'code-required' } }); return }
+        const defaultPanel = args.panelId ?? selectedPanelId
+        const result = await browserCodeSessions.run(key, args.code, (nestedMethod, nestedArgs) => dispatchCateInvoke(invokeScope, nestedMethod,
+          defaultPanel && !nestedArgs.panelId && nestedMethod !== 'cate.browser.listTabs' && !(nestedMethod === 'cate.browser.createTab' && nestedArgs.newPanel)
+            ? { ...nestedArgs, panelId: defaultPanel } : nestedArgs))
+        send(200, { result })
+        return
+      }
       const result = await dispatchCateInvoke(invokeScope, method, dispatchArgs)
       // A void host method resolves `undefined`; coerce to `null` so the wire
       // body keeps a `result` key (JSON.stringify drops undefined values). Without
@@ -216,6 +238,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
       for (const d of duplexes) { try { d.destroy() } catch { /* gone */ } }
       duplexes.clear()
       panelTargets.clear()
+      browserCodeSessions.dispose(codePrefix)
       try { server.close() } catch { /* gone */ }
     },
   }

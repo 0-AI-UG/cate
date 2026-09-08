@@ -8,6 +8,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { closeApp, launchApp, seedTerminal } from './fixtures/electron-app'
+import { fixtureEvaluate } from './fixtures/browser-control'
 
 let app: ElectronApplication
 let page: Page
@@ -75,65 +76,65 @@ test('@public-network controls public sites from a real Cate terminal', async ()
     { timeout: 60_000 },
   ).not.toBeNull()
 
-  const created = JSON.parse(await runCate(
-    terminalNodeId,
-    'browser', 'new-panel', 'https://httpbin.org/forms/post', '--json',
-  )) as { panelId: string }
-  expect(created.panelId).toMatch(/^[a-z0-9-]+$/i)
-  await expect.poll(
-    () => page.evaluate(
-      (panelId) => window.__cateE2E!.nodes().some((node) => node.panelId === panelId),
-      created.panelId,
-    ),
-    { timeout: 15_000 },
-  ).toBe(true)
+  const run = (code: string) => runCate(terminalNodeId, 'browser', 'run', code)
+  const createdResult = JSON.parse(await runCate(terminalNodeId, 'browser', 'run',
+    'var tab = await cua.createBrowserTab("https://httpbin.org/forms/post"); await nodeRepl.write({createdPanel:tab.panelId});', '--json')) as { content: Array<{ type: string; text?: string }> }
+  const created = createdResult.content.filter((item) => item.type === 'text').map((item) => {
+    try { return JSON.parse(item.text!) as { createdPanel?: string } } catch { return {} }
+  }).find((item) => item.createdPanel)!
+  expect(created.createdPanel).toMatch(/^[a-z0-9-]+$/i)
+  await expect.poll(() => page.evaluate(
+    (panelId) => window.__cateE2E!.nodes().some((node) => node.panelId === panelId), created.createdPanel!,
+  ), { timeout: 15_000 }).toBe(true)
 
-  const panel = ['--panel', created.panelId]
-  await runCate(terminalNodeId, 'browser', 'wait', '[name="custname"]', '--state', 'visible', '--timeout', '30000', ...panel)
-  await runCate(terminalNodeId, 'browser', 'fill', '[name="custname"]', 'Cate Terminal Test', ...panel)
-  await runCate(terminalNodeId, 'browser', 'fill', '[name="custtel"]', '+49 30 123456', ...panel)
-  await runCate(terminalNodeId, 'browser', 'fill', '[name="custemail"]', 'terminal-test@example.com', ...panel)
-  await runCate(terminalNodeId, 'browser', 'check', '[name="size"][value="large"]', ...panel)
-  await runCate(terminalNodeId, 'browser', 'check', '[name="topping"][value="cheese"]', ...panel)
-  await runCate(terminalNodeId, 'browser', 'fill', '[name="comments"]', 'Leave at reception', ...panel)
-  await runCate(terminalNodeId, 'browser', 'click', 'form button', ...panel)
-  await runCate(terminalNodeId, 'browser', 'wait', '--text', 'Cate Terminal Test', '--timeout', '30000', ...panel)
+  // Resolve only IDs present in the observed accessibility tree. This helper
+  // deliberately fails on ambiguity instead of guessing a page selector.
+  await run(`var id = async function(name,role){
+    var state=await tab.getAXState({emit:false,disableDiffing:true});
+    var matches=state.elements.filter(e=>e.name.trim().replace(/:$/,"").trim()===name&&(!role||e.role===role));
+    if(matches.length!==1)throw Error("Expected unique accessible target: "+name+"; observed "+JSON.stringify(state.elements.filter(e=>e.role===role).map(e=>e.name)));
+    return matches[0].id;
+  };`)
+  await run(`await tab.setValue(await id("Customer name","textbox"),"Cate Terminal Test");
+    await tab.setValue(await id("Telephone","textbox"),"+49 30 123456");
+    await tab.setValue(await id("E-mail address","textbox"),"terminal-test@example.com");
+    await tab.setChecked(await id("Large","radio"),true);
+    await tab.setChecked(await id("Extra Cheese","checkbox"),true);
+    await tab.setValue(await id("Delivery instructions","textbox"),"Leave at reception");
+    await tab.click(await id("Submit order","button"));
+    await tab.waitFor({text:"Cate Terminal Test"},{timeoutMs:30000});`)
+  const responseBody = await run('await tab.getAXState({disableDiffing:true});')
+  for (const text of ['Cate Terminal Test', 'terminal-test@example.com', 'Leave at reception', 'large', 'cheese']) expect(responseBody).toContain(text)
 
-  const responseBody = await runCate(terminalNodeId, 'browser', 'get', 'text', 'body', ...panel)
-  expect(responseBody).toContain('Cate Terminal Test')
-  expect(responseBody).toContain('terminal-test@example.com')
-  expect(responseBody).toContain('Leave at reception')
-  expect(responseBody).toContain('large')
-  expect(responseBody).toContain('cheese')
+  await run('tab = await cua.createBrowserTab("https://example.com", {panelId:tab.panelId}); await tab.waitFor({text:"Example Domain"},{timeoutMs:30000});')
+  const heading = await run('await tab.getAXState({disableDiffing:true});')
+  expect(heading).toContain('https://example.com/')
+  expect(heading).toContain('Example Domain')
 
-  await runCate(terminalNodeId, 'browser', 'new-tab', 'https://example.com', ...panel)
-  await runCate(terminalNodeId, 'browser', 'wait', 'h1', '--state', 'visible', '--timeout', '30000', ...panel)
-  const heading = JSON.parse(await runCate(
-    terminalNodeId, 'browser', 'get', 'text', 'h1', ...panel,
-  )) as { origin: string; text: string }
-  expect(heading).toMatchObject({ origin: 'https://example.com/', text: 'Example Domain' })
+  // Production document: CSP, client hints, deep AX tree, sticky chrome.
+  await run('tab = await cua.createBrowserTab("https://en.wikipedia.org/wiki/Electron_(software_framework)", {panelId:tab.panelId}); await tab.waitFor({text:"Electron"},{timeoutMs:30000});')
+  const wikipediaState = await run('await tab.getAXState({disableDiffing:true});')
+  expect(wikipediaState).toContain('Electron')
+  expect(wikipediaState).toContain('link')
+  expect(wikipediaState.length).toBeGreaterThan(5_000)
 
-  // A large production document exercises real CSP, client hints, a deep
-  // accessibility tree, sticky chrome, and in-page navigation.
-  await runCate(terminalNodeId, 'browser', 'new-tab', 'https://en.wikipedia.org/wiki/Electron_(software_framework)', ...panel)
-  await runCate(terminalNodeId, 'browser', 'wait', '#firstHeading', '--state', 'visible', '--timeout', '30000', ...panel)
-  expect(await runCate(terminalNodeId, 'browser', 'get', 'text', '#firstHeading', ...panel)).toContain('Electron')
-  const wikipediaSnapshot = await runCate(terminalNodeId, 'browser', 'snapshot', '-i', ...panel)
-  expect(wikipediaSnapshot).toContain('link')
-  expect(wikipediaSnapshot.length).toBeGreaterThan(5_000)
-
-  // A real client-rendered application catches compatibility issues that a
-  // static page and server-rendered form cannot: hydration, reactive updates,
-  // content created after load, keyboard submission, and stateful controls.
-  await runCate(terminalNodeId, 'browser', 'new-tab', 'https://demo.playwright.dev/todomvc/', ...panel)
-  await runCate(terminalNodeId, 'browser', 'wait', '.new-todo', '--state', 'visible', '--timeout', '30000', ...panel)
-  await runCate(terminalNodeId, 'browser', 'fill', '.new-todo', 'Verify Cate public SPA control', ...panel)
-  await runCate(terminalNodeId, 'browser', 'focus', '.new-todo', ...panel)
-  await runCate(terminalNodeId, 'browser', 'press', 'Enter', ...panel)
-  await runCate(terminalNodeId, 'browser', 'wait', '--text', 'Verify Cate public SPA control', '--timeout', '30000', ...panel)
-  expect(await runCate(terminalNodeId, 'browser', 'get', 'text', '.todo-list label', ...panel))
-    .toContain('Verify Cate public SPA control')
-  await runCate(terminalNodeId, 'browser', 'check', '.todo-list .toggle', ...panel)
-  expect(JSON.parse(await runCate(terminalNodeId, 'browser', 'is', 'checked', '.todo-list .toggle', ...panel)))
-    .toMatchObject({ checked: true })
+  // Reactive application: hydration, keyboard submission, stateful controls.
+  await run('tab = await cua.createBrowserTab("https://demo.playwright.dev/todomvc/", {panelId:tab.panelId});')
+  await run(`var state=await tab.getAXState({emit:false,disableDiffing:true});
+    var input=state.elements.filter(e=>e.role==="textbox");
+    if(input.length!==1)throw Error("Expected one todo input");
+    await tab.setValue(input[0].id,"Verify Cate public SPA control");
+    await tab.pressKey("Return");
+    await tab.waitFor({text:"Verify Cate public SPA control"},{timeoutMs:30000});`)
+  expect(await run('await tab.getAXState({disableDiffing:true});')).toContain('Verify Cate public SPA control')
+  // TodoMVC hides its native checkbox (opacity:0) and paints the control on
+  // the label. Exercise visual input: only screenshot coordinates cross the
+  // browser tool; the independent fixture oracle supplies/verifies the hit point.
+  const todoBrowser = { workspaceId: '', panelId: created.createdPanel! }
+  const point = await fixtureEvaluate(app, page, todoBrowser, `(() => {
+    const box=document.querySelector('.todo-list .toggle').getBoundingClientRect();
+    return [box.x+box.width/2,box.y+box.height/2];
+  })()`) as [number, number]
+  await run(`await tab.getAXStateAndScreenshot(); await tab.click(${JSON.stringify(point)}); await tab.waitFor({text:"Clear completed"});`)
+  expect(await fixtureEvaluate(app, page, todoBrowser, "document.querySelector('.todo-list .toggle').checked")).toBe(true)
 })

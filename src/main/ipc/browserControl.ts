@@ -6,20 +6,20 @@
 import { BrowserWindow, ipcMain, webContents, type WebContents } from 'electron'
 import log from '../logger'
 import { wrapHandler } from './handlerError'
-import { grantFileAccess } from './pathValidation'
 import { BROWSER_CONTROL } from '../../shared/ipc-channels'
 import { browserRuntime, type BrowserTargetIdentity } from '../browser/browserRuntime'
 import { actOnBrowserDownload, downloadsForWebContents, watchDownloadsForSession } from '../browser/browserDownloads'
-import { authorizeBrowserUploadCommand } from '../browser/browserUpload'
+import { authorizeBrowserUpload } from '../browser/browserUpload'
+import { assertBrowserCodeCell } from '../browser/browserCodeExecution'
 
 export { watchDownloadsForSession }
 
-export interface BrowserControlRequest extends Partial<BrowserTargetIdentity> {
+export type BrowserControlRequest = { op: 'checkCodeCell'; codeCellId: string } | (Partial<BrowserTargetIdentity> & {
   op: 'attach' | 'execute' | 'downloads' | 'downloadAction'
   webContentsId: number
   method?: string
   args?: Record<string, unknown>
-}
+})
 
 /** Resolve the target guest, enforcing that it belongs to the calling window. */
 export function resolveBrowserGuest(event: Electron.IpcMainInvokeEvent, webContentsId: number): WebContents | null {
@@ -33,7 +33,7 @@ export function resolveBrowserGuest(event: Electron.IpcMainInvokeEvent, webConte
   return contents
 }
 
-function identity(req: BrowserControlRequest): BrowserTargetIdentity | null {
+function identity(req: Partial<BrowserTargetIdentity>): BrowserTargetIdentity | null {
   return req.workspaceId && req.panelId && req.tabId
     ? { workspaceId: req.workspaceId, panelId: req.panelId, tabId: req.tabId }
     : null
@@ -46,6 +46,10 @@ export function registerBrowserControlHandlers(): void {
     if (event.sender.getType() === 'webview') browserRuntime.noteUserInput(event.sender.id)
   })
   ipcMain.handle(BROWSER_CONTROL, wrapHandler(`[${BROWSER_CONTROL}]`, async (event, req: BrowserControlRequest) => {
+    if (req.op === 'checkCodeCell') {
+      try { assertBrowserCodeCell(req.codeCellId); return { ok: true } }
+      catch { return { error: 'browser-code-cell-cancelled' } }
+    }
     const contents = resolveBrowserGuest(event, req.webContentsId)
     if (!contents) return { error: 'no-guest' }
     const target = identity(req)
@@ -73,20 +77,15 @@ export function registerBrowserControlHandlers(): void {
       if (!req.method) return { error: 'browser-method-required' }
       const callerWindowId = BrowserWindow.fromWebContents(event.sender)?.id
       let args = req.args ?? {}
-      if (req.method === 'command' && Array.isArray(args.command) && args.command[0] === 'upload') {
+      if (req.method === 'upload') {
         if (callerWindowId === undefined) return { error: 'browser-upload-owner-required' }
         try {
-          args = { ...args, command: await authorizeBrowserUploadCommand(args.command as string[], callerWindowId, target.workspaceId) }
+          args = { ...args, filePath: await authorizeBrowserUpload(args.filePath, callerWindowId, target.workspaceId) }
         } catch (error) {
           return { error: error instanceof Error ? error.message : 'browser-upload-path-denied' }
         }
       }
       const response = await browserRuntime.execute(contents.id, target, req.method, args)
-      const result = response.result
-      if (callerWindowId !== undefined && result && typeof result === 'object') {
-        const filePath = (result as { path?: unknown }).path
-        if (typeof filePath === 'string') await grantFileAccess(callerWindowId, filePath)
-      }
       return response
     }
     return { error: 'unsupported-op' }

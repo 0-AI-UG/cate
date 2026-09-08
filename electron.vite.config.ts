@@ -33,6 +33,7 @@ export default defineConfig({
           // focused password field's position/opaque marker to the host so
           // Cate can render autofill suggestions outside untrusted page DOM.
           browserGuest: resolve(__dirname, 'src/preload/browserGuest.ts'),
+          browserAgent: resolve(__dirname, 'src/preload/browserAgent.ts'),
         }
       }
     }

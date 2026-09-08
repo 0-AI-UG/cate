@@ -168,38 +168,33 @@ describe('cate CLI — real binary over a real socket', () => {
     expect(JSON.parse(asJson.stdout)).toBe(2)
   }, 20_000)
 
-  it('2. browser open <url> --panel <short id>: resolves the id via list, sends the FULL panelId', async () => {
+  it('2. browser run <code> --panel <short id>: resolves the id via list, sends the FULL panelId', async () => {
     // The user copies the short 8-char id that `list` prints; the CLI resolves it
     // to the full id (an extra cate.panel.list lookup) before dispatching.
     const fullId = 'a1b2c3d4e5f6g7h8'
     panelsForList = [{ panelId: fullId, type: 'browser', url: 'https://x.test', focused: true }]
-    nextResponse = { status: 200, body: { result: { panelId: fullId, url: 'https://x.test' } } }
+    nextResponse = { status: 200, body: { result: { content: [{ type: 'text', text: 'https://x.test' }] } } }
 
-    const r = await runCli(['browser', 'open', 'https://x.test', '--panel', 'a1b2c3d4'], connectedEnv())
+    const r = await runCli(['browser', 'run', 'await cua.listTabs()', '--panel', 'a1b2c3d4'], connectedEnv())
     expect(r.code).toBe(0)
     expect(r.stdout.trim()).toBe('https://x.test')
     // Two calls over the wire: the resolution lookup, then the real open.
-    expect(requests.map((q) => q.method)).toEqual(['cate.panel.list', 'cate.browser.open'])
-    expect(lastRequest?.args).toEqual({ url: 'https://x.test', newTab: true, panelId: fullId })
+    expect(requests.map((q) => q.method)).toEqual(['cate.panel.list', 'cate.browser.run'])
+    expect(lastRequest?.args).toEqual({ code: 'await cua.listTabs()', panelId: fullId })
   }, 20_000)
 
   it('3. native browser snapshot: human output prints the tree; --json returns the raw object', async () => {
-    const result = {
-      url: 'https://x.test',
-      title: 'Example',
-      snapshotId: 's1',
-      snapshot: '- link "Home" [ref=s1e1]',
-    }
+    const result = { content: [{ type: 'text', text: 'link "Home" [42]' }] }
     nextResponse = { status: 200, body: { result } }
 
-    const human = await runCli(['browser', 'snapshot'], connectedEnv())
+    const human = await runCli(['browser', 'run', 'await tab.getAXState()'], connectedEnv())
     expect(human.code).toBe(0)
-    expect(human.stdout).toContain('[ref=s1e1]')
+    expect(human.stdout).toContain('[42]')
     expect(human.stdout).toContain('Home')
-    expect(lastRequest?.method).toBe('cate.browser.readCommand')
-    expect(lastRequest?.args).toEqual({ command: ['snapshot'] })
+    expect(lastRequest?.method).toBe('cate.browser.run')
+    expect(lastRequest?.args).toEqual({ code: 'await tab.getAXState()' })
 
-    const asJson = await runCli(['browser', 'snapshot', '--json'], connectedEnv())
+    const asJson = await runCli(['browser', 'run', 'await tab.getAXState()', '--json'], connectedEnv())
     expect(asJson.code).toBe(0)
     expect(JSON.parse(asJson.stdout)).toEqual(result)
   }, 20_000)
@@ -207,10 +202,10 @@ describe('cate CLI — real binary over a real socket', () => {
   it('4. in-band {result:{error}} (HTTP 200): exit 1, error on stderr, empty stdout', async () => {
     nextResponse = {
       status: 200,
-      body: { result: { error: 'no-browser', method: 'cate.browser.command' } },
+      body: { result: { error: 'no-browser', method: 'cate.browser.run' } },
     }
 
-    const r = await runCli(['browser', 'reload'], connectedEnv())
+    const r = await runCli(['browser', 'run', 'await tab.reload()'], connectedEnv())
     expect(r.code).toBe(1)
     expect(r.stderr).toContain('no-browser')
     expect(r.stdout.trim()).toBe('')
@@ -225,7 +220,7 @@ describe('cate CLI — real binary over a real socket', () => {
   }, 20_000)
 
   it('6. env unset: exit 3 with the how-to-enable message', async () => {
-    const r = await runCli(['browser', 'reload'], { PATH: process.env.PATH ?? '' })
+    const r = await runCli(['browser', 'run', 'await tab.reload()'], { PATH: process.env.PATH ?? '' })
     expect(r.code).toBe(3)
     expect(r.stderr).toContain('CATE_API/CATE_TOKEN unset')
     expect(r.stderr).toContain('Settings → CLI')
@@ -233,13 +228,11 @@ describe('cate CLI — real binary over a real socket', () => {
     expect(lastRequest).toBeUndefined()
   }, 20_000)
 
-  it('7. screenshot: human stdout prints just the path', async () => {
-    nextResponse = { status: 200, body: { result: { path: '/tmp/shot.png' } } }
-
-    const r = await runCli(['browser', 'screenshot'], connectedEnv())
-    expect(r.code).toBe(0)
-    expect(r.stdout.trim()).toBe('/tmp/shot.png')
-    expect(lastRequest?.method).toBe('cate.browser.readCommand')
-    expect(lastRequest?.args).toEqual({ command: ['screenshot'] })
+  it('7. code errors return exit 1 with the emitted diagnostic', async () => {
+    nextResponse = { status: 200, body: { result: { content: [{ type: 'text', text: 'Target is obscured' }], isError: true } } }
+    const r = await runCli(['browser', 'run', 'await tab.click(42)'], connectedEnv())
+    expect(r.code).toBe(1)
+    expect(r.stdout + r.stderr).toContain('Target is obscured')
+    expect(lastRequest?.method).toBe('cate.browser.run')
   }, 20_000)
 })

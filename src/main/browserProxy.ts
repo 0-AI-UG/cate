@@ -31,7 +31,7 @@ export async function configureBrowserProxy(partition: string, proxyUrl?: string
   const ses = session.fromPartition(partition)
   // Browser panels call this before mounting their <webview>, which makes it the
   // one place guaranteed to see each browser session — so it is where the
-  // download observer that backs `cate browser downloads` is attached.
+  // download observer that backs `tab.downloads()` is attached.
   // Attaching later (on first query) would miss the download that prompted it.
   watchDownloadsForSession(ses)
 

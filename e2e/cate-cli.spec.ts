@@ -9,6 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { closeApp, launchApp, seedTerminal } from './fixtures/electron-app'
+import { fixtureEvaluate } from './fixtures/browser-control'
 
 let app: ElectronApplication
 let page: Page
@@ -34,7 +35,7 @@ const FORM_HTML = `<!doctype html>
       <label><input id="option" type="checkbox" checked /> Optional setting</label>
       <label for="size">Size</label>
       <select id="size"><option value="small">Small</option><option value="large">Large</option></select>
-      <div id="editor" contenteditable="true">Draft</div>
+      <div id="editor" role="textbox" aria-label="Editor" contenteditable="true">Draft</div>
       <button id="disabled" type="button" disabled>Disabled action</button>
       <div id="hidden" style="display:none">Hidden content</div>
       <div id="status">Loading</div>
@@ -185,8 +186,8 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
 
   // Process/transport basics.
   expect(await runCate(controlNode, '--version')).toMatch(/^cate cli \d+$/)
-  expect(await runCate(controlNode, '--help')).toContain('cate browser <browser-command>')
-  expect(await runCate(controlNode, 'version')).toBe('7')
+  expect(await runCate(controlNode, '--help')).toContain('cate browser run <JavaScript>')
+  expect(await runCate(controlNode, 'version')).toBe('8')
   expect(await runCate(controlNode, 'panel', 'list')).toContain('terminal')
 
   // Editor + panel verbs.
@@ -194,103 +195,101 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   expect(editorId).toMatch(/^[a-z0-9-]{8}$/i)
   expect(await runCate(controlNode, 'panel', 'list')).toContain('cli-fixture.ts')
 
-  // Browser verbs against a real Electron webview and local HTTP page.
+  // Browser code runs in one persistent session through the real terminal,
+  // CLI, HTTP transport, renderer, and target-bound runtime.
+  const runBrowser = (code: string) => runCate(controlNode, 'browser', 'run', code)
+  const createBinding = async (code: string) => {
+    const result = JSON.parse(await runCate(controlNode, 'browser', 'run', code, '--json')) as {
+      content: Array<{ type: string; text?: string }>
+    }
+    const binding = result.content.filter((item) => item.type === 'text').map((item) => {
+      try { return JSON.parse(item.text!) as { testBinding?: { panelId: string; tabId: string } } } catch { return {} }
+    }).find((item) => item.testBinding)?.testBinding
+    expect(binding).toBeTruthy()
+    return binding!
+  }
   const freshDataOne = `data:text/html,${encodeURIComponent('<title>Fresh One</title>')}`
   const freshDataTwo = `data:text/html,${encodeURIComponent('<title>Fresh Two</title>')}`
-  const freshOpen = JSON.parse(await runCate(controlNode, 'browser', 'new-panel', freshDataOne, '--json'))
-  const freshBrowserId = freshOpen.panelId as string
-  expect(await runCate(controlNode, 'browser', 'open', freshDataTwo, '--panel', freshBrowserId)).toBe(freshDataTwo)
-  await runCate(controlNode, 'browser', 'wait', '8000', '--panel', freshBrowserId)
-  const freshTabs = await runCate(controlNode, 'browser', 'tabs', '--panel', freshBrowserId)
+  const fresh = await createBinding(`var fresh = await cua.createBrowserTab(${JSON.stringify(freshDataOne)}, {newPanel:true}); await nodeRepl.write({testBinding:{panelId:fresh.panelId,tabId:fresh.tabId}});`)
+  await runBrowser(`var second = await cua.createBrowserTab(${JSON.stringify(freshDataTwo)}, {panelId:fresh.panelId});`)
+  const freshTabs = await runBrowser('await cua.listTabs();')
   expect(freshTabs).toContain(freshDataOne)
   expect(freshTabs).toContain(freshDataTwo)
-  expect(await runCate(controlNode, 'panel', 'close', freshBrowserId)).toBe('ok')
+  expect(await runCate(controlNode, 'panel', 'close', fresh.panelId)).toBe('ok')
 
-  const opened = JSON.parse(await runCate(controlNode, 'browser', 'new-panel', baseUrl, '--json'))
-  const browserId = opened.panelId as string
+  const opened = await createBinding(`var tab = await cua.createBrowserTab(${JSON.stringify(baseUrl)}, {newPanel:true}); await nodeRepl.write({testBinding:{panelId:tab.panelId,tabId:tab.tabId}});`)
+  const browserId = opened.panelId
   expect(browserId).toMatch(/^[a-z0-9-]+$/i)
-  expect(await runCate(controlNode, 'browser', 'navigate', `${baseUrl}?opened=1`, '--panel', browserId)).toBe(`${baseUrl}?opened=1`)
-  await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)
+  const oracle = (expression: string) => fixtureEvaluate(app, page, { workspaceId: '', panelId: browserId }, expression)
+  await runBrowser(`await tab.goto(${JSON.stringify(`${baseUrl}?opened=1`)});`)
 
   const firstDataUrl = `data:text/html,${encodeURIComponent('<title>Data One</title><h1>Data One</h1>')}`
   const secondDataUrl = `data:text/html,${encodeURIComponent('<title>Data Two</title><h1>Data Two</h1>')}`
-  expect(await runCate(controlNode, 'browser', 'navigate', firstDataUrl, '--panel', browserId)).toBe(firstDataUrl)
-  expect(await runCate(controlNode, 'browser', 'navigate', secondDataUrl, '--panel', browserId)).toBe(secondDataUrl)
-  await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)
+  await runBrowser(`await tab.goto(${JSON.stringify(firstDataUrl)}); await tab.goto(${JSON.stringify(secondDataUrl)});`)
   expect(await runCate(controlNode, 'panel', 'list')).toContain(secondDataUrl)
-  await runCate(controlNode, 'browser', 'back', '--panel', browserId)
-  await runCate(controlNode, 'browser', 'back', '--panel', browserId)
+  await runBrowser('await tab.back(); await tab.back();')
 
-  const snapshot = await runCate(controlNode, 'browser', 'snapshot', '-i', '--panel', browserId)
-  expect(snapshot).toContain('title: Form Ready')
-  expect(snapshot).toContain('••••••••')
-  expect(snapshot).not.toContain('never-expose-me')
-  let queryRef = snapshot.match(/(?:textbox|searchbox) "Query".*\[ref=(s\d+e\d+)\]/)?.[1]
-  const clickRef = snapshot.match(/button "Click me".*\[ref=(s\d+e\d+)\]/)?.[1]
-  expect(queryRef).toBeTruthy()
-  expect(clickRef).toBeTruthy()
-  queryRef = `@${queryRef}`
+  const state = await runBrowser('await tab.getAXStateAndScreenshot({disableDiffing:true});')
+  expect(state).toContain('Screenshot: ')
+  const retiredMcp = await runInCateTerminal(controlNode, cate('browser', 'mcp'))
+  expect(retiredMcp.code).toBe(2)
+  const retiredObserve = await runInCateTerminal(controlNode, cate('browser', 'observe'))
+  expect(retiredObserve.code).toBe(2)
+  expect(state).toContain('Form Ready')
+  expect(state).toContain('••••••••')
+  expect(state).not.toContain('never-expose-me')
+  await runBrowser(`var id = async function(name,role){
+    var state=await tab.getAXState({disableDiffing:true,emit:false});
+    var matches=state.elements.filter(e=>e.name.trim()===name&&(!role||e.role===role));
+    if(matches.length!==1)throw Error("Expected unique accessible target: "+name);
+    return matches[0].id;
+  }; var query = await id("Query","searchbox"); var click = await id("Click me","button");`)
 
-  await runCate(controlNode, 'browser', 'fill', queryRef!, 'hello', '--panel', browserId)
-  await runCate(controlNode, 'browser', 'type', queryRef!, ' cate', '--panel', browserId)
-  expect(await runCate(controlNode, 'browser', 'get', 'value', queryRef!, '--panel', browserId)).toContain('hello cate')
-  await runCate(controlNode, 'browser', 'click', `@${clickRef}`, '--panel', browserId)
-  await runCate(controlNode, 'browser', 'wait', '--text', 'Saved', '--timeout', '3000', '--panel', browserId)
-  const savedObservation = await runCate(controlNode, 'browser', 'snapshot', '-i', '--panel', browserId)
-  expect(savedObservation).toContain('title: Clicked')
-  queryRef = savedObservation.match(/(?:textbox|searchbox) "Query".*\[ref=(s\d+e\d+)\]/)?.[1]
-  expect(queryRef).toBeTruthy()
-  queryRef = `@${queryRef}`
-  await runCate(controlNode, 'browser', 'wait', queryRef, '--state', 'visible', '--timeout', '3000', '--panel', browserId)
-  await runCate(controlNode, 'browser', 'focus', queryRef, '--panel', browserId)
-  await runCate(controlNode, 'browser', 'press', 'Enter', '--panel', browserId)
-  expect(await runCate(controlNode, 'browser', 'snapshot', '--panel', browserId)).toContain('title: Submitted:hello cate')
-  await runCate(controlNode, 'browser', 'press', 'PageDown', '--panel', browserId)
+  await runBrowser('await tab.getScreenshot({emit:false}); await tab.setValue(query,"hello"); await tab.getScreenshot({emit:false}); await tab.typeText(" cate");')
+  expect(await oracle('document.querySelector("#query").value')).toBe('hello cate')
+  await runBrowser('await tab.click(click); await tab.waitFor({text:"Saved"},{timeoutMs:3000});')
+  expect(await runBrowser('await tab.getAXState({disableDiffing:true});')).toContain('Clicked')
+  await runBrowser('await tab.waitFor({element:query,state:"visible"}); await tab.selectText(query,"hello cate",{selectionType:"cursor_after"}); await tab.pressKey("Return");')
+  expect(await oracle('document.title')).toBe('Submitted:hello cate')
+  await runBrowser('await tab.pressKey("PageDown");')
 
-  // Exercise every page-command family through the real terminal -> CLI ->
-  // HTTP -> renderer -> target-bound CDP path, not only through unit parsers.
-  await runCate(controlNode, 'browser', 'find', 'role', 'button', 'click', '--name', 'Semantic action', '--panel', browserId)
-  expect(await runCate(controlNode, 'browser', 'get', 'attr', 'body', 'data-semantic', '--panel', browserId)).toContain('clicked')
+  await runBrowser('await tab.click(await id("Semantic action","button"));')
+  expect(await oracle('document.body.dataset.semantic')).toBe('clicked')
+  await runBrowser('await tab.waitFor({element:query,state:"visible"}); await tab.waitFor({element:await id("Disabled action","button"),state:"disabled"});')
+  await runBrowser('var option=await id("Optional setting","checkbox"); await tab.waitFor({element:option,state:"checked"}); await tab.setChecked(option,false); await tab.waitFor({element:option,state:"unchecked"});')
+  expect(await oracle('document.querySelector("#option").checked')).toBe(false)
+  await runBrowser('await tab.setChecked(option,true); await tab.click(await id("Double action","button"),{clickCount:2});')
+  expect(await oracle('document.body.dataset.double')).toBe('received')
+  // A targeted click must move the pointer onto the control before input.
+  await runBrowser('await tab.click(await id("Hover action","button"));')
+  expect(await oracle('document.body.dataset.hover')).toBe('received')
 
-  expect(JSON.parse(await runCate(controlNode, 'browser', 'is', 'visible', '#query', '--panel', browserId))).toMatchObject({ visible: true })
-  expect(JSON.parse(await runCate(controlNode, 'browser', 'is', 'enabled', '#disabled', '--panel', browserId))).toMatchObject({ enabled: false })
-  expect(JSON.parse(await runCate(controlNode, 'browser', 'is', 'checked', '#option', '--panel', browserId))).toMatchObject({ checked: true })
-  await runCate(controlNode, 'browser', 'uncheck', '#option', '--panel', browserId)
-  expect(JSON.parse(await runCate(controlNode, 'browser', 'is', 'checked', '#option', '--panel', browserId))).toMatchObject({ checked: false })
-  await runCate(controlNode, 'browser', 'check', '#option', '--panel', browserId)
+  await runBrowser('await tab.setValue(await id("Editor","textbox"),"Rich"); await tab.typeText(" text"); await tab.typeText(" via keyboard");')
+  expect(await oracle('document.querySelector("#editor").textContent')).toBe('Rich text via keyboard')
+  await runBrowser('await tab.selectOption(await id("Size","combobox"),["large"]);')
+  expect(await oracle('document.querySelector("#size").value')).toBe('large')
+  await runBrowser('await tab.scroll([400,300],"down",8);')
+  await expect.poll(() => oracle('scrollY')).toBeGreaterThan(0)
+  await runBrowser('await tab.scroll([400,300],"up",8);')
+  await expect.poll(() => oracle('scrollY')).toBe(0)
+  await runBrowser('await tab.getAXState(); await tab.drag([20,30],[40,50]);')
+  expect(await oracle('document.body.dataset.mouse')).toBe('40,50')
 
-  await runCate(controlNode, 'browser', 'dblclick', '#double', '--panel', browserId)
-  expect(await runCate(controlNode, 'browser', 'get', 'attr', 'body', 'data-double', '--panel', browserId)).toContain('received')
-  await runCate(controlNode, 'browser', 'hover', '#hover', '--panel', browserId)
-  expect(await runCate(controlNode, 'browser', 'get', 'attr', 'body', 'data-hover', '--panel', browserId)).toContain('received')
+  const screenshots = await runBrowser('await tab.getAXStateAndScreenshot();')
+  const imagePath = screenshots.split('\n').find((line) => line.trim().endsWith('.png'))?.trim().replace(/^Screenshot: /, '')
+  expect(imagePath).toBeTruthy()
+  expect(existsSync(imagePath!)).toBe(true)
+  expect(readFileSync(imagePath!).subarray(1, 4).toString()).toBe('PNG')
 
-  await runCate(controlNode, 'browser', 'fill', '#editor', 'Rich', '--panel', browserId)
-  await runCate(controlNode, 'browser', 'type', '#editor', ' text', '--panel', browserId)
-  await runCate(controlNode, 'browser', 'focus', '#editor', '--panel', browserId)
-  await runCate(controlNode, 'browser', 'keyboard', 'type', ' via keyboard', '--panel', browserId)
-  expect(await runCate(controlNode, 'browser', 'get', 'text', '#editor', '--panel', browserId)).toContain('Rich text via keyboard')
-
-  await runCate(controlNode, 'browser', 'select', '#size', 'large', '--panel', browserId)
-  expect(await runCate(controlNode, 'browser', 'get', 'value', '#size', '--panel', browserId)).toContain('large')
-  await runCate(controlNode, 'browser', 'scrollintoview', '#bottom', '--panel', browserId)
-  await runCate(controlNode, 'browser', 'scroll', 'bottom', '--panel', browserId)
-  expect(JSON.parse(await runCate(controlNode, 'browser', 'eval', 'scrollY > 0', '--panel', browserId))).toMatchObject({ result: true })
-  await runCate(controlNode, 'browser', 'scroll', 'top', '--panel', browserId)
-  await runCate(controlNode, 'browser', 'mouse', 'move', '20', '30', '--panel', browserId)
-  expect(await runCate(controlNode, 'browser', 'get', 'attr', 'body', 'data-mouse', '--panel', browserId)).toContain('20,30')
-
-  expect(JSON.parse(await runCate(controlNode, 'browser', 'eval', 'console.log("CATE_CONSOLE_MARKER"); setTimeout(() => { window.__cateErrorReady = true; throw new Error("CATE_ERROR_MARKER") }, 0); "EVAL_OK"', '--panel', browserId))).toMatchObject({ result: 'EVAL_OK' })
-  await runCate(controlNode, 'browser', 'wait', '--fn', 'window.__cateErrorReady === true', '--timeout', '3000', '--panel', browserId)
-  expect(await runCate(controlNode, 'browser', 'console', '--panel', browserId)).toContain('CATE_CONSOLE_MARKER')
-  expect(await runCate(controlNode, 'browser', 'errors', '--panel', browserId)).toContain('CATE_ERROR_MARKER')
-  await runCate(controlNode, 'browser', 'console', '--clear', '--panel', browserId)
-  expect(JSON.parse(await runCate(controlNode, 'browser', 'console', '--panel', browserId))).toMatchObject({ messages: [] })
-
-  // CATE_E2E creates an initially-hidden Chromium surface, for which Electron's
-  // viewport capture never resolves. Screenshot output and composition are
-  // covered by the capture IPC + bitmap regression tests instead.
-  await runCate(controlNode, 'browser', 'reload', '--panel', browserId)
-  await runCate(controlNode, 'browser', 'wait', '8000', '--panel', browserId)
+  // The redesign intentionally removes arbitrary page evaluation and the old
+  // command vocabulary. Rejection must leave the existing session usable.
+  const legacy = await runInCateTerminal(controlNode, cate('browser', 'snapshot'))
+  expect(legacy.code).not.toBe(0)
+  const noDom = await runInCateTerminal(controlNode, cate('browser', 'run', 'await nodeRepl.write({pageEvaluation:typeof tab.evaluate,node:typeof require});'))
+  expect(noDom.output).toContain('undefined')
+  await runBrowser('await tab.reload(); await tab.getAXState();')
+  await runCate(controlNode, 'browser', 'reset')
+  expect(await runBrowser('await nodeRepl.write(typeof tab);')).toContain('undefined')
 
   // A second real terminal proves terminal type/press/read, not just the shell
   // hosting this test's CLI process.
@@ -311,6 +310,11 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
     { timeout: 10_000 },
   ).toBe('CLI_TARGET_OK')
   expect(await runCate(controlNode, 'terminal', 'read', '--panel', workerId)).toContain('CLI_TARGET_OK')
+
+  // The background activity monitor can lag behind the completed shell command.
+  // Wait for its idle state before closing, so this smoke does not open the
+  // native running-process confirmation dialog.
+  await expect.poll(() => page.evaluate(id => window.__cateE2E!.terminalActivity(id), workerNode), { timeout: 30_000 }).toBe('idle')
 
   // Close verifies immediate list consistency for several panel types.
   expect(await runCate(controlNode, 'panel', 'close', workerId)).toBe('ok')

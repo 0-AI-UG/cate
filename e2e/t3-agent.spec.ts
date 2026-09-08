@@ -1,3 +1,4 @@
+import { openTrustedWorkspace } from './fixtures/workspace'
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Locator, Page } from 'playwright'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -111,10 +112,7 @@ test.beforeEach(async ({}, testInfo) => {
   electronApp = launched.electronApp
   page = launched.mainWindow
 
-  const opened = page.evaluate((root) => window.__cateE2E!.setWorkspaceRoot(root), workspaceRoot)
-  const trust = page.getByRole('button', { name: 'Trust and open' })
-  if (await trust.isVisible({ timeout: 2_000 }).catch(() => false)) await trust.click()
-  expect(await opened).toBe(true)
+  await openTrustedWorkspace(page, workspaceRoot)
   agent = await page.evaluate((docked) => docked
     ? window.__cateE2E!.createAgent(undefined, { target: 'dock', zone: 'center' })
     : window.__cateE2E!.createAgent({ x: 24, y: 24 }), testInfo.title.startsWith('docked T3'))
@@ -966,10 +964,7 @@ test('real T3 lifecycle keeps multiple panels connected across repeated workspac
   mkdirSync(otherRoot)
   const otherWorkspace = await page.evaluate(() => window.__cateE2E!.addWorkspace('Second workspace'))
   await page.evaluate(id => window.__cateE2E!.selectWorkspace(id), otherWorkspace)
-  const openingSecond = page.evaluate(root => window.__cateE2E!.setWorkspaceRoot(root), otherRoot)
-  const secondTrust = page.getByRole('button', { name: 'Trust and open' })
-  await secondTrust.waitFor({ state: 'visible', timeout: 2_000 }).then(() => secondTrust.click()).catch(() => {})
-  expect(await openingSecond).toBe(true)
+  await openTrustedWorkspace(page, otherRoot)
   const second = await page.evaluate(() => window.__cateE2E!.createAgent({ x: 24, y: 24 }))
   agent = second
   await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', { timeout: 30_000 })
@@ -1008,6 +1003,23 @@ test('real T3 lifecycle keeps multiple panels connected across repeated workspac
 })
 
 
+async function sendRecoveredDraft(text?: string): Promise<void> {
+  const view = agentWebview()
+  if (text) {
+    await guestEval(view, "document.querySelector('[contenteditable=true]').focus()")
+    const id = await view.evaluate(el => (el as any).getWebContentsId())
+    await electronApp!.evaluate(({ webContents }, input) => webContents.fromId(input.id)!.insertText(input.text), { id, text })
+  }
+  // The host metadata subscription reconnects independently of the chat UI.
+  // Wait for its actual send control, then refocus the composer after recovery.
+  await expect.poll(() => guestEval<boolean>(view,
+    `Boolean(document.querySelector('button[aria-label="Send message"]:not(:disabled)'))`),
+  { timeout: 15_000 }).toBe(true)
+  await guestEval(view, "document.querySelector('[contenteditable=true]').focus()")
+  await guestKey(view, 'Enter')
+}
+
+
 test('real T3 lifecycle recovers a mounted panel after its server process exits', async () => {
   await submitRealChat('before server failure')
   await waitForRealReply('before server failure')
@@ -1015,45 +1027,77 @@ test('real T3 lifecycle recovers a mounted panel after its server process exits'
   const origin = await guestEval<string>(agentWebview(), 'location.origin')
   const sibling = await page.evaluate(() => window.__cateE2E!.createAgent({ x: 700, y: 24 }))
   const siblingView = page.locator(`webview[data-agent-webview="${sibling.panelId}"]`)
+  const siblingPanel = page.locator(`[data-agent-panel-id="${sibling.panelId}"]`)
   await expect(siblingView).toHaveAttribute('data-agent-guest-ready', 'true')
-  await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true')).toBe(true)
+  // Only the metadata owner has a guest socket. Every sibling receives its
+  // connection state through the shared host activity store.
+  await expect(siblingPanel).toHaveAttribute('data-agent-connected', 'true')
   const siblingId = await siblingView.evaluate(el => (el as any).getWebContentsId())
   const guestId = await agentWebview().evaluate(el => (el as any).getWebContentsId())
   await guestEval(agentWebview(), "document.querySelector('[contenteditable=true]').focus()")
   await electronApp!.evaluate(({ webContents }, id) => webContents.fromId(id)!.insertText('after server failure'), guestId)
   const pidPath = path.join(tempRoot, 'userdata', 'cate-runtime', 'ext-servers-local.json')
   const [{ pid }] = JSON.parse(readFileSync(pidPath, 'utf8'))
-  const currentPid = (): number | undefined => existsSync(pidPath) ? JSON.parse(readFileSync(pidPath, 'utf8'))[0]?.pid : undefined
+  // Record transitions before the crash: reconnects can finish between Playwright
+  // polls. Attribute old values also retain a disconnect if both mutations batch.
+  await page.evaluate(panelIds => {
+    const disconnected = new Set<string>()
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        const panel = record.target as HTMLElement
+        if (record.oldValue === 'false' || panel.dataset.agentConnected === 'false') {
+          disconnected.add(panel.dataset.agentPanelId!)
+        }
+      }
+    })
+    for (const id of panelIds) {
+      observer.observe(document.querySelector(`[data-agent-panel-id="${id}"]`)!, {
+        attributes: true, attributeFilter: ['data-agent-connected'], attributeOldValue: true,
+      })
+    }
+    ;(window as any).__recoveryConnections = { disconnected, observer }
+  }, [agent.panelId, sibling.panelId])
   // This PID comes exclusively from this test's private runtime directory.
   process.kill(pid, 'SIGKILL')
-  // Recovery can finish between polls. A new server PID proves the crash was
-  // handled without requiring observation of a transient disconnected phase.
   await expect.poll(() => {
-    const replacement = currentPid()
-    return replacement !== undefined && replacement !== pid
+    try { process.kill(pid, 0); return false } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return true
+      throw error
+    }
+  }).toBe(true)
+  await expect.poll(() => page.evaluate(ids => ids.every(id =>
+    (window as any).__recoveryConnections.disconnected.has(id)), [agent.panelId, sibling.panelId]),
+  { timeout: 15_000 }).toBe(true)
+  await expect.poll(() => {
+    if (!existsSync(pidPath)) return false
+    const servers = JSON.parse(readFileSync(pidPath, 'utf8'))
+    return servers.length === 1 && servers[0].pid !== pid
   }, { timeout: 15_000 }).toBe(true)
+  await expect.poll(() => page.evaluate(cwd => window.electronAPI.agentHarnessGetStatus({ cwd }), workspaceRoot),
+    { timeout: 15_000 }).toMatchObject({ phase: 'running' })
   await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), {timeout: 15_000}).toBe(true)
   expect((await realThreadState())?.id).toBe(threadId)
   expect(await guestEval<string>(agentWebview(), 'location.origin')).toBe(origin)
   expect(await agentWebview().evaluate(el => (el as any).getWebContentsId())).toBe(guestId)
   expect(await guestEval<string>(agentWebview(), "document.querySelector('[contenteditable=true]').innerText")).toBe('after server failure')
-  await waitForRealSendReady()
-  await guestEval(agentWebview(), "document.querySelector('[contenteditable=true]').focus()")
-  await guestKey(agentWebview(), 'Enter')
+  await sendRecoveredDraft()
   await waitForRealReply('after server failure')
-  await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true')).toBe(true)
+  await expect(siblingPanel).toHaveAttribute('data-agent-connected', 'true')
   expect(await siblingView.evaluate(el => (el as any).getWebContentsId())).toBe(siblingId)
   expect(JSON.parse(readFileSync(pidPath, 'utf8'))).toHaveLength(1)
   // Explicit retry must also preserve the endpoint for other mounted panels.
-  const recoveredPid = currentPid()
+  await page.evaluate(() => (window as any).__recoveryConnections.disconnected.clear())
   await page.evaluate(cwd => window.electronAPI.agentHarnessRestart({ cwd }), workspaceRoot)
-  await expect.poll(() => {
-    const replacement = currentPid()
-    return replacement !== undefined && replacement !== recoveredPid
-  }, { timeout: 15_000 }).toBe(true)
-  await expect.poll(() => guestEval<boolean>(siblingView, 'window.__cateT3Threads?.connected === true'), {timeout: 15_000}).toBe(true)
+  await expect.poll(() => page.evaluate(id =>
+    (window as any).__recoveryConnections.disconnected.has(id), sibling.panelId),
+  { timeout: 15_000 }).toBe(true)
+  await expect(siblingPanel).toHaveAttribute('data-agent-connected', 'true', { timeout: 15_000 })
   expect(await siblingView.evaluate(el => (el as any).getWebContentsId())).toBe(siblingId)
   expect(await guestEval<string>(siblingView, 'location.origin')).toBe(origin)
+  await page.evaluate(() => {
+    ;(window as any).__recoveryConnections.observer.disconnect()
+    delete (window as any).__recoveryConnections
+  })
 })
 
 
@@ -1092,11 +1136,13 @@ test('real T3 lifecycle bounds automatic crash recovery and allows an explicit r
   expect(currentPid()).toBeUndefined()
   await page.getByRole('status').filter({ hasText: 'T3 Code activity disconnected' }).getByRole('button', {name: 'Retry', exact: true}).click()
   await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', {timeout: 15_000})
-  // DOM branding readiness precedes the restored server's WebSocket handshake.
-  await expect.poll(() => currentPid(), { timeout: 15_000 }).toBeDefined()
-  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), { timeout: 15_000 }).toBe(true)
+  // The persistent guest remains ready while its server is down. Wait for the
+  // restarted harness and metadata connection before sending the next message.
+  await expect.poll(() => page.evaluate(cwd => window.electronAPI.agentHarnessGetStatus({ cwd }), workspaceRoot),
+    { timeout: 15_000 }).toMatchObject({ phase: 'running' })
+  await expect(page.locator(`[data-agent-panel-id="${agent.panelId}"]`)).toHaveAttribute('data-agent-connected', 'true', { timeout: 15_000 })
   await expect.poll(async () => (await realThreadState())?.id, { timeout: 15_000 }).toBe(threadId)
-  await submitRealChat('after explicit retry', true)
+  await sendRecoveredDraft('after explicit retry')
   await waitForRealReply('after explicit retry')
 })
 
@@ -1157,6 +1203,14 @@ test('webview geometry stays aligned for T3 and browsers during layout changes',
     const hostSize = await agentWebview().evaluate((element) => ({ width: (element as HTMLElement).offsetWidth, height: (element as HTMLElement).offsetHeight }))
     await expect.poll(() => guestEval(agentWebview(), '({ width: innerWidth, height: innerHeight })')).toEqual(hostSize)
   }
+
+  // The live diagnostics HUD changes size once per second and legitimately
+  // invalidates sibling geometry. Hide it through its real toggle so the idle
+  // measurement observes an idle UI; performance counters keep running.
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'p', code: 'KeyP', ctrlKey: true, altKey: true, bubbles: true,
+  })))
+  await expect(page.getByText('⌘⌥P to hide', { exact: true })).toHaveCount(0)
 
   // Count actual tracker passes and measure frame intervals with real guests.
   const result = await page.evaluate(async () => {

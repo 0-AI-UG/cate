@@ -1,3 +1,4 @@
+import { openTrustedWorkspace } from './fixtures/workspace'
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
@@ -80,11 +81,7 @@ test('warm workspace transitions with 36 mixed panels', async () => {
         await h.selectWorkspace(id)
         return id
       }, name)
-      const opened = page.evaluate((folder) => window.__cateE2E!.setWorkspaceRoot(folder), folder)
-      const trust = page.getByRole('button', { name: 'Trust and open' })
-      // Trust may already be inherited by a local test root.
-      await Promise.race([opened, trust.waitFor({ state: 'visible' }).then(() => trust.click())])
-      expect(await opened).toBe(true)
+      await openTrustedWorkspace(page, folder)
       const ws = await page.evaluate(({ id, mix }) => {
         const h = window.__cateE2E!
         h.openSidebarView('explorer')

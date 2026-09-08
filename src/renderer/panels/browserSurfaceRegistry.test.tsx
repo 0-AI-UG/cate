@@ -59,6 +59,26 @@ afterEach(() => {
 })
 
 describe('browser surface layout tracking', () => {
+  it('leaves panel chrome clickable above a scaled persistent guest', async () => {
+    const overlay = document.createElement('div')
+    overlay.dataset.browserSurfaceOverlay = 'browser'
+    host.querySelector('main')!.append(overlay)
+    vi.spyOn(overlay, 'getBoundingClientRect').mockReturnValue(new DOMRect(200, 45, 40, 10))
+    rect = new DOMRect(100, 40, 150, 100)
+    await frame()
+    expect(surface.style.clipPath).toBe('path(evenodd, "M 0 0 H 300 V 200 H 0 Z M 200 10 H 280 V 30 H 200 Z")')
+    const overlapping = overlay.cloneNode() as HTMLElement
+    vi.spyOn(overlapping, 'getBoundingClientRect').mockReturnValue(new DOMRect(210, 45, 20, 10))
+    overlay.parentElement!.append(overlapping)
+    await frame()
+    // An overlapping cutout must not turn the guest back on in the overlap.
+    expect(surface.style.clipPath).toBe('path(evenodd, "M 0 0 H 300 V 200 H 0 Z M 200 10 H 280 V 30 H 200 Z")')
+    overlapping.remove()
+    overlay.remove()
+    await frame()
+    expect(surface.style.clipPath).toBe('inset(0px 0px 0px 0px)')
+  })
+
   it('follows sidebar-driven ancestor resize while the slot size stays unchanged', async () => {
     await frame()
     rect = new DOMRect(250, 40, 300, 200)

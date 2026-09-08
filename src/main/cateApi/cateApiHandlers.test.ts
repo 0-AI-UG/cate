@@ -125,7 +125,7 @@ beforeEach(() => {
 
 describe('dispatchCateInvoke — CLI host API', () => {
   it('reports the API version for feature detection', async () => {
-    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(7)
+    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(8)
   })
 
   it('suppresses ui.notify when the user disabled notifications', async () => {
@@ -629,25 +629,19 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
     activeWindow.value = win
     const s: InvokeScope = { workspaceId: WS, panelId: '', forward: vi.fn(),
     }
-    expect(await dispatchCateInvoke(s, 'cate.browser.command', {
-      command: ['click', '@s1e1'],
+    expect(await dispatchCateInvoke(s, 'cate.browser.click', {
+      target: 1, tabId: 't1', observationId: 'o1',
     })).toEqual({
       error: BROWSER_CONTROL_DISABLED,
-      method: 'cate.browser.command',
+      method: 'cate.browser.click',
     })
     // Refused by the permission, not a prompt — and the browser was never touched.
     expect(send).not.toHaveBeenCalled()
     expect(BROWSER_CONTROL_DISABLED).toMatch(/Settings → CLI/)
     // Read stays allowed: the two halves are independent.
-    await dispatchCateInvoke(s, 'cate.browser.readCommand', { command: ['snapshot', '-i'] })
+    await dispatchCateInvoke(s, 'cate.browser.getAXState', { disableDiffing: true })
     expect(send).toHaveBeenCalledTimes(1)
-    // The request-aware gate cannot be bypassed by using the read envelope.
-    expect(await dispatchCateInvoke(s, 'cate.browser.readCommand', {
-      command: ['click', '@s1e1'],
-    })).toEqual({
-      error: BROWSER_CONTROL_DISABLED,
-      method: 'cate.browser.readCommand',
-    })
+
   })
 
   it('the Browser → Read permission gates snapshot/screenshot while Control stays on', async () => {
@@ -656,22 +650,22 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
     activeWindow.value = win
     const s: InvokeScope = { workspaceId: WS, panelId: '', forward: vi.fn(),
     }
-    expect(await dispatchCateInvoke(s, 'cate.browser.readCommand', {
-      command: ['snapshot'],
+    expect(await dispatchCateInvoke(s, 'cate.browser.getAXState', {
+      disableDiffing: true,
     })).toEqual({
       error: BROWSER_READ_DISABLED,
-      method: 'cate.browser.readCommand',
+      method: 'cate.browser.getAXState',
     })
-    expect(await dispatchCateInvoke(s, 'cate.browser.readCommand', {
-      command: ['get', 'text', '@s1e1'],
+    expect(await dispatchCateInvoke(s, 'cate.browser.getAXState', {
+      disableDiffing: false,
     })).toEqual({
       error: BROWSER_READ_DISABLED,
-      method: 'cate.browser.readCommand',
+      method: 'cate.browser.getAXState',
     })
     expect(send).not.toHaveBeenCalled()
     expect(BROWSER_READ_DISABLED).toMatch(/Settings → CLI/)
     // Control is a separate grant and still goes through.
-    await dispatchCateInvoke(s, 'cate.browser.command', { command: ['click', '@s1e1'] })
+    await dispatchCateInvoke(s, 'cate.browser.click', { target: 1, tabId: 't1', observationId: 'o1' })
     expect(send).toHaveBeenCalledTimes(1)
   })
 
