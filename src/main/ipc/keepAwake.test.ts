@@ -32,11 +32,11 @@ beforeEach(() => {
 })
 
 describe('keep awake', () => {
-  it('starts disabled, shares one blocker, and broadcasts changes to all windows', () => {
+  it('starts disabled, shares one display-sleep blocker, and broadcasts changes to all windows', () => {
     expect(invoke(KEEP_AWAKE_GET)).toBe(false)
     expect(invoke(KEEP_AWAKE_SET, true)).toBe(true)
     expect(invoke(KEEP_AWAKE_SET, true)).toBe(true)
-    expect(mocks.start).toHaveBeenCalledExactlyOnceWith('prevent-app-suspension')
+    expect(mocks.start).toHaveBeenCalledExactlyOnceWith('prevent-display-sleep')
     expect(invoke(KEEP_AWAKE_GET)).toBe(true)
     expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, true)
 
