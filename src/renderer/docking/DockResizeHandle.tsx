@@ -100,12 +100,14 @@ export default function DockResizeHandle({ direction, onResize, onDoubleClick }:
   return (
     <div
       className={`
-        flex-shrink-0 relative group
+        flex-shrink-0 relative z-30 group pointer-events-auto
         ${isHorizontal ? 'w-[5px] cursor-col-resize' : 'h-[5px] cursor-row-resize'}
       `}
       onMouseDown={handleMouseDown}
       onDoubleClick={onDoubleClick}
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
     >
+      <div className={`absolute ${isHorizontal ? 'inset-y-0 -left-1 -right-1' : 'inset-x-0 -top-1 -bottom-1'}`} />
       {/* Visible indicator on hover */}
       <div
         className={`

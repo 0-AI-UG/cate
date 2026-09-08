@@ -32,7 +32,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'nativeApp'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'navigation' | 'search' | 'sourceControl' | 'surface'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -203,6 +203,7 @@ export interface ReviewPanelOpenRequest {
 }
 
 export interface PanelState {
+  sidebarView?: Exclude<SidebarView, 'workspaces'>
   id: string
   type: PanelType
   title: string
@@ -265,11 +266,6 @@ export interface PanelState {
   /** Agent panels only: the T3 thread rendered by this panel. Machine-local
    *  because the id belongs to the harness state on this execution host. */
   agentThreadId?: string
-  /** Native app panels only: the macOS bundle id captured by the
-   *  cate-nativehost sidecar (e.g. "com.apple.Safari"). Unset until the user
-   *  picks an app from the panel's launcher. Persisted so the capture session
-   *  is re-acquired for the right app across remounts/restarts. */
-  nativeAppBundleId?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -604,6 +600,7 @@ export interface DockTabStack {
 }
 
 export interface DockZoneState {
+  maximized?: boolean
   position: DockZonePosition
   visible: boolean
   size: number // width (left/right) or height (bottom) in pixels
@@ -777,10 +774,9 @@ export function displayString(s: StoredShortcut): string {
 export const SHORTCUT_DEFINITIONS = {
   newTerminal: { label: 'New Terminal', shortcut: storedShortcut('t', { command: true }) },
   newBrowser: { label: 'New Browser', shortcut: storedShortcut('b', { command: true, shift: true }) },
-  newEditor: { label: 'New Editor', shortcut: storedShortcut('e', { command: true, shift: true }) },
+  newEditor: { label: 'New Files Panel', shortcut: storedShortcut('e', { command: true, shift: true }) },
   newAgent: { label: 'New T3 Code conversation', shortcut: storedShortcut('a', { command: true, shift: true }) },
   newCanvas: { label: 'New Canvas', shortcut: storedShortcut('c', { command: true, shift: true }) },
-  newNativeApp: { label: 'New Native App', shortcut: storedShortcut('g', { command: true, shift: true }) },
   newFile: { label: 'New File', shortcut: storedShortcut('n', { command: true }) },
   closePanel: { label: 'Close Panel', shortcut: storedShortcut('w', { command: true }) },
   toggleSidebar: { label: 'Toggle Sidebar', shortcut: storedShortcut('b', { command: true }) },
@@ -1196,6 +1192,7 @@ export interface ProjectWorkspaceFile {
 }
 
 export interface ProjectPanelRef {
+  sidebarView?: Exclude<SidebarView, 'workspaces'>
   /** Preserve a manual title across restored terminal and T3 sessions. */
   titleUserOverridden?: boolean
   type: string
@@ -1306,12 +1303,6 @@ export const FILE_EXCLUSIONS: string[] = [
 
 /** A sidebar view (left/right rail tabs). */
 export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'search'
-
-/** Which sidebar views live in the left vs. right rail. Persisted in settings. */
-export interface SidebarLayout {
-  left: SidebarView[]
-  right: SidebarView[]
-}
 
 /** Version of the telemetry/privacy notice. Bump when the privacy policy
  *  materially changes so every user sees the informational notice once more.
@@ -1537,11 +1528,6 @@ export interface AppSettings {
    *  folder already exists in the repo). Sparse: only real overrides stored. */
   agentHookInjection: Record<string, Partial<Record<AgentId, AgentHookMode>>>
 
-  // Layout
-  /** Which sidebar views live in the left vs. right rail. Was renderer
-   *  localStorage (cate.sidebarLayout.v3) before. */
-  sidebarLayout: SidebarLayout
-
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -1634,12 +1620,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Agent
   agentHookInjection: {},
 
-  // Layout — keep in sync with the sidebar's default arrangement.
-  sidebarLayout: {
-    left: ['workspaces', 'explorer', 'search'],
-    right: ['git'],
-  },
-
 }
 
 // -----------------------------------------------------------------------------
@@ -1687,6 +1667,10 @@ export const PANEL_MINIMUM_SIZES: Record<PanelType, Size> = Object.fromEntries(
 // PANEL_DEFAULT_SIZES sizes fresh windows in their own shells and is too
 // large for an in-canvas drop.
 export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
+  navigation: { width: 340, height: 500 },
+  search: { width: 340, height: 500 },
+  sourceControl: { width: 340, height: 500 },
+  surface: { width: 540, height: 500 },
   terminal: { width: 520, height: 340 },
   browser: { width: 640, height: 440 },
   editor: { width: 540, height: 420 },
@@ -1694,7 +1678,6 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   agent: { width: 520, height: 440 },
   document: { width: 640, height: 480 },
   review: { width: 820, height: 560 },
-  nativeApp: { width: 640, height: 440 },
 }
 
 // -----------------------------------------------------------------------------
@@ -1746,39 +1729,3 @@ export interface PerfSnapshot {
   ipc: Array<{ channel: string; kbPerSec: number; callsPerSec: number }>
   terminal: { kbPerSec: number; chunksPerSec: number }
 }
-
-// -----------------------------------------------------------------------------
-// Native app capture — sessions brokered to the cate-nativehost sidecar
-// (native/nativehost/PROTOCOL.md). NativeAppBroker owns the socket + sidecar
-// process; these types describe what crosses the main -> renderer IPC.
-// -----------------------------------------------------------------------------
-
-/** JSON control messages from cate-nativehost (wire type 0x01). Mirrors
- *  PROTOCOL.md's control-message table. Forward-compatible clients ignore
- *  unrecognized `t` values rather than erroring — the catch-all member covers
- *  those. */
-export type NativeAppControlMessage =
-  | { t: 'ready'; displayId: number; appPid: number }
-  | { t: 'placed'; onDisplay: boolean }
-  | { t: 'status'; frames: number; complete: number; idle: number; suspended: number }
-  | { t: 'error'; message: string }
-  | { t: string; [key: string]: unknown }
-
-export interface NativeAppAcquireOptions {
-  bundleId: string
-  width?: number
-  height?: number
-  fps?: number
-}
-
-export type NativeAppAcquireResult = { sessionId: string } | { error: string }
-
-/** Input events forwarded renderer → main → sidecar for a captured app.
- *  Pointer positions are NORMALIZED (0…1) over the captured window content, so
- *  they're independent of panel/window pixel size. Modifier booleans and (for
- *  keys) a macOS virtual key `code` let the sidecar reproduce shortcuts + text.
- *  Compact keys keep the per-event JSON small at interaction frequency. */
-export type NativeAppInputEvent =
-  | { k: 'm'; a: 'down' | 'up' | 'move' | 'drag'; nx: number; ny: number; b?: 0 | 1; clicks?: number; cmd?: boolean; shift?: boolean; opt?: boolean; ctrl?: boolean }
-  | { k: 's'; nx: number; ny: number; dx: number; dy: number }
-  | { k: 'k'; a: 'down' | 'up'; code?: number; text?: string; cmd?: boolean; shift?: boolean; opt?: boolean; ctrl?: boolean }

@@ -1,14 +1,14 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { patchT3Client } from './patch-t3-client.mjs'
 import path from 'node:path'
 import { patchT3Changes } from './patch-t3-changes.mjs'
 
-// T3 0.0.38 discovers Grok models by starting an ACP session, which calls
-// authenticate and can open OAuth on every background health refresh. Use
-// T3's fallback/custom models here; actual chat sessions still authenticate.
-const probe = 'discoverGrokModelsViaAcp(grokSettings, environment).pipe(timeoutOption(GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS), exit)'
-const safeProbe = 'succeed$1([]).pipe(timeoutOption(GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS), exit) /* cate: noninteractive Grok health check */'
+// Keep Grok background health checks noninteractive. T3 0.0.39 uses ACP
+// initialize for discovery; Cate continues using fallback/custom models so
+// background refresh never starts ACP. Chat sessions still authenticate.
+const probe = 'discoverGrokModelsViaAcpInitialize(grokSettings, environment).pipe(timeoutOption(GROK_ACP_INITIALIZE_TIMEOUT_MS), exit)'
+const safeProbe = 'succeed$1([]).pipe(timeoutOption(GROK_ACP_INITIALIZE_TIMEOUT_MS), exit) /* cate: noninteractive Grok health check */'
 
 export function patchT3Source(source) {
   if (source.includes(safeProbe) && !source.includes(probe)) return source
@@ -22,15 +22,27 @@ export function patchT3Source(source) {
 // first server thread and redirects every new guest away from its draft.
 export function patchT3ProjectBootstrap(source) {
   const marker = 'bootstrapProjectId = nextProjectId; /* cate: project-only bootstrap */'
-  const start = '\t\tconst existingThreadId = yield* projectionReadModelQuery.getFirstActiveThreadIdByProjectId(nextProjectId);'
-  const end = '\n\t});\n\treturn {\n\t\t...bootstrapProjectId'
+  const start = '\t\t\tyield* gen$1(function* () {\n\t\t\t\tconst existingThreadId = yield* projectionReadModelQuery.getFirstActiveThreadIdByProjectId(nextProjectId);'
+  const end = '\n\t\t});\n\t}\n\treturn {\n\t\t...bootstrapProjectId'
   if (source.includes(marker) && !source.includes(start)) return source
   const from = source.indexOf(start)
   const to = source.indexOf(end, from)
   if (from === -1 || to === -1 || source.indexOf(start, from + 1) !== -1) {
     throw new Error('T3 project bootstrap changed; review chat creation before shipping')
   }
-  return source.slice(0, from) + '\t\t' + marker + source.slice(to)
+  return source.slice(0, from) + '\t\t\t' + marker + source.slice(to)
+}
+
+// Cate owns onboarding and provider setup. The upstream first-run gate must
+// not redirect embedded chat and usage guests to its standalone welcome page.
+export function patchT3Onboarding(source) {
+  const marker = 'return "cate-hosted" /* cate: host owns onboarding */'
+  if (source.includes(marker)) return source
+  const accessor = /return [a-zA-Z_$][\w$]*\.onboardingCompletedAt(?=})/g
+  if ([...source.matchAll(accessor)].length !== 1) {
+    throw new Error('T3 onboarding gate changed; review embedded startup before shipping')
+  }
+  return source.replace(accessor, marker)
 }
 
 // Remove the retired Cate-only injection from already-patched installations.
@@ -46,6 +58,13 @@ export function patchT3(entryPath) {
   const patched = removeLegacyBrowserMcp(patchT3Changes(patchT3ProjectBootstrap(patchT3Source(source))))
   if (patched !== source) writeFileSync(entryPath, patched)
   patchT3Client(path.join(path.dirname(entryPath), 'client', 'assets'))
+  const assets = new URL('./client/assets/', pathToFileURL(entryPath))
+  const clients = readdirSync(assets).filter((name) => /^main-.*\.js$/.test(name))
+  if (clients.length !== 1) throw new Error('T3 client bundle changed; review embedded onboarding')
+  const clientPath = new URL(clients[0], assets)
+  const clientSource = readFileSync(clientPath, 'utf8')
+  const clientPatched = patchT3Onboarding(clientSource)
+  if (clientPatched !== clientSource) writeFileSync(clientPath, clientPatched)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

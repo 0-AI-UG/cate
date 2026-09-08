@@ -10,7 +10,7 @@ const rect = (x: number, y: number, width = 100, height = 80): Rect => ({
 describe('panelConnectionPath', () => {
   it('connects horizontal rectangles at their facing edges with a gap', () => {
     expect(panelConnectionPath(rect(0, 0), rect(300, 0))).toBe(
-      'M 107 40 C 203 40, 197 40, 293 40',
+      'M 107 40 C 153.5 40, 246.5 40, 293 40',
     )
   })
 
@@ -18,6 +18,12 @@ describe('panelConnectionPath', () => {
     const path = panelConnectionPath(rect(0, 0), rect(0, 240))
     expect(path).toMatch(/^M 50 87 C /)
     expect(path).toMatch(/, 50 233$/)
+  })
+
+  it('anchors diagonal connections at the middle of a side', () => {
+    const path = panelConnectionPath(rect(0, 0), rect(220, 160))
+    expect(path).toMatch(/^M 107 40 C /)
+    expect(path).toMatch(/, 213 200$/)
   })
 
   it('does not invent a direction for coincident rectangles', () => {

@@ -27,7 +27,7 @@ export const CanvasToolbarButton = forwardRef<HTMLButtonElement, CanvasToolbarBu
         aria-label={label}
         aria-pressed={active || undefined}
         style={{ WebkitTapHighlightColor: 'transparent', ...props.style }}
-        className={`${size === 'panel' ? 'h-9 w-9' : 'h-8 w-8'} flex items-center justify-center rounded-full ${
+        className={`${size === 'panel' ? 'h-9 w-9' : 'h-8 w-8'} shrink-0 flex items-center justify-center rounded-full ${
           active ? 'bg-hover-strong text-primary' : 'bg-transparent text-secondary'
         } hover:bg-hover-strong hover:text-primary active:scale-[0.92] transition-all duration-100 ${className}`}
       >

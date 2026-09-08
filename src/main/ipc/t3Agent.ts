@@ -2,6 +2,7 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import {
   AGENT_HARNESS_RENAME_CONVERSATION,
   AGENT_HARNESS_GET_PANEL_URL,
+  AGENT_HARNESS_GET_USAGE_URL,
   AGENT_HARNESS_LIST_CONVERSATIONS,
   AGENT_HARNESS_DELETE_CONVERSATION,
   AGENT_CONVERSATION_DELETED,
@@ -30,8 +31,8 @@ function validateRequest(value: unknown): AgentHarnessPanelRequest {
   if (!value || typeof value !== 'object') throw new Error('Agent harness request is required')
   const input = value as Record<string, unknown>
   const route = input.route
-  if (route !== undefined && route !== 'thread' && route !== 'providers') {
-    throw new Error('route must be thread or providers')
+  if (route !== undefined && route !== 'thread' && route !== 'providers' && route !== 'usage') {
+    throw new Error('route must be thread, providers, or usage')
   }
   return {
     workspaceId: requireText(input.workspaceId, 'workspaceId'),
@@ -84,6 +85,15 @@ export function registerT3AgentHandlers(): void {
       await t3HarnessManager.renameConversation({ ...request, threadId, title }, requireWindowId(event))
       return { ok: true }
     } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
+  })
+
+  ipcMain.handle(AGENT_HARNESS_GET_USAGE_URL, async (_event, input: unknown) => {
+    try {
+      const panelId = requireText((input as { panelId?: unknown } | null)?.panelId, 'panelId')
+      return await t3HarnessManager.getUsageTarget(panelId)
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
   })
   ipcMain.handle(AGENT_HARNESS_DELETE_CONVERSATION, async (event, input: unknown) => {
     try {

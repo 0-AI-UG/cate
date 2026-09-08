@@ -17,8 +17,10 @@ vi.mock('./BrowserPanel', () => ({
 import BackgroundBrowserHost from './BackgroundBrowserHost'
 import { BrowserPanelSurfaceSlot, PersistentBrowserHostContext } from './browserSurfaceRegistry'
 import { useAppStore } from '../stores/appStore'
+import { useUIStore } from '../stores/uiStore'
 
 const initialState = useAppStore.getState()
+const initialUIState = useUIStore.getState()
 let container: HTMLDivElement
 let root: Root
 
@@ -121,9 +123,23 @@ afterEach(() => {
   act(() => root.unmount())
   container.remove()
   useAppStore.setState(initialState, true)
+  useUIStore.setState(initialUIState, true)
 })
 
 describe('BackgroundBrowserHost', () => {
+  it('hides portaled browsers during settings without remounting their guests', async () => {
+    await renderHost()
+    const browser = container.querySelector('[data-browser-panel="browser-one"]')
+    const background = container.querySelector<HTMLElement>('[data-background-browser-host]')!
+    expect(background.hidden).toBe(false)
+    act(() => useUIStore.getState().openSettings())
+    expect(background.hidden).toBe(true)
+    expect(container.querySelector('[data-browser-panel="browser-one"]')).toBe(browser)
+    act(() => useUIStore.getState().closeSettings())
+    expect(background.hidden).toBe(false)
+    expect(container.querySelector('[data-browser-panel="browser-one"]')).toBe(browser)
+  })
+
   it('mounts every browser once and aligns only the selected surface to its slot', async () => {
     await renderHost()
 

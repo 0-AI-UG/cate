@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
-import { ChevronRight as CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, Grid2X2 as SquaresFour, Ellipsis as DotsThree, type LucideIcon } from 'lucide-react'
+import { ChevronRight as CaretRight, Terminal as TerminalIcon, Folder, FolderOpen, FolderPlus, Grid2X2 as SquaresFour, Ellipsis as DotsThree, type LucideIcon } from 'lucide-react'
 import { browserPanelUrl, type WorkspaceState, type PanelType, type PanelState, type WindowPanelInfo } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
@@ -790,11 +790,11 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         </button>
 
         {/* Folder icon (tinted by accent if set) */}
-        <Folder
-          size={14}
-          className="flex-shrink-0 opacity-90"
-          style={hasColor ? { color: accent } : undefined}
-        />
+        {React.createElement(isExpanded ? FolderOpen : Folder, {
+          size: 14,
+          className: 'flex-shrink-0 opacity-90',
+          style: hasColor ? { color: accent } : undefined,
+        })}
 
         {/* Name (or inline rename input) */}
         {isRenaming ? (

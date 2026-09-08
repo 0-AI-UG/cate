@@ -478,9 +478,9 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   if (isPathVisible && !isPathVisible(node.path)) return null
 
   return (
-    <div className={flat ? 'relative' : undefined}>
+    <div className={flat ? 'relative flow-root' : undefined}>
       {flat && Array.from({ length: depth }, (_, index) => (
-        <div key={index} className="absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none" style={{ left: index * 16 + 13 }} />
+        <div key={index} className="explorer-indent-guide absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none" style={{ left: index * 16 + 13 }} />
       ))}
       {/* Node row */}
       <div
@@ -576,7 +576,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       {!flat && node.isDirectory && isExpanded && (
         <div className="relative">
           <div
-            className="absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none"
+            className="explorer-indent-guide absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none"
             style={{ left: `${depth * 16 + 8 + 5}px` }}
           />
           {children.map((child) => (

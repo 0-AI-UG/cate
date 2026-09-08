@@ -78,6 +78,34 @@ function ghost(stroke: string, body: string): string {
 // -----------------------------------------------------------------------------
 
 export const PANEL_DEFINITIONS = {
+  navigation: {
+    type: 'navigation', label: 'Files', brandColor: '#8E8E93', mutedColor: '#636366',
+    tintClass: 'text-secondary', defaultSize: { width: 540, height: 500 },
+    minimumSize: { width: 220, height: 200 }, ghostSvg: '', canLiveOnCanvas: true,
+    worktreeBinding: false, navigable: true, keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false,
+  },
+  search: {
+    type: 'search', label: 'Search', brandColor: '#8E8E93', mutedColor: '#636366',
+    tintClass: 'text-secondary', defaultSize: { width: 540, height: 500 },
+    minimumSize: { width: 220, height: 200 }, ghostSvg: '', canLiveOnCanvas: true,
+    worktreeBinding: false, navigable: true, keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false,
+  },
+  sourceControl: {
+    type: 'sourceControl', label: 'Source Control', brandColor: '#8E8E93', mutedColor: '#636366',
+    tintClass: 'text-secondary', defaultSize: { width: 540, height: 500 },
+    minimumSize: { width: 220, height: 200 }, ghostSvg: '', canLiveOnCanvas: true,
+    worktreeBinding: false, navigable: true, keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false, splitMenuOrder: 7,
+  },
+  surface: {
+    type: 'surface', label: 'Open a surface', brandColor: '#8E8E93', mutedColor: '#636366',
+    tintClass: 'text-secondary', defaultSize: { width: 540, height: 500 },
+    minimumSize: { width: 220, height: 200 }, ghostSvg: '', canLiveOnCanvas: true,
+    worktreeBinding: false, navigable: false, keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false,
+  },
   terminal: {
     type: 'terminal',
     label: 'Terminal',
@@ -115,7 +143,7 @@ export const PANEL_DEFINITIONS = {
   },
   editor: {
     type: 'editor',
-    label: 'Editor',
+    label: 'Files',
     brandColor: '#FF9F0A',
     mutedColor: '#b07440',
     tintClass: 'text-orange-400',
@@ -162,6 +190,7 @@ export const PANEL_DEFINITIONS = {
   },
   review: {
     type: 'review',
+    splitMenuOrder: 8,
     label: 'Diff Review',
     brandColor: '#34C759',
     mutedColor: '#3f8f55',
@@ -190,26 +219,6 @@ export const PANEL_DEFINITIONS = {
     splitMenuOrder: 3,
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
-  },
-  nativeApp: {
-    type: 'nativeApp',
-    worktreeBinding: false,
-    navigable: true,
-    label: 'Native App',
-    brandColor: '#00C7BE',
-    mutedColor: '#3a8f8a',
-    tintClass: 'text-teal-400',
-    // 8:5 to match the captured window aspect (1440×900), so the live frame
-    // fills the panel without letterbox bands at the default size.
-    defaultSize: { width: 800, height: 500 },
-    minimumSize: { width: 400, height: 250 },
-    ghostSvg: ghost('rgb(0,199,190)', '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'),
-    canLiveOnCanvas: true,
-    // The live capture session (cate-nativehost sidecar + virtual display) is
-    // external state that cannot be reconstructed from a remount without
-    // re-launching the target app — same reasoning as extension panels.
-    keepMountedOffscreen: true,
-    keepMountedWhenTabHidden: true,
   },
 } satisfies Record<PanelType, SharedPanelDefinition>
 

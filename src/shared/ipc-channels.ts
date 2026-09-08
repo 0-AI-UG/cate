@@ -46,6 +46,9 @@ export const SEARCH_DONE = 'search:done'      // main -> renderer (terminal even
 
 // Shell utilities
 export const SHELL_SHOW_IN_FOLDER = 'shell:showInFolder'
+export const SHELL_OPEN_PATH = 'shell:openPath'
+export const SHELL_LIST_APPS = 'shell:listApps'
+export const SHELL_OPEN_FILE_ON_GITHUB = 'shell:openFileOnGitHub'
 
 // Git
 export const GIT_IS_REPO = 'git:isRepo'
@@ -159,6 +162,7 @@ export const UPDATE_QUIT_AND_INSTALL = 'update:quitAndInstall'
 // Renderer -> main: pull the latest status (the modal can mount after the
 // download-finished event already fired). Returns the cached UpdateStatus.
 export const UPDATE_GET_STATUS = 'update:getStatus'
+export const UPDATE_CHECK = 'update:check'
 
 // Post-update changelog + feedback prompt
 // Main -> renderer: show the modal. Payload: { fromVersion, toVersion }
@@ -351,6 +355,7 @@ export const NATIVE_FILE_DRAG = 'native:fileDrag'
 
 // T3 provider harness. Cate owns the workspace/worktree path and panel shell;
 // the harness owns provider conversations, streaming, and approvals.
+export const AGENT_HARNESS_GET_USAGE_URL = 'agentHarness:getUsageUrl'
 export const AGENT_HARNESS_GET_PANEL_URL = 'agentHarness:getPanelUrl'
 export const AGENT_HARNESS_RENAME_CONVERSATION = 'agentHarness:renameConversation'
 export const AGENT_HARNESS_PANEL_CLOSED = 'agentHarness:panelClosed'
@@ -362,15 +367,6 @@ export const AGENT_PROVIDER_AUTH_WRITE = 'agentProviderAuth:write'
 export const AGENT_PROVIDER_AUTH_CANCEL = 'agentProviderAuth:cancel'
 export const AGENT_PROVIDER_STATUS_GET = 'agentProviderStatus:get'
 export const AGENT_PROVIDER_SETTINGS = 'agentProvider:settings'
-// Native app capture — sessions brokered to the cate-nativehost sidecar
-// (see src/main/nativeApp/NativeAppBroker.ts, native/nativehost/PROTOCOL.md).
-export const NATIVE_APP_ACQUIRE = 'nativeApp:acquire' // renderer -> main
-export const NATIVE_APP_RELEASE = 'nativeApp:release' // renderer -> main
-export const NATIVE_APP_FRAME = 'nativeApp:frame'     // main -> renderer: { sessionId, jpeg }
-export const NATIVE_APP_STATUS = 'nativeApp:status'   // main -> renderer: { sessionId, control }
-export const NATIVE_APP_INPUT = 'nativeApp:input'     // renderer -> main: { sessionId, event }
-export const NATIVE_APP_RESIZE = 'nativeApp:resize'   // renderer -> main: { sessionId, width, height }
-
 
 // Skills (cross-agent skill manager)
 export const SKILLS_GET_INDEX = 'skills:getIndex'             // renderer -> main (merged catalog)
@@ -424,3 +420,9 @@ export const AGENT_CONVERSATION_DELETED = 'agentHarness:conversationDeleted'
 export const RECENT_SCREENSHOT_GET = 'recentScreenshot:get'
 export const RECENT_SCREENSHOT_CHANGED = 'recentScreenshot:changed'
 export const RECENT_SCREENSHOT_DRAG = 'recentScreenshot:drag'
+
+export const PULL_REQUESTS_LIST = 'pullRequests:list'
+export const GITHUB_LOGIN = 'github:login'
+
+export const GITHUB_CONNECTION = 'github:connection'
+export const GITHUB_PR_CONTEXT = 'github:prContext'

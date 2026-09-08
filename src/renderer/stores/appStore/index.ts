@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // =============================================================================
 // App Store — Zustand state for workspaces and panel management.
 // Workspace metadata is delegated to the main process (source of truth).
@@ -9,7 +10,7 @@
 // helpers, awaitWorkspaceSync) must match the former single-file module exactly.
 // =============================================================================
 
-import { create } from 'zustand'
+import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { shallow } from 'zustand/shallow'
 import { arrayEqualBy } from '../selectorUtils'
@@ -51,21 +52,36 @@ export { getCanvasOpsById } from '../../lib/workspace/canvasAccess'
 // Store
 // -----------------------------------------------------------------------------
 
-export const useAppStore = create<AppStore>((set, get) => ({
-  // --- State ---
-  // Start empty — a default workspace is created during init only if no session is restored.
-  workspaces: [],
-  selectedWorkspaceId: '',
-  localRuntimePhase: null,
-  reloadEpochs: {},
+function createAppState(set: StoreApi<AppStore>['setState'], get: StoreApi<AppStore>['getState']): AppStore {
+  return {
+    // --- State ---
+    // Start empty — a default workspace is created during init only if no session is restored.
+    workspaces: [],
+    selectedWorkspaceId: '',
+    localRuntimePhase: null,
+    reloadEpochs: {},
 
-  // --- Slices ---
-  ...createWorkspaceSlice(set, get),
-  ...createPanelSlice(set, get),
-  ...createRemoteSlice(set, get),
-  ...createWorktreeSlice(set, get),
-  ...createSyncSlice(set, get),
-}))
+    // --- Slices ---
+    ...createWorkspaceSlice(set, get),
+    ...createPanelSlice(set, get),
+    ...createRemoteSlice(set, get),
+    ...createWorktreeSlice(set, get),
+    ...createSyncSlice(set, get),
+  }
+}
+
+// Keep existing subscribers and imperative callers on the same store during HMR.
+// Re-evaluating a dependency must not create an empty parallel workspace store.
+const retainedStore = import.meta.hot?.data?.appStore as UseBoundStore<StoreApi<AppStore>> | undefined
+export const useAppStore = retainedStore ?? create<AppStore>(createAppState)
+if (retainedStore) {
+  const state = retainedStore.getState()
+  retainedStore.setState({ ...createAppState(retainedStore.setState, retainedStore.getState),
+    workspaces: state.workspaces, selectedWorkspaceId: state.selectedWorkspaceId,
+    localRuntimePhase: state.localRuntimePhase, reloadEpochs: state.reloadEpochs,
+  }, true)
+}
+if (import.meta.hot?.data) import.meta.hot.data.appStore = useAppStore
 
 // -----------------------------------------------------------------------------
 // Cross-window workspace sync — subscribe to main-process broadcasts

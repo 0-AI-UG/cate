@@ -4,6 +4,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import log from '../lib/logger'
 import { RotateCw as ArrowClockwise, FilePlus, FolderPlus, Search as MagnifyingGlass, X } from 'lucide-react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
@@ -40,6 +41,9 @@ const FS_READ_RETRY_DELAY_MS = 120
 interface FileExplorerProps {
   rootPath: string
   scopeControl?: React.ReactNode
+  onOpenFiles?: (paths: string[], mode?: 'dock' | 'canvas') => void
+  compact?: boolean
+  actionsTarget?: HTMLElement | null
 }
 
 // One entry per on-screen row, top to bottom (root nodes + children of expanded
@@ -62,7 +66,7 @@ interface ExplorerView {
 // revalidate. Keep the cache bounded independently of the number of workspaces.
 const recentExplorerViews = new Map<string, ExplorerView>()
 
-export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeControl }) => {
+export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeControl, onOpenFiles, compact = false, actionsTarget }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
   // Expansion state is owned by the explorer (not each FileTreeNode) so this
@@ -379,8 +383,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
       // so focus the (tabbable) scroll container explicitly. preventScroll keeps
       // the list from jumping when a row deep in the tree is clicked.
       treeContainerRef.current?.focus({ preventScroll: true })
+      if (onOpenFiles && !meta.shift && !meta.cmd && flatRows.some((row) => row.path === path && !row.isDirectory)) {
+        onOpenFiles([path])
+      }
     },
-    [flatRows],
+    [flatRows, onOpenFiles],
   )
 
   // Move the keyboard cursor to a single row: select it and scroll it into view.
@@ -392,6 +399,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
 
   const handleFileOpen = useCallback(
     (filePaths: string[], mode?: 'dock' | 'canvas') => {
+      if (onOpenFiles) {
+        onOpenFiles(filePaths, mode)
+        return
+      }
       // Resolve mode: explicit > infer from active center panel
       // Default: always open as a dock tab in the center zone (alongside the
       // canvas tab). Opening as a floating canvas node requires an explicit
@@ -404,7 +415,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
         openFileAsPanel(selectedWorkspaceId, filePath, undefined, placement)
       }
     },
-    [selectedWorkspaceId],
+    [onOpenFiles, selectedWorkspaceId],
   )
 
   const handleReload = useCallback(() => {
@@ -590,7 +601,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
 
   return (
     <div
-      className="flex flex-col h-full"
+      className="file-explorer flex flex-col h-full"
       // External (OS) file/folder drops anywhere in the panel import into the
       // workspace root. stopPropagation keeps the drop from bubbling to the
       // app-root handler (which would otherwise re-root the workspace).
@@ -613,7 +624,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
         })
       }}
     >
-      <SidebarSectionHeader
+      {!compact && <SidebarSectionHeader
         title="Explorer"
         subtitle={scopeControl ?? folderName}
         actions={
@@ -642,9 +653,30 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
             </SidebarHeaderButton>
           </>
         }
-      />
+      />}
 
-      {searchVisible && (
+      {compact && (
+        <div className="h-10 px-2 flex items-center gap-1">
+          <div className="flex-1 relative">
+            <MagnifyingGlass size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              placeholder="Filter files"
+              className="w-full bg-surface-2 text-primary text-xs pl-7 pr-2 py-1.5 rounded-lg border border-subtle focus:border-focus outline-none"
+            />
+          </div>
+        </div>
+      )}
+      {compact && actionsTarget && createPortal(<>
+        <SidebarHeaderButton onClick={() => startRootCreate('file')} title="New File"><FilePlus size={14} /></SidebarHeaderButton>
+        <SidebarHeaderButton onClick={() => startRootCreate('folder')} title="New Folder"><FolderPlus size={14} /></SidebarHeaderButton>
+        <SidebarHeaderButton onClick={handleReload} title="Reload"><ArrowClockwise size={14} /></SidebarHeaderButton>
+      </>, actionsTarget)}
+
+      {!compact && searchVisible && (
         <div className="px-2 py-1.5 border-b border-subtle flex items-center gap-1">
           <div className="flex-1 relative">
             <MagnifyingGlass

@@ -7,10 +7,10 @@ export function patchT3Changes(source) {
       .replace('yield* promise(() => cateReportChange(event))', 'cateReportChange(event)')
     return source.slice(0, source.indexOf(marker)).trimEnd() + '\n' + changeHelpers
   }
-  const before = 'const processRuntimeEvent = (event) => gen(function* () {\n\t\tif (event.type === "content.delta"'
+  const before = 'const processRuntimeEvent = (event) => gen$1(function* () {\n\t\tif (event.type === "content.delta"'
   if (source.split(before).length !== 2) throw new Error('T3 provider change ingestion seam changed')
-  source = source.replace(before, 'const processRuntimeEvent = (event) => gen(function* () {\n\t\tif (process.env.CATE_CHANGES_ENDPOINT && (event.type === "turn.diff.updated" || event.type === "item.completed")) cateReportChange(event);\n\t\tif (event.type === "content.delta"')
-  const start = '\t\tconst files = yield* checkpointStore.diffCheckpoints({'
+  source = source.replace(before, 'const processRuntimeEvent = (event) => gen$1(function* () {\n\t\tif (process.env.CATE_CHANGES_ENDPOINT && (event.type === "turn.diff.updated" || event.type === "item.completed")) cateReportChange(event);\n\t\tif (event.type === "content.delta"')
+  const start = '\t\tconst files = yield* (fromCheckpointExists ? checkpointStore.diffCheckpoints({'
   const from = source.indexOf(start)
   const to = source.indexOf('\n\t\tconst assistantMessageId = input.assistantMessageId', from)
   if (from < 0 || to < 0 || source.indexOf(start, from + 1) >= 0) throw new Error('T3 checkpoint summary seam changed')

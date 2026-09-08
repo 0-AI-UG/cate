@@ -3,10 +3,10 @@ import type { Runtime } from '../runtime/types'
 import { T3HarnessManager } from './T3HarnessManager'
 
 const mocks = vi.hoisted(() => ({
-  resolve: vi.fn(), disconnected: vi.fn(), windowClosed: vi.fn(),
+  resolve: vi.fn(), runtime: vi.fn(), disconnected: vi.fn(), windowClosed: vi.fn(),
 }))
 vi.mock('electron', () => ({ app: {}, session: {} }))
-vi.mock('../runtime/runtimeManager', () => ({ resolveLocator: mocks.resolve, runtimes: { onDisconnected: mocks.disconnected } }))
+vi.mock('../runtime/runtimeManager', () => ({ resolveLocator: mocks.resolve, runtimes: { resolve: mocks.runtime, onDisconnected: mocks.disconnected } }))
 vi.mock('../cateApi/serverTunnel', () => ({ openTunnelDuplex: vi.fn() }))
 vi.mock('../cateApi/workspaceCateApi', () => ({ workspaceCateApi: {} }))
 vi.mock('../windowRegistry', () => ({ onWindowClosed: mocks.windowClosed }))
@@ -14,13 +14,14 @@ vi.mock('../windowRegistry', () => ({ onWindowClosed: mocks.windowClosed }))
 function runtime() {
   return {
     validatePathStrict: vi.fn(async (path: string) => path.replace('/alias', '/repo')),
+    file: { harnessRoot: vi.fn().mockResolvedValue('/app/harness') },
     server: { stop: vi.fn() },
     process: { create: vi.fn().mockResolvedValue(undefined), write: vi.fn(), kill: vi.fn() },
   }
 }
 function instance(key: string, rt: ReturnType<typeof runtime>) {
   return {
-    key, runtime: rt, environmentId: 'env', proxyPort: 4321,
+    key, runtimeId: key.startsWith('local:') ? 'local' : 'remote', runtime: rt, environmentId: 'env', proxyPort: 4321,
     serverId: key, panels: new Set<string>(),
     proxy: { close: vi.fn((done: () => void) => done()) },
   }
@@ -33,6 +34,7 @@ const request = { workspaceId: 'ws', panelId: 'panel', cwd: '/repo' }
 beforeEach(() => {
   vi.clearAllMocks()
   local = runtime(); remote = runtime()
+  mocks.runtime.mockReturnValue(local)
   mocks.resolve.mockImplementation((cwd: string) => ({
     runtimeId: cwd.startsWith('ssh:') ? 'remote' : 'local',
     path: cwd.replace(/^ssh:/, ''), runtime: cwd.startsWith('ssh:') ? remote : local,
@@ -50,6 +52,27 @@ beforeEach(() => {
 afterEach(async () => { await manager.disposeAll(); vi.restoreAllMocks() })
 
 describe('T3 harness lifecycle', () => {
+  it('opens global usage without a workspace or a workspace path grant', async () => {
+    const first = await manager.getUsageTarget('usage-one')
+    const second = await manager.getUsageTarget('usage-two')
+    expect(first).toMatchObject({ url: 'http://127.0.0.1:4321/usage', runtimeId: 'local', threadId: null })
+    expect(second.partition).toBe(first.partition)
+    expect(mocks.runtime).toHaveBeenCalledWith('local')
+    expect(mocks.resolve).not.toHaveBeenCalled()
+    expect(local.validatePathStrict).not.toHaveBeenCalled()
+    expect(start).toHaveBeenCalledExactlyOnceWith('local:/app/harness', 'local', local, '/app/harness', undefined)
+  })
+
+  it('opens usage on the existing harness without creating a conversation', async () => {
+    const chat = await manager.getPanelTarget(request, 1)
+    const usage = await manager.getPanelTarget({ ...request, panelId: 'usage', route: 'usage' }, 1)
+    expect(usage.url).toBe('http://127.0.0.1:4321/usage')
+    expect(usage.partition).toBe(chat.partition)
+    expect(start).toHaveBeenCalledOnce()
+    manager.panelClosed('usage')
+    expect(local.server.stop).not.toHaveBeenCalled()
+  })
+
   it('shares concurrent startup for aliases of the same checkout, but keeps panel chat routes independent', async () => {
     const [first, second] = await Promise.all([
       manager.getPanelTarget({ ...request, cwd: '/alias', threadId: 'one' }, 1),

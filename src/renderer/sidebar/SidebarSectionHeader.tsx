@@ -7,7 +7,8 @@ import React from 'react'
 import { IconButton } from '../ui/Button'
 
 interface SidebarSectionHeaderProps {
-  title: string
+  title: React.ReactNode
+  leadingAction?: React.ReactNode
   actions?: React.ReactNode
   /** Optional small subtitle row rendered beneath the main header (no border). */
   subtitle?: React.ReactNode
@@ -16,13 +17,18 @@ interface SidebarSectionHeaderProps {
   large?: boolean
 }
 
-export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ title, actions, subtitle, large }) => {
+export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ title, leadingAction, actions, subtitle, large }) => {
   return (
     <div className="flex-shrink-0">
       <div
-        className="flex items-center min-h-[36px] px-3"
+        className="app-header-bar"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
+        {leadingAction && (
+          <div className="flex items-center mr-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            {leadingAction}
+          </div>
+        )}
         <span
           className={`flex-1 truncate text-primary ${large ? 'text-[18px] font-semibold' : 'text-[13px]'}`}
         >

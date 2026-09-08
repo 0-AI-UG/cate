@@ -147,6 +147,9 @@ import {
   SEARCH_RESULT,
   SEARCH_DONE,
   SHELL_SHOW_IN_FOLDER,
+  SHELL_OPEN_PATH,
+  SHELL_LIST_APPS,
+  SHELL_OPEN_FILE_ON_GITHUB,
   NOTIFY_OS,
   NOTIFY_ACTION,
   WINDOW_SET_TITLE,
@@ -215,6 +218,11 @@ import {
   RECENT_SCREENSHOT_CHANGED,
   RECENT_SCREENSHOT_DRAG,
   AGENT_HARNESS_GET_PANEL_URL,
+  AGENT_HARNESS_GET_USAGE_URL,
+  PULL_REQUESTS_LIST,
+  GITHUB_LOGIN,
+  GITHUB_CONNECTION,
+  GITHUB_PR_CONTEXT,
   AGENT_HARNESS_LIST_CONVERSATIONS,
   AGENT_HARNESS_DELETE_CONVERSATION,
   AGENT_CONVERSATION_DELETED,
@@ -227,15 +235,10 @@ import {
   AGENT_PROVIDER_AUTH_CANCEL,
   AGENT_PROVIDER_STATUS_GET,
   AGENT_PROVIDER_SETTINGS,
-  NATIVE_APP_ACQUIRE,
-  NATIVE_APP_RELEASE,
-  NATIVE_APP_FRAME,
-  NATIVE_APP_STATUS,
-  NATIVE_APP_INPUT,
-  NATIVE_APP_RESIZE,
   UPDATE_STATUS,
   UPDATE_QUIT_AND_INSTALL,
   UPDATE_GET_STATUS,
+  UPDATE_CHECK,
   ANALYTICS_FEEDBACK_PROMPT,
   ANALYTICS_FEEDBACK_SUBMIT,
   ANALYTICS_FEEDBACK_DISMISS,
@@ -263,7 +266,7 @@ import {
   CATE_HOST_FORWARD,
   CATE_HOST_FORWARD_REPLY,
 } from '../shared/ipc-channels'
-import type { AppSettings, SearchResultBatch, SearchDoneEvent, NativeAppControlMessage, NativeAppInputEvent } from '../shared/types'
+import type { AppSettings, SearchResultBatch, SearchDoneEvent } from '../shared/types'
 import type { ElectronAPI, UpdateStatus } from '../shared/electron-api'
 
 // Cache native-fullscreen state so renderer drag handlers can synchronously
@@ -474,7 +477,7 @@ const invokeForwarders = {
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
   getRecentScreenshot: makeInvoker<'getRecentScreenshot'>(RECENT_SCREENSHOT_GET),
   dragRecentScreenshot: makeInvoker<'dragRecentScreenshot'>(RECENT_SCREENSHOT_DRAG),
-  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot | null) => void): () => void {
+  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot[]) => void): () => void {
     return createIpcListener(RECENT_SCREENSHOT_CHANGED, callback)
   },
 
@@ -482,6 +485,11 @@ const invokeForwarders = {
   agentHarnessRenameConversation: makeInvoker<'agentHarnessRenameConversation'>(AGENT_HARNESS_RENAME_CONVERSATION),
   agentHarnessDeleteConversation: makeInvoker<'agentHarnessDeleteConversation'>(AGENT_HARNESS_DELETE_CONVERSATION),
   agentHarnessListConversations: makeInvoker<'agentHarnessListConversations'>(AGENT_HARNESS_LIST_CONVERSATIONS),
+  pullRequestsList: makeInvoker<'pullRequestsList'>(PULL_REQUESTS_LIST),
+  githubLogin: makeInvoker<'githubLogin'>(GITHUB_LOGIN),
+  githubConnection: makeInvoker<'githubConnection'>(GITHUB_CONNECTION),
+  githubPrContext: makeInvoker<'githubPrContext'>(GITHUB_PR_CONTEXT),
+  agentHarnessGetUsageUrl: makeInvoker<'agentHarnessGetUsageUrl'>(AGENT_HARNESS_GET_USAGE_URL),
   agentHarnessGetPanelUrl: makeInvoker<'agentHarnessGetPanelUrl'>(AGENT_HARNESS_GET_PANEL_URL),
   agentHarnessRestart: makeInvoker<'agentHarnessRestart'>(AGENT_HARNESS_RESTART),
   agentHarnessGetStatus: makeInvoker<'agentHarnessGetStatus'>(AGENT_HARNESS_GET_STATUS),
@@ -491,12 +499,12 @@ const invokeForwarders = {
   agentProviderAuthCancel: makeInvoker<'agentProviderAuthCancel'>(AGENT_PROVIDER_AUTH_CANCEL),
   agentProviderStatusGet: makeInvoker<'agentProviderStatusGet'>(AGENT_PROVIDER_STATUS_GET),
   agentProviderSettings: makeInvoker<'agentProviderSettings'>(AGENT_PROVIDER_SETTINGS),
-  // Native app capture (cate-nativehost sidecar)
-  nativeAppAcquire: makeInvoker<'nativeAppAcquire'>(NATIVE_APP_ACQUIRE),
-  nativeAppRelease: makeInvoker<'nativeAppRelease'>(NATIVE_APP_RELEASE),
 
   // Shell utilities
   shellShowInFolder: makeInvoker<'shellShowInFolder'>(SHELL_SHOW_IN_FOLDER),
+  shellOpenPath: makeInvoker<'shellOpenPath'>(SHELL_OPEN_PATH),
+  shellListApps: makeInvoker<'shellListApps'>(SHELL_LIST_APPS),
+  shellOpenFileOnGitHub: makeInvoker<'shellOpenFileOnGitHub'>(SHELL_OPEN_FILE_ON_GITHUB),
 
   // Notifications
   notifyOS: makeInvoker<'notifyOS'>(NOTIFY_OS),
@@ -559,6 +567,7 @@ const invokeForwarders = {
 
   // Auto-updater
   getUpdateStatus: makeInvoker<'getUpdateStatus'>(UPDATE_GET_STATUS),
+  checkForUpdates: makeInvoker<'checkForUpdates'>(UPDATE_CHECK),
   quitAndInstallUpdate: makeInvoker<'quitAndInstallUpdate'>(UPDATE_QUIT_AND_INSTALL),
 
   // Analytics feedback
@@ -611,26 +620,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onTerminalExit(callback: (terminalId: string, exitCode: number) => void): () => void {
     return createIpcListener(TERMINAL_EXIT, callback)
-  },
-
-  // ---------------------------------------------------------------------------
-  // Native app capture (cate-nativehost sidecar)
-  // ---------------------------------------------------------------------------
-
-  onNativeAppFrame(callback: (payload: { sessionId: string; jpeg: Uint8Array }) => void): () => void {
-    return createIpcListener(NATIVE_APP_FRAME, callback)
-  },
-
-  onNativeAppStatus(callback: (payload: { sessionId: string; control: NativeAppControlMessage }) => void): () => void {
-    return createIpcListener(NATIVE_APP_STATUS, callback)
-  },
-
-  nativeAppInput(sessionId: string, event: NativeAppInputEvent): void {
-    ipcRenderer.send(NATIVE_APP_INPUT, sessionId, event)
-  },
-
-  nativeAppResize(sessionId: string, width: number, height: number): void {
-    ipcRenderer.send(NATIVE_APP_RESIZE, sessionId, width, height)
   },
 
   // ---------------------------------------------------------------------------

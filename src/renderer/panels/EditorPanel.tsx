@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Check, Copy, FolderOpen } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { perfCount, useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
@@ -21,10 +21,11 @@ import {
   markEditorActive,
   clearEditorActive,
   getActiveEditorPanelId,
+  saveEditor,
 } from '../lib/editor/editorSaveRegistry'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
 import type { Theme } from '../../shared/types'
-import { takePendingReveal } from '../lib/editor/editorReveal'
+import { setPendingReveal, type EditorReveal, takePendingReveal } from '../lib/editor/editorReveal'
 import {
   getCachedModel,
   rememberModel,
@@ -33,16 +34,25 @@ import {
   resolveLoadedModel,
   markLoadFailed,
   clearLoadFailed,
+  rememberBaseline,
 } from '../lib/editor/modelCache'
 import { useFileSync } from '../lib/editor/useFileSync'
 import EditorConflictBanner from './EditorConflictBanner'
 import { Tooltip } from '../ui/Tooltip'
 import { isRuntimeLocator } from '../../shared/runtimeLocator'
-import { useUIStore } from '../stores/uiStore'
 import { LoadingState } from '../ui/Spinner'
 import { PanelCenteredState } from '../ui/PanelCenteredState'
 import { worktreeForPanel } from '../lib/worktreeContext'
 import { toRelativePath } from '../../shared/pathUtils'
+import { FileExplorer } from '../sidebar/FileExplorer'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
+import { NodePopover, useNodePopover } from '../ui/Popover'
+import { pathDisplayName } from '../lib/fs/displayPath'
+import { ExplorerSidebar } from './ExplorerSidebar'
+import { SearchView } from '../sidebar/SearchView'
+import { useSearchStore } from '../stores/searchStore'
+import { getActivePanelId, useActivePanelStore } from '../lib/activePanel'
+import { setPanelField } from '../stores/appStore/helpers'
 
 // -----------------------------------------------------------------------------
 // Editor font
@@ -243,10 +253,124 @@ export default function EditorPanel({
   const [markdownContent, setMarkdownContent] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [fileLoading, setFileLoading] = useState(!!filePath)
+  const [explorerVisible, setExplorerVisible] = useState(true)
+  const [editorVisible, setEditorVisible] = useState(true)
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  const [toolbarScroll, setToolbarScroll] = useState({ left: false, right: false })
+  const [explorerActionsTarget, setExplorerActionsTarget] = useState<HTMLDivElement | null>(null)
+  const [editorBackground, setEditorBackground] = useState(() => getActiveTheme().editor.colors?.['editor.background'] ?? 'var(--surface-1)')
+  const openButtonRef = useRef<HTMLButtonElement>(null)
+  const [openApps, setOpenApps] = useState<Array<{ id: string; name: string; icon: string }>>([])
+  useEffect(() => { void window.electronAPI.shellListApps().then(setOpenApps).catch(() => setOpenApps([])) }, [])
+  const openMenu = useNodePopover(openButtonRef, (rect) => ({ left: Math.max(8, Math.min(rect.right - 224, window.innerWidth - 232)), gap: 6, height: 150 }))
 
   const workspaces = useAppStore((s) => s.workspaces)
   const ws = workspaces.find((w) => w.id === workspaceId)
   const panel = ws?.panels[panelId]
+  const explorerRoot = worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath ?? ''
+  const showOpenFileState = !filePath && !panel?.unsavedContent
+
+  const activePanelId = useActivePanelStore((s) => s.activePanelId)
+  const searchVisible = panel?.sidebarView === 'search'
+  const searchFocusToken = useSearchStore((s) => s.focusToken)
+  useEffect(() => {
+    const toolbar = toolbarRef.current
+    if (!toolbar) return
+    const update = () => setToolbarScroll({
+      left: toolbar.scrollLeft > 1,
+      right: toolbar.scrollLeft + toolbar.clientWidth < toolbar.scrollWidth - 1,
+    })
+    update()
+    toolbar.addEventListener('scroll', update, { passive: true })
+    const observer = new ResizeObserver(update)
+    observer.observe(toolbar)
+    return () => {
+      toolbar.removeEventListener('scroll', update)
+      observer.disconnect()
+    }
+  }, [filePath, explorerVisible, searchVisible, editorVisible])
+  useEffect(() => {
+    if (searchVisible && getActivePanelId() === panelId) setExplorerVisible(true)
+  }, [searchVisible, searchFocusToken, panelId])
+  const setNavigationView = (view: 'explorer' | 'search') => {
+    setPanelField(useAppStore.setState, workspaceId, panelId, (current) => ({ ...current, sidebarView: view }))
+    setExplorerVisible(true)
+  }
+
+  const switchingFile = useRef(false)
+  const openExplorerFiles = useCallback(async (paths: string[], mode?: 'dock' | 'canvas', reveal?: EditorReveal) => {
+    if (mode === 'canvas') {
+      for (const path of paths) openFileAsPanel(workspaceId, path)
+      return
+    }
+    const nextPath = paths[0]
+    if (!nextPath || switchingFile.current) return
+    if (nextPath === filePath) {
+      if (reveal) {
+        useAppStore.getState().setPanelMarkdownPreview(workspaceId, panelId, false)
+        editorRef.current?.revealLineInCenter(reveal.line)
+        editorRef.current?.setPosition({ lineNumber: reveal.line, column: reveal.column ?? 1 })
+        editorRef.current?.focus()
+      }
+      return
+    }
+    switchingFile.current = true
+    try {
+      const store = useAppStore.getState()
+      const current = store.getWorkspace(workspaceId)?.panels[panelId]
+      if (current?.isDirty) {
+        const choice = await window.electronAPI.confirmUnsavedChanges({ fileName: current.title, filePath: current.filePath })
+        if (choice === 'cancel') return
+        if (choice === 'save' && await saveEditor(panelId) !== 'saved') return
+        if (choice === 'discard') {
+          const content = current.filePath ? await window.electronAPI.fsReadFile(current.filePath, workspaceId) : ''
+          editorRef.current?.getModel()?.setValue(content)
+          if (current.filePath) rememberBaseline(current.filePath, content)
+        }
+      }
+      store.setPanelDirty(workspaceId, panelId, false)
+      store.setPanelUnsavedContent(workspaceId, panelId, undefined)
+      store.setPanelMarkdownPreview(workspaceId, panelId, false)
+      if (reveal) setPendingReveal(panelId, reveal)
+      store.updatePanelFilePath(workspaceId, panelId, nextPath)
+      store.updatePanelTitle(workspaceId, panelId, nextPath.replace(/\\/g, '/').split('/').pop() ?? 'Files')
+    } catch (error) {
+      window.alert(`Could not switch files: ${String(error)}`)
+    } finally {
+      switchingFile.current = false
+    }
+  }, [workspaceId, panelId, filePath])
+
+  const showPathMenu = useCallback(async () => {
+    if (!filePath) return
+    const id = await window.electronAPI.showContextMenu([
+      { id: 'absolute', label: 'Copy Absolute Path' },
+      { id: 'project', label: 'Copy Path Relative to Project' },
+      { id: 'repo', label: 'Copy Path Relative to Repository' },
+    ])
+    const repoRoot = worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath ?? ''
+    const value = id === 'absolute'
+      ? filePath
+      : id === 'project'
+        ? toRelativePath(filePath, ws?.rootPath ?? '')
+        : id === 'repo'
+          ? toRelativePath(filePath, repoRoot)
+          : null
+    if (value) void navigator.clipboard.writeText(value)
+  }, [filePath, panel, ws])
+
+  const runOpenAction = useCallback(async (id: string) => {
+    if (!filePath) return
+    if (id === 'folder') {
+      await window.electronAPI.shellShowInFolder(filePath, workspaceId)
+    } else if (id === 'default') {
+      const result = await window.electronAPI.shellOpenPath(filePath, workspaceId)
+      if (!result.ok) window.alert(result.error ?? 'Could not open this file in another app.')
+    } else if (id === 'github') {
+      const result = await window.electronAPI.shellOpenFileOnGitHub(filePath, workspaceId)
+      if (!result.ok) window.alert('This file is not in a local GitHub repository with an origin remote.')
+    }
+  }, [filePath, workspaceId])
   // Preview mode is kept per-panel in the store rather than as local state: a
   // single EditorPanel mount is reused across dock tabs (renderPanelComponent
   // creates the element without a key), so local state would leak the toggle
@@ -282,8 +406,6 @@ export default function EditorPanel({
   // cwd, file-watch scope, and the default folder for saving an untitled file.
   const checkoutRoot = worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath
   const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
-  const isDirty = !!ws?.panels[panelId]?.isDirty
-  const openFilePalette = useUIStore((s) => s.openFilePalette)
 
   const markdownPreviewRef = useRef(markdownPreview)
   markdownPreviewRef.current = markdownPreview
@@ -341,7 +463,11 @@ export default function EditorPanel({
       minimap: { enabled: false },
       automaticLayout: false,
       scrollBeyondLastLine: false,
-      scrollbar: { useShadows: false },
+      scrollbar: { useShadows: false, verticalScrollbarSize: 8.45, horizontalScrollbarSize: 8.45, verticalSliderSize: 8.45, horizontalSliderSize: 8.45 },
+      lineNumbersMinChars: 3,
+      lineDecorationsWidth: 6,
+      glyphMargin: false,
+      overviewRulerLanes: 0,
       overviewRulerBorder: false,
       padding: { top: 8, bottom: 8 },
       lineNumbers: 'on',
@@ -490,7 +616,7 @@ export default function EditorPanel({
         clearTimeout(unsavedSaveTimer)
         unsavedSaveTimer = null
       }
-      if (!filePath) {
+      if (!filePath && !useAppStore.getState().getWorkspace(workspaceId)?.panels[panelId]?.filePath) {
         const value = editor.getModel()?.getValue() ?? ''
         useAppStore.getState().setPanelUnsavedContent(workspaceId, panelId, value || undefined)
       }
@@ -599,10 +725,10 @@ export default function EditorPanel({
       renderOverviewRuler: false,
       overviewRulerLanes: 0,
       scrollbar: {
-        verticalScrollbarSize: 8,
-        horizontalScrollbarSize: 8,
-        verticalSliderSize: 8,
-        horizontalSliderSize: 8,
+        verticalScrollbarSize: 13.52,
+        horizontalScrollbarSize: 13.52,
+        verticalSliderSize: 13.52,
+        horizontalSliderSize: 13.52,
       },
       padding: { top: 8, bottom: 8 },
     })
@@ -626,6 +752,7 @@ export default function EditorPanel({
   useEffect(() => {
     const unsub = subscribeTheme((t) => {
       applyMonacoTheme(t)
+      setEditorBackground(t.editor.colors?.['editor.background'] ?? 'var(--surface-1)')
       monaco.editor.setTheme(CATE_MONACO_THEME)
     })
     return unsub
@@ -650,7 +777,111 @@ export default function EditorPanel({
           onDismiss={dismiss}
         />
       )}
-      <div className="flex-1 min-h-0 relative">
+      <div className="relative h-10 shrink-0 border-b border-subtle" style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}>
+      <div ref={toolbarRef} className="files-toolbar no-scrollbar h-full overflow-x-auto px-2 flex items-center gap-1 text-xs">
+        <button
+          onClick={showPathMenu}
+          disabled={!filePath}
+          className="min-w-0 shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+          title={filePath ?? explorerRoot}
+        >
+          <span className="truncate text-muted">{pathDisplayName(explorerRoot) || 'Files'}</span>
+          {filePath && <><ChevronRight size={12} className="shrink-0 text-muted" /><span className="truncate text-primary">{toRelativePath(filePath, explorerRoot)}</span></>}
+          <Copy size={12} className="shrink-0" />
+          <ChevronDown size={11} className="shrink-0" />
+        </button>
+        <div className="flex-1" />
+        <div ref={setExplorerActionsTarget} className={`shrink-0 items-center gap-1 ${explorerVisible && !searchVisible ? 'flex' : 'hidden'}`} />
+        <button
+          onClick={async () => {
+            if (!filePath) return
+            const result = await window.electronAPI.shellOpenFileOnGitHub(filePath, workspaceId)
+            if (!result.ok) window.alert('This file is not in a local GitHub repository with an origin remote.')
+          }}
+          disabled={!filePath}
+          className="shrink-0 p-1.5 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+          title="Open on GitHub"
+        ><Github size={14} /></button>
+        <button
+          ref={openButtonRef}
+          onClick={() => openMenu.setOpen(!openMenu.open)}
+          aria-expanded={openMenu.open}
+          disabled={!filePath}
+          className="shrink-0 flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-strong text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+          title="Open in another app"
+        ><ExternalLink size={13} /><span>Open</span><ChevronDown size={11} /></button>
+        <button
+          onClick={() => {
+            if (editorVisible) setExplorerVisible(true)
+            setEditorVisible(!editorVisible)
+          }}
+          disabled={!explorerRoot}
+          className="shrink-0 p-1.5 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+          title={editorVisible ? 'Show file explorer only' : 'Show editor'}
+          aria-label={editorVisible ? 'Show file explorer only' : 'Show editor'}
+          aria-pressed={!editorVisible}
+        >{editorVisible ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}</button>
+        <button
+          onClick={() => {
+            if (searchVisible || !explorerVisible) setNavigationView('explorer')
+            else setExplorerVisible(false)
+          }}
+          disabled={!editorVisible}
+          className={`shrink-0 p-1.5 rounded-md hover:bg-hover ${explorerVisible && !searchVisible ? 'text-primary bg-surface-3' : 'text-secondary'}`}
+          title={explorerVisible && !searchVisible ? 'Hide file explorer' : 'Show file explorer'}
+          aria-label={explorerVisible && !searchVisible ? 'Hide file explorer' : 'Show file explorer'}
+          aria-pressed={explorerVisible && !searchVisible}
+        ><Folders size={15} /></button>
+        <button
+          onClick={() => {
+            if (searchVisible && explorerVisible) setExplorerVisible(false)
+            else { setNavigationView('search'); useSearchStore.getState().requestFocus() }
+          }}
+          className={`shrink-0 p-1.5 rounded-md hover:bg-hover ${explorerVisible && searchVisible ? 'text-primary bg-surface-3' : 'text-secondary'}`}
+          title="Search in files"
+          aria-label="Search in files"
+          aria-pressed={explorerVisible && searchVisible}
+        ><Search size={15} /></button>
+      </div>
+      {toolbarScroll.left && (
+        <button
+          onClick={() => toolbarRef.current?.scrollBy({ left: -180, behavior: 'smooth' })}
+          className="absolute inset-y-0 left-0 z-10 flex w-8 items-center justify-start bg-gradient-to-r from-surface-1 via-surface-1/90 to-transparent pl-1 text-secondary hover:text-primary"
+          aria-label="Scroll toolbar left"
+        ><ChevronLeft size={16} className="animate-pulse" /></button>
+      )}
+      {toolbarScroll.right && (
+        <button
+          onClick={() => toolbarRef.current?.scrollBy({ left: 180, behavior: 'smooth' })}
+          className="absolute inset-y-0 right-0 z-10 flex w-8 items-center justify-end bg-gradient-to-l from-surface-1 via-surface-1/90 to-transparent pr-1 text-secondary hover:text-primary"
+          aria-label="Scroll toolbar right"
+        ><ChevronRight size={16} className="animate-pulse" /></button>
+      )}
+      </div>
+      {openMenu.open && <NodePopover popoverRef={openMenu.popoverRef} pos={openMenu.pos} portalTarget={openMenu.portalTarget} width={224} bodyClassName="p-1.5 !rounded-2xl !border-subtle !bg-surface-3 !shadow-lg">
+        <div onKeyDown={(event) => event.stopPropagation()} className="flex flex-col gap-0.5">
+          {openApps.map((application) => <button key={application.id} onClick={() => {
+            openMenu.setOpen(false)
+            if (filePath) void window.electronAPI.shellOpenPath(filePath, workspaceId, application.id).then((result) => {
+              if (!result.ok) window.alert(result.error)
+            }).catch((error) => window.alert(String(error)))
+          }} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-primary hover:bg-hover">
+            {application.icon ? <img src={application.icon} alt="" className="w-4 h-4 object-contain" /> : <ExternalLink size={16} />}{application.name}
+          </button>)}
+          {openApps.length > 0 && <div className="my-1 border-t border-subtle" />}
+          {([
+            ['default', 'Open in Default App', ExternalLink],
+            ['folder', 'Show in File Explorer', Folders],
+            ['github', 'Open on GitHub', Github],
+          ] as const).map(([id, label, Icon]) => <button key={id} onClick={() => {
+            openMenu.setOpen(false)
+            openButtonRef.current?.focus()
+            void runOpenAction(id).catch((error) => window.alert(String(error)))
+          }} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-primary hover:bg-hover focus-visible:bg-hover"><Icon size={16} className="text-muted" />{label}</button>)}
+        </div>
+      </NodePopover>}
+      <div className="files-content flex-1 min-h-0 flex" style={{ backgroundColor: editorBackground }}>
+      <div className={`${editorVisible ? 'flex-1' : 'hidden'} min-w-0 relative`}>
         {showDiff && conflict?.kind === 'changed' && (
           <div className="absolute inset-0 z-30 bg-surface-1">
             <div ref={diffOverlayRef} className="w-full h-full" />
@@ -669,17 +900,15 @@ export default function EditorPanel({
         {fileLoading && (
           <LoadingState label="Loading file…" className="absolute inset-0 z-20 bg-surface-1 text-sm" />
         )}
-        <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
-        {!filePath && !isDirty && (
-          <button
-            onClick={() => openFilePalette(panelId)}
-            className="absolute top-2 right-3 z-40 flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium bg-surface-3 text-secondary shadow-sm hover:bg-surface-4 hover:text-primary transition-colors"
-            title="Open an existing workspace file"
-          >
-            <FolderOpen size={13} />
-            Open File…
-          </button>
+        {showOpenFileState && (
+          <PanelCenteredState
+            className="absolute inset-0 z-20 !bg-transparent"
+            icon={<FolderOpen size={38} strokeWidth={1.5} />}
+            title="Open file"
+            description="Choose a file from the workspace tree"
+          />
         )}
+        <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError || showOpenFileState ? 'hidden' : ''}`} />
         {/* Source/Preview toggle — floats over the content's top-right instead
             of taking a header row. right-3 (12px) clears Monaco's 8px vertical
             scrollbar lane; z-40 keeps it above the diff (z-30) and load-error
@@ -697,6 +926,14 @@ export default function EditorPanel({
             {markdownPreview ? 'Source' : 'Preview'}
           </button>
         )}
+      </div>
+      {explorerRoot && (
+        <ExplorerSidebar visible={explorerVisible} fill={!editorVisible} onHide={() => setExplorerVisible(false)}>
+          {searchVisible
+            ? <SearchView rootPath={explorerRoot} workspaceId={workspaceId} focusInput={explorerVisible && activePanelId === panelId} onOpenMatch={(path, line, column) => { void openExplorerFiles([path], 'dock', { line, column }) }} />
+            : <FileExplorer rootPath={explorerRoot} onOpenFiles={openExplorerFiles} compact actionsTarget={explorerActionsTarget} />}
+        </ExplorerSidebar>
+      )}
       </div>
     </div>
   )

@@ -1,3 +1,5 @@
+import PullRequestsOverview from './pullRequests/PullRequestsOverview'
+import UsageOverview from './usage/UsageOverview'
 // =============================================================================
 // App — Main application component wiring all systems together.
 // Ported from MainWindowView.swift
@@ -7,11 +9,13 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import log from './lib/logger'
 import { useAppStore, useSelectedWorkspace, setupWorkspaceSync, getWorkspaceCanvasStore } from './stores/appStore'
 import { CanvasStoreProvider } from './stores/CanvasStoreContext'
+import { createCanvasStore } from './stores/canvasStore'
 import { DockStoreProvider } from './stores/DockStoreContext'
 import { getOrCreateWorkspaceDockStore } from './lib/workspace/dockRegistry'
 import { useStore } from 'zustand'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStateStore } from './stores/uiStateStore'
+import { useUIStore } from './stores/uiStore'
 import { useWorkspaceTrustStore, ensureProjectTrusted } from './stores/workspaceTrustStore'
 import { WorkspaceTrustDialog } from './dialogs/WorkspaceTrustDialog'
 import { useBrowserStore } from './stores/browserStore'
@@ -19,7 +23,7 @@ import { workspaceDisplayName } from './lib/fs/displayPath'
 import { useFileDropTracker, FileDropOverlay } from './drag/fileDropTarget'
 import { useProcessMonitor } from './hooks/useProcessMonitor'
 import { useCateHostActionResponder } from './hooks/useCateHostActionResponder'
-import { Sidebar, RightSidebar } from './sidebar/Sidebar'
+import { Sidebar } from './sidebar/Sidebar'
 import { PanelHost } from './panels/PanelHost'
 import { RuntimeLockOverlay } from './ui/RuntimeLockOverlay'
 import WindowChrome from './shells/WindowChrome'
@@ -42,6 +46,7 @@ import { createRemoteDropHandler } from './drag/crossWindow'
 import { hydrateReceivedPanel } from './lib/panelTransfer'
 import { useWindowRuntime } from './lib/hooks/useWindowRuntime'
 import { closePanelWithConfirm } from './lib/closePanelWithConfirm'
+import { IS_MAC } from './lib/platform'
 import pkg from '../../package.json'
 import { PersistentBrowserHostContext } from './panels/browserSurfaceRegistry'
 
@@ -117,6 +122,14 @@ export default function App() {
 // -----------------------------------------------------------------------------
 
 function MainApp() {
+  useEffect(() => {
+    if (!IS_MAC) return
+    const background = document.body.style.background
+    document.body.style.background = 'transparent'
+    return () => { document.body.style.background = background }
+  }, [])
+
+  const sidebarTintOpacity = useSettingsStore((s) => s.sidebarTintOpacity)
   const [initializing, setInitializing] = useState(true)
   const initializedRef = useRef(false)
   // Guards against stacking reload-confirm dialogs when the detector re-fires.
@@ -144,6 +157,7 @@ function MainApp() {
     ? getOrCreateWorkspaceDockStore(selectedWorkspaceId)
     : bootDockStoreRef.current
   const activeCanvasStore = getWorkspaceCanvasStore(selectedWorkspaceId)
+  const [bootCanvasStore] = useState(() => createCanvasStore())
 
   // Shared window runtime — theme/scale, settings load, keyboard shortcuts,
   // agent-screen detector, Cmd+, settings toggle, and the external-file-drop
@@ -223,8 +237,6 @@ function MainApp() {
       // project the user has already trusted.
       await useWorkspaceTrustStore.getState().hydrate()
 
-      // The sidebar layout lives solely in settingsStore now; components read it
-      // via useSidebarLayout, so there's no uiStore copy to re-seed here.
 
       // Try to restore previous session — only the core (active workspace).
       // Detached panel/dock windows are recreated afterwards so the main
@@ -377,20 +389,11 @@ function MainApp() {
     [currentWorkspace, selectedWorkspaceId],
   )
 
-  // Pre-workspace render (boot, before any workspace exists). The trust dialog
-  // has to be mounted here too: at launch the first thing that happens is the
-  // trust question, and at that point there is no canvas store yet.
-  if (!activeCanvasStore) {
-    return (
-      <div className="h-screen w-screen bg-canvas-bg">
-        <WorkspaceTrustDialog />
-      </div>
-    )
-  }
-
+  // Keep the shell and global Usage guest mounted while a new workspace's
+  // canvas store is being created. The empty store only bridges that transition.
   return (
-    <CanvasStoreProvider store={activeCanvasStore}>
-    <div className="h-screen w-screen flex flex-col bg-canvas-bg">
+    <CanvasStoreProvider store={activeCanvasStore ?? bootCanvasStore}>
+    <div className={`h-screen w-screen flex flex-col ${IS_MAC ? '' : 'bg-canvas-bg'}`} style={{ opacity: initializing ? 0 : 1 }}>
       <TitlebarStrip />
       {/* macOS window-control island — floats over the top-left corner (traffic
           lights + sidebar toggle); no dead header row above the canvas. */}
@@ -408,7 +411,8 @@ function MainApp() {
           Wrapped in the active workspace's dock store and KEYED by the
           workspace id so the whole dock/canvas subtree remounts on switch and
           reads that workspace's own stores — full per-workspace isolation. */}
-      <div className="relative flex-1 min-h-0 min-w-0">
+      <div className="relative flex-1 min-h-0 min-w-0 bg-canvas-bg">
+      <WorkspaceContent>
       <DockStoreProvider store={activeDockStore}>
       <MainWindowShell
         key={`${selectedWorkspaceId}:${reloadEpoch}`}
@@ -422,10 +426,15 @@ function MainApp() {
           workspace's runtime is down. Sits inside the shell wrapper so it
           never covers the sidebars. Renders nothing for local/healthy ws. */}
       <RuntimeLockOverlay />
+      </WorkspaceContent>
+      <UsageOverview />
+      <PullRequestsOverview />
+      <div id="skills-content-slot" className="absolute inset-0 z-40 pointer-events-none empty:hidden" />
+      <div id="settings-content-slot" className="absolute inset-0 z-[100001] pointer-events-none empty:hidden" />
       </div>
 
       {/* Right sidebar — real flex item, pushes the shell from the right. */}
-      <div data-app-sidebar="right" className="flex-shrink-0 h-full"><RightSidebar /></div>
+
       </div>
 
       {/* Single shared file-drag drop indicator (canvas / dock / agent) */}
@@ -443,10 +452,14 @@ function MainApp() {
       <UpdateReadyDialog />
       <PerfHud />
 
+      </div>
+    </div>
       {initializing && (
         <div
           className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-4 select-none pointer-events-none"
-          style={{ backgroundColor: BOOT_BG }}
+          style={{ backgroundColor: IS_MAC
+            ? `color-mix(in srgb, var(--surface-1) ${Math.round(sidebarTintOpacity * 30)}%, transparent)`
+            : BOOT_BG }}
         >
           <svg viewBox="0 0 389 204" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-8 text-muted">
             <path d="M274 203.2L307.29 1.79999H388.29L384.51 24.84H329.97L320.5 80.16H342.22H366.34L362.74 103.2H338.62H316.5L304.06 180.16H358.6L355 203.2H314.5H274Z" fill="currentColor"/>
@@ -457,8 +470,16 @@ function MainApp() {
           <div className="mt-3 text-[11px] text-muted tracking-wide">v{pkg.version}</div>
         </div>
       )}
-      </div>
-    </div>
     </CanvasStoreProvider>
   )
+}
+
+// Keep workspace panels mounted while settings owns the content area. Hidden
+// removes covered controls from keyboard navigation as well as painting.
+function WorkspaceContent({ children }: { children: React.ReactNode }) {
+  const showUsage = useUIStore((s) => s.showUsage)
+  const showSettings = useUIStore((s) => s.showSettings)
+  const showSkills = useUIStore((s) => s.showSkillsDialog)
+  const showPullRequests = useUIStore((s) => s.showPullRequests)
+  return <div className="h-full" hidden={showSettings || showUsage || showSkills || showPullRequests}>{children}</div>
 }

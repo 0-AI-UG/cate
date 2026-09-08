@@ -6,9 +6,11 @@ import { T3ConversationMenu } from './T3ConversationMenu'
 
 import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Terminal, Globe, FileText, Minus, Plus, Hand, X } from 'lucide-react'
+import { Terminal, Globe, Folders, Minus, Plus, X } from 'lucide-react'
 import { Map as MapTrifold, MousePointer2 as Cursor } from 'lucide-react'
+import { Hand } from 'lucide-react'
 import Minimap from './Minimap'
+import { RecentScreenshotButton } from './RecentScreenshotButton'
 import WorktreeToolbarMenu from './WorktreeToolbarMenu'
 import { useCanvasStoreApi, useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { useUIStore } from '../stores/uiStore'
@@ -21,7 +23,6 @@ import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { Tooltip } from '../ui/Tooltip'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 import { KeepAwakeButton } from './KeepAwakeButton'
-import { RecentScreenshotButton } from './RecentScreenshotButton'
 
 interface CanvasToolbarProps {
   canvasPanelId: string
@@ -158,7 +159,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
 }) => {
   const canvasApi = useCanvasStoreApi()
   const zoom = useCanvasStoreContext((s) => s.zoomLevel)
-  const minimapOpen = useUIStore((s) => s.minimapOpen)
+  const minimapOpen = useUIStore((s) => !!s.minimapOpenByCanvas[canvasPanelId])
   const toggleMinimapOpen = useUIStore((s) => s.toggleMinimapOpen)
   const activeTool = useUIStore((s) => s.activeTool)
   const setActiveTool = useUIStore((s) => s.setActiveTool)
@@ -171,38 +172,55 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const zoomResetKey = displayString(shortcuts.zoomReset)
   const zoomText = `${Math.round(zoom * 100)}%`
 
-  // Responsive layout keyed on canvas width. When there's room we show the
-  // original horizontal bar centered along the bottom; when the canvas gets too
-  // narrow (split view, small window) — where a centered bar would crowd the
-  // corner minimap — we collapse to a single bottom-left button that reveals a
-  // vertical version on hover.
+  // Responsive layout keyed on the toolbar's measured width and the free space
+  // along the bottom edge. Collapse before the centered bar can be clipped or
+  // overlap a bottom-corner minimap.
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const horizontalCardRef = useRef<HTMLDivElement>(null)
   const [areaWidth, setAreaWidth] = useState(0)
+  const [toolbarWidth, setToolbarWidth] = useState(0)
+
+  const minimapCorner = useUIStateStore((s) => s.minimapButtonCorner)
+  const mmBottom = minimapCorner.startsWith('bottom')
+  const mmRight = minimapCorner.endsWith('right')
 
   useEffect(() => {
-    const area = wrapperRef.current?.closest('[data-canvas-area]') as HTMLElement | null
+    const area = canvasContainerForPanel(canvasPanelId)
     if (!area) return
     const measure = () => setAreaWidth(area.clientWidth)
     const ro = new ResizeObserver(measure)
     ro.observe(area)
     measure()
     return () => ro.disconnect()
-  }, [])
+  }, [canvasPanelId])
 
-  // Below this canvas width the centered bar would crowd the corner minimap.
-  // Default to horizontal until measured so we don't flash the button on load.
-  const HORIZONTAL_MIN_WIDTH = 640
-  const mode: 'horizontal' | 'compact' =
-    areaWidth > 0 && areaWidth < HORIZONTAL_MIN_WIDTH ? 'compact' : 'horizontal'
-  const isHorizontal = mode === 'horizontal'
+  const minimapWidth = minimapOpen ? 220 : 44
+  const bottomLeftInset = mmBottom && !mmRight ? 16 + minimapWidth + 8 : 16
+  const bottomRightInset = mmBottom && mmRight ? 16 + minimapWidth + 8 : 16
+  const centeredLeft = (areaWidth - toolbarWidth) / 2
+  const centeredRight = centeredLeft + toolbarWidth
+  const isHorizontal = areaWidth === 0 || toolbarWidth === 0 || (
+    centeredLeft >= bottomLeftInset && centeredRight <= areaWidth - bottomRightInset
+  )
 
-  // In 'compact' mode: hovering reveals the vertical bar, clicking the resting
-  // button pins it open, and an open worktree fly-out keeps it open so
-  // the pointer can travel to the portaled popover without collapsing the card.
-  const [hovered, setHovered] = useState(false)
+  useEffect(() => {
+    if (!isHorizontal) return
+    const card = horizontalCardRef.current
+    if (!card) return
+    const measure = () => {
+      if (card.isConnected && card.offsetWidth > 0) setToolbarWidth(card.offsetWidth)
+    }
+    const ro = new ResizeObserver(measure)
+    ro.observe(card)
+    measure()
+    return () => ro.disconnect()
+  }, [isHorizontal])
+
+  // In compact mode the resting button expands the vertical toolbar on click.
+  // An open fly-out keeps it expanded until that menu closes.
   const [pinned, setPinned] = useState(false)
   const [openMenu, setOpenMenu] = useState<'worktree' | 't3' | null>(null)
-  const expanded = hovered || pinned || openMenu !== null
+  const expanded = pinned || openMenu !== null
   const ToolIcon = activeTool === 'hand' ? Hand : Cursor
 
   // The buttons are identical between layouts — only the tooltip side, fly-out
@@ -214,7 +232,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const items = (
     <>
       <KeepAwakeButton tooltipPlacement={place} />
-      <RecentScreenshotButton tooltipPlacement={place} />
       {divider}
       <CanvasToolbarButton
         onClick={() => setActiveTool('select')}
@@ -245,8 +262,8 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       <CanvasToolbarButton onClick={onNewBrowser} label={`Browser (${newBrowserKey})`} size="panel" tooltipPlacement={place}>
         <Globe size={18} />
       </CanvasToolbarButton>
-      <CanvasToolbarButton onClick={onNewEditor} label={`Editor (${newEditorKey})`} size="panel" tooltipPlacement={place}>
-        <FileText size={18} />
+      <CanvasToolbarButton onClick={onNewEditor} label={`Files (${newEditorKey})`} size="panel" tooltipPlacement={place}>
+        <Folders size={18} />
       </CanvasToolbarButton>
       <T3ConversationMenu canvasPanelId={canvasPanelId} workspaceId={workspaceId} rootPath={rootPath} tooltipPlacement={place} menuSide={menuSide} onOpenChange={(open) => setOpenMenu(open ? 't3' : null)} />
     </>
@@ -257,11 +274,8 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   // this corner) moves the pill immediately. The toggle button doubles as a
   // drag handle: a click toggles the map, a drag past a small threshold re-docks
   // the pill to whichever corner the cursor ends up in.
-  const minimapCorner = useUIStateStore((s) => s.minimapButtonCorner)
   const minimapDidDragRef = useRef(false)
   const minimapPillRef = useRef<HTMLDivElement>(null)
-  const mmBottom = minimapCorner.startsWith('bottom')
-  const mmRight = minimapCorner.endsWith('right')
 
   const handleMinimapHandleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
@@ -299,7 +313,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       minimapDidDragRef.current = false
       return
     }
-    toggleMinimapOpen()
+    toggleMinimapOpen(canvasPanelId)
   }
 
   return (
@@ -308,11 +322,12 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       /* Wide canvas — the original horizontal bar, centered along the bottom. */
       <div ref={wrapperRef} className="absolute inset-x-0 bottom-4 z-50 flex justify-center pointer-events-none">
         <div
+          ref={horizontalCardRef}
           data-onboarding="toolbar"
           data-toolbar-card
-          className="relative pointer-events-auto rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]"
+          className="relative shrink-0 w-max pointer-events-auto rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]"
         >
-          <div className="flex items-center gap-0.5 px-1 py-1">
+          <div className="flex flex-nowrap items-center gap-0.5 px-1 py-1">
             {items}
             {/* Zoom controls — only in the horizontal bar, where there's room. */}
             <div className="w-px h-5 bg-surface-5 mx-1" />
@@ -345,23 +360,24 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         </div>
       </div>
     ) : (
-      /* Narrow canvas — a single bottom-left button that reveals a vertical bar
-         on hover. It floats directly above the resting button; the transparent
-         paddingBottom keeps the hover region continuous so the pointer can travel
-         up without it collapsing. */
-      <div ref={wrapperRef} className="absolute bottom-4 left-4 z-50 pointer-events-none">
+      /* Narrow canvas: one bottom-right button expands the toolbar upward. If
+         the minimap occupies that corner, keep the button directly beside it. */
+      <div
+        ref={wrapperRef}
+        className="absolute bottom-4 z-50 pointer-events-none"
+        style={{ right: '1rem' }}
+      >
         <div
           data-onboarding="toolbar"
           className="relative pointer-events-auto"
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
         >
           <div
             aria-hidden={!expanded}
             style={{
+              visibility: expanded ? 'visible' : 'hidden',
               position: 'absolute',
               bottom: '100%',
-              left: 0,
+              right: 0,
               paddingBottom: 10,
               opacity: expanded ? 1 : 0,
               transform: expanded ? 'translateY(0)' : 'translateY(6px)',
@@ -372,14 +388,14 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             <div
               data-toolbar-card
               className="rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)] flex flex-col-reverse items-center gap-0.5 p-1"
+              style={{ maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}
             >
               {items}
             </div>
           </div>
 
-          {/* Resting button — shows the active tool; click pins the bar open,
-              hovering it (or the bar above) reveals. */}
-          <Tooltip label={pinned ? 'Collapse toolbar' : 'Tools — hover to expand, click to keep open'} placement="right">
+          {/* Resting button shows the active tool and toggles the vertical bar. */}
+          <Tooltip label={pinned ? 'Collapse toolbar' : 'Expand toolbar'} placement="left">
             <button
               type="button"
               onClick={() => setPinned((p) => !p)}
@@ -404,11 +420,20 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       className="absolute z-50 flex gap-2 pointer-events-auto"
       style={{
         ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),
-        ...(mmRight ? { right: '1rem' } : { left: '1rem' }),
+        ...(mmRight ? { right: !isHorizontal && mmBottom ? 'calc(1rem + 52px)' : '1rem' } : { left: '1rem' }),
         flexDirection: mmRight ? 'row' : 'row-reverse',
         alignItems: mmBottom ? 'flex-end' : 'flex-start',
       }}
     >
+      <div
+        className="absolute"
+        style={{
+          ...(mmBottom ? { bottom: 'calc(100% + 12px)' } : { top: 'calc(100% + 12px)' }),
+          ...(mmRight ? { right: 2 } : { left: 2 }),
+        }}
+      >
+        <RecentScreenshotButton expandDown={!mmBottom} />
+      </div>
       <div
         data-testid="minimap-toggle"
         className="relative overflow-hidden border border-subtle shadow-[0_8px_24px_-6px_var(--shadow-node)]"

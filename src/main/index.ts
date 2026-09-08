@@ -38,7 +38,6 @@ import { registerCaptureHandlers } from './ipc/capture'
 import { registerRecentScreenshotHandlers } from './ipc/recentScreenshot'
 import { registerBrowserControlHandlers } from './ipc/browserControl'
 import { registerBrowserCredentialHandlers } from './ipc/browserCredentials'
-import { registerNativeAppHandlers } from './ipc/nativeApp'
 import { registerWindowControlHandlers } from './ipc/windowControls'
 import { registerKeepAwakeHandlers } from './ipc/keepAwake'
 import { registerDockWindowHandlers } from './ipc/dockWindows'
@@ -47,6 +46,7 @@ import { registerDragHandlers } from './ipc/dragHandlers'
 import { setMainWindowReady, flushPendingOpenPaths, registerOpenFileHandler } from './lifecycle/openPath'
 import { fireStartupTelemetry, registerTelemetryNoticeHandler } from './lifecycle/telemetry'
 import { registerLifecycleHandlers } from './lifecycle/shutdown'
+import { registerPullRequestHandlers } from './ipc/pullRequests'
 import { registerT3AgentHandlers } from './ipc/t3Agent'
 
 // NOTE: runSmokeAssertions only ever runs when CATE_SMOKE_TEST=1. The 1200 ms
@@ -122,8 +122,8 @@ function registerDeferredHandlers(): void {
   registerSkillHandlers()
   registerRuntimeHandlers()
   registerT3AgentHandlers()
+  registerPullRequestHandlers()
   registerCateApiHandlers()
-  registerNativeAppHandlers()
 }
 
 // =============================================================================

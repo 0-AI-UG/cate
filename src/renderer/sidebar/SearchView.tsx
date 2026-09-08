@@ -4,8 +4,7 @@
 // =============================================================================
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Search as MagnifyingGlass, Ellipsis as DotsThree, Settings as Gear, Eraser } from 'lucide-react'
-import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
+import { Search as MagnifyingGlass, SlidersHorizontal, Eraser } from 'lucide-react'
 import { SearchResultsTree } from './SearchResultsTree'
 import { Tooltip } from '../ui/Tooltip'
 import { useGitTree } from './useGitTree'
@@ -51,7 +50,9 @@ export const SearchView: React.FC<{
   rootPath: string
   workspaceId?: string
   scopeControl?: React.ReactNode
-}> = ({ rootPath, workspaceId, scopeControl }) => {
+  focusInput?: boolean
+  onOpenMatch?: (path: string, line: number, column: number) => void
+}> = ({ rootPath, workspaceId, scopeControl, onOpenMatch, focusInput = true }) => {
   const query = useSearchStore((s) => s.query)
   const isRegex = useSearchStore((s) => s.isRegex)
   const matchCase = useSearchStore((s) => s.matchCase)
@@ -87,9 +88,10 @@ export const SearchView: React.FC<{
 
   // Focus the input when something requests it (e.g. Cmd+Shift+F).
   useEffect(() => {
+    if (!focusInput) return
     inputRef.current?.focus()
     inputRef.current?.select()
-  }, [focusToken])
+  }, [focusToken, focusInput])
 
   // Debounced search trigger. The searchId is set in the store BEFORE invoking
   // so streamed batches are never dropped as "stale". Skips re-running an
@@ -155,26 +157,12 @@ export const SearchView: React.FC<{
 
   return (
     <div className="flex flex-col h-full">
-      <SidebarSectionHeader
-        title="Search"
-        subtitle={scopeControl}
-        actions={
-          <Tooltip label="Clear search">
-            <SidebarHeaderButton
-              aria-label="Clear search"
-              onClick={clearSearch}
-              disabled={!hasQuery && files.length === 0}
-            >
-              <Eraser size={15} />
-            </SidebarHeaderButton>
-          </Tooltip>
-        }
-      />
+      {scopeControl && <div className="px-2 pt-1.5">{scopeControl}</div>}
 
       {/* Query input + match-mode toggles */}
-      <div className="px-2 py-1.5 border-b border-subtle flex flex-col gap-1.5">
+      <div className="px-2 py-1.5 flex flex-col gap-1.5">
         <div className="flex items-center gap-1">
-          <div className="flex-1 relative">
+          <div className="flex-1 min-w-0 relative">
             <MagnifyingGlass size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-secondary" />
             <input
               ref={inputRef}
@@ -189,7 +177,7 @@ export const SearchView: React.FC<{
               }}
               placeholder={focusedField === 'query' ? 'Search' : ''}
               spellCheck={false}
-              className="w-full bg-surface-2 text-primary text-xs pl-7 pr-14 py-1 rounded-lg border border-subtle focus:border-focus outline-none"
+              className="w-full bg-surface-2 text-primary text-xs pl-7 pr-[70px] h-7 rounded-lg border border-subtle focus:border-focus outline-none"
             />
             <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
               <ToggleBtn active={matchCase} onClick={() => setOptions({ matchCase: !matchCase })} title="Match Case">
@@ -203,64 +191,58 @@ export const SearchView: React.FC<{
               </ToggleBtn>
             </div>
           </div>
-          {/* VS Code-style "..." toggle that reveals the include/exclude details. */}
+          {(hasQuery || files.length > 0) && <Tooltip label="Clear search">
+            <button type="button" aria-label="Clear search" onClick={clearSearch} className="flex shrink-0 items-center justify-center w-6 h-6 rounded-md text-secondary hover:text-primary hover:bg-hover">
+              <Eraser size={14} />
+            </button>
+          </Tooltip>}
           <Tooltip label="Toggle Search Details">
             <button
               type="button"
               aria-label="Toggle search details"
-              aria-pressed={optionsExpanded}
+              aria-expanded={optionsExpanded}
               onClick={toggleOptionsExpanded}
               className={`flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-lg transition-colors ${
-                optionsExpanded ? 'bg-accent text-white' : 'text-secondary hover:text-primary hover:bg-surface-5'
+                optionsExpanded ? 'bg-surface-3 text-primary' : 'text-secondary hover:text-primary hover:bg-surface-5'
               }`}
             >
-              <DotsThree size={18} />
+              <SlidersHorizontal size={14} />
             </button>
           </Tooltip>
         </div>
 
-        {/* Expandable include / exclude (VS Code-style) */}
         {optionsExpanded && (
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] text-muted">files to include</span>
+          <div className="flex flex-col gap-1.5">
+            <label className="block">
               <input
                 value={includes}
                 aria-label="files to include"
                 onChange={(e) => setOptions({ includes: e.target.value })}
+                onKeyDown={(e) => e.stopPropagation()}
                 onFocus={() => setFocusedField('include')}
                 onBlur={() => setFocusedField(null)}
-                onKeyDown={(e) => e.stopPropagation()}
-                placeholder={focusedField === 'include' ? 'e.g. src/**, *.ts' : ''}
+                placeholder={focusedField === 'include' ? 'src/**, *.ts' : 'Include'}
                 spellCheck={false}
-                className="w-full bg-surface-2 text-primary text-[11px] px-2 py-1 rounded-lg border border-subtle focus:border-focus outline-none"
+                className="min-w-0 w-full h-6 bg-surface-2 text-primary text-[11px] px-2 rounded-md border border-subtle focus:border-focus outline-none"
               />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] text-muted">files to exclude</span>
-              <div className="relative">
-                <input
-                  value={excludes}
-                  aria-label="files to exclude"
-                  onChange={(e) => setOptions({ excludes: e.target.value })}
-                  onFocus={() => setFocusedField('exclude')}
-                  onBlur={() => setFocusedField(null)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  placeholder={focusedField === 'exclude' ? 'e.g. *.lock, dist/**' : ''}
-                  spellCheck={false}
-                  className="w-full bg-surface-2 text-primary text-[11px] pl-2 pr-7 py-1 rounded-lg border border-subtle focus:border-focus outline-none"
-                />
-                <div className="absolute right-1 top-1/2 -translate-y-1/2">
-                  <ToggleBtn
-                    active={respectIgnore}
-                    onClick={() => setOptions({ respectIgnore: !respectIgnore })}
-                    title="Use Exclude Settings and Ignore Files"
-                  >
-                    <Gear size={13} />
-                  </ToggleBtn>
-                </div>
-              </div>
-            </div>
+            </label>
+            <label className="block">
+              <input
+                value={excludes}
+                aria-label="files to exclude"
+                onChange={(e) => setOptions({ excludes: e.target.value })}
+                onKeyDown={(e) => e.stopPropagation()}
+                onFocus={() => setFocusedField('exclude')}
+                onBlur={() => setFocusedField(null)}
+                placeholder={focusedField === 'exclude' ? '*.lock, dist/**' : 'Exclude'}
+                spellCheck={false}
+                className="min-w-0 w-full h-6 bg-surface-2 text-primary text-[11px] px-2 rounded-md border border-subtle focus:border-focus outline-none"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-[11px] text-secondary cursor-pointer">
+              <input type="checkbox" checked={respectIgnore} onChange={(e) => setOptions({ respectIgnore: e.target.checked })} className="m-0 h-3 w-3 accent-[var(--focus-blue)]" />
+              Use ignore files
+            </label>
           </div>
         )}
       </div>
@@ -286,7 +268,7 @@ export const SearchView: React.FC<{
 
       {/* Results */}
       {hasQuery && !error && visibleFiles.length > 0 ? (
-        <SearchResultsTree files={visibleFiles} git={gitTree} />
+        <SearchResultsTree files={visibleFiles} git={gitTree} onOpenMatch={onOpenMatch} />
       ) : !hasQuery ? (
         <div className="flex-1 flex items-center justify-center text-xs text-muted px-4 text-center">
           Search across files in this folder.

@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useRef } from 'react'
 import { useDockStoreContext, useDockStoreApi } from '../stores/DockStoreContext'
 import { useSelectedWorkspace } from '../stores/appStore'
-import type { DockZonePosition } from '../../shared/types'
+import { PANEL_MINIMUM_SIZES, type DockZonePosition } from '../../shared/types'
 import DockZone from '../docking/DockZone'
 import DockResizeHandle from '../docking/DockResizeHandle'
 import {
@@ -16,13 +16,8 @@ import {
   DockZoneDropIndicator,
   DragOverlay,
 } from '../drag'
-import { useUIStore } from '../stores/uiStore'
-import { IS_MAC } from '../lib/platform'
-import { useWindowFullscreen } from '../lib/useWindowFullscreen'
-import { MAC_CHROME_WIDTH, TRAFFIC_LIGHTS_WIDTH } from './MacWindowChrome'
-import { BAR_WIDTH } from '../sidebar/Sidebar'
-import { PanelLeft as SidebarSimple } from 'lucide-react'
-import { Tooltip } from '../ui/Tooltip'
+import { LeftSidebarReopen, useLeftChromeInset } from './LeftSidebarReopen'
+import { useNavigationPanels } from '../docking/useNavigationPanels'
 
 interface MainWindowShellProps {
   renderPanel: (panelId: string) => React.ReactNode
@@ -32,21 +27,6 @@ interface MainWindowShellProps {
 
 /** Width/height of the edge drop zone strips */
 const EDGE_ZONE_SIZE = 60
-
-/** Horizontal space reserved at the center tab bar's right end for the floating
- *  reopen toggle shown when the right sidebar is fully hidden. */
-const RIGHT_CHROME_WIDTH = 40
-
-/** Left inset for the floating left-reopen toggle when not clearing the macOS
- *  lights (fullscreen / non-macOS) — a small edge hug. */
-const LEFT_TOGGLE_EDGE_PAD = 8
-
-/** Horizontal space reserved at the tab bar's left end for the floating reopen
- *  toggle shown when the left sidebar is fully hidden — the mirror of
- *  RIGHT_CHROME_WIDTH, and enough for the toggle's edge pad + its 28px button.
- *  Needed on every platform; non-fullscreen macOS reserves MAC_CHROME_WIDTH
- *  instead, which clears the traffic lights AND the toggle. */
-const LEFT_CHROME_WIDTH = 40
 
 export default function MainWindowShell({
   renderPanel,
@@ -58,27 +38,13 @@ export default function MainWindowShell({
   //   • the floating reopen toggle — rendered on EVERY platform, but only while
   //     the left sidebar is fully hidden,
   //   • the macOS traffic-light island — only on macOS, and not in fullscreen.
-  // So by left sidebar state:
-  //   • fully hidden → clear the toggle, and the lights too where they exist,
-  //   • rail-only    → no toggle; the 40px rail already covers the left of the
-  //                    lights, so only the remainder needs clearing (mac only),
-  //   • opened       → the sidebar holds the space; no reserve.
+  // When visible, the Workspace sidebar holds this space itself.
   // Nested canvas-node bars are exempt.
-  const leftSidebarHidden = useUIStore((s) => s.leftSidebarHidden)
-  const leftSidebarOpen = useUIStore((s) => s.activeLeftSidebarView !== null)
-  const setLeftSidebarHidden = useUIStore((s) => s.setLeftSidebarHidden)
-  const isFullscreen = useWindowFullscreen()
-  const macLights = IS_MAC && !isFullscreen
-  let leftReserve = 0
-  if (leftSidebarHidden) leftReserve = macLights ? MAC_CHROME_WIDTH : LEFT_CHROME_WIDTH
-  else if (macLights && !leftSidebarOpen) leftReserve = Math.max(0, TRAFFIC_LIGHTS_WIDTH - BAR_WIDTH)
+  const leftReserve = useLeftChromeInset()
 
-  // Right sidebar fully hidden → float a reopen toggle at the top-right, next to
-  // the center tab bar's split button (mirrors the top-left sidebar toggle).
-  const rightSidebarHidden = useUIStore((s) => s.rightSidebarHidden)
+  useNavigationPanels()
 
   const leftVisible = useDockStoreContext((s) => s.zones.left.visible)
-  const rightVisible = useDockStoreContext((s) => s.zones.right.visible)
   const bottomVisible = useDockStoreContext((s) => s.zones.bottom.visible)
   const setZoneSize = useDockStoreContext((s) => s.setZoneSize)
   const dockStoreApi = useDockStoreApi()
@@ -108,20 +74,6 @@ export default function MainWindowShell({
         }),
       )
     }
-    if (!rightVisible) {
-      cleanups.push(
-        registerDropZone({
-          id: 'zone-right-edge',
-          zone: 'right',
-          getRect: () => {
-            const shell = shellRef.current
-            if (!shell) return null
-            const b = shell.getBoundingClientRect()
-            return new DOMRect(b.right - EDGE_ZONE_SIZE, b.top, EDGE_ZONE_SIZE, b.height)
-          },
-        }),
-      )
-    }
     if (!bottomVisible) {
       cleanups.push(
         registerDropZone({
@@ -138,15 +90,27 @@ export default function MainWindowShell({
     }
 
     return () => cleanups.forEach((fn) => fn())
-  }, [leftVisible, rightVisible, bottomVisible])
+  }, [leftVisible, bottomVisible])
 
   const handleZoneResize = useCallback(
     (position: DockZonePosition, delta: number) => {
-      const zone = dockStoreApi.getState().zones[position]
+      const shell = shellRef.current
+      if (!shell) return
+      const zones = dockStoreApi.getState().zones
+      const zone = zones[position]
       const sign = position === 'left' ? 1 : -1
-      setZoneSize(position, zone.size + delta * sign)
+      let nextSize = zone.size + delta * sign
+
+      if (position === 'left') {
+        const rightWidth = zones.right.visible ? zones.right.size : 0
+        nextSize = Math.min(nextSize, shell.clientWidth - rightWidth - PANEL_MINIMUM_SIZES.canvas.width)
+      } else if (position === 'bottom') {
+        nextSize = Math.min(nextSize, shell.clientHeight - PANEL_MINIMUM_SIZES.canvas.height)
+      }
+
+      setZoneSize(position, nextSize)
     },
-    [setZoneSize],
+    [dockStoreApi, setZoneSize],
   )
 
   // Edge drop indicators — shown when the matching side dock zone is hidden.
@@ -157,7 +121,6 @@ export default function MainWindowShell({
     style: React.CSSProperties
   }[] = [
     { zone: 'left', hidden: !leftVisible, style: { top: 0, left: 0, bottom: 0, width: EDGE_ZONE_SIZE } },
-    { zone: 'right', hidden: !rightVisible, style: { top: 0, right: 0, bottom: 0, width: EDGE_ZONE_SIZE } },
     { zone: 'bottom', hidden: !bottomVisible, style: { left: 0, right: 0, bottom: 0, height: EDGE_ZONE_SIZE } },
   ]
 
@@ -180,58 +143,10 @@ export default function MainWindowShell({
           .main-window-shell-root [data-node-id] .dock-tab-bar { padding-left: 0; }
         `}</style>
       )}
-      {/* Right sidebar hidden: reserve room at the center tab bar's right end so
-          its split button clears the floating reopen toggle (below). Nested
-          canvas-node tab bars ([data-node-id]) are exempt. */}
-      {rightSidebarHidden && (
-        <style>{`
-          .main-window-shell-root [data-dock-zone="center"] .dock-tab-bar { padding-right: ${RIGHT_CHROME_WIDTH}px; }
-          .main-window-shell-root [data-dock-zone="center"] [data-node-id] .dock-tab-bar { padding-right: 0; }
-        `}</style>
-      )}
-      {/* Floating reopen toggle — pinned top-right, next to the split button,
-          mirroring the top-left sidebar toggle. Only while fully hidden. */}
-      {rightSidebarHidden && (
-        <div
-          className="absolute top-0 right-0 z-40 flex items-center justify-end select-none"
-          style={{ height: 36, width: RIGHT_CHROME_WIDTH, paddingRight: 6 }}
-        >
-          <Tooltip label="Show sidebar" placement="bottom">
-            <button
-              type="button"
-              aria-label="Show sidebar"
-              onClick={() => useUIStore.getState().setRightSidebarHidden(false)}
-              className="flex items-center justify-center w-7 h-7 rounded-[10px] text-muted hover:text-primary hover:bg-hover transition-colors"
-            >
-              <SidebarSimple size={16} style={{ transform: 'scaleX(-1)' }} />
-            </button>
-          </Tooltip>
-        </div>
-      )}
       {/* Left sidebar fully hidden → float a reopen toggle at the top-left, past
           the macOS traffic lights (mirrors the right reopen toggle). Marked
           no-drag so it stays clickable over the window drag island. */}
-      {leftSidebarHidden && (
-        <div
-          className="absolute top-0 left-0 z-40 flex items-center select-none"
-          style={{
-            height: 36,
-            paddingLeft: macLights ? TRAFFIC_LIGHTS_WIDTH : LEFT_TOGGLE_EDGE_PAD,
-            WebkitAppRegion: 'no-drag',
-          } as React.CSSProperties}
-        >
-          <Tooltip label="Show sidebar" placement="bottom">
-            <button
-              type="button"
-              aria-label="Show sidebar"
-              onClick={() => setLeftSidebarHidden(false)}
-              className="flex items-center justify-center w-7 h-7 rounded-[10px] text-muted hover:text-primary hover:bg-hover transition-colors"
-            >
-              <SidebarSimple size={16} />
-            </button>
-          </Tooltip>
-        </div>
-      )}
+      <LeftSidebarReopen />
       {/* Top row: left dock | center dock | right dock */}
       <div className="flex flex-1 min-h-0 min-w-0">
         {/* Left dock zone */}
@@ -260,21 +175,6 @@ export default function MainWindowShell({
           />
         </div>
 
-        {/* Right dock zone */}
-        {rightVisible && (
-          <>
-            <DockResizeHandle
-              direction="horizontal"
-              onResize={(delta) => handleZoneResize('right', delta)}
-            />
-            <DockZone
-              position="right"
-              renderPanel={renderPanel}
-              getPanelTitle={getPanelTitle}
-              onClosePanel={onClosePanel}
-            />
-          </>
-        )}
       </div>
 
       {/* Bottom dock zone */}

@@ -1,14 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { patchT3Source, patchT3ProjectBootstrap } from './patch-t3.mjs'
+import { patchT3Source, patchT3ProjectBootstrap, patchT3Onboarding } from './patch-t3.mjs'
 
 describe('T3 noninteractive Grok health check', () => {
-  const probe = 'discoverGrokModelsViaAcp(grokSettings, environment).pipe(timeoutOption(GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS), exit)'
+  const probe = 'discoverGrokModelsViaAcpInitialize(grokSettings, environment).pipe(timeoutOption(GROK_ACP_INITIALIZE_TIMEOUT_MS), exit)'
 
   it('returns fallback models without starting the authentication-capable discovery', () => {
     const discover = vi.fn(() => { throw new Error('Unexpected interactive authentication') })
     const expression = patchT3Source(probe)
-    const run = new Function('discoverGrokModelsViaAcp', 'succeed$1', 'timeoutOption', 'GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS', 'exit', `return ${expression}`)
+    const run = new Function('discoverGrokModelsViaAcpInitialize', 'succeed$1', 'timeoutOption', 'GROK_ACP_INITIALIZE_TIMEOUT_MS', 'exit', `return ${expression}`)
     expect(run(discover, (models) => ({ pipe: () => models }), () => {}, 1000, {})).toEqual([])
     expect(discover).not.toHaveBeenCalled()
   })
@@ -46,15 +46,16 @@ describe('T3 project-only bootstrap', () => {
     // Exercise an unpatched welcome target even after npm postinstall has
     // already patched the installed bundle.
     const installed = readFileSync(new URL('../node_modules/t3/dist/bin.mjs', import.meta.url), 'utf8')
-    const original = installed.replace('bootstrapProjectId = nextProjectId; /* cate: project-only bootstrap */',
-      'const existingThreadId = yield* projectionReadModelQuery.getFirstActiveThreadIdByProjectId(nextProjectId);\n\t\tbootstrapProjectId = nextProjectId;\n\t\tbootstrapThreadId = existingThreadId.value;')
+    const original = installed.replace(/\t+bootstrapProjectId = nextProjectId; \/\* cate: project-only bootstrap \*\//,
+      '\t\t\tyield* gen$1(function* () {\n\t\t\t\tconst existingThreadId = yield* projectionReadModelQuery.getFirstActiveThreadIdByProjectId(nextProjectId);\n\t\tbootstrapProjectId = nextProjectId;\n\t\tbootstrapThreadId = existingThreadId.value;\n\t\t\t});')
     const source = patchT3ProjectBootstrap(original)
-    const expression = source.slice(source.indexOf('const resolveAutoBootstrapWelcomeTargets = ') + 'const resolveAutoBootstrapWelcomeTargets = '.length, source.indexOf('const resolveStartupBrowserTarget'))
+    const expression = source.slice(source.indexOf('const resolveAutoBootstrapWelcomeTargets = ') + 'const resolveAutoBootstrapWelcomeTargets = '.length, source.indexOf('const completeAutoBootstrapWelcome'))
     const commands = []
     const run = new Function('existing', 'commands', `
-      const effect = value => ({ *[Symbol.iterator]() { return value } });
-      const gen = fn => fn();
+      const effect = value => ({ value, *[Symbol.iterator]() { return value } });
+      const gen$1 = fn => effect((() => { const it = fn(); let step; do { step = it.next(); } while (!step.done); return step.value; })());
       const Crypto = effect({ randomUUIDv4: effect('new-id') });
+      const ServerSettingsService = effect({ getSettings: effect({}) });
       const ServerConfig = effect({ autoBootstrapProjectFromCwd: true, cwd: '/repo' });
       const ProjectionSnapshotQuery = effect({
         getActiveProjectByWorkspaceRoot: () => effect(existing ? { value: { id: 'project' } } : { none: true }),
@@ -66,14 +67,30 @@ describe('T3 project-only bootstrap', () => {
       const now = effect('2026-09-05T00:00:00.000Z');
       const formatIso = value => value;
       const ProjectId = { make: value => value }, CommandId = ProjectId;
-      const getAutoBootstrapDefaultModelSelection = () => ({ instanceId: 'codex', model: 'test' });
-      return (${expression.trim().replace(/;$/, '')}).next().value;
+      const getAutoBootstrapThreadModelSelection = () => ({ instanceId: 'codex', model: 'test' });
+      return (${expression.trim().replace(/;$/, '')});
     `)
-    expect(run(existing, commands)).toEqual({ bootstrapProjectId: existing ? 'project' : 'new-id' })
+    expect(run(existing, commands).value).toEqual({ bootstrapProjectId: existing ? 'project' : 'new-id', bootstrapProjectCreated: !existing })
     expect(commands.map(command => command.type)).toEqual(existing ? [] : ['project.create'])
   })
 
   it('rejects changed upstream bootstrap code', () => {
     expect(() => patchT3ProjectBootstrap('changed')).toThrow('project bootstrap changed')
+  })
+})
+
+
+describe('T3 embedded onboarding', () => {
+  it('bypasses standalone onboarding without changing settings persistence', () => {
+    const source = 'function gate(e){return e.onboardingCompletedAt}function save(e){return {...e,onboardingCompletedAt:new Date().toISOString()}}'
+    const patched = patchT3Onboarding(source)
+    expect(new Function(`${patched}; return gate({onboardingCompletedAt:null})`)()).toBe('cate-hosted')
+    expect(patched).toContain('onboardingCompletedAt:new Date().toISOString()')
+    expect(patchT3Onboarding(patched)).toBe(patched)
+  })
+
+  it('rejects missing or ambiguous upstream gate accessors', () => {
+    expect(() => patchT3Onboarding('changed')).toThrow('onboarding gate changed')
+    expect(() => patchT3Onboarding('function a(e){return e.onboardingCompletedAt}function b(e){return e.onboardingCompletedAt}')).toThrow('onboarding gate changed')
   })
 })

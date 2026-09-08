@@ -351,6 +351,16 @@ export class T3HarnessManager {
     return snapshot.threads.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
   }
 
+  async getUsageTarget(panelId: string): Promise<AgentHarnessPanelTarget> {
+    const runtime = runtimes.resolve('local')
+    // Usage scans provider histories across projects. Its cwd is host-owned
+    // application state, never a renderer-supplied workspace path.
+    const cwd = await runtime.file.harnessRoot()
+    const key = harnessKey('local', cwd)
+    const instance = await this.ensureInstance(key, 'local', runtime, cwd)
+    return this.panelTarget(instance, { panelId, route: 'usage' })
+  }
+
   async getPanelTarget(
     request: AgentHarnessPanelRequest,
     ownerWindowId: number,
@@ -370,21 +380,30 @@ export class T3HarnessManager {
       cwd,
       request.workspaceId,
     )
+    return this.panelTarget(instance, request)
+  }
+
+  private panelTarget(
+    instance: HarnessInstance,
+    request: { panelId: string; route?: AgentHarnessPanelRequest['route']; threadId?: string },
+  ): AgentHarnessPanelTarget {
     // Startup and provider-profile publication already synchronize settings.
     // Reopening a webview must not recopy provider secrets (especially over SSH).
     if (!instance.environmentId) throw new Error('T3 environment descriptor did not include an environment ID')
 
     const previousKey = this.panelHarness.get(request.panelId)
-    if (previousKey && previousKey !== key) {
+    if (previousKey && previousKey !== instance.key) {
       this.states.get(previousKey)?.instance?.panels.delete(request.panelId)
     }
     instance.panels.add(request.panelId)
-    this.panelHarness.set(request.panelId, key)
+    this.panelHarness.set(request.panelId, instance.key)
     this.panelRoute.set(request.panelId, request.route ?? 'thread')
 
     const baseUrl = `http://127.0.0.1:${instance.proxyPort}`
     let url: string
-    if (request.route === 'providers') {
+    if (request.route === 'usage') {
+      url = `${baseUrl}/usage`
+    } else if (request.route === 'providers') {
       url = `${baseUrl}/settings/providers`
     } else if (request.threadId) {
       url = `${baseUrl}/${encodeURIComponent(instance.environmentId)}/${encodeURIComponent(request.threadId)}`
@@ -394,8 +413,8 @@ export class T3HarnessManager {
 
     return {
       url,
-      partition: partitionFor(key),
-      runtimeId: resolved.runtimeId,
+      partition: partitionFor(instance.key),
+      runtimeId: instance.runtimeId,
       environmentId: instance.environmentId,
       threadId: request.threadId ?? null,
     }
@@ -484,7 +503,7 @@ export class T3HarnessManager {
     runtimeId: string,
     runtime: Runtime,
     cwd: string,
-    workspaceId: string,
+    workspaceId?: string,
   ): Promise<HarnessInstance> {
     const existing = this.states.get(key)
     if (existing?.instance && existing.phase === 'running') return existing.instance
@@ -514,7 +533,7 @@ export class T3HarnessManager {
     runtimeId: string,
     runtime: Runtime,
     cwd: string,
-    workspaceId: string,
+    workspaceId?: string,
   ): Promise<HarnessInstance> {
     const harnessRoot = await runtime.file.harnessRoot()
     const paths = harnessPaths(runtimeId, harnessRoot, cwd)
@@ -545,7 +564,7 @@ export class T3HarnessManager {
       panels: new Set([...this.panelHarness].filter(([, owner]) => owner === key).map(([panel]) => panel)),
     }
     await this.ensureLocalThreadMode(seed)
-    const cateApi = await workspaceCateApi.ensureEndpoint(workspaceId)
+    const cateApi = workspaceId ? await workspaceCateApi.ensureEndpoint(workspaceId) : null
 
     const bootstrap = JSON.stringify({
       mode: 'desktop',
@@ -568,7 +587,7 @@ export class T3HarnessManager {
         entryPath,
         '--bootstrap-fd',
         '0',
-        '--auto-bootstrap-project-from-cwd',
+        ...(workspaceId ? ['--auto-bootstrap-project-from-cwd'] : []),
       ],
       cwd,
       env: {

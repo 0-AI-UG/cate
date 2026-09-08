@@ -1,6 +1,5 @@
 import {
   clearShortcut,
-  resetAllShortcuts,
   resetShortcut,
   setShortcut,
   useResolvedShortcuts,
@@ -59,16 +58,7 @@ export function ShortcutSettings() {
           </div>
         </div>
       ))}
-      {visibleActions.length > 0 && (
-        <div className="mt-4 flex justify-end">
-          <button
-            onClick={resetAllShortcuts}
-            className="px-3 py-1.5 text-xs text-secondary hover:text-primary bg-surface-5 hover:bg-hover rounded-md transition-colors"
-          >
-            Reset All to Defaults
-          </button>
-        </div>
-      )}
+
     </div>
   )
 }

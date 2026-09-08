@@ -1,4 +1,4 @@
-import { removedExtensionPanelIds, pruneCanvasNodes } from '../shared/pruneRemovedPanels'
+import { removedPanelIds, pruneCanvasNodes } from '../shared/pruneRemovedPanels'
 import { ipcMain } from 'electron'
 import fs from 'fs/promises'
 import fsSync from 'fs'
@@ -129,7 +129,7 @@ function workspaceNodeCount(data: unknown): number {
   // comparison only cares about the aggregate count, not which canvas owns them.
   const canvases = (data as ProjectWorkspaceFile).canvases
   if (!canvases) return 0
-  const removed = removedExtensionPanelIds(data.panels ?? {})
+  const removed = removedPanelIds(data.panels ?? {})
   let count = 0
   for (const canvas of Object.values(canvases)) {
     count += Object.keys(pruneCanvasNodes(canvas.canvasNodes ?? {}, removed)).length

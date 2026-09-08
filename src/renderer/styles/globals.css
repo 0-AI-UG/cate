@@ -2,9 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-:where(button, [role='button'], a[href], input, select, textarea):focus-visible {
+:where(button, [role='button'], a[href], input[type='checkbox'], input[type='radio'], input[type='range'], input[type='color'], input[type='file']):focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
+}
+
+/* Text fields use their rounded border, not an outline around the text inside.
+   Compound fields put the focus border on their shared frame. */
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea, select):focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+[data-input-frame]:has(input:focus, textarea:focus, select:focus) {
+  border-color: var(--border-focus);
+}
+[data-input-frame] :where(input, textarea, select):focus {
+  outline: none;
+  box-shadow: none;
 }
 
 /* =============================================================================
@@ -200,8 +214,8 @@
      as a pill rather than a full-width bar. :hover only swaps background-COLOR
      (not the `background` shorthand) so the clip/inset survives. */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 13.52px;
+    height: 13.52px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -228,8 +242,8 @@
    then (its track space stays reserved, so revealing it doesn't shift the
    content). Unlayered so it overrides the @layer base defaults above. */
 [data-sidebar-scrollarea] ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 13.52px;
+  height: 13.52px;
 }
 [data-sidebar-scrollarea] ::-webkit-scrollbar-thumb {
   background-color: transparent;
@@ -264,9 +278,10 @@
    xterm caches this width at construction and never re-measures it, so
    TerminalPanel writes the new value back — see syncScrollBarWidth(). */
 .xterm-viewport::-webkit-scrollbar {
-  width: calc(8px * var(--cell-scale, 1));
+  width: calc(13.52px * var(--cell-scale, 1));
 }
 .xterm-viewport::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
   background-color: transparent;
   border-top: calc(2px * var(--cell-scale, 1)) solid transparent;
   border-bottom: calc(2px * var(--cell-scale, 1)) solid transparent;
@@ -287,6 +302,29 @@
 /* Floating canvas header: the tab bar's background + bottom divider stay
    transparent until the pointer is over the bar, so at rest only the tabs and
    +/split buttons read against the canvas. Fades its chrome in on hover. */
+.files-content ::-webkit-scrollbar {
+  width: 8.45px;
+  height: 8.45px;
+}
+
+.monaco-editor:not(:hover) .core-guide,
+.file-explorer:not(:hover) .explorer-indent-guide {
+  opacity: 0;
+}
+
+.core-guide,
+.explorer-indent-guide {
+  transition: opacity 120ms ease;
+}
+
+.monaco-scrollable-element > .scrollbar > .slider {
+  border-radius: 9999px !important;
+}
+
+.files-content ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .dock-tab-bar-floating {
   background-color: transparent;
   border-bottom: 1px solid transparent;
@@ -461,4 +499,27 @@
   position: absolute;
   inset: 1px;
   border-radius: 9999px;
+}
+.app-header-bar {
+  height: 44px;
+  min-height: 44px;
+  padding-inline: 12px;
+  display: flex;
+  align-items: center;
+}
+
+@keyframes dock-new-tab-menu-in {
+  from { opacity: 0; transform: translateY(-3px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.dock-new-tab-menu {
+  transform-origin: top left;
+  animation: dock-new-tab-menu-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.dock-new-tab-menu button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock-new-tab-menu { animation: none; }
 }

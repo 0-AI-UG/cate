@@ -106,7 +106,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
     },
   },
   {
-    label: 'Editor',
+    label: 'Files',
     prefixes: ['cate.editor.'],
     readMethods: ['cate.editor.active'],
     read: {

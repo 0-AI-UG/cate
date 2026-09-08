@@ -31,9 +31,9 @@ export function SettingRow({ label, description, hint, children }: SettingRowPro
   }
   return (
     <SettingLabelContext.Provider value={labelId}>
-    <div data-srow className="flex items-center justify-between py-2.5 border-b border-subtle">
+    <div data-srow className="-mx-3 flex min-h-14 items-center justify-between border-b border-subtle px-3 py-2 last:border-b-0">
       <div className="flex flex-col min-w-0">
-        <span id={labelId} className="text-sm text-primary">{label}</span>
+        <span id={labelId} className="text-[13px] font-medium text-primary">{label}</span>
         {description && <span className="text-xs text-muted mt-0.5">{description}</span>}
         {hint && <div className="mt-1">{hint}</div>}
       </div>

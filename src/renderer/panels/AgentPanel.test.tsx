@@ -14,7 +14,7 @@ vi.hoisted(() => {
 })
 
 import { useAppStore } from '../stores/appStore'
-import AgentPanel from './AgentPanel'
+import AgentPanel, { agentFileDropScript } from './AgentPanel'
 import { useActivePanelStore } from '../lib/activePanel'
 import { useUIStore } from '../stores/uiStore'
 import { createCanvasStore } from '../stores/canvasStore'
@@ -65,6 +65,15 @@ function mockGuest() {
     loadURL: vi.fn().mockResolvedValue(undefined),
   })
 }
+
+  it('builds a valid guest drop that recreates the dragged image file', () => {
+    const script = agentFileDropScript([{ name: 'screen.png', type: 'image/png', dataUrl: 'data:image/png;base64,AA==' }])
+    expect(() => new Function(script)).not.toThrow()
+    expect(script).toContain('new DataTransfer()')
+    expect(script).toContain('screen.png')
+    expect(script).toContain("dispatchEvent(new DragEvent('drop'")
+  })
+
 
 describe('AgentPanel', () => {
   const readyHarness = {

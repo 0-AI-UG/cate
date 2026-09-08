@@ -23,10 +23,10 @@
 import { IS_MAC } from '../lib/platform'
 import { useWindowFullscreen } from '../lib/useWindowFullscreen'
 
-// Matches the dock tab bar's min-height (36px) and the sidebar's opaque top
+// Matches the roomy top chrome shared by dock tabs and both sidebars.
 // strip, so the traffic lights and dock tabs center on the same line and the
 // sidebar's content insets to exactly clear the chrome.
-export const MAC_CHROME_HEIGHT = 36
+export const MAC_CHROME_HEIGHT = 44
 // Horizontal space reserved for the native traffic lights.
 export const TRAFFIC_LIGHTS_WIDTH = 78
 // Width the dock tab bar reserves at the top-left (so its first tab clears the

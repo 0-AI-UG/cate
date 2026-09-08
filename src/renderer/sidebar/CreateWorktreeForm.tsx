@@ -141,7 +141,8 @@ export const CreateWorktreeForm: React.FC<{
   return (
     <div className="px-1 pt-1">
       <div
-        className={`flex items-center gap-1 h-8 px-1.5 rounded-lg text-secondary transition-colors ${
+        data-input-frame
+        className={`flex items-center gap-1 h-8 px-1.5 border border-transparent rounded-lg text-secondary transition-colors ${
           flat ? 'bg-white/[0.05] focus-within:bg-white/[0.08]' : 'bg-surface-3 focus-within:bg-surface-4'
         }`}
       >

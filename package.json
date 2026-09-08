@@ -76,6 +76,7 @@
   },
   "dependencies": {
     "@parcel/watcher": "^2.5.1",
+    "@phosphor-icons/react": "^2.1.10",
     "@sentry/electron": "^7.15.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
@@ -96,7 +97,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "simple-git": "^3.27.0",
-    "t3": "0.0.38",
+    "t3": "0.0.39",
     "use-sync-external-store": "^1.6.0",
     "ws": "^8.21.3",
     "zustand": "^5.0.0"

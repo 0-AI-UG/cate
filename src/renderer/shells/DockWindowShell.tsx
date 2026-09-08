@@ -424,7 +424,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
             visually with z-30. */}
         {!IS_MAC && !isFullscreen && (
           <div
-            className="absolute top-0 right-0 z-30 h-9"
+            className="absolute top-0 right-0 z-30 h-[44px]"
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <WindowControls />

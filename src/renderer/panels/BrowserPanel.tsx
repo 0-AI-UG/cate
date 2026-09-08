@@ -131,7 +131,7 @@ export function browserGuestScrollbarCss(): string {
   const thumb = vars.getPropertyValue('--scrollbar-thumb').trim() || 'rgba(255,255,255,0.15)'
   const hover = vars.getPropertyValue('--scrollbar-thumb-hover').trim() || 'rgba(255,255,255,0.25)'
   return (
-    '::-webkit-scrollbar{width:8px;height:8px}' +
+    '::-webkit-scrollbar{width:13.52px;height:13.52px}' +
     '::-webkit-scrollbar-track{background:transparent}' +
     `::-webkit-scrollbar-thumb{background:${thumb};border-radius:9999px}` +
     `::-webkit-scrollbar-thumb:hover{background:${hover}}` +
@@ -1143,6 +1143,7 @@ export default function BrowserPanel({
         {/* URL input + autocomplete */}
         <div className="flex-1 relative">
           <div
+            data-input-frame
             className={`flex h-7 items-center gap-2 rounded-[10px] border px-3 transition-colors ${
               isStartPageUrl(currentUrl)
                 ? 'border-strong bg-surface-1 focus-within:border-strong'

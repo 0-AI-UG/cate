@@ -14,12 +14,13 @@ import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 
 import React, { type LazyExoticComponent, type ComponentType } from 'react'
-import { Terminal, Globe, FileText, Grid2X2 as SquaresFour, FileText as FileDoc, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
-import { AppWindow } from 'lucide-react'
+import { Terminal, Globe, Grid2X2 as SquaresFour, FileText as FileDoc, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
+import { Folders, Search, GitBranch, Plus } from 'lucide-react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
 import { PANEL_DEFINITIONS, type SharedPanelDefinition } from '../../shared/panels'
+import { addAndPlacePanel } from '../stores/appStore/helpers'
 import { PanelErrorBoundary } from '../ui/PanelErrorBoundary'
 import type { PanelProps } from './types'
 
@@ -36,7 +37,6 @@ const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const AgentPanel = React.lazy(() => import('./AgentPanel'))
 const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
 const ReviewPanel = React.lazy(() => import('./ReviewPanel'))
-const NativeAppPanel = React.lazy(() => import('./nativeApp/NativeAppPanel'))
 
 // -----------------------------------------------------------------------------
 // Renderer definition
@@ -56,8 +56,6 @@ export interface PanelCreateArgs {
   initialInput?: string
   /** Document only. */
   documentType?: 'pdf' | 'docx' | 'image'
-  /** Native app only: macOS bundle id to capture. */
-  bundleId?: string
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
@@ -91,6 +89,49 @@ const baseProps = (panel: PanelState, ctx: PanelRenderContext): Record<string, u
 // -----------------------------------------------------------------------------
 
 export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
+  navigation: {
+    ...PANEL_DEFINITIONS.navigation,
+    icon: Folders,
+    Component: React.lazy(() => import('../sidebar/NavigationPanel')),
+    // Compatibility entry for restored sessions and older callers. New Files
+    // surfaces are editor panels because the explorer now lives in the editor.
+    create: ({ workspaceId, placement, canvasPoint }) =>
+      trackCreated('editor', useAppStore.getState().createEditor(workspaceId, undefined, canvasPoint, placement) || null),
+    props: (panel, ctx) => ({ ...baseProps(panel, ctx), view: panel.sidebarView ?? 'explorer' }),
+  },
+  search: {
+    ...PANEL_DEFINITIONS.search,
+    icon: Search,
+    Component: React.lazy(() => import('../sidebar/NavigationPanel')),
+    create: ({ workspaceId, placement, canvasPoint }) => addAndPlacePanel(
+      useAppStore.setState, useAppStore.getState, workspaceId,
+      { id: crypto.randomUUID(), type: 'search', title: 'Search', isDirty: false, sidebarView: 'search' },
+      placement, canvasPoint,
+    ),
+    props: (panel, ctx) => ({ ...baseProps(panel, ctx), view: 'search' }),
+  },
+  sourceControl: {
+    ...PANEL_DEFINITIONS.sourceControl,
+    icon: GitBranch,
+    Component: React.lazy(() => import('../sidebar/NavigationPanel')),
+    create: ({ workspaceId, placement, canvasPoint }) => addAndPlacePanel(
+      useAppStore.setState, useAppStore.getState, workspaceId,
+      { id: crypto.randomUUID(), type: 'sourceControl', title: 'Source Control', isDirty: false, sidebarView: 'git' },
+      placement, canvasPoint,
+    ),
+    props: (panel, ctx) => ({ ...baseProps(panel, ctx), view: 'git' }),
+  },
+  surface: {
+    ...PANEL_DEFINITIONS.surface,
+    icon: Plus,
+    Component: React.lazy(() => import('./SurfacePicker')),
+    create: ({ workspaceId, placement, canvasPoint }) => addAndPlacePanel(
+      useAppStore.setState, useAppStore.getState, workspaceId,
+      { id: crypto.randomUUID(), type: 'surface', title: 'Open a surface', isDirty: false },
+      placement, canvasPoint,
+    ),
+    props: baseProps,
+  },
   terminal: {
     ...PANEL_DEFINITIONS.terminal,
     icon: Terminal,
@@ -118,7 +159,7 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
   },
   editor: {
     ...PANEL_DEFINITIONS.editor,
-    icon: FileText,
+    icon: Folders,
     Component: EditorPanel,
     create: ({ workspaceId, canvasPoint, placement, filePath }) =>
       trackCreated('editor', useAppStore.getState().createEditor(workspaceId, filePath, canvasPoint, placement) || null),
@@ -159,17 +200,6 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
         : null
     },
     props: baseProps,
-  },
-  nativeApp: {
-    ...PANEL_DEFINITIONS.nativeApp,
-    icon: AppWindow,
-    Component: NativeAppPanel,
-    create: ({ workspaceId, canvasPoint, placement, bundleId }) =>
-      trackCreated('nativeApp', useAppStore.getState().createNativeApp(workspaceId, bundleId, canvasPoint, placement) || null),
-    props: (panel, ctx) => ({
-      ...baseProps(panel, ctx),
-      nativeAppBundleId: panel.nativeAppBundleId,
-    }),
   },
 }
 

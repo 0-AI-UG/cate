@@ -1,10 +1,8 @@
 // =============================================================================
 // Regression test for the macOS traffic-light inset on the left sidebar.
 //
-// The left sidebar reserves MAC_CHROME_HEIGHT at its top so its content clears
-// the native traffic lights. In native fullscreen macOS hides the lights, so
-// that reservation must collapse — otherwise the rail/content stay pushed down
-// by a 36px dead band with nothing in it.
+// The left header shares its row with the native traffic lights. In windowed
+// mode its controls shift right; fullscreen reclaims that horizontal space.
 //
 // jsdom's navigator is not "Mac", so IS_MAC is mocked true to force the path.
 // =============================================================================
@@ -39,12 +37,14 @@ function renderSidebar(): HTMLElement {
 }
 
 describe('Sidebar macOS chrome inset', () => {
-  it('reserves the traffic-light strip when windowed', () => {
-    expect(renderSidebar().style.paddingTop).toBe('36px')
+  it('keeps the header on the first row when windowed', () => {
+    const sidebar = renderSidebar()
+    expect(sidebar.style.paddingTop).toBe('')
+    expect(sidebar.querySelector<HTMLElement>('[aria-label="Hide sidebar"]')?.parentElement?.style.marginLeft).toBe('66px')
   })
 
-  it('collapses the reservation in native fullscreen (lights gone)', () => {
+  it('reclaims the traffic-light space in native fullscreen', () => {
     vi.mocked(window.electronAPI.isMainWindowFullscreen).mockReturnValue(true)
-    expect(renderSidebar().style.paddingTop).toBe('0px')
+    expect(renderSidebar().querySelector<HTMLElement>('[aria-label="Hide sidebar"]')?.parentElement?.style.marginLeft).toBe('0px')
   })
 })

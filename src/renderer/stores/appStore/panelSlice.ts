@@ -7,7 +7,6 @@ import { disambiguateTitle } from '../../lib/panelTitle'
 import type { PanelState, PanelType, ReviewPanelState } from '../../../shared/types'
 import { BROWSER_NEW_TAB_URL } from '../../../shared/types'
 import { resolvePanelSize } from '../../../shared/panels'
-import { nativeAppLabelFor } from '../../lib/nativeApps'
 import { useSettingsStore } from '../settingsStore'
 import { generateId } from '../canvas/helpers'
 import type { AppSet, AppGet, AppStoreActions, PanelPlacement } from './types'
@@ -42,8 +41,6 @@ type PanelSliceActions = Pick<
   | 'createCanvas'
   | 'createAgent'
   | 'createDocument'
-  | 'createNativeApp'
-  | 'setPanelNativeAppBundleId'
   | 'closePanel'
   | 'updatePanelTitle'
   | 'updatePanelTitleFromAgent'
@@ -144,7 +141,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       const panelId = generateId()
       const worktreeId = worktreeIdForPath(workspaceId, filePath)
       if (filePath) recordRecentFile(workspaceId, filePath)
-      const fileName = (filePath && pathDisplayName(filePath)) || 'Untitled'
+      const fileName = (filePath && pathDisplayName(filePath)) || 'Open file'
       const panel: PanelState = {
         id: panelId,
         type: 'editor',
@@ -228,17 +225,6 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         ...(worktreeId ? { worktreeId } : {}),
       }
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('agent', placement), position)
-    },
-
-    createNativeApp(workspaceId, bundleId?, position?, placement?) {
-      const panel: PanelState = {
-        id: generateId(),
-        type: 'nativeApp',
-        title: bundleId ? nativeAppLabelFor(bundleId) : 'Native App',
-        isDirty: false,
-        ...(bundleId ? { nativeAppBundleId: bundleId } : {}),
-      }
-      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('nativeApp', placement), position)
     },
 
     // --- Panel management ---
@@ -347,17 +333,6 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
     updatePanelFilePath(workspaceId, panelId, filePath) {
       const worktreeId = worktreeIdForPath(workspaceId, filePath)
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, filePath, worktreeId }))
-    },
-
-    // Native app panels only: persist the bundle id chosen from the panel's
-    // launcher (or a rename triggered by later re-picking an app). Renames the
-    // panel to match unless the user has already renamed it by hand.
-    setPanelNativeAppBundleId(workspaceId, panelId, bundleId) {
-      setPanelField(set, workspaceId, panelId, (panel) => ({
-        ...panel,
-        nativeAppBundleId: bundleId,
-        title: panel.titleUserOverridden ? panel.title : nativeAppLabelFor(bundleId),
-      }))
     },
 
     setPanelDirty(workspaceId, panelId, dirty) {

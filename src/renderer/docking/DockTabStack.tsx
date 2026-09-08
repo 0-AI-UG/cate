@@ -9,23 +9,21 @@ import { registerDropZone, useDragStore } from '../drag'
 import type { DockTabStack as DockTabStackType, PanelState, PanelType } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { PanelChromeProvider, type PanelChromeApi } from '../panels/panelChrome'
-import { Columns2 as Columns, Plus } from 'lucide-react'
+import { Columns2 as Columns } from 'lucide-react'
 import { DockTabBar } from './DockTabBar'
 import { WorktreePill } from '../canvas/WorktreePill'
 import { AgentChangesPill } from '../canvas/AgentChangesPill'
 import { T3ConversationPill } from '../canvas/T3ConversationPill'
-import { DockTabContextMenu, SPLIT_MENU_ITEMS } from './DockTabContextMenu'
+import { SPLIT_MENU_ITEMS } from './DockTabContextMenu'
 import type { SplitMenuItem } from './DockTabContextMenu'
 import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
 import { setActivePanel } from '../lib/activePanel'
+import { NewTabButton } from './NewTabButton'
+import SurfacePicker from '../panels/SurfacePicker'
 import { Tooltip } from '../ui/Tooltip'
 import { useDockTabDrag } from './useDockTabDrag'
-import { PANEL_DEFINITIONS, keepsMountedWhenTabHidden } from '../../shared/panels'
+import { keepsMountedWhenTabHidden } from '../../shared/panels'
 
-// Human-readable labels for each panel type, used in tooltips and the split menu.
-const PANEL_TYPE_LABELS: Record<PanelType, string> = Object.fromEntries(
-  (Object.keys(PANEL_DEFINITIONS) as PanelType[]).map((t) => [t, PANEL_DEFINITIONS[t].label]),
-) as Record<PanelType, string>
 
 interface DockTabStackProps {
   stack: DockTabStackType
@@ -42,6 +40,7 @@ interface DockTabStackProps {
   excludePanelTypes?: PanelType[]
   /** Extra controls rendered to the right of the +/split buttons. */
   trailingControls?: React.ReactNode
+  newTabControl?: React.ReactNode
   /** Mouse-down handler for the tab bar — fired both for the empty header
    *  area (no panelId) and for individual tab clicks (panelId set). */
   onTabBarMouseDown?: (e: React.MouseEvent, panelId?: string) => void
@@ -54,7 +53,7 @@ interface DockTabStackProps {
   dropDisabled?: boolean
 }
 
-export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, onTabBarMouseDown, localOnly, compact, dropDisabled }: DockTabStackProps) {
+export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, newTabControl, onTabBarMouseDown, localOnly, compact, dropDisabled }: DockTabStackProps) {
   const dockStoreApi = useDockStoreApi()
   const stackRef = useRef<HTMLDivElement>(null)
 
@@ -90,14 +89,16 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const effectiveWorkspaceId = workspaceIdProp ?? selectedWorkspaceId
 
+  // Panel records can settle after the dock layout, including while the shell
+  // is hidden by Usage or Settings. Keep chrome and icons subscribed to them.
+  const workspacePanels = useAppStore((s) =>
+    s.workspaces.find((workspace) => workspace.id === effectiveWorkspaceId)?.panels,
+  )
   const resolvePanel = useCallback(
-    (panelId: string): PanelState | undefined => {
-      if (getPanelProp) return getPanelProp(panelId)
-      const wsId = workspaceIdProp ?? useAppStore.getState().selectedWorkspaceId
-      const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
-      return ws?.panels[panelId]
-    },
-    [getPanelProp, workspaceIdProp],
+    (panelId: string): PanelState | undefined => getPanelProp
+      ? getPanelProp(panelId)
+      : workspacePanels?.[panelId],
+    [getPanelProp, workspacePanels],
   )
 
   const activePanel = activePanelId ? resolvePanel(activePanelId) : undefined
@@ -113,7 +114,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     zone: zoneProp,
     dockStoreApi,
     workspaceId: workspaceIdProp,
-    getPanelProp,
+    getPanelProp: resolvePanel,
     onClosePanel,
     onPanelRemoved,
     onPanelRenamed,
@@ -126,7 +127,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     stackId: stack.id,
     zone: zoneProp,
     dockStoreApi,
-    getPanel: getPanelProp,
+    getPanel: resolvePanel,
   })
 
   const excludeKey = (excludePanelTypes ?? []).join(',')
@@ -143,12 +144,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     [actions, visibleSplitItems],
   )
 
-  // --- Split button (with long-press menu) ---------------------------------
-  const [splitMenuOpen, setSplitMenuOpen] = useState(false)
-  const [splitMenuPos, setSplitMenuPos] = useState<{ top: number; right: number } | null>(null)
-  const splitButtonRef = useRef<HTMLButtonElement>(null)
-  const longPressTimer = useRef<number | null>(null)
-  const longPressFired = useRef(false)
   const springLoadTimer = useRef<number | null>(null)
 
   useEffect(() => {
@@ -160,41 +155,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     }
   }, [])
 
-  const handleSplitClick = useCallback(() => {
-    if (longPressFired.current) {
-      longPressFired.current = false
-      return
-    }
-    if (!activePanel) return
-    actions.splitWithType(activePanel.type)
-  }, [activePanel, actions])
-
-  const handleSplitMouseDown = useCallback(() => {
-    longPressFired.current = false
-    if (longPressTimer.current) window.clearTimeout(longPressTimer.current)
-    longPressTimer.current = window.setTimeout(() => {
-      longPressFired.current = true
-      const rect = splitButtonRef.current?.getBoundingClientRect()
-      if (rect) {
-        setSplitMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
-      }
-      setSplitMenuOpen(true)
-    }, 350)
-  }, [])
-
-  const cancelLongPress = useCallback(() => {
-    if (longPressTimer.current) {
-      window.clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!splitMenuOpen) return
-    const onDown = () => setSplitMenuOpen(false)
-    window.addEventListener('mousedown', onDown)
-    return () => window.removeEventListener('mousedown', onDown)
-  }, [splitMenuOpen])
 
   // Inline "new tab" placeholder when a dock-tab drop targets this stack.
   // The resolver already vetoes invalid self-drops (single-tab same-stack);
@@ -266,10 +226,10 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           // divider (so their panel content isn't occluded — see floatingCenterTabs).
           floatingCenterTabs
             ? `dock-tab-bar-floating absolute top-0 left-0 right-0 z-20 ${showTabPlaceholder ? 'drop-active' : ''}`
-            : compact
+            : compact || activePanel?.type === 'editor'
               ? ''
               : 'border-b border-subtle'
-        } ${compact ? 'min-h-[26px] px-0.5' : 'min-h-[32px] px-1.5'}`}
+        } ${compact ? 'min-h-[26px] px-0.5' : 'app-header-bar'}`}
         style={{
           ...(!compact && !floatingCenterTabs
             ? { backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }
@@ -316,45 +276,19 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           showTabPlaceholder={showTabPlaceholder}
           selfTabDrag={selfTabDrag}
           onTabBarMouseDown={onTabBarMouseDown}
+          newTabControl={newTabControl ?? <NewTabButton canvasAttached={localOnly} compact={compact} items={visibleSplitItems} onPick={actions.addTabOfType} />}
         />
 
-        {/* "+" tab — adds a new tab of the active panel's type into this stack. */}
-        {activePanel && (
-          <Tooltip label={`New ${PANEL_TYPE_LABELS[activePanel.type] ?? 'Tab'}`}>
+        {activePanelId && (
+          <Tooltip label="Split Right">
             <button
-              className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'mx-0.5 w-[22px] h-[22px]' : 'mx-1 w-6 h-6'}`}
-              aria-label={`New ${PANEL_TYPE_LABELS[activePanel.type] ?? 'Tab'}`}
-              onClick={() => actions.addTabOfType(activePanel.type)}
+              className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[22px] h-[22px]' : 'w-6 h-6'}`}
+              aria-label="Split Right"
+              onClick={() => actions.splitPanel()}
             >
-              <Plus size={compact ? 12 : 13} />
+              <Columns size={compact ? 12 : 14} />
             </button>
           </Tooltip>
-        )}
-
-        {/* Split button. Click splits; click-and-hold opens a type picker. */}
-        {activePanelId && (
-          <div className={`relative flex items-center self-center ${compact ? 'px-0.5' : 'px-1'}`}>
-            <Tooltip label="Split (hold to choose type)">
-              <button
-                ref={splitButtonRef}
-                className={`flex items-center justify-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[22px] h-[22px]' : 'w-6 h-6'}`}
-                aria-label="Split (hold to choose type)"
-                onClick={handleSplitClick}
-                onMouseDown={handleSplitMouseDown}
-                onMouseUp={cancelLongPress}
-                onMouseLeave={cancelLongPress}
-              >
-                <Columns size={compact ? 12 : 14} />
-              </button>
-            </Tooltip>
-            <DockTabContextMenu
-              open={splitMenuOpen}
-              position={splitMenuPos}
-              items={visibleSplitItems}
-              onPick={actions.splitWithType}
-              onClose={() => setSplitMenuOpen(false)}
-            />
-          </div>
         )}
 
         {/* Host-injected trailing controls (e.g. canvas-node lock/maximize/close) */}
@@ -402,7 +336,9 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
                 aria-hidden={isActive ? undefined : true}
               >
                 <PanelChromeProvider api={chromeApi} enabled={isActive}>
-                  {renderPanel(panelId)}
+                  {resolvePanel(panelId)?.type === 'surface'
+                    ? <SurfacePicker onSelect={actions.chooseSurface} excludePanelTypes={excludePanelTypes} />
+                    : renderPanel(panelId)}
                 </PanelChromeProvider>
               </div>
             )

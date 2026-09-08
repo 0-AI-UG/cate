@@ -4,6 +4,18 @@ import { describe, expect, it, vi } from 'vitest'
 import { patchT3Changes } from './patch-t3-changes.mjs'
 
 describe('T3 reported change bridge', () => {
+  it('patches a fresh 0.0.39 bundle while preserving its missing-baseline fallback', () => {
+    const source = 'const processRuntimeEvent = (event) => gen$1(function* () {\n\t\tif (event.type === "content.delta") return;\n});\n'
+      + '\t\tconst files = yield* (fromCheckpointExists ? checkpointStore.diffCheckpoints({ cwd: input.cwd }) : succeed$1(""));\n'
+      + '\t\tconst assistantMessageId = input.assistantMessageId;'
+    const patched = patchT3Changes(source)
+    expect(patched).toContain(')) cateReportChange(event);')
+    expect(patched).toContain('cateChangeSummary(input.threadId, input.turnId)) : yield* (fromCheckpointExists ?')
+    expect(patched).toContain(': succeed$1(""))')
+    expect(patchT3Changes(patched)).toBe(patched)
+    expect(() => patchT3Changes(source + source)).toThrow('ingestion seam changed')
+  })
+
   it('is pinned, idempotent, and substitutes recorded summaries for checkout summaries', () => {
     const source = patchT3Changes(readFileSync(new URL('../node_modules/t3/dist/bin.mjs', import.meta.url), 'utf8'))
     expect(patchT3Changes(source)).toBe(source)

@@ -33,7 +33,11 @@ vi.mock('electron', () => {
   }
   return { ...electron, default: electron }
 })
-vi.mock('./windowRegistry', () => ({ broadcastToAll: vi.fn() }))
+vi.mock('./windowRegistry', () => ({
+  broadcastToAll: vi.fn(),
+  windowFromEvent: vi.fn(),
+  getWindowType: vi.fn(),
+}))
 vi.mock('./logger', () => ({
   default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} },
 }))
@@ -121,5 +125,29 @@ describe('boot snapshot (boot.json via jsonStateFile)', () => {
     writeBootSnapshot({ lastWorkspaceId: 'ws-quit' })
     willQuit!()
     expect(readDisk().lastWorkspaceId).toBe('ws-quit')
+  })
+})
+
+
+describe('live theme background', () => {
+  test.each([
+    ['darwin', 'main', '#00000000'],
+    ['darwin', 'dock', '#123456'],
+    ['win32', 'main', '#123456'],
+    ['linux', 'main', '#123456'],
+  ] as const)('preserves the correct backing for %s %s windows', async (platform, type, expected) => {
+    const { windowFromEvent, getWindowType } = await import('./windowRegistry')
+    const { BOOT_SNAPSHOT_WRITE } = await import('../shared/ipc-channels')
+    const setBackgroundColor = vi.fn()
+    vi.mocked(windowFromEvent).mockReturnValue({ id: 1, setBackgroundColor } as any)
+    vi.mocked(getWindowType).mockReturnValue(type)
+    vi.stubEnv('CATE_FAKE_PLATFORM', platform)
+    try {
+      await handlers.get(BOOT_SNAPSHOT_WRITE)!({}, { backgroundColor: '#123456' })
+      expect(setBackgroundColor).toHaveBeenCalledWith(expected)
+      expect(readBootSnapshot()?.backgroundColor).toBe('#123456')
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })

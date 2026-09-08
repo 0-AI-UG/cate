@@ -1,4 +1,4 @@
-export type AgentHarnessRoute = 'thread' | 'providers'
+export type AgentHarnessRoute = 'thread' | 'providers' | 'usage'
 
 export interface AgentHarnessPanelRequest {
   workspaceId: string

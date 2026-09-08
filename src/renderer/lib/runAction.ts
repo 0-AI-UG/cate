@@ -14,7 +14,7 @@ import {
   getActiveCanvasPanelId,
   placementForActivePanel,
 } from '../stores/appStore'
-import { useUIStore, getSidebarLayout } from '../stores/uiStore'
+import { useUIStore } from '../stores/uiStore'
 import { useSearchStore } from '../stores/searchStore'
 import type { MenuActionId } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
@@ -145,13 +145,6 @@ export async function runAction(
       if (wsId) appStore().createCanvas(wsId, undefined, placement)
       break
     }
-    case 'newNativeApp': {
-      const placement = placementForActivePanel()
-      const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      // No bundleId: the panel opens on its launcher (pick-an-app screen).
-      if (wsId) appStore().createNativeApp(wsId, undefined, undefined, placement)
-      break
-    }
     case 'closePanel': {
       const canvas = canvasStore()
       const focusedNodeId = canvas ? focusedNodeIdOf(canvas) : null
@@ -167,26 +160,18 @@ export async function runAction(
       break
     case 'toggleFileExplorer': {
       const ui = useUIStore.getState()
-      const side = getSidebarLayout().left.includes('explorer') ? 'left' : 'right'
-      if (side === 'left') {
-        ui.setActiveLeftSidebarView(ui.activeLeftSidebarView === 'explorer' ? null : 'explorer')
-      } else {
-        ui.setActiveRightSidebarView(ui.activeRightSidebarView === 'explorer' ? null : 'explorer')
-      }
+      ui.requestNavigationView('explorer')
       break
     }
     case 'toggleSearch': {
       const ui = useUIStore.getState()
-      const side = getSidebarLayout().left.includes('search') ? 'left' : 'right'
-      const active = side === 'left' ? ui.activeLeftSidebarView : ui.activeRightSidebarView
-      const next = active === 'search' ? null : 'search'
-      if (side === 'left') ui.setActiveLeftSidebarView(next)
-      else ui.setActiveRightSidebarView(next)
+      const next = 'search'
+      ui.requestNavigationView(next)
       if (next === 'search') useSearchStore.getState().requestFocus()
       break
     }
     case 'toggleMinimap':
-      useUIStore.getState().toggleMinimapOpen()
+      useUIStore.getState().toggleMinimapOpen(getActiveCanvasPanelId() ?? undefined)
       break
     case 'commandPalette':
       useUIStore.getState().setShowCommandPalette(true)

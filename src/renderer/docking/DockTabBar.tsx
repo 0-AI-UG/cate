@@ -1,8 +1,8 @@
 // =============================================================================
 // DockTabBar — pure tab-pill row rendering. Renders each tab as a TabPill with
 // the active accent, icon, title (or rename input), and close button. Used
-// inside DockTabStack's tab bar; the +/split/trailing controls live alongside
-// in DockTabStack itself.
+// inside DockTabStack's tab bar, with the new-tab button after the last tab.
+// Split and trailing controls live alongside in DockTabStack itself.
 // =============================================================================
 
 import React from 'react'
@@ -155,6 +155,7 @@ export interface DockTabBarProps {
   // When the drag source is THIS stack, hide the dragged tab from layout
   // and inline the placeholder at its original (clamped) index.
   selfTabDrag?: { draggedPanelId: string; originalIndex: number } | null
+  newTabControl?: React.ReactNode
   // For the trailing draggable spacer in detached windows.
   onTabBarMouseDown?: (e: React.MouseEvent, panelId?: string) => void
 }
@@ -166,7 +167,7 @@ export function DockTabBar(props: DockTabBarProps) {
     renameId, renameValue, renameInputRef, setRenameValue, setRenameId, commitRename,
     springLoadTimer, setActiveTab,
     onEmptyMouseDown, onEmptyContextMenu,
-    showTabPlaceholder, selfTabDrag, onTabBarMouseDown,
+    showTabPlaceholder, selfTabDrag, onTabBarMouseDown, newTabControl,
   } = props
 
   const worktreeColorByPanel = useWorktreeColorByPanel()
@@ -325,6 +326,7 @@ export function DockTabBar(props: DockTabBarProps) {
         return [pill]
       })}
       {placeholderNode && placeholderInsertAt >= remainingPanelIds.length && placeholderNode}
+      {newTabControl}
       {/* Draggable spacer that fills the rest of the row. */}
       <div
         className="flex-1 min-w-[20px] self-stretch"

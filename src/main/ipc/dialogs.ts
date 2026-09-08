@@ -1,5 +1,10 @@
 import { ipcMain, dialog, shell } from 'electron'
+import { appBundleIcon } from '../appBundleIcon'
+import os from 'os'
 import fs from 'fs'
+import path from 'path'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import log from '../logger'
 import { wrapHandler } from './handlerError'
 import { validatePath, grantFileAccess } from './pathValidation'
@@ -10,6 +15,9 @@ import { importCanvasBackgroundImage } from '../canvasBackgroundStore'
 import { listWindows, windowFromEvent } from '../windowRegistry'
 import {
   SHELL_SHOW_IN_FOLDER,
+  SHELL_OPEN_PATH,
+  SHELL_LIST_APPS,
+  SHELL_OPEN_FILE_ON_GITHUB,
   DIALOG_OPEN_FOLDER,
   DIALOG_OPEN_IMAGE,
   DIALOG_SAVE_FILE,
@@ -29,7 +37,33 @@ import {
   canvasWallpaperMime,
 } from '../../shared/canvasWallpaper'
 
+const execFileAsync = promisify(execFile)
+const detectedApps = new Map<string, string>()
+
+function githubRepositoryUrl(remote: string): string | null {
+  const value = remote.trim().replace(/\.git$/, '')
+  const ssh = value.match(/^git@github\.com:(.+)$/)
+  if (ssh) return `https://github.com/${ssh[1]}`
+  const https = value.match(/^https?:\/\/github\.com\/(.+)$/)
+  return https ? `https://github.com/${https[1]}` : null
+}
+
 export function registerDialogHandlers(): void {
+  ipcMain.handle(SHELL_LIST_APPS, async () => {
+    if (process.platform !== 'darwin') return []
+    const candidates = ['Cursor', 'Visual Studio Code', 'Xcode', 'Zed', 'Sublime Text', 'Terminal', 'iTerm']
+    const found = await Promise.all(candidates.map(async (name) => {
+      for (const root of ['/Applications', path.join(os.homedir(), 'Applications'), '/System/Applications/Utilities']) {
+        const appPath = path.join(root, `${name}.app`)
+        if (!fs.existsSync(appPath)) continue
+        detectedApps.set(name, appPath)
+        const icon = await appBundleIcon(appPath)
+        return { id: name, name, icon }
+      }
+      return null
+    }))
+    return found.filter((entry) => entry !== null)
+  })
   // Shell: Reveal in Finder
   ipcMain.handle(SHELL_SHOW_IN_FOLDER, wrapHandler('[SHELL_SHOW_IN_FOLDER]', async (event, filePath: string, workspaceId?: string) => {
     // A remote (cate-runtime://) path has no representation on this machine —
@@ -41,6 +75,42 @@ export function registerDialogHandlers(): void {
     const win = windowFromEvent(event)
     shell.showItemInFolder(validatePath(filePath, win?.id, workspaceId))
     return { ok: true }
+  }))
+
+  ipcMain.handle(SHELL_OPEN_PATH, wrapHandler('[SHELL_OPEN_PATH]', async (event, filePath: string, workspaceId?: string, appId?: string) => {
+    if (!isLocalLocator(filePath)) return { ok: false, error: 'Remote files cannot be opened by a local app.' }
+    const win = windowFromEvent(event)
+    const safePath = validatePath(filePath, win?.id, workspaceId)
+    if (appId) {
+      const appPath = detectedApps.get(appId)
+      if (!appPath || process.platform !== 'darwin') return { ok: false, error: 'Application is unavailable.' }
+      await execFileAsync('/usr/bin/open', ['-a', appPath, '--', appId === 'Terminal' || appId === 'iTerm' ? path.dirname(safePath) : safePath])
+      return { ok: true }
+    }
+    const error = await shell.openPath(safePath)
+    return error ? { ok: false, error } : { ok: true }
+  }))
+
+  ipcMain.handle(SHELL_OPEN_FILE_ON_GITHUB, wrapHandler('[SHELL_OPEN_FILE_ON_GITHUB]', async (event, filePath: string, workspaceId?: string) => {
+    if (!isLocalLocator(filePath)) return { ok: false, reason: 'remote' }
+    const win = windowFromEvent(event)
+    const safePath = validatePath(filePath, win?.id, workspaceId)
+    const cwd = path.dirname(safePath)
+    try {
+      const [{ stdout: root }, { stdout: remote }, { stdout: revision }] = await Promise.all([
+        execFileAsync('git', ['-C', cwd, 'rev-parse', '--show-toplevel']),
+        execFileAsync('git', ['-C', cwd, 'remote', 'get-url', 'origin']),
+        execFileAsync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD']),
+      ])
+      const repositoryUrl = githubRepositoryUrl(remote)
+      if (!repositoryUrl) return { ok: false, reason: 'not-github' }
+      const relativePath = path.relative(root.trim(), safePath).split(path.sep).map(encodeURIComponent).join('/')
+      const ref = encodeURIComponent(revision.trim() || 'HEAD')
+      await shell.openExternal(`${repositoryUrl}/blob/${ref}/${relativePath}`)
+      return { ok: true }
+    } catch {
+      return { ok: false, reason: 'not-repository' }
+    }
   }))
 
   // Dialog handlers

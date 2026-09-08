@@ -16,6 +16,15 @@
       </svg>
     </div>
   </div>
+  <script>
+    const bootParams = new URLSearchParams(location.search)
+    const bootPlatform = bootParams.get('platform')
+    const bootIsMac = bootPlatform ? bootPlatform === 'darwin' : navigator.userAgent.includes('Mac')
+    if (bootIsMac && (bootParams.get('type') || 'main') === 'main') {
+      document.body.style.background = 'transparent'
+      document.querySelector('#root > div').style.background = `color-mix(in srgb, ${bootParams.get('bg') || '#232220'} 30%, transparent)`
+    }
+  </script>
   <script type="module" src="/src/renderer/main.tsx"></script>
 </body>
 </html>

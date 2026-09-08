@@ -5,20 +5,22 @@ import type { RecentScreenshot } from './recentScreenshot'
 
 import type { AppSettings, AgentState, DockWindowInitPayload, DockWindowSyncState, DetachedDockWindowSnapshot, WindowPanelInfo, WindowPanelReport, FileSearchOptions, FileSearchResult, FileTreeNode, GitComparisonResult, GitComparisonSpec, GitFileContent, GitFileDiff, ReviewPanelOpenRequest, SearchOptions, SearchResultBatch, SearchDoneEvent, NotificationAction, PanelTransferSnapshot, PerfSnapshot, Point, SidebarSession, TerminalActivity, TerminalAgentSession, WorkspaceInfo, WorkspaceMutationResult, RemoteConnectSpec, RuntimeConnectResult, RuntimeStatusEvent, RuntimeConnection, RuntimePhase, RemoteProjectEntry, SshHostEntry, UIState } from './types'
 import type { CodingAgentLaunch } from './codingAgentRuns'
-import type { NativeAppAcquireOptions, NativeAppAcquireResult, NativeAppControlMessage, NativeAppInputEvent } from './types'
 import type { SavedSkill, InstalledSkill, SkillEntry, SkillSource, SkillTargetId } from './skills'
 import type { AgentHookEvent, AgentHookAgentState } from './agentHooks'
 import type { AgentHarnessError, AgentHarnessPanelRequest, AgentHarnessPanelTarget, AgentHarnessStatus, AgentProviderAuthRequest, AgentProviderAuthSession, AgentProviderStatus, AgentProviderStatusRequest } from './t3Agent'
 
 /** Lifecycle state of the auto-updater, surfaced to the renderer for the
  *  in-app "update ready" modal. `downloaded` is the one the modal acts on. */
-export type UpdateState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
+export type UpdateState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'disabled' | 'error'
 export interface UpdateStatus {
   state: UpdateState
   /** Version of the update in flight, or null when unknown. */
   version: string | null
   /** Download progress 0-100 (present while state === 'downloading'). */
   percent?: number
+  message?: string
+  /** This status answers an explicit user check. */
+  manual?: boolean
   /** Transient flag on a re-broadcast of an already-staged 'downloaded' update,
    *  set when the user explicitly asked ("Check for Updates…"). Tells the in-app
    *  modal to re-open even for a version it was already dismissed for. Never
@@ -106,31 +108,6 @@ export interface ElectronAPI {
 
   /** Release a terminal panel's WebGL context slot (on context loss / dispose). */
   webglReleaseGrant(panelId: string): Promise<void>
-
-  // ---------------------------------------------------------------------------
-  // Native app capture (cate-nativehost sidecar) — see
-  // src/main/nativeApp/NativeAppBroker.ts and native/nativehost/PROTOCOL.md.
-  // ---------------------------------------------------------------------------
-
-  /** Acquire a capture session for a native app bundle. Resolves once the
-   *  sidecar's `ready` control message arrives, or with an `error` if it
-   *  exits early or never becomes ready in time. */
-  nativeAppAcquire(options: NativeAppAcquireOptions): Promise<NativeAppAcquireResult>
-
-  /** Release a capture session — stops the sidecar and frees its socket. */
-  nativeAppRelease(sessionId: string): Promise<void>
-
-  /** Subscribe to JPEG frames for any active session (main -> renderer). */
-  onNativeAppFrame(callback: (payload: { sessionId: string; jpeg: Uint8Array }) => void): () => void
-
-  /** Subscribe to control messages for any active session (main -> renderer). */
-  onNativeAppStatus(callback: (payload: { sessionId: string; control: NativeAppControlMessage }) => void): () => void
-
-  /** Forward a mouse/keyboard/scroll event to a session's captured app. */
-  nativeAppInput(sessionId: string, event: NativeAppInputEvent): void
-
-  /** Ask a session's captured app window to resize to width×height points. */
-  nativeAppResize(sessionId: string, width: number, height: number): void
 
   // ---------------------------------------------------------------------------
   // Filesystem
@@ -735,8 +712,8 @@ export interface ElectronAPI {
   }): Promise<{ ok?: true; error?: string }>
   browserCredentialClear(): Promise<void>
 
-  getRecentScreenshot(): Promise<RecentScreenshot | null>
-  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot | null) => void): () => void
+  getRecentScreenshot(): Promise<RecentScreenshot[]>
+  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot[]) => void): () => void
   dragRecentScreenshot(id: string): Promise<void>
   /** Initiate a native OS file drag from the renderer. */
   nativeFileDrag(filePath: string): Promise<void>
@@ -756,6 +733,9 @@ export interface ElectronAPI {
    *  Returns the created destination paths and a count of entries that failed. */
   fsImportEntries(sources: string[], destDir: string, mode: 'copy' | 'move', workspaceId?: string): Promise<{ created: string[]; failed: number }>
   shellShowInFolder(filePath: string, workspaceId?: string): Promise<void>
+  shellOpenPath(filePath: string, workspaceId?: string, appId?: string): Promise<{ ok: boolean; error?: string }>
+  shellListApps(): Promise<Array<{ id: string; name: string; icon: string }>>
+  shellOpenFileOnGitHub(filePath: string, workspaceId?: string): Promise<{ ok: boolean; reason?: string }>
 
   // ---------------------------------------------------------------------------
   // Notifications
@@ -1040,6 +1020,8 @@ export interface ElectronAPI {
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void
   /** Pull the latest auto-updater status (the modal mounts after the event). */
   getUpdateStatus(): Promise<UpdateStatus>
+  /** Run an explicit update check, matching the application menu action. */
+  checkForUpdates(): Promise<void>
   /** Restart now and apply the staged update (electron-updater quitAndInstall).
    *  Resolves false if no update is staged or self-update isn't possible. */
   quitAndInstallUpdate(): Promise<boolean>
@@ -1081,6 +1063,13 @@ export interface ElectronAPI {
   agentHarnessDeleteConversation(request: AgentProviderStatusRequest & { threadId: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessRenameConversation(request: AgentProviderStatusRequest & { threadId: string; title: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessListConversations(request: AgentProviderStatusRequest): Promise<import('./t3Agent').T3Conversation[] | AgentHarnessError>
+
+  githubConnection(): Promise<import('./pullRequests').GitHubConnection>
+  githubPrContext(workspaceId: string, repository: string, number: number): Promise<import('./pullRequests').PullRequestContext | null>
+  pullRequestsList(refresh?: boolean): Promise<import('./pullRequests').PullRequestsResult>
+  githubLogin(operation: 'start' | 'status' | 'cancel'): Promise<import('./pullRequests').GitHubLoginState>
+
+  agentHarnessGetUsageUrl(request: { panelId: string }): Promise<AgentHarnessPanelTarget | AgentHarnessError>
 
   agentHarnessGetPanelUrl(
     request: AgentHarnessPanelRequest,

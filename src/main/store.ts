@@ -8,7 +8,7 @@
 
 import { ipcMain, app, nativeTheme, session } from 'electron'
 import log from './logger'
-import { listWindows, windowFromEvent } from './windowRegistry'
+import { getWindowType, listWindows, windowFromEvent } from './windowRegistry'
 import { isPlainObject } from './jsonUtils'
 import { createJsonStateFile } from './jsonStateFile'
 import {
@@ -362,7 +362,12 @@ export function registerHandlers(): void {
     // so each window (main + detached panel/dock) updates its own chrome.
     if (typeof partial.backgroundColor === 'string') {
       try {
-        windowFromEvent(event)?.setBackgroundColor(partial.backgroundColor)
+        const win = windowFromEvent(event)
+        // Theme initialization also reaches this handler. Preserve the clear
+        // backing required by the main window's native sidebar material.
+        const hasSidebarVibrancy = (process.env.CATE_FAKE_PLATFORM || process.platform) === 'darwin'
+          && win && getWindowType(win.id) === 'main'
+        win?.setBackgroundColor(hasSidebarVibrancy ? '#00000000' : partial.backgroundColor)
       } catch (err) {
         log.warn('Live window background update failed: %O', err)
       }

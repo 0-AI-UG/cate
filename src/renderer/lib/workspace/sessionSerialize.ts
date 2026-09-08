@@ -4,7 +4,7 @@
 // shared dock-state panel-id collector. No store/IPC access.
 // =============================================================================
 
-import { removedExtensionPanelIds, pruneDockState, pruneCanvasNodes } from '../../../shared/pruneRemovedPanels'
+import { removedPanelIds, pruneDockState, pruneCanvasNodes } from '../../../shared/pruneRemovedPanels'
 import type {
   SessionSnapshot,
   DetachedDockWindowSnapshot,
@@ -36,6 +36,7 @@ const PASSTHROUGH_PANEL_FIELDS = [
   'activeTabId',
   'proxyUrl',
   'documentType',
+  'sidebarView',
 ] as const
 
 type PassthroughPanelFields = Pick<ProjectPanelRef, (typeof PASSTHROUGH_PANEL_FIELDS)[number]>
@@ -140,7 +141,7 @@ export function projectFilesToSnapshot(
   sess: ProjectSessionFile | null,
   rootPath: string,
 ): SessionSnapshot {
-  const removed = removedExtensionPanelIds(ws.panels ?? {})
+  const removed = removedPanelIds(ws.panels ?? {})
   // Recreate each panel record by id, merging the committed shareable metadata
   // with the machine-local session facts (worktree tag, unsaved scratch content).
   let panels: Record<string, PanelState> | undefined

@@ -5,7 +5,7 @@ import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import {
   Terminal,
   Globe,
-  FileCode,
+  Folders,
   FolderOpen,
   Folder,
   CloudUpload as CloudArrowUp,
@@ -129,8 +129,8 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
                 onClick={newTerminal}
               />
               <ActionItem
-                icon={<FileCode size={16} />}
-                label="New Editor"
+                icon={<Folders size={16} />}
+                label="New Files Panel"
                 shortcut="⌘⇧E"
                 onClick={newEditor}
               />
@@ -192,7 +192,7 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
           <div className="grid grid-cols-2 gap-x-8 gap-y-1">
             <ShortcutRow keys="⌘T" label="New Terminal" />
             <ShortcutRow keys="⌘⇧B" label="New Browser" />
-            <ShortcutRow keys="⌘⇧E" label="New Editor" />
+            <ShortcutRow keys="⌘⇧E" label="New Files Panel" />
             <ShortcutRow keys="⌘K" label="Command Palette" />
             <ShortcutRow keys="⌘\" label="Toggle Sidebar" />
             <ShortcutRow keys="⌘0" label="Reset Zoom" />

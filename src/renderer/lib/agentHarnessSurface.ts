@@ -1,4 +1,5 @@
-export type AgentHarnessRoute = 'thread' | 'providers'
+import type { AgentHarnessRoute } from '../../shared/t3Agent'
+export type { AgentHarnessRoute } from '../../shared/t3Agent'
 
 /**
  * T3 remains responsible for chat rendering, model selection, approvals, plan
@@ -165,6 +166,7 @@ export function isAllowedAgentHarnessNavigation(
 
     const parts = pathParts(next)
     if (parts.length === 1 && parts[0] === 'pair') return true
+    if (route === 'usage') return parts.length === 1 && parts[0] === 'usage'
     if (parts[0] === 'settings' && parts[1] === 'providers') return route === 'providers'
     if (route === 'providers') return false
     if (parts.length === 0) return !expectedThreadId

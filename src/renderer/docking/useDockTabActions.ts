@@ -168,9 +168,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
     (type: PanelType): string | null => {
       const app = useAppStore.getState()
       const wsId = workspaceId ?? app.selectedWorkspaceId
-      const placement: import('../stores/appStore').PanelPlacement = localOnly
-        ? { target: 'none' }
-        : { target: 'dock', zone }
+      const placement: import('../stores/appStore').PanelPlacement = { target: 'none' }
       const workspace = app.getWorkspace(wsId)
       const activeId = stack.panelIds[stack.activeIndex]
       const activePanel = activeId ? getPanelLocal(activeId) : undefined
@@ -196,9 +194,11 @@ export function useDockTabActions(params: DockTabActionsParams) {
         const repoPath = worktree?.path ?? workspace?.rootPath
         return repoPath ? app.createReview(wsId, repoPath, undefined, undefined, placement) : null
       }
-      return getPanelDef(type).create({ workspaceId: wsId, placement })
+      const panelId = getPanelDef(type).create({ workspaceId: wsId, placement })
+      if (panelId && type === 'surface' && worktree) app.setPanelWorktreeId(wsId, panelId, worktree.id)
+      return panelId
     },
-    [workspaceId, zone, localOnly, stack.panelIds, stack.activeIndex, getPanelLocal],
+    [workspaceId, stack.panelIds, stack.activeIndex, getPanelLocal],
   )
 
   const addTabOfType = useCallback(
@@ -213,9 +213,9 @@ export function useDockTabActions(params: DockTabActionsParams) {
     [createPanelOfType, dockStoreApi, zone, stack.id],
   )
 
-  const splitWithType = useCallback(
-    (type: PanelType) => {
-      const newId = createPanelOfType(type)
+  const splitPanel = useCallback(
+    () => {
+      const newId = createPanelOfType('surface')
       if (!newId) return
       dockStoreApi.getState().dockPanel(newId, zone, {
         type: 'split',
@@ -225,6 +225,16 @@ export function useDockTabActions(params: DockTabActionsParams) {
     },
     [createPanelOfType, dockStoreApi, zone, stack.id],
   )
+
+  const chooseSurface = useCallback((type: PanelType) => {
+    if (excludePanelTypes?.includes(type)) return
+    const placeholderId = stack.panelIds[stack.activeIndex]
+    if (!placeholderId || getPanelLocal(placeholderId)?.type !== 'surface') return
+    const newId = createPanelOfType(type)
+    if (!newId) return
+    dockStoreApi.getState().dockPanel(newId, zone, { type: 'tab', stackId: stack.id, index: stack.activeIndex })
+    onClosePanel?.(placeholderId)
+  }, [excludePanelTypes, stack, getPanelLocal, createPanelOfType, dockStoreApi, zone, onClosePanel])
 
   // --- Tab context menu -----------------------------------------------------
   const handleTabContextMenu = useCallback(
@@ -314,7 +324,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           stack.panelIds.slice().forEach((p) => onClosePanel?.(p))
           break
         case 'split-right': {
-          if (panel) splitWithType(panel.type)
+          splitPanel()
           break
         }
         case 'move-window':
@@ -322,7 +332,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           break
       }
     },
-    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, splitWithType, showMultiSelectionMenu, showCloseAll, beginRename, workspaceId],
+    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, splitPanel, showMultiSelectionMenu, showCloseAll, beginRename, workspaceId],
   )
 
   // Tab-bar (empty-area) context menu — split/new menus. Returns a handler
@@ -342,10 +352,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           label: 'New Tab',
           submenu: visibleSplitItems.map((m) => ({ id: `new:${m.type}`, label: m.label })),
         }],
-        [{
-          label: 'Split With',
-          submenu: visibleSplitItems.map((m) => ({ id: `split:${m.type}`, label: m.label })),
-        }],
+        [{ id: 'split', label: 'Split Right' }],
       ]
       if (showCloseAll()) {
         groups.push([{ id: 'close-all', label: 'Close All', enabled: stack.panelIds.length > 0 }])
@@ -355,6 +362,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
       )
       const id = await window.electronAPI.showContextMenu(menu)
       if (!id) return
+      if (id === 'split') { splitPanel(); return }
       if (id === 'close-all') {
         // Multi-selection handled by the early bulk menu; here it's stack tabs.
         stack.panelIds.slice().forEach((p) => onClosePanel?.(p))
@@ -362,10 +370,9 @@ export function useDockTabActions(params: DockTabActionsParams) {
       }
       const [kind, type] = id.split(':') as [string, PanelType]
       if (kind === 'new') addTabOfType(type)
-      else if (kind === 'split') splitWithType(type)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stack.panelIds, onClosePanel, excludeKey, addTabOfType, splitWithType, showMultiSelectionMenu, showCloseAll],
+    [stack.panelIds, onClosePanel, excludeKey, addTabOfType, splitPanel, showMultiSelectionMenu, showCloseAll],
   )
 
   const handleTabClick = useCallback(
@@ -396,7 +403,8 @@ export function useDockTabActions(params: DockTabActionsParams) {
     handleTabBarContextMenu,
     moveTabToNewWindow,
     addTabOfType,
-    splitWithType,
+    splitPanel,
+    chooseSurface,
     createPanelOfType,
     setActiveTab,
   }

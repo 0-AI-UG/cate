@@ -37,7 +37,7 @@ import { sendEvent } from './analytics'
 import { canSelfUpdate } from './updateInstaller'
 import { createJsonStateFile } from './jsonStateFile'
 import { broadcastToAll } from './windowRegistry'
-import { UPDATE_STATUS, UPDATE_QUIT_AND_INSTALL, UPDATE_GET_STATUS } from '../shared/ipc-channels'
+import { UPDATE_STATUS, UPDATE_QUIT_AND_INSTALL, UPDATE_GET_STATUS, UPDATE_CHECK } from '../shared/ipc-channels'
 import type { UpdateStatus } from '../shared/electron-api'
 import {
   decideInstallState,
@@ -100,13 +100,17 @@ function track(name: string, props?: Record<string, unknown>): void {
 /** Latest status pushed to the renderer. Cached so a window that mounts AFTER
  *  the download-finished event can pull the current state (UPDATE_GET_STATUS)
  *  and still show the "update ready" modal. */
+let manualCheckRequested = false
+let checkInFlight: Promise<unknown> | null = null
+
 let lastStatus: UpdateStatus = { state: 'idle', version: null }
 
 /** Broadcast an updater status change to every renderer window and cache it.
  *  Drives the in-app "update ready" modal (see UpdateReadyDialog.tsx). */
 function pushStatus(status: UpdateStatus): void {
   lastStatus = status
-  broadcastToAll(UPDATE_STATUS, status)
+  broadcastToAll(UPDATE_STATUS, manualCheckRequested ? { ...status, manual: true } : status)
+  if (['up-to-date', 'downloaded', 'error', 'disabled'].includes(status.state)) manualCheckRequested = false
 }
 
 /** Register the renderer-facing IPC for the in-app update modal. Called once at
@@ -115,6 +119,7 @@ function pushStatus(status: UpdateStatus): void {
  *  status, so the modal stays hidden. */
 function registerUpdateIpc(): void {
   ipcMain.handle(UPDATE_GET_STATUS, (): UpdateStatus => lastStatus)
+  ipcMain.handle(UPDATE_CHECK, (): void => checkForUpdatesManually())
   ipcMain.handle(UPDATE_QUIT_AND_INSTALL, (): boolean => {
     if (!updatePendingInstall || !canSelfUpdate()) return false
     track('update_restart_clicked', { version: availableVersion })
@@ -194,11 +199,19 @@ function runCheck(eligible: boolean): Promise<unknown> {
     log.info('[auto-updater] skipping check — an update is already downloaded and staged for install')
     return Promise.resolve(null)
   }
-  const p = eligible ? autoUpdater.checkForUpdatesAndNotify() : autoUpdater.checkForUpdates()
-  return p.catch((err) => {
+  if (checkInFlight) return checkInFlight
+  if (lastStatus.state === 'downloading') return Promise.resolve(null)
+  pushStatus({ state: 'checking', version: availableVersion })
+  checkInFlight = Promise.resolve().then(() =>
+    eligible ? autoUpdater.checkForUpdatesAndNotify() : autoUpdater.checkForUpdates(),
+  ).catch((err) => {
     log.warn('[auto-updater] check failed: %O', err)
+    if (lastStatus.state !== 'error') {
+      pushStatus({ state: 'error', version: availableVersion, message: err instanceof Error ? err.message : String(err) })
+    }
     return null
-  })
+  }).finally(() => { checkInFlight = null })
+  return checkInFlight
 }
 
 /** Attach telemetry + behaviour to every electron-updater event. `eligible`
@@ -234,18 +247,19 @@ function wireUpdaterEvents(eligible: boolean): void {
     // marker so the error handler stays silent (a still-staged install is
     // tracked separately via updatePendingInstall, which it also honors).
     availableVersion = null
+    pushStatus({ state: 'up-to-date', version: null })
     log.info('[auto-updater] no update available (current v%s)', String(info?.version ?? app.getVersion()))
   })
 
   autoUpdater.on('download-progress', (p) => {
-    const percent = typeof p?.percent === 'number' ? p.percent : 0
+    const percent = typeof p?.percent === 'number' && Number.isFinite(p.percent) ? p.percent : 0
     const bucket = Math.min(100, Math.floor(percent / 25) * 25)
     if (bucket > lastProgressBucket) {
       lastProgressBucket = bucket
       log.info('[auto-updater] download progress ~%d%%', bucket)
       track('update_download_progress', { percent: bucket })
-      pushStatus({ state: 'downloading', version: availableVersion, percent: bucket })
     }
+    pushStatus({ state: 'downloading', version: availableVersion, percent: Math.round(Math.max(0, Math.min(100, percent))) })
   })
 
   autoUpdater.on('update-downloaded', (info) => {
@@ -273,7 +287,7 @@ function wireUpdaterEvents(eligible: boolean): void {
     const message = err?.message || String(err)
     log.error('[auto-updater] error: %O', err)
     track('update_error', { message })
-    pushStatus({ state: 'error', version: availableVersion })
+    pushStatus({ state: 'error', version: availableVersion, message })
     // If a known update failed (e.g. Squirrel.Mac "ditto: Couldn't read PKZip
     // signature" — a signing/staging failure, the classic trapped-user cause),
     // the staged install won't apply: drop the pending flag so quit takes the
@@ -321,7 +335,10 @@ export function initAutoUpdater(): void {
   const devUpdate = !app.isPackaged && process.env.CATE_DEV_UPDATE === '1'
   // Register the modal IPC before the gate so renderer invoke() never rejects.
   registerUpdateIpc()
-  if (!app.isPackaged && !devUpdate) return
+  if (!app.isPackaged && !devUpdate) {
+    pushStatus({ state: 'disabled', version: null, message: 'Updates are available in installed builds of Cate.' })
+    return
+  }
   if (devUpdate) {
     autoUpdater.forceDevUpdateConfig = true
     log.info('[auto-updater] DEV UPDATE mode — using local feed (dev-app-update.yml)')
@@ -368,8 +385,7 @@ export function initAutoUpdater(): void {
 }
 
 /** Wired to the "Check for Updates…" menu items. Re-arms the manual prompt since
- *  the user explicitly asked. No "you're up to date" dialog by design — a pending
- *  update surfaces via the OS notification / manual fallback.
+ *  the user explicitly asked. Manual results are marked for renderer feedback.
  *
  *  If an update is already downloaded and staged, the in-app modal may have been
  *  dismissed ("Install on next quit") and won't re-open on its own — the modal
@@ -377,9 +393,14 @@ export function initAutoUpdater(): void {
  *  to "Restart now", so re-broadcast the staged status with forceShow to re-open
  *  it. Sent off lastStatus directly (not cached) so the flag stays a one-off. */
 export function checkForUpdatesManually(): void {
-  if (!app.isPackaged) return
+  manualCheckRequested = true
+  if (!app.isPackaged && process.env.CATE_DEV_UPDATE !== '1') {
+    pushStatus({ state: 'disabled', version: null, message: 'Updates are available in installed builds of Cate.' })
+    return
+  }
   manualPrompted = false
   if (updatePendingInstall && lastStatus.state === 'downloaded') {
+    manualCheckRequested = false
     broadcastToAll(UPDATE_STATUS, { ...lastStatus, forceShow: true })
   }
   void runCheck(canSelfUpdate())

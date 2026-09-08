@@ -29,6 +29,9 @@ export function UpdateReadyDialog() {
         setVersion(status.version)
         // Explicit user re-check: clear the dismissal so it opens again.
         if (status.forceShow) setDismissedVersion(null)
+      } else if (status.state === 'error') {
+        setVersion(null)
+        setRestarting(false)
       }
     }
     const unsubscribe = window.electronAPI.onUpdateStatus(apply)

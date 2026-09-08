@@ -27,6 +27,7 @@ import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { openAgentChanges } from '../lib/review/openAgentChanges'
 import { useAgentChanges } from '../lib/useAgentChanges'
 import { summarizeAgentChanges } from '../../shared/agentChanges'
+import { useFileDragActive } from '../drag/fileDropTarget'
 
 interface WebviewElement extends HTMLElement {
   getURL(): string
@@ -35,6 +36,27 @@ interface WebviewElement extends HTMLElement {
   loadURL(url: string): Promise<void>
   addEventListener(type: string, listener: (event: any) => void): void
   removeEventListener(type: string, listener: (event: any) => void): void
+}
+
+export function agentFileDropScript(files: Array<{ name: string; type: string; dataUrl: string }>): string {
+  return `void (async () => {
+    const transfer = new DataTransfer();
+    for (const source of ${JSON.stringify(files)}) {
+      const blob = await (await fetch(source.dataUrl)).blob();
+      transfer.items.add(new File([blob], source.name, { type: source.type || blob.type }));
+    }
+    const target = document.querySelector('textarea, [contenteditable="true"]') || document.body;
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  })()`
+}
+
+function readFileDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
 }
 
 type ResolveState =
@@ -59,6 +81,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
   const [guestReady, setGuestReady] = useState(false)
   const [hostError, setHostError] = useState('')
   const bridgeTokenRef = useRef(crypto.randomUUID())
+  const fileDragActive = useFileDragActive()
 
   const activePanelId = useActivePanelStore((s) => s.activePanelId)
   const canvasFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
@@ -371,6 +394,28 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
                 // Once ready, inherit visibility so an inactive dock tab can
                 // hide the guest without unmounting it or losing its state.
                 className={`h-full w-full${guestReady ? '' : ' invisible'}`}
+              />
+              <div
+                data-filedrop="agent"
+                data-filedrop-id={panelId}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  event.dataTransfer.dropEffect = 'copy'
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const files = Array.from(event.dataTransfer.files).filter((file) => file.type.startsWith('image/'))
+                  if (!files.length) return
+                  void Promise.all(files.map(async (file) => ({
+                    name: file.name,
+                    type: file.type,
+                    dataUrl: await readFileDataUrl(file),
+                  }))).then((payload) => webviewRef.current?.executeJavaScript(agentFileDropScript(payload)))
+                }}
+                className="absolute inset-0 z-30"
+                style={{ pointerEvents: fileDragActive ? 'auto' : 'none' }}
               />
           </>
         )}
