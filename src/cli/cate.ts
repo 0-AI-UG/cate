@@ -1,13 +1,9 @@
 // `cate` is a small client for the per-workspace loopback API injected into
-// Cate terminals. Browser page commands use Cate's stable argv grammar; the
-// app executes them against the selected live webview through target-bound CDP.
+// Cate terminals. Browser JavaScript runs in an isolated persistent session.
 
-import {
-  isReadOnlyBrowserCommand,
-  validateBrowserCommand,
-} from '../shared/browserCommand'
+import { BROWSER_API_DOCUMENTATION } from '../shared/browserAutomation'
 
-export const CLI_VERSION = '12'
+export const CLI_VERSION = '13'
 export const DEFAULT_TIMEOUT_MS = 30_000
 export const SHORT_ID_LEN = 8
 
@@ -81,8 +77,7 @@ export function parseFileTarget(target: string): Record<string, unknown> {
   }
 }
 
-/** Extract only Cate's four global flags. Everything else remains byte-for-byte
- * native browser argv after `cate browser`. */
+/** Parse CLI flags while preserving quoted JavaScript as a single argument. */
 export function parseCli(argv: string[]): Parsed {
   const flags: Flags = { json: false, help: false, version: false, foreground: false }
   const positionals: string[] = []
@@ -288,86 +283,15 @@ function reviewRequest(args: string[], flags: Flags): Request {
 
 function browserRequest(args: string[], flags: Flags): Request {
   const command = need(args[0], 'browser command')
-  const rest = args.slice(1)
-
-  if (command === 'open' || command === 'navigate' || command === 'new-panel') {
-    const url = need(exact(rest, 1)[0], 'url')
-    if (command === 'new-panel') {
-      if (flags.panel) throw new UsageError('--panel is not valid for browser new-panel')
-      return { method: 'cate.browser.open', args: { url, newPanel: true } }
-    }
-    return withPanel({
-      method: 'cate.browser.open',
-      args: { url, ...(command === 'open' ? { newTab: true } : {}) },
-    }, flags.panel, 'browser')
+  if (command === 'run') {
+    const code = need(exact(args.slice(1), 1)[0], 'JavaScript code')
+    return withPanel({ method: 'cate.browser.run', args: { code } }, flags.panel, 'browser')
   }
-
-  if (command === 'tabs') {
-    exact(rest, 0)
-    return withPanel({ method: 'cate.browser.tabs', args: {} }, flags.panel, 'browser')
+  if (command === 'reset') {
+    exact(args.slice(1), 0)
+    return { method: 'cate.browser.reset', args: {} }
   }
-  if (command === 'new-tab') {
-    if (rest.length > 1) throw new UsageError(`unexpected argument: ${rest[1]}`)
-    return withPanel({
-      method: 'cate.browser.tabNew',
-      args: rest[0] ? { url: rest[0] } : {},
-    }, flags.panel, 'browser')
-  }
-  if (command === 'select-tab' || command === 'close-tab') {
-    const tabId = need(exact(rest, 1)[0], 'tabId')
-    return withPanel({
-      method: command === 'select-tab' ? 'cate.browser.tabSelect' : 'cate.browser.tabClose',
-      args: { tabId },
-    }, flags.panel, 'browser')
-  }
-  if (command === 'current' || command === 'back' || command === 'forward' || command === 'reload' || command === 'downloads') {
-    exact(rest, 0)
-    return withPanel({ method: `cate.browser.${command}`, args: {} }, flags.panel, 'browser')
-  }
-  if (command === 'viewport') {
-    const preset = rest[0]
-    let viewport: Record<string, unknown>
-    if (preset === 'compact') {
-      exact(rest, 1)
-      viewport = { preset }
-    } else if (preset === 'desktop' || preset === 'mobile') {
-      exact(rest, 1)
-      viewport = preset === 'desktop'
-        ? { preset, width: 1280, height: 800 }
-        : { preset, width: 390, height: 844 }
-    } else {
-      exact(rest, 2)
-      viewport = {
-        preset: 'custom',
-        width: positiveInt(rest[0], 'width'),
-        height: positiveInt(rest[1], 'height'),
-      }
-    }
-    return withPanel({ method: 'cate.browser.viewport', args: viewport }, flags.panel, 'browser')
-  }
-  if (command === 'resize') {
-    exact(rest, 2)
-    return withPanel({
-      method: 'cate.browser.resize',
-      args: {
-        width: positiveInt(rest[0], 'width'),
-        height: positiveInt(rest[1], 'height'),
-      },
-    }, flags.panel, 'browser')
-  }
-
-  let native: string[]
-  try {
-    native = validateBrowserCommand(args)
-  } catch (error) {
-    throw new UsageError(error instanceof Error ? error.message : 'invalid-browser-command')
-  }
-  return withPanel({
-    method: isReadOnlyBrowserCommand(native)
-      ? 'cate.browser.readCommand'
-      : 'cate.browser.command',
-    args: { command: native },
-  }, flags.panel, 'browser')
+  throw new UsageError('Use cate browser run <JavaScript> or cate browser reset. See cate browser --help.')
 }
 
 export function buildRequest(positionals: string[], flags: Flags): Request {
@@ -574,16 +498,6 @@ function renderPanelList(value: unknown): string {
   }).join('\n') || '(no panels)'
 }
 
-function renderTabs(value: unknown): string {
-  const tabs = asObject(value)?.tabs
-  if (!Array.isArray(tabs)) return renderGeneric(value)
-  return tabs.map((item) => {
-    const tab = asObject(item)
-    if (!tab) return String(item)
-    return `${tab.active ? '*' : ' '} ${shortId(String(tab.id ?? '?'))}\t${tab.url ?? tab.title ?? '(new tab)'}`
-  }).join('\n') || '(no tabs)'
-}
-
 function renderAgentRuns(value: unknown): string {
   if (!Array.isArray(value)) return renderGeneric(value)
   return value.map((item) => {
@@ -601,8 +515,12 @@ function renderGeneric(value: unknown): string {
 }
 
 export function formatHuman(method: string, value: unknown): string {
+  const content = asObject(value)?.content
+  if ((method === 'cate.browser.run' || method === 'cate.browser.reset') && Array.isArray(content)) return content.map((item) => {
+    const block = asObject(item)
+    return block?.type === 'text' ? String(block.text ?? '') : block?.path ? `Screenshot: ${String(block.path)}\nOpen this file with your image-viewing tool to inspect the page visually.` : '[Browser image: use --json for image data]'
+  }).join('\n')
   if (method === 'cate.panel.list') return renderPanelList(value)
-  if (method === 'cate.browser.tabs') return renderTabs(value)
   if (method === 'cate.codingAgent.list') return renderAgentRuns(value)
   if (method === 'cate.codingAgent.wait') {
     return renderAgentRuns(asObject(value)?.runs)
@@ -627,16 +545,7 @@ export function formatHuman(method: string, value: unknown): string {
     return typeof text === 'string' ? text : renderGeneric(value)
   }
   const object = asObject(value)
-  if (object && typeof object.snapshot === 'string') {
-    const heading = [
-      typeof object.url === 'string' ? `url: ${object.url}` : '',
-      typeof object.title === 'string' ? `title: ${object.title}` : '',
-      typeof object.snapshotId === 'string' ? `snapshot: ${object.snapshotId}` : '',
-    ].filter(Boolean)
-    return [...heading, object.snapshot].join('\n')
-  }
   if (object && typeof object.path === 'string') return object.path
-  if (method === 'cate.browser.open' && object && typeof object.url === 'string') return object.url
   if (
     (method === 'cate.editor.openFile' || method === 'cate.canvas.createPanel')
     && object
@@ -649,11 +558,8 @@ export function formatHuman(method: string, value: unknown): string {
 }
 
 const USAGE = `Usage:
-  cate browser <browser-command> [args] [--panel <id>]
-  cate browser open|navigate|new-panel <url> [--panel <id>]
-  cate browser tabs|new-tab|select-tab|close-tab [args] [--panel <id>]
-  cate browser viewport compact|desktop|mobile|<width> <height>
-  cate browser resize <width> <height>
+  cate browser run <JavaScript> [--panel <id>]
+  cate browser reset
   cate panel list|create|set|current|clear|close [args]
   cate editor open <path[:line[:column]]>
   cate terminal read|type|press [args] [--panel <id>]
@@ -661,39 +567,14 @@ const USAGE = `Usage:
   cate review inspect|note|complete [--panel <id>] [args]
   cate version
 
-Browser page commands use Cate's native syntax. Cate pins them to the
-selected built-in browser session; session startup, native tabs, batch commands,
-and arbitrary host file paths are not exposed.
+Browser code runs in a persistent isolated session against Cate's live tabs.
 
 Global flags: --panel <id> --json -h|--help --version`
 
-const BROWSER_USAGE = `Usage: cate browser <command> [args] [--panel <id>]
+const BROWSER_USAGE = `Usage: cate browser run <JavaScript> [--panel <id>]
+       cate browser reset
 
-Cate lifecycle:
-  open <url>             open a new tab (the default)
-  navigate <url>         replace the active tab
-  new-panel <url>        create another browser panel
-  tabs
-  new-tab [url]
-  select-tab <id>
-  close-tab <id>
-  current
-  back|forward|reload
-  downloads
-  viewport compact|desktop|mobile|<width> <height>
-  resize <width> <height>
-
-Page automation uses Cate's native browser syntax, for example:
-  cate browser snapshot -i
-  cate browser click @s1e3
-  cate browser find role button click --name Save
-  cate browser fill @s1e4 "hello"
-  cate browser press Enter
-  cate browser get text @s1e5
-  cate browser screenshot --full
-
-Snapshot refs are revisioned by Cate (@s1e3) and become stale after the next
-snapshot. Use --panel whenever more than one browser could be the target.`
+${BROWSER_API_DOCUMENTATION}`
 
 const AGENT_USAGE = `Usage:
   cate agent list
@@ -739,6 +620,7 @@ export interface RunDeps {
   stdout: (text: string) => void
   stderr: (text: string) => void
   cwd?: string
+  writeImage?: (data: string) => Promise<string>
 }
 
 function usageError(deps: RunDeps, error: unknown): number {
@@ -779,7 +661,7 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
     env: deps.env,
     timeout: request.method === 'cate.codingAgent.wait'
       ? Math.max(DEFAULT_TIMEOUT_MS, Number(request.args.timeoutSeconds ?? 10) * 1_000 + 5_000)
-      : DEFAULT_TIMEOUT_MS,
+      : request.method === 'cate.browser.run' ? 40_000 : DEFAULT_TIMEOUT_MS,
     cwd: deps.cwd,
   }
   try {
@@ -802,8 +684,14 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
       }
     }
     const value = await send(request.method, request.args, sendDeps)
+    if (!parsed.flags.json && request.method === 'cate.browser.run' && deps.writeImage) {
+      const content = asObject(value)?.content
+      if (Array.isArray(content)) for (const item of content) {
+        if (item.type === 'image' && typeof item.data === 'string') item.path = await deps.writeImage(item.data)
+      }
+    }
     deps.stdout(parsed.flags.json ? JSON.stringify(value) : formatHuman(request.method, value))
-    return 0
+    return asObject(value)?.isError === true ? 1 : 0
   } catch (error) {
     if (error instanceof UsageError) return usageError(deps, error)
     if (error instanceof ApiError) {
@@ -820,6 +708,14 @@ if (typeof require !== 'undefined' && require.main === module) {
     fetch: globalThis.fetch,
     env: process.env,
     cwd: process.cwd(),
+    writeImage: async (data) => {
+      const { mkdtemp, writeFile } = await import('node:fs/promises')
+      const { tmpdir } = await import('node:os')
+      const { join } = await import('node:path')
+      const path = join(await mkdtemp(join(tmpdir(), 'cate-browser-')), 'screenshot.png')
+      await writeFile(path, Buffer.from(data, 'base64'), { mode: 0o600 })
+      return path
+    },
     stdout: (text) => process.stdout.write(`${text}\n`),
     stderr: (text) => process.stderr.write(`${text}\n`),
   }).then((code) => {

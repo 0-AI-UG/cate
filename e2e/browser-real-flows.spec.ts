@@ -1,7 +1,8 @@
+import { browserInvoke, popupBinding, target, act, activeAction, waitForText, inspectFixture } from './fixtures/browser-control'
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { once } from 'node:events'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test } from '@playwright/test'
@@ -14,6 +15,7 @@ let shopServer: Server
 let docsServer: Server
 let shopOrigin: string
 let docsOrigin: string
+let receivedUploads: Array<{ name: string; bytes: Buffer }> = []
 
 function html(response: ServerResponse, body: string, status = 200): void {
   response.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
@@ -30,7 +32,7 @@ test.beforeAll(async () => {
   docsServer = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://docs.test')
     if (url.pathname === '/frame') {
-      html(response, '<title>Cross-origin frame</title><button id="cross-frame" onclick="this.dataset.clicked=\'yes\'">Cross-frame action</button>')
+      html(response, '<title>Cross-origin frame</title><button id="cross-frame" onclick="this.dataset.clicked=\'yes\';this.textContent+=\' complete\'">Cross-frame action</button>')
       return
     }
     if (url.pathname === '/results') {
@@ -100,17 +102,17 @@ test.beforeAll(async () => {
       return
     }
     if (url.pathname === '/frame') {
-      html(response, '<title>Same-origin frame</title><button id="same-frame" onclick="this.dataset.clicked=\'yes\'">Same-frame action</button>')
+      html(response, '<title>Same-origin frame</title><button id="same-frame" onclick="this.dataset.clicked=\'yes\';this.textContent+=\' complete\'">Same-frame action</button>')
       return
     }
     if (url.pathname === '/components') {
       html(response, `<title>Component lab</title><main><h1>Component lab</h1><div id="open-host"></div><div id="closed-host"></div><iframe title="Same origin" src="/frame"></iframe><iframe title="Cross origin" src="${docsOrigin}/frame"></iframe></main><script>
         const openRoot = document.querySelector('#open-host').attachShadow({ mode: 'open' });
         openRoot.innerHTML = '<button id="open-shadow">Open-shadow action</button>';
-        openRoot.querySelector('button').addEventListener('click', function () { this.dataset.clicked = 'yes' });
+        openRoot.querySelector('button').addEventListener('click', function () { this.dataset.clicked = 'yes'; this.textContent += ' complete' });
         const closedRoot = document.querySelector('#closed-host').attachShadow({ mode: 'closed' });
         closedRoot.innerHTML = '<button id="closed-shadow">Closed-shadow action</button>';
-        closedRoot.querySelector('button').addEventListener('click', function () { this.dataset.clicked = 'yes' });
+        closedRoot.querySelector('button').addEventListener('click', function () { this.dataset.clicked = 'yes'; this.textContent += ' complete' });
       </script>`)
       return
     }
@@ -119,8 +121,22 @@ test.beforeAll(async () => {
       html(response, `<title>Large DOM</title><main><h1>Large DOM</h1>${controls}</main>`)
       return
     }
+    if (request.method === 'POST' && url.pathname === '/upload-receive') {
+      void (async () => {
+        const chunks: Buffer[] = []
+        for await (const chunk of request) chunks.push(Buffer.from(chunk))
+        const form = await new Response(Buffer.concat(chunks), {
+          headers: { 'content-type': request.headers['content-type'] ?? '' },
+        }).formData()
+        const file = form.get('attachment')
+        if (!file || typeof file === 'string') { response.writeHead(400).end('Missing attachment'); return }
+        receivedUploads.push({ name: file.name, bytes: Buffer.from(await file.arrayBuffer()) })
+        html(response, '<title>Upload received</title><main><h1>Upload received</h1></main>')
+      })().catch(() => { response.writeHead(400).end('Invalid upload') })
+      return
+    }
     if (url.pathname === '/upload') {
-      html(response, `<title>Upload fixture</title><main><h1>Upload a document</h1><label>Attachment <input id="attachment" type="file"></label><output id="selected">Nothing selected</output></main><script>
+      html(response, `<title>Upload fixture</title><main><h1>Upload a document</h1><form method="post" action="/upload-receive" enctype="multipart/form-data"><label>Attachment <input id="attachment" name="attachment" type="file"></label><button>Submit attachment</button></form><output id="selected">Nothing selected</output></main><script>
         document.querySelector('#attachment').addEventListener('change', (event) => {
           document.querySelector('#selected').textContent = event.target.files[0]?.name ?? 'Nothing selected';
         });
@@ -155,92 +171,85 @@ test.afterEach(async () => {
   await closeApp(app)
 })
 
-async function invoke(
-  browser: { workspaceId: string; panelId: string },
-  method: string,
-  args: Record<string, unknown> = {},
-) {
-  return page.evaluate(({ browser, method, args }) => window.__cateE2E!.browserInvoke(
-    browser.workspaceId, method, { panelId: browser.panelId, ...args },
-  ), { browser, method, args })
-}
 
 test('completes authenticated shopping and cross-origin documentation flows', async () => {
   test.setTimeout(90_000)
   const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/login`)
 
-  await expect.poll(() => invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }), { timeout: 20_000 })
-    .toMatchObject({ ok: true, result: { snapshot: expect.stringContaining('Sign in') } })
-  await expect(invoke(browser, 'command', { command: ['fill', '#email', 'agent@example.test'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', { command: ['fill', '#password', 'correct horse battery staple'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', { command: ['click', '#signin'] })).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => browserInvoke(page, browser, 'getAXState', { disableDiffing: true }), { timeout: 20_000 })
+    .toMatchObject({ ok: true, result: { state: expect.stringContaining('Sign in') } })
+  await expect(act(page, browser, 'setValue', "Email", { value: 'agent@example.test' })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'setValue', "Password", { value: 'correct horse battery staple' })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'click', "Sign in", {}, 'button')).resolves.toMatchObject({ ok: true })
 
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/dashboard` } })
-  await expect(invoke(browser, 'readCommand', { command: ['get', 'text', 'h1'] })).resolves
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"h1\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'Welcome, automation user' } })
 
-  await expect(invoke(browser, 'command', { command: ['click', '#add'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'readCommand', { command: ['get', 'text', '#cart-count'] })).resolves
+  await expect(act(page, browser, 'click', "Add keyboard to cart")).resolves.toMatchObject({ ok: true })
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#cart-count\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: '1' } })
 
-  const initialTabs = await invoke(browser, 'tabs') as { ok: boolean; result: { tabs: Array<{ id: string }> } }
+  const initialTabs = await browserInvoke(page, browser, 'listTabs') as { ok: boolean; result: { tabs: Array<{ id: string }> } }
   const shopTabId = initialTabs.result.tabs[0].id
-  const docsTab = await invoke(browser, 'tabNew', { url: docsOrigin }) as { ok: boolean; result: { tabId: string } }
+  const docsTab = await browserInvoke(page, browser, 'createTab', { url: docsOrigin }) as { ok: boolean; result: { tabId: string } }
   expect(docsTab.ok).toBe(true)
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
+  const docs = { ...browser, tabId: docsTab.result.tabId }
+  await expect.poll(() => browserInvoke(page, docs, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${docsOrigin}/` } })
-  await expect(invoke(browser, 'command', { command: ['fill', '#docs-query', 'background input'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', { command: ['press', 'Enter'] })).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'readCommand', { command: ['get', 'text', '#result'] }), { timeout: 20_000 })
+  await expect(act(page, docs, 'setValue', "Search docs", { value: 'background input' })).resolves.toMatchObject({ ok: true })
+  await expect(activeAction(page, docs, 'pressKey', { key: 'Enter' })).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => inspectFixture(app!, page, docs, "document.querySelector(\"#result\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { text: 'Result for background input' } })
 
-  await expect.poll(() => invoke(browser, 'tabSelect', { tabId: shopTabId }), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'getTab', { tabId: shopTabId }), { timeout: 20_000 })
     .toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/dashboard` } })
 
-  await expect(invoke(browser, 'command', { command: ['click', '#support'] })).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
+  await expect(act(page, browser, 'click', "Open support")).resolves.toMatchObject({ ok: true })
+  const popup = await popupBinding(page, browser, `${shopOrigin}/support`)
+  await expect.poll(() => browserInvoke(page, popup, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/support` } })
-  await expect(invoke(browser, 'command', { command: ['fill', '#question', 'Where is my order?'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', { command: ['click', '#ask'] })).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'readCommand', { command: ['get', 'text', '#support-answer'] }), { timeout: 20_000 })
+  await expect(act(page, popup, 'setValue', "Question", { value: 'Where is my order?' })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, popup, 'click', "Ask")).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => inspectFixture(app!, page, popup, "document.querySelector(\"#support-answer\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { text: 'Received: Where is my order?' } })
-  const popupTabs = await invoke(browser, 'tabs') as { ok: boolean; result: { tabs: Array<{ id: string; active: boolean }> } }
+  const popupTabs = await browserInvoke(page, browser, 'listTabs') as { ok: boolean; result: { tabs: Array<{ id: string; active: boolean }> } }
   expect(popupTabs.result.tabs).toHaveLength(3)
-  const popupTabId = popupTabs.result.tabs.find((tab) => tab.active)!.id
-  await expect(invoke(browser, 'tabClose', { tabId: popupTabId })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'tabSelect', { tabId: shopTabId })).resolves.toMatchObject({ ok: true })
+  const popupTabId = popup.tabId
+  await expect(browserInvoke(page, browser, 'close', { tabId: popupTabId })).resolves.toMatchObject({ ok: true })
+  await expect(browserInvoke(page, browser, 'getTab', { tabId: shopTabId })).resolves.toMatchObject({ ok: true })
 
-  await expect(invoke(browser, 'command', { command: ['click', '#checkout'] })).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
+  await expect(act(page, browser, 'click', "Checkout")).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/checkout` } })
-  await expect(invoke(browser, 'command', { command: ['fill', '#address', 'Invalidenstrasse 117, Berlin'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', { command: ['select', '#country', 'DE'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', { command: ['check', '#terms'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', { command: ['click', '#place-order'] })).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'readCommand', { command: ['get', 'text', '#order-id'] }), { timeout: 20_000 })
+  await expect(act(page, browser, 'setValue', "Shipping address", { value: 'Invalidenstrasse 117, Berlin' })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'selectOption', "Country", { values: ['DE'] })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'setChecked', "Accept terms", { checked: true })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'click', "Place order")).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => inspectFixture(app!, page, browser, "document.querySelector(\"#order-id\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { text: 'Order CATE-4242' } })
 
-  await expect(invoke(browser, 'back')).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
+  await expect(browserInvoke(page, browser, 'back')).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/checkout` } })
-  await expect(invoke(browser, 'forward')).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
+  await expect(browserInvoke(page, browser, 'forward')).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/confirmation` } })
-  await expect(invoke(browser, 'back')).resolves.toMatchObject({ ok: true })
+  await expect(browserInvoke(page, browser, 'back')).resolves.toMatchObject({ ok: true })
 
-  await expect(invoke(browser, 'open', { url: `${shopOrigin}/dashboard` })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', { command: ['click', '#download'] })).resolves.toMatchObject({ ok: true })
+  await expect(browserInvoke(page, browser, 'goto', { url: `${shopOrigin}/dashboard` })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'click', "Download receipt")).resolves.toMatchObject({ ok: true })
   await expect.poll(async () => {
-    const result = await invoke(browser, 'downloads') as {
+    const result = await browserInvoke(page, browser, 'downloads') as {
       ok: boolean
       result: { downloads: Array<{ url: string; filePath: string; state: string }> }
     }
     return result.result.downloads.find((download) => download.url === `${shopOrigin}/receipt.csv`)?.state
   }, { timeout: 20_000 }).toBe('completed')
-  const downloads = await invoke(browser, 'downloads') as {
+  const downloads = await browserInvoke(page, browser, 'downloads') as {
     ok: boolean
     result: { downloads: Array<{ url: string; filePath: string; state: string }> }
   }
@@ -249,112 +258,101 @@ test('completes authenticated shopping and cross-origin documentation flows', as
   expect(existsSync(receipt!.filePath)).toBe(true)
   expect(readFileSync(receipt!.filePath, 'utf8')).toBe('item,quantity\nkeyboard,1\n')
 
-  await expect(invoke(browser, 'viewport', { preset: 'mobile', width: 390, height: 844 })).resolves
+  await expect(browserInvoke(page, browser, 'setViewport', { preset: 'mobile', width: 390, height: 844 })).resolves
     .toMatchObject({ ok: true, result: { preset: 'mobile', width: 390, height: 844 } })
-  await expect.poll(() => invoke(browser, 'evaluate', { expression: 'innerWidth' }), { timeout: 20_000 })
+  await expect.poll(() => inspectFixture(app!, page, browser, 'innerWidth'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { value: 390 } })
-  await expect(invoke(browser, 'resize', { width: 700, height: 520 })).resolves
+  await expect(browserInvoke(page, browser, 'resize', { width: 700, height: 520 })).resolves
     .toMatchObject({ ok: true, result: { width: 700, height: 520 } })
   await expect.poll(() => page.evaluate((panelId) => (
     window.__cateE2E!.nodes().find((node) => node.panelId === panelId)?.size
   ), browser.panelId)).toEqual({ width: 700, height: 520 })
 
-  await expect(invoke(browser, 'viewport', { preset: 'compact', width: 640, height: 480 })).resolves
+  await expect(browserInvoke(page, browser, 'setViewport', { preset: 'compact', width: 640, height: 480 })).resolves
     .toMatchObject({ ok: true, result: { preset: 'compact', width: 640, height: 480 } })
   await expect.poll(() => page.evaluate((panelId) => {
     const webview = document.querySelector(`[data-browser-surface="${panelId}"] webview`) as HTMLElement | null
     return webview?.style.width ?? ''
   }, browser.panelId), { timeout: 20_000 }).toContain('%')
-  const screenshot = await invoke(browser, 'readCommand', { command: ['screenshot', '--full'] }) as {
+  const screenshot = await browserInvoke(page, browser, 'getScreenshot') as {
     ok: boolean
-    result: { path: string }
+    result: { screenshot: { data: string; mimeType: string } }
   }
   expect(screenshot.ok).toBe(true)
-  expect(existsSync(screenshot.result.path)).toBe(true)
-  expect(statSync(screenshot.result.path).size).toBeGreaterThan(100)
+  expect(screenshot.result.screenshot.mimeType).toBe('image/png')
+  expect(Buffer.from(screenshot.result.screenshot.data, 'base64').length).toBeGreaterThan(100)
 })
 
 test('recovers from SPA rerenders and serializes concurrent actions', async () => {
   const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/spa`)
 
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '--text', 'Issue title', '--timeout', '5000'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', {
-    command: ['find', 'label', 'Issue title', 'fill', 'Browser regression'],
-  })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', {
-    command: ['find', 'role', 'button', 'click', '--name', 'Create issue'],
-  })).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['get', 'text', '#issue-name'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true, result: { text: 'Browser regression' } })
+  await expect.poll(() => waitForText(page, browser, 'Issue title'), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect(act(page, browser, 'setValue', 'Issue title', { value: 'Browser regression' })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'click', 'Create issue', {}, 'button')).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => inspectFixture(app!, page, browser, "document.querySelector(\"#issue-name\")?.textContent ?? ''", 'text'), { timeout: 20_000 }).toMatchObject({ ok: true, result: { text: 'Browser regression' } })
 
-  const observation = await invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as {
+  const observation = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
     ok: boolean
-    result: { refs: Array<{ ref: string; name: string }> }
+    result: { elements: Array<{ id: number; name: string; role: string }> }
   }
-  const editRef = observation.result.refs.find((ref) => ref.name === 'Edit issue')?.ref
+  const editRef = observation.result.elements.find((ref) => ref.name === 'Edit issue')?.id
   expect(editRef).toBeTruthy()
-  await expect(invoke(browser, 'command', { command: ['click', editRef!] })).resolves.toMatchObject({ ok: true })
+  await expect(activeAction(page, browser, 'click', { target: editRef! })).resolves.toMatchObject({ ok: true })
 
-  const detachedRef = await invoke(browser, 'command', { command: ['click', editRef!] })
+  const detachedRef = await activeAction(page, browser, 'click', { target: editRef! })
   expect(detachedRef.ok).toBe(false)
   expect(detachedRef.error).toBeTruthy()
 
   await expect.poll(async () => {
-    const result = await invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as {
+    const result = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
       ok: boolean
-      result?: { refs: Array<{ ref: string; name: string; role: string }> }
+      result?: { elements: Array<{ id: number; name: string; role: string }> }
     }
-    return result.result?.refs.some((ref) => ref.role === 'textbox' || ref.role === 'searchbox') ?? false
+    return result.result?.elements.some((ref) => ref.role === 'textbox' || ref.role === 'searchbox') ?? false
   }, { timeout: 20_000 }).toBe(true)
-  const refreshed = await invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as {
+  const refreshed = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
     ok: boolean
-    result: { refs: Array<{ ref: string; name: string; role: string }> }
+    result: { elements: Array<{ id: number; name: string; role: string }> }
   }
-  const titleRef = refreshed.result.refs.find((ref) => ref.role === 'textbox' || ref.role === 'searchbox')?.ref
+  const titleRef = refreshed.result.elements.find((ref) => ref.role === 'textbox' || ref.role === 'searchbox')?.id
   expect(titleRef).toBeTruthy()
-  await expect(invoke(browser, 'command', { command: ['fill', titleRef!, 'Recovered issue'] })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'command', {
-    command: ['find', 'role', 'button', 'click', '--name', 'Save issue'],
-  })).resolves.toMatchObject({ ok: true })
-  await expect(invoke(browser, 'readCommand', { command: ['get', 'text', '#issue-name'] })).resolves
+  await expect(activeAction(page, browser, 'setValue', { target: titleRef!, value: 'Recovered issue' })).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'click', 'Save issue', {}, 'button')).resolves.toMatchObject({ ok: true })
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#issue-name\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'Recovered issue' } })
 
   const concurrent = await Promise.all([
-    invoke(browser, 'command', { command: ['click', '#counter'] }),
-    invoke(browser, 'command', { command: ['click', '#counter'] }),
+    act(page, browser, 'click', "Increment"),
+    act(page, browser, 'click', "Increment"),
   ])
   expect(concurrent).toEqual([expect.objectContaining({ ok: true }), expect.objectContaining({ ok: true })])
-  await expect(invoke(browser, 'readCommand', { command: ['get', 'text', '#count'] })).resolves
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#count\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: '2' } })
 })
 
 test('acts through accessibility refs inside open and closed shadow roots', async () => {
   const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/components`)
   const observation = await expect.poll(async () => {
-    const result = await invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as {
+    const result = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
       ok: boolean
-      result?: { refs: Array<{ ref: string; name: string }> }
+      result?: { elements: Array<{ id: number; name: string; role: string }> }
     }
     return result.ok ? result.result : undefined
   }, { timeout: 20_000 }).toEqual(expect.objectContaining({
-    refs: expect.arrayContaining([
+    elements: expect.arrayContaining([
       expect.objectContaining({ name: 'Open-shadow action' }),
       expect.objectContaining({ name: 'Closed-shadow action' }),
     ]),
-  })).then(() => invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as Promise<{
+  })).then(() => browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as Promise<{
     ok: boolean
-    result: { refs: Array<{ ref: string; name: string }> }
+    result: { elements: Array<{ id: number; name: string; role: string }> }
   }>)
 
   for (const name of ['Open-shadow action', 'Closed-shadow action']) {
-    const ref = observation.result.refs.find((candidate) => candidate.name === name)?.ref
+    const ref = observation.result.elements.find((candidate) => candidate.name === name)?.id
     expect(ref, name).toBeTruthy()
-    await expect(invoke(browser, 'command', { command: ['click', ref!] })).resolves.toMatchObject({ ok: true })
-    await expect(invoke(browser, 'readCommand', { command: ['get', 'attr', ref!, 'data-clicked'] })).resolves
-      .toMatchObject({ ok: true, result: { value: 'yes' } })
+    await expect(activeAction(page, browser, 'click', { target: ref! })).resolves.toMatchObject({ ok: true })
+    await expect(target(page, browser, `${name} complete`, 'button').then(() => ({ ok: true }))).resolves.toMatchObject({ ok: true })
   }
 })
 
@@ -364,48 +362,46 @@ test('keeps concurrent workflows isolated across multiple live browser panels', 
     window.__cateE2E!.createBrowser(`${origin}/spa`, { x: 760, y: 80 }),
   ], shopOrigin)
   for (const browser of [first, second]) {
-    await expect.poll(() => invoke(browser, 'readCommand', {
-      command: ['wait', '#issue-title', '--state', 'visible', '--timeout', '5000'],
-    }), { timeout: 20_000 }).toMatchObject({ ok: true })
+    await expect.poll(() => target(page, browser, "Issue title").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
   }
 
   await Promise.all([
-    invoke(first, 'command', { command: ['fill', '#issue-title', 'First panel'] }),
-    invoke(second, 'command', { command: ['fill', '#issue-title', 'Second panel'] }),
+    act(page, first, 'setValue', "Issue title", { value: 'First panel' }),
+    act(page, second, 'setValue', "Issue title", { value: 'Second panel' }),
   ])
-  await expect(invoke(first, 'readCommand', { command: ['get', 'value', '#issue-title'] })).resolves
+  await expect(inspectFixture(app!, page, first, "document.querySelector(\"#issue-title\")?.value")).resolves
     .toMatchObject({ ok: true, result: { value: 'First panel' } })
-  await expect(invoke(second, 'readCommand', { command: ['get', 'value', '#issue-title'] })).resolves
+  await expect(inspectFixture(app!, page, second, "document.querySelector(\"#issue-title\")?.value")).resolves
     .toMatchObject({ ok: true, result: { value: 'Second panel' } })
 
   await Promise.all([
-    invoke(first, 'command', { command: ['click', '#counter'] }),
-    invoke(first, 'command', { command: ['click', '#counter'] }),
-    invoke(second, 'command', { command: ['click', '#counter'] }),
+    act(page, first, 'click', "Increment"),
+    act(page, first, 'click', "Increment"),
+    act(page, second, 'click', "Increment"),
   ])
-  await expect(invoke(first, 'readCommand', { command: ['get', 'text', '#count'] })).resolves
+  await expect(inspectFixture(app!, page, first, "document.querySelector(\"#count\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: '2' } })
-  await expect(invoke(second, 'readCommand', { command: ['get', 'text', '#count'] })).resolves
+  await expect(inspectFixture(app!, page, second, "document.querySelector(\"#count\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: '1' } })
 })
 
 test('observes 10,000 interactive controls within the workflow latency budget', async ({ browserName: _browserName }, testInfo) => {
   const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/large-dom`)
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
-    .toMatchObject({ ok: true, result: { url: `${shopOrigin}/large-dom`, loading: false } })
+  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+    .toMatchObject({ ok: true, result: { url: `${shopOrigin}/large-dom` } })
 
   const startedAt = performance.now()
-  const observation = await invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as {
+  const observation = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
     ok: boolean
-    result: { refs: Array<{ ref: string; name: string }> }
+    result: { elements: Array<{ id: number; name: string; role: string }> }
   }
   const elapsedMs = performance.now() - startedAt
   expect(observation.ok).toBe(true)
-  expect(observation.result.refs).toHaveLength(10_000)
-  expect(observation.result.refs.at(-1)?.name).toBe('Control 10000')
+  expect(observation.result.elements.filter((element) => element.role === 'button' && element.name.startsWith('Control '))).toHaveLength(10_000)
+  expect(observation.result.elements.at(-1)?.name).toBe('Control 10000')
   expect(elapsedMs).toBeLessThan(10_000)
   await testInfo.attach('browser-observation-metrics.json', {
-    body: JSON.stringify({ controls: observation.result.refs.length, elapsedMs }, null, 2),
+    body: JSON.stringify({ controls: observation.result.elements.length, elapsedMs }, null, 2),
     contentType: 'application/json',
   })
 })
@@ -432,61 +428,60 @@ test('renders the password manager across the complete browser content area', as
 test('acts through accessibility refs inside same-origin and cross-origin frames', async () => {
   const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/components`)
   const observation = await expect.poll(async () => {
-    const result = await invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as {
+    const result = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
       ok: boolean
-      result?: { refs: Array<{ ref: string; name: string }> }
+      result?: { elements: Array<{ id: number; name: string; role: string }> }
     }
-    return result.ok && result.result?.refs.some((ref) => ref.name === 'Same-frame action')
-      && result.result.refs.some((ref) => ref.name === 'Cross-frame action')
+    return result.ok && result.result?.elements.some((ref) => ref.name === 'Same-frame action')
+      && result.result.elements.some((ref) => ref.name === 'Cross-frame action')
       ? result.result
       : undefined
-  }, { timeout: 20_000 }).toBeTruthy().then(() => invoke(browser, 'readCommand', { command: ['snapshot', '-i'] }) as Promise<{
+  }, { timeout: 20_000 }).toBeTruthy().then(() => browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as Promise<{
     ok: boolean
-    result: { refs: Array<{ ref: string; name: string }> }
+    result: { elements: Array<{ id: number; name: string; role: string }> }
   }>).then((result) => result.result)
   for (const name of ['Same-frame action', 'Cross-frame action']) {
-    const ref = observation.refs.find((candidate) => candidate.name === name)?.ref
+    const ref = observation.elements.find((candidate) => candidate.name === name)?.id
     expect(ref, name).toBeTruthy()
-    await expect(invoke(browser, 'command', { command: ['click', ref!] })).resolves.toMatchObject({ ok: true })
-    await expect(invoke(browser, 'readCommand', { command: ['get', 'attr', ref!, 'data-clicked'] })).resolves
-      .toMatchObject({ ok: true, result: { value: 'yes' } })
+    await expect(activeAction(page, browser, 'click', { target: ref! })).resolves.toMatchObject({ ok: true })
+    await expect(target(page, browser, `${name} complete`, 'button').then(() => ({ ok: true }))).resolves.toMatchObject({ ok: true })
   }
 })
 
 test('does not silently lose a click after a responsive viewport round trip', async () => {
   const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/login`)
-  await expect.poll(() => invoke(browser, 'readCommand', {
-    command: ['wait', '#signin', '--state', 'visible', '--timeout', '5000'],
-  }), { timeout: 20_000 }).toMatchObject({ ok: true })
-  await invoke(browser, 'command', { command: ['fill', '#email', 'viewport@example.test'] })
-  await invoke(browser, 'command', { command: ['fill', '#password', 'viewport test'] })
-  await invoke(browser, 'command', { command: ['click', '#signin'] })
-  await expect.poll(() => invoke(browser, 'current'), { timeout: 20_000 })
+  await expect.poll(() => target(page, browser, "Sign in").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await act(page, browser, 'setValue', "Email", { value: 'viewport@example.test' })
+  await act(page, browser, 'setValue', "Password", { value: 'viewport test' })
+  await act(page, browser, 'click', "Sign in", {}, 'button')
+  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/dashboard` } })
-  await invoke(browser, 'viewport', { preset: 'mobile', width: 390, height: 844 })
-  await invoke(browser, 'viewport', { preset: 'compact', width: 640, height: 480 })
-  await expect(invoke(browser, 'command', { command: ['click', '#download'] })).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => invoke(browser, 'downloads'), { timeout: 20_000 }).toMatchObject({
+  await browserInvoke(page, browser, 'setViewport', { preset: 'mobile', width: 390, height: 844 })
+  await browserInvoke(page, browser, 'setViewport', { preset: 'compact', width: 640, height: 480 })
+  await expect(act(page, browser, 'click', "Download receipt")).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => browserInvoke(page, browser, 'downloads'), { timeout: 20_000 }).toMatchObject({
     ok: true,
     result: { downloads: [expect.objectContaining({ url: `${shopOrigin}/receipt.csv`, state: 'completed' })] },
   })
 })
 
-test('uploads a user-granted local file into a page file input', async () => {
+test('uploads an authorized local file and verifies the server receives its exact bytes', async () => {
   const uploadDir = mkdtempSync(path.join(tmpdir(), 'cate-browser-upload-'))
   const uploadPath = path.join(uploadDir, 'browser-upload-fixture.txt')
-  writeFileSync(uploadPath, 'uploaded through Cate\n')
+  const expectedBytes = Buffer.concat([Buffer.from('Uploaded through Cate: Grüße 日本語\r\n'), Buffer.from(Array.from({ length: 256 }, (_, i) => i))])
+  writeFileSync(uploadPath, expectedBytes)
+  receivedUploads = []
   try {
     const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/upload`)
-    await expect.poll(() => invoke(browser, 'readCommand', {
-      command: ['wait', '#attachment', '--state', 'visible'],
-    }), { timeout: 20_000 }).toMatchObject({ ok: true })
-    await expect(invoke(browser, 'command', {
-      command: ['upload', '#attachment', uploadPath],
-    })).resolves.toMatchObject({ ok: true })
-    await expect(invoke(browser, 'readCommand', {
-      command: ['get', 'text', '#selected'],
-    })).resolves.toMatchObject({ ok: true, result: { text: 'browser-upload-fixture.txt' } })
+    await expect.poll(() => target(page, browser, "Attachment").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+    await expect(act(page, browser, 'upload', "Attachment", { filePath: uploadPath })).resolves.toMatchObject({ ok: true })
+    await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#selected\")?.textContent ?? ''", 'text')).resolves.toMatchObject({ ok: true, result: { text: 'browser-upload-fixture.txt' } })
+    await expect(act(page, browser, 'click', 'Submit attachment')).resolves.toMatchObject({ ok: true })
+    // Independent server-side oracle: selecting a filename alone cannot pass.
+    await expect.poll(() => receivedUploads.length).toBe(1)
+    expect(receivedUploads[0].name).toBe(path.basename(uploadPath))
+    expect(receivedUploads[0].bytes).toEqual(expectedBytes)
+    await expect.poll(() => waitForText(page, browser, 'Upload received')).toMatchObject({ ok: true })
   } finally {
     rmSync(uploadDir, { recursive: true, force: true })
   }

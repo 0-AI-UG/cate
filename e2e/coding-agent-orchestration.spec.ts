@@ -1,3 +1,4 @@
+import { openTrustedWorkspace } from './fixtures/workspace'
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import {
@@ -88,11 +89,7 @@ function launchOptions() {
 }
 
 async function trustWorkspace(): Promise<void> {
-  const opened = page.evaluate((workspaceRoot) =>
-    window.__cateE2E!.setWorkspaceRoot(workspaceRoot), root)
-  const trust = page.getByRole('button', { name: 'Trust and open' })
-  if (await trust.isVisible({ timeout: 2_000 }).catch(() => false)) await trust.click()
-  expect(await opened).toBe(true)
+  await openTrustedWorkspace(page, root)
 }
 
 async function createWorker(prompt: string): Promise<RunResult> {

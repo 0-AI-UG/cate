@@ -672,7 +672,7 @@ export interface ElectronAPI {
   webviewScreenshot(webContentsId: number, options?: { wantDataUrl?: boolean; saveTo?: 'desktop' | 'temp' }): Promise<{ filePath: string; dataUrl: string } | null>
 
   /** Target-bound CDP control plane for a live browser webview guest. */
-  browserControl(request: {
+  browserControl(request: { op: 'checkCodeCell'; codeCellId: string } | {
     op: 'attach' | 'execute' | 'downloads' | 'downloadAction'
     webContentsId: number
     workspaceId: string
@@ -682,13 +682,13 @@ export interface ElectronAPI {
     args?: Record<string, unknown>
   }): Promise<{
     error?: string
+    recovery?: string
     ok?: boolean
     result?: unknown
     cursor?: {
       kind: 'move' | 'click' | 'dblclick' | 'hover' | 'drag' | 'scroll' | 'type' | 'press'
       x?: number
       y?: number
-      rect?: [number, number, number, number]
       label: string
     }
     downloads?: import('./types').BrowserDownloadEntry[]

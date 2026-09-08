@@ -1,214 +1,111 @@
-import { EventEmitter } from 'events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { expect, it, vi } from 'vitest'
+vi.mock('electron', () => ({}))
+import { setupGuest, identity } from './browserRuntime.testSupport'
 
-vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
+it('binds every operation to the full guest identity', async () => {
+  const { runtime, contents } = await setupGuest()
+  expect(await runtime.execute(contents.id, { ...identity, tabId: 'other' }, 'getAXState', {})).toEqual({ error: 'browser-target-not-registered' })
+})
 
-import { BrowserRuntimeRegistry } from './browserRuntime'
+it('invalidates numeric IDs and observations on navigation', async () => {
+  const { observe, execute, events } = await setupGuest()
+  const before = await observe()
+  events.emit('message', {}, 'Page.frameNavigated', { frame: { id: 'new' } })
+  expect(await execute('click', { target: before.elements[0].id, observationId: before.observationId })).toMatchObject({ error: 'stale-browser-observation' })
+  const after = await observe()
+  expect(after.documentId).not.toBe(before.documentId)
+  expect(after.elements[0].id).not.toBe(before.elements[0].id)
+})
 
-function guest(id: number, command?: (method: string, params?: Record<string, unknown>, sessionId?: string) => Promise<unknown>) {
-  const events = new EventEmitter()
-  let attached = false
-  const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>, sessionId?: string) => {
-    if (command) return command(method, params, sessionId)
-    if (method === 'Accessibility.getFullAXTree') return {
-      nodes: [{ role: { value: 'button' }, name: { value: 'Save' }, backendDOMNodeId: 7 }],
-    }
-    if (method === 'DOM.resolveNode') return { object: { objectId: 'save' } }
-    if (method === 'Runtime.callFunctionOn') return { result: { value: true } }
-    return {}
+it('requires grounded IDs and rejects CSS targets', async () => {
+  const { observe, execute } = await setupGuest()
+  const observation = await observe()
+  for (const target of ['#save', 999]) expect(await execute('click', { target, observationId: observation.observationId })).toMatchObject({ error: 'browser-element-not-in-observation' })
+  expect(await execute('click', { target: observation.elements[0].id })).toMatchObject({ error: 'browser-observation-required' })
+})
+
+it('returns a new observation after a dispatched action, without claiming business success', async () => {
+  const { observe, execute } = await setupGuest()
+  const observation = await observe()
+  const action = await execute('click', { target: [20, 20], observationId: observation.observationId })
+  expect(action).toMatchObject({ result: { action: { method: 'click', status: 'dispatched' }, observation: { documentId: observation.documentId, elements: [{ id: observation.elements[0].id }] } } })
+})
+
+it('rejects coordinate actions after viewport changes before dispatching input', async () => {
+  const { observe, execute, state, contents } = await setupGuest()
+  const observation = await observe(); state.viewport.scrollY = 20
+  expect(await execute('click', { target: [20, 20], observationId: observation.observationId })).toMatchObject({ error: 'stale-browser-coordinates' })
+  expect(contents.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
+})
+
+it('keeps cross-origin frame IDs bound to their CDP session', async () => {
+  const { observe, execute, events, contents } = await setupGuest(async (method, params, sessionId) => {
+    if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main' }, childFrames: [{ frame: { id: 'cross', parentId: 'main' } }] } }
+    if (method === 'Accessibility.getFullAXTree') return { nodes: sessionId === 'cross-session' ? [{ backendDOMNodeId: 9, role: { value: 'checkbox' }, name: { value: 'Cross' } }] : [] }
+    if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('typeof this.checked')) return { result: { value: false } }
+    if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('Boolean(this.checked);')) return { result: { value: false } }
   })
-  return {
-    id,
-    events,
-    isDestroyed: () => false,
-    once: vi.fn(),
-    getURL: () => 'https://example.test/',
-    getTitle: () => 'Example',
-    isLoading: () => false,
-    send: vi.fn(),
-    debugger: {
-      isAttached: () => attached,
-      attach: vi.fn(() => { attached = true }),
-      detach: vi.fn(() => { attached = false }),
-      sendCommand,
-      on: events.on.bind(events),
-      removeListener: events.removeListener.bind(events),
-    },
-  }
-}
+  events.emit('message', {}, 'Target.attachedToTarget', { sessionId: 'cross-session', targetInfo: { type: 'iframe', targetId: 'cross' } })
+  const observation = await observe()
+  expect(await execute('setChecked', { target: observation.elements[0].id, checked: false, observationId: observation.observationId })).toMatchObject({ result: { action: { status: 'verified' } } })
+  expect(contents.debugger.sendCommand).toHaveBeenCalledWith('DOM.resolveNode', expect.objectContaining({ backendNodeId: 9 }), 'cross-session')
+})
 
-describe('BrowserRuntimeRegistry', () => {
-  let runtime: BrowserRuntimeRegistry
-
-  beforeEach(() => { runtime = new BrowserRuntimeRegistry() })
-
-  it('binds automation to the full guest identity', async () => {
-    const contents = guest(41)
-    const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }
-    await runtime.attach(contents as never, identity)
-
-    await expect(runtime.execute(41, { ...identity, tabId: 'tab-2' }, 'snapshot', {}))
-      .resolves.toEqual({ error: 'browser-target-not-registered' })
-    expect(contents.debugger.sendCommand).not.toHaveBeenCalledWith('Accessibility.getFullAXTree', expect.anything())
+it('uploads an authorized file without exposing its host path in the result', async () => {
+  const { observe, execute, contents } = await setupGuest(async (method, params) => {
+    if (method !== 'Runtime.callFunctionOn') return
+    const fn = String(params.functionDeclaration)
+    if (fn.includes('file: this instanceof')) return { result: { value: { file: true, enabled: true } } }
+    if (fn.includes('this.files?.[0]')) return { result: { value: { name: 'report.pdf', size: 42, count: 1 } } }
   })
+  const observation = await observe()
+  const result = await execute('upload', { target: observation.elements[0].id, filePath: '/authorized/private/report.pdf', observationId: observation.observationId })
+  expect(result).toMatchObject({ result: { action: { method: 'upload', status: 'verified' } } })
+  expect(JSON.stringify(result)).not.toContain('/authorized/private')
+  expect(contents.debugger.sendCommand).toHaveBeenCalledWith('DOM.setFileInputFiles', { files: ['/authorized/private/report.pdf'], backendNodeId: 7 }, undefined)
+})
 
-  it('creates revisioned refs from the bound guest accessibility tree', async () => {
-    const contents = guest(42)
-    const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }
-    await runtime.attach(contents as never, identity)
-    const result = await runtime.execute(42, identity, 'snapshot', { interactiveOnly: true })
-
-    expect(result).toMatchObject({
-      result: {
-        snapshotId: 's1',
-        url: 'https://example.test/',
-        refs: [{ ref: '@s1e1', role: 'button', name: 'Save' }],
-        snapshot: '- button "Save" [ref=s1e1]',
-      },
-    })
+it('keeps native wheel input marked through document acknowledgement and observes its result', async () => {
+  let started!: () => void, release!: () => void
+  const entered = new Promise<void>(resolve => { started = resolve })
+  const { observe, execute, contents, state } = await setupGuest(async (method, params) => {
+    if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('return this.promise')) { started(); await new Promise<void>(resolve => { release = resolve }); state.viewport.scrollY = 400; return { result: { value: true } } }
   })
+  const observation = await observe()
+  const pending = execute('scroll', { target: [20, 20], direction: 'down', pages: 1, observationId: observation.observationId })
+  await entered
+  expect(contents.send).toHaveBeenLastCalledWith('cate-browser-automation-input', true)
+  release()
+  expect(await pending).toMatchObject({ result: { observation: { viewport: { scrollY: 400 } } } })
+  expect(contents.send).toHaveBeenLastCalledWith('cate-browser-automation-input', false)
+})
 
-  it('invalidates accessibility refs when the main frame navigates', async () => {
-    const contents = guest(43)
-    const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }
-    await runtime.attach(contents as never, identity)
-    await runtime.execute(43, identity, 'snapshot', { interactiveOnly: true })
+it('releases temporary CDP handles after every operation while numeric IDs stay usable', async () => {
+  const { observe, execute, contents, events } = await setupGuest()
+  events.emit('message', {}, 'Target.attachedToTarget', { sessionId: 'child-session', targetInfo: { type: 'iframe', targetId: 'child' } })
+  const observation = await observe()
+  expect(contents.debugger.sendCommand).toHaveBeenCalledWith('Runtime.releaseObjectGroup', { objectGroup: 'cate-browser' }, undefined)
+  expect(contents.debugger.sendCommand).toHaveBeenCalledWith('Runtime.releaseObjectGroup', { objectGroup: 'cate-browser' }, 'child-session')
+  expect(await execute('setChecked', { target: observation.elements[0].id, checked: false, observationId: observation.observationId })).toMatchObject({ result: { action: { status: 'verified' }, observation: { elements: [{ id: observation.elements[0].id }] } } })
+  const before = contents.debugger.sendCommand.mock.calls.filter(([method]) => method === 'Runtime.releaseObjectGroup').length
+  expect(await execute('click', { target: 999, observationId: observation.observationId })).toHaveProperty('error')
+  expect(contents.debugger.sendCommand.mock.calls.filter(([method]) => method === 'Runtime.releaseObjectGroup')).toHaveLength(before + 2)
+})
 
-    contents.events.emit('message', {}, 'Page.frameNavigated', { frame: { id: 'new-main-frame' } })
+it.each(['setValue', 'typeText'])('returns positional typing feedback for %s without exposing entered text', async method => {
+  const { observe, execute } = await setupGuest()
+  const observation = await observe()
+  const result = await execute(method, { observationId: observation.observationId, target: observation.elements[0].id, value: 'private text', text: 'private text' })
+  expect(result).toMatchObject({ cursor: { x: 70, y: 40, kind: 'type', label: method } })
+  expect(JSON.stringify(result.cursor)).not.toContain('private text')
+  expect(result.cursor).not.toHaveProperty('rect')
+})
 
-    await expect(runtime.execute(43, identity, 'command', { command: ['click', '@s1e1'] }))
-      .resolves.toEqual({ error: 'stale-browser-ref' })
+it('keeps a successful edit when the field no longer has cursor geometry', async () => {
+  const { observe, execute } = await setupGuest(async method => {
+    if (method === 'DOM.getBoxModel') throw new Error('Node has been removed')
   })
-
-  it.each([false, true])('omits invisible and detached interactive refs (interactiveOnly=%s)', async (interactiveOnly) => {
-    const contents = guest(48, async (method, params) => {
-      if (method === 'Accessibility.getFullAXTree') return {
-        nodes: ['Hidden', 'Detached', 'Visible'].map((name, index) => ({
-          role: { value: 'link' }, name: { value: name }, backendDOMNodeId: index + 1,
-        })),
-      }
-      if (method === 'DOM.resolveNode') {
-        if (params?.backendNodeId === 2) throw new Error('No node with given id found')
-        return { object: { objectId: String(params?.backendNodeId) } }
-      }
-      if (method === 'Runtime.callFunctionOn') return { result: { value: params?.objectId === '3' } }
-      return {}
-    })
-    const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }
-    await runtime.attach(contents as never, identity)
-    await expect(runtime.execute(48, identity, 'snapshot', { interactiveOnly })).resolves.toMatchObject({
-      result: {
-        refs: [{ ref: '@s1e1', role: 'link', name: 'Visible' }],
-        snapshot: '- link "Visible" [ref=s1e1]',
-      },
-    })
-  })
-
-  it('merges same-origin and cross-origin frame trees and keeps refs session-bound', async () => {
-    const contents = guest(45, async (method, params, sessionId) => {
-      if (method === 'Page.getFrameTree') return {
-        frameTree: {
-          frame: { id: 'main' },
-          childFrames: [
-            { frame: { id: 'same', parentId: 'main' } },
-            { frame: { id: 'cross', parentId: 'main' } },
-          ],
-        },
-      }
-      if (method === 'Accessibility.getFullAXTree') {
-        if (sessionId === 'cross-session') return { nodes: [{ role: { value: 'button' }, name: { value: 'Cross-frame action' }, backendDOMNodeId: 9 }] }
-        if (params?.frameId === 'same') return { nodes: [{ role: { value: 'button' }, name: { value: 'Same-frame action' }, backendDOMNodeId: 8 }] }
-        return { nodes: [] }
-      }
-      if (method === 'DOM.resolveNode') return { object: { objectId: sessionId === 'cross-session' ? 'cross-object' : 'same-object' } }
-      if (method === 'Runtime.callFunctionOn') return { result: { value: String(params?.functionDeclaration).includes('checkVisibility') ? true : 'yes' } }
-      return {}
-    })
-    const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }
-    await runtime.attach(contents as never, identity)
-    contents.events.emit('message', {}, 'Target.attachedToTarget', {
-      sessionId: 'cross-session', targetInfo: { type: 'iframe', targetId: 'cross' },
-    })
-
-    const snapshot = await runtime.execute(45, identity, 'snapshot', { interactiveOnly: true }) as {
-      result: { refs: Array<{ ref: string; name: string }> }
-    }
-    expect(snapshot.result.refs.map((ref) => ref.name)).toEqual(['Same-frame action', 'Cross-frame action'])
-    const crossRef = snapshot.result.refs[1].ref
-    await expect(runtime.execute(45, identity, 'command', { command: ['get', 'attr', crossRef, 'data-clicked'] }))
-      .resolves.toMatchObject({ result: { value: 'yes' } })
-    expect(contents.debugger.sendCommand).toHaveBeenCalledWith(
-      'DOM.resolveNode', expect.objectContaining({ backendNodeId: 9 }), 'cross-session',
-    )
-  })
-
-  it('lets user input preempt an in-flight visible action', async () => {
-    const contents = guest(44, async (method) => {
-      if (method === 'Runtime.evaluate') return { result: { objectId: 'object-1' } }
-      if (method === 'DOM.describeNode') return { node: { backendNodeId: 7 } }
-      if (method === 'DOM.getBoxModel') return { model: { content: [0, 0, 100, 0, 100, 40, 0, 40] } }
-      return {}
-    })
-    const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }
-    await runtime.attach(contents as never, identity)
-    let returnedControl = false
-    contents.send.mockImplementation((_channel: string, active: boolean) => {
-      if (!active && !returnedControl) {
-        returnedControl = true
-        queueMicrotask(() => runtime.noteUserInput(44))
-      }
-    })
-
-    await expect(runtime.execute(44, identity, 'command', { command: ['click', '#save'] }))
-      .resolves.toEqual({ error: 'browser-action-preempted-by-user' })
-  })
-
-  it('uploads an authorized file without returning its host path', async () => {
-    let callCount = 0
-    const contents = guest(46, async (method) => {
-      if (method === 'Runtime.evaluate') return { result: { objectId: 'file-input' } }
-      if (method === 'DOM.describeNode') return { node: { backendNodeId: 11 } }
-      if (method === 'DOM.getBoxModel') return { model: { content: [0, 0, 100, 0, 100, 30, 0, 30] } }
-      if (method === 'Runtime.callFunctionOn') {
-        callCount += 1
-        return callCount === 1
-          ? { result: { value: { file: true, enabled: true } } }
-          : { result: { value: { name: 'report.pdf', size: 42, count: 1 } } }
-      }
-      return {}
-    })
-    const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }
-    await runtime.attach(contents as never, identity)
-
-    const result = await runtime.execute(46, identity, 'command', {
-      command: ['upload', '#attachment', '/authorized/private/report.pdf'],
-    })
-    expect(result).toMatchObject({ result: { ok: true, files: ['report.pdf'] } })
-    expect(JSON.stringify(result)).not.toContain('/authorized/private')
-    expect(contents.debugger.sendCommand).toHaveBeenCalledWith(
-      'DOM.setFileInputFiles',
-      { files: ['/authorized/private/report.pdf'], backendNodeId: 11 },
-      undefined,
-    )
-  })
-
-  it('waits for a selector without dropping it when no timeout option is present', async () => {
-    const contents = guest(47, async (method) => {
-      if (method === 'Runtime.evaluate') return { result: { objectId: 'ready' } }
-      if (method === 'DOM.describeNode') return { node: { backendNodeId: 12 } }
-      if (method === 'Runtime.callFunctionOn') return { result: { value: true } }
-      return {}
-    })
-    const identity = { workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1' }
-    await runtime.attach(contents as never, identity)
-
-    await expect(runtime.execute(47, identity, 'readCommand', {
-      command: ['wait', '#ready', '--state', 'visible'],
-    })).resolves.toMatchObject({ result: { loading: false } })
-    expect(contents.debugger.sendCommand).toHaveBeenCalledWith(
-      'Runtime.evaluate',
-      expect.objectContaining({ expression: 'document.querySelector("#ready")' }),
-      undefined,
-    )
-  })
+  const observation = await observe()
+  expect(await execute('setValue', { observationId: observation.observationId, target: observation.elements[0].id, value: 'text' }))
+    .toMatchObject({ result: { action: { status: 'verified' } } })
 })

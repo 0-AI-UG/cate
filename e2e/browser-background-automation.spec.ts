@@ -1,3 +1,4 @@
+import { browserInvoke, observe, target, act, activeAction, inspectFixture } from './fixtures/browser-control'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import { closeApp, launchApp } from './fixtures/electron-app'
@@ -16,7 +17,7 @@ test.afterEach(async () => {
 test('target-bound browser input preserves renderer and workspace focus', async () => {
   test.setTimeout(60_000)
   const url = `data:text/html,${encodeURIComponent(
-    '<title>Background Automation</title><label for="name">Name</label><input id="name"><button id="ready">Ready</button>',
+    '<title>Background Automation</title><label for="name">Name</label><input id="name" aria-label="Name"><button id="ready">Ready</button>',
   )}`
   const browser = await page.evaluate((fixtureUrl) => window.__cateE2E!.createBrowser(fixtureUrl, { x: 120, y: 120 }), url)
 
@@ -24,13 +25,11 @@ test('target-bound browser input preserves renderer and workspace focus', async 
     () => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId),
     { timeout: 20_000 },
   ).not.toBeNull()
-  const initialSnapshot = await page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'readCommand', { panelId, command: ['snapshot', '-i'] },
-  ), browser)
+  const initialSnapshot = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true })
   if (!initialSnapshot.ok) throw new Error(`initial browser snapshot failed: ${initialSnapshot.error}`)
   expect(initialSnapshot).toMatchObject({
     ok: true,
-    result: { snapshot: expect.stringContaining('button "Ready"') },
+    result: { state: expect.stringContaining('button "Ready"') },
   })
 
   // Browser-only CI deliberately does not package the terminal runtime. A real
@@ -39,22 +38,16 @@ test('target-bound browser input preserves renderer and workspace focus', async 
   await rendererFocusTarget.focus()
   await expect(rendererFocusTarget).toBeFocused()
 
-  const firstFill = await page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'command', { panelId, command: ['fill', '#name', 'Renderer focus preserved'] },
-  ), browser)
+  const firstFill = await act(page, browser, 'setValue', "Name", { value: 'Renderer focus preserved' })
   if (!firstFill.ok) throw new Error(`browser fill failed: ${firstFill.error}`)
   await expect(rendererFocusTarget).toBeFocused()
 
   const otherWorkspace = await page.evaluate(() => window.__cateE2E!.addWorkspace('Other workspace'))
   await page.evaluate((workspaceId) => window.__cateE2E!.selectWorkspace(workspaceId), otherWorkspace)
-  await expect(page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'command', { panelId, command: ['fill', '#name', 'Filled from another workspace'] },
-  ), browser)).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'setValue', "Name", { value: 'Filled from another workspace' })).resolves.toMatchObject({ ok: true })
   expect(await page.evaluate(() => window.__cateE2E!.activeCanvasPanelId())).not.toBeNull()
 
-  await expect(page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'readCommand', { panelId, command: ['get', 'value', '#name'] },
-  ), browser)).resolves.toMatchObject({ ok: true, result: { value: 'Filled from another workspace' } })
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#name\")?.value")).resolves.toMatchObject({ ok: true, result: { value: 'Filled from another workspace' } })
 })
 
 test('browser is always a normal canvas card across zoom and pan', async () => {
@@ -86,7 +79,7 @@ test('user clicks and types directly in the live webview at non-default zoom', a
   const url = `data:text/html,${encodeURIComponent(`
     <title>Interactive preview</title>
     <style>html,body{margin:0}#name{position:absolute;left:16px;top:16px;width:240px;height:40px}#save{position:absolute;left:16px;top:80px;width:160px;height:40px}</style>
-    <input id="name"><button id="save" onclick="document.body.dataset.saved=document.querySelector('#name').value">Save</button>
+    <input id="name" aria-label="Name"><button id="save" onclick="document.body.dataset.saved=document.querySelector('#name').value">Save</button>
   `)}`
   const browser = await page.evaluate((fixtureUrl) => window.__cateE2E!.createBrowser(
     fixtureUrl, { x: 120, y: 120 },
@@ -107,9 +100,7 @@ test('user clicks and types directly in the live webview at non-default zoom', a
   }, { id: guestId, x, y })
 
   await guestClick(120, 36)
-  await expect.poll(() => page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'evaluate', { panelId, expression: 'document.activeElement?.id ?? ""' },
-  ), browser), { timeout: 20_000 }).toMatchObject({ ok: true, result: { value: 'name' } })
+  await expect.poll(() => inspectFixture(app!, page, browser, 'document.activeElement?.id ?? ""'), { timeout: 20_000 }).toMatchObject({ ok: true, result: { value: 'name' } })
   await app.evaluate(({ webContents }, input) => {
     const guest = webContents.fromId(input.id!)!
     for (const char of input.text) {
@@ -118,14 +109,10 @@ test('user clicks and types directly in the live webview at non-default zoom', a
       guest.sendInputEvent({ type: 'keyUp', keyCode: char })
     }
   }, { id: guestId, text: 'Typed inside Cate' })
-  await expect.poll(() => page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'readCommand', { panelId, command: ['get', 'value', '#name'] },
-  ), browser), { timeout: 20_000 }).toMatchObject({ ok: true, result: { value: 'Typed inside Cate' } })
+  await expect.poll(() => inspectFixture(app!, page, browser, "document.querySelector(\"#name\")?.value"), { timeout: 20_000 }).toMatchObject({ ok: true, result: { value: 'Typed inside Cate' } })
 
   await guestClick(80, 100)
-  await expect.poll(() => page.evaluate(({ workspaceId, panelId }) => window.__cateE2E!.browserInvoke(
-    workspaceId, 'readCommand', { panelId, command: ['get', 'attr', 'body', 'data-saved'] },
-  ), browser), { timeout: 20_000 }).toMatchObject({ ok: true, result: { value: 'Typed inside Cate' } })
+  await expect.poll(() => inspectFixture(app!, page, browser, "document.querySelector(\"body\")?.getAttribute(\"data-saved\")"), { timeout: 20_000 }).toMatchObject({ ok: true, result: { value: 'Typed inside Cate' } })
 })
 
 test('snapshots omit hidden and boxless links while keeping off-screen links clickable', async () => {
@@ -145,21 +132,14 @@ test('snapshots omit hidden and boxless links while keeping off-screen links cli
     () => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId),
     { timeout: 20_000 },
   ).not.toBeNull()
-  for (const command of [['snapshot'], ['snapshot', '-i']]) {
-    const snapshot = await page.evaluate(({ browser, command }) => window.__cateE2E!.browserInvoke(
-      browser.workspaceId, 'readCommand', { panelId: browser.panelId, command },
-    ), { browser, command })
-    expect(snapshot.ok).toBe(true)
-    const refs = (snapshot.result as { refs: Array<{ ref: string; role: string; name: string }> }).refs
+  for (const visual of [false, true]) {
+    const observation = await observe(page, browser, visual)
+    const refs = observation.elements
     const links = refs.filter((ref) => ref.role === 'link')
     expect(links.map((ref) => ref.name)).toEqual(['Visible link', 'Offscreen link'])
     for (const [index, link] of links.entries()) {
-      expect(await page.evaluate(({ browser, ref }) => window.__cateE2E!.browserInvoke(
-        browser.workspaceId, 'command', { panelId: browser.panelId, command: ['click', ref] },
-      ), { browser, ref: link.ref })).toMatchObject({ ok: true })
-      expect(await page.evaluate((browser) => window.__cateE2E!.browserInvoke(
-        browser.workspaceId, 'readCommand', { panelId: browser.panelId, command: ['get', 'attr', 'body', 'data-clicked'] },
-      ), browser)).toMatchObject({ ok: true, result: { value: index === 0 ? 'yes' : 'offscreen' } })
+      expect(await activeAction(page, browser, 'click', { target: link.id })).toMatchObject({ ok: true })
+      expect(await inspectFixture(app!, page, browser, "document.querySelector(\"body\")?.getAttribute(\"data-clicked\")")).toMatchObject({ ok: true, result: { value: index === 0 ? 'yes' : 'offscreen' } })
     }
   }
 })

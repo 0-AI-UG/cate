@@ -1,3 +1,4 @@
+import { useStatusStore } from '../stores/statusStore'
 // E2E test harness — exposes a tiny inspect/seed API on window.__cateE2E
 // when the app is launched with CATE_E2E=1.
 //
@@ -111,6 +112,7 @@ declare global {
       }
       /** Resolve the PTY id backing a terminal node (null until the PTY spawns). */
       terminalPtyId(nodeId: string): string | null
+      terminalActivity(nodeId: string): string | null
       /** Write raw data to a terminal node's PTY (e.g. a flooding command). */
       writeTerminal(nodeId: string, data: string): boolean
       /** Plain text currently held by a terminal's active xterm buffer. */
@@ -552,6 +554,11 @@ export function installE2EHarness(): void {
     tagNodeWorktree,
     worktreeDebug,
     terminalPtyId,
+    terminalActivity: (nodeId: string) => {
+      const ptyId = terminalPtyId(nodeId)
+      const workspaceId = ptyId ? terminalRegistry.workspaceIdForPty(ptyId) : undefined
+      return ptyId && workspaceId ? useStatusStore.getState().workspaces[workspaceId]?.terminals[ptyId]?.activity?.type ?? null : null
+    },
     writeTerminal,
     terminalText,
     terminalTextForPanel,

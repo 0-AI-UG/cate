@@ -1,3 +1,4 @@
+import { openTrustedWorkspace } from './fixtures/workspace'
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -12,10 +13,7 @@ let workspaceId: string
 test.beforeEach(async () => {
   directory = realpathSync(mkdtempSync(path.join(tmpdir(), 'cate-agent-capture-e2e-')))
   ;({ electronApp: app, mainWindow: page } = await launchApp({ userDataDir: path.join(directory, 'userdata') }))
-  const opened = page.evaluate((cwd) => window.__cateE2E!.setWorkspaceRoot(cwd), directory)
-  const trust = page.getByRole('button', { name: 'Trust and open' })
-  if (await trust.isVisible({ timeout: 2000 }).catch(() => false)) await trust.click()
-  expect(await opened).toBe(true)
+  await openTrustedWorkspace(page, directory)
   workspaceId = await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())
   await resetViewport(page)
 })

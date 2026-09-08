@@ -16,7 +16,8 @@ import { findBrowserPanelId, handleBrowserMethod } from '../browser/browserDrive
 export function openTerminalUrl(workspaceId: string, url: string): void {
   const existing = findBrowserPanelId(workspaceId)
   if (existing) {
-    void handleBrowserMethod(workspaceId, 'cate.browser.open', { panelId: existing, url })
+    const panel = useAppStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)?.panels[existing]
+    void handleBrowserMethod(workspaceId, 'cate.browser.goto', { panelId: existing, tabId: panel?.activeTabId, url })
     return
   }
   useAppStore.getState().createBrowser(workspaceId, url)

@@ -22,6 +22,7 @@ function frameGeometry() {
   const rects = new Map<Element, DOMRect>()
   const styles = new Map<Element, CSSStyleDeclaration>()
   const layers = new Map<Element, Array<{ element: HTMLElement; z: number }>>()
+  const overlays = Array.from(document.querySelectorAll<HTMLElement>('[data-browser-surface-overlay]'))
   const rect = (element: Element): DOMRect => {
     if (!rects.has(element)) {
       perfCount('browserGeometryRect')
@@ -48,7 +49,7 @@ function frameGeometry() {
     }
     return layers.get(layer)!
   }
-  return { rect, style, nodes }
+  return { rect, style, nodes, overlays }
 }
 type FrameGeometry = ReturnType<typeof frameGeometry>
 
@@ -120,6 +121,7 @@ function surfaceBorderRadius(slot: HTMLElement, rect: DOMRect, scale: number, ge
 }
 
 function surfaceClipPath(
+  panelId: string,
   slot: HTMLElement,
   rect: DOMRect,
   logicalWidth: number,
@@ -152,6 +154,30 @@ function surfaceClipPath(
       .filter((value): value is SurfaceRect => value !== null)
       .map(local)
     : []
+
+  // Dock chrome belongs to the slot's DOM stacking context, while the guest is
+  // painted in an external host. Leave the chrome's area open for real clicks.
+  for (const overlay of geometry.overlays) {
+    if (overlay.dataset.browserSurfaceOverlay !== panelId || geometry.style(overlay).visibility === 'hidden') continue
+    const hole = intersectRects(visible, geometry.rect(overlay))
+    if (!hole) continue
+    // Even-odd paths must not contain overlapping holes: their intersection
+    // would paint the guest again. Keep only chrome not already cut out.
+    let remaining = [local(hole)]
+    for (const existing of occluders) {
+      remaining = remaining.flatMap((part) => {
+        const overlap = intersectRects(part, existing)
+        if (!overlap) return [part]
+        return [
+          { ...part, bottom: overlap.top },
+          { ...part, top: overlap.bottom },
+          { left: part.left, right: overlap.left, top: overlap.top, bottom: overlap.bottom },
+          { left: overlap.right, right: part.right, top: overlap.top, bottom: overlap.bottom },
+        ].filter((piece) => piece.right > piece.left && piece.bottom > piece.top)
+      })
+    }
+    occluders.push(...remaining)
+  }
 
   if (occluders.length === 0) {
     return `inset(${cssNumber(outer.top)}px ${cssNumber(logicalWidth - outer.right)}px ${cssNumber(logicalHeight - outer.bottom)}px ${cssNumber(outer.left)}px)`
@@ -209,7 +235,7 @@ function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
     return () => parkSurface(surface)
   }
 
-  const clipPath = surfaceClipPath(slot, rect, logicalWidth, logicalHeight, geometry)
+  const clipPath = surfaceClipPath(panelId, slot, rect, logicalWidth, logicalHeight, geometry)
   if (!clipPath) {
     return () => parkSurface(surface)
   }

@@ -43,7 +43,7 @@
     "test:e2e": "playwright test",
     "test:e2e:agent": "playwright test e2e/t3-agent.spec.ts",
     "test:e2e:ci": "E2E_SKIP_PERF=1 playwright test",
-    "test:e2e:browser": "playwright test e2e/browser-real-flows.spec.ts e2e/browser-advanced-workflows.spec.ts e2e/browser-session-persistence.spec.ts e2e/browser-background-automation.spec.ts",
+    "test:e2e:browser": "playwright test e2e/browser-",
     "test:e2e:browser:soak": "playwright test e2e/browser-real-flows.spec.ts e2e/browser-advanced-workflows.spec.ts --repeat-each=10",
     "test:e2e:public": "E2E_PUBLIC=1 playwright test e2e/browser-public-sites.spec.ts",
     "test:smoke:electron": "node scripts/run-electron-smoke.mjs",

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const codeSessions = vi.hoisted(() => ({ run: vi.fn(), reset: vi.fn(), dispose: vi.fn() }))
+vi.mock('../browser/browserCodeSession', () => ({ browserCodeSessions: codeSessions }))
 const dispatchCateInvoke = vi.hoisted(() => vi.fn())
 const forwardToOwner = vi.hoisted(() => vi.fn(async () => ({ ok: true })))
 const authorizeCateInvoke = vi.hoisted(() => vi.fn((): unknown => null))
@@ -92,6 +94,7 @@ function request(
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   windowPanels.length = 0
   windows.clear()
   dispatchCateInvoke.mockReset()
@@ -240,7 +243,7 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     })
     const snapshot = await request(secondEndpoint, second.output, {
       json: {
-        method: 'cate.browser.snapshot',
+        method: 'cate.browser.getAXState',
         args: {},
         clientId: 'cli-session',
       },
@@ -249,7 +252,7 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     expect(snapshot.body).toEqual({ result: { snapshot: '- document' } })
     expect(dispatchCateInvoke).toHaveBeenLastCalledWith(
       expect.any(Object),
-      'cate.browser.snapshot',
+      'cate.browser.getAXState',
       {},
     )
     endpoint.dispose()
@@ -334,6 +337,30 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     )
     endpoint.dispose()
     secondEndpoint.dispose()
+  })
+
+  it('keeps code discovery and reset independent of a selected terminal panel', async () => {
+    windowPanels.push({ panelId: 'terminal-1', workspaceId: 'ws-1', type: 'terminal' })
+    const { runtime, output } = makeRuntime()
+    const endpoint = createCateApiReverse({ workspaceId: 'ws-1', token: TOKEN, runtime })
+    let consumed = 0
+    const invoke = async (method: string, args: unknown) => {
+      const result = await request(endpoint, () => output().subarray(consumed), { json: { method, args, clientId: 'client' } })
+      consumed = output().length
+      return result
+    }
+    await invoke('cate.panel.target.set', { panelId: 'terminal-1' })
+    codeSessions.run.mockImplementationOnce(async (_key, _code, nested) => {
+      await nested('cate.browser.listTabs', {})
+      await nested('cate.browser.createTab', { newPanel: true, url: 'about:blank' })
+      return { content: [{ type: 'text', text: 'done' }] }
+    })
+    expect((await invoke('cate.browser.run', { code: 'await cua.listTabs()' })).body).toEqual({ result: { content: [{ type: 'text', text: 'done' }] } })
+    expect(dispatchCateInvoke).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'ws-1' }), 'cate.browser.listTabs', {})
+    expect(dispatchCateInvoke).toHaveBeenCalledWith(expect.anything(), 'cate.browser.createTab', { newPanel: true, url: 'about:blank' })
+    await invoke('cate.browser.reset', {})
+    expect(codeSessions.reset).toHaveBeenCalledWith(expect.stringContaining('cli:client'))
+    endpoint.dispose()
   })
 
   it('400s when no method is supplied', async () => {

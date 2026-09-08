@@ -60,7 +60,7 @@ export async function launchApp(opts: {
   env?: Record<string, string>
   userDataDir?: string
 } = {}): Promise<LaunchResult> {
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     CATE_E2E: '1',
     NODE_ENV: 'production',
