@@ -15,7 +15,7 @@ function failNextMetadataPublication(): void {
   const rename = fs.rename
   let fail = true
   vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
-    if (fail && String(to).endsWith('/saved-skills.json')) { fail = false; throw new Error('metadata unavailable') }
+    if (fail && String(to).replace(/\\/g, '/').endsWith('/saved-skills.json')) { fail = false; throw new Error('metadata unavailable') }
     return rename(from, to)
   })
 }

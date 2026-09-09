@@ -128,7 +128,7 @@ describe('skillsInstaller workspace manifest', () => {
     const runtime = resolve()
     const rename = runtime.file.rename
     runtime.file.rename = async (from: string, to: string) => {
-      if (from.endsWith('/skills/demo-skill')) throw new Error('locked')
+      if (from.replace(/\\/g, '/').endsWith('/skills/demo-skill')) throw new Error('locked')
       return rename(from, to)
     }
     await expect(uninstall(entry().id, entry().name, 'codex', WS)).rejects.toThrow('locked')

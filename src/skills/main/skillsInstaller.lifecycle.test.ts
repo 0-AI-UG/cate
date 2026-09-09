@@ -82,7 +82,7 @@ it('rolls a failed replacement back without publishing a new manifest', async ()
   const runtime = h.resolve()
   const rename = runtime.file.rename
   runtime.file.rename = async (from: string, to: string, access?: object) => {
-    if (from.includes('.skills-mirror-stage-') && to.endsWith('/rollback')) throw new Error('injected publication failure')
+    if (from.includes('.skills-mirror-stage-') && to.replace(/\\/g, '/').endsWith('/rollback')) throw new Error('injected publication failure')
     return rename(from, to, access)
   }
   await expect(writeSkillToWorkspace(bundle('rollback', [{ relPath: 'SKILL.md', text: 'replacement' }]))).rejects.toThrow('injected publication failure')
@@ -117,7 +117,7 @@ it('rolls bundle bytes back if ownership manifest publication fails', async () =
   const runtime = h.resolve()
   const rename = runtime.file.rename
   runtime.file.rename = async (from: string, to: string, access?: object) => {
-    if (to.endsWith('/.cate/skills.json')) throw new Error('manifest unavailable')
+    if (to.replace(/\\/g, '/').endsWith('/.cate/skills.json')) throw new Error('manifest unavailable')
     return rename(from, to, access)
   }
   await expect(writeSkillToWorkspace(bundle('owned', [{ relPath: 'SKILL.md', text: 'v2' }]))).rejects.toThrow('manifest unavailable')
@@ -130,12 +130,12 @@ it('retains ownership and bytes when uninstall cannot remove its destination', a
   const runtime = h.resolve()
   const remove = runtime.file.remove
   runtime.file.remove = async (target: string, access?: object) => {
-    if (target.endsWith('/skills/owned')) throw new Error('removal denied')
+    if (target.replace(/\\/g, '/').endsWith('/skills/owned')) throw new Error('removal denied')
     return remove(target, access)
   }
   const rename = runtime.file.rename
   runtime.file.rename = async (from: string, to: string, access?: object) => {
-    if (from.endsWith('/skills/owned')) throw new Error('removal denied')
+    if (from.replace(/\\/g, '/').endsWith('/skills/owned')) throw new Error('removal denied')
     return rename(from, to, access)
   }
   await expect(uninstall('owned', 'owned', 'codex', cwd)).rejects.toThrow('removal denied')
