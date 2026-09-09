@@ -12,6 +12,7 @@ import { lazy, memo, Suspense, useCallback, useLayoutEffect, useMemo, useState }
 import { createPortal } from 'react-dom'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
+import { WorkspaceRequired } from './WorkspaceRequired'
 import BrowserPanel from './BrowserPanel'
 import { registerBrowserSurface } from './browserSurfaceRegistry'
 import type { PanelState } from '../../shared/types'
@@ -41,13 +42,13 @@ const PersistentBrowserSurface = memo(function PersistentBrowserSurface({
   useLayoutEffect(() => () => container.remove(), [container])
 
   return createPortal(
-    panel.type === 'agent' ? <Suspense fallback={null}><AgentPanel panelId={panel.id} workspaceId={workspaceId} /></Suspense> : <BrowserPanel
+    <WorkspaceRequired workspaceId={workspaceId}>{panel.type === 'agent' ? <Suspense fallback={null}><AgentPanel panelId={panel.id} workspaceId={workspaceId} /></Suspense> : <BrowserPanel
       panelId={panel.id}
       workspaceId={workspaceId}
       tabs={panel.tabs!}
       activeTabId={panel.activeTabId!}
       proxyUrl={panel.proxyUrl}
-    />,
+    />}</WorkspaceRequired>,
     container,
   )
 })

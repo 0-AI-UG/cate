@@ -16,7 +16,7 @@ beforeEach(() => {
   const workspace = { id: 'ws', rootPath: '/repo', panels: {}, worktrees: [] }
   mocks.state = {
     workspaces: [workspace], selectedWorkspaceId: 'ws', getWorkspace: () => workspace,
-    selectWorkspace: vi.fn(), ensureCenterCanvas: vi.fn(), createTerminal: vi.fn().mockReturnValue('terminal'),
+    selectWorkspace: vi.fn(), reconcileWorkspaceDock: vi.fn(), createTerminal: vi.fn().mockReturnValue('terminal'),
     createAgent: vi.fn().mockReturnValue('agent'), createReview: vi.fn().mockReturnValue('review'),
     setPanelWorktreeId: vi.fn(), updatePanelTitle: vi.fn(), setPanelReviewState: vi.fn(),
   }
@@ -29,7 +29,7 @@ it('opens an isolated checkout with review, terminal and agent on the same canva
   expect(mocks.state.createTerminal).toHaveBeenCalledWith('ws', undefined, undefined, { target: 'canvas', canvasPanelId: 'canvas' }, '/repo/.cate/worktrees/pr-42-fix')
   expect(mocks.state.createAgent).toHaveBeenCalledWith('ws', undefined, { target: 'canvas', canvasPanelId: 'canvas' }, '/repo/.cate/worktrees/pr-42-fix', 'wt')
   expect(mocks.review).toHaveBeenCalledWith({ workspaceId: 'ws', repoPath: '/repo/.cate/worktrees/pr-42-fix', source: 'overlay', spec: { kind: 'branch', base: 'a'.repeat(40), target: 'HEAD' } })
-  expect(mocks.state.ensureCenterCanvas).not.toHaveBeenCalled()
+  expect(mocks.state.reconcileWorkspaceDock).not.toHaveBeenCalled()
   expect(mocks.hide).toHaveBeenCalledWith(false)
 })
 it('reopens an existing PR without duplicating its worktree or panels', async () => {

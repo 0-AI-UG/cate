@@ -226,6 +226,7 @@ export const MENU_SHOW_CONTEXT = 'menu:showContext'
  *  these channels reuse the live application menu as the single source of truth:
  *  one returns the ordered top-level labels, the other pops a top-level item's
  *  native submenu at a screen-relative point below its label. */
+export const MENU_RUN_NATIVE_ACTION = 'menu:run-native-action'
 export const MENU_GET_BAR_ITEMS = 'menu:getBarItems'
 export const MENU_POPUP_BAR_ITEM = 'menu:popupBarItem'
 
@@ -383,8 +384,6 @@ export const SKILLS_UNSAVE = 'skills:unsave'                 // renderer -> main
 export const SKILLS_LIST_SOURCES = 'skills:listSources'       // renderer -> main
 export const SKILLS_ADD_SOURCE = 'skills:addSource'           // renderer -> main
 export const SKILLS_REMOVE_SOURCE = 'skills:removeSource'     // renderer -> main
-export const SKILLS_GET_TOKEN = 'skills:getToken'             // renderer -> main
-export const SKILLS_SET_TOKEN = 'skills:setToken'             // renderer -> main
 
 // Workspace management (main process is source of truth)
 export const WORKSPACE_CREATE = 'workspace:create'
@@ -439,3 +438,11 @@ export const PANEL_TRANSFER_FINISH = 'panel:transferFinish'
 
 export const OPEN_APPLICATION_OVERLAY = 'window:openApplicationOverlay'
 export const SHOW_APPLICATION_OVERLAY = 'window:showApplicationOverlay'
+
+export const KEEP_AWAKE_TOGGLE = 'keep-awake:toggle'
+
+// Saved remote connection profiles, independent of workspace lifetime.
+export const REMOTE_CONNECTIONS_LIST = 'remote-connections:list'
+export const REMOTE_CONNECTIONS_SAVE = 'remote-connections:save'
+export const REMOTE_CONNECTIONS_REMOVE = 'remote-connections:remove'
+export const REMOTE_CONNECTIONS_CHANGED = 'remote-connections:changed'

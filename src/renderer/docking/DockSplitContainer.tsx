@@ -60,7 +60,14 @@ export default function DockSplitContainer({
       const containerSize = isHorizontal ? container.offsetWidth : container.offsetHeight
       if (containerSize <= 0) return
 
-      const currentRatios = ratiosRef.current
+      const available = containerSize - SPLIT_DIVIDER_SIZE * (node.children.length - 1)
+      const panes = Array.from(container.children).filter((child) => child.hasAttribute('data-dock-pane')) as HTMLElement[]
+      const measured = panes.map((pane) => (isHorizontal ? pane.offsetWidth : pane.offsetHeight) / available)
+      // Flex sizing may constrain saved ratios to minimums after a window resize.
+      // Start the drag at the visible divider, not the unconstrained saved ratio.
+      const currentRatios = measured.length === node.children.length && measured.every((ratio) => ratio > 0)
+        ? measured.map((ratio) => ratio / measured.reduce((sum, value) => sum + value, 0))
+        : ratiosRef.current
       const ratioDelta = delta / (containerSize - SPLIT_DIVIDER_SIZE * (node.children.length - 1))
       const newRatios = [...currentRatios]
 
@@ -85,14 +92,18 @@ export default function DockSplitContainer({
       className={`flex h-full w-full min-h-0 min-w-0 ${isHorizontal ? 'flex-row' : 'flex-col'}`}
     >
       {node.children.map((child, i) => {
+        const minimum = layoutMinimum(child, getPanelType)
         return (
         <React.Fragment key={child.id}>
           <div
+            data-dock-pane={child.id}
             style={{
               [isHorizontal ? 'width' : 'height']: containsMaximized ? '100%' : `calc((100% - ${SPLIT_DIVIDER_SIZE * (node.children.length - 1)}px) * ${node.ratios[i]})`,
               display: containsMaximized && !findTabStack(child, maximizedStackId!) ? 'none' : undefined,
+              minWidth: containsMaximized ? 0 : minimum.width,
+              minHeight: containsMaximized ? 0 : minimum.height,
             }}
-            className="min-h-0 min-w-0 shrink-0 overflow-hidden"
+            className="shrink overflow-hidden"
           >
             {renderNode(child)}
           </div>

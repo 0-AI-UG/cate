@@ -6,7 +6,7 @@ const h = vi.hoisted(() => ({ root: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => h.root } }))
 vi.mock('../../main/logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 vi.mock('../../main/runtime/runtimeManager', () => ({ runtimes: { resolve: vi.fn() } }))
-vi.mock('./skillSources', () => ({ getToken: () => undefined }))
+vi.mock('../../main/github/cli', () => ({ getGithubToken: async () => undefined }))
 vi.mock('./githubCrawl', () => ({ fetchSkillFiles: async () => [{ relPath: 'SKILL.md', text: 'known good' }] }))
 const entry = { id: 'owner/repo/demo', name: 'Demo', description: '', tags: [], format: 'skill-md' as const, source: { repo: 'owner/repo', ref: 'main', path: 'demo' }, provenance: 'curated' as const, sourceId: 'owner/repo' }
 beforeEach(async () => { h.root = await fs.mkdtemp(path.join(os.tmpdir(), 'cate-library-tx-')); vi.resetModules() })

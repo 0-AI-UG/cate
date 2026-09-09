@@ -7,7 +7,7 @@ import { writeSkillToWorkspace, setSeededMarker } from './skillsInstaller'
 const h = vi.hoisted(() => ({ resolve: vi.fn() }))
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
 vi.mock('../../main/runtime/runtimeManager', () => ({ runtimes: { resolve: h.resolve } }))
-vi.mock('./skillSources', () => ({ getToken: () => undefined }))
+vi.mock('../../main/github/cli', () => ({ getGithubToken: async () => undefined }))
 vi.mock('./savedSkills', () => ({ isSaved: () => false }))
 let cwd: string
 let requiredScope: string | undefined

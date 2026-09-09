@@ -9,17 +9,20 @@ import { T3Logo } from './T3Logo'
 // lists all commands, workspaces, open panels, and recently-opened files.
 // =============================================================================
 
+import { flushSync } from 'react-dom'
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { Terminal, Globe, FileText, Folders, Sidebar, FolderOpen, Trash, GraduationCap, X, Scan as Selection, Undo2 as ArrowUUpLeft, Redo2 as ArrowUUpRight, ChevronLeft as CaretLeft, ChevronRight as CaretRight, GitCompareArrows as GitDiff } from 'lucide-react'
 import { Grid2X2 as SquaresFour, Layers as Stack, Search as MagnifyingGlass, Maximize as ArrowsOutSimple, Save as FloppyDisk, RefreshCw as ArrowsClockwise, Puzzle as PuzzlePiece } from 'lucide-react'
-import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
+import { browserPanelUrl, SHORTCUT_ACTIONS, displayString, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { isNavigablePanelType } from '../../shared/panels'
 import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
 import { PaletteDialogShell } from './Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import { useOtherWindowPanels } from '../stores/windowPanelStore'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useResolvedShortcuts } from '../stores/shortcutStore'
+import { getFocusedLeafPanelId } from '../lib/focusedPanel'
+import { resolvePanelById } from '../lib/workspace/panelReveal'
 import { useOptionalCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { WindowTypeContext } from '../stores/WindowTypeContext'
 import { runAction } from '../lib/runAction'
@@ -42,6 +45,7 @@ interface CommandItem {
   id: string
   title: string
   icon: React.ReactNode
+  shortcut?: string
   action: () => void
 }
 
@@ -69,6 +73,26 @@ const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
 const RedoIcon = () => <ArrowUUpRight size={ICON_SIZE} />
 const PreviousWorkspaceIcon = () => <CaretLeft size={ICON_SIZE} />
 const NextWorkspaceIcon = () => <CaretRight size={ICON_SIZE} />
+
+const commandIcons: Partial<Record<ShortcutAction, React.ReactNode>> = {
+  newTerminal: <TerminalIcon />, newBrowser: <GlobeIcon />, newEditor: <FilesIcon />,
+  newAgent: <AgentIcon />, newCanvas: <LayoutIcon />, closePanel: <CloseIcon />,
+  toggleFileExplorer: <FolderOpenIcon />, toggleSearch: <SearchIcon />,
+  toggleSidebar: <SidebarIcon />, zoomReset: <ZoomResetIcon />,
+  zoomToFit: <ZoomToFitIcon />, zoomToSelection: <ZoomSelectionIcon />,
+  autoLayout: <LayersIcon />, saveFile: <SaveIcon />, undo: <UndoIcon />, redo: <RedoIcon />,
+  skills: <SkillsIcon />, showTutorial: <TutorialIcon />, reloadWorkspace: <ReloadIcon />,
+  deleteRuntime: <DeleteRuntimeIcon />, previousWorkspace: <PreviousWorkspaceIcon />,
+  nextWorkspace: <NextWorkspaceIcon />,
+}
+
+const browserCommands = [
+  { id: 'reload', title: 'Browser: Reload', shortcut: '⌘R' },
+  { id: 'reloadHard', title: 'Browser: Force Reload', shortcut: '⇧⌘R' },
+  { id: 'back', title: 'Browser: Back', shortcut: '⌘[' },
+  { id: 'forward', title: 'Browser: Forward', shortcut: '⌘]' },
+  { id: 'focusUrl', title: 'Browser: Focus Address Bar', shortcut: '⌘L' },
+] as const
 
 // -----------------------------------------------------------------------------
 // Result types
@@ -123,7 +147,9 @@ export const CommandPalette: React.FC = () => {
     const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
     return isRemoteRuntimeConnection(ws?.connection)
   })
-  const deleteRuntime = useAppStore((s) => s.deleteRuntime)
+  const shortcuts = useResolvedShortcuts()
+  const focusedPanelId = getFocusedLeafPanelId()
+  const isBrowserFocused = focusedPanelId ? resolvePanelById(focusedPanelId)?.type === 'browser' : false
 
   const [searchText, setSearchText] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -147,66 +173,28 @@ export const CommandPalette: React.FC = () => {
     (action: MenuActionId) => () => { void runAction(action, canvasApi ?? undefined) },
     [canvasApi],
   )
-  const shortcutTitle = useCallback((action: ShortcutAction) => SHORTCUT_DISPLAY_NAMES[action], [])
-
-  // Build command items
-  const allCommands: CommandItem[] = useMemo(
-    () => [
-      { id: 'newTerminal', title: shortcutTitle('newTerminal'), icon: <TerminalIcon />, action: run('newTerminal') },
-      { id: 'newBrowser', title: shortcutTitle('newBrowser'), icon: <GlobeIcon />, action: run('newBrowser') },
-      { id: 'toggleFileExplorer', title: shortcutTitle('toggleFileExplorer'), icon: <FolderOpenIcon />, action: run('toggleFileExplorer') },
-      { id: 'toggleSearch', title: shortcutTitle('toggleSearch'), icon: <SearchIcon />, action: run('toggleSearch') },
-      { id: 'newEditor', title: shortcutTitle('newEditor'), icon: <FilesIcon />, action: run('newEditor') },
-      { id: 'newAgent', title: shortcutTitle('newAgent'), icon: <AgentIcon />, action: run('newAgent') },
-      { id: 'newCanvas', title: shortcutTitle('newCanvas'), icon: <LayoutIcon />, action: run('newCanvas') },
-      { id: 'closePanel', title: shortcutTitle('closePanel'), icon: <CloseIcon />, action: run('closePanel') },
-      { id: 'renamePanel', title: shortcutTitle('renamePanel'), icon: <FileText size={18} />, action: run('renamePanel') },
-      { id: 'saveFile', title: shortcutTitle('saveFile'), icon: <SaveIcon />, action: run('saveFile') },
-      // Sidebar toggles only exist in the main window; hidden in detached windows.
-      ...(isMainWindow
-        ? [
-            { id: 'toggleSidebar', title: shortcutTitle('toggleSidebar'), icon: <SidebarIcon />, action: run('toggleSidebar') },
-          ]
-        : []),
-      { id: 'zoomReset', title: shortcutTitle('zoomReset'), icon: <ZoomResetIcon />, action: run('zoomReset') },
-      { id: 'zoomToFit', title: shortcutTitle('zoomToFit'), icon: <ZoomToFitIcon />, action: run('zoomToFit') },
-      { id: 'zoomToSelection', title: shortcutTitle('zoomToSelection'), icon: <ZoomSelectionIcon />, action: run('zoomToSelection') },
-      { id: 'autoLayout', title: shortcutTitle('autoLayout'), icon: <LayersIcon />, action: run('autoLayout') },
-      { id: 'undo', title: shortcutTitle('undo'), icon: <UndoIcon />, action: run('undo') },
-      { id: 'redo', title: shortcutTitle('redo'), icon: <RedoIcon />, action: run('redo') },
-      {
-        id: 'skills',
-        title: 'Skills…',
-        icon: <SkillsIcon />,
-        action: () => useUIStore.getState().setShowSkillsDialog(true),
-      },
-      {
-        id: 'showTutorial',
-        title: 'Show Tutorial',
-        icon: <TutorialIcon />,
-        // Replays the first-run guided tour by clearing the completed flag.
-        action: () => {
-          useSettingsStore.getState().setSetting('onboardingCompleted', false)
-          try { window.electronAPI?.trackFeatureUsed?.('onboarding_replayed') } catch { /* noop */ }
-        },
-      },
-      { id: 'previousWorkspace', title: shortcutTitle('previousWorkspace'), icon: <PreviousWorkspaceIcon />, action: run('previousWorkspace') },
-      { id: 'nextWorkspace', title: shortcutTitle('nextWorkspace'), icon: <NextWorkspaceIcon />, action: run('nextWorkspace') },
-      { id: 'reloadWorkspace', title: 'Reload Workspace from Disk', icon: <ReloadIcon />, action: run('reloadWorkspace') },
-      // Remote-only: delete the daemon from the host. Main re-probes to the
-      // 'missing' phase; the canvas lock then offers "Install Runtime" for a
-      // clean reinstall — the deliberate delete → install two-step.
-      ...(isRemoteWorkspace
-        ? [{
-            id: 'deleteRuntime',
-            title: 'Delete Runtime',
-            icon: <DeleteRuntimeIcon />,
-            action: () => { void deleteRuntime(selectedWorkspaceId) },
-          }]
-        : []),
-    ],
-    [run, shortcutTitle, isMainWindow, isRemoteWorkspace, deleteRuntime, selectedWorkspaceId],
-  )
+  // Every registered action is discoverable automatically. Only context-specific
+  // commands and the command that opens this dialog are excluded.
+  const allCommands: CommandItem[] = useMemo(() => [
+    ...SHORTCUT_ACTIONS
+      .filter((id) => id !== 'commandPalette'
+        && (id !== 'toggleSidebar' || isMainWindow)
+        && (id !== 'deleteRuntime' || isRemoteWorkspace))
+      .map((id) => ({
+        id,
+        title: SHORTCUT_DISPLAY_NAMES[id],
+        icon: commandIcons[id] ?? <FileText size={ICON_SIZE} />,
+        shortcut: shortcuts[id].key ? displayString(shortcuts[id]) : undefined,
+        action: run(id),
+      })),
+    ...(isBrowserFocused ? browserCommands.map(({ id, title, shortcut }) => ({
+      id: `browser:${id}`,
+      title,
+      shortcut,
+      icon: <GlobeIcon />,
+      action: () => { void window.electronAPI.runNativeAction(`browser:${id}`) },
+    })) : []),
+  ], [run, shortcuts, isMainWindow, isRemoteWorkspace, isBrowserFocused])
 
   // Open panels in the current workspace.
   // Panels come from the SAME source as the sidebar workspace overview
@@ -385,7 +373,7 @@ export const CommandPalette: React.FC = () => {
 
   const activate = useCallback(
     (item: FlatItem) => {
-      close()
+      flushSync(close)
       if (item.kind === 'command') {
         item.command.action()
       } else if (item.kind === 'workspace') {
@@ -480,6 +468,7 @@ export const CommandPalette: React.FC = () => {
                       >
                         <span className="shrink-0 text-secondary">{cmd.icon}</span>
                         <span className="text-[13px] text-primary flex-1 truncate">{cmd.title}</span>
+                        {cmd.shortcut && <kbd className="text-[11px] text-muted shrink-0">{cmd.shortcut}</kbd>}
                       </Row>
                     )
                   })}

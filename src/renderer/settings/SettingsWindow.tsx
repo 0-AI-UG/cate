@@ -40,6 +40,7 @@ import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { UpdatesSettings } from './UpdatesSettings'
 import { AgentSettings } from './AgentSettings'
+import { RemoteSettings } from './RemoteSettings'
 import { GitHubSettings } from './GitHubSettings'
 import { SkillsSettings } from './SkillsSettings'
 import { SettingsSearchContext } from './SettingsSearchContext'
@@ -57,6 +58,7 @@ const SECTION_COMPONENTS = {
   Sidebar: SidebarSettings,
   'File Explorer': FileExplorerSettings,
   Worktrees: WorktreeSettings,
+  'Remote Connections': RemoteSettings,
   Notifications: NotificationSettings,
   'T3 Code': AgentSettings,
   Skills: SkillsSettings,
@@ -67,7 +69,7 @@ const SECTION_COMPONENTS = {
 
 const NAV_GROUPS = [
   { title: 'General', icon: Settings2, sections: ['General', 'Appearance', 'Notifications', 'Updates'] },
-  { title: 'Workspace', icon: LayoutDashboard, sections: ['Canvas', 'Sidebar', 'File Explorer', 'Worktrees'] },
+  { title: 'Workspace', icon: LayoutDashboard, sections: ['Canvas', 'Sidebar', 'File Explorer', 'Worktrees', 'Remote Connections'] },
   { title: 'Tools', icon: Wrench, sections: ['Terminal', 'Browser', 'CLI', 'Source Control', 'Shortcuts'] },
   { title: 'Agents', icon: Sparkles, sections: ['T3 Code', 'Skills'] },
 ] as const

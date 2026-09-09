@@ -528,3 +528,23 @@
 @container repository (min-width: 720px) {
   .repository-changes-grid { grid-template-columns: minmax(0, 1fr) 300px; }
 }
+
+/* Review toolbars respond to panel width rather than the application window. */
+.review-toolbar .review-ref { flex: 1 1 120px; width: 120px; }
+.review-toolbar .review-comparison { max-width: 150px; }
+@container review-toolbar (max-width: 900px) {
+  .review-action-label, .review-run-prefix { display: none; }
+  .review-action { width: 28px; padding-inline: 0; gap: 0; }
+  .review-worktree { max-width: 110px; }
+}
+@container review-toolbar (max-width: 640px) {
+  .review-line-stats { display: none; }
+  .review-toolbar .review-comparison { max-width: 120px; }
+  .review-worktree { max-width: 90px; }
+}
+@container review-toolbar (max-width: 480px) {
+  .review-stats { display: none; }
+  .review-toolbar, .review-toolbar-actions { gap: 2px; }
+  .review-worktree { max-width: 70px; }
+  .review-run-status { width: 6px; height: 6px; overflow: hidden; font-size: 0; border-radius: 50%; background: currentColor; }
+}

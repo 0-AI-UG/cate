@@ -105,10 +105,8 @@ export interface AppStoreActions {
   ) => string
   createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
 
-  // Ensure the center dock zone contains a canvas panel for the given workspace.
-  // Covers session-restore and new-workspace paths where the center layout may
-  // exist but reference no canvas-type panel (→ blank center pane bug).
-  ensureCenterCanvas: (workspaceId: string) => void
+  // Remove stale dock references without creating panels in an empty workspace.
+  reconcileWorkspaceDock: (workspaceId: string) => void
 
   // Panel management
   closePanel: (workspaceId: string, panelId: string) => void

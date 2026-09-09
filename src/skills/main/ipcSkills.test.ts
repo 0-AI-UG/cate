@@ -42,8 +42,6 @@ vi.mock('./skillSources', () => ({
   listSources: vi.fn(),
   addSource: vi.fn(),
   removeSource: vi.fn(),
-  getToken: vi.fn(),
-  setToken: vi.fn(),
 }))
 
 import { registerSkillHandlers } from './ipcSkills'

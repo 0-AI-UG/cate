@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { KEEP_AWAKE_GET, KEEP_AWAKE_SET, KEEP_AWAKE_CHANGED } from '../../shared/ipc-channels'
+import { KEEP_AWAKE_TOGGLE, KEEP_AWAKE_GET, KEEP_AWAKE_SET, KEEP_AWAKE_CHANGED } from '../../shared/ipc-channels'
 import { registerKeepAwakeHandlers } from './keepAwake'
 
 const mocks = vi.hoisted(() => ({
@@ -63,4 +63,12 @@ describe('keep awake', () => {
     expect(invoke(KEEP_AWAKE_GET)).toBe(false)
     expect(mocks.broadcast).not.toHaveBeenCalled()
   })
+})
+
+it('toggles the shared state atomically and broadcasts both transitions', () => {
+  expect(invoke(KEEP_AWAKE_TOGGLE)).toBe(true)
+  expect(invoke(KEEP_AWAKE_TOGGLE)).toBe(false)
+  expect(mocks.start).toHaveBeenCalledTimes(1)
+  expect(mocks.stop).toHaveBeenCalledTimes(1)
+  expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, false)
 })

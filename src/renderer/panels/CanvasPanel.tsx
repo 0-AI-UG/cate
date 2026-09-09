@@ -6,19 +6,17 @@
 
 import React, { useMemo, useCallback, useEffect } from 'react'
 import { useRenderCount } from '../lib/perf/perfClient'
-import { getOrCreateCanvasStoreForPanel, useNodeIds, useVisibleNodeIds } from '../stores/canvasStore'
+import { getOrCreateCanvasStoreForPanel, useVisibleNodeIds } from '../stores/canvasStore'
 import { CanvasStoreProvider, useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import Canvas from '../canvas/Canvas'
 import CanvasNode from '../canvas/CanvasNode'
 import CanvasToolbar from '../canvas/CanvasToolbar'
-import WelcomePage from '../ui/WelcomePage'
 import { NodeErrorBoundary } from '../ui/NodeErrorBoundary'
 import type { PanelType, Point, DockLayoutNode, WindowDockState } from '../../shared/types'
 import { useAppStore, type PanelPlacement } from '../stores/appStore'
 import type { StoreApi } from 'zustand'
 import { useKeepMountedPanelIds } from './keepMountedPanels'
-import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
 import { setActivePanel } from '../lib/activePanel'
 import { createDockStore, type DockStore } from '../stores/dockStore'
 import {
@@ -196,8 +194,6 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     setActivePanel(panelId)
   }, [panelId])
 
-  // `nodeIds` is the full ordered list (used where we need to know about every
-  // node regardless of visibility — e.g. the "canvas empty" welcome page).
   // `visibleNodeIds` is viewport-culled: we only mount CanvasNodeWrapper for
   // nodes whose bbox overlaps the visible canvas rect (plus a 1-screen margin),
   // so off-screen terminals/editors don't hold live xterm/Monaco instances.
@@ -205,11 +201,8 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
   // so panning them off-screen doesn't unmount the guest and reset its session
   // state. It's a stable, membership-keyed set (see useKeepMountedPanelIds) so
   // unrelated panel churn (titles, dirty flags) never re-runs the cull.
-  const nodeIds = useNodeIds(store)
   const keepMountedPanelIds = useKeepMountedPanelIds(workspaceId)
   const visibleNodeIds = useVisibleNodeIds(store, keepMountedPanelIds)
-  // Welcome page only shows on a brand-new workspace (no rootPath chosen yet).
-  // After a folder is picked, deleting all panels leaves a blank canvas.
   const workspaceRootPath = useAppStore(
     (s) => s.workspaces.find((w) => w.id === workspaceId)?.rootPath ?? '',
   )
@@ -224,8 +217,7 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
   const createHere = useCallback(async (type: PanelType, canvasPoint?: Point) => {
     const workspace = useAppStore.getState().getWorkspace(workspaceId)
     const checkout = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
-    const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (wsId) createInteractivePanel(type, { workspaceId: wsId, canvasPoint, placement: here(), ...checkout })
+    createInteractivePanel(type, { workspaceId, canvasPoint, placement: here(), ...checkout })
   }, [workspaceId, here, store])
   const onCreateAtPoint = useCallback((type: PanelType, point: Point) => { void createHere(type, point) }, [createHere])
   const onNewTerminal = useCallback(() => createHere('terminal'), [createHere])
@@ -241,17 +233,10 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
           sidebars — visible when the toolbar overflows its inset box on small
           or split-view screens. Behind-the-sidebar is the intended layering. */}
       <div data-canvas-area className="relative w-full h-full isolate" onPointerDown={handlePointerDown}>
-        {/* Welcome page only on a fresh, uninitialized workspace (no panels
-            yet AND no rootPath). Once a folder is picked, the canvas stays
-            blank when emptied — the start page does not return. */}
-        {nodeIds.length === 0 && !workspaceRootPath && (
-          <WelcomePage workspaceId={workspaceId} />
-        )}
-
         <Canvas
           onCreateAtPoint={onCreateAtPoint}
           panelId={panelId}
-          overlayChildren={(nodeIds.length > 0 || workspaceRootPath) ? (
+          overlayChildren={(
             <CanvasToolbar
               canvasPanelId={panelId}
               workspaceId={workspaceId}
@@ -260,7 +245,7 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
               onNewBrowser={onNewBrowser}
               onNewEditor={onNewEditor}
             />
-          ) : null}
+          )}
         >
           <PanelConnectionLayer workspaceId={workspaceId} />
           {visibleNodeIds.map((nId) => (

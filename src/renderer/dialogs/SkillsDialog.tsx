@@ -277,7 +277,7 @@ export function SkillsDialog() {
               spellCheck={false}
           />
           <IconBtn
-            title={viewMode === 'list' ? 'Switch to card view' : 'Switch to list view'}
+            title={viewMode === 'list' ? 'Card view' : 'List view'}
             onClick={() => setViewMode((mode) => mode === 'list' ? 'card' : 'list')}
           >
             {viewMode === 'list' ? <LayoutGrid size={15} /> : <List size={15} />}
@@ -486,7 +486,7 @@ function SkillRow({
       ? 'flex flex-col gap-3 border border-subtle bg-surface-1 p-4 hover:bg-surface-2'
       : 'flex items-start gap-3 px-3 py-3 hover:bg-surface-1'}`}>
       <div className="flex min-w-0 flex-1 items-start gap-3">
-      <Tooltip label={saved ? 'Saved — click to remove from your library' : 'Save to your library (cached for reuse)'}>
+      <Tooltip label={saved ? 'Remove from library' : 'Save to library'}>
       <button
         onClick={() => void toggleSave()}
         disabled={saveBusy}
@@ -657,7 +657,7 @@ function AgentMenu({
             onClick={() => void toggle(t.id)}
             disabled={working}
             className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-secondary hover:bg-surface-4 hover:text-primary disabled:opacity-50"
-            title={on ? 'Installed — click to remove' : 'Install here'}
+            title={on ? 'Uninstall skill' : 'Install skill'}
           >
             <span className="w-3.5 shrink-0 flex items-center justify-center text-accent">
               {working ? <Spinner size={11} /> : on ? <Check size={11} /> : null}

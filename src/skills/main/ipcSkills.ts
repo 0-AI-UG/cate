@@ -19,8 +19,6 @@ import {
   SKILLS_LIST_SOURCES,
   SKILLS_ADD_SOURCE,
   SKILLS_REMOVE_SOURCE,
-  SKILLS_GET_TOKEN,
-  SKILLS_SET_TOKEN,
 } from '../../shared/ipc-channels'
 import * as registry from './skillsRegistry'
 import * as installer from './skillsInstaller'
@@ -167,11 +165,4 @@ export function registerSkillHandlers(): void {
     return { ok: true as const }
   })
 
-  ipcMain.handle(SKILLS_GET_TOKEN, async () => ({ hasToken: !!sources.getToken() }))
-
-  ipcMain.handle(SKILLS_SET_TOKEN, async (_e, token: string | null) => {
-    sources.setToken(token ?? undefined)
-    registry.refresh()
-    return { ok: true as const }
-  })
 }

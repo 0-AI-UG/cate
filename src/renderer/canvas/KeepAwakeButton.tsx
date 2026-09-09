@@ -37,7 +37,7 @@ export function KeepAwakeButton({ tooltipPlacement }: { tooltipPlacement: 'top' 
     setPending(true)
     setError(false)
     try {
-      await window.electronAPI.setKeepAwake(!enabled)
+      await window.electronAPI.toggleKeepAwake()
     } catch {
       setError(true)
     } finally {
@@ -47,6 +47,7 @@ export function KeepAwakeButton({ tooltipPlacement }: { tooltipPlacement: 'top' 
 
   return (
     <CanvasToolbarButton
+      action="toggleKeepAwake"
       label={error
         ? 'Keep awake failed — retry'
         : enabled

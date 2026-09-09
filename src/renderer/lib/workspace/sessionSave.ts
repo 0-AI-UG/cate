@@ -233,10 +233,11 @@ async function persistSession(): Promise<void> {
     if (!snapshot.rootPath || !isProjectTrusted(snapshot.rootPath)) continue
 
     // Dedup: skip IPC when the payload hasn't changed
-    const serialized = JSON.stringify({ ws: wsFile, sess: sessFile })
+    const allowEmptyLayout = ws?.layoutRootPath === snapshot.rootPath && !deferredSnapshots.has(ws.id)
+    const serialized = JSON.stringify({ ws: wsFile, sess: sessFile, allowEmptyLayout })
     if (lastSerializedByRoot.get(snapshot.rootPath) === serialized) continue
     try {
-      await window.electronAPI.projectStateSave(snapshot.rootPath, wsFile, sessFile, ws?.id)
+      await window.electronAPI.projectStateSave(snapshot.rootPath, wsFile, sessFile, ws?.id, { allowEmptyLayout })
       lastSerializedByRoot.set(snapshot.rootPath, serialized)
     } catch (error) { errors.push(error) }
   }

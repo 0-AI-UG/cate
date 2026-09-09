@@ -19,7 +19,7 @@ import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
 import { setActivePanel } from '../lib/activePanel'
 import { NewTabButton } from './NewTabButton'
 import SurfacePicker from '../panels/SurfacePicker'
-import { canSplitPane, layoutMinimum } from './splitSizing'
+import { canSplitLayout, canSplitPane, layoutMinimum } from './splitSizing'
 import { Tooltip } from '../ui/Tooltip'
 import { useDockTabDrag } from './useDockTabDrag'
 import { keepsMountedWhenTabHidden } from '../../shared/panels'
@@ -113,10 +113,15 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     const element = stackRef.current
     if (!element) return false
     const viewport = element.closest<HTMLElement>('[data-dock-viewport]')
+    const dock = dockStoreApi.getState()
+    const layout = dock.zones[zoneProp].layout
+    if (viewport && layout && !dock.maximizedStackId) {
+      return canSplitLayout(layout, stack.id, viewport.clientWidth, viewport.clientHeight, (id) => resolvePanel(id)?.type)
+    }
     return canSplitPane(Math.min(element.clientWidth, viewport?.clientWidth ?? element.clientWidth),
       Math.min(element.clientHeight, viewport?.clientHeight ?? element.clientHeight),
       layoutMinimum(stack, (id) => resolvePanel(id)?.type))
-  }, [stack, resolvePanel])
+  }, [stack, resolvePanel, dockStoreApi, zoneProp])
   useEffect(() => {
     const update = () => setSplitAllowed(canSplit())
     update()
@@ -307,7 +312,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         />
 
         {activePanelId && (
-          <Tooltip label={splitAllowed ? "Split Right" : "Not enough space. Resize this pane or open a tab."}>
+          <Tooltip label={splitAllowed ? "Split right" : "Not enough space to split"}>
             <button
               className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[22px] h-[22px]' : 'w-6 h-6'}`}
               aria-label="Split Right"

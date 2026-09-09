@@ -2,12 +2,10 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
 import os from 'node:os'
 import { getShellEnv } from '../shellEnv'
+import { gh } from './cli'
 import type { GitHubLoginState, PullRequestItem, PullRequestsResult } from '../../shared/pullRequests'
 
 const exec = promisify(execFile)
-async function gh(args: string[]): Promise<string> {
-  return (await exec('gh', args, { cwd: os.homedir(), env: getShellEnv(), timeout: 30_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true })).stdout
-}
 const fields = `id number title url updatedAt additions deletions isDraft
   repository { nameWithOwner } author { login }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }`

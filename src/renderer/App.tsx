@@ -12,7 +12,6 @@ import { CanvasStoreProvider } from './stores/CanvasStoreContext'
 import { createCanvasStore } from './stores/canvasStore'
 import { DockStoreProvider } from './stores/DockStoreContext'
 import { getOrCreateWorkspaceDockStore } from './lib/workspace/dockRegistry'
-import { useStore } from 'zustand'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStateStore } from './stores/uiStateStore'
 import { useUIStore } from './stores/uiStore'
@@ -260,7 +259,7 @@ function MainApp() {
         log.info('Session restored (%d workspaces)', useAppStore.getState().workspaces.length)
       }
 
-      // Fallback: create a default workspace with a welcome terminal only if
+      // Fallback: create an unconfigured workspace only if
       // no workspaces exist (fresh install or empty session).
       if (useAppStore.getState().workspaces.length === 0) {
         log.info('No session to restore, creating default workspace')
@@ -268,9 +267,9 @@ function MainApp() {
         useAppStore.getState().selectWorkspace(wsId)
       }
 
-      // Ensure the selected workspace's center dock zone has a canvas panel.
+      // Reconcile restored dock references without inventing panels.
       const wsId = useAppStore.getState().selectedWorkspaceId
-      if (wsId) useAppStore.getState().ensureCenterCanvas(wsId)
+      if (wsId) useAppStore.getState().reconcileWorkspaceDock(wsId)
 
       // Paint the UI now — everything below this point is non-critical and
       // runs in the background so the first colorful frame lands ASAP.
@@ -300,17 +299,6 @@ function MainApp() {
     }
     init().catch(() => setInitializing(false))
   }, [])
-
-  // ---------------------------------------------------------------------------
-  // Auto-recreate canvas when center dock zone empties (e.g. canvas tab dragged out)
-  // ---------------------------------------------------------------------------
-  const centerLayout = useStore(activeDockStore, (s) => s.zones.center.layout)
-
-  useEffect(() => {
-    if (!centerLayout && selectedWorkspaceId) {
-      useAppStore.getState().createCanvas(selectedWorkspaceId)
-    }
-  }, [centerLayout, selectedWorkspaceId])
 
   // ---------------------------------------------------------------------------
   // OS-forwarded folder opens — dock drop / "Open With Cate"

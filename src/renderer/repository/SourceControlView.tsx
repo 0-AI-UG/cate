@@ -15,7 +15,7 @@ import { parseLocator } from '../../shared/runtimeLocator'
 import { openReviewPanel } from '../lib/review/openReviewPanel'
 import type { GitComparisonSpec } from '../../shared/types'
 import { selectedWorktree } from '../lib/worktreeContext'
-import { WorktreeScopeSelect } from '../sidebar/WorktreeScopeSelect'
+import { WorktreeSelector } from '../ui/WorktreeSelector'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -657,7 +657,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, workspa
 
   const hasMultipleWorktrees = worktrees.filter((worktree) => !worktree.isOrphan).length > 1
   const changesScope = hasMultipleWorktrees ? (
-    <WorktreeScopeSelect
+    <WorktreeSelector
       worktrees={worktrees}
       value={changesWorktree?.id}
       onChange={(id) => setSourceControlWorktree(rootPath, id)}
@@ -902,7 +902,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, workspa
               className={`w-[calc(100%-0.75rem)] flex items-center gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] hover:bg-hover text-left ${
                 wt.id === changesWorktree?.id ? 'text-primary bg-surface-3' : 'text-secondary'
               }`}
-              title={`${wt.path}\nSelect this checkout for Changes. Manage worktrees in Parallel Work.`}
+              title={wt.path}
               onClick={() => { setSourceControlWorktree(rootPath, wt.id); setSection('changes') }}
             >
               <GitBranch size={12} className="flex-shrink-0" />

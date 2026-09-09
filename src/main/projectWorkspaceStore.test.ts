@@ -206,6 +206,15 @@ describe('PROJECT_STATE_SAVE handler — live production save path (issue #220)'
     expect(nodeCount(await readWorkspaceJson(root))).toBe(2)
   })
 
+  it('persists an explicitly emptied layout through autosave and quit fallback', async () => {
+    await save(root, makeWorkspace([makeNode('a')]), makeSession())
+    await handlers.get(PROJECT_STATE_SAVE)!(null, root, makeWorkspace([]), makeSession(), undefined, { allowEmptyLayout: true })
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(0)
+    saveProjectStateSync()
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(0)
+    expect(nodeCount((await loadProjectState(root))!.workspace)).toBe(0)
+  })
+
   it('the live handler refuses an empty overwrite of a non-empty canvas', async () => {
     await save(root, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
     // Before the fix the inline handler had no node-count check and clobbered this.

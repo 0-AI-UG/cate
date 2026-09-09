@@ -1,7 +1,9 @@
+import type { ShortcutAction } from '../../shared/types'
 import { forwardRef, type ButtonHTMLAttributes } from 'react'
 import { Tooltip } from '../ui/Tooltip'
 
 interface CanvasToolbarButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  action?: ShortcutAction
   label: string
   active?: boolean
   size?: 'panel' | 'zoom'
@@ -10,6 +12,7 @@ interface CanvasToolbarButtonProps extends ButtonHTMLAttributes<HTMLButtonElemen
 
 export const CanvasToolbarButton = forwardRef<HTMLButtonElement, CanvasToolbarButtonProps>(function CanvasToolbarButton({
   label,
+  action,
   active = false,
   size = 'panel',
   tooltipPlacement = 'top',
@@ -19,7 +22,7 @@ export const CanvasToolbarButton = forwardRef<HTMLButtonElement, CanvasToolbarBu
   ...props
 }, ref) {
   return (
-    <Tooltip label={label} placement={tooltipPlacement}>
+    <Tooltip action={action} label={label} placement={tooltipPlacement}>
       <button
         {...props}
         ref={ref}

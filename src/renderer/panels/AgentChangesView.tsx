@@ -78,10 +78,10 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
     filter.turnId && { label: 'This turn', patch: { turnId: undefined } },
   ].filter(Boolean) as { label: string; patch: Partial<AgentChangesFilter> }[]
   const selectClass = 'h-7 w-full rounded-lg bg-surface-2 border border-subtle px-2 text-xs'
-  return <div className="flex h-full min-h-0 flex-col bg-surface-0 text-primary">
+  return <div className="flex w-full min-w-0 h-full min-h-0 flex-col bg-surface-0 text-primary">
     <ReviewToolbar state={state} workspaceId={workspaceId} panelId={panelId}>
-      <button ref={trigger} aria-label="Filters" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} className="flex h-7 items-center gap-1 rounded-lg px-2 text-xs hover:bg-surface-2"><Funnel size={14} />Filters</button>
-      <div className="ml-auto flex items-center gap-1">
+      <button ref={trigger} aria-label="Filters" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} title="Filters" className="review-action flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-xs hover:bg-surface-2"><Funnel size={14} /><span className="review-action-label">Filters</span></button>
+      <div className="review-toolbar-actions ml-auto flex shrink-0 items-center gap-1">
         <ReviewRunStatus state={state} workspace={workspace} workspaceId={workspaceId} panelId={panelId} />
         <ReviewStats files={new Set(files.map(({ file }) => file.path)).size} additions={totals.additions} deletions={totals.deletions} />
         <ToolbarButton label="Refresh" disabled={loading || refreshing} onClick={async () => { setRefreshing(true); try { await refreshAgentChanges(state.repoPath, workspaceId) } finally { setRefreshing(false) } }}>{loading || refreshing ? <Spinner size={14} label="Refreshing changes" /> : <ArrowClockwise size={14} />}</ToolbarButton>

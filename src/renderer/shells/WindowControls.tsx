@@ -1,3 +1,4 @@
+import { useShortcutLabel } from '../stores/shortcutStore'
 // =============================================================================
 // WindowControls — custom minimize / maximize / close buttons for the frameless
 // window chrome on Windows & Linux. macOS uses native traffic lights, so this
@@ -15,6 +16,7 @@ import { IS_MAC } from '../lib/platform'
 const NO_DRAG: React.CSSProperties = { WebkitAppRegion: 'no-drag' } as React.CSSProperties
 
 export default function WindowControls() {
+  const shortcutLabel = useShortcutLabel()
   const [isMaximized, setIsMaximized] = useState<boolean>(
     () => window.electronAPI.isWindowMaximized?.() ?? false,
   )
@@ -50,7 +52,7 @@ export default function WindowControls() {
       <button
         type="button"
         aria-label="Close"
-        title="Close"
+        title={shortcutLabel('closeWindow', 'Close')}
         className="h-full w-11 flex items-center justify-center text-secondary hover:bg-red-600 hover:text-white transition-colors"
         onClick={() => window.electronAPI.windowClose?.()}
       >

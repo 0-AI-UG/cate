@@ -167,6 +167,8 @@ export interface GitReviewNote {
 }
 
 export interface ReviewPanelState {
+  /** Saved comparison and notes for each checkout visited by this panel. */
+  worktreeStates?: Record<string, Omit<ReviewPanelState, 'worktreeStates'>>
   /** Present only for saved agent edits; absent means an ordinary Git comparison. */
   agentChanges?: import('./agentChanges').AgentChangesFilter
   repoPath: string
@@ -654,6 +656,8 @@ export interface WorkspaceState {
   id: string
   name: string
   color: string
+  /** Renderer-only: the root whose layout has been initialized, even when empty. */
+  layoutRootPath?: string
   rootPath: string
   /** Runtime connection for a remote/WSL workspace (absent ⇒ local). Mirrors
    *  WorkspaceInfo.connection; drives reconnect-on-restore. */
@@ -817,19 +821,44 @@ export const SHORTCUT_DEFINITIONS = {
   panDown: { label: 'Pan Canvas Down', shortcut: storedShortcut('↓', { shift: true }) },
   panLeft: { label: 'Pan Canvas Left', shortcut: storedShortcut('←', { shift: true }) },
   panRight: { label: 'Pan Canvas Right', shortcut: storedShortcut('→', { shift: true }) },
+  selectTool: { label: 'Select Tool', shortcut: storedShortcut('1', { command: true, option: true }) },
+  handTool: { label: 'Hand Tool', shortcut: storedShortcut('2', { command: true, option: true }) },
+  toggleKeepAwake: { label: 'Toggle Keep Awake', shortcut: storedShortcut('k', { command: true, option: true }) },
+  openWorktreeMenu: { label: 'Parallel Worktrees', shortcut: storedShortcut('w', { command: true, option: true }) },
+  openConversationMenu: { label: 'T3 Code Conversations', shortcut: storedShortcut('a', { command: true, option: true }) },
+  toggleCanvasToolbar: { label: 'Expand / Collapse Canvas Toolbar', shortcut: storedShortcut('b', { command: true, option: true }) },
+  tidyGrid: { label: 'Tidy Selected Panels into Grid', shortcut: storedShortcut('g', { command: true }) },
+  newWorkspace: { label: 'New Workspace', shortcut: storedShortcut('') },
+  openFolder: { label: 'Open Folder…', shortcut: storedShortcut('o', { command: true }) },
+  openSettings: { label: 'Settings / Preferences…', shortcut: storedShortcut(',', { command: true }) },
+  openRepository: { label: 'Repository / Source Control Changes', shortcut: storedShortcut('g', { command: true, shift: true }) },
+  openPullRequests: { label: 'Pull Requests', shortcut: storedShortcut('g', { command: true, option: true }) },
+  openUsage: { label: 'Usage', shortcut: storedShortcut('u', { command: true, option: true }) },
+  skills: { label: 'Skills…', shortcut: storedShortcut('s', { command: true, option: true }) },
+  showTutorial: { label: 'Show Tutorial', shortcut: storedShortcut('') },
+  reloadWorkspace: { label: 'Reload Workspace from Disk', shortcut: storedShortcut('') },
+  deleteRuntime: { label: 'Delete Runtime', shortcut: storedShortcut('') },
+  newWindow: { label: 'New Window', shortcut: storedShortcut('n', { command: true, shift: true }) },
+  closeWindow: { label: 'Close Window', shortcut: storedShortcut('w', { command: true, shift: true }) },
+  toggleFullscreen: { label: 'Toggle Full Screen', shortcut: storedShortcut('f', { command: true, control: true }) },
+  reloadWindow: { label: 'Force Reload Window', shortcut: storedShortcut('') },
+  toggleDevTools: { label: 'Toggle Developer Tools', shortcut: storedShortcut('i', { command: true, option: true }) },
+  checkForUpdates: { label: 'Check for Updates…', shortcut: storedShortcut('') },
+  documentation: { label: 'Cate Documentation', shortcut: storedShortcut('') },
+  reportIssue: { label: 'Report Issue…', shortcut: storedShortcut('') },
 } as const satisfies Record<string, { label: string; shortcut: StoredShortcut }>
 
 export type ShortcutAction = keyof typeof SHORTCUT_DEFINITIONS
 
-/** Actions the native menu can dispatch into the renderer. Superset of
- *  ShortcutAction — includes a few menu-only items that have no keyboard
- *  binding. */
-export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace'
+/** Renderer commands share one catalog across menus, shortcuts and the palette. */
+export type MenuActionId = ShortcutAction
 
 /** Browser-panel navigation actions. These are panel-scoped (handled by the
  *  focused BrowserPanel) rather than global shortcuts, so they don't collide
  *  with Monaco keys like Cmd+[ / Cmd+] / Cmd+L. */
 export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
+
+export type NativeAction = 'newWindow' | 'closeWindow' | 'toggleFullscreen' | 'reloadWindow' | 'toggleDevTools' | 'checkForUpdates' | 'documentation' | 'reportIssue' | `browser:${BrowserShortcutAction}`
 
 export type BrowserDownloadState = 'progressing' | 'paused' | 'completed' | 'cancelled' | 'interrupted'
 
@@ -1187,6 +1216,8 @@ export interface MultiWorkspaceSession {
 // -----------------------------------------------------------------------------
 
 export interface ProjectWorkspaceFile {
+  /** An intentionally saved empty layout is authoritative over its recovery backup. */
+  emptyLayout?: boolean
   version: 1
   name: string
   color: string

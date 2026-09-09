@@ -1,3 +1,4 @@
+import { REMOTE_CONNECTIONS_LIST, REMOTE_CONNECTIONS_SAVE, REMOTE_CONNECTIONS_REMOVE, REMOTE_CONNECTIONS_CHANGED } from '../shared/ipc-channels'
 import { OPEN_APPLICATION_OVERLAY, SHOW_APPLICATION_OVERLAY } from '../shared/ipc-channels'
 import { PANEL_TRANSFER_STAGE, PANEL_TRANSFER_READY, PANEL_TRANSFER_COMMIT, PANEL_TRANSFER_FINISH } from '../shared/ipc-channels'
 import type { RecentScreenshot } from '../shared/recentScreenshot'
@@ -8,6 +9,7 @@ try { performance.mark('preload-start') } catch { /* noop */ }
 
 import {
   AGENT_HARNESS_RENAME_CONVERSATION,
+  KEEP_AWAKE_TOGGLE,
   KEEP_AWAKE_GET,
   KEEP_AWAKE_SET,
   KEEP_AWAKE_CHANGED,
@@ -107,6 +109,7 @@ import {
   BROWSER_DOWNLOADS_CHANGED,
   MENU_SHOW_CONTEXT,
   MENU_GET_BAR_ITEMS,
+  MENU_RUN_NATIVE_ACTION,
   MENU_POPUP_BAR_ITEM,
   DIALOG_OPEN_FOLDER,
   DIALOG_OPEN_IMAGE,
@@ -265,8 +268,6 @@ import {
   SKILLS_LIST_SOURCES,
   SKILLS_ADD_SOURCE,
   SKILLS_REMOVE_SOURCE,
-  SKILLS_GET_TOKEN,
-  SKILLS_SET_TOKEN,
   PERF_GET,
   CATE_HOST_FORWARD,
   CATE_HOST_FORWARD_REPLY,
@@ -564,6 +565,14 @@ const invokeForwarders = {
   workspaceRemove: makeInvoker<'workspaceRemove'>(WORKSPACE_REMOVE),
 
   // Runtime connections (remote / WSL)
+  remoteConnectionsList: makeInvoker<'remoteConnectionsList'>(REMOTE_CONNECTIONS_LIST),
+  remoteConnectionsSave: makeInvoker<'remoteConnectionsSave'>(REMOTE_CONNECTIONS_SAVE),
+  remoteConnectionsRemove: makeInvoker<'remoteConnectionsRemove'>(REMOTE_CONNECTIONS_REMOVE),
+  onRemoteConnectionsChanged(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, connections: import('../shared/runtimeConnection').RemoteRuntimeConnection[]) => callback(connections)
+    ipcRenderer.on(REMOTE_CONNECTIONS_CHANGED, listener)
+    return () => { ipcRenderer.removeListener(REMOTE_CONNECTIONS_CHANGED, listener) }
+  },
   runtimeConnect: makeInvoker<'runtimeConnect'>(RUNTIME_CONNECT),
   runtimeEnsure: makeInvoker<'runtimeEnsure'>(RUNTIME_ENSURE),
   runtimeList: makeInvoker<'runtimeList'>(RUNTIME_LIST),
@@ -577,6 +586,7 @@ const invokeForwarders = {
 
   // Menu
   showContextMenu: makeInvoker<'showContextMenu'>(MENU_SHOW_CONTEXT),
+  runNativeAction: makeInvoker<'runNativeAction'>(MENU_RUN_NATIVE_ACTION),
   getAppMenuBarItems: makeInvoker<'getAppMenuBarItems'>(MENU_GET_BAR_ITEMS),
 
   // Auto-updater
@@ -603,8 +613,6 @@ const invokeForwarders = {
   skillsListSources: makeInvoker<'skillsListSources'>(SKILLS_LIST_SOURCES),
   skillsAddSource: makeInvoker<'skillsAddSource'>(SKILLS_ADD_SOURCE),
   skillsRemoveSource: makeInvoker<'skillsRemoveSource'>(SKILLS_REMOVE_SOURCE),
-  skillsGetToken: makeInvoker<'skillsGetToken'>(SKILLS_GET_TOKEN),
-  skillsSetToken: makeInvoker<'skillsSetToken'>(SKILLS_SET_TOKEN),
 
 } satisfies Partial<ElectronAPI>
 

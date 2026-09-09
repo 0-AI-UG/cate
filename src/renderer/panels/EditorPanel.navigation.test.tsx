@@ -14,7 +14,9 @@ const h = vi.hoisted(() => ({
   open: null as null | ((paths: string[], mode?: 'dock' | 'canvas') => Promise<void>),
   editors: [] as any[],
   searchStore: null as any,
+  worktrees: [] as any[],
 }))
+vi.mock('../stores/useWorktrees', () => ({ useWorktrees: () => h.worktrees }))
 vi.mock('../sidebar/FileExplorer', () => ({ FileExplorer: (props: any) => { h.open = props.onOpenFiles; return <div>Explorer</div> } }))
 vi.mock('../sidebar/SearchView', () => ({ SearchView: ({ store }: any) => { h.searchStore = store; return <div>Search</div> } }))
 vi.mock('../lib/fs/fsWatchManager', () => ({ watchFsRoot: () => () => {} }))
@@ -30,9 +32,10 @@ vi.mock('monaco-editor', () => ({
       return { getValue: () => value, setValue: (s: string) => { value = s; listeners.forEach(fn => fn()) },
         listeners, isDisposed: () => false, dispose: vi.fn() }
     },
-    create: (element: HTMLElement) => {
+    create: (element: HTMLElement, options: any) => {
       element.dataset.monaco = 'true'
-      let model: any
+      // Monaco starts with an empty model before the async file read finishes.
+      let model: any = options.model === null ? null : { getValue: () => '', isDisposed: () => false }
       let changed: () => void = () => {}
       const editor = { getModel: () => model, setModel: (m: any) => { model = m; model.listeners.add(() => changed()) },
         layout: vi.fn(), focus: vi.fn(), dispose: vi.fn(), updateOptions: vi.fn(),
@@ -68,8 +71,9 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} })
   __resetModelCacheForTest()
   h.editors = []
+  h.worktrees = []
   Object.assign(window.electronAPI, {
-    shellListApps: vi.fn().mockResolvedValue([]), fsReadFile: vi.fn().mockImplementation(async (path: string) => `disk:${path}`),
+    showContextMenu: vi.fn().mockResolvedValue(null), shellListApps: vi.fn().mockResolvedValue([]), fsReadFile: vi.fn().mockImplementation(async (path: string) => `disk:${path}`),
     confirmUnsavedChanges: vi.fn().mockResolvedValue('discard'),
   })
   useUIStore.setState({ requestedNavigationView: null })
@@ -85,6 +89,112 @@ afterEach(async () => {
 it('keeps a new untitled editor editable', async () => {
   await mount()
   expect(host.querySelector('[data-monaco]')!.classList.contains('hidden')).toBe(false)
+})
+it('toggles the right sidebar without hiding the editor or expanding the explorer', async () => {
+  await mount('/test/code.ts')
+  const sidebar = host.querySelector('aside')!
+  const editorArea = host.querySelector('[data-monaco]')!.parentElement!
+  for (let i = 0; i < 2; i++) {
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Files sidebar"]')!.click())
+    expect(sidebar.getAttribute('aria-hidden')).toBe('true')
+    expect(sidebar.style.width).toBe('0px')
+    expect(editorArea.classList.contains('hidden')).toBe(false)
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Files sidebar"]')!.click())
+    expect(sidebar.getAttribute('aria-hidden')).toBe('false')
+    expect(sidebar.style.width).toBe('260px')
+    expect(editorArea.classList.contains('hidden')).toBe(false)
+    expect(editorArea.nextElementSibling).toBe(sidebar)
+  }
+})
+it('switches directly between Files and Search and toggles either sidebar closed', async () => {
+  await mount('/test/code.ts')
+  const sidebar = host.querySelector('aside')!
+  const files = host.querySelector<HTMLButtonElement>('[aria-label="Files sidebar"]')!
+  const search = host.querySelector<HTMLButtonElement>('[aria-label="Search sidebar"]')!
+  for (const button of [search, files, search, files]) {
+    await act(async () => button.click())
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    expect((button === files ? search : files).getAttribute('aria-pressed')).toBe('false')
+    expect(sidebar.style.width).toBe('260px')
+    expect(sidebar.getAttribute('aria-hidden')).toBe('false')
+  }
+  for (const button of [files, search]) {
+    if (button.getAttribute('aria-pressed') === 'false') await act(async () => button.click())
+    await act(async () => button.click())
+    expect(sidebar.style.width).toBe('0px')
+    expect(files.getAttribute('aria-pressed')).toBe('false')
+    expect(search.getAttribute('aria-pressed')).toBe('false')
+  }
+})
+it.each(['md', 'mdx'])('opens %s in preview by default and keeps the source toggle in the header', async (extension) => {
+  await mount(`/test/readme.${extension}`)
+  const toolbar = host.querySelector('.files-toolbar')!
+  const source = toolbar.querySelector<HTMLButtonElement>('[title="Show source"]')!
+  expect(source).not.toBeNull()
+  expect(host.querySelector('[data-monaco]')!.classList.contains('hidden')).toBe(true)
+  expect(host.querySelector('.files-content')!.contains(source)).toBe(false)
+  await act(async () => source.click())
+  expect(useAppStore.getState().getWorkspace('test')!.panels.editor.markdownPreview).toBe(false)
+  expect(host.querySelector('[data-monaco]')!.classList.contains('hidden')).toBe(false)
+  const preview = toolbar.querySelector<HTMLButtonElement>('[title="Preview markdown"]')!
+  await act(async () => preview.click())
+  expect(useAppStore.getState().getWorkspace('test')!.panels.editor.markdownPreview).toBe(true)
+})
+it('switches the open relative file between worktrees and explains missing files', async () => {
+  h.worktrees = [
+    { id: 'main', path: '/test', branch: 'main', isPrimary: true, isOrphan: false },
+    { id: 'feature', path: '/feature', branch: 'feature', isPrimary: false, isOrphan: false },
+  ]
+  vi.mocked(window.electronAPI.fsReadFile).mockImplementation(async (path) => {
+    if (path === '/feature/readme.md') throw new Error('ENOENT: no such file')
+    return '# Main checkout'
+  })
+  await mount('/test/readme.md')
+  const select = host.querySelector<HTMLButtonElement>('[aria-label="File panel worktree"]')!
+  vi.mocked(window.electronAPI.showContextMenu).mockResolvedValueOnce('feature')
+  await act(async () => select.click())
+  expect(useAppStore.getState().getWorkspace('test')!.panels.editor).toMatchObject({ filePath: '/feature/readme.md', worktreeId: 'feature' })
+  expect(host.textContent).toContain('File not found in this worktree')
+  expect(host.querySelector('[data-monaco]')!.classList.contains('hidden')).toBe(true)
+  vi.mocked(window.electronAPI.showContextMenu).mockResolvedValueOnce('main')
+  await act(async () => select.click())
+  expect(useAppStore.getState().getWorkspace('test')!.panels.editor.filePath).toBe('/test/readme.md')
+  expect(host.textContent).not.toContain('File not found in this worktree')
+  expect(host.querySelector('.prose-markdown h1')?.textContent).toBe('Main checkout')
+})
+it('renders Markdown after switching from a missing file to an uncached checkout without toggling preview', async () => {
+  h.worktrees = [
+    { id: 'main', path: '/test', branch: 'main', isPrimary: true, isOrphan: false },
+    { id: 'feature', path: '/feature', branch: 'feature', isPrimary: false, isOrphan: false },
+  ]
+  let resolveFile!: (content: string) => void
+  vi.mocked(window.electronAPI.fsReadFile).mockImplementation(async (path) => {
+    if (path === '/feature/readme.md') throw new Error('ENOENT: no such file')
+    return new Promise<string>((resolve) => { resolveFile = resolve })
+  })
+  await mount('/feature/readme.md')
+  expect(host.textContent).toContain('File not found in this worktree')
+  vi.mocked(window.electronAPI.showContextMenu).mockResolvedValueOnce('main')
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="File panel worktree"]')!.click())
+  await act(async () => resolveFile('# Loaded from main'))
+  expect(host.querySelector('.prose-markdown h1')?.textContent).toBe('Loaded from main')
+  expect(host.querySelector('[data-monaco]')!.classList.contains('hidden')).toBe(true)
+  expect(host.textContent).not.toContain('File not found in this worktree')
+})
+it('keeps the current checkout when an unsaved-file worktree switch is cancelled', async () => {
+  h.worktrees = [
+    { id: 'main', path: '/test', branch: 'main', isPrimary: true, isOrphan: false },
+    { id: 'feature', path: '/feature', branch: 'feature', isPrimary: false, isOrphan: false },
+  ]
+  await mount('/test/code.ts')
+  await act(async () => h.editors.at(-1).getModel().setValue('unsaved'))
+  vi.mocked(window.electronAPI.confirmUnsavedChanges).mockResolvedValue('cancel')
+  const select = host.querySelector<HTMLButtonElement>('[aria-label="File panel worktree"]')!
+  vi.mocked(window.electronAPI.showContextMenu).mockResolvedValueOnce('feature')
+  await act(async () => select.click())
+  expect(useAppStore.getState().getWorkspace('test')!.panels.editor.filePath).toBe('/test/code.ts')
+  expect(h.editors.at(-1).getModel().getValue()).toBe('unsaved')
+  expect(select.textContent).toBe('main')
 })
 it('protects edits to the next file after discarding the previous file', async () => {
   await mount('/test/first.ts')
@@ -112,7 +222,7 @@ it('opens every selected file, reusing the current editor for the first text fil
 })
 it('reopens a hidden explorer through the navigation command', async () => {
   await mount('/test/code.ts')
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Hide file explorer"]')!.click())
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Files sidebar"]')!.click())
   expect(host.querySelector('aside')!.getAttribute('aria-hidden')).toBe('true')
   await act(async () => useUIStore.getState().requestNavigationView('explorer'))
   expect(host.querySelector('aside')!.getAttribute('aria-hidden')).toBe('false')

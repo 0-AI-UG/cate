@@ -5,6 +5,7 @@ import { expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({ createEditor: vi.fn(), createDocument: vi.fn(), workspace: { id: 'ws', rootPath: '/repo', panels: { review: { reviewState: { repoPath: '/repo', spec: { kind: 'uncommitted' }, display: {}, notes: [{ path: 'gone.ts', side: 'file', status: 'open' }] } as any } } } }))
 vi.mock('../stores/appStore', () => ({ useAppStore: Object.assign((selector: any) => selector({ workspaces: [h.workspace] }), { getState: () => ({ createEditor: h.createEditor, createDocument: h.createDocument, getWorkspace: () => h.workspace, setPanelReviewState: (_w: string, _p: string, next: any) => { h.workspace.panels.review.reviewState = next } }) }) }))
 vi.mock('../stores/gitStatusStore', () => ({ useGitStatusSnapshot: () => ({ revision: 0 }), gitStatusStore: {} }))
+vi.mock('../stores/useWorktrees', () => ({ useWorktrees: () => [] }))
 vi.mock('../lib/review/reviewAgent', () => ({}))
 vi.mock('../lib/agent/codingAgentDriver', () => ({}))
 vi.mock('../lib/workspace/canvasAccess', () => ({ placementForPanel: () => ({ target: 'dock', zone: 'right', stackId: 'review-stack' }) }))

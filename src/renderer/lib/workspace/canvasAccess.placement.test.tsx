@@ -9,7 +9,7 @@
 // The fix pins the placement to the active canvas explicitly.
 // =============================================================================
 
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach } from 'vitest'
 import {
   placementForActivePanel,
   placementForBackgroundPanel,
@@ -17,13 +17,25 @@ import {
 } from './canvasAccess'
 import { setActivePanel } from '../activePanel'
 import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../../stores/canvasStore'
+import { getOrCreateWorkspaceDockStore, releaseWorkspaceDockStore } from './dockRegistry'
 import { useAppStore } from '../../stores/appStore'
 
 const PRIMARY = 'canvas-primary'
 const SECONDARY = 'canvas-secondary'
 const SOURCE = 'terminal-source'
 
+beforeEach(() => {
+  useAppStore.setState({ selectedWorkspaceId: 'ws-active', workspaces: [{ id: 'ws-active', rootPath: '/project', panels: {
+    [PRIMARY]: { id: PRIMARY, type: 'canvas', title: 'Canvas' },
+    [SECONDARY]: { id: SECONDARY, type: 'canvas', title: 'Canvas' },
+  } } as never] })
+  const dock = getOrCreateWorkspaceDockStore('ws-active')
+  dock.getState().dockPanel(PRIMARY, 'center')
+  dock.getState().dockPanel(SECONDARY, 'center')
+})
+
 afterEach(() => {
+  releaseWorkspaceDockStore('ws-active')
   releaseCanvasStoreForPanel(PRIMARY)
   releaseCanvasStoreForPanel(SECONDARY)
   setActivePanel(null)
@@ -121,4 +133,12 @@ describe('placementForActivePanel with multiple canvases', () => {
       placementGroupId: SOURCE,
     })
   })
+})
+
+it('ignores retained canvas focus from another workspace when the current dock is empty', () => {
+  getOrCreateCanvasStoreForPanel(SECONDARY)
+  setActivePanel(SECONDARY)
+  useAppStore.setState((s) => ({ selectedWorkspaceId: 'empty', workspaces: [...s.workspaces, { id: 'empty', rootPath: '/empty', panels: {} } as never] }))
+  expect(getActiveCanvasPanelId()).toBeNull()
+  expect(placementForActivePanel()).toEqual({ target: 'dock', zone: 'center' })
 })

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { ShortcutAction, StoredShortcut } from '../../shared/types'
 import {
+  displayString,
   DEFAULT_SHORTCUTS,
   SHORTCUT_ACTIONS,
   normaliseShortcutKey,
@@ -80,4 +81,10 @@ export function matchShortcutEvent(event: KeyboardEvent): ShortcutAction | null 
         stored.control === eventMods.control) return action
   }
   return null
+}
+
+/** Labels follow edits in Settings; cleared bindings don't advertise a key. */
+export function useShortcutLabel(): (action: ShortcutAction, label: string) => string {
+  const shortcuts = useResolvedShortcuts()
+  return (action, label) => shortcuts[action].key ? `${label} (${displayString(shortcuts[action])})` : label
 }

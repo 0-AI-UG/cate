@@ -202,14 +202,15 @@ async function cleanOrphanedTmpFiles(filePath: string): Promise<void> {
 
 // Workspace-aware read (issue #220): a valid, non-empty primary is authoritative
 // even when .bak has more nodes (the difference may be a legitimate deletion).
-// Fall back only when the primary is invalid or empty, which still recovers the
+// Explicitly saved empty layouts are authoritative too. Fall back when the
+// primary is invalid or unexpectedly empty, which still recovers the
 // original empty-workspace wipe without resurrecting older panels on every load.
 async function readWorkspaceWithFallback(filePath: string, read: (path: string) => Promise<unknown> = tryReadJson): Promise<ProjectWorkspaceFile | null> {
   const [primary, backup] = await Promise.all([
     read(filePath),
     read(filePath + '.bak'),
   ])
-  if (isValidWorkspace(primary) && workspaceNodeCount(primary) > 0) return primary
+  if (isValidWorkspace(primary) && (workspaceNodeCount(primary) > 0 || primary.emptyLayout === true)) return primary
   if (isValidWorkspace(backup) && workspaceNodeCount(backup) >= 0) return backup
   return isValidWorkspace(primary) && workspaceNodeCount(primary) >= 0 ? primary : null
 }
@@ -258,6 +259,12 @@ function isValidSession(data: unknown): data is ProjectSessionFile {
   return true
 }
 
+/** Persist explicit emptiness so recovery does not resurrect the previous layout. */
+function withEmptyLayoutIntent(workspace: ProjectWorkspaceFile, allowEmptyLayout: boolean): ProjectWorkspaceFile {
+  const { emptyLayout: _previous, ...layout } = workspace
+  return allowEmptyLayout && workspaceNodeCount(layout) === 0 ? { ...layout, emptyLayout: true } : layout
+}
+
 // Core local save: serializes the per-root write and applies both disk-boundary
 // guards (external-edit + issue #220 empty-overwrite) before touching
 // workspace.json. The live PROJECT_STATE_SAVE handler is the only caller; it
@@ -267,7 +274,9 @@ export async function saveProjectStateLocal(
   rootPath: string,
   workspace: ProjectWorkspaceFile,
   session: ProjectSessionFile,
+  allowEmptyLayout = false,
 ): Promise<void> {
+  workspace = withEmptyLayoutIntent(workspace, allowEmptyLayout)
   const wsJson = JSON.stringify(workspace, null, 2)
   const sessJson = JSON.stringify(session, null, 2)
   await enqueueSave(rootPath, async () => {
@@ -281,7 +290,7 @@ export async function saveProjectStateLocal(
       log.info('Skipping workspace.json overwrite for %s — edited externally; prompting reload', cateDir(rootPath))
       broadcastToAll(WORKSPACE_EXTERNAL_EDIT, { rootPath })
       heldReason = 'Workspace layout was edited externally; reload or keep the current layout before saving.'
-    } else if (await wouldEmptyOverwriteWorkspace(rootPath, workspaceNodeCount(workspace))) {
+    } else if (!allowEmptyLayout && await wouldEmptyOverwriteWorkspace(rootPath, workspaceNodeCount(workspace))) {
       // Data-loss backstop (issue #220): never overwrite a non-empty saved
       // canvas with an empty one. A renderer-side race while activating a
       // deferred (non-selected) workspace can momentarily serialize an empty
@@ -327,15 +336,15 @@ export async function loadProjectState(rootPath: string): Promise<{
 }
 
 // Last-saved JSON for sync fallback on quit
-const lastSavedProjectStates: Map<string, { workspace: string; session: string }> = new Map()
+const lastSavedProjectStates: Map<string, { workspace: string; session: string; allowEmptyLayout: boolean }> = new Map()
 
 export function saveProjectStateSync(): void {
-  for (const [rootPath, { workspace, session }] of lastSavedProjectStates) {
+  for (const [rootPath, { workspace, session, allowEmptyLayout }] of lastSavedProjectStates) {
     try {
       atomicWriteWithBakSync(sessionPath(rootPath), session)
       if (workspaceEditedExternallySync(rootPath)) {
         log.info('Skipping workspace.json sync overwrite for %s — edited externally', cateDir(rootPath))
-      } else if (wouldEmptyOverwriteWorkspaceSync(rootPath, workspaceNodeCount(JSON.parse(workspace)))) {
+      } else if (!allowEmptyLayout && wouldEmptyOverwriteWorkspaceSync(rootPath, workspaceNodeCount(JSON.parse(workspace)))) {
         // issue #220 guard: don't let the quit-time fallback flush an empty
         // canvas over a good one (mirrors the async saveProjectStateLocal guard).
         log.warn('Refusing empty workspace.json sync overwrite for %s (issue #220 guard)', cateDir(rootPath))
@@ -388,14 +397,16 @@ async function saveProjectStateRemote(
   workspace: ProjectWorkspaceFile,
   session: ProjectSessionFile,
   access?: FileAccessContext,
+  allowEmptyLayout = false,
 ): Promise<void> {
+  workspace = withEmptyLayoutIntent(workspace, allowEmptyLayout)
   const { runtime, workspaceFile, sessionFile, gitignoreFile } = remoteCateTargets(rootPath)
 
   const readJson = async (file: string): Promise<unknown> => {
     try { return JSON.parse(await runtime.file.readFile(file, access)) } catch { return null }
   }
   const existing = await readWorkspaceWithFallback(workspaceFile, readJson)
-  const preserveLayout = workspaceNodeCount(workspace) <= 0 && workspaceNodeCount(existing) > 0
+  const preserveLayout = !allowEmptyLayout && workspaceNodeCount(workspace) <= 0 && workspaceNodeCount(existing) > 0
 
   await runtime.file.stat(gitignoreFile, access)
     .catch(() => runtime.file.writeFile(gitignoreFile, CATE_GITIGNORE_CONTENT, access))
@@ -439,16 +450,17 @@ async function loadProjectStateRemote(rootPath: string, access?: FileAccessConte
 export function registerProjectStateHandlers(): void {
   ipcMain.handle(
     PROJECT_STATE_SAVE,
-    async (event, rootPath: string, workspace: ProjectWorkspaceFile, session: ProjectSessionFile, workspaceId?: string) => {
+    async (event, rootPath: string, workspace: ProjectWorkspaceFile, session: ProjectSessionFile, workspaceId?: string, options?: { allowEmptyLayout?: boolean }) => {
+      workspace = withEmptyLayoutIntent(workspace, options?.allowEmptyLayout === true)
       // Remote workspaces use the same session policy with scoped runtime I/O;
       // the local process lock and synchronous fallback cannot apply over RPC.
       if (!isLocalLocator(rootPath)) {
         const access = { ownerWindowId: windowFromEvent(event)?.id, scopeId: workspaceId }
-        return enqueueSave(rootPath, () => saveProjectStateRemote(rootPath, workspace, session, access))
+        return enqueueSave(rootPath, () => saveProjectStateRemote(rootPath, workspace, session, access, options?.allowEmptyLayout === true))
       }
       const wsJson = JSON.stringify(workspace, null, 2)
       const sessJson = JSON.stringify(session, null, 2)
-      lastSavedProjectStates.set(rootPath, { workspace: wsJson, session: sessJson })
+      lastSavedProjectStates.set(rootPath, { workspace: wsJson, session: sessJson, allowEmptyLayout: options?.allowEmptyLayout === true })
       // If another live Cate instance owns this project, don't autosave over
       // it — that's the two-writers loop. Re-acquire each time so we resume
       // saving once the owner exits; only skip while it's genuinely held.
@@ -457,7 +469,7 @@ export function registerProjectStateHandlers(): void {
         lastSavedProjectStates.delete(rootPath) // keep the quit-time sync fallback out too
         throw new Error('Cannot acquire the project save lock: another Cate instance owns it or the .cate directory is inaccessible.')
       }
-      await saveProjectStateLocal(rootPath, workspace, session)
+      await saveProjectStateLocal(rootPath, workspace, session, options?.allowEmptyLayout === true)
     },
   )
 

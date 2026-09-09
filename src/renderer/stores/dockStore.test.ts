@@ -276,10 +276,20 @@ describe('dockPanel — split targets', () => {
     expect(split.children).toHaveLength(3)
     expect(split.children.every((c) => c.type === 'tabs')).toBe(true)
     expect((split.children as DockTabStack[]).map((s) => s.panelIds[0])).toEqual(['a', 'b', 'c'])
-    // The new stack takes half of the sibling it split from.
-    expect(split.ratios[0]).toBeCloseTo(0.5)
-    expect(split.ratios[1]).toBeCloseTo(0.25)
-    expect(split.ratios[2]).toBeCloseTo(0.25)
+    // Same-direction siblings share the available row equally.
+    expect(split.ratios).toEqual([1 / 3, 1 / 3, 1 / 3])
+    expectTreeInvariants(store.getState().zones)
+  })
+
+  it.each(['left', 'right', 'top', 'bottom'] as const)('drops a third panel on the %s edge as an equal sibling without losing panels', (edge) => {
+    const store = createDockStore()
+    store.getState().dockPanel('a', 'center')
+    const stackA = rootStack(store, 'center')
+    store.getState().dockPanel('b', 'center', { type: 'split', stackId: stackA.id, edge: edge === 'left' || edge === 'right' ? 'right' : 'bottom' })
+    store.getState().dockPanel('c', 'center', { type: 'split', stackId: stackContaining(store, 'b').id, edge })
+    const split = rootSplit(store, 'center')
+    expect(split.ratios).toEqual([1 / 3, 1 / 3, 1 / 3])
+    expect((split.children as DockTabStack[]).map((stack) => stack.panelIds[0])).toEqual(edge === 'left' || edge === 'top' ? ['a', 'c', 'b'] : ['a', 'b', 'c'])
     expectTreeInvariants(store.getState().zones)
   })
 
@@ -343,14 +353,14 @@ describe('undockPanel', () => {
     store.getState().dockPanel('b', 'bottom', { type: 'split', stackId: stackA.id, edge: 'right' })
     const stackB = stackContaining(store, 'b')
     store.getState().dockPanel('c', 'bottom', { type: 'split', stackId: stackB.id, edge: 'right' })
-    // ratios are now [0.5, 0.25, 0.25]
+    // Ratios are now equal thirds.
 
     store.getState().undockPanel('b')
 
     const split = rootSplit(store, 'bottom')
     expect(split.children).toHaveLength(2)
-    expect(split.ratios[0]).toBeCloseTo(0.5 / 0.75)
-    expect(split.ratios[1]).toBeCloseTo(0.25 / 0.75)
+    expect(split.ratios[0]).toBeCloseTo(0.5)
+    expect(split.ratios[1]).toBeCloseTo(0.5)
     expectTreeInvariants(store.getState().zones)
   })
 

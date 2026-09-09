@@ -179,3 +179,9 @@ describe('project state — remote (cate-runtime://) routing', () => {
   })
 
 })
+
+it('persists an explicitly emptied remote layout', async () => {
+  await save(LOCATOR, makeWorkspace([makeNode('a')]), makeSession())
+  await handlers.get(PROJECT_STATE_SAVE)!(null, LOCATOR, makeWorkspace([]), makeSession(), undefined, { allowEmptyLayout: true })
+  expect(nodeCount((await load(LOCATOR))!.workspace)).toBe(0)
+})

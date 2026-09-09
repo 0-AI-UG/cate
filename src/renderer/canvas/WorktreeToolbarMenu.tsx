@@ -1,3 +1,4 @@
+import { useCanvasToolbarAction } from './useCanvasToolbarAction'
 import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 // WorktreeToolbarMenu — the canvas toolbar's "parallel worktrees" drop-up, and
@@ -96,13 +97,14 @@ const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
     }
     setOpen(true)
   }, [open, menuSide])
+  useCanvasToolbarAction('openWorktreeMenu', canvasPanelId, toggle)
 
   return (
     <>
       <CanvasToolbarButton
           ref={btnRef}
           onClick={toggle}
-          label="Parallel worktrees"
+          action="openWorktreeMenu" label="Parallel worktrees"
           active={active}
           tooltipPlacement={tooltipPlacement}
       >
@@ -304,7 +306,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
                 <button
                   onClick={() => void handlePrune()}
                   className="px-1.5 py-0.5 rounded-lg hover:bg-surface-4 text-secondary hover:text-primary"
-                  title="Remove the missing entries"
+                  title="Remove missing worktrees"
                 >
                   Clean up
                 </button>
@@ -372,7 +374,7 @@ const SpawnButton: React.FC<{
   worktreeId: string
   onClick: () => void
 }> = ({ icon, title, panelType, cwd, worktreeId, onClick }) => (
-  <Tooltip label={`${title} — click to open here, or drag onto the canvas`}>
+  <Tooltip label={title}>
     <div
       role="button"
       aria-label={title}

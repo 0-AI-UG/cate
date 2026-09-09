@@ -132,8 +132,7 @@ function findParentSplit(
 /**
  * Insert a new child into an existing split node adjacent to the given index.
  * When isAfter=true, inserts after; when false, inserts before.
- * Redistributes ratios so the new child gets an equal share taken from
- * the sibling it was split from.
+ * Shares the row/column equally when a new sibling is added.
  */
 function insertIntoSplit(
   root: DockLayoutNode,
@@ -147,11 +146,7 @@ function insertIntoSplit(
     const newChildren = [...root.children]
     const insertPos = isAfter ? refIndex + 1 : refIndex
     newChildren.splice(insertPos, 0, newChild)
-    const newRatios = [...root.ratios]
-    // Split the existing sibling's ratio in half for the new child
-    const share = newRatios[refIndex] / 2
-    newRatios[refIndex] = share
-    newRatios.splice(insertPos, 0, share)
+    const newRatios = newChildren.map(() => 1 / newChildren.length)
     return { ...root, children: newChildren, ratios: newRatios }
   }
   return {

@@ -91,14 +91,5 @@ export async function movePanelToNewWindow(
   // command palette, session, counts — agrees it's no longer here.
   removePanelFromWindow(workspaceId, panelId, panel.type, 'transfer')
 
-  // Detaching the workspace's only canvas leaves an empty center dock — mint a
-  // fresh one, mirroring the drag-detach path (useDragOp.onRemovedFromCanvas).
-  if (panel.type === 'canvas') {
-    const app = useAppStore.getState()
-    const remaining = Object.values(
-      app.workspaces.find((w) => w.id === workspaceId)?.panels ?? {},
-    ).filter((p) => p.type === 'canvas')
-    if (remaining.length === 0) app.createCanvas(workspaceId)
-  }
   return true
 }

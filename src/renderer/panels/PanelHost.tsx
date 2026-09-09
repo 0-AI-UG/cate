@@ -1,6 +1,7 @@
 import React, { createContext, memo, useCallback, useContext } from 'react'
 import type { PanelState } from '../../shared/types'
 import { getPanelDef, renderPanelComponent } from './registry'
+import { WorkspaceRequired } from './WorkspaceRequired'
 import { PanelSuspense } from './PanelSuspense'
 import { BrowserPanelSurfaceSlot, PersistentBrowserHostContext } from './browserSurfaceRegistry'
 
@@ -54,7 +55,7 @@ const PanelContent = memo(function PanelContent({
   if (!panel) return null
   if (!allowCanvas && !getPanelDef(panel.type).canLiveOnCanvas) return null
   if ((panel.type === 'browser' || panel.type === 'agent') && persistentBrowserHost) {
-    return <BrowserPanelSurfaceSlot panelId={panel.id} />
+    return <WorkspaceRequired workspaceId={workspaceId}><BrowserPanelSurfaceSlot panelId={panel.id} /></WorkspaceRequired>
   }
   const content = renderPanelComponent(panel, {
     workspaceId,
@@ -62,5 +63,5 @@ const PanelContent = memo(function PanelContent({
     zoomLevel,
     renderPanelContent,
   })
-  return content ? <PanelSuspense key={panel.id}>{content}</PanelSuspense> : null
+  return content ? <WorkspaceRequired workspaceId={workspaceId}><PanelSuspense key={panel.id}>{content}</PanelSuspense></WorkspaceRequired> : null
 })

@@ -35,6 +35,7 @@ import {
   type CanvasStore,
 } from '../stores/canvasStore'
 import type { MenuActionId, PanelType } from '../../shared/types'
+import { useAppStore } from '../stores/appStore'
 import { getActivePanelId, setActivePanel } from '../lib/activePanel'
 
 // Tell React this is an act() environment (silences the act warning + flushes effects).
@@ -66,6 +67,10 @@ beforeEach(() => {
     onMenuTriggerAction: (callback: typeof menuAction) => { menuAction = callback; return () => {} },
   }
 
+  useAppStore.setState({ selectedWorkspaceId: 'workspace', workspaces: [{ id: 'workspace', rootPath: '/project', panels: {
+    [PRIMARY]: { id: PRIMARY, type: 'canvas', title: 'Canvas' },
+    [ACTIVE]: { id: ACTIVE, type: 'canvas', title: 'Canvas' },
+  } } as never] })
   // First panel inherits the legacy singleton; the second gets a fresh store.
   primary = getOrCreateCanvasStoreForPanel(PRIMARY) as unknown as StoreApi<CanvasStore>
   active = getOrCreateCanvasStoreForPanel(ACTIVE) as unknown as StoreApi<CanvasStore>
@@ -84,6 +89,8 @@ afterEach(() => {
   container.remove()
   releaseCanvasStoreForPanel(PRIMARY)
   releaseCanvasStoreForPanel(ACTIVE)
+  useAppStore.setState({ selectedWorkspaceId: '', workspaces: [] })
+  setActivePanel(null)
 })
 
 describe('useShortcuts active-canvas routing', () => {

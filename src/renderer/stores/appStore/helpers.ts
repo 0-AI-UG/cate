@@ -282,16 +282,14 @@ function placePanel(
   // (hidden) target whenever a secondary canvas tab is active. Background
   // restores into an inactive workspace keep the primary-canvas routing.
   const pinnedCanvasId = placement?.target === 'canvas' ? placement.canvasPanelId : undefined
+  const workspace = get().getWorkspace(workspaceId)
   const ops = pinnedCanvasId
-    ? ensureCanvasOpsForPanel(pinnedCanvasId)
+    ? workspace?.panels[pinnedCanvasId]?.type === 'canvas' ? ensureCanvasOpsForPanel(pinnedCanvasId) : null
     : (isActiveWorkspace ? getActiveCanvasOps() : null) ?? getWorkspaceCanvasOps(workspaceId)
   if (!ops) {
-    // No canvas to place onto — e.g. a detached dock window (center zone only)
-    // where nothing was focused, so placementForActivePanel couldn't tab into a
-    // stack. Fall back to the center dock zone so the panel still lands instead
-    // of becoming a ghost. (The main window always has a center canvas, so this
-    // only engages for canvas-less windows.)
-    dockStore.getState().dockPanel(panelId, 'center')
+    // A workspace or detached window can have no canvas. Place new panels
+    // directly in its center dock until the user explicitly creates a canvas.
+    dockStore.getState().dockPanel(panelId, 'center', undefined, placement?.target !== 'canvas' || placement.focus !== false)
     return
   }
   let canvasPosition = placement?.target === 'canvas' ? placement.position ?? position : position

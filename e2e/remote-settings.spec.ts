@@ -1,0 +1,45 @@
+import { test, expect } from '@playwright/test'
+import { launchApp, closeApp } from './fixtures/electron-app'
+
+test('manages persistent connections in settings and lists them in a native select on the empty workspace', async () => {
+  const { electronApp, mainWindow: page } = await launchApp({ empty: true })
+  try {
+    await expect(page.getByRole('button', { name: /New T3 Panel/ })).toBeVisible()
+    const picker = page.getByRole('combobox', { name: 'Connect to remote', exact: true })
+    await expect(picker.locator('option', { hasText: 'No saved connections yet' })).toHaveCount(1)
+    await picker.selectOption('__manage')
+    await page.getByPlaceholder('Search settings…').fill('ssh')
+    const section = page.locator('#settings-section-remote-connections')
+    await section.getByRole('button', { name: 'Add connection' }).click()
+    await section.getByRole('textbox', { name: 'SSH host', exact: true }).fill('developer@dev.example.invalid:2222')
+    await section.getByRole('textbox', { name: 'Project folder', exact: true }).fill('/home/developer/project')
+    await expect(section.getByRole('button', { name: 'Save connection' })).toBeEnabled()
+    await expect(section.getByRole('combobox', { name: 'SSH agent', exact: true })).toBeVisible()
+    await page.screenshot({ path: '/tmp/cate-remote-settings-form.png' })
+    await section.getByRole('textbox', { name: 'SSH host', exact: true }).fill('host:70000')
+    await expect(section.getByRole('button', { name: 'Save connection' })).toBeDisabled()
+    await section.getByRole('textbox', { name: 'SSH host', exact: true }).fill('developer@dev.example.invalid:2222')
+    await section.getByRole('button', { name: 'Save connection' }).click()
+    await expect(section.getByText('developer@dev.example.invalid', { exact: true })).toBeVisible()
+    await expect(section.getByRole('status')).toHaveText('Saved')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await page.screenshot({ path: '/tmp/cate-remote-settings-list.png' })
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    // Saving did not replace the empty workspace or attempt a network connection.
+    await expect(picker).toBeVisible()
+    await expect(picker.locator('option', { hasText: 'developer@dev.example.invalid' })).toHaveCount(1)
+    await expect(page.getByRole('button', { name: /developer@dev.example.invalid/ })).toHaveCount(0)
+    await page.screenshot({ path: '/tmp/cate-remote-picker.png' })
+    // Reload the renderer to verify it reads the persisted profile through IPC.
+    await page.reload()
+    await expect(picker.locator('option', { hasText: 'developer@dev.example.invalid' })).toHaveCount(1)
+    await picker.selectOption('__manage')
+    await section.getByRole('button', { name: 'Edit', exact: true }).click()
+    await section.getByRole('textbox', { name: 'Project folder', exact: true }).fill('/home/developer/other')
+    await section.getByRole('button', { name: 'Save connection' }).click()
+    await expect(section.getByText(/SSH · Port 2222 · \/home\/developer\/other/)).toBeVisible()
+    await section.getByRole('button', { name: 'Remove', exact: true }).click()
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+    await expect(picker.locator('option', { hasText: 'No saved connections yet' })).toHaveCount(1)
+  } finally { await closeApp(electronApp) }
+})

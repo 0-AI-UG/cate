@@ -202,7 +202,7 @@ describe('movePanelToNewWindow — canvas-located panel', () => {
 // ---------------------------------------------------------------------------
 
 describe('movePanelToNewWindow — last canvas', () => {
-  it('detaching the workspace\'s only canvas mints a fresh one', async () => {
+  it('detaching the workspace\'s only canvas leaves its dock empty', async () => {
     const ws = 'ws-last-canvas'
     seedWorkspace(ws, [panel('cv', 'canvas')])
     const dock = createDockStore()
@@ -215,9 +215,9 @@ describe('movePanelToNewWindow — last canvas', () => {
     expect(ok).toBe(true)
     expect(panelsOf(ws)['cv']).toBeUndefined()
     const canvases = Object.values(panelsOf(ws)).filter((p) => p.type === 'canvas')
-    expect(canvases).toHaveLength(1) // a NEW canvas was minted
-    expect(canvases[0].id).not.toBe('cv')
-    for (const c of canvases) releaseCanvasStoreForPanel(c.id)
+    expect(canvases).toHaveLength(0)
+    expect(panelsOf(ws)).toEqual({})
+    expect(dock.getState().zones.center.layout).toBeNull()
 
     releaseWorkspaceDockStore(ws)
     // getWorkspaceDockStore may have been recreated by placement — release again defensively.

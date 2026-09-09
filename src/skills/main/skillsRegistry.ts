@@ -9,7 +9,8 @@
 
 import log from '../../main/logger'
 import { listSkillsInRepo, rawText } from './githubCrawl'
-import { listSources, getToken } from './skillSources'
+import { listSources } from './skillSources'
+import { getGithubToken } from '../../main/github/cli'
 import seedIndex from '../../../registry/skills-index.json'
 import type { SkillEntry } from '../../shared/skills'
 
@@ -27,7 +28,7 @@ interface IndexFile {
 }
 
 let curatedCache: { at: number; entries: SkillEntry[] } | null = null
-let userCache: { at: number; entries: SkillEntry[] } | null = null
+let userCache: { at: number; entries: SkillEntry[]; token: string | undefined } | null = null
 
 // Bundled seed — the index committed in the repo, inlined at build time. Used
 // until the remote index is reachable, so curated skills work out of the box
@@ -73,9 +74,10 @@ async function loadCurated(): Promise<SkillEntry[]> {
 }
 
 async function loadUserLive(): Promise<SkillEntry[]> {
-  if (userCache && Date.now() - userCache.at < USER_TTL_MS) return userCache.entries
   const sources = listSources()
-  const token = getToken()
+  if (!sources.length) return []
+  const token = await getGithubToken()
+  if (userCache && userCache.token === token && Date.now() - userCache.at < USER_TTL_MS) return userCache.entries
   const all: SkillEntry[] = []
   for (const src of sources) {
     try {
@@ -84,7 +86,7 @@ async function loadUserLive(): Promise<SkillEntry[]> {
       log.warn('[skills] live crawl failed for %s: %O', src.repo, err)
     }
   }
-  userCache = { at: Date.now(), entries: all }
+  userCache = { at: Date.now(), entries: all, token }
   return all
 }
 
@@ -115,5 +117,5 @@ export function refresh(): void {
 export async function getPreview(entry: SkillEntry): Promise<string> {
   const ref = entry.source.ref || 'main'
   const path = entry.source.path ? `${entry.source.path.replace(/\/+$/, '')}/SKILL.md` : 'SKILL.md'
-  return rawText(entry.source.repo, ref, path, getToken())
+  return rawText(entry.source.repo, ref, path, await getGithubToken())
 }

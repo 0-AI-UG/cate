@@ -256,3 +256,15 @@ it('retains T3 for a warm return and evicts the least recent workspace', async (
   act(() => useAppStore.setState({ selectedWorkspaceId: 'three' }))
   expect(container.querySelector('[data-retained-agent="agent-two"]')).toBeNull()
 })
+
+it('does not mount persistent browser or T3 guests for an unconfigured workspace', async () => {
+  const ws = workspace('one')
+  ws.rootPath = ''
+  ws.panels.agent = { id: 'agent', type: 'agent', title: 'T3' } as never
+  act(() => useAppStore.setState({ workspaces: [ws] }))
+  await renderHost()
+  expect(container.querySelector('[data-browser-panel]')).toBeNull()
+  expect(container.querySelector('[data-retained-agent]')).toBeNull()
+  act(() => useAppStore.setState({ workspaces: [{ ...ws, rootPath: '/project' }] }))
+  expect(container.querySelector('[data-browser-panel]')).not.toBeNull()
+})

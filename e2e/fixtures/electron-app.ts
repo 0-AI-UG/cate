@@ -9,6 +9,7 @@ import path from 'node:path'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { buildSync } from 'esbuild'
+import { openTrustedWorkspace } from './workspace'
 
 export interface LaunchResult {
   electronApp: ElectronApplication
@@ -56,6 +57,7 @@ function localRuntimeEnv(): Record<string, string> {
 }
 
 export async function launchApp(opts: {
+  empty?: boolean
   perf?: boolean
   env?: Record<string, string>
   userDataDir?: string
@@ -84,12 +86,17 @@ export async function launchApp(opts: {
   const mainWindow = await electronApp.firstWindow()
   await mainWindow.waitForLoadState('domcontentloaded')
   await mainWindow.waitForFunction(() => window.__cateE2E?.ready === true, { timeout: 15_000 })
-  // The harness `ready` flag is set by its own effect the moment e2eHarness
-  // installs — independent of App's async init(), which restores/creates the
-  // workspace and mounts the Canvas. Wait for the Canvas to actually be in the
-  // DOM so specs don't race a not-yet-mounted canvas (activeCanvasPanelId would
-  // otherwise transiently return null right after launch).
-  await mainWindow.waitForSelector('[data-canvas-panel-id]', { timeout: 15_000 })
+  await mainWindow.waitForSelector('.main-window-shell-root', { timeout: 15_000 })
+  await mainWindow.waitForFunction(() => !!window.__cateE2E?.selectedWorkspaceId())
+  // Canvas specs request a real project and explicitly create their fixture
+  // panel. Production startup is deliberately empty.
+  if (!opts.empty && await mainWindow.locator('[data-canvas-panel-id]').count() === 0) {
+    if (await mainWindow.locator('[data-onboarding="welcome-actions"]').count()) {
+      await openTrustedWorkspace(mainWindow, mkdtempSync(path.join(tmpdir(), 'cate-e2e-project-')))
+    }
+    await mainWindow.evaluate(() => window.__cateE2E!.createPanel('canvas'))
+    await mainWindow.waitForSelector('[data-canvas-panel-id]', { timeout: 15_000 })
+  }
   return { electronApp, mainWindow }
 }
 

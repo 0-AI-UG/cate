@@ -56,6 +56,16 @@ describe.each(['main', 'detached'])('%s window target routing', (owner) => {
     vi.stubGlobal('window', { electronAPI: { showContextMenu: menu } })
   })
 
+  it.each(['terminal', 'agent', 'editor', 'browser', 'document', 'review'] as const)('creates %s directly in an entirely empty dock for every source', async (panelType) => {
+    for (const source of [{ source: 'overlay' as const }, {}, { sourcePanelId: 'closed-source' }]) {
+      for (const availability of ['new', 'both', 'existing'] as const) {
+        const result = await requestPanelTarget({ workspaceId, panelType, availability, ...source })
+        expect(result).toEqual(availability === 'existing' ? null : { kind: 'new', placement: { target: 'dock', zone: 'center' } })
+      }
+    }
+    expect(menu).not.toHaveBeenCalled()
+  })
+
   it.each(['new', 'both', 'existing'] as const)('uses and reveals the source canvas for %s requests', async (availability) => {
     const first = addCanvas('first')
     addCanvas('second')

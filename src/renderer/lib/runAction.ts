@@ -1,3 +1,4 @@
+import { dispatchCanvasToolbarAction } from '../canvas/useCanvasToolbarAction'
 // =============================================================================
 // runAction — the single source of truth for menu / shortcut / command-palette
 // actions. Both the global keyboard handler (useShortcuts) and the Cmd+K command
@@ -14,6 +15,8 @@ import {
   getActiveCanvasPanelId,
   placementForActivePanel,
 } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
+import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
 import { useUIStore } from '../stores/uiStore'
 import type { MenuActionId } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
@@ -31,6 +34,17 @@ export function isCanvasNavigationBlocked(): boolean {
     || !!document.activeElement?.closest('[role="dialog"], [role="alertdialog"], [data-keynav]')
 }
 
+/** Resolve a chooser target without replacing another workspace at the tab limit. */
+export function ensureWorkspaceTarget(workspaceId: string): string | null {
+  const app = useAppStore.getState()
+  if (app.getWorkspace(workspaceId)) return workspaceId
+  const existingIds = new Set(app.workspaces.map((w) => w.id))
+  const id = app.addWorkspace()
+  if (existingIds.has(id)) return null
+  void app.selectWorkspace(id)
+  return id
+}
+
 /**
  * Ensures the workspace has a rootPath before proceeding.
  * If no rootPath is set, opens the folder dialog first.
@@ -46,8 +60,14 @@ export async function ensureWorkspaceFolder(workspaceId: string): Promise<string
   // Awaited, and its answer respected: the user can still decline to trust the
   // folder they just picked. The caller must not then create a panel in a
   // workspace that never got a root — it would land in $HOME.
-  const opened = await useAppStore.getState().setWorkspaceRootPath(workspaceId, folderPath)
-  return opened ? workspaceId : null
+  const targetId = ensureWorkspaceTarget(workspaceId)
+  if (!targetId) return null
+  const opened = await useAppStore.getState().setWorkspaceRootPath(targetId, folderPath)
+  if (opened) return targetId
+  // Opening an already-open folder redirects selection instead of duplicating
+  // the workspace. Continue the requested action in that existing workspace.
+  const selected = useAppStore.getState().getWorkspace(useAppStore.getState().selectedWorkspaceId)
+  return selected?.rootPath === folderPath && !selected.isRootPathPending ? selected.id : null
 }
 
 /**
@@ -92,6 +112,51 @@ export async function runAction(
     return
   }
   switch (action) {
+    case 'selectTool': useUIStore.getState().setActiveTool('select'); break
+    case 'handTool': useUIStore.getState().setActiveTool('hand'); break
+    case 'toggleKeepAwake': await window.electronAPI.toggleKeepAwake(); break
+    case 'openWorktreeMenu':
+    case 'openConversationMenu':
+    case 'toggleCanvasToolbar': {
+      const canvasPanelId = getActiveCanvasPanelId()
+      if (canvasPanelId) dispatchCanvasToolbarAction(action, canvasPanelId)
+      break
+    }
+    case 'tidyGrid': canvasStore()?.tidyGridSelected(); break
+    case 'newWorkspace': {
+      const ui = useUIStore.getState()
+      ui.setShowPullRequests(false)
+      ui.setShowUsage(false)
+      ui.setShowSkillsDialog(false)
+      ui.closeSettings()
+      const existing = appStore().workspaces.find(w => !w.rootPath)
+      await appStore().selectWorkspace(existing?.id ?? appStore().addWorkspace())
+      break
+    }
+    case 'openSettings': useUIStore.getState().openSettings(); break
+    case 'openRepository': useUIStore.getState().openRepository(); break
+    case 'openPullRequests': useUIStore.getState().openRepository('pullRequests'); break
+    case 'openUsage': useUIStore.getState().setShowUsage(true); break
+    case 'skills': useUIStore.getState().setShowSkillsDialog(true); break
+    case 'showTutorial':
+      useSettingsStore.getState().setSetting('onboardingCompleted', false)
+      window.electronAPI?.trackFeatureUsed?.('onboarding_replayed')
+      break
+    case 'deleteRuntime':
+      if (isRemoteRuntimeConnection(appStore().getWorkspace(selectedWorkspaceId)?.connection)) {
+        await appStore().deleteRuntime(selectedWorkspaceId)
+      }
+      break
+    case 'newWindow':
+    case 'closeWindow':
+    case 'toggleFullscreen':
+    case 'reloadWindow':
+    case 'toggleDevTools':
+    case 'checkForUpdates':
+    case 'documentation':
+    case 'reportIssue':
+      await window.electronAPI.runNativeAction(action)
+      break
     case 'newTerminal':
     case 'newBrowser':
     case 'newEditor':
@@ -249,6 +314,10 @@ export async function runAction(
         }
       }
       break
+    }
+    default: {
+      const unhandled: never = action
+      throw new Error(`Unhandled action: ${unhandled}`)
     }
   }
 }

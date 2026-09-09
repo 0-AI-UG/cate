@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react'
-import { ChevronsDown as CaretDoubleDown, ChevronsUp as CaretDoubleUp, Check, Code, FileSearch as FileMagnifyingGlass, Pin as PushPin } from 'lucide-react'
+import { ChevronsDown as CaretDoubleDown, ChevronsUp as CaretDoubleUp, Check, Code, FileSearch as FileMagnifyingGlass, Pin as PushPin, Terminal } from 'lucide-react'
 import type { AgentDef, AgentId } from '../../shared/agents'
 import type { ReviewPanelState, WorkspaceState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
@@ -23,7 +23,7 @@ export const ToolbarButton: React.FC<{
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors disabled:opacity-30 ${active ? 'bg-hover-strong text-primary' : 'text-muted hover:text-primary hover:bg-hover'}`}
+      className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center transition-colors disabled:opacity-30 ${active ? 'bg-hover-strong text-primary' : 'text-muted hover:text-primary hover:bg-hover'}`}
     >
       {children}
     </button>
@@ -60,13 +60,13 @@ export const ReviewActionButton: React.FC<{
   <button
     type="button"
     aria-label={label}
-    title={title}
+    title={title ?? label}
     disabled={disabled}
     onClick={onClick}
-    className="h-7 px-2.5 rounded-lg flex items-center gap-1.5 border border-subtle bg-surface-2 text-[11px] text-secondary hover:text-primary hover:bg-hover disabled:opacity-30 disabled:pointer-events-none transition-colors"
+    className="review-action h-7 shrink-0 px-2.5 rounded-lg flex items-center justify-center gap-1.5 border border-subtle bg-surface-2 text-[11px] text-secondary hover:text-primary hover:bg-hover disabled:opacity-30 disabled:pointer-events-none transition-colors"
   >
-    {children}
-    <span>{label}</span>
+    {children ?? <Terminal size={14} />}
+    <span className="review-action-label whitespace-nowrap">{label}</span>
   </button>
 )
 
@@ -78,7 +78,7 @@ export function ReviewDisplayOptions({ display, update }: { display: Pick<Review
 }
 
 export function ReviewStats({ files, additions, deletions }: { files: number; additions: number; deletions: number }) {
-  return <span className="text-[11px] text-muted tabular-nums mr-1">{files} files <span className="text-diff-add">+{additions}</span>{' '}<span className="text-diff-del">-{deletions}</span></span>
+  return <span className="review-stats whitespace-nowrap text-[11px] text-muted tabular-nums mr-1" title={`${files} files, +${additions} −${deletions}`}>{files} files <span className="review-line-stats"><span className="text-diff-add">+{additions}</span>{' '}<span className="text-diff-del">-{deletions}</span></span></span>
 }
 
 export function ReviewRunStatus({ state, workspace, workspaceId, panelId }: { state: ReviewPanelState; workspace?: WorkspaceState; workspaceId: string; panelId: string }) {
@@ -91,7 +91,7 @@ export function ReviewRunStatus({ state, workspace, workspaceId, panelId }: { st
     if (latest?.agentReview?.runId !== review.runId || latest.agentReview.status !== 'working') return
     app.setPanelReviewState(workspaceId, panelId, { ...latest, agentReview: { ...review, status: 'failed', completedAt: run.endedAt } })
   }, [review, run?.endedAt, workspaceId, panelId])
-  return review ? <span className={`text-[10px] mr-1 ${review.status === 'complete' ? 'text-green-400' : review.status === 'failed' ? 'text-red-400' : 'text-blue-400'}`}>Terminal review: {review.status}</span> : null
+  return review ? <span title={`Terminal review: ${review.status}`} className={`review-run-status whitespace-nowrap text-[10px] mr-1 ${review.status === 'complete' ? 'text-green-400' : review.status === 'failed' ? 'text-red-400' : 'text-blue-400'}`}><span className="review-run-prefix">Terminal review: </span>{review.status}</span> : null
 }
 
 export function ReviewFileFilter({ value, onChange, allCollapsed, disabled, onToggleCollapsed }: { value: string; onChange: (value: string) => void; allCollapsed: boolean; disabled: boolean; onToggleCollapsed: () => void }) {

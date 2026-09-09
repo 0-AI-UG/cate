@@ -157,7 +157,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({ headerTitle = 'Workspa
             >
               {allExpanded ? <CaretDoubleUp size={14} /> : <CaretDoubleDown size={14} />}
             </SidebarHeaderButton>
-            <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
+            <SidebarHeaderButton action="newWorkspace" onClick={handleNewWorkspace} title="New Workspace">
               <Plus size={14} />
             </SidebarHeaderButton>
           </>

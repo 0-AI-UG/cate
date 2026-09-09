@@ -1,3 +1,4 @@
+import { Tooltip } from '../ui/Tooltip'
 // =============================================================================
 // DockTabBar — pure tab-pill row rendering. Renders each tab as a TabPill with
 // the active accent, icon, title (or rename input), and close button. Used
@@ -303,6 +304,7 @@ export function DockTabBar(props: DockTabBarProps) {
               <AwaitingIndicator />
             )}
             {onClosePanel && (
+              <Tooltip label="Close panel" action={isActive ? 'closePanel' : undefined}>
               <span
                 className={`shrink-0 p-0.5 rounded-md text-muted hover:text-red-400 hover:bg-hover cursor-pointer transition-opacity ${
                   isActive ? 'opacity-70' : 'opacity-0 group-hover:opacity-100'
@@ -314,6 +316,7 @@ export function DockTabBar(props: DockTabBarProps) {
               >
                 <X size={compact ? 12 : 11} />
               </span>
+              </Tooltip>
             )}
           </TabPill>
         )

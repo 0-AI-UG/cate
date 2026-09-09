@@ -532,7 +532,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         } ${isSelected ? 'bg-surface-6' : ''}`}
         onClick={handlePickFolder}
         onContextMenu={handleContextMenu}
-        title={workspace.rootPathError || 'Click to choose a project folder'}
+        title={workspace.rootPathError || 'Choose project folder'}
       >
         <FolderPlus size={14} className="flex-shrink-0 opacity-60" />
         <span className="flex-1 min-w-0 inline-flex items-center gap-1.5 text-[14px] truncate italic">
@@ -809,7 +809,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         ) : (
           <span
             className={`flex-1 min-w-0 text-[14px] truncate ${isSelected ? 'cursor-text' : ''}`}
-            title={isSelected ? 'Click to rename' : workspace.rootPath}
+            title={isSelected ? 'Rename workspace' : workspace.rootPath}
             onClick={handleTitleClick}
             onDoubleClick={(e) => { e.stopPropagation(); beginRename() }}
           >

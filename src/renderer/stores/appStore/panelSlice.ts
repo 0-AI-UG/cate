@@ -265,11 +265,11 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       // Remove from workspace panels (always do this to ensure cleanup)
       set((state) => ({
         workspaces: state.workspaces.map((ws) => {
-          if (ws.id !== workspaceId) return ws
+          if (ws.id !== workspaceId || !ws.panels[panelId]) return ws
           const remainingPanels = { ...ws.panels }
           delete remainingPanels[panelId]
           for (const id of childIds) delete remainingPanels[id]
-          return { ...ws, panels: remainingPanels }
+          return { ...ws, layoutRootPath: ws.rootPath, panels: remainingPanels }
         }),
       }))
     },
@@ -414,7 +414,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
           if (ws.id !== workspaceId) return ws
           if (!(panelId in ws.panels)) return ws
           const { [panelId]: _removed, ...remainingPanels } = ws.panels
-          return { ...ws, panels: remainingPanels }
+          return { ...ws, layoutRootPath: ws.rootPath, panels: remainingPanels }
         }),
       }))
     },
@@ -433,7 +433,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       }
       set((state) => ({
         workspaces: state.workspaces.map((w) =>
-          w.id === wsId ? { ...w, panels: {} } : w,
+          w.id === wsId ? { ...w, layoutRootPath: w.rootPath, panels: {} } : w,
         ),
       }))
 
@@ -442,10 +442,8 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       }
 
       // Reset the workspace's OWN dock store so the just-cleared panel IDs don't
-      // linger as orphan tabs (which render as a generic "Panel" tab), then mint a
-      // fresh canvas panel for the center zone.
+      // linger as orphan tabs. The resulting empty dock is intentional.
       getOrCreateWorkspaceDockStore(wsId).getState().restoreSnapshot(createCleanDockSnapshot())
-      get().ensureCenterCanvas(wsId)
     },
 
     bumpReloadEpoch(wsId) {

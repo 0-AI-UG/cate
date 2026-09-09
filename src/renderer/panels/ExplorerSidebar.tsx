@@ -4,9 +4,8 @@ const MIN_WIDTH = 180
 const MAX_WIDTH = 480
 const COLLAPSE_OVERSHOOT = 64
 
-export function ExplorerSidebar({ visible, fill = false, onHide, children }: {
+export function ExplorerSidebar({ visible, onHide, children }: {
   visible: boolean
-  fill?: boolean
   onHide: () => void
   children: ReactNode
 }) {
@@ -19,12 +18,12 @@ export function ExplorerSidebar({ visible, fill = false, onHide, children }: {
     ref={sidebarRef}
     aria-hidden={!visible}
     className={`relative shrink-0 h-full ${dragging ? '' : 'transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none'}`}
-    style={{ width: visible ? (fill ? '100%' : width) : 0, maxWidth: fill ? 'none' : '70%', opacity: visible ? 1 : 0 }}
+    style={{ width: visible ? width : 0, maxWidth: '70%', opacity: visible ? 1 : 0 }}
   >
-    <div className={`h-full overflow-hidden ${fill ? '' : 'border-l border-subtle'}`} style={{ visibility: visible ? 'visible' : 'hidden', transition: visible ? undefined : 'visibility 0s 200ms' }}>
-      <div className="h-full" style={{ width: fill ? '100%' : width }}>{children}</div>
+    <div className="h-full overflow-hidden border-l border-subtle" style={{ visibility: visible ? 'visible' : 'hidden', transition: visible ? undefined : 'visibility 0s 200ms' }}>
+      <div className="h-full" style={{ width }}>{children}</div>
     </div>
-    {visible && !fill && <div
+    {visible && <div
       role="separator"
       aria-label="Resize file explorer"
       aria-orientation="vertical"

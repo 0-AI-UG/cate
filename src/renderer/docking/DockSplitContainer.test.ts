@@ -16,6 +16,14 @@ const horizontalSplit: DockSplitNode = {
 const panelType = (panelId: string): PanelType => panelId as PanelType
 
 describe('clampSplitDelta', () => {
+  it('lets a diff pane shrink below half the split down to 320px', () => {
+    const split: DockSplitNode = { ...horizontalSplit, children: [
+      { type: 'tabs', id: 'review-stack', panelIds: ['review'], activeIndex: 0 },
+      { type: 'tabs', id: 'editor-stack', panelIds: ['editor'], activeIndex: 0 },
+    ] }
+    expect(clampSplitDelta(split, 0, -0.15, 1000, panelType)).toBeCloseTo(-0.15)
+    expect(clampSplitDelta(split, 0, -0.4, 1000, panelType)).toBeCloseTo(320 / 995 - 0.5)
+  })
   it('keeps a canvas at least its minimum wide in a horizontal split', () => {
     expect(clampSplitDelta(horizontalSplit, 0, -0.4, 2000, panelType)).toBeCloseTo(PANEL_MINIMUM_SIZES.canvas.width / 1995 - 0.5)
   })

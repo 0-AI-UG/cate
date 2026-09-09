@@ -1,5 +1,5 @@
 import { app, ipcMain, powerSaveBlocker } from 'electron'
-import { KEEP_AWAKE_GET, KEEP_AWAKE_SET, KEEP_AWAKE_CHANGED } from '../../shared/ipc-channels'
+import { KEEP_AWAKE_TOGGLE, KEEP_AWAKE_GET, KEEP_AWAKE_SET, KEEP_AWAKE_CHANGED } from '../../shared/ipc-channels'
 import { broadcastToAll } from '../windowRegistry'
 
 export function registerKeepAwakeHandlers(): void {
@@ -12,7 +12,7 @@ export function registerKeepAwakeHandlers(): void {
   }
 
   ipcMain.handle(KEEP_AWAKE_GET, () => isEnabled())
-  ipcMain.handle(KEEP_AWAKE_SET, (_event, enabled: boolean) => {
+  const setEnabled = (enabled: boolean) => {
     if (typeof enabled !== 'boolean') throw new TypeError('Expected a boolean')
     if (enabled) {
       if (!isEnabled()) blockerId = powerSaveBlocker.start('prevent-display-sleep')
@@ -22,7 +22,9 @@ export function registerKeepAwakeHandlers(): void {
     const active = isEnabled()
     broadcastToAll(KEEP_AWAKE_CHANGED, active)
     return active
-  })
+  }
+  ipcMain.handle(KEEP_AWAKE_SET, (_event, enabled: boolean) => setEnabled(enabled))
+  ipcMain.handle(KEEP_AWAKE_TOGGLE, () => setEnabled(!isEnabled()))
 
   app.on('will-quit', stop)
 }

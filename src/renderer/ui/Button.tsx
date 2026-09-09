@@ -1,3 +1,4 @@
+import type { ShortcutAction } from '../../shared/types'
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { Tooltip } from './Tooltip'
 import { Spinner } from './Spinner'
@@ -55,6 +56,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 })
 
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  action?: ShortcutAction
   label: string
   tooltipPlacement?: 'top' | 'bottom' | 'left' | 'right'
   size?: number
@@ -65,6 +67,7 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton({
   label,
+  action,
   tooltipPlacement = 'bottom',
   size = 28,
   tone = 'default',
@@ -91,5 +94,5 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       {loading ? <Spinner size={Math.min(15, size - 10)} /> : children}
     </button>
   )
-  return <Tooltip label={label} placement={tooltipPlacement}>{button}</Tooltip>
+  return <Tooltip action={action} label={label} placement={tooltipPlacement}>{button}</Tooltip>
 })

@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useRef } from 'react'
 import { useDockStoreContext, useDockStoreApi } from '../stores/DockStoreContext'
 import { useSelectedWorkspace } from '../stores/appStore'
 import { PANEL_MINIMUM_SIZES, type DockZonePosition } from '../../shared/types'
+import { WorkspaceEmptyState } from './WorkspaceEmptyState'
 import DockZone from '../docking/DockZone'
 import DockResizeHandle from '../docking/DockResizeHandle'
 import {
@@ -175,6 +176,7 @@ export default function MainWindowShell({
         <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden" style={maximizedZone && maximizedZone !== 'center' ? { display: 'none' } : undefined}>
           <DockZone
             position="center"
+            emptyContent={<WorkspaceEmptyState workspaceId={selectedWorkspace?.id ?? ''} />}
             renderPanel={renderPanel}
             getPanelTitle={getPanelTitle}
             onClosePanel={onClosePanel}

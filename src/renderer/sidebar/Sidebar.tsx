@@ -1,3 +1,4 @@
+import { useShortcutLabel } from '../stores/shortcutStore'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ProjectList } from './ProjectList'
 import { useUIStore } from '../stores/uiStore'
@@ -30,6 +31,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
   const isFullscreen = useWindowFullscreen()
   const macTrafficLightsInset = IS_MAC && !isFullscreen ? TRAFFIC_LIGHTS_WIDTH : 0
 
+  const shortcutLabel = useShortcutLabel()
   const [width, setWidth] = useState(defaultWidth)
   const [isResizing, setIsResizing] = useState(false)
   const startXRef = useRef(0)
@@ -87,7 +89,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
             <>
               {/* The standalone ⌘K search icon was removed now that the dedicated
                   Search view exists; ⌘K still opens the command palette via keyboard. */}
-              <Tooltip label="Skills" placement="top">
+              <Tooltip action="skills" label="Skills" placement="top">
                 <button
                   type="button"
                   className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover focus-visible:outline-offset-[-2px] transition-colors"
@@ -97,12 +99,12 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
                   <PuzzlePiece size={16} className="pointer-events-none" />
                 </button>
               </Tooltip>
-              <Tooltip label="Repository" placement="top">
+              <Tooltip action="openRepository" label="Repository" placement="top">
                 <button type="button" aria-label="Repository" onClick={() => useUIStore.getState().openRepository()} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-secondary">
                   <GitPullRequest size={16} />
                 </button>
               </Tooltip>
-              <Tooltip label="Usage" placement="top">
+              <Tooltip action="openUsage" label="Usage" placement="top">
                 <button
                   type="button"
                   className={`flex items-center justify-center w-8 h-8 rounded-lg hover:bg-hover transition-colors ${showUsage ? 'bg-hover text-primary' : 'text-muted hover:text-secondary'}`}
@@ -113,7 +115,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
                   <ChartNoAxesCombined size={16} className="pointer-events-none" />
                 </button>
               </Tooltip>
-              <Tooltip label="Settings" placement="top">
+              <Tooltip action="openSettings" label="Settings" placement="top">
                 <button
                   type="button"
                   className={`flex items-center justify-center w-8 h-8 rounded-lg hover:bg-hover focus-visible:outline-offset-[-2px] transition-colors ${showSettings ? 'bg-hover text-primary' : 'text-muted hover:text-secondary'}`}
@@ -149,6 +151,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             onClick={() => setSidebarHidden(true)}
             aria-label="Hide sidebar"
+                    title={shortcutLabel('toggleSidebar', 'Hide sidebar')}
           >
             <SidebarSimple size={16} />
           </button>
@@ -168,6 +171,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
                     className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover transition-colors"
                     onClick={() => setSidebarHidden(true)}
                     aria-label="Hide sidebar"
+                    title={shortcutLabel('toggleSidebar', 'Hide sidebar')}
                   >
                     <SidebarSimple size={16} />
                   </button>

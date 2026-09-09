@@ -15,6 +15,7 @@ import { setPendingReveal } from '../lib/editor/editorReveal'
 import { useAppStore } from '../stores/appStore'
 
 interface DockZoneProps {
+  emptyContent?: React.ReactNode
   trailingControls?: React.ReactNode
   newTabControl?: React.ReactNode
   fill?: boolean
@@ -30,7 +31,7 @@ interface DockZoneProps {
   onPanelRenamed?: (panelId: string, title: string) => void
 }
 
-export default function DockZone({ trailingControls, newTabControl, fill, keepMounted, position, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel, workspaceId, onPanelRemoved, onPanelRenamed }: DockZoneProps) {
+export default function DockZone({ emptyContent, trailingControls, newTabControl, fill, keepMounted, position, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel, workspaceId, onPanelRemoved, onPanelRenamed }: DockZoneProps) {
   const zone = useDockStoreContext((s) => s.zones[position])
   const zoneRef = useRef<HTMLDivElement>(null)
 
@@ -158,8 +159,7 @@ export default function DockZone({ trailingControls, newTabControl, fill, keepMo
           }}
         />
       ) : (
-        // Empty center zone — show background
-        isCenter && <div className="w-full h-full" />
+        emptyContent ?? (isCenter && <div className="w-full h-full" />)
       )}
     </div>
   )

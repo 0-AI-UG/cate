@@ -17,7 +17,7 @@ vi.mock('../../main/logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), e
 vi.mock('../../main/runtime/runtimeManager', () => ({ runtimes: { resolve } }))
 vi.mock('./skillStore', () => store)
 vi.mock('./savedSkills', () => saved)
-vi.mock('./skillSources', () => ({ getToken: () => 'token' }))
+vi.mock('../../main/github/cli', () => ({ getGithubToken: async () => 'token' }))
 vi.mock('./githubCrawl', () => ({ fetchSkillFiles }))
 
 import { install, saveSkill, uninstall, writeSkillToWorkspace } from './skillsInstaller'
@@ -260,7 +260,7 @@ it('a later unsave cannot be undone by a pending library fetch', async () => {
   fetchSkillFiles.mockImplementationOnce(() => new Promise(resolve => { resolveFetch = resolve }))
   const saving = saveSkill(entry())
   const removing = unsaveSkill(entry().id)
-  await Promise.resolve()
+  await vi.waitFor(() => expect(fetchSkillFiles).toHaveBeenCalled())
   resolveFetch([{ relPath: 'SKILL.md', text: 'new' }])
   await Promise.all([saving, removing])
   const addOrder = saved.addSaved.mock.invocationCallOrder.at(-1) ?? 0

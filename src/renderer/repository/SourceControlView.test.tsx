@@ -24,15 +24,16 @@ afterEach(() => { act(() => root.unmount()); host.remove() })
 it('scopes files and drafts to Changes while history remains on the repository root', async () => {
   await act(async () => root.render(<SourceControlView workspaceId="ws" rootPath="/repo" />))
   expect(host.querySelector('textarea')!.value).toBe('main draft')
-  const select = host.querySelector('select')!
-  await act(async () => { select.value = 'feature'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  window.electronAPI.showContextMenu = vi.fn().mockResolvedValue('feature')
+  const selector = host.querySelector<HTMLButtonElement>('[aria-label^="Changes worktree"]')!
+  await act(async () => selector.click())
   expect(host.querySelector('textarea')!.value).toBe('feature draft')
   expect(window.electronAPI.gitLog).toHaveBeenLastCalledWith('/repo', 30, 'ws')
   // A partially staged file still exposes its remaining unstaged changes.
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Stage file"]')!.click())
   expect(window.electronAPI.gitStage).toHaveBeenCalledWith('/repo/feature', 'partial.ts', 'ws')
   await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent === 'History')!.click())
-  expect(host.querySelector('select')).toBeNull()
+  expect(host.querySelector('[aria-label^="Changes worktree"]')).toBeNull()
   expect(host.querySelector('textarea')).toBeNull()
 })
 

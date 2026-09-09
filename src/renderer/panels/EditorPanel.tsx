@@ -1,3 +1,4 @@
+import { useShortcutLabel } from '../stores/shortcutStore'
 import { captureEditorPanel } from '../lib/editor/editorDocuments'
 import { panelSearchStore } from '../stores/panelSearchStores'
 // =============================================================================
@@ -6,7 +7,7 @@ import { panelSearchStore } from '../stores/panelSearchStores'
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, Search } from 'lucide-react'
 import { perfCount, useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
@@ -14,6 +15,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { EditorPanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
+import { useWorktrees } from '../stores/useWorktrees'
+import { WorktreeSelector } from '../ui/WorktreeSelector'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
@@ -42,8 +45,8 @@ import { Tooltip } from '../ui/Tooltip'
 import { isRuntimeLocator } from '../../shared/runtimeLocator'
 import { LoadingState } from '../ui/Spinner'
 import { PanelCenteredState } from '../ui/PanelCenteredState'
-import { worktreeForPanel } from '../lib/worktreeContext'
-import { toRelativePath } from '../../shared/pathUtils'
+import { worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
+import { toAbsolutePath, toRelativePath } from '../../shared/pathUtils'
 import { FileExplorer } from '../sidebar/FileExplorer'
 import { getDocumentType, openFileAsPanel } from '../lib/fs/fileRouting'
 import { NodePopover, useNodePopover } from '../ui/Popover'
@@ -246,6 +249,7 @@ export default function EditorPanel({
   nodeId,
 }: EditorPanelProps) {
   useRenderCount('EditorPanel')
+  const shortcutLabel = useShortcutLabel()
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const diffOverlayRef = useRef<HTMLDivElement>(null)
@@ -253,10 +257,8 @@ export default function EditorPanel({
   const [markdownContent, setMarkdownContent] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [fileLoading, setFileLoading] = useState(!!filePath)
-  const [editorVisible, setEditorVisible] = useState(true)
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [toolbarScroll, setToolbarScroll] = useState({ left: false, right: false })
-  const [explorerActionsTarget, setExplorerActionsTarget] = useState<HTMLDivElement | null>(null)
   const [editorBackground, setEditorBackground] = useState(() => getActiveTheme().editor.colors?.['editor.background'] ?? 'var(--surface-1)')
   const openButtonRef = useRef<HTMLButtonElement>(null)
   const [openApps, setOpenApps] = useState<Array<{ id: string; name: string; icon: string }>>([])
@@ -266,7 +268,9 @@ export default function EditorPanel({
   const workspaces = useAppStore((s) => s.workspaces)
   const ws = workspaces.find((w) => w.id === workspaceId)
   const panel = ws?.panels[panelId]
-  const explorerRoot = worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath ?? ''
+  const worktrees = useWorktrees(ws?.rootPath ?? '', workspaceId)
+  const currentWorktree = worktreeForPanel(panel, worktrees)
+  const explorerRoot = currentWorktree?.path ?? worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath ?? ''
   const explorerVisible = panel?.sidebarVisible !== false
   const setExplorerVisible = (visible: boolean) => useAppStore.getState().setPanelNavigation(workspaceId, panelId, panel?.sidebarView === 'search' ? 'search' : 'explorer', visible)
 
@@ -288,7 +292,7 @@ export default function EditorPanel({
       toolbar.removeEventListener('scroll', update)
       observer.disconnect()
     }
-  }, [filePath, explorerVisible, searchVisible, editorVisible])
+  }, [filePath, explorerVisible, searchVisible])
   const setNavigationView = (view: 'explorer' | 'search') => {
     useAppStore.getState().setPanelNavigation(workspaceId, panelId, view)
   }
@@ -301,7 +305,7 @@ export default function EditorPanel({
       { id: 'project', label: 'Copy Path Relative to Project' },
       { id: 'repo', label: 'Copy Path Relative to Repository' },
     ])
-    const repoRoot = worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath ?? ''
+    const repoRoot = explorerRoot
     const value = id === 'absolute'
       ? filePath
       : id === 'project'
@@ -310,7 +314,7 @@ export default function EditorPanel({
           ? toRelativePath(filePath, repoRoot)
           : null
     if (value) void navigator.clipboard.writeText(value)
-  }, [filePath, panel, ws])
+  }, [filePath, explorerRoot, ws])
 
   const runOpenAction = useCallback(async (id: string) => {
     if (!filePath) return
@@ -329,7 +333,8 @@ export default function EditorPanel({
   // creates the element without a key), so local state would leak the toggle
   // from one markdown file to the next. Keying it by panelId also keeps each
   // tab's choice independent across canvas switches.
-  const markdownPreview = !!ws?.panels[panelId]?.markdownPreview
+  const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
+  const markdownPreview = isMarkdown && (panel?.markdownPreview ?? true)
   const setMarkdownPreview = useCallback(
     (next: boolean) =>
       useAppStore.getState().setPanelMarkdownPreview(workspaceId, panelId, next),
@@ -357,8 +362,7 @@ export default function EditorPanel({
   }, [isFocused, markdownPreview])
   // File-backed panels operate on their own checkout. This controls Git diff
   // cwd, file-watch scope, and the default folder for saving an untitled file.
-  const checkoutRoot = worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath
-  const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
+  const checkoutRoot = explorerRoot
 
   const markdownPreviewRef = useRef(markdownPreview)
   markdownPreviewRef.current = markdownPreview
@@ -412,7 +416,7 @@ export default function EditorPanel({
         const current = store.getWorkspace(workspaceId)?.panels[panelId]
         if (!await confirmCloseDirtyPanels([current], () => sync.discard())) return
         store.setPanelUnsavedContent(workspaceId, panelId, undefined)
-        store.setPanelMarkdownPreview(workspaceId, panelId, false)
+        store.setPanelMarkdownPreview(workspaceId, panelId, !reveal && /\.mdx?$/i.test(nextPath))
         if (reveal) setPendingReveal(panelId, reveal)
         store.updatePanelFilePath(workspaceId, panelId, nextPath)
         store.updatePanelTitle(workspaceId, panelId, pathDisplayName(nextPath))
@@ -435,12 +439,32 @@ export default function EditorPanel({
     }
   }, [workspaceId, panelId, filePath, sync.discard])
 
+  const switchWorktree = async (worktreeId: string) => {
+    const target = worktrees.find((worktree) => worktree.id === worktreeId && !worktree.isOrphan)
+    if (!target || target.id === currentWorktree?.id || switchingFile.current) return
+    if (filePath) {
+      const sourceRoot = worktreeForPath(filePath, worktrees)?.path ?? explorerRoot
+      const relativePath = toRelativePath(filePath, sourceRoot)
+      if (relativePath === filePath) {
+        window.alert('This file is outside the current worktree. Open a file from this project before switching worktrees.')
+        return
+      }
+      const nextPath = toAbsolutePath(relativePath, target.path)
+      await openExplorerFiles([nextPath])
+      // A cancelled dirty-file prompt must leave both the file and checkout unchanged.
+      if (useAppStore.getState().getWorkspace(workspaceId)?.panels[panelId]?.filePath !== nextPath) return
+    }
+    useAppStore.getState().setPanelWorktreeId(workspaceId, panelId, target.id)
+  }
+
   // ---------------------------------------------------------------------------
   // Mount: create the editor
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
     if (!containerRef.current) return
+    setLoadError(null)
+    setMarkdownContent('')
 
     applyMonacoTheme(getActiveTheme())
     monaco.editor.setTheme(CATE_MONACO_THEME)
@@ -449,6 +473,7 @@ export default function EditorPanel({
 
     perfCount('editorCreate')
     const editor = monaco.editor.create(containerRef.current, {
+      model: null,
       theme: CATE_MONACO_THEME,
       fontFamily,
       fontSize: fontSize || 12,
@@ -522,6 +547,7 @@ export default function EditorPanel({
         retainModel(filePath)
         modelRetained = true
         editor.setModel(cached)
+        if (markdownPreviewRef.current) setMarkdownContent(cached.getValue())
         setFileLoading(false)
         applyPendingReveal()
         // The warm model may be stale: nothing kept it current while this panel
@@ -554,6 +580,7 @@ export default function EditorPanel({
             retainModel(targetPath)
             modelRetained = true
             editor.setModel(model)
+            if (markdownPreviewRef.current) setMarkdownContent(model.getValue())
             // Freshly read from disk — this is our sync point for the save guard.
             sync.noteLoaded(recovered.editorBaseline ?? content)
             if (recovered.unsavedContent !== undefined) { sync.noteUserEdit(); void sync.resyncFromDisk() }
@@ -673,8 +700,6 @@ export default function EditorPanel({
       const model = editorRef.current?.getModel()
       if (model && !model.isDisposed()) {
         setMarkdownContent(model.getValue())
-      } else if (filePath) {
-        window.electronAPI.fsReadFile(filePath, workspaceId).then(setMarkdownContent).catch(() => {})
       }
     } else {
       // Re-layout Monaco after unhiding — dimensions may have changed while hidden
@@ -767,16 +792,30 @@ export default function EditorPanel({
         <button
           onClick={showPathMenu}
           disabled={!filePath}
-          className="min-w-0 shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+          className="min-w-0 flex-1 flex items-center gap-1 px-2 py-1 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
           title={filePath ?? explorerRoot}
         >
-          <span className="truncate text-muted">{pathDisplayName(explorerRoot) || 'Files'}</span>
+          <span className={`${filePath ? 'max-w-[40%]' : ''} truncate text-muted`}>{pathDisplayName(explorerRoot) || 'Files'}</span>
           {filePath && <><ChevronRight size={12} className="shrink-0 text-muted" /><span className="truncate text-primary">{toRelativePath(filePath, explorerRoot)}</span></>}
           <Copy size={12} className="shrink-0" />
           <ChevronDown size={11} className="shrink-0" />
         </button>
-        <div className="flex-1" />
-        <div ref={setExplorerActionsTarget} className={`shrink-0 items-center gap-1 ${explorerVisible && !searchVisible ? 'flex' : 'hidden'}`} />
+        <div className="shrink-0 max-w-40">
+          <WorktreeSelector worktrees={worktrees} value={currentWorktree?.id} onChange={switchWorktree} title="File panel worktree" />
+        </div>
+        {isMarkdown && (
+          <button
+            onClick={() => setMarkdownPreview(!markdownPreview)}
+            className={`shrink-0 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+              markdownPreview
+                ? 'bg-agent/15 text-agent hover:bg-agent/25'
+                : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
+            }`}
+            title={markdownPreview ? 'Show source' : 'Preview markdown'}
+          >
+            {markdownPreview ? 'Source' : 'Preview'}
+          </button>
+        )}
         <button
           onClick={async () => {
             if (!filePath) return
@@ -797,34 +836,24 @@ export default function EditorPanel({
         ><ExternalLink size={13} /><span>Open</span><ChevronDown size={11} /></button>
         <button
           onClick={() => {
-            if (editorVisible) setExplorerVisible(true)
-            setEditorVisible(!editorVisible)
+            if (explorerVisible && !searchVisible) setExplorerVisible(false)
+            else setNavigationView('explorer')
           }}
           disabled={!explorerRoot}
-          className="shrink-0 p-1.5 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
-          title={editorVisible ? 'Show file explorer only' : 'Show editor'}
-          aria-label={editorVisible ? 'Show file explorer only' : 'Show editor'}
-          aria-pressed={!editorVisible}
-        >{editorVisible ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}</button>
-        <button
-          onClick={() => {
-            if (searchVisible || !explorerVisible) setNavigationView('explorer')
-            else setExplorerVisible(false)
-          }}
-          disabled={!editorVisible}
-          className={`shrink-0 p-1.5 rounded-md hover:bg-hover ${explorerVisible && !searchVisible ? 'text-primary bg-surface-3' : 'text-secondary'}`}
-          title={explorerVisible && !searchVisible ? 'Hide file explorer' : 'Show file explorer'}
-          aria-label={explorerVisible && !searchVisible ? 'Hide file explorer' : 'Show file explorer'}
+          className={`shrink-0 p-1.5 rounded-md hover:bg-hover disabled:opacity-40 ${explorerVisible && !searchVisible ? 'text-primary bg-surface-3' : 'text-secondary'}`}
+          title={shortcutLabel('toggleFileExplorer', explorerVisible && !searchVisible ? 'Hide files' : 'Show files')}
+          aria-label="Files sidebar"
           aria-pressed={explorerVisible && !searchVisible}
         ><Folders size={15} /></button>
         <button
           onClick={() => {
-            if (searchVisible && explorerVisible) setExplorerVisible(false)
+            if (explorerVisible && searchVisible) setExplorerVisible(false)
             else setNavigationView('search')
           }}
-          className={`shrink-0 p-1.5 rounded-md hover:bg-hover ${explorerVisible && searchVisible ? 'text-primary bg-surface-3' : 'text-secondary'}`}
-          title="Search in files"
-          aria-label="Search in files"
+          disabled={!explorerRoot}
+          className={`shrink-0 p-1.5 rounded-md hover:bg-hover disabled:opacity-40 ${explorerVisible && searchVisible ? 'text-primary bg-surface-3' : 'text-secondary'}`}
+          title={shortcutLabel('toggleSearch', explorerVisible && searchVisible ? 'Hide search' : 'Search in files')}
+          aria-label="Search sidebar"
           aria-pressed={explorerVisible && searchVisible}
         ><Search size={15} /></button>
       </div>
@@ -866,7 +895,7 @@ export default function EditorPanel({
         </div>
       </NodePopover>}
       <div className="files-content flex-1 min-h-0 flex" style={{ backgroundColor: editorBackground }}>
-      <div className={`${editorVisible ? 'flex-1' : 'hidden'} min-w-0 relative`}>
+      <div className="flex-1 min-w-0 relative">
         {showDiff && conflict?.kind === 'changed' && (
           <div className="absolute inset-0 z-30 bg-surface-1">
             <div ref={diffOverlayRef} className="w-full h-full" />
@@ -878,37 +907,23 @@ export default function EditorPanel({
         {loadError && (
           <PanelCenteredState
             className="absolute inset-0 z-20 bg-surface-1 px-6"
-            title="Couldn’t open this file"
-            description={<span className="break-all text-secondary">{loadError}</span>}
+            title={/ENOENT|no such file/i.test(loadError) ? 'File not found in this worktree' : 'Couldn’t open this file'}
+            description={<span className="break-all text-secondary">{/ENOENT|no such file/i.test(loadError)
+              ? `${filePath ? toRelativePath(filePath, explorerRoot) : 'This file'} is not present here. Choose another worktree or open a file from Files.`
+              : loadError}</span>}
           />
         )}
         {fileLoading && (
           <LoadingState label="Loading file…" className="absolute inset-0 z-20 bg-surface-1 text-sm" />
         )}
         <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
-        {/* Source/Preview toggle — floats over the content's top-right instead
-            of taking a header row. right-3 (12px) clears Monaco's 8px vertical
-            scrollbar lane; z-40 keeps it above the diff (z-30) and load-error
-            (z-20) overlays, matching the reach it had as a header. */}
-        {isMarkdown && (
-          <button
-            onClick={() => setMarkdownPreview(!markdownPreview)}
-            className={`absolute top-1.5 right-3 z-40 px-2 py-0.5 rounded text-[11px] font-medium shadow-sm transition-colors ${
-              markdownPreview
-                ? 'bg-agent/15 text-agent hover:bg-agent/25'
-                : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
-            }`}
-            title={markdownPreview ? 'Show source' : 'Preview markdown'}
-          >
-            {markdownPreview ? 'Source' : 'Preview'}
-          </button>
-        )}
+
       </div>
       {explorerRoot && (
-        <ExplorerSidebar visible={explorerVisible} fill={!editorVisible} onHide={() => setExplorerVisible(false)}>
+        <ExplorerSidebar visible={explorerVisible} onHide={() => setExplorerVisible(false)}>
           {searchVisible
             ? <SearchView store={searchStore} panelId={panelId} focusToken={panel?.navigationEpoch} rootPath={explorerRoot} workspaceId={workspaceId} focusInput={explorerVisible && activePanelId === panelId} onOpenMatch={(path, line, column) => { void openExplorerFiles([path], 'dock', { line, column }) }} />
-            : <FileExplorer workspaceId={workspaceId} panelId={panelId} rootPath={explorerRoot} onOpenFiles={openExplorerFiles} compact actionsTarget={explorerActionsTarget} />}
+            : <FileExplorer workspaceId={workspaceId} panelId={panelId} rootPath={explorerRoot} onOpenFiles={openExplorerFiles} compact />}
         </ExplorerSidebar>
       )}
       </div>
@@ -955,7 +970,7 @@ function MarkdownCodeBlock({ children }: { children: ReactNode }) {
 function MarkdownPreview({ content }: { content: string }) {
   return (
     <div className="absolute inset-0 overflow-auto px-6 py-4">
-      <div className="max-w-3xl mx-auto prose-markdown space-y-3 text-[13px] text-primary leading-relaxed">
+      <div className="max-w-3xl mx-auto prose-markdown space-y-3 [&>:first-child]:mt-0 text-[13px] text-primary leading-relaxed">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{

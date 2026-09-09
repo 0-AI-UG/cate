@@ -4,37 +4,36 @@
 // the wrapped element. Theme-safe (uses surface/border/text tokens).
 // =============================================================================
 
-import React, { cloneElement, isValidElement, useEffect, useId, useRef, useState } from 'react'
+import React, { cloneElement, isValidElement, useEffect, useLayoutEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { displayString, type ShortcutAction } from '../../shared/types'
+import { useResolvedShortcuts } from '../stores/shortcutStore'
 
 interface TooltipProps {
+  action?: ShortcutAction
   label: string
   placement?: 'top' | 'bottom' | 'right' | 'left'
   children: React.ReactElement<React.HTMLAttributes<HTMLElement>>
 }
 
-export const Tooltip: React.FC<TooltipProps> = ({ label, placement = 'bottom', children }) => {
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+export const Tooltip: React.FC<TooltipProps> = ({ label, action, placement = 'bottom', children }) => {
+  const shortcuts = useResolvedShortcuts()
+  const binding = action ? shortcuts[action] : undefined
+  const text = binding?.key ? `${label} (${displayString(binding)})` : label
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const tooltipId = useId()
 
   const show = (el: HTMLElement, delay = 250): void => {
     if (timer.current) clearTimeout(timer.current)
-    const r = el.getBoundingClientRect()
-    const left =
-      placement === 'right' ? r.right + 6 : placement === 'left' ? r.left - 6 : r.left + r.width / 2
-    const top =
-      placement === 'top'
-        ? r.top - 4
-        : placement === 'right' || placement === 'left'
-          ? r.top + r.height / 2
-          : r.bottom + 4
-    timer.current = setTimeout(() => setPos({ top, left }), delay)
+    timer.current = setTimeout(() => setAnchor(el), delay)
   }
+
   const hide = (): void => {
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
-    setPos(null)
+    setAnchor(null)
   }
 
   useEffect(() => {
@@ -48,8 +47,44 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, placement = 'bottom', c
     }
   }, [])
 
+  // Measure before paint so the first visible frame already fits the window.
+  useLayoutEffect(() => {
+    const tooltip = tooltipRef.current
+    if (!anchor || !tooltip) return
+    const position = () => {
+      const rect = anchor.getBoundingClientRect()
+      const { width, height } = tooltip.getBoundingClientRect()
+      const margin = 8
+      const gap = placement === 'left' || placement === 'right' ? 6 : 4
+      let side = placement
+      if (side === 'right' && rect.right + gap + width > window.innerWidth - margin
+        && rect.left - gap - width >= margin) side = 'left'
+      else if (side === 'left' && rect.left - gap - width < margin
+        && rect.right + gap + width <= window.innerWidth - margin) side = 'right'
+      else if (side === 'bottom' && rect.bottom + gap + height > window.innerHeight - margin
+        && rect.top - gap - height >= margin) side = 'top'
+      else if (side === 'top' && rect.top - gap - height < margin
+        && rect.bottom + gap + height <= window.innerHeight - margin) side = 'bottom'
+
+      const left = side === 'right' ? rect.right + gap
+        : side === 'left' ? rect.left - gap - width : rect.left + (rect.width - width) / 2
+      const top = side === 'top' ? rect.top - gap - height
+        : side === 'bottom' ? rect.bottom + gap : rect.top + (rect.height - height) / 2
+      tooltip.style.left = `${Math.max(margin, Math.min(left, window.innerWidth - width - margin))}px`
+      tooltip.style.top = `${Math.max(margin, Math.min(top, window.innerHeight - height - margin))}px`
+      tooltip.style.visibility = 'visible'
+    }
+    position()
+    window.addEventListener('resize', position)
+    window.addEventListener('scroll', position, true)
+    return () => {
+      window.removeEventListener('resize', position)
+      window.removeEventListener('scroll', position, true)
+    }
+  }, [anchor, placement, text])
+
   if (!isValidElement(children)) return children
-  const describedBy = [children.props['aria-describedby'], pos ? tooltipId : null]
+  const describedBy = [children.props['aria-describedby'], anchor ? tooltipId : null]
     .filter(Boolean)
     .join(' ') || undefined
   const child = cloneElement(children, {
@@ -79,26 +114,21 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, placement = 'bottom', c
   return (
     <>
       {child}
-      {pos &&
+      {anchor &&
         createPortal(
           <div
+            ref={tooltipRef}
             id={tooltipId}
             role="tooltip"
-            className="fixed z-[100] pointer-events-none px-1.5 py-0.5 rounded bg-surface-2 border border-subtle text-[11px] text-primary whitespace-nowrap shadow-lg"
+            className="fixed z-[100] pointer-events-none px-1.5 py-0.5 rounded bg-surface-2 border border-subtle text-[11px] text-primary whitespace-normal shadow-lg"
             style={{
-              top: pos.top,
-              left: pos.left,
-              transform:
-                placement === 'top'
-                  ? 'translate(-50%, -100%)'
-                  : placement === 'right'
-                    ? 'translateY(-50%)'
-                    : placement === 'left'
-                      ? 'translate(-100%, -50%)'
-                      : 'translateX(-50%)',
+              visibility: 'hidden',
+              width: 'max-content',
+              maxWidth: 'calc(100vw - 16px)',
+              overflowWrap: 'anywhere',
             }}
           >
-            {label}
+            {text}
           </div>,
           document.body,
         )}

@@ -127,7 +127,7 @@ function GrabButton({
 }) {
   const baseColor = color ?? 'var(--text-secondary)'
   return (
-    <Tooltip label={title}>
+    <Tooltip label={title} action={title === 'Close' ? 'closePanel' : undefined}>
       <button
         data-grab-button
         aria-label={title}

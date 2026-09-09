@@ -20,7 +20,7 @@ export function LeftSidebarReopen() {
       className="absolute top-0 left-0 z-40 flex items-center select-none"
       style={{ height: 44, paddingLeft: IS_MAC && !fullscreen ? TRAFFIC_LIGHTS_WIDTH : 8, WebkitAppRegion: 'no-drag' } as React.CSSProperties}
     >
-      <Tooltip label="Show sidebar" placement="bottom">
+      <Tooltip action="toggleSidebar" label="Show sidebar" placement="bottom">
         <button
           type="button"
           aria-label="Show sidebar"

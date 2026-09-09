@@ -6,6 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { Sidebar } from '../sidebar/Sidebar'
 import { SettingsWindow } from './SettingsWindow'
 
+vi.mock('./RemoteSettings', () => ({ RemoteSettings: () => <div>Remote content</div> }))
 vi.mock('./GeneralSettings', () => ({ GeneralSettings: () => <div>General content</div> }))
 vi.mock('./AppearanceSettings', () => ({ AppearanceSettings: () => <div>Appearance content</div> }))
 vi.mock('./CanvasSettings', () => ({ CanvasSettings: () => <div>Canvas content</div> }))

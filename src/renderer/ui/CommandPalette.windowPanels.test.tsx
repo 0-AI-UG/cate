@@ -207,3 +207,55 @@ describe('CommandPalette in a detached window', () => {
     expect(host.textContent).not.toContain('Other window')
   })
 })
+
+// Coverage follows the catalog so newly registered commands cannot silently
+// disappear from the launcher again.
+describe('command catalog coverage', () => {
+  it('lists every applicable action with its resolved shortcut', async () => {
+    const { SHORTCUT_ACTIONS, SHORTCUT_DISPLAY_NAMES } = await import('../../shared/types')
+    const { useSettingsStore } = await import('../stores/settingsStore')
+    const { storedShortcut } = await import('../../shared/types')
+    useSettingsStore.setState({ customShortcuts: { newTerminal: storedShortcut('j', { command: true }) } })
+    renderPalette('main')
+    for (const id of SHORTCUT_ACTIONS) {
+      if (id === 'commandPalette' || id === 'deleteRuntime') continue
+      expect(host.textContent, id).toContain(SHORTCUT_DISPLAY_NAMES[id])
+    }
+    expect(rowWithText('New Terminal')?.parentElement?.textContent).toContain('⌘J')
+    expect(host.textContent).not.toContain('Delete Runtime')
+    act(() => useSettingsStore.setState({ customShortcuts: {} }))
+  })
+
+  it('opens the requested repository section and closes the palette', () => {
+    renderPalette('main')
+    act(() => rowWithText('Pull Requests')!.click())
+    expect(useUIStore.getState().repositoryTab).toBe('pullRequests')
+    expect(useUIStore.getState().showPullRequests).toBe(true)
+    expect(useUIStore.getState().showCommandPalette).toBe(false)
+    useUIStore.getState().setShowPullRequests(false)
+  })
+
+  it('offers browser commands only for the focused browser and dispatches them', () => {
+    const runNativeAction = vi.fn().mockResolvedValue(undefined)
+    Object.assign(window.electronAPI, { runNativeAction })
+    useAppStore.getState().addPanel('ws-A', { id: 'browser', type: 'browser', title: 'Browser', isDirty: false })
+    setActivePanel('browser')
+    renderPalette('main')
+    expect(host.textContent).toContain('Browser: Reload')
+    act(() => rowWithText('Browser: Reload')!.click())
+    expect(runNativeAction).toHaveBeenCalledWith('browser:reload')
+  })
+})
+
+it('releases the palette focus before running canvas navigation', async () => {
+  const { CanvasStoreProvider } = await import('../stores/CanvasStoreContext')
+  const { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } = await import('../stores/canvasStore')
+  const store = getOrCreateCanvasStoreForPanel('palette-navigation')
+  const navigate = vi.spyOn(store.getState(), 'navigateSelect').mockImplementation(() => {})
+  act(() => root.render(<CanvasStoreProvider store={store}><CommandPalette /></CanvasStoreProvider>))
+  act(() => host.querySelector('input')!.focus())
+  act(() => rowWithText('Navigate to Panel Above')!.click())
+  expect(navigate).toHaveBeenCalledWith('up')
+  navigate.mockRestore()
+  releaseCanvasStoreForPanel('palette-navigation')
+})

@@ -1,3 +1,4 @@
+import { useCanvasToolbarAction } from './useCanvasToolbarAction'
 import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
 import { T3ConversationMenu } from './T3ConversationMenu'
 // =============================================================================
@@ -17,8 +18,7 @@ import { useCanvasStoreApi, useCanvasStoreContext } from '../stores/CanvasStoreC
 import { useUIStore } from '../stores/uiStore'
 import { useUIStateStore } from '../stores/uiStateStore'
 import { cornerFromPoint } from '../lib/canvasCorners'
-import { useResolvedShortcuts } from '../stores/shortcutStore'
-import { displayString, PANEL_DEFAULT_SIZES } from '../../shared/types'
+import { PANEL_DEFAULT_SIZES } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { Tooltip } from '../ui/Tooltip'
@@ -112,7 +112,8 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
           onClick()
         }}
         onMouseDown={handleMouseDown}
-        label="Terminal. Click for recommendations, or drag onto the canvas."
+        action="newTerminal"
+        label="New terminal"
         size="panel"
         tooltipPlacement={placement}
       >
@@ -163,13 +164,6 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const toggleMinimapOpen = useUIStore((s) => s.toggleMinimapOpen)
   const activeTool = useUIStore((s) => s.activeTool)
   const setActiveTool = useUIStore((s) => s.setActiveTool)
-  const shortcuts = useResolvedShortcuts()
-  const toggleToolKey = displayString(shortcuts.toggleTool)
-  const newBrowserKey = displayString(shortcuts.newBrowser)
-  const newEditorKey = displayString(shortcuts.newEditor)
-  const zoomInKey = displayString(shortcuts.zoomIn)
-  const zoomOutKey = displayString(shortcuts.zoomOut)
-  const zoomResetKey = displayString(shortcuts.zoomReset)
   const zoomText = `${Math.round(zoom * 100)}%`
 
   // Responsive layout keyed on the toolbar's measured width and the free space
@@ -219,6 +213,9 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   // In compact mode the resting button expands the vertical toolbar on click.
   // An open fly-out keeps it expanded until that menu closes.
   const [pinned, setPinned] = useState(false)
+  useCanvasToolbarAction('toggleCanvasToolbar', canvasPanelId, () => {
+    if (!isHorizontal) setPinned(value => !value)
+  })
   const [openMenu, setOpenMenu] = useState<'worktree' | 't3' | null>(null)
   const expanded = pinned || openMenu !== null
   const ToolIcon = activeTool === 'hand' ? Hand : Cursor
@@ -235,7 +232,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       {divider}
       <CanvasToolbarButton
         onClick={() => setActiveTool('select')}
-        label={`Select tool (Space, or ${toggleToolKey} inside a panel)`}
+        action="selectTool" label="Select tool"
         active={activeTool === 'select'}
         tooltipPlacement={place}
       >
@@ -243,7 +240,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       </CanvasToolbarButton>
       <CanvasToolbarButton
         onClick={() => setActiveTool('hand')}
-        label={`Hand tool for panning (Space, or ${toggleToolKey} inside a panel)`}
+        action="handTool" label="Hand tool"
         active={activeTool === 'hand'}
         tooltipPlacement={place}
       >
@@ -259,10 +256,10 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       />
       {divider}
       <TerminalSpawnButton onClick={onNewTerminal} canvasPanelId={canvasPanelId} placement={place} />
-      <CanvasToolbarButton onClick={onNewBrowser} label={`Browser (${newBrowserKey})`} size="panel" tooltipPlacement={place}>
+      <CanvasToolbarButton onClick={onNewBrowser} action="newBrowser" label="New browser" size="panel" tooltipPlacement={place}>
         <Globe size={18} />
       </CanvasToolbarButton>
-      <CanvasToolbarButton onClick={onNewEditor} label={`Files (${newEditorKey})`} size="panel" tooltipPlacement={place}>
+      <CanvasToolbarButton onClick={onNewEditor} action="newEditor" label="New files panel" size="panel" tooltipPlacement={place}>
         <Folders size={18} />
       </CanvasToolbarButton>
       <T3ConversationMenu canvasPanelId={canvasPanelId} workspaceId={workspaceId} rootPath={rootPath} tooltipPlacement={place} menuSide={menuSide} onOpenChange={(open) => setOpenMenu(open ? 't3' : null)} />
@@ -333,16 +330,16 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             <div className="w-px h-5 bg-surface-5 mx-1" />
             <CanvasToolbarButton
               onClick={() => canvasApi.getState().animateZoomTo(zoom - 0.1)}
-              label={`Zoom Out (${zoomOutKey})`}
+              action="zoomOut" label="Zoom out"
               size="zoom"
             >
               <Minus size={16} />
             </CanvasToolbarButton>
-            <Tooltip label={`Reset zoom to 100% (${zoomResetKey})`} placement="top">
+            <Tooltip action="zoomReset" label="Reset zoom" placement="top">
               <button
                 type="button"
                 onClick={() => canvasApi.getState().animateZoomTo(1.0)}
-                aria-label={`Reset zoom to 100% (${zoomResetKey})`}
+                aria-label="Reset zoom"
                 style={{ WebkitTapHighlightColor: 'transparent' }}
                 className="text-[11px] font-mono text-secondary hover:text-primary min-w-[40px] text-center select-none rounded-full bg-transparent hover:bg-hover-strong active:bg-hover-strong cursor-pointer px-1.5 py-1 focus:outline-none focus-visible:outline-none transition-all duration-100"
               >
@@ -351,7 +348,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             </Tooltip>
             <CanvasToolbarButton
               onClick={() => canvasApi.getState().animateZoomTo(zoom + 0.1)}
-              label={`Zoom In (${zoomInKey})`}
+              action="zoomIn" label="Zoom in"
               size="zoom"
             >
               <Plus size={16} />
@@ -395,7 +392,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
           </div>
 
           {/* Resting button shows the active tool and toggles the vertical bar. */}
-          <Tooltip label={pinned ? 'Collapse toolbar' : 'Expand toolbar'} placement="left">
+          <Tooltip action="toggleCanvasToolbar" label={pinned ? 'Collapse toolbar' : 'Expand toolbar'} placement="left">
             <button
               type="button"
               onClick={() => setPinned((p) => !p)}
@@ -454,11 +451,12 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
             <Minimap />
           </div>
         )}
+        <Tooltip action="toggleMinimap" label={`${minimapOpen ? 'Hide' : 'Show'} minimap`}>
         <button
           type="button"
           onMouseDown={handleMinimapHandleMouseDown}
           onClick={handleMinimapToggleClick}
-          title={minimapOpen ? 'Hide minimap (drag to move)' : 'Show minimap (drag to move)'}
+          aria-label={minimapOpen ? 'Hide minimap' : 'Show minimap'}
           style={{
             WebkitTapHighlightColor: 'transparent',
             position: 'absolute',
@@ -470,6 +468,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
         >
           {minimapOpen ? <X size={14} /> : <MapTrifold size={18} />}
         </button>
+        </Tooltip>
       </div>
     </div>
     </>

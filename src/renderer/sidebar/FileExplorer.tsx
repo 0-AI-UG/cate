@@ -5,7 +5,6 @@ import { placementForPanel } from '../lib/workspace/canvasAccess'
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import log from '../lib/logger'
 import { RotateCw as ArrowClockwise, FilePlus, FolderPlus, Search as MagnifyingGlass, X } from 'lucide-react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
@@ -46,7 +45,6 @@ interface FileExplorerProps {
   scopeControl?: React.ReactNode
   onOpenFiles?: (paths: string[], mode?: 'dock' | 'canvas') => void
   compact?: boolean
-  actionsTarget?: HTMLElement | null
 }
 
 // One entry per on-screen row, top to bottom (root nodes + children of expanded
@@ -69,7 +67,7 @@ interface ExplorerView {
 // revalidate. Keep the cache bounded independently of the number of workspaces.
 const recentExplorerViews = new Map<string, ExplorerView>()
 
-export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceId, panelId, scopeControl, onOpenFiles, compact = false, actionsTarget }) => {
+export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceId, panelId, scopeControl, onOpenFiles, compact = false }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
   // Expansion state is owned by the explorer (not each FileTreeNode) so this
@@ -651,8 +649,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
       />}
 
       {compact && (
-        <div className="h-10 px-2 flex items-center gap-1">
-          <div className="flex-1 relative">
+        <div className="h-10 shrink-0 px-2 flex items-center gap-1">
+          <div className="flex-1 min-w-0 relative">
             <MagnifyingGlass size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted" />
             <input
               ref={searchInputRef}
@@ -663,13 +661,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
               className="w-full bg-surface-2 text-primary text-xs pl-7 pr-2 py-1.5 rounded-lg border border-subtle focus:border-focus outline-none"
             />
           </div>
+          <div className="shrink-0 flex items-center gap-1">
+            <SidebarHeaderButton onClick={() => startRootCreate('file')} title="New File"><FilePlus size={14} /></SidebarHeaderButton>
+            <SidebarHeaderButton onClick={() => startRootCreate('folder')} title="New Folder"><FolderPlus size={14} /></SidebarHeaderButton>
+            <SidebarHeaderButton onClick={handleReload} title="Reload"><ArrowClockwise size={14} /></SidebarHeaderButton>
+          </div>
         </div>
       )}
-      {compact && actionsTarget && createPortal(<>
-        <SidebarHeaderButton onClick={() => startRootCreate('file')} title="New File"><FilePlus size={14} /></SidebarHeaderButton>
-        <SidebarHeaderButton onClick={() => startRootCreate('folder')} title="New Folder"><FolderPlus size={14} /></SidebarHeaderButton>
-        <SidebarHeaderButton onClick={handleReload} title="Reload"><ArrowClockwise size={14} /></SidebarHeaderButton>
-      </>, actionsTarget)}
 
       {!compact && searchVisible && (
         <div className="px-2 py-1.5 border-b border-subtle flex items-center gap-1">

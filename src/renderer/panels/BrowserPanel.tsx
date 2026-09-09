@@ -1115,7 +1115,7 @@ export default function BrowserPanel({
       >
         {/* Navigation controls — flat ghost buttons */}
         <div className="flex shrink-0 items-center gap-1">
-          <Tooltip label="Back">
+          <Tooltip label="Back (⌘[)">
             <button
               onClick={handleGoBack}
               disabled={!canGoBack}
@@ -1125,7 +1125,7 @@ export default function BrowserPanel({
               <ArrowLeft size={14} />
             </button>
           </Tooltip>
-          <Tooltip label="Forward">
+          <Tooltip label="Forward (⌘])">
             <button
               onClick={handleGoForward}
               disabled={!canGoForward}
@@ -1135,7 +1135,7 @@ export default function BrowserPanel({
               <ArrowRight size={14} />
             </button>
           </Tooltip>
-          <Tooltip label="Reload">
+          <Tooltip label="Reload (⌘R)">
             <button
               onClick={handleReload}
               disabled={isStartPageUrl(currentUrl)}
@@ -1169,6 +1169,7 @@ export default function BrowserPanel({
                 isStartPageUrl(currentUrl) ? 'text-left' : 'text-center'
               }`}
               placeholder="Enter a URL"
+              title="Address bar (⌘L)"
             />
             {isStartPageUrl(currentUrl) && (
               <button

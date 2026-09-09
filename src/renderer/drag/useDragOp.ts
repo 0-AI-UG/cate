@@ -328,22 +328,6 @@ function runEffects(prevActive: ActiveDispatch, next: RuntimeState) {
           workspaceId: resolveOwningWorkspaceId(prevActive.ownerWorkspaceId),
           onRemovedFromCanvas: (panelId, panelType) => {
             const wsId = resolveOwningWorkspaceId(prevActive.ownerWorkspaceId)
-            // If the user just detached the workspace's only canvas, spawn a
-            // fresh empty one so they don't end up staring at an empty dock.
-            // The detached window keeps the contents that were carried via
-            // PanelTransferSnapshot.canvasState.
-            if (panelType === 'canvas') {
-              const app = useAppStore.getState()
-              const ws = app.workspaces.find((w) => w.id === wsId)
-              if (ws) {
-                const remainingCanvases = Object.values(ws.panels).filter(
-                  (p) => p.type === 'canvas' && p.id !== panelId,
-                )
-                if (remainingCanvases.length === 0) {
-                  app.createCanvas(wsId)
-                }
-              }
-            }
             // The panel now lives in the detached window — release its content
             // (PTYs keep running, mid-transfer) and drop it (and a canvas's
             // children) from this workspace so the overview lists only what's

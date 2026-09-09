@@ -1,3 +1,4 @@
+import type { ShortcutAction } from '../../shared/types'
 // =============================================================================
 // SidebarSectionHeader — unified header bar used by every right-sidebar view.
 // Keeps title typography, height, padding, and action button styling consistent.
@@ -54,7 +55,7 @@ export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ titl
  *  portal Tooltip (native title tooltips are flaky in Electron) plus an
  *  aria-label, instead of being passed through to the DOM. */
 export const SidebarHeaderButton: React.FC<
-  React.ButtonHTMLAttributes<HTMLButtonElement> & { spinning?: boolean }
+  React.ButtonHTMLAttributes<HTMLButtonElement> & { spinning?: boolean; action?: ShortcutAction }
 > = ({ children, className = '', spinning, title, 'aria-label': ariaLabel, ...rest }) => {
   const label = typeof title === 'string' ? title : typeof ariaLabel === 'string' ? ariaLabel : 'Action'
   return (

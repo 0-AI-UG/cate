@@ -491,6 +491,7 @@ export interface ElectronAPI {
     workspace: import('./types').ProjectWorkspaceFile,
     session: import('./types').ProjectSessionFile,
     workspaceId?: string,
+    options?: { allowEmptyLayout?: boolean },
   ): Promise<void>
 
   /** Load project-local state from .cate/ directory. Returns null if not found. */
@@ -764,6 +765,7 @@ export interface ElectronAPI {
   windowToggleMaximize(): Promise<void>
 
   /** Close the calling window. */
+  runNativeAction(action: import('./types').NativeAction): Promise<void>
   windowClose(): Promise<void>
 
   /** Close every detached (dock) window belonging to a workspace. Used when the
@@ -777,6 +779,7 @@ export interface ElectronAPI {
   windowSetTitle(title: string): Promise<void>
 
   /** App-wide idle sleep prevention; resets when Cate quits. */
+  toggleKeepAwake(): Promise<boolean>
   getKeepAwake(): Promise<boolean>
   setKeepAwake(enabled: boolean): Promise<boolean>
   onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void
@@ -938,6 +941,10 @@ export interface ElectronAPI {
 
   /** Connect to a remote (SSH) or WSL runtime. Returns the locator rootPath +
    *  connection record to create the workspace with. */
+  remoteConnectionsList(): Promise<import('./runtimeConnection').RemoteRuntimeConnection[]>
+  remoteConnectionsSave(spec: RemoteConnectSpec, previousId?: string): Promise<import('./runtimeConnection').RemoteRuntimeConnection[]>
+  remoteConnectionsRemove(runtimeId: string): Promise<import('./runtimeConnection').RemoteRuntimeConnection[]>
+  onRemoteConnectionsChanged(callback: (connections: import('./runtimeConnection').RemoteRuntimeConnection[]) => void): () => void
   runtimeConnect(spec: RemoteConnectSpec): Promise<RuntimeConnectResult>
 
   /** Re-establish a connection from a stored connection record (session restore
@@ -1145,10 +1152,6 @@ export interface ElectronAPI {
   skillsAddSource(repo: string, opts?: { ref?: string; path?: string }): Promise<{ ok: boolean; error?: string; source?: SkillSource }>
   /** Remove a user-added source. */
   skillsRemoveSource(id: string): Promise<{ ok: boolean }>
-  /** Whether a GitHub token is stored (for higher rate limits / private repos). */
-  skillsGetToken(): Promise<{ hasToken: boolean }>
-  /** Store or clear the GitHub token. */
-  skillsSetToken(token: string | null): Promise<{ ok: boolean }>
 
   /** Main forwards a state-mutating cateHost call to the owning renderer. */
   onCateHostAction(

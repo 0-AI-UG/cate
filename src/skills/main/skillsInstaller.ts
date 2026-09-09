@@ -22,7 +22,7 @@ import { withBundleTransaction, retireBundle, prepareBundle, readInstalledBundle
 import { skillsRootDirs, targetInfo } from './targets'
 import * as skillStore from './skillStore'
 import * as savedSkills from './savedSkills'
-import { getToken } from './skillSources'
+import { getGithubToken } from '../../main/github/cli'
 import {
   isKnownSkillTarget, slugifySkillName,
   type InstalledSkill, type SkillEntry, type SkillTargetId,
@@ -207,7 +207,7 @@ export async function install(entry: SkillEntry, targetId: SkillTargetId, cwd: s
   let fetchError: unknown
   if (entry.source.repo) {
     try {
-      files = await fetchSkillFiles(entry.source, getToken())
+      files = await fetchSkillFiles(entry.source, await getGithubToken())
       if (!files.length) throw new Error('Source returned no skill files')
       // A successful source read also repairs a stale saved-library cache. A
       // cache write is useful but must not block the workspace install.
@@ -293,7 +293,7 @@ async function saveSkillLocked(entry: SkillEntry): Promise<void> {
   // Re-saving must refresh the bytes. `has()` used to make the first cached
   // copy permanent, even when a moving branch such as `main` changed later.
   try {
-    const files = await fetchSkillFiles(entry.source, getToken())
+    const files = await fetchSkillFiles(entry.source, await getGithubToken())
     if (!files.length) throw new Error('Could not fetch skill files')
     await skillStore.cache(entry.id, files)
   } catch (err) {
