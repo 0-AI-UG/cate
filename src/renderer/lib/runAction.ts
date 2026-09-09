@@ -15,12 +15,11 @@ import {
   placementForActivePanel,
 } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
-import { useSearchStore } from '../stores/searchStore'
 import type { MenuActionId } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
 import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
 import { provideAppStoreForHistory } from '../stores/canvas/historySlice'
-import { inheritedWorktreeFromSelection } from './inheritWorktree'
+import { createInteractivePanel } from './panels/createInteractivePanel'
 import { closePanelWithConfirm } from './closePanelWithConfirm'
 import { setActivePanel } from './activePanel'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
@@ -93,49 +92,18 @@ export async function runAction(
     return
   }
   switch (action) {
-    case 'newTerminal': {
-      const placement = placementForActivePanel()
-      const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      if (wsId) {
-        // Inherit the selected terminal/agent's worktree so ⌘T from inside a
-        // worktree opens the new terminal in that same worktree.
-        const canvas = canvasStore()
-        const workspace = appStore().getWorkspace(wsId)
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, workspace?.worktrees) : {}
-        const panelId = appStore().createTerminal(wsId, undefined, undefined, placement, wt.cwd)
-        if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
-      }
-      break
-    }
-    case 'newBrowser': {
-      const placement = placementForActivePanel()
-      const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      if (wsId) appStore().createBrowser(wsId, undefined, undefined, placement)
-      break
-    }
+    case 'newTerminal':
+    case 'newBrowser':
     case 'newEditor':
-    case 'newFile': {
-      const placement = placementForActivePanel()
-      const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      if (wsId) {
-        const canvas = canvasStore()
-        const workspace = appStore().getWorkspace(wsId)
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, workspace?.worktrees) : {}
-        const panelId = appStore().createEditor(wsId, undefined, undefined, placement)
-        if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
-      }
-      break
-    }
+    case 'newFile':
     case 'newAgent': {
       const placement = placementForActivePanel()
+      const focusedId = getFocusedLeafPanelId()
+      const origin = focusedId ? appStore().getWorkspace(selectedWorkspaceId)?.panels[focusedId] : undefined
       const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
       if (wsId) {
-        // Same worktree inheritance as newTerminal. Cate remains the sole
-        // authority for the Agent panel's cwd.
-        const canvas = canvasStore()
-        const workspace = appStore().getWorkspace(wsId)
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, workspace?.worktrees) : {}
-        appStore().createAgent(wsId, undefined, placement, wt.cwd, wt.worktreeId)
+        const type = action === 'newTerminal' ? 'terminal' : action === 'newBrowser' ? 'browser' : action === 'newAgent' ? 'agent' : 'editor'
+        createInteractivePanel(type, { workspaceId: wsId, placement }, origin)
       }
       break
     }
@@ -146,13 +114,8 @@ export async function runAction(
       break
     }
     case 'closePanel': {
-      const canvas = canvasStore()
-      const focusedNodeId = canvas ? focusedNodeIdOf(canvas) : null
-      if (focusedNodeId) {
-        const node = canvas?.nodes[focusedNodeId]
-        const panelId = activeDockPanelId(node?.dockLayout)
-        if (panelId) await closePanelWithConfirm(selectedWorkspaceId, panelId)
-      }
+      const panelId = getFocusedLeafPanelId()
+      if (panelId) await closePanelWithConfirm(selectedWorkspaceId, panelId)
       break
     }
     case 'toggleSidebar':
@@ -165,14 +128,14 @@ export async function runAction(
     }
     case 'toggleSearch': {
       const ui = useUIStore.getState()
-      const next = 'search'
-      ui.requestNavigationView(next)
-      if (next === 'search') useSearchStore.getState().requestFocus()
+      ui.requestNavigationView('search')
       break
     }
-    case 'toggleMinimap':
-      useUIStore.getState().toggleMinimapOpen(getActiveCanvasPanelId() ?? undefined)
+    case 'toggleMinimap': {
+      const canvasPanelId = getActiveCanvasPanelId()
+      if (canvasPanelId) useUIStore.getState().toggleMinimapOpen(canvasPanelId)
       break
+    }
     case 'commandPalette':
       useUIStore.getState().setShowCommandPalette(true)
       break

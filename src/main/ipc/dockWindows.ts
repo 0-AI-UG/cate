@@ -61,8 +61,8 @@ export function registerDockWindowHandlers({ createWindow }: DockWindowDeps): vo
 
   // Close a panel that lives in another window: route the request to its owner,
   // which runs its own dirty/running confirmation gates before closing.
-  ipcMain.handle(CLOSE_WINDOW_PANEL, async (_event, panelId: string) => {
-    return closeWindowPanel(panelId)
+  ipcMain.handle(CLOSE_WINDOW_PANEL, async (_event, panelId: string, operation?: import('../../shared/types').PanelCloseOperation) => {
+    return closeWindowPanel(panelId, operation)
   })
 
   ipcMain.handle(CLOSE_PANEL_IN_WINDOW_RESULT, async (event, requestId: string, closed: boolean) => {
@@ -97,6 +97,16 @@ export function registerDockWindowHandlers({ createWindow }: DockWindowDeps): vo
     })
 
     if (bounds) newWin.setBounds(bounds)
+    // Main retains a recovery snapshot even if the first renderer crashes
+    // before its initial periodic state sync.
+    setDockWindowState(newWin.id, {
+      dockState: { zones: initPayload.dockState },
+      panels: initPayload.panels,
+      rootPath: initPayload.rootPath,
+      worktrees: initPayload.worktrees,
+      terminalCwds: payload.terminalCwds,
+      canvasStates: payload.canvasStates,
+    })
 
     newWin.webContents.once('did-finish-load', () => {
       sendToWindow(newWin.id, DOCK_WINDOW_INIT, initPayload)

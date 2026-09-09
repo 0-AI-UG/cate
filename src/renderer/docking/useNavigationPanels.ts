@@ -1,12 +1,11 @@
 import { useEffect } from 'react'
 import type { WindowDockState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
-import { useDockStoreApi } from '../stores/DockStoreContext'
+import { getOrCreateWorkspaceDockStore } from '../lib/workspace/dockRegistry'
 import { useUIStore } from '../stores/uiStore'
-import { getPanelDef } from '../panels/registry'
-import { findFirstTabStack, findStackContainingPanelAcrossZones } from '../stores/dockTreeUtils'
+import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
+import { findFirstTabStack } from '../stores/dockTreeUtils'
 import { resolvePanelLocation, revealPanel } from '../lib/workspace/panelReveal'
-import { setPanelField } from '../stores/appStore/helpers'
 import { getActivePanelId, setActivePanel } from '../lib/activePanel'
 
 /** Preserve the old right dock's tabs and splits inside the main layout. */
@@ -23,14 +22,15 @@ export function mergeRightDock(zones: WindowDockState): WindowDockState {
         children: [center, zones.right.layout], ratios: [0.62, 0.38],
       } : zones.right.layout,
     },
-    right: { ...zones.right, layout: null, visible: false, maximized: false },
+    right: { ...zones.right, layout: null, visible: false },
   }
 }
 
 export function useNavigationPanels() {
-  const dock = useDockStoreApi()
   const workspaceId = useAppStore((s) => s.selectedWorkspaceId)
+  const dock = workspaceId ? getOrCreateWorkspaceDockStore(workspaceId) : null
   useEffect(() => {
+    if (!dock) return
     const migrate = () => {
       const zones = dock.getState().zones
       const next = mergeRightDock(zones)
@@ -41,6 +41,7 @@ export function useNavigationPanels() {
   }, [dock])
 
   useEffect(() => {
+    if (!dock) return
     const apply = () => {
       const view = useUIStore.getState().requestedNavigationView
       const workspace = useAppStore.getState().getWorkspace(workspaceId)
@@ -51,27 +52,20 @@ export function useNavigationPanels() {
       const type = view === 'git' ? 'sourceControl' : 'editor'
       const existing = Object.values(workspace.panels).sort((a, b) => Number(b.id === getActivePanelId()) - Number(a.id === getActivePanelId())).find((panel) =>
         (view === 'explorer' ? panel.type === 'editor' : panel.type === type) &&
-        (findStackContainingPanelAcrossZones(dock.getState().zones, panel.id) || resolvePanelLocation(workspaceId, panel.id)),
+        resolvePanelLocation(workspaceId, panel.id),
       )
       if (existing) {
-        const stack = findStackContainingPanelAcrossZones(dock.getState().zones, existing.id)
-        if (stack) {
-          const location = dock.getState().getPanelLocation(existing.id)
-          if (location?.type === 'dock' && !dock.getState().zones[location.zone].visible) dock.getState().toggleZone(location.zone)
-          dock.getState().setActiveTab(stack.id, stack.panelIds.indexOf(existing.id))
-        } else {
-          void revealPanel(workspaceId, existing.id)
-        }
-        setActivePanel(existing.id)
-        if (type === 'editor') setPanelField(useAppStore.setState, workspaceId, existing.id, (panel) => ({ ...panel, sidebarView: view === 'search' ? 'search' : 'explorer' }))
+        void revealPanel(workspaceId, existing.id)
+        if (type === 'editor') useAppStore.getState().setPanelNavigation(workspaceId, existing.id, view === 'search' ? 'search' : 'explorer')
         return
       }
       const stack = findFirstTabStack(dock.getState().zones.center.layout)
-      const id = getPanelDef(type).create({ workspaceId, placement: { target: 'none' } })
+      const activeId = getActivePanelId()
+      const id = createInteractivePanel(type, { workspaceId, placement: { target: 'none' } }, activeId ? workspace.panels[activeId] : undefined)
       if (!id) return
       dock.getState().dockPanel(id, 'center', stack ? { type: 'split', stackId: stack.id, edge: 'right' } : undefined)
       setActivePanel(id)
-      if (type === 'editor') setPanelField(useAppStore.setState, workspaceId, id, (panel) => ({ ...panel, sidebarView: view === 'search' ? 'search' : 'explorer' }))
+      if (type === 'editor') useAppStore.getState().setPanelNavigation(workspaceId, id, view === 'search' ? 'search' : 'explorer')
     }
     apply()
     return useUIStore.subscribe(apply)

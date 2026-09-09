@@ -324,6 +324,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
 
     const shell = await electronAPI.settingsGet('defaultShellPath')
     const ptyId = await electronAPI.terminalCreate({
+      waitForReady: true,
       cols,
       rows,
       cwd: resolvedCwd,
@@ -353,6 +354,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     //    reconnectTerminal via wireTerminalListeners). freshSpawn: this is a
     //    brand-new PTY, so the instant-exit diagnostic applies.
     wireTerminalListeners({ panelId, ptyId, opts, terminal, cleanupListeners, freshSpawn: true })
+    await electronAPI.terminalReady(ptyId)
 
     // 6b. Push the terminal's ACTUAL size to the freshly spawned PTY.
     //

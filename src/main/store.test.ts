@@ -45,6 +45,12 @@ vi.mock('./logger', () => ({
 // doesn't create real filesystem watchers on the temp userData dir.
 vi.mock('chokidar', () => ({ watch: () => ({ on: vi.fn(), close: vi.fn() }) }))
 
+const runtimeSettings = vi.hoisted(() => ({ connected: [] as ((id: string, runtime: unknown) => void)[] }))
+vi.mock('./runtime/runtimeManager', () => ({ runtimes: {
+  connectedIds: () => [],
+  onConnected: (callback: (id: string, runtime: unknown) => void) => { runtimeSettings.connected.push(callback); return () => {} },
+} }))
+
 const { registerHandlers, readBootSnapshot, writeBootSnapshot, flushBootSnapshotSync } = await import('./store')
 const { SETTINGS_SET, SETTINGS_RESET, SETTINGS_RELOADED } = await import('../shared/ipc-channels')
 const { DEFAULT_SETTINGS } = await import('../shared/types')
@@ -150,4 +156,14 @@ describe('live theme background', () => {
       vi.unstubAllEnvs()
     }
   })
+})
+
+test('newly connected runtimes receive current settings changed while disconnected', async () => {
+  await handlers.get(SETTINGS_SET)!({}, 'fileExclusions', ['new-exclusion'])
+  await handlers.get(SETTINGS_SET)!({}, 'autoSuspendIdleTerminals', false)
+  const runtime = { setExclusions: vi.fn().mockResolvedValue(undefined), setIdleSuspend: vi.fn().mockResolvedValue(undefined) }
+  runtimeSettings.connected.forEach(notify => notify('local', runtime))
+  await Promise.resolve()
+  expect(runtime.setExclusions).toHaveBeenCalledWith(['new-exclusion'])
+  expect(runtime.setIdleSuspend).toHaveBeenCalledWith(false)
 })

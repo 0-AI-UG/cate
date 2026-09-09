@@ -45,7 +45,11 @@ function restorePanelRecords(workspaceId: string, snapshot: SessionSnapshot): nu
   for (const panel of Object.values(snapshot.panels)) {
     const existing = appStore.getWorkspace(workspaceId)?.panels[panel.id]
     if (!existing) {
-      appStore.addPanel(workspaceId, panel)
+      appStore.addPanel(workspaceId, {
+        ...panel,
+        worktreeId: panel.worktreeId ?? (['navigation', 'search'].includes(panel.type)
+          ? snapshot.worktreeViewScopes?.navigationWorktreeId : undefined),
+      })
       restoredCount += 1
     }
   }
@@ -99,7 +103,7 @@ export async function reloadWorkspaceFromDisk(wsId: string): Promise<void> {
   // remote cate-runtime:// locator reads .cate/ on the runtime next to the
   // remote repo. Both paths round-trip through the same restore below.
 
-  const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath)) as {
+  const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath, ws.id)) as {
     workspace: ProjectWorkspaceFile
     session: ProjectSessionFile | null
   } | null
@@ -182,7 +186,7 @@ export async function hydrateWorkspaceFromDiskIfEmpty(wsId: string): Promise<voi
   // files unread if trust was revoked under a live workspace.
   if (!isProjectTrusted(ws.rootPath)) return
 
-  const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath)) as {
+  const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath, ws.id)) as {
     workspace: ProjectWorkspaceFile
     session: ProjectSessionFile | null
   } | null
@@ -267,9 +271,6 @@ async function restoreSessionHydrate(snapshot: SessionSnapshot, workspaceId: str
   // their persisted worktreeId, and so the colors/labels here win over anything
   // a background sync already discovered for the same checkout paths.
   if (snapshot.worktrees?.length) appStore.hydrateWorktrees(wsId, snapshot.worktrees)
-  if (snapshot.worktreeViewScopes?.navigationWorktreeId) {
-    useUIStore.getState().setNavigationWorktree(wsId, snapshot.worktreeViewScopes.navigationWorktreeId)
-  }
   for (const [repositoryRoot, worktreeId] of Object.entries(
     snapshot.worktreeViewScopes?.sourceControlWorktreeByRepository ?? {},
   )) {

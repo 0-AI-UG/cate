@@ -8,7 +8,7 @@ import log from '../logger'
 import { wrapHandler } from './handlerError'
 import { BROWSER_CONTROL } from '../../shared/ipc-channels'
 import { browserRuntime, type BrowserTargetIdentity } from '../browser/browserRuntime'
-import { actOnBrowserDownload, downloadsForWebContents, watchDownloadsForSession } from '../browser/browserDownloads'
+import { actOnBrowserDownload, downloadsForWebContents, watchDownloadsForSession, bindBrowserDownloadOwner, ownsBrowserDownloads } from '../browser/browserDownloads'
 import { authorizeBrowserUpload } from '../browser/browserUpload'
 import { assertBrowserCodeCell } from '../browser/browserCodeExecution'
 
@@ -50,29 +50,28 @@ export function registerBrowserControlHandlers(): void {
       try { assertBrowserCodeCell(req.codeCellId); return { ok: true } }
       catch { return { error: 'browser-code-cell-cancelled' } }
     }
-    const contents = resolveBrowserGuest(event, req.webContentsId)
-    if (!contents) return { error: 'no-guest' }
     const target = identity(req)
     if (!target) return { error: 'browser-target-required' }
+    // Download ownership survives its source guest, but never its host window.
+    if (req.op === 'downloadAction' && ownsBrowserDownloads(event.sender.id, req.webContentsId, target)) {
+      const downloadId = req.args?.downloadId
+      if (typeof downloadId !== 'string' || !['cancel', 'open', 'show'].includes(req.method ?? '')) return { error: 'invalid-download-action' }
+      return actOnBrowserDownload(req.webContentsId, downloadId, req.method as 'cancel' | 'open' | 'show')
+    }
+    const contents = resolveBrowserGuest(event, req.webContentsId)
+    if (!contents) return { error: 'no-guest' }
 
     if (req.op === 'attach') {
       watchDownloadsForSession(contents.session)
       await browserRuntime.attach(contents, target)
+      bindBrowserDownloadOwner(contents, target)
       return { ok: true }
     }
     if (req.op === 'downloads') {
       if (!browserRuntime.isRegistered(contents.id)) return { error: 'browser-target-not-registered' }
       return { downloads: downloadsForWebContents(contents.id) }
     }
-    if (req.op === 'downloadAction') {
-      if (!browserRuntime.isRegistered(contents.id)) return { error: 'browser-target-not-registered' }
-      const downloadId = req.args?.downloadId
-      const action = req.method
-      if (typeof downloadId !== 'string' || !['cancel', 'open', 'show'].includes(action ?? '')) {
-        return { error: 'invalid-download-action' }
-      }
-      return actOnBrowserDownload(contents.id, downloadId, action as 'cancel' | 'open' | 'show')
-    }
+    if (req.op === 'downloadAction') return { error: 'download-owner-mismatch' }
     if (req.op === 'execute') {
       if (!req.method) return { error: 'browser-method-required' }
       const callerWindowId = BrowserWindow.fromWebContents(event.sender)?.id

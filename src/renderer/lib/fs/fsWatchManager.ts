@@ -2,16 +2,9 @@
 // fsWatchManager — renderer-side refcounted multiplexer over the main-process
 // filesystem watcher.
 //
-// Main keys watch subscriptions by (windowId, path), so if two components in the
-// SAME window each call fsWatchStart for the same root, the second start evicts
-// the first and either one's fsWatchStop tears the shared watcher down for both
-// (see filesystem.ts watchStart/watchStop). The Explorer (left sidebar) and the
-// Search view (right sidebar) can be mounted at the same time, so they'd clobber
-// each other that way.
-//
-// This manager refcounts per root path on the renderer side: it issues exactly
-// one fsWatchStart on the 0->1 transition and one fsWatchStop on the 1->0
-// transition, and fans the single onFsWatchEvent stream out to every subscriber.
+// A root is shared only within its authorization scope. Separate workspaces
+// may legitimately watch the same additional root; releasing one must neither
+// revoke the other's watch nor retain the first workspace's stale grant.
 // =============================================================================
 
 import { awaitWorkspaceSync } from '../../stores/appStore/helpers'
@@ -19,6 +12,7 @@ import { awaitWorkspaceSync } from '../../stores/appStore/helpers'
 export interface FsWatchEvent {
   type: 'create' | 'update' | 'delete'
   path: string
+  scopeId?: string
 }
 type Listener = (event: FsWatchEvent) => void
 
@@ -47,17 +41,18 @@ function toPosix(p: string): string {
 export function watchFsRoot(rootPath: string, listener: Listener, workspaceId?: string): () => void {
   if (!rootPath || !window.electronAPI) return () => {}
 
-  let entry = entries.get(rootPath)
+  const key = JSON.stringify([rootPath, workspaceId])
+  let entry = entries.get(key)
   if (!entry) {
     const created: Entry = { listeners: new Set(), unsubscribe: null, started: false }
-    entries.set(rootPath, created)
+    entries.set(key, created)
     const rootPosix = toPosix(rootPath)
     // onFsWatchEvent delivers every watch event for this window; only forward
     // those under this root (matters when multiple roots are watched at once).
     // Subscribed synchronously so events are caught the moment the watcher starts.
     created.unsubscribe = window.electronAPI.onFsWatchEvent((event) => {
-      if (toPosix(event.path).startsWith(rootPosix)) {
-        entries.get(rootPath)?.listeners.forEach((l) => l(event))
+      if (event.scopeId === workspaceId && (toPosix(event.path) === rootPosix || toPosix(event.path).startsWith(`${rootPosix.replace(/\/$/, '')}/`))) {
+        entries.get(key)?.listeners.forEach((l) => l(event))
       }
     })
     // Defer the watcher start until any in-flight workspace:create/update has
@@ -71,7 +66,7 @@ export function watchFsRoot(rootPath: string, listener: Listener, workspaceId?: 
     awaitWorkspaceSync().then(() => {
       // Bail if every subscriber unsubscribed (or the entry was torn down and
       // recreated) while we waited — the current entry owns its own start.
-      if (entries.get(rootPath) !== created) return
+      if (entries.get(key) !== created) return
       created.started = true
       window.electronAPI?.fsWatchStart(rootPath, workspaceId).catch(() => { /* watcher unavailable */ })
     })
@@ -81,12 +76,12 @@ export function watchFsRoot(rootPath: string, listener: Listener, workspaceId?: 
   entry.listeners.add(listener)
 
   return () => {
-    const e = entries.get(rootPath)
+    const e = entries.get(key)
     if (!e) return
     e.listeners.delete(listener)
     if (e.listeners.size === 0) {
       e.unsubscribe?.()
-      entries.delete(rootPath)
+      entries.delete(key)
       // Only stop a watcher we actually started — see Entry.started.
       if (e.started) {
         window.electronAPI?.fsWatchStop(rootPath, workspaceId).catch(() => { /* already gone */ })

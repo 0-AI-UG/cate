@@ -35,7 +35,7 @@ afterEach(() => {
 
 it('uses the Workspace sidebar for settings with only Back and updates in its footer', () => {
   HTMLElement.prototype.scrollIntoView = vi.fn()
-  useUIStore.setState({ showSettings: true, leftSidebarHidden: false, activeLeftSidebarView: null })
+  useUIStore.setState({ showSettings: true, leftSidebarHidden: false })
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)

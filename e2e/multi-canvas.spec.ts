@@ -23,7 +23,7 @@ const EXTRA_CANVASES = 6
 
 test.beforeEach(async () => {
   ;({ electronApp: app, mainWindow: page } = await launchApp())
-  await page.evaluate(() => window.__cateE2E!.setActiveLeftSidebarView(null))
+  await page.evaluate(() => window.__cateE2E!.setSidebarHidden(true))
   // Seed: 6 extra canvas tabs beside the default one. Each create activates
   // the new tab, so the LAST canvas ends up active/mounted.
   for (let i = 0; i < EXTRA_CANVASES; i++) {

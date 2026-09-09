@@ -1,3 +1,4 @@
+import { detachPanel } from '../lib/panels/detachPanel'
 // =============================================================================
 // useDockTabActions — tab click, context menu, rename, close, and the
 // new-tab / split-with helpers used by both the +/split buttons and the
@@ -13,7 +14,7 @@ import { createTransferSnapshot } from '../lib/panelTransfer'
 import { removePanelFromWindow } from '../lib/panels/removePanelFromWindow'
 import { useAppStore } from '../stores/appStore'
 import type { DockStore } from '../stores/dockStore'
-import { getPanelDef } from '../panels/registry'
+import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
 import { setActivePanel } from '../lib/activePanel'
 import { useMultiNodeSelection } from '../canvas/useMultiNodeSelection'
 import type { NativeContextMenuItem } from '../../shared/electron-api'
@@ -30,6 +31,7 @@ export interface DockTabActionsParams {
   workspaceId?: string
   getPanelProp?: (panelId: string) => PanelState | undefined
   onClosePanel?: (panelId: string) => void
+  onClosePanels?: (panelIds: string[]) => Promise<boolean>
   onPanelRemoved?: (panelId: string) => void
   onPanelRenamed?: (panelId: string, title: string) => void
   excludePanelTypes?: PanelType[]
@@ -40,7 +42,7 @@ export interface DockTabActionsParams {
 export function useDockTabActions(params: DockTabActionsParams) {
   const {
     stack, zone, dockStoreApi, workspaceId, getPanelProp,
-    onClosePanel, onPanelRemoved, onPanelRenamed, excludePanelTypes, localOnly, canSplit,
+    onClosePanel, onClosePanels, onPanelRemoved, onPanelRenamed, excludePanelTypes, localOnly, canSplit,
   } = params
 
   const setActiveTab = useCallback((stackId: string, index: number) => {
@@ -134,24 +136,20 @@ export function useDockTabActions(params: DockTabActionsParams) {
       const panel = getPanelLocal(panelId)
       if (!panel) return
       const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
-      const sourceWs = useAppStore.getState().workspaces.find((w) => w.id === wsId)
-      const snapshot = createTransferSnapshot(
-        panel,
-        { type: 'dock', zone, stackId: stack.id },
-        { origin: { x: 100, y: 100 }, size: { width: 800, height: 600 } },
-        {
-          // A canvas tab carries its children; without this the new window
-          // renders them as generic "Panel" stubs (mirrors the drag path).
-          resolveChildPanel: (childId: string) => sourceWs?.panels[childId],
-          workspaceRootPath: sourceWs?.rootPath || undefined,
-          worktrees: sourceWs?.worktrees,
-        },
-      )
-      // Detach FIRST — only tear down the source once the new window actually
-      // exists. dragDetach returns null when main refuses (e.g. macOS
-      // fullscreen); doing the undock/release before that check would orphan the
-      // panel (removed from the dock tree, xterm disposed) with nowhere to live.
-      const winId = await window.electronAPI.dragDetach(snapshot, wsId)
+      const capture = () => {
+        const sourceWs = useAppStore.getState().workspaces.find(w => w.id === wsId)
+        const current = sourceWs?.panels[panelId]
+        if (!current) return null
+        return createTransferSnapshot(current, { type: 'dock', zone, stackId: stack.id },
+          { origin: { x: 100, y: 100 }, size: { width: 800, height: 600 } }, {
+            resolveChildPanel: childId => sourceWs.panels[childId],
+            workspaceRootPath: sourceWs.rootPath || undefined,
+            worktrees: sourceWs.worktrees,
+          })
+      }
+      const snapshot = capture()
+      if (!snapshot) return
+      const winId = await detachPanel(snapshot, wsId, capture)
       if (winId == null) return
       dockStoreApi.getState().undockPanel(panelId)
       onPanelRemoved?.(panelId)
@@ -170,34 +168,8 @@ export function useDockTabActions(params: DockTabActionsParams) {
       const app = useAppStore.getState()
       const wsId = workspaceId ?? app.selectedWorkspaceId
       const placement: import('../stores/appStore').PanelPlacement = { target: 'none' }
-      const workspace = app.getWorkspace(wsId)
       const activeId = stack.panelIds[stack.activeIndex]
-      const activePanel = activeId ? getPanelLocal(activeId) : undefined
-      const worktree = worktreeForPanel(
-        activePanel,
-        workspace?.worktrees ?? [],
-      )
-
-      if (type === 'terminal') {
-        const panelId = app.createTerminal(wsId, undefined, undefined, placement, worktree?.path)
-        if (panelId && worktree) app.setPanelWorktreeId(wsId, panelId, worktree.id)
-        return panelId
-      }
-      if (type === 'editor') {
-        const panelId = app.createEditor(wsId, undefined, undefined, placement)
-        if (panelId && worktree) app.setPanelWorktreeId(wsId, panelId, worktree.id)
-        return panelId
-      }
-      if (type === 'agent') {
-        return app.createAgent(wsId, undefined, placement, worktree?.path, worktree?.id)
-      }
-      if (type === 'review') {
-        const repoPath = worktree?.path ?? workspace?.rootPath
-        return repoPath ? app.createReview(wsId, repoPath, undefined, undefined, placement) : null
-      }
-      const panelId = getPanelDef(type).create({ workspaceId: wsId, placement })
-      if (panelId && type === 'surface' && worktree) app.setPanelWorktreeId(wsId, panelId, worktree.id)
-      return panelId
+      return createInteractivePanel(type, { workspaceId: wsId, placement }, activeId ? getPanelLocal(activeId) : undefined)
     },
     [workspaceId, stack.panelIds, stack.activeIndex, getPanelLocal],
   )
@@ -312,18 +284,18 @@ export function useDockTabActions(params: DockTabActionsParams) {
           break
         case 'close-others': {
           const others = stack.panelIds.filter((p) => p !== panelId)
-          others.forEach((p) => onClosePanel?.(p))
+          await onClosePanels?.(others)
           break
         }
         case 'close-right': {
           const toClose = stack.panelIds.slice(idx + 1)
-          toClose.forEach((p) => onClosePanel?.(p))
+          await onClosePanels?.(toClose)
           break
         }
         case 'close-all':
           // Multi-selection is handled by the early bulk menu above, so here
           // close-all only ever means "close this stack's tabs".
-          stack.panelIds.slice().forEach((p) => onClosePanel?.(p))
+          await onClosePanels?.(stack.panelIds.slice())
           break
         case 'split-right': {
           splitPanel()
@@ -334,7 +306,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           break
       }
     },
-    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, splitPanel, canSplit, showMultiSelectionMenu, showCloseAll, beginRename, workspaceId],
+    [stack.panelIds, onClosePanel, onClosePanels, getPanelLocal, moveTabToNewWindow, splitPanel, canSplit, showMultiSelectionMenu, showCloseAll, beginRename, workspaceId],
   )
 
   // Tab-bar (empty-area) context menu — split/new menus. Returns a handler
@@ -367,14 +339,14 @@ export function useDockTabActions(params: DockTabActionsParams) {
       if (id === 'split') { splitPanel(); return }
       if (id === 'close-all') {
         // Multi-selection handled by the early bulk menu; here it's stack tabs.
-        stack.panelIds.slice().forEach((p) => onClosePanel?.(p))
+        await onClosePanels?.(stack.panelIds.slice())
         return
       }
       const [kind, type] = id.split(':') as [string, PanelType]
       if (kind === 'new') addTabOfType(type)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stack.panelIds, onClosePanel, excludeKey, addTabOfType, splitPanel, canSplit, showMultiSelectionMenu, showCloseAll],
+    [stack.panelIds, onClosePanel, onClosePanels, excludeKey, addTabOfType, splitPanel, canSplit, showMultiSelectionMenu, showCloseAll],
   )
 
   const handleTabClick = useCallback(

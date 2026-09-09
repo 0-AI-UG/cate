@@ -49,7 +49,7 @@ async function syncOpenWorktrees(
       scopeId: workspaceId,
     })
     const results = await Promise.all(
-      worktrees.map((worktree) => syncWorkspaceSkills(baseCwd, worktree)),
+      worktrees.map((worktree) => syncWorkspaceSkills(baseCwd, worktree, { scopeId: workspaceId, ownerWindowId })),
     )
     return results.flatMap((result) => result.warnings)
   } catch (err) {
@@ -84,7 +84,7 @@ export function registerSkillHandlers(): void {
 
   ipcMain.handle(SKILLS_INSTALL, async (event, entry: SkillEntry, targetId: SkillTargetId, cwd: string, workspaceId?: string) => {
     try {
-      const res = await installer.install(entry, targetId, cwd)
+      const res = await installer.install(entry, targetId, cwd, { scopeId: workspaceId, ownerWindowId: windowFromEvent(event)?.id })
       const mirrorWarnings = await syncOpenWorktrees(
         cwd,
         workspaceId,
@@ -102,7 +102,7 @@ export function registerSkillHandlers(): void {
 
   ipcMain.handle(SKILLS_UNINSTALL, async (event, skillId: string, name: string, targetId: SkillTargetId, cwd: string, workspaceId?: string) => {
     try {
-      await installer.uninstall(skillId, name, targetId, cwd)
+      await installer.uninstall(skillId, name, targetId, cwd, { scopeId: workspaceId, ownerWindowId: windowFromEvent(event)?.id })
       await syncOpenWorktrees(cwd, workspaceId, windowFromEvent(event)?.id)
       return { ok: true as const }
     } catch (err) {
@@ -112,7 +112,7 @@ export function registerSkillHandlers(): void {
 
   ipcMain.handle(SKILLS_REINSTALL_CATE_CLI, async (event, cwd: string, workspaceId?: string) => {
     try {
-      const installedTargets = await reinstallCateCliSkill(cwd)
+      const installedTargets = await reinstallCateCliSkill(cwd, { scopeId: workspaceId, ownerWindowId: windowFromEvent(event)?.id })
       const warnings = await syncOpenWorktrees(cwd, workspaceId, windowFromEvent(event)?.id)
       return { ok: true as const, installedTargets, warnings }
     } catch (err) {
@@ -138,9 +138,9 @@ export function registerSkillHandlers(): void {
     }
   })
 
-  ipcMain.handle(SKILLS_LIST_INSTALLED, async (_e, cwd: string) => {
+  ipcMain.handle(SKILLS_LIST_INSTALLED, async (event, cwd: string, workspaceId?: string) => {
     try {
-      return await installer.listInstalled(cwd)
+      return await installer.listInstalled(cwd, { scopeId: workspaceId, ownerWindowId: windowFromEvent(event)?.id })
     } catch (err) {
       log.warn('[ipc.skills] listInstalled failed: %O', err)
       return []

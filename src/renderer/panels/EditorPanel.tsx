@@ -1,3 +1,5 @@
+import { captureEditorPanel } from '../lib/editor/editorDocuments'
+import { panelSearchStore } from '../stores/panelSearchStores'
 // =============================================================================
 // EditorPanel — Monaco Editor wrapper for CanvasIDE editor panels.
 // =============================================================================
@@ -21,7 +23,6 @@ import {
   markEditorActive,
   clearEditorActive,
   getActiveEditorPanelId,
-  saveEditor,
 } from '../lib/editor/editorSaveRegistry'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
 import type { Theme } from '../../shared/types'
@@ -34,7 +35,6 @@ import {
   resolveLoadedModel,
   markLoadFailed,
   clearLoadFailed,
-  rememberBaseline,
 } from '../lib/editor/modelCache'
 import { useFileSync } from '../lib/editor/useFileSync'
 import EditorConflictBanner from './EditorConflictBanner'
@@ -45,14 +45,14 @@ import { PanelCenteredState } from '../ui/PanelCenteredState'
 import { worktreeForPanel } from '../lib/worktreeContext'
 import { toRelativePath } from '../../shared/pathUtils'
 import { FileExplorer } from '../sidebar/FileExplorer'
-import { openFileAsPanel } from '../lib/fs/fileRouting'
+import { getDocumentType, openFileAsPanel } from '../lib/fs/fileRouting'
 import { NodePopover, useNodePopover } from '../ui/Popover'
 import { pathDisplayName } from '../lib/fs/displayPath'
 import { ExplorerSidebar } from './ExplorerSidebar'
 import { SearchView } from '../sidebar/SearchView'
-import { useSearchStore } from '../stores/searchStore'
-import { getActivePanelId, useActivePanelStore } from '../lib/activePanel'
-import { setPanelField } from '../stores/appStore/helpers'
+import { useActivePanelStore } from '../lib/activePanel'
+import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
+import { placementForPanel } from '../lib/workspace/canvasAccess'
 
 // -----------------------------------------------------------------------------
 // Editor font
@@ -253,7 +253,6 @@ export default function EditorPanel({
   const [markdownContent, setMarkdownContent] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [fileLoading, setFileLoading] = useState(!!filePath)
-  const [explorerVisible, setExplorerVisible] = useState(true)
   const [editorVisible, setEditorVisible] = useState(true)
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [toolbarScroll, setToolbarScroll] = useState({ left: false, right: false })
@@ -268,11 +267,12 @@ export default function EditorPanel({
   const ws = workspaces.find((w) => w.id === workspaceId)
   const panel = ws?.panels[panelId]
   const explorerRoot = worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath ?? ''
-  const showOpenFileState = !filePath && !panel?.unsavedContent
+  const explorerVisible = panel?.sidebarVisible !== false
+  const setExplorerVisible = (visible: boolean) => useAppStore.getState().setPanelNavigation(workspaceId, panelId, panel?.sidebarView === 'search' ? 'search' : 'explorer', visible)
 
   const activePanelId = useActivePanelStore((s) => s.activePanelId)
   const searchVisible = panel?.sidebarView === 'search'
-  const searchFocusToken = useSearchStore((s) => s.focusToken)
+  const searchStore = panelSearchStore(panelId, explorerRoot)
   useEffect(() => {
     const toolbar = toolbarRef.current
     if (!toolbar) return
@@ -289,57 +289,10 @@ export default function EditorPanel({
       observer.disconnect()
     }
   }, [filePath, explorerVisible, searchVisible, editorVisible])
-  useEffect(() => {
-    if (searchVisible && getActivePanelId() === panelId) setExplorerVisible(true)
-  }, [searchVisible, searchFocusToken, panelId])
   const setNavigationView = (view: 'explorer' | 'search') => {
-    setPanelField(useAppStore.setState, workspaceId, panelId, (current) => ({ ...current, sidebarView: view }))
-    setExplorerVisible(true)
+    useAppStore.getState().setPanelNavigation(workspaceId, panelId, view)
   }
 
-  const switchingFile = useRef(false)
-  const openExplorerFiles = useCallback(async (paths: string[], mode?: 'dock' | 'canvas', reveal?: EditorReveal) => {
-    if (mode === 'canvas') {
-      for (const path of paths) openFileAsPanel(workspaceId, path)
-      return
-    }
-    const nextPath = paths[0]
-    if (!nextPath || switchingFile.current) return
-    if (nextPath === filePath) {
-      if (reveal) {
-        useAppStore.getState().setPanelMarkdownPreview(workspaceId, panelId, false)
-        editorRef.current?.revealLineInCenter(reveal.line)
-        editorRef.current?.setPosition({ lineNumber: reveal.line, column: reveal.column ?? 1 })
-        editorRef.current?.focus()
-      }
-      return
-    }
-    switchingFile.current = true
-    try {
-      const store = useAppStore.getState()
-      const current = store.getWorkspace(workspaceId)?.panels[panelId]
-      if (current?.isDirty) {
-        const choice = await window.electronAPI.confirmUnsavedChanges({ fileName: current.title, filePath: current.filePath })
-        if (choice === 'cancel') return
-        if (choice === 'save' && await saveEditor(panelId) !== 'saved') return
-        if (choice === 'discard') {
-          const content = current.filePath ? await window.electronAPI.fsReadFile(current.filePath, workspaceId) : ''
-          editorRef.current?.getModel()?.setValue(content)
-          if (current.filePath) rememberBaseline(current.filePath, content)
-        }
-      }
-      store.setPanelDirty(workspaceId, panelId, false)
-      store.setPanelUnsavedContent(workspaceId, panelId, undefined)
-      store.setPanelMarkdownPreview(workspaceId, panelId, false)
-      if (reveal) setPendingReveal(panelId, reveal)
-      store.updatePanelFilePath(workspaceId, panelId, nextPath)
-      store.updatePanelTitle(workspaceId, panelId, nextPath.replace(/\\/g, '/').split('/').pop() ?? 'Files')
-    } catch (error) {
-      window.alert(`Could not switch files: ${String(error)}`)
-    } finally {
-      switchingFile.current = false
-    }
-  }, [workspaceId, panelId, filePath])
 
   const showPathMenu = useCallback(async () => {
     if (!filePath) return
@@ -443,6 +396,45 @@ export default function EditorPanel({
     dismiss,
   } = sync
 
+  const switchingFile = useRef(false)
+  const openExplorerFiles = useCallback(async (paths: string[], mode?: 'dock' | 'canvas', reveal?: EditorReveal) => {
+    if (mode === 'canvas') {
+      const placement = placementForPanel(workspaceId, panelId)
+      for (const path of paths) openFileAsPanel(workspaceId, path, undefined, placement?.target === 'canvas' ? placement : undefined)
+      return
+    }
+    if (switchingFile.current) return
+    const nextPath = paths.find((path) => !getDocumentType(path))
+    switchingFile.current = true
+    try {
+      const store = useAppStore.getState()
+      if (nextPath && nextPath !== filePath) {
+        const current = store.getWorkspace(workspaceId)?.panels[panelId]
+        if (!await confirmCloseDirtyPanels([current], () => sync.discard())) return
+        store.setPanelUnsavedContent(workspaceId, panelId, undefined)
+        store.setPanelMarkdownPreview(workspaceId, panelId, false)
+        if (reveal) setPendingReveal(panelId, reveal)
+        store.updatePanelFilePath(workspaceId, panelId, nextPath)
+        store.updatePanelTitle(workspaceId, panelId, pathDisplayName(nextPath))
+      } else if (nextPath && reveal) {
+        store.setPanelMarkdownPreview(workspaceId, panelId, false)
+        editorRef.current?.revealLineInCenter(reveal.line)
+        editorRef.current?.setPosition({ lineNumber: reveal.line, column: reveal.column ?? 1 })
+        editorRef.current?.focus()
+      }
+      const placement = placementForPanel(workspaceId, panelId)
+      let reused = false
+      for (const path of paths) {
+        if (!reused && path === nextPath) { reused = true; continue }
+        openFileAsPanel(workspaceId, path, undefined, placement)
+      }
+    } catch (error) {
+      window.alert(`Could not switch files: ${String(error)}`)
+    } finally {
+      switchingFile.current = false
+    }
+  }, [workspaceId, panelId, filePath, sync.discard])
+
   // ---------------------------------------------------------------------------
   // Mount: create the editor
   // ---------------------------------------------------------------------------
@@ -518,6 +510,14 @@ export default function EditorPanel({
           rememberModel(filePath, byUri)
         }
       }
+      if (!cached || cached.isDisposed()) {
+        const current = useAppStore.getState().workspaces.find(w => w.id === workspaceId)?.panels[panelId]
+        const recovered = current ? captureEditorPanel(current) : undefined
+        if (recovered?.unsavedContent !== undefined) {
+          cached = monaco.editor.createModel(recovered.unsavedContent, detectLanguage(filePath), fileUri)
+          rememberModel(filePath, cached)
+        }
+      }
       if (cached && !cached.isDisposed()) {
         retainModel(filePath)
         modelRetained = true
@@ -544,9 +544,10 @@ export default function EditorPanel({
             // monaco.editor.getModel(uri) reuse on later opens. When two panels
             // open the same uncached file concurrently the URI is already taken,
             // so reuse that model instead of letting createModel() throw.
+            const recovered = captureEditorPanel(useAppStore.getState().workspaces.find(w => w.id === workspaceId)?.panels[panelId] ?? { id: panelId, type: 'editor', title: 'Untitled', isDirty: false, filePath })
             const model = resolveLoadedModel(
               () => monaco.editor.getModel(fileUri),
-              () => monaco.editor.createModel(content, language, fileUri),
+              () => monaco.editor.createModel(recovered.unsavedContent ?? content, language, fileUri),
             )
             createdModel = model
             rememberModel(targetPath, model)
@@ -554,7 +555,8 @@ export default function EditorPanel({
             modelRetained = true
             editor.setModel(model)
             // Freshly read from disk — this is our sync point for the save guard.
-            sync.noteLoaded(content)
+            sync.noteLoaded(recovered.editorBaseline ?? content)
+            if (recovered.unsavedContent !== undefined) { sync.noteUserEdit(); void sync.resyncFromDisk() }
             applyPendingReveal()
           })
           .catch((err) => {
@@ -571,8 +573,8 @@ export default function EditorPanel({
       }
     } else {
       setFileLoading(false)
-      const restored = useAppStore.getState().workspaces
-        .find((w) => w.id === workspaceId)?.panels[panelId]?.unsavedContent ?? ''
+      const current = useAppStore.getState().workspaces.find(w => w.id === workspaceId)?.panels[panelId]
+      const restored = current ? captureEditorPanel(current).unsavedContent ?? '' : ''
       const model = monaco.editor.createModel(restored, 'plaintext')
       createdModel = model
       editor.setModel(model)
@@ -588,22 +590,13 @@ export default function EditorPanel({
       markEditorActive(panelId)
     })
 
-    let unsavedSaveTimer: ReturnType<typeof setTimeout> | null = null
     const changeDisposable = editor.onDidChangeModelContent(() => {
       // A disk-driven reload/merge (in useFileSync) replaces the model value;
       // that isn't a user edit, so don't flip the panel to dirty.
       if (sync.isExternalReplace()) return
       sync.noteUserEdit()
 
-      // Persist scratch-editor content to the store (debounced) so it
-      // survives canvas/workspace switches and app restarts.
-      if (!sync.filePathRef.current) {
-        if (unsavedSaveTimer) clearTimeout(unsavedSaveTimer)
-        unsavedSaveTimer = setTimeout(() => {
-          const value = editor.getModel()?.getValue() ?? ''
-          useAppStore.getState().setPanelUnsavedContent(workspaceId, panelId, value || undefined)
-        }, 300)
-      }
+
     })
 
     return () => {
@@ -612,14 +605,6 @@ export default function EditorPanel({
       changeDisposable.dispose()
       focusDisposable.dispose()
       clearEditorActive(panelId)
-      if (unsavedSaveTimer) {
-        clearTimeout(unsavedSaveTimer)
-        unsavedSaveTimer = null
-      }
-      if (!filePath && !useAppStore.getState().getWorkspace(workspaceId)?.panels[panelId]?.filePath) {
-        const value = editor.getModel()?.getValue() ?? ''
-        useAppStore.getState().setPanelUnsavedContent(workspaceId, panelId, value || undefined)
-      }
       if (filePath && modelRetained) {
         releaseModel(filePath)
       } else if (!filePath && createdModel && !createdModel.isDisposed()) {
@@ -835,7 +820,7 @@ export default function EditorPanel({
         <button
           onClick={() => {
             if (searchVisible && explorerVisible) setExplorerVisible(false)
-            else { setNavigationView('search'); useSearchStore.getState().requestFocus() }
+            else setNavigationView('search')
           }}
           className={`shrink-0 p-1.5 rounded-md hover:bg-hover ${explorerVisible && searchVisible ? 'text-primary bg-surface-3' : 'text-secondary'}`}
           title="Search in files"
@@ -900,15 +885,7 @@ export default function EditorPanel({
         {fileLoading && (
           <LoadingState label="Loading file…" className="absolute inset-0 z-20 bg-surface-1 text-sm" />
         )}
-        {showOpenFileState && (
-          <PanelCenteredState
-            className="absolute inset-0 z-20 !bg-transparent"
-            icon={<FolderOpen size={38} strokeWidth={1.5} />}
-            title="Open file"
-            description="Choose a file from the workspace tree"
-          />
-        )}
-        <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError || showOpenFileState ? 'hidden' : ''}`} />
+        <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
         {/* Source/Preview toggle — floats over the content's top-right instead
             of taking a header row. right-3 (12px) clears Monaco's 8px vertical
             scrollbar lane; z-40 keeps it above the diff (z-30) and load-error
@@ -930,7 +907,7 @@ export default function EditorPanel({
       {explorerRoot && (
         <ExplorerSidebar visible={explorerVisible} fill={!editorVisible} onHide={() => setExplorerVisible(false)}>
           {searchVisible
-            ? <SearchView rootPath={explorerRoot} workspaceId={workspaceId} focusInput={explorerVisible && activePanelId === panelId} onOpenMatch={(path, line, column) => { void openExplorerFiles([path], 'dock', { line, column }) }} />
+            ? <SearchView store={searchStore} panelId={panelId} focusToken={panel?.navigationEpoch} rootPath={explorerRoot} workspaceId={workspaceId} focusInput={explorerVisible && activePanelId === panelId} onOpenMatch={(path, line, column) => { void openExplorerFiles([path], 'dock', { line, column }) }} />
             : <FileExplorer rootPath={explorerRoot} onOpenFiles={openExplorerFiles} compact actionsTarget={explorerActionsTarget} />}
         </ExplorerSidebar>
       )}

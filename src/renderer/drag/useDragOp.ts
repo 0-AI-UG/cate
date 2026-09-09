@@ -1,3 +1,4 @@
+import { detachPanel } from '../lib/panels/detachPanel'
 // =============================================================================
 // useDragOp — thin React dispatcher for the drag runtime. Translates DOM/IPC
 // events into DragEvents fed through `reduce`, then publishes the resulting
@@ -245,16 +246,12 @@ function measureDragGeometry(
 }
 
 function buildSnapshotFor(spec: DragOpSourceSpec): PanelTransferSnapshot | null {
-  // PanelState rides on the spec — dock windows keep panel data in
-  // component-local state and never populate useAppStore, so reading from
-  // the global store would yield null for tabs dragged out of a detached
-  // dock window.
-  const panel = spec.panel
-
-  // For canvas-type panels, the snapshot needs each child's PanelState so the
-  // receiving window can render real child panels instead of "Panel" stubs.
+  // Capture live records again after the destination loads. The drag spec only
+  // supplies a fallback for isolated hosts without an application workspace.
   const app = useAppStore.getState()
-  const sourceWs = app.workspaces.find((w) => w.id === app.selectedWorkspaceId)
+  const sourceWs = app.workspaces.find((w) => w.panels[spec.panel.id])
+    ?? app.workspaces.find((w) => w.id === app.selectedWorkspaceId)
+  const panel = sourceWs?.panels[spec.panel.id] ?? spec.panel
   const resolveChildPanel = (childId: string) => sourceWs?.panels[childId]
   // Carry the source workspace root so the detached window inherits a cwd for
   // new terminals (otherwise its stub workspace has none and re-prompts).
@@ -321,7 +318,11 @@ function runEffects(prevActive: ActiveDispatch, next: RuntimeState) {
           dragDetach: async (snapshot, workspaceId) => {
             if (!window.electronAPI?.dragDetach) return null
             if (window.electronAPI.isMainWindowFullscreen?.()) return null
-            return window.electronAPI.dragDetach(snapshot, workspaceId)
+            const owningWorkspaceId = useAppStore.getState().workspaces.find(w => w.panels[prevActive.spec.panel.id])?.id
+            return detachPanel(snapshot, workspaceId, () => {
+              if (owningWorkspaceId && !useAppStore.getState().workspaces.find(w => w.id === owningWorkspaceId)?.panels[prevActive.spec.panel.id]) return null
+              return buildSnapshotFor(prevActive.spec)
+            })
           },
           buildSnapshot: () => buildSnapshotFor(prevActive.spec),
           workspaceId: resolveOwningWorkspaceId(prevActive.ownerWorkspaceId),

@@ -32,7 +32,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'navigation' | 'search' | 'sourceControl' | 'surface'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'sourceControl' | 'surface'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -203,6 +203,9 @@ export interface ReviewPanelOpenRequest {
 }
 
 export interface PanelState {
+  /** Files panel navigation chrome. Kept with the panel across window transfers. */
+  sidebarVisible?: boolean
+  navigationEpoch?: number
   sidebarView?: Exclude<SidebarView, 'workspaces'>
   id: string
   type: PanelType
@@ -232,6 +235,9 @@ export interface PanelState {
   /** Unsaved buffer content for scratch (no-filePath) editors. Persisted so
    *  content survives canvas switches and app restarts. */
   unsavedContent?: string
+  searchState?: PanelSearchSnapshot
+  /** Disk baseline for a recoverable dirty editor document (machine-local). */
+  editorBaseline?: string
   /** Terminal panels only: explicit working directory override. When unset
    *  the terminal uses the workspace's `rootPath`. Set when the terminal was
    *  created from a dropped folder or worktree to scope it to that path. */
@@ -531,6 +537,7 @@ export interface DetachedDockWindowSnapshot {
 // -----------------------------------------------------------------------------
 
 export interface PanelTransferSnapshot {
+  transferId?: string
   panel: PanelState
   geometry: { origin: Point; size: Size }
   sourceLocation: PanelLocation
@@ -600,7 +607,6 @@ export interface DockTabStack {
 }
 
 export interface DockZoneState {
-  maximized?: boolean
   position: DockZonePosition
   visible: boolean
   size: number // width (left/right) or height (bottom) in pixels
@@ -1132,7 +1138,8 @@ export interface RemoteProjectEntry {
   /** Reconnect info, used by ensureWorkspaceRuntime on restore. */
   connection: RuntimeConnection
   /** Full session snapshot to rebuild the canvas/panels on restore. */
-  snapshot: SessionSnapshot
+  snapshot?: SessionSnapshot
+  cache?: { version: 1; workspace: ProjectWorkspaceFile; session: ProjectSessionFile }
 }
 
 /** Persisted sidebar arrangement (stored in `sidebar.json`). Keyed by
@@ -1157,6 +1164,8 @@ export interface DockStateSnapshot {
  *  echo could only ever be the process-local stub id, and overwriting the real
  *  id would silently drop the window from session.json. */
 export interface DockWindowSyncState {
+  rootPath?: string
+  worktrees?: WorktreeMeta[]
   dockState: DockStateSnapshot
   panels: Record<string, PanelState>
   terminalCwds?: Record<string, string>
@@ -1192,6 +1201,7 @@ export interface ProjectWorkspaceFile {
 }
 
 export interface ProjectPanelRef {
+  sidebarVisible?: boolean
   sidebarView?: Exclude<SidebarView, 'workspaces'>
   /** Preserve a manual title across restored terminal and T3 sessions. */
   titleUserOverridden?: boolean
@@ -1237,6 +1247,7 @@ export interface ProjectSessionFile {
 }
 
 export interface WorktreeViewScopes {
+  /** Legacy sidebar scope, read only to migrate old navigation panels. */
   navigationWorktreeId?: string
   sourceControlWorktreeByRepository?: Record<string, string>
 }
@@ -1246,6 +1257,9 @@ export interface ProjectSessionPanel {
   ptyId?: string
   workingDirectory?: string
   unsavedContent?: string
+  searchState?: PanelSearchSnapshot
+  /** Disk baseline for a recoverable dirty editor document (machine-local). */
+  editorBaseline?: string
   /** Worktree this panel is associated with. Machine-local (worktree ids are
    *  runtime uuids), so it lives in session.json, not workspace.json. */
   worktreeId?: string
@@ -1632,17 +1646,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export type CanvasCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
 
 export interface UIState {
-  /** Corner the floating minimap is docked in. */
-  minimapCorner: CanvasCorner
-  /** Floating minimap size in px. */
-  minimapSize: { w: number; h: number }
   /** Corner the minimap toggle button (canvas toolbar) is docked in. */
   minimapButtonCorner: CanvasCorner
 }
 
 export const DEFAULT_UI_STATE: UIState = {
-  minimapCorner: 'bottom-right',
-  minimapSize: { w: 200, h: 150 },
   minimapButtonCorner: 'bottom-right',
 }
 
@@ -1667,8 +1675,6 @@ export const PANEL_MINIMUM_SIZES: Record<PanelType, Size> = Object.fromEntries(
 // PANEL_DEFAULT_SIZES sizes fresh windows in their own shells and is too
 // large for an in-canvas drop.
 export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
-  navigation: { width: 340, height: 500 },
-  search: { width: 340, height: 500 },
   sourceControl: { width: 340, height: 500 },
   surface: { width: 540, height: 500 },
   terminal: { width: 520, height: 340 },
@@ -1729,3 +1735,18 @@ export interface PerfSnapshot {
   ipc: Array<{ channel: string; kbPerSec: number; callsPerSec: number }>
   terminal: { kbPerSec: number; chunksPerSec: number }
 }
+
+export interface FileEntryMoved { from: string; to: string }
+export interface PanelSearchSnapshot {
+  rootPath: string
+  query: string
+  isRegex: boolean
+  matchCase: boolean
+  wholeWord: boolean
+  includes: string
+  excludes: string
+  respectIgnore: boolean
+  optionsExpanded: boolean
+}
+
+export interface PanelCloseOperation { phase: 'prepare' | 'commit' | 'cancel'; token: string }

@@ -34,6 +34,7 @@ vi.mock('../worktreePanelClose', () => ({
   worktreePanelCloseTargets: panelClose.targets,
   prepareWorktreePanelsForClose: panelClose.prepare,
   closePreparedWorktreePanels: panelClose.close,
+  cancelPreparedWorktreePanels: vi.fn(async () => {}),
   removeWorktreeFromAllWindows: panelClose.removeEverywhere,
 }))
 vi.mock('../review/openReviewPanel', () => ({ openReviewPanel }))

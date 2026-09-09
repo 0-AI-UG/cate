@@ -9,6 +9,7 @@ import { saveEditor } from './editor/editorSaveRegistry'
 
 export async function confirmCloseDirtyPanels(
   panels: Array<PanelState | undefined>,
+  onDiscard?: () => Promise<void>,
 ): Promise<boolean> {
   const dirty = panels.filter(
     (p): p is PanelState => !!p && p.type === 'editor' && !!p.isDirty,
@@ -29,16 +30,12 @@ export async function confirmCloseDirtyPanels(
     filePath,
   })
   if (choice === 'cancel') return false
+  if (choice === 'discard') await onDiscard?.()
   if (choice === 'save') {
     for (const p of dirty) {
       let result: Awaited<ReturnType<typeof saveEditor>> = 'no-handler'
       try { result = await saveEditor(p.id) } catch { /* treat as no-handler */ }
-      // Only an explicit Save-As cancellation aborts the close. `no-handler`
-      // means the panel isn't currently mounted (e.g. an inactive tab in a
-      // dock stack) — we can't save it from here, but aborting would leave
-      // the user with no way to proceed. Pre-existing limitation: that
-      // tab's content is lost if the user picks "Save".
-      if (result === 'cancelled') return false
+      if (result !== 'saved') return false
     }
   }
   return true

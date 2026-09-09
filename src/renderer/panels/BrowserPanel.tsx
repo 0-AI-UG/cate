@@ -359,6 +359,7 @@ export default function BrowserPanel({
   const [crashed, setCrashed] = useState(false)
   const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const downloadTabsRef = useRef(new Map<number, string>())
   const [downloadsByGuest, setDownloadsByGuest] = useState<Map<number, BrowserPanelDownload[]>>(new Map())
   const [downloadsOpen, setDownloadsOpen] = useState(false)
   const downloadButtonRef = useRef<HTMLButtonElement>(null)
@@ -786,14 +787,20 @@ export default function BrowserPanel({
     return window.electronAPI.onBrowserDownloadsChanged(({ webContentsId, downloads: updated }) => {
       const tabId = [...webviewsByTabRef.current.entries()].find(([, webview]) => {
         try { return webview.getWebContentsId() === webContentsId } catch { return false }
-      })?.[0]
+      })?.[0] ?? downloadTabsRef.current.get(webContentsId)
       if (!tabId) return
+      downloadTabsRef.current.set(webContentsId, tabId)
 
       const hasNewDownload = updated.some((download) => !seenDownloadIdsRef.current.has(download.id))
       updated.forEach((download) => seenDownloadIdsRef.current.add(download.id))
       setDownloadsByGuest((current) => {
         const next = new Map(current)
-        next.set(webContentsId, updated.map((download) => ({ ...download, webContentsId, tabId })))
+        const retained = new Set(updated.map(download => download.id))
+        for (const previous of current.get(webContentsId) ?? []) {
+          if (!retained.has(previous.id)) seenDownloadIdsRef.current.delete(previous.id)
+        }
+        if (updated.length) next.set(webContentsId, updated.map((download) => ({ ...download, webContentsId, tabId })))
+        else { next.delete(webContentsId); downloadTabsRef.current.delete(webContentsId) }
         return next
       })
       if (hasNewDownload) {

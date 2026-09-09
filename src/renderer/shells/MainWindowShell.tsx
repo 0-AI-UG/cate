@@ -18,12 +18,12 @@ import {
 } from '../drag'
 import { LeftSidebarReopen, useLeftChromeInset } from './LeftSidebarReopen'
 import { findZoneForStack } from '../stores/dockTreeUtils'
-import { useNavigationPanels } from '../docking/useNavigationPanels'
 
 interface MainWindowShellProps {
   renderPanel: (panelId: string) => React.ReactNode
   getPanelTitle: (panelId: string) => string
   onClosePanel?: (panelId: string) => void
+  onClosePanels?: (panelIds: string[]) => Promise<boolean>
 }
 
 /** Width/height of the edge drop zone strips */
@@ -33,6 +33,7 @@ export default function MainWindowShell({
   renderPanel,
   getPanelTitle,
   onClosePanel,
+  onClosePanels,
 }: MainWindowShellProps) {
   // Reserve room at the top-left so the leftmost dock tab bar's first tab clears
   // whatever floats over that corner. Two independent things can sit there:
@@ -42,8 +43,6 @@ export default function MainWindowShell({
   // When visible, the Workspace sidebar holds this space itself.
   // Nested canvas-node bars are exempt.
   const leftReserve = useLeftChromeInset()
-
-  useNavigationPanels()
 
   const maximizedZone = useDockStoreContext((s) => {
     const position = s.maximizedStackId ? findZoneForStack(s.zones, s.maximizedStackId) : null
@@ -163,6 +162,7 @@ export default function MainWindowShell({
               renderPanel={renderPanel}
               getPanelTitle={getPanelTitle}
               onClosePanel={onClosePanel}
+              onClosePanels={onClosePanels}
             />
             {!maximizedZone && <DockResizeHandle
               direction="horizontal"
@@ -178,6 +178,7 @@ export default function MainWindowShell({
             renderPanel={renderPanel}
             getPanelTitle={getPanelTitle}
             onClosePanel={onClosePanel}
+            onClosePanels={onClosePanels}
           />
         </div>
 
@@ -196,6 +197,7 @@ export default function MainWindowShell({
             renderPanel={renderPanel}
             getPanelTitle={getPanelTitle}
             onClosePanel={onClosePanel}
+            onClosePanels={onClosePanels}
           />
         </div>
       )}

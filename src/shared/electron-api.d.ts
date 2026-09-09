@@ -56,7 +56,10 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
 
   /** Create a new PTY terminal. Returns the terminal ID. */
+  terminalReady(ptyId: string): Promise<void>
+  onFsEntryMoved(callback: (event: import('./types').FileEntryMoved) => void): () => void
   terminalCreate(options: {
+    waitForReady?: boolean
     cols: number
     rows: number
     cwd?: string
@@ -121,7 +124,7 @@ export interface ElectronAPI {
   fsReadBinary(filePath: string, workspaceId?: string): Promise<ArrayBuffer>
 
   /** Write UTF-8 text to a file. */
-  fsWriteFile(filePath: string, content: string, workspaceId?: string): Promise<void>
+  fsWriteFile(filePath: string, content: string, workspaceId?: string, expectedDiskContent?: string | null): Promise<void>
 
   /** Read a directory and return FileTreeNode entries. */
   fsReadDir(dirPath: string, workspaceId?: string): Promise<FileTreeNode[]>
@@ -140,7 +143,7 @@ export interface ElectronAPI {
 
   /** Subscribe to filesystem watch events (main -> renderer). */
   onFsWatchEvent(
-    callback: (event: { type: 'create' | 'update' | 'delete'; path: string }) => void,
+    callback: (event: { type: 'create' | 'update' | 'delete'; path: string; scopeId?: string }) => void,
   ): () => void
 
   // ---------------------------------------------------------------------------
@@ -153,7 +156,7 @@ export interface ElectronAPI {
   searchStart(rootPath: string, searchId: string, options: SearchOptions, workspaceId?: string): Promise<string>
 
   /** Cancel the in-flight search for this window. */
-  searchCancel(): Promise<void>
+  searchCancel(searchId: string): Promise<void>
 
   /** Subscribe to streamed search result batches (main -> renderer). */
   onSearchResult(callback: (batch: SearchResultBatch) => void): () => void
@@ -476,20 +479,21 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
 
   /** Register a callback for flush-save requests from the main process. Returns unsubscribe. */
-  onSessionFlushSave(callback: () => void): () => void
+  onSessionFlushSave(callback: (requestId?: string) => void): () => void
 
   /** Notify the main process that the flush save completed. */
-  sessionFlushSaveDone(): void
+  sessionFlushSaveDone(error?: string, requestId?: string): void
 
   /** Save project-local workspace + session state to .cate/ directory. */
   projectStateSave(
     rootPath: string,
     workspace: import('./types').ProjectWorkspaceFile,
     session: import('./types').ProjectSessionFile,
+    workspaceId?: string,
   ): Promise<void>
 
   /** Load project-local state from .cate/ directory. Returns null if not found. */
-  projectStateLoad(rootPath: string): Promise<{
+  projectStateLoad(rootPath: string, workspaceId?: string): Promise<{
     workspace: import('./types').ProjectWorkspaceFile
     session: import('./types').ProjectSessionFile | null
   } | null>
@@ -803,6 +807,10 @@ export interface ElectronAPI {
   /** Panel was dropped on desktop — create a new dock window. Resolves to
    *  `null` when the main window is in macOS native fullscreen; the caller
    *  should treat that as "detach refused" and keep the panel where it was. */
+  onPanelTransferStage(callback: (payload: { snapshot: PanelTransferSnapshot; workspaceId: string }) => void): () => void
+  panelTransferReady(transferId: string, phase?: 'received' | 'rejected'): Promise<void>
+  finishPanelTransfer(transferId: string, snapshot: PanelTransferSnapshot): void
+  commitPanelTransfer(transferId: string, snapshot: PanelTransferSnapshot | null): Promise<boolean>
   dragDetach(snapshot: PanelTransferSnapshot, workspaceId?: string): Promise<number | null>
 
   /** Synchronous cached check: is the main window currently in native
@@ -845,10 +853,10 @@ export interface ElectronAPI {
   dockWindowRestore(payload: DetachedDockWindowSnapshot & { initPayload: DockWindowInitPayload }): Promise<number | null>
 
   /** Subscribe to a final pre-quit sync request from main (dock windows). */
-  onDockWindowFlushSync(callback: () => void): () => void
+  onDockWindowFlushSync(callback: (requestId: string) => void): () => void
 
   /** ACK that this dock window's final pre-quit sync has been sent. */
-  dockWindowFlushSyncDone(): void
+  dockWindowFlushSyncDone(error?: string, requestId?: string): void
 
   // ---------------------------------------------------------------------------
   // Cross-window panel discovery
@@ -867,7 +875,7 @@ export interface ElectronAPI {
   /** Ask main to have the window that owns `panelId` close it (behind that
    *  window's own dirty/running confirmation gates). Returns false when the
    *  owner is gone or the user cancels. */
-  closeWindowPanel(panelId: string): Promise<boolean>
+  closeWindowPanel(panelId: string, operation?: import('./types').PanelCloseOperation): Promise<boolean>
 
   /** Reply to a cross-window close request after running the owner window's
    *  confirmation gates. */
@@ -887,7 +895,7 @@ export interface ElectronAPI {
   onOpenReviewInWindow(callback: (panelId: string, request: ReviewPanelOpenRequest) => void): () => void
 
   /** This window owns `panelId` — close it (with the usual confirmation gates). */
-  onClosePanelInWindow(callback: (panelId: string, requestId: string) => void): () => void
+  onClosePanelInWindow(callback: (panelId: string, requestId: string, operation?: import('./types').PanelCloseOperation) => void): () => void
 
   /** A worktree was removed by another renderer; clear local metadata and
    *  affinity without initiating another broadcast. */
@@ -905,10 +913,11 @@ export interface ElectronAPI {
    *  targeted DRAG_END against the drag it's tracking. */
   onCrossWindowDragUpdate(callback: (screenPos: Point, snapshot: PanelTransferSnapshot, dragId: string) => void): () => void
 
-  /** Claim the in-flight cross-window drop. Main is the arbiter: `accepted` is
+  /** Reserve the in-flight drop, then acknowledge hydration with panelTransferReady.
+   *  Main is the arbiter: `accepted` is
    *  false when the drag already resolved unclaimed (the source has fallen back
    *  to a detach) — the caller must NOT materialize the panel in that case. */
-  crossWindowDragDrop(panelId: string): Promise<{ accepted: boolean }>
+  crossWindowDragDrop(panelId: string): Promise<{ accepted: boolean; transferId?: string }>
 
   /** Cancel an active cross-window drag. */
   crossWindowDragCancel(): Promise<void>
@@ -1120,7 +1129,7 @@ export interface ElectronAPI {
   /** Replace installed cate-cli skill copies in a workspace with the bundled version. */
   skillsReinstallCateCli(cwd: string, workspaceId?: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; installedTargets?: number }>
   /** Installs recorded in this workspace's .cate/skills.json. */
-  skillsListInstalled(cwd: string): Promise<InstalledSkill[]>
+  skillsListInstalled(cwd: string, workspaceId?: string): Promise<InstalledSkill[]>
   /** Skills saved to the user's Cate library (cached in userData). */
   skillsListSaved(): Promise<SavedSkill[]>
   /** Save a skill to the library: fetch its files + cache them in userData. */

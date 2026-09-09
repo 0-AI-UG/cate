@@ -18,6 +18,7 @@
 interface BatchedDispatcher<TItem> {
   /** Accumulate one item, arming the trailing-edge flush if not already armed. */
   push: (item: TItem) => void
+  flush: () => void
   /** Clear any pending flush timer. With `resetPending` also drop pending items. */
   cancel: (options?: { resetPending?: boolean }) => void
 }
@@ -35,15 +36,18 @@ export function createKeyedDispatcher<TValue>(
   let pending = new Map<string, TValue>()
   let flushTimer: ReturnType<typeof setTimeout> | null = null
 
+  const flush = (): void => {
+    if (flushTimer) clearTimeout(flushTimer)
+    flushTimer = null
+    const values = pending
+    pending = new Map()
+    if (values.size) onBatch(values.values())
+  }
+
   const push = ([key, value]: [string, TValue]): void => {
     pending.set(key, value)
     if (!flushTimer) {
-      flushTimer = setTimeout(() => {
-        const values = pending
-        pending = new Map()
-        flushTimer = null
-        onBatch(values.values())
-      }, delayMs)
+      flushTimer = setTimeout(flush, delayMs)
     }
   }
 
@@ -55,7 +59,7 @@ export function createKeyedDispatcher<TValue>(
     if (options?.resetPending) pending = new Map()
   }
 
-  return { push, cancel }
+  return { push, cancel, flush }
 }
 
 /**
@@ -70,14 +74,18 @@ export function createStringDispatcher(
   let buffer = ''
   let flushTimer: ReturnType<typeof setTimeout> | null = null
 
+  const flush = (): void => {
+    if (flushTimer) clearTimeout(flushTimer)
+    flushTimer = null
+    const data = buffer
+    buffer = ''
+    if (data) onBatch(data)
+  }
+
   const push = (data: string): void => {
     buffer += data
     if (!flushTimer) {
-      flushTimer = setTimeout(() => {
-        flushTimer = null
-        if (buffer) onBatch(buffer)
-        buffer = ''
-      }, delayMs)
+      flushTimer = setTimeout(flush, delayMs)
     }
   }
 
@@ -89,5 +97,5 @@ export function createStringDispatcher(
     if (options?.resetPending) buffer = ''
   }
 
-  return { push, cancel }
+  return { push, cancel, flush }
 }

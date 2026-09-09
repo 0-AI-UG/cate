@@ -59,6 +59,25 @@ describe('buildDaemonRuntime FileHost path validation', () => {
     expect(await runtime.vcs.isRepo(root, { scopeId: 'test' })).toBe(false)
   })
 
+  test('remove unlinks an entry without deleting its in-root symlink target', async () => {
+    const target = path.join(root, 'inside.txt')
+    const link = path.join(root, 'link.txt')
+    await fs.symlink(target, link)
+    await runtime.file.remove(link, { scopeId: 'test' })
+    expect(await fs.readFile(target, 'utf8')).toBe('hello from inside\n')
+    await expect(fs.lstat(link)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  test('rename moves a symlink entry rather than its target', async () => {
+    const target = path.join(root, 'inside.txt')
+    const link = path.join(root, 'link.txt')
+    const renamed = path.join(root, 'renamed.txt')
+    await fs.symlink(target, link)
+    await runtime.file.rename(link, renamed, { scopeId: 'test' })
+    expect(await fs.readFile(target, 'utf8')).toBe('hello from inside\n')
+    expect((await fs.lstat(renamed)).isSymbolicLink()).toBe(true)
+  })
+
   test('writeFile onto an existing symlink rejects (no write-through escape)', async () => {
     const real = path.join(root, 'real.txt')
     await fs.writeFile(real, 'target')

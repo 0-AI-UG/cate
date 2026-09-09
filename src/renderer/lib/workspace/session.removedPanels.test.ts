@@ -51,3 +51,16 @@ describe.each(['extension', 'nativeApp'])('removed %s panel restoration', (remov
     expect(collectPanelIds(windows[0].dockState.zones.bottom.layout)).toEqual(['kept'])
   })
 })
+
+it.each(['navigation', 'search'])('migrates the consolidated %s surface without losing placement', (type) => {
+  const ws = legacyWorkspace(type)
+  const restored = projectFilesToSnapshot(ws, null, '/repo')
+  expect(restored.panels!.removed).toMatchObject({ id: 'removed', type: 'editor', sidebarView: type === 'search' ? 'search' : 'explorer' })
+  expect(restored.dockState).toEqual(ws.dockState)
+  expect(restored.canvases!.canvas.canvasNodes).toEqual(ws.canvases!.canvas.canvasNodes)
+  const panels = { legacy: { id: 'legacy', type, title: 'Files', isDirty: false } } as unknown as Record<string, PanelState>
+  const windows = dockWindowsFromSession({ version: 1, panels: {}, dockWindows: [{
+    panels, workspaceId: 'ws', bounds: { x: 0, y: 0, width: 800, height: 600 }, dockState: ws.dockState!, canvasStates: {},
+  }] })
+  expect(windows[0].panels.legacy.type).toBe('editor')
+})

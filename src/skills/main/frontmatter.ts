@@ -9,22 +9,7 @@
 
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/
 
-/** Parse the leading frontmatter block into a flat string map (top-level scalar
- *  keys only) plus a parsed `tags` list. Returns empty maps when absent. */
-export function parseFrontmatter(text: string): { fm: Record<string, string>; tags: string[] } {
-  const fm: Record<string, string> = {}
-  const m = FM_RE.exec(text)
-  if (m) {
-    for (const line of m[1].split('\n')) {
-      const mm = /^([a-zA-Z0-9_-]+):\s*(.*)$/.exec(line)
-      if (mm) fm[mm[1]] = mm[2].trim().replace(/^["']|["']$/g, '')
-    }
-  }
-  const tags = fm.tags
-    ? fm.tags.replace(/[[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean)
-    : []
-  return { fm, tags }
-}
+export { parseFrontmatter } from '../../shared/skillFrontmatter.mjs'
 
 /** Ensure the frontmatter `name:` equals `name` (the standard wants name === dir
  *  name; targets that don't care are unaffected). Adds a frontmatter block if the

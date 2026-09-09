@@ -13,7 +13,7 @@ import {
   forwardToOwner,
   type InvokeScope,
 } from './cateApiHandlers'
-import { reverseDuplex } from './serverTunnel'
+import { reverseDuplex, receiveTunnelData } from './serverTunnel'
 
 const MAX_BODY_BYTES = 1 * 1024 * 1024
 
@@ -266,15 +266,13 @@ export async function bindReverseTunnel(
     if (!duplex) return
     try {
       const buf = Buffer.from(b64, 'base64')
-      duplex.push(buf)
-      // Credit the daemon's reverse-tunnel window for the delivered bytes.
-      runtime.tunnel.ack(connId, buf.length)
+      receiveTunnelData(duplex, buf)
     } catch { /* ended */ }
   }
   const onClose = (connId: string): void => {
     const duplex = conns.get(connId)
     conns.delete(connId)
-    if (duplex) { try { duplex.push(null) } catch { /* ended */ } }
+    if (duplex) { try { receiveTunnelData(duplex, null) } catch { /* ended */ } }
   }
 
   const { port } = await runtime.tunnel.listen(listenerId, onConnection, onData, onClose)

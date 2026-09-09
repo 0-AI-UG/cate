@@ -1150,7 +1150,7 @@ test('real T3 lifecycle bounds automatic crash recovery and allows an explicit r
 
 test('webview geometry stays aligned for T3 and browsers during layout changes', async () => {
   await page.evaluate(() => {
-    window.__cateE2E!.setActiveLeftSidebarView(null)
+    window.__cateE2E!.setSidebarHidden(true)
     window.__cateE2E!.setZoom(0.65)
     window.__cateE2E!.setViewport({ x: 40, y: 40 })
   })
@@ -1181,7 +1181,7 @@ test('webview geometry stays aligned for T3 and browsers during layout changes',
   for (const sidebar of ['explorer', null, 'explorer', null] as const) {
     await electronApp!.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setSize(width, 850), 1200 + clicks * 30)
     await page.evaluate(({ view, step }) => {
-      window.__cateE2E!.setActiveLeftSidebarView(view)
+      window.__cateE2E!.setSidebarHidden(view === null)
       window.__cateE2E!.setZoom([0.65, 0.85, 0.5, 0.65][step])
       window.__cateE2E!.setViewport({ x: 40 + step * 10, y: 40 + step * 5 })
     }, { view: sidebar, step: clicks })

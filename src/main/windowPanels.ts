@@ -183,7 +183,7 @@ export function openWindowReviewPanel(panelId: string, request: ReviewPanelOpenR
 /** Ask the window that owns `panelId` to close the panel behind its own
  * dirty/running confirmation gates. Resolves false if the owner is gone or the
  * user cancels, so destructive callers can stop before deleting backing data. */
-export function closeWindowPanel(panelId: string): Promise<boolean> {
+export function closeWindowPanel(panelId: string, operation?: import('../shared/types').PanelCloseOperation): Promise<boolean> {
   const owner = getWindowPanels().find((p) => p.panelId === panelId)
   if (!owner) return Promise.resolve(false)
   const win = getWindow(owner.ownerWindowId)
@@ -192,7 +192,7 @@ export function closeWindowPanel(panelId: string): Promise<boolean> {
   const requestId = `panel-close-${nextPanelCloseRequest++}`
   return new Promise<boolean>((resolve) => {
     pendingPanelCloses.set(requestId, { ownerWindowId: owner.ownerWindowId, resolve })
-    sendToWindow(owner.ownerWindowId, CLOSE_PANEL_IN_WINDOW, panelId, requestId)
+    sendToWindow(owner.ownerWindowId, CLOSE_PANEL_IN_WINDOW, panelId, requestId, operation)
   })
 }
 

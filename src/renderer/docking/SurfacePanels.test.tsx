@@ -95,7 +95,6 @@ it('migrates the complete right layout and opens shortcuts in the center without
   act(() => useUIStore.getState().requestNavigationView('search'))
   act(() => useUIStore.getState().requestNavigationView('search'))
   const panels = Object.values(useAppStore.getState().workspaces[0].panels)
-  expect(panels.filter((p) => p.type === 'search')).toHaveLength(0)
   expect(panels.filter((p) => p.type === 'editor')).toHaveLength(1)
   expect(panels.find((p) => p.type === 'editor')?.sidebarView).toBe('search')
   act(() => useUIStore.getState().requestNavigationView('explorer'))
@@ -103,8 +102,8 @@ it('migrates the complete right layout and opens shortcuts in the center without
   expect(dock.getState().zones.right.layout).toBeNull()
 })
 
-it('persists picker, Files, Search and Source Control as movable panel records', () => {
-  for (const type of ['surface', 'navigation', 'search', 'sourceControl'] as const) {
+it('persists picker, Files and Source Control as movable panel records', () => {
+  for (const type of ['surface', 'editor', 'sourceControl'] as const) {
     expect(getPanelDef(type).canLiveOnCanvas).toBe(true)
     const id = getPanelDef(type).create({ workspaceId: 'test', placement: { target: 'none' } })!
     dock.getState().dockPanel(id, 'center')
@@ -112,7 +111,7 @@ it('persists picker, Files, Search and Source Control as movable panel records',
   const workspace = useAppStore.getState().workspaces[0]
   const snapshot = { workspaceName: 'Test', rootPath: '/test', panels: workspace.panels, dockState: dock.getState().getSnapshot() }
   const restored = projectFilesToSnapshot(JSON.parse(JSON.stringify(buildWorkspaceFile(snapshot, '/test'))), JSON.parse(JSON.stringify(buildSessionFile(snapshot))), '/test')
-  expect(Object.values(restored.panels!).map((p) => p.type)).toEqual(['canvas', 'surface', 'editor', 'search', 'sourceControl'])
+  expect(Object.values(restored.panels!).map((p) => p.type)).toEqual(['canvas', 'surface', 'editor', 'sourceControl'])
   expect(restored.dockState).toEqual(snapshot.dockState)
 })
 
@@ -216,4 +215,20 @@ it('disables splitting small panes without creating a panel', () => {
   act(() => button.click())
   expect(dock.getState().zones.center.layout).toBe(layout)
   expect(Object.keys(useAppStore.getState().workspaces[0].panels)).toHaveLength(1)
+})
+
+it('uses the registry menu types and labels in the surface picker', async () => {
+  const { SPLIT_MENU_PANEL_TYPES } = await import('../../shared/panels')
+  act(() => root.render(<SurfacePicker onSelect={() => {}} />))
+  expect([...host.querySelectorAll('button')].map(button => button.textContent)).toEqual(
+    SPLIT_MENU_PANEL_TYPES.map(type => getPanelDef(type).label),
+  )
+})
+
+it('opens navigation in the registered window dock without a main-shell context', () => {
+  act(() => root.render(<NavigationHarness />))
+  act(() => useUIStore.getState().requestNavigationView('search'))
+  const panel = Object.values(useAppStore.getState().workspaces[0].panels).find(panel => panel.type === 'editor')!
+  expect(panel.sidebarView).toBe('search')
+  expect(collectPanelIds(dock.getState().zones.center.layout)).toContain(panel.id)
 })

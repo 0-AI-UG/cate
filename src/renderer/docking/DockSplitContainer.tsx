@@ -64,8 +64,7 @@ export default function DockSplitContainer({
       const ratioDelta = delta / (containerSize - SPLIT_DIVIDER_SIZE * (node.children.length - 1))
       const newRatios = [...currentRatios]
 
-      // Clamp so canvas panes respect their declared minimum dimensions and
-      // other panes retain the existing 10% floor, then transfer
+      // Clamp so all panes respect their minimum dimensions, then transfer
       // only the actual change between the two adjacent panels.
       // Other panels stay untouched (no re-normalization).
       const a = currentRatios[index]

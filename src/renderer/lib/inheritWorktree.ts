@@ -39,8 +39,18 @@ export function inheritedWorktreeFromSelection(
   if (!nodeId || !panels) return {}
   const panelId = activeDockPanelId(canvasState.nodes[nodeId]?.dockLayout)
   const panel = panelId ? panels[panelId] : undefined
+  return inheritedWorktreeFromPanel(panel, worktrees)
+}
+
+/** Shared creation context for canvas selection and focused dock leaves. */
+export function inheritedWorktreeFromPanel(
+  panel: PanelState | undefined,
+  worktrees: readonly WorktreeMeta[] = [],
+): InheritedWorktree {
   if (!panel) return {}
-  if (panel.type === 'terminal' || panel.type === 'agent') return { cwd: panel.cwd, worktreeId: panel.worktreeId }
   const worktree = worktreeForPanel(panel, worktrees)
+  if (panel.type === 'terminal' || panel.type === 'agent') {
+    return { cwd: panel.cwd ?? worktree?.path, worktreeId: panel.worktreeId ?? worktree?.id }
+  }
   return worktree ? { cwd: worktree.path, worktreeId: worktree.id } : {}
 }

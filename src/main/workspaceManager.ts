@@ -121,7 +121,7 @@ function replaySkillSeeds(runtimeId: string): void {
   for (const workspace of workspaces.values()) {
     const locator = parseLocator(workspace.rootPath)
     if (!locator.path || locator.runtimeId !== runtimeId) continue
-    void seedCateCliSkill(workspace.rootPath)
+    void seedCateCliSkill(workspace.rootPath, { scopeId: workspace.id })
   }
 }
 
@@ -198,7 +198,7 @@ async function createWorkspace(
     if (!remote) claimProjectLock(info.rootPath, info.name)
     // Seed the bundled cate-cli skill for the agents used in this workspace
     // (same install path as the skills modal). Best effort, never blocks open.
-    void seedCateCliSkill(info.rootPath)
+    void seedCateCliSkill(info.rootPath, { scopeId: info.id })
   }
   return { ok: true, workspace: info }
 }
@@ -287,7 +287,7 @@ async function updateWorkspace(id: string, changes: Partial<Omit<WorkspaceInfo, 
     if (nextLocal) claimProjectLock(updated.rootPath, updated.name)
     // A workspace first gets its folder through here (local folder pick, remote
     // attach) — seed exactly like createWorkspace. Best effort, never blocks.
-    if (updated.rootPath) void seedCateCliSkill(updated.rootPath)
+    if (updated.rootPath) void seedCateCliSkill(updated.rootPath, { scopeId: id })
   }
   return { ok: true, workspace: updated }
 }

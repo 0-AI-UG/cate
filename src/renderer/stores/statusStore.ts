@@ -173,9 +173,6 @@ export const useStatusStore = create<StatusStore>((set, get) => ({
   },
 
   unregisterTerminal(terminalId, knownWorkspaceId) {
-    void import('../hooks/useProcessMonitor').then(({ forgetTerminalForProcessMonitor }) => {
-      forgetTerminalForProcessMonitor(terminalId)
-    })
     void import('../lib/agent/agentScreenDetector').then(({ forgetAgentTracker }) => {
       forgetAgentTracker(terminalId)
     })

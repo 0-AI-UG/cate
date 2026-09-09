@@ -21,6 +21,7 @@ import {
   handleCodingAgentMethod,
 } from '../lib/agent/codingAgentDriver'
 import { inspectReviewAgents, launchReviewAgent, trackReviewAgent, unavailableReviewAgents } from '../lib/review/reviewAgent'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { placementForPanel } from '../lib/workspace/canvasAccess'
 import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewMenuButton, ReviewRunStatus, ReviewStats, ToolbarButton, type AgentChoice } from './ReviewControls'
 import { HunkView, type NoteDraft } from './ReviewDiff'
@@ -923,7 +924,7 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
                 <span className="font-mono text-[11px] truncate flex-1" title={file.path}>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
                 <span className="text-[10px] tabular-nums"><span className="text-diff-add">+{file.additions ?? '–'}</span> <span className="text-diff-del">-{file.deletions ?? '–'}</span></span>
                 {fileNotes.length > 0 && <span className="text-[10px] text-blue-400">{fileNotes.length} note{fileNotes.length === 1 ? '' : 's'}</span>}
-                <ToolbarButton label="Open file" onClick={() => useAppStore.getState().createEditor(
+                <ToolbarButton label="Open file" onClick={() => openFileAsPanel(
                   workspaceId,
                   absoluteFilePath(reviewState.repoPath, file.path),
                   undefined,

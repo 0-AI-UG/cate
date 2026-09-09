@@ -36,7 +36,7 @@ export type RemoteDropTarget =
 export type RemoteDropHandler = (
   snapshot: PanelTransferSnapshot,
   target: RemoteDropTarget,
-) => void
+) => boolean | void
 
 interface ActiveRemote {
   snapshot: PanelTransferSnapshot
@@ -119,8 +119,13 @@ function runRemoteEffects(active: ActiveRemote, state: RuntimeState): void {
           const { snapshot, onDrop } = active
           const claimedTarget = remoteTarget
           Promise.resolve(window.electronAPI.crossWindowDragDrop(snapshot.panel.id))
-            .then((result) => {
-              if (result?.accepted) onDrop(snapshot, claimedTarget)
+            .then(async (result) => {
+              if (!result?.accepted) return
+              let accepted = false
+              try { accepted = onDrop(snapshot, claimedTarget) !== false }
+              finally {
+                if (result.transferId) await window.electronAPI.panelTransferReady(result.transferId, accepted ? 'received' : 'rejected')
+              }
             })
             .catch(() => {
               // Claim IPC failed — don't materialize; the source still owns the panel.
@@ -148,7 +153,7 @@ export function createRemoteDropHandler(opts: {
   return (snapshot, target) => {
     // Canvas-on-canvas is unsupported: refuse cross-window drops of a
     // canvas panel onto a canvas target. The source window stays as-is.
-    if (snapshot.panel.type === 'canvas' && target.kind !== 'dock') return
+    if (snapshot.panel.type === 'canvas' && target.kind !== 'dock') return false
 
     // Deposit PTY hand-off + hydrate canvas children + register the panel
     // before it mounts (per-window: addPanel vs ensurePanelsInAppStore).
@@ -170,6 +175,7 @@ export function createRemoteDropHandler(opts: {
         target.size,
       )
     }
+    return true
   }
 }
 

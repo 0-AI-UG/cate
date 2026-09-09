@@ -76,7 +76,7 @@ async function syncNewWorktreeSkills(
   const worktree = resolveWorktreeContext(baseCwd, targetCwd)
   if (!worktree) return
   try {
-    await syncWorkspaceSkills(worktree.base.locator, worktree.checkout.locator)
+    await syncWorkspaceSkills(worktree.base.locator, worktree.checkout.locator, { scopeId: workspaceId })
   } catch (err) {
     // Worktree creation succeeded; a later terminal/agent launch retries.
     log.warn('[git] new worktree skill sync failed: %O', err)

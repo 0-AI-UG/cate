@@ -27,6 +27,9 @@ vi.mock('../workspace/canvasAccess', () => ({
   getNodeDockLayout: (_canvasPanelId: string, nodeId: string) => canvasNodes[nodeId]?.dockLayout ?? null,
 }))
 
+vi.mock('../confirmClosePanels', () => ({ confirmClosePanels: vi.fn().mockResolvedValue(true) }))
+import { confirmClosePanels } from '../confirmClosePanels'
+
 import { confirmCloseCanvas } from './confirmCloseCanvas'
 
 const confirmCloseCanvasDialog = vi.fn()
@@ -51,6 +54,7 @@ function setCanvasNodes(children: string[]) {
 
 describe('confirmCloseCanvas', () => {
   beforeEach(() => {
+    vi.mocked(confirmClosePanels).mockReset().mockResolvedValue(true)
     closePanel.mockReset()
     addNode.mockReset()
     addNode.mockReturnValue('target-node')
@@ -124,4 +128,15 @@ describe('confirmCloseCanvas', () => {
     expect(proceed).toBe(true)
     expect(closePanel).not.toHaveBeenCalled()
   })
+})
+
+it.each(['close', 'delete'])('preserves children when their close confirmation is cancelled after %s', async (choice) => {
+  closePanel.mockClear()
+  setWorkspace(['canvasA'], ['term1', 'term2'])
+  setCanvasNodes(['term1', 'term2'])
+  confirmCloseCanvasDialog.mockResolvedValue(choice)
+  vi.mocked(confirmClosePanels).mockResolvedValue(false)
+  expect(await confirmCloseCanvas('ws-1', 'canvasA')).toBe(false)
+  expect(confirmClosePanels).toHaveBeenCalledWith('ws-1', ['term1', 'term2'])
+  expect(closePanel).not.toHaveBeenCalled()
 })

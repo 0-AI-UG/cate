@@ -48,6 +48,8 @@ function createElectronAPIStub() {
     crossWindowDragResolve: vi.fn().mockResolvedValue({ claimed: false }),
     crossWindowDragDrop: vi.fn().mockResolvedValue({ accepted: true }),
     dragDetach: vi.fn().mockResolvedValue(null),
+    commitPanelTransfer: vi.fn().mockResolvedValue(true),
+    finishPanelTransfer: vi.fn(),
     isMainWindowFullscreen: vi.fn().mockReturnValue(false),
     onCrossWindowDragUpdate: vi.fn(() => () => {}),
     onDragEnd: vi.fn(() => () => {}),

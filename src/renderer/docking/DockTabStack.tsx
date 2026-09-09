@@ -32,6 +32,7 @@ interface DockTabStackProps {
   renderPanel: (panelId: string) => React.ReactNode
   getPanelTitle: (panelId: string) => string
   onClosePanel?: (panelId: string) => void
+  onClosePanels?: (panelIds: string[]) => Promise<boolean>
   getPanel?: (panelId: string) => PanelState | undefined
   workspaceId?: string
   onPanelRemoved?: (panelId: string) => void
@@ -54,7 +55,7 @@ interface DockTabStackProps {
   dropDisabled?: boolean
 }
 
-export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, newTabControl, onTabBarMouseDown, localOnly, compact, dropDisabled }: DockTabStackProps) {
+export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, newTabControl, onTabBarMouseDown, localOnly, compact, dropDisabled }: DockTabStackProps) {
   const dockStoreApi = useDockStoreApi()
   const canMaximize = useDockStoreContext((s) => Object.values(s.zones).some((zone) =>
     zone.visible && zone.layout && (zone.layout.type === 'split' || zone.layout.id !== stack.id),
@@ -142,7 +143,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     dockStoreApi,
     workspaceId: workspaceIdProp,
     getPanelProp: resolvePanel,
-    onClosePanel,
+    onClosePanel, onClosePanels,
     onPanelRemoved,
     onPanelRenamed,
     excludePanelTypes,

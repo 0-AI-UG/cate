@@ -4,6 +4,7 @@
 // over wsl.exe stdio. Keeps the runtime framing implementation self-contained.
 // =============================================================================
 
+import { StringDecoder } from 'node:string_decoder'
 import type { AnyFrame } from './protocol'
 
 /** Serialize one frame to a single newline-terminated line. */
@@ -20,6 +21,7 @@ export function serializeFrame(frame: AnyFrame): string {
  */
 export class FrameDecoder {
   private buffer = ''
+  private readonly decoder = new StringDecoder('utf8')
 
   constructor(
     private readonly onFrame: (frame: AnyFrame) => void,
@@ -27,7 +29,7 @@ export class FrameDecoder {
   ) {}
 
   push(chunk: string | Buffer): void {
-    this.buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
+    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk)
     let nl = this.buffer.indexOf('\n')
     while (nl !== -1) {
       let line = this.buffer.slice(0, nl)

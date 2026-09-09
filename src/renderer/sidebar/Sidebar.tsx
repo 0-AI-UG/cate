@@ -1,87 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ProjectList } from './ProjectList'
-import { FileExplorer } from './FileExplorer'
-import { SearchView } from './SearchView'
-import { SourceControlView } from './SourceControlView'
-import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import type { SidebarView } from '../stores/uiStore'
-import { GitPullRequest, ArrowLeft, ChartNoAxesCombined, FolderOpen, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple } from 'lucide-react'
+import { GitPullRequest, ArrowLeft, ChartNoAxesCombined, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple } from 'lucide-react'
 import { UpdateButton } from '../ui/UpdateButton'
 import { Tooltip } from '../ui/Tooltip'
 import { IS_MAC } from '../lib/platform'
 import { useWindowFullscreen } from '../lib/useWindowFullscreen'
 import { TRAFFIC_LIGHTS_WIDTH } from '../shells/MacWindowChrome'
-import { useWorktrees } from '../stores/useWorktrees'
-import { selectedWorktree } from '../lib/worktreeContext'
-import { WorktreeScopeSelect } from './WorktreeScopeSelect'
 import { CateLogo } from '../ui/CateLogo'
-
-// ---------------------------------------------------------------------------
-// Content renderer — renders whichever view is active, regardless of side
-// ---------------------------------------------------------------------------
-
-export const SidebarViewContent: React.FC<{ view: SidebarView; rootPath: string; workspaceHeader?: React.ReactNode; workspaceLeadingAction?: React.ReactNode; workspaceId?: string }> = ({
-  view,
-  rootPath,
-  workspaceHeader,
-  workspaceLeadingAction,
-  workspaceId,
-}) => {
-  const selectedWorkspaceId = useAppStore((s) => workspaceId ?? s.selectedWorkspaceId)
-  const setWorkspaceRootPath = useAppStore((s) => s.setWorkspaceRootPath)
-  const worktrees = useWorktrees(rootPath, selectedWorkspaceId ?? '')
-  const navigationWorktreeId = useUIStore(
-    (s) => s.navigationWorktreeByWorkspace[selectedWorkspaceId ?? ''],
-  )
-  const setNavigationWorktree = useUIStore((s) => s.setNavigationWorktree)
-  const navigationWorktree = selectedWorktree(worktrees, navigationWorktreeId)
-  const navigationRoot = navigationWorktree?.path ?? rootPath
-  const navigationScope = selectedWorkspaceId ? (
-    <WorktreeScopeSelect
-      worktrees={worktrees}
-      value={navigationWorktree?.id}
-      onChange={(id) => setNavigationWorktree(selectedWorkspaceId, id)}
-      title="File navigation worktree"
-    />
-  ) : null
-
-  switch (view) {
-    case 'workspaces':
-      return <ProjectList headerTitle={workspaceHeader} headerLeadingAction={workspaceLeadingAction} />
-    case 'explorer':
-      return rootPath ? (
-        <FileExplorer rootPath={navigationRoot} scopeControl={navigationScope} />
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full text-muted text-xs gap-3 p-4">
-          <span>No folder open</span>
-          <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-secondary hover:text-primary bg-surface-5 hover:bg-hover transition-colors"
-            onClick={async () => {
-              const path = await window.electronAPI.openFolderDialog()
-              if (path && selectedWorkspaceId) {
-                setWorkspaceRootPath(selectedWorkspaceId, path)
-              }
-            }}
-          >
-            <FolderOpen size={13} />
-            Open Folder
-          </button>
-        </div>
-      )
-    case 'search':
-      return <SearchView rootPath={navigationRoot} workspaceId={selectedWorkspaceId} scopeControl={navigationScope} />
-    case 'git':
-      return <SourceControlView rootPath={rootPath} />
-    default:
-      return null
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Shared activity bar sidebar — parameterized by side
-// ---------------------------------------------------------------------------
 
 interface ActivityBarSidebarProps {
   defaultWidth: number
@@ -107,12 +34,6 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
   const [isResizing, setIsResizing] = useState(false)
   const startXRef = useRef(0)
   const startWidthRef = useRef(0)
-
-  const selectedWorkspace = useAppStore((s) => {
-    const id = s.selectedWorkspaceId
-    return s.workspaces.find((w) => w.id === id)
-  })
-  const rootPath = selectedWorkspace?.rootPath ?? ''
 
   const handleResizeDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -238,11 +159,9 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
       <div className={`flex-1 min-h-0 overflow-hidden relative ${settingsNavigation ? 'hidden' : ''}`}>
         {(
           <div className="absolute inset-0 animate-sidebar-view-in">
-            <SidebarViewContent
-              view="workspaces"
-              rootPath={rootPath}
-              workspaceHeader={<CateLogo size={88} className="h-7 w-auto text-primary" aria-label="Cate" />}
-              workspaceLeadingAction={(
+            <ProjectList
+              headerTitle={<CateLogo size={88} className="h-7 w-auto text-primary" aria-label="Cate" />}
+              headerLeadingAction={(
                 <div className="flex items-center" style={{ marginLeft: macTrafficLightsInset ? macTrafficLightsInset - 12 : 0 }}>
                   <button
                     type="button"
@@ -262,7 +181,7 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
     </div>
   )
 
-  // Both sidebars are either fully hidden or full width.
+  // The workspace sidebar is either hidden or full width.
   const sidebarWidth = sidebarHidden ? 0 : width
 
   return (

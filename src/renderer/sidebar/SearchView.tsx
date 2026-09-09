@@ -8,13 +8,13 @@ import { Search as MagnifyingGlass, SlidersHorizontal, Eraser } from 'lucide-rea
 import { SearchResultsTree } from './SearchResultsTree'
 import { Tooltip } from '../ui/Tooltip'
 import { useGitTree } from './useGitTree'
-import { useSearchStore, lineKey } from '../stores/searchStore'
-import { ensureSearchSubscriptions } from '../stores/searchIpc'
+import { createSearchStore, type SearchStore, lineKey } from '../stores/searchStore'
+import { SearchStoreContext, useSearchStoreContext as useSearchStore } from '../stores/SearchStoreContext'
+import { subscribeSearchStore } from '../stores/searchIpc'
 import log from '../lib/logger'
 import { Spinner } from '../ui/Spinner'
 
 const DEBOUNCE_MS = 250
-let searchSeq = 0
 
 /** Split a comma-separated glob field into trimmed, non-empty patterns. */
 function splitGlobs(value: string): string[] {
@@ -46,13 +46,26 @@ const ToggleBtn: React.FC<ToggleBtnProps> = ({ active, onClick, title, children 
   </Tooltip>
 )
 
-export const SearchView: React.FC<{
+interface SearchViewProps {
   rootPath: string
   workspaceId?: string
   scopeControl?: React.ReactNode
   focusInput?: boolean
   onOpenMatch?: (path: string, line: number, column: number) => void
-}> = ({ rootPath, workspaceId, scopeControl, onOpenMatch, focusInput = true }) => {
+  store?: SearchStore
+  panelId?: string
+  focusToken?: number
+}
+
+export function SearchView(props: SearchViewProps) {
+  const localStore = useMemo(() => createSearchStore(), [props.rootPath])
+  const store = props.store ?? localStore
+  return <SearchStoreContext.Provider value={store}>
+    <SearchContent {...props} store={store} />
+  </SearchStoreContext.Provider>
+}
+
+function SearchContent({ rootPath, workspaceId, scopeControl, onOpenMatch, focusInput = true, store, panelId, focusToken: requestedFocus }: SearchViewProps & { store: SearchStore }) {
   const query = useSearchStore((s) => s.query)
   const isRegex = useSearchStore((s) => s.isRegex)
   const matchCase = useSearchStore((s) => s.matchCase)
@@ -68,7 +81,6 @@ export const SearchView: React.FC<{
   const error = useSearchStore((s) => s.error)
   const dismissedFiles = useSearchStore((s) => s.dismissedFiles)
   const dismissedLines = useSearchStore((s) => s.dismissedLines)
-  const focusToken = useSearchStore((s) => s.focusToken)
 
   const setQuery = useSearchStore((s) => s.setQuery)
   const setOptions = useSearchStore((s) => s.setOptions)
@@ -80,18 +92,18 @@ export const SearchView: React.FC<{
   // Git decorations so result file rows tint like the Explorer.
   const gitTree = useGitTree(rootPath)
 
-  // Ensure window-level result subscriptions exist (idempotent; persists across
-  // mount/unmount so batches arriving while the view is hidden aren't lost).
+  // The owning editor retains the store across Explorer/Search toggles; only
+  // this mounted view receives events, filtered by its current request ID.
   useEffect(() => {
-    ensureSearchSubscriptions()
-  }, [])
+    return subscribeSearchStore(store, panelId)
+  }, [store, panelId])
 
   // Focus the input when something requests it (e.g. Cmd+Shift+F).
   useEffect(() => {
     if (!focusInput) return
     inputRef.current?.focus()
     inputRef.current?.select()
-  }, [focusToken, focusInput])
+  }, [requestedFocus, focusInput])
 
   // Debounced search trigger. The searchId is set in the store BEFORE invoking
   // so streamed batches are never dropped as "stale". Skips re-running an
@@ -100,17 +112,16 @@ export const SearchView: React.FC<{
   useEffect(() => {
     const trimmed = query.trim()
     if (!trimmed || !rootPath) {
-      useSearchStore.getState().clearResults()
-      window.electronAPI.searchCancel().catch(() => { /* noop */ })
+      store.getState().clearResults()
       return
     }
     const key = JSON.stringify([
       trimmed, isRegex, matchCase, wholeWord, includes, excludes, respectIgnore, rootPath,
     ])
-    if (key === useSearchStore.getState().lastQueryKey) return
+    if (key === store.getState().lastQueryKey) return
+    const searchId = crypto.randomUUID()
     const handle = window.setTimeout(() => {
-      const searchId = `search-${++searchSeq}`
-      useSearchStore.getState().beginSearch(searchId, key)
+      store.getState().beginSearch(searchId, key)
       window.electronAPI
         .searchStart(rootPath, searchId, {
           query: trimmed,
@@ -123,8 +134,14 @@ export const SearchView: React.FC<{
         }, workspaceId)
         .catch((err) => log.warn('[search] start failed:', err))
     }, DEBOUNCE_MS)
-    return () => window.clearTimeout(handle)
-  }, [query, isRegex, matchCase, wholeWord, includes, excludes, respectIgnore, rootPath, workspaceId])
+    return () => {
+      window.clearTimeout(handle)
+      if (store.getState().currentSearchId === searchId && store.getState().status === 'searching') {
+        void window.electronAPI.searchCancel(searchId).catch(() => {})
+        store.setState({ currentSearchId: null, lastQueryKey: null, status: 'idle' })
+      }
+    }
+  }, [query, isRegex, matchCase, wholeWord, includes, excludes, respectIgnore, rootPath, workspaceId, store])
 
   // Visible files + accurate counts (excluding dismissed files / lines).
   const { visibleFiles, matchCount, fileCount } = useMemo(() => {
@@ -150,8 +167,9 @@ export const SearchView: React.FC<{
   // Reset the search: clear the query, results, and any in-flight run.
   const clearSearch = (): void => {
     setQuery('')
-    useSearchStore.getState().clearResults()
-    window.electronAPI.searchCancel().catch(() => { /* noop */ })
+    const searchId = store.getState().currentSearchId
+    if (searchId) void window.electronAPI.searchCancel(searchId).catch(() => {})
+    store.getState().clearResults()
     inputRef.current?.focus()
   }
 

@@ -1,123 +1,46 @@
-// =============================================================================
-// FIX: Quit-time sync race — a dock-window change immediately before quit can
-// persist STALE dock state, because main's cached dockWindowState is only
-// refreshed on a 5s tick / focus / beforeunload. flushDockWindowsBeforeQuit
-// requests a FINAL sync from every dock window and awaits their ACKs, bounded by
-// a timeout so quit can never hang. These tests drive the pure logic with a fake
-// clock and a manual ack bus.
-// =============================================================================
-
 import { describe, expect, it, vi } from 'vitest'
 import { flushDockWindowsBeforeQuit } from './dockWindowFlush'
 
-/** A tiny manual ack bus standing in for the IPC ack subscription. */
-function makeAckBus() {
-  const handlers = new Set<(id: number) => void>()
-  return {
-    subscribe: (h: (id: number) => void) => {
-      handlers.add(h)
-      return () => handlers.delete(h)
-    },
-    ack: (id: number) => {
-      for (const h of handlers) h(id)
-    },
-    handlerCount: () => handlers.size,
-  }
+function setup(ids = [1, 2]) {
+  let receive!: (id: number, error?: string, requestId?: string) => void
+  const requests = vi.fn()
+  const unsubscribe = vi.fn()
+  const promise = flushDockWindowsBeforeQuit({ windowIds: ids, requestSync: requests,
+    subscribeAck: handler => { receive = handler; return unsubscribe }, timeoutMs: 50 })
+  const result = promise.then(value => ({ value, error: undefined }), error => ({ value: undefined, error }))
+  return { result, requests, unsubscribe, ack: (id: number, error?: string, token = requests.mock.calls[0]?.[1]) => receive(id, error, token) }
 }
 
-describe('flushDockWindowsBeforeQuit', () => {
-  it('resolves immediately with no windows', async () => {
-    const requestSync = vi.fn()
-    const acked = await flushDockWindowsBeforeQuit({
-      windowIds: [],
-      requestSync,
-      subscribeAck: () => () => {},
-      timeoutMs: 1000,
-    })
-    expect(acked.size).toBe(0)
-    expect(requestSync).not.toHaveBeenCalled()
+describe('durable detached flush', () => {
+  it('does not request absent owners', async () => {
+    const h = setup([])
+    expect((await h.result).value?.size).toBe(0)
+    expect(h.requests).not.toHaveBeenCalled()
   })
-
-  it('requests a sync from every window and resolves once ALL ack', async () => {
-    const bus = makeAckBus()
-    const requestSync = vi.fn()
-
-    const p = flushDockWindowsBeforeQuit({
-      windowIds: [1, 2, 3],
-      requestSync,
-      subscribeAck: bus.subscribe,
-      timeoutMs: 10_000,
-    })
-
-    expect(requestSync).toHaveBeenCalledTimes(3)
-    expect(requestSync.mock.calls.map((c) => c[0]).sort()).toEqual([1, 2, 3])
-
-    bus.ack(1)
-    bus.ack(2)
-    bus.ack(3)
-
-    const acked = await p
-    expect([...acked].sort()).toEqual([1, 2, 3])
-    // Subscription cleaned up after settling.
-    expect(bus.handlerCount()).toBe(0)
+  it('waits for all owners and ignores old, duplicate and foreign acknowledgements', async () => {
+    const h = setup()
+    h.ack(1, undefined, 'old-attempt'); h.ack(9); h.ack(1); h.ack(1)
+    expect(h.unsubscribe).not.toHaveBeenCalled()
+    h.ack(2)
+    expect([...(await h.result).value!]).toEqual([1, 2])
+    expect(h.unsubscribe).toHaveBeenCalledOnce()
   })
-
-  it('resolves on timeout with only the windows that acked in time', async () => {
+  it('rejects missing detached owners instead of reporting durability', async () => {
     vi.useFakeTimers()
     try {
-      const bus = makeAckBus()
-      const p = flushDockWindowsBeforeQuit({
-        windowIds: [1, 2],
-        requestSync: () => {},
-        subscribeAck: bus.subscribe,
-        timeoutMs: 500,
-      })
-
-      bus.ack(1) // only window 1 responds
-      vi.advanceTimersByTime(500)
-
-      const acked = await p
-      expect([...acked]).toEqual([1])
-      expect(bus.handlerCount()).toBe(0)
-    } finally {
-      vi.useRealTimers()
-    }
+      const h = setup()
+      h.ack(1)
+      await vi.advanceTimersByTimeAsync(50)
+      expect((await h.result).error.message).toMatch(/timed out: 2/)
+      expect(h.unsubscribe).toHaveBeenCalledOnce()
+    } finally { vi.useRealTimers() }
   })
-
-  it('ignores acks from unknown / duplicate window ids', async () => {
-    const bus = makeAckBus()
-    const p = flushDockWindowsBeforeQuit({
-      windowIds: [1],
-      requestSync: () => {},
-      subscribeAck: bus.subscribe,
-      timeoutMs: 10_000,
-    })
-
-    bus.ack(99) // not in the wait set
-    bus.ack(1)
-    bus.ack(1) // duplicate — must not double-count or error
-
-    const acked = await p
-    expect([...acked]).toEqual([1])
+  it('rejects publication failures', async () => {
+    const h = setup()
+    h.ack(1, 'disk full')
+    expect((await h.result).error.message).toContain('disk full')
   })
-
-  it('does not let a throwing requestSync prevent resolution', async () => {
-    vi.useFakeTimers()
-    try {
-      const bus = makeAckBus()
-      const p = flushDockWindowsBeforeQuit({
-        windowIds: [1, 2],
-        requestSync: (id) => { if (id === 1) throw new Error('window gone') },
-        subscribeAck: bus.subscribe,
-        timeoutMs: 300,
-      })
-
-      bus.ack(2) // window 2 still acks despite window 1 throwing
-      vi.advanceTimersByTime(300)
-      const acked = await p
-      expect([...acked]).toEqual([2])
-    } finally {
-      vi.useRealTimers()
-    }
+  it('rejects delivery failures', async () => {
+    await expect(flushDockWindowsBeforeQuit({ windowIds: [1], requestSync: () => { throw new Error('gone') }, subscribeAck: () => () => {}, timeoutMs: 50 })).rejects.toThrow('gone')
   })
 })

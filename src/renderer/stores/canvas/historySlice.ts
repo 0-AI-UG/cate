@@ -132,12 +132,21 @@ export function createHistorySlice(set: CanvasSet, get: CanvasGet): HistoryActio
       })
     },
 
-    redo() {
+    async redo() {
       const state = get()
       if (state.future.length === 0) return
       const next = state.future[state.future.length - 1]
-      // Carry the annotation back onto the history entry for the next undo.
-      const current = { ...snapshot(state), closedPanels: next.closedPanels }
+      let closedPanels = next.closedPanels
+      if (closedPanels) {
+        const { confirmClosePanels } = await import('../../lib/confirmClosePanels')
+        const { captureEditorPanel } = await import('../../lib/editor/editorDocuments')
+        if (!(await confirmClosePanels(closedPanels.workspaceId, closedPanels.panels.map(p => p.id)))) return
+        // A different canvas edit while confirmation was open invalidates replay.
+        if (get().future !== state.future || get().nodes !== state.nodes) return
+        const panels = historyAppStore?.getState().workspaces.find(ws => ws.id === closedPanels!.workspaceId)?.panels ?? {}
+        closedPanels = { ...closedPanels, panels: closedPanels.panels.flatMap(p => panels[p.id] ? [captureEditorPanel(panels[p.id])] : []) }
+      }
+      const current = { ...snapshot(state), closedPanels }
       set({
         ...restore(next),
         history: [...state.history, current],

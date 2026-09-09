@@ -1,3 +1,4 @@
+import { migrateNavigationPanel } from '../../../shared/panels'
 // =============================================================================
 // App Store — panel creation + management slice.
 // =============================================================================
@@ -49,6 +50,7 @@ type PanelSliceActions = Pick<
   | 'updatePanelTabs'
   | 'updatePanelProxy'
   | 'updatePanelFilePath'
+  | 'setPanelNavigation'
   | 'setPanelDirty'
   | 'setPanelMarkdownPreview'
   | 'setPanelUnsavedContent'
@@ -141,7 +143,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       const panelId = generateId()
       const worktreeId = worktreeIdForPath(workspaceId, filePath)
       if (filePath) recordRecentFile(workspaceId, filePath)
-      const fileName = (filePath && pathDisplayName(filePath)) || 'Open file'
+      const fileName = (filePath && pathDisplayName(filePath)) || 'Untitled'
       const panel: PanelState = {
         id: panelId,
         type: 'editor',
@@ -335,6 +337,13 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, filePath, worktreeId }))
     },
 
+    setPanelNavigation(workspaceId, panelId, view, visible = true) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({
+        ...panel, sidebarView: view, sidebarVisible: visible,
+        navigationEpoch: (panel.navigationEpoch ?? 0) + 1,
+      }))
+    },
+
     setPanelDirty(workspaceId, panelId, dirty) {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, isDirty: dirty }))
     },
@@ -384,6 +393,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
     },
 
     addPanel(workspaceId, panel) {
+      panel = migrateNavigationPanel(panel)
       set((state) => ({
         workspaces: state.workspaces.map((ws) =>
           ws.id === workspaceId

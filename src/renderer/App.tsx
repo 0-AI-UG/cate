@@ -45,7 +45,7 @@ import { setupCrossWindowDragListeners } from './drag'
 import { createRemoteDropHandler } from './drag/crossWindow'
 import { hydrateReceivedPanel } from './lib/panelTransfer'
 import { useWindowRuntime } from './lib/hooks/useWindowRuntime'
-import { closePanelWithConfirm } from './lib/closePanelWithConfirm'
+import { closePanelWithConfirm, closePanelsWithConfirm } from './lib/closePanelWithConfirm'
 import { IS_MAC } from './lib/platform'
 import pkg from '../../package.json'
 import { PersistentBrowserHostContext } from './panels/browserSurfaceRegistry'
@@ -210,7 +210,8 @@ function MainApp() {
         } else {
           // Declined — resume normal saving so the current canvas overwrites the
           // external edit (the file was held steady only while the prompt was up).
-          await window.electronAPI.dismissWorkspaceExternalEdit?.(rootPath)
+          const { keepWorkspaceLayout } = await import('./lib/workspace/sessionSave')
+          await keepWorkspaceLayout(rootPath)
         }
       } finally {
         reloadPromptOpenRef.current = false
@@ -419,6 +420,7 @@ function MainApp() {
         renderPanel={renderDockPanel}
         getPanelTitle={getPanelTitle}
         onClosePanel={handleDockClosePanel}
+        onClosePanels={(ids) => closePanelsWithConfirm(selectedWorkspaceId, ids)}
       />
       </DockStoreProvider>
 

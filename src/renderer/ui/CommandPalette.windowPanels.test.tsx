@@ -1,3 +1,4 @@
+import { setActivePanel } from '../lib/activePanel'
 // =============================================================================
 // CommandPalette — detached-window integration (rendered).
 //
@@ -59,7 +60,6 @@ beforeEach(() => {
     selectedWorkspaceId: 'ws-A',
   })
   useWindowPanelStore.setState({ panels: [detached] })
-  useUIStore.setState({ navigationWorktreeByWorkspace: {} })
   useUIStore.getState().setShowCommandPalette(true)
 
   host = document.createElement('div')
@@ -71,6 +71,7 @@ afterEach(() => {
   act(() => { root.unmount() })
   host.remove()
   useUIStore.getState().setShowCommandPalette(false)
+  setActivePanel(null)
   gitStatusStore._reset()
 })
 
@@ -93,37 +94,6 @@ function rowWithText(text: string): HTMLElement | undefined {
 }
 
 describe('CommandPalette in the main window', () => {
-  it('opens a remote workspace file in the untitled editor that launched the picker', () => {
-    const filePath = 'cate-runtime://ssh_devbox/home/dev/project/src/main.ts'
-    useAppStore.setState({
-      workspaces: [{
-        id: 'ws-A',
-        name: 'Remote project',
-        color: '',
-        rootPath: 'cate-runtime://ssh_devbox/home/dev/project',
-        panels: {
-          'editor-1': { id: 'editor-1', type: 'editor', title: 'Untitled', isDirty: false },
-        },
-      } as never],
-      selectedWorkspaceId: 'ws-A',
-    })
-    recordRecentFile('ws-A', filePath)
-    useUIStore.getState().openFilePalette('editor-1')
-
-    renderPalette('main')
-
-    expect(host.querySelector('input')?.placeholder).toBe('Search workspace files')
-    expect(host.textContent).not.toContain('New Terminal')
-    const row = rowWithText('main.ts')
-    expect(row).toBeTruthy()
-    act(() => { row!.click() })
-
-    const panel = useAppStore.getState().workspaces[0].panels['editor-1']
-    expect(panel.filePath).toBe(filePath)
-    expect(panel.title).toBe('main.ts')
-    expect(useUIStore.getState().showCommandPalette).toBe(false)
-  })
-
   it('lists workspaces and switches to the selected one', () => {
     useAppStore.setState({
       workspaces: [
@@ -150,7 +120,7 @@ describe('CommandPalette in the main window', () => {
     selectWorkspace.mockRestore()
   })
 
-  it('shows recent files only from the selected navigation worktree', () => {
+  it("shows recent files only from the active Files panel's worktree", () => {
     const primary = '/tmp/p'
     const feature = '/tmp/p/.cate/worktrees/feature'
     useAppStore.setState({
@@ -171,7 +141,8 @@ describe('CommandPalette in the main window', () => {
       { path: primary, branch: 'main', isPrimary: true, isCurrent: true },
       { path: feature, branch: 'feature', isPrimary: false, isCurrent: false },
     ])
-    useUIStore.getState().setNavigationWorktree('ws-A', 'feature')
+    useAppStore.getState().addPanel('ws-A', { id: 'files', type: 'editor', title: 'Files', isDirty: false, worktreeId: 'feature' })
+    setActivePanel('files')
     recordRecentFile('ws-A', `${primary}/primary-only.ts`)
     recordRecentFile('ws-A', `${feature}/feature-only.ts`)
 
@@ -216,7 +187,8 @@ describe('CommandPalette in a detached window', () => {
 
     // Sidebar toggles have no meaning without a sidebar.
     expect(host.textContent).not.toContain('Toggle Sidebar')
-    expect(host.textContent).not.toContain('Toggle File Explorer')
+    expect(host.textContent).toContain('Toggle File Explorer')
+    expect(host.textContent).toContain('Toggle Search')
     // Discovery is bidirectional: a detached window also sees panels that live
     // in OTHER windows (this window doesn't host 'remote-1' locally).
     expect(host.textContent).toContain('Remote Term')
@@ -234,4 +206,10 @@ describe('CommandPalette in a detached window', () => {
     renderPalette('dock')
     expect(host.textContent).not.toContain('Other window')
   })
+})
+
+it('renders the registered Source Control icon for its panel row', () => {
+  useWindowPanelStore.setState({ panels: [{ ...detached, type: 'sourceControl', title: 'Source Control' }] })
+  renderPalette('main')
+  expect(host.querySelector('svg.lucide-git-branch')).not.toBeNull()
 })

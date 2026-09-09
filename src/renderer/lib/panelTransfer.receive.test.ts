@@ -185,6 +185,7 @@ beforeEach(() => {
     writable: true,
     value: {
       terminalCreate,
+      terminalReady: vi.fn().mockResolvedValue(undefined),
       terminalWrite: vi.fn(),
       terminalResize: vi.fn(),
       terminalKill,

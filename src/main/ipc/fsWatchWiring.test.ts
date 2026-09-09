@@ -14,6 +14,8 @@ interface Captured {
 const mockState = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   captured: [] as Captured[],
+  connected: [] as ((id: string, runtime: unknown) => void)[],
+  disconnected: [] as ((id: string) => void)[],
 }))
 
 vi.mock('electron', () => ({
@@ -36,7 +38,10 @@ vi.mock('../runtime/runtimeManager', () => {
   }
   return {
     resolveLocator: (locator: string) => ({ runtime, runtimeId: 'local', path: locator }),
-    runtimes: { resolve: () => runtime },
+    runtimes: { resolve: () => runtime,
+      onConnected: (cb: (id: string, runtime: unknown) => void) => { mockState.connected.push(cb); return () => {} },
+      onDisconnected: (cb: (id: string) => void) => { mockState.disconnected.push(cb); return () => {} },
+    },
   }
 })
 
@@ -61,7 +66,7 @@ const root = path.resolve('/repo')
 
 describe('filesystem watch wiring', () => {
   beforeEach(async () => {
-    await Promise.resolve(watchStop(fakeEvent, root)).catch(() => {})
+    stopWatchersForWindow(1)
     mockState.captured.length = 0
     sentEvents.length = 0
   })
@@ -72,7 +77,7 @@ describe('filesystem watch wiring', () => {
     expect(mockState.captured[0].prefix).toBe(root)
     expect(mockState.captured[0].access).toEqual({ ownerWindowId: 1, scopeId: 'workspace-1' })
 
-    await watchStop(fakeEvent, root)
+    await watchStop(fakeEvent, root, 'workspace-1')
     expect(mockState.captured[0].unsub).toHaveBeenCalledTimes(1)
   })
 
@@ -90,4 +95,28 @@ describe('filesystem watch wiring', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(sentEvents).toContainEqual({ path: file, type: 'create' })
   })
+})
+
+test('rebinds existing watches to the reconnected runtime with their workspace scope', async () => {
+  await watchStart(fakeEvent, root, 'workspace-1')
+  const previous = mockState.captured.at(-1)!
+  const nextWatch = vi.fn(() => vi.fn())
+  mockState.disconnected.forEach(notify => notify('local'))
+  mockState.connected.forEach(notify => notify('local', { file: { watch: nextWatch } }))
+  expect(previous.unsub).toHaveBeenCalledTimes(1)
+  expect(nextWatch).toHaveBeenCalledWith(root, expect.any(Function), { ownerWindowId: 1, scopeId: 'workspace-1' })
+  stopWatchersForWindow(1)
+})
+
+test('keeps same-root watches from distinct scopes independent during stop', async () => {
+  stopWatchersForWindow(1)
+  mockState.captured.length = 0
+  await watchStart(fakeEvent, root, 'scope-a')
+  await watchStart(fakeEvent, root, 'scope-b')
+  expect(mockState.captured).toHaveLength(2)
+  expect(mockState.captured[0].unsub).not.toHaveBeenCalled()
+  await watchStop(fakeEvent, root, 'scope-a')
+  expect(mockState.captured[0].unsub).toHaveBeenCalledOnce()
+  expect(mockState.captured[1].unsub).not.toHaveBeenCalled()
+  stopWatchersForWindow(1)
 })

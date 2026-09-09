@@ -1,3 +1,4 @@
+import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
 import { T3ConversationMenu } from './T3ConversationMenu'
 // =============================================================================
 // CanvasToolbar — floating bottom-center toolbar for panel creation and zoom.
@@ -96,8 +97,7 @@ const TerminalSpawnButton: React.FC<{ onClick: () => void; canvasPanelId: string
       if (wsId) {
         const workspace = app.getWorkspace(wsId)
         const wt = inheritedWorktreeFromSelection(canvasApi.getState(), workspace?.panels, workspace?.worktrees)
-        const newId = app.createTerminal(wsId, undefined, pos, { target: 'canvas', canvasPanelId }, wt.cwd)
-        if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
+        createInteractivePanel('terminal', { workspaceId: wsId, canvasPoint: pos, placement: { target: 'canvas', canvasPanelId }, ...wt })
       }
     }
     window.addEventListener('mousemove', onMove, true)
@@ -451,7 +451,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       >
         {minimapOpen && (
           <div className="absolute inset-0">
-            <Minimap mode="popover" />
+            <Minimap />
           </div>
         )}
         <button

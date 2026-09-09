@@ -2,7 +2,7 @@
 // searchStore — state for the VS Code-style Search view.
 //
 // Holds the query + match options, streamed results (grouped by file), and
-// transient UI state (collapsed/dismissed groups, a focus token). Results
+// transient UI state (collapsed/dismissed groups, selection state). Results
 // outlive the SearchView component so switching sidebar views keeps them.
 // =============================================================================
 
@@ -43,7 +43,6 @@ export interface SearchState {
   collapsed: Set<string>
   dismissedFiles: Set<string>
   dismissedLines: Set<string>
-  focusToken: number
 
   // Actions
   setQuery: (q: string) => void
@@ -56,7 +55,6 @@ export interface SearchState {
   toggleCollapse: (path: string) => void
   dismissFile: (path: string) => void
   dismissLine: (path: string, line: number) => void
-  requestFocus: () => void
 }
 
 export type SearchOptionFields = Pick<
@@ -109,7 +107,6 @@ export const createSearchStore = () =>
     collapsed: new Set(),
     dismissedFiles: new Set(),
     dismissedLines: new Set(),
-    focusToken: 0,
 
     setQuery: (q) => set({ query: q }),
 
@@ -175,7 +172,6 @@ export const createSearchStore = () =>
         return { dismissedLines: next }
       }),
 
-    requestFocus: () => set((s) => ({ focusToken: s.focusToken + 1 })),
   }))
 
-export const useSearchStore = createSearchStore()
+export type SearchStore = ReturnType<typeof createSearchStore>

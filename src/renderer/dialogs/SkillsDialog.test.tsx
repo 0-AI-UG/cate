@@ -5,13 +5,15 @@ import { SkillsDialog } from './SkillsDialog'
 import { useUIStore } from '../stores/uiStore'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-vi.mock('../stores/appStore', () => ({ useAppStore: (select: (state: unknown) => unknown) => select({ workspaces: [], selectedWorkspaceId: '' }) }))
+const app = vi.hoisted(() => ({ workspaces: [] as any[], selectedWorkspaceId: '' }))
+vi.mock('../stores/appStore', () => ({ useAppStore: (select: (state: unknown) => unknown) => select(app) }))
 vi.mock('../shells/LeftSidebarReopen', () => ({ LeftSidebarReopen: () => null, useLeftChromeInset: () => 0 }))
 
 let root: Root
 let host: HTMLDivElement
 let slot: HTMLDivElement
 beforeEach(() => {
+  app.workspaces = []; app.selectedWorkspaceId = ''
   host = document.createElement('div')
   slot = document.createElement('div')
   slot.id = 'skills-content-slot'
@@ -111,4 +113,17 @@ it('groups repositories and lets users open their skills and return in either la
   expect(input.value).toBe('owner/tools Review')
   expect(slot.querySelectorAll('article')).toHaveLength(1)
   expect(slot.textContent).not.toContain('All repositories')
+})
+
+
+it('updates installed skills through the same workspace scope as installation', async () => {
+  app.workspaces = [{ id: 'workspace', rootPath: '/project', panels: {} }]
+  app.selectedWorkspaceId = 'workspace'
+  window.electronAPI.skillsInstall = vi.fn().mockResolvedValue({ ok: true, warnings: [] })
+  vi.mocked(window.electronAPI.skillsListInstalled).mockResolvedValue([{ skillId: 'skill', name: 'Example skill', targetId: 'codex', path: '/project/.codex/skills/example/SKILL.md', origin: 'local' }])
+  await act(async () => root.render(<SkillsDialog />))
+  const update = [...slot.querySelectorAll<HTMLButtonElement>('button')].find(button => button.title.includes('Update') || button.getAttribute('aria-label')?.includes('Update'))!
+  expect(update).toBeDefined()
+  await act(async () => update.click())
+  expect(window.electronAPI.skillsInstall).toHaveBeenCalledWith(expect.objectContaining({ id: 'skill' }), 'codex', '/project', 'workspace')
 })

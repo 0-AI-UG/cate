@@ -125,7 +125,8 @@ export interface AppStoreActions {
   /** Browser panels only: set/clear the per-panel proxy. Pass undefined to
    *  revert the panel to the shared (direct) browser session. */
   updatePanelProxy: (workspaceId: string, panelId: string, proxyUrl?: string) => void
-  updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string) => void
+  updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string | undefined) => void
+  setPanelNavigation: (workspaceId: string, panelId: string, view: 'explorer' | 'search', visible?: boolean) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void
   setPanelMarkdownPreview: (workspaceId: string, panelId: string, preview: boolean) => void
   setPanelUnsavedContent: (workspaceId: string, panelId: string, content: string | undefined) => void

@@ -1,12 +1,12 @@
 // =============================================================================
 // Regression: bulk delete (Delete key / "Close All" on a multi-node selection)
-// must use closePanelWithConfirm for every panel, matching normal panel closes
+// must use closePanelsWithConfirm for every panel, matching normal panel closes
 // (including dirty-editor, running-terminal, and canvas confirmation flows).
 // =============================================================================
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-const closePanelWithConfirm = vi.fn()
+const closePanelsWithConfirm = vi.fn()
 const SELECTED_WS = 'ws-1'
 
 // Live panel-record map so the history transaction can snapshot records and
@@ -30,7 +30,8 @@ vi.mock('../appStore', () => ({
   },
 }))
 
-vi.mock('../../lib/closePanelWithConfirm', () => ({ closePanelWithConfirm }))
+vi.mock('../../lib/closePanelWithConfirm', () => ({ closePanelsWithConfirm }))
+vi.mock('../../lib/editor/editorDocuments', () => ({ captureEditorPanel: (panel: unknown) => panel }))
 
 import { createCanvasStore } from '../canvasStore'
 import type { DockLayoutNode } from '../../../shared/types'
@@ -44,12 +45,12 @@ function seedPanels(ids: string[]) {
   for (const id of ids) wsPanels[id] = { id, type: 'terminal', title: id, isDirty: false }
 }
 
-describe('deleteSelection routes panel-backed nodes through closePanelWithConfirm', () => {
+describe('deleteSelection routes panel-backed nodes through closePanelsWithConfirm', () => {
   beforeEach(() => {
-    closePanelWithConfirm.mockReset()
-    // The real closePanelWithConfirm removes the panel record on success.
-    closePanelWithConfirm.mockImplementation(async (_wsId: string, panelId: string) => {
-      delete wsPanels[panelId]
+    closePanelsWithConfirm.mockReset()
+    // The real closePanelsWithConfirm removes the panel record on success.
+    closePanelsWithConfirm.mockImplementation(async (_wsId: string, panelIds: string[], remove: (id: string) => void) => {
+      panelIds.forEach(remove)
       return true
     })
     addPanel.mockClear()
@@ -65,9 +66,7 @@ describe('deleteSelection routes panel-backed nodes through closePanelWithConfir
     store.getState().selectNodes([a, b])
     await store.getState().deleteSelection()
 
-    expect(closePanelWithConfirm).toHaveBeenNthCalledWith(1, SELECTED_WS, 'term-a')
-    expect(closePanelWithConfirm).toHaveBeenNthCalledWith(2, SELECTED_WS, 'term-b')
-    expect(closePanelWithConfirm).toHaveBeenCalledTimes(2)
+    expect(closePanelsWithConfirm).toHaveBeenCalledExactlyOnceWith(SELECTED_WS, ['term-a', 'term-b'], expect.any(Function))
 
     // Nodes are still removed from the canvas as before.
     store.getState().finalizeRemoveNode(a)
@@ -86,39 +85,22 @@ describe('deleteSelection routes panel-backed nodes through closePanelWithConfir
     store.getState().selectNodes([node])
     await store.getState().deleteSelection()
 
-    expect(closePanelWithConfirm).toHaveBeenNthCalledWith(1, SELECTED_WS, 'p1')
-    expect(closePanelWithConfirm).toHaveBeenNthCalledWith(2, SELECTED_WS, 'p2')
-    expect(closePanelWithConfirm).toHaveBeenNthCalledWith(3, SELECTED_WS, 'p3')
-    expect(closePanelWithConfirm).toHaveBeenCalledTimes(3)
+    expect(closePanelsWithConfirm).toHaveBeenCalledExactlyOnceWith(SELECTED_WS, ['p1', 'p2', 'p3'], expect.any(Function))
   })
 
   it('keeps the selection intact when a normal close is cancelled', async () => {
     const store = createCanvasStore()
     const a = store.getState().addNode('term-a', 'terminal', { x: 0, y: 0 }, { width: 100, height: 80 })
     const b = store.getState().addNode('term-b', 'terminal', { x: 200, y: 0 }, { width: 100, height: 80 })
-    closePanelWithConfirm.mockResolvedValueOnce(false)
+    closePanelsWithConfirm.mockResolvedValueOnce(false)
 
     store.getState().selectNodes([a, b])
     await store.getState().deleteSelection()
 
-    expect(closePanelWithConfirm).toHaveBeenCalledTimes(1)
+    expect(closePanelsWithConfirm).toHaveBeenCalledTimes(1)
     expect(store.getState().nodes[a].animationState).not.toBe('exiting')
     expect(store.getState().nodes[b].animationState).not.toBe('exiting')
     expect(store.getState().selection).toEqual([a, b])
-  })
-
-  it('removes already-closed nodes before a later close is cancelled', async () => {
-    const store = createCanvasStore()
-    const a = store.getState().addNode('term-a', 'terminal', { x: 0, y: 0 }, { width: 100, height: 80 })
-    const b = store.getState().addNode('term-b', 'terminal', { x: 200, y: 0 }, { width: 100, height: 80 })
-    closePanelWithConfirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
-
-    store.getState().selectNodes([a, b])
-    await store.getState().deleteSelection()
-
-    expect(store.getState().nodes[a].animationState).toBe('exiting')
-    expect(store.getState().nodes[b].animationState).not.toBe('exiting')
-    expect(store.getState().selection).toEqual([b])
   })
 
   it('does nothing when the selection is empty', async () => {
@@ -127,6 +109,6 @@ describe('deleteSelection routes panel-backed nodes through closePanelWithConfir
 
     await store.getState().deleteSelection()
 
-    expect(closePanelWithConfirm).not.toHaveBeenCalled()
+    expect(closePanelsWithConfirm).not.toHaveBeenCalled()
   })
 })

@@ -1,3 +1,4 @@
+import { applyFileEntryMove } from './lib/editor/editorDocuments'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import log from './lib/logger'
@@ -8,6 +9,9 @@ import { subscribeToOsNotificationClicks } from './lib/notifications/osNotificat
 import { installGestureLockWatchdog } from './lib/dom/gestureLockWatchdog'
 import './styles/globals.css'
 import '@xterm/xterm/css/xterm.css'
+
+// All windows follow acknowledged file moves, including hidden editor panels.
+window.electronAPI.onFsEntryMoved?.(applyFileEntryMove)
 
 // Listen for OS notification clicks (focus the originating terminal).
 subscribeToOsNotificationClicks()

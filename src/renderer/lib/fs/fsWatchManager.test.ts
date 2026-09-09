@@ -91,11 +91,11 @@ describe('fsWatchManager — start ordering', () => {
     sync.state.resolve()
     await flush()
 
-    eventCb!({ type: 'update', path: '/proj/file.txt' })
-    expect(listener).toHaveBeenCalledWith({ type: 'update', path: '/proj/file.txt' })
+    eventCb!({ type: 'update', path: '/proj/file.txt', scopeId: WS })
+    expect(listener).toHaveBeenCalledWith({ type: 'update', path: '/proj/file.txt', scopeId: WS })
 
     // Events outside the root are filtered out.
-    eventCb!({ type: 'update', path: '/other/file.txt' })
+    eventCb!({ type: 'update', path: '/other/file.txt', scopeId: WS })
     expect(listener).toHaveBeenCalledTimes(1)
     stop()
   })
@@ -118,4 +118,17 @@ describe('fsWatchManager — refcounting', () => {
     expect(api.fsWatchStop).toHaveBeenCalledTimes(1)
     expect(api.fsWatchStop).toHaveBeenCalledWith(ROOT, WS)
   })
+})
+
+it('keeps separate authorization owners for the same watched root', async () => {
+  const stopA = watchFsRoot(ROOT, vi.fn(), 'scope-a')
+  const stopB = watchFsRoot(ROOT, vi.fn(), 'scope-b')
+  sync.state.resolve()
+  await flush()
+  expect(api.fsWatchStart).toHaveBeenCalledWith(ROOT, 'scope-a')
+  expect(api.fsWatchStart).toHaveBeenCalledWith(ROOT, 'scope-b')
+  stopA()
+  expect(api.fsWatchStop).toHaveBeenCalledWith(ROOT, 'scope-a')
+  expect(api.fsWatchStop).not.toHaveBeenCalledWith(ROOT, 'scope-b')
+  stopB()
 })

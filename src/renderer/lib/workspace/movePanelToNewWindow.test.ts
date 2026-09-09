@@ -84,7 +84,7 @@ beforeEach(() => {
   h.disposeSpy.mockClear()
   const g = globalThis as unknown as { window?: { electronAPI?: unknown } }
   g.window = g.window ?? {}
-  g.window.electronAPI = { dragDetach }
+  g.window.electronAPI = { dragDetach, commitPanelTransfer: vi.fn().mockResolvedValue(true), finishPanelTransfer: vi.fn() }
 })
 
 // ---------------------------------------------------------------------------
@@ -223,4 +223,21 @@ describe('movePanelToNewWindow — last canvas', () => {
     // getWorkspaceDockStore may have been recreated by placement — release again defensively.
     if (getWorkspaceDockStore(ws)) releaseWorkspaceDockStore(ws)
   })
+})
+
+it('keeps overview/command-palette source intact when the final handoff is rejected', async () => {
+  const ws = 'ws-commit-refused'
+  seedWorkspace(ws, [panel('editor', 'editor')])
+  const dock = createDockStore()
+  dock.getState().dockPanel('editor', 'center')
+  registerWorkspaceDockStore(ws, dock)
+  dragDetach.mockResolvedValue(3)
+  window.electronAPI.commitPanelTransfer = vi.fn().mockResolvedValue(false)
+  window.electronAPI.finishPanelTransfer = vi.fn()
+  try {
+    expect(await movePanelToNewWindow(ws, 'editor')).toBe(false)
+    expect(panelsOf(ws).editor).toBeDefined()
+    expect(collectPanelIds(dock.getState().zones.center.layout)).toContain('editor')
+    expect(window.electronAPI.finishPanelTransfer).not.toHaveBeenCalled()
+  } finally { releaseWorkspaceDockStore(ws) }
 })

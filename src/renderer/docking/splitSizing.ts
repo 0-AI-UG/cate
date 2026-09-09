@@ -5,7 +5,14 @@ export const MIN_PANE_SIZE = { width: 320, height: 220 }
 
 export function layoutMinimum(node: DockLayoutNode, getPanelType?: (id: string) => PanelType | undefined): { width: number; height: number } {
   if (node.type === 'tabs') {
-    return node.panelIds.some((id) => getPanelType?.(id) === 'canvas') ? PANEL_MINIMUM_SIZES.canvas : MIN_PANE_SIZE
+    return node.panelIds.reduce((minimum, id) => {
+      const type = getPanelType?.(id)
+      const panelMinimum = type ? PANEL_MINIMUM_SIZES[type] : MIN_PANE_SIZE
+      return {
+        width: Math.max(minimum.width, panelMinimum.width),
+        height: Math.max(minimum.height, panelMinimum.height),
+      }
+    }, MIN_PANE_SIZE)
   }
   const children = node.children.map((child) => layoutMinimum(child, getPanelType))
   const horizontal = node.direction === 'horizontal'

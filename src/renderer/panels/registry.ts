@@ -15,7 +15,7 @@ import { T3Logo } from '../ui/T3Logo'
 
 import React, { type LazyExoticComponent, type ComponentType } from 'react'
 import { Terminal, Globe, Grid2X2 as SquaresFour, FileText as FileDoc, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
-import { Folders, Search, GitBranch, Plus } from 'lucide-react'
+import { Folders, GitBranch, Plus } from 'lucide-react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
@@ -46,6 +46,8 @@ const ReviewPanel = React.lazy(() => import('./ReviewPanel'))
  *  doesn't understand — e.g. the git factory ignores `filePath`. */
 export interface PanelCreateArgs {
   workspaceId: string
+  cwd?: string
+  worktreeId?: string
   canvasPoint?: Point
   placement?: PanelPlacement
   /** Editor only. */
@@ -89,37 +91,16 @@ const baseProps = (panel: PanelState, ctx: PanelRenderContext): Record<string, u
 // -----------------------------------------------------------------------------
 
 export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
-  navigation: {
-    ...PANEL_DEFINITIONS.navigation,
-    icon: Folders,
-    Component: React.lazy(() => import('../sidebar/NavigationPanel')),
-    // Compatibility entry for restored sessions and older callers. New Files
-    // surfaces are editor panels because the explorer now lives in the editor.
-    create: ({ workspaceId, placement, canvasPoint }) =>
-      trackCreated('editor', useAppStore.getState().createEditor(workspaceId, undefined, canvasPoint, placement) || null),
-    props: (panel, ctx) => ({ ...baseProps(panel, ctx), view: panel.sidebarView ?? 'explorer' }),
-  },
-  search: {
-    ...PANEL_DEFINITIONS.search,
-    icon: Search,
-    Component: React.lazy(() => import('../sidebar/NavigationPanel')),
-    create: ({ workspaceId, placement, canvasPoint }) => addAndPlacePanel(
-      useAppStore.setState, useAppStore.getState, workspaceId,
-      { id: crypto.randomUUID(), type: 'search', title: 'Search', isDirty: false, sidebarView: 'search' },
-      placement, canvasPoint,
-    ),
-    props: (panel, ctx) => ({ ...baseProps(panel, ctx), view: 'search' }),
-  },
   sourceControl: {
     ...PANEL_DEFINITIONS.sourceControl,
     icon: GitBranch,
-    Component: React.lazy(() => import('../sidebar/NavigationPanel')),
+    Component: React.lazy(() => import('./SourceControlPanel')),
     create: ({ workspaceId, placement, canvasPoint }) => addAndPlacePanel(
       useAppStore.setState, useAppStore.getState, workspaceId,
       { id: crypto.randomUUID(), type: 'sourceControl', title: 'Source Control', isDirty: false, sidebarView: 'git' },
       placement, canvasPoint,
     ),
-    props: (panel, ctx) => ({ ...baseProps(panel, ctx), view: 'git' }),
+    props: baseProps,
   },
   surface: {
     ...PANEL_DEFINITIONS.surface,
@@ -136,8 +117,12 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     ...PANEL_DEFINITIONS.terminal,
     icon: Terminal,
     Component: TerminalPanel,
-    create: ({ workspaceId, canvasPoint, placement, initialInput }) =>
-      trackCreated('terminal', useAppStore.getState().createTerminal(workspaceId, initialInput, canvasPoint, placement) || null),
+    create: ({ workspaceId, canvasPoint, placement, initialInput, cwd, worktreeId }) => {
+      const app = useAppStore.getState()
+      const id = app.createTerminal(workspaceId, initialInput, canvasPoint, placement, cwd)
+      if (id && worktreeId) app.setPanelWorktreeId(workspaceId, id, worktreeId)
+      return trackCreated('terminal', id || null)
+    },
     props: (panel, ctx) => ({
       ...baseProps(panel, ctx),
       codingAgentLaunch: panel.codingAgentLaunch,
@@ -161,8 +146,12 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     ...PANEL_DEFINITIONS.editor,
     icon: Folders,
     Component: EditorPanel,
-    create: ({ workspaceId, canvasPoint, placement, filePath }) =>
-      trackCreated('editor', useAppStore.getState().createEditor(workspaceId, filePath, canvasPoint, placement) || null),
+    create: ({ workspaceId, canvasPoint, placement, filePath, worktreeId }) => {
+      const app = useAppStore.getState()
+      const id = app.createEditor(workspaceId, filePath, canvasPoint, placement)
+      if (id && worktreeId && !filePath) app.setPanelWorktreeId(workspaceId, id, worktreeId)
+      return trackCreated('editor', id || null)
+    },
     props: (panel, ctx) => ({ ...baseProps(panel, ctx), filePath: panel.filePath }),
   },
   canvas: {
@@ -177,8 +166,8 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     ...PANEL_DEFINITIONS.agent,
     icon: T3Logo,
     Component: AgentPanel,
-    create: ({ workspaceId, canvasPoint, placement }) =>
-      trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null),
+    create: ({ workspaceId, canvasPoint, placement, cwd, worktreeId }) =>
+      trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement, cwd, worktreeId) || null),
     props: baseProps,
   },
   document: {
@@ -193,8 +182,9 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     ...PANEL_DEFINITIONS.review,
     icon: GitDiff,
     Component: ReviewPanel,
-    create: ({ workspaceId, canvasPoint, placement }) => {
-      const rootPath = useAppStore.getState().getWorkspace(workspaceId)?.rootPath
+    create: ({ workspaceId, canvasPoint, placement, worktreeId }) => {
+      const workspace = useAppStore.getState().getWorkspace(workspaceId)
+      const rootPath = workspace?.worktrees?.find(wt => wt.id === worktreeId)?.path ?? workspace?.rootPath
       return rootPath
         ? trackCreated('review', useAppStore.getState().createReview(workspaceId, rootPath, undefined, canvasPoint, placement) || null)
         : null

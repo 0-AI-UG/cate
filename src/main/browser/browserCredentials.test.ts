@@ -224,3 +224,21 @@ describe('Chrome password import', () => {
     })).rejects.toThrow('invalid')
   })
 })
+
+it('preserves credentials saved concurrently by independent browser tabs', async () => {
+  await Promise.all([
+    saveBrowserCredential({ origin: 'https://one.example/login', username: 'one', password: 'secret-one' }),
+    saveBrowserCredential({ origin: 'https://two.example/login', username: 'two', password: 'secret-two' }),
+  ])
+  expect((await getBrowserCredentials()).map(row => row.username).sort()).toEqual(['one', 'two'])
+})
+
+it('preserves malformed credentials before replacing the store', async () => {
+  const broken = '{ broken credentials'
+  await fsp.writeFile(path.join(state.userData, 'browser-credentials.json'), broken)
+  await saveBrowserCredential({ origin: 'https://one.example', username: 'one', password: 'new-secret' })
+  const files = await fsp.readdir(state.userData)
+  const backup = files.find(file => file.startsWith('browser-credentials.json.corrupt-'))
+  expect(backup).toBeTruthy()
+  expect(await fsp.readFile(path.join(state.userData, backup!), 'utf8')).toBe(broken)
+})

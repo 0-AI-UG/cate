@@ -15,9 +15,11 @@ import log from '../../main/logger'
 import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import { hostJoin } from '../../main/cateApi/hostPath'
-import type { Runtime } from '../../main/runtime/types'
-import { skillsRootDir, skillsRootDirs, targetInfo } from './targets'
-import { ensureSkillName } from './frontmatter'
+import type { FileAccessContext } from '../../main/runtime/types'
+import { KeyedLock } from '../../main/keyedLock'
+import { scopedSkillFiles, withSkillWorkspaces, writeSkillJson, type SkillFileHost } from './skillWorkspace'
+import { withBundleTransaction, retireBundle, prepareBundle, readInstalledBundle, materializeBundle, fileHashes, skillFiles, reconcileManagedBundle } from './skillBundle'
+import { skillsRootDirs, targetInfo } from './targets'
 import * as skillStore from './skillStore'
 import * as savedSkills from './savedSkills'
 import { getToken } from './skillSources'
@@ -26,7 +28,6 @@ import {
   type InstalledSkill, type SkillEntry, type SkillTargetId,
 } from '../../shared/skills'
 import { fetchSkillFiles, type SkillFile } from './githubCrawl'
-import { skillPathSegments } from './skillPath'
 
 // ---------------------------------------------------------------------------
 // Manifest (<workspace>/.cate/skills.json)
@@ -46,7 +47,7 @@ function manifestPath(runtimeId: string, hostCwd: string): string {
   return hostJoin(runtimeId, hostCwd, '.cate', 'skills.json')
 }
 
-async function readManifestData(runtime: Runtime, runtimeId: string, hostCwd: string): Promise<SkillsManifest> {
+async function readManifestData(runtime: SkillFileHost, runtimeId: string, hostCwd: string): Promise<SkillsManifest> {
   try {
     const raw = await runtime.file.readFile(manifestPath(runtimeId, hostCwd))
     const parsed = JSON.parse(raw) as SkillsManifest
@@ -68,26 +69,30 @@ async function readManifestData(runtime: Runtime, runtimeId: string, hostCwd: st
   }
 }
 
-export async function readManifest(runtime: Runtime, runtimeId: string, hostCwd: string): Promise<InstalledSkill[]> {
+export async function readManifest(runtime: SkillFileHost, runtimeId: string, hostCwd: string): Promise<InstalledSkill[]> {
   return (await readManifestData(runtime, runtimeId, hostCwd)).skills
 }
 
-async function writeManifest(runtime: Runtime, runtimeId: string, hostCwd: string, manifest: SkillsManifest): Promise<void> {
+async function writeManifest(runtime: SkillFileHost, runtimeId: string, hostCwd: string, manifest: SkillsManifest): Promise<void> {
   await runtime.file.mkdir(hostJoin(runtimeId, hostCwd, '.cate'))
   // Omit an empty seeded list so pre-seeding manifests round-trip unchanged.
   const out: SkillsManifest = manifest.seeded?.length ? manifest : { skills: manifest.skills }
-  await runtime.file.writeFile(manifestPath(runtimeId, hostCwd), `${JSON.stringify(out, null, 2)}\n`)
+  await writeSkillJson(runtime, manifestPath(runtimeId, hostCwd), out)
 }
 
 /** Seed markers for this workspace (see SkillsManifest.seeded). */
-export async function readSeededMarkers(runtime: Runtime, runtimeId: string, hostCwd: string): Promise<string[]> {
+export async function readSeededMarkers(runtime: SkillFileHost, runtimeId: string, hostCwd: string): Promise<string[]> {
   return (await readManifestData(runtime, runtimeId, hostCwd)).seeded ?? []
 }
 
 /** Record that a bundled skill was seeded for a target in this workspace,
  *  replacing any earlier marker for the same skill+target (the part before the
  *  optional `@<hash>` version suffix). */
-export async function setSeededMarker(runtime: Runtime, runtimeId: string, hostCwd: string, marker: string): Promise<void> {
+export async function setSeededMarker(runtime: SkillFileHost, runtimeId: string, hostCwd: string, marker: string): Promise<void> {
+  return withSkillWorkspaces([formatLocator({ runtimeId, path: hostCwd })], () => setSeededMarkerLocked(runtime, runtimeId, hostCwd, marker))
+}
+
+async function setSeededMarkerLocked(runtime: SkillFileHost, runtimeId: string, hostCwd: string, marker: string): Promise<void> {
   const base = marker.split('@')[0]
   const manifest = await readManifestData(runtime, runtimeId, hostCwd)
   if (manifest.seeded?.includes(marker)) return
@@ -106,6 +111,7 @@ export interface WriteSkillArgs {
   cwd: string
   files: SkillFile[]
   origin: 'local'
+  access?: FileAccessContext
 }
 
 export interface WriteSkillResult {
@@ -113,77 +119,47 @@ export interface WriteSkillResult {
   warnings: string[]
 }
 
-/** Create every directory level from the (existing) workspace root down to
- *  `targetDir`. `runtime.file.mkdir` is recursive but its validation requires
- *  the IMMEDIATE parent to already exist, so we walk level by level — e.g. a
- *  fresh `.codex/skills` works even though `.codex` didn't exist yet. */
-async function mkdirp(runtime: Runtime, runtimeId: string, hostCwd: string, targetDir: string): Promise<void> {
-  if (!targetDir.startsWith(hostCwd)) {
-    await runtime.file.mkdir(targetDir)
-    return
-  }
-  const rel = targetDir.slice(hostCwd.length).replace(/^[/\\]+/, '')
-  let cur = hostCwd
-  for (const part of rel.split(/[/\\]+/).filter(Boolean)) {
-    cur = hostJoin(runtimeId, cur, part)
-    await runtime.file.mkdir(cur)
-  }
-}
-
-async function writeFile(runtime: Runtime, hostPath: string, file: SkillFile, slug: string): Promise<void> {
-  if (file.text != null) {
-    const content = file.relPath === 'SKILL.md' ? ensureSkillName(file.text, slug) : file.text
-    await runtime.file.writeFile(hostPath, content)
-  } else if (file.base64 != null) {
-    await runtime.file.writeBinary(hostPath, Buffer.from(file.base64, 'base64'))
-  }
-}
-
 export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<WriteSkillResult> {
+  return withSkillWorkspaces([args.cwd], () => withBundleTransaction(() => writeSkillLocked(args)))
+}
+
+async function writeSkillLocked(args: WriteSkillArgs): Promise<WriteSkillResult> {
   const { skillId, name, targetId, cwd, files, origin } = args
   const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) throw new Error('Workspace has no folder open')
-  const runtime = runtimes.resolve(runtimeId)
+  const runtime = scopedSkillFiles(runtimes.resolve(runtimeId), args.access)
   const info = targetInfo(targetId)
   const slug = slugifySkillName(name)
   const roots = skillsRootDirs(targetId, runtimeId, hostCwd)
   const root = roots[0]
 
   const warnings: string[] = []
-  let installedHostPath: string
-
-  if (info.layout === 'folder') {
-    // Validate the complete bundle before creating directories or writing files,
-    // so a malformed source cannot escape (or partially modify) the skill root.
-    const bundle = files.map((file) => ({ file, segments: skillPathSegments(file.relPath) }))
-    for (const destinationRoot of roots) {
-      const dir = hostJoin(runtimeId, destinationRoot, slug)
-      await mkdirp(runtime, runtimeId, hostCwd, dir)
-      for (const { file: f, segments: segs } of bundle) {
-        const target = hostJoin(runtimeId, dir, ...segs)
-        if (segs.length > 1) {
-          await mkdirp(runtime, runtimeId, hostCwd, hostJoin(runtimeId, dir, ...segs.slice(0, -1)))
-        }
-        await writeFile(runtime, target, f, slug)
-      }
-    }
-    installedHostPath = hostJoin(runtimeId, root, slug, 'SKILL.md')
-  } else {
-    const skillMd = files.find((f) => f.relPath === 'SKILL.md')
-    if (!skillMd?.text) throw new Error('Skill is missing SKILL.md')
-    const extras = files.filter((f) => f.relPath !== 'SKILL.md')
-    if (extras.length) {
-      warnings.push(`${info.label} supports single-file skills only; ${extras.length} bundled file(s) were not installed.`)
-    }
-    for (const destinationRoot of roots) {
-      await mkdirp(runtime, runtimeId, hostCwd, destinationRoot)
-      await runtime.file.writeFile(
-        hostJoin(runtimeId, destinationRoot, `${slug}.md`),
-        ensureSkillName(skillMd.text, slug),
-      )
-    }
-    installedHostPath = hostJoin(runtimeId, root, `${slug}.md`)
+  const prepared = prepareBundle(files, slug)
+  if (!prepared.some(file => file.relPath === 'SKILL.md')) throw new Error('Skill is missing SKILL.md')
+  const desired = info.layout === 'folder' ? prepared : prepared.filter(file => file.relPath === 'SKILL.md')
+  if (desired.length < prepared.length) warnings.push(`${info.label} supports single-file skills only; ${prepared.length - desired.length} bundled file(s) were not installed.`)
+  const manifest = await readManifestData(runtime, runtimeId, hostCwd)
+  const previous = manifest.skills.find(entry => entry.skillId === skillId && entry.targetId === targetId)
+  const conflicting = manifest.skills.find(row => row.targetId === targetId && row.skillId !== skillId && slugifySkillName(row.name) === slug)
+  if (conflicting) throw new Error(`Skill destination already owned by ${conflicting.skillId}`)
+  for (const destinationRoot of roots) {
+    const current = await readInstalledBundle(runtime, runtimeId, hostCwd, { name, targetId }, destinationRoot)
+    const nextBundle = reconcileManagedBundle(current?.files ?? [], desired, previous?.managedFiles, true)
+    await materializeBundle(runtime, runtimeId, hostCwd, { name, targetId }, nextBundle.files, !!current, destinationRoot)
   }
+  if (previous && slugifySkillName(previous.name) !== slug && !manifest.skills.some(row => row.skillId !== skillId && row.targetId === targetId && slugifySkillName(row.name) === slugifySkillName(previous.name))) {
+    for (const destinationRoot of roots) {
+      const old = await readInstalledBundle(runtime, runtimeId, hostCwd, previous, destinationRoot)
+      if (!old) continue
+      const hashes = fileHashes(old.files)
+      const preserved = old.files.filter(file => previous.managedFiles?.[file.relPath] !== hashes[file.relPath])
+      if (preserved.length) await materializeBundle(runtime, runtimeId, hostCwd, previous, preserved, true, destinationRoot)
+      else await retireBundle(runtime, runtimeId, hostCwd, old.path)
+    }
+  }
+  const installedHostPath = info.layout === 'folder'
+    ? hostJoin(runtimeId, root, slug, 'SKILL.md')
+    : hostJoin(runtimeId, root, `${slug}.md`)
 
   const installed: InstalledSkill = {
     skillId,
@@ -191,9 +167,9 @@ export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<Write
     targetId,
     path: formatLocator({ runtimeId, path: installedHostPath }),
     origin,
+    managedFiles: fileHashes(desired),
   }
 
-  const manifest = await readManifestData(runtime, runtimeId, hostCwd)
   const next = manifest.skills.filter((m) => !(m.skillId === skillId && m.targetId === targetId))
   next.push(installed)
   await writeManifest(runtime, runtimeId, hostCwd, { ...manifest, skills: next })
@@ -206,50 +182,21 @@ export async function writeSkillToWorkspace(args: WriteSkillArgs): Promise<Write
 // and for promoting to global).
 // ---------------------------------------------------------------------------
 
-async function readDirRec(runtime: Runtime, runtimeId: string, dir: string, base = ''): Promise<SkillFile[]> {
-  const out: SkillFile[] = []
-  let nodes
-  try { nodes = await runtime.file.readDir(dir) } catch { return out }
-  for (const n of nodes) {
-    const child = hostJoin(runtimeId, dir, n.name)
-    const rel = base ? `${base}/${n.name}` : n.name
-    if (n.isDirectory) {
-      out.push(...(await readDirRec(runtime, runtimeId, child, rel)))
-    } else {
-      try { out.push({ relPath: rel, text: await runtime.file.readFile(child) }) } catch { /* skip */ }
-    }
-  }
-  return out
-}
-
 export async function readWorkspaceSkillFiles(
-  runtime: Runtime,
-  runtimeId: string,
-  hostCwd: string,
-  targetId: SkillTargetId,
-  name: string,
+  runtime: SkillFileHost, runtimeId: string, hostCwd: string, targetId: SkillTargetId, name: string,
 ): Promise<SkillFile[]> {
-  const info = targetInfo(targetId)
-  const slug = slugifySkillName(name)
-  const root = skillsRootDir(targetId, runtimeId, hostCwd)
-  if (info.layout === 'folder') {
-    return readDirRec(runtime, runtimeId, hostJoin(runtimeId, root, slug))
-  }
-  try {
-    return [{ relPath: 'SKILL.md', text: await runtime.file.readFile(hostJoin(runtimeId, root, `${slug}.md`)) }]
-  } catch {
-    return []
-  }
+  const bundle = await readInstalledBundle(runtime, runtimeId, hostCwd, { targetId, name })
+  return bundle ? skillFiles(bundle.files) : []
 }
 
 // ---------------------------------------------------------------------------
 // Public install / uninstall / list (workspace scope, no cache)
 // ---------------------------------------------------------------------------
 
-export async function install(entry: SkillEntry, targetId: SkillTargetId, cwd: string): Promise<WriteSkillResult> {
+export async function install(entry: SkillEntry, targetId: SkillTargetId, cwd: string, access?: FileAccessContext): Promise<WriteSkillResult> {
   const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) throw new Error('Workspace has no folder open')
-  const runtime = runtimes.resolve(runtimeId)
+  const runtime = scopedSkillFiles(runtimes.resolve(runtimeId), access)
 
   // The remote source is authoritative. Existing installs and the saved cache
   // are offline fallbacks, not a faster path: making them the first choice
@@ -265,7 +212,7 @@ export async function install(entry: SkillEntry, targetId: SkillTargetId, cwd: s
       // A successful source read also repairs a stale saved-library cache. A
       // cache write is useful but must not block the workspace install.
       if (savedSkills.isSaved(entry.id)) {
-        await skillStore.cache(entry.id, files).catch((err) => {
+        await libraryTransactions.run(entry.id, async () => { if (savedSkills.isSaved(entry.id)) await skillStore.cache(entry.id, files) }).catch((err) => {
           log.warn('[skills] could not refresh saved cache for %s: %O', entry.id, err)
         })
       }
@@ -284,7 +231,7 @@ export async function install(entry: SkillEntry, targetId: SkillTargetId, cwd: s
     throw new Error('Could not resolve skill files')
   }
 
-  const result = await writeSkillToWorkspace({ skillId: entry.id, name: entry.name, targetId, cwd, files, origin: 'local' })
+  const result = await writeSkillToWorkspace({ skillId: entry.id, name: entry.name, targetId, cwd, files, origin: 'local', access })
   if (fetchError) {
     result.warnings.unshift('Latest source unavailable; installed the existing offline copy.')
   }
@@ -296,34 +243,39 @@ export async function uninstall(
   name: string,
   targetId: SkillTargetId,
   cwd: string,
+  access?: FileAccessContext,
 ): Promise<void> {
+  return withSkillWorkspaces([cwd], () => withBundleTransaction(() => uninstallLocked(skillId, name, targetId, cwd, access)))
+}
+
+async function uninstallLocked(skillId: string, name: string, targetId: SkillTargetId, cwd: string, access?: FileAccessContext): Promise<void> {
   const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) throw new Error('Workspace has no folder open')
-  const runtime = runtimes.resolve(runtimeId)
+  const runtime = scopedSkillFiles(runtimes.resolve(runtimeId), access)
+  const manifest = await readManifestData(runtime, runtimeId, hostCwd)
+  const owned = manifest.skills.find(row => row.skillId === skillId && row.targetId === targetId)
+  if (!owned) return
   const info = targetInfo(targetId)
-  const slug = slugifySkillName(name)
+  const slug = slugifySkillName(owned.name)
+  const shared = manifest.skills.some(row => row.skillId !== skillId && row.targetId === targetId && slugifySkillName(row.name) === slug)
   for (const root of skillsRootDirs(targetId, runtimeId, hostCwd)) {
     const target = info.layout === 'folder'
       ? hostJoin(runtimeId, root, slug)
       : hostJoin(runtimeId, root, `${slug}.md`)
-    try {
-      await runtime.file.remove(target)
-    } catch (err) {
-      log.warn('[skills] remove failed for %s: %O', target, err)
-    }
+    if (shared) continue
+    await retireBundle(runtime, runtimeId, hostCwd, target)
   }
-  const manifest = await readManifestData(runtime, runtimeId, hostCwd)
   await writeManifest(runtime, runtimeId, hostCwd, {
     ...manifest,
     skills: manifest.skills.filter((m) => !(m.skillId === skillId && m.targetId === targetId)),
   })
 }
 
-export async function listInstalled(cwd: string): Promise<InstalledSkill[]> {
+export async function listInstalled(cwd: string, access?: FileAccessContext): Promise<InstalledSkill[]> {
   const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) return []
-  let runtime: Runtime
-  try { runtime = runtimes.resolve(runtimeId) } catch { return [] }
+  let runtime: SkillFileHost
+  try { runtime = scopedSkillFiles(runtimes.resolve(runtimeId), access) } catch { return [] }
   return readManifest(runtime, runtimeId, hostCwd)
 }
 
@@ -333,7 +285,11 @@ export async function listInstalled(cwd: string): Promise<InstalledSkill[]> {
 // plain installs are NOT cached (only starred skills are).
 // ---------------------------------------------------------------------------
 
-export async function saveSkill(entry: SkillEntry): Promise<void> {
+const libraryTransactions = new KeyedLock()
+export function saveSkill(entry: SkillEntry): Promise<void> {
+  return libraryTransactions.run(entry.id, () => withBundleTransaction(() => saveSkillLocked(entry)))
+}
+async function saveSkillLocked(entry: SkillEntry): Promise<void> {
   // Re-saving must refresh the bytes. `has()` used to make the first cached
   // copy permanent, even when a moving branch such as `main` changed later.
   try {
@@ -346,7 +302,7 @@ export async function saveSkill(entry: SkillEntry): Promise<void> {
     if (!(await skillStore.has(entry.id))) throw err
     log.warn('[skills] source unavailable while saving %s; keeping cached copy: %O', entry.id, err)
   }
-  savedSkills.addSaved({
+  await savedSkills.addSaved({
     skillId: entry.id,
     name: entry.name,
     description: entry.description,
@@ -355,7 +311,9 @@ export async function saveSkill(entry: SkillEntry): Promise<void> {
   })
 }
 
-export async function unsaveSkill(skillId: string): Promise<void> {
-  savedSkills.removeSaved(skillId)
-  await skillStore.remove(skillId).catch(() => { /* best effort */ })
+export function unsaveSkill(skillId: string): Promise<void> {
+  return libraryTransactions.run(skillId, () => withBundleTransaction(async () => {
+    await skillStore.remove(skillId)
+    await savedSkills.removeSaved(skillId)
+  }))
 }

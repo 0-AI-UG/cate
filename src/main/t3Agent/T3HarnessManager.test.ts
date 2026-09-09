@@ -16,7 +16,7 @@ function runtime() {
     validatePathStrict: vi.fn(async (path: string) => path.replace('/alias', '/repo')),
     file: { harnessRoot: vi.fn().mockResolvedValue('/app/harness') },
     server: { stop: vi.fn() },
-    process: { create: vi.fn().mockResolvedValue(undefined), write: vi.fn(), kill: vi.fn() },
+    process: { create: vi.fn().mockImplementation(async (opts: { id: string }) => ({ id: opts.id, pid: 123 })), write: vi.fn(), kill: vi.fn() },
   }
 }
 function instance(key: string, rt: ReturnType<typeof runtime>) {
@@ -144,7 +144,7 @@ describe('T3 harness lifecycle', () => {
     const shutdown = manager.disposeAll()
     const started = instance('local:/repo', local)
     finish(started)
-    await Promise.all([opening, shutdown])
+    await Promise.all([expect(opening).rejects.toThrow('cancelled'), shutdown])
     expect(started.proxy.close).toHaveBeenCalledOnce()
     expect(local.server.stop).toHaveBeenCalledExactlyOnceWith('local:/repo')
     expect(manager.getStatus('/repo').phase).toBe('stopped')
@@ -201,4 +201,62 @@ it('copies provider secrets through canonical directory aliases and still reject
   expect(rt.file.copy).toHaveBeenCalledExactlyOnceWith('/source/' + secret, '/tmp/secrets')
   rt.file.copy.mockResolvedValue('/private/tmp/secrets/unexpected-copy.bin')
   await expect(boundary.copyProviderSecrets(rt, 'local', '/source', '/tmp/secrets')).rejects.toThrow('unexpected destination')
+})
+
+it('routes provider sign-in input and cancellation to the actual process handle', async () => {
+  local.process.create.mockResolvedValue({ id: 'actual-pty', pid: 123 } as never)
+  const session = await manager.startProviderAuth({ workspaceId: 'ws', cwd: '/repo', providerId: 'codex' } as never, 1)
+  manager.writeProviderAuth(session.id, 1, 'code\n')
+  manager.cancelProviderAuth(session.id, 1)
+  expect(local.process.write).toHaveBeenCalledWith('actual-pty', 'code\n')
+  expect(local.process.kill).toHaveBeenCalledWith('actual-pty')
+})
+
+it('does not register ownership when a pending panel acquisition is closed', async () => {
+  let finish!: (value: unknown) => void
+  const pendingInstance = instance('local:/repo', local)
+  start.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  const target = manager.getPanelTarget(request, 1)
+  await vi.waitFor(() => expect(start).toHaveBeenCalled())
+  manager.panelClosed(request.panelId)
+  finish(pendingInstance)
+  await target.catch(() => undefined)
+  expect(pendingInstance.panels.has(request.panelId)).toBe(false)
+})
+
+it('kills a late provider PTY after its owner closes during startup', async () => {
+  let finish!: (value: unknown) => void
+  local.process.create.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  const opening = manager.startProviderAuth({ workspaceId: 'ws', cwd: '/repo', providerId: 'codex' }, 1)
+  await vi.waitFor(() => expect(local.process.create).toHaveBeenCalled())
+  mocks.windowClosed.mock.calls.at(-1)![0](1)
+  finish({ id: 'late-pty', pid: 123 })
+  await opening
+  expect(local.process.kill).toHaveBeenCalledWith('late-pty')
+})
+
+it('keeps the newest panel acquisition when different checkout requests finish out of order', async () => {
+  let finishOld!: (value: unknown) => void
+  const oldInstance = instance('local:/repo', local)
+  const newInstance = instance('local:/feature', local)
+  start.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve })).mockResolvedValueOnce(newInstance)
+  const first = manager.getPanelTarget(request, 1)
+  await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1))
+  await manager.getPanelTarget({ ...request, cwd: '/feature' }, 1)
+  finishOld(oldInstance)
+  await first.catch(() => undefined)
+  expect(oldInstance.panels.has(request.panelId)).toBe(false)
+  expect(newInstance.panels.has(request.panelId)).toBe(true)
+})
+
+it('does not restore usage ownership after closing during harness startup', async () => {
+  let finish!: (value: unknown) => void
+  const pending = instance('local:/app/harness', local)
+  start.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const opening = manager.getUsageTarget('usage-pending')
+  await vi.waitFor(() => expect(start).toHaveBeenCalled())
+  manager.panelClosed('usage-pending')
+  finish(pending)
+  await opening.catch(() => undefined)
+  expect(pending.panels.has('usage-pending')).toBe(false)
 })

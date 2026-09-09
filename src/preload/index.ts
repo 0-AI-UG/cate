@@ -1,3 +1,4 @@
+import { PANEL_TRANSFER_STAGE, PANEL_TRANSFER_READY, PANEL_TRANSFER_COMMIT, PANEL_TRANSFER_FINISH } from '../shared/ipc-channels'
 import type { RecentScreenshot } from '../shared/recentScreenshot'
 import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
 
@@ -10,6 +11,8 @@ import {
   KEEP_AWAKE_SET,
   KEEP_AWAKE_CHANGED,
   TERMINAL_CREATE,
+  TERMINAL_READY,
+  FS_ENTRY_MOVED,
   TERMINAL_WRITE,
   TERMINAL_RESIZE,
   TERMINAL_KILL,
@@ -337,6 +340,8 @@ const invokeForwarders = {
 
   // Terminal
   terminalCreate: makeInvoker<'terminalCreate'>(TERMINAL_CREATE),
+  terminalReady: makeInvoker<'terminalReady'>(TERMINAL_READY),
+  onFsEntryMoved: (callback) => createIpcListener(FS_ENTRY_MOVED, callback),
   terminalWrite: makeInvoker<'terminalWrite'>(TERMINAL_WRITE),
   terminalResize: makeInvoker<'terminalResize'>(TERMINAL_RESIZE),
   terminalKill: makeInvoker<'terminalKill'>(TERMINAL_KILL),
@@ -520,6 +525,10 @@ const invokeForwarders = {
   panelTransferAck: makeInvoker<'panelTransferAck'>(PANEL_TRANSFER_ACK),
 
   // Cross-window drag-and-drop
+  onPanelTransferStage: (callback) => createIpcListener(PANEL_TRANSFER_STAGE, callback),
+  panelTransferReady: makeInvoker<'panelTransferReady'>(PANEL_TRANSFER_READY),
+  commitPanelTransfer: makeInvoker<'commitPanelTransfer'>(PANEL_TRANSFER_COMMIT),
+  finishPanelTransfer: (transferId, snapshot) => ipcRenderer.send(PANEL_TRANSFER_FINISH, transferId, snapshot),
   dragDetach: makeInvoker<'dragDetach'>(DRAG_DETACH),
 
   // Workspace external edit
@@ -719,12 +728,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Session
   // ---------------------------------------------------------------------------
 
-  onSessionFlushSave(callback: () => void): () => void {
+  onSessionFlushSave(callback: (requestId?: string) => void): () => void {
     return createIpcListener(SESSION_FLUSH_SAVE, callback)
   },
 
-  sessionFlushSaveDone(): void {
-    ipcRenderer.send(SESSION_FLUSH_SAVE_DONE)
+  sessionFlushSaveDone(error?: string, requestId?: string): void {
+    ipcRenderer.send(SESSION_FLUSH_SAVE_DONE, error, requestId)
   },
 
   /** Push a partial boot snapshot to main (geometry, theme, etc.). Main
@@ -847,12 +856,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return createIpcListener(DOCK_WINDOW_INIT, callback)
   },
 
-  onDockWindowFlushSync(callback: () => void): () => void {
+  onDockWindowFlushSync(callback: (requestId: string) => void): () => void {
     return createIpcListener(DOCK_WINDOW_FLUSH_SYNC, callback)
   },
 
-  dockWindowFlushSyncDone(): void {
-    ipcRenderer.send(DOCK_WINDOW_FLUSH_SYNC_DONE)
+  dockWindowFlushSyncDone(error?: string, requestId?: string): void {
+    ipcRenderer.send(DOCK_WINDOW_FLUSH_SYNC_DONE, error, requestId)
   },
 
   // ---------------------------------------------------------------------------
@@ -871,7 +880,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return createIpcListener(OPEN_REVIEW_IN_WINDOW, callback)
   },
 
-  onClosePanelInWindow(callback: (panelId: string, requestId: string) => void): () => void {
+  onClosePanelInWindow(callback: (panelId: string, requestId: string, operation?: import('../shared/types').PanelCloseOperation) => void): () => void {
     return createIpcListener(CLOSE_PANEL_IN_WINDOW, callback)
   },
 

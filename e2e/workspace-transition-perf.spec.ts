@@ -84,7 +84,7 @@ test('warm workspace transitions with 36 mixed panels', async () => {
       await openTrustedWorkspace(page, folder)
       const ws = await page.evaluate(({ id, mix }) => {
         const h = window.__cateE2E!
-        h.openSidebarView('explorer')
+        h.openNavigationView('explorer')
         const point = { x: 20, y: 20 }
         const terminals = Array.from({ length: mix.terminal }, () => h.createTerminal(point))
         const editors = Array.from({ length: mix.editor }, () => h.createEditor(point))

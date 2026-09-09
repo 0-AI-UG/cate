@@ -1,51 +1,34 @@
-// =============================================================================
-// installBundledSkill — copy a first-party skill bundled at skills/<name>/ into
-// ~/.claude/skills/<name>/ on first launch, where Claude Code discovers it.
-//
-// Source lives in our tree at skills/<name>/ (committed) and is packaged into
-// resources via electron-builder.yml `extraResources`, so we resolve the dev
-// path (app.getAppPath()) first and fall back to process.resourcesPath.
-//
-// Copy-if-missing (fs.cp with force:false) never overwrites a user's edited
-// copy — existing files are silently skipped, new ones are added.
-// =============================================================================
-
-import fs from 'fs'
-import fsp from 'fs/promises'
+import fs from 'node:fs/promises'
 import os from 'os'
-import path from 'path'
-import { app } from 'electron'
+import path from 'node:path'
 import log from './logger'
+import { bundledSkillSource } from '../skills/main/bundledSkillSource'
+import { localSkillFiles } from '../skills/main/localSkillFiles'
+import { withBundleTransaction, readDirectory, replaceBundle, reconcileManagedBundle, isMissingError } from '../skills/main/skillBundle'
+import { withSkillWorkspaces, writeSkillJson } from '../skills/main/skillWorkspace'
 
-/** Source dir of the bundled skill. Dev path (src/ on disk) first, then the
- *  production extraResources copy. */
-function sourceDir(skillName: string): string | null {
-  const candidates = [
-    path.join(app.getAppPath(), 'skills', skillName),
-    path.join(process.resourcesPath ?? '', 'skills', skillName),
-  ]
-  for (const c of candidates) {
-    if (c && fs.existsSync(c)) return c
-  }
-  return null
-}
-
-const installed = new Set<string>()
-
-/** Idempotent per skill. Call once at app-ready. */
-export async function installBundledSkill(skillName: string): Promise<void> {
-  if (installed.has(skillName)) return
-  installed.add(skillName)
+/** Global placement is intentional; discovery/publication and managed ownership
+ * are shared with workspace skills. Failed publication remains retryable. */
+export async function installBundledSkill(name: string): Promise<void> {
+  const source = bundledSkillSource(name)
+  if (!source) return
+  const root = path.join(os.homedir(), '.claude', 'skills')
+  const destination = path.join(root, name)
+  const manifestPath = path.join(root, '.cate', `${name}.json`)
   try {
-    const src = sourceDir(skillName)
-    if (!src) {
-      log.warn('[installBundledSkill] source dir not found — %s skill not installed', skillName)
-      return
-    }
-    const dest = path.join(os.homedir(), '.claude', 'skills', skillName)
-    await fsp.cp(src, dest, { recursive: true, force: false, errorOnExist: false })
-    log.info('[installBundledSkill] installed %s', dest)
-  } catch (err) {
-    log.warn('[installBundledSkill] install of %s failed: %O', skillName, err)
-  }
+    await withSkillWorkspaces([root], () => withBundleTransaction(async () => {
+      let current: Awaited<ReturnType<typeof readDirectory>> = []
+      let exists = false
+      try { current = await readDirectory(localSkillFiles, 'local', destination); exists = true }
+      catch (error) { if (!isMissingError(error)) throw error }
+      let owned: Record<string, string> = {}
+      try { owned = JSON.parse(await fs.readFile(manifestPath, 'utf8')) } catch { /* Legacy copies remain user-owned. */ }
+      const incoming = await readDirectory(localSkillFiles, 'local', source)
+      const next = reconcileManagedBundle(current, incoming, owned)
+      await fs.mkdir(root, { recursive: true })
+      await replaceBundle(localSkillFiles, 'local', root, destination, next.files, 'folder', exists, root)
+      await fs.mkdir(path.dirname(manifestPath), { recursive: true })
+      await writeSkillJson(localSkillFiles, manifestPath, next.managedFiles)
+    }))
+  } catch (error) { log.warn('[installBundledSkill] install of %s failed: %O', name, error) }
 }

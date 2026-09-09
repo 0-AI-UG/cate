@@ -83,6 +83,8 @@ export interface InstalledSkill {
   path: string
   /** Always `local` now — every workspace install is user-driven. */
   origin: 'local'
+  /** Hashes of the files supplied by the last install; used to retire unchanged upstream removals. */
+  managedFiles?: Record<string, string>
 }
 
 /** A skill saved to the user's Cate library. The canonical bytes live in the

@@ -43,3 +43,10 @@ describe('ensureSkillName', () => {
     expect(out).toContain('just a body')
   })
 })
+
+it.each([
+  ['>', 'First line second line'],
+  ['|', 'First line\nsecond line'],
+])('parses %s block descriptions consistently with catalog generation', (style, expected) => {
+  expect(parseFrontmatter(`---\nname: demo\ndescription: ${style}\n  First line\n  second line\n---\n`).fm.description).toBe(expected)
+})

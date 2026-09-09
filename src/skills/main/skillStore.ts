@@ -1,54 +1,46 @@
-// =============================================================================
-// Global skill cache — Cate's userData copy of GLOBAL skills only.
-//
-// Workspace installs are NOT cached (they fetch from GitHub, or copy from an
-// existing local install of the same skill). Only skills promoted to "global"
-// are cached here, so reconcile can replay them into every workspace on open
-// without a network round-trip. Keyed by skillId.
-// =============================================================================
-
+// Starred-library bytes live in app userData. Workspace installs are tracked
+// separately; saving to this cache never installs into any workspace.
+import { createHash } from 'node:crypto'
 import { app } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import type { SkillFile } from './githubCrawl'
-import { skillPathSegments } from './skillPath'
+import { retireBundle, prepareBundle, readDirectory, replaceBundle, skillFiles } from './skillBundle'
+import { localSkillFiles } from './localSkillFiles'
+import { withSkillWorkspaces } from './skillWorkspace'
 
 function storeRoot(): string {
   return path.join(app.getPath('userData'), 'skills-store')
 }
 
 function keyFor(skillId: string): string {
-  return skillId.replace(/[^a-zA-Z0-9_.-]+/g, '_').replace(/^_+|_+$/g, '') || 'skill'
+  return createHash('sha256').update(skillId).digest('hex')
 }
 
 function skillDir(skillId: string): string {
   return path.join(storeRoot(), keyFor(skillId))
 }
 
-async function walk(dir: string, base = ''): Promise<SkillFile[]> {
-  const out: SkillFile[] = []
-  let entries: import('fs').Dirent[]
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true })
-  } catch {
-    return out
-  }
-  for (const e of entries) {
-    const abs = path.join(dir, e.name)
-    const rel = base ? `${base}/${e.name}` : e.name
-    if (e.isDirectory()) {
-      out.push(...(await walk(abs, rel)))
-    } else if (e.isFile()) {
-      const buf = await fs.readFile(abs)
-      const text = buf.toString('utf-8')
-      if (!text.includes('�')) out.push({ relPath: rel, text })
-      else out.push({ relPath: rel, base64: buf.toString('base64') })
-    }
-  }
-  return out
+function legacyKey(skillId: string): string {
+  return skillId.replace(/[^a-zA-Z0-9_.-]+/g, '_').replace(/^_+|_+$/g, '') || 'skill'
+}
+async function migrateLegacy(skillId: string): Promise<void> {
+  const destination = skillDir(skillId)
+  try { await fs.access(destination); return } catch { /* check legacy owner */ }
+  const legacy = path.join(storeRoot(), legacyKey(skillId))
+  try { await fs.access(path.join(legacy, 'SKILL.md')) } catch { return }
+  const { listSaved } = await import('./savedSkills')
+  const owners = listSaved().filter(row => legacyKey(row.skillId) === legacyKey(skillId))
+  // Ambiguous legacy directories cannot be attributed safely to either ID.
+  if (owners.length !== 1 || owners[0].skillId !== skillId) return
+  await withSkillWorkspaces([legacy, destination], async () => {
+    try { await fs.access(destination); return } catch { /* not migrated */ }
+    await fs.rename(legacy, destination)
+  })
 }
 
 export async function has(skillId: string): Promise<boolean> {
+  await migrateLegacy(skillId)
   try {
     await fs.access(path.join(skillDir(skillId), 'SKILL.md'))
     return true
@@ -57,30 +49,28 @@ export async function has(skillId: string): Promise<boolean> {
   }
 }
 
-/** Read a cached global skill's files; null if not cached. */
+/** Read a cached saved skill's files; null if not cached. */
 export async function read(skillId: string): Promise<SkillFile[] | null> {
   if (!(await has(skillId))) return null
-  const files = await walk(skillDir(skillId))
+  const files = skillFiles(await readDirectory(localSkillFiles, 'local', skillDir(skillId)))
   return files.length ? files : null
 }
 
-/** Cache a skill's files (used when promoting a skill to global). */
+/** Cache a skill's files (used when saving a skill to the library). */
 export async function cache(skillId: string, files: SkillFile[]): Promise<void> {
+  const prepared = prepareBundle(files)
+  await migrateLegacy(skillId)
   const dir = skillDir(skillId)
-  // Validate before removing an existing good cache entry. Skill bundles can
-  // come from remote sources and must never write outside their cache root.
-  const writes = files.map((file) => ({ file, segments: skillPathSegments(file.relPath) }))
-  await fs.rm(dir, { recursive: true, force: true })
-  await fs.mkdir(dir, { recursive: true })
-  for (const { file: f, segments } of writes) {
-    const abs = path.join(dir, ...segments)
-    await fs.mkdir(path.dirname(abs), { recursive: true })
-    if (f.text != null) await fs.writeFile(abs, f.text, 'utf-8')
-    else if (f.base64 != null) await fs.writeFile(abs, Buffer.from(f.base64, 'base64'))
-  }
+  await withSkillWorkspaces([dir], async () => {
+    await fs.mkdir(storeRoot(), { recursive: true })
+    let exists = false
+    try { await fs.stat(dir); exists = true } catch { /* first cache */ }
+    await replaceBundle(localSkillFiles, 'local', storeRoot(), dir, prepared, 'folder', exists, storeRoot())
+  })
 }
 
-/** Drop a cached skill (used when demoting from global). */
+/** Drop a cached skill (used when removing it from the library). */
 export async function remove(skillId: string): Promise<void> {
-  await fs.rm(skillDir(skillId), { recursive: true, force: true })
+  await migrateLegacy(skillId)
+  await withSkillWorkspaces([skillDir(skillId)], () => retireBundle(localSkillFiles, 'local', storeRoot(), skillDir(skillId)))
 }

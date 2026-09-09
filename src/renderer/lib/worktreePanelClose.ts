@@ -1,3 +1,4 @@
+import { rememberPreparedPanelClose, runPreparedPanelClose } from './preparedPanelClose'
 import type { PanelState, WindowPanelInfo } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -25,6 +26,8 @@ export interface WorktreePanelCloseTargets {
   localPanelIds: string[]
   otherWindowPanelIds: string[]
   hasDirtyEditor: boolean
+  workspaceId?: string
+  closeToken?: string
 }
 
 /** Resolve every panel that will be closed with a deleted worktree. The
@@ -58,27 +61,43 @@ export function worktreePanelCloseTargets(
 }
 
 /** Run every owner window's normal dirty/running gates before backing data is
- * deleted. Detached owners close their panels as part of the acknowledged IPC;
- * local panels stay open until the disk operation succeeds. */
+ * deleted. Both local and detached owners retain their approved snapshots;
+ * no panel is removed until the backing operation succeeds. */
 export async function prepareWorktreePanelsForClose(
   workspaceId: string,
   targets: WorktreePanelCloseTargets,
 ): Promise<boolean> {
   if (!(await confirmClosePanels(workspaceId, targets.localPanelIds))) return false
-  for (const panelId of targets.otherWindowPanelIds) {
-    if (!(await window.electronAPI.closeWindowPanel(panelId))) return false
+  targets.workspaceId = workspaceId
+  targets.closeToken = crypto.randomUUID()
+  for (const id of targets.localPanelIds) rememberPreparedPanelClose(workspaceId, id, targets.closeToken)
+  try {
+    for (const panelId of targets.otherWindowPanelIds) {
+      if (!(await window.electronAPI.closeWindowPanel(panelId, { phase: 'prepare', token: targets.closeToken }))) {
+        await cancelPreparedWorktreePanels(targets)
+        return false
+      }
+    }
+  } catch {
+    await cancelPreparedWorktreePanels(targets)
+    return false
   }
   return true
 }
 
 /** Close the already-confirmed local panels after the worktree was removed. */
-export function closePreparedWorktreePanels(
+export async function closePreparedWorktreePanels(
   workspaceId: string,
   targets: WorktreePanelCloseTargets,
-): void {
-  for (const panelId of targets.localPanelIds) {
-    useAppStore.getState().closePanel(workspaceId, panelId)
-  }
+): Promise<void> {
+  try {
+    if (targets.closeToken) for (const panelId of targets.otherWindowPanelIds) {
+      await window.electronAPI.closeWindowPanel(panelId, { phase: 'commit', token: targets.closeToken })
+    }
+    for (const panelId of targets.localPanelIds) {
+      if (targets.closeToken) await runPreparedPanelClose(workspaceId, panelId, { phase: 'commit', token: targets.closeToken })
+    }
+  } finally { await cancelPreparedWorktreePanels(targets) }
 }
 
 /** Remove local metadata immediately and tell every other renderer to clear
@@ -92,4 +111,14 @@ export function removeWorktreeFromAllWindows(workspaceId: string, worktreeId: st
     // Local state is already correct; another renderer will reconcile on the
     // next session load if the best-effort broadcast is unavailable.
   })
+}
+
+export async function cancelPreparedWorktreePanels(targets: WorktreePanelCloseTargets): Promise<void> {
+  const token = targets.closeToken
+  delete targets.closeToken
+  if (!token) return
+  for (const id of targets.localPanelIds) await runPreparedPanelClose(targets.workspaceId ?? '', id, { phase: 'cancel', token })
+  for (const panelId of targets.otherWindowPanelIds) {
+    await window.electronAPI.closeWindowPanel(panelId, { phase: 'cancel', token }).catch(() => false)
+  }
 }

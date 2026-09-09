@@ -25,8 +25,12 @@ function isRemoteProjectEntry(value: unknown): value is RemoteProjectEntry {
   return typeof entry.locator === 'string'
     && isRuntimeLocator(entry.locator)
     && isRemoteRuntimeConnection(entry.connection)
-    && !!entry.snapshot
-    && typeof entry.snapshot === 'object'
+    && ((entry.cache?.version === 1
+      && entry.cache.workspace?.version === 1
+      && typeof entry.cache.workspace.name === 'string'
+      && entry.cache.session?.version === 1
+      && !!entry.cache.session.panels)
+      || (!!entry.snapshot && typeof entry.snapshot === 'object'))
 }
 
 // ---------------------------------------------------------------------------
@@ -116,16 +120,18 @@ export function getSidebarSession(): SidebarSession | null {
   return sidebarStore.get().session
 }
 
-export function setSidebarSession(session: SidebarSession): void {
+export async function setSidebarSession(session: SidebarSession): Promise<void> {
   sidebarStore.set({ session })
+  await sidebarStore.flushDurable()
 }
 
 export function getRemoteProjects(): RemoteProjectEntry[] {
   return remoteWorkspacesStore.get().workspaces
 }
 
-export function setRemoteProjects(entries: RemoteProjectEntry[]): void {
+export async function setRemoteProjects(entries: RemoteProjectEntry[]): Promise<void> {
   remoteWorkspacesStore.set({ workspaces: Array.isArray(entries) ? entries : [] })
+  await remoteWorkspacesStore.flushDurable()
 }
 
 /** Locators (local paths or cate-runtime:// URLs) the user has explicitly

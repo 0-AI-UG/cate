@@ -1,3 +1,4 @@
+import { KeyedLock } from '../../shared/keyedLock'
 // =============================================================================
 // Filesystem IPC handlers — file read/write and directory watching
 // =============================================================================
@@ -7,6 +8,7 @@ import log from '../logger'
 import { consumeScopedWriteAllowance } from './pathValidation'
 import { wrapHandler } from './handlerError'
 import { parseLocator, formatLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
+import type { Runtime } from '../runtime/types'
 import { runtimes, resolveLocator } from '../runtime/runtimeManager'
 import { createKeyedDispatcher } from './batchedDispatcher'
 import { uploadEntriesToRuntime } from '../runtime/uploadEntries'
@@ -21,6 +23,7 @@ import {
   FS_DELETE,
   FS_TRASH_OR_DELETE,
   FS_RENAME,
+  FS_ENTRY_MOVED,
   FS_MKDIR,
   FS_COPY,
   FS_IMPORT_ENTRIES,
@@ -28,7 +31,7 @@ import {
   FS_READ_BINARY,
 } from '../../shared/ipc-channels'
 import { FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
-import { sendToWindow, windowFromEvent } from '../windowRegistry'
+import { broadcastToAll, sendToWindow, windowFromEvent } from '../windowRegistry'
 import { getSettingSync } from '../store'
 
 // Read the user-configured exclusion list live so changes take effect without
@@ -44,16 +47,18 @@ const DISPATCH_DEBOUNCE_MS = 16
  *  watchStop and window-close tear the subscription down precisely. */
 interface RendererWatch {
   windowId: number
+  runtimeId: string
+  attach: (runtime: Runtime) => void
   unsubscribe: () => void
   cancelFlush: () => void
 }
 
-/** Active renderer watches keyed by `${windowId}:${dirLocator}`. Local and remote
+/** Active renderer watches keyed by window, root and workspace scope. Local and remote
  *  paths share this map and lifecycle; runtime.file.watch is the sole watcher. */
 const rendererWatches = new Map<string, RendererWatch>()
 
-function watcherKey(windowId: number, dirPath: string): string {
-  return `${windowId}:${dirPath}`
+function watcherKey(windowId: number, dirPath: string, scopeId?: string): string {
+  return JSON.stringify([windowId, dirPath, scopeId])
 }
 
 // -----------------------------------------------------------------------------
@@ -113,9 +118,9 @@ function encodeTreeNodes(runtimeId: string, nodes: FileTreeNode[]): FileTreeNode
 }
 
 function watchStart(dirLocator: string, ownerWindowId: number, scopeId?: string): void {
-  watchStop(dirLocator, ownerWindowId)
+  watchStop(dirLocator, ownerWindowId, scopeId)
   const { runtime, runtimeId, path: runtimePath } = resolveLocator(dirLocator)
-  const dispatcher = createKeyedDispatcher<{ type: string; path: string }>(
+  const dispatcher = createKeyedDispatcher<{ type: string; path: string; scopeId?: string }>(
     DISPATCH_DEBOUNCE_MS,
     (events) => {
       try {
@@ -125,19 +130,26 @@ function watchStart(dirLocator: string, ownerWindowId: number, scopeId?: string)
       }
     },
   )
-  const unsubscribe = runtime.file.watch(runtimePath, (changedPath, type) => {
-    const locator = formatLocator({ runtimeId, path: changedPath })
-    dispatcher.push([locator, { type, path: locator }])
-  }, { ownerWindowId, scopeId })
-  rendererWatches.set(watcherKey(ownerWindowId, dirLocator), {
+  const watch: RendererWatch = {
     windowId: ownerWindowId,
-    unsubscribe,
+    runtimeId,
+    unsubscribe: () => {},
     cancelFlush: () => dispatcher.cancel({ resetPending: true }),
-  })
+    attach: (nextRuntime) => {
+      watch.cancelFlush()
+      watch.unsubscribe()
+      watch.unsubscribe = nextRuntime.file.watch(runtimePath, (changedPath, type) => {
+        const locator = formatLocator({ runtimeId, path: changedPath })
+        dispatcher.push([locator, { type, path: locator, ...(scopeId ? { scopeId } : {}) }])
+      }, { ownerWindowId, scopeId })
+    },
+  }
+  watch.attach(runtime)
+  rendererWatches.set(watcherKey(ownerWindowId, dirLocator, scopeId), watch)
 }
 
-function watchStop(dirLocator: string, ownerWindowId: number): void {
-  const key = watcherKey(ownerWindowId, dirLocator)
+function watchStop(dirLocator: string, ownerWindowId: number, scopeId?: string): void {
+  const key = watcherKey(ownerWindowId, dirLocator, scopeId)
   const watch = rendererWatches.get(key)
   if (!watch) return
   watch.cancelFlush()
@@ -168,7 +180,34 @@ function fileRuntimeFor(locator: string): {
   return resolveLocator(locator)
 }
 
+/** Two-path operations must never interpret a destination on the source host. */
+function sameRuntimePaths(source: string, destination: string) {
+  const resolved = fileRuntimeFor(source)
+  const target = parseLocator(destination)
+  if (resolved.runtimeId !== target.runtimeId) throw new Error('Source and destination must use the same runtime')
+  return { ...resolved, destinationPath: target.path }
+}
+
+const fileMutations = new KeyedLock()
+let runtimeHooksInstalled = false
+
 export function registerHandlers(): void {
+  if (!runtimeHooksInstalled) {
+    runtimeHooksInstalled = true
+    runtimes.onDisconnected((runtimeId) => {
+      for (const watch of rendererWatches.values()) {
+        if (watch.runtimeId !== runtimeId) continue
+        watch.cancelFlush()
+        watch.unsubscribe()
+        watch.unsubscribe = () => {}
+      }
+    })
+    runtimes.onConnected((runtimeId, runtime) => {
+      for (const watch of rendererWatches.values()) {
+        if (watch.runtimeId === runtimeId) watch.attach(runtime)
+      }
+    })
+  }
   ipcMain.handle(FS_READ_FILE, wrapHandler(`[${FS_READ_FILE}]`, async (event, filePath: string, workspaceId?: string) => {
     const win = windowFromEvent(event)
     const { runtime, path: p } = fileRuntimeFor(filePath)
@@ -181,11 +220,19 @@ export function registerHandlers(): void {
     return await runtime.file.readBinary(p, { ownerWindowId: win?.id, scopeId: workspaceId })
   }))
 
-  ipcMain.handle(FS_WRITE_FILE, wrapHandler(`[${FS_WRITE_FILE}]`, async (event, filePath: string, content: string, workspaceId?: string) => {
+  ipcMain.handle(FS_WRITE_FILE, wrapHandler(`[${FS_WRITE_FILE}]`, async (event, filePath: string, content: string, workspaceId?: string, expectedDiskContent?: string | null) => {
     const win = windowFromEvent(event)
-    const { runtime, path: p } = fileRuntimeFor(filePath)
-    const safePath = await runtime.file.writeFile(p, content, { ownerWindowId: win?.id, scopeId: workspaceId })
-    if (win) consumeScopedWriteAllowance(win.id, safePath)
+    const { runtime, path: p, runtimeId } = fileRuntimeFor(filePath)
+    await fileMutations.run(runtimeId, async () => {
+      const access = { ownerWindowId: win?.id, scopeId: workspaceId }
+      if (expectedDiskContent !== undefined) {
+        let current: string | null = null
+        try { current = await runtime.file.readFile(p, access) } catch { /* absent/unreadable fails a non-null expectation */ }
+        if (current !== expectedDiskContent) throw new Error('File changed while saving; retry with its current location and contents')
+      }
+      const safePath = await runtime.file.writeFile(p, content, access)
+      if (win) consumeScopedWriteAllowance(win.id, safePath)
+    })
   }))
 
   ipcMain.handle(FS_READ_DIR, wrapHandler(`[${FS_READ_DIR}]`, async (event, dirPath: string, workspaceId?: string) => {
@@ -201,10 +248,10 @@ export function registerHandlers(): void {
     watchStart(dirPath, win.id, workspaceId)
   }))
 
-  ipcMain.handle(FS_WATCH_STOP, wrapHandler(`[${FS_WATCH_STOP}]`, async (event, dirPath: string) => {
+  ipcMain.handle(FS_WATCH_STOP, wrapHandler(`[${FS_WATCH_STOP}]`, async (event, dirPath: string, workspaceId?: string) => {
     const win = windowFromEvent(event)
     if (!win) return
-    watchStop(dirPath, win.id)
+    watchStop(dirPath, win.id, workspaceId)
   }))
 
   ipcMain.handle(FS_STAT, wrapHandler(`[${FS_STAT}]`, async (event, filePath: string, workspaceId?: string) => {
@@ -237,18 +284,18 @@ export function registerHandlers(): void {
   }))
 
   ipcMain.handle(FS_RENAME, wrapHandler(`[${FS_RENAME}]`, async (event, oldPath: string, newPath: string, workspaceId?: string) => {
-    // Phase 1: rename is within a single runtime (both bare/local).
     const win = windowFromEvent(event)
-    const { runtime, path: oldP } = fileRuntimeFor(oldPath)
-    const { path: newP } = parseLocator(newPath)
-    const safeNewPath = await runtime.file.rename(oldP, newP, { ownerWindowId: win?.id, scopeId: workspaceId })
-    if (win) consumeScopedWriteAllowance(win.id, safeNewPath)
+    const { runtime, runtimeId, path: oldP, destinationPath: newP } = sameRuntimePaths(oldPath, newPath)
+    await fileMutations.run(runtimeId, async () => {
+      const safeNewPath = await runtime.file.rename(oldP, newP, { ownerWindowId: win?.id, scopeId: workspaceId })
+      if (win) consumeScopedWriteAllowance(win.id, safeNewPath)
+      broadcastToAll(FS_ENTRY_MOVED, { from: oldPath, to: newPath })
+    })
   }))
 
   ipcMain.handle(FS_COPY, wrapHandler(`[${FS_COPY}]`, async (event, srcPath: string, destDir: string, workspaceId?: string) => {
     const win = windowFromEvent(event)
-    const { runtime, path: srcP, runtimeId } = fileRuntimeFor(srcPath)
-    const { path: destP } = parseLocator(destDir)
+    const { runtime, path: srcP, runtimeId, destinationPath: destP } = sameRuntimePaths(srcPath, destDir)
     const finalPath = await runtime.file.copy(srcP, destP, { ownerWindowId: win?.id, scopeId: workspaceId })
     return encodeResultPath(runtimeId, finalPath)
   }))

@@ -119,7 +119,7 @@ describe('hydrateWorkspaceFromDiskIfEmpty — guards', () => {
     const id = await freshWorkspace('ws-nostate')
     projectStateLoad.mockResolvedValue(null)
     await hydrateWorkspaceFromDiskIfEmpty(id)
-    expect(projectStateLoad).toHaveBeenCalledWith(ROOT)
+    expect(projectStateLoad).toHaveBeenCalledWith(ROOT, id)
     // Nothing restored — still no panels.
     const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
     expect(Object.keys(ws.panels)).toHaveLength(0)
@@ -133,7 +133,7 @@ describe('hydrateWorkspaceFromDiskIfEmpty — restore', () => {
 
     await hydrateWorkspaceFromDiskIfEmpty(id)
 
-    expect(projectStateLoad).toHaveBeenCalledWith(ROOT)
+    expect(projectStateLoad).toHaveBeenCalledWith(ROOT, id)
     const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
     // The saved editor panel is now present, and the name synced from the file.
     expect(ws.panels['ed-1']).toBeDefined()

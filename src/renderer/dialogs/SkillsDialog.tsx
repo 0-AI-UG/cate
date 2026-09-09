@@ -103,6 +103,7 @@ export function SkillsDialog() {
     [workspaces, selectedWorkspaceId],
   )
   const rootPath = currentWs?.rootPath ?? ''
+  const workspaceId = currentWs?.id
 
   const [index, setIndex] = useState<SkillEntry[]>([])
   const [saved, setSaved] = useState<SavedSkill[]>([])
@@ -125,11 +126,11 @@ export function SkillsDialog() {
   const refreshInstalled = useCallback(async () => {
     if (!rootPath) return setInstalled([])
     try {
-      setInstalled(await api().skillsListInstalled(rootPath))
+      setInstalled(await api().skillsListInstalled(rootPath, workspaceId))
     } catch (err) {
       log.warn('[SkillsDialog] listInstalled failed', err)
     }
-  }, [rootPath])
+  }, [rootPath, workspaceId])
 
   const loadIndex = useCallback(async (refresh = false) => {
     setLoading(true)
@@ -465,7 +466,7 @@ function SkillRow({
     setUpdateBusy(true)
     try {
       const results = await Promise.all(
-        targets.map((target) => api().skillsInstall(entry, target.id, rootPath)),
+        targets.map((target) => api().skillsInstall(entry, target.id, rootPath, workspaceId)),
       )
       const errors = results.flatMap((result) =>
         result.ok

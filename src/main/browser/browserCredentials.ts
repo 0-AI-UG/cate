@@ -21,9 +21,12 @@ import type {
 } from '../../shared/types'
 import { isPlainObject } from '../jsonUtils'
 import { writeJsonAtomic } from '../writeJsonAtomic'
+import { KeyedLock } from '../keyedLock'
+import { quarantineCorruptFile } from '../quarantineCorruptFile'
 import log from '../logger'
 
 const execFileAsync = promisify(execFile)
+const credentialWrites = new KeyedLock()
 const STORE_VERSION = 1
 const MAX_CREDENTIALS = 20_000
 const MAX_IMPORT_FILE_BYTES = 32 * 1024 * 1024
@@ -172,7 +175,7 @@ async function readStore(): Promise<CredentialFile> {
   try {
     const parsed: unknown = JSON.parse(await fsp.readFile(storePath(), 'utf8'))
     if (!isPlainObject(parsed) || !Array.isArray(parsed.credentials)) {
-      return { version: STORE_VERSION, credentials: [] }
+      throw new SyntaxError('Invalid credential store')
     }
     return {
       version: STORE_VERSION,
@@ -182,6 +185,7 @@ async function readStore(): Promise<CredentialFile> {
         .slice(0, MAX_CREDENTIALS),
     }
   } catch (error) {
+    if (error instanceof SyntaxError) quarantineCorruptFile(storePath())
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       log.warn('[browserCredentials] failed to read credential store')
     }
@@ -297,41 +301,43 @@ async function storePlainCredentials(
   rows: PlainCredential[],
   skippedBeforeStore = 0,
 ): Promise<{ imported: number; skipped: number; total: number }> {
-  assertSecureStorageAvailable()
-  const current = await readStore()
-  const byKey = new Map(current.credentials.map((credential) => [credentialKey(credential), credential]))
-  let imported = 0
-  let skipped = skippedBeforeStore
+  return credentialWrites.run(storePath(), async () => {
+    assertSecureStorageAvailable()
+    const current = await readStore()
+    const byKey = new Map(current.credentials.map((credential) => [credentialKey(credential), credential]))
+    let imported = 0
+    let skipped = skippedBeforeStore
 
-  for (const row of rows) {
-    const origin = normalizeOrigin(row.origin)
-    if (!origin || !row.password) {
-      skipped += 1
-      continue
+    for (const row of rows) {
+      const origin = normalizeOrigin(row.origin)
+      if (!origin || !row.password) {
+        skipped += 1
+        continue
+      }
+      const identity = {
+        origin,
+        signonRealm: row.signonRealm || origin,
+        username: row.username,
+      }
+      const key = credentialKey(identity)
+      const existing = byKey.get(key)
+      byKey.set(key, {
+        id: existing?.id ?? randomUUID(),
+        ...identity,
+        usernameElement: row.usernameElement,
+        passwordElement: row.passwordElement,
+        encryptedPassword: safeStorage.encryptString(row.password).toString('base64'),
+        importedAt: Date.now(),
+      })
+      imported += 1
     }
-    const identity = {
-      origin,
-      signonRealm: row.signonRealm || origin,
-      username: row.username,
-    }
-    const key = credentialKey(identity)
-    const existing = byKey.get(key)
-    byKey.set(key, {
-      id: existing?.id ?? randomUUID(),
-      ...identity,
-      usernameElement: row.usernameElement,
-      passwordElement: row.passwordElement,
-      encryptedPassword: safeStorage.encryptString(row.password).toString('base64'),
-      importedAt: Date.now(),
-    })
-    imported += 1
-  }
 
-  const credentials = [...byKey.values()]
-    .sort((a, b) => b.importedAt - a.importedAt)
-    .slice(0, MAX_CREDENTIALS)
-  await writeStore(credentials)
-  return { imported, skipped, total: credentials.length }
+    const credentials = [...byKey.values()]
+      .sort((a, b) => b.importedAt - a.importedAt)
+      .slice(0, MAX_CREDENTIALS)
+    await writeStore(credentials)
+    return { imported, skipped, total: credentials.length }
+  })
 }
 
 function parseCsv(text: string): string[][] {
@@ -434,9 +440,7 @@ export async function importChromePasswords(
   }
 
   const keychainPassword = options.keychainPassword ?? await chromeSafeStoragePassword()
-  const current = await readStore()
-  const byKey = new Map(current.credentials.map((credential) => [credentialKey(credential), credential]))
-  let imported = 0
+  const importRows: PlainCredential[] = []
   let skipped = 0
 
   for (const filename of ['Login Data', 'Login Data For Account']) {
@@ -463,30 +467,18 @@ export async function importChromePasswords(
         continue
       }
 
-      const identity = {
+      importRows.push({
         origin,
         signonRealm: row.signon_realm || origin,
         username: row.username_value || '',
-      }
-      const key = credentialKey(identity)
-      const existing = byKey.get(key)
-      byKey.set(key, {
-        id: existing?.id ?? randomUUID(),
-        ...identity,
         usernameElement: row.username_element || '',
         passwordElement: row.password_element || '',
-        encryptedPassword: safeStorage.encryptString(password).toString('base64'),
-        importedAt: Date.now(),
+        password,
       })
-      imported += 1
     }
   }
 
-  const credentials = [...byKey.values()]
-    .sort((a, b) => b.importedAt - a.importedAt)
-    .slice(0, MAX_CREDENTIALS)
-  await writeStore(credentials)
-  return { imported, skipped, total: credentials.length }
+  return storePlainCredentials(importRows, skipped)
 }
 
 export async function getBrowserCredentialProfiles(): Promise<BrowserCredentialProfilesResult> {
@@ -536,39 +528,41 @@ export async function saveBrowserCredential(
 ): Promise<BrowserCredentialSaveResult> {
   assertSecureStorageAvailable()
   const value = validateCredentialInput(input)
-  const store = await readStore()
-  const existing = store.credentials.find((credential) =>
-    credential.origin === value.origin && credential.username === value.username)
-  if (existing) {
-    try {
-      if (safeStorage.decryptString(Buffer.from(existing.encryptedPassword, 'base64')) === value.password) {
-        return {
-          action: 'unchanged',
-          credential: { id: existing.id, origin: existing.origin, username: existing.username },
+  return credentialWrites.run<BrowserCredentialSaveResult>(storePath(), async () => {
+    const store = await readStore()
+    const existing = store.credentials.find((credential) =>
+      credential.origin === value.origin && credential.username === value.username)
+    if (existing) {
+      try {
+        if (safeStorage.decryptString(Buffer.from(existing.encryptedPassword, 'base64')) === value.password) {
+          return {
+            action: 'unchanged',
+            credential: { id: existing.id, origin: existing.origin, username: existing.username },
+          }
         }
+      } catch {
+        // Replace credentials whose encrypted value can no longer be read.
       }
-    } catch {
-      // Replace credentials whose encrypted value can no longer be read.
     }
-  }
 
-  const stored: StoredCredential = {
-    id: existing?.id ?? randomUUID(),
-    origin: value.origin,
-    signonRealm: value.origin,
-    username: value.username,
-    usernameElement: value.usernameElement,
-    passwordElement: value.passwordElement,
-    encryptedPassword: safeStorage.encryptString(value.password).toString('base64'),
-    importedAt: Date.now(),
-  }
-  const credentials = [stored, ...store.credentials.filter((credential) => credential.id !== stored.id)]
-    .slice(0, MAX_CREDENTIALS)
-  await writeStore(credentials)
-  return {
-    action: existing ? 'updated' : 'created',
-    credential: { id: stored.id, origin: stored.origin, username: stored.username },
-  }
+    const stored: StoredCredential = {
+      id: existing?.id ?? randomUUID(),
+      origin: value.origin,
+      signonRealm: value.origin,
+      username: value.username,
+      usernameElement: value.usernameElement,
+      passwordElement: value.passwordElement,
+      encryptedPassword: safeStorage.encryptString(value.password).toString('base64'),
+      importedAt: Date.now(),
+    }
+    const credentials = [stored, ...store.credentials.filter((credential) => credential.id !== stored.id)]
+      .slice(0, MAX_CREDENTIALS)
+    await writeStore(credentials)
+    return {
+      action: existing ? 'updated' : 'created',
+      credential: { id: stored.id, origin: stored.origin, username: stored.username },
+    }
+  })
 }
 
 export async function getCredentialForFill(
@@ -592,10 +586,12 @@ export async function getCredentialForFill(
 }
 
 export async function clearBrowserCredentials(): Promise<void> {
-  await writeStore([])
+  await credentialWrites.run(storePath(), () => writeStore([]))
 }
 
 export async function removeBrowserCredential(id: string): Promise<void> {
-  const store = await readStore()
-  await writeStore(store.credentials.filter((credential) => credential.id !== id))
+  await credentialWrites.run(storePath(), async () => {
+    const store = await readStore()
+    await writeStore(store.credentials.filter((credential) => credential.id !== id))
+  })
 }

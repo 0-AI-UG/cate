@@ -146,7 +146,7 @@ export async function listSkillsInRepo(source: SkillSource, token?: string): Pro
       const text = await rawText(source.repo, ref, t.path, token)
       const parsed = parseFrontmatter(text)
       if (parsed.fm.name) name = parsed.fm.name
-      if (parsed.fm.description) description = parsed.fm.description
+      if (parsed.fm.description) description = parsed.fm.description.replace(/\s+/g, ' ').trim()
       tags = parsed.tags
     } catch { /* keep dir-derived name */ }
     const slug = slugifySkillName(name)

@@ -49,10 +49,7 @@ function UsagePage() {
       return
     }
     void getUsageUrl({ panelId }).then((result) => {
-      if (disposed) {
-        window.electronAPI.agentHarnessPanelClosed({ panelId })
-        return
-      }
+      if (disposed) return
       setState('error' in result ? { phase: 'error', message: result.error } : { phase: 'ready', target: result })
     }).catch((error: unknown) => {
       if (!disposed) setState({ phase: 'error', message: error instanceof Error ? error.message : String(error) })

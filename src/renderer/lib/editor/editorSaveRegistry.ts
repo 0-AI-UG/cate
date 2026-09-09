@@ -1,3 +1,4 @@
+import { saveEditorDocument } from './editorDocuments'
 // =============================================================================
 // editorSaveRegistry — module-level map of panelId -> save() function.
 // EditorPanel registers itself on mount; CanvasNode invokes the save fn when
@@ -8,17 +9,8 @@
  *  cancelled the Save-As picker (or the write failed). */
 type SaveFn = () => Promise<boolean>
 
-/** Result of {@link saveEditor}:
- *  - `saved`        — write completed
- *  - `cancelled`    — the user dismissed the Save-As picker for an untitled
- *                     buffer (the only case where close-confirm should abort)
- *  - `no-handler`   — no editor is registered for this panel (e.g. dirty
- *                     inactive tab in a dock stack that isn't mounted). The
- *                     caller cannot recover the buffer from here, so it must
- *                     decide whether to proceed without saving or surface
- *                     the situation; aborting the close would strand the
- *                     user without a path forward.
- */
+/** Close is safe only after an explicit successful save. Unmounted views use
+ * the document owner; no-handler means no recoverable document exists. */
 export type SaveResult = 'saved' | 'cancelled' | 'no-handler'
 
 const registry = new Map<string, SaveFn>()
@@ -33,8 +25,9 @@ export function unregisterEditorSave(panelId: string): void {
 
 export async function saveEditor(panelId: string): Promise<SaveResult> {
   const fn = registry.get(panelId)
-  if (!fn) return 'no-handler'
-  const ok = await fn()
+  const pending = fn ? fn() : saveEditorDocument(panelId)
+  if (!pending) return 'no-handler'
+  const ok = await pending
   return ok ? 'saved' : 'cancelled'
 }
 

@@ -426,3 +426,12 @@ export const GITHUB_LOGIN = 'github:login'
 
 export const GITHUB_CONNECTION = 'github:connection'
 export const GITHUB_PR_CONTEXT = 'github:prContext'
+
+export const TERMINAL_READY = 'terminal:ready'
+export const FS_ENTRY_MOVED = 'fs:entryMoved'
+
+export const PANEL_TRANSFER_STAGE = 'panel:transferStage'
+export const PANEL_TRANSFER_READY = 'panel:transferReady'
+export const PANEL_TRANSFER_COMMIT = 'panel:transferCommit'
+
+export const PANEL_TRANSFER_FINISH = 'panel:transferFinish'

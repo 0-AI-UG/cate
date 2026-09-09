@@ -1,5 +1,5 @@
 // =============================================================================
-// uiStateStore — transient, cosmetic UI placement (minimap position/size),
+// uiStateStore — transient, cosmetic UI placement (minimap button corner),
 // persisted to `<userData>/ui-state.json` via ./jsonStateFile. Kept separate
 // from settings.json so the user-facing settings file stays focused on
 // preferences. Renderer reads it once on launch and writes single keys back.
@@ -19,13 +19,8 @@ const store = createJsonStateFile<UIState>({
   defaults: DEFAULT_UI_STATE,
   normalize: (parsed, defaults) => {
     const o = isPlainObject(parsed) ? parsed : {}
-    const size = o.minimapSize as { w?: unknown; h?: unknown } | undefined
     return {
-      minimapCorner: CORNERS.has(o.minimapCorner as string) ? (o.minimapCorner as UIState['minimapCorner']) : defaults.minimapCorner,
       minimapButtonCorner: CORNERS.has(o.minimapButtonCorner as string) ? (o.minimapButtonCorner as UIState['minimapButtonCorner']) : defaults.minimapButtonCorner,
-      minimapSize: size && typeof size.w === 'number' && typeof size.h === 'number'
-        ? { w: size.w, h: size.h }
-        : defaults.minimapSize,
     }
   },
 })
@@ -33,8 +28,8 @@ const store = createJsonStateFile<UIState>({
 export function registerUIStateHandlers(): void {
   ipcMain.handle(UI_STATE_GET_ALL, async () => store.get())
   ipcMain.handle(UI_STATE_SET, async (_event, key: keyof UIState, value: unknown) => {
-    if (!(key in DEFAULT_UI_STATE)) return
-    store.update((cur) => ({ ...cur, [key]: value }))
+    if (key !== 'minimapButtonCorner' || typeof value !== 'string' || !CORNERS.has(value)) return
+    store.update((cur) => ({ ...cur, [key]: value as UIState['minimapButtonCorner'] }))
   })
   // Keep the in-memory copy fresh if the file is hand-edited (no broadcast — the
   // values are read per-window on launch; a live reload isn't worth the wiring).

@@ -12,7 +12,7 @@ import { beforeEach, describe, it, expect, vi } from 'vitest'
 // deleteSelection routes panel closure through the normal close helper. The
 // appStore mock keeps a live panel-record map so undo/redo can exercise the
 // real recovery flow (records removed on close, re-added on undo).
-const closePanelWithConfirm = vi.fn()
+const closePanelsWithConfirm = vi.fn()
 const wsPanels: Record<string, { id: string; type: string; title: string; isDirty: boolean }> = {}
 const addPanel = vi.fn((_wsId: string, panel: { id: string }) => {
   wsPanels[panel.id] = panel as (typeof wsPanels)[string]
@@ -30,7 +30,9 @@ vi.mock('./appStore', () => ({
     }),
   },
 }))
-vi.mock('../lib/closePanelWithConfirm', () => ({ closePanelWithConfirm }))
+vi.mock('../lib/closePanelWithConfirm', () => ({ closePanelsWithConfirm, confirmClosePanels: vi.fn(async () => true) }))
+vi.mock('../lib/confirmClosePanels', () => ({ confirmClosePanels: vi.fn(async () => true) }))
+vi.mock('../lib/editor/editorDocuments', () => ({ captureEditorPanel: (panel: unknown) => panel }))
 
 import { createCanvasStore } from './canvasStore'
 import { focusedNodeId } from './canvas/selectionModel'
@@ -38,10 +40,10 @@ import { ZOOM_MIN, ZOOM_MAX } from '../../shared/types'
 import type { CanvasNodeState } from '../../shared/types'
 
 beforeEach(() => {
-  closePanelWithConfirm.mockReset()
+  closePanelsWithConfirm.mockReset()
   // The real closePanelWithConfirm removes the panel record via closePanel.
-  closePanelWithConfirm.mockImplementation(async (_wsId: string, panelId: string) => {
-    delete wsPanels[panelId]
+  closePanelsWithConfirm.mockImplementation(async (_wsId: string, panelIds: string[], remove: (id: string) => void) => {
+    panelIds.forEach(remove)
     return true
   })
   addPanel.mockClear()
@@ -284,8 +286,7 @@ describe('undo/redo across a bulk delete', () => {
     store.getState().selectNodes([a, b])
 
     await store.getState().deleteSelection()
-    expect(closePanelWithConfirm).toHaveBeenCalledWith('ws-1', 'panel-a')
-    expect(closePanelWithConfirm).toHaveBeenCalledWith('ws-1', 'panel-b')
+    expect(closePanelsWithConfirm).toHaveBeenCalledWith('ws-1', ['panel-a', 'panel-b'], expect.any(Function))
     expect(store.getState().nodes[a].animationState).toBe('exiting')
     expect(store.getState().nodes[b].animationState).toBe('exiting')
     expect(store.getState().selection.length).toBe(0)
@@ -301,7 +302,7 @@ describe('undo/redo across a bulk delete', () => {
     expect(wsPanels['panel-a']).toBeDefined()
     expect(wsPanels['panel-b']).toBeDefined()
 
-    store.getState().redo()
+    await store.getState().redo()
     expect(store.getState().nodes[a].animationState).toBe('exiting')
     expect(store.getState().nodes[b].animationState).toBe('exiting')
     expect(store.getState().selection.length).toBe(0)

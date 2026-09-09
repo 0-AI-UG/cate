@@ -1,3 +1,4 @@
+import { StringDecoder } from 'node:string_decoder'
 // =============================================================================
 // Content-search engine — spawn ripgrep, stream parsed results in batches,
 // support cancellation and a total-match cap.
@@ -64,6 +65,8 @@ export function runRipgrepSearch(
   let cancelled = false
 
   // Streaming state.
+  const stdoutDecoder = new StringDecoder('utf8')
+  const stderrDecoder = new StringDecoder('utf8')
   let stdoutBuf = ''
   let stderrBuf = ''
   let pending: SearchFileResult[] = []
@@ -139,7 +142,7 @@ export function runRipgrepSearch(
   }
 
   const handleStdout = (chunk: Buffer): void => {
-    stdoutBuf += chunk.toString('utf-8')
+    stdoutBuf += stdoutDecoder.write(chunk)
     let nl = stdoutBuf.indexOf('\n')
     while (nl !== -1) {
       const line = stdoutBuf.slice(0, nl)
@@ -168,12 +171,14 @@ export function runRipgrepSearch(
 
   child.stdout.on('data', handleStdout)
   child.stderr.on('data', (chunk: Buffer) => {
-    if (stderrBuf.length < 4096) stderrBuf += chunk.toString('utf-8')
+    if (stderrBuf.length < 4096) stderrBuf += stderrDecoder.write(chunk)
   })
   child.on('error', (err) => {
     finishOnce(err.message)
   })
   child.on('close', (code) => {
+    stdoutBuf += stdoutDecoder.end()
+    stderrBuf += stderrDecoder.end()
     // Drain any trailing line without a newline.
     if (stdoutBuf.trim()) handleLine(stdoutBuf)
     stdoutBuf = ''

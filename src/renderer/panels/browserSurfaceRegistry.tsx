@@ -147,7 +147,7 @@ function surfaceClipPath(
   const node = slot.closest<HTMLElement>('[data-node-id]')
   const nodeLayer = node?.parentElement
   const nodeZIndex = node ? Number.parseFloat(geometry.style(node).zIndex) : Number.NaN
-  const occluders = nodeLayer && Number.isFinite(nodeZIndex)
+  const nodeOccluders = nodeLayer && Number.isFinite(nodeZIndex)
     ? geometry.nodes(nodeLayer)
       .filter((entry) => entry.element !== node && entry.z > nodeZIndex)
       .map((entry) => intersectRects(visible, geometry.rect(entry.element)))
@@ -155,15 +155,11 @@ function surfaceClipPath(
       .map(local)
     : []
 
-  // Dock chrome belongs to the slot's DOM stacking context, while the guest is
-  // painted in an external host. Leave the chrome's area open for real clicks.
-  for (const overlay of geometry.overlays) {
-    if (overlay.dataset.browserSurfaceOverlay !== panelId || geometry.style(overlay).visibility === 'hidden') continue
-    const hole = intersectRects(visible, geometry.rect(overlay))
-    if (!hole) continue
-    // Even-odd paths must not contain overlapping holes: their intersection
-    // would paint the guest again. Keep only chrome not already cut out.
-    let remaining = [local(hole)]
+  // Every cutout uses the same subtraction: overlapping even-odd holes would
+  // paint the browser again in their intersection.
+  const occluders: SurfaceRect[] = []
+  const addOccluder = (hole: SurfaceRect): void => {
+    let remaining = [hole]
     for (const existing of occluders) {
       remaining = remaining.flatMap((part) => {
         const overlap = intersectRects(part, existing)
@@ -177,6 +173,13 @@ function surfaceClipPath(
       })
     }
     occluders.push(...remaining)
+  }
+  nodeOccluders.forEach(addOccluder)
+  // Dock chrome lives in the slot's stacking context, outside the guest host.
+  for (const overlay of geometry.overlays) {
+    if (overlay.dataset.browserSurfaceOverlay !== panelId || geometry.style(overlay).visibility === 'hidden') continue
+    const hole = intersectRects(visible, geometry.rect(overlay))
+    if (hole) addOccluder(local(hole))
   }
 
   if (occluders.length === 0) {

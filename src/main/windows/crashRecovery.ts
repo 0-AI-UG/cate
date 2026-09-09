@@ -1,3 +1,9 @@
+import { listDockWindows, sendToWindow } from '../windowRegistry'
+import { stopTerminalsForRenderer } from '../ipc/terminal'
+import { stopWatchersForWindow } from '../ipc/filesystem'
+import { stopSearchesForWindow } from '../ipc/search'
+import { stopMonitorsForWindow } from '../ipc/git-monitor'
+import { DOCK_WINDOW_INIT } from '../../shared/ipc-channels'
 import { BrowserWindow, dialog } from 'electron'
 import log from '../logger'
 import { captureMainMessage } from '../sentry'
@@ -65,10 +71,44 @@ async function showUnresponsiveDialog(win: BrowserWindow): Promise<void> {
 
 export function installRendererCrashRecovery(win: BrowserWindow, windowType: string, windowId: number): void {
   let reloads: number[] = []
+  let loaded = false
+  let replacing = false
+  let dockSnapshot: ReturnType<typeof listDockWindows>[number] | undefined
+  const retireRenderer = (): void => {
+    if (replacing) return
+    replacing = true
+    dockSnapshot = windowType === 'dock' ? listDockWindows().find(snapshot => snapshot.windowId === windowId) : undefined
+    stopTerminalsForRenderer(windowId)
+    stopWatchersForWindow(windowId)
+    stopSearchesForWindow(windowId)
+    stopMonitorsForWindow(windowId)
+  }
+  win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+    if (loaded && mainFrame && !inPlace) retireRenderer()
+  })
+  win.webContents.on('did-finish-load', () => {
+    loaded = true
+    if (!replacing) return
+    replacing = false
+    if (dockSnapshot) {
+      sendToWindow(windowId, DOCK_WINDOW_INIT, {
+        workspaceId: dockSnapshot.workspaceId,
+        rootPath: dockSnapshot.rootPath,
+        worktrees: dockSnapshot.worktrees,
+        panels: dockSnapshot.panels,
+        dockState: dockSnapshot.dockState.zones,
+        canvasStates: dockSnapshot.canvasStates,
+        terminalCwds: dockSnapshot.terminalCwds,
+        restore: true,
+      })
+      dockSnapshot = undefined
+    }
+  })
 
   win.webContents.on('render-process-gone', (_event, details) => {
     // 'clean-exit' is a normal teardown (the window is closing) — not a crash.
     if (details.reason === 'clean-exit') return
+    retireRenderer()
     log.error(
       '[crash] renderer gone window=%d type=%s reason=%s exitCode=%s',
       windowId, windowType, details.reason, String(details.exitCode),

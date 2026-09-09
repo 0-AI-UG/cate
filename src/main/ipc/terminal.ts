@@ -17,6 +17,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import {
   TERMINAL_CREATE,
+  TERMINAL_READY,
   TERMINAL_WRITE,
   TERMINAL_RESIZE,
   TERMINAL_KILL,
@@ -60,11 +61,21 @@ import { codingAgentCommand, type CodingAgentLaunch } from '../../shared/codingA
 // calling into a torn-down JS environment.
 let shuttingDown = false
 
-// Which window owns each terminal (windowId)
-const terminalOwners: Map<string, number> = new Map()
+interface TerminalSession {
+  ownerWindowId: number
+  runtimeId?: RuntimeId
+  live: boolean
+  abandoned?: boolean
+  ready(): void
+  exit(code: number): void
+  flush(): void
+  dispose(): void
+}
+const terminalSessions = new Map<string, TerminalSession>()
+const pendingTerminalSessions = new Set<TerminalSession>()
+const rendererGenerations = new Map<number, symbol>()
+const runtimeGenerations = new Map<RuntimeId, symbol>()
 
-// Which runtime hosts each terminal — routes write/resize/kill/getCwd.
-const terminalRuntime: Map<string, RuntimeId> = new Map()
 const sessionListeners = new Set<() => void>()
 
 function emitSessionsChanged(): void {
@@ -77,11 +88,11 @@ export function onTerminalSessionsChanged(listener: () => void): () => void {
 }
 
 export function getTerminalIds(): string[] {
-  return [...terminalRuntime.keys()]
+  return [...terminalSessions].filter(([, session]) => session.live).map(([id]) => id)
 }
 
 function runtimeForTerminal(id: string): Runtime | null {
-  const cid = terminalRuntime.get(id)
+  const cid = terminalSessions.get(id)?.runtimeId
   if (!cid) return null
   try {
     return runtimes.resolve(cid)
@@ -103,6 +114,7 @@ export function getRuntimeForTerminal(id: string): Runtime | null {
 interface TerminalTransferState {
   buffer: Buffer[]
   bufferSize: number
+  exitCode?: number
   /** null while buffering ahead of a destination that doesn't exist yet
    *  (detach buffers BEFORE the new window is created). */
   targetWindowId: number | null
@@ -123,9 +135,13 @@ function completeTerminalTransfer(ptyId: string, targetWindowId: number): void {
   if (!state) return
   clearTimeout(state.timer)
   transferStates.delete(ptyId)
-  terminalOwners.set(ptyId, targetWindowId)
+  reassignTerminalWindow(ptyId, targetWindowId)
   for (const chunk of state.buffer) {
     try { sendToWindow(targetWindowId, TERMINAL_DATA, ptyId, chunk.toString()) } catch { /* target gone */ }
+  }
+  if (state.exitCode !== undefined) {
+    cleanupTerminal(ptyId)
+    sendToWindow(targetWindowId, TERMINAL_EXIT, ptyId, state.exitCode)
   }
 }
 
@@ -138,10 +154,14 @@ export function abortTerminalTransfer(ptyId: string): void {
   if (!state) return
   clearTimeout(state.timer)
   transferStates.delete(ptyId)
-  const ownerId = terminalOwners.get(ptyId)
+  const ownerId = getTerminalOwner(ptyId)
   if (ownerId == null) return
   for (const chunk of state.buffer) {
     try { sendToWindow(ownerId, TERMINAL_DATA, ptyId, chunk.toString()) } catch { /* owner gone */ }
+  }
+  if (state.exitCode !== undefined) {
+    cleanupTerminal(ptyId)
+    sendToWindow(ownerId, TERMINAL_EXIT, ptyId, state.exitCode)
   }
 }
 
@@ -150,12 +170,14 @@ export function abortTerminalTransfer(ptyId: string): void {
  *  via setTerminalTransferTarget, the fallback timer ABORTS back to the current
  *  owner — there is no window the transfer could legitimately complete toward. */
 export function beginTerminalBuffering(ptyId: string): void {
+  terminalSessions.get(ptyId)?.flush()
   const existing = transferStates.get(ptyId)
   if (existing) clearTimeout(existing.timer)
   const timer = setTimeout(() => abortTerminalTransfer(ptyId), TRANSFER_TIMEOUT_MS)
   transferStates.set(ptyId, {
     buffer: existing?.buffer ?? [],
     bufferSize: existing?.bufferSize ?? 0,
+    exitCode: existing?.exitCode,
     targetWindowId: null,
     timer,
   })
@@ -166,12 +188,14 @@ export function beginTerminalBuffering(ptyId: string): void {
  *  COMPLETE toward the target (a missing ack must not strand the PTY on a dead
  *  source — ownership follows the panel). */
 export function setTerminalTransferTarget(ptyId: string, targetWindowId: number): void {
+  terminalSessions.get(ptyId)?.flush()
   const existing = transferStates.get(ptyId)
   if (existing) clearTimeout(existing.timer)
   const timer = setTimeout(() => completeTerminalTransfer(ptyId, targetWindowId), TRANSFER_TIMEOUT_MS)
   transferStates.set(ptyId, {
     buffer: existing?.buffer ?? [],
     bufferSize: existing?.bufferSize ?? 0,
+    exitCode: existing?.exitCode,
     targetWindowId,
     timer,
   })
@@ -197,10 +221,14 @@ export function acknowledgeTerminalTransfer(ptyId: string): void {
  *  pointing at a dead owner); any transfer whose TARGET died is aborted back
  *  to the still-live owner. */
 export function handleWindowClosedTerminalTransfers(windowId: number): void {
+  rendererGenerations.set(windowId, Symbol())
+  for (const session of pendingTerminalSessions) {
+    if (session.ownerWindowId === windowId) { session.abandoned = true; session.dispose() }
+  }
   for (const [ptyId, state] of [...transferStates]) {
     if (state.targetWindowId === windowId) {
       abortTerminalTransfer(ptyId)
-    } else if (terminalOwners.get(ptyId) === windowId) {
+    } else if (getTerminalOwner(ptyId) === windowId) {
       if (state.targetWindowId != null) {
         completeTerminalTransfer(ptyId, state.targetWindowId)
       } else {
@@ -211,10 +239,23 @@ export function handleWindowClosedTerminalTransfers(windowId: number): void {
       }
     }
   }
+  for (const [id, session] of terminalSessions) {
+    if (session.ownerWindowId === windowId && !session.live) cleanupTerminal(id)
+  }
+}
+
+/** A renderer replacement loses every xterm binding. Retire its PTYs before
+ * restoration spawns replacements; completed transfers belong to their target. */
+export function stopTerminalsForRenderer(windowId: number): void {
+  handleWindowClosedTerminalTransfers(windowId)
+  for (const [id, session] of [...terminalSessions]) {
+    if (session.ownerWindowId !== windowId) continue
+    killTerminal(id)
+  }
 }
 
 export function getTerminalOwner(terminalId: string): number | undefined {
-  return terminalOwners.get(terminalId)
+  return terminalSessions.get(terminalId)?.ownerWindowId
 }
 
 export function handleCrossWindowDropTerminalTransfer(ptyId: string | undefined, targetWindowId: number): void {
@@ -223,7 +264,9 @@ export function handleCrossWindowDropTerminalTransfer(ptyId: string | undefined,
 }
 
 export function reassignTerminalWindow(terminalId: string, newWindowId: number): void {
-  terminalOwners.set(terminalId, newWindowId)
+  const session = terminalSessions.get(terminalId)
+  if (session) session.ownerWindowId = newWindowId
+  else terminalSessions.set(terminalId, { ownerWindowId: newWindowId, live: false, ready() {}, exit() {}, flush() {}, dispose() {} })
 }
 
 // =============================================================================
@@ -231,8 +274,11 @@ export function reassignTerminalWindow(terminalId: string, newWindowId: number):
 // =============================================================================
 
 function cleanupTerminal(id: string): void {
-  terminalOwners.delete(id)
-  terminalRuntime.delete(id)
+  terminalSessions.get(id)?.dispose()
+  terminalSessions.delete(id)
+  const transfer = transferStates.get(id)
+  if (transfer) clearTimeout(transfer.timer)
+  transferStates.delete(id)
   emitSessionsChanged()
 }
 
@@ -241,18 +287,9 @@ function cleanupTerminal(id: string): void {
 // those ids would route input to the fresh daemon after reconnect, where the ids
 // do not exist, leaving the terminal apparently alive but permanently frozen.
 function invalidateRuntimeTerminals(runtimeId: RuntimeId): void {
-  for (const [id, terminalRuntimeId] of [...terminalRuntime]) {
-    if (terminalRuntimeId !== runtimeId) continue
-    const ownerWindowId = terminalOwners.get(id)
-    const transfer = transferStates.get(id)
-    if (transfer) {
-      clearTimeout(transfer.timer)
-      transferStates.delete(id)
-    }
-    cleanupTerminal(id)
-    if (ownerWindowId != null) {
-      try { sendToWindow(ownerWindowId, TERMINAL_EXIT, id, 255) } catch { /* owner gone */ }
-    }
+  runtimeGenerations.set(runtimeId, Symbol())
+  for (const session of [...terminalSessions.values(), ...pendingTerminalSessions]) {
+    if (session.runtimeId === runtimeId) session.exit(255)
   }
 }
 
@@ -266,11 +303,14 @@ async function spawnTerminal(
     panelId?: string
     placementGroupId?: string
     codingAgentLaunch?: CodingAgentLaunch
+    waitForReady?: boolean
   },
   ownerWindowId: number,
 ): Promise<string> {
   const { runtimeId, path: cwdPath } = parseLocator(options.cwd ?? '')
   const runtime = runtimes.resolve(runtimeId)
+  const rendererGeneration = rendererGenerations.get(ownerWindowId)
+  const runtimeGeneration = runtimeGenerations.get(runtimeId)
 
   // No client-side validation: the authoritative allowed-root check runs on
   // the daemon inside process.create (a bad cwd rejects the create). An empty
@@ -296,6 +336,12 @@ async function spawnTerminal(
     }
   }
 
+  // Acquire ownership before asynchronous endpoint setup can outlive its
+  // renderer or runtime. Session registration below owns subsequent awaits.
+  if (rendererGenerations.get(ownerWindowId) !== rendererGeneration || runtimeGenerations.get(runtimeId) !== runtimeGeneration) {
+    throw new Error('Terminal owner changed during acquisition')
+  }
+
   // Instant-exit diagnostics (#401): a shell that exits cleanly within this
   // window without ever emitting a byte never became an interactive session
   // (shell startup files exiting, or a PTY that couldn't be allocated). Log it
@@ -311,46 +357,74 @@ async function spawnTerminal(
   // invokes onData with this terminal's own id, so the id captured on first data
   // is the one used at flush.
   let terminalId = ''
-  const dispatcher = createStringDispatcher(16, (dataBuffer) => {
-    const windowId = terminalOwners.get(terminalId)
-    if (windowId != null) {
-      try { sendToWindow(windowId, TERMINAL_DATA, terminalId, dataBuffer) } catch { /* window gone */ }
+  let receiverReady = !options.waitForReady
+  let acquired = false
+  let exitCode: number | undefined
+  let pending = ''
+  const deliver = (data: string): void => {
+    if (!acquired || !receiverReady) {
+      pending = (pending + data).slice(-MAX_TRANSFER_BUFFER)
+      return
     }
-  })
-
+    const transfer = transferStates.get(terminalId)
+    if (transfer) {
+      const chunk = Buffer.from(data)
+      transfer.buffer.push(chunk)
+      transfer.bufferSize += chunk.length
+      while (transfer.bufferSize > MAX_TRANSFER_BUFFER && transfer.buffer.length > 1) {
+        transfer.bufferSize -= transfer.buffer.shift()!.length
+      }
+      return
+    }
+    try { sendToWindow(session.ownerWindowId, TERMINAL_DATA, terminalId, data) } catch { /* owner gone */ }
+  }
+  const dispatcher = createStringDispatcher(16, deliver)
+  const finish = (): void => {
+    if (!acquired || !receiverReady || exitCode === undefined) return
+    const transfer = transferStates.get(terminalId)
+    if (transfer) { transfer.exitCode = exitCode; return }
+    const owner = session.ownerWindowId
+    cleanupTerminal(terminalId)
+    try { sendToWindow(owner, TERMINAL_EXIT, terminalId, exitCode) } catch { /* owner gone */ }
+  }
+  const session: TerminalSession = {
+    ownerWindowId, runtimeId, live: false,
+    flush: dispatcher.flush,
+    dispose: () => { session.abandoned = true; dispatcher.cancel({ resetPending: true }); pending = '' },
+    ready: () => {
+      receiverReady = true
+      if (pending) { const data = pending; pending = ''; deliver(data) }
+      dispatcher.flush()
+      finish()
+    },
+    exit: code => {
+      if (exitCode !== undefined) return
+      exitCode = code
+      session.live = false
+      dispatcher.flush()
+      emitSessionsChanged()
+      finish()
+    },
+  }
+  pendingTerminalSessions.add(session)
   const onData = (id: string, data: string): void => {
-    if (shuttingDown) return
+    if (shuttingDown || session.abandoned || exitCode !== undefined) return
     terminalId = id
     sawData = true
     countTerminalData(data)
     getOrCreateLogger(id).append(data)
-
-    const transferState = transferStates.get(id)
-    if (transferState) {
-      const chunk = Buffer.from(data)
-      transferState.buffer.push(chunk)
-      transferState.bufferSize += chunk.length
-      while (transferState.bufferSize > MAX_TRANSFER_BUFFER && transferState.buffer.length > 1) {
-        transferState.bufferSize -= transferState.buffer.shift()!.length
-      }
-      return
-    }
-
     dispatcher.push(data)
   }
-
-  const onExit = (id: string, exitCode: number): void => {
-    if (shuttingDown) return
-    if (exitCode === 0 && !sawData && Date.now() - spawnedAt < INSTANT_EXIT_THRESHOLD_MS) {
+  const onExit = (id: string, code: number): void => {
+    if (shuttingDown || session.abandoned) return
+    terminalId = id
+    if (code === 0 && !sawData && Date.now() - spawnedAt < INSTANT_EXIT_THRESHOLD_MS) {
       log.warn(
         '[terminal] %s exited immediately (code 0) with no output — shell %s likely exited from its startup files or no PTY could be allocated',
-        id,
-        resolvedShell || '(unknown)',
+        id, resolvedShell || '(unknown)',
       )
     }
-    const windowId = terminalOwners.get(id)
-    cleanupTerminal(id)
-    if (windowId != null) sendToWindow(windowId, TERMINAL_EXIT, id, exitCode)
+    session.exit(code)
   }
 
   // The requested shell is the client's preference; each ProcessHost resolves it
@@ -397,10 +471,14 @@ async function spawnTerminal(
   // triggers. Hydrate managed skills before the shell can launch an agent.
   if (worktree) {
     try {
-      await syncWorkspaceSkills(worktree.base.locator, worktree.checkout.locator)
+      await syncWorkspaceSkills(worktree.base.locator, worktree.checkout.locator, { scopeId: options.workspaceId, ownerWindowId })
     } catch (err) {
       log.warn('[terminal] worktree skill sync failed: %O', err)
     }
+  }
+  if (session.abandoned) {
+    pendingTerminalSessions.delete(session)
+    throw new Error('Terminal owner closed during acquisition')
   }
   const handle = await runtime.process.create(
     {
@@ -424,15 +502,24 @@ async function spawnTerminal(
     },
     onData,
     onExit,
-  )
+  ).catch(error => { session.dispose(); throw error })
+    .finally(() => { pendingTerminalSessions.delete(session) })
+  if (session.abandoned || shuttingDown) {
+    session.dispose()
+    runtime.process.kill(handle.id)
+    return handle.id
+  }
   resolvedShell = handle.shell ?? ''
 
-  terminalRuntime.set(handle.id, runtimeId)
-  terminalOwners.set(handle.id, ownerWindowId)
+  terminalId = handle.id
+  acquired = true
+  session.live = exitCode === undefined
+  terminalSessions.set(handle.id, session)
   emitSessionsChanged()
   if (handle.notice) {
-    try { sendToWindow(ownerWindowId, TERMINAL_DATA, handle.id, handle.notice) } catch { /* window gone */ }
+    deliver(handle.notice)
   }
+  if (receiverReady) session.ready()
   return handle.id
 }
 
@@ -454,6 +541,10 @@ function killTerminal(id: string): void {
 
 export function registerHandlers(): void {
   runtimes.onDisconnected(invalidateRuntimeTerminals)
+  ipcMain.handle(TERMINAL_READY, (event, id: string) => {
+    const session = terminalSessions.get(id)
+    if (session?.ownerWindowId === (windowFromEvent(event)?.id ?? -1)) session.ready()
+  })
 
   // Complete/abandon in-flight terminal transfers when a window closes so a
   // running PTY's ownership follows the panel instead of orphaning on a dead window.
@@ -490,6 +581,7 @@ export function registerHandlers(): void {
       panelId?: string
       placementGroupId?: string
       codingAgentLaunch?: CodingAgentLaunch
+      waitForReady?: boolean
     }): Promise<string> => {
       const win = windowFromEvent(event)
       const windowId = win?.id ?? -1
@@ -559,7 +651,7 @@ export function registerHandlers(): void {
 
     const existing = getOrCreateLogger(terminalId)
     const data = existing.readAll()
-    if (!terminalRuntime.has(terminalId)) {
+    if (!terminalSessions.get(terminalId)?.live) {
       removeLogger(terminalId)
     }
     return data || null
@@ -588,8 +680,8 @@ export function killAllTerminals(): void {
   shuttingDown = true
   disposeAllLoggers()
   void runtimes.disposeAll()
-  terminalOwners.clear()
-  terminalRuntime.clear()
+  for (const session of pendingTerminalSessions) { session.abandoned = true; session.dispose() }
+  for (const id of terminalSessions.keys()) cleanupTerminal(id)
 }
 
 export { flushAllLoggers }

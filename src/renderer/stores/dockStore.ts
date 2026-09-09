@@ -202,6 +202,14 @@ interface DockStoreActions {
 
 export type DockStore = DockStoreState & DockStoreActions
 
+/** Keep transient maximization valid after layout changes and reveal explicit destinations. */
+function updateDockZones(state: DockStoreState, zones: WindowDockState, revealStackId?: string): DockStoreState {
+  const maximizedZone = state.maximizedStackId && findZoneForStack(zones, state.maximizedStackId)
+  const keepMaximized = maximizedZone && zones[maximizedZone].visible
+    && (!revealStackId || revealStackId === state.maximizedStackId)
+  return { zones, maximizedStackId: keepMaximized ? state.maximizedStackId : null }
+}
+
 // -----------------------------------------------------------------------------
 // Store factory — each dock window gets its own independent store instance
 // -----------------------------------------------------------------------------
@@ -217,15 +225,14 @@ export function createDockStore(initialState?: DockStateSnapshot) {
   // --- Zone visibility ---
 
   toggleZone(position) {
-    set((state) => ({
-      zones: {
+    set((state) => {
+      const zones = {
         ...state.zones,
-        [position]: {
-          ...state.zones[position],
-          visible: !state.zones[position].visible,
-        },
-      },
-    }))
+        [position]: { ...state.zones[position], visible: !state.zones[position].visible },
+      }
+      const revealStack = zones[position].visible ? findFirstTabStack(zones[position].layout) : null
+      return updateDockZones(state, zones, revealStack?.id)
+    })
   },
 
   setZoneSize(position, size) {
@@ -337,17 +344,12 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         }
       }
 
-      return {
-        ...(target?.type === 'split' ? { maximizedStackId: null } : {}),
-        zones: {
-          ...state.zones,
-          [zone]: {
-            ...zoneState,
-            visible: activate ? true : zoneState.visible,
-            layout: newLayout,
-          },
-        },
+      const zones = {
+        ...state.zones,
+        [zone]: { ...zoneState, visible: activate ? true : zoneState.visible, layout: newLayout },
       }
+      const destination = activate ? findStackContainingPanelAcrossZones(zones, panelId) : null
+      return updateDockZones(state, zones, destination?.id)
     })
   },
 
@@ -365,17 +367,15 @@ export function createDockStore(initialState?: DockStateSnapshot) {
 
       const newLayout = removePanelFromTree(zoneState.layout, panelId)
 
-      return {
-        zones: {
-          ...state.zones,
-          [zone]: {
-            ...zoneState,
-            layout: newLayout,
-            // Auto-hide zone if it's now empty (never hide center)
-            visible: zone === 'center' ? true : (newLayout !== null ? zoneState.visible : false),
-          },
+      return updateDockZones(state, {
+        ...state.zones,
+        [zone]: {
+          ...zoneState,
+          layout: newLayout,
+          // Auto-hide zone if it's now empty (never hide center)
+          visible: zone === 'center' ? true : (newLayout !== null ? zoneState.visible : false),
         },
-      }
+      })
     })
   },
 
@@ -432,7 +432,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         }
       }
 
-      return { zones }
+      return updateDockZones(state, zones, toStackId)
     })
   },
 
@@ -449,10 +449,10 @@ export function createDockStore(initialState?: DockStateSnapshot) {
             ...zoneState,
             layout: replaceInTree(zoneState.layout, stackId, updated),
           }
-          break
+          return updateDockZones(state, zones, stackId)
         }
       }
-      return { zones }
+      return state
     })
   },
 
@@ -515,7 +515,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         break
       }
 
-      return { zones }
+      return updateDockZones(state, zones)
     })
   },
 

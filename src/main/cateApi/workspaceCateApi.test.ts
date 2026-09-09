@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { reverseDuplex } from './serverTunnel'
+import type { Runtime } from '../runtime/types'
 import type { ReverseSession } from './cateApiReverse'
 
 const settingsState = vi.hoisted(() => ({ cliEnabled: true as unknown }))
@@ -18,7 +20,11 @@ const reverseDispose = vi.fn()
 // feedConnection returns a fake per-conn duplex whose push() we can observe, so
 // the tunnel connection callbacks (onData push+ack, onClose push(null)) can be
 // driven and asserted.
-const feedConnection = vi.fn((_connId: string) => ({ push: vi.fn() }))
+const feedConnection = vi.fn((connId: string) => {
+  const stream = reverseDuplex(fakeRuntime as unknown as Runtime, connId)
+  vi.spyOn(stream, 'push')
+  return stream
+})
 
 vi.mock('electron', () => ({}))
 vi.mock('../runtime/runtimeManager', () => ({ runtimes: { resolve } }))
@@ -176,7 +182,7 @@ describe('WorkspaceCateApiManager tunnel connection callbacks', () => {
   it('onData pushes the decoded bytes into the conn duplex and credits the ack window', async () => {
     const { onConnection, onData } = await wire()
     onConnection('c1')
-    const duplex = feedConnection.mock.results[0].value as { push: ReturnType<typeof vi.fn> }
+    const duplex = feedConnection.mock.results[0].value
 
     const payload = Buffer.from('hello world')
     onData('c1', payload.toString('base64'))
@@ -194,7 +200,7 @@ describe('WorkspaceCateApiManager tunnel connection callbacks', () => {
   it('onClose pushes null (EOF) into the conn duplex', async () => {
     const { onConnection, onClose } = await wire()
     onConnection('c1')
-    const duplex = feedConnection.mock.results[0].value as { push: ReturnType<typeof vi.fn> }
+    const duplex = feedConnection.mock.results[0].value
 
     onClose('c1')
     expect(duplex.push).toHaveBeenCalledWith(null)

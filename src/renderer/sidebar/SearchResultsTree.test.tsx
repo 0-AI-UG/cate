@@ -1,6 +1,8 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
+import { SearchStoreContext } from '../stores/SearchStoreContext'
+import { createSearchStore } from '../stores/searchStore'
 import { SearchResultsTree } from './SearchResultsTree'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 
@@ -15,10 +17,10 @@ it('opens a search match in the containing Files panel at its line and column', 
   const root = createRoot(host)
   const onOpenMatch = vi.fn()
   try {
-    act(() => root.render(<SearchResultsTree onOpenMatch={onOpenMatch} files={[{
+    act(() => root.render(<SearchStoreContext.Provider value={createSearchStore()}><SearchResultsTree onOpenMatch={onOpenMatch} files={[{
       path: '/project/index.ts', relativePath: 'index.ts', matchCount: 1,
       lines: [{ line: 42, text: 'const value = 1', ranges: [{ start: 6, end: 11 }] }],
-    }]} />))
+    }]} /></SearchStoreContext.Provider>))
     const result = host.querySelector<HTMLElement>('[data-testid="search-line"]')!
     expect(result).not.toBeNull()
     act(() => result.click())

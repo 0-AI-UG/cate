@@ -18,6 +18,7 @@ import { act } from 'react'
 // vi.mock factories are hoisted above module top-level, so the spies they
 // reference must come from vi.hoisted (also hoisted) rather than plain consts.
 const h = vi.hoisted(() => ({
+  useNavigationPanels: vi.fn(),
   useShortcuts: vi.fn(),
   useThemeAndScaleHydration: vi.fn(),
   startAgentScreenDetector: vi.fn(),
@@ -35,6 +36,7 @@ const h = vi.hoisted(() => ({
   removeWorktree: vi.fn(),
   retargetReviewPanel: vi.fn(),
 }))
+vi.mock('../../docking/useNavigationPanels', () => ({ useNavigationPanels: h.useNavigationPanels }))
 vi.mock('../../hooks/useShortcuts', () => ({ useShortcuts: h.useShortcuts }))
 vi.mock('./useThemeAndScaleHydration', () => ({ useThemeAndScaleHydration: h.useThemeAndScaleHydration }))
 vi.mock('../agent/agentScreenDetector', () => ({
@@ -211,4 +213,9 @@ describe('useWindowRuntime', () => {
     window.dispatchEvent(e)
     expect(e.defaultPrevented).toBe(false)
   })
+})
+
+it('mounts panel navigation in the shared runtime used by detached windows', () => {
+  act(() => root.render(<Harness />))
+  expect(h.useNavigationPanels).toHaveBeenCalled()
 })

@@ -14,9 +14,7 @@
 
 import { useAppStore } from '../stores/appStore'
 import type { createDockStore } from '../stores/dockStore'
-import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
-import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
-import { confirmCloseCanvas } from '../lib/canvas/confirmCloseCanvas'
+import { closePanelsWithConfirm } from '../lib/closePanelWithConfirm'
 import { removePanelFromWindow } from '../lib/panels/removePanelFromWindow'
 
 export async function closeDockWindowPanel(
@@ -24,17 +22,17 @@ export async function closeDockWindowPanel(
   panelId: string,
   dockStore: ReturnType<typeof createDockStore>,
 ): Promise<boolean> {
-  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-  const panel = ws?.panels[panelId]
+  return closeDockWindowPanels(workspaceId, [panelId], dockStore)
+}
 
-  if (panel?.type === 'canvas') {
-    if (!(await confirmCloseCanvas(workspaceId, panelId))) return false
-  } else {
-    if (!(await confirmCloseDirtyPanels([panel]))) return false
-    if (!(await confirmCloseRunningTerminals([panel]))) return false
-  }
-
-  dockStore.getState().undockPanel(panelId)
-  if (panel) removePanelFromWindow(workspaceId, panelId, panel.type, 'close')
-  return true
+export async function closeDockWindowPanels(
+  workspaceId: string,
+  panelIds: string[],
+  dockStore: ReturnType<typeof createDockStore>,
+): Promise<boolean> {
+  return closePanelsWithConfirm(workspaceId, panelIds, (panelId) => {
+    const panel = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)?.panels[panelId]
+    dockStore.getState().undockPanel(panelId)
+    if (panel) removePanelFromWindow(workspaceId, panelId, panel.type, 'close')
+  })
 }

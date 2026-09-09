@@ -1,3 +1,5 @@
+import { hydratePanelSearch } from '../stores/panelSearchStores'
+import { captureEditorPanel } from './editor/editorDocuments'
 // =============================================================================
 // Panel Transfer — serialize/deserialize PanelTransferSnapshot for cross-window
 // panel handoff.
@@ -31,7 +33,7 @@ export function createTransferSnapshot(
   } = {},
 ): PanelTransferSnapshot {
   const snapshot: PanelTransferSnapshot = {
-    panel: { ...panel },
+    panel: captureEditorPanel(panel),
     geometry,
     sourceLocation,
     rootPath: options.workspaceRootPath,
@@ -65,7 +67,7 @@ export function createTransferSnapshot(
         // layer). Defensively skip a canvas child so a malformed snapshot can't
         // leave a dangling nested-canvas record in the receiver.
         if (childPanel?.type === 'canvas') continue
-        if (childPanel) childPanels[childId] = { ...childPanel }
+        if (childPanel) childPanels[childId] = captureEditorPanel(childPanel)
         const entry = terminalRegistry.getEntry(childId)
         if (entry?.ptyId) {
           childTerminals[childId] = {
@@ -138,6 +140,7 @@ export function hydrateCanvasState(
   const store = getOrCreateCanvasStoreForPanel(canvasPanelId)
   store.getState().loadWorkspaceCanvas(canvasState.nodes, canvasState.viewportOffset, canvasState.zoomLevel)
   applyCanvasChildPanels(wsId, canvasState.childPanels ?? {})
+  for (const panel of Object.values(canvasState.childPanels ?? {})) hydratePanelSearch(panel)
   depositCanvasChildTransfers(canvasState)
 }
 
@@ -146,6 +149,7 @@ export function hydrateCanvasState(
  *  the panel to appStore or place it — callers pick ensurePanelsInAppStore vs
  *  addPanel and dock vs canvas placement, which differ between window kinds. */
 export function hydrateReceivedPanel(wsId: string, snapshot: PanelTransferSnapshot): void {
+  hydratePanelSearch(snapshot.panel)
   depositPanelTerminalTransfer(snapshot)
   if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
     hydrateCanvasState(snapshot.panel.id, wsId, snapshot.canvasState)

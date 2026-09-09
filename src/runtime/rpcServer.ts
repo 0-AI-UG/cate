@@ -156,9 +156,9 @@ export class RpcServer {
         // JSON turns a trailing `undefined` arg into `null`; restore undefined
         // so search's default-parameter ({}) applies.
         return api.file.search(s(0), s(1), (p[2] ?? undefined) as never, p[3] as FileAccessContext | undefined)
-      case Methods.fileSearchContentStart: return this.startSearch(s(0), p[1] as SearchOptions, p[2] as FileAccessContext | undefined)
+      case Methods.fileSearchContentStart: return this.startSearch(s(0), p[1] as SearchOptions, p[2] as FileAccessContext | undefined, s(3))
       case Methods.fileSearchContentStop: return this.stopSearch(s(0))
-      case Methods.fileWatchStart: return this.startWatch(s(0), p[1] as FileAccessContext | undefined)
+      case Methods.fileWatchStart: return this.startWatch(s(0), p[1] as FileAccessContext | undefined, s(2))
       case Methods.fileWatchStop: return this.stopWatch(s(0))
 
       // --- process (pty) --- data/exit stream back keyed by the pty id ---
@@ -177,7 +177,7 @@ export class RpcServer {
       case Methods.ptyScanPorts: return api.process.scanPorts(p[0] as string[])
 
       // --- agent hooks --- normalized events stream back keyed by the streamId ---
-      case Methods.agentHooksSubscribe: return this.startAgentHooks()
+      case Methods.agentHooksSubscribe: return this.startAgentHooks(s(0))
       case Methods.agentHooksUnsubscribe: return this.stopAgentHooks(s(0))
       case Methods.agentHooksInspect: return api.agentHooks.inspectWorkspace(s(0))
       case Methods.agentChangesList: return api.agentHooks.listChanges(s(0), a(1))
@@ -261,20 +261,22 @@ export class RpcServer {
     }
   }
 
-  private startSearch(root: string, opts: SearchOptions, access?: FileAccessContext): string {
-    const streamId = `s${++this.streamSeq}`
+  private startSearch(root: string, opts: SearchOptions, access?: FileAccessContext, requestedId?: string): string {
+    const streamId = requestedId ?? `s${++this.streamSeq}`
+    let completed = false
     const handle = this.api.file.searchContent(root, opts, {
       onBatch: (files) => {
         const payload: SearchEvtPayload = { kind: 'batch', files }
         this.write(serializeFrame({ t: 'evt', streamId, payload }))
       },
       onDone: (stats, error) => {
+        completed = true
         const payload: SearchEvtPayload = { kind: 'done', stats, error }
         this.write(serializeFrame({ t: 'evt', streamId, payload }))
         this.searchCancels.delete(streamId)
       },
     }, access)
-    this.searchCancels.set(streamId, handle.cancel)
+    if (!completed) this.searchCancels.set(streamId, handle.cancel)
     return streamId
   }
 
@@ -285,8 +287,8 @@ export class RpcServer {
     }
   }
 
-  private startAgentHooks(): string {
-    const streamId = `h${++this.streamSeq}`
+  private startAgentHooks(requestedId?: string): string {
+    const streamId = requestedId ?? `h${++this.streamSeq}`
     const unsub = this.api.agentHooks.subscribe((event) => {
       const payload: AgentHookEvtPayload = event
       this.write(serializeFrame({ t: 'evt', streamId, payload }))
@@ -302,8 +304,8 @@ export class RpcServer {
     }
   }
 
-  private startWatch(prefix: string, access?: FileAccessContext): string {
-    const streamId = `w${++this.streamSeq}`
+  private startWatch(prefix: string, access?: FileAccessContext, requestedId?: string): string {
+    const streamId = requestedId ?? `w${++this.streamSeq}`
     const unsub = this.api.file.watch(prefix, (changedPath, type) => {
       const payload: FsWatchEvtPayload = { changedPath, type }
       this.write(serializeFrame({ t: 'evt', streamId, payload }))

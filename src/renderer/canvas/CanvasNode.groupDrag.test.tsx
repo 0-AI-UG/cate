@@ -103,6 +103,7 @@ function tabsDockStore(panelId: string): StoreApi<DockStore> {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   // A workspace that backs the rendered node's panel (CanvasNode derives its
   // primaryPanel from the active workspace). Reset directly so addWorkspace
   // auto-selects the fresh one (it only auto-selects when none exist).
@@ -113,6 +114,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   act(() => root.unmount())
   container.remove()
   document.body.classList.remove('canvas-interacting', 'canvas-dragging')

@@ -1,3 +1,4 @@
+import { migrateNavigationPanel } from '../../../shared/panels'
 // =============================================================================
 // ensurePanelsInAppStore — receive-side helper for panel transfers.
 //
@@ -39,6 +40,7 @@ export function ensurePanelsInAppStore(
   // Allow a panel-less call purely to backfill rootPath/worktrees on an existing
   // stub (e.g. a canvas whose children arrive separately): only bail when there
   // is nothing at all to apply.
+  panels = Object.fromEntries(Object.entries(panels).map(([id, panel]) => [id, migrateNavigationPanel(panel)]))
   const hasWorktrees = !!worktrees && worktrees.length > 0
   if (!workspaceId || (Object.keys(panels).length === 0 && !rootPath && !hasWorktrees)) return
   useAppStore.setState((state) => {

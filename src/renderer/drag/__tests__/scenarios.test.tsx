@@ -296,6 +296,7 @@ describe('drag integration — canvas-node scenarios', () => {
     }
     electronAPI.crossWindowDragResolve.mockResolvedValueOnce({ claimed: false })
     electronAPI.dragDetach.mockResolvedValueOnce(42)
+    vi.mocked(window.electronAPI.commitPanelTransfer).mockResolvedValueOnce(true)
 
     scene = renderDragScene({
       canvases: [{ panelId: 'c1', rect: { x: 0, y: 0, w: 1000, h: 800 } }],
@@ -313,7 +314,9 @@ describe('drag integration — canvas-node scenarios', () => {
     expect(electronAPI.crossWindowDragStart).toHaveBeenCalled()
     expect(electronAPI.crossWindowDragResolve).toHaveBeenCalled()
     expect(electronAPI.dragDetach).toHaveBeenCalled()
-    expect(Object.keys(store.getState().nodes)).not.toContain('n1')
+    await vi.waitFor(() => expect(window.electronAPI.commitPanelTransfer).toHaveBeenCalled())
+    await vi.waitFor(() => expect(window.electronAPI.finishPanelTransfer).toHaveBeenCalled())
+    await vi.waitFor(() => expect(Object.keys(store.getState().nodes)).not.toContain('n1'))
   })
 
   // ---------------------------------------------------------------------------

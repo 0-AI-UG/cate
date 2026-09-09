@@ -5,12 +5,13 @@
 // jsonFileStore, store.ts boot snapshot, grantedPathStore, customModels, agentDir)
 // and several were non-atomic (a crash mid-write left a truncated file). This is
 // the one implementation everything routes through:
-//   - writes to a per-write unique `<path>.<pid>.<seq>.tmp` then renames over the
+//   - writes to a per-write unique temporary path then renames over the
 //     target (atomic on the same fs; unique so concurrent writes can't collide).
 //   - creates the parent dir as needed (with an optional secret 0700 mode).
-//   - optionally chmods the final file to a secret 0600 mode (auth.json etc.).
+//   - supports explicit file modes, including secret 0600 files.
 //   - cleans up the tmp file on failure.
 //
+// Async publication is shared with runtime file writes via shared/atomicFile.
 // Both sync and async variants exist because callers differ: quit-time flushes
 // must be synchronous, everything else prefers the async path.
 // =============================================================================
@@ -18,14 +19,10 @@
 import fs from 'fs'
 import fsp from 'fs/promises'
 import path from 'path'
-import { retryFilePublish } from '../shared/atomicFile'
+import { writeFileAtomic } from '../shared/atomicFile'
 
-// Per-write unique temp suffix. A shared `<file>.tmp` is unsafe when two writes
-// to the same path overlap: one consumes the tmp, the other's rename races and
-// can interleave so older content lands last (or fails with ENOENT). Uniquify so
-// every write owns its own tmp file and renames are independent. (Mirrors the
-// projectWorkspaceStore uniqueTmpPath approach; kept here so every caller of the
-// shared primitive is collision-safe by default, no opt-in required.)
+// The quit-time synchronous writer cannot use the shared async publication
+// helper; each write still needs its own temporary path.
 let tmpSeq = 0
 function uniqueTmpPath(filePath: string): string {
   tmpSeq = (tmpSeq + 1) & 0x7fffffff
@@ -46,10 +43,6 @@ function isRetryableRename(err: unknown, attempt: number): boolean {
   if (process.platform !== 'win32' || attempt >= RENAME_MAX_RETRIES) return false
   const code = (err as NodeJS.ErrnoException).code
   return code !== undefined && RENAME_RETRY_CODES.has(code)
-}
-
-async function renameWithRetry(from: string, to: string): Promise<void> {
-  await retryFilePublish(() => fsp.rename(from, to))
 }
 
 function renameWithRetrySync(from: string, to: string): void {
@@ -89,19 +82,9 @@ export async function writeTextAtomic(
   options: Pick<WriteJsonAtomicOptions, 'mode'> = {},
 ): Promise<void> {
   const { mode } = options
-  const tmp = uniqueTmpPath(filePath)
   const dirMode = mode !== undefined ? 0o700 : undefined
   await fsp.mkdir(path.dirname(filePath), { recursive: true, ...(dirMode !== undefined ? { mode: dirMode } : {}) })
-  try {
-    await fsp.writeFile(tmp, text, 'utf-8')
-    await renameWithRetry(tmp, filePath)
-    if (mode !== undefined) {
-      try { await fsp.chmod(filePath, mode) } catch { /* no file modes on this platform */ }
-    }
-  } catch (err) {
-    try { await fsp.unlink(tmp) } catch { /* noop */ }
-    throw err
-  }
+  await writeFileAtomic(filePath, text, mode)
 }
 
 /** Atomically write raw text to `filePath` (tmp + rename). Synchronous. */

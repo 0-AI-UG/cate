@@ -50,4 +50,25 @@ describe('remote workspace state', () => {
     const { getRemoteProjects } = await import('./workspaceStateStore')
     expect(getRemoteProjects()).toEqual([current])
   })
+  it('loads versioned offline sessions including detached windows', async () => {
+    const current = {
+      locator: 'cate-runtime://server-1/outside/repo',
+      connection: { kind: 'server', runtimeId: 'server-1', host: 'example.test', remotePath: '/outside/repo' },
+      cache: { version: 1, workspace: { version: 1, name: 'repo', color: '' }, session: { version: 1, panels: {}, dockWindows: [{ panels: { editor: { unsavedContent: 'latest' } } }] } },
+    }
+    fs.writeFileSync(path.join(dirRef.current, 'remote-workspaces.json'), JSON.stringify({ workspaces: [current, { ...current, cache: { ...current.cache, version: 99 } }] }))
+    vi.resetModules()
+    const { getRemoteProjects } = await import('./workspaceStateStore')
+    expect(getRemoteProjects()).toEqual([current])
+  })
+
+  it('resolves cache/sidebar setters only once their JSON files are published', async () => {
+    vi.resetModules()
+    const { setRemoteProjects, setSidebarSession } = await import('./workspaceStateStore')
+    await setRemoteProjects([])
+    await setSidebarSession({ order: ['/repo'], selected: '/repo' })
+    expect(JSON.parse(fs.readFileSync(path.join(dirRef.current, 'remote-workspaces.json'), 'utf8'))).toEqual({ workspaces: [] })
+    expect(JSON.parse(fs.readFileSync(path.join(dirRef.current, 'sidebar.json'), 'utf8')).session.selected).toBe('/repo')
+  })
+
 })

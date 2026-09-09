@@ -10,13 +10,6 @@ import { matchAgentProcess } from '../../shared/agents'
 import { isAgentFallbackTitle } from '../lib/panelTitle'
 import type { TerminalActivity } from '../../shared/types'
 
-/** Retained for the statusStore.unregisterTerminal wiring. The per-terminal
- *  rising-edge agent name is now read from statusStore (its single home) rather
- *  than a module-level map, so there is nothing left to forget here. */
-export function forgetTerminalForProcessMonitor(_terminalId: string): void {
-  // no-op
-}
-
 /**
  * Owner-routed terminal telemetry: agent activity/presence/name, listening
  * ports, and cwd. Main sends each of these only to the terminal's OWNER window

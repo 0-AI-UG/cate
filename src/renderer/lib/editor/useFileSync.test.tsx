@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 
+import { __resetModelCacheForTest } from './modelCache'
 import { useFileSync, type FileSync, type UseFileSyncParams } from './useFileSync'
 
 // --- shared mock state (hoisted so the vi.mock factories can see it) ----------
@@ -46,7 +47,8 @@ vi.mock('../../stores/appStore', () => ({
 
 // The disk baseline lives in the model cache so it survives a panel reopen; back
 // the mock with a real map so noteLoaded/save/resync round-trip through it.
-vi.mock('./modelCache', () => ({
+vi.mock('./modelCache', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./modelCache')>()),
   isLoadFailed: () => false,
   rememberBaseline: (p: string, c: string) => { h.baselines.set(p, c) },
   getBaseline: (p: string) => h.baselines.get(p),
@@ -107,6 +109,7 @@ async function settle(ms = 0) {
 }
 
 beforeEach(() => {
+  __resetModelCacheForTest()
   h.watchListener = null
   h.watchedPath = null
   h.baselines.clear()
@@ -139,7 +142,7 @@ describe('useFileSync — save guard', () => {
     await act(async () => { ok = await latest!.save() })
 
     expect(ok).toBe(true)
-    expect(electronApi().fsWriteFile).toHaveBeenCalledWith(FILE, 'hello world', 'w1')
+    expect(electronApi().fsWriteFile).toHaveBeenCalledWith(FILE, 'hello world', 'w1', 'hello')
     expect(latest!.conflict).toBeNull()
     expect(latest!.isDirtyRef.current).toBe(false)
   })
@@ -271,7 +274,7 @@ describe('useFileSync — resolutions', () => {
     await act(async () => { ok = await latest!.save() })
 
     expect(ok).toBe(true)
-    expect(electronApi().fsWriteFile).toHaveBeenCalledWith(FILE, 'mine', 'w1')
+    expect(electronApi().fsWriteFile).toHaveBeenCalledWith(FILE, 'mine', 'w1', 'theirs')
   })
 
   it('saveToRestore writes a deleted file back to disk', async () => {
@@ -286,7 +289,7 @@ describe('useFileSync — resolutions', () => {
     // The save re-read also fails (still gone) → guard falls through and writes.
     await act(async () => { await latest!.saveToRestore() })
 
-    expect(electronApi().fsWriteFile).toHaveBeenCalledWith(FILE, 'rescued content', 'w1')
+    expect(electronApi().fsWriteFile).toHaveBeenCalledWith(FILE, 'rescued content', 'w1', null)
     expect(latest!.conflict).toBeNull()
   })
 })

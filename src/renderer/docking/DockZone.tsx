@@ -23,13 +23,14 @@ interface DockZoneProps {
   renderPanel: (panelId: string) => React.ReactNode
   getPanelTitle: (panelId: string) => string
   onClosePanel?: (panelId: string) => void
+  onClosePanels?: (panelIds: string[]) => Promise<boolean>
   getPanel?: (panelId: string) => PanelState | undefined
   workspaceId?: string
   onPanelRemoved?: (panelId: string) => void
   onPanelRenamed?: (panelId: string, title: string) => void
 }
 
-export default function DockZone({ trailingControls, newTabControl, fill, keepMounted, position, renderPanel, getPanelTitle, onClosePanel, getPanel, workspaceId, onPanelRemoved, onPanelRenamed }: DockZoneProps) {
+export default function DockZone({ trailingControls, newTabControl, fill, keepMounted, position, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel, workspaceId, onPanelRemoved, onPanelRenamed }: DockZoneProps) {
   const zone = useDockStoreContext((s) => s.zones[position])
   const zoneRef = useRef<HTMLDivElement>(null)
 
@@ -113,13 +114,14 @@ export default function DockZone({ trailingControls, newTabControl, fill, keepMo
             renderPanel={renderPanel}
             getPanelTitle={getPanelTitle}
             onClosePanel={onClosePanel}
+            onClosePanels={onClosePanels}
             getPanel={getPanel}
             workspaceId={workspaceId}
             onPanelRemoved={onPanelRemoved}
             onPanelRenamed={onPanelRenamed}
           />
     ),
-    [trailingControls, newTabControl, position, renderPanel, getPanelTitle, onClosePanel, getPanel, workspaceId, onPanelRemoved, onPanelRenamed],
+    [trailingControls, newTabControl, position, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel, workspaceId, onPanelRemoved, onPanelRenamed],
   )
 
   if (!zone.visible && !keepMounted) return null

@@ -211,7 +211,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
   const removeOrphan = useCallback(async (worktreeId: string) => {
     const targets = worktreePanelCloseTargets(workspaceId, worktreeId)
     if (!(await prepareWorktreePanelsForClose(workspaceId, targets))) return
-    closePreparedWorktreePanels(workspaceId, targets)
+    await closePreparedWorktreePanels(workspaceId, targets)
     removeWorktreeFromAllWindows(workspaceId, worktreeId)
   }, [workspaceId])
 

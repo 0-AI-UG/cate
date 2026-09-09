@@ -19,6 +19,7 @@ vi.mock('./sessionSave', () => ({ saveSession: () => saveSession() }))
 import { useAppStore } from '../../stores/appStore'
 import { useUIStore } from '../../stores/uiStore'
 import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../../stores/canvasStore'
+import { editorDocument, releaseEditorPanel } from '../editor/editorDocuments'
 import { setupAutoSave } from './sessionAutosave'
 import type { PanelState } from '../../../shared/types'
 
@@ -38,7 +39,8 @@ let teardown: (() => void) | null = null
 
 beforeEach(() => {
   vi.useFakeTimers()
-  saveSession.mockClear()
+  saveSession.mockReset()
+  saveSession.mockImplementation(async () => {})
   flushCallback = null
 
   const g = globalThis as unknown as { window?: { electronAPI?: unknown } }
@@ -65,7 +67,6 @@ beforeEach(() => {
     selectedWorkspaceId: 'ws-1',
   } as never)
   useUIStore.setState({
-    navigationWorktreeByWorkspace: {},
     sourceControlWorktreeByRepository: {},
   })
   getOrCreateCanvasStoreForPanel(PRIMARY)
@@ -98,9 +99,10 @@ describe('autosave watches secondary canvases', () => {
   it('quit flush WRITES (does not skip-ACK) after a secondary-canvas edit', async () => {
     teardown = setupAutoSave()
 
-    // First flush with no edits skips the round-trip entirely.
+    // Even an unchanged renderer recaptures freshly flushed detached owners.
     flushCallback!()
-    expect(saveSession).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(saveSession).toHaveBeenCalledTimes(1)
     expect(window.electronAPI.sessionFlushSaveDone).toHaveBeenCalledTimes(1)
 
     // A geometry edit on the secondary canvas marks the session dirty.
@@ -138,13 +140,58 @@ describe('autosave watches secondary canvases', () => {
     await vi.advanceTimersByTimeAsync(MAX_WAIT)
     expect(saveSession).not.toHaveBeenCalled()
 
-    useUIStore.getState().setNavigationWorktree('ws-1', 'wt-1')
-    await vi.advanceTimersByTimeAsync(MAX_WAIT)
-    expect(saveSession).toHaveBeenCalledTimes(1)
-
-    saveSession.mockClear()
     useUIStore.getState().setSourceControlWorktree('/repo', 'wt-2')
     await vi.advanceTimersByTimeAsync(MAX_WAIT)
     expect(saveSession).toHaveBeenCalledTimes(1)
   })
+  it('flushes edits made after an already-dirty document was autosaved', async () => {
+    const panel: PanelState = { id: 'scratch-revision', type: 'editor', title: 'Untitled', isDirty: false }
+    useAppStore.setState(state => ({ workspaces: state.workspaces.map(ws => ({ ...ws, panels: { ...ws.panels, [panel.id]: panel } })) }))
+    const document = editorDocument('ws-1', panel.id)
+    let value = 'A'
+    const detach = document.attach({ getModel: () => ({ getValue: () => value, setValue: next => { value = next }, isDisposed: () => false }) })
+    teardown = setupAutoSave()
+    document.noteUserEdit()
+    await vi.advanceTimersByTimeAsync(MAX_WAIT)
+    saveSession.mockClear()
+    value = 'B'
+    document.noteUserEdit()
+    flushCallback!()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(saveSession).toHaveBeenCalledTimes(1)
+    detach()
+    releaseEditorPanel(panel.id)
+  })
+
+  it('does not acknowledge quit until edits during the in-flight flush are durable', async () => {
+    const releases: (() => void)[] = []
+    saveSession.mockImplementation(() => new Promise<void>(resolve => releases.push(resolve)))
+    teardown = setupAutoSave()
+    getOrCreateCanvasStoreForPanel(SECONDARY).getState().setZoom(2)
+    flushCallback!()
+    await vi.advanceTimersByTimeAsync(0)
+    getOrCreateCanvasStoreForPanel(SECONDARY).getState().setZoom(3)
+    releases[0]()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(window.electronAPI.sessionFlushSaveDone).not.toHaveBeenCalled()
+    expect(releases).toHaveLength(2)
+    releases[1]()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(window.electronAPI.sessionFlushSaveDone).toHaveBeenCalledTimes(1)
+    saveSession.mockImplementation(async () => {})
+  })
+
+  it('reports failed durability to quit and retries on a later flush', async () => {
+    saveSession.mockRejectedValueOnce(new Error('disk unavailable'))
+    teardown = setupAutoSave()
+    getOrCreateCanvasStoreForPanel(SECONDARY).getState().setZoom(2)
+    flushCallback!()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(window.electronAPI.sessionFlushSaveDone).toHaveBeenCalledWith('disk unavailable', undefined)
+    flushCallback!()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(saveSession).toHaveBeenCalledTimes(2)
+    expect(window.electronAPI.sessionFlushSaveDone).toHaveBeenLastCalledWith(undefined, undefined)
+  })
+
 })

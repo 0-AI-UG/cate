@@ -364,7 +364,7 @@ app.whenReady().then(async () => {
   registerCriticalHandlers()
   log.info('Critical IPC handlers registered')
 
-  // Install the cate-theme skill into ~/.claude/skills (copy-if-missing) so the
+  // Maintain the cate-theme skill in ~/.claude/skills (preserving user edits) so the
   // LOCAL Claude Code discovers theme authoring anywhere. The cate-cli skill is
   // NOT installed globally — it is seeded per-workspace for every supported
   // agent at workspace open (seedCateCliSkill), where the CLI actually works.

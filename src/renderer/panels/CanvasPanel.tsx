@@ -28,7 +28,7 @@ import {
   findNodeDockStore,
   findNodeIdForDockStore,
 } from './nodeDockRegistry'
-import { getPanelDef } from '../panels/registry'
+import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
 import { useShallow } from 'zustand/react/shallow'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
@@ -221,39 +221,16 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
     [panelId],
   )
 
-  const onCreateAtPoint = useCallback(
-    (type: PanelType, canvasPoint: Point) => {
-      getPanelDef(type).create({ workspaceId, canvasPoint, placement: here() })
-    },
-    [workspaceId, here],
-  )
-
-  const onNewTerminal = useCallback(async () => {
+  const createHere = useCallback(async (type: PanelType, canvasPoint?: Point) => {
+    const workspace = useAppStore.getState().getWorkspace(workspaceId)
+    const checkout = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
     const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (!wsId) return
-    // Open the new terminal in the same worktree as the terminal/agent selected
-    // on this canvas (see inheritedWorktreeFromSelection).
-    const app = useAppStore.getState()
-    const workspace = app.getWorkspace(wsId)
-    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
-    const newId = app.createTerminal(wsId, undefined, undefined, here(), wt.cwd)
-    if (newId && wt.worktreeId) app.setPanelWorktreeId(wsId, newId, wt.worktreeId)
+    if (wsId) createInteractivePanel(type, { workspaceId: wsId, canvasPoint, placement: here(), ...checkout })
   }, [workspaceId, here, store])
-
-  const onNewBrowser = useCallback(async () => {
-    const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (wsId) useAppStore.getState().createBrowser(wsId, undefined, undefined, here())
-  }, [workspaceId, here])
-
-  const onNewEditor = useCallback(async () => {
-    const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (!wsId) return
-    const app = useAppStore.getState()
-    const workspace = app.getWorkspace(wsId)
-    const wt = inheritedWorktreeFromSelection(store.getState(), workspace?.panels, workspace?.worktrees)
-    const panelId = app.createEditor(wsId, undefined, undefined, here())
-    if (panelId && wt.worktreeId) app.setPanelWorktreeId(wsId, panelId, wt.worktreeId)
-  }, [workspaceId, here, store])
+  const onCreateAtPoint = useCallback((type: PanelType, point: Point) => { void createHere(type, point) }, [createHere])
+  const onNewTerminal = useCallback(() => createHere('terminal'), [createHere])
+  const onNewBrowser = useCallback(() => createHere('browser'), [createHere])
+  const onNewEditor = useCallback(() => createHere('editor'), [createHere])
 
 
   return (

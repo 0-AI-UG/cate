@@ -39,7 +39,6 @@ vi.mock('../workspace/session', () => ({ replayTerminalLog: async () => {} }))
 vi.mock('../agent/agentScreenDetector', () => ({
   forgetAgentTracker: vi.fn(),
 }))
-vi.mock('../../hooks/useProcessMonitor', () => ({ forgetTerminalForProcessMonitor: vi.fn() }))
 
 import { dispose } from './terminalLifecycle'
 import { ptyToPanel, registry, setPtyForPanel } from './registryState'

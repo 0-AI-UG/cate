@@ -18,7 +18,7 @@ const SOURCE = readFileSync(
 
 describe('CanvasToolbar — minimap section', () => {
   it('does not force a hard-coded theme on the minimap container (must inherit the active app theme)', () => {
-    const minimapStart = SOURCE.indexOf('<Minimap mode="popover"')
+    const minimapStart = SOURCE.indexOf('<Minimap')
     expect(minimapStart).toBeGreaterThan(-1)
 
     const wrapperBlock = SOURCE.slice(Math.max(0, minimapStart - 600), minimapStart)

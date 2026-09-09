@@ -52,7 +52,6 @@ function reset() {
     useAppStore.getState().removeWorkspace(w.id)
   }
   useUIStore.setState({
-    navigationWorktreeByWorkspace: {},
     sourceControlWorktreeByRepository: {},
   })
 }
@@ -125,9 +124,10 @@ describe('worktree session persistence', () => {
     expect(useAppStore.getState().getWorkspace(ws)?.panels[editorId].worktreeId).toBe(WT_X.id)
   })
 
-  it('restores machine-local navigation and Source Control checkout selections', async () => {
+  it('migrates legacy navigation scope onto its panel and restores Source Control scope', async () => {
     const ws = useAppStore.getState().addWorkspace('WT', ROOT, 'ws')
     const snapshot = snapshotWithWorktrees()
+    snapshot.panels = { ...snapshot.panels, files: { id: 'files', type: 'navigation', title: 'Files', isDirty: false } as unknown as import('../../../shared/types').PanelState }
     snapshot.worktreeViewScopes = {
       navigationWorktreeId: WT_X.id,
       sourceControlWorktreeByRepository: { [ROOT]: WT_X.id },
@@ -135,7 +135,7 @@ describe('worktree session persistence', () => {
 
     await restoreSession(snapshot, ws)
 
-    expect(useUIStore.getState().navigationWorktreeByWorkspace[ws]).toBe(WT_X.id)
+    expect(useAppStore.getState().getWorkspace(ws)?.panels.files).toMatchObject({ type: 'editor', worktreeId: WT_X.id })
     expect(useUIStore.getState().sourceControlWorktreeByRepository[ROOT]).toBe(WT_X.id)
   })
 

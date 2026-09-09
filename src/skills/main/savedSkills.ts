@@ -6,6 +6,7 @@
 // written to any workspace until the user installs the skill there.
 // =============================================================================
 
+import { KeyedLock } from '../../shared/keyedLock'
 import { createJsonStateFile } from '../../main/jsonStateFile'
 import type { SavedSkill } from '../../shared/skills'
 
@@ -36,16 +37,33 @@ export function listSaved(): SavedSkill[] {
   return store.get().skills
 }
 
-export function addSaved(skill: SavedSkill): void {
-  store.update((cur) =>
-    cur.skills.some((s) => s.skillId === skill.skillId)
-      ? { skills: cur.skills.map((s) => (s.skillId === skill.skillId ? skill : s)) }
+const mutations = new KeyedLock()
+function updateSaved(update: (current: SavedSkillsState) => SavedSkillsState): Promise<void> {
+  return mutations.run('library', async () => {
+    const previous = store.get()
+    store.update(update)
+    try { await store.flushDurable() }
+    catch (error) {
+      // Prevent a later debounce from publishing rejected metadata after the
+      // surrounding bundle transaction has restored the previous cache bytes.
+      store.set(previous)
+      try { await store.flushDurable() }
+      catch (rollbackError) { throw new AggregateError([error, rollbackError], 'Saved skill metadata rollback failed', { cause: error }) }
+      throw error
+    }
+  })
+}
+
+export function addSaved(skill: SavedSkill): Promise<void> {
+  return updateSaved(cur =>
+    cur.skills.some(s => s.skillId === skill.skillId)
+      ? { skills: cur.skills.map(s => s.skillId === skill.skillId ? skill : s) }
       : { skills: [...cur.skills, skill] },
   )
 }
 
-export function removeSaved(skillId: string): void {
-  store.update((cur) => ({ skills: cur.skills.filter((s) => s.skillId !== skillId) }))
+export function removeSaved(skillId: string): Promise<void> {
+  return updateSaved(cur => ({ skills: cur.skills.filter(s => s.skillId !== skillId) }))
 }
 
 export function isSaved(skillId: string): boolean {

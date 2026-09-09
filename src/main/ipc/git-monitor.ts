@@ -26,7 +26,8 @@ interface MonitorEntry {
   rootPath: string
   workspaceId: string
   /** Runtime hosting this workspace (local or remote); polled for status. */
-  runtime: Runtime
+  runtimeId: string
+  runtime: Runtime | null
   /** Next delay to schedule after the current poll completes (ms). */
   nextDelayMs: number
   /** Incremented on every poll start; a poll whose epoch is stale (a newer
@@ -61,7 +62,7 @@ function clearTimer(entry: MonitorEntry): void {
 function scheduleNext(entry: MonitorEntry, delayMs: number): void {
   clearTimer(entry)
   if (activeMonitors.get(entry.workspaceId) !== entry) return
-  if (!anyWindowFocused) {
+  if (!anyWindowFocused || !entry.runtime) {
     // Paused while no window has focus — focus handler will re-schedule.
     return
   }
@@ -73,7 +74,7 @@ function scheduleNext(entry: MonitorEntry, delayMs: number): void {
 async function tick(entry: MonitorEntry): Promise<void> {
   entry.timer = null
   if (activeMonitors.get(entry.workspaceId) !== entry) return
-  if (!anyWindowFocused) return
+  if (!anyWindowFocused || !entry.runtime) return
   const changed = await pollGitStatus(entry)
   if (activeMonitors.get(entry.workspaceId) !== entry) return
   if (changed) {
@@ -94,6 +95,7 @@ async function tick(entry: MonitorEntry): Promise<void> {
  */
 async function pollGitStatus(entry: MonitorEntry): Promise<boolean> {
   const { ownerWindowId, workspaceId, rootPath, runtime } = entry
+  if (!runtime) return false
 
   // A newer poll (or teardown) supersedes this one: bump the epoch, and discard
   // our own result if it changes again before we resolve.
@@ -178,17 +180,60 @@ function installAppHooks(): void {
 export function stopMonitorsForWindow(windowId: number): void {
   for (const [workspaceId, entry] of activeMonitors) {
     if (entry.ownerWindowId === windowId) {
-      clearTimer(entry)
-      entry.pollEpoch++
-      entry.unsubscribeFs?.()
+      detachMonitor(entry)
       activeMonitors.delete(workspaceId)
       lastState.delete(workspaceId)
     }
   }
 }
 
+function detachMonitor(entry: MonitorEntry): void {
+  clearTimer(entry)
+  entry.pollEpoch++
+  entry.unsubscribeFs?.()
+  entry.unsubscribeFs = null
+  entry.runtime = null
+}
+
+function attachMonitor(entry: MonitorEntry, runtime: Runtime): void {
+  detachMonitor(entry)
+  entry.runtime = runtime
+  entry.unsubscribeFs = runtime.file.watch(entry.rootPath, () => {
+    if (!anyWindowFocused) return
+    if (entry.fsKickPending) return
+    entry.fsKickPending = true
+    // Coalesce the inbound burst on the next tick before kicking a poll.
+    setImmediate(() => {
+      entry.fsKickPending = false
+      if (activeMonitors.get(entry.workspaceId) !== entry) return
+      entry.nextDelayMs = POLL_INTERVAL_MIN_MS
+      clearTimer(entry)
+      void tick(entry)
+    })
+  }, { scopeId: entry.workspaceId })
+}
+
+let runtimeHooksInstalled = false
+
 export function registerHandlers(): void {
   installAppHooks()
+  if (!runtimeHooksInstalled) {
+    runtimeHooksInstalled = true
+    runtimes.onDisconnected((runtimeId) => {
+      for (const entry of activeMonitors.values()) {
+        if (entry.runtimeId === runtimeId) detachMonitor(entry)
+      }
+    })
+    runtimes.onConnected((runtimeId, runtime) => {
+      for (const entry of activeMonitors.values()) {
+        if (entry.runtimeId !== runtimeId) continue
+        attachMonitor(entry, runtime)
+        lastState.delete(entry.workspaceId)
+        entry.nextDelayMs = POLL_INTERVAL_MIN_MS
+        void tick(entry)
+      }
+    })
+  }
 
   ipcMain.on(GIT_MONITOR_START, (event, workspaceId: string, rootPath: string) => {
     // `ipcMain.on` handlers have no promise boundary, so any throw inside
@@ -215,9 +260,7 @@ export function registerHandlers(): void {
     const validRoot = rootP
     const existing = activeMonitors.get(workspaceId)
     if (existing) {
-      clearTimer(existing)
-      existing.pollEpoch++
-      existing.unsubscribeFs?.()
+      detachMonitor(existing)
     }
 
     const win = windowFromEvent(event)
@@ -228,6 +271,7 @@ export function registerHandlers(): void {
       ownerWindowId,
       rootPath: validRoot,
       workspaceId,
+      runtimeId,
       runtime,
       nextDelayMs: POLL_INTERVAL_MIN_MS,
       pollEpoch: 0,
@@ -235,23 +279,7 @@ export function registerHandlers(): void {
       fsKickPending: false,
     }
 
-    // Wire fs-watcher events from the runtime file watcher to trigger an
-    // immediate poll. The periodic timer becomes a safety net for changes
-    // the watcher may miss (e.g. atomic renames on some filesystems, or repo
-    // mutations that happen before any watcher root covers this path).
-    entry.unsubscribeFs = runtime.file.watch(validRoot, () => {
-      if (!anyWindowFocused) return
-      if (entry.fsKickPending) return
-      entry.fsKickPending = true
-      // Coalesce the inbound burst on the next tick before kicking a poll.
-      setImmediate(() => {
-        entry.fsKickPending = false
-        if (activeMonitors.get(workspaceId) !== entry) return
-        entry.nextDelayMs = POLL_INTERVAL_MIN_MS
-        clearTimer(entry)
-        void tick(entry)
-      })
-    }, { scopeId: workspaceId })
+    attachMonitor(entry, runtime)
 
     activeMonitors.set(workspaceId, entry)
 
@@ -262,9 +290,7 @@ export function registerHandlers(): void {
   ipcMain.on(GIT_MONITOR_STOP, (_event, workspaceId: string) => {
     const entry = activeMonitors.get(workspaceId)
     if (entry) {
-      clearTimer(entry)
-      entry.pollEpoch++
-      entry.unsubscribeFs?.()
+      detachMonitor(entry)
       activeMonitors.delete(workspaceId)
     }
     lastState.delete(workspaceId)

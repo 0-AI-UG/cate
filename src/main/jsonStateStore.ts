@@ -32,6 +32,8 @@ export interface JsonStateStore<T> {
   update(fn: (current: T) => T): void
   subscribe(cb: (next: T, origin: JsonStateChangeOrigin) => void): () => void
   flush(force?: boolean): Promise<void>
+  /** Await the latest revision and reject if publication failed. */
+  flushDurable(): Promise<void>
   flushSync(): void
   stopWatching(): void
   dispose(): void
@@ -48,6 +50,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
   let lastWrittenContent = ''
   let revision = 0
   let durableRevision = 0
+  let lastWriteError: unknown
   let writeTimer: ReturnType<typeof setTimeout> | null = null
   let flushChain: Promise<void> = Promise.resolve()
   let flushInFlight = false
@@ -56,6 +59,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
   let unwatch: (() => void) | null = null
   let watchArming = false
   let watchGeneration = 0
+  let externalReadGeneration = 0
 
   const serialize = (value: T): string => JSON.stringify(value, null, 2) + '\n'
 
@@ -139,6 +143,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
       // Record before writing so an eager watcher event still matches.
       lastWrittenContent = content
       try {
+        lastWriteError = undefined
         await backend.write(value, content)
         if (revisionAtWrite < durableRevision) {
           // A newer synchronous flush landed while this older async write was
@@ -162,6 +167,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
           durableRevision = Math.max(durableRevision, revisionAtWrite)
         }
       } catch (error) {
+        lastWriteError = error ?? new Error('JSON state publication failed')
         report('write', error)
       } finally {
         writingRevision = null
@@ -192,6 +198,9 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
 
   const reloadExternal = async (): Promise<void> => {
     if (!backend.read) return
+    const readRevision = revision
+    const readGeneration = ++externalReadGeneration
+    const ownerGeneration = watchGeneration
     let raw: string | null
     try {
       raw = await backend.read()
@@ -199,12 +208,21 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
       report('read', error)
       return
     }
+    if (readRevision !== revision || readGeneration !== externalReadGeneration || ownerGeneration !== watchGeneration) return
     if (raw == null || raw === lastWrittenContent) return
     const next = parse(raw, 'external')
     if (next == null) return
-    lastWrittenContent = raw
     if (serialize(next) === serialize(current)) return
     current = next
+    revision++
+    if (flushInFlight || queuedWrites > 0 || writeTimer) {
+      // An older publication can still land over this accepted edit. Preserve
+      // its echo identity and queue the newer authority through the same writer.
+      scheduleWrite()
+    } else {
+      lastWrittenContent = raw
+      durableRevision = revision // this revision was read from durable storage
+    }
     notify('external')
   }
 
@@ -262,6 +280,16 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
     return flushChain
   }
 
+  const flushDurable = async (): Promise<void> => {
+    // A mutation may arrive while the prior revision is publishing. Keep using
+    // the existing queue until the latest authority is durable; failures remain
+    // dirty and are retried by the next explicit/background flush.
+    do {
+      await flush()
+      if (lastWriteError !== undefined) throw lastWriteError
+    } while (durableRevision < revision)
+  }
+
   const flushSync = (): void => {
     const hadTimer = writeTimer != null
     if (writeTimer) {
@@ -275,6 +303,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
       backend.writeSync(current, content)
       lastWrittenContent = content
       durableRevision = revision
+      lastWriteError = undefined
     } catch (error) {
       report('writeSync', error)
     }
@@ -298,6 +327,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
     update,
     subscribe,
     flush,
+    flushDurable,
     flushSync,
     stopWatching,
     dispose,

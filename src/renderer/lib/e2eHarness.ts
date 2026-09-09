@@ -1,3 +1,4 @@
+import { getActivePanelId } from './activePanel'
 import { useStatusStore } from '../stores/statusStore'
 // E2E test harness — exposes a tiny inspect/seed API on window.__cateE2E
 // when the app is launched with CATE_E2E=1.
@@ -11,7 +12,8 @@ import { useUIStore, type SidebarView } from '../stores/uiStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { gitStatusStore, type GitWorktreeEntry } from '../stores/gitStatusStore'
 import { useDragStore } from '../drag/store'
-import { useSearchStore } from '../stores/searchStore'
+import { createSearchStore } from '../stores/searchStore'
+import { getMountedSearchStore } from '../stores/searchIpc'
 import { getLastReveal } from './editor/editorReveal'
 import { applyTheme } from './themeManager'
 import { BUILT_IN_THEMES } from '../../shared/themes'
@@ -129,12 +131,10 @@ declare global {
       /** Point the selected workspace at a real directory (registers it as an
        *  allowed root) so content search has files to scan. */
       setWorkspaceRoot(rootPath: string): Promise<boolean>
-      /** Activate a sidebar view (e.g. 'search') on the left activity bar. */
-      openSidebarView(view: SidebarView): void
-      /** Set (or clear, with null) the active left sidebar view. Passing null
-       *  collapses the sidebar panel — used by canvas geometry tests that need
-       *  the full-width canvas the pushed sidebar would otherwise shrink. */
-      setActiveLeftSidebarView(view: SidebarView | null): void
+      /** Open the workspace sidebar or a Files/Search/Source Control panel. */
+      openNavigationView(view: SidebarView): void
+      /** Show or hide the workspace sidebar for canvas geometry tests. */
+      setSidebarHidden(hidden: boolean): void
       /** File paths of currently-open editor panels (for open-at-match asserts). */
       editorPaths(): string[]
       /** Serializable snapshot of the search store (query, options, results). */
@@ -470,12 +470,13 @@ export function installE2EHarness(): void {
     return useAppStore.getState().setWorkspaceRootPath(wsId, rootPath)
   }
 
-  const setActiveLeftSidebarView = (view: SidebarView | null): void => {
-    useUIStore.getState().setActiveLeftSidebarView(view)
+  const setSidebarHidden = (hidden: boolean): void => {
+    useUIStore.getState().setLeftSidebarHidden(hidden)
   }
 
-  const openSidebarView = (view: SidebarView): void => {
-    useUIStore.getState().setActiveLeftSidebarView(view)
+  const openNavigationView = (view: SidebarView): void => {
+    if (view === 'workspaces') useUIStore.getState().setLeftSidebarHidden(false)
+    else useUIStore.getState().requestNavigationView(view)
   }
 
   const editorPaths = (): string[] => {
@@ -488,7 +489,7 @@ export function installE2EHarness(): void {
   }
 
   const getSearchSnapshot = (): SearchSnapshot => {
-    const s = useSearchStore.getState()
+    const s = (getMountedSearchStore(getActivePanelId() ?? '') ?? createSearchStore()).getState()
     return {
       query: s.query,
       isRegex: s.isRegex,
@@ -567,8 +568,8 @@ export function installE2EHarness(): void {
     codingAgentRuns,
     nodeForPanel,
     setWorkspaceRoot,
-    openSidebarView,
-    setActiveLeftSidebarView,
+    openNavigationView,
+    setSidebarHidden,
     editorPaths,
     getSearchSnapshot,
     lastEditorReveal,

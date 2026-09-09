@@ -1,9 +1,13 @@
+import { createRevisionWriter } from '../../shared/revisionWriter'
+import log from '../lib/logger'
+import { subscribeSessionMutations } from '../lib/workspace/sessionMutations'
 // =============================================================================
 // DockWindowShell — shell for detached dock windows.
 // Each dock window has its own dock store, renders a center zone with full
 // split/tab support. No sidebar, canvas, or left/right/bottom zones.
 // =============================================================================
 
+import { captureEditorPanel } from '../lib/editor/editorDocuments'
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { CanvasLayoutSnapshot, DockWindowInitPayload, PanelState, PanelTransferSnapshot } from '../../shared/types'
 import { createDockStore } from '../stores/dockStore'
@@ -19,7 +23,7 @@ import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { ensurePanelsInAppStore } from '../lib/canvas/applyCanvasChildPanels'
 import { hydrateReceivedPanel, hydrateCanvasState } from '../lib/panelTransfer'
 import { useAppStore } from '../stores/appStore'
-import { closeDockWindowPanel } from './dockWindowClosePanel'
+import { closeDockWindowPanel, closeDockWindowPanels } from './dockWindowClosePanel'
 import { isDockEmpty } from './dockEmpty'
 import { shouldCloseDockWindow } from './shouldCloseDockWindow'
 import WindowControls from './WindowControls'
@@ -51,6 +55,7 @@ const SYNC_INTERVAL_MS = 5000
 export default function DockWindowShell({ workspaceId: initialWorkspaceId }: DockWindowShellProps) {
   const [wsId, setWsId] = useState(initialWorkspaceId ?? '')
   const [ready, setReady] = useState(false)
+  const readyRef = useRef(false)
   const dockStore = useMemo(() => createDockStore(), [])
   // Native chrome (macOS traffic lights / frameless window controls) only exists
   // in windowed mode — the OS hides it in fullscreen, so we drop the tab bar's
@@ -80,6 +85,11 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // agent-screen detector, Cmd+, settings, and the external-drop guard. Gives
   // this detached window the same baseline functionality as the main window.
   useWindowRuntime()
+
+  // Acknowledge the listener is ready; final INIT/RECEIVE owns all hydration.
+  useEffect(() => window.electronAPI.onPanelTransferStage?.(({ snapshot }) => {
+    if (snapshot.transferId) void window.electronAPI.panelTransferReady(snapshot.transferId)
+  }), [])
 
   // Listen for DOCK_WINDOW_INIT from main process
   useEffect(() => {
@@ -131,6 +141,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       dockStore.getState().restoreSnapshot({
         zones: payload.dockState,
       })
+      readyRef.current = true
       setReady(true)
     })
 
@@ -149,6 +160,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // reconnectTerminal() after listeners are wired.)
       hydrateReceivedPanel(wsIdRef.current, snapshot)
       ensurePanelsInAppStore(wsIdRef.current, { [snapshot.panel.id]: snapshot.panel }, snapshot.rootPath, snapshot.worktrees)
+      if (snapshot.transferId) void window.electronAPI.panelTransferReady(snapshot.transferId, 'received')
     })
 
     return cleanup
@@ -175,7 +187,8 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // ignore the promise — the next tick re-writes.
   const syncNowRef = useRef<() => Promise<void>>(async () => {})
   useEffect(() => {
-    const syncNow = async (): Promise<void> => {
+    const writer = createRevisionWriter(async (): Promise<void> => {
+      if (!readyRef.current) throw new Error('Dock window is still initializing.')
       // Read panels straight from appStore at call time (not a closed-over
       // value) so the freshest live edits — url, isDirty, filePath written by
       // panel components — are always captured. wsId is read via a ref so this
@@ -184,9 +197,8 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
         useAppStore.getState().workspaces.find((w) => w.id === wsIdRef.current)?.panels ?? {}
 
       // Persist every terminal's scrollback (keyed by the stable panel id, same
-      // as the main window) + capture each terminal's cwd. The save promises are
-      // collected so the flush path can await them before ACKing quit.
-      const { terminalCwds, savePromises } = await captureTerminalScrollbacks(currentPanels)
+      // as the main window) and await those writes before publishing this state.
+      const terminalCwds = await captureTerminalScrollbacks(currentPanels)
 
       // Capture each canvas panel's layout (nodes + viewport) so a detached
       // canvas window restores its children on the next launch instead of
@@ -207,17 +219,21 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // The payload carries no workspaceId by design (DockWindowSyncState cannot
       // express one): main owns the window→workspace mapping, set at creation.
       const snapshot = dockStore.getState().getSnapshot()
-      window.electronAPI.dockWindowSyncState({
+      await window.electronAPI.dockWindowSyncState({
+        rootPath: useAppStore.getState().getWorkspace(wsIdRef.current)?.rootPath,
+        worktrees: useAppStore.getState().getWorkspace(wsIdRef.current)?.worktrees,
         dockState: snapshot,
-        panels: currentPanels,
+        panels: Object.fromEntries(Object.entries(currentPanels).map(([id, panel]) => [id, captureEditorPanel(panel)])),
         terminalCwds,
         canvasStates,
       })
 
-      // Resolve once every scrollback write has been persisted so the pre-quit
-      // flush can await it. allSettled: a failed write must not reject the flush.
-      await Promise.allSettled(savePromises)
+    })
+    const syncNow = (): Promise<void> => {
+      writer.markDirty()
+      return writer.flush()
     }
+    const backgroundSync = () => { void syncNow().catch(error => log.warn('Dock state sync failed:', error)) }
     // Expose the latest syncNow via a ref so callers outside this effect (the
     // rename handler, the pre-quit flush) can trigger an immediate sync.
     syncNowRef.current = syncNow
@@ -229,43 +245,59 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
     // editor Save-As writes appStore → lands here within the debounce).
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
     const scheduleSync = () => {
+      writer.markDirty()
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {
         debounceTimer = null
-        syncNow()
+        backgroundSync()
       }, SYNC_DEBOUNCE_MS)
     }
+    const unsubDocument = subscribeSessionMutations(scheduleSync)
     const unsubDock = dockStore.subscribe(scheduleSync)
+    const canvasSubscriptions = new Map<string, () => void>()
+    const subscribeCanvases = () => {
+      const current = useAppStore.getState().workspaces.find(w => w.id === wsIdRef.current)?.panels ?? {}
+      const ids = new Set(Object.values(current).filter(p => p.type === 'canvas').map(p => p.id))
+      for (const [id, unsubscribe] of canvasSubscriptions) {
+        if (!ids.has(id)) { unsubscribe(); canvasSubscriptions.delete(id) }
+      }
+      for (const id of ids) {
+        if (!canvasSubscriptions.has(id)) canvasSubscriptions.set(id, getOrCreateCanvasStoreForPanel(id).subscribe(scheduleSync))
+      }
+    }
+    subscribeCanvases()
     const unsubApp = useAppStore.subscribe((state, prev) => {
       const panels = state.workspaces.find((w) => w.id === wsIdRef.current)?.panels
       const prevPanels = prev.workspaces.find((w) => w.id === wsIdRef.current)?.panels
-      if (panels !== prevPanels) scheduleSync()
+      if (panels !== prevPanels) { subscribeCanvases(); scheduleSync() }
     })
 
     // Initial sync ~1s after panels are populated so main learns ptyIds quickly
-    const initialSync = setTimeout(syncNow, 1000)
+    const initialSync = setTimeout(backgroundSync, 1000)
     // Periodic safety net — terminal scrollback accumulates WITHOUT any store
     // change, so the change-driven path alone would never re-capture it.
     syncTimerRef.current = setInterval(() => {
-      if (document.visibilityState === 'visible') syncNow()
+      if (document.visibilityState === 'visible') backgroundSync()
     }, SYNC_INTERVAL_MS)
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') syncNow()
+      if (document.visibilityState === 'visible') backgroundSync()
     }
-    const handleFocus = () => syncNow()
+    const handleFocus = backgroundSync
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('focus', handleFocus)
 
     // Final sync before window closes to avoid losing state
-    const handleBeforeUnload = () => syncNow()
+    const handleBeforeUnload = backgroundSync
     window.addEventListener('beforeunload', handleBeforeUnload)
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer)
+      unsubDocument()
       unsubDock()
       unsubApp()
+      for (const unsubscribe of canvasSubscriptions.values()) unsubscribe()
       clearTimeout(initialSync)
       if (syncTimerRef.current) clearInterval(syncTimerRef.current)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -280,7 +312,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // session.json. Runs after the commit that set `ready`, so wsId/panels and
   // syncNowRef are current.
   useEffect(() => {
-    if (ready) syncNowRef.current()
+    if (ready) void syncNowRef.current().catch(error => log.warn('Dock state sync failed:', error))
   }, [ready])
 
   // Pre-quit: main requests a FINAL sync before it reads listDockWindows() for
@@ -291,10 +323,11 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   // single-terminal detached window loses its scrollback on restart (it ACKs
   // fastest, so it is killed before its lone fire-and-forget write lands).
   useEffect(() => {
-    const cleanup = window.electronAPI.onDockWindowFlushSync(() => {
-      void syncNowRef.current().finally(() => {
-        window.electronAPI.dockWindowFlushSyncDone()
-      })
+    const cleanup = window.electronAPI.onDockWindowFlushSync((requestId) => {
+      void syncNowRef.current().then(
+        () => window.electronAPI.dockWindowFlushSyncDone(undefined, requestId),
+        error => window.electronAPI.dockWindowFlushSyncDone(error instanceof Error ? error.message : String(error), requestId),
+      )
     })
     return cleanup
   }, [])
@@ -324,7 +357,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
   const handlePanelRenamed = useCallback(
     (panelId: string, title: string) => {
       useAppStore.getState().renamePanelByUser(wsId, panelId, title)
-      syncNowRef.current()
+      void syncNowRef.current().catch(error => log.warn('Dock state sync failed:', error))
     },
     [wsId],
   )
@@ -407,6 +440,11 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
             renderPanel={renderPanel}
             getPanelTitle={getPanelTitle}
             onClosePanel={handleClosePanel}
+            onClosePanels={async (ids) => {
+              const closed = await closeDockWindowPanels(wsId, ids, dockStore)
+              if (closed && isDockEmpty(dockStore.getState())) window.close()
+              return closed
+            }}
             getPanel={(id) => panels[id]}
             workspaceId={wsId}
             onPanelRemoved={handlePanelRemoved}

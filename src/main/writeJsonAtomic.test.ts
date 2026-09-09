@@ -15,6 +15,7 @@ beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-writejson-'))
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
@@ -133,4 +134,26 @@ describe('writeJsonAtomic', () => {
       Object.defineProperty(process, 'platform', { value: originalPlatform })
     }
   })
+})
+
+it('publishes secret files only after applying their restricted permissions', async () => {
+  if (process.platform === 'win32') return
+  const target = path.join(dir, 'private.json')
+  const rename = fs.promises.rename.bind(fs.promises)
+  const publishedModes: number[] = []
+  vi.spyOn(fs.promises, 'rename').mockImplementation(async (from, to) => {
+    publishedModes.push((await fs.promises.stat(from)).mode & 0o777)
+    return rename(from, to)
+  })
+  await writeJsonAtomic(target, { secret: 'private' }, { mode: 0o600 })
+  expect(publishedModes).toEqual([0o600])
+})
+
+it('retains the old file and removes the temporary file when publication fails', async () => {
+  const target = path.join(dir, 'retained.json')
+  fs.writeFileSync(target, 'previous')
+  vi.spyOn(fs.promises, 'rename').mockRejectedValue(Object.assign(new Error('publish failed'), { code: 'EIO' }))
+  await expect(writeJsonAtomic(target, { next: true })).rejects.toThrow('publish failed')
+  expect(fs.readFileSync(target, 'utf8')).toBe('previous')
+  expect(fs.readdirSync(dir)).toEqual(['retained.json'])
 })

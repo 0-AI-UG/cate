@@ -22,6 +22,7 @@ import { createTunnelCapability, type TunnelCapability } from './tunnel'
 import {
   validatePath as validateScopedPath,
   validatePathStrict as validateScopedPathStrict,
+  validatePathEntry,
   validatePathForCreation as validateScopedPathForCreation,
   validateCwd as validateScopedCwd,
   addAllowedRoot as addScopedRoot,
@@ -126,9 +127,9 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     },
     readDir: async (p, access) => fileLeaf.readDir(await validatePathStrict(p, access?.ownerWindowId, access?.scopeId), exclusionSet),
     stat: async (p, access) => fileLeaf.statEntry(await validatePathStrict(p, access?.ownerWindowId, access?.scopeId)),
-    remove: async (p, access) => fileLeaf.removeEntry(await validatePathStrict(p, access?.ownerWindowId, access?.scopeId)),
+    remove: async (p, access) => fileLeaf.removeEntry(await validatePathEntry(p, access?.ownerWindowId, access?.scopeId)),
     rename: async (oldP, newP, access) => {
-      const safeOldPath = await validatePathStrict(oldP, access?.ownerWindowId, access?.scopeId)
+      const safeOldPath = await validatePathEntry(oldP, access?.ownerWindowId, access?.scopeId)
       const safeNewPath = await validatePathForCreation(newP, access?.ownerWindowId, access?.scopeId)
       await fileLeaf.renameEntry(safeOldPath, safeNewPath)
       if (access?.ownerWindowId != null) consumeScopedWriteAllowance(access.ownerWindowId, safeNewPath)

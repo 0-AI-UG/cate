@@ -5,6 +5,7 @@
 // know nor care which host they are talking to.
 // =============================================================================
 
+import { randomUUID } from 'node:crypto'
 import { Methods } from '../../runtime/protocol'
 import type { RuntimeId } from '../../shared/runtimeLocator'
 import type {
@@ -70,6 +71,29 @@ export class RemoteRuntime implements Runtime {
     const scoped = (access?: FileAccessContext): FileAccessContext =>
       access ?? { scopeId: this.id }
 
+    // Register before sending: responses and first events may share a transport
+    // chunk, or the capability may emit synchronously during startup.
+    const subscribe = (
+      startMethod: string, stopMethod: string, params: unknown[],
+      onPayload: (payload: unknown, complete: () => void) => void,
+      onError: (error: unknown) => void = () => {},
+    ): (() => void) => {
+      const id = `subscription-${randomUUID()}`
+      let stopped = false
+      const complete = () => { stopped = true; this.rpc.unregisterStream(id) }
+      this.rpc.registerStream(id, payload => { if (!stopped) onPayload(payload, complete) })
+      void call<string>(startMethod, [...params, id]).then(() => {
+        if (stopped) void this.rpc.call(stopMethod, [id]).catch(() => {})
+      }).catch(error => {
+        if (!stopped) { complete(); onError(error) }
+      })
+      return () => {
+        if (stopped) return
+        complete()
+        void this.rpc.call(stopMethod, [id]).catch(() => {})
+      }
+    }
+
     this.process = {
       create: async (opts, onData, onExit) => {
         // Client-generated id == the stream key. Register BEFORE the create
@@ -101,34 +125,13 @@ export class RemoteRuntime implements Runtime {
       scanPorts: (ids) => call<Record<string, number[]>>(Methods.ptyScanPorts, [ids]),
     }
 
-    // Agent hooks: server-assigned streamId, like watch — subscribe, then
-    // register the stream when the round-trip resolves. Normalized events
-    // arrive as evt frames.
+    // Hooks, watches and searches share the same subscription lifecycle.
     this.agentHooks = {
       readChanges: (cwd, knownRevision, access) => call(Methods.agentChangesRead, [cwd, knownRevision, scoped(access)]),
       listChanges: (cwd, access) => call(Methods.agentChangesList, [cwd, scoped(access)]),
       bindChanges: (cwd, threadId, panelId, access) => call(Methods.agentChangesBind, [cwd, threadId, panelId, scoped(access)]),
-      subscribe: (onEvent) => {
-        let streamId: string | null = null
-        let stopped = false
-        void call<string>(Methods.agentHooksSubscribe, []).then((id) => {
-          if (stopped) {
-            // Unsubscribed before the subscribe round-trip resolved.
-            void this.rpc.call(Methods.agentHooksUnsubscribe, [id]).catch(() => {})
-            return
-          }
-          streamId = id
-          this.rpc.registerStream(id, (payload) => onEvent(payload as AgentHookEvtPayload))
-        }).catch(() => { /* subscribe failed; no events */ })
-        return () => {
-          stopped = true
-          if (streamId) {
-            this.rpc.unregisterStream(streamId)
-            void this.rpc.call(Methods.agentHooksUnsubscribe, [streamId]).catch(() => {})
-            streamId = null
-          }
-        }
-      },
+      subscribe: (onEvent) => subscribe(Methods.agentHooksSubscribe, Methods.agentHooksUnsubscribe, [],
+        payload => onEvent(payload as AgentHookEvtPayload)),
       inspectWorkspace: (cwd) => call<AgentHookAgentState[]>(Methods.agentHooksInspect, [cwd]),
     }
 
@@ -221,66 +224,20 @@ export class RemoteRuntime implements Runtime {
         call<{ created: string[]; failed: number }>(Methods.fileImportEntries, [sources, destDir, mode, scoped(access)]),
       search: (root, query, opts, access) =>
         longCall<FileSearchResult[]>(Methods.fileSearch, [root, query, opts, scoped(access)]),
-      searchContent: (root, opts, cbs, access) => {
-        // Server-assigned streamId, like watch: start, then register the stream
-        // when the round-trip resolves. batch/done arrive as evt frames.
-        let streamId: string | null = null
-        let stopped = false
-        void call<string>(Methods.fileSearchContentStart, [root, opts, scoped(access)]).then((id) => {
-          if (stopped) {
-            // Cancelled before the start round-trip resolved.
-            void this.rpc.call(Methods.fileSearchContentStop, [id]).catch(() => {})
-            return
-          }
-          streamId = id
-          this.rpc.registerStream(id, (payload) => {
+      searchContent: (root, opts, cbs, access) => ({
+        cancel: subscribe(Methods.fileSearchContentStart, Methods.fileSearchContentStop, [root, opts, scoped(access)],
+          (payload, complete) => {
             const p = payload as SearchEvtPayload
             if (p.kind === 'batch') cbs.onBatch(p.files)
-            else {
-              cbs.onDone(p.stats, p.error)
-              this.rpc.unregisterStream(id)
-            }
-          })
-        }).catch((err) => {
-          // The start request itself failed (e.g. transport dropped): surface a
-          // terminal done so the renderer's spinner clears.
-          if (!stopped) cbs.onDone({ matches: 0, files: 0, truncated: false }, err instanceof Error ? err.message : String(err))
-        })
-        return {
-          cancel: () => {
-            stopped = true
-            if (streamId) {
-              this.rpc.unregisterStream(streamId)
-              void this.rpc.call(Methods.fileSearchContentStop, [streamId]).catch(() => {})
-              streamId = null
-            }
+            else { complete(); cbs.onDone(p.stats, p.error) }
           },
-        }
-      },
-      watch: (prefix, onChange, access) => {
-        let streamId: string | null = null
-        let stopped = false
-        void call<string>(Methods.fileWatchStart, [prefix, scoped(access)]).then((id) => {
-          if (stopped) {
-            // Unsubscribed before the start round-trip resolved.
-            void this.rpc.call(Methods.fileWatchStop, [id]).catch(() => {})
-            return
-          }
-          streamId = id
-          this.rpc.registerStream(id, (payload) => {
-            const p = payload as FsWatchEvtPayload
-            onChange(p.changedPath, p.type)
-          })
-        }).catch(() => { /* watch failed to start; no events */ })
-        return () => {
-          stopped = true
-          if (streamId) {
-            this.rpc.unregisterStream(streamId)
-            void this.rpc.call(Methods.fileWatchStop, [streamId]).catch(() => {})
-            streamId = null
-          }
-        }
-      },
+          error => cbs.onDone({ matches: 0, files: 0, truncated: false }, error instanceof Error ? error.message : String(error))),
+      }),
+      watch: (prefix, onChange, access) => subscribe(Methods.fileWatchStart, Methods.fileWatchStop, [prefix, scoped(access)],
+        payload => {
+          const p = payload as FsWatchEvtPayload
+          onChange(p.changedPath, p.type)
+        }),
     }
 
     this.vcs = {
