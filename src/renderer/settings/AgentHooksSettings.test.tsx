@@ -41,7 +41,7 @@ describe('AgentHooksSettings', () => {
     useAppStore.setState({ workspaces: [], selectedWorkspaceId: '' })
   })
 
-  it('warns when Auto has no agent config folder to install into', async () => {
+  it('shows a neutral status when Auto has no agent config folder', async () => {
     inspect.mockResolvedValue([])
 
     await act(async () => {
@@ -50,11 +50,11 @@ describe('AgentHooksSettings', () => {
     })
 
     expect(host.textContent).toContain(
-      "Hooks aren't installed. Auto waits for this agent's config folder; choose On to install them.",
+      'Not configured in this workspace',
     )
   })
 
-  it('does not warn for an explicitly enabled agent', async () => {
+  it('shows when explicitly enabled hooks will be installed', async () => {
     useSettingsStore.setState({
       agentHookInjection: { ws: { 'claude-code': 'on' } },
     })
@@ -73,7 +73,7 @@ describe('AgentHooksSettings', () => {
     })
 
     const claudeRow = host.querySelector('[data-agent-hook-id="claude-code"]')
-    expect(claudeRow?.textContent).not.toContain("Hooks aren't installed.")
+    expect(claudeRow?.textContent).toContain('Will install when a terminal opens')
   })
 
   it('is discoverable when settings search is filtered to Kiro', async () => {

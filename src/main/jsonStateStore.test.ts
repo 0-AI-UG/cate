@@ -223,4 +223,55 @@ describe('createJsonStateStore', () => {
       vi.useRealTimers()
     }
   })
+  it('offers truthful durable flushes while retaining failed revisions for retry', async () => {
+    const write = vi.fn().mockRejectedValueOnce(new Error('disk full')).mockResolvedValue(undefined)
+    const store = createJsonStateStore({ defaults, normalize, backend: { write } })
+    store.set({ count: 9 })
+    await expect(store.flushDurable()).rejects.toThrow('disk full')
+    await store.flushDurable()
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(write).toHaveBeenLastCalledWith({ count: 9 }, expect.any(String))
+    store.dispose()
+  })
+
+})
+
+it('rejects a stale external read completed after a newer local publication', async () => {
+  let change!: () => void
+  const external = deferred<string | null>()
+  const store = createJsonStateStore({ defaults, normalize, backend: {
+    read: () => external.promise, write: vi.fn(async () => {}), watch: cb => { change = cb; return () => {} },
+  } })
+  const unsubscribe = store.subscribe(() => {})
+  change()
+  store.set({ count: 2 })
+  await store.flushDurable()
+  external.resolve('{"count":1}')
+  await Promise.resolve(); await Promise.resolve()
+  expect(store.get()).toEqual({ count: 2 })
+  unsubscribe(); store.dispose()
+})
+
+it('publishes accepted external revisions after an older in-flight write', async () => {
+  let change!: () => void
+  let disk = '{"count":0}'
+  const pending = deferred<void>()
+  let writes = 0
+  const store = createJsonStateStore({ defaults, normalize, backend: {
+    read: async () => disk,
+    write: async (_value, content) => { if (++writes === 1) await pending.promise; disk = content },
+    watch: cb => { change = cb; return () => {} },
+  } })
+  const unsubscribe = store.subscribe(() => {})
+  store.set({ count: 1 })
+  const publishing = store.flushDurable()
+  await Promise.resolve()
+  disk = '{"count":2}'
+  change()
+  await Promise.resolve(); await Promise.resolve()
+  pending.resolve()
+  await publishing
+  expect(store.get()).toEqual({ count: 2 })
+  expect(JSON.parse(disk)).toEqual({ count: 2 })
+  unsubscribe(); store.dispose()
 })

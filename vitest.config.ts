@@ -10,6 +10,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      'monaco-editor': path.resolve(__dirname, 'node_modules/monaco-editor/esm/vs/editor/editor.api.js'),
       '@shared': path.resolve(__dirname, 'src/shared'),
       // The real electron-log BLOCKS at module eval under vitest (it wires up
       // Electron IPC that never resolves), so any test whose import graph reaches

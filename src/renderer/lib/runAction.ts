@@ -1,3 +1,4 @@
+import { dispatchCanvasToolbarAction } from '../canvas/useCanvasToolbarAction'
 // =============================================================================
 // runAction — the single source of truth for menu / shortcut / command-palette
 // actions. Both the global keyboard handler (useShortcuts) and the Cmd+K command
@@ -14,13 +15,14 @@ import {
   getActiveCanvasPanelId,
   placementForActivePanel,
 } from '../stores/appStore'
-import { useUIStore, getSidebarLayout } from '../stores/uiStore'
-import { useSearchStore } from '../stores/searchStore'
+import { useSettingsStore } from '../stores/settingsStore'
+import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
+import { useUIStore } from '../stores/uiStore'
 import type { MenuActionId } from '../../shared/types'
 import type { CanvasStore } from '../stores/canvasStore'
 import { focusedNodeId as focusedNodeIdOf } from '../stores/canvas/selectionModel'
 import { provideAppStoreForHistory } from '../stores/canvas/historySlice'
-import { inheritedWorktreeFromSelection } from './inheritWorktree'
+import { createInteractivePanel } from './panels/createInteractivePanel'
 import { closePanelWithConfirm } from './closePanelWithConfirm'
 import { setActivePanel } from './activePanel'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
@@ -30,6 +32,17 @@ import { getFocusedLeafPanelId, requestPanelRename } from './focusedPanel'
 export function isCanvasNavigationBlocked(): boolean {
   return useUIStore.getState().showCommandPalette
     || !!document.activeElement?.closest('[role="dialog"], [role="alertdialog"], [data-keynav]')
+}
+
+/** Resolve a chooser target without replacing another workspace at the tab limit. */
+export function ensureWorkspaceTarget(workspaceId: string): string | null {
+  const app = useAppStore.getState()
+  if (app.getWorkspace(workspaceId)) return workspaceId
+  const existingIds = new Set(app.workspaces.map((w) => w.id))
+  const id = app.addWorkspace()
+  if (existingIds.has(id)) return null
+  void app.selectWorkspace(id)
+  return id
 }
 
 /**
@@ -47,8 +60,14 @@ export async function ensureWorkspaceFolder(workspaceId: string): Promise<string
   // Awaited, and its answer respected: the user can still decline to trust the
   // folder they just picked. The caller must not then create a panel in a
   // workspace that never got a root — it would land in $HOME.
-  const opened = await useAppStore.getState().setWorkspaceRootPath(workspaceId, folderPath)
-  return opened ? workspaceId : null
+  const targetId = ensureWorkspaceTarget(workspaceId)
+  if (!targetId) return null
+  const opened = await useAppStore.getState().setWorkspaceRootPath(targetId, folderPath)
+  if (opened) return targetId
+  // Opening an already-open folder redirects selection instead of duplicating
+  // the workspace. Continue the requested action in that existing workspace.
+  const selected = useAppStore.getState().getWorkspace(useAppStore.getState().selectedWorkspaceId)
+  return selected?.rootPath === folderPath && !selected.isRootPathPending ? selected.id : null
 }
 
 /**
@@ -93,49 +112,63 @@ export async function runAction(
     return
   }
   switch (action) {
-    case 'newTerminal': {
-      const placement = placementForActivePanel()
-      const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      if (wsId) {
-        // Inherit the selected terminal/agent's worktree so ⌘T from inside a
-        // worktree opens the new terminal in that same worktree.
-        const canvas = canvasStore()
-        const workspace = appStore().getWorkspace(wsId)
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, workspace?.worktrees) : {}
-        const panelId = appStore().createTerminal(wsId, undefined, undefined, placement, wt.cwd)
-        if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
+    case 'selectTool': useUIStore.getState().setActiveTool('select'); break
+    case 'handTool': useUIStore.getState().setActiveTool('hand'); break
+    case 'toggleKeepAwake': await window.electronAPI.toggleKeepAwake(); break
+    case 'openWorktreeMenu':
+    case 'openConversationMenu':
+    case 'toggleCanvasToolbar': {
+      const canvasPanelId = getActiveCanvasPanelId()
+      if (canvasPanelId) dispatchCanvasToolbarAction(action, canvasPanelId)
+      break
+    }
+    case 'tidyGrid': canvasStore()?.tidyGridSelected(); break
+    case 'newWorkspace': {
+      const ui = useUIStore.getState()
+      ui.setShowPullRequests(false)
+      ui.setShowUsage(false)
+      ui.setShowSkillsDialog(false)
+      ui.closeSettings()
+      const existing = appStore().workspaces.find(w => !w.rootPath)
+      await appStore().selectWorkspace(existing?.id ?? appStore().addWorkspace())
+      break
+    }
+    case 'openSettings': useUIStore.getState().openSettings(); break
+    case 'openRepository': useUIStore.getState().openRepository(); break
+    case 'openPullRequests': useUIStore.getState().openRepository('pullRequests'); break
+    case 'openUsage': useUIStore.getState().setShowUsage(true); break
+    case 'skills': useUIStore.getState().setShowSkillsDialog(true); break
+    case 'showTutorial':
+      useSettingsStore.getState().setSetting('onboardingCompleted', false)
+      window.electronAPI?.trackFeatureUsed?.('onboarding_replayed')
+      break
+    case 'deleteRuntime':
+      if (isRemoteRuntimeConnection(appStore().getWorkspace(selectedWorkspaceId)?.connection)) {
+        await appStore().deleteRuntime(selectedWorkspaceId)
       }
       break
-    }
-    case 'newBrowser': {
-      const placement = placementForActivePanel()
-      const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      if (wsId) appStore().createBrowser(wsId, undefined, undefined, placement)
+    case 'newWindow':
+    case 'closeWindow':
+    case 'toggleFullscreen':
+    case 'reloadWindow':
+    case 'toggleDevTools':
+    case 'checkForUpdates':
+    case 'documentation':
+    case 'reportIssue':
+      await window.electronAPI.runNativeAction(action)
       break
-    }
+    case 'newTerminal':
+    case 'newBrowser':
     case 'newEditor':
-    case 'newFile': {
-      const placement = placementForActivePanel()
-      const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
-      if (wsId) {
-        const canvas = canvasStore()
-        const workspace = appStore().getWorkspace(wsId)
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, workspace?.worktrees) : {}
-        const panelId = appStore().createEditor(wsId, undefined, undefined, placement)
-        if (panelId && wt.worktreeId) appStore().setPanelWorktreeId(wsId, panelId, wt.worktreeId)
-      }
-      break
-    }
+    case 'newFile':
     case 'newAgent': {
       const placement = placementForActivePanel()
+      const focusedId = getFocusedLeafPanelId()
+      const origin = focusedId ? appStore().getWorkspace(selectedWorkspaceId)?.panels[focusedId] : undefined
       const wsId = await ensureWorkspaceFolder(selectedWorkspaceId)
       if (wsId) {
-        // Same worktree inheritance as newTerminal. Cate remains the sole
-        // authority for the Agent panel's cwd.
-        const canvas = canvasStore()
-        const workspace = appStore().getWorkspace(wsId)
-        const wt = canvas ? inheritedWorktreeFromSelection(canvas, workspace?.panels, workspace?.worktrees) : {}
-        appStore().createAgent(wsId, undefined, placement, wt.cwd, wt.worktreeId)
+        const type = action === 'newTerminal' ? 'terminal' : action === 'newBrowser' ? 'browser' : action === 'newAgent' ? 'agent' : 'editor'
+        createInteractivePanel(type, { workspaceId: wsId, placement }, origin)
       }
       break
     }
@@ -146,13 +179,8 @@ export async function runAction(
       break
     }
     case 'closePanel': {
-      const canvas = canvasStore()
-      const focusedNodeId = canvas ? focusedNodeIdOf(canvas) : null
-      if (focusedNodeId) {
-        const node = canvas?.nodes[focusedNodeId]
-        const panelId = activeDockPanelId(node?.dockLayout)
-        if (panelId) await closePanelWithConfirm(selectedWorkspaceId, panelId)
-      }
+      const panelId = getFocusedLeafPanelId()
+      if (panelId) await closePanelWithConfirm(selectedWorkspaceId, panelId)
       break
     }
     case 'toggleSidebar':
@@ -160,27 +188,19 @@ export async function runAction(
       break
     case 'toggleFileExplorer': {
       const ui = useUIStore.getState()
-      const side = getSidebarLayout().left.includes('explorer') ? 'left' : 'right'
-      if (side === 'left') {
-        ui.setActiveLeftSidebarView(ui.activeLeftSidebarView === 'explorer' ? null : 'explorer')
-      } else {
-        ui.setActiveRightSidebarView(ui.activeRightSidebarView === 'explorer' ? null : 'explorer')
-      }
+      ui.requestNavigationView('explorer')
       break
     }
     case 'toggleSearch': {
       const ui = useUIStore.getState()
-      const side = getSidebarLayout().left.includes('search') ? 'left' : 'right'
-      const active = side === 'left' ? ui.activeLeftSidebarView : ui.activeRightSidebarView
-      const next = active === 'search' ? null : 'search'
-      if (side === 'left') ui.setActiveLeftSidebarView(next)
-      else ui.setActiveRightSidebarView(next)
-      if (next === 'search') useSearchStore.getState().requestFocus()
+      ui.requestNavigationView('search')
       break
     }
-    case 'toggleMinimap':
-      useUIStore.getState().toggleMinimapOpen()
+    case 'toggleMinimap': {
+      const canvasPanelId = getActiveCanvasPanelId()
+      if (canvasPanelId) useUIStore.getState().toggleMinimapOpen(canvasPanelId)
       break
+    }
     case 'commandPalette':
       useUIStore.getState().setShowCommandPalette(true)
       break
@@ -294,6 +314,10 @@ export async function runAction(
         }
       }
       break
+    }
+    default: {
+      const unhandled: never = action
+      throw new Error(`Unhandled action: ${unhandled}`)
     }
   }
 }

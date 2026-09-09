@@ -151,15 +151,6 @@ export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
         }
       }
 
-      // Cmd+G — tidy the selected nodes into a grid
-      if (e.metaKey && !e.shiftKey && e.key === 'g') {
-        if (terminalHasFocus) return
-        e.preventDefault()
-        e.stopPropagation()
-        canvasStore()?.tidyGridSelected()
-        return
-      }
-
       // Escape — clear selection and revert to the Select tool (when no overlay
       // is open) so the user is never stuck in the Hand tool.
       if (e.key === 'Escape') {
@@ -227,7 +218,7 @@ export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
       // terminal/editor/input is focused. The capture-phase preventDefault below
       // stops the surface from seeing it. Ignore key-repeat so a held chord
       // doesn't flicker between tools.
-      if (action === 'toggleTool' && e.repeat) return
+      if (['toggleTool', 'toggleKeepAwake', 'openWorktreeMenu', 'openConversationMenu', 'toggleCanvasToolbar'].includes(action) && e.repeat) return
 
       // Cmd+Arrow navigation / Shift+Arrow panning.
       if (NAVIGATE_ACTIONS.has(action) || PAN_ACTIONS.has(action)) {
@@ -241,6 +232,7 @@ export function useShortcuts(windowCanvasStore?: StoreApi<CanvasStore>): void {
       // contenteditable) has focus, let Cmd+Z/Y fall through to it natively.
       // Terminals don't consume Cmd+Z/Y, so the canvas still owns undo/redo when
       // a terminal panel is focused.
+      if (action === 'tidyGrid' && (terminalHasFocus || isTextSurfaceFocused() || isCanvasNavigationBlocked())) return
       if (action === 'undo' || action === 'redo') {
         if (!terminalHasFocus && isTextSurfaceFocused()) return
       }

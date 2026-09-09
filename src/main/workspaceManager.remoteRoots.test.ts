@@ -108,23 +108,22 @@ describe('remote workspace root scopes', () => {
 
     // Open with a folder → seed attempt for that root.
     await create({}, { id: 'workspace-seed-a', name: 'A', rootPath: locator('/home/dev/a') })
-    expect(seed).toHaveBeenLastCalledWith(locator('/home/dev/a'))
+    expect(seed).toHaveBeenLastCalledWith(locator('/home/dev/a'), { scopeId: 'workspace-seed-a' })
 
     // A rootless workspace seeds nothing until a folder is attached (the local
     // folder-pick / remote-attach path, which lands as an update).
     await create({}, { id: 'workspace-seed-b', name: 'B' })
     expect(seed).toHaveBeenCalledTimes(1)
     await update({}, 'workspace-seed-b', { rootPath: locator('/home/dev/b') })
-    expect(seed).toHaveBeenLastCalledWith(locator('/home/dev/b'))
+    expect(seed).toHaveBeenLastCalledWith(locator('/home/dev/b'), { scopeId: 'workspace-seed-b' })
 
     // Runtime (re)connect replays seeding for every workspace on that runtime —
     // the moment a REMOTE workspace can actually seed.
     seed.mockClear()
     fireConnected(runtimeId)
-    expect(seed.mock.calls.map(([root]) => root).sort()).toEqual([
-      locator('/home/dev/a'),
-      locator('/home/dev/b'),
-    ])
+    expect(seed).toHaveBeenCalledTimes(2)
+    expect(seed).toHaveBeenCalledWith(locator('/home/dev/a'), { scopeId: 'workspace-seed-a' })
+    expect(seed).toHaveBeenCalledWith(locator('/home/dev/b'), { scopeId: 'workspace-seed-b' })
 
     // Other runtimes' connects don't touch these workspaces.
     seed.mockClear()

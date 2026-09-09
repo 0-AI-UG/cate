@@ -2,48 +2,25 @@
 // Minimap — Bird's-eye overview of all panels on the canvas.
 // =============================================================================
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useCanvasStoreContext, useCanvasStoreApi, shallow } from '../stores/CanvasStoreContext'
 import { useWorkspacePanels, useAppStore } from '../stores/appStore'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
-import { useUIStateStore } from '../stores/uiStateStore'
 import { useWorktreeMembership } from './worktree/useWorktreeMembership'
+import { getSharedPanelDef } from '../../shared/panels'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
 
-// Default minimap size lives in DEFAULT_UI_STATE (shared/types); the floating
-// size is restored from ui-state.json.
-const MINIMAP_MIN_WIDTH = 120
-const MINIMAP_MIN_HEIGHT = 90
-const MINIMAP_MAX_WIDTH = 600
-const MINIMAP_MAX_HEIGHT = 500
 const MINIMAP_PADDING = 10
-const MINIMAP_GAP = 12
+const MINIMAP_WIDTH = 218
+const MINIMAP_HEIGHT = 158
 
-type Corner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
-// Minimap placement persists in ui-state.json via the UI-state store (loaded on
-// launch, before the canvas mounts). These read the current store value.
-const loadCorner = (): Corner => useUIStateStore.getState().minimapCorner
-const loadSize = (): { w: number; h: number } => useUIStateStore.getState().minimapSize
-
-// Map a panel type to a themed CSS variable so the minimap follows the active
-// theme. Falls back to a generic surface accent for unknown types.
+// Keep theme overrides while giving every registered surface its own color.
 function themedPanelColor(panelType: string): string {
-  switch (panelType) {
-    case 'terminal':
-    case 'browser':
-    case 'editor':
-    case 'canvas':
-      return `var(--panel-${panelType})`
-    default:
-      return 'var(--text-muted)'
-  }
+  const definition = getSharedPanelDef(panelType)
+  return `var(--panel-${definition.type}, ${definition.mutedColor})`
 }
 
-interface MinimapProps {
-  mode?: 'floating' | 'popover'
-}
-
-const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
+const Minimap: React.FC = () => {
   const nodeList = useCanvasStoreContext((s) => Object.values(s.nodes), shallow)
   // NOTE: viewportOffset is intentionally NOT subscribed via React here.
   // The viewport rect div is updated imperatively via canvasApi.subscribe
@@ -78,70 +55,6 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
     worldMinX: 0, worldMinY: 0, scale: 1,
     zoomLevel: 1, containerWidth: 0, containerHeight: 0,
   })
-  const [corner, setCorner] = useState<Corner>(loadCorner)
-  const [size, setSize] = useState<{ w: number; h: number }>(loadSize)
-  const MINIMAP_WIDTH = mode === 'popover' ? 218 : size.w
-  const MINIMAP_HEIGHT = mode === 'popover' ? 158 : size.h
-
-  const sizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const cornerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    e.preventDefault()
-    const startX = e.clientX
-    const startY = e.clientY
-    const startW = size.w
-    const startH = size.h
-    // Resize handle sits on the corner pointing toward canvas center (opposite of `corner`).
-    // Dragging that corner away from the minimap's anchored corner grows it.
-    const signX = corner.endsWith('right') ? -1 : 1 // anchored right → grow when moving left
-    const signY = corner.startsWith('bottom') ? -1 : 1 // anchored bottom → grow when moving up
-    const handleMove = (ev: MouseEvent) => {
-      const dx = (ev.clientX - startX) * signX
-      const dy = (ev.clientY - startY) * signY
-      const w = Math.max(MINIMAP_MIN_WIDTH, Math.min(MINIMAP_MAX_WIDTH, startW + dx))
-      const h = Math.max(MINIMAP_MIN_HEIGHT, Math.min(MINIMAP_MAX_HEIGHT, startH + dy))
-      setSize({ w, h })
-      if (sizeDebounceRef.current) clearTimeout(sizeDebounceRef.current)
-      sizeDebounceRef.current = setTimeout(() => {
-        useUIStateStore.getState().setUIState('minimapSize', { w, h })
-      }, 500)
-    }
-    const handleUp = () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-    }
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
-  }, [size.w, size.h, corner])
-
-  const handleDragHandleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    e.preventDefault()
-    const handleMove = (ev: MouseEvent) => {
-      const cw = containerSize.width
-      const ch = containerSize.height
-      const right = ev.clientX > cw / 2
-      const bottom = ev.clientY > ch / 2
-      const next: Corner = `${bottom ? 'bottom' : 'top'}-${right ? 'right' : 'left'}` as Corner
-      setCorner((prev) => {
-        if (prev === next) return prev
-        if (cornerDebounceRef.current) clearTimeout(cornerDebounceRef.current)
-        cornerDebounceRef.current = setTimeout(() => {
-          useUIStateStore.getState().setUIState('minimapCorner', next)
-        }, 500)
-        return next
-      })
-    }
-    const handleUp = () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-    }
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
-  }, [containerSize.width, containerSize.height])
-
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     if (!minimapRef.current) return
@@ -240,73 +153,19 @@ const Minimap: React.FC<MinimapProps> = ({ mode = 'floating' }) => {
     containerHeight: containerSize.height,
   }
 
-  const isPopover = mode === 'popover'
-
   return (
     <div
       ref={minimapRef}
       style={{
-        ...(isPopover
-          ? { position: 'relative' as const, width: '100%', height: '100%' }
-          : {
-              position: 'absolute' as const,
-              ...(corner.startsWith('bottom') ? { bottom: MINIMAP_GAP } : { top: MINIMAP_GAP }),
-              ...(corner.endsWith('right') ? { right: MINIMAP_GAP } : { left: MINIMAP_GAP }),
-              opacity: 0.7,
-              zIndex: 20,
-              width: MINIMAP_WIDTH,
-              height: MINIMAP_HEIGHT,
-            }),
-        backgroundColor: isPopover ? 'transparent' : 'var(--surface-2)',
-        borderRadius: isPopover ? 6 : 8,
-        border: isPopover ? 'none' : `1px solid var(--border-subtle)`,
+        position: 'relative', width: '100%', height: '100%',
+        backgroundColor: 'transparent',
+        borderRadius: 6,
+        border: 'none',
         overflow: 'hidden',
         cursor: 'crosshair',
       }}
       onMouseDown={handleMouseDown}
     >
-      {/* Resize handle — on the inner corner (pointing toward canvas center). Hidden in popover mode. */}
-      {!isPopover && (
-        <div
-          onMouseDown={handleResizeMouseDown}
-          title="Drag to resize minimap"
-          style={{
-            position: 'absolute',
-            ...(corner.startsWith('bottom') ? { top: 0 } : { bottom: 0 }),
-            ...(corner.endsWith('right') ? { left: 0 } : { right: 0 }),
-            width: 14,
-            height: 14,
-            cursor: (corner === 'bottom-right' || corner === 'top-left') ? 'nwse-resize' : 'nesw-resize',
-            zIndex: 3,
-          }}
-        />
-      )}
-
-      {/* Drag handle — on the outer corner (against the screen edge). Hidden in popover mode. */}
-      {!isPopover && (
-        <div
-          onMouseDown={handleDragHandleMouseDown}
-          title="Drag to move minimap"
-          style={{
-            position: 'absolute',
-            ...(corner.startsWith('bottom') ? { bottom: 2 } : { top: 2 }),
-            ...(corner.endsWith('right') ? { right: 2 } : { left: 2 }),
-            width: 14,
-            height: 14,
-            borderRadius: 3,
-            cursor: 'grab',
-            zIndex: 2,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--text-muted)',
-            fontSize: 10,
-            lineHeight: 1,
-            userSelect: 'none',
-          }}
-        >⠿</div>
-      )}
-
       {/* Node rectangles */}
       {nodeList.map((node) => {
         const panelId = activeDockPanelId(node.dockLayout)

@@ -14,13 +14,14 @@ vi.hoisted(() => {
 })
 
 import { useAppStore } from '../stores/appStore'
-import AgentPanel from './AgentPanel'
+import AgentPanel, { agentFileDropScript } from './AgentPanel'
 import { useActivePanelStore } from '../lib/activePanel'
 import { useUIStore } from '../stores/uiStore'
 import { createCanvasStore } from '../stores/canvasStore'
 import { CanvasStoreProvider } from '../stores/CanvasStoreContext'
 
 const initialState = useAppStore.getState()
+vi.mock('../stores/useWorktrees', () => ({ useWorktrees: () => [] }))
 let host: HTMLDivElement
 let root: Root
 let getPanelUrl: ReturnType<typeof vi.fn>
@@ -66,10 +67,33 @@ function mockGuest() {
   })
 }
 
+  it('builds a valid guest drop that recreates the dragged image file', () => {
+    const script = agentFileDropScript([{ name: 'screen.png', type: 'image/png', dataUrl: 'data:image/png;base64,AA==' }])
+    expect(() => new Function(script)).not.toThrow()
+    expect(script).toContain('new DataTransfer()')
+    expect(script).toContain('screen.png')
+    expect(script).toContain("dispatchEvent(new DragEvent('drop'")
+  })
+
+
 describe('AgentPanel', () => {
   const readyHarness = {
     url: 'http://127.0.0.1:49152/', partition: 'persist:t3-test', runtimeId: 'local', environmentId: 'local-env',
   }
+
+  it('hosts clickable conversation controls alongside the persistent guest', async () => {
+    getPanelUrl.mockResolvedValue(readyHarness)
+    const list = vi.fn().mockResolvedValue([])
+    const menu = vi.fn().mockResolvedValue(null)
+    Object.assign(window.electronAPI, { agentHarnessListConversations: list, showContextMenu: menu })
+    await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
+    const controls = host.querySelector('[data-agent-controls="agent"]')!
+    expect(controls.parentElement).toBe(host.querySelector('webview')!.parentElement)
+    expect(host.querySelector('[data-browser-surface-overlay]')).toBeNull()
+    await act(async () => controls.querySelector<HTMLButtonElement>('[aria-label="Select chat"]')!.click())
+    expect(list).toHaveBeenCalledWith({ workspaceId: 'ws', cwd: '/repo' })
+    expect(menu).toHaveBeenCalledWith(expect.arrayContaining([{ id: '__new', label: 'New conversation' }]))
+  })
 
   it('focuses only the active leaf panel inside a focused canvas node', async () => {
     getPanelUrl.mockResolvedValue(readyHarness)

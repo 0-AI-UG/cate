@@ -523,6 +523,34 @@ async function selectOverlay(label: string) {
   await page.getByRole('button', { name: 'Select chat', exact: true }).click()
 }
 
+for (const placement of ['canvas', 'docked'] as const) {
+  test(`${placement} T3 overlay controls stay clickable above the guest`, async () => {
+    if (placement === 'canvas') {
+      await page.evaluate(() => {
+        window.__cateE2E!.setZoom(0.75)
+        window.__cateE2E!.setViewport({ x: 0, y: 0 })
+      })
+    }
+    const controls = page.locator(`[data-agent-controls="${agent.panelId}"]`)
+    await expect(controls).toBeVisible()
+    expect(await controls.evaluate((element) => {
+      const surface = element.closest('[data-browser-surface]')
+      return !!surface?.querySelector('webview') && !getComputedStyle(surface).clipPath.includes('evenodd')
+    })).toBe(true)
+    await electronApp!.evaluate(({ Menu }) => {
+      const original = Menu.prototype.popup
+      Menu.prototype.popup = function (options) {
+        Menu.prototype.popup = original
+        ;(globalThis as any).__overlayMenuOpened = this.items.some((item) => item.label === 'New conversation')
+        options?.callback?.()
+      }
+    })
+    await controls.getByRole('button', { name: 'Select chat', exact: true }).click()
+    await expect.poll(() => electronApp!.evaluate(() => (globalThis as any).__overlayMenuOpened)).toBe(true)
+    await page.screenshot({ path: test.info().outputPath('t3-overlay.png') })
+  })
+}
+
 for (const entry of ['overlay', 'action bar'] as const) {
   test(`real T3 new conversation from ${entry} stays in a fresh draft with an existing chat`, async () => {
     // Use the actual bundled T3 router/bootstrap, not fake-t3: the fake never
@@ -690,7 +718,7 @@ test('real T3 lifecycle sends, streams, switches chats, restarts Cate and resume
   await submitRealChat(firstMessage)
   await expect.poll(() => guestEval<string>(agentWebview(), 'document.body.innerText').catch(() => ''), { timeout: 30_000 }).toContain('Fixture streaming')
   expect(await guestEval<string>(agentWebview(), 'document.body.innerText')).not.toContain('Fixture streaming reply:')
-  expect((await realThreadState())?.latestTurn?.state).toBe('running')
+  await expect.poll(async () => (await realThreadState())?.latestTurn?.state).toBe('running')
   writeFileSync(path.join(tempRoot, 'codex-state.json.release-stream'), '')
   await waitForRealReply(firstMessage)
   const firstThread = (await realThreadState())!.id
@@ -767,6 +795,7 @@ async function restartCate() {
   const launched = await launchApp(launchOptions)
   electronApp = launched.electronApp
   page = launched.mainWindow
+
   await expect(agentWebview()).toHaveAttribute('data-agent-guest-ready', 'true', { timeout: 30_000 })
 }
 
@@ -1149,7 +1178,7 @@ test('real T3 lifecycle bounds automatic crash recovery and allows an explicit r
 
 test('webview geometry stays aligned for T3 and browsers during layout changes', async () => {
   await page.evaluate(() => {
-    window.__cateE2E!.setActiveLeftSidebarView(null)
+    window.__cateE2E!.setSidebarHidden(true)
     window.__cateE2E!.setZoom(0.65)
     window.__cateE2E!.setViewport({ x: 40, y: 40 })
   })
@@ -1180,7 +1209,7 @@ test('webview geometry stays aligned for T3 and browsers during layout changes',
   for (const sidebar of ['explorer', null, 'explorer', null] as const) {
     await electronApp!.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setSize(width, 850), 1200 + clicks * 30)
     await page.evaluate(({ view, step }) => {
-      window.__cateE2E!.setActiveLeftSidebarView(view)
+      window.__cateE2E!.setSidebarHidden(view === null)
       window.__cateE2E!.setZoom([0.65, 0.85, 0.5, 0.65][step])
       window.__cateE2E!.setViewport({ x: 40 + step * 10, y: 40 + step * 5 })
     }, { view: sidebar, step: clicks })
@@ -1238,4 +1267,129 @@ test('webview geometry stays aligned for T3 and browsers during layout changes',
   console.log('Webview geometry: 8 browsers + T3', result)
   expect(result.idleFrames).toBe(0)
   expect(result.panFrames).toBeLessThanOrEqual(92)
+})
+
+test('real T3 lifecycle usage overview exposes upstream controls and returns to the workspace', async () => {
+  await electronApp!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1400, 1000))
+  await page.getByRole('button', { name: 'Usage', exact: true }).click()
+  const usage = page.locator('webview[data-usage-webview]')
+  await expect(usage).toHaveAttribute('data-usage-ready', 'true', { timeout: 30_000 })
+  await expect.poll(() => guestEval<string>(usage, 'document.body.innerText')).toContain('All environments')
+  await expect.poll(() => guestEval<string>(usage, 'document.body.innerText')).toContain('Breakdown')
+  await expect(page.locator('[data-app-sidebar="left"]').getByRole('button', { name: 'Back to workspace' })).toBeVisible()
+  const background = await page.getByRole('region', { name: 'Usage overview' }).evaluate((element) => getComputedStyle(element).backgroundColor)
+  expect(await guestEval<string>(usage, `getComputedStyle(document.querySelector('[data-slot="sidebar-inset"]')).backgroundColor`)).toBe(background)
+  expect(await guestEval<boolean>(usage, `(() => {
+    const group = document.querySelector('[data-slot="toggle-group"][aria-label="Usage metric"]');
+    return group.getBoundingClientRect().height > 0;
+  })()`)).toBe(true)
+  for (const label of ['Tokens', 'Limits', 'Cost', '7 days', '90 days', 'Past 24h', '30 days']) {
+    expect(await guestEval<boolean>(usage, `(() => {
+      const button = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(label)});
+      button?.click(); return !!button;
+    })()`), label).toBe(true)
+    if (label === 'Limits') {
+      await expect.poll(() => guestEval<boolean>(usage, `!!document.querySelector('button[aria-label="Refresh limits"]')`)).toBe(true)
+    }
+  }
+  expect(await guestEval<boolean>(usage, `(() => {
+    const button = document.querySelector('button[aria-label="Refresh usage"]');
+    button?.click(); return !!button;
+  })()`)).toBe(true)
+  await expect.poll(() => guestEval<number>(usage, 'document.querySelectorAll("[data-slot=skeleton]").length'), { timeout: 30_000 }).toBe(0)
+  expect(await guestEval<boolean>(usage, `(() => {
+    const button = document.querySelector('button[aria-label="Refresh usage"]');
+    return button.getBoundingClientRect().right <= innerWidth;
+  })()`)).toBe(true)
+  expect(await guestEval(usage, `(() => {
+    const toggle = document.querySelector('[data-slot="toggle-group"][aria-label="Usage metric"] [data-slot="toggle"]');
+    const style = getComputedStyle(toggle);
+    return { fontSize: style.fontSize, height: toggle.getBoundingClientRect().height };
+  })()`)).toEqual({ fontSize: '12px', height: 24 })
+  const guestId = await usage.evaluate((element) => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())
+  const capture = await electronApp!.evaluate(async ({ webContents }, id) => (await webContents.fromId(id)!.capturePage()).toPNG().toString('base64'), guestId)
+  writeFileSync('test-results/usage-guest.png', Buffer.from(capture, 'base64'))
+  await page.screenshot({ path: 'test-results/usage-overview.png' })
+  await page.getByRole('button', { name: 'Back to workspace' }).click()
+  await expect(usage).toBeHidden()
+  await expect(agentWebview()).toBeVisible()
+  await page.getByRole('button', { name: 'Usage', exact: true }).click()
+  await expect(usage).toBeVisible()
+  expect(await usage.evaluate((element) => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())).toBe(guestId)
+  await page.getByRole('button', { name: 'New Workspace', exact: true }).click()
+  await expect(usage).toBeHidden()
+  await expect(page.getByText('Infinite canvas for coding', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Usage', exact: true }).click()
+  await expect(usage).toBeVisible()
+  expect(await usage.evaluate((element) => (element as HTMLElement & { getWebContentsId(): number }).getWebContentsId())).toBe(guestId)
+  await page.getByRole('button', { name: 'Back to workspace' }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+})
+
+test('skills page fills the workspace content area and returns through sidebar navigation', async () => {
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  const skills = page.getByRole('region', { name: 'Skills', exact: true })
+  await expect(skills).toBeVisible()
+  await expect(skills.getByRole('heading', { name: 'Skills', exact: true })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Skills', exact: true })).toHaveCount(0)
+  const bounds = await skills.boundingBox()
+  const slot = await page.locator('#skills-content-slot').boundingBox()
+  expect(bounds).toEqual(slot)
+  await expect(page.locator('[data-app-sidebar="left"]')).toBeVisible()
+  await expect(agentWebview()).toBeHidden()
+  const search = skills.getByPlaceholder('Search skills…')
+  await search.focus()
+  expect(await search.evaluate((input) => getComputedStyle(input).outlineStyle)).toBe('none')
+  await page.screenshot({ path: 'test-results/skills-page.png' })
+  await skills.getByRole('button', { name: 'Skill sources & settings' }).click()
+  await expect(skills).toHaveCount(0)
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await page.getByRole('button', { name: 'Back to workspace', exact: true }).click()
+  await expect(skills).toHaveCount(0)
+  await expect(agentWebview()).toBeVisible()
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await page.getByRole('button', { name: 'New Workspace', exact: true }).click()
+  await expect(skills).toHaveCount(0)
+  await expect(page.getByText('Infinite canvas for coding', { exact: true })).toBeVisible()
+})
+
+
+test('pull requests overview shows authored and review groups with search and workspace navigation', async () => {
+  await electronApp!.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('pullRequests:list')
+    ipcMain.handle('pullRequests:list', () => ({ status: 'ready', account: 'alice', truncated: false,
+      items: ['authored', 'review'].map((involvement, index) => ({ id: String(index), number: index + 42,
+        title: index ? 'Add browser navigation shortcuts' : 'Improve workspace startup',
+        url: `https://github.com/example/cate/pull/${index + 42}`, repository: 'example/cate', author: 'alice',
+        updatedAt: '2026-09-08T10:00:00Z', additions: 125, deletions: 18, draft: false, checks: 'SUCCESS', involvement })) }))
+  })
+
+  await page.getByRole('button', { name: 'Pull requests', exact: true }).click()
+  const overview = page.getByRole('region', { name: 'Pull requests', exact: true })
+  await expect(overview.getByText('Improve workspace startup', { exact: true })).toBeVisible()
+  await expect(overview.getByText('Add browser navigation shortcuts', { exact: true })).toBeVisible()
+  await expect(agentWebview()).toBeHidden()
+  const search = overview.getByRole('textbox', { name: 'Search pull requests' })
+  await search.focus()
+  expect(await search.evaluate((input) => {
+    const frame = input.closest('[data-input-frame]')!
+    return { outline: getComputedStyle(input).outlineStyle, border: getComputedStyle(frame).borderColor,
+      expected: (() => { const probe = document.createElement('span'); probe.style.color = 'var(--border-focus)'; document.body.append(probe); const color = getComputedStyle(probe).color; probe.remove(); return color })() }
+  }).then(({ outline, border, expected }) => ({ outline, matches: border === expected }))).toEqual({ outline: 'none', matches: true })
+  await page.screenshot({ path: 'test-results/pull-requests-overview.png' })
+  await overview.getByRole('textbox', { name: 'Search pull requests' }).fill('startup')
+  await expect(overview.getByText('Add browser navigation shortcuts', { exact: true })).toHaveCount(0)
+  await overview.getByRole('textbox', { name: 'Search pull requests' }).fill('')
+  await overview.getByRole('button', { name: 'Filters', exact: true }).click()
+  await page.getByLabel('Filter pull requests').selectOption('review')
+  await page.keyboard.press('Escape')
+  await expect(overview.getByText('Improve workspace startup', { exact: true })).toHaveCount(0)
+  await expect(overview.getByText('Add browser navigation shortcuts', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'New Workspace', exact: true }).click()
+  await expect(overview).toHaveCount(0)
+  await expect(page.getByText('Infinite canvas for coding', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Pull requests', exact: true }).click()
+  await expect(overview.getByText('Add browser navigation shortcuts', { exact: true })).toBeVisible()
 })

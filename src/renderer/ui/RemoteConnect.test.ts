@@ -91,3 +91,17 @@ describe('parseSshTarget', () => {
     expect(parseSshTarget('   ')).toEqual({})
   })
 })
+
+describe('SSH validation regressions', () => {
+  test.each(['0', '65536', '-1', '1.5', 'abc'])('rejects invalid port %s', (port) => {
+    expect(() => buildConnectSpec('server', { ...base, host: 'host', remotePath: '/project', port })).toThrow('Port must')
+  })
+  test('preserves bare IPv6 and parses bracketed IPv6 with a port', () => {
+    expect(parseSshTarget('user@2001:db8::1')).toEqual({ user: 'user', host: '2001:db8::1', port: undefined })
+    expect(parseSshTarget('user@[2001:db8::1]:2222')).toEqual({ user: 'user', host: '2001:db8::1', port: '2222' })
+  })
+  test('does not treat SSH option arguments as destinations', () => {
+    expect(parseSshTarget('ssh -i /private/key user@host')).toEqual({})
+    expect(parseSshTarget('ssh -J jump host')).toEqual({})
+  })
+})

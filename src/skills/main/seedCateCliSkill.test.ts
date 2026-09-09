@@ -1,3 +1,4 @@
+import { memorySkillFiles } from './testSkillFiles'
 // Coverage for seedCateCliSkill: the cliSkillInstallEnabled gate,
 // dir-presence gating for targets, version-hashed seed
 // markers (a changed bundle refreshes an unedited copy; edits are never
@@ -38,45 +39,9 @@ function hashOf(text: string): string {
 let files: Map<string, string>
 let dirs: Set<string>
 
-const norm = (p: string): string => p.replace(/\\/g, '/')
 
 function makeRuntime() {
-  return {
-    file: {
-      readFile: async (p: string) => {
-        const v = files.get(norm(p))
-        if (v === undefined) throw new Error(`ENOENT: ${p}`)
-        return v
-      },
-      writeFile: async (p: string, content: string) => {
-        files.set(norm(p), content)
-      },
-      writeBinary: async (p: string, buf: Buffer) => {
-        files.set(norm(p), buf.toString('utf8'))
-      },
-      mkdir: async (p: string) => {
-        dirs.add(norm(p))
-      },
-      stat: async (p: string) => {
-        if (dirs.has(norm(p))) return { isDirectory: true, isFile: false }
-        if (files.has(norm(p))) return { isDirectory: false, isFile: true }
-        throw new Error(`ENOENT: ${p}`)
-      },
-      // Shallow listing derived from the flat file map (the seeder reads an
-      // install back through this to hash it).
-      readDir: async (p: string) => {
-        const prefix = `${norm(p)}/`
-        const out = new Map<string, { name: string; isDirectory: boolean }>()
-        for (const key of files.keys()) {
-          if (!key.startsWith(prefix)) continue
-          const rest = key.slice(prefix.length)
-          const name = rest.split('/')[0]
-          if (name) out.set(name, { name, isDirectory: rest.includes('/') })
-        }
-        return [...out.values()]
-      },
-    },
-  }
+  return { file: memorySkillFiles(files, dirs) }
 }
 
 function manifest(): { skills: Array<{ skillId: string; targetId: string }>; seeded?: string[] } {

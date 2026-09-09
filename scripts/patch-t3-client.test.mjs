@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { patchT3ClientSource } from './patch-t3-client.mjs'
 
 const directory = new URL('../node_modules/t3/dist/client/assets/', import.meta.url)
-const entry = readdirSync(directory).find((name) => /^index-.*\.js$/.test(name))
+const entry = readdirSync(directory).find((name) => /^ChatView-.*\.js$/.test(name))
 const source = patchT3ClientSource(readFileSync(new URL(entry, directory), 'utf8'))
 
 describe('pinned T3 chat adapter', () => {
@@ -14,8 +14,8 @@ describe('pinned T3 chat adapter', () => {
   })
 
   it.each([null, 'placement'])('waits for placement before creating or sending a plan (%s)', async (placement) => {
-    const start = source.indexOf('jl=(0,X.useCallback)(async()=>') + 'jl=(0,X.useCallback)('.length
-    const end = source.indexOf('},[Rr,ua,tc,Ln,ha,ei,x,S,_t,ba,In,pe,ga,Hn,A,t,We])', start) + 1
+    const start = source.indexOf('cm=(0,X.useCallback)(async()=>') + 'cm=(0,X.useCallback)('.length
+    const end = source.indexOf('},[Y,Zs,xf,q,Ec,so,E,D,Kt,Pc,qr,we,Dc,di,P,t,ft])', start) + 1
     expect(start).toBeGreaterThan(30)
     expect(end).toBeGreaterThan(start)
     const order = []
@@ -25,15 +25,15 @@ describe('pinned T3 chat adapter', () => {
     const send = vi.fn(async () => { order.push('send'); return success })
     const navigate = vi.fn()
     const context = {
-      window: { __cateHost: { request } }, Ln: { id: 'original', environmentId: 'env', worktreePath: '/worktree' },
-      Rr: { id: 'project' }, ua: { id: 'plan', planMarkdown: 'Build this' }, In: true,
-      ba: false, _t: false, ei: false, fn: { current: false },
-      We: { current: { getSendContext: () => ({ providerAvailable: true, selectedModelSelection: { model: 'test' } }), validateProviderInput: () => true } },
-      fr: () => 'new-thread', Wl: () => 'message', x9: ({ text }) => text,
-      Ykt: (plan) => `Implement: ${plan}`, Zkt: () => 'Implement plan', Ekt: (title) => title,
-      ha: vi.fn(), ga: vi.fn(), x: create, A: send, t: 'env', Hn: 'supervised', tc: 'branch',
-      zu: async (fn) => { await fn(); return success }, IMt: vi.fn(), ki: (...args) => args,
-      pe: navigate, S: vi.fn(), Ws: () => false,
+      window: { __cateHost: { request } }, q: { id: 'original', environmentId: 'env', worktreePath: '/worktree' },
+      Y: { id: 'project' }, Zs: { id: 'plan', planMarkdown: 'Build this' }, qr: true,
+      Pc: false, Kt: false, so: false, or: { current: false },
+      ft: { current: { getSendContext: () => ({ providerAvailable: true, interactionModeEnabled: true, selectedModelSelection: { model: 'test' } }), validateProviderInput: () => true } },
+      ke: () => 'new-thread', at: () => 'message', sT: ({ text }) => text,
+      xp: (plan) => `Implement: ${plan}`, Cp: () => 'Implement plan', ip: (title) => title,
+      Ec: vi.fn(), Dc: vi.fn(), E: create, P: send, t: 'env', di: 'supervised', xf: 'branch',
+      Kn: async (fn) => { await fn(); return success }, ig: vi.fn(), Nt: (...args) => args,
+      we: navigate, D: vi.fn(), Jn: () => false,
     }
     await runInNewContext(`(${source.slice(start, end)})()`, context)
     expect(order).toEqual(placement ? ['place-agent', 'create', 'send', 'open-agent'] : ['place-agent'])
@@ -42,6 +42,6 @@ describe('pinned T3 chat adapter', () => {
       expect(send.mock.calls[0][0].input).toMatchObject({ threadId: 'new-thread', message: { text: 'Implement: Build this' }, sourceProposedPlan: { threadId: 'original', planId: 'plan' } })
       expect(request).toHaveBeenLastCalledWith('open-agent', { placementId: 'placement', threadId: 'new-thread', title: 'Implement plan' })
     }
-    expect(context.fn.current).toBe(false)
+    expect(context.or.current).toBe(false)
   })
 })

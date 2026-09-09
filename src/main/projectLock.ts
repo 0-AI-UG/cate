@@ -1,78 +1,100 @@
 import fs from 'fs'
 import path from 'path'
+import { createHash, randomUUID } from 'node:crypto'
+import { writeJsonExclusiveSync } from '../shared/atomicFile'
 import log from './logger'
 
-// ---------------------------------------------------------------------------
-// Per-project lock for .cate/workspace.json
-//
-// The single-instance lock (index.ts) is keyed on Electron's userData dir, but
-// a dev build and an installed build deliberately use *different* userData dirs
-// (the `app.isPackaged` split), so they each win their own single-instance lock
-// and can run side by side. When both open the *same project*, both autosave
-// .cate/workspace.json (~30s) and each reads the other's write as an external
-// edit — the spurious "Reload workspace?" loop.
-//
-// So we drop a .cate/workspace.lock holding the owning pid when a project opens
-// here. A second Cate that finds a *live* owner won't autosave that project.
-// The pid lets us recover from a crash: a leftover lock whose pid is gone is
-// reclaimed instead of bricking the project read-only. Advisory only — if the
-// file can't be written we fail open and behave as the owner.
-// ---------------------------------------------------------------------------
-
-const heldRoots = new Set<string>()
-
-function lockPath(rootPath: string): string {
-  return path.join(rootPath, '.cate', 'workspace.lock')
-}
+// Per-project leases prevent independent Cate userData instances from writing
+// the same session. Publish a complete immutable owner record exclusively;
+// neither a cached claim nor an I/O failure grants permission to write.
+interface Lease { pid: number; token?: string }
+interface LeaseSnapshot { owner: Lease; identity: string }
+const heldRoots = new Map<string, string>()
+const lockPath = (root: string): string => path.join(root, '.cate', 'workspace.lock')
 
 function isProcessAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false
-  try {
-    process.kill(pid, 0) // signal 0 = existence check, sends nothing
-    return true
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM' // exists, not ours to signal
-  }
+  try { process.kill(pid, 0); return true }
+  catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH' }
 }
 
-function ownerPid(file: string): number | null {
+function readLease(file: string): LeaseSnapshot | null {
+  let fd: number
+  try { fd = fs.openSync(file, 'r') }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error }
   try {
-    const pid = JSON.parse(fs.readFileSync(file, 'utf-8'))?.pid
-    return typeof pid === 'number' ? pid : null
-  } catch {
-    return null // missing or corrupt
-  }
+    const stat = fs.fstatSync(fd)
+    const raw = fs.readFileSync(fd, 'utf8')
+    const owner = JSON.parse(raw) as Lease
+    if (!Number.isInteger(owner?.pid) || owner.pid <= 0) throw new Error(`Invalid project lease: ${file}`)
+    return { owner, identity: `${stat.dev}:${stat.ino}:${raw}` }
+  } finally { fs.closeSync(fd) }
 }
 
-/** Take this project's lock. Returns false only if a live instance holds it. */
+function releaseLease(file: string, token: string): void {
+  try {
+    const current = readLease(file)?.owner
+    if (current?.pid === process.pid && current.token === token) fs.unlinkSync(file)
+  } catch { /* fail closed; a later acquire can recover a dead owner */ }
+}
+
+function claimLease(file: string, depth = 0): string | null {
+  // Repeated deaths while reclaiming a dead reaper can create a short chain.
+  // Bound exceptional recovery work; never time out or steal a live lease.
+  if (depth > 16) return null
+  const token = randomUUID()
+  if (writeJsonExclusiveSync(file, { pid: process.pid, token })) return token
+  const previous = readLease(file)
+  if (!previous) return claimLease(file, depth + 1)
+  if (isProcessAlive(previous.owner.pid)) return null
+
+  // All contenders for this exact stale inode use the same exclusive claim.
+  // A crashed reaper is itself a dead lease, recovered by the same protocol.
+  // Rechecking under that claim prevents a delayed contender removing a newer
+  // lease after another contender already reclaimed the old one.
+  const key = createHash('sha256').update(`${file}\0${previous.identity}`).digest('hex')
+  const guard = path.join(path.dirname(file), `.workspace-lock-reap-${key}`)
+  const guardToken = claimLease(guard, depth + 1)
+  if (!guardToken) return null
+  try {
+    if (readLease(file)?.identity !== previous.identity) return null
+    fs.unlinkSync(file)
+    return writeJsonExclusiveSync(file, { pid: process.pid, token }) ? token : null
+  } finally { releaseLease(guard, guardToken) }
+}
+
 export function acquireProjectLock(rootPath: string): boolean {
-  const file = lockPath(rootPath)
-  const pid = ownerPid(file)
-  if (pid !== null && pid !== process.pid && isProcessAlive(pid)) return false
+  const root = path.resolve(rootPath)
+  if (holdsProjectLock(root)) return true
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(file, JSON.stringify({ pid: process.pid }))
-  } catch (err) {
-    log.warn('projectLock: could not write lock for %s, proceeding unlocked: %O', rootPath, err)
+    const token = claimLease(lockPath(root))
+    if (!token) return false
+    heldRoots.set(root, token)
+    return true
+  } catch (error) {
+    log.warn('projectLock: cannot establish ownership for %s: %O', root, error)
+    return false
   }
-  heldRoots.add(rootPath)
-  return true
 }
 
 export function holdsProjectLock(rootPath: string): boolean {
-  return heldRoots.has(rootPath)
+  const root = path.resolve(rootPath)
+  const token = heldRoots.get(root)
+  if (!token) return false
+  try {
+    const current = readLease(lockPath(root))?.owner
+    if (current?.pid === process.pid && current.token === token) return true
+  } catch { /* unreadable ownership is not authority */ }
+  heldRoots.delete(root)
+  return false
 }
 
-/** Release one project's lock, but only if the file on disk is still ours. */
 export function releaseProjectLock(rootPath: string): void {
-  if (!heldRoots.delete(rootPath)) return
-  const file = lockPath(rootPath)
-  if (ownerPid(file) === process.pid) {
-    try { fs.unlinkSync(file) } catch { /* best effort */ }
-  }
+  const root = path.resolve(rootPath)
+  const token = heldRoots.get(root)
+  heldRoots.delete(root)
+  if (token) releaseLease(lockPath(root), token)
 }
 
-/** Release every lock this process holds. Called on quit. */
 export function releaseAllProjectLocks(): void {
-  for (const root of [...heldRoots]) releaseProjectLock(root)
+  for (const root of [...heldRoots.keys()]) releaseProjectLock(root)
 }

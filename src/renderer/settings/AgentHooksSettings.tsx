@@ -10,7 +10,7 @@
 // The live state readout is inspected from the workspace's files on open.
 // =============================================================================
 
-import { Warning } from '@phosphor-icons/react'
+import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { useEffect, useState } from 'react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useSelectedWorkspace } from '../stores/appStore'
@@ -25,14 +25,15 @@ import {
 } from '../lib/agent/agentCliHooks'
 
 const MODE_OPTIONS = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'on', label: 'On' },
-  { value: 'off', label: 'Off' },
+  { value: 'auto', label: 'Auto', description: 'Enable when the agent is configured in this workspace' },
+  { value: 'on', label: 'On', description: 'Install hooks for new terminals' },
+  { value: 'off', label: 'Off', description: 'Disable hooks for new terminals' },
 ] as const
 
 export function AgentHooksSettings() {
   const store = useSettingsStore()
   const workspace = useSelectedWorkspace()
+  const [error, setError] = useState(false)
   const [agents, setAgents] = useState<AgentCliHookState[] | null>(null)
 
   const locator = workspace?.rootPath
@@ -43,12 +44,13 @@ export function AgentHooksSettings() {
     }
     let live = true
     setAgents(null)
+    setError(false)
     void inspectAgentCliHooks(locator)
       .then((r) => {
         if (live) setAgents(r)
       })
       .catch(() => {
-        if (live) setAgents([])
+        if (live) { setAgents([]); setError(true) }
       })
     return () => {
       live = false
@@ -72,38 +74,38 @@ export function AgentHooksSettings() {
   }
 
   return (
-    <div className="flex flex-col gap-1">
-      <SearchableBlock keywords="agent hooks injection claude codex cursor grok kiro opencode status presence auto on off">
-        <p className="text-xs text-muted py-2 leading-relaxed">
-          Cate writes tiny git-ignored hook files so agent CLIs report session and turn status
-          back to it. <span className="text-secondary">Auto</span> injects only where an agent&apos;s
-          config folder already exists. Changes apply to terminals opened after saving. Approval
-          prompts from CLIs without a dedicated permission event remain visible in the terminal.
-        </p>
-      </SearchableBlock>
-
+    <SearchableBlock keywords="agent hooks injection claude codex cursor grok kiro opencode status presence auto on off">
+      <p className="mb-4 text-xs leading-relaxed text-muted">
+        Show agent activity and session status in Cate. These preferences apply to this workspace.
+      </p>
       {agents === null && <LoadingState label="Loading agent hooks…" size={14} className="justify-start py-3 text-xs" />}
-
-      <div className="flex flex-col">
-        {(agents ?? []).map((a) => {
+      {error && <p role="alert" className="py-3 text-xs text-muted">Could not check agent hooks. Reopen settings to try again.</p>}
+      {!!agents?.length && <div className="overflow-hidden rounded-xl border border-subtle">
+        {agents.map((a) => {
           const evaluation = evaluateAgentCliHooks(a, overrides)
           const mode: AgentHookMode = evaluation.mode
+          const logo = getAgentLogoById(a.agent.id)
+          const status = mode === 'off' ? 'Off for new terminals'
+            : evaluation.autoSkipped ? 'Not configured in this workspace'
+            : a.injected ? 'Hooks installed' : 'Will install when a terminal opens'
           return (
             <div
               key={a.agent.id}
               data-agent-hook-id={a.agent.id}
-              className="flex items-center gap-3 py-2.5 border-b border-subtle"
+              className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle px-4 py-3 last:border-b-0"
             >
-              <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-sm text-primary truncate">{a.agent.displayName}</span>
-                {evaluation.autoSkipped && (
-                  <span className="flex items-center gap-1 text-[11px] text-amber-400 mt-1">
-                    <Warning size={12} weight="fill" className="shrink-0" />
-                    Hooks aren&apos;t installed. Auto waits for this agent&apos;s config folder; choose On to install them.
+              <div className="flex min-w-[180px] flex-1 items-center gap-3">
+                {logo && <img src={logo} alt="" draggable={false} className="h-5 w-5 shrink-0 object-contain" />}
+                <div className="min-w-0">
+                  <span className="block truncate text-[13px] font-medium text-primary">{a.agent.displayName}</span>
+                  <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
+                    {mode !== 'off' && a.injected && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: 'var(--git-added)' }} />}
+                    {status}
                   </span>
-                )}
+                </div>
               </div>
               <Segmented
+                label={`${a.agent.displayName} hooks`}
                 value={mode}
                 options={MODE_OPTIONS}
                 onChange={(v) => setMode(a.agent.id, v as AgentHookMode)}
@@ -111,8 +113,19 @@ export function AgentHooksSettings() {
             </div>
           )
         })}
-      </div>
-    </div>
+      </div>}
+      <p className="mt-3 text-[11px] leading-relaxed text-muted">
+        Auto enables hooks where an agent is already configured. Choose On to install them explicitly.
+        Changes take effect in new terminals.
+      </p>
+      <details className="mt-2 text-[11px] text-muted">
+        <summary className="w-fit cursor-pointer rounded hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-blue">How hooks work</summary>
+        <p className="mt-2 max-w-prose leading-relaxed">
+          Cate adds git-ignored hook files to the workspace so agent CLIs can report their activity.
+          Approval prompts remain in the terminal for CLIs without a dedicated permission event.
+        </p>
+      </details>
+    </SearchableBlock>
   )
 }
 
@@ -121,22 +134,26 @@ export function AgentHooksSettings() {
 // -----------------------------------------------------------------------------
 
 interface SegmentedProps {
+  label: string
   value: string
-  options: ReadonlyArray<{ value: string; label: string }>
+  options: ReadonlyArray<{ value: string; label: string; description: string }>
   onChange: (value: string) => void
 }
 
-function Segmented({ value, options, onChange }: SegmentedProps) {
+function Segmented({ label, value, options, onChange }: SegmentedProps) {
   return (
-    <div className="inline-flex flex-shrink-0 rounded-md bg-surface-5 border border-subtle p-0.5">
+    <div role="group" aria-label={label} className="inline-flex shrink-0 rounded-lg border border-subtle bg-surface-1 p-0.5">
       {options.map((opt) => {
         const active = opt.value === value
         return (
           <button
             key={opt.value}
+            type="button"
+            aria-pressed={active}
+            title={opt.description}
             onClick={() => onChange(opt.value)}
-            className={`px-2.5 py-1 text-xs rounded transition-colors ${
-              active ? 'bg-focus-blue text-white' : 'text-secondary hover:text-primary'
+            className={`min-w-10 rounded-md px-2.5 py-1 text-[11px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-blue ${
+              active ? 'bg-surface-4 font-medium text-primary shadow-sm' : 'text-muted hover:bg-hover hover:text-primary'
             }`}
           >
             {opt.label}

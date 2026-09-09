@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useShallow } from 'zustand/shallow'
-import { CaretRight, Terminal as TerminalIcon, Folder, FolderPlus, SquaresFour, DotsThree, type Icon as PhosphorIcon } from '@phosphor-icons/react'
+import { ChevronRight as CaretRight, Terminal as TerminalIcon, Folder, FolderOpen, FolderPlus, Grid2X2 as SquaresFour, Ellipsis as DotsThree, type LucideIcon } from 'lucide-react'
 import { browserPanelUrl, type WorkspaceState, type PanelType, type PanelState, type WindowPanelInfo } from '../../shared/types'
 import { useStatusStore } from '../stores/statusStore'
 import { useAppStore, WORKSPACE_COLORS } from '../stores/appStore'
@@ -211,9 +211,9 @@ const PanelRenameInput: React.FC<{ rename: PanelRenameProps }> = ({ rename }) =>
 export const TerminalPanelRow = WorkspacePanelRow
 export type TerminalPanelRowProps = WorkspacePanelRowProps
 
-const PANEL_ICONS: Record<PanelType, PhosphorIcon> = Object.fromEntries(
+const PANEL_ICONS: Record<PanelType, LucideIcon> = Object.fromEntries(
   (Object.keys(PANEL_REGISTRY) as PanelType[]).map((t) => [t, PANEL_REGISTRY[t].icon]),
-) as Record<PanelType, PhosphorIcon>
+) as Record<PanelType, LucideIcon>
 
 interface WorkspaceTabProps {
   workspace: WorkspaceState
@@ -532,7 +532,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         } ${isSelected ? 'bg-surface-6' : ''}`}
         onClick={handlePickFolder}
         onContextMenu={handleContextMenu}
-        title={workspace.rootPathError || 'Click to choose a project folder'}
+        title={workspace.rootPathError || 'Choose project folder'}
       >
         <FolderPlus size={14} className="flex-shrink-0 opacity-60" />
         <span className="flex-1 min-w-0 inline-flex items-center gap-1.5 text-[14px] truncate italic">
@@ -790,11 +790,11 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         </button>
 
         {/* Folder icon (tinted by accent if set) */}
-        <Folder
-          size={14}
-          className="flex-shrink-0 opacity-90"
-          style={hasColor ? { color: accent } : undefined}
-        />
+        {React.createElement(isExpanded ? FolderOpen : Folder, {
+          size: 14,
+          className: 'flex-shrink-0 opacity-90',
+          style: hasColor ? { color: accent } : undefined,
+        })}
 
         {/* Name (or inline rename input) */}
         {isRenaming ? (
@@ -809,7 +809,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         ) : (
           <span
             className={`flex-1 min-w-0 text-[14px] truncate ${isSelected ? 'cursor-text' : ''}`}
-            title={isSelected ? 'Click to rename' : workspace.rootPath}
+            title={isSelected ? 'Rename workspace' : workspace.rootPath}
             onClick={handleTitleClick}
             onDoubleClick={(e) => { e.stopPropagation(); beginRename() }}
           >

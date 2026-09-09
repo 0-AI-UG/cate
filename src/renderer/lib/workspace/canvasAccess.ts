@@ -49,11 +49,13 @@ export function ensureCanvasOpsForPanel(canvasPanelId: string): CanvasOperations
  *  node) should act on. Derived from the canonical activePanelId: if the active
  *  panel IS a live canvas (it has registered ops), that's it; otherwise (a
  *  docked/non-canvas panel is active, or nothing yet) fall back to the active
- *  workspace's primary canvas. The ops registry — not appStore — is the source
- *  of truth for "is this id a canvas", so this needs no panel-type lookup. */
+ *  workspace's primary canvas. A retained focus id from another workspace
+ *  must never route actions away from an empty current workspace. */
 export function getActiveCanvasPanelId(): string | null {
   const activeId = getActivePanelId()
-  if (activeId && peekCanvasStoreForPanel(activeId)) return activeId
+  const state = useAppStore.getState()
+  const workspace = state.getWorkspace(state.selectedWorkspaceId)
+  if (activeId && workspace?.panels[activeId]?.type === 'canvas' && peekCanvasStoreForPanel(activeId)) return activeId
   return getWorkspaceCanvasPanelId(useAppStore.getState().selectedWorkspaceId)
 }
 
@@ -70,7 +72,7 @@ export function getActiveCanvasOps(): CanvasOperations | null {
  * happens to be active. This is the canonical non-interactive placement probe
  * for panel-to-panel actions in canvas and detached dock surfaces. */
 export function placementForPanel(workspaceId: string, panelId: string): PanelPlacement | undefined {
-  if (peekCanvasStoreForPanel(panelId)) {
+  if (useAppStore.getState().getWorkspace(workspaceId)?.panels[panelId]?.type === 'canvas' && peekCanvasStoreForPanel(panelId)) {
     return { target: 'canvas', canvasPanelId: panelId }
   }
   const location = resolvePanelLocation(workspaceId, panelId)
@@ -86,12 +88,16 @@ export function placementForPanel(workspaceId: string, panelId: string): PanelPl
 /** Placement for a keyboard-created panel (Cmd+T / Cmd+N / …) based on the
  *  canonical active panel. A docked active panel → tab into its exact stack (so
  *  a split lands in the focused pane, not the zone's first stack). A canvas
- *  active panel → pinned to THAT canvas; none → undefined, the default
- *  (primary) canvas placement. */
+ *  active panel → pinned to THAT canvas. An empty dock receives a direct
+ *  center-dock placement; otherwise the default canvas fallback applies. */
 export function placementForActivePanel(): PanelPlacement | undefined {
   const activeId = getActivePanelId()
-  if (!activeId) return undefined
-  return placementForPanel(useAppStore.getState().selectedWorkspaceId, activeId)
+  const state = useAppStore.getState()
+  const workspace = state.getWorkspace(state.selectedWorkspaceId)
+  const placement = activeId && workspace?.panels[activeId] ? placementForPanel(workspace.id, activeId) : undefined
+  if (placement) return placement
+  if (workspace && !getFirstDockedCanvasPanelId(workspace.id)) return { target: 'dock', zone: 'center' }
+  return undefined
 }
 
 /** Placement for host-API creates (CLI). API callers may add
@@ -123,6 +129,22 @@ export function placementForBackgroundPanel(
     ...(placementGroupId ? { placementGroupId } : {}),
     ...(canvasPanelId ? { canvasPanelId } : {}),
   }
+}
+
+/** First canvas actually hosted by this window's dock, independent of focus.
+ * Center comes first, then left/right/bottom in ALL_ZONES order. No record-only
+ * fallback: an overlay must never offer placement on an invisible orphan. */
+export function getFirstDockedCanvasPanelId(workspaceId: string): string | null {
+  const ws = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
+  const snapshot = getWorkspaceDockSnapshot(workspaceId)
+  if (!ws || !snapshot) return null
+  const zones = ['center' as const, ...ALL_ZONES.filter((zone) => zone !== 'center')]
+  for (const zone of zones) {
+    for (const id of collectPanelIds(snapshot.zones[zone].layout)) {
+      if (ws.panels[id]?.type === 'canvas') return id
+    }
+  }
+  return null
 }
 
 function computeWorkspaceCanvasPanelId(workspaceId: string): string | null {

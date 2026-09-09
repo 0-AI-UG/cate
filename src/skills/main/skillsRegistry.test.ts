@@ -8,11 +8,11 @@ const logger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }))
 vi.mock('./githubCrawl', () => crawl)
 vi.mock('./skillSources', () => ({
   listSources: () => sourceState.sources,
-  getToken: () => sourceState.token,
 }))
+vi.mock('../../main/github/cli', () => ({ getGithubToken: async () => sourceState.token }))
 vi.mock('../../main/logger', () => ({ default: logger }))
 
-import { getMergedIndex, refresh } from './skillsRegistry'
+import { getMergedIndex, getPreview, refresh } from './skillsRegistry'
 
 function skill(id: string, repo: string, path: string, provenance: 'curated' | 'user'): SkillEntry {
   return {
@@ -94,4 +94,24 @@ describe('skillsRegistry cache and merge behavior', () => {
       expect.any(Error),
     )
   })
+})
+
+it('refreshes user sources on sign-in, account switch, and sign-out', async () => {
+  vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ skills: [] }) } as Response)
+  for (const token of [undefined, 'first-account', 'second-account', undefined]) {
+    sourceState.token = token
+    await getMergedIndex()
+    expect(crawl.listSkillsInRepo).toHaveBeenLastCalledWith(sourceState.sources[0], token)
+  }
+  expect(crawl.listSkillsInRepo).toHaveBeenCalledTimes(4)
+  expect(fetch).toHaveBeenCalledTimes(1)
+})
+
+it('uses current GitHub credentials for previews, including signed-out access', async () => {
+  const entry = skill('demo', 'owner/repo', 'skills/demo', 'user')
+  for (const token of ['account-token', undefined]) {
+    sourceState.token = token
+    await getPreview(entry)
+    expect(crawl.rawText).toHaveBeenLastCalledWith('owner/repo', 'main', 'skills/demo/SKILL.md', token)
+  }
 })

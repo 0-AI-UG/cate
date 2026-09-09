@@ -1,10 +1,13 @@
+import { useShortcutLabel } from '../stores/shortcutStore'
+import { captureEditorPanel } from '../lib/editor/editorDocuments'
+import { panelSearchStore } from '../stores/panelSearchStores'
 // =============================================================================
 // EditorPanel — Monaco Editor wrapper for CanvasIDE editor panels.
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Check, Copy, FolderOpen } from '@phosphor-icons/react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, Search } from 'lucide-react'
 import { perfCount, useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
@@ -12,6 +15,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { EditorPanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
+import { useWorktrees } from '../stores/useWorktrees'
+import { WorktreeSelector } from '../ui/WorktreeSelector'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
@@ -24,7 +29,7 @@ import {
 } from '../lib/editor/editorSaveRegistry'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
 import type { Theme } from '../../shared/types'
-import { takePendingReveal } from '../lib/editor/editorReveal'
+import { setPendingReveal, type EditorReveal, takePendingReveal } from '../lib/editor/editorReveal'
 import {
   getCachedModel,
   rememberModel,
@@ -38,11 +43,19 @@ import { useFileSync } from '../lib/editor/useFileSync'
 import EditorConflictBanner from './EditorConflictBanner'
 import { Tooltip } from '../ui/Tooltip'
 import { isRuntimeLocator } from '../../shared/runtimeLocator'
-import { useUIStore } from '../stores/uiStore'
 import { LoadingState } from '../ui/Spinner'
 import { PanelCenteredState } from '../ui/PanelCenteredState'
-import { worktreeForPanel } from '../lib/worktreeContext'
-import { toRelativePath } from '../../shared/pathUtils'
+import { worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
+import { toAbsolutePath, toRelativePath } from '../../shared/pathUtils'
+import { FileExplorer } from '../sidebar/FileExplorer'
+import { getDocumentType, openFileAsPanel } from '../lib/fs/fileRouting'
+import { NodePopover, useNodePopover } from '../ui/Popover'
+import { pathDisplayName } from '../lib/fs/displayPath'
+import { ExplorerSidebar } from './ExplorerSidebar'
+import { SearchView } from '../sidebar/SearchView'
+import { useActivePanelStore } from '../lib/activePanel'
+import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
+import { placementForPanel } from '../lib/workspace/canvasAccess'
 
 // -----------------------------------------------------------------------------
 // Editor font
@@ -236,6 +249,7 @@ export default function EditorPanel({
   nodeId,
 }: EditorPanelProps) {
   useRenderCount('EditorPanel')
+  const shortcutLabel = useShortcutLabel()
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const diffOverlayRef = useRef<HTMLDivElement>(null)
@@ -243,16 +257,84 @@ export default function EditorPanel({
   const [markdownContent, setMarkdownContent] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [fileLoading, setFileLoading] = useState(!!filePath)
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  const [toolbarScroll, setToolbarScroll] = useState({ left: false, right: false })
+  const [editorBackground, setEditorBackground] = useState(() => getActiveTheme().editor.colors?.['editor.background'] ?? 'var(--surface-1)')
+  const openButtonRef = useRef<HTMLButtonElement>(null)
+  const [openApps, setOpenApps] = useState<Array<{ id: string; name: string; icon: string }>>([])
+  useEffect(() => { void window.electronAPI.shellListApps().then(setOpenApps).catch(() => setOpenApps([])) }, [])
+  const openMenu = useNodePopover(openButtonRef, (rect) => ({ left: Math.max(8, Math.min(rect.right - 224, window.innerWidth - 232)), gap: 6, height: 150 }))
 
   const workspaces = useAppStore((s) => s.workspaces)
   const ws = workspaces.find((w) => w.id === workspaceId)
   const panel = ws?.panels[panelId]
+  const worktrees = useWorktrees(ws?.rootPath ?? '', workspaceId)
+  const currentWorktree = worktreeForPanel(panel, worktrees)
+  const explorerRoot = currentWorktree?.path ?? worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath ?? ''
+  const explorerVisible = panel?.sidebarVisible !== false
+  const setExplorerVisible = (visible: boolean) => useAppStore.getState().setPanelNavigation(workspaceId, panelId, panel?.sidebarView === 'search' ? 'search' : 'explorer', visible)
+
+  const activePanelId = useActivePanelStore((s) => s.activePanelId)
+  const searchVisible = panel?.sidebarView === 'search'
+  const searchStore = panelSearchStore(panelId, explorerRoot)
+  useEffect(() => {
+    const toolbar = toolbarRef.current
+    if (!toolbar) return
+    const update = () => setToolbarScroll({
+      left: toolbar.scrollLeft > 1,
+      right: toolbar.scrollLeft + toolbar.clientWidth < toolbar.scrollWidth - 1,
+    })
+    update()
+    toolbar.addEventListener('scroll', update, { passive: true })
+    const observer = new ResizeObserver(update)
+    observer.observe(toolbar)
+    return () => {
+      toolbar.removeEventListener('scroll', update)
+      observer.disconnect()
+    }
+  }, [filePath, explorerVisible, searchVisible])
+  const setNavigationView = (view: 'explorer' | 'search') => {
+    useAppStore.getState().setPanelNavigation(workspaceId, panelId, view)
+  }
+
+
+  const showPathMenu = useCallback(async () => {
+    if (!filePath) return
+    const id = await window.electronAPI.showContextMenu([
+      { id: 'absolute', label: 'Copy Absolute Path' },
+      { id: 'project', label: 'Copy Path Relative to Project' },
+      { id: 'repo', label: 'Copy Path Relative to Repository' },
+    ])
+    const repoRoot = explorerRoot
+    const value = id === 'absolute'
+      ? filePath
+      : id === 'project'
+        ? toRelativePath(filePath, ws?.rootPath ?? '')
+        : id === 'repo'
+          ? toRelativePath(filePath, repoRoot)
+          : null
+    if (value) void navigator.clipboard.writeText(value)
+  }, [filePath, explorerRoot, ws])
+
+  const runOpenAction = useCallback(async (id: string) => {
+    if (!filePath) return
+    if (id === 'folder') {
+      await window.electronAPI.shellShowInFolder(filePath, workspaceId)
+    } else if (id === 'default') {
+      const result = await window.electronAPI.shellOpenPath(filePath, workspaceId)
+      if (!result.ok) window.alert(result.error ?? 'Could not open this file in another app.')
+    } else if (id === 'github') {
+      const result = await window.electronAPI.shellOpenFileOnGitHub(filePath, workspaceId)
+      if (!result.ok) window.alert('This file is not in a local GitHub repository with an origin remote.')
+    }
+  }, [filePath, workspaceId])
   // Preview mode is kept per-panel in the store rather than as local state: a
   // single EditorPanel mount is reused across dock tabs (renderPanelComponent
   // creates the element without a key), so local state would leak the toggle
   // from one markdown file to the next. Keying it by panelId also keeps each
   // tab's choice independent across canvas switches.
-  const markdownPreview = !!ws?.panels[panelId]?.markdownPreview
+  const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
+  const markdownPreview = isMarkdown && (panel?.markdownPreview ?? true)
   const setMarkdownPreview = useCallback(
     (next: boolean) =>
       useAppStore.getState().setPanelMarkdownPreview(workspaceId, panelId, next),
@@ -280,10 +362,7 @@ export default function EditorPanel({
   }, [isFocused, markdownPreview])
   // File-backed panels operate on their own checkout. This controls Git diff
   // cwd, file-watch scope, and the default folder for saving an untitled file.
-  const checkoutRoot = worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath
-  const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
-  const isDirty = !!ws?.panels[panelId]?.isDirty
-  const openFilePalette = useUIStore((s) => s.openFilePalette)
+  const checkoutRoot = explorerRoot
 
   const markdownPreviewRef = useRef(markdownPreview)
   markdownPreviewRef.current = markdownPreview
@@ -321,12 +400,71 @@ export default function EditorPanel({
     dismiss,
   } = sync
 
+  const switchingFile = useRef(false)
+  const openExplorerFiles = useCallback(async (paths: string[], mode?: 'dock' | 'canvas', reveal?: EditorReveal) => {
+    if (mode === 'canvas') {
+      const placement = placementForPanel(workspaceId, panelId)
+      for (const path of paths) openFileAsPanel(workspaceId, path, undefined, placement?.target === 'canvas' ? placement : undefined)
+      return
+    }
+    if (switchingFile.current) return
+    const nextPath = paths.find((path) => !getDocumentType(path))
+    switchingFile.current = true
+    try {
+      const store = useAppStore.getState()
+      if (nextPath && nextPath !== filePath) {
+        const current = store.getWorkspace(workspaceId)?.panels[panelId]
+        if (!await confirmCloseDirtyPanels([current], () => sync.discard())) return
+        store.setPanelUnsavedContent(workspaceId, panelId, undefined)
+        store.setPanelMarkdownPreview(workspaceId, panelId, !reveal && /\.mdx?$/i.test(nextPath))
+        if (reveal) setPendingReveal(panelId, reveal)
+        store.updatePanelFilePath(workspaceId, panelId, nextPath)
+        store.updatePanelTitle(workspaceId, panelId, pathDisplayName(nextPath))
+      } else if (nextPath && reveal) {
+        store.setPanelMarkdownPreview(workspaceId, panelId, false)
+        editorRef.current?.revealLineInCenter(reveal.line)
+        editorRef.current?.setPosition({ lineNumber: reveal.line, column: reveal.column ?? 1 })
+        editorRef.current?.focus()
+      }
+      const placement = placementForPanel(workspaceId, panelId)
+      let reused = false
+      for (const path of paths) {
+        if (!reused && path === nextPath) { reused = true; continue }
+        openFileAsPanel(workspaceId, path, undefined, placement)
+      }
+    } catch (error) {
+      window.alert(`Could not switch files: ${String(error)}`)
+    } finally {
+      switchingFile.current = false
+    }
+  }, [workspaceId, panelId, filePath, sync.discard])
+
+  const switchWorktree = async (worktreeId: string) => {
+    const target = worktrees.find((worktree) => worktree.id === worktreeId && !worktree.isOrphan)
+    if (!target || target.id === currentWorktree?.id || switchingFile.current) return
+    if (filePath) {
+      const sourceRoot = worktreeForPath(filePath, worktrees)?.path ?? explorerRoot
+      const relativePath = toRelativePath(filePath, sourceRoot)
+      if (relativePath === filePath) {
+        window.alert('This file is outside the current worktree. Open a file from this project before switching worktrees.')
+        return
+      }
+      const nextPath = toAbsolutePath(relativePath, target.path)
+      await openExplorerFiles([nextPath])
+      // A cancelled dirty-file prompt must leave both the file and checkout unchanged.
+      if (useAppStore.getState().getWorkspace(workspaceId)?.panels[panelId]?.filePath !== nextPath) return
+    }
+    useAppStore.getState().setPanelWorktreeId(workspaceId, panelId, target.id)
+  }
+
   // ---------------------------------------------------------------------------
   // Mount: create the editor
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
     if (!containerRef.current) return
+    setLoadError(null)
+    setMarkdownContent('')
 
     applyMonacoTheme(getActiveTheme())
     monaco.editor.setTheme(CATE_MONACO_THEME)
@@ -335,13 +473,18 @@ export default function EditorPanel({
 
     perfCount('editorCreate')
     const editor = monaco.editor.create(containerRef.current, {
+      model: null,
       theme: CATE_MONACO_THEME,
       fontFamily,
       fontSize: fontSize || 12,
       minimap: { enabled: false },
       automaticLayout: false,
       scrollBeyondLastLine: false,
-      scrollbar: { useShadows: false },
+      scrollbar: { useShadows: false, verticalScrollbarSize: 8.45, horizontalScrollbarSize: 8.45, verticalSliderSize: 8.45, horizontalSliderSize: 8.45 },
+      lineNumbersMinChars: 3,
+      lineDecorationsWidth: 6,
+      glyphMargin: false,
+      overviewRulerLanes: 0,
       overviewRulerBorder: false,
       padding: { top: 8, bottom: 8 },
       lineNumbers: 'on',
@@ -392,10 +535,19 @@ export default function EditorPanel({
           rememberModel(filePath, byUri)
         }
       }
+      if (!cached || cached.isDisposed()) {
+        const current = useAppStore.getState().workspaces.find(w => w.id === workspaceId)?.panels[panelId]
+        const recovered = current ? captureEditorPanel(current) : undefined
+        if (recovered?.unsavedContent !== undefined) {
+          cached = monaco.editor.createModel(recovered.unsavedContent, detectLanguage(filePath), fileUri)
+          rememberModel(filePath, cached)
+        }
+      }
       if (cached && !cached.isDisposed()) {
         retainModel(filePath)
         modelRetained = true
         editor.setModel(cached)
+        if (markdownPreviewRef.current) setMarkdownContent(cached.getValue())
         setFileLoading(false)
         applyPendingReveal()
         // The warm model may be stale: nothing kept it current while this panel
@@ -418,17 +570,20 @@ export default function EditorPanel({
             // monaco.editor.getModel(uri) reuse on later opens. When two panels
             // open the same uncached file concurrently the URI is already taken,
             // so reuse that model instead of letting createModel() throw.
+            const recovered = captureEditorPanel(useAppStore.getState().workspaces.find(w => w.id === workspaceId)?.panels[panelId] ?? { id: panelId, type: 'editor', title: 'Untitled', isDirty: false, filePath })
             const model = resolveLoadedModel(
               () => monaco.editor.getModel(fileUri),
-              () => monaco.editor.createModel(content, language, fileUri),
+              () => monaco.editor.createModel(recovered.unsavedContent ?? content, language, fileUri),
             )
             createdModel = model
             rememberModel(targetPath, model)
             retainModel(targetPath)
             modelRetained = true
             editor.setModel(model)
+            if (markdownPreviewRef.current) setMarkdownContent(model.getValue())
             // Freshly read from disk — this is our sync point for the save guard.
-            sync.noteLoaded(content)
+            sync.noteLoaded(recovered.editorBaseline ?? content)
+            if (recovered.unsavedContent !== undefined) { sync.noteUserEdit(); void sync.resyncFromDisk() }
             applyPendingReveal()
           })
           .catch((err) => {
@@ -445,8 +600,8 @@ export default function EditorPanel({
       }
     } else {
       setFileLoading(false)
-      const restored = useAppStore.getState().workspaces
-        .find((w) => w.id === workspaceId)?.panels[panelId]?.unsavedContent ?? ''
+      const current = useAppStore.getState().workspaces.find(w => w.id === workspaceId)?.panels[panelId]
+      const restored = current ? captureEditorPanel(current).unsavedContent ?? '' : ''
       const model = monaco.editor.createModel(restored, 'plaintext')
       createdModel = model
       editor.setModel(model)
@@ -462,22 +617,13 @@ export default function EditorPanel({
       markEditorActive(panelId)
     })
 
-    let unsavedSaveTimer: ReturnType<typeof setTimeout> | null = null
     const changeDisposable = editor.onDidChangeModelContent(() => {
       // A disk-driven reload/merge (in useFileSync) replaces the model value;
       // that isn't a user edit, so don't flip the panel to dirty.
       if (sync.isExternalReplace()) return
       sync.noteUserEdit()
 
-      // Persist scratch-editor content to the store (debounced) so it
-      // survives canvas/workspace switches and app restarts.
-      if (!sync.filePathRef.current) {
-        if (unsavedSaveTimer) clearTimeout(unsavedSaveTimer)
-        unsavedSaveTimer = setTimeout(() => {
-          const value = editor.getModel()?.getValue() ?? ''
-          useAppStore.getState().setPanelUnsavedContent(workspaceId, panelId, value || undefined)
-        }, 300)
-      }
+
     })
 
     return () => {
@@ -486,14 +632,6 @@ export default function EditorPanel({
       changeDisposable.dispose()
       focusDisposable.dispose()
       clearEditorActive(panelId)
-      if (unsavedSaveTimer) {
-        clearTimeout(unsavedSaveTimer)
-        unsavedSaveTimer = null
-      }
-      if (!filePath) {
-        const value = editor.getModel()?.getValue() ?? ''
-        useAppStore.getState().setPanelUnsavedContent(workspaceId, panelId, value || undefined)
-      }
       if (filePath && modelRetained) {
         releaseModel(filePath)
       } else if (!filePath && createdModel && !createdModel.isDisposed()) {
@@ -562,8 +700,6 @@ export default function EditorPanel({
       const model = editorRef.current?.getModel()
       if (model && !model.isDisposed()) {
         setMarkdownContent(model.getValue())
-      } else if (filePath) {
-        window.electronAPI.fsReadFile(filePath, workspaceId).then(setMarkdownContent).catch(() => {})
       }
     } else {
       // Re-layout Monaco after unhiding — dimensions may have changed while hidden
@@ -599,10 +735,10 @@ export default function EditorPanel({
       renderOverviewRuler: false,
       overviewRulerLanes: 0,
       scrollbar: {
-        verticalScrollbarSize: 8,
-        horizontalScrollbarSize: 8,
-        verticalSliderSize: 8,
-        horizontalSliderSize: 8,
+        verticalScrollbarSize: 13.52,
+        horizontalScrollbarSize: 13.52,
+        verticalSliderSize: 13.52,
+        horizontalSliderSize: 13.52,
       },
       padding: { top: 8, bottom: 8 },
     })
@@ -626,6 +762,7 @@ export default function EditorPanel({
   useEffect(() => {
     const unsub = subscribeTheme((t) => {
       applyMonacoTheme(t)
+      setEditorBackground(t.editor.colors?.['editor.background'] ?? 'var(--surface-1)')
       monaco.editor.setTheme(CATE_MONACO_THEME)
     })
     return unsub
@@ -650,7 +787,115 @@ export default function EditorPanel({
           onDismiss={dismiss}
         />
       )}
-      <div className="flex-1 min-h-0 relative">
+      <div className="relative h-10 shrink-0 border-b border-subtle" style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}>
+      <div ref={toolbarRef} className="files-toolbar no-scrollbar h-full overflow-x-auto px-2 flex items-center gap-1 text-xs">
+        <button
+          onClick={showPathMenu}
+          disabled={!filePath}
+          className="min-w-0 flex-1 flex items-center gap-1 px-2 py-1 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+          title={filePath ?? explorerRoot}
+        >
+          <span className={`${filePath ? 'max-w-[40%]' : ''} truncate text-muted`}>{pathDisplayName(explorerRoot) || 'Files'}</span>
+          {filePath && <><ChevronRight size={12} className="shrink-0 text-muted" /><span className="truncate text-primary">{toRelativePath(filePath, explorerRoot)}</span></>}
+          <Copy size={12} className="shrink-0" />
+          <ChevronDown size={11} className="shrink-0" />
+        </button>
+        <div className="shrink-0 max-w-40">
+          <WorktreeSelector worktrees={worktrees} value={currentWorktree?.id} onChange={switchWorktree} title="File panel worktree" />
+        </div>
+        {isMarkdown && (
+          <button
+            onClick={() => setMarkdownPreview(!markdownPreview)}
+            className={`shrink-0 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+              markdownPreview
+                ? 'bg-agent/15 text-agent hover:bg-agent/25'
+                : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
+            }`}
+            title={markdownPreview ? 'Show source' : 'Preview markdown'}
+          >
+            {markdownPreview ? 'Source' : 'Preview'}
+          </button>
+        )}
+        <button
+          onClick={async () => {
+            if (!filePath) return
+            const result = await window.electronAPI.shellOpenFileOnGitHub(filePath, workspaceId)
+            if (!result.ok) window.alert('This file is not in a local GitHub repository with an origin remote.')
+          }}
+          disabled={!filePath}
+          className="shrink-0 p-1.5 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+          title="Open on GitHub"
+        ><Github size={14} /></button>
+        <button
+          ref={openButtonRef}
+          onClick={() => openMenu.setOpen(!openMenu.open)}
+          aria-expanded={openMenu.open}
+          disabled={!filePath}
+          className="shrink-0 flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-strong text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+          title="Open in another app"
+        ><ExternalLink size={13} /><span>Open</span><ChevronDown size={11} /></button>
+        <button
+          onClick={() => {
+            if (explorerVisible && !searchVisible) setExplorerVisible(false)
+            else setNavigationView('explorer')
+          }}
+          disabled={!explorerRoot}
+          className={`shrink-0 p-1.5 rounded-md hover:bg-hover disabled:opacity-40 ${explorerVisible && !searchVisible ? 'text-primary bg-surface-3' : 'text-secondary'}`}
+          title={shortcutLabel('toggleFileExplorer', explorerVisible && !searchVisible ? 'Hide files' : 'Show files')}
+          aria-label="Files sidebar"
+          aria-pressed={explorerVisible && !searchVisible}
+        ><Folders size={15} /></button>
+        <button
+          onClick={() => {
+            if (explorerVisible && searchVisible) setExplorerVisible(false)
+            else setNavigationView('search')
+          }}
+          disabled={!explorerRoot}
+          className={`shrink-0 p-1.5 rounded-md hover:bg-hover disabled:opacity-40 ${explorerVisible && searchVisible ? 'text-primary bg-surface-3' : 'text-secondary'}`}
+          title={shortcutLabel('toggleSearch', explorerVisible && searchVisible ? 'Hide search' : 'Search in files')}
+          aria-label="Search sidebar"
+          aria-pressed={explorerVisible && searchVisible}
+        ><Search size={15} /></button>
+      </div>
+      {toolbarScroll.left && (
+        <button
+          onClick={() => toolbarRef.current?.scrollBy({ left: -180, behavior: 'smooth' })}
+          className="absolute inset-y-0 left-0 z-10 flex w-8 items-center justify-start bg-gradient-to-r from-surface-1 via-surface-1/90 to-transparent pl-1 text-secondary hover:text-primary"
+          aria-label="Scroll toolbar left"
+        ><ChevronLeft size={16} className="animate-pulse" /></button>
+      )}
+      {toolbarScroll.right && (
+        <button
+          onClick={() => toolbarRef.current?.scrollBy({ left: 180, behavior: 'smooth' })}
+          className="absolute inset-y-0 right-0 z-10 flex w-8 items-center justify-end bg-gradient-to-l from-surface-1 via-surface-1/90 to-transparent pr-1 text-secondary hover:text-primary"
+          aria-label="Scroll toolbar right"
+        ><ChevronRight size={16} className="animate-pulse" /></button>
+      )}
+      </div>
+      {openMenu.open && <NodePopover popoverRef={openMenu.popoverRef} pos={openMenu.pos} portalTarget={openMenu.portalTarget} width={224} bodyClassName="p-1.5 !rounded-2xl !border-subtle !bg-surface-3 !shadow-lg">
+        <div onKeyDown={(event) => event.stopPropagation()} className="flex flex-col gap-0.5">
+          {openApps.map((application) => <button key={application.id} onClick={() => {
+            openMenu.setOpen(false)
+            if (filePath) void window.electronAPI.shellOpenPath(filePath, workspaceId, application.id).then((result) => {
+              if (!result.ok) window.alert(result.error)
+            }).catch((error) => window.alert(String(error)))
+          }} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-primary hover:bg-hover">
+            {application.icon ? <img src={application.icon} alt="" className="w-4 h-4 object-contain" /> : <ExternalLink size={16} />}{application.name}
+          </button>)}
+          {openApps.length > 0 && <div className="my-1 border-t border-subtle" />}
+          {([
+            ['default', 'Open in Default App', ExternalLink],
+            ['folder', 'Show in File Explorer', Folders],
+            ['github', 'Open on GitHub', Github],
+          ] as const).map(([id, label, Icon]) => <button key={id} onClick={() => {
+            openMenu.setOpen(false)
+            openButtonRef.current?.focus()
+            void runOpenAction(id).catch((error) => window.alert(String(error)))
+          }} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-primary hover:bg-hover focus-visible:bg-hover"><Icon size={16} className="text-muted" />{label}</button>)}
+        </div>
+      </NodePopover>}
+      <div className="files-content flex-1 min-h-0 flex" style={{ backgroundColor: editorBackground }}>
+      <div className="flex-1 min-w-0 relative">
         {showDiff && conflict?.kind === 'changed' && (
           <div className="absolute inset-0 z-30 bg-surface-1">
             <div ref={diffOverlayRef} className="w-full h-full" />
@@ -662,41 +907,25 @@ export default function EditorPanel({
         {loadError && (
           <PanelCenteredState
             className="absolute inset-0 z-20 bg-surface-1 px-6"
-            title="Couldn’t open this file"
-            description={<span className="break-all text-secondary">{loadError}</span>}
+            title={/ENOENT|no such file/i.test(loadError) ? 'File not found in this worktree' : 'Couldn’t open this file'}
+            description={<span className="break-all text-secondary">{/ENOENT|no such file/i.test(loadError)
+              ? `${filePath ? toRelativePath(filePath, explorerRoot) : 'This file'} is not present here. Choose another worktree or open a file from Files.`
+              : loadError}</span>}
           />
         )}
         {fileLoading && (
           <LoadingState label="Loading file…" className="absolute inset-0 z-20 bg-surface-1 text-sm" />
         )}
         <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
-        {!filePath && !isDirty && (
-          <button
-            onClick={() => openFilePalette(panelId)}
-            className="absolute top-2 right-3 z-40 flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-medium bg-surface-3 text-secondary shadow-sm hover:bg-surface-4 hover:text-primary transition-colors"
-            title="Open an existing workspace file"
-          >
-            <FolderOpen size={13} />
-            Open File…
-          </button>
-        )}
-        {/* Source/Preview toggle — floats over the content's top-right instead
-            of taking a header row. right-3 (12px) clears Monaco's 8px vertical
-            scrollbar lane; z-40 keeps it above the diff (z-30) and load-error
-            (z-20) overlays, matching the reach it had as a header. */}
-        {isMarkdown && (
-          <button
-            onClick={() => setMarkdownPreview(!markdownPreview)}
-            className={`absolute top-1.5 right-3 z-40 px-2 py-0.5 rounded text-[11px] font-medium shadow-sm transition-colors ${
-              markdownPreview
-                ? 'bg-agent/15 text-agent hover:bg-agent/25'
-                : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'
-            }`}
-            title={markdownPreview ? 'Show source' : 'Preview markdown'}
-          >
-            {markdownPreview ? 'Source' : 'Preview'}
-          </button>
-        )}
+
+      </div>
+      {explorerRoot && (
+        <ExplorerSidebar visible={explorerVisible} onHide={() => setExplorerVisible(false)}>
+          {searchVisible
+            ? <SearchView store={searchStore} panelId={panelId} focusToken={panel?.navigationEpoch} rootPath={explorerRoot} workspaceId={workspaceId} focusInput={explorerVisible && activePanelId === panelId} onOpenMatch={(path, line, column) => { void openExplorerFiles([path], 'dock', { line, column }) }} />
+            : <FileExplorer workspaceId={workspaceId} panelId={panelId} rootPath={explorerRoot} onOpenFiles={openExplorerFiles} compact />}
+        </ExplorerSidebar>
+      )}
       </div>
     </div>
   )
@@ -741,7 +970,7 @@ function MarkdownCodeBlock({ children }: { children: ReactNode }) {
 function MarkdownPreview({ content }: { content: string }) {
   return (
     <div className="absolute inset-0 overflow-auto px-6 py-4">
-      <div className="max-w-3xl mx-auto prose-markdown space-y-3 text-[13px] text-primary leading-relaxed">
+      <div className="max-w-3xl mx-auto prose-markdown space-y-3 [&>:first-child]:mt-0 text-[13px] text-primary leading-relaxed">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{

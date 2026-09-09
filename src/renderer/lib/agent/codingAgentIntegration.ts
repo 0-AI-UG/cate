@@ -3,6 +3,7 @@ import { useAppStore } from '../../stores/appStore'
 import { gitStatusStore } from '../../stores/gitStatusStore'
 import {
   closePreparedWorktreePanels,
+  cancelPreparedWorktreePanels,
   prepareWorktreePanelsForClose,
   removeWorktreeFromAllWindows,
   worktreePanelCloseTargets,
@@ -36,7 +37,7 @@ export async function openCodingAgentReviewPanel(
   workspaceId: string,
   panelId: string,
   currentReview?: CodingAgentWorktreeReview,
-): Promise<string> {
+): Promise<string | null> {
   const { run, worktree } = context(workspaceId, panelId)
   const review = currentReview ?? await reviewCodingAgentWorktree(workspaceId, panelId)
   const spec = review.dirty
@@ -106,30 +107,32 @@ export async function discardCodingAgentWorktree(
   if (!(await prepareWorktreePanelsForClose(workspaceId, panelTargets))) {
     throw new Error('worktree-panel-close-cancelled')
   }
-  const removalStatus = await window.electronAPI.gitWorktreeStatus(worktree.path, workspaceId)
-  if (!removalStatus) throw new Error('worktree-not-found')
-  await window.electronAPI.gitWorktreeRemove(
-    workspace.rootPath,
-    worktree.path,
-    { force: status.dirty || removalStatus.dirty || panelTargets.hasDirtyEditor },
-    workspaceId,
-  )
   try {
-    await window.electronAPI.gitBranchDelete(
+    const removalStatus = await window.electronAPI.gitWorktreeStatus(worktree.path, workspaceId)
+    if (!removalStatus) throw new Error('worktree-not-found')
+    await window.electronAPI.gitWorktreeRemove(
       workspace.rootPath,
-      status.branch,
-      true,
+      worktree.path,
+      { force: status.dirty || removalStatus.dirty || panelTargets.hasDirtyEditor },
       workspaceId,
     )
-  } finally {
-    closePreparedWorktreePanels(workspaceId, panelTargets)
-    removeWorktreeFromAllWindows(workspaceId, worktree.id)
-    store.removeAdditionalRoot(workspaceId, worktree.path)
-    store.setPanelCodingAgentRun(workspaceId, panelId, {
-      ...run,
-      worktreeId: undefined,
-      ownsWorktree: false,
-    })
-    gitStatusStore.refresh(workspace.rootPath)
-  }
+    try {
+      await window.electronAPI.gitBranchDelete(
+        workspace.rootPath,
+        status.branch,
+        true,
+        workspaceId,
+      )
+    } finally {
+      await closePreparedWorktreePanels(workspaceId, panelTargets)
+      removeWorktreeFromAllWindows(workspaceId, worktree.id)
+      store.removeAdditionalRoot(workspaceId, worktree.path)
+      store.setPanelCodingAgentRun(workspaceId, panelId, {
+        ...run,
+        worktreeId: undefined,
+        ownsWorktree: false,
+      })
+      gitStatusStore.refresh(workspace.rootPath)
+    }
+  } finally { await cancelPreparedWorktreePanels(panelTargets) }
 }

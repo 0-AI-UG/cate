@@ -14,41 +14,28 @@ import log from '../logger'
 const run = promisify(execFile)
 
 export function registerRecentScreenshotHandlers(): void {
-  let current: RecentScreenshot | null = null
-  let expiry: ReturnType<typeof setTimeout> | undefined
+  let current: RecentScreenshot[] = []
   let watcher: FSWatcher | undefined
   let stopped = false
   let directory = ''
   let newestMtime = 0
   const startedAt = Date.now()
 
-  const clear = () => {
-    clearTimeout(expiry)
-    current = null
-    broadcastToAll(RECENT_SCREENSHOT_CHANGED, null)
-  }
-  const getCurrent = () => {
-    if (current && current.expiresAt <= Date.now()) clear()
-    return current
-  }
-
   ipcMain.handle(RECENT_SCREENSHOT_GET, wrapHandler('[recentScreenshot:get]', async (event) => {
-    const screenshot = getCurrent()
     const win = windowFromEvent(event)
-    if (!win || !screenshot) return null
-    await grantFileAccess(win.id, screenshot.filePath)
-    return getCurrent()?.id === screenshot.id ? screenshot : null
+    if (!win) return []
+    await Promise.all(current.map(screenshot => grantFileAccess(win.id, screenshot.filePath)))
+    return current
   }))
   ipcMain.handle(RECENT_SCREENSHOT_DRAG, wrapHandler('[recentScreenshot:drag]', async (event, id: string) => {
-    const screenshot = getCurrent()
-    if (!windowFromEvent(event) || !screenshot || screenshot.id !== id) return
+    const screenshot = current.find(screenshot => screenshot.id === id)
+    if (!windowFromEvent(event) || !screenshot) return
     // Export the actual file, so native file drops work in terminals, panels,
-    // and other applications. Consuming the shortcut never deletes the file.
+    // and other applications. Keep the shortcut available even when a drag is cancelled.
     event.sender.startDrag({
       file: screenshot.filePath,
       icon: nativeImage.createFromDataURL(screenshot.dataUrl),
     })
-    if (current?.id === id) clear()
   }))
 
   if (process.platform !== 'darwin') return
@@ -65,10 +52,9 @@ export function registerRecentScreenshotHandlers(): void {
       await Promise.all(BrowserWindow.getAllWindows().map(win => grantFileAccess(win.id, filePath)))
       if (stopped || info.mtimeMs <= newestMtime) return
       newestMtime = info.mtimeMs
-      clearTimeout(expiry)
-      current = { id: `${filePath}:${info.mtimeMs}`, filePath, dataUrl: thumbnail.toDataURL(), expiresAt: Date.now() + 60_000 }
+      current = [{ id: `${filePath}:${info.mtimeMs}`, filePath, dataUrl: thumbnail.toDataURL() },
+        ...current.filter(screenshot => screenshot.filePath !== filePath)].slice(0, 5)
       broadcastToAll(RECENT_SCREENSHOT_CHANGED, current)
-      expiry = setTimeout(clear, 60_000)
     } catch {
       // Ordinary images have no screenshot attribute; files may also disappear
       // before inspection when the user moves or deletes them.
@@ -89,7 +75,11 @@ export function registerRecentScreenshotHandlers(): void {
     watcher = watch(directory, { depth: 0, ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 } })
     watcher.on('add', filePath => { void inspect(filePath) })
     watcher.on('change', filePath => { void inspect(filePath) })
-    watcher.on('unlink', filePath => { if (current?.filePath === filePath) clear() })
+    watcher.on('unlink', filePath => {
+      if (!current.some(screenshot => screenshot.filePath === filePath)) return
+      current = current.filter(screenshot => screenshot.filePath !== filePath)
+      broadcastToAll(RECENT_SCREENSHOT_CHANGED, current)
+    })
     watcher.on('error', error => log.warn('[recentScreenshot] Cannot watch screenshot folder', error))
   }
   void refreshDirectory()
@@ -97,7 +87,6 @@ export function registerRecentScreenshotHandlers(): void {
   app.on('will-quit', () => {
     stopped = true
     clearInterval(refresh)
-    clearTimeout(expiry)
     void watcher?.close()
   })
 }

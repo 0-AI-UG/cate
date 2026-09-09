@@ -1,3 +1,5 @@
+import { placementForActivePanel } from '../lib/workspace/canvasAccess'
+import { getPanelDef } from '../panels/registry'
 import { T3Logo } from './T3Logo'
 // =============================================================================
 // CommandPalette — Unified searchable command launcher + workspace navigator.
@@ -7,46 +9,27 @@ import { T3Logo } from './T3Logo'
 // lists all commands, workspaces, open panels, and recently-opened files.
 // =============================================================================
 
+import { flushSync } from 'react-dom'
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Terminal,
-  Globe,
-  FileText,
-  SquaresFour,
-  Sidebar,
-  FolderOpen,
-  Stack,
-  MagnifyingGlass,
-  ArrowsOutSimple,
-  Square,
-  FloppyDisk,
-  ArrowsClockwise,
-  Trash,
-  GraduationCap,
-  PuzzlePiece,
-  X,
-  Selection,
-  ArrowUUpLeft,
-  ArrowUUpRight,
-  CaretLeft,
-  CaretRight,
-  GitDiff,
-} from '@phosphor-icons/react'
-import { browserPanelUrl, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
+import { Terminal, Globe, FileText, Folders, Sidebar, FolderOpen, Trash, GraduationCap, X, Scan as Selection, Undo2 as ArrowUUpLeft, Redo2 as ArrowUUpRight, ChevronLeft as CaretLeft, ChevronRight as CaretRight, GitCompareArrows as GitDiff } from 'lucide-react'
+import { Grid2X2 as SquaresFour, Layers as Stack, Search as MagnifyingGlass, Maximize as ArrowsOutSimple, Save as FloppyDisk, RefreshCw as ArrowsClockwise, Puzzle as PuzzlePiece } from 'lucide-react'
+import { browserPanelUrl, SHORTCUT_ACTIONS, displayString, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { isNavigablePanelType } from '../../shared/panels'
 import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
 import { PaletteDialogShell } from './Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import { useOtherWindowPanels } from '../stores/windowPanelStore'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useResolvedShortcuts } from '../stores/shortcutStore'
+import { getFocusedLeafPanelId } from '../lib/focusedPanel'
+import { resolvePanelById } from '../lib/workspace/panelReveal'
 import { useOptionalCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { WindowTypeContext } from '../stores/WindowTypeContext'
 import { runAction } from '../lib/runAction'
 import { useWorkspacePanelTree } from '../lib/workspace/useWorkspacePanelTree'
 import { revealPanel } from '../lib/workspace/panelReveal'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
-import { getRecentFiles, recordRecentFile } from '../lib/fs/recentFiles'
+import { getRecentFiles } from '../lib/fs/recentFiles'
 import { pathDisplayName, relativeDisplayPath } from '../lib/fs/displayPath'
 import { LoadingState } from './Spinner'
 import { PaletteTextInput } from './PaletteTextInput'
@@ -62,6 +45,7 @@ interface CommandItem {
   id: string
   title: string
   icon: React.ReactNode
+  shortcut?: string
   action: () => void
 }
 
@@ -69,7 +53,7 @@ interface CommandItem {
 const ICON_SIZE = 16
 const TerminalIcon = () => <Terminal size={ICON_SIZE} />
 const GlobeIcon = () => <Globe size={ICON_SIZE} />
-const FileTextIcon = () => <FileText size={ICON_SIZE} />
+const FilesIcon = () => <Folders size={ICON_SIZE} />
 const LayoutIcon = () => <SquaresFour size={ICON_SIZE} />
 const SidebarIcon = () => <Sidebar size={ICON_SIZE} />
 const FolderOpenIcon = () => <FolderOpen size={ICON_SIZE} />
@@ -89,6 +73,26 @@ const UndoIcon = () => <ArrowUUpLeft size={ICON_SIZE} />
 const RedoIcon = () => <ArrowUUpRight size={ICON_SIZE} />
 const PreviousWorkspaceIcon = () => <CaretLeft size={ICON_SIZE} />
 const NextWorkspaceIcon = () => <CaretRight size={ICON_SIZE} />
+
+const commandIcons: Partial<Record<ShortcutAction, React.ReactNode>> = {
+  newTerminal: <TerminalIcon />, newBrowser: <GlobeIcon />, newEditor: <FilesIcon />,
+  newAgent: <AgentIcon />, newCanvas: <LayoutIcon />, closePanel: <CloseIcon />,
+  toggleFileExplorer: <FolderOpenIcon />, toggleSearch: <SearchIcon />,
+  toggleSidebar: <SidebarIcon />, zoomReset: <ZoomResetIcon />,
+  zoomToFit: <ZoomToFitIcon />, zoomToSelection: <ZoomSelectionIcon />,
+  autoLayout: <LayersIcon />, saveFile: <SaveIcon />, undo: <UndoIcon />, redo: <RedoIcon />,
+  skills: <SkillsIcon />, showTutorial: <TutorialIcon />, reloadWorkspace: <ReloadIcon />,
+  deleteRuntime: <DeleteRuntimeIcon />, previousWorkspace: <PreviousWorkspaceIcon />,
+  nextWorkspace: <NextWorkspaceIcon />,
+}
+
+const browserCommands = [
+  { id: 'reload', title: 'Browser: Reload', shortcut: '⌘R' },
+  { id: 'reloadHard', title: 'Browser: Force Reload', shortcut: '⇧⌘R' },
+  { id: 'back', title: 'Browser: Back', shortcut: '⌘[' },
+  { id: 'forward', title: 'Browser: Forward', shortcut: '⌘]' },
+  { id: 'focusUrl', title: 'Browser: Focus Address Bar', shortcut: '⌘L' },
+] as const
 
 // -----------------------------------------------------------------------------
 // Result types
@@ -131,7 +135,6 @@ type FlatItem =
 
 export const CommandPalette: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
-  const openFileTargetPanelId = useUIStore((s) => s.openFileTargetPanelId)
   const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const workspaces = useAppStore((s) => s.workspaces)
@@ -144,7 +147,9 @@ export const CommandPalette: React.FC = () => {
     const ws = s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
     return isRemoteRuntimeConnection(ws?.connection)
   })
-  const deleteRuntime = useAppStore((s) => s.deleteRuntime)
+  const shortcuts = useResolvedShortcuts()
+  const focusedPanelId = getFocusedLeafPanelId()
+  const isBrowserFocused = focusedPanelId ? resolvePanelById(focusedPanelId)?.type === 'browser' : false
 
   const [searchText, setSearchText] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -168,66 +173,28 @@ export const CommandPalette: React.FC = () => {
     (action: MenuActionId) => () => { void runAction(action, canvasApi ?? undefined) },
     [canvasApi],
   )
-  const shortcutTitle = useCallback((action: ShortcutAction) => SHORTCUT_DISPLAY_NAMES[action], [])
-
-  // Build command items
-  const allCommands: CommandItem[] = useMemo(
-    () => [
-      { id: 'newTerminal', title: shortcutTitle('newTerminal'), icon: <TerminalIcon />, action: run('newTerminal') },
-      { id: 'newBrowser', title: shortcutTitle('newBrowser'), icon: <GlobeIcon />, action: run('newBrowser') },
-      { id: 'newEditor', title: shortcutTitle('newEditor'), icon: <FileTextIcon />, action: run('newEditor') },
-      { id: 'newAgent', title: shortcutTitle('newAgent'), icon: <AgentIcon />, action: run('newAgent') },
-      { id: 'newCanvas', title: shortcutTitle('newCanvas'), icon: <LayoutIcon />, action: run('newCanvas') },
-      { id: 'closePanel', title: shortcutTitle('closePanel'), icon: <CloseIcon />, action: run('closePanel') },
-      { id: 'renamePanel', title: shortcutTitle('renamePanel'), icon: <FileText size={18} />, action: run('renamePanel') },
-      { id: 'saveFile', title: shortcutTitle('saveFile'), icon: <SaveIcon />, action: run('saveFile') },
-      // Sidebar toggles only exist in the main window; hidden in detached windows.
-      ...(isMainWindow
-        ? [
-            { id: 'toggleSidebar', title: shortcutTitle('toggleSidebar'), icon: <SidebarIcon />, action: run('toggleSidebar') },
-            { id: 'toggleFileExplorer', title: shortcutTitle('toggleFileExplorer'), icon: <FolderOpenIcon />, action: run('toggleFileExplorer') },
-            { id: 'toggleSearch', title: shortcutTitle('toggleSearch'), icon: <SearchIcon />, action: run('toggleSearch') },
-          ]
-        : []),
-      { id: 'zoomReset', title: shortcutTitle('zoomReset'), icon: <ZoomResetIcon />, action: run('zoomReset') },
-      { id: 'zoomToFit', title: shortcutTitle('zoomToFit'), icon: <ZoomToFitIcon />, action: run('zoomToFit') },
-      { id: 'zoomToSelection', title: shortcutTitle('zoomToSelection'), icon: <ZoomSelectionIcon />, action: run('zoomToSelection') },
-      { id: 'autoLayout', title: shortcutTitle('autoLayout'), icon: <LayersIcon />, action: run('autoLayout') },
-      { id: 'undo', title: shortcutTitle('undo'), icon: <UndoIcon />, action: run('undo') },
-      { id: 'redo', title: shortcutTitle('redo'), icon: <RedoIcon />, action: run('redo') },
-      {
-        id: 'skills',
-        title: 'Skills…',
-        icon: <SkillsIcon />,
-        action: () => useUIStore.getState().setShowSkillsDialog(true),
-      },
-      {
-        id: 'showTutorial',
-        title: 'Show Tutorial',
-        icon: <TutorialIcon />,
-        // Replays the first-run guided tour by clearing the completed flag.
-        action: () => {
-          useSettingsStore.getState().setSetting('onboardingCompleted', false)
-          try { window.electronAPI?.trackFeatureUsed?.('onboarding_replayed') } catch { /* noop */ }
-        },
-      },
-      { id: 'previousWorkspace', title: shortcutTitle('previousWorkspace'), icon: <PreviousWorkspaceIcon />, action: run('previousWorkspace') },
-      { id: 'nextWorkspace', title: shortcutTitle('nextWorkspace'), icon: <NextWorkspaceIcon />, action: run('nextWorkspace') },
-      { id: 'reloadWorkspace', title: 'Reload Workspace from Disk', icon: <ReloadIcon />, action: run('reloadWorkspace') },
-      // Remote-only: delete the daemon from the host. Main re-probes to the
-      // 'missing' phase; the canvas lock then offers "Install Runtime" for a
-      // clean reinstall — the deliberate delete → install two-step.
-      ...(isRemoteWorkspace
-        ? [{
-            id: 'deleteRuntime',
-            title: 'Delete Runtime',
-            icon: <DeleteRuntimeIcon />,
-            action: () => { void deleteRuntime(selectedWorkspaceId) },
-          }]
-        : []),
-    ],
-    [run, shortcutTitle, isMainWindow, isRemoteWorkspace, deleteRuntime, selectedWorkspaceId],
-  )
+  // Every registered action is discoverable automatically. Only context-specific
+  // commands and the command that opens this dialog are excluded.
+  const allCommands: CommandItem[] = useMemo(() => [
+    ...SHORTCUT_ACTIONS
+      .filter((id) => id !== 'commandPalette'
+        && (id !== 'toggleSidebar' || isMainWindow)
+        && (id !== 'deleteRuntime' || isRemoteWorkspace))
+      .map((id) => ({
+        id,
+        title: SHORTCUT_DISPLAY_NAMES[id],
+        icon: commandIcons[id] ?? <FileText size={ICON_SIZE} />,
+        shortcut: shortcuts[id].key ? displayString(shortcuts[id]) : undefined,
+        action: run(id),
+      })),
+    ...(isBrowserFocused ? browserCommands.map(({ id, title, shortcut }) => ({
+      id: `browser:${id}`,
+      title,
+      shortcut,
+      icon: <GlobeIcon />,
+      action: () => { void window.electronAPI.runNativeAction(`browser:${id}`) },
+    })) : []),
+  ], [run, shortcuts, isMainWindow, isRemoteWorkspace, isBrowserFocused])
 
   // Open panels in the current workspace.
   // Panels come from the SAME source as the sidebar workspace overview
@@ -243,21 +210,9 @@ export const CommandPalette: React.FC = () => {
 
   const rootPath = useAppStore((s) => s.workspaces.find((w) => w.id === s.selectedWorkspaceId)?.rootPath)
   const worktrees = useWorktrees(rootPath ?? '', selectedWorkspaceId)
-  const navigationWorktreeId = useUIStore(
-    (s) => s.navigationWorktreeByWorkspace[selectedWorkspaceId],
-  )
-  const savedNavigationWorktree = navigationWorktreeId
-    ? selectedWorktree(worktrees, navigationWorktreeId)
-    : undefined
-  // Detached windows have no sidebar selector of their own. Until a saved
-  // navigation scope exists there, Quick Open follows the active panel's
-  // checkout; the main window retains the primary-checkout default.
+  // Files, Search and Quick Open follow the same panel checkout in every window.
   const activePanel = panels[getActivePanelId() ?? '']
-  const detachedPanelWorktree = !isMainWindow
-    ? worktreeForPanel(activePanel, worktrees)
-    : undefined
-  const navigationWorktree = savedNavigationWorktree
-    ?? detachedPanelWorktree
+  const navigationWorktree = worktreeForPanel(activePanel, worktrees)
     ?? selectedWorktree(worktrees, undefined)
   const navigationRoot = navigationWorktree?.path ?? rootPath
 
@@ -364,15 +319,12 @@ export const CommandPalette: React.FC = () => {
   const displayedFiles = query ? fileResults : recentFileResults
 
   // Flat list of every navigable item, in render order. Drives keyboard nav.
-  const visibleCommands = openFileTargetPanelId ? [] : filteredCommands
-  const visibleWorkspaces = openFileTargetPanelId ? [] : filteredWorkspaces
-  const visiblePanels = openFileTargetPanelId ? [] : filteredPanels
   const flatItems = useMemo<FlatItem[]>(() => [
-    ...(openFileTargetPanelId ? [] : filteredCommands.map((command) => ({ kind: 'command', command }) as FlatItem)),
-    ...(openFileTargetPanelId ? [] : filteredWorkspaces.map((workspace) => ({ kind: 'workspace', workspace }) as FlatItem)),
-    ...(openFileTargetPanelId ? [] : filteredPanels.map((panel) => ({ kind: 'panel', panel }) as FlatItem)),
+    ...filteredCommands.map((command) => ({ kind: 'command', command }) as FlatItem),
+    ...filteredWorkspaces.map((workspace) => ({ kind: 'workspace', workspace }) as FlatItem),
+    ...filteredPanels.map((panel) => ({ kind: 'panel', panel }) as FlatItem),
     ...displayedFiles.map((file) => ({ kind: 'file', file }) as FlatItem),
-  ], [openFileTargetPanelId, filteredCommands, filteredWorkspaces, filteredPanels, displayedFiles])
+  ], [filteredCommands, filteredWorkspaces, filteredPanels, displayedFiles])
 
   const totalItems = flatItems.length
 
@@ -410,32 +362,18 @@ export const CommandPalette: React.FC = () => {
       const appStore = useAppStore.getState()
       const wsId = appStore.selectedWorkspaceId
       const ws = appStore.workspaces.find((w) => w.id === wsId)
-      let panelId: string | undefined
-      if (ws) {
-        const target = openFileTargetPanelId ? ws.panels[openFileTargetPanelId] : undefined
-        if (target?.type === 'editor' && !target.filePath && !target.isDirty) {
-          appStore.updatePanelFilePath(wsId, target.id, file.path)
-          appStore.updatePanelTitle(wsId, target.id, pathDisplayName(file.path) || 'Untitled')
-          recordRecentFile(wsId, file.path)
-          return
-        }
-        const existing = Object.values(ws.panels).find(
-          (p) => (p.type === 'editor' || p.type === 'document') && p.filePath === file.path,
-        )
-        panelId = existing?.id
-      }
-      if (!panelId) panelId = openFileAsPanel(wsId, file.path)
-      const cs = canvasApi?.getState()
-      if (!cs) return
-      const nodeId = panelId ? cs.nodeForPanel(panelId) : null
-      if (nodeId) cs.focusAndCenter(nodeId)
+      const existing = Object.values(ws?.panels ?? {}).find(
+        (panel) => (panel.type === 'editor' || panel.type === 'document') && panel.filePath === file.path,
+      )
+      const panelId = existing?.id ?? openFileAsPanel(wsId, file.path, undefined, placementForActivePanel())
+      void revealPanel(wsId, panelId, { retry: true })
     },
-    [canvasApi, openFileTargetPanelId],
+    [],
   )
 
   const activate = useCallback(
     (item: FlatItem) => {
-      close()
+      flushSync(close)
       if (item.kind === 'command') {
         item.command.action()
       } else if (item.kind === 'workspace') {
@@ -460,9 +398,9 @@ export const CommandPalette: React.FC = () => {
   if (!showCommandPalette) return null
 
   // Section boundaries within the flat list.
-  const workspaceStart = visibleCommands.length
-  const panelStart = workspaceStart + visibleWorkspaces.length
-  const fileStart = panelStart + visiblePanels.length
+  const workspaceStart = filteredCommands.length
+  const panelStart = workspaceStart + filteredWorkspaces.length
+  const fileStart = panelStart + filteredPanels.length
   const filesLabel = query ? 'Files' : 'Recent Files'
 
   return (
@@ -502,7 +440,7 @@ export const CommandPalette: React.FC = () => {
                     break
                 }
               }}
-              placeholder={openFileTargetPanelId ? 'Search workspace files' : 'Search commands, workspaces, panels and files'}
+              placeholder="Search commands, workspaces, panels and files"
           />
         </div>
 
@@ -515,10 +453,10 @@ export const CommandPalette: React.FC = () => {
           ) : (
             <>
               {/* Commands */}
-              {visibleCommands.length > 0 && (
+              {filteredCommands.length > 0 && (
                 <>
                   <SectionHeader>Commands</SectionHeader>
-                  {visibleCommands.map((cmd, i) => {
+                  {filteredCommands.map((cmd, i) => {
                     const isSelected = i === selectedIndex
                     return (
                       <Row
@@ -530,6 +468,7 @@ export const CommandPalette: React.FC = () => {
                       >
                         <span className="shrink-0 text-secondary">{cmd.icon}</span>
                         <span className="text-[13px] text-primary flex-1 truncate">{cmd.title}</span>
+                        {cmd.shortcut && <kbd className="text-[11px] text-muted shrink-0">{cmd.shortcut}</kbd>}
                       </Row>
                     )
                   })}
@@ -537,11 +476,11 @@ export const CommandPalette: React.FC = () => {
               )}
 
               {/* Workspaces */}
-              {visibleWorkspaces.length > 0 && (
+              {filteredWorkspaces.length > 0 && (
                 <>
-                  {visibleCommands.length > 0 && <Separator />}
+                  {filteredCommands.length > 0 && <Separator />}
                   <SectionHeader>Workspaces</SectionHeader>
-                  {visibleWorkspaces.map((workspace, i) => {
+                  {filteredWorkspaces.map((workspace, i) => {
                     const itemIndex = workspaceStart + i
                     const isSelected = itemIndex === selectedIndex
                     return (
@@ -570,11 +509,11 @@ export const CommandPalette: React.FC = () => {
               )}
 
               {/* Panels */}
-              {visiblePanels.length > 0 && (
+              {filteredPanels.length > 0 && (
                 <>
-                  {(visibleCommands.length > 0 || visibleWorkspaces.length > 0) && <Separator />}
+                  {(filteredCommands.length > 0 || filteredWorkspaces.length > 0) && <Separator />}
                   <SectionHeader>Panels</SectionHeader>
-                  {visiblePanels.map((panel, i) => {
+                  {filteredPanels.map((panel, i) => {
                     const itemIndex = panelStart + i
                     const isSelected = itemIndex === selectedIndex
                     return (
@@ -597,7 +536,7 @@ export const CommandPalette: React.FC = () => {
               {/* Files */}
               {displayedFiles.length > 0 && (
                 <>
-                  {(visibleCommands.length > 0 || visibleWorkspaces.length > 0 || visiblePanels.length > 0) && <Separator />}
+                  {(filteredCommands.length > 0 || filteredWorkspaces.length > 0 || filteredPanels.length > 0) && <Separator />}
                   <SectionHeader>{filesLabel}</SectionHeader>
                   {displayedFiles.map((file, i) => {
                     const itemIndex = fileStart + i
@@ -663,11 +602,6 @@ const Separator: React.FC = () => <div className="mx-3.5 my-1 border-t border-su
 // -----------------------------------------------------------------------------
 
 function PanelIcon({ type }: { type: PanelType }) {
-  const cls = 'shrink-0'
-  if (type === 'terminal') return <span className={`${cls} text-emerald-400`}><Terminal size={ICON_SIZE} /></span>
-  if (type === 'browser')  return <span className={`${cls} text-sky-400`}><Globe size={ICON_SIZE} /></span>
-  if (type === 'editor' || type === 'document') return <span className={`${cls} text-orange-400`}><FileText size={ICON_SIZE} /></span>
-  if (type === 'agent') return <span className={`${cls} text-[rgb(var(--agent-rgb))]`}><T3Logo size={ICON_SIZE} /></span>
-  if (type === 'review')   return <span className={`${cls} text-green-400`}><GitDiff size={ICON_SIZE} /></span>
-  return <span className={`${cls} text-violet-400`}><Square size={ICON_SIZE} /></span>
+  const { icon: Icon, tintClass } = getPanelDef(type)
+  return <span className={`shrink-0 ${tintClass}`}><Icon size={ICON_SIZE} /></span>
 }

@@ -1,3 +1,4 @@
+import { useCanvasToolbarAction } from './useCanvasToolbarAction'
 import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 // WorktreeToolbarMenu — the canvas toolbar's "parallel worktrees" drop-up, and
@@ -17,16 +18,9 @@ import { T3Logo } from '../ui/T3Logo'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  ArrowsSplit,
-  Terminal as TerminalIcon,
-  Plus,
-  Check,
-  DotsThree,
-  Warning,
-  X,
-  GitPullRequest,
-} from '@phosphor-icons/react'
+import { Plus, Check, X, GitPullRequest } from 'lucide-react'
+import { Terminal as TerminalIcon, Ellipsis as DotsThree, TriangleAlert as Warning } from 'lucide-react'
+import { Split as ArrowsSplit } from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
 import { CreateWorktreeForm } from '../sidebar/CreateWorktreeForm'
 import { errorMessage } from '../lib/errorMessage'
@@ -103,13 +97,14 @@ const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
     }
     setOpen(true)
   }, [open, menuSide])
+  useCanvasToolbarAction('openWorktreeMenu', canvasPanelId, toggle)
 
   return (
     <>
       <CanvasToolbarButton
           ref={btnRef}
           onClick={toggle}
-          label="Parallel worktrees"
+          action="openWorktreeMenu" label="Parallel worktrees"
           active={active}
           tooltipPlacement={tooltipPlacement}
       >
@@ -218,7 +213,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
   const removeOrphan = useCallback(async (worktreeId: string) => {
     const targets = worktreePanelCloseTargets(workspaceId, worktreeId)
     if (!(await prepareWorktreePanelsForClose(workspaceId, targets))) return
-    closePreparedWorktreePanels(workspaceId, targets)
+    await closePreparedWorktreePanels(workspaceId, targets)
     removeWorktreeFromAllWindows(workspaceId, worktreeId)
   }, [workspaceId])
 
@@ -311,7 +306,7 @@ const WorktreeMenuPopover: React.FC<PopoverProps> = ({
                 <button
                   onClick={() => void handlePrune()}
                   className="px-1.5 py-0.5 rounded-lg hover:bg-surface-4 text-secondary hover:text-primary"
-                  title="Remove the missing entries"
+                  title="Remove missing worktrees"
                 >
                   Clean up
                 </button>
@@ -379,7 +374,7 @@ const SpawnButton: React.FC<{
   worktreeId: string
   onClick: () => void
 }> = ({ icon, title, panelType, cwd, worktreeId, onClick }) => (
-  <Tooltip label={`${title} — click to open here, or drag onto the canvas`}>
+  <Tooltip label={title}>
     <div
       role="button"
       aria-label={title}

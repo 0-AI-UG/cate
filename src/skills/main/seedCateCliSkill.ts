@@ -1,3 +1,4 @@
+import { bundledSkillSource } from './bundledSkillSource'
 // =============================================================================
 // seedCateCliSkill — auto-install the bundled cate-cli skill into a workspace
 // through the SAME path the skills modal uses (writeSkillToWorkspace), so it is
@@ -31,19 +32,17 @@
 // =============================================================================
 
 import crypto from 'crypto'
-import fs from 'fs'
-import fsp from 'fs/promises'
-import path from 'path'
-import { app } from 'electron'
 import log from '../../main/logger'
 import { getSetting } from '../../main/settingsFile'
 import { parseLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
 import { hostJoin } from '../../main/cateApi/hostPath'
-import type { Runtime } from '../../main/runtime/types'
+import type { FileAccessContext } from '../../main/runtime/types'
+import { scopedSkillFiles, withSkillWorkspaces, type SkillFileHost } from './skillWorkspace'
+import { prepareBundle, readDirectory, skillFiles } from './skillBundle'
+import { localSkillFiles } from './localSkillFiles'
 import { SKILL_TARGETS, slugifySkillName, type SkillTargetId } from '../../shared/skills'
 import { targetInfo, toolDirSegment } from './targets'
-import { ensureSkillName } from './frontmatter'
 import { readManifest, readSeededMarkers, setSeededMarker, writeSkillToWorkspace, readWorkspaceSkillFiles } from './skillsInstaller'
 import type { SkillFile } from './githubCrawl'
 
@@ -54,34 +53,15 @@ const SKILL_NAME = 'cate-cli'
 
 /** Source dir of the bundled skill: dev path (repo skills/ on disk) first, then
  *  the packaged extraResources copy — same resolution as installBundledSkill. */
-function bundledSkillDir(): string | null {
-  const candidates = [
-    path.join(app.getAppPath(), 'skills', SKILL_NAME),
-    path.join(process.resourcesPath ?? '', 'skills', SKILL_NAME),
-  ]
-  for (const c of candidates) {
-    if (c && fs.existsSync(c)) return c
-  }
-  return null
-}
+const bundledSkillDir = () => bundledSkillSource(SKILL_NAME)
 
 /** Read the bundled skill's files as SkillFile[]. Skill bundles are text
  *  (SKILL.md + optional companions) — read as UTF-8. */
-async function readBundledFiles(dir: string, base = ''): Promise<SkillFile[]> {
-  const out: SkillFile[] = []
-  for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
-    const rel = base ? `${base}/${entry.name}` : entry.name
-    const abs = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      out.push(...(await readBundledFiles(abs, rel)))
-    } else if (entry.isFile()) {
-      out.push({ relPath: rel, text: await fsp.readFile(abs, 'utf8') })
-    }
-  }
-  return out
+async function readBundledFiles(dir: string): Promise<SkillFile[]> {
+  return skillFiles(await readDirectory(localSkillFiles, 'local', dir))
 }
 
-async function dirExists(runtime: Runtime, hostPath: string): Promise<boolean> {
+async function dirExists(runtime: SkillFileHost, hostPath: string): Promise<boolean> {
   try {
     return (await runtime.file.stat(hostPath)).isDirectory
   } catch {
@@ -95,13 +75,8 @@ async function dirExists(runtime: Runtime, hostPath: string): Promise<boolean> {
  *  an unedited install. */
 function expectedInstall(files: SkillFile[], targetId: SkillTargetId): SkillFile[] {
   const slug = slugifySkillName(SKILL_NAME)
-  const withName = (f: SkillFile): SkillFile =>
-    f.relPath === 'SKILL.md' && f.text != null ? { relPath: f.relPath, text: ensureSkillName(f.text, slug) } : f
-  if (targetInfo(targetId).layout !== 'folder') {
-    const md = files.find((f) => f.relPath === 'SKILL.md')
-    return md ? [withName(md)] : []
-  }
-  return files.map(withName)
+  const prepared = skillFiles(prepareBundle(files, slug))
+  return targetInfo(targetId).layout === 'folder' ? prepared : prepared.filter(file => file.relPath === 'SKILL.md')
 }
 
 /** Order-independent content hash of a skill install (short — it only has to
@@ -121,9 +96,9 @@ function hashFiles(files: SkillFile[]): string {
  *  rejects (safe to call fire-and-forget at workspace open) — a failed target
  *  is retried on the next open or runtime connect, since no marker is written
  *  for it. */
-export async function seedCateCliSkill(cwd: string): Promise<void> {
+export async function seedCateCliSkill(cwd: string, access?: FileAccessContext): Promise<void> {
   try {
-    await seed(cwd)
+    await withSkillWorkspaces([cwd], () => seed(cwd, access))
   } catch (err) {
     log.warn('[skills-seed] seeding %s failed for %s: %O', SKILL_NAME, cwd, err)
   }
@@ -131,10 +106,14 @@ export async function seedCateCliSkill(cwd: string): Promise<void> {
 
 /** Explicit settings action: replace Cate-managed copies with the current
  * bundled skill. Unlike automatic seeding, this intentionally overwrites edits. */
-export async function reinstallCateCliSkill(cwd: string): Promise<number> {
+export async function reinstallCateCliSkill(cwd: string, access?: FileAccessContext): Promise<number> {
+  return withSkillWorkspaces([cwd], () => reinstallLocked(cwd, access))
+}
+
+async function reinstallLocked(cwd: string, access?: FileAccessContext): Promise<number> {
   const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) throw new Error('Open a workspace before reinstalling the cate CLI skill.')
-  const runtime = runtimes.resolve(runtimeId)
+  const runtime = scopedSkillFiles(runtimes.resolve(runtimeId), access)
   const srcDir = bundledSkillDir()
   if (!srcDir) throw new Error('Bundled cate-cli skill not found.')
 
@@ -158,6 +137,7 @@ export async function reinstallCateCliSkill(cwd: string): Promise<number> {
       cwd,
       files: bundled,
       origin: 'local',
+      access,
     })
     const hash = hashFiles(expectedInstall(bundled, targetId))
     await setSeededMarker(runtime, runtimeId, hostCwd, `${SKILL_ID}:${targetId}@${hash}`)
@@ -167,14 +147,14 @@ export async function reinstallCateCliSkill(cwd: string): Promise<number> {
   return installedTargets
 }
 
-async function seed(cwd: string): Promise<void> {
+async function seed(cwd: string, access?: FileAccessContext): Promise<void> {
   if (getSetting('cliSkillInstallEnabled') !== true) return
   const { runtimeId, path: hostCwd } = parseLocator(cwd)
   if (!hostCwd) return
 
-  let runtime: Runtime
+  let runtime: SkillFileHost
   try {
-    runtime = runtimes.resolve(runtimeId)
+    runtime = scopedSkillFiles(runtimes.resolve(runtimeId), access)
   } catch {
     return // runtime not registered yet — the runtime-connect replay retries
   }
@@ -199,7 +179,7 @@ async function seed(cwd: string): Promise<void> {
 
     const entry = installed.find((m) => m.skillId === SKILL_ID && m.targetId === targetId)
     const write = async (): Promise<void> => {
-      await writeSkillToWorkspace({ skillId: SKILL_ID, name: SKILL_NAME, targetId, cwd, files: bundled, origin: 'local' })
+      await writeSkillToWorkspace({ skillId: SKILL_ID, name: SKILL_NAME, targetId, cwd, files: bundled, origin: 'local', access })
       log.info('[skills-seed] seeded %s for %s in %s', SKILL_NAME, targetId, hostCwd)
     }
 

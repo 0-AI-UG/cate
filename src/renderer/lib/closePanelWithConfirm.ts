@@ -1,7 +1,7 @@
 // =============================================================================
 // closePanelWithConfirm — the single entry point for closing one panel with the
 // right confirmation flow for its type. Canvas panels route through
-// confirmCloseCanvas (move/delete/cancel for the children they host); every
+// prepared canvas dispositions (move/delete/cancel for their children); every
 // other panel goes through the dirty-editor / running-terminal gates.
 //
 // Centralising this keeps every close affordance (dock tab, sidebar row,
@@ -13,26 +13,37 @@ import { useAppStore } from '../stores/appStore'
 import { confirmClosePanels } from './confirmClosePanels'
 import { confirmCloseDirtyPanels } from './confirmCloseDirty'
 import { confirmCloseRunningTerminals } from './confirmCloseTerminal'
-import { confirmCloseCanvas } from './canvas/confirmCloseCanvas'
+import { prepareCloseCanvas, type CanvasClosePlan } from './canvas/confirmCloseCanvas'
 
 /** Returns true when the panel was closed, false when the user cancelled. */
 export async function closePanelWithConfirm(
   workspaceId: string,
   panelId: string,
 ): Promise<boolean> {
-  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-  const panel = ws?.panels[panelId]
+  return closePanelsWithConfirm(workspaceId, [panelId])
+}
 
-  if (panel?.type === 'canvas') {
-    // confirmCloseCanvas fans out the children (move/delete) itself, then we
-    // close the canvas panel. It returns false on cancel.
-    if (!(await confirmCloseCanvas(workspaceId, panelId))) return false
-    useAppStore.getState().closePanel(workspaceId, panelId)
-    return true
+/** Aggregate all affected panel gates before removing any requested tab.
+ * Hosts supply only their removal mechanics; confirmation policy stays shared. */
+export async function closePanelsWithConfirm(
+  workspaceId: string,
+  panelIds: string[],
+  remove: (panelId: string) => void = (id) => useAppStore.getState().closePanel(workspaceId, id),
+): Promise<boolean> {
+  const ws = useAppStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)
+  const ids = [...new Set(panelIds)]
+  const ordinary = ids.filter((id) => ws?.panels[id]?.type !== 'canvas')
+  const canvases = ids.filter((id) => ws?.panels[id]?.type === 'canvas')
+  const plans: CanvasClosePlan[] = []
+  for (const id of canvases) {
+    const plan = await prepareCloseCanvas(workspaceId, id, canvases)
+    if (!plan) return false
+    plans.push(plan)
   }
-
-  if (!(await confirmClosePanels(workspaceId, [panelId]))) return false
-  useAppStore.getState().closePanel(workspaceId, panelId)
+  const closing = [...new Set([...ordinary, ...plans.flatMap((plan) => plan.closingPanelIds)])]
+  if (!(await confirmClosePanels(workspaceId, closing))) return false
+  for (const plan of plans) if (!plan.apply()) return false
+  for (const id of ids) remove(id)
   return true
 }
 

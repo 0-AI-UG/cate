@@ -48,43 +48,60 @@ afterEach(() => {
 describe('recent macOS screenshot', () => {
   it('ignores existing files and grants new screenshots to every open window', async () => {
     expect(mocks.watch).toHaveBeenCalledWith('/desktop', expect.objectContaining({ ignoreInitial: true }))
-    expect(await invoke(RECENT_SCREENSHOT_GET)).toBeNull()
+    expect(await invoke(RECENT_SCREENSHOT_GET)).toEqual([])
     await emit('add', '/desktop/localized-name.png')
     expect(mocks.run).toHaveBeenCalledWith('/usr/bin/xattr', ['-p', 'com.apple.metadata:kMDItemIsScreenCapture', '/desktop/localized-name.png'], expect.anything(), expect.any(Function))
     expect(mocks.grant).toHaveBeenCalledWith(1, '/desktop/localized-name.png')
     expect(mocks.grant).toHaveBeenCalledWith(2, '/desktop/localized-name.png')
-    expect(await invoke(RECENT_SCREENSHOT_GET)).toMatchObject({ filePath: '/desktop/localized-name.png' })
+    expect(await invoke(RECENT_SCREENSHOT_GET)).toMatchObject([{ filePath: '/desktop/localized-name.png' }])
   })
 
-  it('replaces the previous screenshot and expires one minute after the replacement', async () => {
+  it('retains recent screenshots without a deadline', async () => {
     await emit('add', '/desktop/first.png')
     await vi.advanceTimersByTimeAsync(30_000)
     await emit('add', '/desktop/second.png')
     await vi.advanceTimersByTimeAsync(30_000)
-    expect(await invoke(RECENT_SCREENSHOT_GET)).toMatchObject({ filePath: '/desktop/second.png' })
-    await vi.advanceTimersByTimeAsync(30_000)
-    expect(await invoke(RECENT_SCREENSHOT_GET)).toBeNull()
+    expect((await invoke(RECENT_SCREENSHOT_GET))[0]).toMatchObject({ filePath: '/desktop/second.png' })
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect((await invoke(RECENT_SCREENSHOT_GET))[0]).toMatchObject({ filePath: '/desktop/second.png' })
   })
 
-  it('exports the full file and consumes globally without resurfacing on a duplicate event', async () => {
+  it('exports the full file and stays available for repeated or cancelled drags', async () => {
     await emit('add', '/desktop/shot.png')
-    const screenshot = await invoke(RECENT_SCREENSHOT_GET)
+    const [screenshot] = await invoke(RECENT_SCREENSHOT_GET)
     await invoke(RECENT_SCREENSHOT_DRAG, 'stale-id')
     expect(mocks.drag).not.toHaveBeenCalled()
     await invoke(RECENT_SCREENSHOT_DRAG, screenshot.id)
     expect(mocks.drag).toHaveBeenCalledWith({ file: '/desktop/shot.png', icon: 'icon' })
-    expect(mocks.broadcast).toHaveBeenLastCalledWith(RECENT_SCREENSHOT_CHANGED, null)
+    expect(mocks.broadcast).toHaveBeenLastCalledWith(RECENT_SCREENSHOT_CHANGED, [screenshot])
     await emit('change', '/desktop/shot.png')
-    expect(await invoke(RECENT_SCREENSHOT_GET)).toBeNull()
+    expect(await invoke(RECENT_SCREENSHOT_GET)).toEqual([screenshot])
+    await invoke(RECENT_SCREENSHOT_DRAG, screenshot.id)
+    expect(mocks.drag).toHaveBeenCalledTimes(2)
   })
 
   it('ignores ordinary images and removes a deleted screenshot', async () => {
     mocks.run.mockImplementationOnce((_command, _args, _options, callback) => callback(new Error('No attribute')))
     await emit('add', '/desktop/photo.png')
-    expect(await invoke(RECENT_SCREENSHOT_GET)).toBeNull()
+    expect(await invoke(RECENT_SCREENSHOT_GET)).toEqual([])
     await emit('add', '/desktop/shot.png')
     await emit('unlink', '/desktop/shot.png')
-    expect(await invoke(RECENT_SCREENSHOT_GET)).toBeNull()
+    expect(await invoke(RECENT_SCREENSHOT_GET)).toEqual([])
+  })
+
+  it('retains only the last five screenshots and exports older entries', async () => {
+    for (let i = 0; i < 6; i++) {
+      await vi.advanceTimersByTimeAsync(1)
+      await emit('add', `/desktop/${i}.png`)
+    }
+    const screenshots = await invoke(RECENT_SCREENSHOT_GET)
+    expect(screenshots.map((shot: { filePath: string }) => shot.filePath)).toEqual(
+      [5, 4, 3, 2, 1].map(i => `/desktop/${i}.png`),
+    )
+    await invoke(RECENT_SCREENSHOT_DRAG, screenshots[4].id)
+    expect(mocks.drag).toHaveBeenCalledWith({ file: '/desktop/1.png', icon: 'icon' })
+    await emit('unlink', '/desktop/3.png')
+    expect(await invoke(RECENT_SCREENSHOT_GET)).toHaveLength(4)
   })
 
   it('switches to a custom screenshot directory and closes watchers on quit', async () => {

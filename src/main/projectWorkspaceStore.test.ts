@@ -24,8 +24,8 @@ vi.mock('./cateGitignore', () => ({ ensureCateGitignore: vi.fn(async () => {}) }
 // The live handler skips saving when another instance owns the project lock;
 // always grant it so the save path runs.
 vi.mock('./projectLock', () => ({
-  holdsProjectLock: () => true,
-  acquireProjectLock: () => true,
+  holdsProjectLock: vi.fn(() => true),
+  acquireProjectLock: vi.fn(() => true),
 }))
 
 // saveProjectStateLocal is the core the live PROJECT_STATE_SAVE handler runs
@@ -103,7 +103,7 @@ describe('saveProjectState — issue #220 empty-overwrite guard', () => {
   it('refuses to overwrite a non-empty canvas with an empty one', async () => {
     await saveProjectStateLocal(root, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
     // A racey activation save serializes an empty canvas — must be rejected.
-    await saveProjectStateLocal(root, makeWorkspace([]), makeSession())
+    await expect(saveProjectStateLocal(root, makeWorkspace([]), makeSession())).rejects.toThrow(/empty/ )
     expect(nodeCount(await readWorkspaceJson(root))).toBe(2)
   })
 
@@ -206,10 +206,19 @@ describe('PROJECT_STATE_SAVE handler — live production save path (issue #220)'
     expect(nodeCount(await readWorkspaceJson(root))).toBe(2)
   })
 
+  it('persists an explicitly emptied layout through autosave and quit fallback', async () => {
+    await save(root, makeWorkspace([makeNode('a')]), makeSession())
+    await handlers.get(PROJECT_STATE_SAVE)!(null, root, makeWorkspace([]), makeSession(), undefined, { allowEmptyLayout: true })
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(0)
+    saveProjectStateSync()
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(0)
+    expect(nodeCount((await loadProjectState(root))!.workspace)).toBe(0)
+  })
+
   it('the live handler refuses an empty overwrite of a non-empty canvas', async () => {
     await save(root, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
     // Before the fix the inline handler had no node-count check and clobbered this.
-    await save(root, makeWorkspace([]), makeSession())
+    await expect(save(root, makeWorkspace([]), makeSession())).rejects.toThrow(/empty/)
     expect(nodeCount(await readWorkspaceJson(root))).toBe(2)
   })
 })
@@ -226,7 +235,7 @@ describe('saveProjectStateSync — quit-time guard ordering (issue #220)', () =>
     const wsPath = path.join(root, '.cate', 'workspace.json')
     // Queue an empty canvas as the last live save (the guard skips its on-disk
     // write, but lastSavedProjectStates now holds the empty snapshot).
-    await save(root, makeWorkspace([]), makeSession())
+    await expect(save(root, makeWorkspace([]), makeSession())).rejects.toThrow(/empty/)
     // Simulate the primary already wiped to empty in a degraded build while .bak
     // still holds the rich canvas.
     await fs.writeFile(wsPath + '.bak', JSON.stringify(makeWorkspace([makeNode('a'), makeNode('b')])), 'utf-8')
@@ -249,5 +258,28 @@ describe('saveProjectStateSync — quit-time guard ordering (issue #220)', () =>
     await save(root, makeWorkspace([makeNode('a'), makeNode('b')]), makeSession())
     saveProjectStateSync()
     expect(nodeCount(await readWorkspaceJson(root))).toBe(2)
+  })
+})
+
+
+describe('save receipts reflect publication', () => {
+  it('rejects an externally held layout and retries unchanged bytes after dismissal', async () => {
+    registerProjectStateHandlers()
+    const layout = makeWorkspace([makeNode('a')])
+    await save(root, layout, makeSession())
+    await fs.writeFile(path.join(root, '.cate/workspace.json'), JSON.stringify({ ...layout, name: 'external' }))
+    await expect(save(root, layout, makeSession())).rejects.toThrow(/external/i)
+    await handlers.get(WORKSPACE_EXTERNAL_EDIT_DISMISS)!(null, root)
+    await save(root, layout, makeSession())
+    expect((await readWorkspaceJson(root)).name).toBe('WS')
+  })
+  it('rejects another owner rather than acknowledging a skipped save', async () => {
+    const lock = await import('./projectLock')
+    registerProjectStateHandlers()
+    vi.mocked(lock.holdsProjectLock).mockReturnValueOnce(false)
+    vi.mocked(lock.acquireProjectLock).mockReturnValueOnce(false)
+    await expect(save(root, makeWorkspace([makeNode('a')]), makeSession())).rejects.toThrow(/another.*instance/i)
+    await save(root, makeWorkspace([makeNode('a')]), makeSession())
+    expect(nodeCount(await readWorkspaceJson(root))).toBe(1)
   })
 })

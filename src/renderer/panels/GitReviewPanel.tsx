@@ -1,25 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  ArrowClockwise,
-  CaretDown,
-  CaretRight,
-  Check,
-  ClipboardText,
-  Code,
-  DotsThree,
-  File,
-  FileMagnifyingGlass,
-  GitDiff,
-  GitPullRequest,
-  ImageSquare,
-  Minus,
-  NotePencil,
-  PaperPlaneTilt,
-  Plus,
-  Rows,
-  SplitHorizontal,
-  Trash,
-} from '@phosphor-icons/react'
+import { RotateCw as ArrowClockwise, ChevronDown as CaretDown, ChevronRight as CaretRight, Check, Clipboard as ClipboardText, Code, Ellipsis as DotsThree, File, FileSearch as FileMagnifyingGlass, GitCompareArrows as GitDiff, GitPullRequest, ImageIcon as ImageSquare, Minus, NotebookPen as NotePencil, Send as PaperPlaneTilt, Plus, Rows2 as Rows, Split as SplitHorizontal, Trash } from 'lucide-react'
 import type {
   GitChangedFile,
   GitComparisonResult,
@@ -41,6 +21,7 @@ import {
   handleCodingAgentMethod,
 } from '../lib/agent/codingAgentDriver'
 import { inspectReviewAgents, launchReviewAgent, trackReviewAgent, unavailableReviewAgents } from '../lib/review/reviewAgent'
+import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { placementForPanel } from '../lib/workspace/canvasAccess'
 import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewMenuButton, ReviewRunStatus, ReviewStats, ToolbarButton, type AgentChoice } from './ReviewControls'
 import { HunkView, type NoteDraft } from './ReviewDiff'
@@ -492,6 +473,8 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
     comparisonKeyRef.current = comparisonKey
     const cachedDiffs = comparisonChanged ? {} : diffsRef.current
     if (comparisonChanged) {
+      setComparison(null)
+      setNoteDraft(null)
       diffsRef.current = {}
       expandedFilesRef.current = new Set()
       contextLinesByFileRef.current = {}
@@ -803,7 +786,7 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
     note.side !== 'file' && note.status !== 'resolved' && !note.outdated,
   )
   return (
-    <div ref={panelRef} className="relative flex flex-col h-full min-h-0 bg-surface-0 text-primary">
+    <div ref={panelRef} className="relative flex flex-col w-full min-w-0 h-full min-h-0 bg-surface-0 text-primary">
       <ReviewToolbar state={reviewState} workspaceId={workspaceId} panelId={panelId}>
         {reviewState.spec.kind === 'commit' && (
           <SearchableRefInput
@@ -812,7 +795,7 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
             options={commits.map((item) => ({ value: item.hash, label: item.message }))}
             onCommit={(commit) => update({ spec: { kind: 'commit', commit, ignoreWhitespace: reviewState.spec.ignoreWhitespace } })}
             ariaLabel="Search commits"
-            className="h-7 min-w-0 max-w-[300px] rounded-lg bg-surface-2 border border-subtle px-2 text-[11px] font-mono focus:outline-none"
+            className="review-ref h-7 min-w-0 max-w-[300px] rounded-lg bg-surface-2 border border-subtle px-2 text-[11px] font-mono focus:outline-none"
           />
         )}
         {reviewState.spec.kind === 'branch' && (
@@ -823,7 +806,7 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
               options={branches.map((branch) => ({ value: branch.name }))}
               onCommit={(base) => update({ spec: { kind: 'branch', base, target: reviewState.spec.kind === 'branch' ? reviewState.spec.target : '', ignoreWhitespace: reviewState.spec.ignoreWhitespace } })}
               ariaLabel="Search base branches"
-              className="h-7 max-w-[180px] rounded-lg bg-surface-2 border border-subtle px-2 text-[11px] focus:outline-none"
+              className="review-ref h-7 min-w-0 max-w-[180px] rounded-lg bg-surface-2 border border-subtle px-2 text-[11px] focus:outline-none"
             />
             <span className="text-muted">→</span>
             <SearchableRefInput
@@ -832,11 +815,11 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
               options={branches.map((branch) => ({ value: branch.name }))}
               onCommit={(target) => update({ spec: { kind: 'branch', base: reviewState.spec.kind === 'branch' ? reviewState.spec.base : '', target, ignoreWhitespace: reviewState.spec.ignoreWhitespace } })}
               ariaLabel="Search target branches"
-              className="h-7 max-w-[180px] rounded-lg bg-surface-2 border border-subtle px-2 text-[11px] focus:outline-none"
+              className="review-ref h-7 min-w-0 max-w-[180px] rounded-lg bg-surface-2 border border-subtle px-2 text-[11px] focus:outline-none"
             />
           </>
         )}
-        <div className="flex items-center gap-1 ml-auto">
+        <div className="review-toolbar-actions flex shrink-0 items-center gap-1 ml-auto">
           <ReviewRunStatus state={reviewState} workspace={workspace} workspaceId={workspaceId} panelId={panelId} />
           <ReviewStats files={comparison?.files.length ?? 0} additions={comparison?.additions ?? 0} deletions={comparison?.deletions ?? 0} />
           <ToolbarButton label="Refresh" onClick={() => void refresh()} disabled={loading}>{loading ? <Spinner size={14} label="Refreshing changes" /> : <ArrowClockwise size={14} />}</ToolbarButton>
@@ -943,7 +926,7 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
                 <span className="font-mono text-[11px] truncate flex-1" title={file.path}>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
                 <span className="text-[10px] tabular-nums"><span className="text-diff-add">+{file.additions ?? '–'}</span> <span className="text-diff-del">-{file.deletions ?? '–'}</span></span>
                 {fileNotes.length > 0 && <span className="text-[10px] text-blue-400">{fileNotes.length} note{fileNotes.length === 1 ? '' : 's'}</span>}
-                <ToolbarButton label="Open file" onClick={() => useAppStore.getState().createEditor(
+                <ToolbarButton label="Open file" onClick={() => openFileAsPanel(
                   workspaceId,
                   absoluteFilePath(reviewState.repoPath, file.path),
                   undefined,

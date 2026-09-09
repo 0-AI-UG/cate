@@ -5,6 +5,7 @@
 import { BrowserWindow, Menu, shell, app } from 'electron'
 import { MENU_OPEN_SETTINGS, MENU_TRIGGER_ACTION, BROWSER_SHORTCUT } from '../shared/ipc-channels'
 import {
+  SHORTCUT_ACTIONS,
   SHORTCUT_DISPLAY_NAMES,
   resolveShortcuts,
   type MenuActionId,
@@ -92,6 +93,10 @@ export function popupMenuBarItem(index: number, win: BrowserWindow, x: number, y
 }
 
 export function buildApplicationMenu(): void {
+  const native = (action: import('../shared/types').NativeAction) => (): void => {
+    const win = getFocusedWindow()
+    if (win) runNativeAction(win, action)
+  }
   const newWindow = (): void => {
     if (!newMainWindowFn) return
     newMainWindowFn()
@@ -103,15 +108,14 @@ export function buildApplicationMenu(): void {
       submenu: [
         { role: 'about' },
         {
-          label: 'Check for Updates...',
+          ...actionMeta('checkForUpdates'),
           click: (): void => {
             checkForUpdatesManually()
           },
         },
         { type: 'separator' },
         {
-          label: 'Preferences...',
-          accelerator: 'Cmd+,',
+          ...actionMeta('openSettings'),
           click: (): void => {
             const win = getFocusedWindow()
             if (win) sendToWindow(win.id, MENU_OPEN_SETTINGS)
@@ -132,8 +136,7 @@ export function buildApplicationMenu(): void {
       label: 'File',
       submenu: [
         {
-          label: 'New Window',
-          accelerator: 'CmdOrCtrl+Shift+N',
+          ...actionMeta('newWindow'),
           click: newWindow,
         },
         { type: 'separator' },
@@ -144,8 +147,8 @@ export function buildApplicationMenu(): void {
         { ...actionMeta('newAgent'), click: dispatch('newAgent') },
         { ...actionMeta('newCanvas'), click: dispatch('newCanvas') },
         { type: 'separator' },
-        { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: dispatch('openFolder') },
-        { label: 'Reload Workspace from Disk', click: dispatch('reloadWorkspace') },
+        { ...actionMeta('openFolder'), click: dispatch('openFolder') },
+        { ...actionMeta('reloadWorkspace'), click: dispatch('reloadWorkspace') },
         { type: 'separator' },
         { ...actionMeta('saveFile'), label: 'Save', click: dispatch('saveFile') },
         { type: 'separator' },
@@ -153,7 +156,7 @@ export function buildApplicationMenu(): void {
         // browser so its panel-local reload handling can take precedence.
         { label: SHORTCUT_DISPLAY_NAMES.renamePanel, click: dispatch('renamePanel') },
         { ...actionMeta('closePanel'), click: dispatch('closePanel') },
-        { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' },
+        { ...actionMeta('closeWindow'), click: native('closeWindow') },
       ],
     },
     // Edit menu
@@ -194,10 +197,10 @@ export function buildApplicationMenu(): void {
         { ...actionMeta('zoomReset'), click: dispatch('zoomReset') },
         { ...actionMeta('zoomToFit'), click: dispatch('zoomToFit') },
         { type: 'separator' },
-        { role: 'togglefullscreen' },
+        { ...actionMeta('toggleFullscreen'), click: native('toggleFullscreen') },
         { type: 'separator' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
+        { ...actionMeta('reloadWindow'), click: native('reloadWindow') },
+        { ...actionMeta('toggleDevTools'), click: native('toggleDevTools') },
       ],
     },
     // Go menu
@@ -255,30 +258,71 @@ export function buildApplicationMenu(): void {
       role: 'help',
       submenu: [
         {
-          label: 'Cate Documentation',
+          ...actionMeta('documentation'),
           click: (): void => {
             shell.openExternal('https://github.com/0-AI-UG/cate')
           },
         },
         {
-          label: 'Report Issue...',
+          ...actionMeta('reportIssue'),
           click: (): void => {
             shell.openExternal('https://github.com/0-AI-UG/cate/issues')
           },
         },
         { type: 'separator' },
         {
-          label: 'Check for Updates...',
+          ...actionMeta('checkForUpdates'),
           click: (): void => {
             checkForUpdatesManually()
           },
         },
-        { role: 'toggleDevTools' },
+        { ...actionMeta('toggleDevTools'), click: native('toggleDevTools') },
       ],
     },
   ]
 
+// Native accelerators also reach browser guests. Keep text-sensitive commands
+  // in the renderer, where the focused surface can retain its own editing keys.
+  const registered = new Set<string>()
+  const collect = (items: Electron.MenuItemConstructorOptions[]): void => {
+    for (const item of items) {
+      if (item.accelerator) registered.add(item.accelerator)
+      if (Array.isArray(item.submenu)) collect(item.submenu)
+    }
+  }
+  collect(template)
+  const extras = SHORTCUT_ACTIONS.filter(id => ![
+    'tidyGrid', 'renamePanel', 'undo', 'redo', 'deleteNode', 'panUp', 'panDown', 'panLeft', 'panRight',
+  ].includes(id)).flatMap(id => {
+    const meta = actionMeta(id)
+    if (!meta.accelerator || registered.has(meta.accelerator)) return []
+    registered.add(meta.accelerator)
+    return [{ ...meta, visible: false, acceleratorWorksWhenHidden: true, click: dispatch(id) }]
+  })
+  const view = template.find(item => item.label === 'View')
+  if (view && Array.isArray(view.submenu)) view.submenu.push(...extras)
   const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
   currentMenu = menu
+}
+
+/** Commands that need Electron APIs, scoped to the requesting app window. */
+export function runNativeAction(win: BrowserWindow, action: import('../shared/types').NativeAction): void {
+  switch (action) {
+    case 'newWindow': newMainWindowFn?.(); break
+    case 'closeWindow': win.close(); break
+    case 'toggleFullscreen': win.setFullScreen(!win.isFullScreen()); break
+    case 'reloadWindow': win.webContents.reloadIgnoringCache(); break
+    case 'toggleDevTools': win.webContents.toggleDevTools(); break
+    case 'checkForUpdates': checkForUpdatesManually(); break
+    case 'documentation': void shell.openExternal('https://github.com/0-AI-UG/cate'); break
+    case 'reportIssue': void shell.openExternal('https://github.com/0-AI-UG/cate/issues'); break
+    case 'browser:reload':
+    case 'browser:reloadHard':
+    case 'browser:back':
+    case 'browser:forward':
+    case 'browser:focusUrl':
+      sendToWindow(win.id, BROWSER_SHORTCUT, action.slice('browser:'.length))
+      break
+  }
 }

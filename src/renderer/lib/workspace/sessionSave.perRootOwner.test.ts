@@ -15,7 +15,7 @@ vi.mock('../logger', () => ({
 
 import { useAppStore } from '../../stores/appStore'
 import { useWorkspaceTrustStore } from '../../stores/workspaceTrustStore'
-import { saveSession } from './sessionSave'
+import { saveSession, keepWorkspaceLayout } from './sessionSave'
 import type { PanelState } from '../../../shared/types'
 
 function terminalPanel(id: string): PanelState {
@@ -96,15 +96,51 @@ describe('per-root write ownership', () => {
     expect(savesForRoot()).toHaveLength(firstCount)
   })
 
-  it('stops retrying .cate saves after three consecutive failures', async () => {
+  it('waits for durable project writes before resolving', async () => {
+    let complete!: () => void
+    projectStateSave.mockImplementation(() => new Promise<void>(resolve => { complete = resolve }))
+    let done = false
+    const saving = saveSession().then(() => { done = true })
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(projectStateSave).toHaveBeenCalledTimes(1)
+    expect(done).toBe(false)
+    complete()
+    await saving
+  })
+
+  it('queues the latest snapshot behind an in-flight write', async () => {
+    let complete!: () => void
+    projectStateSave.mockImplementationOnce(() => new Promise<void>(resolve => { complete = resolve }))
+    const first = saveSession()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    useAppStore.setState({ selectedWorkspaceId: 'ws-other' })
+    const latest = saveSession()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    complete()
+    await Promise.all([first, latest])
+    expect(savesForRoot().map(call => (call[1] as { name: string }).name)).toEqual(['Owner', 'Other'])
+  })
+
+  it('keeps failed bytes retryable instead of acknowledging them as durable', async () => {
     projectStateSave.mockRejectedValue(new Error('EPERM: read-only mount'))
 
     for (let attempt = 0; attempt < 6; attempt++) {
-      await saveSession()
+      await expect(saveSession()).rejects.toThrow('read-only mount')
       await Promise.resolve()
       await Promise.resolve()
     }
 
-    expect(savesForRoot()).toHaveLength(3)
+    expect(savesForRoot()).toHaveLength(6)
   })
+})
+
+
+it('publishes an unchanged layout after keeping it over an external edit', async () => {
+  await saveSession()
+  await saveSession()
+  expect(savesForRoot()).toHaveLength(1)
+  window.electronAPI.dismissWorkspaceExternalEdit = vi.fn(async () => {})
+  await keepWorkspaceLayout(ROOT)
+  expect(window.electronAPI.dismissWorkspaceExternalEdit).toHaveBeenCalledWith(ROOT)
+  expect(savesForRoot()).toHaveLength(2)
 })

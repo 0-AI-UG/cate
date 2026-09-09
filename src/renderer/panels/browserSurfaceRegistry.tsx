@@ -99,6 +99,27 @@ function cssNumber(value: number): string {
   return String(Math.round(value * 1000) / 1000)
 }
 
+function surfaceBorderRadius(slot: HTMLElement, rect: DOMRect, scale: number, geometry: FrameGeometry): string {
+  const node = slot.closest<HTMLElement>('[data-node-id]')
+  if (!node) return '0px'
+  const bounds = geometry.rect(node)
+  const style = geometry.style(node)
+  const border = (side: string): number => Number.parseFloat(style.getPropertyValue(`border-${side}-width`)) || 0
+  const left = Math.abs((rect.left - bounds.left) / scale - border('left')) < 1
+  const right = Math.abs((bounds.right - rect.right) / scale - border('right')) < 1
+  const top = Math.abs((rect.top - bounds.top) / scale - border('top')) < 1
+  const bottom = Math.abs((bounds.bottom - rect.bottom) / scale - border('bottom')) < 1
+  const corner = (touches: boolean, radius: string, a: string, b: string): string => (
+    `${cssNumber(touches ? Math.max(0, (Number.parseFloat(radius) || 0) - Math.max(border(a), border(b))) : 0)}px`
+  )
+  return [
+    corner(top && left, style.borderTopLeftRadius || style.borderRadius, 'top', 'left'),
+    corner(top && right, style.borderTopRightRadius || style.borderRadius, 'top', 'right'),
+    corner(bottom && right, style.borderBottomRightRadius || style.borderRadius, 'bottom', 'right'),
+    corner(bottom && left, style.borderBottomLeftRadius || style.borderRadius, 'bottom', 'left'),
+  ].join(' ')
+}
+
 function surfaceClipPath(
   panelId: string,
   slot: HTMLElement,
@@ -126,7 +147,7 @@ function surfaceClipPath(
   const node = slot.closest<HTMLElement>('[data-node-id]')
   const nodeLayer = node?.parentElement
   const nodeZIndex = node ? Number.parseFloat(geometry.style(node).zIndex) : Number.NaN
-  const occluders = nodeLayer && Number.isFinite(nodeZIndex)
+  const nodeOccluders = nodeLayer && Number.isFinite(nodeZIndex)
     ? geometry.nodes(nodeLayer)
       .filter((entry) => entry.element !== node && entry.z > nodeZIndex)
       .map((entry) => intersectRects(visible, geometry.rect(entry.element)))
@@ -134,15 +155,11 @@ function surfaceClipPath(
       .map(local)
     : []
 
-  // Dock chrome belongs to the slot's DOM stacking context, while the guest is
-  // painted in an external host. Leave the chrome's area open for real clicks.
-  for (const overlay of geometry.overlays) {
-    if (overlay.dataset.browserSurfaceOverlay !== panelId || geometry.style(overlay).visibility === 'hidden') continue
-    const hole = intersectRects(visible, geometry.rect(overlay))
-    if (!hole) continue
-    // Even-odd paths must not contain overlapping holes: their intersection
-    // would paint the guest again. Keep only chrome not already cut out.
-    let remaining = [local(hole)]
+  // Every cutout uses the same subtraction: overlapping even-odd holes would
+  // paint the browser again in their intersection.
+  const occluders: SurfaceRect[] = []
+  const addOccluder = (hole: SurfaceRect): void => {
+    let remaining = [hole]
     for (const existing of occluders) {
       remaining = remaining.flatMap((part) => {
         const overlap = intersectRects(part, existing)
@@ -156,6 +173,13 @@ function surfaceClipPath(
       })
     }
     occluders.push(...remaining)
+  }
+  nodeOccluders.forEach(addOccluder)
+  // Dock chrome lives in the slot's stacking context, outside the guest host.
+  for (const overlay of geometry.overlays) {
+    if (overlay.dataset.browserSurfaceOverlay !== panelId || geometry.style(overlay).visibility === 'hidden') continue
+    const hole = intersectRects(visible, geometry.rect(overlay))
+    if (hole) addOccluder(local(hole))
   }
 
   if (occluders.length === 0) {
@@ -176,7 +200,7 @@ function surfaceClipPath(
 
 type SurfaceStyles = Pick<CSSStyleDeclaration,
   'position' | 'left' | 'top' | 'width' | 'height' | 'transform' | 'transformOrigin'
-  | 'clipPath' | 'opacity' | 'pointerEvents' | 'zIndex' | 'visibility'>
+  | 'clipPath' | 'opacity' | 'pointerEvents' | 'zIndex' | 'visibility' | 'borderRadius' | 'overflow'>
 
 function writeSurface(surface: SurfaceEntry, visible: boolean, styles: Partial<SurfaceStyles>): void {
   const { container } = surface
@@ -221,11 +245,13 @@ function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
 
   const node = slot.closest<HTMLElement>('[data-node-id]')
   const nodeZIndex = node ? geometry.style(node).zIndex : 'auto'
+  const borderRadius = surfaceBorderRadius(slot, rect, rect.width / logicalWidth, geometry)
   return () => writeSurface(surface, true, {
     visibility: 'visible',
     position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
     width: `${logicalWidth}px`, height: `${logicalHeight}px`, transformOrigin: '0 0',
     transform: `scale(${rect.width / logicalWidth}, ${rect.height / logicalHeight})`,
+    borderRadius, overflow: 'hidden',
     clipPath, zIndex: nodeZIndex === 'auto' ? '1' : nodeZIndex,
     opacity: '1', pointerEvents: 'auto',
   })

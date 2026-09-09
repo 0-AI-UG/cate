@@ -11,8 +11,8 @@
 // noise on the common single-branch flow.
 // =============================================================================
 
-import React, { useCallback, useEffect, useState } from 'react'
-import { ArrowsSplit } from '@phosphor-icons/react'
+import React, { useCallback, useEffect } from 'react'
+import { WorktreeSelector, worktreeLabel } from '../ui/WorktreeSelector'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 import { useWorktrees } from '../stores/useWorktrees'
@@ -35,40 +35,15 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
   const focusWorktree = useUIStore((s) => s.focusWorktree)
   const focusedWorktreeId = useUIStore((s) => s.focusedWorktreeId)
 
-  const current = resolveWorktree(panel.worktreeId, worktrees) ?? worktrees.find((w) => w.isPrimary)
+  const live = worktrees.filter((worktree) => !worktree.isOrphan)
+  const current = resolveWorktree(panel.worktreeId, live) ?? live.find((w) => w.isPrimary) ?? live[0]
   const currentId = current?.id
-
-  // Collapsed (icon-only) until hovered, so the overlay covers as little of the
-  // panel content as possible (#370); hovering grows it to the full title.
-  const [hovered, setHovered] = useState(false)
-
-  const labelOf = (w: { label?: string; branch?: string; isPrimary?: boolean }) =>
-    w.label || w.branch || (w.isPrimary ? 'main' : '(detached)')
 
   // Clear the hover highlight if this chip unmounts while hovered.
   useEffect(() => () => setHoveredWorktree(null), [setHoveredWorktree])
 
-  const handleClick = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!window.electronAPI || !current) return
-    const isFocused = focusedWorktreeId === current.id
-    const items = [
-      { id: '__focus', label: isFocused ? 'Clear focus' : `Focus “${labelOf(current)}” on canvas` },
-      { type: 'separator' as const },
-      ...worktrees.map((w) => ({
-        id: w.id,
-        label: labelOf(w) + (w.id === current.id ? '  ✓' : ''),
-      })),
-    ]
-    const choice = await window.electronAPI.showContextMenu(items)
-    if (!choice) return
-
-    if (choice === '__focus') {
-      focusWorktree(isFocused ? null : current.id)
-      return
-    }
-    if (choice === current.id) return
-    const target = worktrees.find((w) => w.id === choice)
+  const changeWorktree = useCallback(async (id: string) => {
+    const target = worktrees.find((worktree) => worktree.id === id)
     if (!target) return
 
     if (panel.type === 'agent') {
@@ -81,66 +56,24 @@ export const WorktreePill: React.FC<WorktreePillProps> = ({ panel, workspaceId }
     const ok = await confirmCloseRunningTerminals([panel])
     if (!ok) return
     useAppStore.getState().respawnPanelTerminal(workspaceId, panel.id, target.path, target.id)
-  }, [worktrees, current, focusedWorktreeId, panel, workspaceId, focusWorktree])
+  }, [worktrees, panel, workspaceId])
 
   if (panel.type !== 'terminal' && panel.type !== 'agent') return null
-  if (worktrees.length < 2 || !current) return null
+  if (live.length < 2 || !current) return null
 
   const isFocused = focusedWorktreeId === currentId
 
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      onMouseEnter={() => {
-        setHovered(true)
-        if (currentId) setHoveredWorktree(currentId)
-      }}
-      onMouseLeave={() => {
-        setHovered(false)
-        setHoveredWorktree(null)
-      }}
-      title={`Worktree: ${current.branch || current.path}`}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: hovered ? 4 : 0,
-        height: 18,
-        maxWidth: 220,
-        padding: hovered ? '0 9px 0 7px' : '0 4px',
-        borderRadius: 9,
-        // Filled, no outline — the chip IS the worktree color. Slightly toned
-        // toward black so white text stays legible across the bright palette.
-        backgroundColor: `color-mix(in srgb, ${current.color ?? 'var(--text-muted)'} 92%, black)`,
-        border: 'none',
-        boxShadow: isFocused ? `0 0 10px -1px ${current.color ?? 'var(--text-muted)'}` : 'none',
-        color: '#fff',
-        fontSize: 10,
-        fontWeight: 600,
-        lineHeight: 1,
-        letterSpacing: 0.2,
-        textShadow: '0 1px 1px rgba(0,0,0,0.3)',
-        cursor: 'pointer',
-        userSelect: 'none',
-        transition:
-          'box-shadow 150ms ease, background-color 150ms ease, filter 150ms ease, gap 150ms ease, padding 150ms ease',
-        filter: isFocused ? 'brightness(1.12)' : undefined,
-      }}
-      onMouseDown={(e) => e.stopPropagation()}
-    >
-      <ArrowsSplit size={11} style={{ flexShrink: 0 }} />
-      <span
-        style={{
-          maxWidth: hovered ? 180 : 0,
-          opacity: hovered ? 1 : 0,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          transition: 'max-width 150ms ease, opacity 150ms ease',
-        }}
-      >
-        {labelOf(current)}
-      </span>
-    </button>
-  )
+  return <WorktreeSelector
+    worktrees={worktrees}
+    value={currentId}
+    onChange={changeWorktree}
+    title="Worktree"
+    overlay
+    focused={isFocused}
+    onHoverChange={setHoveredWorktree}
+    focusAction={{
+      label: isFocused ? 'Clear focus' : `Focus “${worktreeLabel(current)}” on canvas`,
+      onSelect: () => focusWorktree(isFocused ? null : current.id),
+    }}
+  />
 }

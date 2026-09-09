@@ -2,6 +2,9 @@ import React, { useState } from 'react'
 import type { GitComparisonSpec, ReviewPanelState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { Spinner } from '../ui/Spinner'
+import { useWorktrees } from '../stores/useWorktrees'
+import { WorktreeSelector } from '../ui/WorktreeSelector'
+import { worktreeForPath } from '../lib/worktreeContext'
 
 const MODES = [
   { value: 'uncommitted', label: 'All Changes' },
@@ -17,6 +20,26 @@ export function ReviewToolbar({ state, workspaceId, panelId, children }: {
 }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const workspace = useAppStore((app) => app.workspaces.find((item) => item.id === workspaceId))
+  const worktrees = useWorktrees(workspace?.rootPath ?? '', workspaceId)
+  const currentWorktree = worktreeForPath(state.repoPath, worktrees)
+  const switchWorktree = (id: string) => {
+    const target = worktrees.find((worktree) => worktree.id === id && !worktree.isOrphan)
+    if (!target || target.path === state.repoPath || busy) return
+    const { worktreeStates = {}, ...current } = state
+    const restored = worktreeStates[target.path]
+    const spec: GitComparisonSpec = state.spec.kind === 'branch'
+      ? { ...state.spec, target: target.branch || 'HEAD' }
+      : state.spec
+    const next: ReviewPanelState = {
+      ...(restored ?? { repoPath: target.path, spec, agentChanges: state.agentChanges ? {} : undefined }),
+      display: state.display,
+      worktreeStates: { ...worktreeStates, [state.repoPath]: current },
+    }
+    const app = useAppStore.getState()
+    app.setPanelReviewState(workspaceId, panelId, next)
+    app.setPanelWorktreeId(workspaceId, panelId, target.id)
+  }
   const select = async (kind: GitComparisonSpec['kind'] | 'agent') => {
     setError(''); setBusy(true)
     try {
@@ -48,14 +71,19 @@ export function ReviewToolbar({ state, workspaceId, panelId, children }: {
     finally { setBusy(false) }
   }
   return <>
-    <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 border-b border-subtle bg-surface-1 flex-shrink-0">
+    <div className="review-toolbar-container w-full min-w-0 shrink-0" style={{ containerType: 'inline-size', containerName: 'review-toolbar' }}>
+    <div className="review-toolbar min-w-0 flex flex-nowrap items-center gap-1.5 px-2 py-1.5 border-b border-subtle bg-surface-1">
       <select aria-label="Comparison" value={state.agentChanges ? 'agent' : state.spec.kind} disabled={busy}
         onChange={(event) => void select(event.target.value as typeof MODES[number]['value'])}
-        className="h-7 rounded-lg bg-surface-2 border border-subtle px-2 text-[12px] focus:outline-none">
+        className="review-comparison h-7 min-w-0 rounded-lg bg-surface-2 border border-subtle px-2 text-[12px] focus:outline-none">
         {MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
       </select>
+      <div className="review-worktree min-w-0 max-w-40 flex items-center">
+        <WorktreeSelector worktrees={worktrees} value={currentWorktree?.id} onChange={switchWorktree} disabled={busy} title="Diff panel worktree" />
+      </div>
       {busy && <Spinner size={14} label="Loading comparison" />}
       {children}
+    </div>
     </div>
     {error && <div role="alert" className="px-3 py-2 text-red-400 text-[11px] border-b border-subtle">{error}</div>}
   </>

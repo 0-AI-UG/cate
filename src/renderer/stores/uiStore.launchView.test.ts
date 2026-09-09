@@ -6,14 +6,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 // state we stage first.
 async function loadStoresWith(settings: {
   showFileExplorerOnLaunch: boolean
-  sidebarLayout?: { left: string[]; right: string[] }
   loaded: boolean
 }) {
   vi.resetModules()
   const { useSettingsStore } = await import('./settingsStore')
   useSettingsStore.setState({
     showFileExplorerOnLaunch: settings.showFileExplorerOnLaunch,
-    ...(settings.sidebarLayout ? { sidebarLayout: settings.sidebarLayout as never } : {}),
     _loaded: settings.loaded,
   })
   const { useUIStore } = await import('./uiStore')
@@ -32,7 +30,7 @@ describe('uiStore — show file explorer on launch', () => {
     })
     // Flip loaded → triggers the subscription with the setting off.
     useSettingsStore.setState({ _loaded: true })
-    expect(useUIStore.getState().activeLeftSidebarView).toBe('workspaces')
+    expect(useUIStore.getState().requestedNavigationView).toBeNull()
   })
 
   it('opens the explorer at launch once settings finish loading', async () => {
@@ -40,9 +38,9 @@ describe('uiStore — show file explorer on launch', () => {
       showFileExplorerOnLaunch: true,
       loaded: false,
     })
-    expect(useUIStore.getState().activeLeftSidebarView).toBe('workspaces')
+    expect(useUIStore.getState().requestedNavigationView).toBeNull()
     useSettingsStore.setState({ _loaded: true })
-    expect(useUIStore.getState().activeLeftSidebarView).toBe('explorer')
+    expect(useUIStore.getState().requestedNavigationView).toBe('explorer')
   })
 
   it('applies immediately when settings are already loaded at module init', async () => {
@@ -50,7 +48,7 @@ describe('uiStore — show file explorer on launch', () => {
       showFileExplorerOnLaunch: true,
       loaded: true,
     })
-    expect(useUIStore.getState().activeLeftSidebarView).toBe('explorer')
+    expect(useUIStore.getState().requestedNavigationView).toBe('explorer')
   })
 
   it('only applies once — a later settings reload does not re-open the explorer', async () => {
@@ -58,20 +56,10 @@ describe('uiStore — show file explorer on launch', () => {
       showFileExplorerOnLaunch: true,
       loaded: true,
     })
-    expect(useUIStore.getState().activeLeftSidebarView).toBe('explorer')
+    expect(useUIStore.getState().requestedNavigationView).toBe('explorer')
     // User navigates away, then another settings load fires.
-    useUIStore.getState().setActiveLeftSidebarView(null)
+    useUIStore.getState().requestNavigationView(null)
     useSettingsStore.setState({ _loaded: true })
-    expect(useUIStore.getState().activeLeftSidebarView).toBeNull()
-  })
-
-  it('does nothing when explorer is not in the left rail', async () => {
-    const { useSettingsStore, useUIStore } = await loadStoresWith({
-      showFileExplorerOnLaunch: true,
-      sidebarLayout: { left: ['workspaces'], right: ['explorer', 'git', 'search'] },
-      loaded: false,
-    })
-    useSettingsStore.setState({ _loaded: true })
-    expect(useUIStore.getState().activeLeftSidebarView).toBe('workspaces')
+    expect(useUIStore.getState().requestedNavigationView).toBeNull()
   })
 })

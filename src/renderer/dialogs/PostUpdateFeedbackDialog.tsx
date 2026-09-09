@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Star, GithubLogo, Envelope, ArrowSquareOut } from '@phosphor-icons/react'
+import { Star, Github as GithubLogo, Mail as Envelope, SquareArrowOutUpRight as ArrowSquareOut } from 'lucide-react'
 import heroImg from '../assets/dialog-hero.jpg'
 import { useEscapeKey } from '../lib/hooks/useEscapeKey'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -168,7 +168,7 @@ export function PostUpdateFeedbackDialog() {
                   onClick={() => openLink(CHANGELOG_URL, 'full_changelog')}
                   className="flex-1 inline-flex items-center justify-center gap-2 px-3 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-subtle text-white text-[12px] font-semibold transition-all"
                 >
-                  <GithubLogo size={16} weight="fill" />
+                  <GithubLogo size={16} />
                   Full changelog
                   <ArrowSquareOut size={12} />
                 </button>
@@ -176,7 +176,7 @@ export function PostUpdateFeedbackDialog() {
                   onClick={() => openLink(NEWSLETTER_URL, 'newsletter')}
                   className="flex-1 inline-flex items-center justify-center gap-2 px-3 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-subtle text-white text-[12px] font-semibold transition-all"
                 >
-                  <Envelope size={16} weight="fill" className="text-blue-400" />
+                  <Envelope size={16} className="text-blue-400" />
                   Newsletter
                 </button>
               </div>
@@ -199,7 +199,7 @@ export function PostUpdateFeedbackDialog() {
                         >
                           <Star
                             size={22}
-                            weight={filled ? 'fill' : 'regular'}
+
                             className={filled ? 'text-yellow-400' : 'text-[#555]'}
                           />
                         </button>

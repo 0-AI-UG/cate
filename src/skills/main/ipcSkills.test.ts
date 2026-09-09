@@ -42,8 +42,6 @@ vi.mock('./skillSources', () => ({
   listSources: vi.fn(),
   addSource: vi.fn(),
   removeSource: vi.fn(),
-  getToken: vi.fn(),
-  setToken: vi.fn(),
 }))
 
 import { registerSkillHandlers } from './ipcSkills'
@@ -97,13 +95,14 @@ describe('skill mutation worktree propagation', () => {
       'workspace-1',
     )
 
+    expect(state.install).toHaveBeenCalledWith(entry, 'codex', '/repo', { scopeId: 'workspace-1', ownerWindowId: 9 })
     expect(state.worktreeList).toHaveBeenCalledWith('/repo', {
       ownerWindowId: 9,
       scopeId: 'workspace-1',
     })
-    expect(state.sync).toHaveBeenCalledWith('/repo', '/repo')
-    expect(state.sync).toHaveBeenCalledWith('/repo', '/repo/.cate/worktrees/feature')
-    expect(state.sync).not.toHaveBeenCalledWith('/repo', '/repo.git')
+    expect(state.sync).toHaveBeenCalledWith('/repo', '/repo', { scopeId: 'workspace-1', ownerWindowId: 9 })
+    expect(state.sync).toHaveBeenCalledWith('/repo', '/repo/.cate/worktrees/feature', { scopeId: 'workspace-1', ownerWindowId: 9 })
+    expect(state.sync).not.toHaveBeenCalledWith('/repo', '/repo.git', expect.anything())
     expect(result).toMatchObject({ ok: true, warnings: ['mirror warning'] })
   })
 
@@ -117,7 +116,7 @@ describe('skill mutation worktree propagation', () => {
       'workspace-1',
     )
 
-    expect(state.uninstall).toHaveBeenCalledWith(entry.id, entry.name, 'codex', '/repo')
-    expect(state.sync).toHaveBeenCalledWith('/repo', '/repo/.cate/worktrees/feature')
+    expect(state.uninstall).toHaveBeenCalledWith(entry.id, entry.name, 'codex', '/repo', { scopeId: 'workspace-1', ownerWindowId: 9 })
+    expect(state.sync).toHaveBeenCalledWith('/repo', '/repo/.cate/worktrees/feature', { scopeId: 'workspace-1', ownerWindowId: 9 })
   })
 })

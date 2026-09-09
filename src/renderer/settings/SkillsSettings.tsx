@@ -1,14 +1,14 @@
 // =============================================================================
-// SkillsSettings — manage the skill catalog SOURCES (user-added repos) and the
-// optional GitHub token. Sources are global (userData), shared across every
-// workspace, so they live here in main Settings. The Skills dialog's gear button
+// SkillsSettings — manage the skill catalog SOURCES (user-added repos).
+// Sources are global (userData), shared across every workspace, so they live here in main Settings. The Skills dialog's gear button
 // deep-links to this section. Browsing / saving / installing skills happens in
 // the Skills dialog (left-rail puzzle button), not here.
 // =============================================================================
 
 import { useCallback, useEffect, useState } from 'react'
-import { GithubLogo, Plus, Trash } from '@phosphor-icons/react'
+import { Github as GithubLogo, Plus, Trash } from 'lucide-react'
 import { SettingRow, SearchableBlock, SecondaryButton, TextInput } from './SettingsComponents'
+import { useUIStore } from '../stores/uiStore'
 import { errorMessage } from '../lib/errorMessage'
 import type { SkillSource } from '../../shared/skills'
 import { Tooltip } from '../ui/Tooltip'
@@ -21,13 +21,10 @@ export function SkillsSettings() {
   const [repo, setRepo] = useState('')
   const [adding, setAdding] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [hasToken, setHasToken] = useState(false)
-  const [token, setToken] = useState('')
 
   const refresh = useCallback(async () => {
     try {
       setSources(await api().skillsListSources())
-      setHasToken((await api().skillsGetToken()).hasToken)
     } catch {
       /* ignore */
     }
@@ -56,18 +53,6 @@ export function SkillsSettings() {
 
   const remove = async (id: string) => {
     await api().skillsRemoveSource(id)
-    await refresh()
-  }
-
-  const saveToken = async () => {
-    await api().skillsSetToken(token.trim() || null)
-    setToken('')
-    await refresh()
-  }
-
-  const clearToken = async () => {
-    await api().skillsSetToken(null)
-    setToken('')
     await refresh()
   }
 
@@ -121,26 +106,12 @@ export function SkillsSettings() {
       )}
 
       <SettingRow
-        label="GitHub token"
-        description="Optional. Raises the rate limit (60→5,000/hr) and allows private repos. Stored locally."
-        hint={hasToken ? <span className="text-[10px] text-emerald-400">Token saved</span> : undefined}
+        label="GitHub account"
+        description="Skills use your GitHub sign-in for private repositories and higher rate limits. Public skills also work without signing in."
       >
-        <div className="flex items-center gap-2">
-          <TextInput
-            type="password"
-            value={token}
-            onChange={setToken}
-            placeholder={hasToken ? 'Replace…' : 'ghp_…'}
-          />
-          <SecondaryButton onClick={() => void saveToken()} disabled={!token.trim()}>
-            Save
-          </SecondaryButton>
-          {hasToken && (
-            <button onClick={() => void clearToken()} className="px-2 py-1 text-[11px] rounded text-muted hover:text-red-400">
-              Clear
-            </button>
-          )}
-        </div>
+        <SecondaryButton onClick={() => useUIStore.getState().openSettings('Source Control')}>
+          Manage GitHub account
+        </SecondaryButton>
       </SettingRow>
 
     </div>

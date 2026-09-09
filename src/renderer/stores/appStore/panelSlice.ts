@@ -1,3 +1,4 @@
+import { migrateNavigationPanel } from '../../../shared/panels'
 // =============================================================================
 // App Store — panel creation + management slice.
 // =============================================================================
@@ -49,6 +50,7 @@ type PanelSliceActions = Pick<
   | 'updatePanelTabs'
   | 'updatePanelProxy'
   | 'updatePanelFilePath'
+  | 'setPanelNavigation'
   | 'setPanelDirty'
   | 'setPanelMarkdownPreview'
   | 'setPanelUnsavedContent'
@@ -263,11 +265,11 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       // Remove from workspace panels (always do this to ensure cleanup)
       set((state) => ({
         workspaces: state.workspaces.map((ws) => {
-          if (ws.id !== workspaceId) return ws
+          if (ws.id !== workspaceId || !ws.panels[panelId]) return ws
           const remainingPanels = { ...ws.panels }
           delete remainingPanels[panelId]
           for (const id of childIds) delete remainingPanels[id]
-          return { ...ws, panels: remainingPanels }
+          return { ...ws, layoutRootPath: ws.rootPath, panels: remainingPanels }
         }),
       }))
     },
@@ -335,6 +337,13 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, filePath, worktreeId }))
     },
 
+    setPanelNavigation(workspaceId, panelId, view, visible = true) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({
+        ...panel, sidebarView: view, sidebarVisible: visible,
+        navigationEpoch: (panel.navigationEpoch ?? 0) + 1,
+      }))
+    },
+
     setPanelDirty(workspaceId, panelId, dirty) {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, isDirty: dirty }))
     },
@@ -384,6 +393,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
     },
 
     addPanel(workspaceId, panel) {
+      panel = migrateNavigationPanel(panel)
       set((state) => ({
         workspaces: state.workspaces.map((ws) =>
           ws.id === workspaceId
@@ -404,7 +414,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
           if (ws.id !== workspaceId) return ws
           if (!(panelId in ws.panels)) return ws
           const { [panelId]: _removed, ...remainingPanels } = ws.panels
-          return { ...ws, panels: remainingPanels }
+          return { ...ws, layoutRootPath: ws.rootPath, panels: remainingPanels }
         }),
       }))
     },
@@ -423,7 +433,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       }
       set((state) => ({
         workspaces: state.workspaces.map((w) =>
-          w.id === wsId ? { ...w, panels: {} } : w,
+          w.id === wsId ? { ...w, layoutRootPath: w.rootPath, panels: {} } : w,
         ),
       }))
 
@@ -432,10 +442,8 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       }
 
       // Reset the workspace's OWN dock store so the just-cleared panel IDs don't
-      // linger as orphan tabs (which render as a generic "Panel" tab), then mint a
-      // fresh canvas panel for the center zone.
+      // linger as orphan tabs. The resulting empty dock is intentional.
       getOrCreateWorkspaceDockStore(wsId).getState().restoreSnapshot(createCleanDockSnapshot())
-      get().ensureCenterCanvas(wsId)
     },
 
     bumpReloadEpoch(wsId) {

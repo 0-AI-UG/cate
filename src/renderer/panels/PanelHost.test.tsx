@@ -15,6 +15,7 @@ vi.mock('./PanelSuspense', () => ({
   PanelSuspense: ({ children }: { children: React.ReactNode }) => children,
 }))
 
+import { useAppStore } from '../stores/appStore'
 import { PanelHost } from './PanelHost'
 import type { PanelRenderContext } from './registry'
 import type { PanelState } from '../../shared/types'
@@ -28,6 +29,7 @@ function panel(id: string, type: PanelState['type']): PanelState {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  useAppStore.setState({ workspaces: ['ws', 'ws-1'].map((id) => ({ id, rootPath: '/project', panels: {} } as never)) })
   registryMocks.getPanelDef.mockReturnValue({ canLiveOnCanvas: true })
   host = document.createElement('div')
   document.body.appendChild(host)
@@ -118,4 +120,14 @@ it('updates only changed leaf content without invalidating the canvas render cal
   act(() => root.render(<PanelHost panelId="canvas" panels={{ ...panels, a: { ...panels.a, title: 'Changed' } }} workspaceId="ws" />))
   expect(registryMocks.renderPanelComponent.mock.calls.map(([record]) => record.id)).toEqual(['a'])
   expect(host.textContent).toBe('Changedb')
+})
+
+it.each(['canvas', 'terminal', 'editor', 'browser', 'agent', 'document', 'review', 'surface'] as const)('gates %s content before mounting without a workspace', (type) => {
+  const mounted = vi.fn()
+  function Content() { React.useEffect(mounted, []); return <span>Content</span> }
+  registryMocks.renderPanelComponent.mockReturnValue(<Content />)
+  act(() => useAppStore.setState({ workspaces: [] }))
+  act(() => root.render(<PanelHost panelId="p" panels={{ p: panel('p', type) }} workspaceId="missing" />))
+  expect(host.textContent).toContain('No workspace selected')
+  expect(mounted).not.toHaveBeenCalled()
 })

@@ -1,3 +1,7 @@
+import { getPanelDef } from '../panels/registry'
+import { movePanelToNewWindow } from './workspace/movePanelToNewWindow'
+import type { PanelState, PanelType } from '../../shared/types'
+import { getActivePanelId } from './activePanel'
 import { useStatusStore } from '../stores/statusStore'
 // E2E test harness — exposes a tiny inspect/seed API on window.__cateE2E
 // when the app is launched with CATE_E2E=1.
@@ -11,7 +15,8 @@ import { useUIStore, type SidebarView } from '../stores/uiStore'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { gitStatusStore, type GitWorktreeEntry } from '../stores/gitStatusStore'
 import { useDragStore } from '../drag/store'
-import { useSearchStore } from '../stores/searchStore'
+import { createSearchStore } from '../stores/searchStore'
+import { getMountedSearchStore } from '../stores/searchIpc'
 import { getLastReveal } from './editor/editorReveal'
 import { applyTheme } from './themeManager'
 import { BUILT_IN_THEMES } from '../../shared/themes'
@@ -91,6 +96,10 @@ declare global {
        *  by the workspace-trust spec to assert that a repo-supplied
        *  process-bearing panel never materializes. */
       panelTypes(wsId?: string): string[]
+      panels(): PanelState[]
+      createPanel(type: PanelType, filePath?: string): string
+      detachPanel(panelId: string): Promise<boolean>
+      openApplicationOverlay(view: 'settings' | 'skills' | 'usage' | 'pullRequests', section?: string): void
       /** Seed N worktrees on the selected workspace (index 0 = primary, keyed by
        *  the workspace root) WITHOUT a real on-disk repo: writes UI metadata
        *  (id/color/label) and injects a pinned live `git worktree list` so the
@@ -129,12 +138,10 @@ declare global {
       /** Point the selected workspace at a real directory (registers it as an
        *  allowed root) so content search has files to scan. */
       setWorkspaceRoot(rootPath: string): Promise<boolean>
-      /** Activate a sidebar view (e.g. 'search') on the left activity bar. */
-      openSidebarView(view: SidebarView): void
-      /** Set (or clear, with null) the active left sidebar view. Passing null
-       *  collapses the sidebar panel — used by canvas geometry tests that need
-       *  the full-width canvas the pushed sidebar would otherwise shrink. */
-      setActiveLeftSidebarView(view: SidebarView | null): void
+      /** Open the workspace sidebar or a Files/Search/Source Control panel. */
+      openNavigationView(view: SidebarView): void
+      /** Show or hide the workspace sidebar for canvas geometry tests. */
+      setSidebarHidden(hidden: boolean): void
       /** File paths of currently-open editor panels (for open-at-match asserts). */
       editorPaths(): string[]
       /** Serializable snapshot of the search store (query, options, results). */
@@ -470,12 +477,13 @@ export function installE2EHarness(): void {
     return useAppStore.getState().setWorkspaceRootPath(wsId, rootPath)
   }
 
-  const setActiveLeftSidebarView = (view: SidebarView | null): void => {
-    useUIStore.getState().setActiveLeftSidebarView(view)
+  const setSidebarHidden = (hidden: boolean): void => {
+    useUIStore.getState().setLeftSidebarHidden(hidden)
   }
 
-  const openSidebarView = (view: SidebarView): void => {
-    useUIStore.getState().setActiveLeftSidebarView(view)
+  const openNavigationView = (view: SidebarView): void => {
+    if (view === 'workspaces') useUIStore.getState().setLeftSidebarHidden(false)
+    else useUIStore.getState().requestNavigationView(view)
   }
 
   const editorPaths = (): string[] => {
@@ -488,7 +496,7 @@ export function installE2EHarness(): void {
   }
 
   const getSearchSnapshot = (): SearchSnapshot => {
-    const s = useSearchStore.getState()
+    const s = (getMountedSearchStore(getActivePanelId() ?? '') ?? createSearchStore()).getState()
     return {
       query: s.query,
       isRegex: s.isRegex,
@@ -550,6 +558,16 @@ export function installE2EHarness(): void {
     selectedWorkspaceId: () => useAppStore.getState().selectedWorkspaceId,
     selectWorkspace,
     panelTypes,
+    panels: () => Object.values(useAppStore.getState().getWorkspace(useAppStore.getState().selectedWorkspaceId)?.panels ?? {}),
+    createPanel: (type, filePath) => getPanelDef(type).create({ filePath, documentType: filePath ? 'image' : undefined, workspaceId: useAppStore.getState().selectedWorkspaceId, placement: { target: 'dock', zone: 'center' } })!,
+    detachPanel: (id) => movePanelToNewWindow(useAppStore.getState().selectedWorkspaceId, id),
+    openApplicationOverlay: (view, section) => {
+      const ui = useUIStore.getState()
+      if (view === 'settings') ui.openSettings(section)
+      else if (view === 'skills') ui.setShowSkillsDialog(true)
+      else if (view === 'usage') ui.setShowUsage(true)
+      else ui.setShowPullRequests(true)
+    },
     seedWorktrees,
     tagNodeWorktree,
     worktreeDebug,
@@ -567,8 +585,8 @@ export function installE2EHarness(): void {
     codingAgentRuns,
     nodeForPanel,
     setWorkspaceRoot,
-    openSidebarView,
-    setActiveLeftSidebarView,
+    openNavigationView,
+    setSidebarHidden,
     editorPaths,
     getSearchSnapshot,
     lastEditorReveal,

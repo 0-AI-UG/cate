@@ -1,6 +1,8 @@
+import { useCanvasToolbarAction } from './useCanvasToolbarAction'
+import { Tooltip } from '../ui/Tooltip'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, MagnifyingGlass, Trash, PencilSimple } from '@phosphor-icons/react'
+import { Plus, Search as MagnifyingGlass, Trash, Pencil as PencilSimple } from 'lucide-react'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 import { Spinner } from '../ui/Spinner'
 import { T3Logo } from '../ui/T3Logo'
@@ -16,6 +18,7 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
   onOpenChange: (open: boolean) => void
 }) {
   const trigger = useRef<HTMLButtonElement>(null)
+  useCanvasToolbarAction('openConversationMenu', canvasPanelId, () => trigger.current?.click())
   const content = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<{ left: number; bottom: number } | null>(null)
   const canvasApi = useCanvasStoreApi()
@@ -75,7 +78,7 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
   }
   const filtered = threads.filter((thread) => thread.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
   return <>
-    <CanvasToolbarButton ref={trigger} active={!!position} label="T3 Code conversations" tooltipPlacement={tooltipPlacement} size="panel" onClick={() => {
+    <CanvasToolbarButton ref={trigger} active={!!position} action="openConversationMenu" label="T3 Code conversations" tooltipPlacement={tooltipPlacement} size="panel" onClick={() => {
       if (position) { close(); return }
       const rect = trigger.current?.getBoundingClientRect()
       if (!rect) return
@@ -114,7 +117,7 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
         </div>)}
       </div>
       <div className="my-1 h-px bg-surface-5 mx-2.5 shrink-0" />
-      <button disabled={!cwd} onClick={() => create()} className="mx-1 w-[calc(100%-0.5rem)] flex shrink-0 items-center gap-2 h-[26px] px-1.5 rounded-lg text-[12px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors disabled:opacity-40"><Plus size={13} className="shrink-0" />New conversation</button>
+      <Tooltip action="newAgent" label="New conversation"><button disabled={!cwd} onClick={() => create()} className="mx-1 w-[calc(100%-0.5rem)] flex shrink-0 items-center gap-2 h-[26px] px-1.5 rounded-lg text-[12px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors disabled:opacity-40"><Plus size={13} className="shrink-0" />New conversation</button></Tooltip>
     </div>, document.body)}
   </>
 }

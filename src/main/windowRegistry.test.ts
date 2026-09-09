@@ -201,3 +201,27 @@ describe('listDockWindows', () => {
     expect(listDockWindows().find((e) => e.windowId === dock.id)).toBeUndefined()
   })
 })
+
+describe('committed handoff recovery in the existing dock snapshot list', () => {
+  it('retains committed bytes when the target closes, then releases recovery after adoption', async () => {
+    const registry = await import('./windowRegistry') as typeof import('./windowRegistry') & {
+      retainDockWindowRecovery?: (id: number) => boolean
+      clearDockWindowRecovery?: (id: number) => void
+    }
+    const win = register('dock', 'workspace')
+    const state = { dockState: { zones: {} }, panels: { editor: { id: 'editor', type: 'editor', title: 'file', isDirty: true, unsavedContent: 'committed edits' } }, canvasStates: {} }
+    setDockWindowState(win.id, state as never)
+    registry.retainDockWindowRecovery?.(win.id)
+    expect(listDockWindows().filter(entry => entry.windowId === win.id)).toHaveLength(1)
+    destroy(win)
+    expect(listDockWindows()).toContainEqual(expect.objectContaining({ windowId: win.id, workspaceId: 'workspace', panels: state.panels, bounds: win.bounds }))
+    registry.clearDockWindowRecovery?.(win.id)
+    expect(listDockWindows().some(entry => entry.windowId === win.id)).toBe(false)
+  })
+  it('does not retain ordinary closed dock windows', () => {
+    const win = register('dock', 'ordinary')
+    setDockWindowState(win.id, { dockState: { zones: {} }, panels: {}, canvasStates: {} } as never)
+    destroy(win)
+    expect(listDockWindows().some(entry => entry.windowId === win.id)).toBe(false)
+  })
+})

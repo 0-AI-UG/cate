@@ -134,6 +134,7 @@ beforeEach(() => {
     writable: true,
     value: {
       terminalCreate,
+      terminalReady: vi.fn(async () => undefined),
       terminalWrite: vi.fn(),
       terminalResize: vi.fn(),
       terminalKill: vi.fn(async () => undefined),

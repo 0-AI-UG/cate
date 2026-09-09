@@ -13,7 +13,7 @@
 //                    close-confirm still protects it.
 // =============================================================================
 
-import { Warning } from '@phosphor-icons/react'
+import { TriangleAlert as Warning } from 'lucide-react'
 
 export interface EditorConflictBannerProps {
   kind: 'changed' | 'deleted'
@@ -77,7 +77,7 @@ export default function EditorConflictBanner({
       className="flex items-center gap-2 shrink-0 px-2 py-1 border-b border-subtle"
       style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}
     >
-      <Warning size={12} weight="fill" className="text-warning shrink-0" />
+      <Warning size={12} className="text-warning shrink-0" />
       <span className="text-[11px] text-secondary leading-tight flex-1 min-w-0 truncate">
         {label}
       </span>

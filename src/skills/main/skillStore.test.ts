@@ -33,7 +33,7 @@ describe('skillStore', () => {
       { relPath: 'references/guide.md', text: 'guide' },
       { relPath: 'assets/icon.bin', base64: binary.toString('base64') },
     ]))
-    expect(fs.existsSync(path.join(userData, 'skills-store', 'owner_repo_demo', 'SKILL.md'))).toBe(true)
+    expect(fs.readdirSync(path.join(userData, 'skills-store')).filter(name => name !== '.cate')).toHaveLength(1)
   })
 
   it('re-caching replaces stale files and remove drops the entry', async () => {
@@ -62,4 +62,22 @@ describe('skillStore', () => {
     expect(await read('demo')).toEqual([{ relPath: 'SKILL.md', text: 'known-good' }])
     expect(fs.existsSync(path.join(userData, 'outside.md'))).toBe(false)
   })
+})
+
+it('keeps distinct IDs independent when legacy sanitization collides', async () => {
+  await cache('owner/repo:demo', [{ relPath: 'SKILL.md', text: 'first' }])
+  await cache('owner_repo/demo', [{ relPath: 'SKILL.md', text: 'second' }])
+  expect(await read('owner/repo:demo')).toEqual([{ relPath: 'SKILL.md', text: 'first' }])
+  await remove('owner_repo/demo')
+  expect(await has('owner/repo:demo')).toBe(true)
+})
+
+it('migrates an unambiguous saved legacy cache without losing offline bytes', async () => {
+  const { addSaved } = await import('./savedSkills')
+  addSaved({ skillId: 'legacy/repo', name: 'Legacy', description: '', source: { repo: 'legacy/repo', ref: 'main', path: '' } })
+  const legacy = path.join(userData, 'skills-store', 'legacy_repo')
+  fs.mkdirSync(legacy, { recursive: true })
+  fs.writeFileSync(path.join(legacy, 'SKILL.md'), 'offline')
+  expect(await read('legacy/repo')).toEqual([{ relPath: 'SKILL.md', text: 'offline' }])
+  expect(fs.existsSync(legacy)).toBe(false)
 })

@@ -1,16 +1,7 @@
 import { useState } from 'react'
-import { ArrowCounterClockwise } from '@phosphor-icons/react'
 import { useSettingsStore } from '../stores/settingsStore'
-import { DEFAULT_SETTINGS } from '../../shared/types'
-import { SearchableBlock, SecondaryButton } from './SettingsComponents'
+import { SearchableBlock } from './SettingsComponents'
 import { StringListEditor } from './StringListEditor'
-
-function sameAsDefault(list: string[]): boolean {
-  const defaults = DEFAULT_SETTINGS.fileExclusions
-  if (list.length !== defaults.length) return false
-  const set = new Set(list)
-  return defaults.every((name) => set.has(name))
-}
 
 export function FileExplorerSettings() {
   const store = useSettingsStore()
@@ -44,11 +35,6 @@ export function FileExplorerSettings() {
     store.setSetting('fileExclusions', folders.filter((f) => f !== name))
   }
 
-  const restore = () => {
-    store.setSetting('fileExclusions', [...DEFAULT_SETTINGS.fileExclusions])
-    setError(null)
-  }
-
   return (
     <SearchableBlock keywords="file explorer exclusions hidden ignore folders gitignore exclude">
     <div className="flex flex-col gap-1">
@@ -68,12 +54,7 @@ export function FileExplorerSettings() {
         emptyMessage="No exclusions. Every file and folder is shown."
       />
 
-      <div className="mt-4 pt-3 border-t border-subtle flex justify-end">
-        <SecondaryButton onClick={restore} disabled={sameAsDefault(folders)}>
-          <ArrowCounterClockwise size={11} />
-          Restore defaults
-        </SecondaryButton>
-      </div>
+
     </div>
     </SearchableBlock>
   )

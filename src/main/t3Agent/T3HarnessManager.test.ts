@@ -3,10 +3,10 @@ import type { Runtime } from '../runtime/types'
 import { T3HarnessManager } from './T3HarnessManager'
 
 const mocks = vi.hoisted(() => ({
-  resolve: vi.fn(), disconnected: vi.fn(), windowClosed: vi.fn(),
+  resolve: vi.fn(), runtime: vi.fn(), disconnected: vi.fn(), windowClosed: vi.fn(),
 }))
 vi.mock('electron', () => ({ app: {}, session: {} }))
-vi.mock('../runtime/runtimeManager', () => ({ resolveLocator: mocks.resolve, runtimes: { onDisconnected: mocks.disconnected } }))
+vi.mock('../runtime/runtimeManager', () => ({ resolveLocator: mocks.resolve, runtimes: { resolve: mocks.runtime, onDisconnected: mocks.disconnected } }))
 vi.mock('../cateApi/serverTunnel', () => ({ openTunnelDuplex: vi.fn() }))
 vi.mock('../cateApi/workspaceCateApi', () => ({ workspaceCateApi: {} }))
 vi.mock('../windowRegistry', () => ({ onWindowClosed: mocks.windowClosed }))
@@ -14,13 +14,14 @@ vi.mock('../windowRegistry', () => ({ onWindowClosed: mocks.windowClosed }))
 function runtime() {
   return {
     validatePathStrict: vi.fn(async (path: string) => path.replace('/alias', '/repo')),
+    file: { harnessRoot: vi.fn().mockResolvedValue('/app/harness') },
     server: { stop: vi.fn() },
-    process: { create: vi.fn().mockResolvedValue(undefined), write: vi.fn(), kill: vi.fn() },
+    process: { create: vi.fn().mockImplementation(async (opts: { id: string }) => ({ id: opts.id, pid: 123 })), write: vi.fn(), kill: vi.fn() },
   }
 }
 function instance(key: string, rt: ReturnType<typeof runtime>) {
   return {
-    key, runtime: rt, environmentId: 'env', proxyPort: 4321,
+    key, runtimeId: key.startsWith('local:') ? 'local' : 'remote', runtime: rt, environmentId: 'env', proxyPort: 4321,
     serverId: key, panels: new Set<string>(),
     proxy: { close: vi.fn((done: () => void) => done()) },
   }
@@ -33,6 +34,7 @@ const request = { workspaceId: 'ws', panelId: 'panel', cwd: '/repo' }
 beforeEach(() => {
   vi.clearAllMocks()
   local = runtime(); remote = runtime()
+  mocks.runtime.mockReturnValue(local)
   mocks.resolve.mockImplementation((cwd: string) => ({
     runtimeId: cwd.startsWith('ssh:') ? 'remote' : 'local',
     path: cwd.replace(/^ssh:/, ''), runtime: cwd.startsWith('ssh:') ? remote : local,
@@ -50,6 +52,27 @@ beforeEach(() => {
 afterEach(async () => { await manager.disposeAll(); vi.restoreAllMocks() })
 
 describe('T3 harness lifecycle', () => {
+  it('opens global usage without a workspace or a workspace path grant', async () => {
+    const first = await manager.getUsageTarget('usage-one')
+    const second = await manager.getUsageTarget('usage-two')
+    expect(first).toMatchObject({ url: 'http://127.0.0.1:4321/usage', runtimeId: 'local', threadId: null })
+    expect(second.partition).toBe(first.partition)
+    expect(mocks.runtime).toHaveBeenCalledWith('local')
+    expect(mocks.resolve).not.toHaveBeenCalled()
+    expect(local.validatePathStrict).not.toHaveBeenCalled()
+    expect(start).toHaveBeenCalledExactlyOnceWith('local:/app/harness', 'local', local, '/app/harness', undefined)
+  })
+
+  it('opens usage on the existing harness without creating a conversation', async () => {
+    const chat = await manager.getPanelTarget(request, 1)
+    const usage = await manager.getPanelTarget({ ...request, panelId: 'usage', route: 'usage' }, 1)
+    expect(usage.url).toBe('http://127.0.0.1:4321/usage')
+    expect(usage.partition).toBe(chat.partition)
+    expect(start).toHaveBeenCalledOnce()
+    manager.panelClosed('usage')
+    expect(local.server.stop).not.toHaveBeenCalled()
+  })
+
   it('shares concurrent startup for aliases of the same checkout, but keeps panel chat routes independent', async () => {
     const [first, second] = await Promise.all([
       manager.getPanelTarget({ ...request, cwd: '/alias', threadId: 'one' }, 1),
@@ -121,7 +144,7 @@ describe('T3 harness lifecycle', () => {
     const shutdown = manager.disposeAll()
     const started = instance('local:/repo', local)
     finish(started)
-    await Promise.all([opening, shutdown])
+    await Promise.all([expect(opening).rejects.toThrow('cancelled'), shutdown])
     expect(started.proxy.close).toHaveBeenCalledOnce()
     expect(local.server.stop).toHaveBeenCalledExactlyOnceWith('local:/repo')
     expect(manager.getStatus('/repo').phase).toBe('stopped')
@@ -178,4 +201,62 @@ it('copies provider secrets through canonical directory aliases and still reject
   expect(rt.file.copy).toHaveBeenCalledExactlyOnceWith('/source/' + secret, '/tmp/secrets')
   rt.file.copy.mockResolvedValue('/private/tmp/secrets/unexpected-copy.bin')
   await expect(boundary.copyProviderSecrets(rt, 'local', '/source', '/tmp/secrets')).rejects.toThrow('unexpected destination')
+})
+
+it('routes provider sign-in input and cancellation to the actual process handle', async () => {
+  local.process.create.mockResolvedValue({ id: 'actual-pty', pid: 123 } as never)
+  const session = await manager.startProviderAuth({ workspaceId: 'ws', cwd: '/repo', providerId: 'codex' } as never, 1)
+  manager.writeProviderAuth(session.id, 1, 'code\n')
+  manager.cancelProviderAuth(session.id, 1)
+  expect(local.process.write).toHaveBeenCalledWith('actual-pty', 'code\n')
+  expect(local.process.kill).toHaveBeenCalledWith('actual-pty')
+})
+
+it('does not register ownership when a pending panel acquisition is closed', async () => {
+  let finish!: (value: unknown) => void
+  const pendingInstance = instance('local:/repo', local)
+  start.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  const target = manager.getPanelTarget(request, 1)
+  await vi.waitFor(() => expect(start).toHaveBeenCalled())
+  manager.panelClosed(request.panelId)
+  finish(pendingInstance)
+  await target.catch(() => undefined)
+  expect(pendingInstance.panels.has(request.panelId)).toBe(false)
+})
+
+it('kills a late provider PTY after its owner closes during startup', async () => {
+  let finish!: (value: unknown) => void
+  local.process.create.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+  const opening = manager.startProviderAuth({ workspaceId: 'ws', cwd: '/repo', providerId: 'codex' }, 1)
+  await vi.waitFor(() => expect(local.process.create).toHaveBeenCalled())
+  mocks.windowClosed.mock.calls.at(-1)![0](1)
+  finish({ id: 'late-pty', pid: 123 })
+  await opening
+  expect(local.process.kill).toHaveBeenCalledWith('late-pty')
+})
+
+it('keeps the newest panel acquisition when different checkout requests finish out of order', async () => {
+  let finishOld!: (value: unknown) => void
+  const oldInstance = instance('local:/repo', local)
+  const newInstance = instance('local:/feature', local)
+  start.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve })).mockResolvedValueOnce(newInstance)
+  const first = manager.getPanelTarget(request, 1)
+  await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(1))
+  await manager.getPanelTarget({ ...request, cwd: '/feature' }, 1)
+  finishOld(oldInstance)
+  await first.catch(() => undefined)
+  expect(oldInstance.panels.has(request.panelId)).toBe(false)
+  expect(newInstance.panels.has(request.panelId)).toBe(true)
+})
+
+it('does not restore usage ownership after closing during harness startup', async () => {
+  let finish!: (value: unknown) => void
+  const pending = instance('local:/app/harness', local)
+  start.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const opening = manager.getUsageTarget('usage-pending')
+  await vi.waitFor(() => expect(start).toHaveBeenCalled())
+  manager.panelClosed('usage-pending')
+  finish(pending)
+  await opening.catch(() => undefined)
+  expect(pending.panels.has('usage-pending')).toBe(false)
 })

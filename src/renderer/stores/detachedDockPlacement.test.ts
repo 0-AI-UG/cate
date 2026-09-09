@@ -21,7 +21,9 @@ vi.mock('../lib/terminal/terminalRegistry', () => ({
 import { useAppStore } from './appStore'
 import { createDockStore } from './dockStore'
 import { registerWorkspaceDockStore, releaseWorkspaceDockStore } from '../lib/workspace/dockRegistry'
-import { placementForActivePanel, placementForPanel } from '../lib/workspace/canvasAccess'
+import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
+import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from './canvasStore'
+import { placementForActivePanel, placementForPanel, placementForBackgroundPanel } from '../lib/workspace/canvasAccess'
 import { setActivePanel } from '../lib/activePanel'
 import { useWindowPanelStore } from './windowPanelStore'
 import type { DockStore } from './dockStore'
@@ -34,8 +36,8 @@ function dockLoc(store: ReturnType<typeof createDockStore>, panelId: string) {
   return loc
 }
 
-describe('detached dock window panel placement', () => {
-  const wsId = 'detached-dock-window'
+describe.each(['main', 'detached'])('%s empty dock panel placement', (owner) => {
+  const wsId = `${owner}-dock-window`
   let localDock: ReturnType<typeof createDockStore>
 
   beforeEach(() => {
@@ -54,6 +56,19 @@ describe('detached dock window panel placement', () => {
     registerWorkspaceDockStore(wsId, localDock)
     setActivePanel(null)
     useWindowPanelStore.setState({ panels: [] })
+  })
+
+  it.each(['terminal', 'agent', 'editor', 'browser', 'review', 'document', 'surface'] as const)('places %s directly for implicit, keyboard, and host API sources', (type) => {
+    const foreign = getOrCreateCanvasStoreForPanel('foreign-canvas')
+    setActivePanel('foreign-canvas')
+    const placements = [undefined, placementForActivePanel(), placementForBackgroundPanel(wsId), { target: 'canvas' as const, canvasPanelId: 'closed-canvas' }]
+    for (const placement of placements) {
+      const id = createInteractivePanel(type, { workspaceId: wsId, placement })!
+      expect(localDock.getState().getPanelLocation(id)?.type).toBe('dock')
+    }
+    expect(foreign.getState().nodes).toEqual({})
+    expect(Object.values(useAppStore.getState().getWorkspace(wsId)!.panels).some(p => p.type === 'canvas')).toBe(false)
+    releaseCanvasStoreForPanel('foreign-canvas')
   })
 
   it('docks a newly-created terminal into the window-registered dock store', () => {

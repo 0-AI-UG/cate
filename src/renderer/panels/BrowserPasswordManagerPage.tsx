@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Globe, Key, MagnifyingGlass, Plus, Trash } from '@phosphor-icons/react'
+import { Globe, Key, Search as MagnifyingGlass, Plus, Trash } from 'lucide-react'
 import type {
   BrowserCredentialProfile,
   BrowserCredentialProfilesResult,

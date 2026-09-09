@@ -1,3 +1,5 @@
+import { REMOTE_CONNECTIONS_LIST, REMOTE_CONNECTIONS_SAVE, REMOTE_CONNECTIONS_REMOVE, REMOTE_CONNECTIONS_CHANGED } from '../../shared/ipc-channels'
+import { normalizeRemoteConnection, updateRemoteConnections, watchRemoteConnections } from '../remoteConnections'
 // =============================================================================
 // Runtime connection IPC — lets the renderer connect to / disconnect from a
 // remote (SSH) or WSL runtime. Connecting mints a stable runtimeId, persists
@@ -230,7 +232,47 @@ export async function buildTransport(runtimeId: string, spec: RemoteConnectSpec)
   })
 }
 
+export async function registerRemoteConnection(spec: RemoteConnectSpec, previousId?: string): Promise<RuntimeConnectResult> {
+    try {
+      const remotePath = spec.kind === 'server' ? spec.remotePath : spec.distroPath
+      assertAbsoluteRuntimePath(remotePath)
+      const runtimeId = mintRuntimeId(spec)
+      if (!normalizeRemoteConnection(runtimeConnectionFromSpec(runtimeId, spec))) throw new Error('Invalid remote connection')
+      if (spec.kind === 'server' && spec.auth) {
+        // Blank key/passphrase fields in Edit mean "reuse the stored value";
+        // useAgent is an explicit boolean and must persist false as well as true.
+        const current = await getSshSecret(runtimeId) ?? (previousId ? await getSshSecret(previousId) : null)
+        await saveSshSecret(runtimeId, mergedSshSecret(current, spec.auth))
+      }
+      const connection = runtimeConnectionFromSpec(runtimeId, spec)
+      const rootPath = formatLocator({ runtimeId, path: remotePath })
+      return { ok: true, runtimeId, rootPath, connection }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn('[runtime:connect] failed: %s', message)
+      return { ok: false, error: message }
+    }
+}
+
 export function registerRuntimeHandlers(): void {
+  watchRemoteConnections((connections) => broadcastToAll(REMOTE_CONNECTIONS_CHANGED, connections))
+  ipcMain.handle(REMOTE_CONNECTIONS_LIST, () => updateRemoteConnections())
+  ipcMain.handle(REMOTE_CONNECTIONS_SAVE, async (_event, spec: RemoteConnectSpec, previousId?: string) => {
+    const result = await registerRemoteConnection(spec, previousId)
+    if (!result.ok) throw new Error(result.error)
+    if (!isRemoteRuntimeConnection(result.connection)) throw new Error('Expected a remote connection')
+    const connection = result.connection
+    const connections = await updateRemoteConnections((current) => [
+      ...current.filter((c) => c.runtimeId !== previousId && c.runtimeId !== connection.runtimeId), connection,
+    ])
+    broadcastToAll(REMOTE_CONNECTIONS_CHANGED, connections)
+    return connections
+  })
+  ipcMain.handle(REMOTE_CONNECTIONS_REMOVE, async (_event, runtimeId: string) => {
+    const connections = await updateRemoteConnections((current) => current.filter((c) => c.runtimeId !== runtimeId))
+    broadcastToAll(REMOTE_CONNECTIONS_CHANGED, connections)
+    return connections
+  })
   // Forward connection-state changes (incl. async drops) to the renderer.
   runtimes.setStatusListener((runtimeId, phase, message) => {
     const evt: RuntimeStatusEvent = { runtimeId, phase, message }
@@ -243,24 +285,7 @@ export function registerRuntimeHandlers(): void {
   // determined there and streamed back as phases. Keeps state purely
   // probe-driven instead of inferred from this call.
   ipcMain.handle(RUNTIME_CONNECT, async (_event, spec: RemoteConnectSpec): Promise<RuntimeConnectResult> => {
-    try {
-      const remotePath = spec.kind === 'server' ? spec.remotePath : spec.distroPath
-      assertAbsoluteRuntimePath(remotePath)
-      const runtimeId = mintRuntimeId(spec)
-      if (spec.kind === 'server' && spec.auth) {
-        // Blank key/passphrase fields in Edit mean "reuse the stored value";
-        // useAgent is an explicit boolean and must persist false as well as true.
-        const current = await getSshSecret(runtimeId)
-        await saveSshSecret(runtimeId, mergedSshSecret(current, spec.auth))
-      }
-      const connection = runtimeConnectionFromSpec(runtimeId, spec)
-      const rootPath = formatLocator({ runtimeId, path: remotePath })
-      return { ok: true, runtimeId, rootPath, connection }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      log.warn('[runtime:connect] failed: %s', message)
-      return { ok: false, error: message }
-    }
+    return registerRemoteConnection(spec)
   })
 
   // Probe + connect from a stored connection (restore / reconnect / retry).

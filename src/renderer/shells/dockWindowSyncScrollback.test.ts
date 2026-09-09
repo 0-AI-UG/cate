@@ -5,7 +5,7 @@
 // fix makes the flush AWAIT the scrollback writes before ACKing.
 //
 // This test pins the await contract at the helper + flush-orchestration level:
-//   - captureTerminalScrollbacks returns the in-flight save promises, and
+//   - captureTerminalScrollbacks awaits durable publication, and
 //   - the flush sequence (await syncNow, THEN ack) must not ACK before the save
 //     promise settles.
 
@@ -73,11 +73,12 @@ describe('captureTerminalScrollbacks', () => {
       'ed-1': { id: 'ed-1', type: 'editor', title: 'E' } as PanelState,
     }
 
-    const { terminalCwds, savePromises } = await captureTerminalScrollbacks(panels)
+    const capture = captureTerminalScrollbacks(panels)
+    resolveSave?.()
+    const terminalCwds = await capture
 
     // Scrollback is keyed by the STABLE panelId — not the ptyId.
     expect(saveCalls).toEqual([['term-1', 'ls output']])
-    expect(savePromises).toHaveLength(1)
     expect(terminalCwds).toEqual({ 'term-1': '/work/cwd' })
   })
 
@@ -86,9 +87,8 @@ describe('captureTerminalScrollbacks', () => {
       'term-1': { id: 'term-1', type: 'terminal', title: 'T' } as PanelState,
     }
     // No entry registered for term-1 → nothing to capture.
-    const { terminalCwds, savePromises } = await captureTerminalScrollbacks(panels)
+    const terminalCwds = await captureTerminalScrollbacks(panels)
     expect(terminalCwds).toEqual({})
-    expect(savePromises).toHaveLength(0)
     expect(saveCalls).toEqual([])
   })
 })
@@ -105,14 +105,13 @@ describe('pre-quit flush awaits the scrollback write before ACKing', () => {
 
     const ack = vi.fn()
 
-    // The shell's syncNow: capture + Promise.allSettled over the save promises.
+    // Capture includes durable scrollback publication.
     const syncNow = async (): Promise<void> => {
-      const { savePromises } = await captureTerminalScrollbacks(panels)
-      await Promise.allSettled(savePromises)
+      await captureTerminalScrollbacks(panels)
     }
 
     // The flush handler: await syncNow, THEN ack.
-    const flush = syncNow().finally(() => ack())
+    const flush = syncNow().then(() => ack())
 
     // Let the capture (incl. its cwd await) settle and issue the save IPC, which
     // has NOT resolved yet — so the ACK must still be pending.
@@ -125,4 +124,11 @@ describe('pre-quit flush awaits the scrollback write before ACKing', () => {
     await flush
     expect(ack).toHaveBeenCalledTimes(1)
   })
+})
+
+
+it('rejects failed scrollback publication instead of acknowledging it', async () => {
+  entries.set('term', fakeTerminalEntry('pty', 'unsaved output'))
+  vi.mocked(window.electronAPI.terminalScrollbackSave).mockRejectedValue(new Error('disk full'))
+  await expect(captureTerminalScrollbacks({ term: { id: 'term', type: 'terminal', title: 'T', isDirty: false } })).rejects.toThrow('disk full')
 })

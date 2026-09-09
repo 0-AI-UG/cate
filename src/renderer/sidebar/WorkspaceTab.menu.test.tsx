@@ -179,6 +179,8 @@ beforeEach(() => {
     focusWindowPanel,
     closeWindowPanel,
     dragDetach,
+    commitPanelTransfer: vi.fn().mockResolvedValue(true),
+    finishPanelTransfer: vi.fn(),
     openFolderDialog: vi.fn().mockResolvedValue(null),
     skillsListInstalled: vi.fn().mockResolvedValue([]),
     workspaceCreate: vi.fn(async () => ({ ok: true, workspace: {} })),

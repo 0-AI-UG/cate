@@ -12,7 +12,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react'
-import { PuzzlePiece, CaretRight } from '@phosphor-icons/react'
+import { Puzzle as PuzzlePiece, ChevronRight as CaretRight } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
@@ -80,11 +80,11 @@ export const WorkspaceSkillsTree: React.FC<{ workspaceId: string; rootPath: stri
       return
     }
     try {
-      setGroups(toSkillTargetGroups(await api().skillsListInstalled(rootPath)))
+      setGroups(toSkillTargetGroups(await api().skillsListInstalled(rootPath, workspaceId)))
     } catch (err) {
       log.warn('[WorkspaceSkillsTree] listInstalled failed', err)
     }
-  }, [rootPath, showSkillsInWorkspaceOverview])
+  }, [rootPath, showSkillsInWorkspaceOverview, workspaceId])
 
   useEffect(() => {
     if (showSkillsDialog) return

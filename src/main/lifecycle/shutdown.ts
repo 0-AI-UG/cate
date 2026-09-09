@@ -1,11 +1,13 @@
-import { app, ipcMain, session } from 'electron'
+import { installPersistentSessionTracking, flushPersistentSessions } from '../browser/persistentSessions'
+import { randomUUID } from 'node:crypto'
+import { app, ipcMain, dialog } from 'electron'
 import log from '../logger'
 import { createWindow } from '../windows/windowFactory'
 import { setMainWindowReady, flushPendingOpenPaths } from './openPath'
 import { getActiveMainWindow, sendToWindow, listDockWindowIds, listWindows, windowFromEvent } from '../windowRegistry'
 import { flushDockWindowsBeforeQuit } from '../dockWindowFlush'
 import { flushAllLoggers, killAllTerminals } from '../ipc/terminal'
-import { guardQuit, isQuitCommitted, markQuitCommitted } from './quitConfirm'
+import { guardQuit, isQuitCommitted, markQuitCommitted, resetQuitAttempt } from './quitConfirm'
 import { saveProjectStateSync } from '../projectWorkspaceStore'
 import { flushPendingWritesSync as flushSettingsPendingWritesSync } from '../settingsFile'
 import { flushWorkspaceStateSync } from '../workspaceStateStore'
@@ -43,21 +45,21 @@ import {
 // live renderer to save from.
 // ---------------------------------------------------------------------------
 
-const FLUSH_TIMEOUT_MS = 1500
+const FLUSH_TIMEOUT_MS = 15_000
+let sessionFlushPending = false
 // Bound the pre-quit dock-window sync so an unresponsive detached window can't
 // stall quit. Kept short relative to FLUSH_TIMEOUT_MS — it runs BEFORE the main
 // renderer's session flush, so dock sync + session save share the quit budget.
 const DOCK_FLUSH_TIMEOUT_MS = 600
 const EXIT_DISPOSE_TIMEOUT_MS = 800
 
-const SHARED_BROWSER_PARTITION = 'persist:browser-shared'
-
 type BrowserSessionStore = Pick<Electron.Session, 'cookies' | 'flushStorageData'>
 
 /** Force Chromium's persistent browser state to disk before Cate's hard exit. */
 export async function flushPersistentBrowserSession(
-  browserSession: BrowserSessionStore = session.fromPartition(SHARED_BROWSER_PARTITION),
+  browserSession?: BrowserSessionStore,
 ): Promise<void> {
+  if (!browserSession) return flushPersistentSessions()
   browserSession.flushStorageData()
   await browserSession.cookies.flushStore()
 }
@@ -96,6 +98,7 @@ export async function runHardExit(
  * bootstrap.
  */
 export function registerLifecycleHandlers(): void {
+  installPersistentSessionTracking()
   app.on('window-all-closed', () => {
     log.info('All windows closed, quitting')
     app.quit()
@@ -125,6 +128,8 @@ export function registerLifecycleHandlers(): void {
       return
     }
 
+    if (sessionFlushPending) { event.preventDefault(); return }
+
     // First gate: warn before tearing down terminals that are still running a
     // foreground process (dev server, editor, agent, …) — and, when the user has
     // enabled "Warn before quit", confirm a plain quit too. Mirrors the
@@ -147,73 +152,93 @@ export function registerLifecycleHandlers(): void {
     flushAllLoggers()
     const mainWin = getActiveMainWindow()
 
-    if (!mainWin) {
-      // No renderer to save — proceed immediately
-      markQuitCommitted()
-      return
-    }
-
     // Prevent quit until the renderer confirms session save
     event.preventDefault()
 
-    let proceedStarted = false
+    sessionFlushPending = true
+    const requestId = randomUUID()
+    let settled = false
+    let flushTimeout: ReturnType<typeof setTimeout> | undefined
+    const cleanup = () => {
+      sessionFlushPending = false
+      if (flushTimeout) clearTimeout(flushTimeout)
+      ipcMain.removeListener(SESSION_FLUSH_SAVE_DONE, onFlushDone)
+    }
+    const abort = (error: string) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resetQuitAttempt()
+      log.warn('Session save failed; keeping windows open: %s', error)
+      dialog.showErrorBox('Unable to save session', `${error}\nYour windows remain open. Retry quitting after the problem is resolved.`)
+    }
+    let flushingBrowser = false
     const proceed = () => {
-      if (proceedStarted) return
-      proceedStarted = true
+      if (settled || flushingBrowser) return
+      flushingBrowser = true
+      cleanup()
+      sessionFlushPending = true
       void flushPersistentBrowserSession()
-        .catch((err) => log.warn('Browser session flush failed during quit: %O', err))
-        .finally(() => {
+        .then(() => {
+          settled = true
+          sessionFlushPending = false
           markQuitCommitted()
           app.quit()
+        }, error => {
+          sessionFlushPending = false
+          abort(error instanceof Error ? error.message : String(error))
         })
     }
 
-    // Listen for renderer ACK
-    ipcMain.once(SESSION_FLUSH_SAVE_DONE, () => {
+    // Only the main renderer requested above may acknowledge this attempt.
+    const onFlushDone = (event: Electron.IpcMainEvent, error?: string, responseId?: string) => {
+      if (!mainWin || windowFromEvent(event)?.id !== mainWin.id || responseId !== requestId || settled) return
+      if (error) { abort(error); return }
       log.info('Session flush save confirmed by renderer')
       proceed()
-    })
+    }
+    ipcMain.on(SESSION_FLUSH_SAVE_DONE, onFlushDone)
+
+    if (!mainWin) {
+      if (listDockWindowIds().length) abort('The main workspace window is unavailable to save detached windows. Reopen it before quitting.')
+      else proceed()
+      return
+    }
 
     // Agent-session stamps are hook-pushed the moment identity changes, so
     // they are already current at quit — no refresh step. FIRST a FINAL,
     // AWAITED sync from every dock window, so the main renderer's session
     // flush (which reads listDockWindows() / main's cached dock state) sees
     // the freshest dock layout + terminal/canvas state instead of stale data
-    // from the last sync. Bounded by DOCK_FLUSH_TIMEOUT_MS so an unresponsive
-    // dock window can't delay quit. The session-flush safety timeout is armed
+    // from the last sync. Missing or failed acknowledgements abort this attempt
+    // after DOCK_FLUSH_TIMEOUT_MS and keep the remaining owners alive. The session-flush safety timeout is armed
     // only once SESSION_FLUSH_SAVE is actually sent, so the dock flush never
     // eats into the main renderer's save budget — the timeouts are
     // sequential, not shared.
     flushDockWindowsBeforeQuit({
       windowIds: listDockWindowIds(),
-      requestSync: (id) => sendToWindow(id, DOCK_WINDOW_FLUSH_SYNC),
+      requestSync: (id, dockRequestId) => sendToWindow(id, DOCK_WINDOW_FLUSH_SYNC, dockRequestId),
       subscribeAck: (handler) => {
-        const listener = (e: Electron.IpcMainEvent) => {
+        const listener = (e: Electron.IpcMainEvent, error?: string, dockRequestId?: string) => {
           const win = windowFromEvent(e)
-          if (win) handler(win.id)
+          if (win) handler(win.id, error, dockRequestId)
         }
         ipcMain.on(DOCK_WINDOW_FLUSH_SYNC_DONE, listener)
         return () => ipcMain.removeListener(DOCK_WINDOW_FLUSH_SYNC_DONE, listener)
       },
       timeoutMs: DOCK_FLUSH_TIMEOUT_MS,
     })
-      .catch(() => {})
-      .finally(() => {
-        if (isQuitCommitted()) return
+      .then(() => {
+        if (isQuitCommitted() || settled) return
         if (mainWin.isDestroyed()) {
-          // Renderer gone mid-flush — nothing to save from, let quit proceed.
-          proceed()
+          abort('The main workspace window closed before session saving completed.')
           return
         }
-        sendToWindow(mainWin.id, SESSION_FLUSH_SAVE)
-        // Safety timeout — don't hang forever if the renderer is unresponsive
-        setTimeout(() => {
-          if (!isQuitCommitted()) {
-            log.warn('Session flush timed out after %dms, proceeding with quit', FLUSH_TIMEOUT_MS)
-            proceed()
-          }
-        }, FLUSH_TIMEOUT_MS)
-      })
+        sendToWindow(mainWin.id, SESSION_FLUSH_SAVE, requestId)
+        // Missing acknowledgement is not evidence of durability. Keep the live
+        // editors available instead of discarding them after a slow/failed save.
+        flushTimeout = setTimeout(() => abort('Session saving did not finish in time.'), FLUSH_TIMEOUT_MS)
+      }).catch(error => abort(error instanceof Error ? error.message : String(error)))
   })
 
   app.on('will-quit', (event) => {

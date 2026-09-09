@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Trash, Upload, DownloadSimple, Sparkle } from '@phosphor-icons/react'
+import { Check, Trash, Upload, Download as DownloadSimple, Sparkles as Sparkle } from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
 import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, Select, NumberInput, TextInput, Toggle, SearchableBlock, SecondaryButton } from './SettingsComponents'
@@ -21,13 +21,11 @@ function appColors(theme: Theme): Record<string, string> {
   return { ...(theme.type === 'light' ? BASE_LIGHT : BASE_DARK), ...theme.app }
 }
 
-/** Resolve the surface-1 color of the theme currently mapped to a given OS
- *  appearance, so the System card preview matches the real selection (falls
- *  back to the generic base if the mapped theme can't be found). */
-function systemSurface(themes: Theme[], id: string, side: 'light' | 'dark'): string {
-  const theme = themes.find((t) => t.id === id)
-  if (theme) return appColors(theme)['surface-1']
-  return (side === 'light' ? BASE_LIGHT : BASE_DARK)['surface-1']
+/** Resolve the complete theme mapped to an OS appearance for System preview. */
+function systemTheme(themes: Theme[], id: string, type: 'light' | 'dark'): Theme {
+  return themes.find((theme) => theme.id === id)
+    ?? themes.find((theme) => theme.type === type)
+    ?? BUILT_IN_THEMES[0]
 }
 
 /** Ensure an id is unique against the existing theme list, suffixing -2, -3… */
@@ -110,8 +108,8 @@ export function AppearanceSettings() {
     <div className="flex flex-col gap-1">
       <SearchableBlock keywords="theme appearance color dark light catalog import export system mode">
       {/* Mode + catalog header */}
-      <div className="flex items-center justify-between py-2.5">
-        <span className="text-sm text-primary">Theme</span>
+      <div className="flex items-center justify-between py-2">
+        <span className="text-[13px] font-medium text-primary">Theme</span>
         <SecondaryButton onClick={handleImport} title="Import a theme from a JSON file">
           <Upload size={11} />
           Import…
@@ -121,11 +119,11 @@ export function AppearanceSettings() {
       {importError && <InlineNotice tone="error" className="mb-2 border-0 bg-transparent px-0">{importError}</InlineNotice>}
 
       {/* Catalog */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2 pb-3 lg:grid-cols-3">
         <SystemCard
           active={isSystem}
-          lightColor={systemSurface(allThemes, store.systemLightThemeId, 'light')}
-          darkColor={systemSurface(allThemes, store.systemDarkThemeId, 'dark')}
+          lightTheme={systemTheme(allThemes, store.systemLightThemeId, 'light')}
+          darkTheme={systemTheme(allThemes, store.systemDarkThemeId, 'dark')}
           onClick={() => store.setSetting('activeThemeId', 'system')}
         />
         {allThemes.map((theme) => (
@@ -166,12 +164,12 @@ export function AppearanceSettings() {
       {/* Create / get more themes */}
       <button
         onClick={() => window.electronAPI?.openExternalUrl(SKILL_GUIDE_URL)}
-        className="mt-4 flex w-full items-center gap-3 rounded-xl border border-subtle bg-surface-2 px-3.5 py-3 text-left hover:bg-surface-1"
+        className="mb-3 flex w-full items-center gap-2.5 rounded-lg border border-subtle bg-surface-2 px-3 py-2 text-left hover:bg-hover"
       >
-        <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-agent/15 text-focus-blue">
-          <Sparkle size={16} weight="fill" />
+        <div className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md bg-agent/15 text-focus-blue">
+          <Sparkle size={14} />
         </div>
-        <h4 className="text-[13px] font-semibold text-primary">Create your own theme</h4>
+        <h4 className="text-xs font-medium text-primary">Create your own theme</h4>
       </button>
       </SearchableBlock>
 
@@ -225,7 +223,7 @@ function CardShell({
   return (
     <div
       onClick={onClick}
-      className={`group relative flex flex-col gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
+      className={`group relative flex min-h-[124px] flex-col justify-between rounded-xl border p-3 cursor-pointer transition-colors ${
         active ? 'border-focus-blue bg-agent/10' : 'border-subtle hover:bg-hover'
       }`}
     >
@@ -241,23 +239,37 @@ function CardShell({
 
 function SwatchPreview({ theme }: { theme: Theme }) {
   const c = appColors(theme)
-  const ansi = [theme.terminal.red, theme.terminal.green, theme.terminal.yellow, theme.terminal.blue, theme.terminal.magenta, theme.terminal.cyan]
   return (
-    <div
-      className="h-12 rounded-md border border-subtle overflow-hidden flex flex-col justify-between p-1.5"
-      style={{ background: c['surface-1'] }}
-    >
-      <div className="flex items-center gap-1">
-        <span className="text-[10px] font-medium" style={{ color: c['text-primary'] }}>Aa</span>
-        <span className="w-2 h-2 rounded-full" style={{ background: c['focus-blue'] }} />
-        <span className="text-[9px]" style={{ color: c['text-muted'] }}>code</span>
-      </div>
-      <div className="flex gap-0.5">
-        {ansi.map((color, i) => (
-          <span key={i} className="h-1.5 flex-1 rounded-sm" style={{ background: color }} />
-        ))}
-      </div>
+    <div className="flex items-center justify-center gap-5 py-1">
+      <ThemeOrb base={c['surface-1']} shade={c['surface-6']} accent={c['focus-blue']} />
+      <ThemeOrb base={c['canvas-bg-alt']} shade={c['surface-4']} accent={c['focus-blue']} reverse />
     </div>
+  )
+}
+
+function ThemeOrb({
+  base,
+  shade,
+  accent,
+  reverse = false,
+}: {
+  base: string
+  shade: string
+  accent: string
+  reverse?: boolean
+}) {
+  const softenedAccent = `color-mix(in srgb, ${accent} 22%, ${base})`
+  const softenedShade = `color-mix(in srgb, ${shade} 72%, ${base})`
+  return (
+    <span
+      className="h-14 w-14 rounded-full border border-white/10 shadow-[0_5px_16px_rgba(0,0,0,0.28)]"
+      style={{
+        backgroundColor: base,
+        backgroundImage: reverse
+          ? `radial-gradient(circle at 70% 72%, ${softenedShade} 0, transparent 62%), radial-gradient(circle at 24% 20%, ${softenedAccent} 0, transparent 48%)`
+          : `radial-gradient(circle at 30% 72%, ${softenedShade} 0, transparent 62%), radial-gradient(circle at 76% 20%, ${softenedAccent} 0, transparent 48%)`,
+      }}
+    />
   )
 }
 
@@ -305,13 +317,15 @@ function ThemeCard({
 }
 
 function SystemCard({
-  active, lightColor, darkColor, onClick,
-}: { active: boolean; lightColor: string; darkColor: string; onClick: () => void }) {
+  active, lightTheme, darkTheme, onClick,
+}: { active: boolean; lightTheme: Theme; darkTheme: Theme; onClick: () => void }) {
+  const light = appColors(lightTheme)
+  const dark = appColors(darkTheme)
   return (
     <CardShell active={active} onClick={onClick}>
-      <div className="h-12 rounded-md border border-subtle overflow-hidden flex">
-        <div className="flex-1" style={{ background: lightColor }} />
-        <div className="flex-1" style={{ background: darkColor }} />
+      <div className="flex items-center justify-center gap-5 py-1">
+        <ThemeOrb base={light['surface-1']} shade={light['surface-6']} accent={light['focus-blue']} />
+        <ThemeOrb base={dark['surface-1']} shade={dark['surface-6']} accent={dark['focus-blue']} reverse />
       </div>
       <span className="text-[12px] text-primary truncate">System</span>
     </CardShell>

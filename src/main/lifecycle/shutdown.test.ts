@@ -7,20 +7,23 @@ import { describe, it, expect, vi } from 'vitest'
 //
 // The quit confirmation itself lives in ./quitConfirm — see quitConfirm.test.ts
 // for decideQuitPrompt and the guard's Cancel/Quit behavior.
+const lifecycle = vi.hoisted(() => ({ handlers: new Map<string, (...args: any[]) => void>(), ack: null as ((...args: any[]) => void) | null, quit: vi.fn(), requestId: undefined as string | undefined, active: null as any, committed: false, dockFlush: vi.fn(async () => {}) }))
 vi.mock('electron', () => {
-  const e = { app: {}, BrowserWindow: {}, ipcMain: {}, dialog: {} }
+  const e = { app: { on: (name: string, fn: (...args: any[]) => void) => lifecycle.handlers.set(name, fn), quit: lifecycle.quit }, BrowserWindow: {}, ipcMain: { once: (_name: string, fn: (...args: any[]) => void) => { lifecycle.ack = fn }, on: (_name: string, fn: (...args: any[]) => void) => { lifecycle.ack = fn }, removeListener: vi.fn() }, dialog: { showErrorBox: vi.fn() }, session: { fromPartition: () => ({ cookies: { flushStore: async () => {} }, flushStorageData: () => {} }) } }
   return { ...e, default: e }
 })
 vi.mock('../logger', () => ({ default: { info: () => {}, warn: () => {}, error: () => {} } }))
 vi.mock('../windows/windowFactory', () => ({ createWindow: () => {} }))
 vi.mock('./openPath', () => ({ setMainWindowReady: () => {}, flushPendingOpenPaths: () => {} }))
 vi.mock('../windowRegistry', () => ({
-  getActiveMainWindow: () => null,
-  sendToWindow: () => {},
+  getActiveMainWindow: () => lifecycle.active,
+  listWindows: () => [],
+  windowFromEvent: (event: any) => event.sender,
+  sendToWindow: (_id: number, channel: string, requestId?: string) => { if (channel === 'session:flushSave') lifecycle.requestId = requestId },
   listDockWindowIds: () => [],
 }))
 vi.mock('../windowPanels', () => ({ getWindowPanels: () => [] }))
-vi.mock('../dockWindowFlush', () => ({ flushDockWindowsBeforeQuit: () => Promise.resolve() }))
+vi.mock('../dockWindowFlush', () => ({ flushDockWindowsBeforeQuit: lifecycle.dockFlush }))
 vi.mock('../ipc/terminal', () => ({ flushAllLoggers: () => {}, killAllTerminals: () => {} }))
 vi.mock('../ipc/shell', () => ({ getRunningTerminals: () => [] }))
 vi.mock('../settingsFile', () => ({ getSetting: () => false, flushPendingWritesSync: () => {} }))
@@ -35,7 +38,10 @@ vi.mock('../t3Agent/T3HarnessManager', () => ({
 }))
 vi.mock('../auto-updater', () => ({ isUpdatePendingInstall: () => false }))
 
-const { flushPersistentBrowserSession, runHardExit } = await import('./shutdown')
+vi.mock('./quitConfirm', () => ({ guardQuit: () => 'pass', isQuitCommitted: () => lifecycle.committed, markQuitCommitted: () => { lifecycle.committed = true }, resetQuitAttempt: () => { lifecycle.committed = false } }))
+vi.mock('../cateApi/workspaceCateApi', () => ({ workspaceCateApi: { disposeAll: async () => {} } }))
+
+const { flushPersistentBrowserSession, runHardExit, registerLifecycleHandlers } = await import('./shutdown')
 
 describe('flushPersistentBrowserSession', () => {
   it('flushes DOM storage and awaits the cookie store before quit continues', async () => {
@@ -100,4 +106,122 @@ describe('runHardExit', () => {
 
     expect(exit).toHaveBeenCalledWith(0)
   })
+})
+
+
+describe('quit session durability', () => {
+  it('cancels an explicitly failed save without a later timeout quitting anyway', async () => {
+    vi.useFakeTimers()
+    lifecycle.committed = false
+    lifecycle.quit.mockClear()
+    lifecycle.active = { id: 7, webContents: { id: 42 }, isDestroyed: () => false }
+    registerLifecycleHandlers()
+    lifecycle.handlers.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.advanceTimersByTimeAsync(0)
+    lifecycle.ack!({ sender: lifecycle.active }, 'disk full', lifecycle.requestId)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(lifecycle.quit).not.toHaveBeenCalled()
+    expect(lifecycle.committed).toBe(false)
+    lifecycle.active = null
+    vi.useRealTimers()
+  })
+  it('ignores acknowledgements from a different owner or abandoned attempt', async () => {
+    vi.useFakeTimers()
+    lifecycle.committed = false
+    lifecycle.quit.mockClear()
+    lifecycle.active = { id: 7, webContents: { id: 42 }, isDestroyed: () => false }
+    registerLifecycleHandlers()
+    lifecycle.handlers.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.advanceTimersByTimeAsync(0)
+    lifecycle.ack!({ sender: { id: 8 } }, undefined, lifecycle.requestId)
+    lifecycle.ack!({ sender: lifecycle.active }, undefined, 'previous-attempt')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(lifecycle.quit).not.toHaveBeenCalled()
+    lifecycle.ack!({ sender: lifecycle.active }, undefined, lifecycle.requestId)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(lifecycle.quit).toHaveBeenCalledTimes(1)
+    lifecycle.active = null
+    lifecycle.committed = false
+    vi.useRealTimers()
+  })
+
+  it('keeps editors alive when no durable-save acknowledgement arrives', async () => {
+    vi.useFakeTimers()
+    lifecycle.committed = false
+    lifecycle.quit.mockClear()
+    lifecycle.active = { id: 7, webContents: { id: 42 }, isDestroyed: () => false }
+    registerLifecycleHandlers()
+    lifecycle.handlers.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.advanceTimersByTimeAsync(16_000)
+    expect(lifecycle.quit).not.toHaveBeenCalled()
+    expect(lifecycle.committed).toBe(false)
+    lifecycle.active = null
+    vi.useRealTimers()
+  })
+
+})
+
+it('flushes every created persistent Chromium session rather than only the shared browser partition', async () => {
+  registerLifecycleHandlers()
+  const shared = { isPersistent: () => true, cookies: { flushStore: vi.fn(async () => {}) }, flushStorageData: vi.fn() }
+  const proxy = { isPersistent: () => true, cookies: { flushStore: vi.fn(async () => {}) }, flushStorageData: vi.fn() }
+  const agent = { isPersistent: () => true, cookies: { flushStore: vi.fn(async () => {}) }, flushStorageData: vi.fn() }
+  const transient = { isPersistent: () => false, cookies: { flushStore: vi.fn(async () => {}) }, flushStorageData: vi.fn() }
+  for (const session of [shared, proxy, agent, transient, proxy]) lifecycle.handlers.get('session-created')?.(session)
+  await flushPersistentBrowserSession()
+  for (const session of [shared, proxy, agent]) {
+    expect(session.cookies.flushStore).toHaveBeenCalledOnce()
+    expect(session.flushStorageData).toHaveBeenCalledOnce()
+  }
+  expect(transient.cookies.flushStore).not.toHaveBeenCalled()
+})
+
+
+it('aborts quit when a detached owner cannot confirm durability', async () => {
+  vi.useFakeTimers()
+  try {
+    lifecycle.committed = false
+    lifecycle.requestId = undefined
+    lifecycle.quit.mockClear()
+    lifecycle.active = { id: 7, webContents: { id: 42 }, isDestroyed: () => false }
+    lifecycle.dockFlush.mockRejectedValueOnce(new Error('Dock window sync timed out'))
+    registerLifecycleHandlers()
+    lifecycle.handlers.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(lifecycle.requestId).toBeUndefined()
+    expect(lifecycle.quit).not.toHaveBeenCalled()
+    expect(lifecycle.committed).toBe(false)
+  } finally { lifecycle.active = null; vi.useRealTimers() }
+})
+
+it('keeps windows open when a persistent Chromium flush fails', async () => {
+  vi.useFakeTimers()
+  const sessions = await import('../browser/persistentSessions')
+  const failingFlush = vi.spyOn(sessions, 'flushPersistentSessions').mockRejectedValueOnce(new Error('cookie write failed'))
+  try {
+    lifecycle.committed = false
+    lifecycle.quit.mockClear()
+    lifecycle.active = { id: 7, webContents: { id: 42 }, isDestroyed: () => false }
+    registerLifecycleHandlers()
+    lifecycle.handlers.get('before-quit')!({ preventDefault: vi.fn() })
+    await vi.advanceTimersByTimeAsync(0)
+    lifecycle.ack!({ sender: lifecycle.active }, undefined, lifecycle.requestId)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(lifecycle.quit).not.toHaveBeenCalled()
+    expect(lifecycle.committed).toBe(false)
+  } finally { failingFlush.mockRestore(); lifecycle.active = null; vi.useRealTimers() }
+})
+
+it('flushes persistent sessions even when no main renderer remains', async () => {
+  const sessions = await import('../browser/persistentSessions')
+  const flush = vi.spyOn(sessions, 'flushPersistentSessions').mockResolvedValueOnce(undefined)
+  lifecycle.committed = false
+  lifecycle.quit.mockClear()
+  lifecycle.active = null
+  try {
+    registerLifecycleHandlers()
+    lifecycle.handlers.get('before-quit')!({ preventDefault: vi.fn() })
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+    expect(flush).toHaveBeenCalledOnce()
+  } finally { flush.mockRestore(); lifecycle.committed = false }
 })

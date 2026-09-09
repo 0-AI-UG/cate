@@ -107,3 +107,17 @@ describe('shortcutStore', () => {
     expect(matchShortcutEvent(keyEvent('x', { meta: true }))).toBeNull()
   })
 })
+
+it('has no duplicate assigned default shortcuts', () => {
+  const assigned = Object.entries(DEFAULT_SHORTCUTS).filter(([, shortcut]) => shortcut.key)
+  const bindings = assigned.map(([, s]) => JSON.stringify([s.key, s.command, s.shift, s.option, s.control]))
+  expect(new Set(bindings).size).toBe(assigned.length)
+})
+
+it('assigns default keys to overlay and action-bar controls', () => {
+  for (const action of [
+    'openSettings', 'openRepository', 'openPullRequests', 'skills', 'openUsage',
+    'toggleKeepAwake', 'openWorktreeMenu', 'openConversationMenu', 'toggleCanvasToolbar',
+    'selectTool', 'handTool', 'toggleTool', 'newTerminal', 'newBrowser', 'newEditor', 'newAgent', 'toggleMinimap',
+  ] as const) expect(DEFAULT_SHORTCUTS[action].key, action).not.toBe('')
+})

@@ -427,3 +427,24 @@ describe('workspace.json + session.json round-trip', () => {
     expect(restored.panels!['ed-1'].filePath).toBe('C:\\Users\\dev\\repo\\src\\app.ts')
   })
 })
+
+it.each(['edited file', ''])('round-trips a dirty file buffer (%j) and baseline only through session.json', (content) => {
+  const { snapshot } = buildSnapshot()
+  snapshot.panels = { editor: panel({ id: 'editor', type: 'editor', filePath: `${ROOT}/a.ts`, isDirty: true, unsavedContent: content, editorBaseline: 'disk baseline' }) }
+  const workspace = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+  const session = throughDisk(buildSessionFile(snapshot))
+  expect(workspace.panels!.editor).not.toHaveProperty('unsavedContent')
+  expect(workspace.panels!.editor).not.toHaveProperty('editorBaseline')
+  const restored = projectFilesToSnapshot(workspace, session, ROOT)
+  expect(restored.panels!.editor).toMatchObject({ unsavedContent: content, editorBaseline: 'disk baseline', isDirty: true })
+})
+
+it('round-trips Search options through machine-local session state', () => {
+  const { snapshot } = buildSnapshot()
+  const searchState = { rootPath: ROOT, query: 'needle', isRegex: false, matchCase: true, wholeWord: false, includes: '*.ts', excludes: '', respectIgnore: true, optionsExpanded: true }
+  snapshot.panels = { editor: panel({ id: 'editor', type: 'editor', searchState }) }
+  const workspace = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+  const session = throughDisk(buildSessionFile(snapshot))
+  expect(workspace.panels!.editor).not.toHaveProperty('searchState')
+  expect(projectFilesToSnapshot(workspace, session, ROOT).panels!.editor.searchState).toEqual(searchState)
+})

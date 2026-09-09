@@ -126,3 +126,17 @@ describe('Agent harness chat-only surface', () => {
     expect(agentThreadIdFromUrl('http://127.0.0.1:49152/settings/providers', ENV)).toBeNull()
   })
 })
+
+describe('Usage navigation', () => {
+  it('keeps usage on its own origin and route while allowing pairing', () => {
+    expect(isAllowedAgentHarnessNavigation(HARNESS, HARNESS, ENV, 'usage')).toBe(true)
+    for (const path of ['/usage', '/usage?metric=tokens']) {
+      expect(isAllowedAgentHarnessNavigation(`http://127.0.0.1:49152${path}`, HARNESS, ENV, 'usage')).toBe(true)
+    }
+    for (const path of ['/', '/settings/providers', '/local-env/thread-1', '/usage/other']) {
+      expect(isAllowedAgentHarnessNavigation(`http://127.0.0.1:49152${path}`, HARNESS, ENV, 'usage')).toBe(false)
+    }
+    expect(isAllowedAgentHarnessNavigation('https://example.com/usage', HARNESS, ENV, 'usage')).toBe(false)
+    expect(isAllowedAgentHarnessNavigation('http://127.0.0.1:49152/usage', HARNESS, ENV, 'thread')).toBe(false)
+  })
+})

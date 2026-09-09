@@ -52,8 +52,8 @@ asarUnpack:
   - "node_modules/sharp/**"
   - "node_modules/pdfjs-dist/**"
 extraResources:
-  # Ship the cate-theme authoring skill so installThemeSkill can copy it into
-  # ~/.claude/skills/cate-theme/ on first launch.
+  # Ship the cate-theme authoring skill for managed installation into
+  # ~/.claude/skills/cate-theme/, preserving user edits during updates.
   - from: skills
     to: skills
     filter:

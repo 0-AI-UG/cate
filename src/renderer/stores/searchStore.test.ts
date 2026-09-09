@@ -74,13 +74,6 @@ describe('searchStore actions', () => {
     expect(store.getState().dismissedLines.has(lineKey('b.ts', 1))).toBe(true)
   })
 
-  it('requestFocus bumps the focus token', () => {
-    const store = createSearchStore()
-    const before = store.getState().focusToken
-    store.getState().requestFocus()
-    expect(store.getState().focusToken).toBe(before + 1)
-  })
-
   it('clearResults returns to idle with empty results', () => {
     const store = createSearchStore()
     store.getState().beginSearch('s5')

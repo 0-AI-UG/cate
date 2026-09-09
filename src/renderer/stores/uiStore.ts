@@ -1,52 +1,32 @@
+import type { ApplicationOverlayRequest } from '../../shared/types'
+import log from '../lib/logger'
 // =============================================================================
 // UI Store — Zustand state for transient UI overlays and visibility toggles.
 // =============================================================================
 
-import { useMemo } from 'react'
 import { create } from 'zustand'
-import type { SidebarView, SidebarLayout } from '../../shared/types'
+import type { SidebarView } from '../../shared/types'
 import { useSettingsStore } from './settingsStore'
 
 // -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
 
-// SidebarView / SidebarLayout now live in shared/types (they're persisted in
-// settings.json); re-exported here so existing `from '../stores/uiStore'`
-// imports keep working.
-export type { SidebarView, SidebarLayout }
-export type SidebarSide = 'left' | 'right'
+// Re-exported here so existing `from '../stores/uiStore'` imports keep working.
+export type { SidebarView }
 
 /** Active canvas interaction tool (Figma-style). */
 export type CanvasTool = 'select' | 'hand'
 
-const ALL_VIEWS: SidebarView[] = ['workspaces', 'explorer', 'git', 'search']
-
-/** Filter to known views and ensure every view appears exactly once (missing
- *  ones appended to the right). Tolerates partial hand-edited shapes. */
-export function normalizeSidebarLayout(raw: Partial<SidebarLayout> | null | undefined): SidebarLayout {
-  const left = (raw?.left ?? []).filter((v) => ALL_VIEWS.includes(v))
-  const right = (raw?.right ?? []).filter((v) => ALL_VIEWS.includes(v))
-  const seen = new Set<SidebarView>([...left, ...right])
-  for (const v of ALL_VIEWS) if (!seen.has(v)) right.push(v)
-  return { left, right }
-}
-
-// The sidebar layout lives SOLELY in settingsStore (persisted in settings.json).
-// uiStore holds only the transient sidebar state (active views, drag). Read the
-// layout via `getSidebarLayout()` (or the `useSidebarLayout` selector in
-// components) so there is a single source of truth and no hand-sync.
-export function getSidebarLayout(): SidebarLayout {
-  return normalizeSidebarLayout(useSettingsStore.getState().sidebarLayout)
-}
-
 interface UIStoreState {
   showCommandPalette: boolean
-  /** Untitled editor to reuse when the palette was opened as an Open File picker. */
-  openFileTargetPanelId: string | null
   showSkillsDialog: boolean
   /** Whether the minimap is currently expanded. */
-  minimapOpen: boolean
+  minimapOpenByCanvas: Record<string, boolean>
+  repositoryTab: 'changes' | 'pullRequests'
+  sourceControlDrafts: Record<string, string>
+  showPullRequests: boolean
+  showUsage: boolean
   showSettings: boolean
   /** Optional initial settings tab to open when showSettings flips to true. */
   settingsInitialTab: string | null
@@ -54,32 +34,16 @@ interface UIStoreState {
   marquee: { startX: number; startY: number; currentX: number; currentY: number } | null
   /** Active canvas tool. Sticky: toggled via the toolbar or the Space key. */
   activeTool: CanvasTool
-  /** Active view on the left sidebar, null = collapsed */
-  activeLeftSidebarView: SidebarView | null
-  /** Active view on the right sidebar, null = collapsed */
-  activeRightSidebarView: SidebarView | null
-  /** When true the left sidebar (activity rail + content) is fully hidden
-   *  (width 0), reopened via the floating top-left toggle. Mirror of
-   *  rightSidebarHidden; distinct from activeLeftSidebarView === null, which
-   *  only collapses the content and keeps the rail visible. */
+  /** Pending panel navigation request, consumed by the shared window runtime */
+  requestedNavigationView: SidebarView | null
+  /** When true the Workspace sidebar is fully hidden. */
   leftSidebarHidden: boolean
-  /** When true the right sidebar (activity rail + content) is fully hidden
-   *  (width 0), reopened via the floating top-right toggle. Distinct from
-   *  activeRightSidebarView === null, which only collapses the content and
-   *  keeps the rail visible. */
-  rightSidebarHidden: boolean
-  /** View icon currently being dragged between rails, or null when idle.
-   *  Transient (not persisted); the layout itself lives in settingsStore. */
-  draggingView: SidebarView | null
   /** Worktree being hovered (chip or sidebar row) — transiently highlights all
    *  its member nodes + sludge. Null when nothing is hovered. */
   hoveredWorktreeId: string | null
   /** Worktree the focus lens is locked onto — dims non-members, rings members,
    *  and (on entry) frames the camera. Null when the lens is off. */
   focusedWorktreeId: string | null
-  /** Checkout used by file-navigation surfaces (Explorer, Search, Quick Open),
-   *  keyed by workspace. Independent from the transient canvas focus lens. */
-  navigationWorktreeByWorkspace: Record<string, string>
   /** Checkout whose index/working tree is shown by Source Control's Changes
    *  section, keyed by repository root so multi-repo workspaces stay isolated. */
   sourceControlWorktreeByRepository: Record<string, string>
@@ -87,37 +51,28 @@ interface UIStoreState {
 
 interface UIStoreActions {
   setShowCommandPalette: (show: boolean) => void
-  openFilePalette: (targetPanelId: string) => void
   setShowSkillsDialog: (show: boolean) => void
-  setMinimapOpen: (open: boolean) => void
-  toggleMinimapOpen: () => void
+  toggleMinimapOpen: (canvasPanelId: string) => void
+  openRepository: (tab?: 'changes' | 'pullRequests') => void
+  setSourceControlDraft: (root: string, draft: string) => void
+  setShowPullRequests: (show: boolean) => void
+  setShowUsage: (show: boolean) => void
   openSettings: (initialTab?: string) => void
   closeSettings: () => void
   toggleSidebar: () => void
   setMarquee: (marquee: { startX: number; startY: number; currentX: number; currentY: number } | null) => void
   setActiveTool: (tool: CanvasTool) => void
-  setActiveLeftSidebarView: (view: SidebarView | null) => void
-  setActiveRightSidebarView: (view: SidebarView | null) => void
+  requestNavigationView: (view: SidebarView | null) => void
   /** Show/hide the entire left sidebar (rail + content). */
   setLeftSidebarHidden: (hidden: boolean) => void
   /** Flip the left sidebar between fully hidden and shown. */
   toggleLeftSidebar: () => void
-  /** Show/hide the entire right sidebar (rail + content). */
-  setRightSidebarHidden: (hidden: boolean) => void
-  /** Flip the right sidebar between fully hidden and shown. */
-  toggleRightSidebar: () => void
-  /** Mark a view icon as being dragged (rail-to-rail DnD); null to clear. */
-  setDraggingView: (view: SidebarView | null) => void
-  /** Move a sidebar view to targetSide at targetIndex, persisting the new
-   *  layout to settings and focusing the moved view on its new side. */
-  moveSidebarView: (view: SidebarView, targetSide: SidebarSide, targetIndex: number) => void
   /** Highlight (hover) a worktree's member nodes; pass null to clear. */
   setHoveredWorktree: (id: string | null) => void
   /** Lock the focus lens onto a worktree (caller frames the camera separately). */
   focusWorktree: (id: string | null) => void
   /** Clear both hover highlight and the focus lens. */
   clearWorktreeLens: () => void
-  setNavigationWorktree: (workspaceId: string, worktreeId: string) => void
   setSourceControlWorktree: (repositoryRoot: string, worktreeId: string) => void
 }
 
@@ -127,50 +82,72 @@ export type UIStore = UIStoreState & UIStoreActions
 // Store
 // -----------------------------------------------------------------------------
 
+// Application pages have a single owner. Calls from panel menus, native menus,
+// and the command palette all pass through this boundary before mutating state.
+function forwardApplicationOverlay(request: ApplicationOverlayRequest): boolean {
+  if (typeof window === 'undefined' || new URLSearchParams(window.location.search).get('type') !== 'dock') return false
+  void window.electronAPI.openApplicationOverlay(request).catch(error => log.warn('Could not open application view:', error))
+  return true
+}
+
 export const useUIStore = create<UIStore>((set, get) => ({
   // --- State ---
   showCommandPalette: false,
-  openFileTargetPanelId: null,
   showSkillsDialog: false,
-  minimapOpen: false,
+  minimapOpenByCanvas: {},
+  repositoryTab: 'changes',
+  sourceControlDrafts: {},
+  showPullRequests: false,
+  showUsage: false,
   showSettings: false,
   settingsInitialTab: null,
   marquee: null,
   activeTool: 'select',
-  activeLeftSidebarView: 'workspaces',
-  activeRightSidebarView: null,
+  requestedNavigationView: null,
   leftSidebarHidden: false,
-  rightSidebarHidden: false,
-  draggingView: null,
   hoveredWorktreeId: null,
   focusedWorktreeId: null,
-  navigationWorktreeByWorkspace: {},
   sourceControlWorktreeByRepository: {},
 
   // --- Actions ---
 
   setShowCommandPalette(show) {
-    set({ showCommandPalette: show, ...(!show ? { openFileTargetPanelId: null } : {}) })
-  },
-
-  openFilePalette(targetPanelId) {
-    set({ showCommandPalette: true, openFileTargetPanelId: targetPanelId })
+    set({ showCommandPalette: show })
   },
 
   setShowSkillsDialog(show) {
-    set({ showSkillsDialog: show })
+    if (show && forwardApplicationOverlay({ view: 'skills' })) return
+    set({ showSkillsDialog: show, ...(show ? { showPullRequests: false, showUsage: false, showSettings: false, settingsInitialTab: null } : {}) })
   },
 
-  setMinimapOpen(open) {
-    set({ minimapOpen: open })
+  toggleMinimapOpen(canvasPanelId) {
+    set((state) => ({ minimapOpenByCanvas: {
+      ...state.minimapOpenByCanvas,
+      [canvasPanelId]: !state.minimapOpenByCanvas[canvasPanelId],
+    } }))
   },
 
-  toggleMinimapOpen() {
-    set({ minimapOpen: !get().minimapOpen })
+  setSourceControlDraft(root, draft) {
+    set(state => ({ sourceControlDrafts: { ...state.sourceControlDrafts, [root]: draft } }))
+  },
+  openRepository(tab = 'changes') {
+    if (forwardApplicationOverlay({ view: 'pullRequests', section: tab })) return
+    get().setShowPullRequests(true)
+    set({ repositoryTab: tab })
+  },
+  setShowPullRequests(show) {
+    if (show && forwardApplicationOverlay({ view: 'pullRequests' })) return
+    set({ repositoryTab: 'pullRequests', showPullRequests: show, ...(show ? { showSkillsDialog: false, showUsage: false, showSettings: false, settingsInitialTab: null } : {}) })
+  },
+
+  setShowUsage(show) {
+    if (show && forwardApplicationOverlay({ view: 'usage' })) return
+    set({ showUsage: show, ...(show ? { showPullRequests: false, showSkillsDialog: false, showSettings: false, settingsInitialTab: null } : {}) })
   },
 
   openSettings(initialTab) {
-    set({ showSettings: true, settingsInitialTab: initialTab ?? null })
+    if (forwardApplicationOverlay({ view: 'settings', section: initialTab })) return
+    set({ showPullRequests: false, showSkillsDialog: false, showUsage: false, showSettings: true, settingsInitialTab: initialTab ?? null })
   },
 
   closeSettings() {
@@ -178,20 +155,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
 
   toggleSidebar() {
-    // Cmd+B / menu / command-palette action. Across the three-state left rail:
-    //   • fully hidden → reveal and open the first left view,
-    //   • opened       → collapse to rail-only (content hidden, rail kept),
-    //   • rail-only     → open the first left view.
-    const { leftSidebarHidden, activeLeftSidebarView } = get()
-    if (leftSidebarHidden) {
-      const first = getSidebarLayout().left[0] ?? null
-      set({ leftSidebarHidden: false, activeLeftSidebarView: first })
-    } else if (activeLeftSidebarView !== null) {
-      set({ activeLeftSidebarView: null })
-    } else {
-      const first = getSidebarLayout().left[0] ?? null
-      set({ activeLeftSidebarView: first })
-    }
+    set((state) => ({ leftSidebarHidden: !state.leftSidebarHidden }))
   },
 
   setMarquee(marquee) {
@@ -202,12 +166,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
     set({ activeTool: tool })
   },
 
-  setActiveLeftSidebarView(view) {
-    set({ activeLeftSidebarView: view })
-  },
-
-  setActiveRightSidebarView(view) {
-    set({ activeRightSidebarView: view })
+  requestNavigationView(view) {
+    set({ requestedNavigationView: view })
   },
 
   setLeftSidebarHidden(hidden) {
@@ -217,54 +177,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
   toggleLeftSidebar() {
     set((s) => ({ leftSidebarHidden: !s.leftSidebarHidden }))
   },
-
-  setRightSidebarHidden(hidden) {
-    set({ rightSidebarHidden: hidden })
-  },
-
-  toggleRightSidebar() {
-    set((s) => ({ rightSidebarHidden: !s.rightSidebarHidden }))
-  },
-
-  setDraggingView(view) {
-    set({ draggingView: view })
-  },
-
-  moveSidebarView(view, targetSide, targetIndex) {
-    // Layout's single home is settingsStore; work on a copy, then persist.
-    const current = getSidebarLayout()
-    const layout: SidebarLayout = { left: current.left.slice(), right: current.right.slice() }
-
-    // Find the view's source side + index.
-    let sourceSide: SidebarSide | null = null
-    let sourceIndex = layout.left.indexOf(view)
-    if (sourceIndex >= 0) sourceSide = 'left'
-    else if ((sourceIndex = layout.right.indexOf(view)) >= 0) sourceSide = 'right'
-    if (sourceSide === null) return
-
-    // Remove from source, then compensate the target index for the removal when
-    // moving within the same rail and the source sat before the drop point.
-    layout[sourceSide].splice(sourceIndex, 1)
-    let insertAt = targetIndex
-    if (sourceSide === targetSide && sourceIndex < targetIndex) insertAt -= 1
-    insertAt = Math.max(0, Math.min(insertAt, layout[targetSide].length))
-    layout[targetSide].splice(insertAt, 0, view)
-
-    // Persist (settingsStore is the source of truth; components read via
-    // useSidebarLayout, so this drives the re-render).
-    useSettingsStore.getState().setSetting('sidebarLayout', layout)
-
-    // Keep active views coherent: if the moved view was active on its source
-    // side, clear it there; focus it on the target side so its landing shows.
-    const state = get()
-    const patch: Partial<UIStoreState> = {}
-    if (sourceSide === 'left' && state.activeLeftSidebarView === view) patch.activeLeftSidebarView = null
-    if (sourceSide === 'right' && state.activeRightSidebarView === view) patch.activeRightSidebarView = null
-    if (targetSide === 'left') patch.activeLeftSidebarView = view
-    else patch.activeRightSidebarView = view
-    set(patch)
-  },
-
 
   setHoveredWorktree(id) {
     if (get().hoveredWorktreeId === id) return
@@ -281,15 +193,6 @@ export const useUIStore = create<UIStore>((set, get) => ({
     set({ hoveredWorktreeId: null, focusedWorktreeId: null })
   },
 
-  setNavigationWorktree(workspaceId, worktreeId) {
-    set((state) => ({
-      navigationWorktreeByWorkspace: {
-        ...state.navigationWorktreeByWorkspace,
-        [workspaceId]: worktreeId,
-      },
-    }))
-  },
-
   setSourceControlWorktree(repositoryRoot, worktreeId) {
     set((state) => ({
       sourceControlWorktreeByRepository: {
@@ -301,38 +204,15 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
 }))
 
-// "Show file explorer on launch": the active sidebar view is transient uiStore
-// state (not restored from session), so it starts at the static default above.
-// Settings load asynchronously via IPC after this store is created, so we apply
-// the launch preference once — when settings first finish loading — and only if
-// the user hasn't already opened a view in the meantime. Idempotent across the
-// repeat loadSettings() calls every window makes.
+// Apply the file panel launch preference once settings finish loading.
 let launchSidebarViewApplied = false
 function applyLaunchSidebarView(loaded: boolean): void {
   if (launchSidebarViewApplied || !loaded) return
   launchSidebarViewApplied = true
-  const { showFileExplorerOnLaunch, sidebarLayout } = useSettingsStore.getState()
+  const { showFileExplorerOnLaunch } = useSettingsStore.getState()
   if (!showFileExplorerOnLaunch) return
-  // Only honor it when 'explorer' actually lives in the left rail and the user
-  // hasn't navigated away from the initial default yet.
-  const left = normalizeSidebarLayout(sidebarLayout).left
-  if (!left.includes('explorer')) return
-  if (useUIStore.getState().activeLeftSidebarView !== 'workspaces') return
-  useUIStore.setState({ activeLeftSidebarView: 'explorer' })
+  if (useUIStore.getState().requestedNavigationView !== null) return
+  useUIStore.getState().requestNavigationView('explorer')
 }
 applyLaunchSidebarView(useSettingsStore.getState()._loaded)
 useSettingsStore.subscribe((s) => applyLaunchSidebarView(s._loaded))
-
-/**
- * Subscribe to the sidebar layout (its single home is settingsStore). Components
- * use this instead of reading a uiStore copy, so there's no hand-sync and no
- * stale path when the layout changes via UI, hand-edit, or another window.
- */
-export function useSidebarLayout(): SidebarLayout {
-  // Select the stable raw field and normalize in a memo: normalizeSidebarLayout
-  // builds a fresh {left,right} every call, so selecting it directly would return
-  // a new reference on every render and, under zustand v5's snapshot identity
-  // check, spin useSyncExternalStore into "Maximum update depth exceeded".
-  const raw = useSettingsStore((s) => s.sidebarLayout)
-  return useMemo(() => normalizeSidebarLayout(raw), [raw])
-}

@@ -1,7 +1,9 @@
+import type { ShortcutAction } from '../../shared/types'
 import { forwardRef, type ButtonHTMLAttributes } from 'react'
 import { Tooltip } from '../ui/Tooltip'
 
 interface CanvasToolbarButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  action?: ShortcutAction
   label: string
   active?: boolean
   size?: 'panel' | 'zoom'
@@ -10,6 +12,7 @@ interface CanvasToolbarButtonProps extends ButtonHTMLAttributes<HTMLButtonElemen
 
 export const CanvasToolbarButton = forwardRef<HTMLButtonElement, CanvasToolbarButtonProps>(function CanvasToolbarButton({
   label,
+  action,
   active = false,
   size = 'panel',
   tooltipPlacement = 'top',
@@ -19,7 +22,7 @@ export const CanvasToolbarButton = forwardRef<HTMLButtonElement, CanvasToolbarBu
   ...props
 }, ref) {
   return (
-    <Tooltip label={label} placement={tooltipPlacement}>
+    <Tooltip action={action} label={label} placement={tooltipPlacement}>
       <button
         {...props}
         ref={ref}
@@ -27,7 +30,7 @@ export const CanvasToolbarButton = forwardRef<HTMLButtonElement, CanvasToolbarBu
         aria-label={label}
         aria-pressed={active || undefined}
         style={{ WebkitTapHighlightColor: 'transparent', ...props.style }}
-        className={`${size === 'panel' ? 'h-9 w-9' : 'h-8 w-8'} flex items-center justify-center rounded-full ${
+        className={`${size === 'panel' ? 'h-9 w-9' : 'h-8 w-8'} shrink-0 flex items-center justify-center rounded-full ${
           active ? 'bg-hover-strong text-primary' : 'bg-transparent text-secondary'
         } hover:bg-hover-strong hover:text-primary active:scale-[0.92] transition-all duration-100 ${className}`}
       >

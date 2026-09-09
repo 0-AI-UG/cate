@@ -1,3 +1,4 @@
+import { detachPanel } from '../panels/detachPanel'
 // =============================================================================
 // movePanelToNewWindow — detach a panel into its own window from ANY location.
 //
@@ -7,8 +8,8 @@
 // location-agnostic version for callers that only have a panel id (the sidebar
 // workspace overview, the command palette): it resolves the panel's location via
 // the canonical probe (resolvePanelLocation), builds the same transfer snapshot,
-// asks main to spawn the window, and only then removes the panel from its source
-// — mirroring the "detach first, tear down after" rule of both existing paths.
+// uses the same acknowledged handoff as menu and drag callers, and only then
+// removes the panel from its source.
 // =============================================================================
 
 import type { PanelLocation } from '../../../shared/types'
@@ -47,22 +48,24 @@ export async function movePanelToNewWindow(
     sourceLocation = { type: 'canvas', canvasId: location.canvasPanelId, canvasNodeId: nodeId }
   }
 
-  const snapshot = createTransferSnapshot(
-    panel,
-    sourceLocation,
-    { origin: { x: 100, y: 100 }, size: { width: 800, height: 600 } },
-    {
-      // A canvas panel carries its children; without this the new window
-      // renders them as generic "Panel" stubs (mirrors the dock tab path).
-      resolveChildPanel: (childId: string) => ws.panels[childId],
-      workspaceRootPath: ws.rootPath || undefined,
-      worktrees: ws.worktrees,
-    },
-  )
-
-  // Detach FIRST — only tear down the source once the new window actually
-  // exists (dragDetach returns null when main refuses).
-  const winId = await window.electronAPI.dragDetach(snapshot, workspaceId)
+  const capture = () => {
+    const current = useAppStore.getState().workspaces.find(w => w.id === workspaceId)
+    const currentPanel = current?.panels[panelId]
+    if (!current || !currentPanel || JSON.stringify(resolvePanelLocation(workspaceId, panelId)) !== JSON.stringify(location)) return null
+    return createTransferSnapshot(
+      currentPanel,
+      sourceLocation,
+      { origin: { x: 100, y: 100 }, size: { width: 800, height: 600 } },
+      {
+        resolveChildPanel: childId => current.panels[childId],
+        workspaceRootPath: current.rootPath || undefined,
+        worktrees: current.worktrees,
+      },
+    )
+  }
+  const snapshot = capture()
+  if (!snapshot) return false
+  const winId = await detachPanel(snapshot, workspaceId, capture)
   if (winId == null) return false
 
   if (location.kind === 'dock') {
@@ -88,14 +91,5 @@ export async function movePanelToNewWindow(
   // command palette, session, counts — agrees it's no longer here.
   removePanelFromWindow(workspaceId, panelId, panel.type, 'transfer')
 
-  // Detaching the workspace's only canvas leaves an empty center dock — mint a
-  // fresh one, mirroring the drag-detach path (useDragOp.onRemovedFromCanvas).
-  if (panel.type === 'canvas') {
-    const app = useAppStore.getState()
-    const remaining = Object.values(
-      app.workspaces.find((w) => w.id === workspaceId)?.panels ?? {},
-    ).filter((p) => p.type === 'canvas')
-    if (remaining.length === 0) app.createCanvas(workspaceId)
-  }
   return true
 }

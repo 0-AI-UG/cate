@@ -5,12 +5,13 @@
 // =============================================================================
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { CaretRight, CaretDown, X } from '@phosphor-icons/react'
+import { ChevronRight as CaretRight, ChevronDown as CaretDown, X } from 'lucide-react'
 import type { SearchFileResult, SearchMatchRange } from '../../shared/types'
 import { getFileIcon } from './FileTreeNode'
 import { trimLeading } from './searchDisplay'
 import { lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
-import { useSearchStore, lineKey } from '../stores/searchStore'
+import { lineKey } from '../stores/searchStore'
+import { useSearchStoreContext as useSearchStore } from '../stores/SearchStoreContext'
 import { useAppStore } from '../stores/appStore'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
@@ -70,13 +71,14 @@ type Row =
   | { kind: 'line'; file: SearchFileResult; lineIdx: number }
 
 interface Props {
+  onOpenMatch?: (path: string, line: number, column: number) => void
   /** Visible files (already filtered for dismissed files by the caller). */
   files: SearchFileResult[]
   /** Git decorations for the repo, so file rows tint like the Explorer. */
   git?: GitTree
 }
 
-export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
+export const SearchResultsTree: React.FC<Props> = ({ files, git, onOpenMatch }) => {
   const collapsed = useSearchStore((s) => s.collapsed)
   const dismissedLines = useSearchStore((s) => s.dismissedLines)
   const toggleCollapse = useSearchStore((s) => s.toggleCollapse)
@@ -169,10 +171,14 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git }) => {
   const visibleRows = rows.slice(startIdx, endIdx)
 
   const openLine = (file: SearchFileResult, lineIdx: number): void => {
-    const wsId = useAppStore.getState().selectedWorkspaceId
-    if (!wsId) return
     const ln = file.lines[lineIdx]
     const column = (ln.ranges[0]?.start ?? 0) + 1
+    if (onOpenMatch) {
+      onOpenMatch(file.path, ln.line, column)
+      return
+    }
+    const wsId = useAppStore.getState().selectedWorkspaceId
+    if (!wsId) return
     const panelId = openFileAsPanel(wsId, file.path, undefined, { target: 'dock', zone: 'center' })
     setPendingReveal(panelId, { line: ln.line, column })
   }

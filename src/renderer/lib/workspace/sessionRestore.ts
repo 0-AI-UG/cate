@@ -14,10 +14,6 @@ import {
 import { useUIStore } from '../../stores/uiStore'
 import { setActivePanel } from '../activePanel'
 import { getOrCreateWorkspaceDockStore } from './dockRegistry'
-import {
-  getCanvasSnapshotForPanel,
-  getWorkspaceCanvasPanelIds,
-} from './canvasAccess'
 import { getOrCreateCanvasStoreForPanel } from '../../stores/canvasStore'
 import { deferredSnapshots, setDeferredRestoreHandler } from './deferredRestore'
 import { beginRestoreQuiescence } from './sessionAutosave'
@@ -45,7 +41,11 @@ function restorePanelRecords(workspaceId: string, snapshot: SessionSnapshot): nu
   for (const panel of Object.values(snapshot.panels)) {
     const existing = appStore.getWorkspace(workspaceId)?.panels[panel.id]
     if (!existing) {
-      appStore.addPanel(workspaceId, panel)
+      appStore.addPanel(workspaceId, {
+        ...panel,
+        worktreeId: panel.worktreeId ?? (['navigation', 'search'].includes(panel.type)
+          ? snapshot.worktreeViewScopes?.navigationWorktreeId : undefined),
+      })
       restoredCount += 1
     }
   }
@@ -99,7 +99,7 @@ export async function reloadWorkspaceFromDisk(wsId: string): Promise<void> {
   // remote cate-runtime:// locator reads .cate/ on the runtime next to the
   // remote repo. Both paths round-trip through the same restore below.
 
-  const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath)) as {
+  const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath, ws.id)) as {
     workspace: ProjectWorkspaceFile
     session: ProjectSessionFile | null
   } | null
@@ -128,23 +128,10 @@ export async function reloadWorkspaceFromDisk(wsId: string): Promise<void> {
   log.info('[session] reloaded workspace %s from disk (%d panels)', wsId, Object.keys(snapshot.panels ?? {}).length)
 }
 
-/**
- * True when a workspace has no meaningful layout yet: no panels at all, or only
- * canvas panels that hold zero nodes (the blank center canvas a fresh workspace
- * mints). Used to decide whether opening it should load the on-disk `.cate/`
- * layout, and whether a just-opened workspace still needs a starter terminal.
- */
+/** Explicit canvases are user content, even before they contain nodes. */
 export function isWorkspaceEffectivelyEmpty(wsId: string): boolean {
   const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
-  if (!ws) return true
-  for (const panel of Object.values(ws.panels)) {
-    if (panel.type !== 'canvas') return false
-  }
-  for (const cpId of getWorkspaceCanvasPanelIds(wsId)) {
-    const snap = getCanvasSnapshotForPanel(cpId)
-    if (snap && Object.keys(snap.nodes).length > 0) return false
-  }
-  return true
+  return !ws || Object.keys(ws.panels).length === 0
 }
 
 /**
@@ -169,11 +156,7 @@ export async function hydrateWorkspaceFromDiskIfEmpty(wsId: string): Promise<voi
   const appStore = useAppStore.getState()
   const ws = appStore.workspaces.find((w) => w.id === wsId)
   if (!ws?.rootPath) return
-  // A deferred restore owns it, or it already has live content — leave it alone.
-  // "Live content" means any non-canvas panel, or any canvas with nodes on it. A
-  // freshly-opened workspace has only an empty center canvas (minted by
-  // ensureCenterCanvas), which still counts as empty so the disk layout loads.
-  if (deferredSnapshots.has(wsId)) return
+  if (deferredSnapshots.has(wsId) || ws.layoutRootPath === ws.rootPath) return
   if (!isWorkspaceEffectivelyEmpty(wsId)) return
   // This is the drive-by path from the advisory: opening a cloned repo restores
   // whatever its committed workspace.json names (GHSA-8769-jp52-985f). The user
@@ -182,30 +165,46 @@ export async function hydrateWorkspaceFromDiskIfEmpty(wsId: string): Promise<voi
   // files unread if trust was revoked under a live workspace.
   if (!isProjectTrusted(ws.rootPath)) return
 
-  const projectState = (await window.electronAPI.projectStateLoad(ws.rootPath)) as {
-    workspace: ProjectWorkspaceFile
-    session: ProjectSessionFile | null
-  } | null
-  if (!projectState?.workspace) return
+  const endQuiescence = beginRestoreQuiescence()
+  try {
+    // Claim initialization before awaiting I/O so concurrent selection cannot
+    // replay the same layout. An empty result is an initialized layout too.
+    useAppStore.setState((state) => ({ workspaces: state.workspaces.map((w) =>
+      w.id === wsId ? { ...w, layoutRootPath: ws.rootPath } : w,
+    ) }))
+    let projectState: { workspace: ProjectWorkspaceFile; session: ProjectSessionFile | null } | null
+    try {
+      projectState = await window.electronAPI.projectStateLoad(ws.rootPath, ws.id)
+    } catch (error) {
+      useAppStore.setState((state) => ({ workspaces: state.workspaces.map((w) =>
+        w.id === wsId && w.rootPath === ws.rootPath && w.panels === ws.panels
+          ? { ...w, layoutRootPath: undefined } : w,
+      ) }))
+      throw error
+    }
+    const current = useAppStore.getState().getWorkspace(wsId)
+    if (!current || current.rootPath !== ws.rootPath || current.panels !== ws.panels) return
+    if (!projectState?.workspace) return
 
-  const snapshot = projectFilesToSnapshot(projectState.workspace, projectState.session, ws.rootPath)
-  // Nothing worth restoring (no panels) — let the normal empty-canvas path run.
-  if (!snapshot.panels || Object.keys(snapshot.panels).length === 0) return
+    const snapshot = projectFilesToSnapshot(projectState.workspace, projectState.session, ws.rootPath)
 
-  // Keep the workspace's display name/color in sync with the file.
-  if (projectState.workspace.name) appStore.renameWorkspace(wsId, projectState.workspace.name)
-  if (typeof projectState.workspace.color === 'string') {
-    appStore.setWorkspaceColor(wsId, projectState.workspace.color)
+    // Keep the workspace's display name/color in sync with the file.
+    if (projectState.workspace.name) appStore.renameWorkspace(wsId, projectState.workspace.name)
+    if (typeof projectState.workspace.color === 'string') {
+      appStore.setWorkspaceColor(wsId, projectState.workspace.color)
+    }
+
+    await restoreWorkspaceLayout(snapshot, wsId, { teardown: true, remount: true })
+    const { restoreWorkspaceDetachedWindows } = await import('./sessionStartup')
+    await restoreWorkspaceDetachedWindows(
+      wsId,
+      dockWindowsFromSession(projectState.session),
+      { closeExisting: true },
+    )
+    log.info('[session] hydrated workspace %s on open (%d panels)', wsId, Object.keys(snapshot.panels ?? {}).length)
+  } finally {
+    endQuiescence()
   }
-
-  await restoreWorkspaceLayout(snapshot, wsId, { teardown: true, remount: true })
-  const { restoreWorkspaceDetachedWindows } = await import('./sessionStartup')
-  await restoreWorkspaceDetachedWindows(
-    wsId,
-    dockWindowsFromSession(projectState.session),
-    { closeExisting: true },
-  )
-  log.info('[session] hydrated workspace %s on open (%d panels)', wsId, Object.keys(snapshot.panels).length)
 }
 
 // -----------------------------------------------------------------------------
@@ -262,18 +261,22 @@ async function restoreSessionHydrate(snapshot: SessionSnapshot, workspaceId: str
   // switch can never redirect a restore into the wrong workspace.
   const appStore = useAppStore.getState()
   const wsId = workspaceId
+  useAppStore.setState((state) => ({ workspaces: state.workspaces.map((w) =>
+    w.id === wsId ? { ...w, layoutRootPath: w.rootPath } : w,
+  ) }))
 
   // Seed the worktree registry first, so the panels restored below can resolve
   // their persisted worktreeId, and so the colors/labels here win over anything
   // a background sync already discovered for the same checkout paths.
   if (snapshot.worktrees?.length) appStore.hydrateWorktrees(wsId, snapshot.worktrees)
-  if (snapshot.worktreeViewScopes?.navigationWorktreeId) {
-    useUIStore.getState().setNavigationWorktree(wsId, snapshot.worktreeViewScopes.navigationWorktreeId)
-  }
   for (const [repositoryRoot, worktreeId] of Object.entries(
     snapshot.worktreeViewScopes?.sourceControlWorktreeByRepository ?? {},
   )) {
     useUIStore.getState().setSourceControlWorktree(repositoryRoot, worktreeId)
+  }
+
+  for (const [root, draft] of Object.entries(snapshot.worktreeViewScopes?.sourceControlDrafts ?? {})) {
+    useUIStore.getState().setSourceControlDraft(root, draft)
   }
 
   const restoredCount = restorePanelRecords(wsId, snapshot)
@@ -320,10 +323,8 @@ async function restoreSessionHydrate(snapshot: SessionSnapshot, workspaceId: str
     terminalRegistry.setPendingRestore(panel.id, snapshot.terminalCwds?.[panel.id])
   }
 
-  // Safety net: guarantee the center zone has a canvas panel after restore.
-  // Without this, a session saved in a bad state (or one whose center layout
-  // references non-canvas panels only) would come up as a blank center pane.
-  appStore.ensureCenterCanvas(wsId)
+  // Repair stale references while preserving empty or canvas-free layouts.
+  appStore.reconcileWorkspaceDock(wsId)
 
   log.debug(`[session] workspace ${wsId} restored in ${(performance.now() - t0).toFixed(1)}ms`)
 }

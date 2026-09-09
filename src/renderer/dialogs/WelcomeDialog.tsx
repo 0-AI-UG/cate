@@ -10,7 +10,7 @@
 // =============================================================================
 
 import { useState } from 'react'
-import { EnvelopeSimple } from '@phosphor-icons/react'
+import { Mail as EnvelopeSimple } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { CateLogo } from '../ui/CateLogo'
 import log from '../lib/logger'

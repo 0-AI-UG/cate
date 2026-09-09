@@ -32,7 +32,7 @@ const snap = (page: Page): Promise<Snapshot> =>
 /** Open the Search view rooted at the fixture project; returns the query input locator. */
 async function openSearch(page: Page, root: string) {
   await openTrustedWorkspace(page, root)
-  await page.evaluate(() => window.__cateE2E!.openSidebarView('search'))
+  await page.evaluate(() => window.__cateE2E!.openNavigationView('search'))
   const input = page.locator('input[aria-label="Search"]')
   await input.waitFor({ state: 'visible', timeout: 30_000 })
   return input

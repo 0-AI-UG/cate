@@ -13,7 +13,7 @@ import type { SearchFileResult, SearchStats } from '../shared/types'
 import type { AgentHookEvent } from '../shared/agentHooks'
 
 /** Bumped only on a wire-incompatible change. A mismatch is a hard failure. */
-export const RUNTIME_PROTOCOL_VERSION = 2
+export const RUNTIME_PROTOCOL_VERSION = 3
 
 // ---- Handshake -------------------------------------------------------------
 
@@ -120,6 +120,7 @@ export const Methods = {
   vcsInit: 'vcs.init',
   vcsLsFiles: 'vcs.lsFiles',
   vcsStatus: 'vcs.status',
+  vcsRemotes: 'vcs.remotes',
   vcsCompare: 'vcs.compare',
   vcsFileDiff: 'vcs.fileDiff',
   vcsFileContent: 'vcs.fileContent',

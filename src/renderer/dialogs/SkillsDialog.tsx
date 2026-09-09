@@ -1,7 +1,8 @@
+import { OverlayHeader } from '../ui/OverlayHeader'
 // =============================================================================
 // SkillsDialog — the skill browser, opened from the left-rail puzzle button.
 //
-// A modal (Cmd+K-family chrome) for giving the agents in the CURRENT workspace a
+// A full-page browser for giving the agents in the CURRENT workspace a
 // skill. Two independent things you can do to a skill:
 //   • Install — write it into this workspace (per agent). Plain installs are not
 //     cached; uninstalling forgets them.
@@ -20,17 +21,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  MagnifyingGlass,
-  ArrowsClockwise,
-  SlidersHorizontal,
-  X,
-  BookmarkSimple,
-  Check,
-  CaretDown,
-  ArrowSquareOut,
-} from '@phosphor-icons/react'
-import { PaletteDialogShell } from '../ui/Modal'
+import { ArrowLeft, ChevronRight, Folder, SlidersHorizontal, LayoutGrid, List, X, Check, ChevronDown as CaretDown, SquareArrowOutUpRight as ArrowSquareOut } from 'lucide-react'
+import { Search as MagnifyingGlass, RefreshCw as ArrowsClockwise, Bookmark as BookmarkSimple } from 'lucide-react'
+import { LeftSidebarReopen } from '../shells/LeftSidebarReopen'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import log from '../lib/logger'
@@ -58,7 +51,7 @@ const SKILL_SOURCES_URL = 'https://github.com/0-AI-UG/cate/blob/main/registry/so
 
 function matches(entry: SkillEntry, terms: string[]): boolean {
   if (terms.length === 0) return true
-  const hay = `${entry.name} ${entry.description}`.toLowerCase()
+  const hay = `${entry.name} ${entry.description} ${entry.source.repo}`.toLowerCase()
   return terms.every((t) => hay.includes(t))
 }
 
@@ -110,11 +103,15 @@ export function SkillsDialog() {
     [workspaces, selectedWorkspaceId],
   )
   const rootPath = currentWs?.rootPath ?? ''
+  const workspaceId = currentWs?.id
 
   const [index, setIndex] = useState<SkillEntry[]>([])
   const [saved, setSaved] = useState<SavedSkill[]>([])
   const [installed, setInstalled] = useState<InstalledSkill[]>([])
   const [query, setQuery] = useState('')
+  const [viewMode, setViewMode] = useState<'list' | 'card'>('list')
+  const [browseMode, setBrowseMode] = useState<'skills' | 'repositories'>('skills')
+  const [selectedRepo, setSelectedRepo] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -129,11 +126,11 @@ export function SkillsDialog() {
   const refreshInstalled = useCallback(async () => {
     if (!rootPath) return setInstalled([])
     try {
-      setInstalled(await api().skillsListInstalled(rootPath))
+      setInstalled(await api().skillsListInstalled(rootPath, workspaceId))
     } catch (err) {
       log.warn('[SkillsDialog] listInstalled failed', err)
     }
-  }, [rootPath])
+  }, [rootPath, workspaceId])
 
   const loadIndex = useCallback(async (refresh = false) => {
     setLoading(true)
@@ -218,6 +215,19 @@ export function SkillsDialog() {
         .sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0) || a.name.localeCompare(b.name)),
     [index, available],
   )
+  const repositories = useMemo(() => {
+    const groups = new Map<string, { repo: string; entries: SkillEntry[] }>()
+    for (const entry of browseRows) {
+      const key = entry.source.repo.toLowerCase()
+      const group = groups.get(key)
+      if (group) group.entries.push(entry)
+      else groups.set(key, { repo: entry.source.repo, entries: [entry] })
+    }
+    return [...groups.values()]
+  }, [browseRows])
+  const visibleBrowseRows = browseMode === 'repositories' && selectedRepo !== null
+    ? browseRows.filter((entry) => entry.source.repo.toLowerCase() === selectedRepo.toLowerCase())
+    : browseRows
 
   if (!show) return null
 
@@ -232,6 +242,7 @@ export function SkillsDialog() {
     <SkillRow
       key={`${entry.id}#${entry.source.path}`}
       entry={entry}
+      viewMode={viewMode}
       installed={installedRow}
       saved={savedIds.has(entry.id)}
       rootPath={rootPath}
@@ -242,14 +253,19 @@ export function SkillsDialog() {
     />
   )
 
-  return (
-    <PaletteDialogShell
-      onClose={close}
-      ariaLabel="Skills"
-      cardClassName="w-[600px] max-w-[600px] max-h-[560px] mt-[80px] overflow-hidden flex flex-col self-start"
-    >
-        {/* Search + actions — no header bar, matching the other dialogs */}
-        <div className="p-2 shrink-0 flex items-center gap-2">
+  const itemsClassName = viewMode === 'card'
+    ? 'grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3'
+    : 'flex flex-col gap-1'
+
+  const contentSlot = document.getElementById('skills-content-slot')
+  return createPortal(
+    <section aria-label="Skills" className={`${contentSlot ? 'h-full w-full' : 'fixed inset-0 z-[100001]'} pointer-events-auto flex min-h-0 flex-col bg-canvas-bg text-primary`}>
+      <LeftSidebarReopen />
+      <OverlayHeader title="Skills">
+        {!contentSlot && <button type="button" onClick={close} className="text-sm text-muted hover:text-primary">Back</button>}
+      </OverlayHeader>
+      <div className="mx-auto flex w-full max-w-[1040px] min-h-0 flex-1 flex-col px-6">
+        <div className="py-4 shrink-0 flex items-center gap-2">
           <PaletteTextInput
               icon={<MagnifyingGlass size={14} />}
               containerClassName="flex-1"
@@ -260,12 +276,12 @@ export function SkillsDialog() {
               placeholder="Search skills…"
               spellCheck={false}
           />
-          <span
-            className="shrink-0 max-w-[130px] truncate text-[11px] text-muted"
-            title={rootPath ? currentWs?.name : undefined}
+          <IconBtn
+            title={viewMode === 'list' ? 'Card view' : 'List view'}
+            onClick={() => setViewMode((mode) => mode === 'list' ? 'card' : 'list')}
           >
-            {rootPath ? `into ${currentWs?.name || 'workspace'}` : 'no folder open'}
-          </span>
+            {viewMode === 'list' ? <LayoutGrid size={15} /> : <List size={15} />}
+          </IconBtn>
           <IconBtn title="Refresh catalog" onClick={() => void loadIndex(true)}>
             {loading ? <Spinner size={15} /> : <ArrowsClockwise size={15} />}
           </IconBtn>
@@ -282,31 +298,59 @@ export function SkillsDialog() {
         )}
 
         {/* Lists */}
-        <div className="flex-1 overflow-y-auto pb-2">
+        <div
+          className="flex-1 min-h-0 overflow-y-auto pt-4 pb-6"
+          style={{ maskImage: 'linear-gradient(to bottom, transparent, black 16px)' }}
+        >
           {cateRows.length > 0 && (
             <>
               <GroupLabel>Cate · {cateRows.length}</GroupLabel>
-              {cateRows.map((e) => renderRow(e, false))}
+              <div className={itemsClassName}>{cateRows.map((e) => renderRow(e, false))}</div>
             </>
           )}
 
           {installedRows.length > 0 && (
             <>
               <GroupLabel>Installed · {installedRows.length}</GroupLabel>
-              {installedRows.map((e) => renderRow(e, true))}
+              <div className={itemsClassName}>{installedRows.map((e) => renderRow(e, true))}</div>
             </>
           )}
 
           {savedRows.length > 0 && (
             <>
               <GroupLabel>Saved · {savedRows.length}</GroupLabel>
-              {savedRows.map((e) => renderRow(e, false))}
+              <div className={itemsClassName}>{savedRows.map((e) => renderRow(e, false))}</div>
             </>
           )}
 
-          <GroupLabel>Browse{browseRows.length > 0 && ` · ${browseRows.length}`}</GroupLabel>
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-5 pb-3 px-3">
+            <h2 className="text-sm font-medium text-secondary">Browse · {browseMode === 'repositories' && selectedRepo === null ? repositories.length : visibleBrowseRows.length}</h2>
+            <div role="group" aria-label="Browse by" className="flex rounded-lg bg-surface-1 p-0.5 text-xs">
+              {(['skills', 'repositories'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={browseMode === mode}
+                  onClick={() => { setBrowseMode(mode); setSelectedRepo(null) }}
+                  className={`rounded-md px-3 py-1.5 ${browseMode === mode ? 'bg-surface-3 text-primary' : 'text-muted hover:text-primary'}`}
+                >
+                  {mode === 'skills' ? 'All skills' : 'Repositories'}
+                </button>
+              ))}
+            </div>
+          </div>
+          {browseMode === 'repositories' && selectedRepo !== null && (
+            <div className="flex items-center gap-3 px-3 pb-3 text-xs">
+              <button type="button" onClick={() => setSelectedRepo(null)} className="flex shrink-0 items-center gap-1 text-muted hover:text-primary">
+                <ArrowLeft size={14} /> All repositories
+              </button>
+              <span className="truncate text-primary">{selectedRepo || 'Unknown repository'}</span>
+            </div>
+          )}
           {loading && browseRows.length === 0 ? (
             <LoadingState label="Loading skills…" size={15} className="px-4 py-6 text-[13px]" />
+          ) : browseMode === 'repositories' && selectedRepo !== null && visibleBrowseRows.length === 0 ? (
+            <div className="px-4 py-6 text-center text-[13px] text-muted">No available skills match in this repository.</div>
           ) : browseRows.length === 0 ? (
             <div className="px-4 py-6 text-center text-[13px] text-muted">
               {index.length === 0
@@ -317,8 +361,27 @@ export function SkillsDialog() {
                     ? 'No other catalog matches.'
                     : 'Everything in the catalog is already here.'}
             </div>
+          ) : browseMode === 'repositories' && selectedRepo === null ? (
+            <div className={itemsClassName}>
+              {repositories.map(({ repo, entries }) => (
+                <button
+                  key={repo.toLowerCase()}
+                  type="button"
+                  aria-label={`Browse ${repo || 'Unknown repository'}`}
+                  onClick={() => setSelectedRepo(repo)}
+                  className={`flex min-w-0 items-center gap-3 rounded-xl text-left transition-colors ${viewMode === 'card' ? 'border border-subtle bg-surface-1 p-4 hover:bg-surface-2' : 'px-3 py-3 hover:bg-surface-1'}`}
+                >
+                  <Folder size={18} className="shrink-0 text-muted" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-primary">{repo || 'Unknown repository'}</span>
+                    <span className="mt-1 block text-xs text-muted">{entries.length} {terms.length ? 'matching ' : ''}{entries.length === 1 ? 'skill' : 'skills'}</span>
+                  </span>
+                  <ChevronRight size={15} className="shrink-0 text-muted" />
+                </button>
+              ))}
+            </div>
           ) : (
-            browseRows.map((e) => renderRow(e, false))
+            <div className={itemsClassName}>{visibleBrowseRows.map((e) => renderRow(e, false))}</div>
           )}
         </div>
 
@@ -334,7 +397,9 @@ export function SkillsDialog() {
             <ArrowSquareOut size={11} />
           </button>
         </div>
-    </PaletteDialogShell>
+      </div>
+    </section>,
+    contentSlot ?? document.body,
   )
 }
 
@@ -345,6 +410,7 @@ export function SkillsDialog() {
 
 function SkillRow({
   entry,
+  viewMode,
   installed,
   saved,
   rootPath,
@@ -354,6 +420,7 @@ function SkillRow({
   onError,
 }: {
   entry: SkillEntry
+  viewMode: 'list' | 'card'
   installed: boolean
   saved: boolean
   rootPath: string
@@ -398,7 +465,7 @@ function SkillRow({
     setUpdateBusy(true)
     try {
       const results = await Promise.all(
-        targets.map((target) => api().skillsInstall(entry, target.id, rootPath)),
+        targets.map((target) => api().skillsInstall(entry, target.id, rootPath, workspaceId)),
       )
       const errors = results.flatMap((result) =>
         result.ok
@@ -415,8 +482,11 @@ function SkillRow({
   }
 
   return (
-    <div className="group flex items-center gap-2 mx-1.5 px-2 py-1.5 rounded-md hover:bg-surface-5/60">
-      <Tooltip label={saved ? 'Saved — click to remove from your library' : 'Save to your library (cached for reuse)'}>
+    <article className={`group min-w-0 rounded-xl transition-colors ${viewMode === 'card'
+      ? 'flex flex-col gap-3 border border-subtle bg-surface-1 p-4 hover:bg-surface-2'
+      : 'flex items-start gap-3 px-3 py-3 hover:bg-surface-1'}`}>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+      <Tooltip label={saved ? 'Remove from library' : 'Save to library'}>
       <button
         onClick={() => void toggleSave()}
         disabled={saveBusy}
@@ -428,7 +498,7 @@ function SkillRow({
         ) : (
           <BookmarkSimple
             size={15}
-            weight={saved ? 'fill' : 'regular'}
+
             className={saved ? 'text-accent' : 'text-muted hover:text-secondary'}
           />
         )}
@@ -437,16 +507,20 @@ function SkillRow({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-[12.5px] font-mono text-primary truncate">{entry.name}</span>
+          <span className="text-[13px] font-medium text-primary truncate">{entry.name}</span>
           {typeof entry.stars === 'number' && entry.stars > 0 && (
             <span className="shrink-0 text-[10px] text-muted tabular-nums">
               {entry.stars > 999 ? `${Math.round(entry.stars / 1000)}k` : entry.stars}★
             </span>
           )}
         </div>
-        {entry.description && <div className="text-[11px] text-muted truncate">{entry.description}</div>}
+        {entry.description && <p className={`mt-1 text-xs leading-relaxed text-muted ${viewMode === 'card' ? 'line-clamp-3' : 'line-clamp-2'}`}>{entry.description}</p>}
+        {entry.source.repo && <div className="mt-2 truncate text-[11px] text-muted" title={entry.source.repo}>{entry.source.repo}</div>}
       </div>
 
+      </div>
+
+      <div className={`flex shrink-0 items-center gap-1.5 ${viewMode === 'card' ? 'justify-end border-t border-subtle pt-3' : 'pt-0.5'}`}>
       {installed && link && (
         <Tooltip label="Update installed copies from source">
           <button
@@ -485,6 +559,8 @@ function SkillRow({
         <CaretDown size={10} className="opacity-60" />
       </button>
 
+      </div>
+
       {menuAnchor && (
         <AgentMenu
           entry={entry}
@@ -498,7 +574,7 @@ function SkillRow({
           onClose={() => setMenuAnchor(null)}
         />
       )}
-    </div>
+    </article>
   )
 }
 
@@ -581,7 +657,7 @@ function AgentMenu({
             onClick={() => void toggle(t.id)}
             disabled={working}
             className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-secondary hover:bg-surface-4 hover:text-primary disabled:opacity-50"
-            title={on ? 'Installed — click to remove' : 'Install here'}
+            title={on ? 'Uninstall skill' : 'Install skill'}
           >
             <span className="w-3.5 shrink-0 flex items-center justify-center text-accent">
               {working ? <Spinner size={11} /> : on ? <Check size={11} /> : null}
@@ -622,5 +698,5 @@ function IconBtn({
 }
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
-  return <div className="px-3.5 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted select-none">{children}</div>
+  return <h2 className="px-3 pt-5 pb-3 text-sm font-medium text-secondary">{children}</h2>
 }

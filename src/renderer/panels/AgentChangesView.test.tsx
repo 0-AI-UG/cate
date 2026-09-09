@@ -3,11 +3,13 @@ import { createRoot } from 'react-dom/client'
 import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
+  setWorktree: vi.fn(),
   workspace: { id: 'ws', rootPath: '/repo', worktrees: [] as any[], panels: {} as Record<string, any> }, records: [] as any[], loading: false, setState: vi.fn(), refresh: vi.fn(), reveal: vi.fn(),
 }))
 vi.mock('../stores/appStore', () => ({ useAppStore: Object.assign((selector: any) => selector({ workspaces: [h.workspace] }), {
-  getState: () => ({ setPanelReviewState: h.setState, getWorkspace: () => h.workspace }),
+  getState: () => ({ setPanelReviewState: h.setState, setPanelWorktreeId: h.setWorktree, getWorkspace: () => h.workspace }),
 }) }))
+vi.mock('../stores/useWorktrees', () => ({ useWorktrees: () => h.workspace.worktrees }))
 vi.mock('../lib/useAgentChanges', () => ({ useAgentChanges: () => ({ records: h.records, loading: h.loading }), refreshAgentChanges: h.refresh }))
 vi.mock('../lib/workspace/panelReveal', () => ({ revealPanel: h.reveal }))
 import AgentChangesView from './AgentChangesView'
@@ -57,6 +59,24 @@ it('offers every comparison mode and switches directly to staged changes', async
   expect(h.setState).toHaveBeenLastCalledWith('ws', 'review', expect.objectContaining({ spec: { kind: 'staged' }, agentChanges: undefined }))
 })
 
+it('switches diff worktrees and restores each checkout comparison and notes', async () => {
+  window.electronAPI.showContextMenu = vi.fn().mockResolvedValueOnce('feature').mockResolvedValueOnce('main')
+  h.workspace.worktrees = [
+    { id: 'main', path: '/repo', branch: 'main', isPrimary: true },
+    { id: 'feature', path: '/feature', branch: 'feature' },
+  ]
+  const original = { ...h.workspace.panels.review.reviewState, agentChanges: undefined, spec: { kind: 'branch', base: 'main', target: 'main' }, notes: [{ id: 'note', path: 'a.ts', body: 'Keep this note' }] }
+  act(() => root.render(<ReviewToolbar state={original} workspaceId="ws" panelId="review" />))
+  const select = host.querySelector<HTMLButtonElement>('[aria-label="Diff panel worktree"]')!
+  await act(async () => select.click())
+  const next = h.setState.mock.calls.at(-1)![2]
+  expect(next).toMatchObject({ repoPath: '/feature', spec: { kind: 'branch', base: 'main', target: 'feature' } })
+  expect(next.notes).toBeUndefined()
+  expect(h.setWorktree).toHaveBeenLastCalledWith('ws', 'review', 'feature')
+  act(() => root.render(<ReviewToolbar state={next} workspaceId="ws" panelId="review" />))
+  await act(async () => select.click())
+  expect(h.setState.mock.calls.at(-1)![2]).toMatchObject({ repoPath: '/repo', notes: original.notes, spec: original.spec })
+})
 it('offers Agent changes from the same repository comparison menu', async () => {
   const state = { ...h.workspace.panels.review.reviewState, agentChanges: undefined }
   act(() => root.render(<ReviewToolbar state={state} workspaceId="ws" panelId="review" />))

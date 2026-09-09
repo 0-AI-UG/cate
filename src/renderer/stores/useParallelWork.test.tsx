@@ -240,7 +240,8 @@ describe('useParallelWork handleDelete', () => {
       await actions.handleDelete(worktree)
     })
 
-    expect(window.electronAPI.closeWindowPanel).toHaveBeenCalledWith('detached-editor')
+    expect(window.electronAPI.closeWindowPanel).toHaveBeenCalledWith('detached-editor', { phase: 'prepare', token: expect.any(String) })
+    expect(window.electronAPI.closeWindowPanel).toHaveBeenCalledWith('detached-editor', { phase: 'cancel', token: expect.any(String) })
     expect(window.electronAPI.gitWorktreeRemove).not.toHaveBeenCalled()
     expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(true)
   })

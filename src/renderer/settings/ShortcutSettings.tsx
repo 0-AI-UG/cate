@@ -1,13 +1,12 @@
 import {
   clearShortcut,
-  resetAllShortcuts,
   resetShortcut,
   setShortcut,
   useResolvedShortcuts,
 } from '../stores/shortcutStore'
 import { SHORTCUT_ACTIONS, SHORTCUT_DISPLAY_NAMES } from '../../shared/types'
 import { ShortcutRecorder } from './ShortcutRecorder'
-import { ArrowCounterClockwise, X } from '@phosphor-icons/react'
+import { RotateCcw as ArrowCounterClockwise, X } from 'lucide-react'
 import { Tooltip } from '../ui/Tooltip'
 import { useSettingsSearch, matchesQuery } from './SettingsSearchContext'
 
@@ -59,16 +58,7 @@ export function ShortcutSettings() {
           </div>
         </div>
       ))}
-      {visibleActions.length > 0 && (
-        <div className="mt-4 flex justify-end">
-          <button
-            onClick={resetAllShortcuts}
-            className="px-3 py-1.5 text-xs text-secondary hover:text-primary bg-surface-5 hover:bg-hover rounded-md transition-colors"
-          >
-            Reset All to Defaults
-          </button>
-        </div>
-      )}
+
     </div>
   )
 }

@@ -111,9 +111,6 @@ export async function discardCreatedWorktreeForWorkspace(
 }
 
 export function useWorktreeActions(rootPath: string, workspaceId: string | null): WorktreeActions {
-  const upsertWorktree = useAppStore((s) => s.upsertWorktree)
-  const addAdditionalRoot = useAppStore((s) => s.addAdditionalRoot)
-
   const createWorktree = useCallback(
     async (rawName: string, baseRef?: string) => {
       if (!rootPath || !workspaceId) return null
@@ -125,28 +122,32 @@ export function useWorktreeActions(rootPath: string, workspaceId: string | null)
   const checkoutPr = useCallback(
     async (pr: PrListItem) => {
       if (!rootPath || !workspaceId) return null
-      // Slug includes the PR number so contributors' identically-named branches
-      // never collide on disk.
-      const targetPath = worktreePathFor(rootPath, `pr-${pr.number}-${pr.headRefName}`)
-      const res = await window.electronAPI.gitWorktreeAddFromPr(rootPath, pr.number, targetPath, {
-        symlinkPaths: configuredSymlinkPaths(),
-      }, workspaceId)
-
-      const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-      const meta: WorktreeMeta = {
-        id: newWorktreeId(),
-        path: res.path,
-        label: `#${pr.number} ${pr.headRefName}`,
-        prNumber: pr.number,
-        color: pickWorktreeColor(ws?.worktrees ?? []),
-      }
-      upsertWorktree(workspaceId, meta)
-      addAdditionalRoot(workspaceId, res.path)
-      gitStatusStore.refresh(rootPath)
-      return meta
+      return checkoutPrForWorkspace(rootPath, workspaceId, pr)
     },
-    [rootPath, workspaceId, upsertWorktree, addAdditionalRoot],
+    [rootPath, workspaceId],
   )
 
   return { createWorktree, checkoutPr }
+}
+
+export async function checkoutPrForWorkspace(rootPath: string, workspaceId: string, pr: PrListItem): Promise<WorktreeMeta> {
+  // Slug includes the PR number so contributors' identically-named branches
+  // never collide on disk.
+  const targetPath = worktreePathFor(rootPath, `pr-${pr.number}-${pr.headRefName}`)
+  const res = await window.electronAPI.gitWorktreeAddFromPr(rootPath, pr.number, targetPath, {
+    symlinkPaths: configuredSymlinkPaths(),
+  }, workspaceId)
+
+  const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
+  const meta: WorktreeMeta = {
+    id: newWorktreeId(),
+    path: res.path,
+    label: `#${pr.number} ${pr.headRefName}`,
+    prNumber: pr.number,
+    color: pickWorktreeColor(ws?.worktrees ?? []),
+  }
+  useAppStore.getState().upsertWorktree(workspaceId, meta)
+  useAppStore.getState().addAdditionalRoot(workspaceId, res.path)
+  gitStatusStore.refresh(rootPath)
+  return meta
 }

@@ -215,3 +215,38 @@ describe('depositCanvasChildTransfers — receiver reconnect', () => {
     expect(setPendingTransfer).toHaveBeenCalledWith('live', 'pty-live', 'LL')
   })
 })
+
+it('captures the live unsaved buffer and baseline for a file-backed editor', async () => {
+  const { rememberModel, rememberBaseline } = await import('./editor/modelCache')
+  rememberModel('/repo/transfer.ts', { getValue: () => 'edited before detach', isDisposed: () => false, dispose: () => {} } as any)
+  rememberBaseline('/repo/transfer.ts', 'disk before edit')
+  const snapshot = createTransferSnapshot(
+    { id: 'dirty-transfer', type: 'editor', title: 'transfer.ts', filePath: '/repo/transfer.ts', isDirty: true },
+    { type: 'dock', zone: 'center', stackId: 'stack' },
+    { origin: { x: 0, y: 0 }, size: { width: 600, height: 400 } },
+  )
+  expect(snapshot.panel.unsavedContent).toBe('edited before detach')
+  expect(snapshot.panel.editorBaseline).toBe('disk before edit')
+})
+
+it('preserves portable Search options through transfer and restarts with destination request ownership', async () => {
+  const { panelSearchStore, releasePanelSearchStore } = await import('../stores/panelSearchStores')
+  const { hydrateReceivedPanel } = await import('./panelTransfer')
+  const store = panelSearchStore('portable-search', '/repo')
+  store.getState().setQuery('needle')
+  store.getState().setOptions({ matchCase: true, includes: '*.ts' })
+  store.getState().beginSearch('source-request', 'source-key')
+  Object.assign(window.electronAPI, { searchCancel: vi.fn().mockResolvedValue(undefined) })
+  const snapshot = createTransferSnapshot({ id: 'portable-search', type: 'editor', title: 'Files', isDirty: false },
+    { type: 'dock', zone: 'center', stackId: 'stack' }, { origin: { x: 0, y: 0 }, size: { width: 600, height: 400 } })
+  releasePanelSearchStore('portable-search')
+  hydrateReceivedPanel('ws', snapshot)
+  const restored = panelSearchStore('portable-search', '/repo').getState()
+  expect(restored.query).toBe('needle')
+  expect(restored.matchCase).toBe(true)
+  expect(restored.includes).toBe('*.ts')
+  expect(restored.currentSearchId).toBeNull()
+  expect(restored.lastQueryKey).toBeNull()
+  expect(window.electronAPI.searchCancel).toHaveBeenCalledExactlyOnceWith('source-request')
+  releasePanelSearchStore('portable-search')
+})

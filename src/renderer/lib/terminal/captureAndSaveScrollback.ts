@@ -7,11 +7,8 @@
 // the fresh xterm on the next launch. When the buffer has no content there is
 // nothing to save and the call is skipped.
 //
-// The save KEY differs by caller — session capture keys scrollback by the
-// restore-stable panel id, while the detached-window shells key by the live
-// ptyId — so the key is a parameter. The save promise is returned so callers
-// can either await it (session capture batches them) or fire-and-forget (the
-// shells); the rejection is already swallowed.
+// Callers use the restore-stable panel id and await publication. Failures must
+// propagate to the session durability gate.
 // =============================================================================
 
 import { terminalRegistry } from './terminalRegistry'
@@ -22,5 +19,5 @@ export function captureAndSaveScrollback(
 ): Promise<void> | undefined {
   const content = terminalRegistry.serializeTerminalState(entry)
   if (!content) return undefined
-  return window.electronAPI.terminalScrollbackSave(saveKey, content).catch(() => {})
+  return window.electronAPI.terminalScrollbackSave(saveKey, content)
 }

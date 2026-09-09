@@ -4,8 +4,8 @@
 // =============================================================================
 
 import { Menu, ipcMain, type MenuItemConstructorOptions } from 'electron'
-import { MENU_SHOW_CONTEXT, MENU_GET_BAR_ITEMS, MENU_POPUP_BAR_ITEM } from '../../shared/ipc-channels'
-import { getMenuBarLabels, popupMenuBarItem } from '../menu'
+import { MENU_RUN_NATIVE_ACTION, MENU_SHOW_CONTEXT, MENU_GET_BAR_ITEMS, MENU_POPUP_BAR_ITEM } from '../../shared/ipc-channels'
+import { getMenuBarLabels, popupMenuBarItem, runNativeAction } from '../menu'
 import { windowFromEvent } from '../windowRegistry'
 
 interface ContextMenuTemplateItem {
@@ -39,6 +39,10 @@ function buildTemplate(
 }
 
 export function registerHandlers(): void {
+  ipcMain.handle(MENU_RUN_NATIVE_ACTION, (event, action: import('../../shared/types').NativeAction) => {
+    const win = windowFromEvent(event)
+    if (win) runNativeAction(win, action)
+  })
   ipcMain.handle(
     MENU_SHOW_CONTEXT,
     (event, items: ContextMenuTemplateItem[]) => {

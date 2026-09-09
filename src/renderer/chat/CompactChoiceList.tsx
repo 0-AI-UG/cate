@@ -1,4 +1,4 @@
-import { CheckCircle } from '@phosphor-icons/react'
+import { CircleCheck as CheckCircle } from 'lucide-react'
 
 export interface CompactChoiceOption<T extends string | number> {
   value: T
@@ -35,7 +35,7 @@ export function CompactChoiceList<T extends string | number>({
               }`}
             >
               <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              {selected && <CheckCircle size={10} weight="fill" className="shrink-0 text-agent-light" />}
+              {selected && <CheckCircle size={10} className="shrink-0 text-agent-light" />}
             </button>
           )
         })}

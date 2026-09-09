@@ -1,22 +1,24 @@
 import { useEffect, useState } from 'react'
-import { CaretRight } from '@phosphor-icons/react'
-import type { RemoteConnectSpec, SshHostEntry } from '../../shared/types'
+import type { RemoteConnectSpec, RuntimeConnection, SshHostEntry } from '../../shared/types'
 import {
   ABSOLUTE_RUNTIME_PATH_ERROR,
   assertAbsoluteRuntimePath,
   isAbsoluteRuntimePath,
 } from '../../shared/runtimeLocator'
-import { btn, inputCls, SEGMENT } from './Modal'
-import { LoadingState, Spinner } from './Spinner'
+import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
+import { SettingRow, TextInput, Select, SecondaryButton } from '../settings/SettingsComponents'
+import { SettingsSearchContext } from '../settings/SettingsSearchContext'
+import { Button } from './Button'
+import { LoadingState } from './Spinner'
 
-// In-panel connect form (no modal) for a remote SSH server or a WSL distro.
+// Settings form for a saved SSH or WSL connection. Saving never opens a workspace.
 // Presentational: it builds a RemoteConnectSpec and hands it to `onSubmit`;
-// the store action does the actual runtimeConnect + workspace wiring.
+// the settings store persists the profile and main stores SSH credentials.
 //
 // SSH input is built around one "Connection" string (user@host:port) rather
 // than a grid of boxes — paste a target or an `ssh …` command and it splits
 // into the pieces. A saved-host picker prefills it from ~/.ssh/config, and the
-// rarely-touched auth knobs (agent / key / passphrase) live under "Advanced".
+// authentication controls (agent / key / passphrase) live in a disclosure.
 
 type Kind = 'server' | 'wsl'
 
@@ -32,21 +34,37 @@ export interface RemoteConnectFields {
   distroPath: string
 }
 
+function sshTargetError(rawHost: string, port: string): string | null {
+  const host = rawHost.trim()
+  const singleColon = host.includes(':') && host.indexOf(':') === host.lastIndexOf(':')
+  if (!host || /[\s/@[\]]/.test(host) || singleColon || host.startsWith('-')) {
+    return 'Enter a valid SSH host or config alias.'
+  }
+  const portNum = port.trim() ? Number(port) : undefined
+  if (portNum !== undefined && (!/^\d+$/.test(port.trim()) || !Number.isInteger(portNum) || portNum < 1 || portNum > 65535)) {
+    return 'Port must be a whole number between 1 and 65535.'
+  }
+  return null
+}
+
 /** Pure: assemble a validated RemoteConnectSpec from raw form fields. */
 export function buildConnectSpec(kind: Kind, f: RemoteConnectFields): RemoteConnectSpec {
   if (kind === 'wsl') {
     const distroPath = f.distroPath.trim()
     assertAbsoluteRuntimePath(distroPath)
+    if (!f.distro.trim()) throw new Error('Choose a WSL distribution.')
     return { kind: 'wsl', distro: f.distro.trim(), distroPath }
   }
   const remotePath = f.remotePath.trim()
   assertAbsoluteRuntimePath(remotePath)
-  const portNum = f.port.trim() ? Number(f.port.trim()) : undefined
+  const targetError = sshTargetError(f.host, f.port)
+  if (targetError) throw new Error(targetError)
+  const portNum = f.port.trim() ? Number(f.port) : undefined
   return {
     kind: 'server',
     host: f.host.trim(),
     user: f.user.trim(),
-    port: portNum !== undefined && Number.isFinite(portNum) ? portNum : undefined,
+    port: portNum,
     remotePath,
     auth: {
       keyPath: f.keyPath.trim() || undefined,
@@ -57,8 +75,8 @@ export function buildConnectSpec(kind: Kind, f: RemoteConnectFields): RemoteConn
 }
 
 /** Pure: split a connection string into its parts. Accepts `[user@]host[:port]`
- *  and a pasted `ssh …` command (strips the `ssh`, honours `-p PORT`, takes the
- *  first non-flag token as the target). Missing parts come back undefined. */
+ *  and a pasted `ssh [-p PORT] host` command. Other options are rejected;
+ *  configure them in OpenSSH instead of silently discarding them. Missing parts come back undefined. */
 export function parseSshTarget(raw: string): { user?: string; host?: string; port?: string } {
   let s = raw.trim()
   if (!s) return {}
@@ -70,7 +88,9 @@ export function parseSshTarget(raw: string): { user?: string; host?: string; por
       port = pm[1]
       s = s.replace(pm[0], ' ')
     }
-    s = s.split(/\s+/).filter(Boolean).find((t) => !t.startsWith('-')) ?? ''
+    // Never mistake an option argument (such as an identity file) for a host.
+    if (s.trim().split(/\s+/).length !== 1 || s.trim().startsWith('-')) return {}
+    s = s.trim()
   }
   let user: string | undefined
   const at = s.indexOf('@')
@@ -78,8 +98,10 @@ export function parseSshTarget(raw: string): { user?: string; host?: string; por
     user = s.slice(0, at) || undefined
     s = s.slice(at + 1)
   }
+  const bracketed = s.match(/^\[([^\]]+)\](?::(\d+))?$/)
+  if (bracketed) return { user, host: bracketed[1], port: port ?? bracketed[2] }
   const colon = s.lastIndexOf(':')
-  if (colon >= 0 && /^\d+$/.test(s.slice(colon + 1))) {
+  if (s.indexOf(':') === colon && colon >= 0 && /^\d+$/.test(s.slice(colon + 1))) {
     port = port ?? s.slice(colon + 1)
     s = s.slice(0, colon)
   }
@@ -89,7 +111,7 @@ export function parseSshTarget(raw: string): { user?: string; host?: string; por
 /** Render parts back into a `user@host:port` connection string. */
 function formatTarget(user?: string, host?: string, port?: string | number): string {
   if (!host) return ''
-  return `${user ? `${user}@` : ''}${host}${port ? `:${port}` : ''}`
+  return `${user ? `${user}@` : ''}${host.includes(':') ? `[${host}]` : host}${port ? `:${port}` : ''}`
 }
 
 /** Non-secret fields that can be pre-filled when editing an existing
@@ -103,6 +125,21 @@ export interface RemoteConnectInitial {
   remotePath?: string
   distro?: string
   distroPath?: string
+}
+
+/** Pre-fill values for the edit-connection form from a stored connection. */
+export function connectionInitial(connection: RuntimeConnection | undefined) {
+  if (!isRemoteRuntimeConnection(connection)) return undefined
+  if (connection.kind === 'wsl') {
+    return { kind: 'wsl' as const, distro: connection.distro, distroPath: connection.distroPath }
+  }
+  return {
+    kind: 'server' as const,
+    host: connection.host,
+    user: connection.user,
+    port: connection.port != null ? String(connection.port) : '',
+    remotePath: connection.remotePath,
+  }
 }
 
 export function RemoteConnect({
@@ -119,6 +156,8 @@ export function RemoteConnect({
   /** Pre-fill the form to edit an existing connection (see RemoteConnectInitial). */
   initial?: RemoteConnectInitial
 }) {
+  const [authChanged, setAuthChanged] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
   const [kind, setKind] = useState<Kind>(initial?.kind ?? 'server')
 
   // server fields — `target` is the single source for host/user/port.
@@ -127,7 +166,6 @@ export function RemoteConnect({
   const [keyPath, setKeyPath] = useState('')
   const [passphrase, setPassphrase] = useState('')
   const [useAgent, setUseAgent] = useState(true)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
   // Saved hosts from ~/.ssh/config; null = not loaded yet, [] = none/unreadable.
   const [sshHosts, setSshHosts] = useState<SshHostEntry[] | null>(null)
   const [savedAlias, setSavedAlias] = useState('')
@@ -135,8 +173,7 @@ export function RemoteConnect({
   // wsl fields
   const [distro, setDistro] = useState(initial?.distro ?? '')
   const [distroPath, setDistroPath] = useState(initial?.distroPath ?? '')
-  // Installed distros for the picker; null = not loaded yet. Empty (non-Windows /
-  // no WSL / probe failed) falls back to a free-text input.
+  // Installed distros for the picker; null = not loaded yet.
   const [distros, setDistros] = useState<string[] | null>(null)
 
   useEffect(() => {
@@ -174,166 +211,87 @@ export function RemoteConnect({
   const pathError = activePath && !isAbsoluteRuntimePath(activePath)
     ? ABSOLUTE_RUNTIME_PATH_ERROR
     : null
+  const targetError = kind === 'server' && target.trim()
+    ? sshTargetError(parsed.host ?? '', parsed.port ?? '')
+    : null
   const canSubmit =
     !pending &&
-    !pathError &&
+    !pathError && !targetError &&
     (kind === 'server'
       ? !!parsed.host && !!remotePath.trim()
-      : (distros?.length ?? 0) > 0 && distro.trim() && distroPath.trim())
+      : !!distro.trim() && !!distroPath.trim())
 
   const submit = (): void => {
     if (!canSubmit) return
-    onSubmit(
-      buildConnectSpec(kind, {
-        host: parsed.host ?? '',
-        user: parsed.user ?? '',
-        port: parsed.port ?? '',
-        remotePath,
-        keyPath,
-        passphrase,
-        useAgent,
-        distro,
-        distroPath,
-      }),
-    )
-  }
-
-  const onKeyDown = (e: React.KeyboardEvent): void => {
-    if (e.key === 'Enter') submit()
-    if (e.key === 'Escape') onCancel?.()
+    const spec = buildConnectSpec(kind, {
+      host: parsed.host ?? '',
+      user: parsed.user ?? '',
+      port: parsed.port ?? '',
+      remotePath,
+      keyPath,
+      passphrase,
+      useAgent,
+      distro,
+      distroPath,
+    })
+    if (spec.kind === 'server' && spec.auth && initial && !authChanged) delete spec.auth.useAgent
+    onSubmit(spec)
   }
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-4" onKeyDown={onKeyDown}>
-      {/* Kind toggle — segmented control */}
-      <div className={SEGMENT.group}>
-        {(['server', 'wsl'] as const).map((k) => (
-          <button key={k} type="button" className={SEGMENT.seg(kind === k)} onClick={() => setKind(k)}>
-            {k === 'server' ? 'SSH server' : 'WSL'}
-          </button>
-        ))}
-      </div>
-
-      {kind === 'server' ? (
-        <>
-          {sshHosts && sshHosts.length > 0 && (
-            <select className={`${inputCls} cursor-pointer`} value={savedAlias} onChange={(e) => pickSavedHost(e.target.value)}>
-              <option value="" className="bg-surface-5 text-primary">Saved host…</option>
-              {sshHosts.map((h) => (
-                <option key={h.alias} value={h.alias} className="bg-surface-5 text-primary">
-                  {h.alias}
-                </option>
-              ))}
-            </select>
-          )}
-
-          <input
-            className={inputCls}
-            value={target}
-            onChange={(e) => {
-              setTarget(e.target.value)
-              setSavedAlias('')
-            }}
-            placeholder="[user@]host[:port] or SSH alias"
-            autoFocus
-          />
-
-          <input
-            className={inputCls}
-            value={remotePath}
-            onChange={(e) => setRemotePath(e.target.value)}
-            placeholder="Remote path"
-            aria-invalid={!!pathError}
-          />
-          {pathError && <div className="text-[12px] text-red-400 px-0.5">{pathError}</div>}
-
-          <button
-            type="button"
-            className="flex items-center gap-1 self-start text-[12px] text-muted hover:text-secondary transition-colors"
-            onClick={() => setAdvancedOpen((o) => !o)}
-          >
-            <CaretRight size={12} className={`transition-transform ${advancedOpen ? 'rotate-90' : ''}`} />
-            Advanced
-          </button>
-
-          {advancedOpen && (
-            <div className="flex flex-col gap-2.5 pl-3 border-l border-subtle">
-              <label className="flex items-center gap-2 text-[12px] text-secondary cursor-pointer">
-                <input type="checkbox" checked={useAgent} onChange={(e) => setUseAgent(e.target.checked)} className="accent-focus-blue" />
-                Use SSH agent
-              </label>
+    <SettingsSearchContext.Provider value={{ query: '', sectionMatched: true }}>
+      <form aria-label={initial ? 'Edit remote connection' : 'New remote connection'} aria-busy={pending} onSubmit={(e) => { e.preventDefault(); submit() }}>
+        <fieldset disabled={pending} className="min-w-0 disabled:opacity-60">
+          <SettingRow label="Connection type">
+            <Select value={kind} onChange={(value) => setKind(value as Kind)} options={[{ value: 'server', label: 'SSH server' }, { value: 'wsl', label: 'WSL' }]} />
+          </SettingRow>
+          {kind === 'server' ? <>
+            {!!sshHosts?.length && <SettingRow label="SSH config host" description="Use an alias from this computer’s SSH configuration.">
+              <Select value={savedAlias} onChange={pickSavedHost} options={[{ value: '', label: 'Choose a host…' }, ...sshHosts.map((h) => ({ value: h.alias, label: h.alias }))]} />
+            </SettingRow>}
+            <SettingRow label="SSH host" description="Host, user@host:port, or SSH config alias." hint={targetError ? <span role="alert" className="text-danger">{targetError}</span> : undefined}>
+              <TextInput value={target} onChange={(value) => { setTarget(value); setSavedAlias('') }} placeholder="user@host:port" layoutClassName="w-64 px-2" />
+            </SettingRow>
+            <SettingRow label="Project folder" description="Absolute path on the remote machine." hint={pathError ? <span role="alert" className="text-danger">{pathError}</span> : undefined}>
+              <TextInput value={remotePath} onChange={setRemotePath} placeholder="/home/you/project" layoutClassName="w-64 px-2" />
+            </SettingRow>
+            <SettingRow label="SSH agent" description="SSH also uses your system config, including proxy and jump hosts.">
+              <Select value={initial && !authChanged ? 'saved' : useAgent ? 'enabled' : 'disabled'} onChange={(value) => { setAuthChanged(value !== 'saved'); setUseAgent(value === 'enabled') }} options={[
+                ...(initial ? [{ value: 'saved', label: 'Keep saved preference' }] : []),
+                { value: 'enabled', label: 'Use SSH agent' }, { value: 'disabled', label: 'Do not use SSH agent' },
+              ]} />
+            </SettingRow>
+            <SettingRow label="Private key" description={initial ? 'Leave empty to keep the saved key.' : 'Optional when provided by your SSH config or agent.'}>
               <div className="flex items-center gap-2">
-                <input
-                  className={`${inputCls} flex-1 min-w-0`}
-                  value={keyPath}
-                  onChange={(e) => setKeyPath(e.target.value)}
-                  placeholder="Private key path"
-                />
-                <button
-                  type="button"
-                  className={btn.ghost}
-                  onClick={() => {
-                    void window.electronAPI.runtimePickSshKey().then((p) => {
-                      if (p) setKeyPath(p)
-                    })
-                  }}
-                >
-                  Browse…
-                </button>
+                <TextInput value={keyPath} onChange={setKeyPath} placeholder="~/.ssh/id_ed25519" />
+                <SecondaryButton onClick={() => {
+                  void window.electronAPI.runtimePickSshKey().then((path) => { if (path) setKeyPath(path) })
+                    .catch(() => setLocalError('Could not open the key picker. Enter the key path instead.'))
+                }}>Browse…</SecondaryButton>
               </div>
-              <input
-                className={inputCls}
-                type="password"
-                value={passphrase}
-                onChange={(e) => setPassphrase(e.target.value)}
-                placeholder="Key passphrase"
-              />
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          {distros === null ? (
-            <LoadingState label="Looking for WSL distros…" size={13} className="justify-start px-0.5 py-1 text-[12px]" />
-          ) : distros.length > 0 ? (
-            <select className={`${inputCls} cursor-pointer`} value={distro} onChange={(e) => setDistro(e.target.value)} autoFocus>
-              {distros.map((d) => (
-                <option key={d} value={d} className="bg-surface-5 text-primary">
-                  {d}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className="text-[12px] text-muted px-0.5 py-1">No WSL distros found.</div>
-          )}
-          <input
-            className={inputCls}
-            value={distroPath}
-            onChange={(e) => setDistroPath(e.target.value)}
-            placeholder="Path in distro"
-            aria-invalid={!!pathError}
-          />
-          {pathError && <div className="text-[12px] text-red-400 px-0.5">{pathError}</div>}
-        </>
-      )}
-
-      {error && (
-        <div className="text-[12px] text-red-400 whitespace-pre-wrap break-words max-h-32 overflow-auto rounded-lg bg-red-500/10 border border-red-500/20 px-2.5 py-2">
-          {error}
+            </SettingRow>
+            <SettingRow label="Key passphrase" description={initial ? 'Leave empty to keep the saved passphrase.' : 'Stored securely on this computer.'}>
+              <TextInput value={passphrase} onChange={setPassphrase} type="password" placeholder="Optional" layoutClassName="w-64 px-2" />
+            </SettingRow>
+          </> : <>
+            <SettingRow label="WSL distribution" description="Requires Windows with WSL installed.">
+              {distros === null ? <LoadingState label="Looking for distributions…" size={13} /> : distros.length ?
+                <Select value={distro} onChange={setDistro} options={[
+                  ...(!distros.includes(distro) && distro ? [{ value: distro, label: `${distro} (unavailable)` }] : []),
+                  ...distros.map((d) => ({ value: d, label: d })),
+                ]} /> : <TextInput value={distro} onChange={setDistro} placeholder="Ubuntu" />}
+            </SettingRow>
+            <SettingRow label="Project folder" description="Absolute path inside the distribution." hint={pathError ? <span role="alert" className="text-danger">{pathError}</span> : undefined}>
+              <TextInput value={distroPath} onChange={setDistroPath} placeholder="/home/you/project" layoutClassName="w-64 px-2" />
+            </SettingRow>
+          </>}
+        </fieldset>
+        {(error || localError) && <p role="alert" className="mt-3 whitespace-pre-wrap break-words text-xs text-danger">{error || localError}</p>}
+        <div className="flex justify-end gap-2 py-3">
+          {onCancel && <SecondaryButton disabled={pending} onClick={onCancel}>Cancel</SecondaryButton>}
+          <Button size="sm" type="submit" disabled={!canSubmit} loading={pending} loadingLabel="Saving…">Save connection</Button>
         </div>
-      )}
-
-      <div className="flex items-center justify-end gap-2 mt-1">
-        {onCancel && (
-          <button type="button" className={btn.ghost} onClick={onCancel}>
-            Cancel
-          </button>
-        )}
-        <button type="button" className={btn.primary} onClick={submit} disabled={!canSubmit}>
-          {pending && <Spinner size={13} />}
-          {pending ? 'Connecting…' : 'Connect'}
-        </button>
-      </div>
-    </div>
+      </form>
+    </SettingsSearchContext.Provider>
   )
 }

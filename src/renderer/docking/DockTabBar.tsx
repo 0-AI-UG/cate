@@ -1,14 +1,15 @@
+import { Tooltip } from '../ui/Tooltip'
 // =============================================================================
 // DockTabBar — pure tab-pill row rendering. Renders each tab as a TabPill with
 // the active accent, icon, title (or rename input), and close button. Used
-// inside DockTabStack's tab bar; the +/split/trailing controls live alongside
-// in DockTabStack itself.
+// inside DockTabStack's tab bar, with the new-tab button after the last tab.
+// Split and trailing controls live alongside in DockTabStack itself.
 // =============================================================================
 
 import React from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import type { PanelState, PanelType, DockTabStack as DockTabStackType } from '../../shared/types'
-import { X } from '@phosphor-icons/react'
+import { X } from 'lucide-react'
 import { useDragStore, useTabSourceVisibility } from '../drag'
 import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
 import { useAppStore } from '../stores/appStore'
@@ -155,6 +156,7 @@ export interface DockTabBarProps {
   // When the drag source is THIS stack, hide the dragged tab from layout
   // and inline the placeholder at its original (clamped) index.
   selfTabDrag?: { draggedPanelId: string; originalIndex: number } | null
+  newTabControl?: React.ReactNode
   // For the trailing draggable spacer in detached windows.
   onTabBarMouseDown?: (e: React.MouseEvent, panelId?: string) => void
 }
@@ -166,7 +168,7 @@ export function DockTabBar(props: DockTabBarProps) {
     renameId, renameValue, renameInputRef, setRenameValue, setRenameId, commitRename,
     springLoadTimer, setActiveTab,
     onEmptyMouseDown, onEmptyContextMenu,
-    showTabPlaceholder, selfTabDrag, onTabBarMouseDown,
+    showTabPlaceholder, selfTabDrag, onTabBarMouseDown, newTabControl,
   } = props
 
   const worktreeColorByPanel = useWorktreeColorByPanel()
@@ -223,7 +225,7 @@ export function DockTabBar(props: DockTabBarProps) {
             panelId={panelId}
             className={`
               group relative flex items-center gap-1.5 whitespace-nowrap
-              cursor-grab select-none min-w-0 shrink rounded-[10px] transition-colors
+              cursor-grab select-none min-w-0 shrink rounded-[var(--node-tab-radius,10px)] transition-colors
               ${compact ? 'h-[22px] max-w-[160px] pl-2 text-[11px]' : 'h-6 max-w-[200px] pl-2.5 text-[12px]'}
               ${onClosePanel ? 'pr-1' : compact ? 'pr-2' : 'pr-2.5'}
               ${isActive ? 'bg-surface-2 text-primary' : 'text-muted hover:text-secondary hover:bg-hover dock-tab-inactive'}
@@ -302,6 +304,7 @@ export function DockTabBar(props: DockTabBarProps) {
               <AwaitingIndicator />
             )}
             {onClosePanel && (
+              <Tooltip label="Close panel" action={isActive ? 'closePanel' : undefined}>
               <span
                 className={`shrink-0 p-0.5 rounded-md text-muted hover:text-red-400 hover:bg-hover cursor-pointer transition-opacity ${
                   isActive ? 'opacity-70' : 'opacity-0 group-hover:opacity-100'
@@ -313,6 +316,7 @@ export function DockTabBar(props: DockTabBarProps) {
               >
                 <X size={compact ? 12 : 11} />
               </span>
+              </Tooltip>
             )}
           </TabPill>
         )
@@ -325,6 +329,7 @@ export function DockTabBar(props: DockTabBarProps) {
         return [pill]
       })}
       {placeholderNode && placeholderInsertAt >= remainingPanelIds.length && placeholderNode}
+      {newTabControl}
       {/* Draggable spacer that fills the rest of the row. */}
       <div
         className="flex-1 min-w-[20px] self-stretch"

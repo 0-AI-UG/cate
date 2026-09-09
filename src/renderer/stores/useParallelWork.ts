@@ -24,6 +24,7 @@ import { errorMessage } from '../lib/errorMessage'
 import { pathKey } from '../../shared/pathUtils'
 import {
   closePreparedWorktreePanels,
+  cancelPreparedWorktreePanels,
   prepareWorktreePanelsForClose,
   removeWorktreeFromAllWindows,
   worktreePanelCloseTargets,
@@ -318,6 +319,7 @@ export function useParallelWork(
       try {
         removalDirty = !!(await window.electronAPI.gitWorktreeStatus(wt.path, workspaceId))?.dirty
       } catch (err: unknown) {
+        await cancelPreparedWorktreePanels(panelTargets)
         setError(`Couldn’t re-verify this worktree before discarding it: ${errorMessage(err, 'Status is unavailable.')}`)
         return
       }
@@ -338,10 +340,11 @@ export function useParallelWork(
             setError(`Removed, but branch ${wt.branch} could not be deleted: ${errorMessage(err, 'Branch deletion failed.')}`)
           }
         }
-        closePreparedWorktreePanels(workspaceId, panelTargets)
+        await closePreparedWorktreePanels(workspaceId, panelTargets)
         removeWorktreeFromAllWindows(workspaceId, wt.id)
         reconcile()
       } catch (err: unknown) {
+        await cancelPreparedWorktreePanels(panelTargets)
         setError(`Discard failed: ${errorMessage(err, 'The worktree was not removed.')}`)
       } finally {
         setBusy?.(null)
@@ -371,7 +374,7 @@ export function useParallelWork(
         if (worktreeKey === rootKey || livePaths.has(worktreeKey)) continue
         const targets = worktreePanelCloseTargets(workspaceId, w.id)
         if (!(await prepareWorktreePanelsForClose(workspaceId, targets))) continue
-        closePreparedWorktreePanels(workspaceId, targets)
+        await closePreparedWorktreePanels(workspaceId, targets)
         removeWorktreeFromAllWindows(workspaceId, w.id)
       }
       reconcile()

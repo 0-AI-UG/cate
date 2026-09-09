@@ -368,6 +368,13 @@ export async function validatePathStrict(filePath: string, ownerWindowId?: numbe
   throw new Error(`Access denied: resolved path "${real}" is outside allowed directories`)
 }
 
+/** Authorize a directory entry without following its final symlink. Mutations
+ * operate on that entry; only its parent chain must be canonicalized. */
+export async function validatePathEntry(filePath: string, ownerWindowId?: number, scopeId?: string): Promise<string> {
+  validatePath(filePath, ownerWindowId, scopeId)
+  return validatePath(await normalizeCreationTarget(filePath), ownerWindowId, scopeId)
+}
+
 /**
  * Validates a path for file/directory creation.  The target itself need not
  * exist yet, but its parent directory must exist and resolve (symlink-free)

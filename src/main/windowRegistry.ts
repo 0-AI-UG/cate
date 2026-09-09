@@ -25,6 +25,9 @@ const windowTypes = new Map<number, CateWindowType>()
 
 /** Dock window state — synced from renderer for session persistence. */
 const dockWindowState = new Map<number, DockWindowSyncState>()
+// Committed handoffs remain part of ordinary session snapshots until the
+// receiver acknowledges adoption, even if its native window closes first.
+const dockWindowRecovery = new Map<number, DockWindowListEntry>()
 
 /** Workspace a window was opened for — the SINGLE source of truth, owned by
  *  main. Set once at creation (registerWindow) and NEVER refreshed from
@@ -239,6 +242,8 @@ export function setDockWindowState(
 
 /** A dock window's persisted state plus its live window id and bounds. */
 interface DockWindowListEntry {
+  rootPath?: string
+  worktrees?: import('../shared/types').WorktreeMeta[]
   windowId: number
   dockState: DockStateSnapshot
   panels: Record<string, PanelState>
@@ -246,6 +251,20 @@ interface DockWindowListEntry {
   workspaceId: string
   terminalCwds?: Record<string, string>
   canvasStates: Record<string, CanvasLayoutSnapshot>
+}
+
+export function retainDockWindowRecovery(windowId: number): boolean {
+  const win = getWindow(windowId)
+  const state = dockWindowState.get(windowId)
+  if (!win || windowTypes.get(windowId) !== 'dock' || !state) return false
+  dockWindowRecovery.set(windowId, {
+    windowId, ...state, workspaceId: windowWorkspaceId.get(windowId) ?? '', bounds: win.getBounds(),
+  })
+  return true
+}
+
+export function clearDockWindowRecovery(windowId: number): void {
+  dockWindowRecovery.delete(windowId)
 }
 
 /**
@@ -266,6 +285,9 @@ export function listDockWindows(): Array<DockWindowListEntry> {
       workspaceId: windowWorkspaceId.get(id) ?? '',
       bounds,
     })
+  }
+  for (const [id, recovery] of dockWindowRecovery) {
+    if (!result.some(entry => entry.windowId === id)) result.push(recovery)
   }
   return result
 }

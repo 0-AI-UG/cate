@@ -6,6 +6,7 @@
 // is rendered via the standard dock primitives.
 // =============================================================================
 
+import { closePanelsWithConfirm } from '../lib/closePanelWithConfirm'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRenderCount } from '../lib/perf/perfClient'
@@ -30,10 +31,9 @@ import { findTabStack } from '../stores/dockTreeUtils'
 import { setActivePanel } from '../lib/activePanel'
 import { Tooltip } from '../ui/Tooltip'
 import DockLayoutRenderer from '../docking/DockLayoutRenderer'
-import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
-import { confirmCloseRunningTerminals } from '../lib/confirmCloseTerminal'
+import { confirmClosePanels } from '../lib/confirmClosePanels'
 import { collectPanelIds } from '../../shared/collectPanelIds'
-import { ArrowsOutSimple, ArrowsInSimple, X, Lock, LockOpen } from '@phosphor-icons/react'
+import { Maximize as ArrowsOutSimple, Minimize as ArrowsInSimple, X, Lock, LockOpen } from 'lucide-react'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
 import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
@@ -127,7 +127,7 @@ function GrabButton({
 }) {
   const baseColor = color ?? 'var(--text-secondary)'
   return (
-    <Tooltip label={title}>
+    <Tooltip label={title} action={title === 'Close' ? 'closePanel' : undefined}>
       <button
         data-grab-button
         aria-label={title}
@@ -320,25 +320,20 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const getPanel = useCallback((panelId: string) => resolvePanel(panelId), [resolvePanel])
 
   const confirmCloseForPanels = useCallback(
-    async (panelIds: string[]): Promise<boolean> => {
-      const ws = useAppStore.getState().workspaces.find((w) => w.id === wsId)
-      if (!ws) return true
-      const panels = panelIds.map((id) => ws.panels[id])
-      if (!(await confirmCloseDirtyPanels(panels))) return false
-      if (!(await confirmCloseRunningTerminals(panels))) return false
-      return true
-    },
+    (panelIds: string[]) => confirmClosePanels(wsId, panelIds),
     [wsId],
   )
 
-  const handleClosePanel = useCallback(
-    async (panelId: string) => {
-      const ok = await confirmCloseForPanels([panelId])
-      if (!ok) return
+  const handleClosePanels = useCallback(
+    (panelIds: string[]) => closePanelsWithConfirm(wsId, panelIds, (panelId) => {
       dockStoreApi.getState().undockPanel(panelId)
       useAppStore.getState().closePanel(wsId, panelId)
-    },
-    [dockStoreApi, wsId, confirmCloseForPanels],
+    }),
+    [dockStoreApi, wsId],
+  )
+  const handleClosePanel = useCallback(
+    (panelId: string) => { void handleClosePanels([panelId]) },
+    [handleClosePanels],
   )
 
   // A tab was detached into its own window via the "Move into New Window" menu
@@ -481,6 +476,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           getPanelTitle={getPanelTitle}
           getPanel={getPanel}
           onClosePanel={handleClosePanel}
+          onClosePanels={handleClosePanels}
           onPanelRemoved={handlePanelRemoved}
           excludePanelTypes={CANVAS_EXCLUDED_TYPES}
           localOnly
@@ -734,6 +730,11 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           position: 'relative',
           height: rootIsTabs ? '100%' : `calc(100% - ${GRAB_STRIP_HEIGHT}px)`,
           overflow: 'hidden',
+          // The content sits inside the border, so its radius must shrink by
+          // that inset to stay concentric with the outer panel.
+          clipPath: rootIsTabs
+            ? 'inset(0 round var(--node-inner-radius))'
+            : 'inset(0 round 0 0 var(--node-inner-radius) var(--node-inner-radius))',
         }}
       >
         {/* Unfocused dim overlay — intercepts pointer events until node is focused. */}

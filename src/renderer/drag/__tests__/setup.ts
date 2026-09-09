@@ -39,12 +39,17 @@ function createElectronAPIStub() {
   // Tests that drive remote drags grab the registered handler off the stub.
   return {
     isE2E: false,
+    onUpdateStatus: vi.fn(() => () => {}),
+    getUpdateStatus: vi.fn(() => Promise.resolve({ state: 'idle', version: null })),
+    checkForUpdates: vi.fn().mockResolvedValue(undefined),
     crossWindowDragStart: vi.fn().mockResolvedValue(undefined),
     crossWindowDragCancel: vi.fn().mockResolvedValue(undefined),
     crossWindowDragMove: vi.fn().mockResolvedValue(undefined),
     crossWindowDragResolve: vi.fn().mockResolvedValue({ claimed: false }),
     crossWindowDragDrop: vi.fn().mockResolvedValue({ accepted: true }),
     dragDetach: vi.fn().mockResolvedValue(null),
+    commitPanelTransfer: vi.fn().mockResolvedValue(true),
+    finishPanelTransfer: vi.fn(),
     isMainWindowFullscreen: vi.fn().mockReturnValue(false),
     onCrossWindowDragUpdate: vi.fn(() => () => {}),
     onDragEnd: vi.fn(() => () => {}),

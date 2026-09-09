@@ -5,7 +5,7 @@
 //   Include -> Host alias -> ProxyCommand -> certificate sidecar -> ssh/scp
 //
 // No external host or user SSH files are used. Opt in with CATE_LOCAL_SSH_E2E=1;
-// CI runs this on macOS and Linux, where an OpenSSH server is available.
+// Runs locally on macOS and Linux when an OpenSSH server is available.
 // =============================================================================
 
 import { execFileSync, spawn as nodeSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process'

@@ -11,13 +11,16 @@ import type { AgentHarnessError, AgentHarnessPanelRequest, AgentHarnessPanelTarg
 
 /** Lifecycle state of the auto-updater, surfaced to the renderer for the
  *  in-app "update ready" modal. `downloaded` is the one the modal acts on. */
-export type UpdateState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
+export type UpdateState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'disabled' | 'error'
 export interface UpdateStatus {
   state: UpdateState
   /** Version of the update in flight, or null when unknown. */
   version: string | null
   /** Download progress 0-100 (present while state === 'downloading'). */
   percent?: number
+  message?: string
+  /** This status answers an explicit user check. */
+  manual?: boolean
   /** Transient flag on a re-broadcast of an already-staged 'downloaded' update,
    *  set when the user explicitly asked ("Check for Updates…"). Tells the in-app
    *  modal to re-open even for a version it was already dismissed for. Never
@@ -53,7 +56,10 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
 
   /** Create a new PTY terminal. Returns the terminal ID. */
+  terminalReady(ptyId: string): Promise<void>
+  onFsEntryMoved(callback: (event: import('./types').FileEntryMoved) => void): () => void
   terminalCreate(options: {
+    waitForReady?: boolean
     cols: number
     rows: number
     cwd?: string
@@ -118,7 +124,7 @@ export interface ElectronAPI {
   fsReadBinary(filePath: string, workspaceId?: string): Promise<ArrayBuffer>
 
   /** Write UTF-8 text to a file. */
-  fsWriteFile(filePath: string, content: string, workspaceId?: string): Promise<void>
+  fsWriteFile(filePath: string, content: string, workspaceId?: string, expectedDiskContent?: string | null): Promise<void>
 
   /** Read a directory and return FileTreeNode entries. */
   fsReadDir(dirPath: string, workspaceId?: string): Promise<FileTreeNode[]>
@@ -137,7 +143,7 @@ export interface ElectronAPI {
 
   /** Subscribe to filesystem watch events (main -> renderer). */
   onFsWatchEvent(
-    callback: (event: { type: 'create' | 'update' | 'delete'; path: string }) => void,
+    callback: (event: { type: 'create' | 'update' | 'delete'; path: string; scopeId?: string }) => void,
   ): () => void
 
   // ---------------------------------------------------------------------------
@@ -150,7 +156,7 @@ export interface ElectronAPI {
   searchStart(rootPath: string, searchId: string, options: SearchOptions, workspaceId?: string): Promise<string>
 
   /** Cancel the in-flight search for this window. */
-  searchCancel(): Promise<void>
+  searchCancel(searchId: string): Promise<void>
 
   /** Subscribe to streamed search result batches (main -> renderer). */
   onSearchResult(callback: (batch: SearchResultBatch) => void): () => void
@@ -183,6 +189,7 @@ export interface ElectronAPI {
   gitLsFiles(dirPath: string, workspaceId: string): Promise<string[]>
 
   /** Get git status for a repository. */
+  gitRemotes(cwd: string, workspaceId: string): Promise<Array<{ name: string; fetchUrl: string; pushUrl: string }>>
   gitStatus(cwd: string, workspaceId: string): Promise<{
     files: Array<{ path: string; index: string; working_dir: string }>
     current: string | null
@@ -473,20 +480,22 @@ export interface ElectronAPI {
   // ---------------------------------------------------------------------------
 
   /** Register a callback for flush-save requests from the main process. Returns unsubscribe. */
-  onSessionFlushSave(callback: () => void): () => void
+  onSessionFlushSave(callback: (requestId?: string) => void): () => void
 
   /** Notify the main process that the flush save completed. */
-  sessionFlushSaveDone(): void
+  sessionFlushSaveDone(error?: string, requestId?: string): void
 
   /** Save project-local workspace + session state to .cate/ directory. */
   projectStateSave(
     rootPath: string,
     workspace: import('./types').ProjectWorkspaceFile,
     session: import('./types').ProjectSessionFile,
+    workspaceId?: string,
+    options?: { allowEmptyLayout?: boolean },
   ): Promise<void>
 
   /** Load project-local state from .cate/ directory. Returns null if not found. */
-  projectStateLoad(rootPath: string): Promise<{
+  projectStateLoad(rootPath: string, workspaceId?: string): Promise<{
     workspace: import('./types').ProjectWorkspaceFile
     session: import('./types').ProjectSessionFile | null
   } | null>
@@ -709,8 +718,8 @@ export interface ElectronAPI {
   }): Promise<{ ok?: true; error?: string }>
   browserCredentialClear(): Promise<void>
 
-  getRecentScreenshot(): Promise<RecentScreenshot | null>
-  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot | null) => void): () => void
+  getRecentScreenshot(): Promise<RecentScreenshot[]>
+  onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot[]) => void): () => void
   dragRecentScreenshot(id: string): Promise<void>
   /** Initiate a native OS file drag from the renderer. */
   nativeFileDrag(filePath: string): Promise<void>
@@ -730,6 +739,9 @@ export interface ElectronAPI {
    *  Returns the created destination paths and a count of entries that failed. */
   fsImportEntries(sources: string[], destDir: string, mode: 'copy' | 'move', workspaceId?: string): Promise<{ created: string[]; failed: number }>
   shellShowInFolder(filePath: string, workspaceId?: string): Promise<void>
+  shellOpenPath(filePath: string, workspaceId?: string, appId?: string): Promise<{ ok: boolean; error?: string }>
+  shellListApps(): Promise<Array<{ id: string; name: string; icon: string }>>
+  shellOpenFileOnGitHub(filePath: string, workspaceId?: string): Promise<{ ok: boolean; reason?: string }>
 
   // ---------------------------------------------------------------------------
   // Notifications
@@ -753,17 +765,21 @@ export interface ElectronAPI {
   windowToggleMaximize(): Promise<void>
 
   /** Close the calling window. */
+  runNativeAction(action: import('./types').NativeAction): Promise<void>
   windowClose(): Promise<void>
 
   /** Close every detached (dock) window belonging to a workspace. Used when the
    *  workspace is reloaded so its detached windows are discarded with it. */
   windowsCloseForWorkspace(workspaceId: string): Promise<void>
+  openApplicationOverlay(request: import('./types').ApplicationOverlayRequest): Promise<void>
+  onApplicationOverlay(callback: (request: import('./types').ApplicationOverlayRequest) => void): () => void
   runActionInMain(action: string): Promise<void>
 
   /** Set the OS title of the calling window. Drives the macOS native tab label. */
   windowSetTitle(title: string): Promise<void>
 
   /** App-wide idle sleep prevention; resets when Cate quits. */
+  toggleKeepAwake(): Promise<boolean>
   getKeepAwake(): Promise<boolean>
   setKeepAwake(enabled: boolean): Promise<boolean>
   onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void
@@ -797,6 +813,10 @@ export interface ElectronAPI {
   /** Panel was dropped on desktop — create a new dock window. Resolves to
    *  `null` when the main window is in macOS native fullscreen; the caller
    *  should treat that as "detach refused" and keep the panel where it was. */
+  onPanelTransferStage(callback: (payload: { snapshot: PanelTransferSnapshot; workspaceId: string }) => void): () => void
+  panelTransferReady(transferId: string, phase?: 'received' | 'rejected'): Promise<void>
+  finishPanelTransfer(transferId: string, snapshot: PanelTransferSnapshot): void
+  commitPanelTransfer(transferId: string, snapshot: PanelTransferSnapshot | null): Promise<boolean>
   dragDetach(snapshot: PanelTransferSnapshot, workspaceId?: string): Promise<number | null>
 
   /** Synchronous cached check: is the main window currently in native
@@ -839,10 +859,10 @@ export interface ElectronAPI {
   dockWindowRestore(payload: DetachedDockWindowSnapshot & { initPayload: DockWindowInitPayload }): Promise<number | null>
 
   /** Subscribe to a final pre-quit sync request from main (dock windows). */
-  onDockWindowFlushSync(callback: () => void): () => void
+  onDockWindowFlushSync(callback: (requestId: string) => void): () => void
 
   /** ACK that this dock window's final pre-quit sync has been sent. */
-  dockWindowFlushSyncDone(): void
+  dockWindowFlushSyncDone(error?: string, requestId?: string): void
 
   // ---------------------------------------------------------------------------
   // Cross-window panel discovery
@@ -861,7 +881,7 @@ export interface ElectronAPI {
   /** Ask main to have the window that owns `panelId` close it (behind that
    *  window's own dirty/running confirmation gates). Returns false when the
    *  owner is gone or the user cancels. */
-  closeWindowPanel(panelId: string): Promise<boolean>
+  closeWindowPanel(panelId: string, operation?: import('./types').PanelCloseOperation): Promise<boolean>
 
   /** Reply to a cross-window close request after running the owner window's
    *  confirmation gates. */
@@ -881,7 +901,7 @@ export interface ElectronAPI {
   onOpenReviewInWindow(callback: (panelId: string, request: ReviewPanelOpenRequest) => void): () => void
 
   /** This window owns `panelId` — close it (with the usual confirmation gates). */
-  onClosePanelInWindow(callback: (panelId: string, requestId: string) => void): () => void
+  onClosePanelInWindow(callback: (panelId: string, requestId: string, operation?: import('./types').PanelCloseOperation) => void): () => void
 
   /** A worktree was removed by another renderer; clear local metadata and
    *  affinity without initiating another broadcast. */
@@ -899,10 +919,11 @@ export interface ElectronAPI {
    *  targeted DRAG_END against the drag it's tracking. */
   onCrossWindowDragUpdate(callback: (screenPos: Point, snapshot: PanelTransferSnapshot, dragId: string) => void): () => void
 
-  /** Claim the in-flight cross-window drop. Main is the arbiter: `accepted` is
+  /** Reserve the in-flight drop, then acknowledge hydration with panelTransferReady.
+   *  Main is the arbiter: `accepted` is
    *  false when the drag already resolved unclaimed (the source has fallen back
    *  to a detach) — the caller must NOT materialize the panel in that case. */
-  crossWindowDragDrop(panelId: string): Promise<{ accepted: boolean }>
+  crossWindowDragDrop(panelId: string): Promise<{ accepted: boolean; transferId?: string }>
 
   /** Cancel an active cross-window drag. */
   crossWindowDragCancel(): Promise<void>
@@ -920,6 +941,10 @@ export interface ElectronAPI {
 
   /** Connect to a remote (SSH) or WSL runtime. Returns the locator rootPath +
    *  connection record to create the workspace with. */
+  remoteConnectionsList(): Promise<import('./runtimeConnection').RemoteRuntimeConnection[]>
+  remoteConnectionsSave(spec: RemoteConnectSpec, previousId?: string): Promise<import('./runtimeConnection').RemoteRuntimeConnection[]>
+  remoteConnectionsRemove(runtimeId: string): Promise<import('./runtimeConnection').RemoteRuntimeConnection[]>
+  onRemoteConnectionsChanged(callback: (connections: import('./runtimeConnection').RemoteRuntimeConnection[]) => void): () => void
   runtimeConnect(spec: RemoteConnectSpec): Promise<RuntimeConnectResult>
 
   /** Re-establish a connection from a stored connection record (session restore
@@ -1014,6 +1039,8 @@ export interface ElectronAPI {
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void
   /** Pull the latest auto-updater status (the modal mounts after the event). */
   getUpdateStatus(): Promise<UpdateStatus>
+  /** Run an explicit update check, matching the application menu action. */
+  checkForUpdates(): Promise<void>
   /** Restart now and apply the staged update (electron-updater quitAndInstall).
    *  Resolves false if no update is staged or self-update isn't possible. */
   quitAndInstallUpdate(): Promise<boolean>
@@ -1055,6 +1082,13 @@ export interface ElectronAPI {
   agentHarnessDeleteConversation(request: AgentProviderStatusRequest & { threadId: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessRenameConversation(request: AgentProviderStatusRequest & { threadId: string; title: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessListConversations(request: AgentProviderStatusRequest): Promise<import('./t3Agent').T3Conversation[] | AgentHarnessError>
+
+  githubConnection(): Promise<import('./pullRequests').GitHubConnection>
+  githubPrContext(workspaceId: string, repository: string, number: number): Promise<import('./pullRequests').PullRequestContext | null>
+  pullRequestsList(refresh?: boolean): Promise<import('./pullRequests').PullRequestsResult>
+  githubLogin(operation: 'start' | 'status' | 'cancel'): Promise<import('./pullRequests').GitHubLoginState>
+
+  agentHarnessGetUsageUrl(request: { panelId: string }): Promise<AgentHarnessPanelTarget | AgentHarnessError>
 
   agentHarnessGetPanelUrl(
     request: AgentHarnessPanelRequest,
@@ -1105,7 +1139,7 @@ export interface ElectronAPI {
   /** Replace installed cate-cli skill copies in a workspace with the bundled version. */
   skillsReinstallCateCli(cwd: string, workspaceId?: string): Promise<{ ok: boolean; error?: string; warnings?: string[]; installedTargets?: number }>
   /** Installs recorded in this workspace's .cate/skills.json. */
-  skillsListInstalled(cwd: string): Promise<InstalledSkill[]>
+  skillsListInstalled(cwd: string, workspaceId?: string): Promise<InstalledSkill[]>
   /** Skills saved to the user's Cate library (cached in userData). */
   skillsListSaved(): Promise<SavedSkill[]>
   /** Save a skill to the library: fetch its files + cache them in userData. */
@@ -1118,10 +1152,6 @@ export interface ElectronAPI {
   skillsAddSource(repo: string, opts?: { ref?: string; path?: string }): Promise<{ ok: boolean; error?: string; source?: SkillSource }>
   /** Remove a user-added source. */
   skillsRemoveSource(id: string): Promise<{ ok: boolean }>
-  /** Whether a GitHub token is stored (for higher rate limits / private repos). */
-  skillsGetToken(): Promise<{ hasToken: boolean }>
-  /** Store or clear the GitHub token. */
-  skillsSetToken(token: string | null): Promise<{ ok: boolean }>
 
   /** Main forwards a state-mutating cateHost call to the owning renderer. */
   onCateHostAction(

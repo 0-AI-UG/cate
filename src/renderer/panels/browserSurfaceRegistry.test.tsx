@@ -59,6 +59,24 @@ afterEach(() => {
 })
 
 describe('browser surface layout tracking', () => {
+  it('subtracts overlapping canvas occluders without reopening their intersection', async () => {
+    const node = host.querySelector('main')!
+    node.dataset.nodeId = 'browser-node'
+    node.style.zIndex = '1'
+    const rectangles = [new DOMRect(110, 50, 80, 80), new DOMRect(130, 70, 20, 20)]
+    const occluders = rectangles.map((bounds, index) => {
+      const other = document.createElement('div')
+      other.dataset.nodeId = `other-${index}`
+      other.style.zIndex = String(index + 2)
+      vi.spyOn(other, 'getBoundingClientRect').mockReturnValue(bounds)
+      node.parentElement!.append(other)
+      return other
+    })
+    await frame()
+    expect(surface.style.clipPath).toBe('path(evenodd, "M 0 0 H 300 V 200 H 0 Z M 10 10 H 90 V 90 H 10 Z")')
+    occluders.forEach((element) => element.remove())
+  })
+
   it('leaves panel chrome clickable above a scaled persistent guest', async () => {
     const overlay = document.createElement('div')
     overlay.dataset.browserSurfaceOverlay = 'browser'

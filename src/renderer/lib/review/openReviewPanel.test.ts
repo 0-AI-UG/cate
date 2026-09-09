@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
+  target: vi.fn(),
   workspace: { id: 'ws', panels: {} as Record<string, any> },
   createReview: vi.fn(() => 'new-review'),
   setPanelReviewState: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('../../stores/appStore', () => ({
     }),
   },
 }))
+vi.mock('../panelTargetPicker', () => ({ requestPanelTarget: h.target }))
 vi.mock('../activePanel', () => ({ getActivePanelId: () => null }))
 vi.mock('../workspace/panelReveal', () => ({ revealPanel: h.revealPanel }))
 vi.mock('../workspace/canvasAccess', () => ({
@@ -33,6 +35,7 @@ import { openReviewPanel, retargetReviewPanel } from './openReviewPanel'
 const spec = { kind: 'unstaged' as const }
 
 beforeEach(() => {
+  h.target.mockReset()
   h.workspace.panels = {}
   h.createReview.mockClear()
   h.setPanelReviewState.mockClear()
@@ -117,5 +120,31 @@ describe('retargetReviewPanel', () => {
       display: expect.objectContaining({ split: true }),
     }))
     expect(h.revealPanel).toHaveBeenCalledWith('ws', 'review', { retry: true })
+  })
+})
+
+
+describe('overlay review requests', () => {
+  it('offers matching reviews instead of silently reusing one', async () => {
+    h.workspace.panels.review = { id: 'review', type: 'review', reviewState: { repoPath: '/repo', spec } }
+    h.target.mockResolvedValue({ kind: 'existing', panelId: 'review' })
+    expect(await openReviewPanel({ workspaceId: 'ws', repoPath: '/repo', spec, source: 'overlay' })).toBe('review')
+    expect(h.target).toHaveBeenCalledWith({ workspaceId: 'ws', panelType: 'review', source: 'overlay', availability: 'both', existingPanelIds: ['review'] })
+    expect(h.createReview).not.toHaveBeenCalled()
+    expect(h.setPanelReviewState).toHaveBeenCalled()
+  })
+  it.each(['canvas', 'dock'] as const)('uses the selected %s placement exactly once', async (target) => {
+    const placement = target === 'canvas' ? { target, canvasPanelId: 'first', position: { x: 1, y: 2 }, size: { width: 600, height: 400 } } : { target, zone: 'center' }
+    h.target.mockResolvedValue({ kind: 'new', placement })
+    expect(await openReviewPanel({ workspaceId: 'ws', repoPath: '/repo', spec, source: 'overlay', openNew: true })).toBe('new-review')
+    expect(h.target).toHaveBeenCalledWith(expect.objectContaining({ availability: 'new' }))
+    expect(h.createReview).toHaveBeenCalledWith('ws', '/repo', expect.objectContaining({ spec }), undefined, placement)
+    expect(h.placementForActivePanel).not.toHaveBeenCalled()
+  })
+  it('cancellation leaves reviews untouched', async () => {
+    h.target.mockResolvedValue(null)
+    expect(await openReviewPanel({ workspaceId: 'ws', repoPath: '/repo', spec, source: 'overlay' })).toBeNull()
+    expect(h.createReview).not.toHaveBeenCalled()
+    expect(h.setPanelReviewState).not.toHaveBeenCalled()
   })
 })

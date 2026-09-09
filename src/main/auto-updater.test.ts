@@ -143,14 +143,14 @@ describe('initAutoUpdater — config', () => {
   it('schedules a check shortly after launch', async () => {
     const { initAutoUpdater } = await loadModule()
     initAutoUpdater()
-    vi.advanceTimersByTime(6000)
+    await vi.advanceTimersByTimeAsync(6000)
     expect(h.autoUpdater.checkForUpdatesAndNotify).toHaveBeenCalled()
   })
 
   it('stops re-checking once an update is downloaded and staged', async () => {
     const { initAutoUpdater } = await loadModule()
     initAutoUpdater()
-    vi.advanceTimersByTime(6000) // launch check fires
+    await vi.advanceTimersByTimeAsync(6000) // launch check fires
     expect(h.autoUpdater.checkForUpdatesAndNotify).toHaveBeenCalledTimes(1)
 
     // Update finished downloading → staged for install on quit.
@@ -166,7 +166,7 @@ describe('initAutoUpdater — config', () => {
   it('a manual check does not re-check when an update is already staged', async () => {
     const { initAutoUpdater, checkForUpdatesManually } = await loadModule()
     initAutoUpdater()
-    vi.advanceTimersByTime(6000)
+    await vi.advanceTimersByTimeAsync(6000)
     h.autoUpdater.emit('update-downloaded', { version: '1.2.3' })
     const before = h.autoUpdater.checkForUpdatesAndNotify.mock.calls.length
     checkForUpdatesManually() // re-opens the modal, but must not perturb native state
@@ -427,5 +427,53 @@ describe('manual-reinstall fallback', () => {
       UPDATE_STATUS,
       expect.objectContaining({ forceShow: true }),
     )
+  })
+})
+
+
+describe('renderer update feedback', () => {
+  it('finishes manual checks with an explicit result without marking background results manual', async () => {
+    const mod = await loadModule()
+    mod.initAutoUpdater()
+    mod.checkForUpdatesManually()
+    await flushMicrotasks()
+    h.autoUpdater.emit('checking-for-update')
+    h.autoUpdater.emit('update-not-available', { version: '1.2.2' })
+    expect(h.broadcastToAll).toHaveBeenLastCalledWith(UPDATE_STATUS, { state: 'up-to-date', version: null, manual: true })
+    h.autoUpdater.emit('checking-for-update')
+    h.autoUpdater.emit('update-not-available', { version: '1.2.2' })
+    expect(h.broadcastToAll).toHaveBeenLastCalledWith(UPDATE_STATUS, { state: 'up-to-date', version: null })
+  })
+
+  it('reports rejected checks and allows a later retry', async () => {
+    const mod = await loadModule()
+    mod.initAutoUpdater()
+    h.autoUpdater.checkForUpdatesAndNotify.mockRejectedValueOnce(new Error('Offline'))
+    mod.checkForUpdatesManually()
+    mod.checkForUpdatesManually()
+    await flushMicrotasks()
+    expect(h.autoUpdater.checkForUpdatesAndNotify).toHaveBeenCalledTimes(1)
+    expect(h.broadcastToAll).toHaveBeenLastCalledWith(UPDATE_STATUS, { state: 'error', version: null, message: 'Offline', manual: true })
+    mod.checkForUpdatesManually()
+    await flushMicrotasks()
+    expect(h.autoUpdater.checkForUpdatesAndNotify).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports actual progress between analytics milestones', async () => {
+    const mod = await loadModule()
+    mod.initAutoUpdater()
+    h.autoUpdater.emit('download-progress', { percent: 37.4 })
+    expect(h.broadcastToAll).toHaveBeenLastCalledWith(UPDATE_STATUS, { state: 'downloading', version: null, percent: 37 })
+    h.autoUpdater.emit('download-progress', { percent: 38 })
+    expect(h.broadcastToAll).toHaveBeenLastCalledWith(UPDATE_STATUS, { state: 'downloading', version: null, percent: 38 })
+  })
+
+  it('explains why development builds cannot check', async () => {
+    h.app.isPackaged = false
+    const mod = await loadModule()
+    mod.initAutoUpdater()
+    mod.checkForUpdatesManually()
+    expect(h.broadcastToAll).toHaveBeenLastCalledWith(UPDATE_STATUS, expect.objectContaining({ state: 'disabled', manual: true, message: expect.any(String) }))
+    expect(h.autoUpdater.checkForUpdatesAndNotify).not.toHaveBeenCalled()
   })
 })

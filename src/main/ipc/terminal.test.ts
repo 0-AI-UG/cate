@@ -575,7 +575,7 @@ describe('CATE_API env injection into spawned terminals', () => {
     )
 
     expect(workspaceInfo.get).toHaveBeenCalledWith('ws-1')
-    expect(skillsSync.run).toHaveBeenCalledWith('/repo/base', '/repo/worktree')
+    expect(skillsSync.run).toHaveBeenCalledWith('/repo/base', '/repo/worktree', { scopeId: 'ws-1', ownerWindowId: -1 })
     expect(diag.ptyCreate.mock.calls[0][0]).toMatchObject({
       cwd: '/repo/worktree',
       scopeId: 'ws-1',
@@ -707,4 +707,72 @@ describe('Cate-owned coding-agent process launch', () => {
 
     expect(options.command).toBeUndefined()
   })
+})
+
+describe('terminal output acquisition ordering', () => {
+  beforeEach(() => { vi.resetModules(); handlers.clear(); diag.ptyCreate.mockReset(); vi.useFakeTimers() })
+  afterEach(() => vi.useRealTimers())
+  it('delivers final data before exit instead of deleting its dispatcher owner', async () => {
+    let data!: (id: string, text: string) => void
+    let exit!: (id: string, code: number) => void
+    diag.ptyCreate.mockImplementation(async (_opts, onData, onExit) => {
+      data = onData; exit = onExit; return { id: 'final-output', pid: 1 }
+    })
+    const terminal = await import('./terminal')
+    terminal.registerHandlers()
+    await handlers.get('terminal:create')!({}, { cols: 80, rows: 24 })
+    const { __sent } = await import('../windowRegistry') as unknown as { __sent: Array<{ channel: string; args: unknown[] }> }
+    __sent.length = 0
+    data('final-output', 'goodbye')
+    exit('final-output', 0)
+    vi.advanceTimersByTime(20)
+    expect(__sent.map(({ channel, args }) => [channel, ...args])).toEqual([
+      ['terminal:data', 'final-output', 'goodbye'], ['terminal:exit', 'final-output', 0],
+    ])
+  })
+  it('buffers synchronous spawn output and exit until receiver readiness without resurrecting a dead PTY', async () => {
+    diag.ptyCreate.mockImplementation(async (_opts, onData, onExit) => {
+      onData('early-exit', 'startup failed'); onExit('early-exit', 1)
+      return { id: 'early-exit', pid: 1 }
+    })
+    const terminal = await import('./terminal')
+    terminal.registerHandlers()
+    const { __sent } = await import('../windowRegistry') as unknown as { __sent: Array<{ channel: string; args: unknown[] }> }
+    __sent.length = 0
+    await handlers.get('terminal:create')!({}, { cols: 80, rows: 24, waitForReady: true })
+    expect(terminal.getTerminalIds()).not.toContain('early-exit')
+    expect(__sent).toEqual([])
+    await handlers.get('terminal:ready')!({}, 'early-exit')
+    expect(__sent.map(({ channel, args }) => [channel, ...args])).toEqual([
+      ['terminal:data', 'early-exit', 'startup failed'], ['terminal:exit', 'early-exit', 1],
+    ])
+    expect(terminal.getTerminalOwner('early-exit')).toBeUndefined()
+  })
+})
+
+it('does not register a terminal whose runtime disconnected during acquisition', async () => {
+  vi.resetModules()
+  let resolve!: (handle: unknown) => void
+  diag.ptyCreate.mockImplementation(() => new Promise(done => { resolve = done }))
+  const terminal = await import('./terminal')
+  terminal.registerHandlers()
+  const creating = handlers.get('terminal:create')!({}, { cols: 80, rows: 24, cwd: '/remote/repo' })
+  runtimeEvents.disconnected?.('remote-1')
+  resolve({ id: 'late-runtime', pid: 1 })
+  await creating
+  expect(terminal.getTerminalIds()).not.toContain('late-runtime')
+})
+
+it('does not start a terminal for a replaced renderer while its endpoint prerequisite is pending', async () => {
+  vi.resetModules()
+  let release!: (value: null) => void
+  cateApi.ensureEndpoint.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  diag.ptyCreate.mockReset().mockResolvedValue({ id: 'stale-generation', pid: 1 })
+  const terminal = await import('./terminal')
+  terminal.registerHandlers()
+  const creating = handlers.get('terminal:create')!({}, { cols: 80, rows: 24, workspaceId: 'ws' })
+  terminal.stopTerminalsForRenderer(-1)
+  release(null)
+  await expect(creating).rejects.toThrow(/renderer|owner|acquisition/i)
+  expect(diag.ptyCreate).not.toHaveBeenCalled()
 })

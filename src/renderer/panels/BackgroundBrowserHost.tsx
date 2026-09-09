@@ -11,6 +11,8 @@
 import { lazy, memo, Suspense, useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAppStore } from '../stores/appStore'
+import { useUIStore } from '../stores/uiStore'
+import { WorkspaceRequired } from './WorkspaceRequired'
 import BrowserPanel from './BrowserPanel'
 import { registerBrowserSurface } from './browserSurfaceRegistry'
 import type { PanelState } from '../../shared/types'
@@ -40,18 +42,19 @@ const PersistentBrowserSurface = memo(function PersistentBrowserSurface({
   useLayoutEffect(() => () => container.remove(), [container])
 
   return createPortal(
-    panel.type === 'agent' ? <Suspense fallback={null}><AgentPanel panelId={panel.id} workspaceId={workspaceId} /></Suspense> : <BrowserPanel
+    <WorkspaceRequired workspaceId={workspaceId}>{panel.type === 'agent' ? <Suspense fallback={null}><AgentPanel panelId={panel.id} workspaceId={workspaceId} /></Suspense> : <BrowserPanel
       panelId={panel.id}
       workspaceId={workspaceId}
       tabs={panel.tabs!}
       activeTabId={panel.activeTabId!}
       proxyUrl={panel.proxyUrl}
-    />,
+    />}</WorkspaceRequired>,
     container,
   )
 })
 
 export default function BackgroundBrowserHost({ workspaceId }: { workspaceId?: string }): React.ReactElement | null {
+  const showSettings = useUIStore((s) => s.showSettings)
   const workspaces = useAppStore((state) => state.workspaces)
   const selected = useAppStore((state) => workspaceId ?? state.selectedWorkspaceId)
   // Bound retained T3 UIs. Closing/removing panels still unmounts immediately.
@@ -75,6 +78,7 @@ export default function BackgroundBrowserHost({ workspaceId }: { workspaceId?: s
   return (
     <div
       ref={setRootRef}
+      hidden={showSettings}
       data-background-browser-host
       className="fixed inset-0 pointer-events-none overflow-hidden"
     >

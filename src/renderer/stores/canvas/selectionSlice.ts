@@ -72,68 +72,38 @@ export function createSelectionSlice(set: CanvasSet, get: CanvasGet): SelectionA
       // beginning any close. Each panel then goes through the same confirmation
       // and lifecycle path as a normal panel close.
       const panelIds = new Set<string>()
-      const panelIdsByNode = new Map<string, string[]>()
       for (const nodeId of selectedNodeIds) {
         const node = get().nodes[nodeId]
         if (!node) continue
         const nodePanelIds = new Set<string>()
         collectPanelIds(node.dockLayout, nodePanelIds)
-        panelIdsByNode.set(nodeId, [...nodePanelIds])
         for (const panelId of nodePanelIds) panelIds.add(panelId)
       }
 
       try {
-        const [{ useAppStore }, { closePanelWithConfirm }] = await Promise.all([
-          import('../appStore'),
-          import('../../lib/closePanelWithConfirm'),
-        ])
+        const { useAppStore } = await import('../appStore')
+        const { closePanelsWithConfirm } = await import('../../lib/closePanelWithConfirm')
+        const { captureEditorPanel } = await import('../../lib/editor/editorDocuments')
         provideAppStoreForHistory(useAppStore)
         const workspaceId = useAppStore.getState().selectedWorkspaceId
-        // Snapshot the panel records before closing so the history entry can
-        // carry them — undo re-adds the records and restores the nodes. Copied
-        // eagerly: the close loop below removes them from the workspace.
-        const livePanels = useAppStore.getState().workspaces
-          .find((w) => w.id === workspaceId)?.panels ?? {}
-        const panelRecords = new Map([...panelIds].flatMap((id) => {
-          const panel = livePanels[id]
-          return panel ? [[id, panel] as const] : []
-        }))
-        const closedPanelIds = new Set<string>()
-
-        const removeClosedNodes = () => {
-          const nodeIdsToRemove = selectedNodeIds.filter((nodeId) => {
-            const nodePanelIds = panelIdsByNode.get(nodeId)
-            return nodePanelIds !== undefined && nodePanelIds.every((id) => closedPanelIds.has(id))
-          })
-          if (nodeIdsToRemove.length === 0) return
-
-          const state = get()
-          for (const nodeId of nodeIdsToRemove) state.removeNode(nodeId)
-          set((current) => ({
-            selection: current.selection.filter((nodeId) => !nodeIdsToRemove.includes(nodeId)),
-            selectionActive: false,
-          }))
-        }
-
-        // One transaction around the whole delete: every node removal (both the
-        // ones closePanel triggers internally and removeClosedNodes below)
-        // collapses into a single undo step carrying the closed panel records.
-        get().beginHistoryTransaction()
+        let began = false
+        let records: import('../../../shared/types').PanelState[] = []
         try {
-          for (const panelId of panelIds) {
-            if (!(await closePanelWithConfirm(workspaceId, panelId))) {
-              removeClosedNodes()
-              return
+          const closed = await closePanelsWithConfirm(workspaceId, [...panelIds], (id) => {
+            if (!began) {
+              const live = useAppStore.getState().workspaces.find(w => w.id === workspaceId)?.panels ?? {}
+              records = [...panelIds].flatMap(id => live[id] ? [captureEditorPanel(live[id])] : [])
+              get().beginHistoryTransaction()
+              began = true
             }
-            closedPanelIds.add(panelId)
+            useAppStore.getState().closePanel(workspaceId, id)
+          })
+          if (closed) {
+            for (const nodeId of selectedNodeIds) get().removeNode(nodeId)
+            set(current => ({ selection: current.selection.filter(id => !selectedNodeIds.includes(id)), selectionActive: false }))
           }
-
-          removeClosedNodes()
         } finally {
-          const closed = [...closedPanelIds].flatMap((id) => panelRecords.get(id) ?? [])
-          get().commitHistoryTransaction(
-            closed.length > 0 ? { workspaceId, panels: closed } : undefined,
-          )
+          if (began) get().commitHistoryTransaction({ workspaceId, panels: records })
         }
       } catch {
         // Closing is user-initiated; an unavailable confirmation path must not

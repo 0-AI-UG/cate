@@ -1,55 +1,26 @@
 import { useState, useEffect, useCallback } from 'react'
 import log from '../lib/logger'
 import { useAppStore } from '../stores/appStore'
-import { ensureWorkspaceFolder } from '../hooks/useShortcuts'
+import { ensureWorkspaceTarget } from '../lib/runAction'
 import {
   Terminal,
   Globe,
-  FileCode,
+  Folders,
   FolderOpen,
   Folder,
-  CloudArrowUp,
-} from '@phosphor-icons/react'
+} from 'lucide-react'
 import { abbreviateLocalPath, workspaceDisplayName } from '../lib/fs/displayPath'
 import { parseLocator, LOCAL_RUNTIME_ID } from '../../shared/runtimeLocator'
-import { RemoteConnectDialog } from '../dialogs/RemoteConnectDialog'
-import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
-import { isWorkspaceEffectivelyEmpty } from '../lib/workspace/session'
-import type { RemoteConnectSpec } from '../../shared/types'
+import { RemoteConnectionPicker } from './RemoteConnectionPicker'
+import { T3Logo } from './T3Logo'
+import { startWorkspacePanel } from '../lib/workspace/startWorkspacePanel'
+import { displayString } from '../../shared/types'
+import { useResolvedShortcuts } from '../stores/shortcutStore'
 
 // Abbreviate home directory in paths
 export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
+  const shortcuts = useResolvedShortcuts()
   const [recentProjects, setRecentProjects] = useState<string[]>([])
-  const [showRemote, setShowRemote] = useState(false)
-  const [remotePending, setRemotePending] = useState(false)
-  const [remoteError, setRemoteError] = useState<string | null>(null)
-
-  const connectRemote = useCallback(
-    async (spec: RemoteConnectSpec) => {
-      setRemotePending(true)
-      setRemoteError(null)
-      const app = useAppStore.getState()
-      const ok = await app.connectRemoteWorkspace(workspaceId, spec)
-      setRemotePending(false)
-      if (ok) {
-        setShowRemote(false)
-        // The workspace is registered; the probe drives its phase. Only spawn a
-        // terminal if it actually connected — otherwise the canvas lock shows
-        // the probed state (missing → Install, unreachable → Retry/Edit). Skip it
-        // when connect restored a saved .cate/ layout, so we don't stack a stray
-        // terminal on top of the restored panels.
-        const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-        if (workspaceRuntime(ws).editable && isWorkspaceEffectivelyEmpty(workspaceId)) {
-          app.createTerminal(workspaceId)
-        }
-      } else {
-        const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
-        setRemoteError(ws?.runtime?.error ?? 'Failed to connect')
-      }
-    },
-    [workspaceId],
-  )
-
   useEffect(() => {
     window.electronAPI.recentProjectsGet().then(setRecentProjects).catch((err) => log.warn('[welcome] Failed to load recent projects:', err))
   }, [])
@@ -58,35 +29,21 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
     const path = await window.electronAPI.openFolderDialog()
     if (!path) return
     const app = useAppStore.getState()
-    const ok = await app.setWorkspaceRootPath(workspaceId, path)
-    // Skip the starter terminal if a saved .cate/ layout was just restored.
-    if (ok && isWorkspaceEffectivelyEmpty(workspaceId)) app.createTerminal(workspaceId)
+    await app.setWorkspaceRootPath(ensureWorkspaceTarget(workspaceId) ?? '', path)
   }, [workspaceId])
 
   const openRecentProject = useCallback(
     async (path: string) => {
       const app = useAppStore.getState()
-      const ok = await app.setWorkspaceRootPath(workspaceId, path)
-      // Skip the starter terminal if a saved .cate/ layout was just restored.
-      if (ok && isWorkspaceEffectivelyEmpty(workspaceId)) app.createTerminal(workspaceId)
+      await app.setWorkspaceRootPath(ensureWorkspaceTarget(workspaceId) ?? '', path)
     },
     [workspaceId],
   )
 
-  const newTerminal = useCallback(async () => {
-    const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (wsId) useAppStore.getState().createTerminal(wsId)
-  }, [workspaceId])
-
-  const newEditor = useCallback(async () => {
-    const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (wsId) useAppStore.getState().createEditor(wsId)
-  }, [workspaceId])
-
-  const newBrowser = useCallback(async () => {
-    const wsId = await ensureWorkspaceFolder(workspaceId)
-    if (wsId) useAppStore.getState().createBrowser(wsId)
-  }, [workspaceId])
+  const newTerminal = () => startWorkspacePanel(workspaceId, 'terminal')
+  const newEditor = () => startWorkspacePanel(workspaceId, 'editor')
+  const newT3Panel = () => startWorkspacePanel(workspaceId, 'agent')
+  const newBrowser = () => startWorkspacePanel(workspaceId, 'browser')
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
@@ -115,29 +72,32 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
               <ActionItem
                 icon={<FolderOpen size={16} />}
                 label="Open Folder..."
+                shortcut={displayString(shortcuts.openFolder)}
                 onClick={openFolder}
               />
+              <RemoteConnectionPicker workspaceId={workspaceId} />
               <ActionItem
-                icon={<CloudArrowUp size={16} />}
-                label="Connect to Remote..."
-                onClick={() => { setRemoteError(null); setShowRemote(true) }}
+                icon={<T3Logo size={16} />}
+                label="New T3 Panel"
+                shortcut={displayString(shortcuts.newAgent)}
+                onClick={newT3Panel}
               />
               <ActionItem
                 icon={<Terminal size={16} />}
                 label="New Terminal"
-                shortcut="⌘T"
+                shortcut={displayString(shortcuts.newTerminal)}
                 onClick={newTerminal}
               />
               <ActionItem
-                icon={<FileCode size={16} />}
-                label="New Editor"
-                shortcut="⌘⇧E"
+                icon={<Folders size={16} />}
+                label="New Files Panel"
+                shortcut={displayString(shortcuts.newEditor)}
                 onClick={newEditor}
               />
               <ActionItem
                 icon={<Globe size={16} />}
                 label="New Browser"
-                shortcut="⌘⇧B"
+                shortcut={displayString(shortcuts.newBrowser)}
                 onClick={newBrowser}
               />
             </div>
@@ -190,24 +150,17 @@ export default function WelcomePage({ workspaceId }: { workspaceId: string }) {
             Keyboard Shortcuts
           </h2>
           <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-            <ShortcutRow keys="⌘T" label="New Terminal" />
-            <ShortcutRow keys="⌘⇧B" label="New Browser" />
-            <ShortcutRow keys="⌘⇧E" label="New Editor" />
-            <ShortcutRow keys="⌘K" label="Command Palette" />
-            <ShortcutRow keys="⌘\" label="Toggle Sidebar" />
-            <ShortcutRow keys="⌘0" label="Reset Zoom" />
+            <ShortcutRow keys={displayString(shortcuts.newAgent)} label="New T3 Panel" />
+            <ShortcutRow keys={displayString(shortcuts.newTerminal)} label="New Terminal" />
+            <ShortcutRow keys={displayString(shortcuts.newBrowser)} label="New Browser" />
+            <ShortcutRow keys={displayString(shortcuts.newEditor)} label="New Files Panel" />
+            <ShortcutRow keys={displayString(shortcuts.commandPalette)} label="Command Palette" />
+            <ShortcutRow keys={displayString(shortcuts.toggleSidebar)} label="Toggle Sidebar" />
+            <ShortcutRow keys={displayString(shortcuts.zoomReset)} label="Reset Zoom" />
           </div>
         </div>
       </div>
 
-      {showRemote && (
-        <RemoteConnectDialog
-          onSubmit={connectRemote}
-          onClose={() => setShowRemote(false)}
-          pending={remotePending}
-          error={remoteError}
-        />
-      )}
     </div>
   )
 }

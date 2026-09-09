@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CircleNotch } from '@phosphor-icons/react'
+import { LoaderCircle as CircleNotch } from 'lucide-react'
 
 interface SpinnerProps {
   size?: number

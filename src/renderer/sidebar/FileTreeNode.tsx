@@ -5,18 +5,18 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  CaretRight,
+  ChevronRight as CaretRight,
   Folder,
   FolderOpen,
   File,
   FileCode,
   Code,
   FileText,
-  BracketsCurly,
+  Braces as BracketsCurly,
   Globe,
-  PaintBrush,
+  Paintbrush as PaintBrush,
   Image as ImageIcon,
-} from '@phosphor-icons/react'
+} from 'lucide-react'
 import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExternalEntries'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
@@ -76,7 +76,7 @@ export function getFileIcon(extension: string, isDirectory: boolean, isExpanded:
 }
 
 // -----------------------------------------------------------------------------
-// Pre-created phosphor icon elements (sized 14)
+// Pre-created icon elements (sized 14)
 // -----------------------------------------------------------------------------
 
 const ICON_PROPS = { size: 14 } as const
@@ -478,9 +478,9 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   if (isPathVisible && !isPathVisible(node.path)) return null
 
   return (
-    <div className={flat ? 'relative' : undefined}>
+    <div className={flat ? 'relative flow-root' : undefined}>
       {flat && Array.from({ length: depth }, (_, index) => (
-        <div key={index} className="absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none" style={{ left: index * 16 + 13 }} />
+        <div key={index} className="explorer-indent-guide absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none" style={{ left: index * 16 + 13 }} />
       ))}
       {/* Node row */}
       <div
@@ -576,7 +576,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       {!flat && node.isDirectory && isExpanded && (
         <div className="relative">
           <div
-            className="absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none"
+            className="explorer-indent-guide absolute top-0 bottom-0 w-px bg-surface-5 pointer-events-none"
             style={{ left: `${depth * 16 + 8 + 5}px` }}
           />
           {children.map((child) => (

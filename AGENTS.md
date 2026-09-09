@@ -66,18 +66,35 @@ The canvas (`Canvas.tsx`) positions nodes using CSS transforms. Panel positions 
 Panel definitions are centralised in `src/shared/panels.ts`. The detachable panel
 types (`PanelType` in `src/shared/types.ts`) are: terminal, browser, editor,
 canvas, agent, document, review. Renderer components live in `src/renderer/panels/`:
-- **EditorPanel** — Monaco Editor with syntax highlighting
+- **EditorPanel** — Monaco Editor with integrated Files and Search navigation
 - **TerminalPanel** — xterm.js terminal with WebGL renderer, backed by node-pty
 - **BrowserPanel** — embedded webview (file:// allowed for local HTML)
 - **CanvasPanel** — nested canvas
-- **DocumentPanel** — PDF / docx preview
+- **DocumentPanel** — PDF / docx / image preview
 - **AgentPanel** — Codex agent thread (sidebar + dock)
 
-The file tree (`src/renderer/sidebar/FileExplorer.tsx`) and recent-projects
-switcher (`src/renderer/sidebar/ProjectList.tsx`) are **sidebar** components, not
-detachable panels.
+The file tree and Search are hosted by EditorPanel. Source Control and Pull
+Requests share RepositoryOverview, an application overlay. Changes owns its
+worktree selector and per-checkout commit drafts; branches and history use the
+repository root. Source Control is not a detachable panel. Old panel records are
+pruned during session restoration and their drafts migrate into overlay state. The recent-projects switcher
+(`src/renderer/sidebar/ProjectList.tsx`) remains a sidebar component.
 
 Each panel can be wrapped in a `CanvasNode` (`src/renderer/canvas/CanvasNode.tsx`) — title bar, drag, resize, close — or live inside a dock zone via `DockTabStack` (`src/renderer/docking/`). All panel records render through the shared `PanelHost` (`src/renderer/panels/PanelHost.tsx`); detached windows are dock windows (`src/renderer/shells/DockWindowShell.tsx`) with local panels state synced back to main for session persistence.
+
+Editor buffers, baselines, conflicts, and saves belong to `editorDocuments.ts`,
+independent of mounted Monaco views. Session/transfer code uses `captureEditorPanel`
+to preserve dirty content. Search stores likewise follow panel lifetime through
+`panelSearchStores.ts`; portable query/options follow panel transfer and session
+recovery. Permanent panel teardown releases both owners. Interactive creation
+uses `createInteractivePanel`; filesystem rename broadcasts migrate document
+identity across windows. Editor saves validate document identity and expected disk
+content; filesystem writes and renames share a serialized mutation boundary.
+Canvas delete/redo uses aggregate close preparation before changing history.
+Detach callers use `detachPanel` rather than invoking `dragDetach` directly; it
+validates source state through the staged handoff. Existing-window drops likewise
+wait for receiver acknowledgement. Committed handoffs retain recovery snapshots
+in the existing detached-session list until receiver adoption.
 
 ### State Management
 
@@ -97,8 +114,18 @@ engine to `jsonStateStore.ts` and keeps the filesystem backend (sync load,
 debounced atomic write, chokidar external-edit watcher, corrupt-file quarantine).
 `workspaceStateStore.ts` uses it for `recent-projects.json`, `sidebar.json`,
 `remote-workspaces.json`, and `trusted-projects.json`. Per-project canvas/session state
-lives in `<project>/.cate/workspace.json` + `session.json`. Agent provider
-credentials and conversation state are owned by the bundled T3 harness.
+lives in `<project>/.cate/workspace.json` + `session.json`. Session autosave tracks
+mutation revisions through the shared `revisionWriter`, also used by detached
+window synchronization. Quit requires successful acknowledgements for the current
+attempt from every live owner. Held project writes reject and remain retryable;
+project leases use exclusive PID/token publication. External JSON reloads participate
+in the same revision authority as local changes. Remote
+workspaces use the same file representation, with a versioned local recovery
+cache that includes detached windows; runtime files serve explicit reopen. Agent provider
+credentials and conversation state are owned by the bundled T3 harness. Persistent
+Chromium partitions register through Electron session creation and share the quit
+flush. Skill bundle transactions retain rollback backups until ownership metadata
+commits; saved-library operations await durable metadata publication.
 
 ### Key Patterns
 

@@ -69,13 +69,14 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     minWidth: isDock ? 400 : 800,
     minHeight: isDock ? 300 : 600,
     title: 'Cate',
-    // macOS: hide the native title bar and draw a themed strip in its place (the
-    // macOS native bar can't be tinted to a theme color — only dark/light — so we
-    // always use `hiddenInset` and render TitlebarStrip).
+    // macOS: use a full-size content window and place the traffic lights
+    // explicitly. `hiddenInset` lets AppKit reintroduce a native titlebar inset
+    // across window/fullscreen transitions, leaving a filled band above the
+    // renderer even though our chrome already lives inside the content view.
     // Windows/Linux: go fully frameless and draw our own window controls in the
     // renderer (WindowControls), so the chrome matches the theme. `titleBarStyle`
     // is irrelevant once `frame:false`.
-    titleBarStyle: isMacChrome ? 'hiddenInset' : 'default',
+    titleBarStyle: isMacChrome ? 'hidden' : 'default',
     // Center the traffic lights on the 36px chrome line shared by the dock tab
     // bar, the MacWindowChrome toggle, and the sidebar's top strip (y≈11 for a
     // 36px row). Dock and main windows use the same line so they read alike.
@@ -89,7 +90,9 @@ export function createWindow(params?: CateWindowParams): BrowserWindow {
     // macOS main windows keep a (hidden-inset) native frame; dock windows — and
     // every window on Windows/Linux — are frameless.
     frame: isMacChrome ? !isDock : false,
-    backgroundColor: bgColor,
+    // Native glass is exposed through the main window's sidebar and startup splash.
+    backgroundColor: isMacChrome && !isDock ? '#00000000' : bgColor,
+    ...(isMacChrome && !isDock ? { vibrancy: 'sidebar' as const } : {}),
     icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),

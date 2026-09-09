@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ handlers: new Map<string, (...args: any[]) => void>(), poll: vi.fn() }))
+const mocks = vi.hoisted(() => ({ handlers: new Map<string, (...args: any[]) => void>(), poll: vi.fn(), connected: [] as ((id: string, runtime: unknown) => void)[], disconnected: [] as ((id: string) => void)[] }))
 vi.mock('electron', () => ({ app: { on: vi.fn() }, ipcMain: { on: (key: string, handler: (...args: any[]) => void) => mocks.handlers.set(key, handler) } }))
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), warn: vi.fn() } }))
 vi.mock('../windowRegistry', () => ({ isAnyWindowFocused: () => true, windowFromEvent: () => ({ id: 1 }), sendToWindow: vi.fn() }))
-vi.mock('../runtime/runtimeManager', () => ({ runtimes: { resolve: () => ({ vcs: { monitorStatus: mocks.poll }, file: { watch: () => vi.fn() } }) } }))
+vi.mock('../runtime/runtimeManager', () => ({ runtimes: { onConnected: (cb: (id: string, runtime: unknown) => void) => { mocks.connected.push(cb); return () => {} }, onDisconnected: (cb: (id: string) => void) => { mocks.disconnected.push(cb); return () => {} }, resolve: () => ({ vcs: { monitorStatus: mocks.poll }, file: { watch: () => vi.fn() } }) } }))
 import { registerHandlers, stopMonitorsForWindow } from './git-monitor'
 import { GIT_MONITOR_START, GIT_MONITOR_STOP } from '../../shared/ipc-channels'
 afterEach(() => { stopMonitorsForWindow(1); vi.useRealTimers() })
@@ -19,4 +19,19 @@ it('does not resurrect a stopped monitor when its in-flight poll completes', asy
   await vi.advanceTimersByTimeAsync(120_000)
   expect(mocks.poll).toHaveBeenCalledTimes(1)
   expect(vi.getTimerCount()).toBe(0)
+})
+
+it('rebinds local git monitoring when its daemon reconnects', async () => {
+  vi.useFakeTimers()
+  mocks.poll.mockResolvedValue({ branch: 'old', dirty: false, branches: ['old'] })
+  registerHandlers()
+  mocks.handlers.get(GIT_MONITOR_START)!({}, 'workspace', '/tmp/project')
+  await Promise.resolve()
+  mocks.disconnected.forEach(notify => notify('local'))
+  const nextPoll = vi.fn().mockResolvedValue({ branch: 'new', dirty: true, branches: ['new'] })
+  const nextWatch = vi.fn(() => vi.fn())
+  mocks.connected.forEach(notify => notify('local', { vcs: { monitorStatus: nextPoll }, file: { watch: nextWatch } }))
+  await Promise.resolve()
+  expect(nextPoll).toHaveBeenCalledWith('/tmp/project', { scopeId: 'workspace' })
+  expect(nextWatch).toHaveBeenCalledTimes(1)
 })

@@ -145,6 +145,7 @@ vi.mock('../logger', () => ({
 
 let ptyCounter = 0
 const terminalCreate = vi.fn(async () => `pty-${++ptyCounter}`)
+const terminalReady = vi.fn(async (_id: string) => undefined)
 const terminalWrite = vi.fn()
 const terminalResize = vi.fn()
 const terminalKill = vi.fn(async () => undefined)
@@ -191,7 +192,7 @@ beforeEach(() => {
     configurable: true,
     writable: true,
     value: {
-      terminalCreate, terminalWrite, terminalResize, terminalKill,
+      terminalCreate, terminalReady, terminalWrite, terminalResize, terminalKill,
       onTerminalData, onTerminalExit,
       settingsGet, panelTransferAck,
     },
@@ -701,4 +702,17 @@ describe('workspace boundaries', () => {
 
     LC.dispose('panel-w2')
   })
+})
+
+it('acknowledges receiver readiness only after output and exit listeners exist', async () => {
+  terminalCreate.mockResolvedValueOnce('pty-ready')
+  terminalReady.mockImplementationOnce(async id => {
+    fireData(id, 'early output')
+    fireExit(id, 1)
+  })
+  const entry = await LC.getOrCreate('panel-ready', { workspaceId: 'ws-1' })
+  expect(terminalCreate).toHaveBeenCalledWith(expect.objectContaining({ waitForReady: true }))
+  expect(terminalReady).toHaveBeenCalledWith('pty-ready')
+  expect((entry.terminal as unknown as FakeTerminalShape).writes.join('')).toContain('early output')
+  expect(entry.alive).toBe(false)
 })

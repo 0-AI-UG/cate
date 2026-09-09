@@ -13,7 +13,7 @@ import { createPortal } from 'react-dom'
 import { create } from 'zustand'
 import { CATE_FILE_MIME, CATE_FILES_MIME } from './fileDragPayload'
 
-export type FileDropKind = 'canvas' | 'dock' | 'terminal'
+export type FileDropKind = 'canvas' | 'dock' | 'terminal' | 'agent'
 
 interface FileDropTarget {
   kind: FileDropKind
@@ -23,13 +23,21 @@ interface FileDropTarget {
 
 interface FileDropState {
   target: FileDropTarget | null
+  active: boolean
   set: (t: FileDropTarget | null) => void
+  setActive: (active: boolean) => void
 }
 
 const useFileDropStore = create<FileDropState>((set) => ({
   target: null,
+  active: false,
   set: (target) => set({ target }),
+  setActive: (active) => set({ active }),
 }))
+
+export function useFileDragActive(): boolean {
+  return useFileDropStore((state) => state.active)
+}
 
 export function isFileDrag(e: DragEvent): boolean {
   const types = e.dataTransfer?.types
@@ -47,6 +55,7 @@ export function useFileDropTracker(): void {
   useEffect(() => {
     const onDragOver = (e: DragEvent): void => {
       if (!isFileDrag(e)) return
+      useFileDropStore.getState().setActive(true)
       e.preventDefault() // allow dropping anywhere a [data-filedrop] target exists
       const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
       const host = el?.closest('[data-filedrop]') as HTMLElement | null
@@ -61,7 +70,9 @@ export function useFileDropTracker(): void {
       store.set({ kind, id, host })
     }
     const clear = (): void => {
-      if (useFileDropStore.getState().target) useFileDropStore.getState().set(null)
+      const store = useFileDropStore.getState()
+      if (store.target) store.set(null)
+      store.setActive(false)
     }
     const onDragLeave = (e: DragEvent): void => {
       // relatedTarget null === cursor left the window entirely.
@@ -86,6 +97,7 @@ const LABEL: Record<FileDropKind, string> = {
   canvas: 'Drop to open on canvas',
   dock: 'Drop to open here',
   terminal: 'Drop to paste path',
+  agent: 'Drop to attach',
 }
 
 /** Single indicator for the active file-drop target. Mirrors the internal

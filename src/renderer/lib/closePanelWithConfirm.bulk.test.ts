@@ -262,3 +262,21 @@ describe('removeWorkspacesWithConfirm', () => {
     expect(ids).not.toContain('ws-2')
   })
 })
+
+it('cancelling the second canvas preserves both canvases and their children', async () => {
+  const { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } = await import('../stores/canvasStore')
+  const { closePanelsWithConfirm } = await import('./closePanelWithConfirm')
+  seed(workspace('bulk-canvases', [panel('canvas-one', 'canvas'), panel('canvas-two', 'canvas'), panel('child-one', 'editor'), panel('child-two', 'editor')]))
+  const first = getOrCreateCanvasStoreForPanel('canvas-one')
+  const second = getOrCreateCanvasStoreForPanel('canvas-two')
+  first.getState().addNode('child-one', 'editor')
+  second.getState().addNode('child-two', 'editor')
+  window.electronAPI.confirmCloseCanvas = vi.fn().mockResolvedValueOnce('delete').mockResolvedValueOnce('cancel')
+  try {
+    expect(await closePanelsWithConfirm('bulk-canvases', ['canvas-one', 'canvas-two'])).toBe(false)
+    expect(Object.keys(panelsOf('bulk-canvases')).sort()).toEqual(['canvas-one', 'canvas-two', 'child-one', 'child-two'])
+  } finally {
+    releaseCanvasStoreForPanel('canvas-one')
+    releaseCanvasStoreForPanel('canvas-two')
+  }
+})

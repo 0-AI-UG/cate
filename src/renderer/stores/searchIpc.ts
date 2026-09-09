@@ -1,23 +1,25 @@
-// =============================================================================
-// searchIpc — wire main-process search events into searchStore exactly once,
-// for the lifetime of the window. Kept out of the SearchView component so that
-// mounting/unmounting the view (switching sidebar tabs) never drops streamed
-// batches that arrive during the gap.
-// =============================================================================
+// Each mounted search surface owns its subscriptions and correlation IDs. Reuse
+// the existing store's stale-result filtering; never broadcast into one global store.
+import type { SearchStore } from './searchStore'
 
-import { useSearchStore } from './searchStore'
+const mountedStores = new Map<string, SearchStore>()
 
-let initialized = false
+/** Active-panel lookup for the development/e2e harness. */
+export function getMountedSearchStore(panelId: string): SearchStore | undefined {
+  return mountedStores.get(panelId)
+}
 
-export function ensureSearchSubscriptions(): void {
-  if (initialized) return
-  if (typeof window === 'undefined' || !window.electronAPI) return
-  initialized = true
-
-  window.electronAPI.onSearchResult(({ searchId, files }) => {
-    useSearchStore.getState().addBatch(searchId, files)
+export function subscribeSearchStore(store: SearchStore, panelId?: string): () => void {
+  if (panelId) mountedStores.set(panelId, store)
+  const offResult = window.electronAPI.onSearchResult(({ searchId, files }) => {
+    store.getState().addBatch(searchId, files)
   })
-  window.electronAPI.onSearchDone(({ searchId, stats, error }) => {
-    useSearchStore.getState().finishSearch(searchId, stats, error)
+  const offDone = window.electronAPI.onSearchDone(({ searchId, stats, error }) => {
+    store.getState().finishSearch(searchId, stats, error)
   })
+  return () => {
+    offResult()
+    offDone()
+    if (panelId && mountedStores.get(panelId) === store) mountedStores.delete(panelId)
+  }
 }

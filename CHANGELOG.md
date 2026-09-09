@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.0.0-beta.1] - 2026-09-09
+
+The first Cate 2.0 beta refreshes the application interface, brings repository navigation into a shared overview, and improves panel, workspace, and session reliability.
+
+### Added
+
+- **Repository overview**: browse Source Control and Pull Requests in a shared application overlay, with checkout-specific changes and commit drafts.
+- **Usage and screenshot history**: inspect agent usage and revisit recent screenshots, with draggable screenshots available from the canvas action bar.
+- **Split controls**: maximize individual dock splits and reveal newly created splits, with minimum panel sizes and scrolling for overflowing layouts.
+
+### Changed
+
+- **Refreshed interface**: updated icons, panel corners, settings navigation, workspace controls, and application menus.
+- **Editor navigation**: Files and Search now live inside editor panels, sharing panel navigation and lifecycle behavior.
+- **Remote connections**: streamlined remote connection settings and workspace startup, restoration, and lifecycle handling.
+- **Browser automation**: redesigned browser control and reduced agent observation overhead, with more focused snapshots of visible interactive targets.
+- **Agent reviews**: unified agent change tracking and embedded T3 review flows.
+
+### Fixed
+
+- **Editor and panel transfers**: preserve unsaved content and search state when moving panels between windows, validate saves against disk changes, and recover interrupted handoffs.
+- **Session persistence**: strengthen autosave, shutdown acknowledgements, external JSON reloads, and remote workspace recovery.
+- **Skill management**: make skill installation rollback and saved-library persistence more reliable across platforms.
+- **Browser and panel interaction**: improve browser alignment and workspace transitions, keyboard navigation from focused content, overlays, and file dragging from unfocused webviews.
+- **Agent connections and status**: recover T3 panels after backend exits, reduce loading and polling overhead, and correct awaiting-input and terminal approval status.
+- **Terminal and keep-awake behavior**: validate terminal working directories against the calling workspace and keep the display awake while the coffee toggle is enabled.
+
+### Removed
+
+- **Saved layouts**: removed the saved-layout feature.
+- **Standalone repository panels**: Source Control and Pull Requests use the repository overview; obsolete saved panel records are pruned and commit drafts migrate to the overview.
+
 ## [1.7.0] - 2026-09-06
 
 Cate 1.7 brings T3 conversations into the canvas, adds multi-file change reviews, and makes browser and agent panels more seamless across focus, tabs, and workspaces. This stable release includes the improvements from the 1.6.1 beta series.

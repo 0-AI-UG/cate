@@ -15,17 +15,23 @@ import { setPendingReveal } from '../lib/editor/editorReveal'
 import { useAppStore } from '../stores/appStore'
 
 interface DockZoneProps {
+  emptyContent?: React.ReactNode
+  trailingControls?: React.ReactNode
+  newTabControl?: React.ReactNode
+  fill?: boolean
+  keepMounted?: boolean
   position: DockZonePosition
   renderPanel: (panelId: string) => React.ReactNode
   getPanelTitle: (panelId: string) => string
   onClosePanel?: (panelId: string) => void
+  onClosePanels?: (panelIds: string[]) => Promise<boolean>
   getPanel?: (panelId: string) => PanelState | undefined
   workspaceId?: string
   onPanelRemoved?: (panelId: string) => void
   onPanelRenamed?: (panelId: string, title: string) => void
 }
 
-export default function DockZone({ position, renderPanel, getPanelTitle, onClosePanel, getPanel, workspaceId, onPanelRemoved, onPanelRenamed }: DockZoneProps) {
+export default function DockZone({ emptyContent, trailingControls, newTabControl, fill, keepMounted, position, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel, workspaceId, onPanelRemoved, onPanelRenamed }: DockZoneProps) {
   const zone = useDockStoreContext((s) => s.zones[position])
   const zoneRef = useRef<HTMLDivElement>(null)
 
@@ -103,24 +109,27 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
           <DockTabStack
             key={node.id}
             stack={node}
+            trailingControls={trailingControls}
+            newTabControl={newTabControl}
             zone={position}
             renderPanel={renderPanel}
             getPanelTitle={getPanelTitle}
             onClosePanel={onClosePanel}
+            onClosePanels={onClosePanels}
             getPanel={getPanel}
             workspaceId={workspaceId}
             onPanelRemoved={onPanelRemoved}
             onPanelRenamed={onPanelRenamed}
           />
     ),
-    [position, renderPanel, getPanelTitle, onClosePanel, getPanel, workspaceId, onPanelRemoved, onPanelRenamed],
+    [trailingControls, newTabControl, position, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel, workspaceId, onPanelRemoved, onPanelRenamed],
   )
 
-  if (!zone.visible) return null
+  if (!zone.visible && !keepMounted) return null
 
   // Center zone fills its parent (100%); side zones use fixed size
   const isCenter = position === 'center'
-  const style: React.CSSProperties = isCenter
+  const style: React.CSSProperties = isCenter || fill
     ? { width: '100%', height: '100%' }
     : {
         [position === 'bottom' ? 'height' : 'width']: `${zone.size}px`,
@@ -138,9 +147,19 @@ export default function DockZone({ position, renderPanel, getPanelTitle, onClose
       onDragOver={handleFileDragOver}
       onDrop={handleFileDrop}
     >
-      {zone.layout ? <DockLayoutRenderer layout={zone.layout} renderTabs={renderTabs} /> : (
-        // Empty center zone — show background
-        isCenter && <div className="w-full h-full" />
+      {zone.layout ? (
+        <DockLayoutRenderer
+          layout={zone.layout}
+          renderTabs={renderTabs}
+          getPanelType={(panelId) => {
+            const directPanel = getPanel?.(panelId)
+            if (directPanel) return directPanel.type
+            const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
+            return useAppStore.getState().workspaces.find((workspace) => workspace.id === wsId)?.panels[panelId]?.type
+          }}
+        />
+      ) : (
+        emptyContent ?? (isCenter && <div className="w-full h-full" />)
       )}
     </div>
   )

@@ -22,7 +22,9 @@ vi.mock('../appStore', () => ({
     }),
   },
 }))
-vi.mock('../../lib/closePanelWithConfirm', () => ({ closePanelWithConfirm }))
+vi.mock('../../lib/closePanelWithConfirm', () => ({ closePanelsWithConfirm: async (ws: string, ids: string[], remove: (id: string) => void) => { if (!(await closePanelWithConfirm(ws, ids))) return false; ids.forEach(remove); return true } }))
+vi.mock('../../lib/confirmClosePanels', () => ({ confirmClosePanels: closePanelWithConfirm }))
+vi.mock('../../lib/editor/editorDocuments', () => ({ captureEditorPanel: (p: unknown) => p }))
 
 import { createCanvasStore } from '../canvasStore'
 
@@ -100,7 +102,7 @@ describe('canvas history — selection is versioned and restored filtered to liv
     expect(store.getState().nodes[a]).toBeDefined()
     expect([...store.getState().selection]).toEqual([a])
 
-    store.getState().redo() // re-applies the post-delete state (A gone)
+    await store.getState().redo() // re-applies the post-delete state (A gone)
     expect(store.getState().nodes[a]).toBeUndefined()
     // Redo restores the post-delete snapshot, whose selection was empty.
     expect(store.getState().selection.length).toBe(0)
@@ -141,8 +143,8 @@ describe('canvas history — selection is versioned and restored filtered to liv
     // Walk back and forth; the invariant must hold after every step.
     store.getState().undo(); expectSelectionLive(store)
     store.getState().undo(); expectSelectionLive(store)
-    store.getState().redo(); expectSelectionLive(store)
-    store.getState().redo(); expectSelectionLive(store)
+    await store.getState().redo(); expectSelectionLive(store)
+    await store.getState().redo(); expectSelectionLive(store)
     store.getState().undo(); expectSelectionLive(store)
   })
 })

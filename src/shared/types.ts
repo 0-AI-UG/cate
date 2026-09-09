@@ -32,7 +32,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'surface'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -167,6 +167,8 @@ export interface GitReviewNote {
 }
 
 export interface ReviewPanelState {
+  /** Saved comparison and notes for each checkout visited by this panel. */
+  worktreeStates?: Record<string, Omit<ReviewPanelState, 'worktreeStates'>>
   /** Present only for saved agent edits; absent means an ordinary Git comparison. */
   agentChanges?: import('./agentChanges').AgentChangesFilter
   repoPath: string
@@ -203,6 +205,10 @@ export interface ReviewPanelOpenRequest {
 }
 
 export interface PanelState {
+  /** Files panel navigation chrome. Kept with the panel across window transfers. */
+  sidebarVisible?: boolean
+  navigationEpoch?: number
+  sidebarView?: Exclude<SidebarView, 'workspaces'>
   id: string
   type: PanelType
   title: string
@@ -231,6 +237,11 @@ export interface PanelState {
   /** Unsaved buffer content for scratch (no-filePath) editors. Persisted so
    *  content survives canvas switches and app restarts. */
   unsavedContent?: string
+  /** Legacy Source Control panel state, read only during session migration. */
+  sourceControlState?: Record<string, SourceControlRepositoryState>
+  searchState?: PanelSearchSnapshot
+  /** Disk baseline for a recoverable dirty editor document (machine-local). */
+  editorBaseline?: string
   /** Terminal panels only: explicit working directory override. When unset
    *  the terminal uses the workspace's `rootPath`. Set when the terminal was
    *  created from a dropped folder or worktree to scope it to that path. */
@@ -530,6 +541,7 @@ export interface DetachedDockWindowSnapshot {
 // -----------------------------------------------------------------------------
 
 export interface PanelTransferSnapshot {
+  transferId?: string
   panel: PanelState
   geometry: { origin: Point; size: Size }
   sourceLocation: PanelLocation
@@ -644,6 +656,8 @@ export interface WorkspaceState {
   id: string
   name: string
   color: string
+  /** Renderer-only: the root whose layout has been initialized, even when empty. */
+  layoutRootPath?: string
   rootPath: string
   /** Runtime connection for a remote/WSL workspace (absent ⇒ local). Mirrors
    *  WorkspaceInfo.connection; drives reconnect-on-restore. */
@@ -772,7 +786,7 @@ export function displayString(s: StoredShortcut): string {
 export const SHORTCUT_DEFINITIONS = {
   newTerminal: { label: 'New Terminal', shortcut: storedShortcut('t', { command: true }) },
   newBrowser: { label: 'New Browser', shortcut: storedShortcut('b', { command: true, shift: true }) },
-  newEditor: { label: 'New Editor', shortcut: storedShortcut('e', { command: true, shift: true }) },
+  newEditor: { label: 'New Files Panel', shortcut: storedShortcut('e', { command: true, shift: true }) },
   newAgent: { label: 'New T3 Code conversation', shortcut: storedShortcut('a', { command: true, shift: true }) },
   newCanvas: { label: 'New Canvas', shortcut: storedShortcut('c', { command: true, shift: true }) },
   newFile: { label: 'New File', shortcut: storedShortcut('n', { command: true }) },
@@ -807,19 +821,44 @@ export const SHORTCUT_DEFINITIONS = {
   panDown: { label: 'Pan Canvas Down', shortcut: storedShortcut('↓', { shift: true }) },
   panLeft: { label: 'Pan Canvas Left', shortcut: storedShortcut('←', { shift: true }) },
   panRight: { label: 'Pan Canvas Right', shortcut: storedShortcut('→', { shift: true }) },
+  selectTool: { label: 'Select Tool', shortcut: storedShortcut('1', { command: true, option: true }) },
+  handTool: { label: 'Hand Tool', shortcut: storedShortcut('2', { command: true, option: true }) },
+  toggleKeepAwake: { label: 'Toggle Keep Awake', shortcut: storedShortcut('k', { command: true, option: true }) },
+  openWorktreeMenu: { label: 'Parallel Worktrees', shortcut: storedShortcut('w', { command: true, option: true }) },
+  openConversationMenu: { label: 'T3 Code Conversations', shortcut: storedShortcut('a', { command: true, option: true }) },
+  toggleCanvasToolbar: { label: 'Expand / Collapse Canvas Toolbar', shortcut: storedShortcut('b', { command: true, option: true }) },
+  tidyGrid: { label: 'Tidy Selected Panels into Grid', shortcut: storedShortcut('g', { command: true }) },
+  newWorkspace: { label: 'New Workspace', shortcut: storedShortcut('') },
+  openFolder: { label: 'Open Folder…', shortcut: storedShortcut('o', { command: true }) },
+  openSettings: { label: 'Settings / Preferences…', shortcut: storedShortcut(',', { command: true }) },
+  openRepository: { label: 'Repository / Source Control Changes', shortcut: storedShortcut('g', { command: true, shift: true }) },
+  openPullRequests: { label: 'Pull Requests', shortcut: storedShortcut('g', { command: true, option: true }) },
+  openUsage: { label: 'Usage', shortcut: storedShortcut('u', { command: true, option: true }) },
+  skills: { label: 'Skills…', shortcut: storedShortcut('s', { command: true, option: true }) },
+  showTutorial: { label: 'Show Tutorial', shortcut: storedShortcut('') },
+  reloadWorkspace: { label: 'Reload Workspace from Disk', shortcut: storedShortcut('') },
+  deleteRuntime: { label: 'Delete Runtime', shortcut: storedShortcut('') },
+  newWindow: { label: 'New Window', shortcut: storedShortcut('n', { command: true, shift: true }) },
+  closeWindow: { label: 'Close Window', shortcut: storedShortcut('w', { command: true, shift: true }) },
+  toggleFullscreen: { label: 'Toggle Full Screen', shortcut: storedShortcut('f', { command: true, control: true }) },
+  reloadWindow: { label: 'Force Reload Window', shortcut: storedShortcut('') },
+  toggleDevTools: { label: 'Toggle Developer Tools', shortcut: storedShortcut('i', { command: true, option: true }) },
+  checkForUpdates: { label: 'Check for Updates…', shortcut: storedShortcut('') },
+  documentation: { label: 'Cate Documentation', shortcut: storedShortcut('') },
+  reportIssue: { label: 'Report Issue…', shortcut: storedShortcut('') },
 } as const satisfies Record<string, { label: string; shortcut: StoredShortcut }>
 
 export type ShortcutAction = keyof typeof SHORTCUT_DEFINITIONS
 
-/** Actions the native menu can dispatch into the renderer. Superset of
- *  ShortcutAction — includes a few menu-only items that have no keyboard
- *  binding. */
-export type MenuActionId = ShortcutAction | 'openFolder' | 'reloadWorkspace'
+/** Renderer commands share one catalog across menus, shortcuts and the palette. */
+export type MenuActionId = ShortcutAction
 
 /** Browser-panel navigation actions. These are panel-scoped (handled by the
  *  focused BrowserPanel) rather than global shortcuts, so they don't collide
  *  with Monaco keys like Cmd+[ / Cmd+] / Cmd+L. */
 export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
+
+export type NativeAction = 'newWindow' | 'closeWindow' | 'toggleFullscreen' | 'reloadWindow' | 'toggleDevTools' | 'checkForUpdates' | 'documentation' | 'reportIssue' | `browser:${BrowserShortcutAction}`
 
 export type BrowserDownloadState = 'progressing' | 'paused' | 'completed' | 'cancelled' | 'interrupted'
 
@@ -1130,7 +1169,8 @@ export interface RemoteProjectEntry {
   /** Reconnect info, used by ensureWorkspaceRuntime on restore. */
   connection: RuntimeConnection
   /** Full session snapshot to rebuild the canvas/panels on restore. */
-  snapshot: SessionSnapshot
+  snapshot?: SessionSnapshot
+  cache?: { version: 1; workspace: ProjectWorkspaceFile; session: ProjectSessionFile }
 }
 
 /** Persisted sidebar arrangement (stored in `sidebar.json`). Keyed by
@@ -1155,6 +1195,8 @@ export interface DockStateSnapshot {
  *  echo could only ever be the process-local stub id, and overwriting the real
  *  id would silently drop the window from session.json. */
 export interface DockWindowSyncState {
+  rootPath?: string
+  worktrees?: WorktreeMeta[]
   dockState: DockStateSnapshot
   panels: Record<string, PanelState>
   terminalCwds?: Record<string, string>
@@ -1174,6 +1216,8 @@ export interface MultiWorkspaceSession {
 // -----------------------------------------------------------------------------
 
 export interface ProjectWorkspaceFile {
+  /** An intentionally saved empty layout is authoritative over its recovery backup. */
+  emptyLayout?: boolean
   version: 1
   name: string
   color: string
@@ -1190,6 +1234,8 @@ export interface ProjectWorkspaceFile {
 }
 
 export interface ProjectPanelRef {
+  sidebarVisible?: boolean
+  sidebarView?: Exclude<SidebarView, 'workspaces'>
   /** Preserve a manual title across restored terminal and T3 sessions. */
   titleUserOverridden?: boolean
   type: string
@@ -1234,7 +1280,9 @@ export interface ProjectSessionFile {
 }
 
 export interface WorktreeViewScopes {
+  /** Legacy sidebar scope, read only to migrate old navigation panels. */
   navigationWorktreeId?: string
+  sourceControlDrafts?: Record<string, string>
   sourceControlWorktreeByRepository?: Record<string, string>
 }
 
@@ -1243,6 +1291,11 @@ export interface ProjectSessionPanel {
   ptyId?: string
   workingDirectory?: string
   unsavedContent?: string
+  /** Legacy Source Control panel state, read only during session migration. */
+  sourceControlState?: Record<string, SourceControlRepositoryState>
+  searchState?: PanelSearchSnapshot
+  /** Disk baseline for a recoverable dirty editor document (machine-local). */
+  editorBaseline?: string
   /** Worktree this panel is associated with. Machine-local (worktree ids are
    *  runtime uuids), so it lives in session.json, not workspace.json. */
   worktreeId?: string
@@ -1300,12 +1353,6 @@ export const FILE_EXCLUSIONS: string[] = [
 
 /** A sidebar view (left/right rail tabs). */
 export type SidebarView = 'workspaces' | 'explorer' | 'git' | 'search'
-
-/** Which sidebar views live in the left vs. right rail. Persisted in settings. */
-export interface SidebarLayout {
-  left: SidebarView[]
-  right: SidebarView[]
-}
 
 /** Version of the telemetry/privacy notice. Bump when the privacy policy
  *  materially changes so every user sees the informational notice once more.
@@ -1531,11 +1578,6 @@ export interface AppSettings {
    *  folder already exists in the repo). Sparse: only real overrides stored. */
   agentHookInjection: Record<string, Partial<Record<AgentId, AgentHookMode>>>
 
-  // Layout
-  /** Which sidebar views live in the left vs. right rail. Was renderer
-   *  localStorage (cate.sidebarLayout.v3) before. */
-  sidebarLayout: SidebarLayout
-
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -1628,12 +1670,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // Agent
   agentHookInjection: {},
 
-  // Layout — keep in sync with the sidebar's default arrangement.
-  sidebarLayout: {
-    left: ['workspaces', 'explorer', 'search'],
-    right: ['git'],
-  },
-
 }
 
 // -----------------------------------------------------------------------------
@@ -1646,17 +1682,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export type CanvasCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
 
 export interface UIState {
-  /** Corner the floating minimap is docked in. */
-  minimapCorner: CanvasCorner
-  /** Floating minimap size in px. */
-  minimapSize: { w: number; h: number }
   /** Corner the minimap toggle button (canvas toolbar) is docked in. */
   minimapButtonCorner: CanvasCorner
 }
 
 export const DEFAULT_UI_STATE: UIState = {
-  minimapCorner: 'bottom-right',
-  minimapSize: { w: 200, h: 150 },
   minimapButtonCorner: 'bottom-right',
 }
 
@@ -1681,6 +1711,7 @@ export const PANEL_MINIMUM_SIZES: Record<PanelType, Size> = Object.fromEntries(
 // PANEL_DEFAULT_SIZES sizes fresh windows in their own shells and is too
 // large for an in-canvas drop.
 export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
+  surface: { width: 540, height: 500 },
   terminal: { width: 520, height: 340 },
   browser: { width: 640, height: 440 },
   editor: { width: 540, height: 420 },
@@ -1739,3 +1770,21 @@ export interface PerfSnapshot {
   ipc: Array<{ channel: string; kbPerSec: number; callsPerSec: number }>
   terminal: { kbPerSec: number; chunksPerSec: number }
 }
+
+export interface FileEntryMoved { from: string; to: string }
+export interface PanelSearchSnapshot {
+  rootPath: string
+  query: string
+  isRegex: boolean
+  matchCase: boolean
+  wholeWord: boolean
+  includes: string
+  excludes: string
+  respectIgnore: boolean
+  optionsExpanded: boolean
+}
+
+export interface PanelCloseOperation { phase: 'prepare' | 'commit' | 'cancel'; token: string }
+
+export interface ApplicationOverlayRequest { view: 'settings' | 'skills' | 'usage' | 'pullRequests'; section?: string }
+export interface SourceControlRepositoryState { worktreeId?: string; commitMessage?: string }

@@ -1,6 +1,5 @@
 // =============================================================================
-// Skill sources — userData list of user-added repos to live-crawl, plus an
-// optional GitHub token (lifts the 60/hr REST limit and reaches private repos).
+// Skill sources — userData list of user-added repos to live-crawl.
 // The curated catalog comes from the CI-built index; this is the user's own
 // additions on top.
 // =============================================================================
@@ -12,7 +11,6 @@ import type { SkillSource } from '../../shared/skills'
 
 interface SkillSourcesState {
   sources: SkillSource[]
-  githubToken?: string
 }
 
 const DEFAULTS: SkillSourcesState = { sources: [] }
@@ -31,26 +29,12 @@ const store = createJsonStateFile<SkillSourcesState>({
             typeof (s as SkillSource).repo === 'string',
         )
       : []
-    const githubToken = typeof obj.githubToken === 'string' && obj.githubToken ? obj.githubToken : undefined
-    return githubToken ? { sources, githubToken } : { sources }
+    return { sources }
   },
 })
 
 export function listSources(): SkillSource[] {
   return store.get().sources
-}
-
-export function getToken(): string | undefined {
-  return store.get().githubToken
-}
-
-export function setToken(token: string | undefined): void {
-  store.update((cur) => {
-    const next = { ...cur }
-    if (token && token.trim()) next.githubToken = token.trim()
-    else delete next.githubToken
-    return next
-  })
 }
 
 /** Add a repo by "owner/name" or GitHub URL. Returns the created source. Throws

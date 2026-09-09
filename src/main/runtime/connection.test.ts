@@ -485,3 +485,18 @@ describe('RuntimeManager LOCAL auto-reconnect (FIX 4)', () => {
     expect(seen).not.toContain('connecting') // REMOTE never auto-reconnects
   })
 })
+
+test('rejects old subscription protocol and connects after explicit replacement', async () => {
+  const manager = new RuntimeManager()
+  const old = new FakeTransport({ hello: { protocolVersion: 2 } })
+  const phases: string[] = []
+  manager.setStatusListener((_id, phase) => phases.push(phase))
+  await expect(manager.connect('wsl_protocol', old)).rejects.toThrow('protocol mismatch')
+  expect(old.disposed).toBe(true)
+  expect(phases).toContain('missing')
+  const replacement = new FakeTransport()
+  await manager.connect('wsl_protocol', replacement, { install: true, force: true })
+  expect(replacement.forcedBootstrap).toBe(true)
+  expect(manager.isConnected('wsl_protocol')).toBe(true)
+  await manager.disposeAll()
+})

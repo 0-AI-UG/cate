@@ -59,6 +59,7 @@ export interface JsonStateFile<T> {
   stopWatching(): void
   /** Flush a pending debounced write synchronously (call on quit). */
   flushPendingWritesSync(): void
+  flushDurable(): Promise<void>
 }
 
 export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonStateFile<T> {
@@ -155,5 +156,6 @@ export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonSt
     startWatching,
     stopWatching,
     flushPendingWritesSync,
+    flushDurable: () => state.flushDurable(),
   }
 }

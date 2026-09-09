@@ -16,7 +16,7 @@ export const PaletteTextInput = forwardRef<HTMLInputElement, PaletteTextInputPro
   ...props
 }, ref) {
   return (
-    <div className={`flex h-8 items-center gap-2 rounded-md border border-strong bg-surface-0/60 px-2.5 transition-colors focus-within:border-[rgba(255,255,255,0.18)] ${containerClassName}`}>
+    <div data-input-frame className={`flex h-8 items-center gap-2 rounded-md border border-strong bg-surface-0/60 px-2.5 transition-colors ${containerClassName}`}>
       <span className="shrink-0 text-muted" aria-hidden="true">{icon}</span>
       <input
         {...props}

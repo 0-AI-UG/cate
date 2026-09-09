@@ -3,7 +3,7 @@ import { T3Logo } from '../ui/T3Logo'
 // Panel registry (renderer side)
 //
 // Extends the shared per-type data in `src/shared/panels.ts` with renderer-only
-// concerns: the Phosphor icon component, the lazy panel component, and a
+// concerns: the Lucide icon component, the lazy panel component, and a
 // factory that maps to the right `appStore.createXxx()` call.
 //
 // Every place that used to switch on `panel.type` should read from
@@ -14,19 +14,13 @@ import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 
 import React, { type LazyExoticComponent, type ComponentType } from 'react'
-import {
-  Terminal,
-  Globe,
-  FileText,
-  SquaresFour,
-  FileDoc,
-  GitDiff,
-  type Icon as PhosphorIcon,
-} from '@phosphor-icons/react'
+import { Terminal, Globe, Grid2X2 as SquaresFour, FileText as FileDoc, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
+import { Folders, Plus } from 'lucide-react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
 import { PANEL_DEFINITIONS, type SharedPanelDefinition } from '../../shared/panels'
+import { addAndPlacePanel } from '../stores/appStore/helpers'
 import { PanelErrorBoundary } from '../ui/PanelErrorBoundary'
 import type { PanelProps } from './types'
 
@@ -52,6 +46,8 @@ const ReviewPanel = React.lazy(() => import('./ReviewPanel'))
  *  doesn't understand — e.g. the git factory ignores `filePath`. */
 export interface PanelCreateArgs {
   workspaceId: string
+  cwd?: string
+  worktreeId?: string
   canvasPoint?: Point
   placement?: PanelPlacement
   /** Editor only. */
@@ -65,7 +61,7 @@ export interface PanelCreateArgs {
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
-  icon: PhosphorIcon | ComponentType<{ size?: number; className?: string }>
+  icon: LucideIcon | ComponentType<{ size?: number; className?: string }>
   /** React.lazy() wrapped panel component. Accepts the standard PanelProps
    *  plus optional per-type extras (filePath/url/zoomLevel) — the dispatcher
    *  reads those off the PanelState. */
@@ -95,12 +91,27 @@ const baseProps = (panel: PanelState, ctx: PanelRenderContext): Record<string, u
 // -----------------------------------------------------------------------------
 
 export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
+  surface: {
+    ...PANEL_DEFINITIONS.surface,
+    icon: Plus,
+    Component: React.lazy(() => import('./SurfacePicker')),
+    create: ({ workspaceId, placement, canvasPoint }) => addAndPlacePanel(
+      useAppStore.setState, useAppStore.getState, workspaceId,
+      { id: crypto.randomUUID(), type: 'surface', title: 'Open a surface', isDirty: false },
+      placement, canvasPoint,
+    ),
+    props: baseProps,
+  },
   terminal: {
     ...PANEL_DEFINITIONS.terminal,
     icon: Terminal,
     Component: TerminalPanel,
-    create: ({ workspaceId, canvasPoint, placement, initialInput }) =>
-      trackCreated('terminal', useAppStore.getState().createTerminal(workspaceId, initialInput, canvasPoint, placement) || null),
+    create: ({ workspaceId, canvasPoint, placement, initialInput, cwd, worktreeId }) => {
+      const app = useAppStore.getState()
+      const id = app.createTerminal(workspaceId, initialInput, canvasPoint, placement, cwd)
+      if (id && worktreeId) app.setPanelWorktreeId(workspaceId, id, worktreeId)
+      return trackCreated('terminal', id || null)
+    },
     props: (panel, ctx) => ({
       ...baseProps(panel, ctx),
       codingAgentLaunch: panel.codingAgentLaunch,
@@ -122,10 +133,14 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
   },
   editor: {
     ...PANEL_DEFINITIONS.editor,
-    icon: FileText,
+    icon: Folders,
     Component: EditorPanel,
-    create: ({ workspaceId, canvasPoint, placement, filePath }) =>
-      trackCreated('editor', useAppStore.getState().createEditor(workspaceId, filePath, canvasPoint, placement) || null),
+    create: ({ workspaceId, canvasPoint, placement, filePath, worktreeId }) => {
+      const app = useAppStore.getState()
+      const id = app.createEditor(workspaceId, filePath, canvasPoint, placement)
+      if (id && worktreeId && !filePath) app.setPanelWorktreeId(workspaceId, id, worktreeId)
+      return trackCreated('editor', id || null)
+    },
     props: (panel, ctx) => ({ ...baseProps(panel, ctx), filePath: panel.filePath }),
   },
   canvas: {
@@ -140,8 +155,8 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     ...PANEL_DEFINITIONS.agent,
     icon: T3Logo,
     Component: AgentPanel,
-    create: ({ workspaceId, canvasPoint, placement }) =>
-      trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement) || null),
+    create: ({ workspaceId, canvasPoint, placement, cwd, worktreeId }) =>
+      trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement, cwd, worktreeId) || null),
     props: baseProps,
   },
   document: {
@@ -156,8 +171,9 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     ...PANEL_DEFINITIONS.review,
     icon: GitDiff,
     Component: ReviewPanel,
-    create: ({ workspaceId, canvasPoint, placement }) => {
-      const rootPath = useAppStore.getState().getWorkspace(workspaceId)?.rootPath
+    create: ({ workspaceId, canvasPoint, placement, worktreeId }) => {
+      const workspace = useAppStore.getState().getWorkspace(workspaceId)
+      const rootPath = workspace?.worktrees?.find(wt => wt.id === worktreeId)?.path ?? workspace?.rootPath
       return rootPath
         ? trackCreated('review', useAppStore.getState().createReview(workspaceId, rootPath, undefined, canvasPoint, placement) || null)
         : null

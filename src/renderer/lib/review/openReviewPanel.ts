@@ -3,6 +3,7 @@ import { useAppStore } from '../../stores/appStore'
 import { useWindowPanelStore } from '../../stores/windowPanelStore'
 import { getActivePanelId } from '../activePanel'
 import { placementForActivePanel, placementForPanel } from '../workspace/canvasAccess'
+import { requestPanelTarget } from '../panelTargetPicker'
 import { revealPanel } from '../workspace/panelReveal'
 
 export interface OpenReviewOptions {
@@ -11,6 +12,7 @@ export interface OpenReviewOptions {
   spec: GitComparisonSpec
   focusedFile?: string
   openNew?: boolean
+  source?: 'overlay'
   sourceAgent?: ReviewPanelState['sourceAgent']
 }
 
@@ -54,10 +56,29 @@ export async function retargetReviewPanel(
   return true
 }
 
-/** Open a review comparison, reusing the active or newest panel for the same repo. */
-export async function openReviewPanel(options: OpenReviewOptions): Promise<string> {
+/** Overlay actions explicitly choose a target; programmatic deep links reuse a matching review. */
+export async function openReviewPanel(options: OpenReviewOptions): Promise<string | null> {
   const app = useAppStore.getState()
   const workspace = app.getWorkspace(options.workspaceId)
+  if (options.source === 'overlay') {
+    const target = await requestPanelTarget({
+      workspaceId: options.workspaceId, panelType: 'review', source: 'overlay',
+      availability: options.openNew ? 'new' : 'both',
+      existingPanelIds: Object.values(workspace?.panels ?? {})
+        .filter((panel) => panel.type === 'review' && panel.reviewState?.repoPath === options.repoPath)
+        .map((panel) => panel.id),
+    })
+    if (!target) return null
+    if (target.kind === 'existing') {
+      await retargetReviewPanel(options.workspaceId, target.panelId, openRequest(options))
+      return target.panelId
+    }
+    const id = app.createReview(options.workspaceId, options.repoPath, {
+      spec: options.spec, focusedFile: options.focusedFile, sourceAgent: options.sourceAgent,
+    }, undefined, target.placement)
+    await revealPanel(options.workspaceId, id, { retry: true })
+    return id
+  }
   const activeId = getActivePanelId()
   const matching = Object.values(workspace?.panels ?? {}).filter(
     (panel) => panel.type === 'review' && panel.reviewState?.repoPath === options.repoPath,

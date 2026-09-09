@@ -20,6 +20,7 @@ export const MODEL_CACHE_LIMIT = 20
 const modelCache = new Map<string, ModelLike>()
 // Counts how many mounted EditorPanel instances are actively using a cached model.
 const modelRefCount = new Map<string, number>()
+const retiredModels = new Map<string, ModelLike>()
 // Disk content each cached model was last synced with (its sync baseline). Kept
 // alongside the model so that when a panel reopens and reattaches a warm model,
 // useFileSync can tell unsaved edits (buffer ≠ baseline) apart from a stale-but-
@@ -83,6 +84,9 @@ export function releaseModel(filePath: string): void {
     // no re-tokenization). The LRU eviction path in rememberModel() will
     // dispose the model later if it falls out of the cache.
     modelRefCount.delete(filePath)
+    const retired = retiredModels.get(filePath)
+    retiredModels.delete(filePath)
+    if (retired && !retired.isDisposed()) retired.dispose()
   } else {
     modelRefCount.set(filePath, count)
   }
@@ -120,9 +124,38 @@ export function isLoadFailed(filePath: string): boolean {
 }
 
 /** Test-only reset of all module state. */
+const resetListeners = new Set<() => void>()
+export function onModelCacheReset(listener: () => void): void { resetListeners.add(listener) }
+
+export function forgetModel(filePath: string): void {
+  const model = modelCache.get(filePath)
+  modelCache.delete(filePath); modelBaseline.delete(filePath); modelRefCount.delete(filePath)
+  if (model && !model.isDisposed()) model.dispose()
+}
+
 export function __resetModelCacheForTest(): void {
+  resetListeners.forEach(listener => listener())
   modelCache.clear()
+  retiredModels.forEach(model => { if (!model.isDisposed()) model.dispose() })
+  retiredModels.clear()
   modelRefCount.clear()
   modelBaseline.clear()
   loadFailedPaths.clear()
+}
+
+/** A renamed model has an immutable old URI. Retire that cache entry without
+ * disposing a model still attached to a mounted view; remount creates the new URI. */
+export function retireModel(filePath: string): void {
+  const model = modelCache.get(filePath)
+  modelCache.delete(filePath); modelBaseline.delete(filePath); loadFailedPaths.delete(filePath)
+  if (!model || model.isDisposed()) return
+  if ((modelRefCount.get(filePath) ?? 0) > 0) retiredModels.set(filePath, model)
+  else model.dispose()
+}
+
+/** Include warm entries with no surviving document/panel owner. */
+export function retireModelsMatching(matches: (path: string) => boolean): void {
+  for (const path of new Set([...modelCache.keys(), ...modelBaseline.keys(), ...loadFailedPaths])) {
+    if (matches(path)) retireModel(path)
+  }
 }

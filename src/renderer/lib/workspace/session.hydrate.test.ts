@@ -43,6 +43,7 @@ beforeEach(() => {
     projectStateLoad,
   }
   projectStateLoad.mockReset()
+  useAppStore.setState({ workspaces: [], selectedWorkspaceId: '' })
   // These tests are about the hydrate path, not the gate: trust the fixture root
   // so hydrate gets past it. The trust suite at the bottom clears this.
   useWorkspaceTrustStore.setState({ trusted: [ROOT], hydrated: true, queue: [] })
@@ -119,7 +120,7 @@ describe('hydrateWorkspaceFromDiskIfEmpty — guards', () => {
     const id = await freshWorkspace('ws-nostate')
     projectStateLoad.mockResolvedValue(null)
     await hydrateWorkspaceFromDiskIfEmpty(id)
-    expect(projectStateLoad).toHaveBeenCalledWith(ROOT)
+    expect(projectStateLoad).toHaveBeenCalledWith(ROOT, id)
     // Nothing restored — still no panels.
     const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
     expect(Object.keys(ws.panels)).toHaveLength(0)
@@ -133,7 +134,7 @@ describe('hydrateWorkspaceFromDiskIfEmpty — restore', () => {
 
     await hydrateWorkspaceFromDiskIfEmpty(id)
 
-    expect(projectStateLoad).toHaveBeenCalledWith(ROOT)
+    expect(projectStateLoad).toHaveBeenCalledWith(ROOT, id)
     const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
     // The saved editor panel is now present, and the name synced from the file.
     expect(ws.panels['ed-1']).toBeDefined()
@@ -225,5 +226,36 @@ describe('hydrateWorkspaceFromDiskIfEmpty — workspace trust', () => {
     const ws = useAppStore.getState().workspaces.find((w) => w.id === id)!
     expect(ws.panels['agent-poc']).toBeDefined()
     expect(ws.panels['agent-poc'].type).toBe('agent')
+  })
+})
+
+describe('intentional empty layouts', () => {
+  it('does not resurrect closed panels when reselected', async () => {
+    const id = await freshWorkspace('closed')
+    projectStateLoad.mockResolvedValue(diskState())
+    await hydrateWorkspaceFromDiskIfEmpty(id)
+    useAppStore.getState().closeAllPanels(id)
+    projectStateLoad.mockClear()
+    await useAppStore.getState().selectWorkspace(id)
+    expect(projectStateLoad).not.toHaveBeenCalled()
+    expect(useAppStore.getState().getWorkspace(id)?.panels).toEqual({})
+  })
+  it('initializes a missing saved layout only once', async () => {
+    const id = await freshWorkspace('empty')
+    projectStateLoad.mockResolvedValue(null)
+    await hydrateWorkspaceFromDiskIfEmpty(id)
+    await hydrateWorkspaceFromDiskIfEmpty(id)
+    expect(projectStateLoad).toHaveBeenCalledTimes(1)
+    expect(useAppStore.getState().getWorkspace(id)?.panels).toEqual({})
+  })
+  it('does not overwrite a panel created while disk loading is pending', async () => {
+    const id = await freshWorkspace('raced')
+    let finish!: (value: ReturnType<typeof diskState>) => void
+    projectStateLoad.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    const loading = hydrateWorkspaceFromDiskIfEmpty(id)
+    const canvas = useAppStore.getState().createCanvas(id)
+    finish(diskState())
+    await loading
+    expect(Object.keys(useAppStore.getState().getWorkspace(id)!.panels)).toEqual([canvas])
   })
 })

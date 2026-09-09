@@ -48,7 +48,7 @@ function setupDownload(webContentsId: number) {
   const guest = { id: webContentsId, hostWebContents: { send: h.send } }
   watchDownloadsForSession(session as unknown as Electron.Session)
   session.emit('will-download', {}, item, guest)
-  return { item, setReceivedBytes: (value: number) => { receivedBytes = value } }
+  return { item, guest, setReceivedBytes: (value: number) => { receivedBytes = value } }
 }
 
 describe('browserDownloads', () => {
@@ -89,4 +89,23 @@ describe('browserDownloads', () => {
     await expect(actOnBrowserDownload(72, download.id, 'cancel')).resolves.toEqual({ ok: true })
     expect(item.cancel).toHaveBeenCalledOnce()
   })
+})
+
+it('retains all active downloads beyond the completed history cap', async () => {
+  const first = setupDownload(90)
+  const firstId = downloadsForWebContents(90)[0].id
+  for (let index = 0; index < 20; index++) setupDownload(90)
+  expect(downloadsForWebContents(90)).toHaveLength(21)
+  await expect(actOnBrowserDownload(90, firstId, 'cancel')).resolves.toEqual({ ok: true })
+  expect(first.item.cancel).toHaveBeenCalledOnce()
+})
+it('delivers completion through the captured owner after the guest loses its host', () => {
+  const { item, guest } = setupDownload(91)
+  h.send.mockClear()
+  Object.assign(guest, { hostWebContents: undefined })
+  item.emit('done', {}, 'completed')
+  expect(h.send).toHaveBeenCalledWith(BROWSER_DOWNLOADS_CHANGED, expect.objectContaining({
+    webContentsId: 91, downloads: [expect.objectContaining({ state: 'completed' })],
+  }))
+  expect(item.listenerCount('updated')).toBe(0)
 })

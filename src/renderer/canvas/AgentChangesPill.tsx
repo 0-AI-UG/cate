@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { GitDiff } from '@phosphor-icons/react'
+import { GitCompareArrows as GitDiff } from 'lucide-react'
 import type { PanelState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { openAgentChanges } from '../lib/review/openAgentChanges'

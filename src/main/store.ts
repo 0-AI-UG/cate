@@ -8,7 +8,7 @@
 
 import { ipcMain, app, nativeTheme, session } from 'electron'
 import log from './logger'
-import { listWindows, windowFromEvent } from './windowRegistry'
+import { getWindowType, listWindows, windowFromEvent } from './windowRegistry'
 import { isPlainObject } from './jsonUtils'
 import { createJsonStateFile } from './jsonStateFile'
 import {
@@ -80,6 +80,15 @@ import { grantFileAccess } from './ipc/pathValidation'
 import { recordPersistentGrant } from './grantedPathStore'
 import { computeThemeBootFields } from './themeBootCache'
 
+type RuntimeSettings = Pick<AppSettings, 'fileExclusions' | 'autoSuspendIdleTerminals'>
+
+function applyRuntimeSettings(runtime: import('./runtime/types').Runtime, settings: Partial<RuntimeSettings>): void {
+  if (settings.fileExclusions !== undefined) void runtime.setExclusions(settings.fileExclusions).catch(() => {})
+  if (settings.autoSuspendIdleTerminals !== undefined) void runtime.setIdleSuspend(settings.autoSuspendIdleTerminals).catch(() => {})
+}
+
+let runtimeSettingsHooksInstalled = false
+
 /**
  * Apply the main-process side effects of a single settings change. Shared by
  * the renderer-driven SETTINGS_SET path and the external-file-edit watcher so a
@@ -105,32 +114,14 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
   if (key === 'fileExclusions') {
     broadcastToAll(SETTINGS_CHANGED, key, value)
   }
-  // Push the new set to EVERY connected runtime daemon (local and remote alike
-  // — each captured its exclusions once at launch); without this a daemon's
-  // file tree / file-name search / watchers wouldn't honor the change until a
-  // reconnect. Imports are dynamic to avoid store<->filesystem and
-  // store<->runtime cycles.
-  if (key === 'fileExclusions') {
+  if (key === 'fileExclusions' || key === 'autoSuspendIdleTerminals') {
     try {
       const { runtimes } = await import('./runtime/runtimeManager')
       for (const id of runtimes.connectedIds()) {
-        runtimes.resolve(id).setExclusions(value as string[]).catch(() => {})
+        applyRuntimeSettings(runtimes.resolve(id), { [key]: value })
       }
     } catch (err) {
-      log.warn('Runtime exclusions forward failed: %O', err)
-    }
-  }
-  // Push the idle-suspend toggle to EVERY connected runtime daemon, each of
-  // which gated its idle scanner once at launch — toggling otherwise needs a
-  // reconnect. (POSIX-only inside the daemon; a win32 host ignores it.)
-  if (key === 'autoSuspendIdleTerminals') {
-    try {
-      const { runtimes } = await import('./runtime/runtimeManager')
-      for (const id of runtimes.connectedIds()) {
-        runtimes.resolve(id).setIdleSuspend(value !== false).catch(() => {})
-      }
-    } catch (err) {
-      log.warn('Runtime idle-suspend forward failed: %O', err)
+      log.warn('Runtime settings forward failed: %O', err)
     }
   }
   // The wallpaper image is copied into managed app data (see DIALOG_OPEN_IMAGE).
@@ -274,6 +265,19 @@ function broadcastSettingsReloaded(): void {
 }
 
 export function registerHandlers(): void {
+  if (!runtimeSettingsHooksInstalled) {
+    runtimeSettingsHooksInstalled = true
+    // The settings file remains the authority; launch options can be stale
+    // after settings change while a daemon is disconnected.
+    void import('./runtime/runtimeManager').then(({ runtimes }) => {
+      const replay = (_id: string, runtime: import('./runtime/types').Runtime) => applyRuntimeSettings(runtime, {
+        fileExclusions: getSettingFromFile('fileExclusions'),
+        autoSuspendIdleTerminals: getSettingFromFile('autoSuspendIdleTerminals'),
+      })
+      runtimes.onConnected(replay)
+      for (const id of runtimes.connectedIds()) replay(id, runtimes.resolve(id))
+    }).catch(err => log.warn('Runtime settings replay setup failed: %O', err))
+  }
   // Settings — backed by settings.json (see ./settingsFile). The file is the
   // source of truth; these handlers read/write it and fan out side effects.
   ipcMain.handle(SETTINGS_GET, async (_event, key: keyof AppSettings) => {
@@ -362,7 +366,12 @@ export function registerHandlers(): void {
     // so each window (main + detached panel/dock) updates its own chrome.
     if (typeof partial.backgroundColor === 'string') {
       try {
-        windowFromEvent(event)?.setBackgroundColor(partial.backgroundColor)
+        const win = windowFromEvent(event)
+        // Theme initialization also reaches this handler. Preserve the clear
+        // backing required by the main window's native sidebar material.
+        const hasSidebarVibrancy = (process.env.CATE_FAKE_PLATFORM || process.platform) === 'darwin'
+          && win && getWindowType(win.id) === 'main'
+        win?.setBackgroundColor(hasSidebarVibrancy ? '#00000000' : partial.backgroundColor)
       } catch (err) {
         log.warn('Live window background update failed: %O', err)
       }
@@ -429,18 +438,17 @@ export function registerHandlers(): void {
   })
 
   ipcMain.handle(SIDEBAR_SESSION_SET, async (_event, session: SidebarSession) => {
-    setSidebarSession(session)
+    await setSidebarSession(session)
   })
 
-  // Remote projects (cate-runtime:// workspaces): full restore snapshot +
-  // reconnect info, since their tree lives on a runtime and can't use the
-  // local .cate/ project-state files.
+  // Remote reconnect metadata + latest machine-owned offline session cache.
+  // A successful IPC response means the cache is on disk, ready for restart.
   ipcMain.handle(REMOTE_PROJECTS_GET, async () => {
     return getRemoteProjects()
   })
 
   ipcMain.handle(REMOTE_PROJECTS_SET, async (_event, entries: RemoteProjectEntry[]) => {
-    setRemoteProjects(entries)
+    await setRemoteProjects(entries)
   })
 
   // Browser history + bookmarks (global). Mutations broadcast a "changed" event

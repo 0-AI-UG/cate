@@ -1,6 +1,6 @@
+import { applyFileEntryMove } from './lib/editor/editorDocuments'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { IconContext } from '@phosphor-icons/react'
 import log from './lib/logger'
 import { mark } from './lib/perfMarks'
 import { initRendererSentry, captureRendererException } from './lib/sentry'
@@ -9,6 +9,9 @@ import { subscribeToOsNotificationClicks } from './lib/notifications/osNotificat
 import { installGestureLockWatchdog } from './lib/dom/gestureLockWatchdog'
 import './styles/globals.css'
 import '@xterm/xterm/css/xterm.css'
+
+// All windows follow acknowledged file moves, including hidden editor panels.
+window.electronAPI.onFsEntryMoved?.(applyFileEntryMove)
 
 // Listen for OS notification clicks (focus the originating terminal).
 subscribeToOsNotificationClicks()
@@ -73,13 +76,8 @@ class ErrorBoundary extends React.Component<
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {/* Default icon weight for all chrome (headers, panels, cards, dock
-        toolbar, etc.). Icons that set an explicit `weight` prop
-        (bold/fill/duotone) override this. */}
-    <IconContext.Provider value={{ weight: 'regular' }}>
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
-    </IconContext.Provider>
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 )

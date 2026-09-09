@@ -17,7 +17,7 @@ test.beforeEach(async () => {
   // Keep the left sidebar EXPANDED (default) so it occupies real width and the
   // canvas container starts to its right — that left strip is the region the
   // drop indicator must not paint over.
-  await page.evaluate(() => window.__cateE2E!.setActiveLeftSidebarView('explorer'))
+  await page.evaluate(() => window.__cateE2E!.openNavigationView('explorer'))
   await page.waitForTimeout(300) // 200ms width transition + margin
   await resetViewport(page)
 })

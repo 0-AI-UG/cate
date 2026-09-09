@@ -1,9 +1,10 @@
+import { migrateNavigationPanel } from '../../../shared/panels'
 // =============================================================================
 // Session load — read the on-disk project files (local + remote) and assemble a
 // MultiWorkspaceSession for restore.
 // =============================================================================
 
-import { removedExtensionPanelIds, pruneDockState, pruneCanvasNodes } from '../../../shared/pruneRemovedPanels'
+import { removedPanelIds, pruneDockState, pruneCanvasNodes } from '../../../shared/pruneRemovedPanels'
 import log from '../logger'
 import { isLocalLocator } from '../../../shared/runtimeLocator'
 import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
@@ -25,10 +26,9 @@ export async function loadSession(): Promise<MultiWorkspaceSession | null> {
 
 export function dockWindowsFromSession(sess: ProjectSessionFile | null): DetachedDockWindowSnapshot[] {
   return (sess?.dockWindows ?? []).flatMap((window) => {
-    const removed = removedExtensionPanelIds(window.panels)
-    if (!removed.size) return [window]
-    const panels = Object.fromEntries(Object.entries(window.panels).filter(([id]) => !removed.has(id)))
-    if (!Object.keys(panels).length) return []
+    const removed = removedPanelIds(window.panels)
+    const panels = Object.fromEntries(Object.entries(window.panels).filter(([id]) => !removed.has(id)).map(([id, panel]) => [id, migrateNavigationPanel(panel)]))
+    if (removed.size > 0 && !Object.keys(panels).length) return []
     return [{
       ...window,
       panels,
@@ -55,9 +55,8 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
     recentProjects = []
   }
 
-  // Remote (cate-runtime://) workspaces never appear in recentProjects — they
-  // live in the parallel remoteProjects store with their full restore snapshot
-  // and reconnect info (Finding 3). Load them up front so they round-trip too.
+  // Remote reconnect metadata and the latest offline session cache are local;
+  // startup can restore them before runtime transport is available.
   let remoteEntries: RemoteProjectEntry[] = []
   try {
     remoteEntries = (await window.electronAPI.remoteProjectsGet()) ?? []
@@ -71,8 +70,7 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
   const dockWindows: DetachedDockWindowSnapshot[] = []
 
   for (const rootPath of recentProjects) {
-    // Defensive: a remote locator must never reach projectStateLoad (it would
-    // mangle into a junk local path). Remote workspaces are loaded below.
+    // Remote workspaces restore from their offline cache below.
     if (!isLocalLocator(rootPath)) continue
 
     // Trust gate, BEFORE the project's files are read. Reopening at launch is
@@ -100,24 +98,25 @@ async function loadFromProjectFiles(): Promise<MultiWorkspaceSession | null> {
     }
   }
 
-  // Append remote workspaces. Their snapshot is self-contained (canvas layout +
-  // connection), so no projectStateLoad is needed. Skip any whose connection
-  // somehow went missing — without it ensureWorkspaceRuntime can't reconnect.
-  // Same trust gate: reconnecting reads the remote repo's `.cate/` too.
+  // Reconnect has not happened yet. Restore the latest machine-owned cache
+  // through the same decoder as project files; retain legacy snapshot migration.
   const keptRemote: RemoteProjectEntry[] = []
   let declinedRemote = false
   for (const entry of remoteEntries) {
-    const snap = entry?.snapshot
-    if (!isRemoteRuntimeConnection(snap?.connection)) {
-      keptRemote.push(entry)
-      continue
-    }
-    if (!(await ensureProjectTrusted(snap.rootPath))) {
+    if (!isRemoteRuntimeConnection(entry?.connection)) continue
+    if (!(await ensureProjectTrusted(entry.locator))) {
       declinedRemote = true
       continue
     }
     keptRemote.push(entry)
-    snapshots.push(snap)
+    if (entry.cache?.version === 1) {
+      const snapshot = projectFilesToSnapshot(entry.cache.workspace, entry.cache.session, entry.locator)
+      snapshot.connection = entry.connection
+      snapshots.push(snapshot)
+      dockWindows.push(...dockWindowsFromSession(entry.cache.session))
+    } else if (entry.snapshot) {
+      snapshots.push({ ...entry.snapshot, connection: entry.connection })
+    }
   }
   // "Don't open" is also "stop asking": drop the declined entries so the next
   // launch doesn't re-prompt for a project the user already refused.

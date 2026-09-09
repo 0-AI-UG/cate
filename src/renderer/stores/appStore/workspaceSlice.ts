@@ -32,7 +32,7 @@ type WorkspaceSliceActions = Pick<
   | 'selectWorkspace'
   | 'switchWorkspaceByOffset'
   | 'removeWorkspace'
-  | 'ensureCenterCanvas'
+  | 'reconcileWorkspaceDock'
   | 'setWorkspaceColor'
   | 'renameWorkspace'
   | 'reorderWorkspaces'
@@ -77,8 +77,8 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
       const ws = createDefaultWorkspace(name, rootPath, id, connection)
 
       // Note: the new workspace starts with an empty panels map and its own (empty)
-      // dock + canvas stores. ensureCenterCanvas mints a fresh canvas panel for the
-      // center zone when the workspace is shown. Copying panels from another
+      // dock + canvas stores. Panels are created only by explicit actions.
+      // Copying panels from another
       // workspace here led to orphaned/duplicate canvas panels and the "empty pane"
       // bug.
 
@@ -156,12 +156,11 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
       // serializes straight from them via the canvasAccess resolvers.
 
       // Discard outgoing workspace if it was never initialized (no folder
-      // picked, not currently picking one) and contains only its placeholder
-      // canvas. A rootless workspace with a browser/editor/etc. is real user
+      // picked, not currently picking one) and contains no panels.
+      // A rootless workspace with explicit panels is real user
       // state and must survive the switch so background work can continue.
       const outgoing = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
-      const hasUserPanels = Object.values(outgoing?.panels ?? {})
-        .some((panel) => panel.type !== 'canvas')
+      const hasUserPanels = Object.keys(outgoing?.panels ?? {}).length > 0
       const shouldDropOutgoing =
         !!outgoing
         && !outgoing.rootPath
@@ -212,20 +211,18 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
         // Opening a never-activated workspace that has a rootPath — the
         // close-then-reopen path (onOpenPath addWorkspace(name, rootPath) → select).
         // Load its saved .cate/ layout. Runs after the runtime reconnect above so
-        // a remote read can't race an unregistered runtime. The zero-panel gate
-        // keeps a plain switch-back from reloading a workspace cleared via Close
-        // Panels. Guarded + idempotent inside the helper.
+        // a remote read can't race an unregistered runtime. The helper tracks
+        // layout initialization so intentionally cleared workspaces stay empty.
         await hydrateWorkspaceFromDisk(id)
       }
 
-      // Guarantee the center zone has a canvas panel — a brand new workspace, or
-      // a restored dock layout that referenced no canvas-type panel.
+      // Repair stale layout references; an empty dock is a valid state.
       if (get().workspaces.some((w) => w.id === id)) {
-        get().ensureCenterCanvas(id)
+        get().reconcileWorkspaceDock(id)
       }
     },
 
-    ensureCenterCanvas(workspaceId) {
+    reconcileWorkspaceDock(workspaceId) {
       const ws = get().workspaces.find((w) => w.id === workspaceId)
       if (!ws) return
       const dockStore = getOrCreateWorkspaceDockStore(workspaceId)
@@ -275,20 +272,6 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
         for (const id of orphanedDockIds) {
           try { dockStore.getState().undockPanel(id) } catch { /* ignore */ }
         }
-      }
-
-      // Check if the center zone now contains a canvas-type panel
-      const centerPanelIds: string[] = []
-      const center = dockStore.getState().zones.center
-      if (center.layout) {
-        const c = new Set<string>()
-        walk(center.layout, c)
-        centerPanelIds.push(...c)
-      }
-      const wsAfter = get().workspaces.find((w) => w.id === workspaceId)
-      const hasCanvas = centerPanelIds.some((pid) => wsAfter?.panels[pid]?.type === 'canvas')
-      if (!hasCanvas) {
-        get().createCanvas(workspaceId)
       }
     },
 
@@ -343,11 +326,11 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
 
       // If the removed workspace was selected, the shell remounts onto the new
       // selection and reads ITS own stores — nothing to copy. Just make sure the
-      // newly-selected workspace's center zone has a canvas panel.
+      // newly-selected workspace's dock references are valid.
       if (wasSelected) {
         const newId = get().selectedWorkspaceId
         if (get().workspaces.some((w) => w.id === newId)) {
-          get().ensureCenterCanvas(newId)
+          get().reconcileWorkspaceDock(newId)
         }
       }
 

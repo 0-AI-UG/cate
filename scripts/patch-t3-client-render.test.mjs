@@ -9,21 +9,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { patchT3ClientSource } from './patch-t3-client.mjs'
 
 const directory = path.resolve('node_modules/t3/dist/client/assets')
-const entry = readdirSync(directory).find((name) => /^index-.*\.js$/.test(name))
+const entry = readdirSync(directory).find((name) => /^ChatView-.*\.js$/.test(name))
 const source = patchT3ClientSource(readFileSync(path.join(directory, entry), 'utf8'))
 
 // Execute the actual patched summary component and hook with React. Only its
 // unchanged file-list child is replaced; the compiler cache retains React state.
 function summaryComponent() {
-  const start = source.indexOf('var VLt=(0,X.memo)(function(e)')
-  const end = source.indexOf(';function HLt', start)
+  const start = source.indexOf('var HS=(0,X.memo)(function(e)')
+  const end = source.indexOf(';function US', start)
   const helpers = source.slice(source.indexOf('const cateEmptyFiles=[];'), source.indexOf('/* cate: checkpoint-independent summaries */'))
   expect(start).toBeGreaterThan(0)
   expect(end).toBeGreaterThan(start)
-  return runInNewContext(`${helpers};${source.slice(start, end)};VLt`, {
-    X: React, Z: jsxRuntime, window,
-    Q: { c: (size) => React.useMemo(() => Array(size).fill(Symbol.for('react.memo_cache_sentinel')), []) },
-    HLt: ({ checkpointFiles }) => React.createElement('div', { 'data-testid': 'files' }, checkpointFiles.map((f) => f.path).join(',')),
+  return runInNewContext(`${helpers};${source.slice(start, end)};HS`, {
+    X: React, Q: jsxRuntime, window,
+    Z: { c: (size) => React.useMemo(() => Array(size).fill(Symbol.for('react.memo_cache_sentinel')), []) },
+    US: ({ checkpointFiles }) => React.createElement('div', { 'data-testid': 'files' }, checkpointFiles.map((f) => f.path).join(',')),
   })
 }
 

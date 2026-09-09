@@ -12,6 +12,8 @@
 // FIELD_CELL is in SCREEN px; the rest are CANVAS-space px unless noted.
 // =============================================================================
 
+import { NODE_CORNER_RADIUS } from '../nodeAppearance'
+
 /** Field sampling resolution in SCREEN px. Smaller = smoother edges, more cost. */
 export const FIELD_CELL = 6
 /** How far (canvas-space px) the territory reaches beyond the base shape — the
@@ -31,8 +33,8 @@ export const OUTER_LEVEL = 0.45
 /** Corner radius the territory rounds the panel to (canvas-space px). */
 export const CORNER = 18
 /** Corner radius (canvas-space px) used when punching panels out of the
- *  territory so it reads as a halo behind them. Match CanvasNode's CORNER_RADIUS. */
-export const PANEL_CORNER = 8
+ *  territory so it reads as a halo behind them. Follow the panel's outer radius. */
+export const PANEL_CORNER = NODE_CORNER_RADIUS
 /** Smooth-merge radius (canvas-space px) — how organically shapes fuse. Smaller
  *  = tighter fusion with less of a rounded bulge ballooning out where two nearby
  *  panels meet. */

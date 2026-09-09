@@ -1,5 +1,8 @@
-import { describe, expect, test } from 'vitest'
-import { mergedSshSecret, mintRuntimeId } from './runtime'
+import { describe, expect, test, vi } from 'vitest'
+
+vi.mock('../runtime/sshSecretStore', () => ({ getSshSecret: vi.fn(async () => null), saveSshSecret: vi.fn(async () => {}) }))
+import { getSshSecret, saveSshSecret } from '../runtime/sshSecretStore'
+import { mergedSshSecret, mintRuntimeId, registerRemoteConnection } from './runtime'
 
 describe('mintRuntimeId', () => {
   test('WSL ids carry the sanitized distro name as a readable prefix + a path hash', () => {
@@ -50,4 +53,15 @@ describe('mergedSshSecret', () => {
       { useAgent: false },
     )).toEqual({ keyPath: '/keys/id_ecdsa', passphrase: 'secret', useAgent: false })
   })
+})
+
+
+test('editing a saved target preserves its credentials without exposing them in the profile', async () => {
+  vi.mocked(getSshSecret).mockImplementation(async (id) => id === 'previous' ? { keyPath: '/keys/private', passphrase: 'secret', useAgent: false } : null)
+  const result = await registerRemoteConnection({ kind: 'server', host: 'new-host', user: 'me', remotePath: '/project', auth: {} }, 'previous')
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error(result.error)
+  expect(saveSshSecret).toHaveBeenCalledWith(result.runtimeId, { keyPath: '/keys/private', passphrase: 'secret', useAgent: false })
+  expect(result.connection).not.toHaveProperty('auth')
+  expect(JSON.stringify(result)).not.toContain('secret')
 })

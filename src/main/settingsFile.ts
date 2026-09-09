@@ -88,9 +88,8 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   telemetryNoticeAcknowledgedVersion: 'number',
   onboardingCompleted: 'boolean',
   betaUpdatesEnabled: 'boolean',
-  // Agent / layout structured values.
+  // Agent structured values.
   agentHookInjection: 'object',
-  sidebarLayout: 'object',
   customShortcuts: 'object',
 }
 

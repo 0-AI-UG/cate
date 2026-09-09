@@ -56,11 +56,11 @@ describe('placementForActivePanel', () => {
   const wsId = 'ws-active-panel-test'
 
   beforeEach(() => {
-    useAppStore.setState({ selectedWorkspaceId: wsId })
+    useAppStore.setState({ selectedWorkspaceId: wsId, workspaces: [{ id: wsId, panels: { 'docked-1': { id: 'docked-1', type: 'terminal' }, 'canvas-1': { id: 'canvas-1', type: 'canvas' } } } as never] })
   })
 
-  it('returns undefined when nothing is active', () => {
-    expect(placementForActivePanel()).toBeUndefined()
+  it('targets the center dock when nothing is active and no canvas is docked', () => {
+    expect(placementForActivePanel()).toEqual({ target: 'dock', zone: 'center' })
   })
 
   it('targets the exact dock stack a docked active panel lives in', () => {
@@ -77,11 +77,11 @@ describe('placementForActivePanel', () => {
     })
   })
 
-  it('falls back to the default canvas placement for a non-docked active panel', () => {
+  it('targets the center dock for a stale active panel when no canvas is docked', () => {
     // A panel with no dock location (e.g. a canvas node, or the canvas itself)
     // → undefined, which placePanel reads as the default canvas placement.
     setActivePanel('not-docked')
-    expect(placementForActivePanel()).toBeUndefined()
+    expect(placementForActivePanel()).toEqual({ target: 'dock', zone: 'center' })
   })
 
   it('pins the placement to the active CANVAS, despite its center-zone dock location', () => {

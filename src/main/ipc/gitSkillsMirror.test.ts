@@ -67,7 +67,7 @@ describe('git worktree skill mirroring', () => {
       'workspace-1',
     )
 
-    expect(state.sync).toHaveBeenCalledWith('/repo/base', '/repo/.cate/worktrees/feature')
+    expect(state.sync).toHaveBeenCalledWith('/repo/base', '/repo/.cate/worktrees/feature', { scopeId: 'workspace-1' })
     expect(result).toMatchObject({ path: '/repo/.cate/worktrees/feature', branch: 'feature' })
   })
 
@@ -81,6 +81,6 @@ describe('git worktree skill mirroring', () => {
       'workspace-1',
     )
 
-    expect(state.sync).toHaveBeenCalledWith('/repo/base', '/repo/.cate/worktrees/pr-12')
+    expect(state.sync).toHaveBeenCalledWith('/repo/base', '/repo/.cate/worktrees/pr-12', { scopeId: 'workspace-1' })
   })
 })

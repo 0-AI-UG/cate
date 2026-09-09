@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { ArrowClockwise } from '@phosphor-icons/react'
+import { RotateCw as ArrowClockwise } from 'lucide-react'
 import type { UpdateStatus } from '../../shared/electron-api'
 import { CateLogo } from '../ui/CateLogo'
 import headerImg from '../assets/welcome-header.jpg'
@@ -29,6 +29,9 @@ export function UpdateReadyDialog() {
         setVersion(status.version)
         // Explicit user re-check: clear the dismissal so it opens again.
         if (status.forceShow) setDismissedVersion(null)
+      } else if (status.state === 'error') {
+        setVersion(null)
+        setRestarting(false)
       }
     }
     const unsubscribe = window.electronAPI.onUpdateStatus(apply)

@@ -9,7 +9,7 @@
 
 import fs from 'fs/promises'
 import path from 'path'
-import { retryFilePublish } from '../../shared/atomicFile'
+import { writeFileAtomic } from '../../shared/atomicFile'
 import type { FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
 
 export async function readFile(filePath: string): Promise<string> {
@@ -32,27 +32,10 @@ async function assertNotSymlink(filePath: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Atomic writes — every write through the runtime is tmp+rename, so a crash
-// mid-write can never leave a truncated file, on any host. This mirrors the
-// main process's writeJsonAtomic (src/main/writeJsonAtomic.ts): per-write
-// unique tmp in the same directory (rename is atomic on the same fs; unique so
-// concurrent writes can't consume each other's tmp), win32 rename retry for
-// the transient EPERM that MoveFileEx(REPLACE_EXISTING) hits when racing an
-// antivirus/indexer handle. The target's existing mode is copied onto the tmp
-// BEFORE the rename (a plain write preserves the inode's mode; a rename
-// replaces the inode — without this an editor save would strip a script's
-// executable bit).
+// Shared atomic publication preserves complete bytes across crashes. The runtime
+// owns symlink validation and preserves the existing mode, so saving a script
+// cannot strip its executable bit when publication replaces the inode.
 // ---------------------------------------------------------------------------
-
-let tmpSeq = 0
-function uniqueTmpPath(filePath: string): string {
-  tmpSeq = (tmpSeq + 1) & 0x7fffffff
-  return `${filePath}.${process.pid}.${tmpSeq}.tmp`
-}
-
-async function renameWithRetry(from: string, to: string): Promise<void> {
-  await retryFilePublish(() => fs.rename(from, to))
-}
 
 async function writeAtomic(filePath: string, data: string | Buffer): Promise<void> {
   await assertNotSymlink(filePath)
@@ -61,17 +44,7 @@ async function writeAtomic(filePath: string, data: string | Buffer): Promise<voi
     .stat(filePath)
     .then((s) => s.mode & 0o7777)
     .catch(() => null) // no existing file — the tmp's default mode applies
-  const tmp = uniqueTmpPath(filePath)
-  try {
-    await fs.writeFile(tmp, data, 'utf-8') // encoding ignored for Buffers
-    if (existingMode !== null) {
-      await fs.chmod(tmp, existingMode).catch(() => { /* no modes on this fs */ })
-    }
-    await renameWithRetry(tmp, filePath)
-  } catch (err) {
-    await fs.unlink(tmp).catch(() => { /* never written */ })
-    throw err
-  }
+  await writeFileAtomic(filePath, data, existingMode ?? undefined)
 }
 
 export async function writeFile(filePath: string, content: string): Promise<void> {

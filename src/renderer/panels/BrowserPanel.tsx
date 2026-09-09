@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { Globe, ArrowLeft, ArrowRight, ArrowClockwise, ArrowUpRight, Camera, DownloadSimple, Key, Star, DotsThreeVertical } from '@phosphor-icons/react'
+import { Globe, ArrowLeft, ArrowRight, RotateCw as ArrowClockwise, ArrowUpRight, Camera, Download as DownloadSimple, Key, Star, EllipsisVertical as DotsThreeVertical } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
@@ -131,7 +131,7 @@ export function browserGuestScrollbarCss(): string {
   const thumb = vars.getPropertyValue('--scrollbar-thumb').trim() || 'rgba(255,255,255,0.15)'
   const hover = vars.getPropertyValue('--scrollbar-thumb-hover').trim() || 'rgba(255,255,255,0.25)'
   return (
-    '::-webkit-scrollbar{width:8px;height:8px}' +
+    '::-webkit-scrollbar{width:13.52px;height:13.52px}' +
     '::-webkit-scrollbar-track{background:transparent}' +
     `::-webkit-scrollbar-thumb{background:${thumb};border-radius:9999px}` +
     `::-webkit-scrollbar-thumb:hover{background:${hover}}` +
@@ -190,6 +190,8 @@ function BrowserWebviewSlot({
         className={hidden ? 'invisible' : ''}
         style={{
           ...webviewStyle,
+          // Transparent pages need a browser canvas, not Cate's themed surface.
+          backgroundColor: '#fff',
           display: active ? 'flex' : 'none',
           transform: `scale(${displayScale})`,
           transformOrigin: 'top left',
@@ -357,6 +359,7 @@ export default function BrowserPanel({
   const [crashed, setCrashed] = useState(false)
   const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const downloadTabsRef = useRef(new Map<number, string>())
   const [downloadsByGuest, setDownloadsByGuest] = useState<Map<number, BrowserPanelDownload[]>>(new Map())
   const [downloadsOpen, setDownloadsOpen] = useState(false)
   const downloadButtonRef = useRef<HTMLButtonElement>(null)
@@ -784,14 +787,20 @@ export default function BrowserPanel({
     return window.electronAPI.onBrowserDownloadsChanged(({ webContentsId, downloads: updated }) => {
       const tabId = [...webviewsByTabRef.current.entries()].find(([, webview]) => {
         try { return webview.getWebContentsId() === webContentsId } catch { return false }
-      })?.[0]
+      })?.[0] ?? downloadTabsRef.current.get(webContentsId)
       if (!tabId) return
+      downloadTabsRef.current.set(webContentsId, tabId)
 
       const hasNewDownload = updated.some((download) => !seenDownloadIdsRef.current.has(download.id))
       updated.forEach((download) => seenDownloadIdsRef.current.add(download.id))
       setDownloadsByGuest((current) => {
         const next = new Map(current)
-        next.set(webContentsId, updated.map((download) => ({ ...download, webContentsId, tabId })))
+        const retained = new Set(updated.map(download => download.id))
+        for (const previous of current.get(webContentsId) ?? []) {
+          if (!retained.has(previous.id)) seenDownloadIdsRef.current.delete(previous.id)
+        }
+        if (updated.length) next.set(webContentsId, updated.map((download) => ({ ...download, webContentsId, tabId })))
+        else { next.delete(webContentsId); downloadTabsRef.current.delete(webContentsId) }
         return next
       })
       if (hasNewDownload) {
@@ -1106,7 +1115,7 @@ export default function BrowserPanel({
       >
         {/* Navigation controls — flat ghost buttons */}
         <div className="flex shrink-0 items-center gap-1">
-          <Tooltip label="Back">
+          <Tooltip label="Back (⌘[)">
             <button
               onClick={handleGoBack}
               disabled={!canGoBack}
@@ -1116,7 +1125,7 @@ export default function BrowserPanel({
               <ArrowLeft size={14} />
             </button>
           </Tooltip>
-          <Tooltip label="Forward">
+          <Tooltip label="Forward (⌘])">
             <button
               onClick={handleGoForward}
               disabled={!canGoForward}
@@ -1126,7 +1135,7 @@ export default function BrowserPanel({
               <ArrowRight size={14} />
             </button>
           </Tooltip>
-          <Tooltip label="Reload">
+          <Tooltip label="Reload (⌘R)">
             <button
               onClick={handleReload}
               disabled={isStartPageUrl(currentUrl)}
@@ -1141,6 +1150,7 @@ export default function BrowserPanel({
         {/* URL input + autocomplete */}
         <div className="flex-1 relative">
           <div
+            data-input-frame
             className={`flex h-7 items-center gap-2 rounded-[10px] border px-3 transition-colors ${
               isStartPageUrl(currentUrl)
                 ? 'border-strong bg-surface-1 focus-within:border-strong'
@@ -1159,6 +1169,7 @@ export default function BrowserPanel({
                 isStartPageUrl(currentUrl) ? 'text-left' : 'text-center'
               }`}
               placeholder="Enter a URL"
+              title="Address bar (⌘L)"
             />
             {isStartPageUrl(currentUrl) && (
               <button
@@ -1217,7 +1228,7 @@ export default function BrowserPanel({
                 }`}
                 aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
               >
-                <Star size={13} weight={isBookmarked ? 'fill' : 'regular'} />
+                <Star size={13} />
               </button>
             </Tooltip>
 

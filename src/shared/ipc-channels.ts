@@ -46,6 +46,9 @@ export const SEARCH_DONE = 'search:done'      // main -> renderer (terminal even
 
 // Shell utilities
 export const SHELL_SHOW_IN_FOLDER = 'shell:showInFolder'
+export const SHELL_OPEN_PATH = 'shell:openPath'
+export const SHELL_LIST_APPS = 'shell:listApps'
+export const SHELL_OPEN_FILE_ON_GITHUB = 'shell:openFileOnGitHub'
 
 // Git
 export const GIT_IS_REPO = 'git:isRepo'
@@ -55,6 +58,7 @@ export const GIT_LS_FILES = 'git:lsFiles'
 export const GIT_BRANCH_UPDATE = 'git:branch-update'         // main -> renderer
 export const GIT_MONITOR_START = 'git:monitor-start'
 export const GIT_MONITOR_STOP = 'git:monitor-stop'
+export const GIT_REMOTES = 'git:remotes'
 export const GIT_STATUS = 'git:status'
 export const GIT_COMPARE = 'git:compare'
 export const GIT_FILE_DIFF = 'git:fileDiff'
@@ -159,6 +163,7 @@ export const UPDATE_QUIT_AND_INSTALL = 'update:quitAndInstall'
 // Renderer -> main: pull the latest status (the modal can mount after the
 // download-finished event already fired). Returns the cached UpdateStatus.
 export const UPDATE_GET_STATUS = 'update:getStatus'
+export const UPDATE_CHECK = 'update:check'
 
 // Post-update changelog + feedback prompt
 // Main -> renderer: show the modal. Payload: { fromVersion, toVersion }
@@ -221,6 +226,7 @@ export const MENU_SHOW_CONTEXT = 'menu:showContext'
  *  these channels reuse the live application menu as the single source of truth:
  *  one returns the ordered top-level labels, the other pops a top-level item's
  *  native submenu at a screen-relative point below its label. */
+export const MENU_RUN_NATIVE_ACTION = 'menu:run-native-action'
 export const MENU_GET_BAR_ITEMS = 'menu:getBarItems'
 export const MENU_POPUP_BAR_ITEM = 'menu:popupBarItem'
 
@@ -351,6 +357,7 @@ export const NATIVE_FILE_DRAG = 'native:fileDrag'
 
 // T3 provider harness. Cate owns the workspace/worktree path and panel shell;
 // the harness owns provider conversations, streaming, and approvals.
+export const AGENT_HARNESS_GET_USAGE_URL = 'agentHarness:getUsageUrl'
 export const AGENT_HARNESS_GET_PANEL_URL = 'agentHarness:getPanelUrl'
 export const AGENT_HARNESS_RENAME_CONVERSATION = 'agentHarness:renameConversation'
 export const AGENT_HARNESS_PANEL_CLOSED = 'agentHarness:panelClosed'
@@ -377,8 +384,6 @@ export const SKILLS_UNSAVE = 'skills:unsave'                 // renderer -> main
 export const SKILLS_LIST_SOURCES = 'skills:listSources'       // renderer -> main
 export const SKILLS_ADD_SOURCE = 'skills:addSource'           // renderer -> main
 export const SKILLS_REMOVE_SOURCE = 'skills:removeSource'     // renderer -> main
-export const SKILLS_GET_TOKEN = 'skills:getToken'             // renderer -> main
-export const SKILLS_SET_TOKEN = 'skills:setToken'             // renderer -> main
 
 // Workspace management (main process is source of truth)
 export const WORKSPACE_CREATE = 'workspace:create'
@@ -415,3 +420,29 @@ export const AGENT_CONVERSATION_DELETED = 'agentHarness:conversationDeleted'
 export const RECENT_SCREENSHOT_GET = 'recentScreenshot:get'
 export const RECENT_SCREENSHOT_CHANGED = 'recentScreenshot:changed'
 export const RECENT_SCREENSHOT_DRAG = 'recentScreenshot:drag'
+
+export const PULL_REQUESTS_LIST = 'pullRequests:list'
+export const GITHUB_LOGIN = 'github:login'
+
+export const GITHUB_CONNECTION = 'github:connection'
+export const GITHUB_PR_CONTEXT = 'github:prContext'
+
+export const TERMINAL_READY = 'terminal:ready'
+export const FS_ENTRY_MOVED = 'fs:entryMoved'
+
+export const PANEL_TRANSFER_STAGE = 'panel:transferStage'
+export const PANEL_TRANSFER_READY = 'panel:transferReady'
+export const PANEL_TRANSFER_COMMIT = 'panel:transferCommit'
+
+export const PANEL_TRANSFER_FINISH = 'panel:transferFinish'
+
+export const OPEN_APPLICATION_OVERLAY = 'window:openApplicationOverlay'
+export const SHOW_APPLICATION_OVERLAY = 'window:showApplicationOverlay'
+
+export const KEEP_AWAKE_TOGGLE = 'keep-awake:toggle'
+
+// Saved remote connection profiles, independent of workspace lifetime.
+export const REMOTE_CONNECTIONS_LIST = 'remote-connections:list'
+export const REMOTE_CONNECTIONS_SAVE = 'remote-connections:save'
+export const REMOTE_CONNECTIONS_REMOVE = 'remote-connections:remove'
+export const REMOTE_CONNECTIONS_CHANGED = 'remote-connections:changed'

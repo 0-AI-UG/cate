@@ -1,3 +1,4 @@
+import { memorySkillFiles } from './testSkillFiles'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SkillEntry } from '../../shared/skills'
 
@@ -16,7 +17,7 @@ vi.mock('../../main/logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), e
 vi.mock('../../main/runtime/runtimeManager', () => ({ runtimes: { resolve } }))
 vi.mock('./skillStore', () => store)
 vi.mock('./savedSkills', () => saved)
-vi.mock('./skillSources', () => ({ getToken: () => 'token' }))
+vi.mock('../../main/github/cli', () => ({ getGithubToken: async () => 'token' }))
 vi.mock('./githubCrawl', () => ({ fetchSkillFiles }))
 
 import { install, saveSkill, uninstall, writeSkillToWorkspace } from './skillsInstaller'
@@ -27,33 +28,14 @@ const norm = (value: string): string => value.replace(/\\/g, '/')
 
 let files: Map<string, string>
 let dirs: Set<string>
-let removeError: Error | null
 let removed: string[]
 
 function makeRuntime() {
-  return {
-    file: {
-      readFile: async (file: string) => {
-        const value = files.get(norm(file))
-        if (value == null) throw new Error(`ENOENT: ${file}`)
-        return value
-      },
-      writeFile: async (file: string, content: string) => {
-        files.set(norm(file), content)
-        return file
-      },
-      writeBinary: async (file: string, content: Buffer) => {
-        files.set(norm(file), content.toString('base64'))
-        return file
-      },
-      mkdir: async (dir: string) => { dirs.add(norm(dir)) },
-      remove: async (target: string) => {
-        removed.push(norm(target))
-        if (removeError) throw removeError
-        files.delete(norm(target))
-      },
-    },
-  }
+  return { file: memorySkillFiles(files, dirs, target => {
+    // Assertions track deletion of user-visible installations, not temporary
+    // staging/backup cleanup inside the shared atomic writer.
+    if (!target.includes('.skills-mirror-') && !target.includes('skills.json.tmp-')) removed.push(target)
+  }) }
 }
 
 function entry(): SkillEntry {
@@ -77,7 +59,6 @@ beforeEach(() => {
   files = new Map()
   dirs = new Set([WS])
   removed = []
-  removeError = null
   resolve.mockReset().mockReturnValue(makeRuntime())
   store.read.mockReset().mockResolvedValue(null)
   store.has.mockReset().mockResolvedValue(false)
@@ -107,9 +88,8 @@ describe('skillsInstaller workspace manifest', () => {
     )
 
     await uninstall(entry().id, entry().name, 'codex', WS)
-    expect(removed).toEqual([
-      `${WS}/.codex/skills/demo-skill`,
-    ])
+    expect(files.has(`${WS}/.codex/skills/demo-skill/SKILL.md`)).toBe(false)
+    expect(manifest().skills).toEqual([])
   })
 
   it('replaces only the matching target entry and preserves seed markers', async () => {
@@ -143,21 +123,17 @@ describe('skillsInstaller workspace manifest', () => {
     expect(manifest().seeded).toEqual(['cate/cate-cli:codex'])
   })
 
-  it('removes the manifest entry even when deleting the installed files fails', async () => {
-    files.set(MANIFEST, JSON.stringify({
-      skills: [
-        { skillId: entry().id, name: entry().name, targetId: 'codex', path: '/codex', origin: 'local' },
-        { skillId: entry().id, name: entry().name, targetId: 'claude-code', path: '/claude', origin: 'local' },
-      ],
-      seeded: ['keep-me'],
-    }))
-    removeError = new Error('locked')
-
-    await uninstall(entry().id, entry().name, 'codex', WS)
-
-    expect(removed).toEqual([`${WS}/.codex/skills/demo-skill`])
-    expect(manifest().skills).toEqual([expect.objectContaining({ targetId: 'claude-code' })])
-    expect(manifest().seeded).toEqual(['keep-me'])
+  it('retains ownership when a destination cannot be retired', async () => {
+    await writeSkillToWorkspace({ skillId: entry().id, name: entry().name, targetId: 'codex', cwd: WS, origin: 'local', files: [{ relPath: 'SKILL.md', text: 'owned' }] })
+    const runtime = resolve()
+    const rename = runtime.file.rename
+    runtime.file.rename = async (from: string, to: string) => {
+      if (from.replace(/\\/g, '/').endsWith('/skills/demo-skill')) throw new Error('locked')
+      return rename(from, to)
+    }
+    await expect(uninstall(entry().id, entry().name, 'codex', WS)).rejects.toThrow('locked')
+    expect(manifest().skills).toHaveLength(1)
+    expect(files.get(`${WS}/.codex/skills/demo-skill/SKILL.md`)).toContain('owned')
   })
 
   // Regression: a workspace written by an older Cate can carry rows for a
@@ -276,4 +252,18 @@ describe('saveSkill freshness', () => {
     expect(store.cache).not.toHaveBeenCalled()
     expect(saved.addSaved).toHaveBeenCalled()
   })
+})
+
+it('a later unsave cannot be undone by a pending library fetch', async () => {
+  const { unsaveSkill } = await import('./skillsInstaller')
+  let resolveFetch!: (files: { relPath: string; text: string }[]) => void
+  fetchSkillFiles.mockImplementationOnce(() => new Promise(resolve => { resolveFetch = resolve }))
+  const saving = saveSkill(entry())
+  const removing = unsaveSkill(entry().id)
+  await vi.waitFor(() => expect(fetchSkillFiles).toHaveBeenCalled())
+  resolveFetch([{ relPath: 'SKILL.md', text: 'new' }])
+  await Promise.all([saving, removing])
+  const addOrder = saved.addSaved.mock.invocationCallOrder.at(-1) ?? 0
+  const removeOrder = saved.removeSaved.mock.invocationCallOrder.at(-1) ?? 0
+  expect(removeOrder).toBeGreaterThan(addOrder)
 })

@@ -1,3 +1,4 @@
+import { runPreparedPanelClose } from '../preparedPanelClose'
 // =============================================================================
 // useWindowRuntime — the shared "app shell runtime" every Cate window mounts.
 //
@@ -15,6 +16,7 @@
 // =============================================================================
 
 import { useEffect } from 'react'
+import { useNavigationPanels } from '../../docking/useNavigationPanels'
 import { useShortcuts } from '../../hooks/useShortcuts'
 import { useThemeAndScaleHydration } from './useThemeAndScaleHydration'
 import { useSettingsStore } from '../../stores/settingsStore'
@@ -55,6 +57,7 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
   // its canvas/active-panel resolution is per-window, so it acts on the in-window
   // canvas and panels.
   useShortcuts(canvasStore)
+  useNavigationPanels()
 
   // Owner-routed terminal telemetry (agent presence/name, ports, cwd). Main
   // sends these only to each terminal's owning window, so every window must
@@ -97,6 +100,14 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
       offHook?.()
     }
   }, [])
+
+  useEffect(() => window.electronAPI.onApplicationOverlay?.((request) => {
+    const ui = useUIStore.getState()
+    if (request.view === 'settings') ui.openSettings(request.section)
+    else if (request.view === 'skills') ui.setShowSkillsDialog(true)
+    else if (request.view === 'usage') ui.setShowUsage(true)
+    else ui.openRepository(request.section === 'changes' ? 'changes' : 'pullRequests')
+  }), [])
 
   // Cmd+, / Settings menu item → toggle the (already-mounted) SettingsWindow.
   useEffect(() => {
@@ -170,13 +181,13 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
   // Cross-window close: another window's overview asked to close a panel this
   // window owns. Runs the same confirm gates as any local close affordance.
   useEffect(() => {
-    return window.electronAPI.onClosePanelInWindow?.((panelId: string, requestId: string) => {
+    return window.electronAPI.onClosePanelInWindow?.((panelId: string, requestId: string, operation?: import('../../../shared/types').PanelCloseOperation) => {
       void (async () => {
         let closed = false
         try {
           const app = useAppStore.getState()
           const owner = app.workspaces.find((w) => panelId in w.panels)
-          closed = owner ? await closePanelWithConfirm(owner.id, panelId) : false
+          closed = owner ? await (operation ? runPreparedPanelClose(owner.id, panelId, operation) : closePanelWithConfirm(owner.id, panelId)) : false
         } catch {
           closed = false
         } finally {

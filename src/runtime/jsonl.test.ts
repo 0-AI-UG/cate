@@ -48,3 +48,15 @@ describe('jsonl framing', () => {
     expect((frames[0] as { id: number }).id).toBe(9)
   })
 })
+
+test('preserves UTF-8 when multibyte characters cross transport chunks', () => {
+  const expected = { t: 'res' as const, id: 9, ok: true as const, data: 'café/日本語/🙂' }
+  const bytes = Buffer.from(serializeFrame(expected))
+  for (let split = 1; split < bytes.length; split++) {
+    const frames: AnyFrame[] = []
+    const decoder = new FrameDecoder(frame => frames.push(frame))
+    decoder.push(bytes.subarray(0, split))
+    decoder.push(bytes.subarray(split))
+    expect(frames).toEqual([expected])
+  }
+})

@@ -1,12 +1,18 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { CaretDoubleDown, CaretDoubleUp, Plus } from '@phosphor-icons/react'
+import { ChevronsDown as CaretDoubleDown, ChevronsUp as CaretDoubleUp, Plus } from 'lucide-react'
 import { useAppStore, useWorkspaceList } from '../stores/appStore'
+import { useUIStore } from '../stores/uiStore'
 import { removeWorkspacesWithConfirm } from '../lib/closePanelWithConfirm'
 import { WorkspaceTab } from './WorkspaceTab'
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import type { NativeContextMenuItem } from '../../shared/electron-api.d'
 
-export const ProjectList: React.FC = () => {
+interface ProjectListProps {
+  headerTitle?: React.ReactNode
+  headerLeadingAction?: React.ReactNode
+}
+
+export const ProjectList: React.FC<ProjectListProps> = ({ headerTitle = 'Workspace', headerLeadingAction }) => {
   const workspaces = useWorkspaceList()
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const addWorkspace = useAppStore((s) => s.addWorkspace)
@@ -114,6 +120,9 @@ export const ProjectList: React.FC = () => {
   }, [allExpanded, workspaces])
 
   const handleNewWorkspace = useCallback(() => {
+    useUIStore.getState().setShowPullRequests(false)
+    useUIStore.getState().setShowUsage(false)
+    useUIStore.getState().setShowSkillsDialog(false)
     const existing = useAppStore.getState().workspaces.find((w) => !w.rootPath)
     const wsId = existing ? existing.id : addWorkspace()
     selectWorkspace(wsId)
@@ -136,8 +145,9 @@ export const ProjectList: React.FC = () => {
       onKeyDown={handleKeyDown}
     >
       <SidebarSectionHeader
-        title="Workspace"
+        title={headerTitle}
         large
+        leadingAction={headerLeadingAction}
         actions={
           <>
             <SidebarHeaderButton
@@ -147,7 +157,7 @@ export const ProjectList: React.FC = () => {
             >
               {allExpanded ? <CaretDoubleUp size={14} /> : <CaretDoubleDown size={14} />}
             </SidebarHeaderButton>
-            <SidebarHeaderButton onClick={handleNewWorkspace} title="New Workspace">
+            <SidebarHeaderButton action="newWorkspace" onClick={handleNewWorkspace} title="New Workspace">
               <Plus size={14} />
             </SidebarHeaderButton>
           </>
@@ -155,7 +165,7 @@ export const ProjectList: React.FC = () => {
       />
 
       {/* Scrollable workspace list. No top padding so the first row sits flush
-          beneath the 36px header — matching the canvas dock tab bar, whose
+          beneath the header, matching the canvas dock tab bar, whose
           content starts flush below its bar. A top gap makes the header read
           as taller than the canvas header. */}
       <div className="flex-1 overflow-y-auto pb-1">

@@ -51,7 +51,13 @@ export function createViewportSlice(set: CanvasSet, get: CanvasGet, ctx: CanvasS
     },
 
     setContainerSize(size) {
+      const previous = get().containerSize
       set({ containerSize: size })
+      // A revealed canvas may mount after its target request. Refit once its
+      // actual dimensions arrive, so the picker is visible in the new surface.
+      if (size.width > 0 && size.height > 0 && (previous.width !== size.width || previous.height !== size.height)) {
+        get().refreshPlacement()
+      }
     },
 
     zoomAroundCenter(newZoom) {

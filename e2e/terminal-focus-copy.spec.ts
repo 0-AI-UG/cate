@@ -26,7 +26,7 @@ let page: Page
 
 test.beforeEach(async () => {
   ;({ electronApp: app, mainWindow: page } = await launchApp())
-  await page.evaluate(() => window.__cateE2E!.setActiveLeftSidebarView(null))
+  await page.evaluate(() => window.__cateE2E!.setSidebarHidden(true))
   await resetViewport(page)
 })
 test.afterEach(async () => closeApp(app))

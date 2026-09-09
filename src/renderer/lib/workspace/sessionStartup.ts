@@ -85,9 +85,9 @@ export async function restoreMultiWorkspaceSession(session: MultiWorkspaceSessio
           .catch((error) => log.error('[session] background restore of remote workspace failed:', error))
       } else {
         // Local workspace: restore into its own stores FIRST (by id), then mark
-        // it selected. Doing restore before select means selectWorkspace finds
-        // the center canvas already present and won't mint a throwaway one. The
-        // launch path neither tears down (nothing live yet) nor remounts.
+        // it selected. Layout initialization also records empty snapshots, so
+        // selection does not read them a second time. The launch path neither
+        // tears down (nothing live yet) nor remounts.
         await restoreWorkspaceLayout(snapshot, wsId, { teardown: false, remount: false })
         await appStore.selectWorkspace(wsId)
       }

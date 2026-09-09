@@ -26,7 +26,7 @@ vi.mock('../../lib/logger', () => ({
 }))
 
 import { renderDragScene, type SceneApi } from './harness'
-import { setupCrossWindowDragListeners, shouldIgnoreDragEnd } from '../crossWindow'
+import { setupCrossWindowDragListeners, shouldIgnoreDragEnd, type RemoteDropHandler } from '../crossWindow'
 import { useDragStore } from '../store'
 import { registerDropZone } from '../registry'
 import { terminalRegistry } from '../../lib/terminal/terminalRegistry'
@@ -118,7 +118,9 @@ afterEach(() => {
 // -----------------------------------------------------------------------------
 
 describe('cross-window — local drag boundary', () => {
-  it('cursor leaves window → crossWindowDragStart fired with snapshot', () => {
+  it('cursor leaves window → crossWindowDragStart fired with snapshot', async () => {
+    vi.mocked(window.electronAPI.crossWindowDragResolve).mockResolvedValueOnce({ claimed: false })
+    vi.mocked(window.electronAPI.dragDetach).mockResolvedValueOnce(null)
     const stub = electronStub()
     scene = renderDragScene({
       canvases: [{ panelId: 'c1', rect: { x: 0, y: 0, w: 1000, h: 800 } }],
@@ -135,6 +137,7 @@ describe('cross-window — local drag boundary', () => {
     // the snapshot has the source panel id.
     expect(call[0]?.panel?.id).toBe('n1')
     scene.mouse.up()
+    await flushAsync()
   })
 
   it('cursor returns to window → crossWindowDragCancel fired', () => {
@@ -203,9 +206,12 @@ describe('cross-window — remote drag', () => {
     bridge.cleanup()
   })
 
-  it('drop on a registered dock zone → onDrop fires + IPC claim sent', async () => {
+  it.each([true, false])('acknowledges dock hydration outcome after onDrop returns %s', async (accepted) => {
     const stub = electronStub()
-    const onDrop = vi.fn()
+    stub.crossWindowDragDrop.mockResolvedValueOnce({ accepted: true, transferId: 'receipt' })
+    const receipt = vi.fn()
+    window.electronAPI.panelTransferReady = receipt
+    const onDrop = vi.fn<RemoteDropHandler>(() => { expect(receipt).not.toHaveBeenCalled(); return accepted })
     const bridge = attachBridge(onDrop)
 
     // Register a drop zone covering (200..600, 200..600). `dockStoreApi` is
@@ -243,6 +249,7 @@ describe('cross-window — remote drag', () => {
     await flushAsync()
 
     expect(onDrop).toHaveBeenCalledTimes(1)
+    expect(receipt).toHaveBeenCalledWith('receipt', accepted ? 'received' : 'rejected')
     const dropArg = onDrop.mock.calls[0][1]
     expect(dropArg.kind).toBe('dock')
     // Runtime should have cleared state.

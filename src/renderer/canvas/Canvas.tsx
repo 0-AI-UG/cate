@@ -183,6 +183,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
   )
 
   const marquee = useUIStore((s) => s.marquee)
+  const showSettings = useUIStore((s) => s.showSettings)
   // Idle cursor reflects the active tool (React owns idle; useCanvasInteraction
   // overrides to 'grabbing' during an active pan and hands control back on release).
   const handToolActive = useUIStore((s) => s.activeTool === 'hand')
@@ -560,7 +561,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
           items.push({ id: 'new-terminal', label: 'New Terminal' })
         }
         items.push(
-          { id: 'new-editor', label: 'New Editor' },
+          { id: 'new-editor', label: 'New Files Panel' },
           { id: 'new-browser', label: 'New Browser' },
           { id: 'new-agent', label: 'New T3 Code conversation' },
           { id: 'new-canvas', label: 'New Canvas' },
@@ -700,6 +701,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
         <div
           ref={topOverlayRef}
           data-canvas-top-overlay={panelId ?? ''}
+          hidden={showSettings}
           style={{
             position: 'fixed',
             overflow: 'clip',

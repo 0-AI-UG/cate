@@ -2,7 +2,7 @@ import { LoadingState } from '../ui/Spinner'
 import { subscribeT3Activity } from '../lib/t3ActivitySubscription'
 import { useT3ActivityStore } from '../stores/t3ActivityStore'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowClockwise, ChatsCircle } from '@phosphor-icons/react'
+import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle } from 'lucide-react'
 import type { AgentPanelProps } from './types'
 import { agentProductCopy } from '../../shared/agentProductCopy'
 import { useAppStore } from '../stores/appStore'
@@ -27,6 +27,10 @@ import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { openAgentChanges } from '../lib/review/openAgentChanges'
 import { useAgentChanges } from '../lib/useAgentChanges'
 import { summarizeAgentChanges } from '../../shared/agentChanges'
+import { useFileDragActive } from '../drag/fileDropTarget'
+import { T3ConversationPill } from '../canvas/T3ConversationPill'
+import { WorktreePill } from '../canvas/WorktreePill'
+import { AgentChangesPill } from '../canvas/AgentChangesPill'
 
 interface WebviewElement extends HTMLElement {
   getURL(): string
@@ -35,6 +39,27 @@ interface WebviewElement extends HTMLElement {
   loadURL(url: string): Promise<void>
   addEventListener(type: string, listener: (event: any) => void): void
   removeEventListener(type: string, listener: (event: any) => void): void
+}
+
+export function agentFileDropScript(files: Array<{ name: string; type: string; dataUrl: string }>): string {
+  return `void (async () => {
+    const transfer = new DataTransfer();
+    for (const source of ${JSON.stringify(files)}) {
+      const blob = await (await fetch(source.dataUrl)).blob();
+      transfer.items.add(new File([blob], source.name, { type: source.type || blob.type }));
+    }
+    const target = document.querySelector('textarea, [contenteditable="true"]') || document.body;
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  })()`
+}
+
+function readFileDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
 }
 
 type ResolveState =
@@ -53,12 +78,14 @@ function errorText(error: unknown): string {
 }
 
 export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelProps) {
+  const panel = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId)?.panels[panelId])
   const webviewRef = useRef<WebviewElement | null>(null)
   const [state, setState] = useState<ResolveState>({ phase: 'loading' })
   const [retryNonce, setRetryNonce] = useState(0)
   const [guestReady, setGuestReady] = useState(false)
   const [hostError, setHostError] = useState('')
   const bridgeTokenRef = useRef(crypto.randomUUID())
+  const fileDragActive = useFileDragActive()
 
   const activePanelId = useActivePanelStore((s) => s.activePanelId)
   const canvasFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
@@ -333,6 +360,13 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       data-agent-connected={t3Connection === true}
     >
       <div className="relative min-h-0 flex-1">
+        {/* Keep chrome in the persistent guest's stacking context so it needs no
+            rectangular cutout through the guest to render or receive clicks. */}
+        {panel && <div className="absolute top-1.5 right-3 z-10 flex items-center gap-1" data-agent-controls={panelId}>
+          <T3ConversationPill panel={panel} workspaceId={workspaceId} />
+          <WorktreePill panel={panel} workspaceId={workspaceId} />
+          <AgentChangesPill panel={panel} workspaceId={workspaceId} />
+        </div>}
         {hostError && <div role="alert" className="absolute bottom-2 left-2 right-2 z-30 rounded bg-surface-2 p-2 text-xs text-primary">{hostError}<button className="ml-2 text-muted" onClick={() => setHostError('')}>Dismiss</button></div>}
         {state.phase === 'ready' && guestReady && t3Connection === false && (
           <div role="status" className="absolute bottom-1 left-2 z-20 rounded bg-surface-2 px-2 py-1 text-xs text-muted">
@@ -371,6 +405,28 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
                 // Once ready, inherit visibility so an inactive dock tab can
                 // hide the guest without unmounting it or losing its state.
                 className={`h-full w-full${guestReady ? '' : ' invisible'}`}
+              />
+              <div
+                data-filedrop="agent"
+                data-filedrop-id={panelId}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  event.dataTransfer.dropEffect = 'copy'
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const files = Array.from(event.dataTransfer.files).filter((file) => file.type.startsWith('image/'))
+                  if (!files.length) return
+                  void Promise.all(files.map(async (file) => ({
+                    name: file.name,
+                    type: file.type,
+                    dataUrl: await readFileDataUrl(file),
+                  }))).then((payload) => webviewRef.current?.executeJavaScript(agentFileDropScript(payload)))
+                }}
+                className="absolute inset-0 z-30"
+                style={{ pointerEvents: fileDragActive ? 'auto' : 'none' }}
               />
           </>
         )}

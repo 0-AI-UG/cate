@@ -27,6 +27,8 @@ export function createDragGhostWindow(
     width: w,
     height: h,
     frame: false,
+    // Let CSS round the ghost; native window corners clip its border.
+    roundedCorners: false,
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,

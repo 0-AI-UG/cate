@@ -1,10 +1,13 @@
+import { gitStatusStore } from '../../stores/gitStatusStore'
+import { notifySessionMutation } from './sessionMutations'
+import { KeyedLock } from '../../../shared/keyedLock'
+import { captureEditorPanel } from '../editor/editorDocuments'
 // =============================================================================
 // Session save — serialize every persistable workspace to .cate/workspace.json +
 // .cate/session.json (and remote/sidebar stores), with per-target dedup so the
 // periodic autosave doesn't rewrite identical files.
 // =============================================================================
 
-import log from '../logger'
 import { useAppStore } from '../../stores/appStore'
 import { useUIStore } from '../../stores/uiStore'
 import {
@@ -33,19 +36,26 @@ import { pathKey } from '../../../shared/pathUtils'
 // actually changed, so the periodic auto-save doesn't rewrite an identical file
 // every ~1s.
 const lastSerializedByRoot = new Map<string, string>()
-// A read-only or broken mount must not trigger one failed `.cate` write every
-// autosave tick forever. Stop scheduling writes for the root after a small
-// consecutive-failure budget; relaunching Cate starts a fresh budget.
-const MAX_PROJECT_STATE_SAVE_FAILURES = 3
-const projectStateSaveFailuresByRoot = new Map<string, number>()
-const projectStateSavesInFlight = new Set<string>()
-// Same idea for the global sidebar arrangement: skip the IPC + electron-store
+const saveQueue = new KeyedLock()
+// Same idea for the global sidebar arrangement: skip the IPC + JSON-file
 // write when order/active-workspace haven't changed since the last save.
 let lastSidebarSessionSerialized: string | null = null
 // And for the remote-projects list (cate-runtime:// restore snapshots).
 let lastRemoteProjectsSerialized: string | null = null
 
-export async function saveSession(): Promise<void> {
+/** Dismiss a disk conflict and publish the unchanged current layout again. */
+export async function keepWorkspaceLayout(rootPath: string): Promise<void> {
+  await window.electronAPI.dismissWorkspaceExternalEdit(rootPath)
+  lastSerializedByRoot.delete(rootPath)
+  notifySessionMutation()
+  await saveSession()
+}
+
+export function saveSession(): Promise<void> {
+  return saveQueue.run('session', persistSession)
+}
+
+async function persistSession(): Promise<void> {
   const updatedState = useAppStore.getState()
   const uiState = useUIStore.getState()
 
@@ -100,7 +110,7 @@ export async function saveSession(): Promise<void> {
     for (const id of placedPanelIds) {
       const panel = workspace.panels[id]
       if (!panel) continue
-      ;(panels ??= {})[id] = panel
+      ;(panels ??= {})[id] = captureEditorPanel(panel)
       if (panel.type === 'terminal') {
         const entry = terminalRegistry.getEntry(id)
         if (entry?.ptyId) {
@@ -139,21 +149,18 @@ export async function saveSession(): Promise<void> {
       }
     }
 
-    const sourceControlWorktreeByRepository = workspace.rootPath
-      ? Object.fromEntries(
-          Object.entries(uiState.sourceControlWorktreeByRepository).filter(([repositoryRoot]) => {
-            const workspaceRoot = parseLocator(workspace.rootPath)
-            const repository = parseLocator(repositoryRoot)
-            const workspaceKey = pathKey(workspaceRoot.path)
-            const repositoryKey = pathKey(repository.path)
-            return repository.runtimeId === workspaceRoot.runtimeId && (
-              repositoryKey === workspaceKey || repositoryKey.startsWith(`${workspaceKey}/`)
-            )
-          }),
-        )
-      : {}
-    const navigationWorktreeId = uiState.navigationWorktreeByWorkspace[workspace.id]
-    const hasWorktreeViewScopes = !!navigationWorktreeId || Object.keys(sourceControlWorktreeByRepository).length > 0
+    const repositoryRoots = [workspace.rootPath, ...(workspace.additionalRoots ?? []),
+      ...(workspace.worktrees ?? []).map(worktree => worktree.path),
+      ...gitStatusStore.getSnapshot(workspace.rootPath).worktrees.map(worktree => worktree.path),
+    ].filter(Boolean).map(root => parseLocator(root))
+    const belongsToWorkspace = ([repositoryRoot]: [string, string]) => {
+      const repository = parseLocator(repositoryRoot)
+      return repositoryRoots.some(root => repository.runtimeId === root.runtimeId &&
+        (pathKey(repository.path) === pathKey(root.path) || pathKey(repository.path).startsWith(`${pathKey(root.path)}/`)))
+    }
+    const sourceControlWorktreeByRepository = Object.fromEntries(Object.entries(uiState.sourceControlWorktreeByRepository).filter(belongsToWorkspace))
+    const sourceControlDrafts = Object.fromEntries(Object.entries(uiState.sourceControlDrafts ?? {}).filter(belongsToWorkspace))
+    const hasWorktreeViewScopes = Object.keys(sourceControlWorktreeByRepository).length > 0 || Object.keys(sourceControlDrafts).length > 0
 
     snapshots.push({
       workspaceId: workspace.id,
@@ -168,7 +175,7 @@ export async function saveSession(): Promise<void> {
       // restarts instead of re-assigned from the palette on rediscovery.
       worktrees: workspace.worktrees?.length ? workspace.worktrees : undefined,
       worktreeViewScopes: hasWorktreeViewScopes ? {
-        navigationWorktreeId,
+        sourceControlDrafts,
         sourceControlWorktreeByRepository: Object.keys(sourceControlWorktreeByRepository).length
           ? sourceControlWorktreeByRepository
           : undefined,
@@ -179,15 +186,8 @@ export async function saveSession(): Promise<void> {
   }
 
   // Capture detached dock-window snapshots for inclusion in .cate/session.json
-  let dockWindows: DetachedDockWindowSnapshot[] | undefined
-  try {
-    const dwList = await window.electronAPI.dockWindowsList()
-    if (dwList && dwList.length > 0) {
-      dockWindows = dwList
-    }
-  } catch (err) {
-    log.warn('[session] Dock window listing failed:', err)
-  }
+  // An unavailable owner listing cannot safely be interpreted as no windows.
+  const dockWindows: DetachedDockWindowSnapshot[] | undefined = await window.electronAPI.dockWindowsList()
 
   // One owner workspace per root. Legacy state may still contain duplicates;
   // the selected workspace owns persistence, otherwise the first one does.
@@ -200,79 +200,46 @@ export async function saveSession(): Promise<void> {
     }
   }
 
-  // Remote (cate-runtime://) workspaces can't use the local .cate/ files —
-  // their tree lives on a runtime. Collect their full snapshots + reconnect
-  // info into the electron-store remoteProjects list so restart can rebuild and
-  // reconnect them (Findings 2/3/4). TODO: route remote project-state through
-  // runtime.file so .cate/ lives next to the remote repo instead of here.
-  const remoteEntries: RemoteProjectEntry[] = []
-  for (const snapshot of snapshots) {
-    if (!snapshot.rootPath || isLocalLocator(snapshot.rootPath)) continue
-    if (!isRemoteRuntimeConnection(snapshot.connection)) continue
-    if (workspacesByRoot.get(snapshot.rootPath)?.id !== snapshot.workspaceId) continue
-    remoteEntries.push({
-      locator: snapshot.rootPath,
-      connection: snapshot.connection,
-      snapshot,
-    })
-  }
+  // Use one serialized representation for local files, remote files and offline
+  // recovery. The local cache is the latest session owned by this machine; it
+  // restores before a remote runtime reconnects. Runtime files support explicit
+  // project reopen. Never derive a second, incomplete remote-only snapshot.
+  const payloads = snapshots.flatMap(snapshot => {
+    if (!snapshot.rootPath) return []
+    const owner = workspacesByRoot.get(snapshot.rootPath)
+    if (owner && owner.id !== snapshot.workspaceId) return []
+    const workspace = buildWorkspaceFile(snapshot, snapshot.rootPath, owner?.color)
+    const session = buildSessionFile(snapshot, dockWindows?.filter(dw => dw.workspaceId === owner?.id))
+    return [{ snapshot, owner, workspace, session }]
+  })
+  const remoteEntries: RemoteProjectEntry[] = payloads.flatMap(({ snapshot, workspace, session }) => {
+    if (isLocalLocator(snapshot.rootPath!) || !isRemoteRuntimeConnection(snapshot.connection)) return []
+    return [{ locator: snapshot.rootPath!, connection: snapshot.connection, cache: { version: 1 as const, workspace, session } }]
+  })
+  const errors: unknown[] = []
   const remoteSerialized = JSON.stringify(remoteEntries)
   if (remoteSerialized !== lastRemoteProjectsSerialized) {
-    window.electronAPI.remoteProjectsSet(remoteEntries)
-      .then(() => { lastRemoteProjectsSerialized = remoteSerialized })
-      .catch((err) => {
-        log.warn('[session] Remote projects save failed: %s', err)
-      })
+    try {
+      await window.electronAPI.remoteProjectsSet(remoteEntries)
+      lastRemoteProjectsSerialized = remoteSerialized
+    } catch (error) { errors.push(error) }
   }
 
   // Save to .cate/workspace.json + .cate/session.json next to the repo for EVERY
   // workspace. Local writes to local disk; remote routes through the runtime to
   // the remote repo's .cate/ (projectStateSave is locator-aware). This is what
   // lets a closed remote workspace restore on reopen, exactly like local.
-  for (const snapshot of snapshots) {
-    if (!snapshot.rootPath) continue
-
-    const ws = workspacesByRoot.get(snapshot.rootPath)
-    // A single owner workspace per root writes its .cate/ files. Two workspaces
-    // duplicated onto one rootPath would otherwise each write a different layout
-    // every tick — the rootPath-keyed dedup never settles, .cate/workspace.json
-    // flip-flops, and one layout is lost on restart. Skip the non-owner snapshot;
-    // the owner (the selected one, else the first in order) wins.
-    if (ws && ws.id !== snapshot.workspaceId) continue
-
-    // NEVER write into an untrusted project. An open workspace is a trusted one
-    // (the gate is on the open path), so this is an invariant check rather than
-    // a filter — but it is what keeps a revoked-trust project from having its
-    // `.cate/` files rewritten by a workspace that is still on screen.
-    if (!isProjectTrusted(snapshot.rootPath)) continue
-
-    const wsFile = buildWorkspaceFile(snapshot, snapshot.rootPath, ws?.color)
-
-    // Filter detached dock windows belonging to this workspace
-    const wsDockWindows = dockWindows?.filter((dw) => dw.workspaceId === ws?.id)
-    const sessFile = buildSessionFile(snapshot, wsDockWindows)
+  for (const { snapshot, owner: ws, workspace: wsFile, session: sessFile } of payloads) {
+    if (!snapshot.rootPath || !isProjectTrusted(snapshot.rootPath)) continue
 
     // Dedup: skip IPC when the payload hasn't changed
-    const serialized = JSON.stringify({ ws: wsFile, sess: sessFile })
+    const allowEmptyLayout = ws?.layoutRootPath === snapshot.rootPath && !deferredSnapshots.has(ws.id)
+    const serialized = JSON.stringify({ ws: wsFile, sess: sessFile, allowEmptyLayout })
     if (lastSerializedByRoot.get(snapshot.rootPath) === serialized) continue
-    if ((projectStateSaveFailuresByRoot.get(snapshot.rootPath) ?? 0) >= MAX_PROJECT_STATE_SAVE_FAILURES) continue
-    if (projectStateSavesInFlight.has(snapshot.rootPath)) continue
-
-    projectStateSavesInFlight.add(snapshot.rootPath)
-    window.electronAPI.projectStateSave(snapshot.rootPath, wsFile, sessFile)
-      .then(() => {
-        lastSerializedByRoot.set(snapshot.rootPath!, serialized)
-        projectStateSaveFailuresByRoot.delete(snapshot.rootPath!)
-      })
-      .catch((err) => {
-        const failures = (projectStateSaveFailuresByRoot.get(snapshot.rootPath!) ?? 0) + 1
-        projectStateSaveFailuresByRoot.set(snapshot.rootPath!, failures)
-        log.warn('[session] Project state save failed for %s: %s', snapshot.rootPath, err)
-        if (failures === MAX_PROJECT_STATE_SAVE_FAILURES) {
-          log.warn('[session] Disabling project state saves for %s after %d consecutive failures', snapshot.rootPath, failures)
-        }
-      })
-      .finally(() => { projectStateSavesInFlight.delete(snapshot.rootPath!) })
+    try {
+      await window.electronAPI.projectStateSave(snapshot.rootPath, wsFile, sessFile, ws?.id, { allowEmptyLayout })
+      lastSerializedByRoot.set(snapshot.rootPath, serialized)
+    } catch (error) { errors.push(error) }
   }
 
   // Persist the sidebar arrangement (order + active workspace, keyed by root
@@ -282,10 +249,10 @@ export async function saveSession(): Promise<void> {
   const sidebarSession = deriveSidebarSession(updatedState.workspaces, updatedState.selectedWorkspaceId)
   const sidebarSerialized = JSON.stringify(sidebarSession)
   if (sidebarSerialized !== lastSidebarSessionSerialized) {
-    await window.electronAPI.sidebarSessionSet(sidebarSession)
-      .then(() => { lastSidebarSessionSerialized = sidebarSerialized })
-      .catch((err) => {
-        log.warn('[session] Sidebar session save failed: %s', err)
-      })
+    try {
+      await window.electronAPI.sidebarSessionSet(sidebarSession)
+      lastSidebarSessionSerialized = sidebarSerialized
+    } catch (error) { errors.push(error) }
   }
+  if (errors.length) throw errors[0]
 }

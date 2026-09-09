@@ -1,3 +1,4 @@
+import { createRevisionWriter } from '../../../shared/revisionWriter'
 // =============================================================================
 // Auto-save (idle debounce + max-wait + periodic unconditional save)
 //
@@ -11,6 +12,8 @@
 // saveSession itself is async + IPC, so it doesn't block the render thread.
 // =============================================================================
 
+import { subscribeSessionMutations } from './sessionMutations'
+import log from '../logger'
 import type { StoreApi } from 'zustand'
 import { useAppStore } from '../../stores/appStore'
 import { useUIStore } from '../../stores/uiStore'
@@ -39,63 +42,31 @@ function unrefTimer<T>(t: T): T {
   if (h && typeof h === 'object' && typeof h.unref === 'function') h.unref()
   return t
 }
-let pendingSave = false
-let saveInFlight = false
 let autoSaveSetUp = false
-// Restore gate — while a workspace restore is hydrating stores, the store
-// subscriptions below fire with TRANSIENT half-built state (panels recreated
-// but canvases not yet seeded, teardown's momentary empty layout, …). Saving
-// that state is how a rich on-disk layout gets clobbered by an empty one
-// (issue #220). This gate suppresses scheduling at the source; the main
-// process's empty-overwrite/richness guards remain as backstops. A counter,
-// not a boolean: multi-workspace startup can overlap restores.
 let restoreDepth = 0
-// "Dirty since last save" flag — set by every store subscription that schedules
-// a save, cleared after a successful write. Lets the quit flush skip the IPC
-// round-trip entirely when there's nothing to persist.
-let sessionDirty = false
-// Resolvers for flush requests waiting on an in-flight save to finish
-let flushWaiters: (() => void)[] = []
+// A revision is durable only after every underlying IPC write resolves.
+let writer = createRevisionWriter(saveSession)
 
-function runSave(): void {
+function clearSaveTimers(): void {
   if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
   if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null }
-  if (!pendingSave) return
-  pendingSave = false
-  if (saveInFlight) {
-    // A save is already running; mark dirty so the next scheduler tick re-runs.
-    pendingSave = true
-    return
-  }
-  saveInFlight = true
-  // Snapshot dirty at the moment the save begins; further mutations re-set it.
-  sessionDirty = false
-  saveSession()
-    .catch(() => {
-      // Save failed — re-mark dirty so the next flush still writes.
-      sessionDirty = true
-    })
-    .finally(() => {
-      saveInFlight = false
-      // Notify any flush waiters that the save completed
-      const waiters = flushWaiters
-      flushWaiters = []
-      for (const resolve of waiters) resolve()
-      // If more changes arrived while saving, re-arm idle timer.
-      if (pendingSave) scheduleSave()
-    })
+}
+
+function flushSession(): Promise<void> {
+  clearSaveTimers()
+  return writer.flush()
+}
+
+function runSave(): void {
+  void flushSession().catch(error => log.warn('[session] Autosave failed:', error))
 }
 
 function scheduleSave(): void {
-  // Hydrating — transient restore state must never be persisted.
   if (restoreDepth > 0) return
-  pendingSave = true
-  sessionDirty = true
+  writer.markDirty()
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = unrefTimer(setTimeout(runSave, IDLE_DELAY))
-  if (!maxWaitTimer) {
-    maxWaitTimer = unrefTimer(setTimeout(runSave, MAX_WAIT))
-  }
+  if (!maxWaitTimer) maxWaitTimer = unrefTimer(setTimeout(runSave, MAX_WAIT))
 }
 
 /** Suppress session autosave while a workspace restore hydrates the stores.
@@ -178,16 +149,16 @@ export function setupAutoSave(): () => void {
     scheduleSave()
   })
   // Most uiStore state is deliberately transient (hover, marquee, dialogs).
-  // Only the two worktree scope maps belong in the machine-local session, so
-  // watch their references explicitly instead of autosaving on every UI edit.
+  // Only Source Control checkout scopes belong in the machine-local session, so
+  // watch that reference explicitly instead of autosaving on every UI edit.
   const unsubUI = useUIStore.subscribe((state, previous) => {
     if (
-      state.navigationWorktreeByWorkspace !== previous.navigationWorktreeByWorkspace
-      || state.sourceControlWorktreeByRepository !== previous.sourceControlWorktreeByRepository
+      state.sourceControlWorktreeByRepository !== previous.sourceControlWorktreeByRepository || state.sourceControlDrafts !== previous.sourceControlDrafts
     ) {
       scheduleSave()
     }
   })
+  const unsubDocuments = subscribeSessionMutations(scheduleSave)
   subscribeActive()
 
   // Unconditional periodic save — ensures on-disk state is never more than
@@ -195,64 +166,34 @@ export function setupAutoSave(): () => void {
   // against crashes, force-kills, and update restarts.
   periodicTimer = unrefTimer(setInterval(() => {
     if (restoreDepth > 0) return
-    if (pendingSave) {
-      runSave()
-    } else if (!saveInFlight) {
-      // Force a save even without detected changes — workspace sync may have
-      // drifted or external state (terminal CWD) changed without store updates.
-      pendingSave = true
-      runSave()
-    }
+    writer.markDirty()
+    runSave()
   }, PERIODIC_INTERVAL))
 
   // Listen for flush-save requests from main process (quit, window close)
-  const unsubFlush = window.electronAPI.onSessionFlushSave(() => {
-    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
-    if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null }
-
-    // Quitting mid-restore: the on-disk session IS the state being restored —
-    // persisting half-hydrated stores could only degrade it. ACK without saving.
+  const unsubFlush = window.electronAPI.onSessionFlushSave((requestId) => {
+    clearSaveTimers()
     if (restoreDepth > 0) {
-      window.electronAPI.sessionFlushSaveDone()
+      window.electronAPI.sessionFlushSaveDone('Workspace restoration is still in progress.', requestId)
       return
     }
-
-    // Phase 4.3: skip the round-trip entirely when nothing has changed since
-    // the last successful save. Cuts quit latency for read-only sessions.
-    if (!sessionDirty && !pendingSave && !saveInFlight) {
-      window.electronAPI.sessionFlushSaveDone()
-      return
-    }
-
-    const doFlushSave = () => {
-      saveInFlight = true
-      pendingSave = false
-      sessionDirty = false
-      saveSession()
-        .catch(() => { sessionDirty = true })
-        .finally(() => {
-          saveInFlight = false
-          window.electronAPI.sessionFlushSaveDone()
-        })
-    }
-
-    if (saveInFlight) {
-      // A save is already in flight — wait for it to finish, then run a
-      // fresh save with current state before sending the ACK.
-      flushWaiters.push(doFlushSave)
-    } else {
-      doFlushSave()
-    }
+    writer.markDirty() // Detached state and terminal output may change without local mutations.
+    void flushSession().then(
+      () => window.electronAPI.sessionFlushSaveDone(undefined, requestId),
+      error => window.electronAPI.sessionFlushSaveDone(error instanceof Error ? error.message : String(error), requestId),
+    )
   })
 
   return () => {
     unsubActive()
     unsubApp()
     unsubUI()
+    unsubDocuments()
     unsubFlush()
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
     if (maxWaitTimer) { clearTimeout(maxWaitTimer); maxWaitTimer = null }
     if (periodicTimer) { clearInterval(periodicTimer); periodicTimer = null }
     autoSaveSetUp = false
+    writer = createRevisionWriter(saveSession)
   }
 }

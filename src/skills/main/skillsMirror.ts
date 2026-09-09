@@ -1,19 +1,18 @@
-import { createHash, randomUUID } from 'crypto'
 import log from '../../main/logger'
 import { CATE_GITIGNORE_CONTENT } from '../../main/cateGitignore'
 import { parseLocator } from '../../shared/runtimeLocator'
 import { runtimes } from '../../main/runtime/runtimeManager'
-import type { Runtime } from '../../main/runtime/types'
+import type { FileAccessContext } from '../../main/runtime/types'
+import { scopedSkillFiles, withSkillWorkspaces, writeSkillJson, type SkillFileHost } from './skillWorkspace'
+import { withBundleTransaction, retireBundle, isMissingError, mkdirp, readInstalledBundle, materializeBundle } from './skillBundle'
 import { hostJoin } from '../../main/cateApi/hostPath'
 import {
   isKnownSkillTarget,
-  slugifySkillName,
   type InstalledSkill,
   type SkillTargetId,
 } from '../../shared/skills'
 import { pathKey } from '../../shared/pathUtils'
-import { skillPathSegments } from './skillPath'
-import { skillsRootDir, skillsRootDirs, targetInfo } from './targets'
+import { skillsRootDirs } from './targets'
 
 const MIRROR_VERSION = 1
 
@@ -27,17 +26,6 @@ interface MirrorEntry {
 interface MirrorManifest {
   version: typeof MIRROR_VERSION
   skills: MirrorEntry[]
-}
-
-interface BundleFile {
-  relPath: string
-  bytes: Buffer
-}
-
-interface InstalledBundle {
-  files: BundleFile[]
-  path: string
-  contentHash: string
 }
 
 export interface SkillMirrorSyncResult {
@@ -66,19 +54,12 @@ function mirrorManifestPath(runtimeId: string, hostCwd: string): string {
   return hostJoin(runtimeId, hostCwd, '.cate', 'skills-mirror.json')
 }
 
-function isMissingError(error: unknown): boolean {
-  return (
-    (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') ||
-    (error instanceof Error && /ENOENT|no such file/i.test(error.message))
-  )
-}
-
 function canonicalManifestPath(runtimeId: string, hostCwd: string): string {
   return hostJoin(runtimeId, hostCwd, '.cate', 'skills.json')
 }
 
 async function readCanonicalManifest(
-  runtime: Runtime,
+  runtime: SkillFileHost,
   runtimeId: string,
   hostCwd: string,
 ): Promise<InstalledSkill[]> {
@@ -93,7 +74,7 @@ async function readCanonicalManifest(
 }
 
 async function readMirrorManifest(
-  runtime: Runtime,
+  runtime: SkillFileHost,
   runtimeId: string,
   hostCwd: string,
 ): Promise<MirrorManifest> {
@@ -115,22 +96,8 @@ async function readMirrorManifest(
   }
 }
 
-async function mkdirp(
-  runtime: Runtime,
-  runtimeId: string,
-  hostCwd: string,
-  targetDir: string,
-): Promise<void> {
-  const rel = targetDir.slice(hostCwd.length).replace(/^[/\\]+/, '')
-  let current = hostCwd
-  for (const part of rel.split(/[/\\]+/).filter(Boolean)) {
-    current = hostJoin(runtimeId, current, part)
-    await runtime.file.mkdir(current)
-  }
-}
-
 async function writeMirrorManifest(
-  runtime: Runtime,
+  runtime: SkillFileHost,
   runtimeId: string,
   hostCwd: string,
   entries: Iterable<MirrorEntry>,
@@ -148,159 +115,7 @@ async function writeMirrorManifest(
     version: MIRROR_VERSION,
     skills: [...entries].sort((a, b) => entryKey(a).localeCompare(entryKey(b))),
   }
-  await runtime.file.writeFile(
-    mirrorManifestPath(runtimeId, hostCwd),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  )
-}
-
-async function readDirectory(
-  runtime: Runtime,
-  runtimeId: string,
-  dir: string,
-  base = '',
-): Promise<BundleFile[]> {
-  const nodes = await runtime.file.readDir(dir)
-  const files: BundleFile[] = []
-  for (const node of [...nodes].sort((a, b) => a.name.localeCompare(b.name))) {
-    const child = hostJoin(runtimeId, dir, node.name)
-    const relPath = base ? `${base}/${node.name}` : node.name
-    if (node.isDirectory) {
-      files.push(...await readDirectory(runtime, runtimeId, child, relPath))
-    } else {
-      skillPathSegments(relPath)
-      files.push({ relPath, bytes: await runtime.file.readBinary(child) })
-    }
-  }
-  return files
-}
-
-function hashBundle(files: BundleFile[]): string {
-  const hash = createHash('sha256')
-  for (const file of [...files].sort((a, b) => a.relPath.localeCompare(b.relPath))) {
-    hash.update(file.relPath)
-    hash.update('\0')
-    hash.update(String(file.bytes.length))
-    hash.update('\0')
-    hash.update(file.bytes)
-    hash.update('\0')
-  }
-  return hash.digest('hex')
-}
-
-function installedPath(
-  runtimeId: string,
-  hostCwd: string,
-  entry: Pick<MirrorEntry, 'name' | 'targetId'>,
-  root = skillsRootDir(entry.targetId, runtimeId, hostCwd),
-): string {
-  const slug = slugifySkillName(entry.name)
-  return targetInfo(entry.targetId).layout === 'folder'
-    ? hostJoin(runtimeId, root, slug)
-    : hostJoin(runtimeId, root, `${slug}.md`)
-}
-
-async function readInstalledBundle(
-  runtime: Runtime,
-  runtimeId: string,
-  hostCwd: string,
-  entry: Pick<MirrorEntry, 'name' | 'targetId'>,
-  root?: string,
-): Promise<InstalledBundle | null> {
-  const path = installedPath(runtimeId, hostCwd, entry, root)
-  let stat
-  try {
-    stat = await runtime.file.stat(path)
-  } catch (error) {
-    if (isMissingError(error)) return null
-    throw error
-  }
-  const layout = targetInfo(entry.targetId).layout
-  if ((layout === 'folder' && !stat.isDirectory) || (layout === 'flat' && !stat.isFile)) {
-    throw new Error(`Unexpected skill path type: ${path}`)
-  }
-  const files = layout === 'folder'
-    ? await readDirectory(runtime, runtimeId, path)
-    : [{ relPath: 'SKILL.md', bytes: await runtime.file.readBinary(path) }]
-  return { files, path, contentHash: hashBundle(files) }
-}
-
-async function materializeBundle(
-  runtime: Runtime,
-  runtimeId: string,
-  hostCwd: string,
-  entry: Pick<MirrorEntry, 'name' | 'targetId'>,
-  files: BundleFile[],
-  replace: boolean,
-  root = skillsRootDir(entry.targetId, runtimeId, hostCwd),
-): Promise<boolean> {
-  const destination = installedPath(runtimeId, hostCwd, entry, root)
-  const slug = slugifySkillName(entry.name)
-  const layout = targetInfo(entry.targetId).layout
-  const transactionId = randomUUID()
-  const staging = layout === 'folder'
-    ? hostJoin(runtimeId, hostCwd, '.cate', `.skills-mirror-stage-${slug}-${transactionId}`)
-    : hostJoin(runtimeId, hostCwd, '.cate', `.skills-mirror-stage-${slug}-${transactionId}.md`)
-  const backup = hostJoin(runtimeId, hostCwd, '.cate', `.skills-mirror-backup-${slug}-${transactionId}`)
-  let preserveBackup = false
-
-  await mkdirp(runtime, runtimeId, hostCwd, root)
-  await mkdirp(runtime, runtimeId, hostCwd, hostJoin(runtimeId, hostCwd, '.cate'))
-  try {
-    if (layout === 'folder') {
-      await mkdirp(runtime, runtimeId, hostCwd, staging)
-      for (const file of files) {
-        const segments = skillPathSegments(file.relPath)
-        const target = hostJoin(runtimeId, staging, ...segments)
-        if (segments.length > 1) {
-          await mkdirp(
-            runtime,
-            runtimeId,
-            hostCwd,
-            hostJoin(runtimeId, staging, ...segments.slice(0, -1)),
-          )
-        }
-        await runtime.file.writeBinary(target, file.bytes)
-      }
-    } else {
-      const skillMd = files.find((file) => file.relPath === 'SKILL.md')
-      if (!skillMd) throw new Error('Skill is missing SKILL.md')
-      await runtime.file.writeBinary(staging, skillMd.bytes)
-    }
-
-    if (!replace) {
-      try {
-        await runtime.file.stat(destination)
-        return false
-      } catch (error) {
-        if (!isMissingError(error)) throw error
-      }
-    } else {
-      await runtime.file.rename(destination, backup)
-      try {
-        await runtime.file.rename(staging, destination)
-      } catch (error) {
-        try {
-          await runtime.file.rename(backup, destination)
-        } catch (rollbackError) {
-          preserveBackup = true
-          const message = rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
-          throw new Error(`Skill update failed and rollback failed; backup retained at ${backup}: ${message}`, {
-            cause: error,
-          })
-        }
-        throw error
-      }
-      return true
-    }
-    await runtime.file.rename(staging, destination)
-    return true
-  } finally {
-    try { await runtime.file.remove(staging) } catch { /* already renamed or best-effort cleanup */ }
-    if (replace && !preserveBackup) {
-      try { await runtime.file.remove(backup) } catch { /* already restored or best-effort cleanup */ }
-    }
-  }
+  await writeSkillJson(runtime, mirrorManifestPath(runtimeId, hostCwd), manifest)
 }
 
 function warn(result: SkillMirrorSyncResult, message: string, error?: unknown): void {
@@ -320,7 +135,18 @@ function warn(result: SkillMirrorSyncResult, message: string, error?: unknown): 
 export async function syncWorkspaceSkills(
   baseCwd: string,
   targetCwd: string,
+  access?: FileAccessContext,
 ): Promise<SkillMirrorSyncResult> {
+  try {
+    return await withSkillWorkspaces([baseCwd, targetCwd], () => withBundleTransaction(() => syncWorkspaceSkillsLocked(baseCwd, targetCwd, access)))
+  } catch (error) {
+    const result = emptyResult()
+    warn(result, 'Could not synchronize skill bundles', error)
+    return result
+  }
+}
+
+async function syncWorkspaceSkillsLocked(baseCwd: string, targetCwd: string, access?: FileAccessContext): Promise<SkillMirrorSyncResult> {
   const result = emptyResult()
   if (sameLocator(baseCwd, targetCwd)) return result
 
@@ -331,11 +157,11 @@ export async function syncWorkspaceSkills(
     return result
   }
 
-  let baseRuntime: Runtime
-  let targetRuntime: Runtime
+  let baseRuntime: SkillFileHost
+  let targetRuntime: SkillFileHost
   try {
-    baseRuntime = runtimes.resolve(base.runtimeId)
-    targetRuntime = runtimes.resolve(target.runtimeId)
+    baseRuntime = scopedSkillFiles(runtimes.resolve(base.runtimeId), access)
+    targetRuntime = scopedSkillFiles(runtimes.resolve(target.runtimeId), access)
   } catch (error) {
     warn(result, 'Workspace runtime is unavailable', error)
     return result
@@ -377,14 +203,14 @@ export async function syncWorkspaceSkills(
           root,
         )
         if (mirrored?.contentHash === prior.contentHash) {
-          await targetRuntime.file.remove(mirrored.path)
+          await retireBundle(targetRuntime, target.runtimeId, target.path, mirrored.path)
         }
       }
       const current = await readInstalledBundle(targetRuntime, target.runtimeId, target.path, prior)
       if (!current) {
         owned.delete(key)
       } else if (current.contentHash === prior.contentHash) {
-        await targetRuntime.file.remove(current.path)
+        await retireBundle(targetRuntime, target.runtimeId, target.path, current.path)
         owned.delete(key)
         result.removed.push(key)
       } else {
@@ -392,7 +218,7 @@ export async function syncWorkspaceSkills(
         result.preserved.push(key)
       }
     } catch (error) {
-      warn(result, `Could not retire mirrored skill ${key}`, error)
+      throw error
     }
   }
 
@@ -464,7 +290,7 @@ export async function syncWorkspaceSkills(
         result.updated.push(key)
       }
     } catch (error) {
-      warn(result, `Could not synchronize skill ${key}`, error)
+      throw error
     }
   }
 
@@ -515,14 +341,14 @@ export async function syncWorkspaceSkills(
         if (!result.preserved.includes(key)) result.preserved.push(key)
       }
     } catch (error) {
-      warn(result, `Could not synchronize consumer copies for ${key}`, error)
+      throw error
     }
   }
 
   try {
     await writeMirrorManifest(targetRuntime, target.runtimeId, target.path, owned.values())
   } catch (error) {
-    warn(result, 'Could not write skill mirror ownership metadata', error)
+    throw error
   }
   return result
 }
