@@ -6,6 +6,7 @@
 import React, { useCallback, useRef } from 'react'
 import { useDockStoreContext } from '../stores/DockStoreContext'
 import { PANEL_MINIMUM_SIZES, type DockLayoutNode, type DockSplitNode, type PanelType } from '../../shared/types'
+import { findTabStack } from '../stores/dockTreeUtils'
 import DockResizeHandle from './DockResizeHandle'
 
 interface DockSplitContainerProps {
@@ -52,6 +53,8 @@ export default function DockSplitContainer({
   getPanelType,
 }: DockSplitContainerProps) {
   const setSplitRatio = useDockStoreContext((s) => s.setSplitRatio)
+  const maximizedStackId = useDockStoreContext((s) => s.maximizedStackId)
+  const containsMaximized = !!maximizedStackId && !!findTabStack(node, maximizedStackId)
   const isHorizontal = node.direction === 'horizontal'
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -98,13 +101,14 @@ export default function DockSplitContainer({
         <React.Fragment key={child.id}>
           <div
             style={{
-              [isHorizontal ? 'width' : 'height']: `${node.ratios[i] * 100}%`,
+              [isHorizontal ? 'width' : 'height']: containsMaximized ? '100%' : `${node.ratios[i] * 100}%`,
+              display: containsMaximized && !findTabStack(child, maximizedStackId!) ? 'none' : undefined,
             }}
             className="min-h-0 min-w-0 overflow-hidden"
           >
             {renderNode(child)}
           </div>
-          {i < node.children.length - 1 && (
+          {!containsMaximized && i < node.children.length - 1 && (
             <DockResizeHandle
               direction={isHorizontal ? 'horizontal' : 'vertical'}
               onResize={(delta) => handleResize(i, delta)}

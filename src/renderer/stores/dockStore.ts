@@ -167,10 +167,12 @@ function insertIntoSplit(
 // -----------------------------------------------------------------------------
 
 interface DockStoreState {
+  maximizedStackId: string | null
   zones: WindowDockState
 }
 
 interface DockStoreActions {
+  toggleStackMaximized: (stackId: string) => void
   // Zone visibility
   toggleZone: (position: DockZonePosition) => void
   setZoneSize: (position: DockZonePosition, size: number) => void
@@ -207,6 +209,10 @@ export type DockStore = DockStoreState & DockStoreActions
 export function createDockStore(initialState?: DockStateSnapshot) {
   return create<DockStore>((set, get) => ({
   zones: initialState?.zones ?? createDefaultDockState(),
+  maximizedStackId: null,
+  toggleStackMaximized(stackId) {
+    set((state) => ({ maximizedStackId: state.maximizedStackId === stackId ? null : stackId }))
+  },
 
   // --- Zone visibility ---
 
@@ -332,6 +338,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
       }
 
       return {
+        ...(target?.type === 'split' ? { maximizedStackId: null } : {}),
         zones: {
           ...state.zones,
           [zone]: {
@@ -531,6 +538,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
   restoreSnapshot(snapshot) {
     set({
       zones: snapshot.zones,
+      maximizedStackId: null,
     })
   },
 }))

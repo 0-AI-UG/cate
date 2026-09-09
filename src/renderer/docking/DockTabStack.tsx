@@ -4,12 +4,12 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useDockStoreApi } from '../stores/DockStoreContext'
+import { useDockStoreContext, useDockStoreApi } from '../stores/DockStoreContext'
 import { registerDropZone, useDragStore } from '../drag'
 import type { DockTabStack as DockTabStackType, PanelState, PanelType } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { PanelChromeProvider, type PanelChromeApi } from '../panels/panelChrome'
-import { Columns2 as Columns } from 'lucide-react'
+import { Columns2 as Columns, Maximize2, Minimize2 } from 'lucide-react'
 import { DockTabBar } from './DockTabBar'
 import { WorktreePill } from '../canvas/WorktreePill'
 import { AgentChangesPill } from '../canvas/AgentChangesPill'
@@ -55,6 +55,10 @@ interface DockTabStackProps {
 
 export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, newTabControl, onTabBarMouseDown, localOnly, compact, dropDisabled }: DockTabStackProps) {
   const dockStoreApi = useDockStoreApi()
+  const canMaximize = useDockStoreContext((s) => Object.values(s.zones).some((zone) =>
+    zone.visible && zone.layout && (zone.layout.type === 'split' || zone.layout.id !== stack.id),
+  ))
+  const maximized = useDockStoreContext((s) => s.maximizedStackId === stack.id)
   const stackRef = useRef<HTMLDivElement>(null)
 
   const isDragging = useDragStore((s) => s.isDragging)
@@ -290,6 +294,19 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             </button>
           </Tooltip>
         )}
+
+        {canMaximize && <Tooltip label={maximized ? 'Restore split' : 'Maximize split'}>
+          <button
+            type="button"
+            aria-label={maximized ? 'Restore split' : 'Maximize split'}
+            aria-pressed={maximized}
+            className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[22px] h-[22px]' : 'w-6 h-6'}`}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={() => dockStoreApi.getState().toggleStackMaximized(stack.id)}
+          >
+            {maximized ? <Minimize2 size={compact ? 12 : 14} /> : <Maximize2 size={compact ? 12 : 14} />}
+          </button>
+        </Tooltip>}
 
         {/* Host-injected trailing controls (e.g. canvas-node lock/maximize/close) */}
         {trailingControls && (

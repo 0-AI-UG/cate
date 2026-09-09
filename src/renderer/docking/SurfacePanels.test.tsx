@@ -173,3 +173,30 @@ it('refreshes canvas chrome when panel records settle without a layout change', 
   expect(host.querySelector('.dock-tab-bar-floating')).not.toBeNull()
   expect(host.querySelector('.dock-tab-bar')?.classList.contains('border-b')).toBe(false)
 })
+
+it('offers maximize and restore in each split header', () => {
+  act(() => root.render(<FullDock />))
+  expect(host.querySelector('[aria-label="Maximize split"]')).toBeNull()
+  act(() => (host.querySelector('[aria-label="Split Right"]') as HTMLButtonElement).click())
+  const buttons = host.querySelectorAll<HTMLButtonElement>('[aria-label="Maximize split"]')
+  expect(buttons).toHaveLength(2)
+  const layout = dock.getState().zones.center.layout
+  act(() => buttons[1].click())
+  const restore = host.querySelector<HTMLButtonElement>('[aria-label="Restore split"]')!
+  expect(restore.getAttribute('aria-pressed')).toBe('true')
+  expect(dock.getState().zones.center.layout).toBe(layout)
+  act(() => restore.click())
+  expect(dock.getState().maximizedStackId).toBeNull()
+  expect(host.querySelectorAll('[aria-label="Maximize split"]')).toHaveLength(2)
+})
+
+
+it('splitting a maximized pane reveals the new pane', () => {
+  act(() => root.render(<FullDock />))
+  act(() => (host.querySelector('[aria-label="Split Right"]') as HTMLButtonElement).click())
+  act(() => (host.querySelector('[aria-label="Maximize split"]') as HTMLButtonElement).click())
+  expect(dock.getState().maximizedStackId).not.toBeNull()
+  act(() => (host.querySelector('[aria-label="Split Right"]') as HTMLButtonElement).click())
+  expect(dock.getState().maximizedStackId).toBeNull()
+  expect(host.querySelectorAll('[aria-label="Maximize split"]')).toHaveLength(3)
+})
