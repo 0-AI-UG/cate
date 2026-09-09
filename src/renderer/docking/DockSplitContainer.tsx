@@ -5,20 +5,15 @@
 
 import React, { useCallback, useRef } from 'react'
 import { useDockStoreContext } from '../stores/DockStoreContext'
-import { PANEL_MINIMUM_SIZES, type DockLayoutNode, type DockSplitNode, type PanelType } from '../../shared/types'
+import { type DockLayoutNode, type DockSplitNode, type PanelType } from '../../shared/types'
 import { findTabStack } from '../stores/dockTreeUtils'
+import { layoutMinimum, SPLIT_DIVIDER_SIZE } from './splitSizing'
 import DockResizeHandle from './DockResizeHandle'
 
 interface DockSplitContainerProps {
   node: DockSplitNode
   renderNode: (node: DockLayoutNode) => React.ReactNode
   getPanelType?: (panelId: string) => PanelType | undefined
-}
-
-function containsCanvas(node: DockLayoutNode, getPanelType?: (panelId: string) => PanelType | undefined): boolean {
-  if (!getPanelType) return false
-  if (node.type === 'tabs') return node.panelIds.some((panelId) => getPanelType(panelId) === 'canvas')
-  return node.children.some((child) => containsCanvas(child, getPanelType))
 }
 
 export function clampSplitDelta(
@@ -29,18 +24,12 @@ export function clampSplitDelta(
   getPanelType?: (panelId: string) => PanelType | undefined,
 ): number {
   const dimension = node.direction === 'horizontal' ? 'width' : 'height'
-  const canvasMinRatio = PANEL_MINIMUM_SIZES.canvas[dimension] / containerSize
-  const minimumRatio = (child: DockLayoutNode) => containsCanvas(child, getPanelType) ? canvasMinRatio : 0.1
+  const available = containerSize - SPLIT_DIVIDER_SIZE * (node.children.length - 1)
   const a = node.ratios[index]
   const b = node.ratios[index + 1]
-  const requestedMinA = minimumRatio(node.children[index])
-  const requestedMinB = minimumRatio(node.children[index + 1])
-  // A small window or a multi-way split may not have enough room for both
-  // requested pixel minimums. Keep the divider usable in that state instead of
-  // freezing it, falling back to the original proportional pane floor.
-  const minimumsFit = requestedMinA + requestedMinB <= a + b
-  const minA = minimumsFit ? requestedMinA : 0.1
-  const minB = minimumsFit ? requestedMinB : 0.1
+  const minA = layoutMinimum(node.children[index], getPanelType)[dimension] / available
+  const minB = layoutMinimum(node.children[index + 1], getPanelType)[dimension] / available
+  if (minA + minB > a + b) return 0
   const lowerBound = minA - a
   const upperBound = b - minB
 
@@ -72,7 +61,7 @@ export default function DockSplitContainer({
       if (containerSize <= 0) return
 
       const currentRatios = ratiosRef.current
-      const ratioDelta = delta / containerSize
+      const ratioDelta = delta / (containerSize - SPLIT_DIVIDER_SIZE * (node.children.length - 1))
       const newRatios = [...currentRatios]
 
       // Clamp so canvas panes respect their declared minimum dimensions and
@@ -101,10 +90,10 @@ export default function DockSplitContainer({
         <React.Fragment key={child.id}>
           <div
             style={{
-              [isHorizontal ? 'width' : 'height']: containsMaximized ? '100%' : `${node.ratios[i] * 100}%`,
+              [isHorizontal ? 'width' : 'height']: containsMaximized ? '100%' : `calc((100% - ${SPLIT_DIVIDER_SIZE * (node.children.length - 1)}px) * ${node.ratios[i]})`,
               display: containsMaximized && !findTabStack(child, maximizedStackId!) ? 'none' : undefined,
             }}
-            className="min-h-0 min-w-0 overflow-hidden"
+            className="min-h-0 min-w-0 shrink-0 overflow-hidden"
           >
             {renderNode(child)}
           </div>

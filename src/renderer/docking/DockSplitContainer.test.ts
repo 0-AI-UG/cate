@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { DockSplitNode, PanelType } from '../../shared/types'
+import { PANEL_MINIMUM_SIZES, type DockSplitNode, type PanelType } from '../../shared/types'
 import { clampSplitDelta } from './DockSplitContainer'
 
 const horizontalSplit: DockSplitNode = {
@@ -16,16 +16,16 @@ const horizontalSplit: DockSplitNode = {
 const panelType = (panelId: string): PanelType => panelId as PanelType
 
 describe('clampSplitDelta', () => {
-  it('keeps a canvas at least 400px wide in a horizontal split', () => {
-    expect(clampSplitDelta(horizontalSplit, 0, -0.4, 1000, panelType)).toBeCloseTo(-0.1)
+  it('keeps a canvas at least its minimum wide in a horizontal split', () => {
+    expect(clampSplitDelta(horizontalSplit, 0, -0.4, 2000, panelType)).toBeCloseTo(PANEL_MINIMUM_SIZES.canvas.width / 1995 - 0.5)
   })
 
-  it('keeps a canvas at least 300px tall in a vertical split', () => {
+  it('keeps a canvas at least its minimum tall in a vertical split', () => {
     const verticalSplit = { ...horizontalSplit, direction: 'vertical' as const }
-    expect(clampSplitDelta(verticalSplit, 0, -0.4, 1000, panelType)).toBeCloseTo(-0.2)
+    expect(clampSplitDelta(verticalSplit, 0, -0.4, 2000, panelType)).toBeCloseTo(PANEL_MINIMUM_SIZES.canvas.height / 1995 - 0.5)
   })
 
-  it('remains movable when both canvas minimums cannot fit', () => {
+  it('does not shrink panes further when their minimums cannot fit', () => {
     const twoCanvases: DockSplitNode = {
       ...horizontalSplit,
       children: [
@@ -34,7 +34,7 @@ describe('clampSplitDelta', () => {
       ],
     }
     const canvases = (): PanelType => 'canvas'
-    expect(clampSplitDelta(twoCanvases, 0, 0.1, 700, canvases)).toBeCloseTo(0.1)
-    expect(clampSplitDelta(twoCanvases, 0, -0.6, 700, canvases)).toBeCloseTo(-0.4)
+    expect(clampSplitDelta(twoCanvases, 0, 0.1, 700, canvases)).toBe(0)
+    expect(clampSplitDelta(twoCanvases, 0, -0.6, 700, canvases)).toBe(0)
   })
 })

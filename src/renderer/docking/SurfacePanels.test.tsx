@@ -42,6 +42,9 @@ function Harness({ localOnly = false }: { localOnly?: boolean }) {
 }
 function NavigationHarness() { useNavigationPanels(); return null }
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(2000)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(1000)
   useAppStore.setState({ selectedWorkspaceId: 'test', workspaces: [{ id: 'test', name: 'Test', rootPath: '/test', color: '', panels: { original: { id: 'original', type: 'canvas', title: 'Canvas', isDirty: false } } }] })
   useUIStore.setState({ requestedNavigationView: null })
   dock = createDockStore()
@@ -52,6 +55,8 @@ beforeEach(() => {
 })
 afterEach(() => {
   act(() => root.unmount()); host.remove()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   releaseWorkspaceDockStore('test')
   useAppStore.setState(appBefore, true); useUIStore.setState(uiBefore, true)
 })
@@ -199,4 +204,16 @@ it('splitting a maximized pane reveals the new pane', () => {
   act(() => (host.querySelector('[aria-label="Split Right"]') as HTMLButtonElement).click())
   expect(dock.getState().maximizedStackId).toBeNull()
   expect(host.querySelectorAll('[aria-label="Maximize split"]')).toHaveLength(3)
+})
+
+
+it('disables splitting small panes without creating a panel', () => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(500)
+  act(() => root.render(<FullDock />))
+  const button = host.querySelector<HTMLButtonElement>('[aria-label="Split Right"]')!
+  expect(button.disabled).toBe(true)
+  const layout = dock.getState().zones.center.layout
+  act(() => button.click())
+  expect(dock.getState().zones.center.layout).toBe(layout)
+  expect(Object.keys(useAppStore.getState().workspaces[0].panels)).toHaveLength(1)
 })

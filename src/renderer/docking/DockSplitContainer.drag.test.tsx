@@ -15,7 +15,7 @@ it('can drag away from the minimum and reverse direction during the same gesture
   store.setState((state) => ({ zones: { ...state.zones, center: { ...state.zones.center, layout: split } } }))
   function Harness() {
     const node = useDockStoreContext((state) => state.zones.center.layout) as DockSplitNode
-    return <DockSplitContainer node={node} getPanelType={() => 'canvas'} renderNode={() => null} />
+    return <DockSplitContainer node={node} getPanelType={() => 'editor'} renderNode={() => null} />
   }
   const host = document.createElement('div')
   document.body.appendChild(host)
@@ -26,9 +26,9 @@ it('can drag away from the minimum and reverse direction during the same gesture
     const handle = host.querySelector('.cursor-col-resize')!
     act(() => handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 400 })))
     act(() => document.dispatchEvent(new MouseEvent('mousemove', { clientX: 500 })))
-    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(0.5)
+    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(0.4 + 100 / 995)
     act(() => document.dispatchEvent(new MouseEvent('mousemove', { clientX: 450 })))
-    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(0.45)
+    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(0.4 + 50 / 995)
   } finally {
     act(() => document.dispatchEvent(new MouseEvent('mouseup')))
     act(() => root.unmount())

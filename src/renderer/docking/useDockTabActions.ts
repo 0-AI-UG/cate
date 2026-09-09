@@ -33,13 +33,14 @@ export interface DockTabActionsParams {
   onPanelRemoved?: (panelId: string) => void
   onPanelRenamed?: (panelId: string, title: string) => void
   excludePanelTypes?: PanelType[]
+  canSplit?: () => boolean
   localOnly?: boolean
 }
 
 export function useDockTabActions(params: DockTabActionsParams) {
   const {
     stack, zone, dockStoreApi, workspaceId, getPanelProp,
-    onClosePanel, onPanelRemoved, onPanelRenamed, excludePanelTypes, localOnly,
+    onClosePanel, onPanelRemoved, onPanelRenamed, excludePanelTypes, localOnly, canSplit,
   } = params
 
   const setActiveTab = useCallback((stackId: string, index: number) => {
@@ -215,6 +216,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
 
   const splitPanel = useCallback(
     () => {
+      if (canSplit && !canSplit()) return
       const newId = createPanelOfType('surface')
       if (!newId) return
       dockStoreApi.getState().dockPanel(newId, zone, {
@@ -223,7 +225,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
         edge: 'right',
       })
     },
-    [createPanelOfType, dockStoreApi, zone, stack.id],
+    [createPanelOfType, dockStoreApi, zone, stack.id, canSplit],
   )
 
   const chooseSurface = useCallback((type: PanelType) => {
@@ -274,7 +276,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           ? [{ id: 'close-all', label: 'Close All', accelerator: 'Cmd+K Cmd+W' } as NativeContextMenuItem]
           : []),
         { type: 'separator' },
-        { id: 'split-right', label: 'Split Right' },
+        { id: 'split-right', label: 'Split Right', enabled: canSplit?.() ?? true },
         { id: 'move-window', label: 'Move into New Window' },
       ]
       const id = await window.electronAPI.showContextMenu(menu)
@@ -332,7 +334,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           break
       }
     },
-    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, splitPanel, showMultiSelectionMenu, showCloseAll, beginRename, workspaceId],
+    [stack.panelIds, onClosePanel, getPanelLocal, moveTabToNewWindow, splitPanel, canSplit, showMultiSelectionMenu, showCloseAll, beginRename, workspaceId],
   )
 
   // Tab-bar (empty-area) context menu — split/new menus. Returns a handler
@@ -352,7 +354,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           label: 'New Tab',
           submenu: visibleSplitItems.map((m) => ({ id: `new:${m.type}`, label: m.label })),
         }],
-        [{ id: 'split', label: 'Split Right' }],
+        [{ id: 'split', label: 'Split Right', enabled: canSplit?.() ?? true }],
       ]
       if (showCloseAll()) {
         groups.push([{ id: 'close-all', label: 'Close All', enabled: stack.panelIds.length > 0 }])
@@ -372,7 +374,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
       if (kind === 'new') addTabOfType(type)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stack.panelIds, onClosePanel, excludeKey, addTabOfType, splitPanel, showMultiSelectionMenu, showCloseAll],
+    [stack.panelIds, onClosePanel, excludeKey, addTabOfType, splitPanel, canSplit, showMultiSelectionMenu, showCloseAll],
   )
 
   const handleTabClick = useCallback(

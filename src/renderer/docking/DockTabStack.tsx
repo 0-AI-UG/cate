@@ -20,6 +20,7 @@ import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
 import { setActivePanel } from '../lib/activePanel'
 import { NewTabButton } from './NewTabButton'
 import SurfacePicker from '../panels/SurfacePicker'
+import { canSplitPane, layoutMinimum } from './splitSizing'
 import { Tooltip } from '../ui/Tooltip'
 import { useDockTabDrag } from './useDockTabDrag'
 import { keepsMountedWhenTabHidden } from '../../shared/panels'
@@ -107,6 +108,27 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
 
   const activePanel = activePanelId ? resolvePanel(activePanelId) : undefined
 
+  const [splitAllowed, setSplitAllowed] = useState(false)
+  const canSplit = useCallback(() => {
+    const element = stackRef.current
+    if (!element) return false
+    const viewport = element.closest<HTMLElement>('[data-dock-viewport]')
+    return canSplitPane(Math.min(element.clientWidth, viewport?.clientWidth ?? element.clientWidth),
+      Math.min(element.clientHeight, viewport?.clientHeight ?? element.clientHeight),
+      layoutMinimum(stack, (id) => resolvePanel(id)?.type))
+  }, [stack, resolvePanel])
+  useEffect(() => {
+    const update = () => setSplitAllowed(canSplit())
+    update()
+    const observer = new ResizeObserver(update)
+    if (stackRef.current) {
+      observer.observe(stackRef.current)
+      const viewport = stackRef.current.closest('[data-dock-viewport]')
+      if (viewport) observer.observe(viewport)
+    }
+    return () => observer.disconnect()
+  }, [canSplit])
+
   // Set while the visible panel's own UI covers its top-right corner (see the
   // worktree chip below, which otherwise overlays exactly there).
   const [cornerClaimed, setCornerClaimed] = useState(false)
@@ -115,6 +137,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
   // Tab interaction actions (rename, click, context menus, add/split helpers).
   const actions = useDockTabActions({
     stack,
+    canSplit,
     zone: zoneProp,
     dockStoreApi,
     workspaceId: workspaceIdProp,
@@ -284,10 +307,12 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
         />
 
         {activePanelId && (
-          <Tooltip label="Split Right">
+          <Tooltip label={splitAllowed ? "Split Right" : "Not enough space. Resize this pane or open a tab."}>
             <button
               className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[22px] h-[22px]' : 'w-6 h-6'}`}
               aria-label="Split Right"
+              disabled={!splitAllowed}
+              style={!splitAllowed ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
               onClick={() => actions.splitPanel()}
             >
               <Columns size={compact ? 12 : 14} />
