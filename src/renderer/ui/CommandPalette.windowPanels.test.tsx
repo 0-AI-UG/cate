@@ -207,9 +207,3 @@ describe('CommandPalette in a detached window', () => {
     expect(host.textContent).not.toContain('Other window')
   })
 })
-
-it('renders the registered Source Control icon for its panel row', () => {
-  useWindowPanelStore.setState({ panels: [{ ...detached, type: 'sourceControl', title: 'Source Control' }] })
-  renderPalette('main')
-  expect(host.querySelector('svg.lucide-git-branch')).not.toBeNull()
-})

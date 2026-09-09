@@ -1,3 +1,6 @@
+import { OPEN_APPLICATION_OVERLAY, SHOW_APPLICATION_OVERLAY } from '../../shared/ipc-channels'
+import type { ApplicationOverlayRequest } from '../../shared/types'
+import { revealWindow } from '../windows/reveal'
 import { ipcMain } from 'electron'
 import { windowFromEvent, closeWindowsForWorkspace, getActiveMainWindow, sendToWindow } from '../windowRegistry'
 import { anyWindowFullscreen } from '../windows/fullscreen'
@@ -14,6 +17,13 @@ import {
 } from '../../shared/ipc-channels'
 
 export function registerWindowControlHandlers(): void {
+  ipcMain.handle(OPEN_APPLICATION_OVERLAY, (_event, request: ApplicationOverlayRequest) => {
+    if (!request || !['settings', 'skills', 'usage', 'pullRequests'].includes(request.view)) return
+    const main = getActiveMainWindow()
+    if (!main) throw new Error('No main application window is available.')
+    sendToWindow(main.id, SHOW_APPLICATION_OVERLAY, request)
+    revealWindow(main, { focus: true })
+  })
   // Renderer-driven title sync — used so each native macOS tab shows the
   // active workspace name instead of the generic app title.
   ipcMain.handle(WINDOW_SET_TITLE, async (event, title: string) => {

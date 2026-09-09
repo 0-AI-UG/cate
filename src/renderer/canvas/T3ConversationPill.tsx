@@ -1,3 +1,4 @@
+import { Spinner } from '../ui/Spinner'
 import { useState } from 'react'
 import { MessageCircleMore as ChatsCircle } from 'lucide-react'
 import type { PanelState } from '../../shared/types'
@@ -62,7 +63,7 @@ export function T3ConversationPill({ panel, workspaceId }: { panel: PanelState; 
     className="inline-flex h-[18px] max-w-[220px] cursor-pointer select-none items-center rounded-full border-0 bg-surface-2 text-secondary shadow-sm hover:text-primary disabled:opacity-60"
     style={{ gap: hovered ? 4 : 0, padding: hovered ? '0 9px 0 7px' : '0 4px', fontSize: 10, fontWeight: 600, lineHeight: 1, transition: 'gap 150ms ease, padding 150ms ease' }}
   >
-    <ChatsCircle size={11} className="shrink-0" />
+    <>{loading ? <Spinner size={11} label="Loading conversations" /> : <ChatsCircle size={11} className="shrink-0" />}</>
     <span style={{ maxWidth: hovered ? 180 : 0, opacity: hovered ? 1 : 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', transition: 'max-width 150ms ease, opacity 150ms ease' }}>{label}</span>
   </button>{renameTitle !== null && <Modal title="Rename conversation" width={360} dismissable={!loading} onClose={() => { if (!loading) setRenameTitle(null) }}>
     <form className="p-4" onMouseDown={(event) => event.stopPropagation()} onSubmit={async (event) => {

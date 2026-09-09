@@ -101,6 +101,14 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
     }
   }, [])
 
+  useEffect(() => window.electronAPI.onApplicationOverlay?.((request) => {
+    const ui = useUIStore.getState()
+    if (request.view === 'settings') ui.openSettings(request.section)
+    else if (request.view === 'skills') ui.setShowSkillsDialog(true)
+    else if (request.view === 'usage') ui.setShowUsage(true)
+    else ui.openRepository(request.section === 'changes' ? 'changes' : 'pullRequests')
+  }), [])
+
   // Cmd+, / Settings menu item → toggle the (already-mounted) SettingsWindow.
   useEffect(() => {
     return window.electronAPI.onMenuOpenSettings?.(() => {

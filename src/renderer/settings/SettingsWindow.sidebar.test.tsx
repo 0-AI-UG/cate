@@ -48,6 +48,8 @@ it('uses the Workspace sidebar for settings with only Back and updates in its fo
   expect(left.querySelector('#settings-sidebar-slot')?.querySelector('input')?.getAttribute('placeholder')).toBe('Search settings…')
   expect(host.querySelectorAll('aside')).toHaveLength(0)
   expect(host.querySelector('#settings-content-slot main')).not.toBeNull()
+  expect(host.querySelector('#settings-content-slot header h1')?.textContent).toBe('Settings')
+  expect(host.querySelector('#settings-content-slot header')?.textContent).not.toContain('/')
   const resetAll = vi.spyOn(useSettingsStore.getState(), 'resetAll').mockImplementation(() => {})
   const restoreButton = [...host.querySelectorAll('header button')].find((button) => button.textContent?.trim() === 'Restore defaults') as HTMLButtonElement
   expect(restoreButton).toBeDefined()
@@ -63,7 +65,8 @@ it('uses the Workspace sidebar for settings with only Back and updates in its fo
   expect((left.querySelector('[data-sidebar-scrollarea]') as HTMLElement).style.width).not.toBe('0px')
   const agents = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Agents')!
   act(() => agents.click())
-  expect(host.querySelector('header')?.textContent).toContain('T3 Code')
+  expect(left.querySelector('[aria-current="page"]')?.textContent).toBe('T3 Code')
+  expect(host.querySelector('header')?.textContent).not.toContain('T3 Code')
   expect(host.querySelector('header')?.textContent).toContain('Settings')
   const checkForUpdates = vi.fn().mockResolvedValue(undefined)
   vi.stubGlobal('electronAPI', { ...window.electronAPI, checkForUpdates })

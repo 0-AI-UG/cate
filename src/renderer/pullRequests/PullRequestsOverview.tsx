@@ -1,16 +1,15 @@
+import { LoadingState, Spinner } from '../ui/Spinner'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownUp, ListFilter, CheckCircle2, CircleX, GitPullRequest, Github, Settings2, ExternalLink, RefreshCw, Search } from 'lucide-react'
 import { Button, IconButton } from '../ui/Button'
 import { PaletteTextInput } from '../ui/PaletteTextInput'
 import { PopoverSurface, useNodePopover } from '../ui/Popover'
 import { useUIStore } from '../stores/uiStore'
-import { LeftSidebarReopen, useLeftChromeInset } from '../shells/LeftSidebarReopen'
 import { openPullRequest } from './openPullRequest'
 import type { PullRequestItem, GitHubLoginState, PullRequestsResult } from '../../shared/pullRequests'
 
-export default function PullRequestsOverview() {
+export default function PullRequestsOverview({ initialRepository = '' }: { initialRepository?: string }) {
   const visible = useUIStore((s) => s.showPullRequests)
-  const inset = useLeftChromeInset()
   const [result, setResult] = useState<PullRequestsResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [opening, setOpening] = useState<string | null>(null)
@@ -26,7 +25,8 @@ export default function PullRequestsOverview() {
     finally { openingRef.current = false; setOpening(null) }
   }
   const [query, setQuery] = useState('')
-  const [repository, setRepository] = useState('')
+  const [repository, setRepository] = useState(initialRepository)
+  useEffect(() => setRepository(initialRepository), [initialRepository])
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('updated')
   const [login, setLogin] = useState<GitHubLoginState>({ status: 'idle' })
@@ -48,11 +48,12 @@ export default function PullRequestsOverview() {
     return () => clearInterval(timer)
   }, [login.status])
   const signIn = async () => {
+    setLogin({ status: 'pending' })
     try { setLogin(await window.electronAPI.githubLogin('start')) }
     catch { setLogin({ status: 'error', message: 'Could not start GitHub sign-in. Try again.' }) }
   }
   const items = result?.status === 'ready' ? result.items : []
-  const repositories = [...new Set(items.map((pr) => pr.repository))].sort()
+  const repositories = [...new Set([...items.map((pr) => pr.repository), ...(initialRepository ? [initialRepository] : [])])].sort()
   const filtered = useMemo(() => items.filter((pr) => {
     const text = `${pr.title} ${pr.repository} ${pr.author} #${pr.number}`.toLowerCase()
     return query.toLowerCase().trim().split(/\s+/).every((term) => text.includes(term)) &&
@@ -62,13 +63,8 @@ export default function PullRequestsOverview() {
     b.additions + b.deletions - a.additions - a.deletions : b.updatedAt.localeCompare(a.updatedAt)), [items, query, repository, filter, sort])
   if (!visible) return null
   return (
-    <section aria-label="Pull requests" className="absolute inset-0 z-40 flex min-h-0 flex-col bg-canvas-bg text-primary">
-      <LeftSidebarReopen />
-      <header className="flex h-11 shrink-0 items-center justify-between border-b border-subtle px-6" style={{ paddingLeft: Math.max(24, inset) }}>
-        <h1 className="text-sm font-medium">Pull requests</h1>
-        {result?.status === 'ready' && <span className="flex items-center gap-2 text-xs text-muted"><Github size={14} />{result.account}</span>}
-      </header>
-      <div className="mx-auto flex w-full max-w-[1040px] min-h-0 flex-1 flex-col px-6 py-7">
+    <section aria-label="Pull requests" className="flex h-full min-h-0 flex-col text-primary">
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center gap-2 pb-4">
           <PaletteTextInput icon={<Search size={14} />} aria-label="Search pull requests" placeholder="Search pull requests, repository, or author" value={query} onChange={(e) => setQuery(e.target.value)} containerClassName="min-w-[180px] flex-1" />
           <ToolbarPopover label="Sort" icon={<ArrowDownUp size={14} />}>
@@ -92,18 +88,18 @@ export default function PullRequestsOverview() {
             {(filter !== 'all' || repository) && <Button variant="ghost" size="sm" className="mt-3" onClick={() => { setFilter('all'); setRepository('') }}>Reset filters</Button>}
           </ToolbarPopover>
           <IconButton label="GitHub settings" size={32} onClick={() => useUIStore.getState().openSettings('source control')}><Settings2 size={14} /></IconButton>
-          <IconButton label="Refresh pull requests" size={32} disabled={loading} onClick={() => void load(true)} className="border border-subtle"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></IconButton>
+          <IconButton label="Refresh pull requests" size={32} loading={loading} onClick={() => void load(true)} className="border border-subtle"><RefreshCw size={14} /></IconButton>
         </div>
         {openError && <p role="alert" className="mb-3 text-sm text-danger">{openError}</p>}
         {login.status === 'pending' && <div role="status" className="mb-4 rounded-lg border border-subtle p-4 text-sm">
-          {login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in…'}
+          <Spinner size={14} className="mr-2 align-middle" />{login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in…'}
           <div className="mt-3 flex gap-4">
             <button onClick={() => void window.electronAPI.openExternalUrl('https://github.com/login/device')} className="text-accent">Open GitHub</button>
             <button onClick={() => void window.electronAPI.githubLogin('cancel').then(setLogin)} className="text-muted">Cancel</button>
           </div>
         </div>}
         {login.status === 'error' && <p role="alert" className="mb-3 text-sm text-muted">{login.message}</p>}
-        {!result && loading ? <p className="py-12 text-center text-sm text-muted">Loading pull requests…</p> : result && result.status !== 'ready' ? (
+        {!result && loading ? <LoadingState label="Loading pull requests…" className="py-12 text-sm" /> : result && result.status !== 'ready' ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
             <Github size={28} className="text-muted" /><p className="max-w-md text-sm text-muted">{result.message}</p>
             {result.status === 'missing-cli' ? <button onClick={() => void window.electronAPI.openExternalUrl('https://cli.github.com/')} className="rounded-lg bg-surface-2 px-4 py-2 text-sm">Get GitHub CLI</button> :
@@ -123,7 +119,7 @@ export default function PullRequestsOverview() {
                   <span className="text-diff-add">+{pr.additions.toLocaleString()}</span><span className="text-danger">−{pr.deletions.toLocaleString()}</span>
                   <time dateTime={pr.updatedAt} title={new Date(pr.updatedAt).toLocaleString()} className="ml-1 min-w-[54px] text-right text-muted">{relativeDate(pr.updatedAt)}</time>
                 </span>
-                  <Button size="sm" disabled={opening !== null} onClick={() => void openInCate(pr)}>{opening === pr.id ? 'Opening…' : 'Open in Cate'}</Button>
+                  <Button size="sm" loading={opening === pr.id} disabled={opening !== null} onClick={() => void openInCate(pr)}>{opening === pr.id ? 'Opening…' : 'Open in Cate'}</Button>
                   <IconButton label={`Open pull request #${pr.number} on GitHub`} title="Open pull request on GitHub" onClick={() => void window.electronAPI.openExternalUrl(pr.url)}><ExternalLink size={14} /></IconButton>
               </div>)}
             </section>

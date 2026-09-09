@@ -908,7 +908,7 @@ export default function EditorPanel({
         <ExplorerSidebar visible={explorerVisible} fill={!editorVisible} onHide={() => setExplorerVisible(false)}>
           {searchVisible
             ? <SearchView store={searchStore} panelId={panelId} focusToken={panel?.navigationEpoch} rootPath={explorerRoot} workspaceId={workspaceId} focusInput={explorerVisible && activePanelId === panelId} onOpenMatch={(path, line, column) => { void openExplorerFiles([path], 'dock', { line, column }) }} />
-            : <FileExplorer rootPath={explorerRoot} onOpenFiles={openExplorerFiles} compact actionsTarget={explorerActionsTarget} />}
+            : <FileExplorer workspaceId={workspaceId} panelId={panelId} rootPath={explorerRoot} onOpenFiles={openExplorerFiles} compact actionsTarget={explorerActionsTarget} />}
         </ExplorerSidebar>
       )}
       </div>

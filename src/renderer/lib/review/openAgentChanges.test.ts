@@ -4,9 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   target: vi.fn(), retarget: vi.fn(async () => true), create: vi.fn(() => 'new'), setState: vi.fn(), title: vi.fn(),
   workspace: { rootPath: '/repo', panels: {} as Record<string, any> },
-  detached: [] as any[], remoteOpen: vi.fn(async () => true),
 }))
-vi.mock('../../stores/windowPanelStore', () => ({ useWindowPanelStore: { getState: () => ({ panels: h.detached }) } }))
 vi.mock('../panelTargetPicker', () => ({ requestPanelTarget: h.target }))
 vi.mock('./openReviewPanel', () => ({ retargetReviewPanel: h.retarget }))
 vi.mock('../../stores/appStore', () => ({ useAppStore: { getState: () => ({
@@ -16,18 +14,14 @@ import { openAgentChanges } from './openAgentChanges'
 
 beforeEach(() => {
   vi.clearAllMocks()
-  h.detached = []
-  window.electronAPI = { openWindowReviewPanel: h.remoteOpen } as any
   h.workspace.panels = { source: { type: 'agent', agentThreadId: 'chat' }, review: { type: 'review', reviewState: { repoPath: '/repo' } } }
 })
 describe('agent changes placement handoff', () => {
-  it('offers and retargets a matching detached review', async () => {
-    h.detached = [{ workspaceId: 'ws', panelId: 'detached', type: 'review', title: 'Detached review', reviewRepoPath: '/repo' }]
+  it('does not retarget a panel that left this window while choosing', async () => {
     h.target.mockResolvedValue({ kind: 'existing', panelId: 'detached' })
-    expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'source', cwd: '/repo' })).toBe(true)
-    expect(h.target).toHaveBeenCalledWith(expect.objectContaining({ additionalExisting: [{ panelId: 'detached', title: 'Detached review' }] }))
-    expect(h.remoteOpen).toHaveBeenCalledWith('detached', expect.objectContaining({ agentChanges: { panelId: 'source' } }))
+    expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'source', cwd: '/repo' })).toBe(false)
     expect(h.create).not.toHaveBeenCalled()
+    expect(h.retarget).not.toHaveBeenCalled()
   })
   it('does not mutate after the originating host has been disposed', async () => {
     h.target.mockResolvedValue({ kind: 'existing', panelId: 'review' })

@@ -400,6 +400,7 @@ export interface VcsHost {
   findRepos(dir: string, maxDepth?: number, access?: FileAccessContext): Promise<string[]>
   init(dir: string, access?: FileAccessContext): Promise<void>
   lsFiles(dir: string, access?: FileAccessContext): Promise<string[]>
+  remotes(cwd: string, access?: FileAccessContext): Promise<Array<{ name: string; fetchUrl: string; pushUrl: string }>>
   status(cwd: string, access?: FileAccessContext): Promise<GitStatusResult>
   compare(cwd: string, spec: GitComparisonSpec, access?: FileAccessContext): Promise<GitComparisonResult>
   fileDiff(

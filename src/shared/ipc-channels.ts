@@ -58,6 +58,7 @@ export const GIT_LS_FILES = 'git:lsFiles'
 export const GIT_BRANCH_UPDATE = 'git:branch-update'         // main -> renderer
 export const GIT_MONITOR_START = 'git:monitor-start'
 export const GIT_MONITOR_STOP = 'git:monitor-stop'
+export const GIT_REMOTES = 'git:remotes'
 export const GIT_STATUS = 'git:status'
 export const GIT_COMPARE = 'git:compare'
 export const GIT_FILE_DIFF = 'git:fileDiff'
@@ -435,3 +436,6 @@ export const PANEL_TRANSFER_READY = 'panel:transferReady'
 export const PANEL_TRANSFER_COMMIT = 'panel:transferCommit'
 
 export const PANEL_TRANSFER_FINISH = 'panel:transferFinish'
+
+export const OPEN_APPLICATION_OVERLAY = 'window:openApplicationOverlay'
+export const SHOW_APPLICATION_OVERLAY = 'window:showApplicationOverlay'

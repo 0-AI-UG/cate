@@ -1,4 +1,6 @@
-import { LeftSidebarReopen, useLeftChromeInset } from '../shells/LeftSidebarReopen'
+import { OverlayHeader } from '../ui/OverlayHeader'
+import { LoadingState } from '../ui/Spinner'
+import { LeftSidebarReopen } from '../shells/LeftSidebarReopen'
 import { useEffect, useRef, useState } from 'react'
 import { RotateCw } from 'lucide-react'
 import { useUIStore } from '../stores/uiStore'
@@ -26,13 +28,13 @@ export default function UsageOverview() {
       className="absolute inset-0 z-40 flex flex-col bg-canvas-bg"
     >
       <LeftSidebarReopen />
+      <OverlayHeader title="Usage" />
       <UsagePage />
     </section>
   )
 }
 
 function UsagePage() {
-  const leftChromeInset = useLeftChromeInset()
   const [panelId] = useState(() => `usage-${crypto.randomUUID()}`)
   const [state, setState] = useState<State>({ phase: 'loading' })
   const [attempt, setAttempt] = useState(0)
@@ -118,12 +120,6 @@ function UsagePage() {
     }
   }, [state])
 
-  useEffect(() => {
-    if (!ready || !guestRef.current) return
-    void guestRef.current.executeJavaScript(
-      `document.documentElement.style.setProperty('--cate-left-chrome-inset', '${leftChromeInset}px')`,
-    ).catch(() => undefined)
-  }, [ready, leftChromeInset])
 
   return (
     <div className="relative flex-1 min-h-0">
@@ -137,6 +133,7 @@ function UsagePage() {
         </div>
       ) : (
         <>
+          {!ready && <LoadingState label="Loading usage…" className="pointer-events-none absolute inset-0 text-sm" />}
           {state.phase === 'ready' && (
             <webview ref={guestRef as any} src={state.target.url} partition={state.target.partition}
               data-usage-webview="" data-usage-ready={ready ? 'true' : 'false'}

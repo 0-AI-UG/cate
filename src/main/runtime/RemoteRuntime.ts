@@ -245,6 +245,7 @@ export class RemoteRuntime implements Runtime {
       findRepos: (dir, maxDepth, access) => call<string[]>(Methods.vcsFindRepos, [dir, maxDepth, scoped(access)]),
       init: (dir, access) => call<void>(Methods.vcsInit, [dir, scoped(access)]),
       lsFiles: (dir, access) => call<string[]>(Methods.vcsLsFiles, [dir, scoped(access)]),
+      remotes: (cwd, access) => call(Methods.vcsRemotes, [cwd, scoped(access)]),
       status: (cwd, access) => call<GitStatusResult>(Methods.vcsStatus, [cwd, scoped(access)]),
       compare: (cwd, spec, access) => call<GitComparisonResult>(Methods.vcsCompare, [cwd, spec, scoped(access)]),
       fileDiff: (cwd, spec, filePath, options, access) => call<GitFileDiff>(Methods.vcsFileDiff, [cwd, spec, filePath, options, scoped(access)]),

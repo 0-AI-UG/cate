@@ -125,6 +125,22 @@ export function placementForBackgroundPanel(
   }
 }
 
+/** First canvas actually hosted by this window's dock, independent of focus.
+ * Center comes first, then left/right/bottom in ALL_ZONES order. No record-only
+ * fallback: an overlay must never offer placement on an invisible orphan. */
+export function getFirstDockedCanvasPanelId(workspaceId: string): string | null {
+  const ws = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
+  const snapshot = getWorkspaceDockSnapshot(workspaceId)
+  if (!ws || !snapshot) return null
+  const zones = ['center' as const, ...ALL_ZONES.filter((zone) => zone !== 'center')]
+  for (const zone of zones) {
+    for (const id of collectPanelIds(snapshot.zones[zone].layout)) {
+      if (ws.panels[id]?.type === 'canvas') return id
+    }
+  }
+  return null
+}
+
 function computeWorkspaceCanvasPanelId(workspaceId: string): string | null {
   const state = useAppStore.getState()
   const ws = state.workspaces.find((candidate) => candidate.id === workspaceId)

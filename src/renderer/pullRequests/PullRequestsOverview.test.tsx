@@ -43,3 +43,23 @@ it('opens the selected PR in Cate and surfaces checkout failures', async () => {
   expect(openPullRequest).toHaveBeenCalledWith(pr)
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('Open your local org/repo project')
 })
+
+it('defaults to the connected repository and follows repository changes', async () => {
+  const pr = { id: 'pr', number: 42, title: 'Matching request', repository: 'org/repo', author: 'alice', updatedAt: '2026-09-08T10:00:00Z', additions: 20, deletions: 3, involvement: 'authored' }
+  list.mockResolvedValue({ status: 'ready', account: 'alice', truncated: false, items: [pr, { ...pr, id: 'other', repository: 'org/other', title: 'Other request' }] })
+  await act(async () => root.render(<PullRequestsOverview initialRepository="org/repo" />))
+  expect(host.textContent).toContain('Matching request')
+  expect(host.textContent).not.toContain('Other request')
+  await act(async () => root.render(<PullRequestsOverview initialRepository="org/other" />))
+  expect(host.textContent).toContain('Other request')
+  expect(host.textContent).not.toContain('Matching request')
+})
+
+it('shows shared loading feedback while pull requests are pending', async () => {
+  list.mockReturnValue(new Promise(() => {}))
+  await act(async () => root.render(<PullRequestsOverview />))
+  expect(host.querySelector('[role="status"][aria-busy="true"]')?.textContent).toContain('Loading pull requests')
+  const refresh = host.querySelector('[aria-label="Refresh pull requests"]')!
+  expect(refresh.getAttribute('aria-busy')).toBe('true')
+  expect(refresh.querySelector('.animate-spin')).not.toBeNull()
+})

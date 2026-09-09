@@ -204,7 +204,7 @@ export function projectFilesToSnapshot(
     // Restore the persisted worktree registry (absolute paths) so colors/labels
     // are stable and panel.worktreeId references resolve after restart.
     worktrees: sess?.worktrees,
-    worktreeViewScopes: sess?.worktreeViewScopes,
+    worktreeViewScopes: restoredRepositoryScopes(sess),
     // Restore the machine-local reconnect info (absent ⇒ local). Only the
     // local-disk path carries it here; remote workspaces come straight from the
     // remoteProjects store with their connection already on the snapshot.
@@ -219,4 +219,23 @@ export function collectPanelIdsFromDockState(zones: WindowDockState): string[] {
     for (const id of collectPanelIds(zone.layout)) ids.add(id)
   }
   return [...ids]
+}
+
+/** Move retired panel drafts into the repository overlay before pruning layouts. */
+function restoredRepositoryScopes(session: ProjectSessionFile | null) {
+  const panels = [...Object.values(session?.panels ?? {}), ...(session?.dockWindows ?? []).flatMap(window => Object.values(window.panels))]
+  const legacy = panels.flatMap(panel => Object.entries(panel.sourceControlState ?? {}))
+  if (!legacy.length) return session?.worktreeViewScopes
+  const drafts: Record<string, string> = {}
+  const scopes: Record<string, string> = {}
+  for (const [root, state] of legacy) {
+    if (state.worktreeId) scopes[root] = state.worktreeId
+    const checkout = session?.worktrees?.find(worktree => worktree.id === state.worktreeId)?.path ?? root
+    if (state.commitMessage) drafts[checkout] = state.commitMessage
+  }
+  return {
+    ...session?.worktreeViewScopes,
+    sourceControlDrafts: { ...drafts, ...session?.worktreeViewScopes?.sourceControlDrafts },
+    sourceControlWorktreeByRepository: { ...scopes, ...session?.worktreeViewScopes?.sourceControlWorktreeByRepository },
+  }
 }

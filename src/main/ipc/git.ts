@@ -23,6 +23,7 @@ import {
   GIT_INIT,
   GIT_LS_FILES,
   GIT_STATUS,
+  GIT_REMOTES,
   GIT_COMPARE,
   GIT_FILE_DIFF,
   GIT_FILE_CONTENT,
@@ -127,6 +128,7 @@ export function registerHandlers(): void {
   route(GIT_INIT, 'init')
   route(GIT_LS_FILES, 'lsFiles')
   route(GIT_STATUS, 'status')
+  route(GIT_REMOTES, 'remotes')
   route(GIT_COMPARE, 'compare')
   route(GIT_FILE_DIFF, 'fileDiff')
   route(GIT_FILE_CONTENT, 'fileContent')

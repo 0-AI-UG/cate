@@ -210,9 +210,9 @@ export function createPanelTargetSlice(
     refreshPlacement() {
       const state = get()
       const pending = state.pendingPanelTarget
-      if (!pending || pending.freeArmed || pending.availability === 'existing') return
-      const candidates = computeCandidates(state, ctx, pending.panelType, pending.size)
-      if (candidates.length === 0) return
+      if (!pending || pending.freeArmed) return
+      const candidates = pending.availability === 'existing' ? [] : computeCandidates(state, ctx, pending.panelType, pending.size)
+      if (candidates.length === 0 && pending.existing.length === 0) return
       const camera = fitCamera(state, candidates, existingRects(state, pending))
       set({
         pendingPanelTarget: { ...pending, candidates, hoveredIndex: null },

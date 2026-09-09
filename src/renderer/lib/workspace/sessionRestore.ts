@@ -277,6 +277,10 @@ async function restoreSessionHydrate(snapshot: SessionSnapshot, workspaceId: str
     useUIStore.getState().setSourceControlWorktree(repositoryRoot, worktreeId)
   }
 
+  for (const [root, draft] of Object.entries(snapshot.worktreeViewScopes?.sourceControlDrafts ?? {})) {
+    useUIStore.getState().setSourceControlDraft(root, draft)
+  }
+
   const restoredCount = restorePanelRecords(wsId, snapshot)
   if (restoredCount > 0) {
     log.debug(`[session] restored ${restoredCount} panel records for workspace ${wsId}`)

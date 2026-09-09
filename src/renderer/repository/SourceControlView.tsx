@@ -1,9 +1,10 @@
+import { useUIStore } from '../stores/uiStore'
+import { Button } from '../ui/Button'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import log from '../lib/logger'
 import { GitBranch, Plus, Minus, ArrowUp, ArrowDown, Download, Trash, Archive, X, Check, GitCompareArrows as GitDiff } from 'lucide-react'
 import { RotateCw as ArrowClockwise, ChevronDown as CaretDown, ChevronRight as CaretRight, Undo2 as ArrowUUpLeft, SquareArrowOutUpRight as BoxArrowUp, History as ClockCounterClockwise } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
-import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { pathDisplayName } from '../lib/fs/displayPath'
 import { Tooltip } from '../ui/Tooltip'
 import { Spinner } from '../ui/Spinner'
@@ -13,9 +14,8 @@ import { errorMessage } from '../lib/errorMessage'
 import { parseLocator } from '../../shared/runtimeLocator'
 import { openReviewPanel } from '../lib/review/openReviewPanel'
 import type { GitComparisonSpec } from '../../shared/types'
-import { useUIStore } from '../stores/uiStore'
 import { selectedWorktree } from '../lib/worktreeContext'
-import { WorktreeScopeSelect } from './WorktreeScopeSelect'
+import { WorktreeScopeSelect } from '../sidebar/WorktreeScopeSelect'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,7 +65,7 @@ function dirName(path: string): string {
   return parts.join('/')
 }
 
-/** Last path segment of a rootPath, for the nested-mode section header.
+/** Last path segment of a repository path, for its Changes selector.
  *  rootPath may be a locator (`cate-runtime://<id>/<path>`) for a remote
  *  workspace, so decode it before taking the basename. */
 function repoDisplayName(rootPath: string): string {
@@ -119,7 +119,7 @@ const Section: React.FC<{
   return (
     <div className="mb-1">
       <div
-        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-muted cursor-pointer hover:bg-hover select-none"
+        className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-muted cursor-pointer hover:bg-hover select-none"
         onClick={() => setOpen(!open)}
       >
         {open ? <CaretDown size={12} /> : <CaretRight size={12} />}
@@ -151,7 +151,7 @@ const FileEntry: React.FC<{
   const dir = dirName(file.path)
   return (
     <div
-      className="group flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] text-[12px] cursor-pointer hover:bg-hover"
+      className="group flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-2 text-[13px] cursor-pointer hover:bg-hover"
       onClick={onClick}
     >
       <span className={`w-4 text-center font-mono text-[11px] flex-shrink-0 ${statusColor(statusChar)}`}>
@@ -211,7 +211,7 @@ const BranchPicker: React.FC<{
   onSwitch: () => void
   onReview: (branch: string) => void
 }> = ({ repositoryRoot, checkoutRoot, currentBranch, onSwitch, onReview }) => {
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen, setIsOpen] = useState(true)
   const [branches, setBranches] = useState<GitBranchInfo[]>([])
   const [filter, setFilter] = useState('')
   const [creating, setCreating] = useState(false)
@@ -286,7 +286,7 @@ const BranchPicker: React.FC<{
     <div className="mb-1">
       {/* Section header — matches Section component style */}
       <div
-        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-muted cursor-pointer hover:bg-hover select-none"
+        className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-muted cursor-pointer hover:bg-hover select-none"
         onClick={() => setIsOpen(!isOpen)}
       >
         {isOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}
@@ -402,30 +402,25 @@ const BranchPicker: React.FC<{
 }
 
 // ---------------------------------------------------------------------------
-// RepoSourceControl — the full single-repo view (staged/changes/branches/log/
-// worktrees + commit box). Rendered standalone when the workspace root is
-// itself a repo, or once per discovered repo (nested) in a multi-repo
-// workspace. `nested` swaps the "Source Control" panel header for a
-// collapsible section headed by the repo's folder name.
+// Repository sections share the existing Git actions and status owner.
+// Only Changes follows the selected worktree; other sections use the repo root.
 // ---------------------------------------------------------------------------
 
 interface RepoSourceControlProps {
+  workspaceId: string
   rootPath: string
-  nested?: boolean
 }
 
-const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested = false }) => {
-  const [sectionOpen, setSectionOpen] = useState(true)
+const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, workspaceId: selectedWorkspaceId }) => {
+  const [section, setSection] = useState<'changes' | 'branches' | 'history' | 'worktrees'>('changes')
+  const repositorySnapshot = useGitStatusSnapshot(rootPath)
   // status + worktrees come from the single per-workspace gitStatusStore (the
   // shared fsWatch + focus + branch-update loop). The Source Control list can
   // therefore no longer disagree with the Explorer / Search git tints. Only the
   // commit log is still fetched locally (it isn't part of the shared snapshot).
-  const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const worktrees = useWorktrees(rootPath, selectedWorkspaceId)
-  const selectedChangesWorktreeId = useUIStore(
-    (s) => s.sourceControlWorktreeByRepository[rootPath],
-  )
-  const setSourceControlWorktree = useUIStore((s) => s.setSourceControlWorktree)
+  const selectedChangesWorktreeId = useUIStore(s => s.sourceControlWorktreeByRepository[rootPath])
+  const setSourceControlWorktree = useUIStore(s => s.setSourceControlWorktree)
   const changesWorktree = selectedWorktree(worktrees, selectedChangesWorktreeId)
   const checkoutRoot = changesWorktree?.path ?? rootPath
   const snapshot = useGitStatusSnapshot(checkoutRoot)
@@ -440,7 +435,10 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     : null
 
   const [logEntries, setLogEntries] = useState<GitLogEntry[]>([])
-  const [commitMessage, setCommitMessage] = useState('')
+  const commitMessage = useUIStore(s => s.sourceControlDrafts[checkoutRoot] ?? '')
+  const setCommitMessage = useCallback((draft: string) => {
+    useUIStore.getState().setSourceControlDraft(checkoutRoot, draft)
+  }, [checkoutRoot])
   const [loading, setLoading] = useState(false)
   const [committing, setCommitting] = useState(false)
   const [pushing, setPushing] = useState(false)
@@ -462,9 +460,8 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     setActionError(null)
     gitStatusStore.refresh(checkoutRoot)
     try {
-      // History follows the selected checkout's current branch. Branch and
-      // worktree inventories below remain repository-wide.
-      const logResult = await window.electronAPI.gitLog(checkoutRoot, 30, workspaceIdForRoot(checkoutRoot))
+      // History follows the repository root; the Changes worktree is independent.
+      const logResult = await window.electronAPI.gitLog(rootPath, 30, selectedWorkspaceId)
       setLogEntries(logResult)
     } catch (err) {
       log.error('Git log error:', err)
@@ -481,9 +478,11 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     spec: GitComparisonSpec,
     focusedFile?: string,
     openNew = false,
+    repoPath = checkoutRoot,
   ) => {
     if (!selectedWorkspaceId) return
-    void openReviewPanel({ workspaceId: selectedWorkspaceId, repoPath: checkoutRoot, spec, focusedFile, openNew })
+    void openReviewPanel({ workspaceId: selectedWorkspaceId, repoPath, spec, focusedFile, openNew, source: 'overlay' })
+    useUIStore.getState().setShowPullRequests(false)
   }, [checkoutRoot, selectedWorkspaceId])
 
   // -------------------------------------------------------------------------
@@ -536,7 +535,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     } finally {
       setCommitting(false)
     }
-  }, [checkoutRoot, commitMessage, committing, refresh])
+  }, [checkoutRoot, commitMessage, committing, refresh, setCommitMessage])
 
   const push = useCallback(async () => {
     if (pushing) return
@@ -609,7 +608,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
   ) ?? []
 
   const changedFiles = status?.files.filter(
-    (f) => f.working_dir && f.working_dir !== ' ' && f.working_dir !== '?' && (f.index === ' ' || f.index === '?' || !f.index)
+    (f) => f.working_dir && f.working_dir !== ' ' && f.working_dir !== '?'
   ) ?? []
 
   const untrackedFiles = status?.files.filter(
@@ -667,62 +666,28 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
     />
   ) : null
 
-  const headerActions = (
-    <>
-      <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' })} title="Review all uncommitted changes">
-        <GitDiff size={12} />
-      </SidebarHeaderButton>
-      <SidebarHeaderButton onClick={() => openReview({ kind: 'uncommitted' }, undefined, true)} title="Open new diff review">
-        <Plus size={12} />
-      </SidebarHeaderButton>
-      <SidebarHeaderButton onClick={fetch_} title="Fetch from remote" disabled={fetching} spinning={fetching}>
-        <Download size={12} />
-      </SidebarHeaderButton>
-      <SidebarHeaderButton onClick={pull} title="Pull from remote" disabled={pulling} spinning={pulling}>
-        <ArrowDown size={12} />
-      </SidebarHeaderButton>
-      <SidebarHeaderButton onClick={push} title="Push to remote" disabled={pushing} spinning={pushing}>
-        <ArrowUp size={12} />
-      </SidebarHeaderButton>
-      <SidebarHeaderButton onClick={refresh} title="Refresh status" spinning={loading}>
-        <ArrowClockwise size={12} />
-      </SidebarHeaderButton>
-    </>
-  )
-
-  // In nested (multi-repo) mode the whole repo body collapses under a header
-  // labelled with the repo's folder name; standalone keeps the full panel.
-  const bodyVisible = !nested || sectionOpen
+  const headerActions = <Button variant="ghost" size="sm" onClick={refresh} loading={loading}>{!loading && <ArrowClockwise size={14} />}Refresh</Button>
 
   return (
-    <div className={nested ? 'flex flex-col text-[12px]' : 'flex flex-col h-full overflow-hidden text-[12px]'}>
-      {nested ? (
-        <div
-          className="flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-2 py-1 text-[11px] font-medium text-muted cursor-pointer hover:bg-hover select-none"
-          onClick={() => setSectionOpen((v) => !v)}
-        >
-          {sectionOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}
-          <span className="truncate text-secondary flex-shrink-0 max-w-[45%]">{repoName}</span>
-          <span className="flex-1 min-w-0 font-normal normal-case">{branchSubtitle}</span>
-          <div className="flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            {headerActions}
+    <div className="flex h-full min-h-0 flex-col overflow-hidden text-[12px]" style={{ containerType: 'inline-size', containerName: 'repository' }}>
+      <nav aria-label="Repository sections" className="flex shrink-0 items-center gap-1 pb-3">
+        {(['changes', 'branches', 'history', 'worktrees'] as const).map(value => <Button variant="ghost" key={value} size="sm" aria-pressed={section === value} className={section === value ? 'bg-hover text-primary' : 'text-muted'} onClick={() => setSection(value)}>{value === 'history' ? 'History' : value[0].toUpperCase() + value.slice(1)}</Button>)}
+        <div className="ml-auto">{headerActions}</div>
+      </nav>
+      {section === 'changes' && (
+        <div className="px-1 pb-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 py-2">
+            <div className="flex items-center gap-3">{changesScope ?? branchSubtitle}<span className="text-muted">{status?.files.length ?? 0} files changed</span></div>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={fetch_} loading={fetching}>{!fetching && <Download size={14} />}Fetch</Button>
+              <Button variant="ghost" size="sm" onClick={pull} loading={pulling}>{!pulling && <ArrowDown size={14} />}Pull</Button>
+              <Button variant="ghost" size="sm" onClick={push} loading={pushing}>{!pushing && <ArrowUp size={14} />}Push{status?.ahead ? ` (${status.ahead})` : ''}</Button>
+              <Button variant="ghost" size="sm" onClick={() => openReview({ kind: 'uncommitted' })}><GitDiff size={14} />Review changes</Button>
+            </div>
           </div>
         </div>
-      ) : (
-        <SidebarSectionHeader
-          title="Source Control"
-          subtitle={changesScope ? repoName : branchSubtitle}
-          actions={headerActions}
-        />
       )}
 
-      {bodyVisible && changesScope && (
-        <div className="px-3 py-1 border-b border-subtle">
-          {changesScope}
-        </div>
-      )}
-
-      {bodyVisible && (
       <>
       {/* Error banner */}
       {actionError && (
@@ -736,12 +701,17 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
         </div>
       )}
 
+      <div className={section === 'changes' ? 'repository-changes-grid grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto py-2' : 'min-h-0 flex-1 overflow-y-auto py-2'}>
       {/* Commit area */}
-      <div className="px-2 pt-2 pb-2 flex-shrink-0">
+      {section === 'changes' && (
+      <div className="order-2 self-start rounded-xl bg-surface-1 p-4">
+        <h2 className="mb-1 text-sm font-medium">Commit staged changes</h2>
+        <p className="mb-4 text-xs text-muted">{stagedFiles.length} staged {stagedFiles.length === 1 ? 'file' : 'files'} · {status?.current ?? 'Detached HEAD'}</p>
         <textarea
           ref={textareaRef}
           className="w-full bg-surface-2 border border-subtle rounded-lg px-2 py-1.5 text-[12px] text-primary placeholder:text-muted resize-none focus:outline-none focus:border-subtle min-h-[72px] no-scrollbar"
-          placeholder="Commit message"
+          aria-label="Commit message"
+          placeholder="Describe what changed…"
           value={commitMessage}
           onChange={(e) => setCommitMessage(e.target.value)}
           onKeyDown={(e) => {
@@ -782,9 +752,10 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
         </div>
       </div>
 
-      {/* File sections — the standalone panel scrolls here; nested repos flow
-          into the wrapper's shared scroll container instead. */}
-      <div className={nested ? '' : 'flex-1 min-h-0 overflow-y-auto'}>
+      )}
+      {/* Changes share a bounded column beside the commit composer. */}
+      <div className="min-w-0 py-1">
+        {section === 'changes' && <>
         {/* Staged Changes */}
         <Section
           title="Staged Changes"
@@ -878,25 +849,30 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           ))}
         </Section>
 
+        </>}
+        {section === 'branches' && <>
         {/* Branches */}
         <BranchPicker
           repositoryRoot={rootPath}
-          checkoutRoot={checkoutRoot}
-          currentBranch={status?.current ?? null}
+          checkoutRoot={rootPath}
+          currentBranch={repositorySnapshot.branch ?? null}
           onSwitch={refresh}
           onReview={(base) => {
-            const target = status?.current
-            if (target && target !== base) openReview({ kind: 'branch', base, target })
+            const target = repositorySnapshot.branch
+            if (target && target !== base) openReview({ kind: 'branch', base, target }, undefined, false, rootPath)
           }}
         />
 
+        </>}
+        {section === 'history' && <>
+        {!logEntries.length && <p className="p-6 text-sm text-muted">No commits to display.</p>}
         {/* Commit Log */}
-        <Section title="Commit Log" count={logEntries.length} defaultOpen={false}>
+        <Section title="Commit history" count={logEntries.length}>
           {logEntries.map((entry) => (
             <div
               key={entry.hash}
               className="flex items-start gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[4px] hover:bg-hover text-[11px] cursor-pointer"
-              onClick={() => openReview({ kind: 'commit', commit: entry.hash })}
+              onClick={() => openReview({ kind: 'commit', commit: entry.hash }, undefined, false, rootPath)}
             >
               <ClockCounterClockwise size={11} className="text-muted flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
@@ -911,12 +887,13 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           ))}
         </Section>
 
+        </>}
+        {section === 'worktrees' && <>
         {/* Worktrees — read-only mirror; manage from the canvas toolbar's
             parallel-worktrees drop-up. */}
         <Section
           title="Worktrees"
           count={worktrees.filter((wt) => !wt.isOrphan).length}
-          defaultOpen={false}
         >
           {worktrees.filter((wt) => !wt.isOrphan).map((wt) => (
             <button
@@ -926,7 +903,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
                 wt.id === changesWorktree?.id ? 'text-primary bg-surface-3' : 'text-secondary'
               }`}
               title={`${wt.path}\nSelect this checkout for Changes. Manage worktrees in Parallel Work.`}
-              onClick={() => setSourceControlWorktree(rootPath, wt.id)}
+              onClick={() => { setSourceControlWorktree(rootPath, wt.id); setSection('changes') }}
             >
               <GitBranch size={12} className="flex-shrink-0" />
               <span className="truncate flex-1">{wt.label || wt.branch || '(detached)'}</span>
@@ -940,85 +917,18 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, nested 
           ))}
         </Section>
 
+        </>}
         {/* Empty state */}
-        {status && stagedFiles.length === 0 && changedFiles.length === 0 && untrackedFiles.length === 0 && (
+        {section === 'changes' && status && stagedFiles.length === 0 && changedFiles.length === 0 && untrackedFiles.length === 0 && (
           <div className="flex items-center justify-center py-8 text-muted text-[11px]">
             No changes detected
           </div>
         )}
       </div>
+      </div>
       </>
-      )}
     </div>
   )
 }
 
-// ---------------------------------------------------------------------------
-// SourceControlView — public entry. Discovers the git repos in the workspace
-// and renders the single-repo view directly when the root itself is a repo (or
-// exactly one repo lives under it, or none is found), or a stacked, collapsible
-// section per repo when the root is a multi-repo parent folder (issue #400).
-// ---------------------------------------------------------------------------
-
-interface SourceControlViewProps {
-  rootPath: string
-}
-
-export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }) => {
-  // null = discovery hasn't resolved yet; render the single view meanwhile so
-  // the common (root-is-a-repo) case never flashes an intermediate layout.
-  const [repos, setRepos] = useState<string[] | null>(null)
-
-  useEffect(() => {
-    if (!rootPath) {
-      setRepos(null)
-      return
-    }
-    let cancelled = false
-    const discover = (): void => {
-      window.electronAPI
-        .gitFindRepos(rootPath, undefined, workspaceIdForRoot(rootPath))
-        .then((found) => { if (!cancelled) setRepos(found) })
-        .catch(() => { if (!cancelled) setRepos([]) })
-    }
-    discover()
-    // Re-scan on focus so a repo created/removed in a subfolder while the app
-    // was backgrounded appears without reopening the workspace. The scan is a
-    // cheap depth-1 directory read.
-    window.addEventListener('focus', discover)
-    return () => {
-      cancelled = true
-      window.removeEventListener('focus', discover)
-    }
-  }, [rootPath])
-
-  if (!rootPath) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted text-xs p-4">
-        No folder open
-      </div>
-    )
-  }
-
-  // Single-repo — the common case: root is the repo, one repo sits below it, or
-  // nothing was discovered (yet / at all). Render the full panel as before,
-  // targeting the discovered repo when it differs from the workspace root.
-  if (repos === null || repos.length <= 1) {
-    return <RepoSourceControl rootPath={repos && repos.length === 1 ? repos[0] : rootPath} />
-  }
-
-  // Multi-repo parent folder: one collapsible section per repo.
-  return (
-    <div className="flex flex-col h-full overflow-hidden text-[12px]">
-      <SidebarSectionHeader
-        title="Source Control"
-        subtitle={<span className="text-muted">{repos.length} repositories</span>}
-      />
-      <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-subtle">
-        {repos.map((repo) => (
-          <RepoSourceControl key={repo} rootPath={repo} nested />
-        ))}
-      </div>
-    </div>
-  )
-}
+export const SourceControlView = RepoSourceControl

@@ -22,7 +22,7 @@ function legacyWorkspace(removedType: string): ProjectWorkspaceFile {
   }
 }
 
-describe.each(['extension', 'nativeApp'])('removed %s panel restoration', (removedType) => {
+describe.each(['extension', 'nativeApp', 'sourceControl'])('removed %s panel restoration', (removedType) => {
   it('drops obsolete panels and empty canvas nodes, preserving the selected surviving dock tab', () => {
     const ws = legacyWorkspace(removedType)
     const restored = projectFilesToSnapshot(ws, null, '/repo')
@@ -63,4 +63,12 @@ it.each(['navigation', 'search'])('migrates the consolidated %s surface without 
     panels, workspaceId: 'ws', bounds: { x: 0, y: 0, width: 800, height: 600 }, dockState: ws.dockState!, canvasStates: {},
   }] })
   expect(windows[0].panels.legacy.type).toBe('editor')
+})
+
+it('preserves retired Source Control drafts and checkout scopes in the repository overlay', () => {
+  const ws = legacyWorkspace('sourceControl')
+  const session: ProjectSessionFile = { version: 1, panels: { removed: { panelId: 'removed', sourceControlState: { '/repo': { commitMessage: 'Unfinished commit', worktreeId: 'feature' } } } } }
+  const restored = projectFilesToSnapshot(ws, session, '/repo')
+  expect(restored.panels).not.toHaveProperty('removed')
+  expect(restored.worktreeViewScopes).toMatchObject({ sourceControlDrafts: { '/repo': 'Unfinished commit' }, sourceControlWorktreeByRepository: { '/repo': 'feature' } })
 })

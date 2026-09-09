@@ -13,7 +13,6 @@ import { Columns2 as Columns, Maximize2, Minimize2 } from 'lucide-react'
 import { DockTabBar } from './DockTabBar'
 import { WorktreePill } from '../canvas/WorktreePill'
 import { AgentChangesPill } from '../canvas/AgentChangesPill'
-import { T3ConversationPill } from '../canvas/T3ConversationPill'
 import { SPLIT_MENU_ITEMS } from './DockTabContextMenu'
 import type { SplitMenuItem } from './DockTabContextMenu'
 import { useDockTabActions, useAcceptsPanelType } from './useDockTabActions'
@@ -391,19 +390,18 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             No panel
           </div>
         )}
-        {/* Terminal/Agent worktree chip — overlaid on the panel's top-right rather than crammed
+        {/* Terminal worktree chip — overlaid on the panel's top-right rather than crammed
             into the tab strip (where it starved the title). Collapsed to its icon
             until hovered so it covers almost no content (#370). Self-hides for
             single-worktree workspaces, and stands
             down while the panel claims the corner for its own UI (see
             panelChrome) rather than sitting on top of it. */}
-        {(activePanel?.type === 'terminal' || activePanel?.type === 'agent') && effectiveWorkspaceId && !cornerClaimed && (
+        {activePanel?.type === 'terminal' && effectiveWorkspaceId && !cornerClaimed && (
           // right-3 (12px), not right-1.5: terminal panels reserve a 6px
           // scrollbar lane (overflow-y: scroll). Offset
           // past it so the chip clears the scrollbar and leaves a 6px gap that
           // matches the 6px top inset (top-1.5).
           <div data-browser-surface-overlay={activePanel.id} className="absolute top-1.5 right-3 z-10 flex items-center gap-1">
-            {activePanel.type === 'agent' && <T3ConversationPill key={activePanel.id} panel={activePanel} workspaceId={effectiveWorkspaceId} />}
             <WorktreePill panel={activePanel} workspaceId={effectiveWorkspaceId} />
             <AgentChangesPill key={`changes:${activePanel.id}`} panel={activePanel} workspaceId={effectiveWorkspaceId} />
           </div>

@@ -523,6 +523,34 @@ async function selectOverlay(label: string) {
   await page.getByRole('button', { name: 'Select chat', exact: true }).click()
 }
 
+for (const placement of ['canvas', 'docked'] as const) {
+  test(`${placement} T3 overlay controls stay clickable above the guest`, async () => {
+    if (placement === 'canvas') {
+      await page.evaluate(() => {
+        window.__cateE2E!.setZoom(0.75)
+        window.__cateE2E!.setViewport({ x: 0, y: 0 })
+      })
+    }
+    const controls = page.locator(`[data-agent-controls="${agent.panelId}"]`)
+    await expect(controls).toBeVisible()
+    expect(await controls.evaluate((element) => {
+      const surface = element.closest('[data-browser-surface]')
+      return !!surface?.querySelector('webview') && !getComputedStyle(surface).clipPath.includes('evenodd')
+    })).toBe(true)
+    await electronApp!.evaluate(({ Menu }) => {
+      const original = Menu.prototype.popup
+      Menu.prototype.popup = function (options) {
+        Menu.prototype.popup = original
+        ;(globalThis as any).__overlayMenuOpened = this.items.some((item) => item.label === 'New conversation')
+        options?.callback?.()
+      }
+    })
+    await controls.getByRole('button', { name: 'Select chat', exact: true }).click()
+    await expect.poll(() => electronApp!.evaluate(() => (globalThis as any).__overlayMenuOpened)).toBe(true)
+    await page.screenshot({ path: test.info().outputPath('t3-overlay.png') })
+  })
+}
+
 for (const entry of ['overlay', 'action bar'] as const) {
   test(`real T3 new conversation from ${entry} stays in a fresh draft with an existing chat`, async () => {
     // Use the actual bundled T3 router/bootstrap, not fake-t3: the fake never

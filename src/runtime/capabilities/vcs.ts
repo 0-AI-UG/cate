@@ -464,6 +464,10 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
         return []
       }
     },
+    async remotes(cwd, access) {
+      const remotes = await simpleGit(validateCwd(cwd, access)).getRemotes(true)
+      return remotes.map(remote => ({ name: remote.name, fetchUrl: remote.refs.fetch, pushUrl: remote.refs.push }))
+    },
     async status(cwd, access) {
       const status = await simpleGit(validateCwd(cwd, access)).status()
       return {

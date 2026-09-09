@@ -523,3 +523,8 @@
 @media (prefers-reduced-motion: reduce) {
   .dock-new-tab-menu { animation: none; }
 }
+
+/* Adapt to the overlay's available width, including when the sidebar is open. */
+@container repository (min-width: 720px) {
+  .repository-changes-grid { grid-template-columns: minmax(0, 1fr) 300px; }
+}

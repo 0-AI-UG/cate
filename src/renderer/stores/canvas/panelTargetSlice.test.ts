@@ -186,3 +186,27 @@ describe('panel target selection', () => {
     expect(firstCancelled).toHaveBeenCalledOnce()
   })
 })
+
+
+it.each(['new', 'both', 'existing'] as const)('refits %s targets when a revealed canvas is measured', (availability) => {
+  const store = createCanvasStore()
+  store.getState().addNode('existing', 'terminal', { x: 1400, y: 1000 }, SIZE)
+  const cancelled = vi.fn()
+  store.getState().beginPanelTarget({ panelType: 'terminal', availability,
+    existing: [{ panelId: 'existing', title: 'Existing' }], onCancelled: cancelled })
+  store.getState().setContainerSize(CONTAINER)
+  const pending = store.getState().pendingPanelTarget!
+  const rect = availability === 'existing'
+    ? { point: { x: 1400, y: 1000 }, size: SIZE }
+    : pending.candidates[0]
+  const state = store.getState()
+  const x = rect.point.x * state.zoomLevel + state.viewportOffset.x
+  const y = rect.point.y * state.zoomLevel + state.viewportOffset.y
+  expect(x).toBeGreaterThanOrEqual(0)
+  expect(y).toBeGreaterThanOrEqual(0)
+  expect(x).toBeLessThan(CONTAINER.width)
+  expect(y).toBeLessThan(CONTAINER.height)
+  expect(cancelled).not.toHaveBeenCalled()
+  store.getState().cancelPanelTarget()
+  expect(store.getState().viewportOffset).toEqual({ x: 0, y: 0 })
+})

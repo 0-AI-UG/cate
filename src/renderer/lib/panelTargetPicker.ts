@@ -4,11 +4,12 @@ import type { PanelPlacement } from '../stores/appStore'
 import type { PanelTargetAvailability } from '../stores/canvasStore'
 import { useAppStore } from '../stores/appStore'
 import {
-  getActiveCanvasPanelId,
-  getCanvasOpsById,
-  getWorkspaceCanvasPanelId,
+  ensureCanvasOpsForPanel,
+  getFirstDockedCanvasPanelId,
+  resolvePanelLocation,
   placementForPanel,
 } from './workspace/canvasAccess'
+import { revealPanel } from './workspace/panelReveal'
 
 export type PanelTarget =
   | { kind: 'new'; placement: Extract<PanelPlacement, { target: 'canvas' | 'dock' }> }
@@ -20,54 +21,66 @@ export interface PanelTargetRequest {
   availability: PanelTargetAvailability
   /** Restrict existing choices after the type filter (for example, idle terminals in one worktree). */
   existingPanelIds?: string[]
-  /** Additional candidates owned by another window, resolved by the caller. */
-  additionalExisting?: Array<{ panelId: string; title: string }>
-  /** Prefer the canvas containing this panel; otherwise use the active or primary canvas. */
+  /** Resolve the source in this window; absent sources use the first docked canvas. */
   sourcePanelId?: string
-  chooseExistingInDock?: boolean
+  /** Overlays use the first docked canvas, or create directly in the center dock. */
+  source?: 'overlay'
 }
 
-export function requestPanelTarget(request: PanelTargetRequest): Promise<PanelTarget | null> {
+export async function requestPanelTarget(request: PanelTargetRequest): Promise<PanelTarget | null> {
   const state = useAppStore.getState()
   const workspace = state.workspaces.find((candidate) => candidate.id === request.workspaceId)
-  if (!workspace) return Promise.resolve(null)
-  const existing = [
-    ...Object.values(workspace.panels)
-      .filter((panel) => panel.type === request.panelType && (!request.existingPanelIds || request.existingPanelIds.includes(panel.id)))
-      .map((panel) => ({ panelId: panel.id, title: panel.title })),
-    ...(request.additionalExisting ?? []),
-  ].filter((candidate, index, all) => all.findIndex((item) => item.panelId === candidate.panelId) === index)
+  if (!workspace) return null
+  const existing = Object.values(workspace.panels)
+    .filter((panel) => panel.type === request.panelType && (!request.existingPanelIds || request.existingPanelIds.includes(panel.id)))
+    .map((panel) => ({ panelId: panel.id, title: panel.title }))
 
-  const sourcePlacement = request.sourcePanelId
+  const sourcePlacement = request.source !== 'overlay' && request.sourcePanelId
     ? placementForPanel(request.workspaceId, request.sourcePanelId)
     : undefined
-  if (sourcePlacement?.target === 'dock') {
-    if (request.chooseExistingInDock && request.availability === 'both') {
-      return window.electronAPI.showContextMenu([
-        { id: '__new', label: `New ${PANEL_DEFINITIONS[request.panelType].label}` },
-        ...existing.map((panel) => ({ id: panel.panelId, label: panel.title })),
-      ]).then((id) => !id ? null : id === '__new'
-        ? { kind: 'new' as const, placement: sourcePlacement }
-        : { kind: 'existing' as const, panelId: id })
-    }
-    if (request.availability === 'existing') return Promise.resolve(null)
-    return Promise.resolve({
-      kind: 'new',
-      placement: sourcePlacement,
-    })
-  }
   const canvasPanelId = sourcePlacement?.target === 'canvas'
     ? sourcePlacement.canvasPanelId
-    : getActiveCanvasPanelId() ?? getWorkspaceCanvasPanelId(request.workspaceId)
-  if (!canvasPanelId) return Promise.resolve(null)
-  const canvas = getCanvasOpsById(canvasPanelId)?.storeApi
-  if (!canvas) return Promise.resolve(null)
+    : sourcePlacement?.target === 'dock' ? null : getFirstDockedCanvasPanelId(request.workspaceId)
+  const dockPlacement = sourcePlacement?.target === 'dock'
+    ? sourcePlacement
+    : { target: 'dock' as const, zone: 'center' as const }
+
+  if (!canvasPanelId) {
+    // Overlay fallback deliberately creates directly, even for a combined request.
+    if (request.availability === 'new' || (request.source === 'overlay' && request.availability === 'both')) {
+      return { kind: 'new', placement: dockPlacement }
+    }
+    const dockExisting = existing.filter((panel) =>
+      resolvePanelLocation(request.workspaceId, panel.panelId)?.kind === 'dock',
+    )
+    if (dockExisting.length === 0) return request.availability === 'both'
+      ? { kind: 'new', placement: dockPlacement } : null
+    const id = await window.electronAPI.showContextMenu([
+      ...(request.availability === 'both' ? [{ id: '__new', label: `New ${PANEL_DEFINITIONS[request.panelType].label}` }] : []),
+      ...dockExisting.map((panel) => ({ id: panel.panelId, label: panel.title })),
+    ])
+    if (id === '__new' && request.availability === 'both') return { kind: 'new', placement: dockPlacement }
+    return dockExisting.some((panel) => panel.panelId === id) ? { kind: 'existing', panelId: id! } : null
+  }
+
+  // Switch hidden tabs/zones before opening the chooser. This also works for
+  // canvases in detached windows, whose stores and dock registry are local.
+  if (!await revealPanel(request.workspaceId, canvasPanelId)) return null
+  const canvas = ensureCanvasOpsForPanel(canvasPanelId).storeApi
+  if (request.sourcePanelId && request.source !== 'overlay') {
+    const nodeId = canvas.getState().nodeForPanel(request.sourcePanelId)
+    if (nodeId) canvas.getState().focusNode(nodeId)
+  }
+  const canvasExisting = existing.filter((panel) => {
+    const location = resolvePanelLocation(request.workspaceId, panel.panelId)
+    return location?.kind === 'canvas' && location.canvasPanelId === canvasPanelId
+  })
 
   return new Promise((resolve) => {
     const shown = canvas.getState().beginPanelTarget({
       panelType: request.panelType,
       availability: request.availability,
-      existing,
+      existing: canvasExisting,
       onSelected: (choice) => resolve(choice.kind === 'existing'
         ? choice
         : {

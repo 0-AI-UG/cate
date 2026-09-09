@@ -1,3 +1,6 @@
+import { getPanelDef } from '../panels/registry'
+import { movePanelToNewWindow } from './workspace/movePanelToNewWindow'
+import type { PanelState, PanelType } from '../../shared/types'
 import { getActivePanelId } from './activePanel'
 import { useStatusStore } from '../stores/statusStore'
 // E2E test harness — exposes a tiny inspect/seed API on window.__cateE2E
@@ -93,6 +96,10 @@ declare global {
        *  by the workspace-trust spec to assert that a repo-supplied
        *  process-bearing panel never materializes. */
       panelTypes(wsId?: string): string[]
+      panels(): PanelState[]
+      createPanel(type: PanelType, filePath?: string): string
+      detachPanel(panelId: string): Promise<boolean>
+      openApplicationOverlay(view: 'settings' | 'skills' | 'usage' | 'pullRequests', section?: string): void
       /** Seed N worktrees on the selected workspace (index 0 = primary, keyed by
        *  the workspace root) WITHOUT a real on-disk repo: writes UI metadata
        *  (id/color/label) and injects a pinned live `git worktree list` so the
@@ -551,6 +558,16 @@ export function installE2EHarness(): void {
     selectedWorkspaceId: () => useAppStore.getState().selectedWorkspaceId,
     selectWorkspace,
     panelTypes,
+    panels: () => Object.values(useAppStore.getState().getWorkspace(useAppStore.getState().selectedWorkspaceId)?.panels ?? {}),
+    createPanel: (type, filePath) => getPanelDef(type).create({ filePath, documentType: filePath ? 'image' : undefined, workspaceId: useAppStore.getState().selectedWorkspaceId, placement: { target: 'dock', zone: 'center' } })!,
+    detachPanel: (id) => movePanelToNewWindow(useAppStore.getState().selectedWorkspaceId, id),
+    openApplicationOverlay: (view, section) => {
+      const ui = useUIStore.getState()
+      if (view === 'settings') ui.openSettings(section)
+      else if (view === 'skills') ui.setShowSkillsDialog(true)
+      else if (view === 'usage') ui.setShowUsage(true)
+      else ui.setShowPullRequests(true)
+    },
     seedWorktrees,
     tagNodeWorktree,
     worktreeDebug,

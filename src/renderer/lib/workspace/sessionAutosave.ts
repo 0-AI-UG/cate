@@ -153,7 +153,7 @@ export function setupAutoSave(): () => void {
   // watch that reference explicitly instead of autosaving on every UI edit.
   const unsubUI = useUIStore.subscribe((state, previous) => {
     if (
-      state.sourceControlWorktreeByRepository !== previous.sourceControlWorktreeByRepository
+      state.sourceControlWorktreeByRepository !== previous.sourceControlWorktreeByRepository || state.sourceControlDrafts !== previous.sourceControlDrafts
     ) {
       scheduleSave()
     }

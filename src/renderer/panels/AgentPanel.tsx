@@ -28,6 +28,9 @@ import { openAgentChanges } from '../lib/review/openAgentChanges'
 import { useAgentChanges } from '../lib/useAgentChanges'
 import { summarizeAgentChanges } from '../../shared/agentChanges'
 import { useFileDragActive } from '../drag/fileDropTarget'
+import { T3ConversationPill } from '../canvas/T3ConversationPill'
+import { WorktreePill } from '../canvas/WorktreePill'
+import { AgentChangesPill } from '../canvas/AgentChangesPill'
 
 interface WebviewElement extends HTMLElement {
   getURL(): string
@@ -75,6 +78,7 @@ function errorText(error: unknown): string {
 }
 
 export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelProps) {
+  const panel = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId)?.panels[panelId])
   const webviewRef = useRef<WebviewElement | null>(null)
   const [state, setState] = useState<ResolveState>({ phase: 'loading' })
   const [retryNonce, setRetryNonce] = useState(0)
@@ -356,6 +360,13 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       data-agent-connected={t3Connection === true}
     >
       <div className="relative min-h-0 flex-1">
+        {/* Keep chrome in the persistent guest's stacking context so it needs no
+            rectangular cutout through the guest to render or receive clicks. */}
+        {panel && <div className="absolute top-1.5 right-3 z-10 flex items-center gap-1" data-agent-controls={panelId}>
+          <T3ConversationPill panel={panel} workspaceId={workspaceId} />
+          <WorktreePill panel={panel} workspaceId={workspaceId} />
+          <AgentChangesPill panel={panel} workspaceId={workspaceId} />
+        </div>}
         {hostError && <div role="alert" className="absolute bottom-2 left-2 right-2 z-30 rounded bg-surface-2 p-2 text-xs text-primary">{hostError}<button className="ml-2 text-muted" onClick={() => setHostError('')}>Dismiss</button></div>}
         {state.phase === 'ready' && guestReady && t3Connection === false && (
           <div role="status" className="absolute bottom-1 left-2 z-20 rounded bg-surface-2 px-2 py-1 text-xs text-muted">

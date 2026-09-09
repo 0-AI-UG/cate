@@ -222,6 +222,7 @@ export class RpcServer {
       case Methods.vcsFindRepos: return api.vcs.findRepos(s(0), n(1), a(2))
       case Methods.vcsInit: return api.vcs.init(s(0), a(1))
       case Methods.vcsLsFiles: return api.vcs.lsFiles(s(0), a(1))
+      case Methods.vcsRemotes: return api.vcs.remotes(s(0), a(1))
       case Methods.vcsStatus: return api.vcs.status(s(0), a(1))
       case Methods.vcsCompare: return api.vcs.compare(s(0), p[1] as never, a(2))
       case Methods.vcsFileDiff: return api.vcs.fileDiff(s(0), p[1] as never, s(2), p[3] as never, a(4))

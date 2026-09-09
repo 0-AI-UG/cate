@@ -37,7 +37,7 @@ export async function openCodingAgentReviewPanel(
   workspaceId: string,
   panelId: string,
   currentReview?: CodingAgentWorktreeReview,
-): Promise<string> {
+): Promise<string | null> {
   const { run, worktree } = context(workspaceId, panelId)
   const review = currentReview ?? await reviewCodingAgentWorktree(workspaceId, panelId)
   const spec = review.dirty

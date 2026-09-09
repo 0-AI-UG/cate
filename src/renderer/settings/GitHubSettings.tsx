@@ -1,3 +1,4 @@
+import { LoadingState, Spinner } from '../ui/Spinner'
 import { useEffect, useState } from 'react'
 import { Github, RefreshCw } from 'lucide-react'
 import type { GitHubConnection, GitHubLoginState } from '../../shared/pullRequests'
@@ -26,6 +27,7 @@ export function GitHubSettings() {
     return () => clearInterval(timer)
   }, [login.status])
   async function changeLogin(operation: 'start' | 'cancel') {
+    if (operation === 'start') setLogin({ status: 'pending' })
     try { setLogin(await window.electronAPI.githubLogin(operation)) }
     catch { setLogin({ status: 'error', message: 'Could not update GitHub sign-in. Try again.' }) }
   }
@@ -39,19 +41,19 @@ export function GitHubSettings() {
             <span className="text-sm font-medium text-primary">GitHub</span>
             {connection?.version && <span className="font-mono text-xs text-muted">{connection.version}</span>}
           </div>
-          <p role="status" className="mt-2 text-xs text-muted">{!connection ? 'Checking GitHub…' : connected ? `Authenticated as ${connection.account}` : connection.message}</p>
+          {!connection ? <LoadingState label="Checking GitHub…" size={13} className="mt-2 justify-start text-xs" /> : <p role="status" className="mt-2 text-xs text-muted">{connected ? `Authenticated as ${connection.account}` : connection.message}</p>}
         </div>
         <div className="flex items-center gap-2">
           {connected ? <SecondaryButton onClick={() => useUIStore.getState().setShowPullRequests(true)}>Pull requests</SecondaryButton> : connection?.status === 'missing-cli' ?
             <SecondaryButton onClick={() => void window.electronAPI.openExternalUrl('https://cli.github.com/')}>Install GitHub CLI</SecondaryButton> :
             <SecondaryButton disabled={!connection || login.status === 'pending'} onClick={() => void changeLogin('start')}>Sign in to GitHub</SecondaryButton>}
-          <SecondaryButton disabled={checking} onClick={() => void refresh()} aria-label="Recheck GitHub connection"><RefreshCw size={14} className={checking ? 'animate-spin' : ''} />Recheck</SecondaryButton>
+          <SecondaryButton disabled={checking} onClick={() => void refresh()} aria-label="Recheck GitHub connection">{checking ? <Spinner size={14} /> : <RefreshCw size={14} />}Recheck</SecondaryButton>
         </div>
       </div>
       <div className="border-t border-subtle px-4 py-3 text-xs text-muted">Uses the GitHub CLI account on this computer, shared with your terminals. Remote workspaces use their own GitHub CLI authentication.</div>
     </div>
     {login.status === 'pending' && <div role="status" className="mt-3 text-sm text-secondary">
-      {login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in…'}
+      <Spinner size={14} className="mr-2 align-middle" />{login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in…'}
       <div className="mt-2 flex gap-2"><SecondaryButton onClick={() => void window.electronAPI.openExternalUrl('https://github.com/login/device')}>Open GitHub</SecondaryButton><SecondaryButton onClick={() => void changeLogin('cancel')}>Cancel</SecondaryButton></div>
     </div>}
     {login.status === 'error' && <p role="alert" className="mt-3 text-xs text-danger">{login.message}</p>}

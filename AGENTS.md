@@ -66,15 +66,18 @@ The canvas (`Canvas.tsx`) positions nodes using CSS transforms. Panel positions 
 Panel definitions are centralised in `src/shared/panels.ts`. The detachable panel
 types (`PanelType` in `src/shared/types.ts`) are: terminal, browser, editor,
 canvas, agent, document, review. Renderer components live in `src/renderer/panels/`:
-- **EditorPanel** — Monaco Editor with integrated Files, Search, and Source Control navigation
+- **EditorPanel** — Monaco Editor with integrated Files and Search navigation
 - **TerminalPanel** — xterm.js terminal with WebGL renderer, backed by node-pty
 - **BrowserPanel** — embedded webview (file:// allowed for local HTML)
 - **CanvasPanel** — nested canvas
 - **DocumentPanel** — PDF / docx / image preview
 - **AgentPanel** — Codex agent thread (sidebar + dock)
 
-The file tree and Search/Source Control views are hosted by EditorPanel; they do
-not have independent detachable panel records. The recent-projects switcher
+The file tree and Search are hosted by EditorPanel. Source Control and Pull
+Requests share RepositoryOverview, an application overlay. Changes owns its
+worktree selector and per-checkout commit drafts; branches and history use the
+repository root. Source Control is not a detachable panel. Old panel records are
+pruned during session restoration and their drafts migrate into overlay state. The recent-projects switcher
 (`src/renderer/sidebar/ProjectList.tsx`) remains a sidebar component.
 
 Each panel can be wrapped in a `CanvasNode` (`src/renderer/canvas/CanvasNode.tsx`) — title bar, drag, resize, close — or live inside a dock zone via `DockTabStack` (`src/renderer/docking/`). All panel records render through the shared `PanelHost` (`src/renderer/panels/PanelHost.tsx`); detached windows are dock windows (`src/renderer/shells/DockWindowShell.tsx`) with local panels state synced back to main for session persistence.

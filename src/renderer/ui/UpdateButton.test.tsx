@@ -34,7 +34,7 @@ const button = () => host.querySelector('button')!
 it('shows checking and download progress, prevents duplicate actions, then offers the restart dialog', async () => {
   act(() => emit({ state: 'checking', version: null }))
   expect(button().getAttribute('aria-label')).toBe('Checking for updates…')
-  expect(host.querySelector('.motion-safe\\:animate-spin')).not.toBeNull()
+  expect(host.querySelector('.animate-spin')).not.toBeNull()
   act(() => button().click())
   expect(check).not.toHaveBeenCalled()
   act(() => emit({ state: 'downloading', version: '2.0.0', percent: 38 }))

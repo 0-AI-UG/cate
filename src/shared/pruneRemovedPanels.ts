@@ -2,7 +2,7 @@ import type { CanvasNodeState, DockLayoutNode, DockStateSnapshot } from './types
 
 /** Remove obsolete panel records at the persistence boundary. */
 export function removedPanelIds(panels: Record<string, { type: string }>): Set<string> {
-  return new Set(Object.entries(panels).filter(([, panel]) => panel.type === 'extension' || panel.type === 'nativeApp').map(([id]) => id))
+  return new Set(Object.entries(panels).filter(([, panel]) => panel.type === 'sourceControl' || panel.type === 'extension' || panel.type === 'nativeApp').map(([id]) => id))
 }
 
 export function pruneDockLayout(layout: DockLayoutNode | null, removed: Set<string>): DockLayoutNode | null {

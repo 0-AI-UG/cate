@@ -45,3 +45,11 @@ it('explains when the running preload needs a restart', async () => {
   expect(host.textContent).toContain('Restart Cate')
   expect(host.textContent).not.toContain('Open a workspace')
 })
+
+it('shows the shared loading state while the usage surface starts', async () => {
+  mocks.getUrl.mockReturnValue(new Promise(() => {}))
+  await act(async () => root.render(<UsageOverview />))
+  expect(host.querySelector('header h1')?.textContent).toBe('Usage')
+  expect(host.querySelector('[role="status"][aria-busy="true"]')?.textContent).toContain('Loading usage')
+  expect(host.querySelector('[role="status"] .animate-spin')).not.toBeNull()
+})

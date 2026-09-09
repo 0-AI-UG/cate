@@ -15,7 +15,7 @@ import { T3Logo } from '../ui/T3Logo'
 
 import React, { type LazyExoticComponent, type ComponentType } from 'react'
 import { Terminal, Globe, Grid2X2 as SquaresFour, FileText as FileDoc, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
-import { Folders, GitBranch, Plus } from 'lucide-react'
+import { Folders, Plus } from 'lucide-react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
@@ -91,17 +91,6 @@ const baseProps = (panel: PanelState, ctx: PanelRenderContext): Record<string, u
 // -----------------------------------------------------------------------------
 
 export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
-  sourceControl: {
-    ...PANEL_DEFINITIONS.sourceControl,
-    icon: GitBranch,
-    Component: React.lazy(() => import('./SourceControlPanel')),
-    create: ({ workspaceId, placement, canvasPoint }) => addAndPlacePanel(
-      useAppStore.setState, useAppStore.getState, workspaceId,
-      { id: crypto.randomUUID(), type: 'sourceControl', title: 'Source Control', isDirty: false, sidebarView: 'git' },
-      placement, canvasPoint,
-    ),
-    props: baseProps,
-  },
   surface: {
     ...PANEL_DEFINITIONS.surface,
     icon: Plus,

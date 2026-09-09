@@ -1,3 +1,5 @@
+import type { ApplicationOverlayRequest } from '../../shared/types'
+import log from '../lib/logger'
 // =============================================================================
 // UI Store — Zustand state for transient UI overlays and visibility toggles.
 // =============================================================================
@@ -21,6 +23,8 @@ interface UIStoreState {
   showSkillsDialog: boolean
   /** Whether the minimap is currently expanded. */
   minimapOpenByCanvas: Record<string, boolean>
+  repositoryTab: 'changes' | 'pullRequests'
+  sourceControlDrafts: Record<string, string>
   showPullRequests: boolean
   showUsage: boolean
   showSettings: boolean
@@ -49,6 +53,8 @@ interface UIStoreActions {
   setShowCommandPalette: (show: boolean) => void
   setShowSkillsDialog: (show: boolean) => void
   toggleMinimapOpen: (canvasPanelId: string) => void
+  openRepository: (tab?: 'changes' | 'pullRequests') => void
+  setSourceControlDraft: (root: string, draft: string) => void
   setShowPullRequests: (show: boolean) => void
   setShowUsage: (show: boolean) => void
   openSettings: (initialTab?: string) => void
@@ -76,11 +82,21 @@ export type UIStore = UIStoreState & UIStoreActions
 // Store
 // -----------------------------------------------------------------------------
 
+// Application pages have a single owner. Calls from panel menus, native menus,
+// and the command palette all pass through this boundary before mutating state.
+function forwardApplicationOverlay(request: ApplicationOverlayRequest): boolean {
+  if (typeof window === 'undefined' || new URLSearchParams(window.location.search).get('type') !== 'dock') return false
+  void window.electronAPI.openApplicationOverlay(request).catch(error => log.warn('Could not open application view:', error))
+  return true
+}
+
 export const useUIStore = create<UIStore>((set, get) => ({
   // --- State ---
   showCommandPalette: false,
   showSkillsDialog: false,
   minimapOpenByCanvas: {},
+  repositoryTab: 'changes',
+  sourceControlDrafts: {},
   showPullRequests: false,
   showUsage: false,
   showSettings: false,
@@ -100,6 +116,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
 
   setShowSkillsDialog(show) {
+    if (show && forwardApplicationOverlay({ view: 'skills' })) return
     set({ showSkillsDialog: show, ...(show ? { showPullRequests: false, showUsage: false, showSettings: false, settingsInitialTab: null } : {}) })
   },
 
@@ -110,15 +127,26 @@ export const useUIStore = create<UIStore>((set, get) => ({
     } }))
   },
 
+  setSourceControlDraft(root, draft) {
+    set(state => ({ sourceControlDrafts: { ...state.sourceControlDrafts, [root]: draft } }))
+  },
+  openRepository(tab = 'changes') {
+    if (forwardApplicationOverlay({ view: 'pullRequests', section: tab })) return
+    get().setShowPullRequests(true)
+    set({ repositoryTab: tab })
+  },
   setShowPullRequests(show) {
-    set({ showPullRequests: show, ...(show ? { showSkillsDialog: false, showUsage: false, showSettings: false, settingsInitialTab: null } : {}) })
+    if (show && forwardApplicationOverlay({ view: 'pullRequests' })) return
+    set({ repositoryTab: 'pullRequests', showPullRequests: show, ...(show ? { showSkillsDialog: false, showUsage: false, showSettings: false, settingsInitialTab: null } : {}) })
   },
 
   setShowUsage(show) {
+    if (show && forwardApplicationOverlay({ view: 'usage' })) return
     set({ showUsage: show, ...(show ? { showPullRequests: false, showSkillsDialog: false, showSettings: false, settingsInitialTab: null } : {}) })
   },
 
   openSettings(initialTab) {
+    if (forwardApplicationOverlay({ view: 'settings', section: initialTab })) return
     set({ showPullRequests: false, showSkillsDialog: false, showUsage: false, showSettings: true, settingsInitialTab: initialTab ?? null })
   },
 

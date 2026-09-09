@@ -1,3 +1,4 @@
+import { gitStatusStore } from '../../stores/gitStatusStore'
 import { notifySessionMutation } from './sessionMutations'
 import { KeyedLock } from '../../../shared/keyedLock'
 import { captureEditorPanel } from '../editor/editorDocuments'
@@ -148,20 +149,18 @@ async function persistSession(): Promise<void> {
       }
     }
 
-    const sourceControlWorktreeByRepository = workspace.rootPath
-      ? Object.fromEntries(
-          Object.entries(uiState.sourceControlWorktreeByRepository).filter(([repositoryRoot]) => {
-            const workspaceRoot = parseLocator(workspace.rootPath)
-            const repository = parseLocator(repositoryRoot)
-            const workspaceKey = pathKey(workspaceRoot.path)
-            const repositoryKey = pathKey(repository.path)
-            return repository.runtimeId === workspaceRoot.runtimeId && (
-              repositoryKey === workspaceKey || repositoryKey.startsWith(`${workspaceKey}/`)
-            )
-          }),
-        )
-      : {}
-    const hasWorktreeViewScopes = Object.keys(sourceControlWorktreeByRepository).length > 0
+    const repositoryRoots = [workspace.rootPath, ...(workspace.additionalRoots ?? []),
+      ...(workspace.worktrees ?? []).map(worktree => worktree.path),
+      ...gitStatusStore.getSnapshot(workspace.rootPath).worktrees.map(worktree => worktree.path),
+    ].filter(Boolean).map(root => parseLocator(root))
+    const belongsToWorkspace = ([repositoryRoot]: [string, string]) => {
+      const repository = parseLocator(repositoryRoot)
+      return repositoryRoots.some(root => repository.runtimeId === root.runtimeId &&
+        (pathKey(repository.path) === pathKey(root.path) || pathKey(repository.path).startsWith(`${pathKey(root.path)}/`)))
+    }
+    const sourceControlWorktreeByRepository = Object.fromEntries(Object.entries(uiState.sourceControlWorktreeByRepository).filter(belongsToWorkspace))
+    const sourceControlDrafts = Object.fromEntries(Object.entries(uiState.sourceControlDrafts ?? {}).filter(belongsToWorkspace))
+    const hasWorktreeViewScopes = Object.keys(sourceControlWorktreeByRepository).length > 0 || Object.keys(sourceControlDrafts).length > 0
 
     snapshots.push({
       workspaceId: workspace.id,
@@ -176,6 +175,7 @@ async function persistSession(): Promise<void> {
       // restarts instead of re-assigned from the palette on rediscovery.
       worktrees: workspace.worktrees?.length ? workspace.worktrees : undefined,
       worktreeViewScopes: hasWorktreeViewScopes ? {
+        sourceControlDrafts,
         sourceControlWorktreeByRepository: Object.keys(sourceControlWorktreeByRepository).length
           ? sourceControlWorktreeByRepository
           : undefined,

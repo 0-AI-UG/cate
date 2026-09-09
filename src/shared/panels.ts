@@ -78,13 +78,6 @@ function ghost(stroke: string, body: string): string {
 // -----------------------------------------------------------------------------
 
 export const PANEL_DEFINITIONS = {
-  sourceControl: {
-    type: 'sourceControl', label: 'Source Control', brandColor: '#8E8E93', mutedColor: '#636366',
-    tintClass: 'text-secondary', defaultSize: { width: 540, height: 500 },
-    minimumSize: { width: 220, height: 200 }, ghostSvg: '', canLiveOnCanvas: true,
-    worktreeBinding: false, navigable: true, keepMountedOffscreen: false,
-    keepMountedWhenTabHidden: false, splitMenuOrder: 7,
-  },
   surface: {
     type: 'surface', label: 'Open a surface', brandColor: '#8E8E93', mutedColor: '#636366',
     tintClass: 'text-secondary', defaultSize: { width: 540, height: 500 },

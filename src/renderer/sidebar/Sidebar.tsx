@@ -97,8 +97,8 @@ const ActivityBarSidebar: React.FC<ActivityBarSidebarProps> = ({ defaultWidth, m
                   <PuzzlePiece size={16} className="pointer-events-none" />
                 </button>
               </Tooltip>
-              <Tooltip label="Pull requests" placement="top">
-                <button type="button" aria-label="Pull requests" onClick={() => useUIStore.getState().setShowPullRequests(true)} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-secondary">
+              <Tooltip label="Repository" placement="top">
+                <button type="button" aria-label="Repository" onClick={() => useUIStore.getState().openRepository()} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-hover hover:text-secondary">
                   <GitPullRequest size={16} />
                 </button>
               </Tooltip>

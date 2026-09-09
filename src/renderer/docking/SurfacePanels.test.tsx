@@ -102,8 +102,8 @@ it('migrates the complete right layout and opens shortcuts in the center without
   expect(dock.getState().zones.right.layout).toBeNull()
 })
 
-it('persists picker, Files and Source Control as movable panel records', () => {
-  for (const type of ['surface', 'editor', 'sourceControl'] as const) {
+it('persists picker and Files as movable panel records', () => {
+  for (const type of ['surface', 'editor'] as const) {
     expect(getPanelDef(type).canLiveOnCanvas).toBe(true)
     const id = getPanelDef(type).create({ workspaceId: 'test', placement: { target: 'none' } })!
     dock.getState().dockPanel(id, 'center')
@@ -111,7 +111,7 @@ it('persists picker, Files and Source Control as movable panel records', () => {
   const workspace = useAppStore.getState().workspaces[0]
   const snapshot = { workspaceName: 'Test', rootPath: '/test', panels: workspace.panels, dockState: dock.getState().getSnapshot() }
   const restored = projectFilesToSnapshot(JSON.parse(JSON.stringify(buildWorkspaceFile(snapshot, '/test'))), JSON.parse(JSON.stringify(buildSessionFile(snapshot))), '/test')
-  expect(Object.values(restored.panels!).map((p) => p.type)).toEqual(['canvas', 'surface', 'editor', 'sourceControl'])
+  expect(Object.values(restored.panels!).map((p) => p.type)).toEqual(['canvas', 'surface', 'editor'])
   expect(restored.dockState).toEqual(snapshot.dockState)
 })
 
@@ -130,11 +130,11 @@ it('opens the picker from the split button and closes its placeholder through th
   act(() => root.render(<FullDock />))
   act(() => host.querySelector<HTMLButtonElement>('[aria-label="Split Right"]')!.click())
   expect(host.querySelector('[role="group"][aria-label="Open a surface"]')).not.toBeNull()
-  act(() => [...host.querySelectorAll('button')].find((button) => button.textContent?.startsWith('Source Control'))!.click())
-  expect(host.textContent).toContain('Source Control content')
+  act(() => [...host.querySelectorAll('button')].find((button) => button.textContent?.startsWith('Terminal'))!.click())
+  expect(host.textContent).toContain('Terminal 1 content')
   expect(host.querySelector('[role="group"][aria-label="Open a surface"]')).toBeNull()
   const panels = Object.values(useAppStore.getState().workspaces[0].panels)
-  expect(panels.map((panel) => panel.type)).toEqual(['canvas', 'sourceControl'])
+  expect(panels.map((panel) => panel.type)).toEqual(['canvas', 'terminal'])
   expect(collectPanelIds(dock.getState().zones.center.layout)).toHaveLength(2)
 })
 
@@ -231,4 +231,12 @@ it('opens navigation in the registered window dock without a main-shell context'
   const panel = Object.values(useAppStore.getState().workspaces[0].panels).find(panel => panel.type === 'editor')!
   expect(panel.sidebarView).toBe('search')
   expect(collectPanelIds(dock.getState().zones.center.layout)).toContain(panel.id)
+})
+
+
+it('opens Source Control in the repository overlay without creating a panel', () => {
+  act(() => root.render(<NavigationHarness />))
+  act(() => useUIStore.getState().requestNavigationView('git'))
+  expect(useUIStore.getState()).toMatchObject({ showPullRequests: true, repositoryTab: 'changes' })
+  expect(Object.keys(useAppStore.getState().workspaces[0].panels)).toEqual(['original'])
 })

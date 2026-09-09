@@ -189,6 +189,7 @@ export interface ElectronAPI {
   gitLsFiles(dirPath: string, workspaceId: string): Promise<string[]>
 
   /** Get git status for a repository. */
+  gitRemotes(cwd: string, workspaceId: string): Promise<Array<{ name: string; fetchUrl: string; pushUrl: string }>>
   gitStatus(cwd: string, workspaceId: string): Promise<{
     files: Array<{ path: string; index: string; working_dir: string }>
     current: string | null
@@ -768,6 +769,8 @@ export interface ElectronAPI {
   /** Close every detached (dock) window belonging to a workspace. Used when the
    *  workspace is reloaded so its detached windows are discarded with it. */
   windowsCloseForWorkspace(workspaceId: string): Promise<void>
+  openApplicationOverlay(request: import('./types').ApplicationOverlayRequest): Promise<void>
+  onApplicationOverlay(callback: (request: import('./types').ApplicationOverlayRequest) => void): () => void
   runActionInMain(action: string): Promise<void>
 
   /** Set the OS title of the calling window. Drives the macOS native tab label. */

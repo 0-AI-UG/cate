@@ -1,4 +1,4 @@
-import PullRequestsOverview from './pullRequests/PullRequestsOverview'
+import RepositoryOverview from './repository/RepositoryOverview'
 import UsageOverview from './usage/UsageOverview'
 // =============================================================================
 // App — Main application component wiring all systems together.
@@ -430,7 +430,7 @@ function MainApp() {
       <RuntimeLockOverlay />
       </WorkspaceContent>
       <UsageOverview />
-      <PullRequestsOverview />
+      <RepositoryOverview />
       <div id="skills-content-slot" className="absolute inset-0 z-40 pointer-events-none empty:hidden" />
       <div id="settings-content-slot" className="absolute inset-0 z-[100001] pointer-events-none empty:hidden" />
       </div>

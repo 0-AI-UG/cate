@@ -1,3 +1,4 @@
+import { OPEN_APPLICATION_OVERLAY, SHOW_APPLICATION_OVERLAY } from '../shared/ipc-channels'
 import { PANEL_TRANSFER_STAGE, PANEL_TRANSFER_READY, PANEL_TRANSFER_COMMIT, PANEL_TRANSFER_FINISH } from '../shared/ipc-channels'
 import type { RecentScreenshot } from '../shared/recentScreenshot'
 import { contextBridge, ipcRenderer, webUtils, webFrame } from 'electron'
@@ -41,6 +42,7 @@ import {
   GIT_MONITOR_START,
   GIT_MONITOR_STOP,
   GIT_STATUS,
+  GIT_REMOTES,
   GIT_COMPARE,
   GIT_FILE_DIFF,
   GIT_FILE_CONTENT,
@@ -379,6 +381,7 @@ const invokeForwarders = {
   gitInit: makeInvoker<'gitInit'>(GIT_INIT),
   gitLsFiles: makeInvoker<'gitLsFiles'>(GIT_LS_FILES),
   gitStatus: makeInvoker<'gitStatus'>(GIT_STATUS),
+  gitRemotes: makeInvoker<'gitRemotes'>(GIT_REMOTES),
   gitCompare: makeInvoker<'gitCompare'>(GIT_COMPARE),
   gitFileDiff: makeInvoker<'gitFileDiff'>(GIT_FILE_DIFF),
   gitFileContent: makeInvoker<'gitFileContent'>(GIT_FILE_CONTENT),
@@ -519,6 +522,8 @@ const invokeForwarders = {
   windowToggleMaximize: makeInvoker<'windowToggleMaximize'>(WINDOW_TOGGLE_MAXIMIZE),
   windowClose: makeInvoker<'windowClose'>(WINDOW_CLOSE),
   windowsCloseForWorkspace: makeInvoker<'windowsCloseForWorkspace'>(WINDOW_CLOSE_FOR_WORKSPACE),
+  openApplicationOverlay: makeInvoker<'openApplicationOverlay'>(OPEN_APPLICATION_OVERLAY),
+  onApplicationOverlay: (callback) => createIpcListener(SHOW_APPLICATION_OVERLAY, callback),
   runActionInMain: makeInvoker<'runActionInMain'>(RUN_ACTION_IN_MAIN),
 
   // Panel transfer (cross-window)

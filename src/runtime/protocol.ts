@@ -120,6 +120,7 @@ export const Methods = {
   vcsInit: 'vcs.init',
   vcsLsFiles: 'vcs.lsFiles',
   vcsStatus: 'vcs.status',
+  vcsRemotes: 'vcs.remotes',
   vcsCompare: 'vcs.compare',
   vcsFileDiff: 'vcs.fileDiff',
   vcsFileContent: 'vcs.fileContent',

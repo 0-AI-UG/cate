@@ -1,3 +1,4 @@
+import { placementForPanel } from '../lib/workspace/canvasAccess'
 // =============================================================================
 // FileExplorer — Git-aware file tree browser.
 // Ported from FileExplorerView.swift + FileTreeModel.swift
@@ -39,6 +40,8 @@ const FS_READ_RETRY_DELAY_MS = 120
 // -----------------------------------------------------------------------------
 
 interface FileExplorerProps {
+  workspaceId?: string
+  panelId?: string
   rootPath: string
   scopeControl?: React.ReactNode
   onOpenFiles?: (paths: string[], mode?: 'dock' | 'canvas') => void
@@ -66,7 +69,7 @@ interface ExplorerView {
 // revalidate. Keep the cache bounded independently of the number of workspaces.
 const recentExplorerViews = new Map<string, ExplorerView>()
 
-export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeControl, onOpenFiles, compact = false, actionsTarget }) => {
+export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceId, panelId, scopeControl, onOpenFiles, compact = false, actionsTarget }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
   // Expansion state is owned by the explorer (not each FileTreeNode) so this
@@ -109,7 +112,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
   const refreshRef = useRef<ReturnType<typeof createExplorerRefresh<FileTreeNodeType[]>> | null>(null)
   const createSeqRef = useRef(0)
 
-  const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
+  const selectedWorkspaceId = useAppStore((s) => workspaceId ?? s.selectedWorkspaceId)
 
   // Git decorations come from the single per-workspace gitStatusStore (one
   // fsWatch + focus + branch-update loop shared with the Search view and Source
@@ -118,7 +121,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
   const gitTree = useGitTreeFor(rootPath)
 
   const createTerminal = useAppStore((s) => s.createTerminal)
-  const removeWorkspace = useAppStore((s) => s.removeWorkspace)
 
   const openSearch = useCallback(() => {
     setSearchVisible(true)
@@ -545,8 +547,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
       { type: 'separator' },
       { id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: hasClipboard() },
       { type: 'separator' },
-      { id: 'remove-workspace', label: 'Remove Workspace' },
-      { type: 'separator' },
       { id: 'find-in-folder', label: 'Find in Folder…', accelerator: 'Alt+Shift+F' },
       { type: 'separator' },
       { id: 'copy-path', label: 'Copy Path', accelerator: 'Alt+Cmd+C' },
@@ -561,14 +561,14 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
           const store = useAppStore.getState()
           const workspace = store.getWorkspace(selectedWorkspaceId)
           const worktree = worktreeForPath(rootPath, workspace?.worktrees ?? [])
-          const panelId = createTerminal(
+          const terminalId = createTerminal(
             selectedWorkspaceId,
             undefined,
             undefined,
-            { target: 'dock', zone: 'bottom' },
+            panelId ? placementForPanel(selectedWorkspaceId, panelId) : undefined,
             rootPath,
           )
-          if (panelId && worktree) store.setPanelWorktreeId(selectedWorkspaceId, panelId, worktree.id)
+          if (terminalId && worktree) store.setPanelWorktreeId(selectedWorkspaceId, terminalId, worktree.id)
         }
         break
       case 'paste': {
@@ -583,17 +583,12 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, scopeContr
         handleReload()
         break
       }
-      case 'remove-workspace':
-        if (window.confirm('Remove this workspace?')) {
-          removeWorkspace(selectedWorkspaceId, true)
-        }
-        break
       case 'find-in-folder': openSearch(); break
       case 'copy-path': navigator.clipboard.writeText(rootPath); break
       case 'copy-rel-path': navigator.clipboard.writeText(folderName); break
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootPath, startRootCreate, createTerminal, selectedWorkspaceId, removeWorkspace, openSearch])
+  }, [rootPath, startRootCreate, createTerminal, selectedWorkspaceId, panelId, openSearch])
 
   // ---------------------------------------------------------------------------
   // Render

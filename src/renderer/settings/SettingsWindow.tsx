@@ -1,3 +1,4 @@
+import { OverlayHeader } from '../ui/OverlayHeader'
 // =============================================================================
 // SettingsWindow — wide settings dialog: a left sidebar (search + section nav
 // with scroll-spy) beside one long scrollable content column.
@@ -24,6 +25,7 @@ import { createPortal } from 'react-dom'
 import log from '../lib/logger'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { requestPanelTarget } from '../lib/panelTargetPicker'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { GeneralSettings } from './GeneralSettings'
 import { AppearanceSettings } from './AppearanceSettings'
@@ -43,7 +45,7 @@ import { SkillsSettings } from './SkillsSettings'
 import { SettingsSearchContext } from './SettingsSearchContext'
 import { SidebarSectionHeader } from '../sidebar/SidebarSectionHeader'
 import { UpdateButton } from '../ui/UpdateButton'
-import { LeftSidebarReopen, useLeftChromeInset } from '../shells/LeftSidebarReopen'
+import { LeftSidebarReopen } from '../shells/LeftSidebarReopen'
 
 const SECTION_COMPONENTS = {
   General: GeneralSettings,
@@ -86,7 +88,6 @@ interface SettingsWindowProps {
 }
 
 export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowProps) {
-  const leftChromeInset = useLeftChromeInset()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [slots, setSlots] = useState<{ sidebar: HTMLElement; content: HTMLElement } | null>(null)
   useLayoutEffect(() => {
@@ -95,7 +96,6 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
     if (sidebar && content) setSlots({ sidebar, content })
   }, [])
   const [rawQuery, setRawQuery] = useState('')
-  const [activeId, setActiveId] = useState<string>(SECTIONS[0].title.toLowerCase())
   const [activeIds, setActiveIds] = useState<Set<string>>(() => new Set([SECTIONS[0].title.toLowerCase()]))
   const [visibleSections, setVisibleSections] = useState<Set<string>>(
     () => new Set(SECTIONS.map((s) => s.title.toLowerCase())),
@@ -109,7 +109,6 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
     setRawQuery('')
     const requested = (initialTab ?? SECTIONS[0].title).toLowerCase()
     const target = requested === 'providers' || requested === 'agent' ? 't3 code' : requested
-    setActiveId(target)
     setActiveIds(new Set([target]))
     requestAnimationFrame(() => {
       scrollRef.current?.querySelector(`#${sectionId(target)}`)?.scrollIntoView({ block: 'start', behavior: 'auto' })
@@ -152,9 +151,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
         .map((section) => section.dataset.sectionId)
         .filter((id): id is string => Boolean(id))
       const fallback = sections.find((section) => !section.hidden)?.dataset.sectionId
-      const current = inView[0] ?? fallback
       setActiveIds(new Set(inView.length > 0 ? inView : fallback ? [fallback] : []))
-      if (current) setActiveId(current)
     }
     onScroll()
     root.addEventListener('scroll', onScroll, { passive: true })
@@ -188,7 +185,8 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
       onClose()
       const workspaceId = useAppStore.getState().selectedWorkspaceId
       if (workspaceId) {
-        openFileAsPanel(workspaceId, filePath)
+        const target = await requestPanelTarget({ workspaceId, panelType: 'editor', availability: 'new', source: 'overlay' })
+        if (target?.kind === 'new') openFileAsPanel(workspaceId, filePath, undefined, target.placement)
       } else {
         // No workspace/canvas to host an editor panel — reveal the file so the
         // user can still open it in their own editor.
@@ -203,15 +201,10 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
 
   const jumpTo = (id: string) => {
     scrollRef.current?.querySelector(`#${sectionId(id)}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-    setActiveId(id)
     setActiveIds(new Set([id]))
   }
 
   const navSections = SECTIONS.filter(({ title }) => query === '' || visibleSections.has(title.toLowerCase()))
-
-  const activeGroup = NAV_GROUPS.find((group) =>
-    group.sections.some((title) => title.toLowerCase() === activeId),
-  ) ?? NAV_GROUPS[0]
 
   const navigation = (
       <div className="min-h-0 flex-1 flex flex-col text-primary">
@@ -304,16 +297,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
   const content = (
       <main className="relative h-full min-w-0 flex-1 flex flex-col bg-canvas-bg text-primary pointer-events-auto">
         <LeftSidebarReopen />
-        <header
-          className="app-header-bar relative z-10 shrink-0 gap-2 bg-canvas-bg after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-canvas-bg after:to-transparent"
-          style={{ paddingLeft: leftChromeInset || undefined }}
-        >
-          <span className="text-[13px] text-muted">Settings</span>
-          <span className="text-muted">/</span>
-          <span className="text-[13px] font-medium text-primary">
-            {SECTIONS.find(({ title }) => title.toLowerCase() === activeId)?.title ?? activeGroup.title}
-          </span>
-          <div className="flex-1" />
+        <OverlayHeader title="Settings">
           <button
             onClick={openSettingsJson}
             title="Open settings.json in an editor to edit and export your settings directly"
@@ -331,7 +315,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
             <RotateCcw size={14} />
             Restore defaults
           </button>
-        </header>
+        </OverlayHeader>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5">
           <div className="w-full max-w-[860px] mx-auto flex flex-col gap-7 pb-12">

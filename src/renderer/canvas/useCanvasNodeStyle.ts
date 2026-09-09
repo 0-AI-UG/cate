@@ -7,11 +7,7 @@
 
 import React, { useMemo } from 'react'
 import type { CanvasNodeState, NodeActivityState } from '../../shared/types'
-
-// Panel corner radius. Set to the tab pill radius (10px) plus the tab bar's 2px
-// inset so the active pill's rounded corner nests concentrically inside the
-// panel corner instead of poking past it or leaving an uneven gap.
-const CORNER_RADIUS = 12
+import { NODE_CORNER_RADIUS as CORNER_RADIUS } from './nodeAppearance'
 
 // Glow/ring layer z-index. Node containers live in the `1000 + node.zOrder`
 // band; this sits well above any realistic zOrder so a selected node's ring is

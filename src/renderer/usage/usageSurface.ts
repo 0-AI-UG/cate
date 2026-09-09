@@ -10,6 +10,12 @@ export function usageThemeScript(theme: Theme, fontFamily: string): string {
 
 /** Keep upstream controls and behavior, with Cate's canvas surface and chrome. */
 export const USAGE_SURFACE_CSS = `
+/* Cate owns the overlay title. Keep the upstream environment filter and actions. */
+nav[aria-label="Usage breadcrumb"] > ol > li:has(> h1),
+nav[aria-label="Usage breadcrumb"] > ol > li[aria-hidden="true"] {
+  display: none !important;
+}
+
 :root {
   --text-xs: 12px !important;
   --text-sm: 13px !important;
@@ -47,7 +53,7 @@ header button[aria-label^="Refresh"] svg { width: 14px; height: 14px; }
 [data-slot="sidebar-inset"] > div > header {
   height: 44px !important;
   min-height: 44px !important;
-  padding: 0 12px 0 max(12px, var(--cate-left-chrome-inset, 0px)) !important;
+  padding: 0 24px !important;
   display: flex !important;
   align-items: center !important;
 }

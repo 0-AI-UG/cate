@@ -1,3 +1,4 @@
+import { OverlayHeader } from '../ui/OverlayHeader'
 // =============================================================================
 // SkillsDialog — the skill browser, opened from the left-rail puzzle button.
 //
@@ -22,7 +23,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, ChevronRight, Folder, SlidersHorizontal, LayoutGrid, List, X, Check, ChevronDown as CaretDown, SquareArrowOutUpRight as ArrowSquareOut } from 'lucide-react'
 import { Search as MagnifyingGlass, RefreshCw as ArrowsClockwise, Bookmark as BookmarkSimple } from 'lucide-react'
-import { LeftSidebarReopen, useLeftChromeInset } from '../shells/LeftSidebarReopen'
+import { LeftSidebarReopen } from '../shells/LeftSidebarReopen'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
 import log from '../lib/logger'
@@ -93,7 +94,6 @@ function stubEntry(m: InstalledSkill): SkillEntry {
 }
 
 export function SkillsDialog() {
-  const leftChromeInset = useLeftChromeInset()
   const show = useUIStore((s) => s.showSkillsDialog)
   const setShow = useUIStore((s) => s.setShowSkillsDialog)
   const workspaces = useAppStore((s) => s.workspaces)
@@ -261,10 +261,9 @@ export function SkillsDialog() {
   return createPortal(
     <section aria-label="Skills" className={`${contentSlot ? 'h-full w-full' : 'fixed inset-0 z-[100001]'} pointer-events-auto flex min-h-0 flex-col bg-canvas-bg text-primary`}>
       <LeftSidebarReopen />
-      <header className="relative z-10 flex h-11 shrink-0 items-center gap-3 bg-canvas-bg px-6 after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-canvas-bg after:to-transparent" style={{ paddingLeft: Math.max(24, leftChromeInset) }}>
+      <OverlayHeader title="Skills">
         {!contentSlot && <button type="button" onClick={close} className="text-sm text-muted hover:text-primary">Back</button>}
-        <h1 className="text-sm font-medium">Skills</h1>
-      </header>
+      </OverlayHeader>
       <div className="mx-auto flex w-full max-w-[1040px] min-h-0 flex-1 flex-col px-6">
         <div className="py-4 shrink-0 flex items-center gap-2">
           <PaletteTextInput

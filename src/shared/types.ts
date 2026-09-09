@@ -32,7 +32,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'sourceControl' | 'surface'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'surface'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -235,6 +235,8 @@ export interface PanelState {
   /** Unsaved buffer content for scratch (no-filePath) editors. Persisted so
    *  content survives canvas switches and app restarts. */
   unsavedContent?: string
+  /** Legacy Source Control panel state, read only during session migration. */
+  sourceControlState?: Record<string, SourceControlRepositoryState>
   searchState?: PanelSearchSnapshot
   /** Disk baseline for a recoverable dirty editor document (machine-local). */
   editorBaseline?: string
@@ -1249,6 +1251,7 @@ export interface ProjectSessionFile {
 export interface WorktreeViewScopes {
   /** Legacy sidebar scope, read only to migrate old navigation panels. */
   navigationWorktreeId?: string
+  sourceControlDrafts?: Record<string, string>
   sourceControlWorktreeByRepository?: Record<string, string>
 }
 
@@ -1257,6 +1260,8 @@ export interface ProjectSessionPanel {
   ptyId?: string
   workingDirectory?: string
   unsavedContent?: string
+  /** Legacy Source Control panel state, read only during session migration. */
+  sourceControlState?: Record<string, SourceControlRepositoryState>
   searchState?: PanelSearchSnapshot
   /** Disk baseline for a recoverable dirty editor document (machine-local). */
   editorBaseline?: string
@@ -1675,7 +1680,6 @@ export const PANEL_MINIMUM_SIZES: Record<PanelType, Size> = Object.fromEntries(
 // PANEL_DEFAULT_SIZES sizes fresh windows in their own shells and is too
 // large for an in-canvas drop.
 export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
-  sourceControl: { width: 340, height: 500 },
   surface: { width: 540, height: 500 },
   terminal: { width: 520, height: 340 },
   browser: { width: 640, height: 440 },
@@ -1750,3 +1754,6 @@ export interface PanelSearchSnapshot {
 }
 
 export interface PanelCloseOperation { phase: 'prepare' | 'commit' | 'cancel'; token: string }
+
+export interface ApplicationOverlayRequest { view: 'settings' | 'skills' | 'usage' | 'pullRequests'; section?: string }
+export interface SourceControlRepositoryState { worktreeId?: string; commitMessage?: string }

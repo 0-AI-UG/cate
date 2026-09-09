@@ -49,7 +49,8 @@ export function useNavigationPanels() {
       useUIStore.setState({ requestedNavigationView: null })
       // Files are part of the editor surface. Opening Explorer therefore creates
       // or reveals an editor instead of a second, standalone Files panel type.
-      const type = view === 'git' ? 'sourceControl' : 'editor'
+      if (view === 'git') { useUIStore.getState().openRepository('changes'); return }
+      const type = 'editor'
       const existing = Object.values(workspace.panels).sort((a, b) => Number(b.id === getActivePanelId()) - Number(a.id === getActivePanelId())).find((panel) =>
         (view === 'explorer' ? panel.type === 'editor' : panel.type === type) &&
         resolvePanelLocation(workspaceId, panel.id),
