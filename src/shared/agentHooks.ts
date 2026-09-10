@@ -341,7 +341,7 @@ export function agentHookFolder(agentId: AgentId): string | null {
 
 const CLAUDE_EVENTS = [
   'SessionStart', 'UserPromptSubmit', 'PermissionRequest',
-  'PostToolUse', 'Stop', 'StopFailure', 'SessionEnd',
+  'PreToolUse', 'PostToolUse', 'Stop', 'StopFailure', 'SessionEnd',
 ]
 
 const claudeSpec: AgentHookSpec = {
@@ -372,9 +372,12 @@ const claudeSpec: AgentHookSpec = {
     switch (p.hook_event_name) {
       case 'SessionStart': return { kind: 'session-start', ...base }
       case 'UserPromptSubmit': return { kind: 'turn-start', ...base }
+      // PermissionRequest precedes the approval UI; PreToolUse follows the
+      // resolved approval immediately before execution. This also covers
+      // approvals granted by another hook, where no terminal Enter occurs.
+      case 'PreToolUse': return { kind: 'turn-resume', ...base }
       // Fires after EVERY executed tool call. This confirms the turn is still
-      // active, but is too late to represent approval resolution: an approved
-      // long-running tool fires it only after finishing.
+      // active and remains a fallback resume edge for older Claude versions.
       case 'PostToolUse': return { kind: 'turn-resume', ...base }
       case 'Stop': return { kind: 'turn-end', ...base }
       case 'StopFailure': return { kind: 'turn-end', ...base }
@@ -415,7 +418,9 @@ export function codexTrustedHash(label: string, command: string, timeout: number
 /** hooks.json event keys (CamelCase). Codex's own trust-state keys use
  *  snake_case labels of these same events — a codex quirk the live suite's
  *  trust harness mirrors. */
-const CODEX_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'Stop', 'Interrupt']
+const CODEX_EVENTS = [
+  'SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PreToolUse', 'PostToolUse', 'Stop', 'Interrupt',
+]
 
 const CODEX_HOOK_TIMEOUT = 60
 
@@ -450,9 +455,12 @@ const codexSpec: AgentHookSpec = {
       case 'Stop': return { kind: 'turn-end', ...base }
       case 'Interrupt': return { kind: 'turn-end', ...base }
       case 'PermissionRequest': return { kind: 'permission-wait', ...base }
+      // Fires after an approval is resolved and immediately before the tool
+      // starts. This clears permission-wait while a long-running command is
+      // executing instead of leaving the UI blocked until PostToolUse.
+      case 'PreToolUse': return { kind: 'turn-resume', ...base }
       // Fires after EVERY executed tool call. This confirms the turn is still
-      // active, but is too late to represent approval resolution: an approved
-      // long-running tool fires it only after finishing.
+      // active and remains a fallback resume edge for older Codex versions.
       case 'PostToolUse': return { kind: 'turn-resume', ...base }
       // SessionEnd never fires (pinned live) — no mapping on purpose.
       default: return null

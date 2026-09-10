@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { RotateCw as ArrowClockwise, ChevronDown as CaretDown, ChevronRight as CaretRight, Ellipsis as DotsThree, Funnel, Info, Rows2 as Rows, Split as SplitHorizontal, X } from 'lucide-react'
 import { ReviewToolbar } from './ReviewToolbar'
 import { RecordedReviewButton } from './RecordedReviewButton'
-import { RecordedDiffHunk } from './ReviewDiff'
+import { RecordedDiffHunk, type NoteDraft } from './ReviewDiff'
 import { ReviewDisplayOptions, ReviewFileFilter, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
 import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { PopoverSurface, useDismissableLayer, useViewportPopoverPosition } from '../ui/Popover'
@@ -10,7 +10,7 @@ import { AGENTS } from '../../shared/agents'
 import { filterAgentChanges } from '../../shared/agentChanges'
 import type { AgentChangedFile, AgentChangesFilter } from '../../shared/agentChanges'
 import type { PanelProps } from './types'
-import type { ReviewPanelState, WorkspaceState } from '../../shared/types'
+import type { GitReviewNote, ReviewPanelState, WorkspaceState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { refreshAgentChanges, useAgentChanges } from '../lib/useAgentChanges'
 import { revealPanel } from '../lib/workspace/panelReveal'
@@ -38,6 +38,7 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
   const [open, setOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [noteDraft, setNoteDraft] = useState<(NoteDraft & { agentChangeId: string }) | null>(null)
   const morePopover = useRef<HTMLDivElement>(null)
   useDismissableLayer({ open: moreOpen, contentRef: morePopover, onDismiss: () => setMoreOpen(false) })
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -63,6 +64,35 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
   const display = state.display ?? { split: false, wordDiff: true, wrap: false }
   const updateDisplay = (patch: Partial<typeof display>) => useAppStore.getState().setPanelReviewState(workspaceId, panelId, { ...state, display: { ...display, ...patch } })
   const allCollapsed = files.length > 0 && files.every(({ record, file }) => collapsed.has(`${record.id}:${file.path}`))
+  const addNote = (draft: NoteDraft & { agentChangeId: string }, body: string, severity: NonNullable<GitReviewNote['severity']>) => {
+    const latest = useAppStore.getState().getWorkspace(workspaceId)?.panels[panelId]?.reviewState
+    if (!latest) return
+    const note: GitReviewNote = {
+      id: crypto.randomUUID(),
+      agentChangeId: draft.agentChangeId,
+      path: draft.filePath,
+      side: draft.side,
+      line: draft.line,
+      body,
+      context: draft.context,
+      resolvedBase: null,
+      resolvedTarget: null,
+      status: 'open',
+      severity,
+      author: 'human',
+      createdAt: new Date().toISOString(),
+    }
+    useAppStore.getState().setPanelReviewState(workspaceId, panelId, { ...latest, notes: [...(latest.notes ?? []), note] })
+    setNoteDraft(null)
+  }
+  const toggleNote = (noteId: string) => {
+    const latest = useAppStore.getState().getWorkspace(workspaceId)?.panels[panelId]?.reviewState
+    if (!latest) return
+    useAppStore.getState().setPanelReviewState(workspaceId, panelId, {
+      ...latest,
+      notes: (latest.notes ?? []).map((note) => note.id === noteId ? { ...note, status: note.status === 'resolved' ? 'open' : 'resolved' } : note),
+    })
+  }
   useEffect(() => {
     if (!state.focusedFile) return
     setCollapsed((previous) => new Set([...previous].filter((key) => !key.endsWith(`:${state.focusedFile}`))))
@@ -80,7 +110,7 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
   const selectClass = 'h-7 w-full rounded-lg bg-surface-2 border border-subtle px-2 text-xs'
   return <div className="flex w-full min-w-0 h-full min-h-0 flex-col bg-surface-0 text-primary">
     <ReviewToolbar state={state} workspaceId={workspaceId} panelId={panelId}>
-      <button ref={trigger} aria-label="Filters" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} title="Filters" className="review-action flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-xs hover:bg-surface-2"><Funnel size={14} /><span className="review-action-label">Filters</span></button>
+      <button ref={trigger} aria-label="Filters" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} title="Filters" className="review-action flex h-7 shrink-0 items-center justify-center gap-1 rounded-lg px-2 text-xs hover:bg-surface-2"><Funnel size={14} /><span className="review-action-label">Filters</span></button>
       <div className="review-toolbar-actions ml-auto flex shrink-0 items-center gap-1">
         <ReviewRunStatus state={state} workspace={workspace} workspaceId={workspaceId} panelId={panelId} />
         <ReviewStats files={new Set(files.map(({ file }) => file.path)).size} additions={totals.additions} deletions={totals.deletions} />
@@ -136,7 +166,16 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
             <span className="text-[10px] tabular-nums text-diff-add">+{file.additions}</span><span className="text-[10px] tabular-nums text-diff-del">−{file.deletions}</span>
             {file.coverage === 'fragment' && <span title="Reported edit fragment; full-file context and line numbers are unavailable." className="text-muted"><Info size={12} /></span>}
           </div>
-          {!collapsed.has(key) && <RecordedFileBody file={file} display={display} />}
+          {!collapsed.has(key) && <RecordedFileBody
+            file={file}
+            recordId={record.id}
+            display={display}
+            notes={(state.notes ?? []).filter((note) => note.path === file.path && note.agentChangeId === record.id)}
+            noteDraft={noteDraft?.filePath === file.path && noteDraft.agentChangeId === record.id ? noteDraft : null}
+            setNoteDraft={setNoteDraft}
+            addNote={addNote}
+            toggleNote={toggleNote}
+          />}
         </section>
       })}
       {shownCount < files.length && <button className="m-3 rounded bg-surface-2 px-3 py-2 text-xs" onClick={() => setVisibleCount(shownCount + 50)}>Show more recorded files ({files.length - shownCount} remaining)</button>}
@@ -144,7 +183,16 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
   </div>
 }
 
-function RecordedFileBody({ file, display }: { file: AgentChangedFile; display: Pick<ReviewPanelState['display'], 'split' | 'wordDiff' | 'wrap'> }) {
+function RecordedFileBody({ file, recordId, display, notes, noteDraft, setNoteDraft, addNote, toggleNote }: {
+  file: AgentChangedFile
+  recordId: string
+  display: Pick<ReviewPanelState['display'], 'split' | 'wordDiff' | 'wrap'>
+  notes: GitReviewNote[]
+  noteDraft: (NoteDraft & { agentChangeId: string }) | null
+  setNoteDraft: React.Dispatch<React.SetStateAction<(NoteDraft & { agentChangeId: string }) | null>>
+  addNote: (draft: NoteDraft & { agentChangeId: string }, body: string, severity: NonNullable<GitReviewNote['severity']>) => void
+  toggleNote: (noteId: string) => void
+}) {
   const root = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(typeof IntersectionObserver === 'undefined')
   const [allowLarge, setAllowLarge] = useState(false)
@@ -160,7 +208,19 @@ function RecordedFileBody({ file, display }: { file: AgentChangedFile; display: 
   return <div ref={root} className={`font-mono text-[11px] leading-[1.45] ${display.wrap ? 'w-full min-w-0 whitespace-pre-wrap break-all' : 'w-max min-w-full whitespace-pre'}`}>
     {!visible ? <LoadingState label="Loading recorded diff…" className="h-20" /> : large && !allowLarge ? <button className="m-3 rounded bg-surface-2 px-3 py-2" onClick={() => setAllowLarge(true)}>Load large recorded diff</button> : <>
       {file.coverage === 'unavailable' && <p className="px-3 py-2 text-muted">No patch was reported for this file.</p>}
-      {file.hunks.map((hunk, index) => <RecordedDiffHunk key={index} split={display.split} wordDiff={display.wordDiff} wrap={display.wrap} hunk={file.coverage === 'fragment' ? { ...hunk, lines: hunk.lines.map((line) => ({ ...line, oldLine: null, newLine: null })) } : hunk} />)}
+      {file.hunks.map((hunk, index) => <RecordedDiffHunk
+        key={index}
+        split={display.split}
+        wordDiff={display.wordDiff}
+        wrap={display.wrap}
+        hunk={file.coverage === 'fragment' ? { ...hunk, lines: hunk.lines.map((line) => ({ ...line, oldLine: null, newLine: null })) } : hunk}
+        notes={notes}
+        addNote={(side, line, context) => setNoteDraft({ agentChangeId: recordId, filePath: file.path, side, line, context })}
+        toggleNote={toggleNote}
+        noteDraft={noteDraft}
+        submitNote={(body, severity) => noteDraft && addNote(noteDraft, body, severity)}
+        cancelNote={() => setNoteDraft(null)}
+      />)}
     </>}
   </div>
 }
