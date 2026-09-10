@@ -21,9 +21,6 @@ import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useClaimPanelCorner } from './panelChrome'
 import { useOptionalCanvasStoreApi, useOptionalCanvasStoreContext } from '../stores/CanvasStoreContext'
-import { useUIStore } from '../stores/uiStore'
-import { useMissingAgentHookNotice } from '../hooks/useMissingAgentHookNotice'
-import { TriangleAlert as Warning } from 'lucide-react'
 import { focusedNodeId } from '../stores/canvas/selectionModel'
 import { useActivePanelStore, getActivePanelId } from '../lib/activePanel'
 import { collectPanelIds } from '../../shared/collectPanelIds'
@@ -211,10 +208,6 @@ export default function TerminalPanel({
   const isFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
   const canvasApi = useOptionalCanvasStoreApi()
   const zoomLevel = useOptionalCanvasStoreContext((s) => s.zoomLevel, 1)
-
-  // A supported agent CLI running here with no Cate hooks installed → a small
-  // "hooks off" chip linking to Settings (auto-clears when resolved).
-  const missingHookAgent = useMissingAgentHookNotice(workspaceId, panelId, rootPath)
 
   // -------------------------------------------------------------------------
   // Search handlers
@@ -975,18 +968,6 @@ export default function TerminalPanel({
             ['--cell-scale' as string]: String(cellScale.w),
           }}
         />
-        {/* Supported agent running without Cate hooks — nudge to Settings. */}
-        {missingHookAgent && (
-          <button
-            type="button"
-            onClick={() => useUIStore.getState().openSettings('agent hooks')}
-            title={`${missingHookAgent} is running without Cate hooks — click to set them up in Settings`}
-            className="absolute bottom-2 right-2 z-30 flex items-center gap-1 px-2 py-1 rounded-md bg-surface-3/90 border border-subtle text-[11px] text-secondary hover:text-primary backdrop-blur-sm transition-colors focus:outline-none"
-          >
-            <Warning size={11} className="flex-shrink-0" />
-            Agent hooks off
-          </button>
-        )}
         {/* File-drop indicator is rendered globally by <FileDropOverlay/>
             (this container is marked data-filedrop="terminal"). */}
         {/* Inline URL prompt is rendered outside this scaled box so it

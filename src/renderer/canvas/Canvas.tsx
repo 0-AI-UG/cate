@@ -46,6 +46,13 @@ function injectCanvasInteractingStyle(): void {
     .canvas-interacting .xterm * {
       cursor: grabbing !important;
     }
+    /* Keep each visible card on its own compositor layer during zoom. This
+       preserves live panel pixels while avoiding a full Monaco/xterm repaint
+       for every intermediate world transform. Canvas removes the class after
+       settling, so the layers do not consume idle RAM. */
+    .canvas-world-zooming [data-node-id] {
+      will-change: transform;
+    }
     /* Hand tool active (idle): let left-presses on interactive panel content
        fall through to the canvas pan handler instead of being swallowed. */
     .canvas-tool-hand iframe,
@@ -214,7 +221,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
   // Imperatively update the world div transform on zoom/offset changes so
   // Canvas itself never re-renders during pan/zoom — only the world div moves.
   useEffect(() => {
-    const applyTransform = (zoom: number, offset: { x: number; y: number }) => {
+    const applyTransform = (zoom: number, offset: { x: number; y: number }, zoomChanged = false) => {
       const transform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
       const layers = [worldRef.current, topOverlayWorldRef.current]
       if (!layers.some(Boolean)) return
@@ -232,11 +239,13 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
       for (const el of layers) {
         if (el) el.style.willChange = 'transform'
       }
+      if (zoomChanged) worldRef.current?.classList.add('canvas-world-zooming')
       if (willChangeResetRef.current) clearTimeout(willChangeResetRef.current)
       willChangeResetRef.current = setTimeout(() => {
         for (const node of [worldRef.current, topOverlayWorldRef.current]) {
           if (node) node.style.willChange = 'auto'
         }
+        worldRef.current?.classList.remove('canvas-world-zooming')
         willChangeResetRef.current = null
       }, 150)
     }
@@ -248,12 +257,13 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
     // Subscribe to future changes
     const unsubscribe = canvasApi.subscribe((state, prev) => {
       if (state.zoomLevel !== prev.zoomLevel || state.viewportOffset !== prev.viewportOffset) {
-        applyTransform(state.zoomLevel, state.viewportOffset)
+        applyTransform(state.zoomLevel, state.viewportOffset, state.zoomLevel !== prev.zoomLevel)
       }
     })
     return () => {
       unsubscribe()
       if (willChangeResetRef.current) clearTimeout(willChangeResetRef.current)
+      worldRef.current?.classList.remove('canvas-world-zooming')
     }
   }, []) // mount-only
 

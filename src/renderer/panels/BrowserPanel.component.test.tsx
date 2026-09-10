@@ -56,7 +56,7 @@ beforeEach(() => {
   useBrowserStore.setState({ bookmarks: [], recordVisit: vi.fn(), toggleBookmark: vi.fn(), querySuggestions: vi.fn(() => []) })
   useSettingsStore.setState({
     browserHomepage: '', browserSearchEngine: 'google', browserProxyUrl: '',
-    browserNewTabBehavior: 'startPage', browserShowTabSidebar: false, setSetting: vi.fn(),
+    browserNewTabBehavior: 'startPage', setSetting: vi.fn(),
   })
   Object.assign(window, { electronAPI: {
     browserControl, browserSetProxy: vi.fn(async () => undefined), onBrowserShortcut: vi.fn(() => () => undefined),

@@ -6,7 +6,6 @@ import { noteAgentPresence } from '../lib/agent/agentScreenDetector'
 import { isWorkspaceMonitorReady } from './workspaceMonitorReady'
 import { syncWorktrees } from '../lib/worktreeSync'
 import log from '../lib/logger'
-import { matchAgentProcess } from '../../shared/agents'
 import { isAgentFallbackTitle } from '../lib/panelTitle'
 import type { TerminalActivity } from '../../shared/types'
 
@@ -56,22 +55,18 @@ export function useOwnedTerminalTelemetry(): void {
         // coordinator can read it at commit.
         noteAgentPresence(terminalId, agentPresent)
 
-        // Agent tab title fallback: show a clean detected agent name while its
-        // native session title is not available (or hooks are not installed).
-        // A resolved native title is a normal panel title and is intentionally
-        // not touched by later process scans.
-        const scannedName =
-          terminalActivity.type === 'running' ? matchAgentProcess(terminalActivity.processName ?? '') : null
-        const displayName = agentName ?? scannedName
-        if (displayName) {
+        // Hooks are the sole source of agent identity. Use their clean name as
+        // a fallback until native session metadata provides a real title; the
+        // generic process scan must never classify a terminal as an agent.
+        if (agentName) {
           const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
           const panel = useAppStore.getState().workspaces
             .find((workspace) => workspace.id === actualWorkspaceId)?.panels[panelId]
           // A native session title is just the normal panel title. Only replace
-          // Cate's generic terminal/agent fallback labels here; otherwise this
-          // 1 Hz process scan would immediately overwrite the resolved title.
+          // Cate's generic terminal/agent fallback labels here; later hook
+          // telemetry must not overwrite the resolved title.
           if (isAgentFallbackTitle(panel?.title ?? '')) {
-            useAppStore.getState().updatePanelTitleFromAgent(actualWorkspaceId, panelId, displayName)
+            useAppStore.getState().updatePanelTitleFromAgent(actualWorkspaceId, panelId, agentName)
           }
         }
       },

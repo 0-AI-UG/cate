@@ -25,6 +25,7 @@ beforeEach(() => {
   act(() => root.render(<UpdateButton />))
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   act(() => root.unmount())
   host.remove()
   vi.unstubAllGlobals()
@@ -54,6 +55,24 @@ it('shows a dismissible up-to-date message only for manual checks', () => {
   expect(document.querySelector('[role="status"]')?.textContent).toContain('You’re up to date')
   act(() => document.querySelector<HTMLButtonElement>('[aria-label="Dismiss update message"]')!.click())
   expect(document.querySelector('[role="status"]')).toBeNull()
+})
+
+it('centers update feedback above the button using the rendered message width', () => {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.getAttribute('role') === 'status') {
+      return { left: 0, top: 0, right: 144, bottom: 40, width: 144, height: 40, x: 0, y: 0, toJSON: () => ({}) }
+    }
+    if (this === button()) {
+      return { left: 180, top: 700, right: 212, bottom: 732, width: 32, height: 32, x: 180, y: 700, toJSON: () => ({}) }
+    }
+    return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) }
+  })
+
+  act(() => emit({ state: 'up-to-date', version: null, manual: true }))
+
+  const popup = document.querySelector<HTMLElement>('[role="status"]')!
+  expect(popup.style.left).toBe('124px')
+  expect(popup.style.visibility).toBe('visible')
 })
 
 it('surfaces errors and lets the user retry', async () => {

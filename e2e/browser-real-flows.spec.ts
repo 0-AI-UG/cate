@@ -60,7 +60,7 @@ test.beforeAll(async () => {
       return
     }
     if (url.pathname === '/dashboard') {
-      html(response, `<title>Cate Shop</title><main><h1>Welcome, automation user</h1><p>Cart: <strong id="cart-count">0</strong></p><button id="add" onclick="document.querySelector('#cart-count').textContent=String(Number(document.querySelector('#cart-count').textContent)+1)">Add keyboard to cart</button><button id="support" onclick="window.open('/support', 'support')">Open support</button><a id="checkout" href="/checkout">Checkout</a><a id="download" href="/receipt.csv" download>Download receipt</a><a id="docs" href="${docsOrigin}">Product docs</a></main>`)
+      html(response, `<title>Cate Shop</title><main><h1>Welcome, automation user</h1><img src="/pixel.png" alt="Keyboard product image"><p>Cart: <strong id="cart-count">0</strong></p><button id="add" onclick="document.querySelector('#cart-count').textContent=String(Number(document.querySelector('#cart-count').textContent)+1)">Add keyboard to cart</button><button id="support" onclick="window.open('/support', 'support')">Open support</button><a id="checkout" href="/checkout">Checkout</a><a id="download" href="/receipt.csv" download>Download receipt</a><a id="docs" href="${docsOrigin}">Product docs</a></main>`)
       return
     }
     if (url.pathname === '/support') {
@@ -149,6 +149,11 @@ test.beforeAll(async () => {
         'content-disposition': 'attachment; filename="receipt.csv"',
       })
       response.end('item,quantity\nkeyboard,1\n')
+      return
+    }
+    if (url.pathname === '/pixel.png') {
+      response.writeHead(200, { 'content-type': 'image/png' })
+      response.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'))
       return
     }
     response.writeHead(404).end('not found')
@@ -257,6 +262,17 @@ test('completes authenticated shopping and cross-origin documentation flows', as
   expect(receipt?.filePath).toContain('receipt.csv')
   expect(existsSync(receipt!.filePath)).toBe(true)
   expect(readFileSync(receipt!.filePath, 'utf8')).toBe('item,quantity\nkeyboard,1\n')
+
+  const imageUrl = `${shopOrigin}/pixel.png`
+  const image = await target(page, browser, 'Keyboard product image', 'image')
+  const src = await browserInvoke(page, browser, 'getAttribute', { ...image, name: 'src' })
+  expect(src).toEqual({ ok: true, result: '/pixel.png' })
+  await expect(browserInvoke(page, browser, 'download', { url: src.result })).resolves
+    .toEqual({ ok: true, result: { url: imageUrl } })
+  await expect.poll(() => browserInvoke(page, browser, 'downloads'), { timeout: 20_000 }).toMatchObject({
+    ok: true,
+    result: { downloads: expect.arrayContaining([expect.objectContaining({ url: imageUrl, state: 'completed' })]) },
+  })
 
   await expect(browserInvoke(page, browser, 'setViewport', { preset: 'mobile', width: 390, height: 844 })).resolves
     .toMatchObject({ ok: true, result: { preset: 'mobile', width: 390, height: 844 } })

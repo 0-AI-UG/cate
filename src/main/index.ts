@@ -11,8 +11,9 @@ import { registerHandlers as registerSearchHandlers } from './ipc/search'
 import { registerHandlers as registerShellHandlers } from './ipc/shell'
 import { registerAgentHookForwarding } from './ipc/agentHookEvents'
 import { registerHandlers as registerGitMonitorHandlers } from './ipc/git-monitor'
-import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, getSettingSync, setSettingsFromMain } from './store'
-import { registerUIStateHandlers } from './uiStateStore'
+import { registerHandlers as registerStoreHandlers, loadSettingsSyncFromDisk, getSettingSync } from './store'
+import { getSettingsFilePath } from './settingsFile'
+import { getUIStateSync, loadUIStateSync, migrateLegacyLifecycleState, registerUIStateHandlers, setUIStateFromMain } from './uiStateStore'
 import { registerProjectStateHandlers } from './projectWorkspaceStore'
 import { registerHandlers as registerMenuHandlers } from './ipc/menu'
 import { registerHandlers as registerNotificationHandlers } from './ipc/notifications'
@@ -20,13 +21,12 @@ import { registerSkillHandlers } from '../skills/main/ipcSkills'
 import { registerWorkspaceHandlers } from './workspaceManager'
 import { buildApplicationMenu, setNewMainWindowFn } from './menu'
 import { initShellEnv, getShellEnv } from './shellEnv'
-import { currentExclusionSet } from './ipc/filesystem'
 import { initAutoUpdater } from './auto-updater'
 import { initSentry, captureMainException, flushSentry } from './sentry'
 import { initAnalytics, devSimulateUpdateFrom, hasRunBefore } from './analytics'
 import { startPerfMonitor, getLatestSnapshot } from './perf/perfMonitor'
 import { PERF_GET } from '../shared/ipc-channels'
-import { TELEMETRY_NOTICE_VERSION } from '../shared/types'
+import { FILE_EXCLUSIONS, TELEMETRY_NOTICE_VERSION } from '../shared/types'
 import { installWebContentsSecurity } from './webSecurity'
 import { installProxyAuthHandler } from './browserProxy'
 import { installBundledSkill } from './installBundledSkill'
@@ -223,6 +223,8 @@ log.info('Cate v%s starting (electron %s, node %s, platform %s)', app.getVersion
 // Load persisted settings synchronously so window-creation code paths can read
 // them before the async electron-store finishes initializing.
 loadSettingsSyncFromDisk()
+loadUIStateSync()
+migrateLegacyLifecycleState(getSettingsFilePath())
 
 // Optional GPU-rasterization workaround (off by default). Under this app's GPU
 // load — many live xterm WebGL contexts + the worktree-territory WebGL2 renderer
@@ -244,8 +246,8 @@ if (getSettingSync('disableGpuRasterization')) {
 // user whose acknowledged notice version is below TELEMETRY_NOTICE_VERSION
 // sees it once, updaters included.
 if (hasRunBefore()) {
-  if (!getSettingSync('onboardingCompleted')) {
-    void setSettingsFromMain({ onboardingCompleted: true })
+  if (!getUIStateSync('onboardingCompleted')) {
+    setUIStateFromMain('onboardingCompleted', true)
   }
 }
 
@@ -254,7 +256,8 @@ if (hasRunBefore()) {
 // drive. Mark both as already handled so e2e starts on a clean canvas. Runs
 // before the renderer queries settings, so the dialogs never flash.
 if (IS_E2E) {
-  void setSettingsFromMain({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION, onboardingCompleted: true })
+  setUIStateFromMain('telemetryNoticeAcknowledgedVersion', TELEMETRY_NOTICE_VERSION)
+  setUIStateFromMain('onboardingCompleted', true)
 }
 
 // Initialize Sentry as early as possible — before any IPC handlers or windows.
@@ -327,7 +330,7 @@ app.whenReady().then(async () => {
     : undefined
   runtimes.ensureLocalRuntime({
     root: app.getPath('home'),
-    exclusions: [...currentExclusionSet()],
+    exclusions: FILE_EXCLUSIONS,
     env: e2ePathPrefix
       ? { ...runtimeEnv, PATH: `${e2ePathPrefix}${path.delimiter}${runtimeEnv.PATH ?? ''}` }
       : runtimeEnv,

@@ -67,10 +67,7 @@ beforeEach(() => {
     }],
     selectedWorkspaceId: WS,
   }, true)
-  useSettingsStore.setState({
-    ...initialSettingsState,
-    worktreeSymlinkPaths: [' node_modules ', '', ' .env.local '],
-  }, true)
+  useSettingsStore.setState(initialSettingsState, true)
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {
     gitWorktreeAdd: vi.fn().mockResolvedValue(undefined),
     gitWorktreeAddFromPr: vi.fn(),
@@ -103,7 +100,6 @@ describe('useWorktreeActions', () => {
       {
         createBranch: true,
         baseRef: 'origin/release',
-        symlinkPaths: ['node_modules', '.env.local'],
       },
       WS,
     )
@@ -192,7 +188,7 @@ describe('useWorktreeActions', () => {
       ROOT,
       42,
       '/repo/.cate/worktrees/pr-42-fork-feature',
-      { symlinkPaths: ['node_modules', '.env.local'] },
+      undefined,
       WS,
     )
     expect(workspace().worktrees).toEqual(expect.arrayContaining([

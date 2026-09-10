@@ -83,6 +83,8 @@ coordinates. A dispatched click is not proof that a business operation completed
 use `waitFor` or inspect the resulting state.
 
 ```javascript
+const src = await tab.getAttribute(42, "src"); // string or null; use a current AX element ID
+await tab.download(src);                       // relative URLs resolve against the current page
 await tab.click(42);                         // or [x,y]
 await tab.setValue(17, "replacement");
 await tab.typeText("insert at selection");
@@ -99,7 +101,9 @@ await tab.goto("https://example.com");
 await tab.back(); await tab.forward(); await tab.reload();
 await tab.setViewport({width:1280,height:800});
 await tab.resize({width:800,height:600});
-await tab.downloads(); await tab.close();
+await tab.download();                         // current tab URL; or pass an absolute/relative asset URL
+await tab.downloads();                        // inspect download progress/completion
+await tab.close();
 ```
 
 Keep deterministic batches short and inspect unexpected changes before continuing.

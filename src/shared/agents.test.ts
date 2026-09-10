@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { agentForLaunchCommand, matchAgentDef, matchAgentProcess, resumeCommandForAgent } from './agents'
+import { agentForLaunchCommand, matchAgentDef, resumeCommandForAgent } from './agents'
 
 describe('agentForLaunchCommand', () => {
   it('recognizes a bare driver launch command, including an absolute path', () => {
@@ -24,11 +24,6 @@ describe('matchAgentDef', () => {
     expect(matchAgentDef('cursor')?.id).toBe('cursor')
     expect(matchAgentDef('kiro-cli')?.id).toBe('kiro')
     expect(matchAgentDef('node')).toBeNull()
-  })
-
-  it('keeps matchAgentProcess returning the display name', () => {
-    expect(matchAgentProcess('opencode')).toBe('OpenCode')
-    expect(matchAgentProcess('zsh')).toBeNull()
   })
 })
 

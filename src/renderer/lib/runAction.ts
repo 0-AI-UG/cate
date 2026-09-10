@@ -15,7 +15,7 @@ import {
   getActiveCanvasPanelId,
   placementForActivePanel,
 } from '../stores/appStore'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStateStore } from '../stores/uiStateStore'
 import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
 import { useUIStore } from '../stores/uiStore'
 import type { MenuActionId } from '../../shared/types'
@@ -139,7 +139,7 @@ export async function runAction(
     case 'openUsage': useUIStore.getState().setShowUsage(true); break
     case 'skills': useUIStore.getState().setShowSkillsDialog(true); break
     case 'showTutorial':
-      useSettingsStore.getState().setSetting('onboardingCompleted', false)
+      useUIStateStore.getState().setUIState('onboardingCompleted', false)
       window.electronAPI?.trackFeatureUsed?.('onboarding_replayed')
       break
     case 'deleteRuntime':

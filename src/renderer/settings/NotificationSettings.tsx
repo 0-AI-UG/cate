@@ -23,6 +23,7 @@ export function NotificationSettings() {
         <Toggle
           checked={store.notifyOnlyWhenUnfocused}
           onChange={(v) => store.setSetting('notifyOnlyWhenUnfocused', v)}
+          disabled={!store.notificationsEnabled}
         />
       </SettingRow>
     </div>

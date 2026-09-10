@@ -158,12 +158,11 @@ describe('live theme background', () => {
   })
 })
 
-test('newly connected runtimes receive current settings changed while disconnected', async () => {
-  await handlers.get(SETTINGS_SET)!({}, 'fileExclusions', ['new-exclusion'])
+test('newly connected runtimes receive idle-suspend changes made while disconnected', async () => {
   await handlers.get(SETTINGS_SET)!({}, 'autoSuspendIdleTerminals', false)
   const runtime = { setExclusions: vi.fn().mockResolvedValue(undefined), setIdleSuspend: vi.fn().mockResolvedValue(undefined) }
   runtimeSettings.connected.forEach(notify => notify('local', runtime))
   await Promise.resolve()
-  expect(runtime.setExclusions).toHaveBeenCalledWith(['new-exclusion'])
+  expect(runtime.setExclusions).not.toHaveBeenCalled()
   expect(runtime.setIdleSuspend).toHaveBeenCalledWith(false)
 })

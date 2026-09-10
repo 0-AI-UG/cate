@@ -11,7 +11,7 @@
 
 import { useState } from 'react'
 import { Mail as EnvelopeSimple } from 'lucide-react'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStateStore } from '../stores/uiStateStore'
 import { CateLogo } from '../ui/CateLogo'
 import log from '../lib/logger'
 import headerImg from '../assets/welcome-header.jpg'
@@ -40,8 +40,8 @@ function GithubMark({ size = 17 }: { size?: number }) {
 }
 
 export function WelcomeDialog() {
-  const acknowledgedVersion = useSettingsStore((s) => s.telemetryNoticeAcknowledgedVersion)
-  const loaded = useSettingsStore((s) => s._loaded)
+  const acknowledgedVersion = useUIStateStore((s) => s.telemetryNoticeAcknowledgedVersion)
+  const loaded = useUIStateStore((s) => s._loaded)
 
   const [saving, setSaving] = useState(false)
   const [exiting, setExiting] = useState(false)
@@ -63,7 +63,7 @@ export function WelcomeDialog() {
     // this dialog and hands off to the tour (which fades in on its own), so the
     // transition is a soft dissolve rather than a harsh cut.
     window.setTimeout(() => {
-      useSettingsStore.setState({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION })
+      useUIStateStore.setState({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION })
     }, 320)
   }
 
