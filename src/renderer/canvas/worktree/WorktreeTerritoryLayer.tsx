@@ -315,20 +315,10 @@ const WorktreeTerritoryLayer: React.FC<Props> = ({ containerWidth, containerHeig
     ensureRef.current = ensure
 
     const onChange = () => {
-      // The world transform (Canvas.applyTransform) updates the DOM synchronously
-      // on every offset change. The GL territory draw is just one full-screen quad,
-      // so draw it synchronously in the SAME store-notification tick — phase-locked
-      // to the panels. Scheduling it on a later rAF instead makes the territory lag
-      // the panels by a frame during fast pan/zoom (very visible when zoomed out,
-      // where one pan event is a large world delta). Node-drag still uses the rAF
-      // loop (to follow the ghost), and the CPU fallback stays on rAF (its draw is
-      // far too heavy to run per pan event).
-      const dragging = useDragStore.getState().source?.origin.kind === 'canvas-node'
-      if (backendRef.current === 'gl' && !dragging) {
-        dirtyRef.current = false
-        paintGL()
-        return
-      }
+      // Store notifications can arrive faster than Chromium can composite a
+      // frame. Drawing synchronously here queues redundant full-screen GPU work
+      // and makes pan input contend with the compositor. Keep view updates
+      // dirty-gated and coalesce them into the next animation frame instead.
       dirtyRef.current = true
       ensure()
     }
