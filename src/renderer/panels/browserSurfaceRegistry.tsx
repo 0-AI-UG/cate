@@ -22,7 +22,14 @@ function frameGeometry() {
   const rects = new Map<Element, DOMRect>()
   const styles = new Map<Element, CSSStyleDeclaration>()
   const layers = new Map<Element, Array<{ element: HTMLElement; z: number }>>()
-  const overlays = Array.from(document.querySelectorAll<HTMLElement>('[data-browser-surface-overlay]'))
+  const overlays = new Map<string, HTMLElement[]>()
+  for (const element of document.querySelectorAll<HTMLElement>('[data-browser-surface-overlay]')) {
+    const panelId = element.dataset.browserSurfaceOverlay
+    if (!panelId) continue
+    const entries = overlays.get(panelId)
+    if (entries) entries.push(element)
+    else overlays.set(panelId, [element])
+  }
   const rect = (element: Element): DOMRect => {
     if (!rects.has(element)) {
       perfCount('browserGeometryRect')
@@ -176,8 +183,8 @@ function surfaceClipPath(
   }
   nodeOccluders.forEach(addOccluder)
   // Dock chrome lives in the slot's stacking context, outside the guest host.
-  for (const overlay of geometry.overlays) {
-    if (overlay.dataset.browserSurfaceOverlay !== panelId || geometry.style(overlay).visibility === 'hidden') continue
+  for (const overlay of geometry.overlays.get(panelId) ?? []) {
+    if (geometry.style(overlay).visibility === 'hidden') continue
     const hole = intersectRects(visible, geometry.rect(overlay))
     if (hole) addOccluder(local(hole))
   }
@@ -287,9 +294,20 @@ function schedule(): void {
     const started = PERF_ENABLED ? performance.now() : 0
     if (rebuildTracking) watchSurfaces()
     refreshAnimations()
+    // Background-workspace guests deliberately stay mounted so CLI/agent
+    // control keeps their exact webContents and page state. They have no live
+    // geometry slot, though, and are already parked by unregisterSlot. Exclude
+    // them from the per-frame layout pass without changing their lifecycle.
+    const activeIds = [...slots.entries()]
+      .filter(([id, slot]) => surfaces.has(id) && slot.isConnected)
+      .map(([id]) => id)
+    if (activeIds.length === 0) {
+      geometryAnimations.clear()
+      return
+    }
     perfCount('browserGeometryFrame')
     const geometry = frameGeometry()
-    const writes = [...surfaces.keys()].map((id) => measureSurface(id, geometry))
+    const writes = activeIds.map((id) => measureSurface(id, geometry))
     for (const write of writes) write()
     // Animated transforms produce no further mutations or resize notifications.
     for (const [element, animations] of geometryAnimations) {
@@ -319,13 +337,16 @@ function watchSurfaces(): void {
     schedule()
   })
   const ancestors = new Set<HTMLElement>()
-  for (const id of surfaces.keys()) {
+  const activeIds = [...slots.entries()]
+    .filter(([id, slot]) => surfaces.has(id) && slot.isConnected)
+    .map(([id]) => id)
+  for (const id of activeIds) {
     for (let element: HTMLElement | null = slots.get(id) ?? null; element; element = element.parentElement) {
       if (ancestors.has(element)) break
       ancestors.add(element)
     }
   }
-  const outputs = [...surfaces.values()].map((entry) => entry.container)
+  const outputs = activeIds.map((id) => surfaces.get(id)!.container)
   const observe = (element: HTMLElement, childList: boolean): void => {
     if (tracked.has(element)) return
     tracked.add(element)
