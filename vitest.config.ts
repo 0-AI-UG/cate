@@ -22,11 +22,10 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.mjs'],
     restoreMocks: true,
-    environmentMatchGlobs: [
-      ['**/*.test.tsx', 'jsdom'],
-      ['**/*.test.ts', 'node'],
+    projects: [
+      { extends: true, test: { name: 'node', environment: 'node', include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'] } },
+      { extends: true, test: { name: 'renderer', environment: 'jsdom', include: ['src/**/*.test.tsx'] } },
     ],
     setupFiles: ['src/renderer/drag/__tests__/setup.ts'],
   },

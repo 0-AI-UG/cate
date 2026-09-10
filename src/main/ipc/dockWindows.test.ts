@@ -73,9 +73,9 @@ import type {
 interface FakeWin {
   id: number
   sent: Array<{ channel: string; args: unknown[] }>
-  focus: ReturnType<typeof vi.fn>
-  show: ReturnType<typeof vi.fn>
-  setBounds: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn<() => void>>
+  show: ReturnType<typeof vi.fn<() => void>>
+  setBounds: ReturnType<typeof vi.fn<(bounds: unknown) => void>>
   fireClosed: () => void
   fireDidFinishLoad: () => void
   win: never

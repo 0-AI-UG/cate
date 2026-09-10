@@ -40,8 +40,8 @@ import type { WindowPanelInfo, WindowPanelReport, PanelState } from '../shared/t
 interface FakeWin {
   id: number
   sent: Array<{ channel: string; args: unknown[] }>
-  focus: ReturnType<typeof vi.fn>
-  restore: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn<() => void>>
+  restore: ReturnType<typeof vi.fn<() => void>>
   fireClosed: () => void
   /** Simulates a window that died WITHOUT a clean close: isDestroyed() flips
    *  true while the union still holds its last report. */
