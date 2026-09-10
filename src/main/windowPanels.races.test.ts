@@ -34,7 +34,7 @@ import type { WindowPanelInfo, WindowPanelReport, PanelState } from '../shared/t
 interface FakeWin {
   id: number
   sent: Array<{ channel: string; args: unknown[] }>
-  focus: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn<() => void>>
   /** Flip to true to simulate destruction WITHOUT firing 'closed'. */
   destroyed: boolean
   fireClosed: () => void

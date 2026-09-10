@@ -19,6 +19,7 @@ let host: HTMLDivElement
 let root: Root
 
 beforeEach(() => {
+  vi.mocked(window.electronAPI.isWindowMaximized).mockReturnValue(false)
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)

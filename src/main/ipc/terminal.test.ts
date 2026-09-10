@@ -128,11 +128,11 @@ const makeFakeTerminal = () => ({
   write: () => {},
   dispose: () => {},
 })
-vi.mock('@xterm/xterm', () => ({ Terminal: vi.fn(() => makeFakeTerminal()) }))
-vi.mock('@xterm/addon-fit', () => ({ FitAddon: vi.fn(() => ({ dispose: () => {} })) }))
-vi.mock('@xterm/addon-search', () => ({ SearchAddon: vi.fn(() => ({})) }))
-vi.mock('@xterm/addon-serialize', () => ({ SerializeAddon: vi.fn(() => ({ dispose: () => {} })) }))
-vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: vi.fn(() => ({})) }))
+vi.mock('@xterm/xterm', () => ({ Terminal: vi.fn(function () { return makeFakeTerminal() }) }))
+vi.mock('@xterm/addon-fit', () => ({ FitAddon: vi.fn(function () { return { dispose: () => {} } }) }))
+vi.mock('@xterm/addon-search', () => ({ SearchAddon: vi.fn(function () { return {} }) }))
+vi.mock('@xterm/addon-serialize', () => ({ SerializeAddon: vi.fn(function () { return { dispose: () => {} } }) }))
+vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: vi.fn(function () { return {} }) }))
 vi.mock('@xterm/addon-webgl', () => ({ WebglAddon: class { onContextLoss() {} dispose() {} } }))
 vi.mock('../../renderer/lib/logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
 vi.mock('../../renderer/lib/terminal/terminalSettings', () => ({

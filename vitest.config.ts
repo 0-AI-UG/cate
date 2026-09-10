@@ -7,7 +7,14 @@ import path from 'node:path'
 //   - .test.tsx → jsdom env, used by the drag integration harness (renders a real
 //                 React tree and simulates real mouse events through useDragOp).
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), {
+    // Vitest 5 misses node:sqlite in Node 22's builtinModules list.
+    name: 'externalize-node-sqlite',
+    enforce: 'pre',
+    resolveId(id) {
+      if (id === 'node:sqlite') return { id, external: true }
+    },
+  }],
   resolve: {
     alias: {
       'monaco-editor': path.resolve(__dirname, 'node_modules/monaco-editor/esm/vs/editor/editor.api.js'),
@@ -22,11 +29,10 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.mjs'],
     restoreMocks: true,
-    environmentMatchGlobs: [
-      ['**/*.test.tsx', 'jsdom'],
-      ['**/*.test.ts', 'node'],
+    projects: [
+      { extends: true, test: { name: 'node', environment: 'node', include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'] } },
+      { extends: true, test: { name: 'renderer', environment: 'jsdom', include: ['src/**/*.test.tsx'] } },
     ],
     setupFiles: ['src/renderer/drag/__tests__/setup.ts'],
   },
