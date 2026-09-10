@@ -168,6 +168,32 @@ describe('coding-agent hook status integration', () => {
     expect(state()).toBe('running')
   })
 
+  it('codex resumes when an approved bash command starts', () => {
+    emit('codex', { hook_event_name: 'UserPromptSubmit', session_id: SESSION, turn_id: 'turn-1' })
+    emit('codex', {
+      hook_event_name: 'PermissionRequest', session_id: SESSION, turn_id: 'turn-1', tool_name: 'Bash',
+    })
+    expect(state()).toBe('waitingForInput')
+
+    emit('codex', {
+      hook_event_name: 'PreToolUse', session_id: SESSION, turn_id: 'turn-1', tool_name: 'Bash',
+    })
+    expect(state()).toBe('running')
+  })
+
+  it('claude-code resumes when an approved bash command starts', () => {
+    emit('claude-code', { hook_event_name: 'UserPromptSubmit', session_id: SESSION })
+    emit('claude-code', {
+      hook_event_name: 'PermissionRequest', session_id: SESSION, tool_name: 'Bash',
+    })
+    expect(state()).toBe('waitingForInput')
+
+    emit('claude-code', {
+      hook_event_name: 'PreToolUse', session_id: SESSION, tool_name: 'Bash',
+    })
+    expect(state()).toBe('running')
+  })
+
   it.each(permissionFixtures)(
     '$agentId resumes as soon as the user submits a permission answer',
     ({ agentId, turnStart, permissionWait }) => {
