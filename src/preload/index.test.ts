@@ -3,6 +3,7 @@ import type { ElectronAPI } from '../shared/electron-api'
 import {
   DIALOG_SAVE_FILE,
   DIALOG_TERMINAL_LINK_OPEN,
+  KEEP_AWAKE_TOGGLE,
   MENU_POPUP_BAR_ITEM,
   TERMINAL_DATA,
   TERMINAL_RESIZE,
@@ -65,6 +66,17 @@ beforeEach(() => {
 })
 
 describe('electronAPI preload bridge', () => {
+  it('exposes the keep-awake toggle and returns its IPC result', async () => {
+    electron.invoke.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+    expect(await api.toggleKeepAwake()).toBe(true)
+    expect(await api.toggleKeepAwake()).toBe(false)
+    expect(electron.invoke.mock.calls).toEqual([
+      [KEEP_AWAKE_TOGGLE],
+      [KEEP_AWAKE_TOGGLE],
+    ])
+  })
+
   it('forwards invoke arguments and returns the original IPC promise', () => {
     const ipcResult = Promise.resolve('done')
     electron.invoke.mockReturnValueOnce(ipcResult)
