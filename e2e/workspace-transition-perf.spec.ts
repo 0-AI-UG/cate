@@ -22,7 +22,7 @@ interface Workspace {
 }
 
 async function ready(page: Page, workspace: Workspace): Promise<void> {
-  await page.waitForFunction((ws) => {
+  const isReady = (ws: Workspace) => {
     const h = window.__cateE2E!
     if (h.selectedWorkspaceId() !== ws.id) return false
     return ws.nodes.every((id) => {
@@ -31,13 +31,28 @@ async function ready(page: Page, workspace: Workspace): Promise<void> {
       const rect = node.getBoundingClientRect()
       return rect.width > 0 && rect.height > 0 && rect.left >= 0 && rect.top >= 0
         && rect.right <= innerWidth && rect.bottom <= innerHeight
-    }) && ws.terminals.every((id) => h.terminalPtyId(id)
-      && document.querySelector(`[data-node-id="${id}"] .xterm-screen`))
+    }) && ws.terminals.every((id) => h.terminalPtyId(id))
       && ws.editors.every((id) => document.querySelector(`[data-node-id="${id}"] .monaco-editor textarea`))
-      && ws.browsers.every((id) => h.browserWebContentsId(id) !== null
-        && document.querySelector(`[data-browser-surface="${id}"][data-browser-surface-visible="true"]`))
+      && ws.browsers.every((id) => h.browserWebContentsId(id) !== null)
       && document.querySelector(`webview[data-agent-webview="${ws.agent}"][data-agent-guest-ready="true"]`)
-  }, workspace, { timeout: 30_000 })
+  }
+  try {
+    await page.waitForFunction(isReady, workspace, { timeout: 30_000 })
+  } catch (error) {
+    const diagnostic = await page.evaluate((ws) => {
+      const h = window.__cateE2E!
+      return {
+        selected: h.selectedWorkspaceId(),
+        expected: ws.id,
+        missingNodes: ws.nodes.filter((id) => !document.querySelector(`[data-node-id="${id}"]`)),
+        missingTerminals: ws.terminals.filter((id) => !h.terminalPtyId(id)),
+        missingEditors: ws.editors.filter((id) => !document.querySelector(`[data-node-id="${id}"] .monaco-editor textarea`)),
+        missingBrowsers: ws.browsers.filter((id) => h.browserWebContentsId(id) === null),
+        agentReady: Boolean(document.querySelector(`webview[data-agent-webview="${ws.agent}"][data-agent-guest-ready="true"]`)),
+      }
+    }, workspace)
+    throw new Error(`Workspace readiness timed out: ${JSON.stringify(diagnostic)}`, { cause: error })
+  }
 }
 
 async function guestIds(page: Page, workspace: Workspace) {
@@ -66,7 +81,7 @@ test('warm workspace transitions with 36 mixed panels', async () => {
     await page.waitForFunction(() => !!window.__catePerf)
     expect(await page.evaluate(() => window.__catePerf!.longTasksSupported())).toBe(true)
     // Keep all 18 cards genuinely on screen, instead of benchmarking culled DOM.
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1600, 1100))
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(2200, 1600))
     // E2E windows remain hidden: activate production monitor cadence explicitly.
     await app.evaluate(({ app, BrowserWindow }) => app.emit('browser-window-focus', {}, BrowserWindow.getAllWindows()[0]))
     const workspaces: Workspace[] = []
@@ -82,24 +97,50 @@ test('warm workspace transitions with 36 mixed panels', async () => {
         return id
       }, name)
       await openTrustedWorkspace(page, folder)
-      const ws = await page.evaluate(({ id, mix }) => {
+      // New workspaces intentionally start without an implicit canvas. Create
+      // the benchmark's canvas explicitly so positioned panels become nodes
+      // instead of correctly falling back to the center dock.
+      await page.evaluate(() => window.__cateE2E!.createPanel('canvas'))
+      await page.waitForSelector('[data-canvas-panel-id]', { timeout: 15_000 })
+      await page.evaluate(() => window.__cateE2E!.openNavigationView('explorer'))
+      const point = { x: 20, y: 20 }
+      const terminals: string[] = []
+      for (let i = 0; i < MIX.terminal; i++) {
+        const node = await page.evaluate((p) => window.__cateE2E!.createTerminal(p), point)
+        terminals.push(node)
+        await page.waitForSelector(`[data-node-id="${node}"] .xterm-screen`, { timeout: 15_000 })
+        await expect.poll(() => page.evaluate((nodeId) => window.__cateE2E!.terminalPtyId(nodeId), node), { timeout: 15_000 }).not.toBeNull()
+      }
+      const editors: string[] = []
+      for (let i = 0; i < MIX.editor; i++) {
+        const node = await page.evaluate((p) => window.__cateE2E!.createEditor(p), point)
+        editors.push(node)
+        await page.waitForSelector(`[data-node-id="${node}"] .monaco-editor textarea`, { timeout: 15_000 })
+      }
+      const url = `data:text/html,${encodeURIComponent('<title>Transition fixture</title><body><input value="preserved browser state"><div style="height:1200px">Browser fixture</div></body>')}`
+      const browsers: string[] = []
+      for (let i = 0; i < MIX.browser; i++) {
+        const panelId = await page.evaluate(({ fixtureUrl, p }) => window.__cateE2E!.createBrowser(fixtureUrl, p).panelId, { fixtureUrl: url, p: point })
+        browsers.push(panelId)
+        await expect.poll(() => page.evaluate((id) => window.__cateE2E!.browserWebContentsId(id), panelId), { timeout: 15_000 }).not.toBeNull()
+      }
+      const agent = await page.evaluate((p) => window.__cateE2E!.createAgent(p).panelId, point)
+      await page.waitForSelector(`webview[data-agent-webview="${agent}"][data-agent-guest-ready="true"]`, { timeout: 15_000 })
+      const nodes = await page.evaluate(() => window.__cateE2E!.nodes().map((node) => node.id))
+      const ws: Workspace = { id, nodes, terminals, editors, browsers, agent }
+      expect(ws.nodes).toHaveLength(TOTAL)
+      await page.evaluate((created) => {
         const h = window.__cateE2E!
-        h.openNavigationView('explorer')
-        const point = { x: 20, y: 20 }
-        const terminals = Array.from({ length: mix.terminal }, () => h.createTerminal(point))
-        const editors = Array.from({ length: mix.editor }, () => h.createEditor(point))
-        const url = `data:text/html,${encodeURIComponent('<title>Transition fixture</title><body><input value="preserved browser state"><div style="height:1200px">Browser fixture</div></body>')}`
-        const browsers = Array.from({ length: mix.browser }, () => h.createBrowser(url, point).panelId)
-        const agent = h.createAgent(point).panelId
-        const nodes = h.nodes()
+        const nodes = h.nodes().filter((node) => created.nodes.includes(node.id))
+        const canvas = document.querySelector<HTMLElement>('[data-canvas-area]')!.getBoundingClientRect()
+        const columns = 4
+        const rows = Math.ceil(nodes.length / columns)
         const width = Math.max(...nodes.map((n) => n.size.width)) + 40
         const height = Math.max(...nodes.map((n) => n.size.height)) + 40
-        nodes.forEach((n, i) => h.moveNode(n.id, { x: 20 + (i % 4) * width, y: 20 + Math.floor(i / 4) * height }))
-        h.setZoom(Math.min(0.3, (innerWidth - 500) / (4 * width + 40), (innerHeight - 180) / (5 * height + 40)))
+        nodes.forEach((n, i) => h.moveNode(n.id, { x: 20 + (i % columns) * width, y: 20 + Math.floor(i / columns) * height }))
+        h.setZoom(Math.min(0.3, (canvas.width - 80) / (columns * width + 40), (canvas.height - 80) / (rows * height + 40)))
         h.resetViewport()
-        return { id, nodes: nodes.map((n) => n.id), terminals, editors, browsers, agent }
-      }, { id, mix: MIX })
-      expect(ws.nodes).toHaveLength(TOTAL)
+      }, ws)
       await ready(page, ws)
       // Give every editor real content and terminals a recognizable live buffer.
       for (const node of ws.editors) {

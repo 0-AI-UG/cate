@@ -4,7 +4,7 @@
 // Every canvas panel resolves its store from the renderer session by panel id.
 // =============================================================================
 
-import React, { useMemo, useCallback, useEffect } from 'react'
+import React, { useMemo, useCallback, useEffect, useState } from 'react'
 import { useRenderCount } from '../lib/perf/perfClient'
 import { getOrCreateCanvasStoreForPanel, useVisibleNodeIds } from '../stores/canvasStore'
 import { CanvasStoreProvider, useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
@@ -28,6 +28,23 @@ import {
 } from './nodeDockRegistry'
 import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
 import { inheritedWorktreeFromSelection } from '../lib/inheritWorktree'
+
+const NODE_MOUNT_BATCH = 6
+
+/** Split a large cold canvas mount across frames. Existing mounted ids are
+ * removed immediately by slice(), while newly-visible ids join in small
+ * batches. Persistent browser/agent guests live outside this subtree. */
+function useStagedVisibleNodeIds(visibleNodeIds: string[]): string[] {
+  const [mountLimit, setMountLimit] = useState(NODE_MOUNT_BATCH)
+  useEffect(() => {
+    if (mountLimit >= visibleNodeIds.length) return
+    const frame = requestAnimationFrame(() => {
+      setMountLimit((current) => Math.min(current + NODE_MOUNT_BATCH, visibleNodeIds.length))
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [mountLimit, visibleNodeIds.length])
+  return visibleNodeIds.slice(0, mountLimit)
+}
 import { useShallow } from 'zustand/react/shallow'
 import { activeDockPanelId } from '../../shared/collectPanelIds'
 import { PanelConnectionLayer } from '../canvas/PanelConnectionLayer'
@@ -203,6 +220,7 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
   // unrelated panel churn (titles, dirty flags) never re-runs the cull.
   const keepMountedPanelIds = useKeepMountedPanelIds(workspaceId)
   const visibleNodeIds = useVisibleNodeIds(store, keepMountedPanelIds)
+  const mountedNodeIds = useStagedVisibleNodeIds(visibleNodeIds)
   const workspaceRootPath = useAppStore(
     (s) => s.workspaces.find((w) => w.id === workspaceId)?.rootPath ?? '',
   )
@@ -248,7 +266,7 @@ export default function CanvasPanel({ panelId, workspaceId, renderPanelContent }
           )}
         >
           <PanelConnectionLayer workspaceId={workspaceId} />
-          {visibleNodeIds.map((nId) => (
+          {mountedNodeIds.map((nId) => (
             <CanvasNodeWrapper
               key={nId}
               nodeId={nId}
