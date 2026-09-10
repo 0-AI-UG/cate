@@ -795,6 +795,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(WINDOW_SET_TITLE, title)
   },
 
+  toggleKeepAwake(): Promise<boolean> {
+    return ipcRenderer.invoke(KEEP_AWAKE_TOGGLE)
+  },
   getKeepAwake(): Promise<boolean> {
     return ipcRenderer.invoke(KEEP_AWAKE_GET)
   },
