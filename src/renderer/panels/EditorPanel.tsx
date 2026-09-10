@@ -6,7 +6,7 @@ import { panelSearchStore } from '../stores/panelSearchStores'
 // =============================================================================
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { perfCount, useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
@@ -907,7 +907,7 @@ export default function EditorPanel({
           }} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-primary hover:bg-hover focus-visible:bg-hover"><Icon size={16} className="text-muted" />{label}</button>)}
         </div>
       </NodePopover>}
-      <div className="files-content flex-1 min-h-0 flex" style={{ backgroundColor: editorBackground }}>
+      <div className="files-content flex-1 min-h-0 flex" style={{ backgroundColor: editorBackground, '--file-explorer-bg': editorBackground } as CSSProperties}>
       <div className={`${editorVisible ? 'flex-1' : 'hidden'} min-w-0 relative`}>
         {showDiff && conflict?.kind === 'changed' && (
           <div className="absolute inset-0 z-30 bg-surface-1">

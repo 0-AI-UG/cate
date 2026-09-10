@@ -590,7 +590,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
 
   return (
     <div
-      className="file-explorer flex flex-col h-full"
+      className="file-explorer flex flex-col h-full min-h-0 overflow-hidden"
       // External (OS) file/folder drops anywhere in the panel import into the
       // workspace root. stopPropagation keeps the drop from bubbling to the
       // app-root handler (which would otherwise re-root the workspace).
@@ -618,12 +618,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
         subtitle={scopeControl ?? folderName}
         actions={
           <>
-            <SidebarHeaderButton onClick={() => startRootCreate('file')} title="New File">
-              <FilePlus size={13} />
-            </SidebarHeaderButton>
-            <SidebarHeaderButton onClick={() => startRootCreate('folder')} title="New Folder">
-              <FolderPlus size={13} />
-            </SidebarHeaderButton>
             <SidebarHeaderButton
               onClick={() => {
                 setSearchVisible((v) => {
@@ -658,8 +652,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
             />
           </div>
           <div className="shrink-0 flex items-center gap-1">
-            <SidebarHeaderButton onClick={() => startRootCreate('file')} title="New File"><FilePlus size={14} /></SidebarHeaderButton>
-            <SidebarHeaderButton onClick={() => startRootCreate('folder')} title="New Folder"><FolderPlus size={14} /></SidebarHeaderButton>
             <SidebarHeaderButton onClick={handleReload} title="Reload"><ArrowClockwise size={14} /></SidebarHeaderButton>
           </div>
         </div>
@@ -712,7 +704,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
       ) : (
         <div
           ref={treeContainerRef}
-          className="relative flex-1 overflow-y-auto py-1 outline-none"
+          className="relative flex-1 min-h-0 overflow-y-auto overscroll-none pt-1 pb-4 outline-none"
           // Focusable + tagged so Delete/Backspace (incl. Cmd+Backspace) deletes
           // the selection here instead of being swallowed by the canvas-level
           // shortcut handler. Focused explicitly from onSelect (draggable rows
@@ -800,6 +792,11 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
           )}
         </div>
       )}
+      <div className="relative shrink-0 h-10 flex items-center justify-end gap-1 px-2">
+        <div className="pointer-events-none absolute inset-x-0 -top-4 h-4" style={{ background: 'linear-gradient(to bottom, transparent, var(--file-explorer-bg, var(--surface-1)))' }} />
+        <SidebarHeaderButton onClick={() => startRootCreate('file')} title="New File"><FilePlus size={14} /></SidebarHeaderButton>
+        <SidebarHeaderButton onClick={() => startRootCreate('folder')} title="New Folder"><FolderPlus size={14} /></SidebarHeaderButton>
+      </div>
     </div>
   )
 }
