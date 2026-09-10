@@ -656,7 +656,7 @@ export interface ElectronAPI {
 
   /** Target-bound CDP control plane for a live browser webview guest. */
   browserControl(request: { op: 'checkCodeCell'; codeCellId: string } | {
-    op: 'attach' | 'execute' | 'downloads' | 'downloadAction'
+    op: 'attach' | 'execute' | 'download' | 'downloads' | 'downloadAction'
     webContentsId: number
     workspaceId: string
     panelId: string

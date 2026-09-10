@@ -43,3 +43,22 @@ it('authorizes completed download actions by surviving owner after its guest is 
   host.emit('destroyed')
   expect(downloadsForWebContents(901)).toEqual([])
 })
+
+it('starts a download only through the attached target guest', async () => {
+  registerBrowserControlHandlers()
+  const host = Object.assign(new EventEmitter(), { id: 42, send: vi.fn(), isDestroyed: () => false })
+  const session = new EventEmitter()
+  const downloadURL = vi.fn()
+  h.guest = {
+    id: 902, hostWebContents: host, session, downloadURL,
+    isDestroyed: () => false, getType: () => 'webview',
+  }
+  const target = { workspaceId: 'w', panelId: 'p', tabId: 't', webContentsId: 902 }
+  const handler = h.handlers.get(BROWSER_CONTROL)!
+
+  expect(await handler({ sender: host }, { op: 'attach', ...target })).toEqual({ ok: true })
+  expect(await handler({ sender: host }, { op: 'download', ...target, args: { url: 'https://example.com/image.png' } }))
+    .toEqual({ ok: true })
+  expect(downloadURL).toHaveBeenCalledWith('https://example.com/image.png')
+  expect(await handler({ sender: host }, { op: 'download', ...target, args: {} })).toEqual({ error: 'url-required' })
+})
