@@ -130,7 +130,7 @@ vi.mock('../lib/terminal/terminalRegistry', () => {
 
 // --- collaborators the panel pulls in but that are irrelevant here ----------
 
-const canvasState = { zoomLevel: 2.0 }
+const canvasState = { zoomLevel: 2.0, nodes: {} }
 vi.mock('../stores/CanvasStoreContext', () => ({
   useOptionalCanvasStoreApi: () => null,
   // Selectors that read state this fake doesn't model fall back, as they do

@@ -5,7 +5,8 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, Select, NumberInput, TextInput, Toggle, SearchableBlock, SecondaryButton } from './SettingsComponents'
 import type { Theme } from '../../shared/types'
 import { validateTheme } from '../../shared/theme'
-import { BASE_DARK, BASE_LIGHT, BUILT_IN_THEMES } from '../../shared/themes'
+import { BUILT_IN_THEMES, DEFAULT_DARK_THEME_ID, DEFAULT_LIGHT_THEME_ID } from '../../shared/themes'
+import { mergeThemeApp, resolveTheme } from '../../shared/themeResolution'
 import { errorMessage } from '../lib/errorMessage'
 import { InlineNotice } from '../ui/InlineNotice'
 
@@ -15,18 +16,6 @@ const UI_SCALE_OPTIONS = [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5].map((s) => ({
   value: String(s),
   label: `${Math.round(s * 100)}%`,
 }))
-
-/** Merge a theme's partial app map over its base — used for swatch previews. */
-function appColors(theme: Theme): Record<string, string> {
-  return { ...(theme.type === 'light' ? BASE_LIGHT : BASE_DARK), ...theme.app }
-}
-
-/** Resolve the complete theme mapped to an OS appearance for System preview. */
-function systemTheme(themes: Theme[], id: string, type: 'light' | 'dark'): Theme {
-  return themes.find((theme) => theme.id === id)
-    ?? themes.find((theme) => theme.type === type)
-    ?? BUILT_IN_THEMES[0]
-}
 
 /** Ensure an id is unique against the existing theme list, suffixing -2, -3… */
 function uniqueId(id: string, taken: Set<string>): string {
@@ -102,8 +91,8 @@ export function AppearanceSettings() {
     }
     store.setSetting('customThemes', customThemes.filter((t) => t.id !== id))
     if (activeThemeId === id) store.setSetting('activeThemeId', 'system')
-    if (store.systemDarkThemeId === id) store.setSetting('systemDarkThemeId', 'dark-warm')
-    if (store.systemLightThemeId === id) store.setSetting('systemLightThemeId', 'light-subtle')
+    if (store.systemDarkThemeId === id) store.setSetting('systemDarkThemeId', DEFAULT_DARK_THEME_ID)
+    if (store.systemLightThemeId === id) store.setSetting('systemLightThemeId', DEFAULT_LIGHT_THEME_ID)
     setConfirmDeleteId(null)
   }
 
@@ -128,8 +117,8 @@ export function AppearanceSettings() {
       <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-2 pb-3 lg:grid-cols-3">
         <SystemCard
           active={isSystem}
-          lightTheme={systemTheme(allThemes, store.systemLightThemeId, 'light')}
-          darkTheme={systemTheme(allThemes, store.systemDarkThemeId, 'dark')}
+          lightTheme={resolveTheme(store, 'system', false)}
+          darkTheme={resolveTheme(store, 'system', true)}
           onClick={() => store.setSetting('activeThemeId', 'system')}
         />
         {allThemes.map((theme) => (
@@ -254,7 +243,7 @@ function CardShell({
 }
 
 function SwatchPreview({ theme }: { theme: Theme }) {
-  const c = appColors(theme)
+  const c = mergeThemeApp(theme)
   return (
     <div className="flex items-center justify-center gap-5 py-1">
       <ThemeOrb base={c['surface-1']} shade={c['surface-6']} accent={c['focus-blue']} />
@@ -336,8 +325,8 @@ function ThemeCard({
 function SystemCard({
   active, lightTheme, darkTheme, onClick,
 }: { active: boolean; lightTheme: Theme; darkTheme: Theme; onClick: () => void }) {
-  const light = appColors(lightTheme)
-  const dark = appColors(darkTheme)
+  const light = mergeThemeApp(lightTheme)
+  const dark = mergeThemeApp(darkTheme)
   return (
     <CardShell active={active} onClick={onClick}>
       <div className="flex items-center justify-center gap-5 py-1">

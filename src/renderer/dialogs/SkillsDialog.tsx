@@ -44,7 +44,7 @@ import {
 
 const api = () => window.electronAPI
 
-// The list of repos the curated catalog is crawled from. Linked at the bottom so
+// The list of repos the curated catalog is crawled from. Linked in the header so
 // anyone can PR a missing skill's source repo in (the CI crawler turns this into
 // skills-index.json).
 const SKILL_SOURCES_URL = 'https://github.com/0-AI-UG/cate/blob/main/registry/sources.json'
@@ -263,6 +263,15 @@ export function SkillsDialog() {
       <LeftSidebarReopen />
       <OverlayHeader title="Skills">
         {!contentSlot && <button type="button" onClick={close} className="text-sm text-muted hover:text-primary">Back</button>}
+        <button
+          type="button"
+          onClick={() => window.electronAPI?.openExternalUrl(SKILL_SOURCES_URL)}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-secondary hover:bg-hover hover:text-primary"
+          title="Suggest a missing skill for the catalog"
+        >
+          Add a skill source
+          <ArrowSquareOut size={13} />
+        </button>
       </OverlayHeader>
       <div className="mx-auto flex w-full max-w-[1040px] min-h-0 flex-1 flex-col px-6">
         <div className="py-4 shrink-0 flex items-center gap-2">
@@ -383,19 +392,6 @@ export function SkillsDialog() {
           ) : (
             <div className={itemsClassName}>{visibleBrowseRows.map((e) => renderRow(e, false))}</div>
           )}
-        </div>
-
-        {/* Pinned footer — PR a missing skill into the curated index. Stays put
-            below the (possibly very long) scrolling list so it's always seen. */}
-        <div className="shrink-0 border-t border-subtle px-3.5 py-2 text-[11px] text-muted">
-          Missing a skill?{' '}
-          <button
-            onClick={() => window.electronAPI?.openExternalUrl(SKILL_SOURCES_URL)}
-            className="inline-flex items-center gap-0.5 text-secondary hover:text-primary underline decoration-dotted underline-offset-2"
-          >
-            Add its source
-            <ArrowSquareOut size={11} />
-          </button>
         </div>
       </div>
     </section>,

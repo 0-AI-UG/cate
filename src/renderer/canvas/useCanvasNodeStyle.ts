@@ -6,6 +6,7 @@
 // =============================================================================
 
 import React, { useMemo } from 'react'
+import { isMaximized } from '../../shared/types'
 import type { CanvasNodeState, NodeActivityState } from '../../shared/types'
 import { NODE_CORNER_RADIUS as CORNER_RADIUS } from './nodeAppearance'
 
@@ -45,7 +46,6 @@ interface StyleArgs {
   isFocused: boolean
   isSelected: boolean
   activityState: NodeActivityState | undefined
-  isAnimatingLayout: boolean
   isHovered: boolean
   chromeTint: { background: string; accent: string } | null
   isWholeNodeDragSource: boolean
@@ -64,7 +64,6 @@ export function useCanvasNodeStyle(args: StyleArgs) {
     isFocused,
     isSelected,
     activityState,
-    isAnimatingLayout,
     isHovered,
     chromeTint,
     isWholeNodeDragSource,
@@ -82,9 +81,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
 
     const baseTransition =
       'border-color 150ms ease, box-shadow 200ms ease, outline-color 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out, filter 200ms ease'
-    const layoutTransition = isAnimatingLayout
-      ? ', left 250ms cubic-bezier(0.16, 1, 0.3, 1), top 250ms cubic-bezier(0.16, 1, 0.3, 1), width 250ms cubic-bezier(0.16, 1, 0.3, 1), height 250ms cubic-bezier(0.16, 1, 0.3, 1)'
-      : ''
+
 
     const baseOpacity = isEntering ? 0 : isExiting ? 0 : isWholeNodeDragSource ? 0 : 1
     // Focus lens: nodes outside the focused worktree recede.
@@ -112,17 +109,24 @@ export function useCanvasNodeStyle(args: StyleArgs) {
         ? `color-mix(in srgb, ${chromeTint.background} 86%, white 14%)`
         : 'var(--surface-3)',
       ['--node-chrome-accent' as any]: chromeTint?.accent ?? 'var(--focus-blue)',
-      transition: baseTransition + layoutTransition,
+      transition: baseTransition,
       filter: worktreeDim ? 'saturate(0.4)' : undefined,
       transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
       opacity,
       pointerEvents: isExiting || isWholeNodeDragSource ? 'none' : undefined,
       userSelect: 'none',
+      ...(isMaximized(node) ? {
+        position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh',
+        zIndex: 50, borderRadius: 0, border: 'none', boxShadow: 'none',
+        transform: 'none', transition: 'none', filter: 'none',
+        opacity: isExiting || isWholeNodeDragSource ? 0 : 1,
+        ['--node-inner-radius' as any]: '0px',
+      } as React.CSSProperties : {}),
     }
-  }, [node, isFocused, isSelected, activityState, isAnimatingLayout, isHovered, chromeTint, isWholeNodeDragSource, worktreeDim])
+  }, [node, isFocused, isSelected, activityState, isHovered, chromeTint, isWholeNodeDragSource, worktreeDim])
 
   const glowStyle = useMemo<React.CSSProperties | null>(() => {
-    if (!node) return null
+    if (!node || isMaximized(node)) return null
     if (!(isFocused || isSelected || worktreeHighlight)) return null
     // Hide the focus glow while the node is the drag source — the source node
     // itself is hidden (containerStyle.opacity = 0 above) and the glow would
@@ -130,9 +134,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
     if (isWholeNodeDragSource) return null
     const isEntering = node.animationState === 'entering'
     const isExiting = node.animationState === 'exiting'
-    const layoutTransition = isAnimatingLayout
-      ? 'left 250ms cubic-bezier(0.16, 1, 0.3, 1), top 250ms cubic-bezier(0.16, 1, 0.3, 1), width 250ms cubic-bezier(0.16, 1, 0.3, 1), height 250ms cubic-bezier(0.16, 1, 0.3, 1), '
-      : ''
+
     return {
       position: 'absolute',
       left: node.origin.x,
@@ -157,9 +159,9 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       pointerEvents: 'none',
       transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
       opacity: isEntering || isExiting ? 0 : 1,
-      transition: `${layoutTransition}transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out, box-shadow 200ms ease`,
+      transition: `transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out, box-shadow 200ms ease`,
     }
-  }, [node, isFocused, isSelected, isAnimatingLayout, isWholeNodeDragSource, worktreeHighlight, worktreeColor])
+  }, [node, isFocused, isSelected, isWholeNodeDragSource, worktreeHighlight, worktreeColor])
 
   return { containerStyle, glowStyle }
 }

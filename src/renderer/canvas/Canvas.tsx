@@ -312,6 +312,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
     if (!el) return
 
     const onWheel = (e: WheelEvent) => {
+      if ((e.target as Element).closest('[data-canvas-maximized="true"]')) return
       handleWheelRef.current(e as unknown as React.WheelEvent<HTMLDivElement>)
     }
 

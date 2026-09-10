@@ -33,11 +33,14 @@ import { Tooltip } from '../ui/Tooltip'
 import DockLayoutRenderer from '../docking/DockLayoutRenderer'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
 import { collectPanelIds } from '../../shared/collectPanelIds'
-import { Maximize as ArrowsOutSimple, Minimize as ArrowsInSimple, X, Lock, LockOpen } from 'lucide-react'
+import { Maximize2, Minimize2, X, Lock, LockOpen } from 'lucide-react'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
 import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
 import { worktreeForPanel } from '../lib/worktreeContext'
+import { IS_MAC } from '../lib/platform'
+import { useWindowFullscreen } from '../lib/useWindowFullscreen'
+import { TRAFFIC_LIGHTS_WIDTH } from '../shells/MacWindowChrome'
 
 // Node ids already reported for missing geometry, so a bad node that keeps
 // re-rendering warns/reports once instead of spamming.
@@ -98,6 +101,23 @@ const PULSE_KEYFRAMES = `
   opacity: 0 !important;
   pointer-events: none !important;
 }
+/* Keep live panel contents mounted while escaping canvas scaling and clipping. */
+body :has([data-canvas-maximized="true"]) {
+  transform: none !important;
+  filter: none !important;
+  perspective: none !important;
+  contain: none !important;
+  will-change: auto !important;
+  overflow: visible !important;
+  z-index: auto !important;
+}
+[data-canvas-maximized="true"] { --zoom: 1; }
+[data-canvas-maximized="true"] .dock-tab-bar {
+  padding-left: var(--maximized-chrome-inset) !important;
+}
+body:has([data-canvas-maximized="true"]) [data-node-id]:not([data-canvas-maximized="true"]),
+body:has([data-canvas-maximized="true"]) [data-canvas-top-overlay],
+body:has([data-canvas-maximized="true"]) [data-resize-frame-for] { visibility: hidden; }
 `
 
 let keyframesInjected = false
@@ -132,7 +152,7 @@ function GrabButton({
         data-grab-button
         aria-label={title}
         onClick={onClick}
-        className="flex items-center justify-center w-[18px] h-[18px] rounded text-secondary hover:text-primary hover:bg-hover"
+        className="flex items-center justify-center w-6 h-6 self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover"
         style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: baseColor }}
       >
         {children}
@@ -141,7 +161,7 @@ function GrabButton({
   )
 }
 
-const TAB_ICON_SIZE = 12
+const TAB_ICON_SIZE = 14
 
 // -----------------------------------------------------------------------------
 // Component
@@ -159,10 +179,10 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   useRenderCount('CanvasNode')
 
   const canvasApi = useCanvasStoreApi()
+  const windowFullscreen = useWindowFullscreen()
   const topOverlayTarget = useCanvasTopOverlayTarget()
   const nodeRef = useRef<HTMLDivElement>(null)
   const [isHovered, setIsHovered] = useState(false)
-  const [isAnimatingLayout, setIsAnimatingLayout] = useState(false)
   // True while a file/panel drag is hovering an unfocused node, so the dim
   // overlay lets the drop fall through to the panel content that owns it.
   const [fileDragOver, setFileDragOver] = useState(false)
@@ -357,10 +377,8 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   }, [removeNode, nodeId, layout, confirmCloseForPanels, wsId])
 
   const handleToggleMaximize = useCallback(() => {
-    setIsAnimatingLayout(true)
     const viewportSize = { width: window.innerWidth, height: window.innerHeight }
     toggleMaximize(nodeId, viewportSize)
-    setTimeout(() => setIsAnimatingLayout(false), 300)
   }, [toggleMaximize, nodeId])
 
   // Spring-load: when ANY dock drag is active AND this node is maximized
@@ -452,8 +470,8 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         onClick={(e) => { e.stopPropagation(); handleToggleMaximize() }}
       >
         {maximized
-          ? <ArrowsInSimple size={TAB_ICON_SIZE} />
-          : <ArrowsOutSimple size={TAB_ICON_SIZE} />}
+          ? <Minimize2 size={TAB_ICON_SIZE} />
+          : <Maximize2 size={TAB_ICON_SIZE} />}
       </GrabButton>
       <GrabButton
         title="Close"
@@ -480,7 +498,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           onPanelRemoved={handlePanelRemoved}
           excludePanelTypes={CANVAS_EXCLUDED_TYPES}
           localOnly
-          compact
+          compact={false}
           onTabBarMouseDown={isHeaderHost ? handleHeaderMouseDown : undefined}
           trailingControls={isHeaderHost ? nodeControlButtons : undefined}
           dropDisabled={isWholeNodeDragSource}
@@ -638,7 +656,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     isFocused,
     isSelected,
     activityState,
-    isAnimatingLayout,
     isHovered,
     chromeTint,
     isWholeNodeDragSource,
@@ -672,8 +689,9 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     <div
       ref={nodeRef}
       data-node-id={nodeId}
+      data-canvas-maximized={maximized ? "true" : undefined}
       data-node-active={isFocused ? 'true' : 'false'}
-      style={containerStyle}
+      style={{ ...containerStyle, ['--maximized-chrome-inset' as string]: IS_MAC && !windowFullscreen ? `${TRAFFIC_LIGHTS_WIDTH}px` : '0px' }}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       onMouseEnter={() => setIsHovered(true)}
@@ -823,7 +841,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         Mounted as a sibling (not inside the node's overflow:hidden box) so the
         strips can overhang the edge; positioned to the node's bounds and
         stacked with it. */}
-    {!isWholeNodeDragSource && (
+    {!maximized && !isWholeNodeDragSource && (
       <div
         aria-hidden
         data-resize-frame-for={nodeId}

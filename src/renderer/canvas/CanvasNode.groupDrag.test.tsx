@@ -335,3 +335,35 @@ describe('CanvasNode — group drag from the title bar', () => {
     expect(store.getState().nodes['B'].origin).toEqual({ x: 400, y: 0 })
   })
 })
+
+it('uses split-sized diagonal maximize controls and restores the live canvas panel', () => {
+  const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-maximize')
+  useAppStore.getState().addPanel(wsId, { id: 'panel-A', type: 'editor', title: 'Editor', isDirty: false })
+  const store = freshCanvasStore()
+  addNode(store, 'A', 'panel-A', { x: 120, y: 230 }, { width: 400, height: 300 })
+  const dock = tabsDockStore('panel-A')
+  act(() => root.render(
+    <CanvasStoreProvider store={store}>
+      <CanvasNode nodeId="A" isFocused dockStoreApi={dock} renderPanel={() => <input defaultValue="keep" />} />
+    </CanvasStoreProvider>,
+  ))
+  const node = container.querySelector<HTMLElement>('[data-node-id="A"]')!
+  const input = node.querySelector('input')
+  const button = container.querySelector<HTMLButtonElement>('[aria-label="Maximize"]')!
+  expect(button.classList.contains('w-6')).toBe(true)
+  expect(button.querySelector('.lucide-maximize2')).not.toBeNull()
+  expect(button.querySelector('svg')?.getAttribute('width')).toBe('14')
+  act(() => button.click())
+  expect(node.style.position).toBe('fixed')
+  expect(node.style.width).toBe('100vw')
+  expect(node.style.height).toBe('100vh')
+  expect(container.querySelector('[data-resize-frame-for]')).toBeNull()
+  const restore = container.querySelector<HTMLButtonElement>('[aria-label="Restore"]')!
+  expect(restore.querySelector('.lucide-minimize2')).not.toBeNull()
+  act(() => restore.click())
+  expect(node.style.position).toBe('absolute')
+  expect(node.style.left).toBe('120px')
+  expect(node.style.top).toBe('230px')
+  expect(node.style.width).toBe('400px')
+  expect(node.querySelector('input')).toBe(input)
+})

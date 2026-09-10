@@ -195,7 +195,7 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
       set({ selectionActive: false })
     },
 
-    toggleMaximize(id, viewportSize) {
+    toggleMaximize(id, _viewportSize) {
       const state = get()
       const node = state.nodes[id]
       if (!node) return
@@ -213,29 +213,11 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
           preMaximizeSize: undefined,
         }
       } else {
-        // Save current geometry and maximize to fill visible canvas area
-        const cs = state.containerSize
-        const topLeft = get().viewToCanvas({ x: 0, y: 0 })
-        const bottomRight = get().viewToCanvas({
-          x: cs.width || viewportSize.width,
-          y: cs.height || viewportSize.height,
-        })
-        // The canvas tab bar floats over the viewport (32px tall). Leave
-        // another 8px below it, but fill the left, right, and bottom edges.
-        const topInset = 40 / state.zoomLevel
-
+        // Full-window presentation preserves the original canvas geometry.
         updated = {
           ...node,
           preMaximizeOrigin: { ...node.origin },
           preMaximizeSize: { ...node.size },
-          origin: {
-            x: topLeft.x,
-            y: topLeft.y + topInset,
-          },
-          size: {
-            width: bottomRight.x - topLeft.x,
-            height: (bottomRight.y - topLeft.y) - topInset,
-          },
         }
       }
 

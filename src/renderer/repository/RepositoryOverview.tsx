@@ -53,7 +53,7 @@ export default function RepositoryOverview() {
     <OverlayHeader title="Repository">
       <IconButton label="GitHub settings" onClick={() => useUIStore.getState().openSettings('source control')}><Settings2 size={15} /></IconButton>
     </OverlayHeader>
-    <div className="mx-auto flex min-h-0 w-full max-w-[1040px] flex-1 flex-col px-6 pt-4 pb-4">
+    <div className="mx-auto flex min-h-0 w-full max-w-[1040px] flex-1 flex-col px-6 pt-4">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           {repositories.length > 1 ? <select aria-label="Local repository" value={root} onChange={e => setSelected(e.target.value)} className="max-w-full rounded-lg border border-subtle bg-surface-2 px-2 py-1 text-xl font-semibold">{repositories.map(path => <option key={path} value={path}>{pathDisplayName(path)}</option>)}</select> : <h1 className="truncate text-xl font-medium">{root ? pathDisplayName(root) : 'Your repositories'}</h1>}
