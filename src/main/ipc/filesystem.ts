@@ -30,15 +30,9 @@ import {
   FS_SEARCH,
   FS_READ_BINARY,
 } from '../../shared/ipc-channels'
-import { FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
+import { FILE_EXCLUSIONS, FileTreeNode, FileSearchResult, FileSearchOptions } from '../../shared/types'
 import { broadcastToAll, sendToWindow, windowFromEvent } from '../windowRegistry'
-import { getSettingSync } from '../store'
-
-// Read the user-configured exclusion list live so changes take effect without
-// a relaunch. Built into a Set per call for fast membership checks.
-export function currentExclusionSet(): Set<string> {
-  return new Set(getSettingSync('fileExclusions'))
-}
+const exclusionSet = new Set(FILE_EXCLUSIONS)
 
 /** Trailing-edge debounce window for coalescing watcher bursts. */
 const DISPATCH_DEBOUNCE_MS = 16
@@ -65,8 +59,8 @@ function watcherKey(windowId: number, dirPath: string, scopeId?: string): string
 // Leaf filesystem operations live in the electron-free capability module
 // (src/runtime/capabilities/file.ts) so the local process and the standalone
 // runtime daemon share ONE implementation. Path-only ops are re-exported
-// verbatim; the two ops that need the live `fileExclusions` setting (readDir,
-// searchFiles) and import-entry logging are wrapped below to inject it.
+// verbatim; readDir/searchFiles are wrapped below to inject Cate's fixed
+// internal exclusions, and import-entry logging is handled locally.
 // -----------------------------------------------------------------------------
 
 export {
@@ -86,7 +80,7 @@ import {
   searchFiles as capSearchFiles,
 } from '../../runtime/capabilities/file'
 export function readDir(dirPath: string): Promise<FileTreeNode[]> {
-  return capReadDir(dirPath, currentExclusionSet())
+  return capReadDir(dirPath, exclusionSet)
 }
 
 export function searchFiles(
@@ -94,7 +88,7 @@ export function searchFiles(
   query: string,
   opts: FileSearchOptions = {},
 ): Promise<FileSearchResult[]> {
-  return capSearchFiles(rootPath, query, currentExclusionSet(), opts)
+  return capSearchFiles(rootPath, query, exclusionSet, opts)
 }
 
 // ---------------------------------------------------------------------------

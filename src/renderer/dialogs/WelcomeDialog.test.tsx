@@ -13,7 +13,7 @@ vi.mock('../lib/logger', () => ({
 }))
 
 import { WelcomeDialog } from './WelcomeDialog'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStateStore } from '../stores/uiStateStore'
 import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
 
 let host: HTMLDivElement
@@ -38,7 +38,7 @@ beforeEach(() => {
     trackLinkClick: vi.fn(),
     openExternalUrl: vi.fn(),
   }
-  useSettingsStore.setState({ _loaded: true, telemetryNoticeAcknowledgedVersion: 0 } as never)
+  useUIStateStore.setState({ _loaded: true, telemetryNoticeAcknowledgedVersion: 0 } as never)
 })
 
 afterEach(() => {
@@ -49,7 +49,7 @@ afterEach(() => {
 
 describe('WelcomeDialog', () => {
   it('is hidden once the current notice version is acknowledged', () => {
-    useSettingsStore.setState({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION } as never)
+    useUIStateStore.setState({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION } as never)
     act(() => root.render(<WelcomeDialog />))
     expect(host.textContent).toBe('')
   })
@@ -68,7 +68,7 @@ describe('WelcomeDialog', () => {
     clickButton((b) => b.textContent?.trim() === 'Continue')
     expect(acknowledge).toHaveBeenCalledTimes(1)
     act(() => { vi.advanceTimersByTime(350) })
-    expect(useSettingsStore.getState().telemetryNoticeAcknowledgedVersion).toBe(TELEMETRY_NOTICE_VERSION)
+    expect(useUIStateStore.getState().telemetryNoticeAcknowledgedVersion).toBe(TELEMETRY_NOTICE_VERSION)
     vi.useRealTimers()
   })
 })

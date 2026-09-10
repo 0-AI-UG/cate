@@ -90,6 +90,32 @@ describe('browser code session', () => {
     sessions.dispose()
   })
 
+  it('exposes downloads for the current tab or a known asset URL', async () => {
+    const sessions = new BrowserCodeSessions()
+    const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation() : { ok: true })
+    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await tab.download(); await tab.download("https://example.test/image.png")', invoke)
+    expect(result.isError).toBeUndefined()
+    expect(invoke.mock.calls[1]).toEqual(['cate.browser.download', {
+      panelId: 'p1', tabId: 't1', observationId: 'o1', _codeCellId: expect.any(String),
+    }])
+    expect(invoke.mock.calls[2]).toEqual(['cate.browser.download', {
+      panelId: 'p1', tabId: 't1', observationId: 'o1', url: 'https://example.test/image.png', _codeCellId: expect.any(String),
+    }])
+    sessions.dispose()
+  })
+
+  it('reads an attribute from a grounded AX element', async () => {
+    const sessions = new BrowserCodeSessions()
+    const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation() : '/image.png')
+    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await nodeRepl.write(await tab.getAttribute(42,"src"))', invoke)
+    expect(result.isError).toBeUndefined()
+    expect(invoke.mock.calls[1]).toEqual(['cate.browser.getAttribute', {
+      panelId: 'p1', tabId: 't1', observationId: 'o1', target: 42, name: 'src', _codeCellId: expect.any(String),
+    }])
+    expect(result.content.at(-1)).toEqual({ type: 'text', text: '/image.png' })
+    sessions.dispose()
+  })
+
   it('observes a newly resolved binding before exposing it', async () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? { panelId: 'p1', tabId: 't1' } : observation())

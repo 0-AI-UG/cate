@@ -312,9 +312,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
     void refresh.request(rootPath)
     if (cached) refresh.refresh(cached.children.keys())
     const releaseWatch = watchFsRoot(rootPath, refresh.event, selectedWorkspaceId)
-    const unsubscribeSettings = window.electronAPI.onSettingsChanged((key) => {
-      if (key === 'fileExclusions') refresh.refresh([rootPath, ...childrenCacheRef.current.keys()])
-    })
     return () => {
       recentExplorerViews.delete(cacheKey)
       recentExplorerViews.set(cacheKey, viewRef.current)
@@ -323,7 +320,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
       refresh.dispose()
       refreshRef.current = null
       releaseWatch()
-      unsubscribeSettings()
     }
   }, [rootPath, selectedWorkspaceId])
   useEffect(() => {

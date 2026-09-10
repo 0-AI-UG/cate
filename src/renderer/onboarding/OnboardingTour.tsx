@@ -5,7 +5,7 @@
 // real piece of the UI (canvas, toolbar, sidebar) and spotlight it — dimming the
 // rest of the screen and floating the explanation card beside the highlighted
 // element. Shows once after the telemetry-consent step; replayable by resetting
-// the `onboardingCompleted` setting (see the "Show Tutorial" command).
+// onboarding UI state (see the "Show Tutorial" command).
 //
 // Visual language matches the dark dialogs (WelcomeDialog /
 // PostUpdateFeedbackDialog): dark cards, soft borders, blue accent.
@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { ArrowLeft, ArrowRight, X } from 'lucide-react'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStateStore } from '../stores/uiStateStore'
 import { useUIStore } from '../stores/uiStore'
 import { ONBOARDING_STEPS, type OnboardingStep } from './steps'
 import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
@@ -133,10 +133,10 @@ function clampBox(rect: Rect, pad: number): { left: number; top: number; width: 
 }
 
 export function OnboardingTour() {
-  const loaded = useSettingsStore((s) => s._loaded)
-  const noticeAcknowledgedVersion = useSettingsStore((s) => s.telemetryNoticeAcknowledgedVersion)
-  const completed = useSettingsStore((s) => s.onboardingCompleted)
-  const setSetting = useSettingsStore((s) => s.setSetting)
+  const loaded = useUIStateStore((s) => s._loaded)
+  const noticeAcknowledgedVersion = useUIStateStore((s) => s.telemetryNoticeAcknowledgedVersion)
+  const completed = useUIStateStore((s) => s.onboardingCompleted)
+  const setUIState = useUIStateStore((s) => s.setUIState)
   const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
 
   const [step, setStep] = useState(0)
@@ -186,14 +186,14 @@ export function OnboardingTour() {
   }, [active])
 
   const finish = useCallback((reason: 'completed' | 'skipped') => {
-    setSetting('onboardingCompleted', true)
+    setUIState('onboardingCompleted', true)
     try {
       window.electronAPI?.trackFeatureUsed?.(
         reason === 'completed' ? 'onboarding_completed' : 'onboarding_skipped',
         { steps_seen: step + 1 },
       )
     } catch { /* noop */ }
-  }, [setSetting, step])
+  }, [setUIState, step])
 
   const next = useCallback(() => {
     if (step >= ONBOARDING_STEPS.length - 1) finish('completed')

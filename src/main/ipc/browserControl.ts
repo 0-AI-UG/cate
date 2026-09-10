@@ -15,7 +15,7 @@ import { assertBrowserCodeCell } from '../browser/browserCodeExecution'
 export { watchDownloadsForSession }
 
 export type BrowserControlRequest = { op: 'checkCodeCell'; codeCellId: string } | (Partial<BrowserTargetIdentity> & {
-  op: 'attach' | 'execute' | 'downloads' | 'downloadAction'
+  op: 'attach' | 'execute' | 'download' | 'downloads' | 'downloadAction'
   webContentsId: number
   method?: string
   args?: Record<string, unknown>
@@ -70,6 +70,13 @@ export function registerBrowserControlHandlers(): void {
     if (req.op === 'downloads') {
       if (!browserRuntime.isRegistered(contents.id)) return { error: 'browser-target-not-registered' }
       return { downloads: downloadsForWebContents(contents.id) }
+    }
+    if (req.op === 'download') {
+      if (!browserRuntime.isRegistered(contents.id)) return { error: 'browser-target-not-registered' }
+      const url = req.args?.url
+      if (typeof url !== 'string' || !url) return { error: 'url-required' }
+      contents.downloadURL(url)
+      return { ok: true }
     }
     if (req.op === 'downloadAction') return { error: 'download-owner-mismatch' }
     if (req.op === 'execute') {

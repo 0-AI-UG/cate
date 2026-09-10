@@ -5,7 +5,6 @@ const PROVIDER_SETTING_KEYS = [
   'providerInstances',
   'usageLimitSources',
   'enableProviderUpdateChecks',
-  'providerHealthRefreshInterval',
   'backgroundActivity',
   'textGenerationModelSelection',
   'sourceControlWriterModelSelection',
@@ -51,6 +50,8 @@ export function applyProviderProfile(
     delete next[key]
     if (Object.hasOwn(profile, key)) next[key] = profile[key]
   }
+  delete next.providerHealthRefreshInterval
+  delete next.enableLegacyTokenStreaming
   next.defaultThreadEnvMode = 'local'
   next.enableAgentBrowserAccess = false
   return next

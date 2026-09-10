@@ -201,7 +201,7 @@ export function registerHandlers(): void {
       repoCwd: string,
       prNumber: number,
       targetPath: string,
-      options: { symlinkPaths?: string[] } | undefined,
+      options: undefined,
       workspaceId?: string,
     ) => {
       const { vcs, path, runtimeId } = vcsFor(repoCwd)

@@ -22,7 +22,6 @@ beforeEach(async () => {
     browserSearchEngine: 'google',
     browserProxyUrl: '',
     browserNewTabBehavior: 'startPage',
-    browserShowTabSidebar: false,
     terminalLinkOpenTarget: 'ask',
   })
   ;(window as unknown as { electronAPI: unknown }).electronAPI = {

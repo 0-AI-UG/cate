@@ -32,7 +32,12 @@ describe('T3 provider profile', () => {
   })
 
   it('removes stale provider values when the sparse global profile resets them', () => {
-    expect(applyProviderProfile({ providers: { codex: {} }, providerInstances: { work: {} } }, {})).toEqual({
+    expect(applyProviderProfile({
+      providers: { codex: {} },
+      providerInstances: { work: {} },
+      providerHealthRefreshInterval: 10,
+      enableLegacyTokenStreaming: true,
+    }, {})).toEqual({
       defaultThreadEnvMode: 'local',
       enableAgentBrowserAccess: false,
     })

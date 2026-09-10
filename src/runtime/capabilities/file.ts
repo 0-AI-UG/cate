@@ -1,9 +1,9 @@
 // =============================================================================
 // File capability — electron-free filesystem leaf operations over validated,
 // runtime-absolute paths. This is the SINGLE SOURCE for the fs logic: the
-// Electron main process (src/main/ipc/filesystem.ts) wraps these injecting the
-// live `fileExclusions` setting, and the standalone runtime daemon
-// (src/runtime/index.ts) wraps them with its configured exclusion set. No
+// Electron main process (src/main/ipc/filesystem.ts) wraps these with Cate's
+// fixed exclusions, and the standalone runtime daemon (src/runtime/index.ts)
+// wraps them with its configured exclusion set. No
 // electron / settings / window imports here, so it bundles into the daemon.
 // =============================================================================
 

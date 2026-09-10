@@ -34,7 +34,6 @@ import { TerminalSettings } from './TerminalSettings'
 import { BrowserSettings } from './BrowserSettings'
 import { CliSettings } from './CliSettings'
 import { SidebarSettings } from './SidebarSettings'
-import { FileExplorerSettings } from './FileExplorerSettings'
 import { WorktreeSettings } from './WorktreeSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
@@ -56,21 +55,20 @@ const SECTION_COMPONENTS = {
   Browser: BrowserSettings,
   CLI: CliSettings,
   Sidebar: SidebarSettings,
-  'File Explorer': FileExplorerSettings,
   Worktrees: WorktreeSettings,
   'Remote Connections': RemoteSettings,
   Notifications: NotificationSettings,
   'T3 Code': AgentSettings,
   Skills: SkillsSettings,
-  'Source Control': GitHubSettings,
+  GitHub: GitHubSettings,
   Updates: UpdatesSettings,
   Shortcuts: ShortcutSettings,
 } as const
 
 const NAV_GROUPS = [
   { title: 'General', icon: Settings2, sections: ['General', 'Appearance', 'Notifications', 'Updates'] },
-  { title: 'Workspace', icon: LayoutDashboard, sections: ['Canvas', 'Sidebar', 'File Explorer', 'Worktrees', 'Remote Connections'] },
-  { title: 'Tools', icon: Wrench, sections: ['Terminal', 'Browser', 'CLI', 'Source Control', 'Shortcuts'] },
+  { title: 'Workspace', icon: LayoutDashboard, sections: ['Canvas', 'Sidebar', 'Worktrees', 'Remote Connections'] },
+  { title: 'Tools', icon: Wrench, sections: ['Terminal', 'Browser', 'CLI', 'GitHub', 'Shortcuts'] },
   { title: 'Agents', icon: Sparkles, sections: ['T3 Code', 'Skills'] },
 ] as const
 
@@ -98,6 +96,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
     if (sidebar && content) setSlots({ sidebar, content })
   }, [])
   const [rawQuery, setRawQuery] = useState('')
+  const [confirmingReset, setConfirmingReset] = useState(false)
   const [activeIds, setActiveIds] = useState<Set<string>>(() => new Set([SECTIONS[0].title.toLowerCase()]))
   const [visibleSections, setVisibleSections] = useState<Set<string>>(
     () => new Set(SECTIONS.map((s) => s.title.toLowerCase())),
@@ -109,6 +108,7 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
   useEffect(() => {
     if (!isOpen) return
     setRawQuery('')
+    setConfirmingReset(false)
     const requested = (initialTab ?? SECTIONS[0].title).toLowerCase()
     const target = requested === 'providers' || requested === 'agent' ? 't3 code' : requested
     setActiveIds(new Set([target]))
@@ -310,12 +310,19 @@ export function SettingsWindow({ isOpen, onClose, initialTab }: SettingsWindowPr
           </button>
           <button
             type="button"
-            onClick={() => useSettingsStore.getState().resetAll()}
+            onClick={() => {
+              if (!confirmingReset) {
+                setConfirmingReset(true)
+                return
+              }
+              useSettingsStore.getState().resetAll()
+              setConfirmingReset(false)
+            }}
             title="Restore all Cate settings to their defaults"
             className="flex items-center gap-1.5 px-2 h-7 rounded-md text-secondary hover:bg-hover hover:text-primary text-xs"
           >
             <RotateCcw size={14} />
-            Restore defaults
+            {confirmingReset ? 'Confirm restore' : 'Restore defaults'}
           </button>
         </OverlayHeader>
 

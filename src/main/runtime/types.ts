@@ -439,14 +439,14 @@ export interface VcsHost {
     repoCwd: string,
     branch: string,
     targetPath: string,
-    options?: { createBranch?: boolean; baseRef?: string; symlinkPaths?: string[] },
+    options?: { createBranch?: boolean; baseRef?: string },
     access?: FileAccessContext,
   ): Promise<{ path: string; branch: string }>
   worktreeAddFromPr(
     repoCwd: string,
     prNumber: number,
     targetPath: string,
-    options?: { symlinkPaths?: string[] },
+    options?: undefined,
     access?: FileAccessContext,
   ): Promise<{ path: string; branch: string }>
   worktreeRemove(repoCwd: string, worktreePath: string, options?: { force?: boolean }, access?: FileAccessContext): Promise<void>
@@ -498,10 +498,7 @@ export interface Runtime {
    *  the runtime uses its own configured root scope. */
   addAllowedRoot(root: string, scopeId?: string): Promise<void>
   removeAllowedRoot(root: string, scopeId?: string): Promise<void>
-  /** Replace this runtime's readDir/search exclusion basenames live (the
-   *  daemon's mirror of the fileExclusions setting). For the LOCAL daemon the
-   *  main process forwards this when the setting changes, so the file tree /
-   *  file-name search hide the new set without an app restart. */
+  /** Replace this runtime's internal readDir/search exclusion basenames. */
   setExclusions(names: string[]): Promise<void>
   /** Toggle POSIX idle-suspend of backgrounded terminals live (the daemon's
    *  mirror of autoSuspendIdleTerminals). Forwarded to the LOCAL daemon when the

@@ -179,7 +179,7 @@ describe('agentHooks capability', () => {
     expect((await post(url, tokenFor('rpty-other'), { agentId: 'claude-code', terminalId: 'rpty-9', payload: claudeStart })).status).toBe(401)
     // Unknown agent / untracked payload / missing terminal id → accepted, dropped.
     await post(url, tokenFor('rpty-9'), { agentId: 'nope', terminalId: 'rpty-9', payload: claudeStart })
-    await post(url, tokenFor('rpty-9'), { agentId: 'claude-code', terminalId: 'rpty-9', payload: { hook_event_name: 'PreToolUse' } })
+    await post(url, tokenFor('rpty-9'), { agentId: 'claude-code', terminalId: 'rpty-9', payload: { hook_event_name: 'PreCompact' } })
     await post(url, tokenFor(''), { agentId: 'claude-code', terminalId: '', payload: claudeStart })
     await new Promise((r) => setTimeout(r, 100))
     expect(events.length).toBe(1)
@@ -239,7 +239,7 @@ describe('agentHooks capability', () => {
     await waitFor(() => events.length === 1)
 
     // A payload that normalizes to null still proves the agent is alive.
-    await post(url, tokenFor('rpty-p'), { agentId: 'claude-code', terminalId: 'rpty-p', pid: 4242, payload: { hook_event_name: 'PreToolUse' } })
+    await post(url, tokenFor('rpty-p'), { agentId: 'claude-code', terminalId: 'rpty-p', pid: 4242, payload: { hook_event_name: 'PreCompact' } })
     await waitFor(() => calls.length === 2)
     expect(events.length).toBe(1) // still no normalized event
 
@@ -383,6 +383,7 @@ describe('agentHooks capability', () => {
     expect(Object.keys(claudeSettings.hooks)).toContain('Stop')
     expect(Object.keys(claudeSettings.hooks)).toContain('StopFailure')
     expect(Object.keys(claudeSettings.hooks)).toContain('PermissionRequest')
+    expect(Object.keys(claudeSettings.hooks)).toContain('PreToolUse')
     expect(Object.keys(claudeSettings.hooks)).not.toContain('Notification')
 
     // codex discovers <project>/.codex/hooks.json itself (repo scope) — the
@@ -391,6 +392,7 @@ describe('agentHooks capability', () => {
       hooks: Record<string, Array<{ hooks: Array<{ command: string; timeout: number }> }>>
     }
     expect(Object.keys(codexHooks.hooks)).toContain('PermissionRequest')
+    expect(Object.keys(codexHooks.hooks)).toContain('PreToolUse')
     expect(codexHooks.hooks.Interrupt[0].hooks[0].timeout).toBe(3)
     const { dir } = await cap.endpoint()
     expect(codexHooks.hooks.SessionStart[0].hooks[0]).toMatchObject({

@@ -42,6 +42,7 @@ export function AppearanceSettings() {
   const activeThemeId = store.activeThemeId
   const isSystem = activeThemeId === 'system'
   const [importError, setImportError] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const allThemes: Theme[] = [...BUILT_IN_THEMES, ...customThemes]
 
@@ -95,10 +96,15 @@ export function AppearanceSettings() {
   }
 
   const handleDelete = (id: string) => {
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id)
+      return
+    }
     store.setSetting('customThemes', customThemes.filter((t) => t.id !== id))
     if (activeThemeId === id) store.setSetting('activeThemeId', 'system')
     if (store.systemDarkThemeId === id) store.setSetting('systemDarkThemeId', 'dark-warm')
     if (store.systemLightThemeId === id) store.setSetting('systemLightThemeId', 'light-subtle')
+    setConfirmDeleteId(null)
   }
 
   // Any theme can be used for either OS appearance — it's the user's choice.
@@ -106,7 +112,7 @@ export function AppearanceSettings() {
 
   return (
     <div className="flex flex-col gap-1">
-      <SearchableBlock keywords="theme appearance color dark light catalog import export system mode">
+      <SearchableBlock keywords={`theme appearance color dark light catalog import export system mode ${allThemes.map((theme) => theme.name).join(' ')}`}>
       {/* Mode + catalog header */}
       <div className="flex items-center justify-between py-2">
         <span className="text-[13px] font-medium text-primary">Theme</span>
@@ -119,7 +125,7 @@ export function AppearanceSettings() {
       {importError && <InlineNotice tone="error" className="mb-2 border-0 bg-transparent px-0">{importError}</InlineNotice>}
 
       {/* Catalog */}
-      <div className="grid grid-cols-2 gap-2 pb-3 lg:grid-cols-3">
+      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-2 pb-3 lg:grid-cols-3">
         <SystemCard
           active={isSystem}
           lightTheme={systemTheme(allThemes, store.systemLightThemeId, 'light')}
@@ -134,13 +140,14 @@ export function AppearanceSettings() {
             onClick={() => store.setSetting('activeThemeId', theme.id)}
             onExport={() => handleExport(theme)}
             onDelete={theme.builtIn ? undefined : () => handleDelete(theme.id)}
+            confirmingDelete={confirmDeleteId === theme.id}
           />
         ))}
       </div>
 
       {/* System light/dark mapping */}
       {isSystem && (
-        <div className="mt-3 flex flex-col gap-1 rounded-lg border border-subtle px-3 py-2">
+        <div className="mt-3 flex flex-col gap-1">
           <p className="text-[11px] text-muted mb-1">
             Follows your OS appearance, switching between the two themes below.
           </p>
@@ -222,8 +229,17 @@ function CardShell({
 }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <div
+      role="radio"
+      tabIndex={0}
       onClick={onClick}
-      className={`group relative flex min-h-[124px] flex-col justify-between rounded-xl border p-3 cursor-pointer transition-colors ${
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick()
+        }
+      }}
+      aria-checked={active}
+      className={`group relative flex min-h-[124px] flex-col justify-between rounded-xl border p-3 text-left cursor-pointer transition-colors ${
         active ? 'border-focus-blue bg-agent/10' : 'border-subtle hover:bg-hover'
       }`}
     >
@@ -274,13 +290,14 @@ function ThemeOrb({
 }
 
 function ThemeCard({
-  theme, active, onClick, onExport, onDelete,
+  theme, active, onClick, onExport, onDelete, confirmingDelete,
 }: {
   theme: Theme
   active: boolean
   onClick: () => void
   onExport: () => void
   onDelete?: () => void
+  confirmingDelete?: boolean
 }) {
   return (
     <CardShell active={active} onClick={onClick}>
@@ -298,11 +315,11 @@ function ThemeCard({
             </button>
           </Tooltip>
           {onDelete ? (
-            <Tooltip label="Remove theme">
+            <Tooltip label={confirmingDelete ? 'Confirm removal' : 'Remove theme'}>
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete() }}
                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded-lg text-muted hover:text-red-400 transition-opacity"
-                aria-label="Remove theme"
+                aria-label={confirmingDelete ? 'Confirm removal' : 'Remove theme'}
               >
                 <Trash size={12} />
               </button>
