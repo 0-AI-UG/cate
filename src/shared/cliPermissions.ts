@@ -50,7 +50,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Read',
       code: 'browser-read-disabled',
       detail:
-        'Accessibility state, screenshots, tabs, and waits — inspect the page in the built-in browser panel, which shows your live logged-in sessions.',
+        'Accessibility state, element attributes, screenshots, tabs, and waits — inspect the page in the built-in browser panel, which shows your live logged-in sessions.',
     },
     control: {
       key: 'cliBrowserControlEnabled',

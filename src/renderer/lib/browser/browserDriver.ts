@@ -95,7 +95,7 @@ async function control(
   workspaceId: string,
   panel: PanelState,
   webview: PortalWebview,
-  request: { op: 'execute'; method: string; args: Record<string, unknown> } | { op: 'downloads' },
+  request: { op: 'execute'; method: string; args: Record<string, unknown> } | { op: 'download'; args: { url: string } } | { op: 'downloads' },
 ) {
   const stillBound = () => currentPanel(workspaceId, panel.id)?.activeTabId === panel.activeTabId && portalRegistry.get(panel.id) === webview
   if (!stillBound()) return { error: 'browser-tab-changed' }
@@ -220,7 +220,7 @@ export async function handleBrowserMethod(
     return response.error ? { ok: false, error: response.error } : { ok: true, result: { preset, width, height, observation: response.result } }
   }
 
-  if (name === 'goto' || name === 'reload' || name === 'back' || name === 'forward' || name === 'downloads') {
+  if (name === 'goto' || name === 'reload' || name === 'back' || name === 'forward' || name === 'download' || name === 'downloads') {
     if (name === 'goto') {
       const url = stringArg(args, 'url')
       if (!url) return { ok: false, error: 'url-required' }
@@ -238,6 +238,16 @@ export async function handleBrowserMethod(
     if (name === 'forward') {
       if (!webview.canGoForward()) return { ok: false, error: 'no-history' }
       webview.goForward()
+    }
+    if (name === 'download') {
+      const requested = stringArg(args, 'url')
+      const currentUrl = webview.getURL()
+      if (!requested && !currentUrl) return { ok: false, error: 'url-required' }
+      let url: string
+      try { url = requested === undefined ? currentUrl : new URL(requested, currentUrl).href }
+      catch { return { ok: false, error: 'invalid-browser-url' } }
+      const response = await control(workspaceId, panel, webview, { op: 'download', args: { url } })
+      return response.error ? { ok: false, error: response.error } : { ok: true, result: { url } }
     }
     if (name === 'downloads') {
       const response = await control(workspaceId, panel, webview, { op: 'downloads' })

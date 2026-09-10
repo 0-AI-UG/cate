@@ -1,5 +1,5 @@
 import { type WebContents } from 'electron'
-import { BROWSER_ACTION_METHODS, BROWSER_OBSERVATION_METHODS, type BrowserObservation, type BrowserObservationPerformance, type BrowserElement, type BrowserViewportState, type BrowserImage } from '../../shared/browserAutomation'
+import { BROWSER_ACTION_METHODS, BROWSER_ELEMENT_READ_METHODS, BROWSER_OBSERVATION_METHODS, type BrowserObservation, type BrowserObservationPerformance, type BrowserElement, type BrowserViewportState, type BrowserImage } from '../../shared/browserAutomation'
 import { BrowserObservationCache, type CachedBrowserObservation } from './browserObservationCache'
 import { readBrowserAX } from './browserAX'
 import { assertBrowserCodeCell } from './browserCodeExecution'
@@ -865,9 +865,18 @@ class BrowserTargetRuntime {
 
   private async executeBound(method: string, args: BrowserArgs): Promise<BrowserRuntimeResult> {
     if (BROWSER_OBSERVATION_METHODS.has(method)) return { result: await this.observe(args, method !== 'getAXState', method === 'getScreenshot') }
-    if (!BROWSER_ACTION_METHODS.has(method) && method !== 'waitFor') throw new Error('unsupported-browser-method')
+    if (!BROWSER_ELEMENT_READ_METHODS.has(method) && !BROWSER_ACTION_METHODS.has(method) && method !== 'waitFor') throw new Error('unsupported-browser-method')
     const observation = this.requireObservation(args)
     const guard = this.activeGuard!
+    if (method === 'getAttribute') {
+      if (typeof args.name !== 'string' || !args.name) throw new Error('browser-attribute-name-required')
+      const result = objectValue((await this.callOn(this.element(args.target, observation), `function () {
+        if (!(this instanceof Element)) return { element:false };
+        return { element:true, value:this.getAttribute(${JSON.stringify(args.name)}) };
+      }`)).value)
+      if (result.element !== true) throw new Error('browser-attribute-target-required')
+      return { result: typeof result.value === 'string' ? result.value : null }
+    }
     let verified = false
     let cursor: BrowserRuntimeResult['cursor']
     if (method === 'waitFor') {

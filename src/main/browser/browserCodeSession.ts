@@ -64,6 +64,7 @@ export function installBrowserCodeSdk(): void {
       getAXState: (options: any = {}) => call('getAXState', options, options.emit !== false),
       getScreenshot: (options: any = {}) => call('getScreenshot', options, options.emit !== false),
       getAXStateAndScreenshot: (options: any = {}) => call('getAXStateAndScreenshot', options, options.emit !== false),
+      getAttribute: (target: unknown, name: string) => call('getAttribute', { target, name }),
       click: (target: unknown, options: Record<string, unknown> = {}) => call('click', { ...options, target }),
       setValue: (target: unknown, value: unknown) => call('setValue', { target, value }),
       typeText: (text: string) => call('typeText', { text }),
@@ -79,6 +80,7 @@ export function installBrowserCodeSdk(): void {
       back: () => call('back'), forward: () => call('forward'), reload: () => call('reload'), close: () => call('close'),
       setViewport: (size: Record<string, unknown>) => call('setViewport', size),
       resize: (size: Record<string, unknown>) => call('resize', size),
+      download: (url?: string) => call('download', url === undefined ? {} : { url }),
       downloads: () => call('downloads'),
     })
   }

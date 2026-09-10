@@ -24,6 +24,20 @@ it('requires grounded IDs and rejects CSS targets', async () => {
   expect(await execute('click', { target: observation.elements[0].id })).toMatchObject({ error: 'browser-observation-required' })
 })
 
+it('reads attributes from grounded AX elements', async () => {
+  const { observe, execute } = await setupGuest(async (method, params) => {
+    if (method !== 'Runtime.callFunctionOn' || !String(params.functionDeclaration).includes('this.getAttribute')) return
+    const name = String(params.functionDeclaration).includes('"src"') ? 'src' : 'missing'
+    return { result: { value: { element: true, value: name === 'src' ? '/image.png' : null } } }
+  })
+  const observation = await observe()
+  const base = { target: observation.elements[0].id, observationId: observation.observationId }
+  expect(await execute('getAttribute', { ...base, name: 'src' })).toEqual({ result: '/image.png' })
+  expect(await execute('getAttribute', { ...base, name: 'missing' })).toEqual({ result: null })
+  expect(await execute('getAttribute', { ...base, name: '' })).toMatchObject({ error: 'browser-attribute-name-required' })
+  expect(await execute('getAttribute', { ...base, target: 999, name: 'src' })).toMatchObject({ error: 'browser-element-not-in-observation' })
+})
+
 it('returns a new observation after a dispatched action, without claiming business success', async () => {
   const { observe, execute } = await setupGuest()
   const observation = await observe()
@@ -44,10 +58,12 @@ it('keeps cross-origin frame IDs bound to their CDP session', async () => {
     if (method === 'Accessibility.getFullAXTree') return { nodes: sessionId === 'cross-session' ? [{ backendDOMNodeId: 9, role: { value: 'checkbox' }, name: { value: 'Cross' } }] : [] }
     if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('typeof this.checked')) return { result: { value: false } }
     if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('Boolean(this.checked);')) return { result: { value: false } }
+    if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('this.getAttribute')) return { result: { value: { element: true, value: '/cross.png' } } }
   })
   events.emit('message', {}, 'Target.attachedToTarget', { sessionId: 'cross-session', targetInfo: { type: 'iframe', targetId: 'cross' } })
   const observation = await observe()
   expect(await execute('setChecked', { target: observation.elements[0].id, checked: false, observationId: observation.observationId })).toMatchObject({ result: { action: { status: 'verified' } } })
+  expect(await execute('getAttribute', { target: observation.elements[0].id, name: 'src', observationId: observation.observationId })).toEqual({ result: '/cross.png' })
   expect(contents.debugger.sendCommand).toHaveBeenCalledWith('DOM.resolveNode', expect.objectContaining({ backendNodeId: 9 }), 'cross-session')
 })
 

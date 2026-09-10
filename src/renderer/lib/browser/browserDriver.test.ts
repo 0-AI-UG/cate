@@ -80,6 +80,33 @@ describe('browserDriver target-bound webview boundary', () => {
     expect(h.browserControl).not.toHaveBeenCalled()
   })
 
+  it('downloads the current tab URL or a known asset URL through the bound guest', async () => {
+    h.browserControl.mockResolvedValue({ ok: true })
+    await expect(handleBrowserMethod('workspace-1', 'cate.browser.download', {
+      panelId: 'browser-1', tabId: 'tab-1',
+    })).resolves.toEqual({ ok: true, result: { url: 'https://example.test/' } })
+    expect(h.browserControl).toHaveBeenNthCalledWith(2, {
+      op: 'download', webContentsId: 99, workspaceId: 'workspace-1', panelId: 'browser-1', tabId: 'tab-1',
+      args: { url: 'https://example.test/' },
+    })
+
+    h.browserControl.mockClear()
+    await expect(handleBrowserMethod('workspace-1', 'cate.browser.download', {
+      panelId: 'browser-1', tabId: 'tab-1', url: 'https://cdn.example.test/image.png',
+    })).resolves.toEqual({ ok: true, result: { url: 'https://cdn.example.test/image.png' } })
+    expect(h.browserControl).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      op: 'download', args: { url: 'https://cdn.example.test/image.png' },
+    }))
+
+    h.browserControl.mockClear()
+    await expect(handleBrowserMethod('workspace-1', 'cate.browser.download', {
+      panelId: 'browser-1', tabId: 'tab-1', url: '/image.png',
+    })).resolves.toEqual({ ok: true, result: { url: 'https://example.test/image.png' } })
+    expect(h.browserControl).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      op: 'download', args: { url: 'https://example.test/image.png' },
+    }))
+  })
+
   it('changes responsive viewport through the panel controller', async () => {
     let settle!: () => void
     h.setViewport.mockReturnValueOnce(new Promise<void>((resolve) => { settle = resolve }))
