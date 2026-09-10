@@ -4,8 +4,8 @@
 // so adding an agent is one entry plus whatever the compiler then demands.
 //
 // Declared inline on each AgentDef:
-//   • detection — src/runtime/capabilities/process.ts matches a terminal's
-//     child process name against `matchProcess` to label/decorate the panel.
+//   • identity verification — agentPresence.ts matches the ancestry of an
+//     authenticated hook post against `matchProcess` before registering its pid.
 //   • resume — `resumeArgs`, the argv that re-attaches a restored terminal to
 //     the session it had open (null when the CLI cannot resume by id).
 //   • skills — `skills`, where this agent reads project skills from and how
@@ -141,7 +141,7 @@ export const AGENTS: readonly AgentDef[] = [
   },
   // The install script links ~/.local/bin/cursor-agent; the CLI keeps the
   // invoked name as its process title (comm is the full launcher path, which
-  // the process scan basenames), so both spellings show up in the wild.
+  // the process-table snapshot basenames), so both spellings show up in the wild.
   {
     id: 'cursor',
     t3: { providerId: 'cursor', driverId: 'cursor' },
@@ -159,7 +159,7 @@ export const AGENTS: readonly AgentDef[] = [
     skills: folderSkills('cursor', ['.cursor', 'skills']),
   },
   // xAI's Grok Build. The npm launcher (@xai-official/grok) execs a versioned
-  // binary out of ~/.grok/bin — the process scan basenames it, so the
+  // binary out of ~/.grok/bin — the process-table snapshot basenames it, so the
   // versioned spelling shows up alongside the plain one.
   {
     id: 'grok',
@@ -241,11 +241,6 @@ export function matchAgentDef(procName: string): AgentDef | null {
     if (a.matchProcess(lower)) return a
   }
   return null
-}
-
-/** Display name of the agent whose process name matches, or null if none. */
-export function matchAgentProcess(procName: string): string | null {
-  return matchAgentDef(procName)?.displayName ?? null
 }
 
 // Session-resume (AgentDef.resumeArgs) builds the command typed into a restored
