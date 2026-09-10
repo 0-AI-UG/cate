@@ -32,3 +32,28 @@ it('holds at minimum width and collapses only after the second drag threshold', 
   await act(async () => root.unmount())
   host.remove()
 })
+
+it('fills the panel without a resize handle and restores the sidebar width', async () => {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const onHide = vi.fn()
+  const render = async (fill: boolean) => {
+    await act(async () => root.render(<ExplorerSidebar visible fill={fill} onHide={onHide}>Files</ExplorerSidebar>))
+  }
+  await render(false)
+  await act(async () => host.querySelector('[role="separator"]')!.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+  ))
+  expect(host.querySelector('aside')!.style.width).toBe('276px')
+  await render(true)
+  expect(host.querySelector('aside')!.style.width).toBe('100%')
+  expect(host.querySelector('aside')!.style.maxWidth).toBe('none')
+  expect(host.querySelector('[role="separator"]')).toBeNull()
+  expect(host.textContent).toBe('Files')
+  await render(false)
+  expect(host.querySelector('aside')!.style.width).toBe('276px')
+  expect(host.querySelector('[role="separator"]')).not.toBeNull()
+  await act(async () => root.unmount())
+  host.remove()
+})

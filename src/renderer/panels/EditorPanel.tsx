@@ -7,7 +7,7 @@ import { panelSearchStore } from '../stores/panelSearchStores'
 
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, Search } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { perfCount, useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
@@ -257,6 +257,7 @@ export default function EditorPanel({
   const [markdownContent, setMarkdownContent] = useState('')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [fileLoading, setFileLoading] = useState(!!filePath)
+  const [editorCollapsed, setEditorCollapsed] = useState(false)
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [toolbarScroll, setToolbarScroll] = useState({ left: false, right: false })
   const [editorBackground, setEditorBackground] = useState(() => getActiveTheme().editor.colors?.['editor.background'] ?? 'var(--surface-1)')
@@ -272,6 +273,7 @@ export default function EditorPanel({
   const currentWorktree = worktreeForPanel(panel, worktrees)
   const explorerRoot = currentWorktree?.path ?? worktreeForPanel(panel, ws?.worktrees ?? [])?.path ?? ws?.rootPath ?? ''
   const explorerVisible = panel?.sidebarVisible !== false
+  const editorVisible = !editorCollapsed || !explorerVisible || !explorerRoot
   const setExplorerVisible = (visible: boolean) => useAppStore.getState().setPanelNavigation(workspaceId, panelId, panel?.sidebarView === 'search' ? 'search' : 'explorer', visible)
 
   const activePanelId = useActivePanelStore((s) => s.activePanelId)
@@ -292,7 +294,7 @@ export default function EditorPanel({
       toolbar.removeEventListener('scroll', update)
       observer.disconnect()
     }
-  }, [filePath, explorerVisible, searchVisible])
+  }, [filePath, explorerVisible, searchVisible, editorVisible])
   const setNavigationView = (view: 'explorer' | 'search') => {
     useAppStore.getState().setPanelNavigation(workspaceId, panelId, view)
   }
@@ -836,6 +838,17 @@ export default function EditorPanel({
         ><ExternalLink size={13} /><span>Open</span><ChevronDown size={11} /></button>
         <button
           onClick={() => {
+            if (editorVisible) setExplorerVisible(true)
+            setEditorCollapsed(editorVisible)
+          }}
+          disabled={!explorerRoot}
+          className="shrink-0 p-1.5 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+          title={editorVisible ? 'Show sidebar only' : 'Show editor'}
+          aria-label={editorVisible ? 'Show sidebar only' : 'Show editor'}
+          aria-pressed={!editorVisible}
+        >{editorVisible ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}</button>
+        <button
+          onClick={() => {
             if (explorerVisible && !searchVisible) setExplorerVisible(false)
             else setNavigationView('explorer')
           }}
@@ -895,7 +908,7 @@ export default function EditorPanel({
         </div>
       </NodePopover>}
       <div className="files-content flex-1 min-h-0 flex" style={{ backgroundColor: editorBackground }}>
-      <div className="flex-1 min-w-0 relative">
+      <div className={`${editorVisible ? 'flex-1' : 'hidden'} min-w-0 relative`}>
         {showDiff && conflict?.kind === 'changed' && (
           <div className="absolute inset-0 z-30 bg-surface-1">
             <div ref={diffOverlayRef} className="w-full h-full" />
@@ -920,7 +933,7 @@ export default function EditorPanel({
 
       </div>
       {explorerRoot && (
-        <ExplorerSidebar visible={explorerVisible} onHide={() => setExplorerVisible(false)}>
+        <ExplorerSidebar visible={explorerVisible} fill={!editorVisible} onHide={() => setExplorerVisible(false)}>
           {searchVisible
             ? <SearchView store={searchStore} panelId={panelId} focusToken={panel?.navigationEpoch} rootPath={explorerRoot} workspaceId={workspaceId} focusInput={explorerVisible && activePanelId === panelId} onOpenMatch={(path, line, column) => { void openExplorerFiles([path], 'dock', { line, column }) }} />
             : <FileExplorer workspaceId={workspaceId} panelId={panelId} rootPath={explorerRoot} onOpenFiles={openExplorerFiles} compact />}
