@@ -210,6 +210,19 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     expect(state()).toBe('running')
   })
 
+  it('Codex PreToolUse keeps the sidebar running for an approved bash command', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start', 'codex'))
+    noteAgentHookEvent(hookEvent('permission-wait', 'codex'))
+    expect(state()).toBe('waitingForInput')
+
+    noteAgentHookEvent(hookEvent('turn-resume', 'codex', { hook_event_name: 'PreToolUse' }))
+    expect(state()).toBe('running')
+
+    noteAgentPresence(PTY, true)
+    expect(state()).toBe('running')
+  })
+
   it('a Kiro Ctrl-C ends only its known active turn and stays silent', () => {
     noteAgentPresence(PTY, true)
     noteAgentHookEvent(hookEvent('turn-start', 'kiro'))

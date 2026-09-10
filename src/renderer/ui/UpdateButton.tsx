@@ -1,5 +1,5 @@
 import { Spinner } from './Spinner'
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, CircleAlert, Download, RefreshCw, RotateCw, X } from 'lucide-react'
 import type { UpdateStatus } from '../../shared/electron-api'
@@ -10,6 +10,7 @@ export function UpdateButton({ className = '' }: { className?: string }) {
   const [pending, setPending] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const feedbackRef = useRef<HTMLDivElement>(null)
   const pendingRef = useRef(false)
 
   useEffect(() => {
@@ -34,6 +35,28 @@ export function UpdateButton({ className = '' }: { className?: string }) {
     const dismiss = (event: KeyboardEvent) => { if (event.key === 'Escape') setFeedback(null) }
     document.addEventListener('keydown', dismiss)
     return () => document.removeEventListener('keydown', dismiss)
+  }, [feedback])
+
+  useLayoutEffect(() => {
+    const button = buttonRef.current
+    const popup = feedbackRef.current
+    if (!feedback || !button || !popup) return
+    const position = () => {
+      const anchor = button.getBoundingClientRect()
+      const { width } = popup.getBoundingClientRect()
+      const margin = 8
+      const left = anchor.left + (anchor.width - width) / 2
+      popup.style.left = `${Math.max(margin, Math.min(left, window.innerWidth - width - margin))}px`
+      popup.style.bottom = `${window.innerHeight - anchor.top + margin}px`
+      popup.style.visibility = 'visible'
+    }
+    position()
+    window.addEventListener('resize', position)
+    window.addEventListener('scroll', position, true)
+    return () => {
+      window.removeEventListener('resize', position)
+      window.removeEventListener('scroll', position, true)
+    }
   }, [feedback])
 
   const checking = status.state === 'checking' || pending
@@ -67,8 +90,6 @@ export function UpdateButton({ className = '' }: { className?: string }) {
       setPending(false)
     }
   }
-  const rect = feedback ? buttonRef.current?.getBoundingClientRect() : null
-
   return <>
     <Tooltip label={label} placement="top">
       <button
@@ -84,9 +105,9 @@ export function UpdateButton({ className = '' }: { className?: string }) {
         {downloading && <span className="absolute bottom-0 left-0 h-0.5 rounded-full bg-blue-400" style={{ width: `${status.percent ?? 0}%` }} />}
       </button>
     </Tooltip>
-    {feedback && rect && createPortal(
-      <div role={failed ? 'alert' : 'status'} className="fixed z-[100] flex items-start gap-2 max-w-[min(320px,calc(100vw-16px))] rounded-lg border border-subtle bg-surface-2 p-3 text-xs text-primary shadow-lg"
-        style={{ left: Math.max(8, Math.min(rect.right - 280, window.innerWidth - 288)), bottom: window.innerHeight - rect.top + 8 }}>
+    {feedback && createPortal(
+      <div ref={feedbackRef} role={failed ? 'alert' : 'status'} className="fixed z-[100] flex items-start gap-2 max-w-[min(320px,calc(100vw-16px))] rounded-lg border border-subtle bg-surface-2 p-3 text-xs text-primary shadow-lg"
+        style={{ visibility: 'hidden' }}>
         <span className="min-w-0 break-words">{feedback}</span>
         <button type="button" aria-label="Dismiss update message" onClick={() => setFeedback(null)} className="shrink-0 text-muted hover:text-primary"><X size={14} /></button>
       </div>, document.body,

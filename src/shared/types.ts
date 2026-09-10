@@ -149,6 +149,8 @@ export interface GitFileContent {
 
 export interface GitReviewNote {
   id: string
+  /** Recorded agent change this note belongs to; absent for Git comparisons. */
+  agentChangeId?: string
   path: string
   side: 'old' | 'new' | 'file'
   line: number | null

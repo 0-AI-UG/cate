@@ -40,12 +40,15 @@ describe('claude spec', () => {
 
   const file = spec.projectFiles![0]
 
-  test('creates .claude/settings.local.json with the bridge on all seven hook events', () => {
+  test('creates .claude/settings.local.json with the bridge on all eight hook events', () => {
     expect(file.relPath).toBe('.claude/settings.local.json')
     const out = file.build(null, ctx)!
     const parsed = JSON.parse(out) as { hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string }> }>> }
     expect(Object.keys(parsed.hooks).sort()).toEqual(
-      ['PermissionRequest', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit'].sort(),
+      [
+        'PermissionRequest', 'PostToolUse', 'PreToolUse', 'SessionEnd',
+        'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit',
+      ].sort(),
     )
     for (const groups of Object.values(parsed.hooks)) {
       expect(groups).toHaveLength(1)
@@ -113,7 +116,13 @@ describe('claude spec', () => {
     ).toBeNull()
   })
 
-  test('PostToolUse maps to turn-resume (approval resolution / ordinary tool call)', () => {
+  test('PreToolUse and PostToolUse map to turn-resume', () => {
+    expect(norm('claude-code', {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'touch needs-approval.txt' },
+      ...base,
+    })?.kind).toBe('turn-resume')
     const resume = norm('claude-code', {
       hook_event_name: 'PostToolUse',
       tool_name: 'Bash',
@@ -137,7 +146,7 @@ describe('codex spec', () => {
       hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string; timeout: number }> }>>
     }
     expect(Object.keys(parsed.hooks).sort()).toEqual(
-      ['Interrupt', 'PermissionRequest', 'PostToolUse', 'SessionStart', 'Stop', 'UserPromptSubmit'].sort(),
+      ['Interrupt', 'PermissionRequest', 'PostToolUse', 'PreToolUse', 'SessionStart', 'Stop', 'UserPromptSubmit'].sort(),
     )
     expect(parsed.hooks.Interrupt).toEqual([
       { hooks: [{ type: 'command', command: ctx.bridgeCommand, timeout: 3 }] },
@@ -212,6 +221,10 @@ describe('codex spec', () => {
     expect(perm?.kind).toBe('permission-wait')
     expect(perm?.turnId).toBe('turn-1')
     expect(perm?.raw.turn_id).toBe('turn-1')
+    expect(
+      norm('codex', { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'touch x' }, ...base })
+        ?.kind,
+    ).toBe('turn-resume')
     expect(
       norm('codex', { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'touch x' }, ...base })
         ?.kind,
