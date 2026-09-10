@@ -1,7 +1,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { BrowserPanelSurfaceSlot, registerBrowserSurface } from './browserSurfaceRegistry'
+import { BrowserPanelSurfaceSlot, registerBrowserSurface, syncBrowserSurfaces } from './browserSurfaceRegistry'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -107,6 +107,25 @@ describe('browser surface layout tracking', () => {
     await frame()
     expect(surface.style.left).toBe('250px')
     expect(surface.style.width).toBe('300px')
+  })
+
+  it('can align a canvas-driven surface before the next animation frame', async () => {
+    await frame()
+    rect = new DOMRect(180, 70, 240, 160)
+    const transformed = host.querySelector('main')!
+    transformed.dataset.canvasWorld = ''
+    transformed.style.transform = 'translate(80px, 30px)'
+    const grid = host.querySelector('aside')!
+    grid.dataset.canvasGrid = ''
+    grid.style.backgroundPosition = '80px 30px'
+
+    syncBrowserSurfaces()
+    await Promise.resolve()
+
+    expect(surface.style.left).toBe('180px')
+    expect(surface.style.top).toBe('70px')
+    expect(surface.style.transform).toBe('scale(0.8, 0.8)')
+    expect(frames.size).toBe(0)
   })
 
   it('follows sibling layout changes and ancestor child insertion', async () => {
