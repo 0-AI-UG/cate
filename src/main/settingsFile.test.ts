@@ -55,10 +55,10 @@ describe('settingsFile', () => {
     m.loadSettingsSync()
     expect(fs.existsSync(settingsPath())).toBe(true)
     const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
-    expect(onDisk.showMinimap).toBe(DEFAULT_SETTINGS.showMinimap)
+    expect(onDisk.zoomSpeed).toBe(DEFAULT_SETTINGS.zoomSpeed)
     expect(onDisk.cliAgentReadEnabled).toBe(true)
     expect(onDisk.cliAgentControlEnabled).toBe(true)
-    expect(m.getSetting('showMinimap')).toBe(DEFAULT_SETTINGS.showMinimap)
+    expect(onDisk.showMinimap).toBeUndefined()
   })
 
   it('loads an existing settings.json over defaults', async () => {
@@ -66,7 +66,7 @@ describe('settingsFile', () => {
     const m = await freshModule()
     m.loadSettingsSync()
     expect(m.getSetting('terminalScrollback')).toBe(9000)
-    expect(m.getSetting('showMinimap')).toBe(DEFAULT_SETTINGS.showMinimap)
+    expect(m.getSetting('zoomSpeed')).toBe(DEFAULT_SETTINGS.zoomSpeed)
   })
 
   it('validates setSetting and persists on sync flush', async () => {
@@ -81,6 +81,21 @@ describe('settingsFile', () => {
     m.flushPendingWritesSync()
     const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
     expect(onDisk.warnBeforeQuit).toBe(true)
+  })
+
+  it('rejects invalid enum, range, and structured values', async () => {
+    const m = await freshModule()
+    m.loadSettingsSync()
+
+    expect(m.setSetting('canvasGridStyle', 'triangles' as never)).toBe(false)
+    expect(m.setSetting('uiScale', 4)).toBe(false)
+    expect(m.setSetting('agentHookInjection', null as never)).toBe(false)
+    expect(m.setSetting('customShortcuts', { newTerminal: { key: 't' } } as never)).toBe(false)
+
+    expect(m.getSetting('canvasGridStyle')).toBe(DEFAULT_SETTINGS.canvasGridStyle)
+    expect(m.getSetting('uiScale')).toBe(DEFAULT_SETTINGS.uiScale)
+    expect(m.getSetting('agentHookInjection')).toEqual({})
+    expect(m.getSetting('customShortcuts')).toEqual({})
   })
 
   it('resets a key back to its default', async () => {

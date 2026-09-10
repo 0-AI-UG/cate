@@ -18,9 +18,10 @@
 import fsSync from 'fs'
 import log from './logger'
 import { isPlainObject } from './jsonUtils'
-import { DEFAULT_SETTINGS } from '../shared/types'
+import { DEFAULT_SETTINGS, SHORTCUT_ACTIONS } from '../shared/types'
 import type { AppSettings } from '../shared/types'
 import { createJsonStateFile } from './jsonStateFile'
+import { validateTheme } from '../shared/theme'
 
 const SETTINGS_FILENAME = 'settings.json'
 
@@ -33,7 +34,6 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   defaultShellPath: 'string',
   warnBeforeQuit: 'boolean',
   closeWorktreePanelsOnDelete: 'boolean',
-  worktreeSymlinkPaths: 'array',
   activeThemeId: 'string',
   systemLightThemeId: 'string',
   systemDarkThemeId: 'string',
@@ -42,7 +42,6 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   editorFontFamily: 'string',
   uiScale: 'number',
   disableGpuRasterization: 'boolean',
-  showMinimap: 'boolean',
   zoomSpeed: 'number',
   autoFocusLargestVisibleNode: 'boolean',
   canvasGridStyle: 'string',
@@ -75,18 +74,13 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   browserHomepage: 'string',
   browserSearchEngine: 'string',
   browserProxyUrl: 'string',
-  browserShowBookmarksBar: 'boolean',
-  browserShowTabSidebar: 'boolean',
   browserNewTabBehavior: 'string',
   terminalLinkOpenTarget: 'string',
   sidebarTintOpacity: 'number',
   showFileExplorerOnLaunch: 'boolean',
   showSkillsInWorkspaceOverview: 'boolean',
-  fileExclusions: 'array',
   notificationsEnabled: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',
-  telemetryNoticeAcknowledgedVersion: 'number',
-  onboardingCompleted: 'boolean',
   betaUpdatesEnabled: 'boolean',
   // Agent structured values.
   agentHookInjection: 'object',
@@ -98,18 +92,46 @@ const SETTINGS_KEYS = Object.keys(SETTINGS_SCHEMA) as Array<keyof AppSettings>
 /** True if `value` matches the schema type expected for `key`. */
 function valueMatchesSchema(key: keyof AppSettings, value: unknown): boolean {
   const expected = SETTINGS_SCHEMA[key]
-  if (expected === 'array') return Array.isArray(value)
-  // 'object' accepts a plain object or null; arrays are rejected so an array
-  // can't masquerade as an object.
-  if (expected === 'object') return typeof value === 'object' && !Array.isArray(value)
-  return typeof value === expected
-}
+  if (expected === 'array' && !Array.isArray(value)) return false
+  if (expected === 'object' && !isPlainObject(value)) return false
+  if (expected !== 'array' && expected !== 'object' && typeof value !== expected) return false
 
-// Array settings whose elements must all be strings. A malformed entry (non-array
-// or any non-string element) falls back to the default [] rather than poisoning
-// state with garbage that downstream consumers would have to defend against.
-const STRING_ARRAY_KEYS = new Set<keyof AppSettings>([
-])
+  if (key === 'canvasGridStyle') return value === 'dots' || value === 'lines' || value === 'none'
+  if (key === 'browserSearchEngine') return value === 'google' || value === 'duckDuckGo' || value === 'bing' || value === 'brave'
+  if (key === 'browserNewTabBehavior') return value === 'startPage' || value === 'homepage'
+  if (key === 'terminalLinkOpenTarget') return value === 'ask' || value === 'canvas' || value === 'external'
+  if (key === 'customThemes') return (value as unknown[]).every((theme) => validateTheme(theme).ok)
+  if (key === 'agentHookInjection') {
+    return Object.values(value as Record<string, unknown>).every((workspace) => (
+      isPlainObject(workspace) && Object.values(workspace).every((mode) => mode === 'auto' || mode === 'on' || mode === 'off')
+    ))
+  }
+  if (key === 'customShortcuts') {
+    const actions = new Set<string>(SHORTCUT_ACTIONS)
+    return Object.entries(value as Record<string, unknown>).every(([action, shortcut]) => (
+      actions.has(action) && isPlainObject(shortcut)
+      && typeof shortcut.key === 'string'
+      && typeof shortcut.command === 'boolean'
+      && typeof shortcut.shift === 'boolean'
+      && typeof shortcut.option === 'boolean'
+      && typeof shortcut.control === 'boolean'
+    ))
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return false
+    const ranges: Partial<Record<keyof AppSettings, [number, number]>> = {
+      editorFontSize: [8, 32], uiScale: [0.8, 1.5], zoomSpeed: [0.5, 3],
+      canvasBackgroundImageOpacity: [0, 1], terminalFontSize: [0, 32],
+      terminalScrollback: [100, 10_000], terminalScrollSpeed: [0.25, 3],
+      terminalContrast: [1, 21], sidebarTintOpacity: [0.3, 1],
+    }
+    const range = ranges[key]
+    if (range && (value < range[0] || value > range[1])) return false
+    if ((key === 'editorFontSize' || key === 'terminalFontSize' || key === 'terminalScrollback') && !Number.isInteger(value)) return false
+  }
+  return true
+}
 
 /** Merge only known, type-correct keys from a parsed object into `target`. */
 function mergeValidatedSettings(target: AppSettings, source: Record<string, unknown>): void {
@@ -118,10 +140,6 @@ function mergeValidatedSettings(target: AppSettings, source: Record<string, unkn
     const val = source[key]
     if (!valueMatchesSchema(key, val)) {
       log.warn('Settings schema mismatch: %s expected %s, got %s', key, SETTINGS_SCHEMA[key], typeof val)
-      continue
-    }
-    if (STRING_ARRAY_KEYS.has(key) && !(val as unknown[]).every((v) => typeof v === 'string')) {
-      log.warn('Settings schema mismatch: %s expected array of strings', key)
       continue
     }
     ;(target as unknown as Record<string, unknown>)[key as string] = val

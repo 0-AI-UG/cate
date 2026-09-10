@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 
 import { PostUpdateFeedbackDialog } from './PostUpdateFeedbackDialog'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStateStore } from '../stores/uiStateStore'
 import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
 
 let host: HTMLDivElement
@@ -45,7 +45,7 @@ beforeEach(() => {
   // The dialog fetches the GitHub star count once visible; stub it so the effect
   // never hits the network in jsdom.
   vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ json: () => Promise.resolve({}) })))
-  useSettingsStore.setState({ _loaded: true, telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION } as never)
+  useUIStateStore.setState({ _loaded: true, telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION } as never)
 })
 
 afterEach(() => {
@@ -57,20 +57,20 @@ afterEach(() => {
 
 describe('PostUpdateFeedbackDialog', () => {
   it('stays hidden while the telemetry notice is unacknowledged, even with a pending prompt', () => {
-    useSettingsStore.setState({ telemetryNoticeAcknowledgedVersion: 0 } as never)
+    useUIStateStore.setState({ telemetryNoticeAcknowledgedVersion: 0 } as never)
     act(() => root.render(<PostUpdateFeedbackDialog />))
     firePrompt({ fromVersion: '1.2.0', toVersion: '1.3.0' })
     expect(host.textContent).toBe('')
   })
 
   it('appears once the notice is acknowledged (notice goes first)', () => {
-    useSettingsStore.setState({ telemetryNoticeAcknowledgedVersion: 0 } as never)
+    useUIStateStore.setState({ telemetryNoticeAcknowledgedVersion: 0 } as never)
     act(() => root.render(<PostUpdateFeedbackDialog />))
     firePrompt({ fromVersion: '1.2.0', toVersion: '1.3.0' })
     expect(host.textContent).toBe('')
     // The notice's acknowledgement flips the setting — the post-update dialog,
     // already holding the pending prompt, then reveals itself.
-    act(() => { useSettingsStore.setState({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION } as never) })
+    act(() => { useUIStateStore.setState({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION } as never) })
     expect(host.textContent).toContain('Rate this update')
   })
 

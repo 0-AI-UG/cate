@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import log from '../logger'
-import { setSettingsFromMain } from '../store'
+import { setUIStateFromMain } from '../uiStateStore'
 import { trackAppStart, checkAndReportUpdate } from '../analytics'
 import { TELEMETRY_ACKNOWLEDGE_NOTICE } from '../../shared/ipc-channels'
 import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
@@ -18,6 +18,6 @@ export function fireStartupTelemetry(mainWin: BrowserWindow): void {
 // is bumped. Purely informational; telemetry does not depend on it.
 export function registerTelemetryNoticeHandler(): void {
   ipcMain.handle(TELEMETRY_ACKNOWLEDGE_NOTICE, async () => {
-    await setSettingsFromMain({ telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION })
+    setUIStateFromMain('telemetryNoticeAcknowledgedVersion', TELEMETRY_NOTICE_VERSION)
   })
 }

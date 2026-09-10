@@ -5,6 +5,7 @@ import { btn, inputCls, Modal } from '../ui/Modal'
 import { useAppStore } from '../stores/appStore'
 import { SearchableBlock, SecondaryButton } from './SettingsComponents'
 import { AgentProviderConfiguration } from './AgentProviderConfiguration'
+import { AgentHooksSettings } from './AgentHooksSettings'
 import { AGENT_PROVIDER_LOGINS, type AgentProviderLogin } from './providerAuthentication'
 import type { AgentProviderAuthSession, AgentProviderStatus } from '../../shared/t3Agent'
 
@@ -130,7 +131,7 @@ export function AgentSettings() {
   }, [authSession?.phase, authSession?.providerId, refreshProviderStatuses])
 
   return (
-    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok opencode advanced display name accent color binary path home launch arguments custom models environment variables server password endpoint auto-compact updates legacy token streaming settle chats merge refresh interval generated titles">
+    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok opencode kiro hooks activity status advanced display name accent color binary path home launch arguments custom models environment variables server password endpoint auto-compact updates archive chats merge generated titles">
       <div className="flex flex-col gap-4">
         <AgentProviderConfiguration workspaceId={workspaceId} cwd={cwd} onChanged={refreshProviderStatuses} authentication={(driver) => (
           <div>
@@ -180,19 +181,10 @@ export function AgentSettings() {
             })}
           </div>
         )} />
-
-        <p className="text-xs text-muted">
-          Conversations run in{' '}
-          <button
-            type="button"
-            onClick={() => window.electronAPI.openExternalUrl('https://github.com/pingdotgg/t3code')}
-            className="inline-flex items-center gap-1 text-focus-blue hover:underline"
-          >
-            T3 Code
-            <ArrowSquareOut size={11} />
-          </button>
-          . Cate provides the project, worktree, panel, browser, and diff experience around it.
-        </p>
+        <div>
+          <h3 className="mb-2 text-sm font-medium text-primary">Agent hooks</h3>
+          <AgentHooksSettings />
+        </div>
       </div>
 
       {authProvider && (

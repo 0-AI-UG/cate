@@ -41,9 +41,10 @@ export function BrowserSettings() {
           value={store.browserHomepage}
           onChange={(v) => store.setSetting('browserHomepage', v)}
           placeholder="about:blank"
+          disabled={store.browserNewTabBehavior !== 'homepage'}
         />
       </SettingRow>
-      <SettingRow label="Search engine">
+      <SettingRow label="Search engine" keywords="Google DuckDuckGo Bing Brave">
         <Select
           value={store.browserSearchEngine}
           onChange={(v) => store.setSetting('browserSearchEngine', v as BrowserSearchEngine)}
@@ -55,7 +56,7 @@ export function BrowserSettings() {
           ]}
         />
       </SettingRow>
-      <SettingRow label="New tab opens">
+      <SettingRow label="New tab opens" keywords="Start page Homepage">
         <Select
           value={store.browserNewTabBehavior}
           onChange={(v) => store.setSetting('browserNewTabBehavior', v as BrowserNewTabBehavior)}
@@ -83,6 +84,7 @@ export function BrowserSettings() {
       </SettingRow>
       <SettingRow
         label="Open terminal links"
+        keywords="Ask each time On canvas In system browser"
         description="Where Cmd/Ctrl+click on a terminal link opens. Cmd/Ctrl+Shift+click always uses the system browser."
       >
         <Select
