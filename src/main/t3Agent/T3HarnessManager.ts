@@ -302,8 +302,7 @@ export class T3HarnessManager {
       cookies.map(({ name, value }) => `${name}=${value}`).join('; '), method, payload)
     if (request.operation === 'save') {
       const allowed = new Set(['providers', 'providerInstances', 'enableProviderUpdateChecks',
-        'providerHealthRefreshInterval', 'enableLegacyTokenStreaming', 'sidebarAutoSettleAfterDays',
-        'sidebarAutoSettleOnMerge', 'textGenerationModelSelection'])
+        'sidebarAutoSettleAfterDays', 'sidebarAutoSettleOnMerge', 'textGenerationModelSelection'])
       const patch = request.patch ?? {}
       if (Object.keys(patch).some((field) => !allowed.has(field))) throw new Error('Unsupported agent setting')
       await call('server.updateSettings', { patch })

@@ -38,6 +38,7 @@ import type {
   RuntimeStatusEvent,
   SshHostEntry,
 } from '../../shared/types'
+import { FILE_EXCLUSIONS } from '../../shared/types'
 import { broadcastToAll } from '../windowRegistry'
 import { assertAbsoluteRuntimePath, formatLocator } from '../../shared/runtimeLocator'
 import {
@@ -183,10 +184,7 @@ export async function buildTransport(runtimeId: string, spec: RemoteConnectSpec)
       distro: spec.distro,
       root: spec.distroPath,
       id: runtimeId,
-      // Same launch config the local daemon gets (main/index.ts) so a WSL host
-      // honors the exclusion + idle-suspend settings identically. Later live
-      // changes are forwarded to every connected runtime by the store.
-      exclusions: getSetting('fileExclusions'),
+      exclusions: FILE_EXCLUSIONS,
       idleSuspend: getSetting('autoSuspendIdleTerminals'),
     })
   }
@@ -224,10 +222,7 @@ export async function buildTransport(runtimeId: string, spec: RemoteConnectSpec)
     // the user's PATH. Cate resolves the login-shell environment at startup;
     // OpenSSH must receive that same authoritative environment.
     env: getShellEnv(),
-    // Same launch config the local daemon gets (main/index.ts) so an SSH host
-    // honors the exclusion + idle-suspend settings identically. Later live
-    // changes are forwarded to every connected runtime by the store.
-    exclusions: getSetting('fileExclusions'),
+    exclusions: FILE_EXCLUSIONS,
     idleSuspend: getSetting('autoSuspendIdleTerminals'),
   })
 }

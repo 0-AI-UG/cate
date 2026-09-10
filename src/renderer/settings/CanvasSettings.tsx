@@ -61,7 +61,7 @@ export function CanvasSettings() {
           onChange={(v) => store.setSetting('showWorktreeTerritory', v)}
         />
       </SettingRow>
-      <SettingRow label="Canvas background">
+      <SettingRow label="Grid style">
         <Select
           value={store.canvasGridStyle}
           onChange={(v) => store.setSetting('canvasGridStyle', v as CanvasGridStyle)}

@@ -75,12 +75,9 @@ export function AgentHooksSettings() {
 
   return (
     <SearchableBlock keywords="agent hooks injection claude codex cursor grok kiro opencode status presence auto on off">
-      <p className="mb-4 text-xs leading-relaxed text-muted">
-        Show agent activity and session status in Cate. These preferences apply to this workspace.
-      </p>
       {agents === null && <LoadingState label="Loading agent hooks…" size={14} className="justify-start py-3 text-xs" />}
       {error && <p role="alert" className="py-3 text-xs text-muted">Could not check agent hooks. Reopen settings to try again.</p>}
-      {!!agents?.length && <div className="overflow-hidden rounded-xl border border-subtle">
+      {!!agents?.length && <div>
         {agents.map((a) => {
           const evaluation = evaluateAgentCliHooks(a, overrides)
           const mode: AgentHookMode = evaluation.mode
@@ -92,7 +89,7 @@ export function AgentHooksSettings() {
             <div
               key={a.agent.id}
               data-agent-hook-id={a.agent.id}
-              className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle px-4 py-3 last:border-b-0"
+              className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle py-3 last:border-b-0"
             >
               <div className="flex min-w-[180px] flex-1 items-center gap-3">
                 {logo && <img src={logo} alt="" draggable={false} className="h-5 w-5 shrink-0 object-contain" />}
@@ -114,17 +111,6 @@ export function AgentHooksSettings() {
           )
         })}
       </div>}
-      <p className="mt-3 text-[11px] leading-relaxed text-muted">
-        Auto enables hooks where an agent is already configured. Choose On to install them explicitly.
-        Changes take effect in new terminals.
-      </p>
-      <details className="mt-2 text-[11px] text-muted">
-        <summary className="w-fit cursor-pointer rounded hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-blue">How hooks work</summary>
-        <p className="mt-2 max-w-prose leading-relaxed">
-          Cate adds git-ignored hook files to the workspace so agent CLIs can report their activity.
-          Approval prompts remain in the terminal for CLIs without a dedicated permission event.
-        </p>
-      </details>
     </SearchableBlock>
   )
 }

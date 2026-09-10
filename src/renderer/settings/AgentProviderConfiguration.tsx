@@ -28,7 +28,7 @@ interface Instance {
 
 function SettingsDisclosure({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   const { query } = useSettingsSearch()
-  return <details key={query} open={query ? true : undefined} className="group rounded-lg border border-subtle bg-surface-1">
+  return <details key={query} open={query ? true : undefined} className="group border-b border-subtle last:border-b-0">
     <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-blue [&::-webkit-details-marker]:hidden">
       <CaretRight size={14} className="shrink-0 text-muted group-open:rotate-90" />
       <span>
@@ -36,7 +36,7 @@ function SettingsDisclosure({ title, description, children }: { title: string; d
         <span className="mt-0.5 block text-xs text-muted">{description}</span>
       </span>
     </summary>
-    <div className="border-t border-subtle px-4 pb-3">{children}</div>
+    <div className="pb-3 pl-7">{children}</div>
   </details>
 }
 
@@ -52,6 +52,7 @@ export function AgentProviderConfiguration({ workspaceId, cwd, onChanged, authen
   const [message, setMessage] = useState('')
   const [newDriver, setNewDriver] = useState('codex')
   const [dirty, setDirty] = useState(false)
+  const [confirmRemoveAccount, setConfirmRemoveAccount] = useState<string | null>(null)
   const operate = useCallback(async (operation: 'read' | 'save' | 'refresh' | 'update', extra: Record<string, any> = {}) => {
     if (!cwd || !workspaceId) return
     setBusy(true); setError(''); setMessage('')
@@ -125,7 +126,7 @@ export function AgentProviderConfiguration({ workspaceId, cwd, onChanged, authen
           })}
         </div>
       </fieldset>
-      <fieldset key={selected} disabled={busy} className="flex min-w-0 flex-col gap-3 rounded-xl border border-subtle bg-surface-0 p-4">
+      <fieldset key={selected} disabled={busy} className="flex min-w-0 flex-col gap-3">
         <div className="border-b border-subtle pb-3">
           <p className="text-xs text-muted">Provider settings</p>
           <h3 className="mt-1 text-base font-semibold text-primary">{draft.displayName || (drivers.includes(selected) ? names[draft.driver] : `${names[draft.driver] || draft.driver} · ${selected}`)}</h3>
@@ -165,13 +166,17 @@ export function AgentProviderConfiguration({ workspaceId, cwd, onChanged, authen
             void operate('save', { patch: { providerInstances: { ...settings.providerInstances, [id]: { driver: newDriver, enabled: true, config: {} } } } })
           }}><Plus size={13} />Add account</SecondaryButton></div></SettingRow>
           {!drivers.includes(selected) && <SecondaryButton onClick={() => {
+            if (confirmRemoveAccount !== selected) {
+              setConfirmRemoveAccount(selected)
+              return
+            }
             const remaining = { ...settings.providerInstances }; delete remaining[selected]; setSelected('codex')
+            setConfirmRemoveAccount(null)
             void operate('save', { patch: { providerInstances: remaining } })
-          }}>Remove selected account</SecondaryButton>}
+          }}>{confirmRemoveAccount === selected ? 'Confirm removal' : 'Remove selected account'}</SecondaryButton>}
         </SettingsDisclosure>
         <SettingsDisclosure title="T3 Code preferences" description="Shared across providers. Updates, chat cleanup, and generated titles save immediately.">
-          {([['enableProviderUpdateChecks', 'Check for provider updates'], ['enableLegacyTokenStreaming', 'Legacy token streaming'], ['sidebarAutoSettleOnMerge', 'Settle chats after merge']] as const).map(([key, label]) => <SettingRow key={key} label={label}><Toggle checked={!!settings[key]} onChange={(value) => void operate('save', { patch: { [key]: value } })} /></SettingRow>)}
-          <SettingRow label="Provider status refresh interval"><Select value={String(settings.providerHealthRefreshInterval ?? 30000)} onChange={(value) => void operate('save', { patch: { providerHealthRefreshInterval: Number(value) } })} options={[15000, 30000, 60000, 300000].map((ms) => ({ value: String(ms), label: `${ms / 1000} seconds` }))} /></SettingRow>
+          {([['enableProviderUpdateChecks', 'Check for provider updates'], ['sidebarAutoSettleOnMerge', 'Archive chats after merge']] as const).map(([key, label]) => <SettingRow key={key} label={label}><Toggle checked={!!settings[key]} onChange={(value) => void operate('save', { patch: { [key]: value } })} /></SettingRow>)}
           <SettingRow label="Automatically settle inactive chats"><Select value={String(settings.sidebarAutoSettleAfterDays ?? 'never')} onChange={(value) => void operate('save', { patch: { sidebarAutoSettleAfterDays: value === 'never' ? null : Number(value) } })} options={[{ value: 'never', label: 'Never' }, ...[1, 3, 7, 14, 30].map((days) => ({ value: String(days), label: `After ${days} days` }))]} /></SettingRow>
           <SettingRow label="Model for generated chat titles"><Select value={JSON.stringify([settings.textGenerationModelSelection?.instanceId, settings.textGenerationModelSelection?.model])} onChange={(value) => {
             const [instanceId, model] = JSON.parse(value)

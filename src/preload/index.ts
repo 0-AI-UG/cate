@@ -89,7 +89,6 @@ import {
   SETTINGS_SET,
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
-  SETTINGS_CHANGED,
   SETTINGS_OPEN_IN_EDITOR,
   SETTINGS_RELOADED,
   UI_STATE_GET_ALL,
@@ -728,10 +727,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ---------------------------------------------------------------------------
   // Settings
   // ---------------------------------------------------------------------------
-
-  onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void {
-    return createIpcListener(SETTINGS_CHANGED, callback)
-  },
 
   onSettingsReloaded(callback: (settings: AppSettings) => void): () => void {
     return createIpcListener(SETTINGS_RELOADED, callback)

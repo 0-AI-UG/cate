@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { beforeEach, afterEach, describe, expect, test, vi } from 'vitest'
 import type { FileSearchResult, FileTreeNode } from '../../shared/types'
+import { FILE_EXCLUSIONS } from '../../shared/types'
 
 // Capture the handlers registered via ipcMain.handle so we can invoke them
 // directly without a live Electron main process.
@@ -21,31 +22,21 @@ vi.mock('../windowRegistry', () => ({
   sendToWindow: vi.fn(),
 }))
 
-// Controllable exclusion list. filesystem.ts reads this live on every call via
-// getSettingSync('fileExclusions') — mutating it between calls models a user
-// editing the setting at runtime (the PR's "no relaunch" guarantee).
-let exclusions: string[] = []
-vi.mock('../store', () => ({
-  getSettingSync: (key: string) => (key === 'fileExclusions' ? exclusions : undefined),
-}))
-
 const { registerHandlers } = await import('./filesystem')
 const { addAllowedRoot, removeAllowedRoot } = await import('./pathValidation')
 const { FS_READ_DIR, FS_SEARCH } = await import('../../shared/ipc-channels')
 const { registerTestDaemonRuntime } = await import('../runtime/testHarness')
 
 registerHandlers()
-const testRuntime = registerTestDaemonRuntime()
+registerTestDaemonRuntime(FILE_EXCLUSIONS)
 const readDirHandler = handlers.get(FS_READ_DIR)!
 const searchHandler = handlers.get(FS_SEARCH)!
 const fakeEvent = { sender: {} } as unknown
 
 const readDir = async (p: string): Promise<FileTreeNode[]> => {
-  await testRuntime.setExclusions(exclusions)
   return readDirHandler(fakeEvent, p, 'local') as Promise<FileTreeNode[]>
 }
 const search = async (root: string, q: string): Promise<FileSearchResult[]> => {
-  await testRuntime.setExclusions(exclusions)
   return searchHandler(fakeEvent, root, q, undefined, 'local') as Promise<FileSearchResult[]>
 }
 const names = (nodes: FileTreeNode[]) => nodes.map((n) => n.name).sort()
@@ -55,7 +46,6 @@ describe('file exclusions across explorer + search', () => {
   let root: string
 
   beforeEach(async () => {
-    exclusions = []
     // realpath so the registered allowed root matches validatePathStrict's
     // symlink-resolved comparison (e.g. /tmp → /private/tmp on macOS).
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-excl-')))
@@ -79,18 +69,11 @@ describe('file exclusions across explorer + search', () => {
     await fs.rm(root, { recursive: true, force: true })
   })
 
-  test('empty exclusion list shows everything', async () => {
-    exclusions = []
-    expect(names(await readDir(root))).toEqual(['keep.txt', 'node_modules', 'src'])
-  })
-
-  test('readDir hides an excluded folder by exact name', async () => {
-    exclusions = ['node_modules']
+  test('readDir hides an internally excluded folder by exact name', async () => {
     expect(names(await readDir(root))).toEqual(['keep.txt', 'src'])
   })
 
   test('readDir hides a same-named file at a nested level (exact-name, any depth)', async () => {
-    exclusions = ['node_modules']
     // The folder-vs-file distinction does not matter: a file named like an
     // exclusion is dropped too, matching how the watcher now ignores both
     // `**/<name>` and `**/<name>/**`.
@@ -98,22 +81,10 @@ describe('file exclusions across explorer + search', () => {
   })
 
   test('search skips excluded folders and same-named files', async () => {
-    exclusions = ['node_modules']
     // Name-only search: 'txt' matches keep.txt and src/app.txt by name.
     const found = relPaths(await search(root, 'txt'))
     expect(found).toEqual(['keep.txt', 'src/app.txt'])
     // Nothing under node_modules/, and not the src/node_modules file either.
     expect(found.some((p) => p.includes('node_modules'))).toBe(false)
-  })
-
-  test('exclusions are read live: editing the list takes effect on the next call', async () => {
-    exclusions = []
-    expect(names(await readDir(root))).toContain('node_modules')
-    expect(relPaths(await search(root, 'txt'))).toContain('node_modules/pkg.txt')
-
-    // User edits the setting at runtime — no relaunch.
-    exclusions = ['node_modules']
-    expect(names(await readDir(root))).not.toContain('node_modules')
-    expect(relPaths(await search(root, 'txt')).some((p) => p.includes('node_modules'))).toBe(false)
   })
 })

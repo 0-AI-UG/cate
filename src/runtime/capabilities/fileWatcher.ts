@@ -53,7 +53,7 @@ export interface WatchPool {
    *  its last subscriber leaves. */
   subscribe(prefix: string, onChange: FsWatchListener): () => void
   /** Rebuild every live subscription against the CURRENT exclusion set (call
-   *  after the user edits fileExclusions so running watchers honor it). */
+   *  when the runtime exclusion set changes). */
   refresh(): Promise<void>
   /** Tear down every subscription (teardown / tests). */
   closeAll(): Promise<void>

@@ -21,10 +21,9 @@
 //             reason=clear) + SessionStart(source=clear, new id). Works in
 //             -p and TUI.
 //             Permission-wait: PermissionRequest fires immediately before the
-//             approval UI. StopFailure closes API/error turns.
-//             PostToolUse fires once the approved tool FINISHES (denial
-//             produces none). Cate therefore resumes earlier from the user's
-//             terminal submission.
+//             approval UI. PreToolUse follows approval immediately before
+//             execution; PostToolUse fires once the tool finishes. StopFailure
+//             closes API/error turns.
 //   codex   · JSON-on-stdin hooks configured in <project root>/.codex/
 //             hooks.json (repo scope, discovered by codex itself —
 //             launch-method independent, unlike the six per-invocation -c
@@ -47,8 +46,9 @@
 //             Permission-wait: PermissionRequest hook (session_id, turn_id,
 //             tool_name, tool_input) — fires in exec mode too, where the
 //             unanswerable approval is then auto-rejected and the turn Stops.
-//             PostToolUse (label post_tool_use) fires only after an executed
-//             command finishes; Cate resumes earlier from terminal input.
+//             PreToolUse fires after approval, immediately before execution;
+//             PostToolUse fires only after the command finishes. Cate uses
+//             either as a resume edge, plus terminal input for older versions.
 //             Interrupt closes user-cancelled turns with the same turn_id.
 //   cursor  · JSON-on-stdin hooks configured in <workspace>/.cursor/hooks.json
 //             (project scope, discovered by the CLI itself; hooks landed in
@@ -427,9 +427,9 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     'ElicitationResult', 'ConfigChange', 'InstructionsLoaded', 'MessageDisplay',
   ]
 
-  /** The seven events claudeSpec actually injects in the shipped product. */
+  /** The eight events claudeSpec actually injects in the shipped product. */
   const SHIPPED_CLAUDE_EVENTS = [
-    'SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PostToolUse',
+    'SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PreToolUse', 'PostToolUse',
     'Stop', 'StopFailure', 'SessionEnd',
   ]
 
@@ -581,9 +581,9 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
   })
 
   // PermissionRequest fires immediately before Claude displays an approval
-  // prompt. Approving runs the tool, so PostToolUse marks the turn as back in
-  // flight before it finally Stops.
-  test('TUI: PermissionRequest while blocked; approval resumes via PostToolUse', { retry: 1, timeout: 420_000 }, async () => {
+  // prompt. Approving runs PreToolUse before execution and PostToolUse after
+  // completion, so long-running commands resume at their actual start.
+  test('TUI: PermissionRequest while blocked; approval resumes via PreToolUse', { retry: 1, timeout: 420_000 }, async () => {
     const cwd = makeCwd('claude-perm')
     const eventsFile = join(cwd, 'events.jsonl')
     const bridge = writeBridge(cwd)
@@ -617,13 +617,16 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     expect(replayAgentState('claude-code', tid, events()), 'the workspace overview shows Claude awaiting approval')
       .toBe('waitingForInput')
 
-    // Approve (Enter accepts the highlighted "Yes"): the tool runs, PostToolUse
-    // pushes the back-in-flight signal, then the turn completes with Stop.
+    // Approve (Enter accepts the highlighted "Yes"): PreToolUse pushes the
+    // back-in-flight signal before the tool runs, then the turn completes.
     await tui.send('')
     expect(
       replayAgentState('claude-code', tid, events(), { permissionAnswered: true }),
       'submitting the approval resumes the overview before PostToolUse',
     ).toBe('running')
+    await tui.waitFor(() => byName(events(), 'PreToolUse').length > 0, 120_000, 'PreToolUse after approval')
+    expect(byName(events(), 'PreToolUse')[0].payload.session_id).toBe(id)
+    expect(byName(events(), 'PreToolUse')[0].payload.tool_name).toBe('Bash')
     await tui.waitFor(() => byName(events(), 'PostToolUse').length > 0, 120_000, 'PostToolUse after approval')
     expect(byName(events(), 'PostToolUse')[0].payload.session_id).toBe(id)
     expect(byName(events(), 'PostToolUse')[0].payload.tool_name).toBe('Bash')
@@ -751,6 +754,7 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     ['SessionStart', 'session_start'],
     ['UserPromptSubmit', 'user_prompt_submit'],
     ['PermissionRequest', 'permission_request'],
+    ['PreToolUse', 'pre_tool_use'],
     ['PostToolUse', 'post_tool_use'],
     ['Stop', 'stop'],
     ['Interrupt', 'interrupt'],

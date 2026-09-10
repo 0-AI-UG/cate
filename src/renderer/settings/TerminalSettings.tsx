@@ -1,4 +1,3 @@
-import { AgentHooksSettings } from './AgentHooksSettings'
 import { useSettingsStore } from '../stores/settingsStore'
 import { SettingRow, TextInput, NumberInput, Toggle, Slider } from './SettingsComponents'
 import { IS_MAC } from '../lib/platform'
@@ -8,10 +7,9 @@ export function TerminalSettings() {
 
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-xs text-muted mb-3">
-        Leave font fields blank for system defaults. Colors follow the active
-        theme; change it in Appearance.
-      </p>
+      <SettingRow label="Default shell path" description="Leave blank to auto-detect ($SHELL, then a platform default).">
+        <TextInput value={store.defaultShellPath} onChange={(v) => store.setSetting('defaultShellPath', v)} placeholder="Auto-detect" />
+      </SettingRow>
       <SettingRow label="Font family override">
         <TextInput
           value={store.terminalFontFamily}
@@ -86,7 +84,6 @@ export function TerminalSettings() {
           onChange={(v) => store.setSetting('autoSuspendIdleTerminals', v)}
         />
       </SettingRow>
-      <section className="mt-6 border-t border-subtle pt-4"><h3 className="text-sm font-medium text-primary mb-2">CLI agent hooks</h3><AgentHooksSettings /></section>
     </div>
   )
 }

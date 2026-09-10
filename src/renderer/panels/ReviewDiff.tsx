@@ -220,8 +220,32 @@ export function UnifiedLine({
 }
 
 const noReviewAction = () => {}
-export function RecordedDiffHunk({ hunk, split = false, wordDiff = true, wrap = false }: { hunk: GitDiffHunk; split?: boolean; wordDiff?: boolean; wrap?: boolean }) {
+export function RecordedDiffHunk({
+  hunk,
+  split = false,
+  wordDiff = true,
+  wrap = false,
+  notes = [],
+  addNote,
+  toggleNote = noReviewAction,
+  noteDraft = null,
+  submitNote = noReviewAction,
+  cancelNote = noReviewAction,
+}: {
+  hunk: GitDiffHunk
+  split?: boolean
+  wordDiff?: boolean
+  wrap?: boolean
+  notes?: GitReviewNote[]
+  addNote?: (side: 'old' | 'new', line: number, context: string) => void
+  toggleNote?: (noteId: string) => void
+  noteDraft?: NoteDraft | null
+  submitNote?: (body: string, severity: NonNullable<GitReviewNote['severity']>) => void
+  cancelNote?: () => void
+}) {
   const lines = hunk.lines.filter((line) => line.kind !== 'meta')
+  if (lines.length === 0) return null
+  if (addNote) return <HunkView hunk={{ ...hunk, lines }} split={split} wordDiff={wordDiff} wrap={wrap} notes={notes} addNote={addNote} toggleNote={toggleNote} noteDraft={noteDraft} submitNote={submitNote} cancelNote={cancelNote} />
   if (split) return <>{splitRows(lines).map((row, index) => <div key={index} className={`grid divide-x divide-subtle text-primary/75 ${wrap ? 'grid-cols-2 min-w-0' : 'grid-cols-[minmax(360px,max-content)_minmax(360px,max-content)] min-w-full'}`}><SplitCell line={row.left} side="old" other={row.right?.text} wordDiff={wordDiff} addNote={noReviewAction} readOnly /><SplitCell line={row.right} side="new" other={row.left?.text} wordDiff={wordDiff} addNote={noReviewAction} readOnly /></div>)}</>
   return <>{lines.map((line, index) => <UnifiedLine key={index} line={line} other={counterpart(lines, index)} wordDiff={wordDiff} readOnly notes={[]} addNote={noReviewAction} toggleNote={noReviewAction} noteDraft={null} submitNote={noReviewAction} cancelNote={noReviewAction} />)}</>
 }
