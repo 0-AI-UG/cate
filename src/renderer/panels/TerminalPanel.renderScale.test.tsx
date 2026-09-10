@@ -171,7 +171,6 @@ vi.mock('../lib/activePanel', () => ({
   setActivePanel: () => {},
 }))
 vi.mock('./panelChrome', () => ({ useClaimPanelCorner: () => null }))
-vi.mock('../hooks/useMissingAgentHookNotice', () => ({ useMissingAgentHookNotice: () => null }))
 vi.mock('../lib/logger', () => ({
   default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} },
 }))

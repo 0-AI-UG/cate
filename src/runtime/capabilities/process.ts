@@ -15,7 +15,6 @@ import os from 'os'
 import { execFile } from 'child_process'
 import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../../main/runtime/types'
 import type { TerminalActivity } from '../../shared/types'
-import { matchAgentDef } from '../../shared/agents'
 import type { AgentPresenceTracker } from './agentPresence'
 import type { AgentHookConfig } from '../../shared/agentHooks'
 import { catePathEnv } from '../cateCli'
@@ -110,31 +109,11 @@ function isShellProcess(name: string): boolean {
   return shells.includes(name.toLowerCase())
 }
 
-/** The activity indicator + a hooks-independent "which agent is running here"
- *  signal. A supported agent CLI anywhere in the pty's subtree wins: it may run
- *  under a launcher (grok's npm wrapper execs a versioned binary, etc.), so it
- *  isn't always the direct child. This is the process-scan detection the tab
- *  title and the "hooks off" nudge key on — complementary to the hook-anchored
- *  presence (agentPresence.ts), which still owns running/finished STATE.
- *
- *  BLIND SPOT (deliberate, see #480 / agentPresence.ts header): this is a
- *  DOWNWARD walk of the pty's OWN tree, so it is structurally blind wherever the
- *  agent is detached from that tree — tmux/screen panes hang off the
- *  multiplexer server, setsid/nohup daemonize. That is exactly why presence and
- *  STATE are hook-anchored, not scan-anchored: hooks don't care about topology.
- *  The two features that key on this scan (clean tab title, "hooks off" nudge)
- *  therefore degrade to "no clean name / no nudge" under tmux — never a wrong
- *  state, and the hook path still delivers the tab name + full state there. The
- *  nudge additionally gates on hook-anchored presence so it can't fire when
- *  hooks ARE working (see useMissingAgentHookNotice).
- *
- *  Falls back to the first non-shell direct child for the generic indicator
- *  (dev servers, vim). */
-function activityForPid(shellPid: number, tree: ProcTree): TerminalActivity {
-  for (const pid of descendantsOf(shellPid, tree)) {
-    const name = tree.nameByPid.get(pid)
-    if (name && matchAgentDef(name)) return { type: 'running', processName: name }
-  }
+/** Generic activity indicator: report the first non-shell direct child (dev
+ *  servers, editors, agent CLIs, etc.). Agent identity deliberately does not
+ *  live here; authenticated hooks establish identity and register the exact
+ *  agent pid whose liveness is checked separately by agentPresence.ts. */
+export function activityForPid(shellPid: number, tree: ProcTree): TerminalActivity {
   for (const childPid of tree.childrenByPid.get(shellPid) ?? []) {
     const name = tree.nameByPid.get(childPid)
     if (name && !isShellProcess(name)) return { type: 'running', processName: name }
