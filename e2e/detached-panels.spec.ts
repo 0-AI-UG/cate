@@ -70,11 +70,11 @@ async function chooseNativeMenu(choice: string) {
   }, choice)
 }
 
-for (const type of ['terminal', 'browser', 'editor', 'canvas', 'agent', 'document', 'review', 'surface'] as const) {
+for (const type of ['terminal', 'browser', 'editor', 'canvas', 'agent', 'review', 'surface'] as const) {
   test(`${type}: real detach, palette, overview reveal and owner-routed close`, async () => {
     const image = path.join(directory, 'preview.svg')
     writeFileSync(image, '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="red"/></svg>')
-    const id = await main.evaluate(({ type, image }) => window.__cateE2E!.createPanel(type, type === 'document' ? image : undefined), { type, image })
+    const id = await main.evaluate(({ type, image }) => window.__cateE2E!.createPanel(type, type === 'editor' ? image : undefined), { type, image })
     expect(id).toBeTruthy()
     const detached = await detach(id)
     await expect.poll(() => main.evaluate(id => window.__cateE2E!.panels().some(p => p.id === id), id)).toBe(false)

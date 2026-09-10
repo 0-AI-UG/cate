@@ -5,7 +5,7 @@ import { RecordedReviewButton } from './RecordedReviewButton'
 import { RecordedDiffHunk, type NoteDraft } from './ReviewDiff'
 import { ReviewDisplayOptions, ReviewFileFilter, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
 import { getAgentLogoById } from '../lib/agent/agentLogos'
-import { PopoverSurface, useDismissableLayer, useViewportPopoverPosition } from '../ui/Popover'
+import { POPOVER_SURFACE, PopoverSurface, useDismissableLayer, useViewportPopoverPosition } from '../ui/Popover'
 import { AGENTS } from '../../shared/agents'
 import { filterAgentChanges } from '../../shared/agentChanges'
 import type { AgentChangedFile, AgentChangesFilter } from '../../shared/agentChanges'
@@ -119,7 +119,7 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
         <ToolbarButton label={display.split ? 'Switch to unified diff' : 'Switch to split diff'} onClick={() => updateDisplay({ split: !display.split })}>{display.split ? <Rows size={14} /> : <SplitHorizontal size={14} />}</ToolbarButton>
         <div ref={morePopover} className="relative">
           <ToolbarButton label="More review options" active={moreOpen} onClick={() => setMoreOpen(!moreOpen)}><DotsThree size={16} /></ToolbarButton>
-          {moreOpen && <div role="menu" className="absolute right-0 top-8 z-50 w-56 rounded-xl border border-subtle bg-surface-2 p-1 shadow-xl"><ReviewDisplayOptions display={display} update={updateDisplay} /></div>}
+          {moreOpen && <div role="menu" className={`absolute right-0 top-8 z-50 w-56 ${POPOVER_SURFACE} p-1.5`}><ReviewDisplayOptions display={display} update={updateDisplay} /></div>}
         </div>
         <span className="text-muted" title="Recorded agent edits, not the current Git diff. Shell-generated or unreported edits may be missing. Counts are recorded edit totals."><Info size={14} aria-label="About recorded edits" /></span>
       </div>

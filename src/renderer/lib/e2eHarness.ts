@@ -559,7 +559,7 @@ export function installE2EHarness(): void {
     selectWorkspace,
     panelTypes,
     panels: () => Object.values(useAppStore.getState().getWorkspace(useAppStore.getState().selectedWorkspaceId)?.panels ?? {}),
-    createPanel: (type, filePath) => getPanelDef(type).create({ filePath, documentType: filePath ? 'image' : undefined, workspaceId: useAppStore.getState().selectedWorkspaceId, placement: { target: 'dock', zone: 'center' } })!,
+    createPanel: (type, filePath) => getPanelDef(type).create({ filePath, workspaceId: useAppStore.getState().selectedWorkspaceId, placement: { target: 'dock', zone: 'center' } })!,
     detachPanel: (id) => movePanelToNewWindow(useAppStore.getState().selectedWorkspaceId, id),
     openApplicationOverlay: (view, section) => {
       const ui = useUIStore.getState()

@@ -122,7 +122,7 @@ it('updates only changed leaf content without invalidating the canvas render cal
   expect(host.textContent).toBe('Changedb')
 })
 
-it.each(['canvas', 'terminal', 'editor', 'browser', 'agent', 'document', 'review', 'surface'] as const)('gates %s content before mounting without a workspace', (type) => {
+it.each(['canvas', 'terminal', 'editor', 'browser', 'agent', 'review', 'surface'] as const)('gates %s content before mounting without a workspace', (type) => {
   const mounted = vi.fn()
   function Content() { React.useEffect(mounted, []); return <span>Content</span> }
   registryMocks.renderPanelComponent.mockReturnValue(<Content />)

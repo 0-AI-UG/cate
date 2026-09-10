@@ -6,7 +6,7 @@ export function createExplorerRefresh<T>(options: {
   root: string
   loaded: () => Iterable<string>
   read: (path: string) => Promise<T>
-  apply: (path: string, value: T | null) => void
+  apply: (path: string, value: T | null, error?: unknown) => void
   remove: (path: string) => void
 }) {
   const pending = new Set<string>()
@@ -29,11 +29,15 @@ export function createExplorerRefresh<T>(options: {
         await Promise.all(paths.map(async (path) => {
           inFlight.add(path)
           let value: T | null = null
-          try { value = await options.read(path) } catch { /* deleted/unreadable */ }
+          let readError: unknown
+          try { value = await options.read(path) } catch (error) { readError = error }
           inFlight.delete(path)
           const removed = removedInFlight.delete(path)
           if (!disposed && !pending.has(path)) {
-            if (!removed) options.apply(path, value)
+            if (!removed) {
+              if (readError !== undefined) options.apply(path, value, readError)
+              else options.apply(path, value)
+            }
             for (const resolve of waiters.get(path) ?? []) resolve()
             waiters.delete(path)
           }

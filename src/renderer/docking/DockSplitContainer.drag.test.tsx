@@ -17,10 +17,10 @@ it('starts resizing at the visible divider when saved ratios were constrained by
     Object.defineProperty(host.firstElementChild!, 'offsetWidth', { value: 1000 })
     const panes = host.querySelectorAll('[data-dock-pane]')
     Object.defineProperty(panes[0], 'offsetWidth', { value: 320 })
-    Object.defineProperty(panes[1], 'offsetWidth', { value: 675 })
+    Object.defineProperty(panes[1], 'offsetWidth', { value: 679 })
     act(() => host.querySelector('.cursor-col-resize')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 320 })))
     act(() => document.dispatchEvent(new MouseEvent('mousemove', { clientX: 370 })))
-    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(370 / 995)
+    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(370 / 999)
   } finally {
     act(() => document.dispatchEvent(new MouseEvent('mouseup')))
     act(() => root.unmount())
@@ -47,9 +47,9 @@ it('can drag away from the minimum and reverse direction during the same gesture
     const handle = host.querySelector('.cursor-col-resize')!
     act(() => handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 400 })))
     act(() => document.dispatchEvent(new MouseEvent('mousemove', { clientX: 500 })))
-    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(0.4 + 100 / 995)
+    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(0.4 + 100 / 999)
     act(() => document.dispatchEvent(new MouseEvent('mousemove', { clientX: 450 })))
-    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(0.4 + 50 / 995)
+    expect((store.getState().zones.center.layout as DockSplitNode).ratios[0]).toBeCloseTo(0.4 + 50 / 999)
   } finally {
     act(() => document.dispatchEvent(new MouseEvent('mouseup')))
     act(() => root.unmount())

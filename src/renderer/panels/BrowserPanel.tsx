@@ -32,6 +32,7 @@ import { Tooltip } from '../ui/Tooltip'
 import { Spinner } from '../ui/Spinner'
 import { PanelCenteredState } from '../ui/PanelCenteredState'
 import { Button } from '../ui/Button'
+import { POPOVER_SURFACE } from '../ui/Popover'
 import { useActivePanelStore } from '../lib/activePanel'
 import {
   BROWSER_HISTORY_URL,
@@ -1347,7 +1348,7 @@ export default function BrowserPanel({
             IPC; the selected password is decrypted and filled in main. */}
         {autofillPopup && (
           <div
-            className="absolute z-40 min-w-56 max-w-[calc(100%-1rem)] overflow-hidden rounded-lg border border-subtle bg-surface-2 shadow-2xl"
+            className={`absolute z-40 min-w-56 max-w-[calc(100%-1rem)] overflow-hidden ${POPOVER_SURFACE}`}
             style={{
               left: Math.max(
                 8,

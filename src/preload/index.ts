@@ -224,6 +224,7 @@ import {
   RECENT_SCREENSHOT_GET,
   RECENT_SCREENSHOT_CHANGED,
   RECENT_SCREENSHOT_DRAG,
+  RECENT_SCREENSHOT_SAVE,
   AGENT_HARNESS_GET_PANEL_URL,
   AGENT_HARNESS_GET_USAGE_URL,
   PULL_REQUESTS_LIST,
@@ -485,6 +486,7 @@ const invokeForwarders = {
   nativeFileDrag: makeInvoker<'nativeFileDrag'>(NATIVE_FILE_DRAG),
   getRecentScreenshot: makeInvoker<'getRecentScreenshot'>(RECENT_SCREENSHOT_GET),
   dragRecentScreenshot: makeInvoker<'dragRecentScreenshot'>(RECENT_SCREENSHOT_DRAG),
+  saveRecentScreenshot: makeInvoker<'saveRecentScreenshot'>(RECENT_SCREENSHOT_SAVE),
   onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot[]) => void): () => void {
     return createIpcListener(RECENT_SCREENSHOT_CHANGED, callback)
   },

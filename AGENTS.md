@@ -65,12 +65,11 @@ The canvas (`Canvas.tsx`) positions nodes using CSS transforms. Panel positions 
 
 Panel definitions are centralised in `src/shared/panels.ts`. The detachable panel
 types (`PanelType` in `src/shared/types.ts`) are: terminal, browser, editor,
-canvas, agent, document, review. Renderer components live in `src/renderer/panels/`:
-- **EditorPanel** — Monaco Editor with integrated Files and Search navigation
+canvas, agent, review. Renderer components live in `src/renderer/panels/`:
+- **EditorPanel** — Files with Monaco editing, image/PDF/DOCX previews, and integrated Files and Search navigation
 - **TerminalPanel** — xterm.js terminal with WebGL renderer, backed by node-pty
 - **BrowserPanel** — embedded webview (file:// allowed for local HTML)
 - **CanvasPanel** — nested canvas
-- **DocumentPanel** — PDF / docx / image preview
 - **AgentPanel** — Codex agent thread (sidebar + dock)
 
 The file tree and Search are hosted by EditorPanel. Source Control and Pull

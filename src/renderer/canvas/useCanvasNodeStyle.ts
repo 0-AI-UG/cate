@@ -116,7 +116,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       pointerEvents: isExiting || isWholeNodeDragSource ? 'none' : undefined,
       userSelect: 'none',
       ...(isMaximized(node) ? {
-        position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh',
+        position: 'absolute', left: 0, top: 0, width: '100%', height: '100%',
         zIndex: 50, borderRadius: 0, border: 'none', boxShadow: 'none',
         transform: 'none', transition: 'none', filter: 'none',
         opacity: isExiting || isWholeNodeDragSource ? 0 : 1,

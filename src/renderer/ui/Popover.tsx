@@ -45,7 +45,7 @@ export function useDismissableLayer({
 }
 
 export const POPOVER_SURFACE =
-  'rounded-lg border border-strong bg-surface-4/98 backdrop-blur-xl shadow-[0_12px_32px_var(--shadow-node)]'
+  'rounded-2xl border border-subtle bg-surface-3 shadow-lg'
 
 export type ViewportPopoverPosition = {
   top: number

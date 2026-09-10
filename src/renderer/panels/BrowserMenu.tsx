@@ -7,7 +7,7 @@ import { useBrowserStore } from '../stores/browserStore'
 import { useUIStore } from '../stores/uiStore'
 import { BrowserFavicon } from './BrowserFavicon'
 import { faviconForUrl } from './browserUrl'
-import { useDismissableLayer } from '../ui/Popover'
+import { POPOVER_SURFACE, useDismissableLayer } from '../ui/Popover'
 
 interface Props {
   onNewTab: () => void
@@ -40,16 +40,16 @@ export function BrowserMenu({
 
   useDismissableLayer({ open: true, contentRef: ref, triggerRefs: [triggerRef], onDismiss: onClose })
 
-  const item = 'w-full flex items-center gap-2.5 px-3 h-8 text-sm text-secondary hover:bg-hover transition-colors text-left'
+  const item = 'w-full flex items-center gap-2.5 rounded-lg px-2.5 h-8 text-[13px] text-primary hover:bg-hover focus-visible:bg-hover transition-colors duration-100 motion-reduce:transition-none text-left'
 
   return (
     <div
       ref={ref}
-      className="absolute right-2 top-[5.5rem] z-40 w-56 rounded-lg border border-subtle bg-surface-2 shadow-2xl py-1"
+      className={`absolute right-2 top-[5.5rem] z-40 w-60 max-w-[calc(100%-16px)] ${POPOVER_SURFACE} p-1.5`}
       onMouseDown={(e) => e.stopPropagation()}
     >
       <button className={item} onClick={() => { onClose(); onNewTab() }}>
-        <Plus size={14} className="text-muted" /> New tab
+        <Plus size={16} className="shrink-0 text-secondary" /> New tab
       </button>
       <div
         className="relative"
@@ -67,7 +67,7 @@ export function BrowserMenu({
           aria-haspopup="menu"
           aria-expanded={bookmarksOpen}
         >
-          <BookmarkSimple size={14} className="text-muted" />
+          <BookmarkSimple size={16} className="shrink-0 text-secondary" />
           <span className="flex-1">Bookmarks</span>
           <CaretLeft size={12} className="text-muted" />
         </button>
@@ -75,7 +75,7 @@ export function BrowserMenu({
           <div
             role="menu"
             aria-label="Bookmarks"
-            className="absolute right-[calc(100%-4px)] top-0 z-50 max-h-80 w-64 overflow-y-auto rounded-lg border border-subtle bg-surface-2 py-1 shadow-2xl"
+            className={`absolute right-[calc(100%-4px)] top-0 z-50 max-h-80 w-64 overflow-y-auto ${POPOVER_SURFACE} p-1.5`}
           >
             {bookmarks.length === 0 ? (
               <div className="px-3 py-2 text-xs text-muted">No bookmarks yet</div>
@@ -84,7 +84,7 @@ export function BrowserMenu({
                 key={bookmark.url}
                 role="menuitem"
                 title={bookmark.url}
-                className="flex h-8 w-full items-center gap-2.5 px-3 text-left text-sm text-secondary transition-colors hover:bg-hover"
+                className={item}
                 onClick={() => {
                   onClose()
                   onNavigate(bookmark.url)
@@ -98,42 +98,44 @@ export function BrowserMenu({
         )}
       </div>
       <button className={item} onClick={() => { onClose(); onOpenHistory() }}>
-        <ClockCounterClockwise size={14} className="text-muted" /> History
+        <ClockCounterClockwise size={16} className="shrink-0 text-secondary" /> History
       </button>
       <button className={item} onClick={() => { onClose(); onOpenPasswordManager() }}>
-        <Key size={14} className="text-muted" /> Passwords and autofill
+        <Key size={16} className="shrink-0 text-secondary" /> Passwords and autofill
       </button>
-      <div className="my-1 border-t border-subtle" />
-      <div className="flex h-9 items-center gap-1 px-3 text-sm text-secondary">
+      <div className="mx-2.5 my-1.5 border-t border-subtle" />
+      <div className="flex h-9 items-center gap-3 px-2.5 text-[13px] text-primary">
         <span className="flex-1">Zoom</span>
-        <button
-          type="button"
-          onClick={onZoomOut}
-          disabled={zoomPercent <= 25}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-hover hover:text-primary disabled:opacity-30"
-          aria-label="Zoom out"
-        >
-          <Minus size={13} />
-        </button>
-        <button
-          type="button"
-          onClick={onZoomReset}
-          className="h-7 min-w-12 rounded-md px-1 text-center text-xs tabular-nums text-secondary transition-colors hover:bg-hover hover:text-primary"
-          aria-label="Reset zoom"
-        >
-          {zoomPercent}%
-        </button>
-        <button
-          type="button"
-          onClick={onZoomIn}
-          disabled={zoomPercent >= 500}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-hover hover:text-primary disabled:opacity-30"
-          aria-label="Zoom in"
-        >
-          <Plus size={13} />
-        </button>
+        <div className="flex h-7 items-center overflow-hidden rounded-lg border border-subtle bg-surface-4">
+          <button
+            type="button"
+            onClick={onZoomOut}
+            disabled={zoomPercent <= 25}
+            className="flex h-7 w-7 items-center justify-center text-secondary transition-colors hover:bg-hover hover:text-primary focus-visible:bg-hover disabled:opacity-30 disabled:hover:bg-transparent"
+            aria-label="Zoom out"
+          >
+            <Minus size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={onZoomReset}
+            className="h-5 min-w-12 border-x border-subtle px-1.5 text-center text-xs tabular-nums text-primary transition-colors hover:bg-hover focus-visible:bg-hover"
+            aria-label="Reset zoom"
+          >
+            {zoomPercent}%
+          </button>
+          <button
+            type="button"
+            onClick={onZoomIn}
+            disabled={zoomPercent >= 500}
+            className="flex h-7 w-7 items-center justify-center text-secondary transition-colors hover:bg-hover hover:text-primary focus-visible:bg-hover disabled:opacity-30 disabled:hover:bg-transparent"
+            aria-label="Zoom in"
+          >
+            <Plus size={13} />
+          </button>
+        </div>
       </div>
-      <div className="my-1 border-t border-subtle" />
+      <div className="mx-2.5 my-1.5 border-t border-subtle" />
       <button
         className={item}
         onClick={() => {
@@ -141,7 +143,7 @@ export function BrowserMenu({
           useUIStore.getState().openSettings('browser')
         }}
       >
-        <Gear size={14} className="text-muted" /> Browser settings…
+        <Gear size={16} className="shrink-0 text-secondary" /> Browser settings…
       </button>
     </div>
   )

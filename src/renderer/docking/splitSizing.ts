@@ -1,6 +1,6 @@
 import { PANEL_MINIMUM_SIZES, type DockLayoutNode, type PanelType } from '../../shared/types'
 
-export const SPLIT_DIVIDER_SIZE = 5
+export const SPLIT_DIVIDER_SIZE = 1
 export const MIN_PANE_SIZE = { width: 320, height: 220 }
 
 export function layoutMinimum(node: DockLayoutNode, getPanelType?: (id: string) => PanelType | undefined): { width: number; height: number } {

@@ -38,9 +38,6 @@ import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
 import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
 import { worktreeForPanel } from '../lib/worktreeContext'
-import { IS_MAC } from '../lib/platform'
-import { useWindowFullscreen } from '../lib/useWindowFullscreen'
-import { TRAFFIC_LIGHTS_WIDTH } from '../shells/MacWindowChrome'
 
 // Node ids already reported for missing geometry, so a bad node that keeps
 // re-rendering warns/reports once instead of spamming.
@@ -101,8 +98,10 @@ const PULSE_KEYFRAMES = `
   opacity: 0 !important;
   pointer-events: none !important;
 }
-/* Keep live panel contents mounted while escaping canvas scaling and clipping. */
-body :has([data-canvas-maximized="true"]) {
+/* The shell excludes the workspace sidebars and spans every dock split.
+   Keep panel contents mounted while the shell becomes its containing block. */
+[data-panel-maximize-root] :has([data-canvas-maximized="true"]) {
+  position: static !important;
   transform: none !important;
   filter: none !important;
   perspective: none !important;
@@ -112,18 +111,33 @@ body :has([data-canvas-maximized="true"]) {
   z-index: auto !important;
 }
 [data-canvas-maximized="true"] { --zoom: 1; }
-[data-canvas-maximized="true"] .dock-tab-bar {
-  padding-left: var(--maximized-chrome-inset) !important;
+[data-canvas-container]:has([data-canvas-maximized="true"]) {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: clip !important;
 }
-body:has([data-canvas-maximized="true"]) [data-node-id]:not([data-canvas-maximized="true"]),
-body:has([data-canvas-maximized="true"]) [data-canvas-top-overlay],
-body:has([data-canvas-maximized="true"]) [data-resize-frame-for] { visibility: hidden; }
+[data-dock-stack-id]:has([data-canvas-maximized="true"]) > .dock-tab-bar {
+  display: none;
+}
+/* Hide sibling branches along the path to the maximized panel. This also
+   hides persistent browser slots in other splits without unmounting them. */
+[data-panel-maximize-root]:has([data-canvas-maximized="true"]) > :not(:has([data-canvas-maximized="true"])):not([data-canvas-maximized="true"]),
+[data-panel-maximize-root] :has([data-canvas-maximized="true"]) > :not(:has([data-canvas-maximized="true"])):not([data-canvas-maximized="true"]) {
+  visibility: hidden;
+}
 `
 
 let keyframesInjected = false
 function ensureKeyframes() {
   if (keyframesInjected) return
   if (typeof document === 'undefined') return
+  // Replace earlier module versions during hot reload, including the old
+  // window-wide maximize rules, instead of accumulating conflicting styles.
+  for (const previous of document.head.querySelectorAll('style')) {
+    if (previous.textContent?.includes('@keyframes pulseActivity')) previous.remove()
+  }
   const style = document.createElement('style')
   style.textContent = PULSE_KEYFRAMES
   document.head.appendChild(style)
@@ -138,11 +152,13 @@ function GrabButton({
   title,
   onClick,
   color,
+  compact,
   children,
 }: {
   title: string
   onClick: (e: React.MouseEvent) => void
   color?: string
+  compact: boolean
   children: React.ReactNode
 }) {
   const baseColor = color ?? 'var(--text-secondary)'
@@ -152,7 +168,7 @@ function GrabButton({
         data-grab-button
         aria-label={title}
         onClick={onClick}
-        className="flex items-center justify-center w-6 h-6 self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover"
+        className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover ${compact ? 'w-[22px] h-[22px]' : 'w-6 h-6'}`}
         style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: baseColor }}
       >
         {children}
@@ -161,7 +177,6 @@ function GrabButton({
   )
 }
 
-const TAB_ICON_SIZE = 14
 
 // -----------------------------------------------------------------------------
 // Component
@@ -179,7 +194,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   useRenderCount('CanvasNode')
 
   const canvasApi = useCanvasStoreApi()
-  const windowFullscreen = useWindowFullscreen()
   const topOverlayTarget = useCanvasTopOverlayTarget()
   const nodeRef = useRef<HTMLDivElement>(null)
   const [isHovered, setIsHovered] = useState(false)
@@ -454,30 +468,34 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     return () => canvasApi.getState().setNodeActiveWorktree(nodeId, null)
   }, [nodeId, canvasApi])
 
+  const tabIconSize = maximized ? 14 : 12
   const nodeControlButtons = (
     <>
       <GrabButton
+        compact={!maximized}
         title={node?.isPinned ? 'Unlock' : 'Lock'}
         onClick={(e) => { e.stopPropagation(); handleTogglePin() }}
         color={node?.isPinned ? 'var(--focus-blue)' : undefined}
       >
         {node?.isPinned
-          ? <Lock size={TAB_ICON_SIZE} />
-          : <LockOpen size={TAB_ICON_SIZE} />}
+          ? <Lock size={tabIconSize} />
+          : <LockOpen size={tabIconSize} />}
       </GrabButton>
       <GrabButton
+        compact={!maximized}
         title={maximized ? 'Restore' : 'Maximize'}
         onClick={(e) => { e.stopPropagation(); handleToggleMaximize() }}
       >
         {maximized
-          ? <Minimize2 size={TAB_ICON_SIZE} />
-          : <Maximize2 size={TAB_ICON_SIZE} />}
+          ? <Minimize2 size={tabIconSize} />
+          : <Maximize2 size={tabIconSize} />}
       </GrabButton>
       <GrabButton
+        compact={!maximized}
         title="Close"
         onClick={(e) => { e.stopPropagation(); handleClose() }}
       >
-        <X size={TAB_ICON_SIZE} />
+        <X size={tabIconSize} />
       </GrabButton>
     </>
   )
@@ -498,7 +516,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           onPanelRemoved={handlePanelRemoved}
           excludePanelTypes={CANVAS_EXCLUDED_TYPES}
           localOnly
-          compact={false}
+          compact={!maximized}
           onTabBarMouseDown={isHeaderHost ? handleHeaderMouseDown : undefined}
           trailingControls={isHeaderHost ? nodeControlButtons : undefined}
           dropDisabled={isWholeNodeDragSource}
@@ -691,7 +709,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       data-node-id={nodeId}
       data-canvas-maximized={maximized ? "true" : undefined}
       data-node-active={isFocused ? 'true' : 'false'}
-      style={{ ...containerStyle, ['--maximized-chrome-inset' as string]: IS_MAC && !windowFullscreen ? `${TRAFFIC_LIGHTS_WIDTH}px` : '0px' }}
+      style={containerStyle}
       onClick={handleClick}
       onMouseDown={handleMouseDown}
       onMouseEnter={() => setIsHovered(true)}

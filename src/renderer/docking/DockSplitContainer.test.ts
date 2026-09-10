@@ -22,15 +22,15 @@ describe('clampSplitDelta', () => {
       { type: 'tabs', id: 'editor-stack', panelIds: ['editor'], activeIndex: 0 },
     ] }
     expect(clampSplitDelta(split, 0, -0.15, 1000, panelType)).toBeCloseTo(-0.15)
-    expect(clampSplitDelta(split, 0, -0.4, 1000, panelType)).toBeCloseTo(320 / 995 - 0.5)
+    expect(clampSplitDelta(split, 0, -0.4, 1000, panelType)).toBeCloseTo(320 / 999 - 0.5)
   })
   it('keeps a canvas at least its minimum wide in a horizontal split', () => {
-    expect(clampSplitDelta(horizontalSplit, 0, -0.4, 2000, panelType)).toBeCloseTo(PANEL_MINIMUM_SIZES.canvas.width / 1995 - 0.5)
+    expect(clampSplitDelta(horizontalSplit, 0, -0.4, 2000, panelType)).toBeCloseTo(PANEL_MINIMUM_SIZES.canvas.width / 1999 - 0.5)
   })
 
   it('keeps a canvas at least its minimum tall in a vertical split', () => {
     const verticalSplit = { ...horizontalSplit, direction: 'vertical' as const }
-    expect(clampSplitDelta(verticalSplit, 0, -0.4, 2000, panelType)).toBeCloseTo(PANEL_MINIMUM_SIZES.canvas.height / 1995 - 0.5)
+    expect(clampSplitDelta(verticalSplit, 0, -0.4, 2000, panelType)).toBeCloseTo(PANEL_MINIMUM_SIZES.canvas.height / 1999 - 0.5)
   })
 
   it('does not shrink panes further when their minimums cannot fit', () => {

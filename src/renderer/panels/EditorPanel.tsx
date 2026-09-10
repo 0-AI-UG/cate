@@ -5,7 +5,7 @@ import { panelSearchStore } from '../stores/panelSearchStores'
 // EditorPanel — Monaco Editor wrapper for CanvasIDE editor panels.
 // =============================================================================
 
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useCallback, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { perfCount, useRenderCount } from '../lib/perf/perfClient'
@@ -242,6 +242,8 @@ function detectLanguage(filePath: string): string {
 // EditorPanel component
 // -----------------------------------------------------------------------------
 
+const FilePreview = lazy(() => import('./FilePreview'))
+
 export default function EditorPanel({
   panelId,
   workspaceId,
@@ -249,6 +251,7 @@ export default function EditorPanel({
   nodeId,
 }: EditorPanelProps) {
   useRenderCount('EditorPanel')
+  const previewType = filePath ? getDocumentType(filePath) : null
   const shortcutLabel = useShortcutLabel()
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
@@ -384,7 +387,7 @@ export default function EditorPanel({
   const sync = useFileSync({
     workspaceId,
     panelId,
-    filePath,
+    filePath: previewType ? null : filePath,
     rootPath: checkoutRoot,
     getModel,
     onExternalReplace,
@@ -410,7 +413,7 @@ export default function EditorPanel({
       return
     }
     if (switchingFile.current) return
-    const nextPath = paths.find((path) => !getDocumentType(path))
+    const nextPath = paths[0]
     switchingFile.current = true
     try {
       const store = useAppStore.getState()
@@ -464,7 +467,7 @@ export default function EditorPanel({
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!containerRef.current) return
+    if (previewType || !containerRef.current) return
     setLoadError(null)
     setMarkdownContent('')
 
@@ -646,7 +649,7 @@ export default function EditorPanel({
       editorRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filePath, workspaceId])
+  }, [filePath, workspaceId, previewType])
 
   // ---------------------------------------------------------------------------
   // Listen for save-file custom event
@@ -909,7 +912,8 @@ export default function EditorPanel({
       </NodePopover>}
       <div className="files-content flex-1 min-h-0 flex" style={{ backgroundColor: editorBackground, '--file-explorer-bg': editorBackground } as CSSProperties}>
       <div className={`${editorVisible ? 'flex-1' : 'hidden'} min-w-0 relative`}>
-        {showDiff && conflict?.kind === 'changed' && (
+        {previewType && filePath && <Suspense fallback={<LoadingState label="Loading preview…" className="h-full" />}><FilePreview key={filePath} filePath={filePath} workspaceId={workspaceId} /></Suspense>}
+        {!previewType && showDiff && conflict?.kind === 'changed' && (
           <div className="absolute inset-0 z-30 bg-surface-1">
             <div ref={diffOverlayRef} className="w-full h-full" />
           </div>
@@ -917,7 +921,7 @@ export default function EditorPanel({
         {markdownPreview && isMarkdown && (
           <MarkdownPreview content={markdownContent} />
         )}
-        {loadError && (
+        {!previewType && loadError && (
           <PanelCenteredState
             className="absolute inset-0 z-20 bg-surface-1 px-6"
             title={/ENOENT|no such file/i.test(loadError) ? 'File not found in this worktree' : 'Couldn’t open this file'}
@@ -926,10 +930,10 @@ export default function EditorPanel({
               : loadError}</span>}
           />
         )}
-        {fileLoading && (
+        {!previewType && fileLoading && (
           <LoadingState label="Loading file…" className="absolute inset-0 z-20 bg-surface-1 text-sm" />
         )}
-        <div ref={containerRef} className={`w-full h-full ${(markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
+        <div ref={containerRef} className={`w-full h-full ${previewType || (markdownPreview && isMarkdown) || loadError ? 'hidden' : ''}`} />
 
       </div>
       {explorerRoot && (

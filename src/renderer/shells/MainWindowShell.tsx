@@ -135,6 +135,7 @@ export default function MainWindowShell({
   return (
     <div
       ref={shellRef}
+      data-panel-maximize-root
       className="main-window-shell-root flex flex-col h-full w-full min-h-0 min-w-0 relative"
       style={workspaceAccent ? ({ ['--workspace-accent' as string]: workspaceAccent } as React.CSSProperties) : undefined}
     >

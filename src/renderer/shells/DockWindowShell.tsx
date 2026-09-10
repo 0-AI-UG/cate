@@ -434,7 +434,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
           }
         `}</style>
         {/* Full content area — center zone only */}
-        <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
+        <div data-panel-maximize-root className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
           <DockZone
             position="center"
             renderPanel={renderPanel}

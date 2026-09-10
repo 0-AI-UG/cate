@@ -191,6 +191,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
 
   const marquee = useUIStore((s) => s.marquee)
   const showSettings = useUIStore((s) => s.showSettings)
+  const hasMaximizedNode = useCanvasStoreContext((s) => Object.values(s.nodes).some((node) => node.preMaximizeOrigin != null))
   // Idle cursor reflects the active tool (React owns idle; useCanvasInteraction
   // overrides to 'grabbing' during an active pan and hands control back on release).
   const handToolActive = useUIStore((s) => s.activeTool === 'hand')
@@ -368,8 +369,19 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
 
     let prevRect = el.getBoundingClientRect()
     let prevWindowWidth = window.innerWidth
+    let wasMaximized = Object.values(canvasApi.getState().nodes).some((node) => node.preMaximizeOrigin != null)
 
     const observer = new ResizeObserver((entries) => {
+      const maximized = Object.values(canvasApi.getState().nodes).some((node) => node.preMaximizeOrigin != null)
+      const leavingMaximize = wasMaximized && !maximized
+      wasMaximized = maximized
+      // Maximizing changes layout ancestry, not the saved canvas viewport.
+      // Ignore those measurements and do not pan when restoring the layout.
+      if (maximized) {
+        prevRect = el.getBoundingClientRect()
+        prevWindowWidth = window.innerWidth
+        return
+      }
       for (const entry of entries) {
         const size = {
           width: entry.contentRect.width,
@@ -392,7 +404,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
       // structural jumps: only compensate when the right edge moved by less than
       // a quarter of the pane width.
       const structuralJump = Math.abs(dRight) > rect.width * 0.25
-      if (!windowResized && !structuralJump && Math.abs(dLeft) < 0.5 && Math.abs(dRight) > 0.5) {
+      if (!leavingMaximize && !windowResized && !structuralJump && Math.abs(dLeft) < 0.5 && Math.abs(dRight) > 0.5) {
         const { viewportOffset } = canvasApi.getState()
         canvasApi.setState({ viewportOffset: { x: viewportOffset.x + dRight, y: viewportOffset.y } })
       }
@@ -712,7 +724,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
         <div
           ref={topOverlayRef}
           data-canvas-top-overlay={panelId ?? ''}
-          hidden={showSettings}
+          hidden={showSettings || hasMaximizedNode}
           style={{
             position: 'fixed',
             overflow: 'clip',

@@ -25,6 +25,7 @@ import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { placementForPanel } from '../lib/workspace/canvasAccess'
 import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewMenuButton, ReviewRunStatus, ReviewStats, ToolbarButton, type AgentChoice } from './ReviewControls'
 import { HunkView, type NoteDraft } from './ReviewDiff'
+import { POPOVER_SURFACE } from '../ui/Popover'
 
 interface BranchInfo {
   name: string
@@ -890,7 +891,7 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
           <div ref={moreMenuRef} className="relative">
             <ToolbarButton label="More review options" active={moreOpen} onClick={() => setMoreOpen((open) => !open)}><DotsThree size={16} /></ToolbarButton>
             {moreOpen && (
-              <div role="menu" className="absolute right-0 top-8 z-50 w-56 rounded-xl border border-subtle bg-surface-2 p-1 shadow-xl">
+              <div role="menu" className={`absolute right-0 top-8 z-50 w-56 ${POPOVER_SURFACE} p-1.5`}>
                 <ReviewDisplayOptions display={reviewState.display} update={updateDisplay} />
                 <ReviewMenuButton label="Load full files" active={reviewState.display.fullFile} onClick={() => { updateDisplay({ fullFile: !reviewState.display.fullFile }); setDiffs({}) }}><File size={14} /></ReviewMenuButton>
                 <ReviewMenuButton label="Image previews" active={reviewState.display.advancedPreview} onClick={() => updateDisplay({ advancedPreview: !reviewState.display.advancedPreview })}><ImageSquare size={14} /></ReviewMenuButton>

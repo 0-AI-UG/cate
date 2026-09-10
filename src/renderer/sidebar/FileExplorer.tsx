@@ -6,6 +6,7 @@ import { placementForPanel } from '../lib/workspace/canvasAccess'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import log from '../lib/logger'
+import { errorMessage } from '../lib/errorMessage'
 import { RotateCw as ArrowClockwise, FilePlus, FolderPlus, Search as MagnifyingGlass, X } from 'lucide-react'
 import type { FileTreeNode as FileTreeNodeType } from '../../shared/types'
 import { VirtualFileRows, type VirtualFileRowsHandle } from './VirtualFileRows'
@@ -70,6 +71,7 @@ const recentExplorerViews = new Map<string, ExplorerView>()
 export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceId, panelId, scopeControl, onOpenFiles, compact = false }) => {
   const [nodes, setNodes] = useState<FileTreeNodeType[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   // Expansion state is owned by the explorer (not each FileTreeNode) so this
   // component knows the tree's full visible structure — needed for keyboard
   // navigation (issue #268) and as the ordering source for shift-click ranges.
@@ -257,6 +259,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
   const viewRef = useRef<ExplorerView>({ nodes, children: childrenCache, expanded: expandedPaths, selected: selectedPaths })
   useEffect(() => {
     rootPathRef.current = rootPath
+    setLoadError(null)
     const cacheKey = `${selectedWorkspaceId}:${rootPath}`
     const cached = recentExplorerViews.get(cacheKey)
     childRequests.current.clear()
@@ -284,8 +287,16 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
           }
         }
       },
-      apply: (path, entries) => {
-        if (path === rootPath) { setNodes(entries ?? []); setIsLoading(false) }
+      apply: (path, entries, error) => {
+        if (path === rootPath) {
+          setIsLoading(false)
+          if (error !== undefined) {
+            setLoadError(errorMessage(error, 'Could not load files.'))
+            return
+          }
+          setLoadError(null)
+          setNodes(entries ?? [])
+        }
         else setChildrenCache((previous) => {
           const next = new Map(previous)
           if (entries) next.set(path, entries)
@@ -690,10 +701,25 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
         </div>
       )}
 
+      {loadError && (
+        <div role="alert" className="shrink-0 px-3 py-3 text-xs text-muted">
+          <p className="font-medium text-primary">Could not load files</p>
+          <p className="mt-1 break-words">{loadError}</p>
+          <button type="button" className="mt-2 rounded-md bg-surface-2 px-3 py-1.5 text-primary hover:bg-hover" onClick={async () => {
+            if (isLocalLocator(rootPath)) {
+              try {
+                const result = await window.electronAPI.runtimeRetryLocal()
+                if (!result.ok) { setLoadError(result.error ?? 'Could not reconnect to local files.'); return }
+              } catch (error) { setLoadError(errorMessage(error)); return }
+            }
+            loadTree(rootPath)
+          }}>Retry</button>
+        </div>
+      )}
       {/* Tree content */}
       {isLoading && nodes.length === 0 ? (
         <LoadingState label="Loading files…" size={14} className="flex-1 text-xs" />
-      ) : nodes.length === 0 && !rootCreating ? (
+      ) : nodes.length === 0 && loadError && !rootCreating ? null : nodes.length === 0 && !rootCreating ? (
         <div
           className="flex flex-col items-center justify-center flex-1 text-muted text-xs gap-2 p-4"
           onContextMenu={handleRootContextMenu}

@@ -53,4 +53,23 @@ describe('useVisibleNodeIds zoom settling', () => {
     act(() => { second = store.getState().addNode('second', 'editor', { x: 200, y: 100 }, { width: 100, height: 100 }) })
     expect(host.firstElementChild?.getAttribute('data-ids')).toBe(`${first},${second}`)
   })
+
+  it('keeps a maximized node mounted after losing focus in a collapsed canvas', () => {
+    const store = createCanvasStore()
+    store.getState().setContainerSize({ width: 800, height: 600 })
+    const id = store.getState().addNode('terminal', 'terminal', { x: 200, y: 200 }, { width: 640, height: 400 })
+    const Probe = () => <div data-ids={useVisibleNodeIds(store, new Set()).join(',')} />
+    act(() => root.render(<Probe />))
+    act(() => {
+      store.getState().toggleMaximize(id, { width: 800, height: 600 })
+      store.getState().setContainerSize({ width: 800, height: 1 })
+      store.getState().unfocus()
+    })
+    expect(host.firstElementChild?.getAttribute('data-ids')).toBe(id)
+    act(() => {
+      store.getState().toggleMaximize(id, { width: 800, height: 600 })
+      store.getState().unfocus()
+    })
+    expect(host.firstElementChild?.getAttribute('data-ids')).toBe('')
+  })
 })

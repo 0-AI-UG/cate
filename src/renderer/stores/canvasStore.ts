@@ -338,7 +338,7 @@ export function selectVisibleNodeIds(
 
   const result: string[] = []
   for (const n of sorted) {
-    if (n.id === focusedNodeId || n.isPinned || keepAlive.has(n.id)) {
+    if (n.preMaximizeOrigin != null || n.id === focusedNodeId || n.isPinned || keepAlive.has(n.id)) {
       result.push(n.id)
       continue
     }
