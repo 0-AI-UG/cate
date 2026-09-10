@@ -15,7 +15,7 @@ vi.mock('./BrowserPanel', () => ({
 }))
 
 import BackgroundBrowserHost from './BackgroundBrowserHost'
-import { BrowserPanelSurfaceSlot, PersistentBrowserHostContext } from './browserSurfaceRegistry'
+import { BrowserPanelSurfaceSlot, PersistentBrowserHostContext, syncBrowserSurfaces } from './browserSurfaceRegistry'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
 
@@ -200,6 +200,7 @@ describe('BackgroundBrowserHost', () => {
 
     act(() => {
       world.style.transform = 'scale(1.5) translate(20px, 10px)'
+      syncBrowserSurfaces()
     })
 
     await vi.waitFor(() => {

@@ -291,31 +291,41 @@ function schedule(): void {
   if (frame !== null || surfaces.size === 0) return
   frame = requestAnimationFrame(() => {
     frame = null
-    const started = PERF_ENABLED ? performance.now() : 0
-    if (rebuildTracking) watchSurfaces()
-    refreshAnimations()
-    // Background-workspace guests deliberately stay mounted so CLI/agent
-    // control keeps their exact webContents and page state. They have no live
-    // geometry slot, though, and are already parked by unregisterSlot. Exclude
-    // them from the per-frame layout pass without changing their lifecycle.
-    const activeIds = [...slots.entries()]
-      .filter(([id, slot]) => surfaces.has(id) && slot.isConnected)
-      .map(([id]) => id)
-    if (activeIds.length === 0) {
-      geometryAnimations.clear()
-      return
-    }
-    perfCount('browserGeometryFrame')
-    const geometry = frameGeometry()
-    const writes = activeIds.map((id) => measureSurface(id, geometry))
-    for (const write of writes) write()
-    // Animated transforms produce no further mutations or resize notifications.
-    for (const [element, animations] of geometryAnimations) {
-      if (!animations.some((animation) => animation.playState === 'running')) geometryAnimations.delete(element)
-    }
-    if (PERF_ENABLED) perfCount('browserGeometryMicros', Math.round((performance.now() - started) * 1000))
+    syncBrowserSurfaces()
     if (geometryAnimations.size) schedule()
   })
+}
+
+/**
+ * Align persistent webview surfaces immediately after an imperative canvas
+ * transform. Waiting for MutationObserver -> requestAnimationFrame puts the
+ * fixed guest host one paint behind the canvas node that owns its slot.
+ */
+export function syncBrowserSurfaces(): void {
+  if (surfaces.size === 0) return
+  const started = PERF_ENABLED ? performance.now() : 0
+  if (rebuildTracking) watchSurfaces()
+  refreshAnimations()
+  // Background-workspace guests deliberately stay mounted so CLI/agent
+  // control keeps their exact webContents and page state. They have no live
+  // geometry slot, though, and are already parked by unregisterSlot. Exclude
+  // them from the layout pass without changing their lifecycle.
+  const activeIds = [...slots.entries()]
+    .filter(([id, slot]) => surfaces.has(id) && slot.isConnected)
+    .map(([id]) => id)
+  if (activeIds.length === 0) {
+    geometryAnimations.clear()
+    return
+  }
+  perfCount('browserGeometryFrame')
+  const geometry = frameGeometry()
+  const writes = activeIds.map((id) => measureSurface(id, geometry))
+  for (const write of writes) write()
+  // Animated transforms produce no further mutations or resize notifications.
+  for (const [element, animations] of geometryAnimations) {
+    if (!animations.some((animation) => animation.playState === 'running')) geometryAnimations.delete(element)
+  }
+  if (PERF_ENABLED) perfCount('browserGeometryMicros', Math.round((performance.now() - started) * 1000))
 }
 
 function watchSurfaces(): void {
@@ -332,8 +342,17 @@ function watchSurfaces(): void {
   }
   const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
   const mutation = typeof MutationObserver === 'undefined' ? null : new MutationObserver((records) => {
-    if (records.some((record) => record.type === 'childList')) rebuildTracking = true
-    for (const record of records) animatedElements.add(record.target as HTMLElement)
+    // Canvas owns these transforms and synchronously aligns the fixed guests.
+    // Observing their style/class writes would repeat that work next frame.
+    // Child changes still rebuild the tracked node set.
+    const pending = records.filter((record) => record.type === 'childList' || !(
+      (record.target as HTMLElement).hasAttribute('data-canvas-world')
+      || (record.target as HTMLElement).hasAttribute('data-canvas-top-overlay-world')
+      || (record.target as HTMLElement).hasAttribute('data-canvas-grid')
+    ))
+    if (pending.length === 0) return
+    if (pending.some((record) => record.type === 'childList')) rebuildTracking = true
+    for (const record of pending) animatedElements.add(record.target as HTMLElement)
     schedule()
   })
   const ancestors = new Set<HTMLElement>()

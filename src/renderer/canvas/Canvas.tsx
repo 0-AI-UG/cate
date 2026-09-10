@@ -22,6 +22,7 @@ import { isWorktreePanelType, type WorktreePanelType } from '../../shared/panels
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
 import { CanvasTopOverlayContext } from './CanvasTopOverlayContext'
+import { syncBrowserSurfaces } from '../panels/browserSurfaceRegistry'
 
 // Module-level style injection — shared across all Canvas instances
 let canvasStyleInjected = false
@@ -230,6 +231,10 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
         el.style.transform = transform
         el.style.setProperty('--zoom', String(zoom))
       }
+      // Browser and T3 guests live in a fixed host outside the transformed
+      // world. Realign them in this task so they paint with their canvas nodes;
+      // MutationObserver + rAF would leave them one frame behind while panning.
+      syncBrowserSurfaces()
 
       // Promote the world to its own GPU layer for the duration of the gesture so
       // pan/zoom stays smooth, then de-promote once it settles. While promoted,
@@ -687,6 +692,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
       {/* World div: transformed to implement pan/zoom */}
       <div
         ref={worldRef}
+        data-canvas-world
         style={{
           position: 'absolute',
           top: 0,
@@ -721,6 +727,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
         >
           <div
             ref={setTopOverlayWorldRef}
+            data-canvas-top-overlay-world
             style={{
               position: 'absolute',
               top: 0,
