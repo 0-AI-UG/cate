@@ -1333,8 +1333,9 @@ export type NotificationAction =
 // -----------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------
-// File exclusions — folder/file names hidden in the file explorer by default.
-// Serves as the default for the user-editable AppSettings.fileExclusions list.
+// File exclusions — internal folder/file names hidden in the file explorer,
+// search, and watcher. These are deliberately not user-configurable: exposing
+// .git/node_modules can make ordinary workspace operations prohibitively noisy.
 // -----------------------------------------------------------------------------
 
 export const FILE_EXCLUSIONS: string[] = [
@@ -1365,9 +1366,6 @@ export interface AppSettings {
   warnBeforeQuit: boolean
   /** When discarding a worktree, also close its terminal and agent panels. */
   closeWorktreePanelsOnDelete: boolean
-  /** Workspace-root-relative paths to symlink into every new worktree (e.g.
-   *  node_modules) so they don't need rebuilding per worktree. Empty = off. */
-  worktreeSymlinkPaths: string[]
 
   // Appearance
   /** Active unified theme: 'system' (auto light/dark) or a theme id. */
@@ -1384,7 +1382,7 @@ export interface AppSettings {
   /** Global UI zoom for Cate's own chrome (panels, sidebars, editor, terminal),
    *  applied via webFrame.setZoomFactor in every window. 1.0 = 100%. Does not
    *  affect web pages shown in browser panels (those keep their own zoom).
-   *  Range 0.5–2.0. */
+   *  Range 0.8–1.5. */
   uiScale: number
   /** Disable Chromium's GPU rasterization (text glyphs included) while leaving
    *  WebGL and GPU compositing on. A workaround for intermittent glyph dropout —
@@ -1396,7 +1394,6 @@ export interface AppSettings {
   disableGpuRasterization: boolean
 
   // Canvas
-  showMinimap: boolean
   zoomSpeed: number
   /** When enabled, the node that occupies the most visible canvas area is
    *  automatically focused as the user pans/zooms. */
@@ -1517,10 +1514,6 @@ export interface AppSettings {
   browserSearchEngine: BrowserSearchEngine
   /** Proxy used by browser panels. Empty means a direct connection. */
   browserProxyUrl: string
-  /** Show the horizontal bookmarks bar (favorite chips) under the URL bar. */
-  browserShowBookmarksBar: boolean
-  /** Show the vertical tab sidebar (Arc/Edge-style) on the left of the panel. */
-  browserShowTabSidebar: boolean
   /** What a freshly-opened browser panel / new tab loads. */
   browserNewTabBehavior: BrowserNewTabBehavior
   /** Where a Cmd/Ctrl+clicked terminal link opens.
@@ -1536,26 +1529,9 @@ export interface AppSettings {
   /** Show installed agent skills in each expanded workspace overview. */
   showSkillsInWorkspaceOverview: boolean
 
-  // File Explorer
-  /** Folder/file names hidden in the file explorer, file search, and watcher. */
-  fileExclusions: string[]
-
   // Notifications (OS-level only)
   notificationsEnabled: boolean
   notifyOnlyWhenUnfocused: boolean
-
-  // Privacy
-  /** Highest TELEMETRY_NOTICE_VERSION the user has dismissed the telemetry
-   *  notice (WelcomeDialog) for. The notice shows whenever this is below the
-   *  current TELEMETRY_NOTICE_VERSION — on first install, and again for every
-   *  existing user when the constant is bumped. Informational only — telemetry
-   *  does not depend on it. */
-  telemetryNoticeAcknowledgedVersion: number
-
-  // Onboarding
-  /** Whether the user has finished (or skipped) the first-run guided tour.
-   *  Set false to replay it. */
-  onboardingCompleted: boolean
 
   // Updates
   /** Opt in to beta (pre-release / staged) builds. When on, the in-app
@@ -1588,7 +1564,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultShellPath: '',
   warnBeforeQuit: false,
   closeWorktreePanelsOnDelete: true,
-  worktreeSymlinkPaths: [],
 
   // Appearance
   activeThemeId: 'system',
@@ -1601,7 +1576,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   disableGpuRasterization: false,
 
   // Canvas
-  showMinimap: true,
   zoomSpeed: 1.0,
   autoFocusLargestVisibleNode: false,
   canvasGridStyle: 'lines',
@@ -1638,8 +1612,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   browserHomepage: '',
   browserSearchEngine: 'google',
   browserProxyUrl: '',
-  browserShowBookmarksBar: true,
-  browserShowTabSidebar: true,
   browserNewTabBehavior: 'startPage',
   terminalLinkOpenTarget: 'ask',
 
@@ -1648,18 +1620,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showFileExplorerOnLaunch: false,
   showSkillsInWorkspaceOverview: true,
 
-  // File Explorer
-  fileExclusions: [...FILE_EXCLUSIONS],
-
   // Notifications (OS-level only)
   notificationsEnabled: true,
   notifyOnlyWhenUnfocused: true,
-
-  // Privacy notice. Telemetry is always on in packaged builds.
-  telemetryNoticeAcknowledgedVersion: 0,
-
-  // Onboarding
-  onboardingCompleted: false,
 
   // Updates
   betaUpdatesEnabled: false,
@@ -1684,10 +1647,16 @@ export type CanvasCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-l
 export interface UIState {
   /** Corner the minimap toggle button (canvas toolbar) is docked in. */
   minimapButtonCorner: CanvasCorner
+  /** Highest privacy-notice version dismissed by the user. */
+  telemetryNoticeAcknowledgedVersion: number
+  /** Whether the first-run guided tour has been completed or skipped. */
+  onboardingCompleted: boolean
 }
 
 export const DEFAULT_UI_STATE: UIState = {
   minimapButtonCorner: 'bottom-right',
+  telemetryNoticeAcknowledgedVersion: 0,
+  onboardingCompleted: false,
 }
 
 // -----------------------------------------------------------------------------

@@ -18,7 +18,7 @@ export function SidebarSettings() {
           onChange={(v) => store.setSetting('showSkillsInWorkspaceOverview', v)}
         />
       </SettingRow>
-      <SettingRow label="Background opacity" description={`${Math.round(store.sidebarTintOpacity * 100)}%`}>
+      <SettingRow label="Sidebar background opacity" description={`${Math.round(store.sidebarTintOpacity * 100)}%`}>
         <Slider value={store.sidebarTintOpacity} onChange={(v) => store.setSetting('sidebarTintOpacity', v)} min={0.3} max={1.0} step={0.05} />
       </SettingRow>
     </div>

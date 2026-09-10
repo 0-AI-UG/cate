@@ -14,14 +14,14 @@ vi.mock('../lib/logger', () => ({
 
 import { OnboardingTour } from './OnboardingTour'
 import { ONBOARDING_STEPS } from './steps'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStateStore } from '../stores/uiStateStore'
 import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
 
 let host: HTMLDivElement
 let root: Root
 
 function setState(partial: Record<string, unknown>): void {
-  act(() => { useSettingsStore.setState(partial as never) })
+  act(() => { useUIStateStore.setState(partial as never) })
 }
 
 function clickButton(match: (b: HTMLButtonElement) => boolean): void {
@@ -34,15 +34,15 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
-  // The settings store's setSetting fires settingsSet over IPC, and the tour
+  // The UI-state store persists completion over IPC, and the tour
   // reports usage — stub both so the real store action doesn't throw in jsdom.
   ;(window as unknown as { electronAPI: Record<string, unknown> }).electronAPI = {
     ...(window as unknown as { electronAPI?: Record<string, unknown> }).electronAPI,
-    settingsSet: vi.fn(() => Promise.resolve()),
+    uiStateSet: vi.fn(() => Promise.resolve()),
     trackFeatureUsed: vi.fn(),
   }
   // Fresh, consented, not-yet-onboarded state.
-  useSettingsStore.setState({ _loaded: true, telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION, onboardingCompleted: false } as never)
+  useUIStateStore.setState({ _loaded: true, telemetryNoticeAcknowledgedVersion: TELEMETRY_NOTICE_VERSION, onboardingCompleted: false } as never)
 })
 
 afterEach(() => {
@@ -76,14 +76,14 @@ describe('OnboardingTour', () => {
       clickButton((b) => b.textContent?.includes('Next') ?? false)
     }
     clickButton((b) => b.textContent?.includes('Get started') ?? false)
-    expect(useSettingsStore.getState().onboardingCompleted).toBe(true)
+    expect(useUIStateStore.getState().onboardingCompleted).toBe(true)
     expect(host.textContent).toBe('')
   })
 
   it('skipping (the X) persists completion and dismisses', () => {
     act(() => root.render(<OnboardingTour />))
     clickButton((b) => b.getAttribute('aria-label') === 'Skip tour')
-    expect(useSettingsStore.getState().onboardingCompleted).toBe(true)
+    expect(useUIStateStore.getState().onboardingCompleted).toBe(true)
     expect(host.textContent).toBe('')
   })
 

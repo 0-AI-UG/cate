@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { Star, Github as GithubLogo, Mail as Envelope, SquareArrowOutUpRight as ArrowSquareOut } from 'lucide-react'
 import heroImg from '../assets/dialog-hero.jpg'
 import { useEscapeKey } from '../lib/hooks/useEscapeKey'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useUIStateStore } from '../stores/uiStateStore'
 import { TELEMETRY_NOTICE_VERSION } from '../../shared/types'
 import { findChangelogRelease, parseChangelog } from '../../shared/changelog'
 import changelogMarkdown from '../../../CHANGELOG.md?raw'
@@ -33,8 +33,8 @@ export function PostUpdateFeedbackDialog() {
   // fully dormant — not rendered — so on an update it never
   // mounts behind the opaque notice. The pending prompt is held in main and
   // re-pulled, so it surfaces here the moment the notice is dismissed.
-  const loaded = useSettingsStore((s) => s._loaded)
-  const noticeAcknowledgedVersion = useSettingsStore((s) => s.telemetryNoticeAcknowledgedVersion)
+  const loaded = useUIStateStore((s) => s._loaded)
+  const noticeAcknowledgedVersion = useUIStateStore((s) => s.telemetryNoticeAcknowledgedVersion)
   const noticeReady = loaded && noticeAcknowledgedVersion >= TELEMETRY_NOTICE_VERSION
 
   const isFirstInstall = payload?.fromVersion === ''

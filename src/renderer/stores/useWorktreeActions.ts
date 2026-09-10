@@ -9,7 +9,6 @@
 
 import { useCallback } from 'react'
 import { useAppStore, pickWorktreeColor } from './appStore'
-import { useSettingsStore } from './settingsStore'
 import { gitStatusStore } from './gitStatusStore'
 import { newWorktreeId } from '../lib/worktreeSync'
 import type { WorktreeMeta } from '../../shared/types'
@@ -34,13 +33,6 @@ function toBranchName(input: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-/** Workspace-root-relative paths to symlink into a new worktree, or undefined
- *  when none are configured. Global setting, applied to every workspace. */
-function configuredSymlinkPaths(): string[] | undefined {
-  const paths = useSettingsStore.getState().worktreeSymlinkPaths.map((p) => p.trim()).filter(Boolean)
-  return paths.length ? paths : undefined
-}
-
 export interface WorktreeActions {
   /** Create a brand-new branch + worktree. Throws on failure (callers surface).
    *  Returns the registered metadata (null when there is no workspace/root yet) so
@@ -51,7 +43,7 @@ export interface WorktreeActions {
 }
 
 /** Imperative core shared by the React hook and agent orchestration
- * driver. Keeping one path preserves branch sanitization, symlink settings,
+ * driver. Keeping one path preserves branch sanitization,
  * metadata colors, additional-root registration, and git refresh behavior. */
 export async function createWorktreeForWorkspace(
   rootPath: string,
@@ -65,7 +57,6 @@ export async function createWorktreeForWorkspace(
   await window.electronAPI.gitWorktreeAdd(rootPath, branch, targetPath, {
     createBranch: true,
     baseRef,
-    symlinkPaths: configuredSymlinkPaths(),
   }, workspaceId)
 
   const store = useAppStore.getState()
@@ -134,9 +125,7 @@ export async function checkoutPrForWorkspace(rootPath: string, workspaceId: stri
   // Slug includes the PR number so contributors' identically-named branches
   // never collide on disk.
   const targetPath = worktreePathFor(rootPath, `pr-${pr.number}-${pr.headRefName}`)
-  const res = await window.electronAPI.gitWorktreeAddFromPr(rootPath, pr.number, targetPath, {
-    symlinkPaths: configuredSymlinkPaths(),
-  }, workspaceId)
+  const res = await window.electronAPI.gitWorktreeAddFromPr(rootPath, pr.number, targetPath, undefined, workspaceId)
 
   const ws = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
   const meta: WorktreeMeta = {

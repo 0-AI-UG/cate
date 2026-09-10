@@ -16,17 +16,19 @@ const SettingLabelContext = createContext<string | undefined>(undefined)
 interface SettingRowProps {
   label: string
   description?: string
+  /** Additional searchable values, such as select option labels. */
+  keywords?: string
   /** Optional node rendered below the description, still above the row border. */
   hint?: ReactNode
   children: ReactNode
 }
 
-export function SettingRow({ label, description, hint, children }: SettingRowProps) {
+export function SettingRow({ label, description, keywords, hint, children }: SettingRowProps) {
   const { query, sectionMatched } = useSettingsSearch()
   const labelId = useId()
   // Hide when there's an active query the section title didn't match and
   // neither the label nor description contains it.
-  if (query !== '' && !sectionMatched && !matchesQuery(label, query) && !matchesQuery(description, query)) {
+  if (query !== '' && !sectionMatched && !matchesQuery(label, query) && !matchesQuery(description, query) && !matchesQuery(keywords, query)) {
     return null
   }
   return (
