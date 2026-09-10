@@ -1,17 +1,21 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
-import { builtinModules } from 'node:module'
 
 // Two-environment setup:
 //   - .test.ts  → node env, used by pure-function tests in src/main + src/renderer/drag
 //   - .test.tsx → jsdom env, used by the drag integration harness (renders a real
 //                 React tree and simulates real mouse events through useDragOp).
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), {
+    // Vitest 5 misses node:sqlite in Node 22's builtinModules list.
+    name: 'externalize-node-sqlite',
+    enforce: 'pre',
+    resolveId(id) {
+      if (id === 'node:sqlite') return { id, external: true }
+    },
+  }],
   resolve: {
-    // Node 22 omits node:sqlite from builtinModules; jsdom tests still run in Node.
-    builtins: [...builtinModules, /^node:/],
     alias: {
       'monaco-editor': path.resolve(__dirname, 'node_modules/monaco-editor/esm/vs/editor/editor.api.js'),
       '@shared': path.resolve(__dirname, 'src/shared'),
