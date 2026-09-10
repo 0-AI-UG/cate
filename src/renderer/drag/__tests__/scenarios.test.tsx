@@ -5,8 +5,8 @@
 //
 // Numbered scenarios match Phase 1 of the plan. Dock-related scenarios (6, 7,
 // 10) require dock-stack support in the harness and are skipped pending a
-// follow-up harness extension. preMaximizeSize / proportional grab / cross-
-// store invariant are the high-priority regressions targeted here.
+// follow-up harness extension. Cross-store invariants are the high-priority
+// regressions targeted here.
 // =============================================================================
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -165,57 +165,6 @@ describe('drag integration — canvas-node scenarios', () => {
     scene.mouse.up()
     expect(scene.drag().isDragging).toBe(false)
     expect(store.getState().nodes['n1'].origin).toEqual(initialOrigin)
-  })
-
-  // ---------------------------------------------------------------------------
-  // 4. preMaximizeSize ghost sizing — drag a maximized node; ghost size =
-  //    preMaximizeSize, not the current (maximized) size. Lost in 0.4.4.
-  // ---------------------------------------------------------------------------
-  it('4: ghost size for a maximized node equals preMaximizeSize', () => {
-    scene = renderDragScene({
-      canvases: [{ panelId: 'c1', rect: { x: 0, y: 0, w: 1000, h: 800 } }],
-      nodes: [{
-        canvasPanelId: 'c1',
-        nodeId: 'n1',
-        origin: { x: 0, y: 0 },
-        size: { width: 1000, height: 800 }, // maximized
-        preMaximizeOrigin: { x: 200, y: 150 },
-        preMaximizeSize: { width: 300, height: 200 },
-      }],
-    })
-    scene.mouse.downOnNode('n1', { offset: { x: 500, y: 400 } })
-    scene.mouse.moveBy({ x: 50, y: 50 })
-    const drag = scene.drag()
-    expect(drag.isDragging).toBe(true)
-    expect(drag.ghostSize?.width).toBe(300)
-    expect(drag.ghostSize?.height).toBe(200)
-    scene.mouse.up()
-  })
-
-  // ---------------------------------------------------------------------------
-  // 5. Proportional grab on maximized node — cursor lands at same relative
-  //    fraction inside the smaller ghost.
-  // ---------------------------------------------------------------------------
-  it('5: grab on a maximized node is projected proportionally into the pre-maximize rect', () => {
-    scene = renderDragScene({
-      canvases: [{ panelId: 'c1', rect: { x: 0, y: 0, w: 1000, h: 800 } }],
-      nodes: [{
-        canvasPanelId: 'c1',
-        nodeId: 'n1',
-        origin: { x: 0, y: 0 },
-        size: { width: 1000, height: 800 },
-        preMaximizeOrigin: { x: 0, y: 0 },
-        preMaximizeSize: { width: 300, height: 200 },
-      }],
-    })
-    // Grab at (750, 600): fraction (0.75, 0.75) of the maximized footprint.
-    scene.mouse.downOnNode('n1', { offset: { x: 750, y: 600 } })
-    scene.mouse.moveBy({ x: 10, y: 10 })
-    const drag = scene.drag()
-    expect(drag.isDragging).toBe(true)
-    // Expected grab = 0.75 × ghostSize.
-    expect(drag.grab?.x).toBeCloseTo(0.75 * 300, 0)
-    expect(drag.grab?.y).toBeCloseTo(0.75 * 200, 0)
   })
 
   // ---------------------------------------------------------------------------

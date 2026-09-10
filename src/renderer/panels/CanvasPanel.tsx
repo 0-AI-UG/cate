@@ -19,6 +19,7 @@ import type { StoreApi } from 'zustand'
 import { useKeepMountedPanelIds } from './keepMountedPanels'
 import { setActivePanel } from '../lib/activePanel'
 import { createDockStore, type DockStore } from '../stores/dockStore'
+import { useOptionalDockStoreApi } from '../stores/DockStoreContext'
 import {
   registerNodeDockStore,
   unregisterNodeDockStore,
@@ -78,6 +79,7 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, workspaceId, rend
   const firstPanelId = node ? activeDockPanelId(node.dockLayout) : undefined
   const title = useAppStore((s) => firstPanelId ? s.workspaces.find((w) => w.id === workspaceId)?.panels[firstPanelId]?.title : undefined)
   const canvasStoreApi = useCanvasStoreApi()
+  const outerDockStoreApi = useOptionalDockStoreApi()
 
   // ------------------------------------------------------------------
   // Create (or reuse) the per-node DockStore, keyed by canvasPanelId:nodeId
@@ -180,8 +182,10 @@ const CanvasNodeWrapper = React.memo(({ nodeId, canvasPanelId, workspaceId, rend
     <NodeErrorBoundary nodeId={node.id}>
       <CanvasNode
         nodeId={node.id}
+        canvasPanelId={canvasPanelId}
         isFocused={isFocused}
         dockStoreApi={dockStoreApi}
+        outerDockStoreApi={outerDockStoreApi ?? undefined}
         renderPanel={renderPanel}
         title={title}
       />

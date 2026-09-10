@@ -720,6 +720,7 @@ export interface ElectronAPI {
   getRecentScreenshot(): Promise<RecentScreenshot[]>
   onRecentScreenshotChanged(callback: (screenshot: RecentScreenshot[]) => void): () => void
   dragRecentScreenshot(id: string): Promise<void>
+  readRecentScreenshot(id: string): Promise<string>
   saveRecentScreenshot(id: string, dataUrl: string): Promise<RecentScreenshot>
   /** Initiate a native OS file drag from the renderer. */
   nativeFileDrag(filePath: string): Promise<void>

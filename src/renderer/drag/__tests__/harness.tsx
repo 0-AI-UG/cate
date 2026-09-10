@@ -48,8 +48,6 @@ export interface NodeSpec {
   panelType?: PanelType
   origin: Point
   size: Size
-  preMaximizeOrigin?: Point
-  preMaximizeSize?: Size
 }
 
 export interface SceneSpec {
@@ -182,9 +180,6 @@ function TestNode({ spec, canvasStore }: { spec: NodeSpec; canvasStore: StoreApi
         id: finalId,
         origin: spec.origin,
         size: spec.size,
-        ...(spec.preMaximizeOrigin && spec.preMaximizeSize
-          ? { preMaximizeOrigin: spec.preMaximizeOrigin, preMaximizeSize: spec.preMaximizeSize }
-          : {}),
       }
       return { ...s, nodes: next }
     })

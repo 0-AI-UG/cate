@@ -191,6 +191,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const minimapWidth = minimapOpen ? 220 : 44
   const bottomLeftInset = mmBottom && !mmRight ? 16 + minimapWidth + 8 : 16
   const bottomRightInset = mmBottom && mmRight ? 16 + minimapWidth + 8 : 16
+  const compactToolbarRight = mmBottom && mmRight ? 16 + minimapWidth + 8 : 16
   const centeredLeft = (areaWidth - toolbarWidth) / 2
   const centeredRight = centeredLeft + toolbarWidth
   const isHorizontal = areaWidth === 0 || toolbarWidth === 0 || (
@@ -358,11 +359,11 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       </div>
     ) : (
       /* Narrow canvas: one bottom-right button expands the toolbar upward. If
-         the minimap occupies that corner, keep the button directly beside it. */
+         the minimap occupies that corner, keep the actions directly left of it. */
       <div
         ref={wrapperRef}
         className="absolute bottom-4 z-50 pointer-events-none"
-        style={{ right: '1rem' }}
+        style={{ right: compactToolbarRight }}
       >
         <div
           data-onboarding="toolbar"
@@ -417,7 +418,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
       className="absolute z-50 flex gap-2 pointer-events-auto"
       style={{
         ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),
-        ...(mmRight ? { right: !isHorizontal && mmBottom ? 'calc(1rem + 52px)' : '1rem' } : { left: '1rem' }),
+        ...(mmRight ? { right: '1rem' } : { left: '1rem' }),
         flexDirection: mmRight ? 'row' : 'row-reverse',
         alignItems: mmBottom ? 'flex-end' : 'flex-start',
       }}

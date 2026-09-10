@@ -6,7 +6,6 @@
 // =============================================================================
 
 import React, { useMemo } from 'react'
-import { isMaximized } from '../../shared/types'
 import type { CanvasNodeState, NodeActivityState } from '../../shared/types'
 import { NODE_CORNER_RADIUS as CORNER_RADIUS } from './nodeAppearance'
 
@@ -83,7 +82,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       'border-color 150ms ease, box-shadow 200ms ease, outline-color 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out, filter 200ms ease'
 
 
-    const baseOpacity = isEntering ? 0 : isExiting ? 0 : isWholeNodeDragSource ? 0 : 1
+    const baseOpacity = isEntering ? 0 : isExiting ? 0 : 1
     // Focus lens: nodes outside the focused worktree recede.
     const opacity = worktreeDim ? baseOpacity * 0.5 : baseOpacity
 
@@ -113,24 +112,20 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       filter: worktreeDim ? 'saturate(0.4)' : undefined,
       transform: isEntering ? 'scale(0.85)' : isExiting ? 'scale(0.9)' : 'scale(1)',
       opacity,
+      // Electron webviews are separate guest surfaces and can remain painted
+      // through an opacity:0 ancestor. visibility reliably suppresses the guest
+      // whenever this node must fall back to the generic drag ghost.
+      visibility: isWholeNodeDragSource ? 'hidden' : undefined,
       pointerEvents: isExiting || isWholeNodeDragSource ? 'none' : undefined,
       userSelect: 'none',
-      ...(isMaximized(node) ? {
-        position: 'absolute', left: 0, top: 0, width: '100%', height: '100%',
-        zIndex: 50, borderRadius: 0, border: 'none', boxShadow: 'none',
-        transform: 'none', transition: 'none', filter: 'none',
-        opacity: isExiting || isWholeNodeDragSource ? 0 : 1,
-        ['--node-inner-radius' as any]: '0px',
-      } as React.CSSProperties : {}),
     }
   }, [node, isFocused, isSelected, activityState, isHovered, chromeTint, isWholeNodeDragSource, worktreeDim])
 
   const glowStyle = useMemo<React.CSSProperties | null>(() => {
-    if (!node || isMaximized(node)) return null
+    if (!node) return null
     if (!(isFocused || isSelected || worktreeHighlight)) return null
     // Hide the focus glow while the node is the drag source — the source node
-    // itself is hidden (containerStyle.opacity = 0 above) and the glow would
-    // otherwise float at the node's original origin while the ghost moves.
+    // itself is hidden and the glow would otherwise overlap the ghost.
     if (isWholeNodeDragSource) return null
     const isEntering = node.animationState === 'entering'
     const isExiting = node.animationState === 'exiting'

@@ -178,6 +178,108 @@ describe('CanvasNode — file drags into an unfocused webview', () => {
   })
 })
 
+it('promotes one tab from a canvas node and restores the full mini-dock while unchanged', () => {
+  const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-present')
+  useAppStore.getState().addPanel(wsId, { id: 'canvas', type: 'canvas', title: 'Canvas', isDirty: false })
+  useAppStore.getState().addPanel(wsId, { id: 'editor', type: 'editor', title: 'Editor', isDirty: false })
+  useAppStore.getState().addPanel(wsId, { id: 'sibling', type: 'browser', title: 'Browser', isDirty: false })
+  const canvas = freshCanvasStore()
+  addNode(canvas, 'node', 'editor', { x: 120, y: 230 }, { width: 400, height: 300 })
+  const nodeDock = tabsDockStore('editor')
+  nodeDock.getState().dockPanel('sibling', 'center', { type: 'tab', stackId: 'stack-editor' })
+  nodeDock.getState().setActiveTab('stack-editor', 0)
+  canvas.getState().setNodeDockLayout('node', nodeDock.getState().zones.center.layout)
+  const unsubscribe = nodeDock.subscribe((state, previous) => {
+    const layout = state.zones.center.layout
+    if (layout !== previous.zones.center.layout && layout) canvas.getState().setNodeDockLayout('node', layout)
+  })
+  const outerDock = createDockStore()
+  outerDock.getState().dockPanel('canvas', 'center')
+  const canvasLocation = outerDock.getState().getPanelLocation('canvas')!
+  if (canvasLocation.type !== 'dock') throw new Error('Expected dock location')
+
+  act(() => root.render(
+    <CanvasStoreProvider store={canvas}>
+      <CanvasNode
+        nodeId="node"
+        canvasPanelId="canvas"
+        isFocused
+        dockStoreApi={nodeDock}
+        outerDockStoreApi={outerDock}
+        renderPanel={() => <div />}
+      />
+    </CanvasStoreProvider>,
+  ))
+
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Move panel into dock"]')!.click())
+  expect(canvas.getState().nodes.node.dockLayout).toMatchObject({ panelIds: ['sibling'] })
+  expect(outerDock.getState().zones.center.layout).toMatchObject({
+    type: 'tabs', panelIds: ['canvas', 'editor'], activeIndex: 1,
+  })
+  expect(outerDock.getState().canRestorePresentation(canvasLocation.stackId)).toBe(true)
+
+  act(() => { outerDock.getState().restorePresentation(canvasLocation.stackId) })
+  expect(outerDock.getState().zones.center.layout).toMatchObject({ type: 'tabs', panelIds: ['canvas'] })
+  expect(canvas.getState().nodes.node).toMatchObject({
+    origin: { x: 120, y: 230 }, size: { width: 400, height: 300 },
+    dockLayout: { panelIds: ['editor', 'sibling'], activeIndex: 0 },
+  })
+
+  // A later source edit consumes the next reverse transaction permanently.
+  // This covers the multi-panel case where the original canvas node survives
+  // promotion and can itself be tabbed/split while the promoted panel is open.
+  act(() => nodeDock.getState().dockPanel('editor', 'center', {
+    type: 'tab', stackId: 'stack-editor', index: 0,
+  }))
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Move panel into dock"]')!.click())
+  expect(outerDock.getState().presentation).not.toBeNull()
+  act(() => nodeDock.getState().dockPanel('changed-source', 'center', {
+    type: 'tab', stackId: 'stack-editor',
+  }))
+  expect(outerDock.getState().presentation).toBeNull()
+  unsubscribe()
+})
+
+it('removes and restores a singleton canvas node when its panel is promoted', () => {
+  const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-present-single')
+  useAppStore.getState().addPanel(wsId, { id: 'canvas', type: 'canvas', title: 'Canvas', isDirty: false })
+  useAppStore.getState().addPanel(wsId, { id: 'editor', type: 'editor', title: 'Editor', isDirty: false })
+  const canvas = freshCanvasStore()
+  addNode(canvas, 'node', 'editor', { x: 120, y: 230 }, { width: 400, height: 300 })
+  const nodeDock = tabsDockStore('editor')
+  const outerDock = createDockStore()
+  outerDock.getState().dockPanel('canvas', 'center')
+  const canvasLocation = outerDock.getState().getPanelLocation('canvas')!
+  if (canvasLocation.type !== 'dock') throw new Error('Expected dock location')
+
+  act(() => root.render(
+    <CanvasStoreProvider store={canvas}>
+      <CanvasNode
+        nodeId="node"
+        canvasPanelId="canvas"
+        isFocused
+        dockStoreApi={nodeDock}
+        outerDockStoreApi={outerDock}
+        renderPanel={() => <div />}
+      />
+    </CanvasStoreProvider>,
+  ))
+
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Move panel into dock"]')!.click())
+  expect(canvas.getState().nodes.node).toBeUndefined()
+  expect(outerDock.getState().zones.center.layout).toMatchObject({
+    type: 'tabs', panelIds: ['canvas', 'editor'], activeIndex: 1,
+  })
+
+  act(() => { outerDock.getState().restorePresentation(canvasLocation.stackId) })
+  expect(outerDock.getState().zones.center.layout).toMatchObject({ panelIds: ['canvas'] })
+  expect(canvas.getState().nodes.node).toMatchObject({
+    origin: { x: 120, y: 230 },
+    size: { width: 400, height: 300 },
+    dockLayout: { panelIds: ['editor'] },
+  })
+})
+
 describe('CanvasNode — group drag from the title bar', () => {
   it('grabbing a multi-selected node by its tab bar arms a GROUP drag carrying the whole selection', () => {
     const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-group-drag')
@@ -334,41 +436,4 @@ describe('CanvasNode — group drag from the title bar', () => {
     // B never moved.
     expect(store.getState().nodes['B'].origin).toEqual({ x: 400, y: 0 })
   })
-})
-
-it('uses split-sized diagonal maximize controls and restores the live canvas panel', () => {
-  const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-maximize')
-  useAppStore.getState().addPanel(wsId, { id: 'panel-A', type: 'editor', title: 'Editor', isDirty: false })
-  const store = freshCanvasStore()
-  addNode(store, 'A', 'panel-A', { x: 120, y: 230 }, { width: 400, height: 300 })
-  const dock = tabsDockStore('panel-A')
-  act(() => root.render(
-    <CanvasStoreProvider store={store}>
-      <CanvasNode nodeId="A" isFocused dockStoreApi={dock} renderPanel={() => <input defaultValue="keep" />} />
-    </CanvasStoreProvider>,
-  ))
-  const node = container.querySelector<HTMLElement>('[data-node-id="A"]')!
-  const input = node.querySelector('input')
-  expect(node.querySelector('.dock-tab-bar')?.classList.contains('min-h-[26px]')).toBe(true)
-  const button = container.querySelector<HTMLButtonElement>('[aria-label="Maximize"]')!
-  expect(button.classList.contains('w-[22px]')).toBe(true)
-  expect(button.querySelector('.lucide-maximize2')).not.toBeNull()
-  expect(button.querySelector('svg')?.getAttribute('width')).toBe('12')
-  act(() => button.click())
-  expect(node.style.position).toBe('absolute')
-  expect(node.style.width).toBe('100%')
-  expect(node.style.height).toBe('100%')
-  expect(container.querySelector('[data-resize-frame-for]')).toBeNull()
-  const restore = container.querySelector<HTMLButtonElement>('[aria-label="Restore"]')!
-  expect(restore.querySelector('.lucide-minimize2')).not.toBeNull()
-  expect(restore.classList.contains('w-6')).toBe(true)
-  expect(restore.querySelector('svg')?.getAttribute('width')).toBe('14')
-  expect(node.querySelector('.dock-tab-bar')?.classList.contains('app-header-bar')).toBe(true)
-  act(() => restore.click())
-  expect(node.style.position).toBe('absolute')
-  expect(node.style.left).toBe('120px')
-  expect(node.style.top).toBe('230px')
-  expect(node.style.width).toBe('400px')
-  expect(node.querySelector('input')).toBe(input)
-  expect(node.querySelector('.dock-tab-bar')?.classList.contains('min-h-[26px]')).toBe(true)
 })

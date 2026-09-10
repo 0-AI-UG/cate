@@ -1,24 +1,24 @@
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { RECENT_SCREENSHOT_GET, RECENT_SCREENSHOT_DRAG, RECENT_SCREENSHOT_CHANGED, RECENT_SCREENSHOT_SAVE } from '../../shared/ipc-channels'
+import { RECENT_SCREENSHOT_GET, RECENT_SCREENSHOT_DRAG, RECENT_SCREENSHOT_CHANGED, RECENT_SCREENSHOT_READ, RECENT_SCREENSHOT_SAVE } from '../../shared/ipc-channels'
 import { registerRecentScreenshotHandlers } from './recentScreenshot'
 
 const mocks = vi.hoisted(() => ({
   handle: vi.fn(), on: vi.fn(), watch: vi.fn(), close: vi.fn(), watcherOn: vi.fn(),
   run: vi.fn(), stat: vi.fn(), thumbnail: vi.fn(), broadcast: vi.fn(), grant: vi.fn(), drag: vi.fn(),
-  runtimeGrant: vi.fn(), mkdir: vi.fn(), writeFile: vi.fn(), decode: vi.fn(),
+  runtimeGrant: vi.fn(), writeFile: vi.fn(), decode: vi.fn(), fromPath: vi.fn(),
 }))
 vi.mock('node:child_process', () => ({ execFile: (...args: unknown[]) => mocks.run(...args) }))
 vi.mock('node:util', () => ({ promisify: () => (...args: unknown[]) => new Promise((resolve, reject) => {
   mocks.run(...args, (error: Error | null, stdout: string, stderr: string) => error ? reject(error) : resolve({ stdout, stderr }))
 }) }))
-vi.mock('node:fs/promises', () => ({ stat: mocks.stat, writeFile: mocks.writeFile, mkdir: mocks.mkdir }))
+vi.mock('node:fs/promises', () => ({ stat: mocks.stat, writeFile: mocks.writeFile }))
 vi.mock('chokidar', () => ({ watch: mocks.watch }))
 vi.mock('electron', () => ({
   app: { getPath: (key: string) => key === 'desktop' ? '/desktop' : '/home', on: mocks.on },
   ipcMain: { handle: mocks.handle },
   BrowserWindow: { getAllWindows: () => [{ id: 1 }, { id: 2 }] },
-  nativeImage: { createThumbnailFromPath: mocks.thumbnail, createFromDataURL: mocks.decode },
+  nativeImage: { createThumbnailFromPath: mocks.thumbnail, createFromDataURL: mocks.decode, createFromPath: mocks.fromPath },
 }))
 vi.mock('../windowRegistry', () => ({ broadcastToAll: mocks.broadcast, windowFromEvent: () => ({ id: 1 }) }))
 vi.mock('./pathValidation', () => ({ grantFileAccess: mocks.grant }))
@@ -39,6 +39,7 @@ beforeEach(async () => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
   mocks.grant.mockImplementation(async (_windowId, filePath) => filePath)
   mocks.decode.mockReturnValue('icon')
+  mocks.fromPath.mockReturnValue({ isEmpty: () => false, toDataURL: () => 'data:image/png;base64,converted' })
   mocks.runtimeGrant.mockResolvedValue(undefined)
   mocks.run.mockImplementation((_command, _args, _options, callback) => callback(null, '', ''))
   mocks.watch.mockReturnValue({ on: mocks.watcherOn, close: mocks.close })
@@ -139,7 +140,7 @@ describe('recent macOS screenshot', () => {
     mocks.decode.mockReturnValue({ isEmpty: () => false, toPNG: () => png })
     const saved = await invoke(RECENT_SCREENSHOT_SAVE, shot.id, 'data:image/png;base64,test')
     expect(saved.annotated).toBe(true)
-    expect(saved.filePath).toMatch(/^\/home\/screenshots\/shot-annotated-.*\.png$/)
+    expect(saved.filePath).toMatch(/^\/desktop\/shot-annotated-.*\.png$/)
     expect(mocks.writeFile).toHaveBeenCalledWith(saved.filePath, png, { flag: 'wx' })
     expect(mocks.runtimeGrant).toHaveBeenCalledWith(saved.filePath, 1)
     expect(mocks.runtimeGrant).toHaveBeenCalledWith(saved.filePath, 2)
@@ -147,9 +148,15 @@ describe('recent macOS screenshot', () => {
     expect(mocks.broadcast).toHaveBeenLastCalledWith(RECENT_SCREENSHOT_CHANGED, [saved, shot])
     await invoke(RECENT_SCREENSHOT_DRAG, saved.id)
     expect(mocks.drag).toHaveBeenCalledWith({ file: saved.filePath, icon: expect.anything() })
-    const evicted = await invoke(RECENT_SCREENSHOT_SAVE, 'evicted-id', 'data:image/png;base64,test')
-    expect(evicted.annotated).toBe(true)
-    expect(evicted.filePath).not.toBe(saved.filePath)
+    await expect(invoke(RECENT_SCREENSHOT_SAVE, 'evicted-id', 'data:image/png;base64,test')).rejects.toThrow('no longer available')
+  })
+
+  it('converts the original through nativeImage before sending it to the renderer', async () => {
+    await emit('add', '/desktop/shot.heic')
+    const [shot] = await invoke(RECENT_SCREENSHOT_GET)
+    await expect(invoke(RECENT_SCREENSHOT_READ, shot.id)).resolves.toBe('data:image/png;base64,converted')
+    expect(mocks.fromPath).toHaveBeenCalledWith('/desktop/shot.heic')
+    await expect(invoke(RECENT_SCREENSHOT_READ, 'missing')).rejects.toThrow('no longer available')
   })
 
   it('switches to a custom screenshot directory and closes watchers on quit', async () => {

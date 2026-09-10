@@ -47,8 +47,6 @@ export interface CanvasNodeState {
   size: Size
   zOrder: number
   creationIndex: number
-  preMaximizeOrigin?: Point
-  preMaximizeSize?: Size
   isPinned?: boolean
   /** Per-node dock layout tree — what's actually rendered inside the node.
    *  Each canvas node owns a private DockStore whose `center` zone holds this
@@ -56,11 +54,6 @@ export interface CanvasNodeState {
    *  the main dock zones. */
   dockLayout: DockLayoutNode
   animationState?: 'entering' | 'exiting' | 'idle'
-}
-
-/** Computed helper — mirrors the Swift `isMaximized` computed property. */
-export function isMaximized(node: CanvasNodeState): boolean {
-  return node.preMaximizeOrigin != null
 }
 
 // -----------------------------------------------------------------------------

@@ -237,41 +237,6 @@ describe('viewport math', () => {
     expect(store.getState().zoomLevel).toBe(1.5)
   })
 
-  it('toggleMaximize preserves canvas geometry and restores exactly on toggle back', () => {
-    const store = createCanvasStore()
-    const id = store.getState().addNode('p', 'editor', { x: 100, y: 100 }, { width: 300, height: 200 })
-    store.getState().setContainerSize({ width: 1200, height: 800 })
-    store.getState().setZoomAndOffset(1, { x: 0, y: 0 })
-
-    store.getState().toggleMaximize(id, { width: 1200, height: 800 })
-    const maxed = store.getState().nodes[id]
-    expect(maxed.origin).toEqual({ x: 100, y: 100 })
-    expect(maxed.size).toEqual({ width: 300, height: 200 })
-    expect(maxed.preMaximizeOrigin).toEqual({ x: 100, y: 100 })
-    expect(focusedNodeId(store.getState())).toBe(id)
-
-    store.getState().toggleMaximize(id, { width: 1200, height: 800 })
-    const restored = store.getState().nodes[id]
-    expect(restored.origin).toEqual({ x: 100, y: 100 })
-    expect(restored.size).toEqual({ width: 300, height: 200 })
-    expect(restored.preMaximizeOrigin).toBeUndefined()
-    expect(restored.preMaximizeSize).toBeUndefined()
-  })
-
-  it.each([0.5, 1.04, 2])('maximize preserves canvas geometry at zoom %s', (zoom) => {
-    const store = createCanvasStore()
-    const id = store.getState().addNode('p', 'editor', { x: 100, y: 100 }, { width: 300, height: 200 })
-    store.getState().setContainerSize({ width: 1200, height: 800 })
-    store.getState().setZoomAndOffset(zoom, { x: 137, y: -83 })
-
-    // The canvas can be smaller than the window because of sidebars/docks.
-    store.getState().toggleMaximize(id, { width: 1600, height: 1000 })
-    const node = store.getState().nodes[id]
-    expect(node.origin).toEqual({ x: 100, y: 100 })
-    expect(node.size).toEqual({ width: 300, height: 200 })
-    expect(store.getState().zoomLevel).toBe(zoom)
-    expect(store.getState().viewportOffset).toEqual({ x: 137, y: -83 })
-  })
 })
 
 describe('undo/redo across a bulk delete', () => {
@@ -491,8 +456,6 @@ describe('degenerate inputs and limits', () => {
     store.getState().togglePin('ghost')
     store.getState().moveToFront('ghost')
     store.getState().setNodeAnimationState('ghost', 'idle')
-    store.getState().toggleMaximize('ghost', { width: 100, height: 100 })
-
     expect(store.getState().nodes).toEqual(nodesBefore)
     expect(store.getState().history).toHaveLength(historyLen)
     expect(focusedNodeId(store.getState())).toBeNull()

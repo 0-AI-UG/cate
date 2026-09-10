@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { CaretLeft, CaretRight, DownloadSimple, Minus, PencilSimple, Plus, X } from '@phosphor-icons/react'
+import { CaretLeft, CaretRight, DownloadSimple, Minus, Plus, X } from '@phosphor-icons/react'
 import type { RecentScreenshot } from '../../shared/recentScreenshot'
 import { Tooltip } from '../ui/Tooltip'
 import { createPortal } from 'react-dom'
@@ -17,7 +17,6 @@ function ScreenshotViewer({ screenshots, initialIndex, onClose, onSaved }: {
   const [zoom, setZoom] = useState<number | null>(null)
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight })
   const [drawingToolbarHost, setDrawingToolbarHost] = useState<HTMLDivElement | null>(null)
-  const [editing, setEditing] = useState(false)
   const [direction, setDirection] = useState(1)
   const scrollRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -41,17 +40,20 @@ function ScreenshotViewer({ screenshots, initialIndex, onClose, onSaved }: {
   useEffect(() => {
     let active = true
     setErrorId(null)
-    void window.electronAPI.fsReadBinary(screenshot.filePath).then(async bytes => {
+    const readImage = typeof window.electronAPI.readRecentScreenshot === 'function'
+      ? window.electronAPI.readRecentScreenshot(screenshot.id)
+      : window.electronAPI.fsReadBinary(screenshot.filePath).then(bytes => {
+          const data = new Uint8Array(bytes)
+          let binary = ''
+          for (let offset = 0; offset < data.length; offset += 8192) {
+            binary += String.fromCharCode(...data.subarray(offset, offset + 8192))
+          }
+          const extension = screenshot.filePath.split('.').pop()?.toLowerCase()
+          const format = extension === 'jpg' ? 'jpeg' : extension === 'tif' ? 'tiff' : extension
+          return `data:image/${format || 'png'};base64,${btoa(binary)}`
+        })
+    void readImage.then(async url => {
       if (!active) return
-      // Cate allows data: images, but its content security policy blocks blob: URLs.
-      const data = new Uint8Array(bytes)
-      let binary = ''
-      for (let offset = 0; offset < data.length; offset += 8192) {
-        binary += String.fromCharCode(...data.subarray(offset, offset + 8192))
-      }
-      const extension = screenshot.filePath.split('.').pop()?.toLowerCase()
-      const format = extension === 'jpg' ? 'jpeg' : extension === 'tif' ? 'tiff' : extension
-      const url = `data:image/${format || 'png'};base64,${btoa(binary)}`
       const decoded = new Image()
       decoded.src = url
       await decoded.decode()
@@ -78,22 +80,26 @@ function ScreenshotViewer({ screenshots, initialIndex, onClose, onSaved }: {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!['ArrowLeft', 'ArrowRight', 'Escape', 'Tab'].includes(event.key)) return
+      const target = event.target
+      const editingText = target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      if (editingText && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) return
       event.preventDefault()
       event.stopImmediatePropagation()
-      if (event.key === 'Escape') { if (editing) setEditing(false); else onClose(); return }
+      if (event.key === 'Escape') { onClose(); return }
       if (event.key === 'Tab') {
         const buttons = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]') ?? [])
         const current = buttons.indexOf(document.activeElement as HTMLElement)
         buttons[(current + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]?.focus()
         return
       }
-      if (editing) return
       setDirection(event.key === 'ArrowLeft' ? -1 : 1)
       setIndex(current => (current + (event.key === 'ArrowLeft' ? -1 : 1) + screenshots.length) % screenshots.length)
     }
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
-  }, [screenshots.length, onClose, editing])
+  }, [screenshots.length, onClose])
 
   const displayHeight = Math.max(80, viewport.height - 160)
   const fit = image ? Math.min(1, Math.max(1, viewport.width - 96) / image.width, displayHeight / image.height) : 1
@@ -109,9 +115,6 @@ function ScreenshotViewer({ screenshots, initialIndex, onClose, onSaved }: {
         className="flex h-full flex-col outline-none">
         <div ref={setDrawingToolbarHost} className="absolute left-1/2 top-3 z-20 -translate-x-1/2" />
         <div className="absolute right-3 top-3 z-10 flex gap-2" onClick={event => event.stopPropagation()}>
-          <button type="button" aria-label="Edit screenshot" title="Draw on screenshot" className={`${controlClass} backdrop-blur-md`}
-            disabled={!image || image.id !== screenshot.id} aria-pressed={editing}
-            onClick={() => setEditing(value => !value)}><PencilSimple size={18} /></button>
           {image?.id === screenshot.id && <a href={image.url} download={screenshot.filePath.split('/').pop()}
             aria-label="Download screenshot" title="Download screenshot" className={`${controlClass} backdrop-blur-md`}><DownloadSimple size={18} /></a>}
           <button type="button" aria-label="Close screenshot preview" title="Close (Esc)"
@@ -129,9 +132,8 @@ function ScreenshotViewer({ screenshots, initialIndex, onClose, onSaved }: {
                 onClick={event => event.stopPropagation()} onError={() => setErrorId(screenshot.id)} draggable={false}
                 style={{ width: image.width * scale, height: image.height * scale }}
                 className="block max-w-none rounded-xl shadow-2xl" />
-              {editing && <ScreenshotDrawing id={image.id} url={image.url} width={image.width} height={image.height}
-                toolbarHost={drawingToolbarHost} onClose={() => setEditing(false)}
-                onSaved={saved => onSaved(saved)} />}
+              <ScreenshotDrawing key={image.id} id={image.id} url={image.url} width={image.width} height={image.height}
+                toolbarHost={drawingToolbarHost} onClose={onClose} onSaved={saved => onSaved(saved)} />
               </div>
             ) : <p role="status" className="p-4 text-center text-white/70">Loading screenshot...</p>}
           </div>
@@ -140,11 +142,11 @@ function ScreenshotViewer({ screenshots, initialIndex, onClose, onSaved }: {
         <div className="flex h-20 shrink-0 items-center justify-center gap-3">
           <div className="flex items-center gap-1 rounded-full bg-neutral-800/80 p-1 shadow-lg backdrop-blur-md" onClick={event => event.stopPropagation()}>
             <button type="button" aria-label="Previous screenshot" title="Previous screenshot (Left arrow)"
-              className={controlClass} disabled={screenshots.length < 2 || editing}
+              className={controlClass} disabled={screenshots.length < 2}
               onClick={() => { setDirection(-1); setIndex(current => (current - 1 + screenshots.length) % screenshots.length) }}><CaretLeft size={18} /></button>
             <span className="min-w-10 text-center text-xs text-white/80" aria-live="polite">{index + 1} / {screenshots.length}</span>
             <button type="button" aria-label="Next screenshot" title="Next screenshot (Right arrow)"
-              className={controlClass} disabled={screenshots.length < 2 || editing}
+              className={controlClass} disabled={screenshots.length < 2}
               onClick={() => { setDirection(1); setIndex(current => (current + 1) % screenshots.length) }}><CaretRight size={18} /></button>
           </div>
           <div className="flex items-center gap-1 rounded-full bg-neutral-800/80 p-1 shadow-lg backdrop-blur-md" onClick={event => event.stopPropagation()}>

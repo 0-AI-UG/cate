@@ -85,12 +85,11 @@ it('opens clicked screenshots, navigates with overlay controls and keys, and clo
     naturalHeight = nextImageHeight
     decode = async () => {}
   })
-  const originalBytes = new Uint8Array([137, 80, 78, 71]).buffer
   const shots = ['first', 'second', 'third'].map(id => ({ id, filePath: `/${id}.png`, dataUrl: `data:image/png;base64,${id}` }))
   window.electronAPI = {
     ...originalAPI,
     getRecentScreenshot: vi.fn().mockResolvedValue(shots),
-    fsReadBinary: vi.fn().mockResolvedValue(originalBytes),
+    readRecentScreenshot: vi.fn().mockResolvedValue('data:image/png;base64,iVBORw=='),
     shellOpenPath: vi.fn().mockResolvedValue({ ok: true }),
     onRecentScreenshotChanged: vi.fn(() => () => {}),
     dragRecentScreenshot: vi.fn().mockResolvedValue(undefined),
@@ -101,7 +100,7 @@ it('opens clicked screenshots, navigates with overlay controls and keys, and clo
   const dialog = () => document.querySelector('[role="dialog"]')!
   const key = (value: string) => act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true })))
   const expectOriginal = (index: number) => {
-    expect(window.electronAPI.fsReadBinary).toHaveBeenLastCalledWith(shots[index].filePath)
+    expect(window.electronAPI.readRecentScreenshot).toHaveBeenLastCalledWith(shots[index].id)
     expect(dialog().querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,iVBORw==')
   }
   try {
@@ -111,6 +110,7 @@ it('opens clicked screenshots, navigates with overlay controls and keys, and clo
     await act(async () => thumbnail.click())
     expectOriginal(1)
     expect(dialog().contains(document.activeElement)).toBe(true)
+    expect(dialog().querySelector('[aria-label="Annotate screenshot"]')).not.toBeNull()
     nextImageWidth = 4000
     nextImageHeight = 100
     await key('ArrowRight')
@@ -130,12 +130,19 @@ it('opens clicked screenshots, navigates with overlay controls and keys, and clo
     await act(async () => (dialog().querySelector('[aria-label="Previous screenshot"]') as HTMLButtonElement).click())
     expectOriginal(1)
     await key('Tab')
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Edit screenshot')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Draw with pen')
     expect(dialog().querySelector('img')?.className).toContain('rounded-xl')
-    await act(async () => (dialog().querySelector('[aria-label="Edit screenshot"]') as HTMLButtonElement).click())
     expect(window.electronAPI.shellOpenPath).not.toHaveBeenCalled()
-    expect(dialog().querySelector('[aria-label="Draw on screenshot"]')).not.toBeNull()
-    await act(async () => (dialog().querySelector('[aria-label="Edit screenshot"]') as HTMLButtonElement).click())
+    expect(dialog().querySelector('[aria-label="Annotate screenshot"]')).not.toBeNull()
+    await act(async () => (dialog().querySelector('[aria-label="Add comment"]') as HTMLButtonElement).click())
+    const annotation = dialog().querySelector('[aria-label="Annotate screenshot"]') as SVGSVGElement
+    annotation.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, toJSON: () => ({}) })
+    await act(async () => annotation.dispatchEvent(new MouseEvent('click', { clientX: 400, clientY: 300, bubbles: true })))
+    const comment = dialog().querySelector('[aria-label="Comment 1"]') as HTMLTextAreaElement
+    expect(comment).not.toBeNull()
+    const caretKey = new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })
+    await act(async () => comment.dispatchEvent(caretKey))
+    expect(caretKey.defaultPrevented).toBe(false)
     expect(dialog().querySelector('[aria-label="Download screenshot"]')?.getAttribute('href')).toBe('data:image/png;base64,iVBORw==')
     expect(dialog().querySelector('[aria-label="Download screenshot"]')?.getAttribute('download')).toBe('second.png')
     await act(async () => (dialog().querySelector('[aria-label="Zoom in"]') as HTMLButtonElement).click())

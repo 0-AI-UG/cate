@@ -11,8 +11,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRenderCount } from '../lib/perf/perfClient'
 import type { StoreApi } from 'zustand'
-import type { NodeActivityState, DockTabStack as DockTabStackNode, PanelType } from '../../shared/types'
-import { isMaximized as checkMaximized } from '../../shared/types'
+import type { NodeActivityState, DockLayoutNode, DockTabStack as DockTabStackNode, PanelType } from '../../shared/types'
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
@@ -23,7 +22,7 @@ import { useCanvasNodeDrag } from './useCanvasNodeDrag'
 import { isSelected as isNodeSelected, isGroupDragMember } from '../stores/canvas/selectionModel'
 import { useNodeResizeCursor } from './useNodeResizeCursor'
 import { NodeResizeOverlay } from './NodeResizeOverlay'
-import type { DockStore } from '../stores/dockStore'
+import { removePanelFromTree, type DockStore } from '../stores/dockStore'
 import { DockStoreProvider } from '../stores/DockStoreContext'
 import DockTabStack from '../docking/DockTabStack'
 import { activeLeafPanelId } from '../panels/nodeDockRegistry'
@@ -33,7 +32,7 @@ import { Tooltip } from '../ui/Tooltip'
 import DockLayoutRenderer from '../docking/DockLayoutRenderer'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
 import { collectPanelIds } from '../../shared/collectPanelIds'
-import { Maximize2, Minimize2, X, Lock, LockOpen } from 'lucide-react'
+import { X, Lock, LockOpen } from 'lucide-react'
 import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
 import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
@@ -58,10 +57,13 @@ function handToolPanShouldWin(e: React.MouseEvent): boolean {
 
 export interface CanvasNodeProps {
   nodeId: string
+  canvasPanelId?: string
   isFocused: boolean
   activityState?: NodeActivityState
   /** Per-node DockStore that owns the layout for this node. Created in CanvasPanel. */
   dockStoreApi: StoreApi<DockStore>
+  /** Dock store which owns the canvas panel containing this node. */
+  outerDockStoreApi?: StoreApi<DockStore>
   /** Render the panel content for a given panelId. */
   renderPanel: (panelId: string) => React.ReactNode
   /** Title used in tooltips / context when there's no dock panel. */
@@ -78,6 +80,21 @@ const GRAB_STRIP_HEIGHT = 22
 const CANVAS_EXCLUDED_TYPES = (Object.values(PANEL_DEFINITIONS)
   .filter((definition) => !definition.canLiveOnCanvas)
   .map((definition) => definition.type)) satisfies PanelType[]
+
+function sameDockTopology(a: DockLayoutNode | null, b: DockLayoutNode | null): boolean {
+  if (!a || !b) return a === b
+  if (a.type !== b.type || a.id !== b.id) return false
+  if (a.type === 'tabs' && b.type === 'tabs') {
+    return a.panelIds.length === b.panelIds.length
+      && a.panelIds.every((panelId, index) => panelId === b.panelIds[index])
+  }
+  if (a.type === 'split' && b.type === 'split') {
+    return a.direction === b.direction
+      && a.children.length === b.children.length
+      && a.children.every((child, index) => sameDockTopology(child, b.children[index]))
+  }
+  return false
+}
 
 // -----------------------------------------------------------------------------
 // Pulse animation keyframes (injected once)
@@ -97,35 +114,6 @@ const PULSE_KEYFRAMES = `
 [data-node-id][data-node-active="false"] .dock-tab-bar .group > span:last-child {
   opacity: 0 !important;
   pointer-events: none !important;
-}
-/* The shell excludes the workspace sidebars and spans every dock split.
-   Keep panel contents mounted while the shell becomes its containing block. */
-[data-panel-maximize-root] :has([data-canvas-maximized="true"]) {
-  position: static !important;
-  transform: none !important;
-  filter: none !important;
-  perspective: none !important;
-  contain: none !important;
-  will-change: auto !important;
-  overflow: visible !important;
-  z-index: auto !important;
-}
-[data-canvas-maximized="true"] { --zoom: 1; }
-[data-canvas-container]:has([data-canvas-maximized="true"]) {
-  position: absolute !important;
-  inset: 0;
-  width: 100% !important;
-  height: 100% !important;
-  overflow: clip !important;
-}
-[data-dock-stack-id]:has([data-canvas-maximized="true"]) > .dock-tab-bar {
-  display: none;
-}
-/* Hide sibling branches along the path to the maximized panel. This also
-   hides persistent browser slots in other splits without unmounting them. */
-[data-panel-maximize-root]:has([data-canvas-maximized="true"]) > :not(:has([data-canvas-maximized="true"])):not([data-canvas-maximized="true"]),
-[data-panel-maximize-root] :has([data-canvas-maximized="true"]) > :not(:has([data-canvas-maximized="true"])):not([data-canvas-maximized="true"]) {
-  visibility: hidden;
 }
 `
 
@@ -184,9 +172,11 @@ function GrabButton({
 
 const CanvasNode: React.FC<CanvasNodeProps> = ({
   nodeId,
+  canvasPanelId,
   isFocused,
   activityState,
   dockStoreApi,
+  outerDockStoreApi,
   renderPanel,
   title: _title = 'Panel',
 }) => {
@@ -194,6 +184,18 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   useRenderCount('CanvasNode')
 
   const canvasApi = useCanvasStoreApi()
+  const [outerPresentationActive, setOuterPresentationActive] = useState(
+    () => !!outerDockStoreApi?.getState().presentation,
+  )
+  useEffect(() => {
+    if (!outerDockStoreApi) return
+    setOuterPresentationActive(!!outerDockStoreApi.getState().presentation)
+    return outerDockStoreApi.subscribe((state, previous) => {
+      if (!!state.presentation !== !!previous.presentation) {
+        setOuterPresentationActive(!!state.presentation)
+      }
+    })
+  }, [outerDockStoreApi])
   const topOverlayTarget = useCanvasTopOverlayTarget()
   const nodeRef = useRef<HTMLDivElement>(null)
   const [isHovered, setIsHovered] = useState(false)
@@ -241,7 +243,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   )
   const focusNode = useCanvasStoreContext((s) => s.focusNode)
   const removeNode = useCanvasStoreContext((s) => s.removeNode)
-  const toggleMaximize = useCanvasStoreContext((s) => s.toggleMaximize)
   const isSelected = useCanvasStoreContext((s) => isNodeSelected(s, nodeId))
   const isDockDragging = useDragStore((s) => s.isDragging)
   const { hidden: isWholeNodeDragSource } = useDragSourceVisibility(nodeId)
@@ -277,8 +278,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     }
     handleDragStart(e)
   }, [handleDragStart, handleTabDetachStart, dockStoreApi, canvasApi, nodeId])
-
-  const maximized = node ? checkMaximized(node) : false
 
   const { handleResizeStart } = useNodeResize(nodeId, primaryPanelType, canvasApi)
   // Under the Hand tool, edge presses pan instead of resizing.
@@ -390,40 +389,74 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     removeNode(nodeId)
   }, [removeNode, nodeId, layout, confirmCloseForPanels, wsId])
 
-  const handleToggleMaximize = useCallback(() => {
-    const viewportSize = { width: window.innerWidth, height: window.innerHeight }
-    toggleMaximize(nodeId, viewportSize)
-  }, [toggleMaximize, nodeId])
+  const handlePresentPanel = useCallback((panelId: string) => {
+    if (!outerDockStoreApi || !canvasPanelId) return
+    const outer = outerDockStoreApi.getState()
+    if (outer.presentation) return
+    const canvasLocation = outer.getPanelLocation(canvasPanelId)
+    if (!canvasLocation || canvasLocation.type !== 'dock') return
+    const restoreLayout = outer.zones[canvasLocation.zone].layout
+    const sourceNode = canvasApi.getState().nodes[nodeId]
+    const sourceLayout = dockStoreApi.getState().zones.center.layout
+    if (!restoreLayout || !sourceNode || !sourceLayout || !collectPanelIds(sourceLayout).includes(panelId)) return
 
-  // Spring-load: when ANY dock drag is active AND this node is maximized
-  // (covering the canvas), un-maximize after a short delay so the user can
-  // see the canvas underneath and target a drop point.
-  const toggleMaximizeRef = useRef(handleToggleMaximize)
-  toggleMaximizeRef.current = handleToggleMaximize
-  const maximizedRef = useRef(maximized)
-  maximizedRef.current = maximized
-  useEffect(() => {
-    let timerId: number | null = null
-    const tryArm = () => {
-      const s = useDragStore.getState()
-      if (!s.isDragging || s.panel?.type === 'canvas') return
-      if (!maximizedRef.current) return
-      if (timerId !== null) return
-      timerId = window.setTimeout(() => {
-        timerId = null
-        if (maximizedRef.current) toggleMaximizeRef.current()
-      }, 200)
-    }
-    const cancel = () => {
-      if (timerId !== null) { window.clearTimeout(timerId); timerId = null }
-    }
-    tryArm()
-    const unsub = useDragStore.subscribe((s, prev) => {
-      if (s.isDragging && !prev.isDragging) tryArm()
-      else if (!s.isDragging && prev.isDragging) cancel()
+    const expectedSourceLayout = removePanelFromTree(sourceLayout, panelId)
+    dockStoreApi.getState().undockPanel(panelId)
+    if (!expectedSourceLayout) canvasApi.getState().finalizeRemoveNode(nodeId)
+
+    outerDockStoreApi.getState().dockPanel(panelId, canvasLocation.zone, {
+      type: 'tab',
+      stackId: canvasLocation.stackId,
     })
-    return () => { cancel(); unsub() }
-  }, [])
+    const expectedLayout = outerDockStoreApi.getState().zones[canvasLocation.zone].layout
+    if (!expectedLayout) return
+
+    let unsubscribeSource = () => {}
+    const presentation = {
+      stackId: canvasLocation.stackId,
+      panelId,
+      zone: canvasLocation.zone,
+      restoreLayout,
+      expectedLayout,
+      canRestoreExternal: () => {
+        const current = canvasApi.getState().nodes[nodeId]
+        return expectedSourceLayout
+          ? !!current && sameDockTopology(current.dockLayout, expectedSourceLayout)
+          : !current
+      },
+      restoreExternal: () => {
+        // The canvas panel is normally unmounted while its promoted sibling is
+        // active, so its per-node DockStore may no longer be registered. Restore
+        // the persisted canvas projection directly; remount will seed the live
+        // mini-dock from this exact layout.
+        canvasApi.setState((state) => ({
+          nodes: {
+            ...state.nodes,
+            [nodeId]: {
+              ...(state.nodes[nodeId] ?? sourceNode),
+              dockLayout: sourceLayout,
+              animationState: 'idle',
+            },
+          },
+          selection: [nodeId],
+          selectionActive: true,
+          focusEpoch: state.focusEpoch + 1,
+        }))
+        setActivePanel(canvasPanelId)
+      },
+      dispose: () => unsubscribeSource(),
+    }
+    outerDockStoreApi.getState().beginPresentation(presentation)
+    unsubscribeSource = canvasApi.subscribe(() => {
+      const current = outerDockStoreApi.getState().presentation
+      if (current !== presentation) {
+        unsubscribeSource()
+        return
+      }
+      if (!presentation.canRestoreExternal()) outerDockStoreApi.getState().discardPresentation()
+    })
+    setActivePanel(panelId)
+  }, [outerDockStoreApi, canvasPanelId, canvasApi, nodeId, dockStoreApi])
 
   const handleTogglePin = useCallback(() => {
     canvasApi.getState().togglePin(nodeId)
@@ -468,11 +501,11 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     return () => canvasApi.getState().setNodeActiveWorktree(nodeId, null)
   }, [nodeId, canvasApi])
 
-  const tabIconSize = maximized ? 14 : 12
+  const tabIconSize = 12
   const nodeControlButtons = (
     <>
       <GrabButton
-        compact={!maximized}
+        compact
         title={node?.isPinned ? 'Unlock' : 'Lock'}
         onClick={(e) => { e.stopPropagation(); handleTogglePin() }}
         color={node?.isPinned ? 'var(--focus-blue)' : undefined}
@@ -482,16 +515,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           : <LockOpen size={tabIconSize} />}
       </GrabButton>
       <GrabButton
-        compact={!maximized}
-        title={maximized ? 'Restore' : 'Maximize'}
-        onClick={(e) => { e.stopPropagation(); handleToggleMaximize() }}
-      >
-        {maximized
-          ? <Minimize2 size={tabIconSize} />
-          : <Maximize2 size={tabIconSize} />}
-      </GrabButton>
-      <GrabButton
-        compact={!maximized}
+        compact
         title="Close"
         onClick={(e) => { e.stopPropagation(); handleClose() }}
       >
@@ -516,7 +540,8 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           onPanelRemoved={handlePanelRemoved}
           excludePanelTypes={CANVAS_EXCLUDED_TYPES}
           localOnly
-          compact={!maximized}
+          compact
+          onPresentPanel={outerDockStoreApi && canvasPanelId && !outerPresentationActive ? handlePresentPanel : undefined}
           onTabBarMouseDown={isHeaderHost ? handleHeaderMouseDown : undefined}
           trailingControls={isHeaderHost ? nodeControlButtons : undefined}
           dropDisabled={isWholeNodeDragSource}
@@ -633,13 +658,14 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       const target = e.target as HTMLElement
       if (target.closest('[data-grab-button]')) return
       e.stopPropagation()
-      if (e.detail === 2) {
-        handleToggleMaximize()
+      if (e.detail === 2 && !outerPresentationActive) {
+        const panelId = activeLeafPanelId(dockStoreApi.getState().zones.center.layout)
+        if (panelId) handlePresentPanel(panelId)
         return
       }
       handleDragStart(e)
     },
-    [handleDragStart, handleToggleMaximize],
+    [handleDragStart, handlePresentPanel, dockStoreApi, outerPresentationActive],
   )
 
   const handleGrabStripContextMenu = useCallback(
@@ -648,7 +674,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       e.stopPropagation()
       if (!window.electronAPI) return
       const id = await window.electronAPI.showContextMenu([
-        { id: 'maximize', label: maximized ? 'Restore' : 'Maximize' },
+        ...(!outerPresentationActive ? [{ id: 'maximize', label: 'Move into Dock' }] : []),
         { id: 'pin', label: node?.isPinned ? 'Unlock' : 'Lock' },
         { type: 'separator' },
         { id: 'front', label: 'Move to Front' },
@@ -657,14 +683,18 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         { id: 'close', label: 'Close', accelerator: 'Cmd+W' },
       ])
       switch (id) {
-        case 'maximize': handleToggleMaximize(); break
+        case 'maximize': {
+          const panelId = activeLeafPanelId(dockStoreApi.getState().zones.center.layout)
+          if (panelId) handlePresentPanel(panelId)
+          break
+        }
         case 'pin': handleTogglePin(); break
         case 'front': canvasApi.getState().moveToFront(nodeId); break
         case 'back': canvasApi.getState().moveToBack(nodeId); break
         case 'close': handleClose(); break
       }
     },
-    [maximized, node?.isPinned, handleToggleMaximize, handleTogglePin, handleClose, canvasApi, nodeId],
+    [node?.isPinned, handlePresentPanel, handleTogglePin, handleClose, canvasApi, dockStoreApi, nodeId, outerPresentationActive],
   )
 
   // --- Computed styles -------------------------------------------------------
@@ -707,7 +737,6 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     <div
       ref={nodeRef}
       data-node-id={nodeId}
-      data-canvas-maximized={maximized ? "true" : undefined}
       data-node-active={isFocused ? 'true' : 'false'}
       style={containerStyle}
       onClick={handleClick}
@@ -859,7 +888,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         Mounted as a sibling (not inside the node's overflow:hidden box) so the
         strips can overhang the edge; positioned to the node's bounds and
         stacked with it. */}
-    {!maximized && !isWholeNodeDragSource && (
+    {!isWholeNodeDragSource && (
       <div
         aria-hidden
         data-resize-frame-for={nodeId}
@@ -883,9 +912,11 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
 export default React.memo(CanvasNode, (prev, next) => {
   return (
     prev.nodeId === next.nodeId &&
+    prev.canvasPanelId === next.canvasPanelId &&
     prev.isFocused === next.isFocused &&
     prev.activityState === next.activityState &&
     prev.dockStoreApi === next.dockStoreApi &&
+    prev.outerDockStoreApi === next.outerDockStoreApi &&
     prev.renderPanel === next.renderPanel &&
     prev.title === next.title
   )

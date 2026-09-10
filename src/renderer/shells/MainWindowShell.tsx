@@ -18,7 +18,6 @@ import {
   DragOverlay,
 } from '../drag'
 import { LeftSidebarReopen, useLeftChromeInset } from './LeftSidebarReopen'
-import { findZoneForStack } from '../stores/dockTreeUtils'
 
 interface MainWindowShellProps {
   renderPanel: (panelId: string) => React.ReactNode
@@ -45,10 +44,6 @@ export default function MainWindowShell({
   // Nested canvas-node bars are exempt.
   const leftReserve = useLeftChromeInset()
 
-  const maximizedZone = useDockStoreContext((s) => {
-    const position = s.maximizedStackId ? findZoneForStack(s.zones, s.maximizedStackId) : null
-    return position && s.zones[position].visible ? position : null
-  })
   const leftVisible = useDockStoreContext((s) => s.zones.left.visible)
   const bottomVisible = useDockStoreContext((s) => s.zones.bottom.visible)
   const setZoneSize = useDockStoreContext((s) => s.setZoneSize)
@@ -135,7 +130,6 @@ export default function MainWindowShell({
   return (
     <div
       ref={shellRef}
-      data-panel-maximize-root
       className="main-window-shell-root flex flex-col h-full w-full min-h-0 min-w-0 relative"
       style={workspaceAccent ? ({ ['--workspace-accent' as string]: workspaceAccent } as React.CSSProperties) : undefined}
     >
@@ -154,27 +148,26 @@ export default function MainWindowShell({
           no-drag so it stays clickable over the window drag island. */}
       <LeftSidebarReopen />
       {/* Top row: left dock | center dock | right dock */}
-      <div className="flex flex-1 min-h-0 min-w-0" style={maximizedZone === 'bottom' ? { display: 'none' } : undefined}>
+      <div className="flex flex-1 min-h-0 min-w-0">
         {/* Left dock zone */}
         {leftVisible && (
-          <div className="flex min-h-0 shrink-0" style={{ display: maximizedZone && maximizedZone !== 'left' ? 'none' : undefined, flex: maximizedZone === 'left' ? 1 : undefined }}>
+          <div className="flex min-h-0 shrink-0">
             <DockZone
-              fill={maximizedZone === 'left'}
               position="left"
               renderPanel={renderPanel}
               getPanelTitle={getPanelTitle}
               onClosePanel={onClosePanel}
               onClosePanels={onClosePanels}
             />
-            {!maximizedZone && <DockResizeHandle
+            <DockResizeHandle
               direction="horizontal"
               onResize={(delta) => handleZoneResize('left', delta)}
-            />}
+            />
           </div>
         )}
 
         {/* Center dock zone — always visible, flex-1 */}
-        <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden" style={maximizedZone && maximizedZone !== 'center' ? { display: 'none' } : undefined}>
+        <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
           <DockZone
             position="center"
             emptyContent={<WorkspaceEmptyState workspaceId={selectedWorkspace?.id ?? ''} />}
@@ -189,13 +182,12 @@ export default function MainWindowShell({
 
       {/* Bottom dock zone */}
       {bottomVisible && (
-        <div className="flex flex-col min-h-0 shrink-0" style={{ display: maximizedZone && maximizedZone !== 'bottom' ? 'none' : undefined, flex: maximizedZone === 'bottom' ? 1 : undefined }}>
-          {!maximizedZone && <DockResizeHandle
+        <div className="flex flex-col min-h-0 shrink-0">
+          <DockResizeHandle
             direction="vertical"
             onResize={(delta) => handleZoneResize('bottom', delta)}
-          />}
+          />
           <DockZone
-            fill={maximizedZone === 'bottom'}
             position="bottom"
             renderPanel={renderPanel}
             getPanelTitle={getPanelTitle}

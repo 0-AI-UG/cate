@@ -15,7 +15,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
 import type { TerminalPanelProps } from './types'
-import { isMaximized } from '../../shared/types'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { formatTerminalPaste, type DroppedRef } from './terminalDrop'
 import { useAppStore } from '../stores/appStore'
@@ -208,10 +207,7 @@ export default function TerminalPanel({
 
   const isFocused = useOptionalCanvasStoreContext((s) => focusedNodeId(s) === nodeId, false)
   const canvasApi = useOptionalCanvasStoreApi()
-  const zoomLevel = useOptionalCanvasStoreContext((s) => {
-    const node = nodeId ? s.nodes[nodeId] : undefined
-    return node && isMaximized(node) ? 1 : s.zoomLevel
-  }, 1)
+  const zoomLevel = useOptionalCanvasStoreContext((s) => s.zoomLevel, 1)
 
   // -------------------------------------------------------------------------
   // Search handlers

@@ -3,10 +3,10 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { stat, writeFile, mkdir } from 'node:fs/promises'
+import { stat, writeFile } from 'node:fs/promises'
 import { watch, type FSWatcher } from 'chokidar'
 import type { RecentScreenshot } from '../../shared/recentScreenshot'
-import { RECENT_SCREENSHOT_GET, RECENT_SCREENSHOT_CHANGED, RECENT_SCREENSHOT_DRAG, RECENT_SCREENSHOT_SAVE } from '../../shared/ipc-channels'
+import { RECENT_SCREENSHOT_GET, RECENT_SCREENSHOT_CHANGED, RECENT_SCREENSHOT_DRAG, RECENT_SCREENSHOT_READ, RECENT_SCREENSHOT_SAVE } from '../../shared/ipc-channels'
 import { broadcastToAll, windowFromEvent } from '../windowRegistry'
 import { grantFileAccess } from './pathValidation'
 import { wrapHandler } from './handlerError'
@@ -48,16 +48,25 @@ export function registerRecentScreenshotHandlers(): void {
     })
   }))
 
+  ipcMain.handle(RECENT_SCREENSHOT_READ, wrapHandler('[recentScreenshot:read]', async (event, id: string) => {
+    if (!windowFromEvent(event)) throw new Error('Screenshot window is no longer available.')
+    const screenshot = current.find(shot => shot.id === id)
+    if (!screenshot) throw new Error('Screenshot is no longer available.')
+    const image = nativeImage.createFromPath(screenshot.filePath)
+    if (image.isEmpty()) throw new Error('Could not read the screenshot.')
+    return image.toDataURL()
+  }))
+
   ipcMain.handle(RECENT_SCREENSHOT_SAVE, wrapHandler('[recentScreenshot:save]', async (event, id: string, dataUrl: string) => {
     const win = windowFromEvent(event)
     const screenshot = current.find(shot => shot.id === id)
     if (!win) throw new Error('Screenshot window is no longer available.')
+    if (!screenshot) throw new Error('Screenshot is no longer available.')
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) throw new Error('Expected a PNG image.')
     const image = nativeImage.createFromDataURL(dataUrl)
     if (image.isEmpty()) throw new Error('Could not read the annotated image.')
-    const directory = path.join(app.getPath('userData'), 'screenshots')
-    await mkdir(directory, { recursive: true })
-    const name = screenshot ? path.basename(screenshot.filePath, path.extname(screenshot.filePath)) : 'screenshot'
+    const directory = path.dirname(screenshot.filePath)
+    const name = path.basename(screenshot.filePath, path.extname(screenshot.filePath))
     const filePath = path.join(directory, `${name}-annotated-${randomUUID()}.png`)
     await writeFile(filePath, image.toPNG(), { flag: 'wx' })
     const thumbnail = await nativeImage.createThumbnailFromPath(filePath, { width: 128, height: 128 })

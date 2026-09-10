@@ -1,6 +1,6 @@
 // =============================================================================
 // Nodes slice — node lifecycle (create/remove/move/resize), focus, z-order,
-// maximize, per-node dock layout, and node queries.
+// per-node dock layout, and node queries.
 // =============================================================================
 
 import type { CanvasNodeState } from '../../../shared/types'
@@ -21,7 +21,6 @@ type NodesActions = Pick<
   | 'resizeNode'
   | 'focusNode'
   | 'unfocus'
-  | 'toggleMaximize'
   | 'focusAndCenter'
   | 'moveToFront'
   | 'moveToBack'
@@ -193,44 +192,6 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
       // Deactivate the lead but keep the selection (rings remain), matching the
       // old unfocus() which cleared focus without touching the selection.
       set({ selectionActive: false })
-    },
-
-    toggleMaximize(id, _viewportSize) {
-      const state = get()
-      const node = state.nodes[id]
-      if (!node) return
-
-      const isMaximized = node.preMaximizeOrigin != null
-
-      let updated: CanvasNodeState
-      if (isMaximized) {
-        // Restore pre-maximize geometry
-        updated = {
-          ...node,
-          origin: node.preMaximizeOrigin!,
-          size: node.preMaximizeSize!,
-          preMaximizeOrigin: undefined,
-          preMaximizeSize: undefined,
-        }
-      } else {
-        // Full-window presentation preserves the original canvas geometry.
-        updated = {
-          ...node,
-          preMaximizeOrigin: { ...node.origin },
-          preMaximizeSize: { ...node.size },
-        }
-      }
-
-      // Focus the node as well (bump zOrder)
-      updated = { ...updated, zOrder: state.nextZOrder }
-
-      set({
-        nodes: { ...state.nodes, [id]: updated },
-        nextZOrder: state.nextZOrder + 1,
-        selection: [id],
-        selectionActive: true,
-        focusEpoch: state.focusEpoch + 1,
-      })
     },
 
     nodeForPanel(panelId) {
