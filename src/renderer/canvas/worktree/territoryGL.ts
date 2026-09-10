@@ -246,6 +246,13 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLSh
   return sh
 }
 
+/** Explicitly surrender the context instead of waiting for Chromium's GC.
+ * Canvas subtrees are remounted on workspace switches, so deferred context
+ * collection otherwise lets GPU resources accumulate over a long session. */
+function releaseContext(gl: WebGL2RenderingContext): void {
+  gl.getExtension('WEBGL_lose_context')?.loseContext()
+}
+
 export interface TerritoryGL {
   resize(deviceW: number, deviceH: number): void
   setView(zoom: number, offX: number, offY: number, dpr: number): void
@@ -280,13 +287,25 @@ export function createTerritoryGL(canvas: HTMLCanvasElement): TerritoryGL | null
   const hp = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT)
   if (!hp || hp.precision === 0) {
     console.warn('[territoryGL] no fragment highp float; falling back to CPU')
+    releaseContext(gl)
     return null
   }
 
   const vs = compile(gl, gl.VERTEX_SHADER, VERT_SRC)
   const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG_SRC)
-  if (!vs || !fs) return null
-  const program = gl.createProgram()!
+  if (!vs || !fs) {
+    if (vs) gl.deleteShader(vs)
+    if (fs) gl.deleteShader(fs)
+    releaseContext(gl)
+    return null
+  }
+  const program = gl.createProgram()
+  if (!program) {
+    gl.deleteShader(vs)
+    gl.deleteShader(fs)
+    releaseContext(gl)
+    return null
+  }
   gl.attachShader(program, vs)
   gl.attachShader(program, fs)
   gl.bindAttribLocation(program, 0, 'aPos')
@@ -296,6 +315,7 @@ export function createTerritoryGL(canvas: HTMLCanvasElement): TerritoryGL | null
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
     console.error('[territoryGL] program link failed:', gl.getProgramInfoLog(program))
     gl.deleteProgram(program)
+    releaseContext(gl)
     return null
   }
 
@@ -449,6 +469,7 @@ export function createTerritoryGL(canvas: HTMLCanvasElement): TerritoryGL | null
       gl.deleteBuffer(vbo)
       gl.deleteVertexArray(vao)
       gl.deleteProgram(program)
+      releaseContext(gl)
     },
   }
 }
