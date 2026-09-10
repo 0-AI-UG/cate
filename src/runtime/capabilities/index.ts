@@ -37,7 +37,7 @@ import type { Runtime, FileHost } from '../../main/runtime/types'
 
 export interface DaemonRuntimeConfig {
   id: string
-  /** Basenames to hide in readDir/search (the daemon's mirror of fileExclusions). */
+  /** Internal basenames to hide in readDir/search. */
   exclusions?: string[]
   /** Env for git/gh subprocesses. Defaults to process.env. */
   env?: () => NodeJS.ProcessEnv

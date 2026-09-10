@@ -41,6 +41,7 @@
     "test:runtime:linux-glibc": "node scripts/test-linux-node-pty-baseline.mjs",
     "test:agent-contracts": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts agentHookContracts",
     "test:e2e": "playwright test",
+    "test:e2e:perf": "node scripts/run-e2e-perf.mjs",
     "test:e2e:agent": "playwright test e2e/t3-agent.spec.ts",
     "test:e2e:ci": "E2E_SKIP_PERF=1 playwright test",
     "test:e2e:browser": "playwright test e2e/browser-",

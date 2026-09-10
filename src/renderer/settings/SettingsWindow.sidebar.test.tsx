@@ -14,7 +14,6 @@ vi.mock('./TerminalSettings', () => ({ TerminalSettings: () => <div>Terminal con
 vi.mock('./BrowserSettings', () => ({ BrowserSettings: () => <div>Browser content</div> }))
 vi.mock('./CliSettings', () => ({ CliSettings: () => <div>Cli content</div> }))
 vi.mock('./SidebarSettings', () => ({ SidebarSettings: () => <div>Sidebar content</div> }))
-vi.mock('./FileExplorerSettings', () => ({ FileExplorerSettings: () => <div>FileExplorer content</div> }))
 vi.mock('./WorktreeSettings', () => ({ WorktreeSettings: () => <div>Worktree content</div> }))
 vi.mock('./ShortcutSettings', () => ({ ShortcutSettings: () => <div>Shortcut content</div> }))
 vi.mock('./NotificationSettings', () => ({ NotificationSettings: () => <div>Notification content</div> }))
@@ -54,6 +53,9 @@ it('uses the Workspace sidebar for settings with only Back and updates in its fo
   const resetAll = vi.spyOn(useSettingsStore.getState(), 'resetAll').mockImplementation(() => {})
   const restoreButton = [...host.querySelectorAll('header button')].find((button) => button.textContent?.trim() === 'Restore defaults') as HTMLButtonElement
   expect(restoreButton).toBeDefined()
+  act(() => restoreButton.click())
+  expect(resetAll).not.toHaveBeenCalled()
+  expect(restoreButton.textContent).toContain('Confirm restore')
   act(() => restoreButton.click())
   expect(resetAll).toHaveBeenCalledOnce()
   expect(left.querySelector('[aria-label="Check for updates"]')).not.toBeNull()

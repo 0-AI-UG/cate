@@ -45,7 +45,10 @@ test('target-bound browser input preserves renderer and workspace focus', async 
   const otherWorkspace = await page.evaluate(() => window.__cateE2E!.addWorkspace('Other workspace'))
   await page.evaluate((workspaceId) => window.__cateE2E!.selectWorkspace(workspaceId), otherWorkspace)
   await expect(act(page, browser, 'setValue', "Name", { value: 'Filled from another workspace' })).resolves.toMatchObject({ ok: true })
-  expect(await page.evaluate(() => window.__cateE2E!.activeCanvasPanelId())).not.toBeNull()
+  // Browser control is target-bound: it must not switch back to the browser's
+  // workspace or invent a canvas in this intentionally empty destination.
+  expect(await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())).toBe(otherWorkspace)
+  expect(await page.evaluate(() => window.__cateE2E!.activeCanvasPanelId())).toBeNull()
 
   await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#name\")?.value")).resolves.toMatchObject({ ok: true, result: { value: 'Filled from another workspace' } })
 })

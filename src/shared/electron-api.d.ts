@@ -240,7 +240,7 @@ export interface ElectronAPI {
     repoCwd: string,
     branch: string,
     targetPath: string,
-    options: { createBranch?: boolean; baseRef?: string; symlinkPaths?: string[] } | undefined,
+    options: { createBranch?: boolean; baseRef?: string } | undefined,
     workspaceId: string,
   ): Promise<{ path: string; branch: string }>
 
@@ -298,7 +298,7 @@ export interface ElectronAPI {
     repoCwd: string,
     prNumber: number,
     targetPath: string,
-    options: { symlinkPaths?: string[] } | undefined,
+    options: undefined,
     workspaceId: string,
   ): Promise<{ path: string; branch: string }>
 
@@ -465,7 +465,6 @@ export interface ElectronAPI {
   uiStateSet<K extends keyof UIState>(key: K, value: UIState[K]): Promise<void>
 
   /** Subscribe to setting-change broadcasts from main (key + new value). Returns unsubscribe. */
-  onSettingsChanged(callback: (key: keyof AppSettings, value: unknown) => void): () => void
 
   /** Grant this window access to settings.json and return its absolute path so
    *  it can be opened in an editor panel. */
@@ -656,7 +655,7 @@ export interface ElectronAPI {
 
   /** Target-bound CDP control plane for a live browser webview guest. */
   browserControl(request: { op: 'checkCodeCell'; codeCellId: string } | {
-    op: 'attach' | 'execute' | 'downloads' | 'downloadAction'
+    op: 'attach' | 'execute' | 'download' | 'downloads' | 'downloadAction'
     webContentsId: number
     workspaceId: string
     panelId: string

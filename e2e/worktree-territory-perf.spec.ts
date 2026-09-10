@@ -41,7 +41,12 @@ test.afterAll(async () => closeApp(app))
 // Each scenario seeds its own world; clear the canvas first so node counts and
 // layout don't accumulate across tests (the app instance is shared via beforeAll).
 test.beforeEach(async () => {
-  await page.evaluate(() => { window.__cateE2E!.clearCanvas(); window.__cateE2E!.setZoom(1); window.__cateE2E!.resetViewport() })
+  await page.evaluate(() => window.__cateE2E!.clearCanvas())
+  // clearCanvas intentionally removes every panel, including the canvas shell.
+  // Recreate it before seeding positioned terminals or they land in the dock.
+  await page.evaluate(() => window.__cateE2E!.createPanel('canvas'))
+  await page.waitForSelector('[data-canvas-panel-id]', { timeout: 15_000 })
+  await page.evaluate(() => { window.__cateE2E!.setZoom(1); window.__cateE2E!.resetViewport() })
   await page.waitForTimeout(150)
 })
 

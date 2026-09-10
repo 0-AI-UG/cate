@@ -223,6 +223,27 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   const oracle = (expression: string) => fixtureEvaluate(app, page, { workspaceId: '', panelId: browserId }, expression)
   await runBrowser(`await tab.goto(${JSON.stringify(`${baseUrl}?opened=1`)});`)
 
+  // A CLI/agent may keep driving a browser while the user works elsewhere.
+  // Exercise the full terminal → CLI → HTTP → renderer path with the owning
+  // workspace unmounted, and prove the target-bound call does not steal focus.
+  const browserWorkspace = await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())
+  const delayedBrowserCommand = process.platform === 'win32'
+    ? `Start-Sleep -Milliseconds 1000; ${cate('browser', 'run', 'await tab.getAXState({disableDiffing:true,emit:false});')}`
+    : `sleep 1; ${cate('browser', 'run', 'await tab.getAXState({disableDiffing:true,emit:false});')}`
+  const backgroundRun = runInCateTerminal(controlNode, delayedBrowserCommand, 30_000)
+  await page.waitForTimeout(300)
+  const otherWorkspace = await page.evaluate(async () => {
+    const id = window.__cateE2E!.addWorkspace('CLI background workspace')
+    await window.__cateE2E!.selectWorkspace(id)
+    return id
+  })
+  // Keep the browser's workspace unmounted beyond the command's delay, then
+  // return only to read the control terminal's rendered output.
+  await page.waitForTimeout(2_000)
+  expect(await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())).toBe(otherWorkspace)
+  await page.evaluate((id) => window.__cateE2E!.selectWorkspace(id), browserWorkspace)
+  expect((await backgroundRun).code).toBe(0)
+
   const firstDataUrl = `data:text/html,${encodeURIComponent('<title>Data One</title><h1>Data One</h1>')}`
   const secondDataUrl = `data:text/html,${encodeURIComponent('<title>Data Two</title><h1>Data Two</h1>')}`
   await runBrowser(`await tab.goto(${JSON.stringify(firstDataUrl)}); await tab.goto(${JSON.stringify(secondDataUrl)});`)

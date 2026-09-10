@@ -10,6 +10,7 @@
 
 import { create, type UseBoundStore } from 'zustand'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
+import { useEffect, useState } from 'react'
 import type { StoreApi } from 'zustand'
 import type { CanvasNodeId, CanvasNodeState } from '../../shared/types'
 import { ZOOM_MIN, ZOOM_MAX, ZOOM_DEFAULT } from '../../shared/types'
@@ -355,9 +356,51 @@ export function useVisibleNodeIds(
   store: StoreApi<CanvasStore>,
   keepMountedPanelIds: ReadonlySet<string>,
 ): string[] {
-  return useStoreWithEqualityFn(
-    store,
-    (s) => selectVisibleNodeIds(s, keepMountedPanelIds),
-    primitiveArrayEqual,
-  )
+  const [visible, setVisible] = useState(() => selectVisibleNodeIds(store.getState(), keepMountedPanelIds))
+
+  useEffect(() => {
+    let settleTimer: ReturnType<typeof setTimeout> | undefined
+    const publish = (ids: string[]) => {
+      setVisible((current) => primitiveArrayEqual(current, ids) ? current : ids)
+    }
+    const cancelPending = () => {
+      if (settleTimer) clearTimeout(settleTimer)
+      settleTimer = undefined
+    }
+
+    // A smooth zoom updates the store every animation frame. Publishing each
+    // intermediate cull result repeatedly mounts/unmounts Monaco, xterm and file
+    // explorer trees, which is much more expensive than the transform itself.
+    // Keep the last mounted set during the gesture and reconcile once the zoom
+    // has been quiet for a frame-sized settling window. Pan remains immediate,
+    // as do structural/focus changes, so interaction and newly-created panels
+    // never wait behind this optimization.
+    const unsubscribe = store.subscribe((state, previous) => {
+      const ids = selectVisibleNodeIds(state, keepMountedPanelIds)
+      const structuralChange = state.nodes !== previous.nodes
+        || state.containerSize !== previous.containerSize
+        || state.selection !== previous.selection
+        || state.selectionActive !== previous.selectionActive
+      if (state.zoomLevel !== previous.zoomLevel && !structuralChange) {
+        cancelPending()
+        settleTimer = setTimeout(() => {
+          settleTimer = undefined
+          publish(selectVisibleNodeIds(store.getState(), keepMountedPanelIds))
+        }, 120)
+        return
+      }
+      cancelPending()
+      publish(ids)
+    })
+
+    // A changed keep-mounted set (notably a newly-created browser) is applied
+    // synchronously even if the canvas itself has not emitted another update.
+    publish(selectVisibleNodeIds(store.getState(), keepMountedPanelIds))
+    return () => {
+      cancelPending()
+      unsubscribe()
+    }
+  }, [store, keepMountedPanelIds])
+
+  return visible
 }

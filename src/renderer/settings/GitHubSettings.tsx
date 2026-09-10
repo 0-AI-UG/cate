@@ -33,8 +33,8 @@ export function GitHubSettings() {
   }
   const connected = connection?.status === 'connected'
   return <SearchableBlock keywords="source control providers github account authentication login sign in gh cli pull requests">
-    <div className="overflow-hidden rounded-xl border border-subtle">
-      <div className="flex flex-wrap items-center gap-4 p-4">
+    <div>
+      <div className="flex flex-wrap items-center gap-4 py-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-3">
             <span className="relative"><Github size={22} /><span className="absolute -left-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-surface-1" style={{ backgroundColor: connected ? 'var(--git-added)' : 'var(--text-muted)' }} /></span>
@@ -50,7 +50,7 @@ export function GitHubSettings() {
           <SecondaryButton disabled={checking} onClick={() => void refresh()} aria-label="Recheck GitHub connection">{checking ? <Spinner size={14} /> : <RefreshCw size={14} />}Recheck</SecondaryButton>
         </div>
       </div>
-      <div className="border-t border-subtle px-4 py-3 text-xs text-muted">Uses the GitHub CLI account on this computer, shared with your terminals. Remote workspaces use their own GitHub CLI authentication.</div>
+      <div className="py-2 text-xs text-muted">Uses the GitHub CLI account on this computer. Remote workspaces use their own authentication.</div>
     </div>
     {login.status === 'pending' && <div role="status" className="mt-3 text-sm text-secondary">
       <Spinner size={14} className="mr-2 align-middle" />{login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in…'}

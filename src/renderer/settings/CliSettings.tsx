@@ -22,6 +22,9 @@ interface CheckboxProps {
 function PermissionCheckbox({ checked, onChange, title, disabled }: CheckboxProps) {
   return (
     <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
       onClick={() => onChange(!checked)}
       disabled={disabled}
       title={title}

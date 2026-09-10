@@ -16,7 +16,6 @@ import {
   SETTINGS_SET,
   SETTINGS_GET_ALL,
   SETTINGS_RESET,
-  SETTINGS_CHANGED,
   SETTINGS_OPEN_IN_EDITOR,
   SETTINGS_RELOADED,
   BOOT_SNAPSHOT_WRITE,
@@ -80,10 +79,9 @@ import { grantFileAccess } from './ipc/pathValidation'
 import { recordPersistentGrant } from './grantedPathStore'
 import { computeThemeBootFields } from './themeBootCache'
 
-type RuntimeSettings = Pick<AppSettings, 'fileExclusions' | 'autoSuspendIdleTerminals'>
+type RuntimeSettings = Pick<AppSettings, 'autoSuspendIdleTerminals'>
 
 function applyRuntimeSettings(runtime: import('./runtime/types').Runtime, settings: Partial<RuntimeSettings>): void {
-  if (settings.fileExclusions !== undefined) void runtime.setExclusions(settings.fileExclusions).catch(() => {})
   if (settings.autoSuspendIdleTerminals !== undefined) void runtime.setIdleSuspend(settings.autoSuspendIdleTerminals).catch(() => {})
 }
 
@@ -108,17 +106,11 @@ async function applySettingSideEffect(key: keyof AppSettings, value: unknown): P
       log.warn('Native shortcut menu rebuild failed: %O', err)
     }
   }
-  // fileExclusions has one live consumer (the FileExplorer tree) that listens on
-  // the SETTINGS_CHANGED invalidation channel and reloads. Broadcast it directly
-  // (the only key that uses this channel today).
-  if (key === 'fileExclusions') {
-    broadcastToAll(SETTINGS_CHANGED, key, value)
-  }
-  if (key === 'fileExclusions' || key === 'autoSuspendIdleTerminals') {
+  if (key === 'autoSuspendIdleTerminals') {
     try {
       const { runtimes } = await import('./runtime/runtimeManager')
       for (const id of runtimes.connectedIds()) {
-        applyRuntimeSettings(runtimes.resolve(id), { [key]: value })
+        applyRuntimeSettings(runtimes.resolve(id), { autoSuspendIdleTerminals: value as boolean })
       }
     } catch (err) {
       log.warn('Runtime settings forward failed: %O', err)
@@ -271,7 +263,6 @@ export function registerHandlers(): void {
     // after settings change while a daemon is disconnected.
     void import('./runtime/runtimeManager').then(({ runtimes }) => {
       const replay = (_id: string, runtime: import('./runtime/types').Runtime) => applyRuntimeSettings(runtime, {
-        fileExclusions: getSettingFromFile('fileExclusions'),
         autoSuspendIdleTerminals: getSettingFromFile('autoSuspendIdleTerminals'),
       })
       runtimes.onConnected(replay)
