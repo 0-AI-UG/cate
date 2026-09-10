@@ -98,9 +98,32 @@ it('renders the agent logo and normal diff lines without patch metadata or sessi
   expect(host.textContent).not.toContain('secret-session-id')
   expect(host.textContent).not.toContain('new file mode')
   expect(host.textContent).not.toContain('@@')
-  expect(host.querySelector('[aria-label^="Add review note"]')).toBeNull()
+  expect(host.querySelector('[aria-label^="Add review note"]')).not.toBeNull()
   act(() => host.querySelector<HTMLButtonElement>('section button')!.click())
   expect(host.textContent).not.toContain('hello')
+})
+
+it('adds local review comments to numbered recorded changes', () => {
+  h.records[0].files[0] = { path: 'a.ts', additions: 1, deletions: 0, coverage: 'patch', hunks: [
+    { header: '@@ -0,0 +1 @@', lines: [{ kind: 'add', text: 'hello', oldLine: null, newLine: 1 }] },
+  ] }
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Add review note on new line 1"]')!.click())
+  const textarea = host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Review note"]')!
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    setter?.call(textarea, 'Please cover this case')
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  act(() => Array.from(host.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.textContent === 'Comment')!.click())
+  expect(h.setState).toHaveBeenLastCalledWith('ws', 'review', expect.objectContaining({
+    notes: [expect.objectContaining({ agentChangeId: 'a', path: 'a.ts', side: 'new', line: 1, body: 'Please cover this case' })],
+  }))
+})
+
+it('keeps the responsive filter icon centered when its label is hidden', () => {
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
+  expect(host.querySelector('[aria-label="Filters"]')?.className).toContain('justify-center')
 })
 
 it('removes scoped filters through chips and dismisses the popover', () => {
