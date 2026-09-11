@@ -4,10 +4,16 @@ import { PERF_ENABLED, perfCount } from '../lib/perf/perfClient'
 interface SurfaceEntry {
   container: HTMLDivElement
   styles: Partial<SurfaceStyles>
+  backgroundRoot: HTMLDivElement | null
+  inlineWithSlot: boolean
 }
 
 const slots = new Map<string, HTMLDivElement>()
 const surfaces = new Map<string, SurfaceEntry>()
+
+function hasFixedSurfaces(): boolean {
+  return [...surfaces.values()].some((surface) => !surface.inlineWithSlot)
+}
 
 interface SurfaceRect {
   left: number
@@ -228,6 +234,32 @@ function parkSurface(surface: SurfaceEntry): void {
   })
 }
 
+function moveSurface(parent: HTMLElement, container: HTMLDivElement): void {
+  if (container.parentElement === parent) return
+  const moveBefore = (parent as HTMLElement & {
+    moveBefore?: (node: Element, child: Element | null) => void
+  }).moveBefore
+  if (typeof moveBefore === 'function' && container.isConnected && parent.isConnected) {
+    moveBefore.call(parent, container, null)
+  } else {
+    parent.appendChild(container)
+  }
+}
+
+function placeInlineSurface(surface: SurfaceEntry, slot?: HTMLDivElement): void {
+  if (!slot?.isConnected) {
+    if (surface.backgroundRoot) moveSurface(surface.backgroundRoot, surface.container)
+    parkSurface(surface)
+    return
+  }
+  moveSurface(slot, surface.container)
+  writeSurface(surface, true, {
+    position: 'absolute', left: '0', top: '0', width: '100%', height: '100%',
+    transform: 'none', transformOrigin: '0 0', clipPath: 'none', opacity: '1',
+    pointerEvents: 'auto', zIndex: 'auto', visibility: 'visible', borderRadius: '0', overflow: 'hidden',
+  })
+}
+
 function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
   const surface = surfaces.get(panelId)
   const slot = slots.get(panelId)
@@ -288,7 +320,7 @@ function refreshAnimations(): void {
 }
 
 function schedule(): void {
-  if (frame !== null || surfaces.size === 0) return
+  if (frame !== null || !hasFixedSurfaces()) return
   frame = requestAnimationFrame(() => {
     frame = null
     syncBrowserSurfaces()
@@ -302,7 +334,7 @@ function schedule(): void {
  * fixed guest host one paint behind the canvas node that owns its slot.
  */
 export function syncBrowserSurfaces(): void {
-  if (surfaces.size === 0) return
+  if (!hasFixedSurfaces()) return
   const started = PERF_ENABLED ? performance.now() : 0
   if (rebuildTracking) watchSurfaces()
   refreshAnimations()
@@ -311,7 +343,7 @@ export function syncBrowserSurfaces(): void {
   // geometry slot, though, and are already parked by unregisterSlot. Exclude
   // them from the layout pass without changing their lifecycle.
   const activeIds = [...slots.entries()]
-    .filter(([id, slot]) => surfaces.has(id) && slot.isConnected)
+    .filter(([id, slot]) => surfaces.get(id)?.inlineWithSlot === false && slot.isConnected)
     .map(([id]) => id)
   if (activeIds.length === 0) {
     geometryAnimations.clear()
@@ -335,7 +367,7 @@ function watchSurfaces(): void {
   tracked = new Set()
   animatedElements.clear()
   geometryAnimations.clear()
-  if (surfaces.size === 0) {
+  if (!hasFixedSurfaces()) {
     if (frame !== null) cancelAnimationFrame(frame)
     frame = null
     return
@@ -357,7 +389,7 @@ function watchSurfaces(): void {
   })
   const ancestors = new Set<HTMLElement>()
   const activeIds = [...slots.entries()]
-    .filter(([id, slot]) => surfaces.has(id) && slot.isConnected)
+    .filter(([id, slot]) => surfaces.get(id)?.inlineWithSlot === false && slot.isConnected)
     .map(([id]) => id)
   for (const id of activeIds) {
     for (let element: HTMLElement | null = slots.get(id) ?? null; element; element = element.parentElement) {
@@ -404,9 +436,10 @@ function refreshSurfaces(panelId: string): void {
   // Hide removed/new slots immediately, but measure all incoming slots together
   // before the next paint. Per-slot reads here bypassed the shared frame cache.
   const surface = surfaces.get(panelId)
+  if (surface?.inlineWithSlot) placeInlineSurface(surface, slots.get(panelId))
   if (surface && (!slots.has(panelId) || !surface.styles.width)) parkSurface(surface)
   rebuildTracking = true
-  if (surfaces.size === 0) watchSurfaces()
+  if (!hasFixedSurfaces()) watchSurfaces()
   else schedule()
 }
 
@@ -428,9 +461,12 @@ export function registerBrowserSurface(
   panelId: string,
   container: HTMLDivElement,
   backgroundRoot: HTMLDivElement | null,
+  inlineWithSlot = false,
 ): () => void {
-  if (backgroundRoot && container.parentElement !== backgroundRoot) backgroundRoot.appendChild(container)
-  const surface: SurfaceEntry = { container, styles: {} }
+  const slot = slots.get(panelId)
+  if (inlineWithSlot && slot?.isConnected) moveSurface(slot, container)
+  else if (backgroundRoot && container.parentElement !== backgroundRoot) backgroundRoot.appendChild(container)
+  const surface: SurfaceEntry = { container, styles: {}, backgroundRoot, inlineWithSlot }
   surfaces.set(panelId, surface)
   refreshSurfaces(panelId)
   return () => {

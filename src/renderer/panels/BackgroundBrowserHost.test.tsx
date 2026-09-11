@@ -57,6 +57,11 @@ function VisibleBrowserSlot(): React.ReactElement {
   return <BrowserPanelSurfaceSlot panelId={`browser-${selectedWorkspaceId}`} />
 }
 
+function VisibleAgentSlot(): React.ReactElement {
+  const selectedWorkspaceId = useAppStore((state) => state.selectedWorkspaceId)
+  return <BrowserPanelSurfaceSlot panelId={`agent-${selectedWorkspaceId}`} />
+}
+
 function ClippedStackedBrowserSlot(): React.ReactElement {
   return (
     <div data-test-rect="100,0,400,300" style={{ overflow: 'clip' }}>
@@ -256,6 +261,33 @@ it('retains T3 for a warm return and evicts the least recent workspace', async (
   expect(container.querySelector('[data-retained-agent="agent-one"]')).toBe(original)
   act(() => useAppStore.setState({ selectedWorkspaceId: 'three' }))
   expect(container.querySelector('[data-retained-agent="agent-two"]')).toBeNull()
+})
+
+it('moves the retained T3 surface into its canvas slot without remounting it', async () => {
+  const all = ['one', 'two'].map((id) => ({ ...workspace(id), panels: {
+    [`agent-${id}`]: { id: `agent-${id}`, type: 'agent' as const, title: 'Agent', isDirty: false },
+  } }))
+  act(() => {
+    useAppStore.setState({ workspaces: all, selectedWorkspaceId: 'one' })
+    root.render(<PersistentBrowserHostContext.Provider value>
+      <VisibleAgentSlot />
+      <BackgroundBrowserHost />
+    </PersistentBrowserHostContext.Provider>)
+  })
+  await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
+  const original = container.querySelector('[data-retained-agent="agent-one"]')!
+  expect(original.closest('[data-browser-surface-slot="agent-one"]')).not.toBeNull()
+
+  act(() => useAppStore.setState({ selectedWorkspaceId: 'two' }))
+  await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
+  expect(original.closest('[data-background-browser-host]')).not.toBeNull()
+  expect(container.querySelector('[data-retained-agent="agent-two"]')
+    ?.closest('[data-browser-surface-slot="agent-two"]')).not.toBeNull()
+
+  act(() => useAppStore.setState({ selectedWorkspaceId: 'one' }))
+  await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)) })
+  expect(container.querySelector('[data-retained-agent="agent-one"]')).toBe(original)
+  expect(original.closest('[data-browser-surface-slot="agent-one"]')).not.toBeNull()
 })
 
 it('does not mount persistent browser or T3 guests for an unconfigured workspace', async () => {
