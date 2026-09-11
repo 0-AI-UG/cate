@@ -548,3 +548,22 @@
   .review-worktree { max-width: 70px; }
   .review-run-status { width: 6px; height: 6px; overflow: hidden; font-size: 0; border-radius: 50%; background: currentColor; }
 }
+
+@keyframes screenshot-slide-from-right {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes screenshot-slide-from-left {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.screenshot-viewer-image-in {
+  animation-duration: 180ms;
+  animation-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screenshot-viewer-image-in { animation: none !important; }
+}

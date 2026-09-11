@@ -103,7 +103,6 @@ export interface AppStoreActions {
     worktreeId?: string,
     threadId?: string,
   ) => string
-  createDocument: (workspaceId: string, filePath?: string, documentType?: 'pdf' | 'docx' | 'image', position?: Point, placement?: PanelPlacement) => string
 
   // Remove stale dock references without creating panels in an empty workspace.
   reconcileWorkspaceDock: (workspaceId: string) => void

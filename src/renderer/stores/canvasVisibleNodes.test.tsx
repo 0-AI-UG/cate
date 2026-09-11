@@ -53,4 +53,5 @@ describe('useVisibleNodeIds zoom settling', () => {
     act(() => { second = store.getState().addNode('second', 'editor', { x: 200, y: 100 }, { width: 100, height: 100 }) })
     expect(host.firstElementChild?.getAttribute('data-ids')).toBe(`${first},${second}`)
   })
+
 })

@@ -14,7 +14,7 @@ import { T3Logo } from '../ui/T3Logo'
 // =============================================================================
 
 import React, { type LazyExoticComponent, type ComponentType } from 'react'
-import { Terminal, Globe, Grid2X2 as SquaresFour, FileText as FileDoc, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
+import { Terminal, Globe, Grid2X2 as SquaresFour, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
 import { Folders, Plus } from 'lucide-react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
@@ -35,7 +35,6 @@ const EditorPanel = React.lazy(() => import('./EditorPanel'))
 const BrowserPanel = React.lazy(() => import('./BrowserPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
 const AgentPanel = React.lazy(() => import('./AgentPanel'))
-const DocumentPanel = React.lazy(() => import('./DocumentPanel'))
 const ReviewPanel = React.lazy(() => import('./ReviewPanel'))
 
 // -----------------------------------------------------------------------------
@@ -57,7 +56,6 @@ export interface PanelCreateArgs {
   /** Terminal only. */
   initialInput?: string
   /** Document only. */
-  documentType?: 'pdf' | 'docx' | 'image'
 }
 
 export interface RendererPanelDefinition extends SharedPanelDefinition {
@@ -159,14 +157,6 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
       trackCreated('agent', useAppStore.getState().createAgent(workspaceId, canvasPoint, placement, cwd, worktreeId) || null),
     props: baseProps,
   },
-  document: {
-    ...PANEL_DEFINITIONS.document,
-    icon: FileDoc,
-    Component: DocumentPanel,
-    create: ({ workspaceId, canvasPoint, placement, filePath, documentType }) =>
-      trackCreated('document', useAppStore.getState().createDocument(workspaceId, filePath, documentType, canvasPoint, placement) || null),
-    props: (panel, ctx) => ({ ...baseProps(panel, ctx), filePath: panel.filePath }),
-  },
   review: {
     ...PANEL_DEFINITIONS.review,
     icon: GitDiff,
@@ -211,7 +201,7 @@ export function renderPanelComponent(
   panel: PanelState,
   ctx: PanelRenderContext,
 ): React.ReactElement | null {
-  const def = PANEL_REGISTRY[panel.type]
+  const def = getPanelDef(panel.type)
   if (!def) return null
   const { Component } = def
   const props = def.props(panel, ctx) as PanelProps & Record<string, unknown>

@@ -152,21 +152,6 @@ export const PANEL_DEFINITIONS = {
     keepMountedOffscreen: true,
     keepMountedWhenTabHidden: true,
   },
-  document: {
-    type: 'document',
-    label: 'Document',
-    brandColor: '#AF52DE',
-    mutedColor: '#7a4a9a',
-    tintClass: 'text-purple-400',
-    defaultSize: { width: 700, height: 500 },
-    minimumSize: { width: 300, height: 250 },
-    ghostSvg: ghost('rgb(175,82,222)', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="12" cy="15" r="3"/>'),
-    canLiveOnCanvas: true,
-    worktreeBinding: false,
-    navigable: true,
-    keepMountedOffscreen: false,
-    keepMountedWhenTabHidden: false,
-  },
   review: {
     type: 'review',
     splitMenuOrder: 8,
@@ -263,6 +248,7 @@ export function resolvePanelSize(type: PanelType, _settings?: unknown): Size {
 /** Normalize retired navigation surfaces at persistence/transfer boundaries.
  * Preserve IDs and placement; Files and Search now share the editor surface. */
 export function migrateNavigationPanel<T extends { type: string; sidebarView?: 'explorer' | 'search' | 'git' }>(panel: T): T {
+  if (panel.type === 'document') return { ...panel, type: 'editor', sidebarView: 'explorer' }
   if (panel.type !== 'navigation' && panel.type !== 'search') return panel
   return { ...panel, type: 'editor', sidebarView: panel.type === 'search' ? 'search' : panel.sidebarView ?? 'explorer' }
 }

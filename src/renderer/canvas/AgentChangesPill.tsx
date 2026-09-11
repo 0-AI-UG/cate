@@ -9,7 +9,7 @@ export function AgentChangesPill({ panel, workspaceId }: { panel: PanelState; wo
   const [error, setError] = useState('')
   return <>
     <button type="button" aria-label="Open agent changes" title={error || 'Changes from this panel'} disabled={busy}
-      className="group inline-flex h-[18px] items-center gap-1 rounded-full bg-surface-3 px-1 text-secondary hover:text-primary disabled:opacity-50"
+      className="group inline-flex h-[18px] items-center gap-0 rounded-full bg-surface-3 px-1 text-secondary transition-[gap] hover:gap-1 hover:text-primary disabled:opacity-50"
       onMouseDown={(event) => event.stopPropagation()}
       onClick={async (event) => {
         event.stopPropagation()

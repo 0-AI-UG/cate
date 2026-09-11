@@ -26,6 +26,7 @@ import { mergeThemeApp, resolveTheme as resolveThemeSelection } from '../../shar
 
 let currentTheme: Theme = BUILT_IN_BY_ID[DEFAULT_DARK_THEME_ID]
 let currentSelection: ThemeSelection = 'system'
+let appliedAppKeys = new Set<string>()
 const subscribers = new Set<(t: Theme) => void>()
 
 let mediaQuery: MediaQueryList | null = null
@@ -66,6 +67,12 @@ function injectAppVars(theme: Theme): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
   const merged = mergeThemeApp(theme)
+  // Settings-file themes can contain extra tokens absent from the base palette.
+  // Remove their old overrides when switching or deleting a theme.
+  for (const key of appliedAppKeys) {
+    if (!(key in merged)) root.style.removeProperty('--' + key)
+  }
+  appliedAppKeys = new Set(Object.keys(merged))
   for (const [key, value] of Object.entries(merged)) {
     root.style.setProperty('--' + key, value)
   }

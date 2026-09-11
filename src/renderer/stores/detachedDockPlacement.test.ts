@@ -58,7 +58,7 @@ describe.each(['main', 'detached'])('%s empty dock panel placement', (owner) => 
     useWindowPanelStore.setState({ panels: [] })
   })
 
-  it.each(['terminal', 'agent', 'editor', 'browser', 'review', 'document', 'surface'] as const)('places %s directly for implicit, keyboard, and host API sources', (type) => {
+  it.each(['terminal', 'agent', 'editor', 'browser', 'review', 'surface'] as const)('places %s directly for implicit, keyboard, and host API sources', (type) => {
     const foreign = getOrCreateCanvasStoreForPanel('foreign-canvas')
     setActivePanel('foreign-canvas')
     const placements = [undefined, placementForActivePanel(), placementForBackgroundPanel(wsId), { target: 'canvas' as const, canvasPanelId: 'closed-canvas' }]

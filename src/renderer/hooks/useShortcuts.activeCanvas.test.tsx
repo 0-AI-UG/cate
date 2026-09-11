@@ -151,7 +151,7 @@ describe('navigation from panel content', () => {
     expect(active.getState().selection).toEqual([left])
   })
 
-  it.each<PanelType>(['agent', 'browser', 'terminal', 'editor', 'canvas', 'document', 'review'])(
+  it.each<PanelType>(['agent', 'browser', 'terminal', 'editor', 'canvas', 'review'])(
     'supports chained jumps starting from a %s panel', (type) => {
       const left = active.getState().addNode('source', type, { x: 0, y: 0 })
       const middle = active.getState().addNode('middle', 'editor', { x: 2000, y: 0 })

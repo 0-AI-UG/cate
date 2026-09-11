@@ -1,7 +1,5 @@
 import React from 'react'
 import type { DockLayoutNode, DockTabStack as DockTabStackNode, PanelType } from '../../shared/types'
-import { useDockStoreContext } from '../stores/DockStoreContext'
-import { findTabStack } from '../stores/dockTreeUtils'
 import { layoutMinimum } from './splitSizing'
 import DockSplitContainer from './DockSplitContainer'
 
@@ -13,9 +11,7 @@ interface DockLayoutRendererProps {
 
 /** Shared recursive renderer for window docks and canvas-node mini-docks. */
 export default function DockLayoutRenderer({ layout, renderTabs, getPanelType }: DockLayoutRendererProps) {
-  const maximizedId = useDockStoreContext((s) => s.maximizedStackId)
-  const maximized = maximizedId ? findTabStack(layout, maximizedId) : null
-  const minimum = layoutMinimum(maximized ?? layout, getPanelType)
+  const minimum = layoutMinimum(layout, getPanelType)
   const renderNode = (node: DockLayoutNode, isRoot: boolean): React.ReactNode => {
     if (node.type === 'tabs') return renderTabs(node, isRoot)
     return (

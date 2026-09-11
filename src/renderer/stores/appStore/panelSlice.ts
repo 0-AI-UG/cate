@@ -41,7 +41,6 @@ type PanelSliceActions = Pick<
   | 'createReview'
   | 'createCanvas'
   | 'createAgent'
-  | 'createDocument'
   | 'closePanel'
   | 'updatePanelTitle'
   | 'updatePanelTitleFromAgent'
@@ -153,23 +152,6 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         ...(worktreeId ? { worktreeId } : {}),
       }
       return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('editor', placement), position)
-    },
-
-    createDocument(workspaceId, filePath?, documentType?, position?, placement?) {
-      const panelId = generateId()
-      const worktreeId = worktreeIdForPath(workspaceId, filePath)
-      if (filePath) recordRecentFile(workspaceId, filePath)
-      const fileName = (filePath && pathDisplayName(filePath)) || 'Document'
-      const panel: PanelState = {
-        id: panelId,
-        type: 'document',
-        title: fileName,
-        isDirty: false,
-        filePath,
-        documentType,
-        ...(worktreeId ? { worktreeId } : {}),
-      }
-      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('document', placement), position)
     },
 
     createReview(workspaceId, repoPath, initial?, position?, placement?) {

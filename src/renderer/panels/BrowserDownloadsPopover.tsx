@@ -1,7 +1,7 @@
 import { useRef, type RefObject } from 'react'
 import { CircleCheck as CheckCircle, Download as DownloadSimple, FolderOpen, CircleAlert as WarningCircle, X } from 'lucide-react'
 import type { BrowserDownloadEntry } from '../../shared/types'
-import { useDismissableLayer } from '../ui/Popover'
+import { POPOVER_SURFACE, useDismissableLayer } from '../ui/Popover'
 
 export interface BrowserPanelDownload extends BrowserDownloadEntry {
   webContentsId: number
@@ -42,7 +42,7 @@ export function BrowserDownloadsPopover({ downloads, onAction, onClose, triggerR
     <div
       ref={ref}
       data-browser-downloads-popover
-      className="absolute right-2 top-[5.5rem] z-50 w-80 overflow-hidden rounded-xl border border-subtle bg-surface-2 shadow-2xl"
+      className={`absolute right-2 top-[5.5rem] z-50 w-80 overflow-hidden ${POPOVER_SURFACE}`}
       onMouseDown={(event) => event.stopPropagation()}
     >
       <div className="flex h-10 items-center border-b border-subtle px-3">

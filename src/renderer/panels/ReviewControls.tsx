@@ -6,6 +6,7 @@ import { useAppStore } from '../stores/appStore'
 import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { Tooltip } from '../ui/Tooltip'
 import { LoadingState, Spinner } from '../ui/Spinner'
+import { POPOVER_SURFACE } from '../ui/Popover'
 
 export interface AgentChoice { agent: AgentDef; ready: boolean }
 type AgentAction = { kind: 'review' | 'changes' }
@@ -120,7 +121,7 @@ export function AgentPickerPopover({
   onConfirm: () => void
 }) {
   return (
-    <div role="dialog" aria-label={action.kind === 'review' ? 'Choose terminal review CLI' : 'Choose terminal changes CLI'} className="absolute right-0 top-9 z-50 w-64 rounded-lg border border-subtle bg-surface-2 p-1.5 shadow-xl">
+    <div role="dialog" aria-label={action.kind === 'review' ? 'Choose terminal review CLI' : 'Choose terminal changes CLI'} className={`absolute right-0 top-9 z-50 w-64 ${POPOVER_SURFACE} p-1.5`}>
       <p className="px-1 pb-1.5 text-[10px] text-muted">
         {action.kind === 'review'
           ? 'Choose a terminal CLI to review this diff.'

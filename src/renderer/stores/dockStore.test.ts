@@ -462,6 +462,17 @@ describe('moveTab', () => {
     expect(rootStack(store, 'bottom').panelIds).toEqual(['b', 'c', 'a'])
     expectTreeInvariants(store.getState().zones)
   })
+
+  it('keeps a single tab when asked to move it within its own stack', () => {
+    const store = createDockStore()
+    store.getState().dockPanel('a', 'bottom')
+    const stack = rootStack(store, 'bottom')
+
+    store.getState().moveTab('a', stack.id, stack.id, 0)
+
+    expect(rootStack(store, 'bottom').panelIds).toEqual(['a'])
+    expectTreeInvariants(store.getState().zones)
+  })
 })
 
 describe('setActiveTab', () => {
@@ -657,27 +668,19 @@ describe('cross-zone moves', () => {
   })
 })
 
-// Each test below asserts the DESIRED behavior and is marked `.fails` because
-// the current implementation silently loses or corrupts state instead. When the
-// underlying hole is fixed, the test starts passing and vitest flags it —
-// remove the `.fails` marker then.
-describe('known holes (documented as expected failures)', () => {
-  it.fails('dockPanel into a different zone must not duplicate the panel across zones', () => {
+describe('invalid and stale dock targets', () => {
+  it('dockPanel into a different zone does not duplicate the panel across zones', () => {
     const store = createDockStore()
     store.getState().dockPanel('a', 'left')
 
-    // The duplicate guard in dockPanel only cleans the TARGET zone's tree.
-    // Docking a panel that lives in another zone leaves it in both. Today the
-    // drag commit always undocks first, but any caller that skips that (or a
-    // refactor that reorders it) corrupts the layout silently.
     store.getState().dockPanel('a', 'bottom')
 
-    expectTreeInvariants(store.getState().zones) // 'a' appears twice today
+    expectTreeInvariants(store.getState().zones)
     expect(store.getState().getPanelLocation('a')).toMatchObject({ zone: 'bottom' })
     expect(collectStacks(zoneLayout(store, 'left')).some((s) => s.panelIds.includes('a'))).toBe(false)
   })
 
-  it.fails('a split target whose stack is gone falls back to zone append instead of dropping the panel', () => {
+  it('a split target whose stack is gone falls back to zone append instead of dropping the panel', () => {
     const store = createDockStore()
     store.getState().dockPanel('a', 'bottom')
 
@@ -688,7 +691,7 @@ describe('known holes (documented as expected failures)', () => {
     expect(store.getState().getPanelLocation('b')).toBeDefined()
   })
 
-  it.fails('moveTab to a stack that no longer exists does not lose the panel', () => {
+  it('moveTab to a stack that no longer exists does not lose the panel', () => {
     const store = createDockStore()
     store.getState().dockPanel('a', 'bottom')
     store.getState().dockPanel('b', 'bottom')
@@ -699,7 +702,7 @@ describe('known holes (documented as expected failures)', () => {
     expect(store.getState().getPanelLocation('a')).toBeDefined()
   })
 
-  it.fails('a tab insert index beyond the stack length keeps activeIndex in range', () => {
+  it('a tab insert index beyond the stack length keeps activeIndex in range', () => {
     const store = createDockStore()
     store.getState().dockPanel('a', 'bottom')
     const stack = rootStack(store, 'bottom')
@@ -744,6 +747,7 @@ describe('end-to-end rearrangement scenario', () => {
 
     // Left zone emptied by the move; bottom holds everything, each panel locatable.
     expect(zoneLayout(store, 'left')).toBeNull()
+    expect(s().zones.left.visible).toBe(false)
     for (const id of ['term1', 'agent', 'term2', 'files']) {
       const loc = s().getPanelLocation(id)
       expect(loc?.type).toBe('dock')
