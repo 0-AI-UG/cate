@@ -66,6 +66,7 @@ const CanvasGrid: React.FC<CanvasGridProps> = ({
   return (
     <div
       ref={divRef}
+      data-canvas-grid
       style={{
         position: 'absolute',
         left: 0,

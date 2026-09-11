@@ -59,9 +59,9 @@ export async function syncWorktrees(workspaceId: string): Promise<WorktreeSyncRe
   store.ensurePrimaryWorktree(workspaceId)
 
   // Re-read after ensurePrimaryWorktree so we diff against the freshest list.
-  const current = store.workspaces.find((w) => w.id === workspaceId)
+  const current = useAppStore.getState().workspaces.find((w) => w.id === workspaceId)
   if (current) {
-    const existing = current.worktrees ?? []
+    let existing = current.worktrees ?? []
     // Match on a normalized key, not raw strings: git reports forward-slash
     // paths while rootPath/stored paths use the native separator, so on Windows
     // raw `===` would never match and every worktree would be re-added.
@@ -78,6 +78,7 @@ export async function syncWorktrees(workspaceId: string): Promise<WorktreeSyncRe
           color: pickWorktreeColor(existing),
         }
         store.upsertWorktree(workspaceId, meta)
+        existing = [...existing, meta]
       }
     }
   }
