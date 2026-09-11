@@ -194,6 +194,27 @@ const WorktreeTerritoryLayer: React.FC<Props> = ({ containerWidth, containerHeig
     ensureRef.current()
   }, [containerWidth, containerHeight])
 
+  // Moving between displays can change DPR without changing the CSS size.
+  // Keep the backing store and shader coordinates on the same display scale,
+  // and re-arm the query so subsequent moves are observed too.
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    let query: MediaQueryList
+    const onChange = () => {
+      sizeActive()
+      dirtyRef.current = true
+      ensureRef.current()
+      arm()
+    }
+    const arm = () => {
+      query?.removeEventListener('change', onChange)
+      query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+      query.addEventListener('change', onChange)
+    }
+    arm()
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+
   // Renderer setup + dirty-driven rAF.
   useEffect(() => {
     const abort = new AbortController()
