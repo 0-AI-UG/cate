@@ -37,18 +37,21 @@ export interface ServerDeps {
   daemonId?: string
 }
 
-/** Where this daemon records its live server children's pids, so a NEXT run for
- *  the same host can reap any it left orphaned (e.g. after a hard crash that
- *  skipped killAll). Keyed by the daemon id — stable across restarts for one
- *  host. Lives under the system temp dir (always writable, cleared on reboot). */
-export function serverPidFilePath(daemonId: string): string {
+function serverPidFileStem(daemonId: string): { root: string; stem: string } {
   // Sanitize the id into a safe filename component (ids are app-controlled, but
   // keep it defensive — they can contain path-ish characters).
   const safe = daemonId.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'default'
-  const pidRoot = process.env.CATE_E2E === '1' && process.env.CATE_E2E_USER_DATA
+  const root = process.env.CATE_E2E === '1' && process.env.CATE_E2E_USER_DATA
     ? process.env.CATE_E2E_USER_DATA
     : os.tmpdir()
-  return path.join(pidRoot, 'cate-runtime', `ext-servers-${safe}.json`)
+  return { root: path.join(root, 'cate-runtime'), stem: `ext-servers-${safe}` }
+}
+
+/** Where this daemon records its live server children's pids. The owner pid
+ * keeps concurrent installed/dev Cate runtimes from overwriting each other. */
+export function serverPidFilePath(daemonId: string, ownerPid = process.pid): string {
+  const { root, stem } = serverPidFileStem(daemonId)
+  return path.join(root, `${stem}-${ownerPid}.json`)
 }
 
 interface PidRecord { pid: number; id: string; startedAt: number; ownerPid?: number }
@@ -75,26 +78,35 @@ function writePidFile(file: string, records: PidRecord[]): void {
  * another daemon uses the same id. Legacy records without an owner retain the
  * previous cleanup behavior. PID reuse can conservatively defer orphan cleanup. */
 export function reapOrphanServers(daemonId: string): void {
-  const file = serverPidFilePath(daemonId)
-  const retained: PidRecord[] = []
-  for (const rec of readPidFile(file)) {
-    if (rec.pid <= 0) continue
-    if (rec.ownerPid && rec.ownerPid > 0) {
-      try {
-        process.kill(rec.ownerPid, 0)
-        retained.push(rec)
-        continue
-      } catch (error) {
-        // Only ESRCH proves the owner is gone; lack of permission does not.
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+  const { root, stem } = serverPidFileStem(daemonId)
+  let files: string[] = []
+  try {
+    files = fs.readdirSync(root)
+      .filter((name) => name === `${stem}.json` || (name.startsWith(`${stem}-`) && name.endsWith('.json')))
+      .map((name) => path.join(root, name))
+  } catch { return }
+
+  for (const file of files) {
+    const retained: PidRecord[] = []
+    for (const rec of readPidFile(file)) {
+      if (rec.pid <= 0) continue
+      if (rec.ownerPid && rec.ownerPid > 0) {
+        try {
+          process.kill(rec.ownerPid, 0)
           retained.push(rec)
           continue
+        } catch (error) {
+          // Only ESRCH proves the owner is gone; lack of permission does not.
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+            retained.push(rec)
+            continue
+          }
         }
       }
+      try { process.kill(rec.pid, 'SIGKILL') } catch { /* ESRCH or perms: already gone */ }
     }
-    try { process.kill(rec.pid, 'SIGKILL') } catch { /* ESRCH or perms: already gone */ }
+    writePidFile(file, retained)
   }
-  writePidFile(file, retained)
 }
 
 /** A built server capability plus a killAll() so the daemon reaps every live
@@ -265,13 +277,15 @@ export function createServerCapability(deps: ServerDeps = {}): ServerCapability 
     },
 
     killAll(): void {
+      const ownedPids = new Set<number>()
       for (const child of children.values()) {
+        if (child.pid) ownedPids.add(child.pid)
         try { child.kill('SIGKILL') } catch { /* gone */ }
       }
       children.clear()
-      // Clean shutdown: drop the whole pid file so the next run has nothing stale
-      // to reap (the children we just killed are gone).
-      writePidFile(pidFile, [])
+      // Multiple runtime daemons can share an id. Remove only this capability's
+      // children so another daemon's live server remains discoverable/reapable.
+      writePidFile(pidFile, readPidFile(pidFile).filter((record) => !ownedPids.has(record.pid)))
     },
   }
 }

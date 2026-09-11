@@ -55,8 +55,9 @@ describe('T3 provider profile', () => {
         claudeAgent: { enabled: true },
         cursor: { enabled: true },
         grok: { enabled: false, binaryPath: '/bin/grok' },
-        opencode: { enabled: true },
+        opencode: { enabled: false },
       },
+      cateProviderDefaultsVersion: 1,
     })
   })
 
@@ -67,10 +68,24 @@ describe('T3 provider profile', () => {
     expect(isProviderSecretFile('provider-env-example.txt')).toBe(false)
   })
 
-  it('makes Grok opt-in and preserves subsequent explicit enablement', () => {
+  it('makes process-launching providers opt-in and preserves subsequent explicit enablement', () => {
     const defaults = applyCateProviderDefaults({})
-    expect(defaults.providers).toMatchObject({ grok: { enabled: false }, codex: { enabled: true } })
-    expect(applyCateProviderDefaults({ providers: { grok: { enabled: true } } }).providers)
-      .toMatchObject({ grok: { enabled: true } })
+    expect(defaults.providers).toMatchObject({
+      grok: { enabled: false },
+      opencode: { enabled: false },
+      codex: { enabled: true },
+    })
+    expect(applyCateProviderDefaults({
+      cateProviderDefaultsVersion: 1,
+      providers: { grok: { enabled: true }, opencode: { enabled: true } },
+    }).providers).toMatchObject({ grok: { enabled: true }, opencode: { enabled: true } })
+  })
+
+  it('migrates the old bare OpenCode default but preserves configured OpenCode', () => {
+    expect(applyCateProviderDefaults({ providers: { opencode: { enabled: true } } }).providers)
+      .toMatchObject({ opencode: { enabled: false } })
+    expect(applyCateProviderDefaults({
+      providers: { opencode: { enabled: true, binaryPath: '/bin/opencode' } },
+    }).providers).toMatchObject({ opencode: { enabled: true, binaryPath: '/bin/opencode' } })
   })
 })
