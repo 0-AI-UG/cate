@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import type { PanelType } from '../../shared/types'
 import { SPLIT_MENU_PANEL_TYPES } from '../../shared/panels'
 import { PANEL_REGISTRY } from '../panels/registry'
+import { POPOVER_SURFACE } from '../ui/Popover'
 
 export type SplitMenuItem = { type: PanelType; label: string; Icon: React.ComponentType<any> }
 
@@ -49,7 +50,7 @@ export function DockTabContextMenu({ open, position, items, onPick, onClose, anc
       ref={menuRef}
       role="menu"
       aria-label="New Tab"
-      className="dock-new-tab-menu pointer-events-auto z-[1000] w-[220px] max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border border-subtle bg-surface-3 shadow-lg p-1.5 text-[13px]"
+      className={`dock-new-tab-menu pointer-events-auto z-[1000] w-[220px] max-w-[calc(100vw-16px)] overflow-y-auto ${POPOVER_SURFACE} p-1.5 text-[13px]`}
       onKeyDown={(event) => {
         if (event.key === 'Escape' || event.key === 'Tab') { onClose(); event.stopPropagation(); return }
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return

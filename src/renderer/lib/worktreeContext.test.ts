@@ -29,7 +29,7 @@ describe('worktreeContext', () => {
       filePath: '/checkouts/feature/src/app.ts',
     }
     const document: PanelState = {
-      id: 'document', type: 'document', title: 'spec.pdf', isDirty: false,
+      id: 'document', type: 'editor', title: 'spec.pdf', isDirty: false,
       filePath: '/checkouts/feature/docs/spec.pdf',
     }
     const review: PanelState = {

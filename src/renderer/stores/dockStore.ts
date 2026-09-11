@@ -20,6 +20,7 @@ import {
   findTabStack,
   findZoneForStack,
   findStackContainingPanelAcrossZones,
+  findTabStackAcrossZones,
   findFirstTabStack,
 } from './dockTreeUtils'
 import { clearActivePanelIfMatches } from '../lib/activePanel'
@@ -157,17 +158,42 @@ function insertIntoSplit(
   }
 }
 
+function collectPanelIdsInTree(node: DockLayoutNode): string[] {
+  if (node.type === 'tabs') return [...node.panelIds]
+  return node.children.flatMap(collectPanelIdsInTree)
+}
+
 // -----------------------------------------------------------------------------
 // Store interface
 // -----------------------------------------------------------------------------
 
 interface DockStoreState {
-  maximizedStackId: string | null
+  presentation: DockPresentation | null
   zones: WindowDockState
 }
 
+export interface DockPresentation {
+  /** The real stack containing the presented panel(s). */
+  stackId: string
+  /** Set for a panel promoted out of a canvas. Split merges apply to the stack. */
+  panelId?: string
+  zone: DockZonePosition
+  /** Layout before the structural transformation. */
+  restoreLayout: DockLayoutNode
+  /** Layout produced by the transformation. Used to reject unsafe restores. */
+  expectedLayout: DockLayoutNode
+  /** Canvas promotion has a second source tree which must still be unchanged. */
+  canRestoreExternal?: () => boolean
+  restoreExternal?: () => void
+  dispose?: () => void
+}
+
 interface DockStoreActions {
-  toggleStackMaximized: (stackId: string) => void
+  mergeSplitToStack: (stackId: string) => void
+  beginPresentation: (presentation: DockPresentation) => void
+  discardPresentation: () => void
+  canRestorePresentation: (stackId: string) => boolean
+  restorePresentation: (stackId: string) => boolean
   // Zone visibility
   toggleZone: (position: DockZonePosition) => void
   setZoneSize: (position: DockZonePosition, size: number) => void
@@ -197,12 +223,21 @@ interface DockStoreActions {
 
 export type DockStore = DockStoreState & DockStoreActions
 
-/** Keep transient maximization valid after layout changes and reveal explicit destinations. */
-function updateDockZones(state: DockStoreState, zones: WindowDockState, revealStackId?: string): DockStoreState {
-  const maximizedZone = state.maximizedStackId && findZoneForStack(zones, state.maximizedStackId)
-  const keepMaximized = maximizedZone && zones[maximizedZone].visible
-    && (!revealStackId || revealStackId === state.maximizedStackId)
-  return { zones, maximizedStackId: keepMaximized ? state.maximizedStackId : null }
+/** Active-tab changes are harmless, but any structural difference makes a
+ * presentation unsafe to reverse. */
+function samePresentationLayout(a: DockLayoutNode | null, b: DockLayoutNode | null): boolean {
+  if (!a || !b) return a === b
+  if (a.type !== b.type || a.id !== b.id) return false
+  if (a.type === 'tabs' && b.type === 'tabs') {
+    return a.panelIds.length === b.panelIds.length
+      && a.panelIds.every((panelId, index) => panelId === b.panelIds[index])
+  }
+  if (a.type === 'split' && b.type === 'split') {
+    return a.direction === b.direction
+      && a.children.length === b.children.length
+      && a.children.every((child, index) => samePresentationLayout(child, b.children[index]))
+  }
+  return false
 }
 
 // -----------------------------------------------------------------------------
@@ -210,11 +245,70 @@ function updateDockZones(state: DockStoreState, zones: WindowDockState, revealSt
 // -----------------------------------------------------------------------------
 
 export function createDockStore(initialState?: DockStateSnapshot) {
-  return create<DockStore>((set, get) => ({
+  const store = create<DockStore>((set, get) => ({
   zones: initialState?.zones ?? createDefaultDockState(),
-  maximizedStackId: null,
-  toggleStackMaximized(stackId) {
-    set((state) => ({ maximizedStackId: state.maximizedStackId === stackId ? null : stackId }))
+  presentation: null,
+  mergeSplitToStack(stackId) {
+    set((state) => {
+      if (state.presentation) return state
+      const zone = findZoneForStack(state.zones, stackId)
+      if (!zone) return state
+      const layout = state.zones[zone].layout
+      const target = findTabStack(layout, stackId)
+      if (!layout || layout.type !== 'split' || !target) return state
+
+      const panelIds = collectPanelIdsInTree(layout)
+      const activePanelId = target.panelIds[target.activeIndex] ?? target.panelIds[0]
+      const merged: DockTabStack = {
+        type: 'tabs',
+        id: target.id,
+        panelIds,
+        activeIndex: Math.max(0, panelIds.indexOf(activePanelId)),
+      }
+      return {
+        zones: {
+          ...state.zones,
+          [zone]: { ...state.zones[zone], layout: merged },
+        },
+        presentation: {
+          stackId: merged.id,
+          zone,
+          restoreLayout: layout,
+          expectedLayout: merged,
+        },
+      }
+    })
+  },
+  beginPresentation(presentation) {
+    set((state) => state.presentation ? state : { presentation })
+  },
+  discardPresentation() {
+    get().presentation?.dispose?.()
+    set({ presentation: null })
+  },
+  canRestorePresentation(stackId) {
+    const state = get()
+    const presentation = state.presentation
+    if (!presentation || presentation.stackId !== stackId) return false
+    return samePresentationLayout(state.zones[presentation.zone].layout, presentation.expectedLayout)
+      && (presentation.canRestoreExternal?.() ?? true)
+  },
+  restorePresentation(stackId) {
+    if (!get().canRestorePresentation(stackId)) return false
+    const presentation = get().presentation!
+    presentation.dispose?.()
+    presentation.restoreExternal?.()
+    set((state) => ({
+      zones: {
+        ...state.zones,
+        [presentation.zone]: {
+          ...state.zones[presentation.zone],
+          layout: presentation.restoreLayout,
+        },
+      },
+      presentation: null,
+    }))
+    return true
   },
 
   // --- Zone visibility ---
@@ -225,8 +319,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         ...state.zones,
         [position]: { ...state.zones[position], visible: !state.zones[position].visible },
       }
-      const revealStack = zones[position].visible ? findFirstTabStack(zones[position].layout) : null
-      return updateDockZones(state, zones, revealStack?.id)
+      return { zones, presentation: state.presentation }
     })
   },
 
@@ -247,13 +340,23 @@ export function createDockStore(initialState?: DockStateSnapshot) {
 
   dockPanel(panelId, zone, target, activate = true) {
     set((state) => {
-      const zoneState = state.zones[zone]
-      let newLayout = zoneState.layout
-
-      // Guard: remove panel from target zone layout first to prevent duplicates
-      if (newLayout) {
-        newLayout = removePanelFromTree(newLayout, panelId)
+      // A panel has exactly one dock owner. Remove any existing occurrence
+      // before placing it, even when the caller skips an explicit undock.
+      const zones = { ...state.zones }
+      for (const position of ALL_ZONES) {
+        const current = zones[position]
+        if (!current.layout) continue
+        const layout = removePanelFromTree(current.layout, panelId)
+        if (layout !== current.layout) {
+          zones[position] = {
+            ...current,
+            layout,
+            visible: position === 'center' ? true : (layout !== null ? current.visible : false),
+          }
+        }
       }
+      const zoneState = zones[zone]
+      let newLayout = zoneState.layout
 
       // A 'tab' target whose stack no longer exists (e.g. it was closed since the
       // user last interacted with it) falls through to the default zone-append
@@ -262,7 +365,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         // Add to existing tab stack
         const stack = findTabStack(newLayout, target.stackId)!
         {
-          const insertIndex = target.index ?? stack.panelIds.length
+          const insertIndex = Math.max(0, Math.min(target.index ?? stack.panelIds.length, stack.panelIds.length))
           const newPanelIds = [...stack.panelIds]
           newPanelIds.splice(insertIndex, 0, panelId)
           const updatedStack: DockTabStack = {
@@ -274,7 +377,11 @@ export function createDockStore(initialState?: DockStateSnapshot) {
             ? replaceInTree(newLayout, stack.id, updatedStack)
             : updatedStack
         }
-      } else if (target?.type === 'split' && target.stackId) {
+      } else if (
+        target?.type === 'split'
+        && target.stackId
+        && findTabStack(newLayout, target.stackId)
+      ) {
         // Split an existing stack
         const newStack: DockTabStack = {
           type: 'tabs',
@@ -339,12 +446,8 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         }
       }
 
-      const zones = {
-        ...state.zones,
-        [zone]: { ...zoneState, visible: activate ? true : zoneState.visible, layout: newLayout },
-      }
-      const destination = activate ? findStackContainingPanelAcrossZones(zones, panelId) : null
-      return updateDockZones(state, zones, destination?.id)
+      zones[zone] = { ...zoneState, visible: activate ? true : zoneState.visible, layout: newLayout }
+      return { zones, presentation: state.presentation }
     })
   },
 
@@ -362,7 +465,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
 
       const newLayout = removePanelFromTree(zoneState.layout, panelId)
 
-      return updateDockZones(state, {
+      return { zones: {
         ...state.zones,
         [zone]: {
           ...zoneState,
@@ -370,7 +473,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
           // Auto-hide zone if it's now empty (never hide center)
           visible: zone === 'center' ? true : (newLayout !== null ? zoneState.visible : false),
         },
-      })
+      }, presentation: state.presentation }
     })
   },
 
@@ -378,6 +481,10 @@ export function createDockStore(initialState?: DockStateSnapshot) {
 
   moveTab(panelId, fromStackId, toStackId, index) {
     set((state) => {
+      const source = findTabStackAcrossZones(state.zones, fromStackId)
+      const target = findTabStackAcrossZones(state.zones, toStackId)
+      if (!source?.panelIds.includes(panelId) || !target) return state
+      if (fromStackId === toStackId && source.panelIds.length === 1) return state
       const zones = { ...state.zones }
 
       // Find and update source and target stacks across all zones
@@ -390,9 +497,11 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         if (fromStack) {
           const newPanelIds = fromStack.panelIds.filter((id) => id !== panelId)
           if (newPanelIds.length === 0) {
+            const layout = removePanelFromTree(zoneState.layout, panelId)
             zones[pos] = {
               ...zoneState,
-              layout: removePanelFromTree(zoneState.layout, panelId),
+              layout,
+              visible: pos === 'center' ? true : (layout !== null ? zoneState.visible : false),
             }
           } else {
             const updated: DockTabStack = {
@@ -410,7 +519,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         // Add to target
         const toStack = findTabStack(zones[pos].layout, toStackId)
         if (toStack) {
-          const insertIndex = index ?? toStack.panelIds.length
+          const insertIndex = Math.max(0, Math.min(index ?? toStack.panelIds.length, toStack.panelIds.length))
           const newPanelIds = [...toStack.panelIds]
           newPanelIds.splice(insertIndex, 0, panelId)
           const updated: DockTabStack = {
@@ -427,7 +536,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         }
       }
 
-      return updateDockZones(state, zones, toStackId)
+      return { zones, presentation: state.presentation }
     })
   },
 
@@ -444,7 +553,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
             ...zoneState,
             layout: replaceInTree(zoneState.layout, stackId, updated),
           }
-          return updateDockZones(state, zones, stackId)
+          return { zones, presentation: state.presentation }
         }
       }
       return state
@@ -510,7 +619,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         break
       }
 
-      return updateDockZones(state, zones)
+      return { zones, presentation: state.presentation }
     })
   },
 
@@ -531,12 +640,31 @@ export function createDockStore(initialState?: DockStateSnapshot) {
   },
 
   restoreSnapshot(snapshot) {
+    get().presentation?.dispose?.()
     set({
       zones: snapshot.zones,
-      maximizedStackId: null,
+      presentation: null,
     })
   },
-}))
+  }))
+
+  // Presentation is a one-shot reverse transaction, not a mode. The first
+  // incompatible structural change consumes it permanently. In particular,
+  // moving or splitting a panel promoted from a canvas must not allow Restore
+  // to reappear if the user later happens to recreate the old topology.
+  store.subscribe((state) => {
+    const presentation = state.presentation
+    if (!presentation) return
+    const outerUnchanged = samePresentationLayout(
+      state.zones[presentation.zone].layout,
+      presentation.expectedLayout,
+    )
+    if (!outerUnchanged || !(presentation.canRestoreExternal?.() ?? true)) {
+      state.discardPresentation()
+    }
+  })
+
+  return store
 }
 
 // -----------------------------------------------------------------------------

@@ -6,7 +6,7 @@ export type { EditorConflict }
 export interface UseFileSyncParams {
   workspaceId: string
   panelId: string
-  filePath: string | undefined
+  filePath: string | null | undefined
   rootPath: string | undefined
   getModel: () => monaco.editor.ITextModel | null
   onExternalReplace?: (content: string) => void

@@ -372,7 +372,6 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
 
     let prevRect = el.getBoundingClientRect()
     let prevWindowWidth = window.innerWidth
-
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const size = {

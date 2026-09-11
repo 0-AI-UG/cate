@@ -33,9 +33,5 @@ export function openFileAsPanel(
   placement?: PanelPlacement,
 ): string {
   const store = useAppStore.getState()
-  const docType = getDocumentType(filePath)
-  if (docType) {
-    return store.createDocument(workspaceId, filePath, docType, position, placement)
-  }
   return store.createEditor(workspaceId, filePath, position, placement)
 }

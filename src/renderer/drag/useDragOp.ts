@@ -159,21 +159,8 @@ function measureCanvasNodeGrab(
       ghostZoom: zoom,
     }
   }
-  // If the node is currently maximized, the spring-load effect (see
-  // CanvasNode's drag-store subscription) will un-maximize it ~200ms into
-  // the drag, snapping node.size/origin back to preMaximizeSize/Origin. The
-  // ghost is sized once at START and isn't re-measured, so taking the live
-  // maximized size would leave a huge stale ghost as soon as spring-load
-  // fires. Use the pre-maximize geometry up-front so the ghost matches the
-  // node's actual post-spring-load footprint (this mirrors the 0.4.4
-  // behaviour that was lost in the unified-drag refactor).
-  const isMaximized = node.preMaximizeOrigin != null && node.preMaximizeSize != null
-  const effectiveSize: Size = isMaximized && node.preMaximizeSize
-    ? { width: node.preMaximizeSize.width, height: node.preMaximizeSize.height }
-    : { width: node.size.width, height: node.size.height }
-  const effectiveOrigin: Point = isMaximized && node.preMaximizeOrigin
-    ? { x: node.preMaximizeOrigin.x, y: node.preMaximizeOrigin.y }
-    : { x: node.origin.x, y: node.origin.y }
+  const effectiveSize: Size = { width: node.size.width, height: node.size.height }
+  const effectiveOrigin: Point = { x: node.origin.x, y: node.origin.y }
 
   const container = findCanvasContainerForStore(canvasStoreApi)
   if (!container) {
@@ -189,19 +176,6 @@ function measureCanvasNodeGrab(
     y: cursorClient.y - container.rect.top,
   }
   const cursorCanvas = viewToCanvas(localView, zoom, container.viewportOffset)
-  // For a maximized node, project the grab proportionally into the pre-maximize
-  // rect so the cursor stays at the same relative spot inside the (smaller)
-  // ghost — otherwise grabbing the right side of a maximized node would put
-  // the cursor far outside a much smaller pre-maximize ghost.
-  if (isMaximized) {
-    const fx = (cursorCanvas.x - node.origin.x) / Math.max(node.size.width, 1)
-    const fy = (cursorCanvas.y - node.origin.y) / Math.max(node.size.height, 1)
-    return {
-      grab: { x: fx * effectiveSize.width, y: fy * effectiveSize.height },
-      ghostSize: effectiveSize,
-      ghostZoom: zoom,
-    }
-  }
   return {
     grab: { x: cursorCanvas.x - effectiveOrigin.x, y: cursorCanvas.y - effectiveOrigin.y },
     ghostSize: effectiveSize,

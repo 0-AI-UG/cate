@@ -80,5 +80,7 @@ describe('Canvas top overlay', () => {
     expect(overlay.querySelector('[data-glow-probe]')).not.toBeNull()
     expect(overlay.querySelector('[data-toolbar-probe]')).not.toBeNull()
     expect(container.querySelector('[data-canvas-marquee]')).toBeNull()
+
+    expect(world.style.transform).toBe('scale(2) translate(15px, 20px)')
   })
 })

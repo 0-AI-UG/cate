@@ -184,6 +184,26 @@ export async function seedTerminal(
   return nodeId
 }
 
+export async function seedEditor(
+  page: Page,
+  point: { x: number; y: number } = { x: 200, y: 200 },
+): Promise<string> {
+  const hint = await page.evaluate((p) => window.__cateE2E!.createEditor(p), point)
+  const nodeId = await page
+    .waitForFunction(
+      (h) => {
+        const n = window.__cateE2E!.nodes().find((x) => x.id === h || x.panelId === h)
+        return n ? n.id : null
+      },
+      hint,
+      { timeout: 15_000 },
+    )
+    .then((handle) => handle.jsonValue() as Promise<string>)
+  await page.waitForSelector(`[data-node-id="${nodeId}"]`)
+  await page.waitForTimeout(100)
+  return nodeId
+}
+
 export async function seedCanvasPanel(
   page: Page,
   point: { x: number; y: number } = { x: 200, y: 200 },

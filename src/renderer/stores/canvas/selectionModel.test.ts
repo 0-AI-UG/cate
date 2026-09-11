@@ -231,7 +231,7 @@ describe('unfocus', () => {
 })
 
 // =============================================================================
-// The activating actions — focusNode / focusAndCenter / toggleMaximize / addNode
+// The activating actions — focusNode / focusAndCenter / addNode
 // (existing-node branch) all collapse to [id] + active and bump zOrder/epoch.
 // =============================================================================
 
@@ -248,17 +248,6 @@ describe('activating actions collapse to a single active selection', () => {
     expect(focusedNodeId(s)).toBe(c)
     expect(s.nodes[c].zOrder).toBeGreaterThan(z0)
     expect(s.focusEpoch).toBe(e0 + 1)
-    expectInvariant(s)
-  })
-
-  it('toggleMaximize collapses to [id] + active', () => {
-    const { store, a, b } = addThree()
-    store.getState().setContainerSize({ width: 800, height: 600 })
-    store.getState().selectNodes([a, b])
-    store.getState().toggleMaximize(b, { width: 800, height: 600 })
-    const s = store.getState()
-    expect(s.selection).toEqual([b])
-    expect(focusedNodeId(s)).toBe(b)
     expectInvariant(s)
   })
 

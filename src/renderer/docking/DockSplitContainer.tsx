@@ -6,7 +6,6 @@
 import React, { useCallback, useRef } from 'react'
 import { useDockStoreContext } from '../stores/DockStoreContext'
 import { type DockLayoutNode, type DockSplitNode, type PanelType } from '../../shared/types'
-import { findTabStack } from '../stores/dockTreeUtils'
 import { layoutMinimum, SPLIT_DIVIDER_SIZE } from './splitSizing'
 import DockResizeHandle from './DockResizeHandle'
 
@@ -42,8 +41,6 @@ export default function DockSplitContainer({
   getPanelType,
 }: DockSplitContainerProps) {
   const setSplitRatio = useDockStoreContext((s) => s.setSplitRatio)
-  const maximizedStackId = useDockStoreContext((s) => s.maximizedStackId)
-  const containsMaximized = !!maximizedStackId && !!findTabStack(node, maximizedStackId)
   const isHorizontal = node.direction === 'horizontal'
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -98,16 +95,15 @@ export default function DockSplitContainer({
           <div
             data-dock-pane={child.id}
             style={{
-              [isHorizontal ? 'width' : 'height']: containsMaximized ? '100%' : `calc((100% - ${SPLIT_DIVIDER_SIZE * (node.children.length - 1)}px) * ${node.ratios[i]})`,
-              display: containsMaximized && !findTabStack(child, maximizedStackId!) ? 'none' : undefined,
-              minWidth: containsMaximized ? 0 : minimum.width,
-              minHeight: containsMaximized ? 0 : minimum.height,
+              [isHorizontal ? 'width' : 'height']: `calc((100% - ${SPLIT_DIVIDER_SIZE * (node.children.length - 1)}px) * ${node.ratios[i]})`,
+              minWidth: minimum.width,
+              minHeight: minimum.height,
             }}
             className="shrink overflow-hidden"
           >
             {renderNode(child)}
           </div>
-          {!containsMaximized && i < node.children.length - 1 && (
+          {i < node.children.length - 1 && (
             <DockResizeHandle
               direction={isHorizontal ? 'horizontal' : 'vertical'}
               onResize={(delta) => handleResize(i, delta)}

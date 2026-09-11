@@ -21,7 +21,7 @@ vi.mock('pdfjs-dist', () => ({
   getDocument: pdfMocks.getDocument,
 }))
 
-import DocumentPanel from './DocumentPanel'
+import FilePreview from './FilePreview'
 import { useAppStore } from '../stores/appStore'
 import type { PanelState, WorkspaceState } from '../../shared/types'
 
@@ -32,7 +32,7 @@ let root: Root
 let fsReadBinary: ReturnType<typeof vi.fn>
 let shellShowInFolder: ReturnType<typeof vi.fn>
 
-function workspace(filePath?: string, documentType?: PanelState['documentType']): WorkspaceState {
+function workspace(filePath?: string, _documentType?: 'pdf' | 'docx' | 'image'): WorkspaceState {
   return {
     id: 'ws-1',
     name: 'Workspace',
@@ -41,18 +41,22 @@ function workspace(filePath?: string, documentType?: PanelState['documentType'])
     panels: {
       'document-1': {
         id: 'document-1',
-        type: 'document',
+        type: 'editor',
         title: 'Document',
         filePath,
-        documentType,
       } as PanelState,
     },
   }
 }
 
+function PreviewHarness() {
+  const filePath = useAppStore(s => s.workspaces[0].panels['document-1'].filePath)
+  return <FilePreview filePath={filePath ?? ''} workspaceId="ws-1" />
+}
+
 function mount(): void {
   act(() => {
-    root.render(<DocumentPanel panelId="document-1" workspaceId="ws-1" />)
+    root.render(<PreviewHarness />)
   })
 }
 
@@ -79,7 +83,7 @@ afterEach(() => {
   useAppStore.setState(initialAppState, true)
 })
 
-describe('DocumentPanel component', () => {
+describe('FilePreview component', () => {
   it('loads binary data for the owning workspace and trusts magic bytes over stale persisted type', async () => {
     useAppStore.setState({ workspaces: [workspace('/workspace/photo.png', 'pdf')], selectedWorkspaceId: 'ws-1' })
     fsReadBinary.mockResolvedValue(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]).buffer)

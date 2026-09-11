@@ -110,7 +110,6 @@ export interface CanvasStoreActions {
   resizeNode: (id: CanvasNodeId, size: Size, origin?: Point) => void
   focusNode: (id: CanvasNodeId) => void
   unfocus: () => void
-  toggleMaximize: (id: CanvasNodeId, viewportSize: Size) => void
   setZoom: (level: number) => void
   setViewportOffset: (offset: Point) => void
   setZoomAndOffset: (zoom: number, offset: Point) => void

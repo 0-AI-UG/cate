@@ -117,21 +117,21 @@ const Section: React.FC<{
   if (count === 0) return null
 
   return (
-    <div className="mb-1">
+    <div className="mb-4 overflow-hidden rounded-lg border border-subtle">
       <div
-        className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-muted cursor-pointer hover:bg-hover select-none"
+        className="flex items-center gap-2 bg-surface-1 px-4 py-3 text-[13px] font-semibold text-primary cursor-pointer hover:bg-hover select-none"
         onClick={() => setOpen(!open)}
       >
         {open ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <span className="flex-1">{title}</span>
-        <span className="text-muted font-normal normal-case">{count}</span>
+        <span className="min-w-6 rounded-full bg-surface-3 px-2 py-0.5 text-center text-[11px] font-medium text-secondary tabular-nums">{count}</span>
         {actions && (
           <div className="flex items-center gap-0.5 ml-1" onClick={(e) => e.stopPropagation()}>
             {actions}
           </div>
         )}
       </div>
-      {open && <div>{children}</div>}
+      {open && <div className="divide-y divide-subtle border-t border-subtle">{children}</div>}
     </div>
   )
 }
@@ -151,15 +151,15 @@ const FileEntry: React.FC<{
   const dir = dirName(file.path)
   return (
     <div
-      className="group flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-2 text-[13px] cursor-pointer hover:bg-hover"
+      className="group flex items-center gap-2 px-4 py-3 text-[13px] cursor-pointer hover:bg-hover"
       onClick={onClick}
     >
       <span className={`w-4 text-center font-mono text-[11px] flex-shrink-0 ${statusColor(statusChar)}`}>
         {statusChar}
       </span>
-      <span className="truncate text-primary flex-1 min-w-0">
+      <span className="truncate font-medium text-primary flex-1 min-w-0">
         {fileName(file.path)}
-        {dir && <span className="text-muted ml-1">{dir}</span>}
+        {dir && <span className="text-muted ml-2 font-normal">{dir}</span>}
       </span>
       <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
         {onDiscard && (
@@ -283,15 +283,15 @@ const BranchPicker: React.FC<{
   const branchCount = branches.length || 1 // at least show current
 
   return (
-    <div className="mb-1">
+    <div className="mb-4 overflow-hidden rounded-lg border border-subtle">
       {/* Section header — matches Section component style */}
       <div
-        className="flex items-center gap-1 px-3 py-2 text-xs font-medium text-muted cursor-pointer hover:bg-hover select-none"
+        className="flex items-center gap-2 bg-surface-1 px-4 py-3 text-[13px] font-semibold text-primary cursor-pointer hover:bg-hover select-none"
         onClick={() => setIsOpen(!isOpen)}
       >
         {isOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <span className="flex-1">Branches</span>
-        <span className="text-muted font-normal normal-case">{branchCount}</span>
+        <span className="min-w-6 rounded-full bg-surface-3 px-2 py-0.5 text-center text-[11px] font-medium text-secondary tabular-nums">{branchCount}</span>
         {!isOpen && (
           <span className="text-muted font-normal text-[10px] truncate max-w-[80px]">{currentBranch}</span>
         )}
@@ -300,7 +300,7 @@ const BranchPicker: React.FC<{
       {isOpen && (
         <div>
           {/* Search / Create */}
-          <div className="px-2 py-1">
+          <div className="border-y border-subtle bg-surface-1/50 p-3">
             {creating ? (
               <div className="flex gap-1">
                 <input
@@ -352,7 +352,7 @@ const BranchPicker: React.FC<{
             return (
               <div
                 key={b.name}
-                className={`group flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] ${isSelectedCurrent ? 'text-primary' : 'text-secondary'}`}
+                className={`group flex items-center gap-2 border-b border-subtle last:border-b-0 px-4 py-3 cursor-pointer hover:bg-hover text-[13px] ${isSelectedCurrent ? 'text-primary' : 'text-secondary'}`}
                 onClick={() => handleCheckout(b.name)}
               >
                 <GitBranch size={11} className="flex-shrink-0" />
@@ -379,11 +379,11 @@ const BranchPicker: React.FC<{
           })}
           {filtered(remoteBranches).length > 0 && (
             <>
-              <div className="px-3 py-0.5 text-[10px] text-muted uppercase mt-1">Remote</div>
+              <div className="border-y border-subtle bg-surface-1 px-4 py-2 text-xs font-semibold text-secondary">Remote</div>
               {filtered(remoteBranches).map(b => (
                 <div
                   key={b.name}
-                  className="flex items-center gap-1 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] cursor-pointer hover:bg-hover text-[12px] text-muted"
+                  className="flex items-center gap-2 border-b border-subtle last:border-b-0 px-4 py-3 cursor-pointer hover:bg-hover text-[13px] text-secondary"
                   onClick={() => handleCheckout(b.name)}
                 >
                   <GitBranch size={11} className="flex-shrink-0" />
@@ -670,8 +670,8 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, workspa
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden text-[12px]" style={{ containerType: 'inline-size', containerName: 'repository' }}>
-      <nav aria-label="Repository sections" className="flex shrink-0 items-center gap-1 pb-3">
-        {(['changes', 'branches', 'history', 'worktrees'] as const).map(value => <Button variant="ghost" key={value} size="sm" aria-pressed={section === value} className={section === value ? 'bg-hover text-primary' : 'text-muted'} onClick={() => setSection(value)}>{value === 'history' ? 'History' : value[0].toUpperCase() + value.slice(1)}</Button>)}
+      <nav aria-label="Repository sections" className="mb-2 flex shrink-0 items-center gap-1 border-b border-subtle pb-3">
+        {(['changes', 'branches', 'history', 'worktrees'] as const).map(value => <Button variant="ghost" key={value} size="sm" aria-pressed={section === value} className={section === value ? 'bg-surface-3 font-semibold text-primary' : 'text-secondary'} onClick={() => setSection(value)}>{value === 'history' ? 'History' : value[0].toUpperCase() + value.slice(1)}</Button>)}
         <div className="ml-auto">{headerActions}</div>
       </nav>
       {section === 'changes' && (
@@ -701,11 +701,11 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, workspa
         </div>
       )}
 
-      <div className={section === 'changes' ? 'repository-changes-grid grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto py-2' : 'min-h-0 flex-1 overflow-y-auto py-2'}>
+      <div className={section === 'changes' ? 'repository-changes-grid grid min-h-0 flex-1 grid-cols-1 gap-4 content-start overflow-y-auto pt-2 pb-6' : 'min-h-0 flex-1 overflow-y-auto pt-2 pb-6'}>
       {/* Commit area */}
       {section === 'changes' && (
-      <div className="order-2 self-start rounded-xl bg-surface-1 p-4">
-        <h2 className="mb-1 text-sm font-medium">Commit staged changes</h2>
+      <div className="order-2 self-start rounded-lg border border-subtle bg-surface-1 p-4">
+        <h2 className="mb-1 text-sm font-semibold">Commit staged changes</h2>
         <p className="mb-4 text-xs text-muted">{stagedFiles.length} staged {stagedFiles.length === 1 ? 'file' : 'files'} · {status?.current ?? 'Detached HEAD'}</p>
         <textarea
           ref={textareaRef}
@@ -754,7 +754,7 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, workspa
 
       )}
       {/* Changes share a bounded column beside the commit composer. */}
-      <div className="min-w-0 py-1">
+      <div className="min-w-0">
         {section === 'changes' && <>
         {/* Staged Changes */}
         <Section
@@ -871,13 +871,13 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, workspa
           {logEntries.map((entry) => (
             <div
               key={entry.hash}
-              className="flex items-start gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[4px] hover:bg-hover text-[11px] cursor-pointer"
+              className="flex items-start gap-3 px-4 py-3 hover:bg-hover text-xs cursor-pointer"
               onClick={() => openReview({ kind: 'commit', commit: entry.hash }, undefined, false, rootPath)}
             >
               <ClockCounterClockwise size={11} className="text-muted flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
-                <div className="text-primary truncate">{entry.message}</div>
-                <div className="flex items-center gap-1.5 text-muted">
+                <div className="text-[13px] font-medium text-primary truncate">{entry.message}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-muted">
                   <span className="font-mono">{entry.hash.slice(0, 7)}</span>
                   <span>{entry.author_name}</span>
                   <span>{relativeTime(entry.date)}</span>
@@ -899,14 +899,14 @@ const RepoSourceControl: React.FC<RepoSourceControlProps> = ({ rootPath, workspa
             <button
               type="button"
               key={wt.path}
-              className={`w-[calc(100%-0.75rem)] flex items-center gap-1.5 mx-1.5 my-0.5 rounded-lg px-3 py-[3px] hover:bg-hover text-left ${
+              className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-hover text-[13px] text-left ${
                 wt.id === changesWorktree?.id ? 'text-primary bg-surface-3' : 'text-secondary'
               }`}
               title={wt.path}
               onClick={() => { setSourceControlWorktree(rootPath, wt.id); setSection('changes') }}
             >
               <GitBranch size={12} className="flex-shrink-0" />
-              <span className="truncate flex-1">{wt.label || wt.branch || '(detached)'}</span>
+              <span className="min-w-0 flex-1"><span className="block truncate font-medium">{wt.label || wt.branch || '(detached)'}</span><span className="mt-1 block truncate text-xs text-muted" title={wt.path}>{wt.path}</span></span>
               {wt.id === changesWorktree?.id && (
                 <span className="text-[10px] text-green-400/60">changes</span>
               )}

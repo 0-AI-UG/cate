@@ -46,7 +46,7 @@ export function worktreeForPanel<W extends WorktreePathLike>(
   const explicit = worktrees.find((worktree) => worktree.id === panel.worktreeId)
   if (explicit) return explicit
   if (panel.type === 'terminal' || panel.type === 'agent') return worktreeForPath(panel.cwd, worktrees)
-  if (panel.type === 'editor' || panel.type === 'document') {
+  if (panel.type === 'editor') {
     return worktreeForPath(panel.filePath, worktrees)
   }
   if (panel.type === 'review') return worktreeForPath(panel.reviewState?.repoPath, worktrees)
