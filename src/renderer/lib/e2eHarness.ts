@@ -21,8 +21,9 @@ import { getLastReveal } from './editor/editorReveal'
 import { applyTheme } from './themeManager'
 import { BUILT_IN_THEMES } from '../../shared/themes'
 import { terminalRegistry } from './terminal/terminalRegistry'
-import type { Point, WorktreeMeta } from '../../shared/types'
-import { activeDockPanelId } from '../../shared/collectPanelIds'
+import type { DockLayoutNode, DockZonePosition, Point, WorktreeMeta } from '../../shared/types'
+import { activeDockPanelId, collectPanelIds } from '../../shared/collectPanelIds'
+import { getOrCreateWorkspaceDockStore } from './workspace/dockRegistry'
 import { useSettingsStore } from '../stores/settingsStore'
 import { parseCodingAgentId, type CodingAgentRunSnapshot } from '../../shared/codingAgentRuns'
 import { codingAgentSnapshot, handleCodingAgentMethod } from './agent/codingAgentDriver'
@@ -76,6 +77,11 @@ declare global {
       ): Promise<BrowserOutcome>
       browserWebContentsId(panelId: string): number | null
       nodes(): { id: string; panelId: string; origin: Point; size: { width: number; height: number } }[]
+      dockDebug(): {
+        zones: Record<DockZonePosition, { panelIds: string[]; leafCount: number }>
+        presentation: { stackId: string; panelId: string | null; canRestore: boolean } | null
+      }
+      canvasDebug(canvasPanelId?: string): { id: string; panelIds: string[]; leafCount: number }[]
       zoom(): number
       setZoom(z: number): void
       resetViewport(): void
@@ -279,6 +285,49 @@ export function installE2EHarness(): void {
       panelId: activeDockPanelId(n.dockLayout) ?? '',
       origin: { x: n.origin.x, y: n.origin.y },
       size: { width: n.size.width, height: n.size.height },
+    }))
+  }
+
+  const leafCount = (layout: DockLayoutNode | null): number => {
+    if (!layout) return 0
+    return layout.type === 'tabs'
+      ? 1
+      : layout.children.reduce((total, child) => total + leafCount(child), 0)
+  }
+
+  const dockDebug = () => {
+    const workspaceId = useAppStore.getState().selectedWorkspaceId
+    const state = getOrCreateWorkspaceDockStore(workspaceId).getState()
+    const zone = (position: DockZonePosition) => ({
+      panelIds: collectPanelIds(state.zones[position].layout),
+      leafCount: leafCount(state.zones[position].layout),
+    })
+    return {
+      zones: {
+        left: zone('left'),
+        right: zone('right'),
+        bottom: zone('bottom'),
+        center: zone('center'),
+      },
+      presentation: state.presentation
+        ? {
+            stackId: state.presentation.stackId,
+            panelId: state.presentation.panelId ?? null,
+            canRestore: state.canRestorePresentation(state.presentation.stackId),
+          }
+        : null,
+    }
+  }
+
+  const canvasDebug = (canvasPanelId?: string) => {
+    const store = canvasPanelId
+      ? getOrCreateCanvasStoreForPanel(canvasPanelId)
+      : activeCanvasStore()
+    if (!store) return []
+    return Object.values(store.getState().nodes).map((node) => ({
+      id: node.id,
+      panelIds: collectPanelIds(node.dockLayout),
+      leafCount: leafCount(node.dockLayout),
     }))
   }
 
@@ -548,6 +597,8 @@ export function installE2EHarness(): void {
     browserInvoke,
     browserWebContentsId,
     nodes,
+    dockDebug,
+    canvasDebug,
     zoom,
     setZoom,
     resetViewport,

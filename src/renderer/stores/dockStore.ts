@@ -20,6 +20,7 @@ import {
   findTabStack,
   findZoneForStack,
   findStackContainingPanelAcrossZones,
+  findTabStackAcrossZones,
   findFirstTabStack,
 } from './dockTreeUtils'
 import { clearActivePanelIfMatches } from '../lib/activePanel'
@@ -339,13 +340,23 @@ export function createDockStore(initialState?: DockStateSnapshot) {
 
   dockPanel(panelId, zone, target, activate = true) {
     set((state) => {
-      const zoneState = state.zones[zone]
-      let newLayout = zoneState.layout
-
-      // Guard: remove panel from target zone layout first to prevent duplicates
-      if (newLayout) {
-        newLayout = removePanelFromTree(newLayout, panelId)
+      // A panel has exactly one dock owner. Remove any existing occurrence
+      // before placing it, even when the caller skips an explicit undock.
+      const zones = { ...state.zones }
+      for (const position of ALL_ZONES) {
+        const current = zones[position]
+        if (!current.layout) continue
+        const layout = removePanelFromTree(current.layout, panelId)
+        if (layout !== current.layout) {
+          zones[position] = {
+            ...current,
+            layout,
+            visible: position === 'center' ? true : (layout !== null ? current.visible : false),
+          }
+        }
       }
+      const zoneState = zones[zone]
+      let newLayout = zoneState.layout
 
       // A 'tab' target whose stack no longer exists (e.g. it was closed since the
       // user last interacted with it) falls through to the default zone-append
@@ -354,7 +365,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         // Add to existing tab stack
         const stack = findTabStack(newLayout, target.stackId)!
         {
-          const insertIndex = target.index ?? stack.panelIds.length
+          const insertIndex = Math.max(0, Math.min(target.index ?? stack.panelIds.length, stack.panelIds.length))
           const newPanelIds = [...stack.panelIds]
           newPanelIds.splice(insertIndex, 0, panelId)
           const updatedStack: DockTabStack = {
@@ -366,7 +377,11 @@ export function createDockStore(initialState?: DockStateSnapshot) {
             ? replaceInTree(newLayout, stack.id, updatedStack)
             : updatedStack
         }
-      } else if (target?.type === 'split' && target.stackId) {
+      } else if (
+        target?.type === 'split'
+        && target.stackId
+        && findTabStack(newLayout, target.stackId)
+      ) {
         // Split an existing stack
         const newStack: DockTabStack = {
           type: 'tabs',
@@ -431,10 +446,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         }
       }
 
-      const zones = {
-        ...state.zones,
-        [zone]: { ...zoneState, visible: activate ? true : zoneState.visible, layout: newLayout },
-      }
+      zones[zone] = { ...zoneState, visible: activate ? true : zoneState.visible, layout: newLayout }
       return { zones, presentation: state.presentation }
     })
   },
@@ -469,6 +481,10 @@ export function createDockStore(initialState?: DockStateSnapshot) {
 
   moveTab(panelId, fromStackId, toStackId, index) {
     set((state) => {
+      const source = findTabStackAcrossZones(state.zones, fromStackId)
+      const target = findTabStackAcrossZones(state.zones, toStackId)
+      if (!source?.panelIds.includes(panelId) || !target) return state
+      if (fromStackId === toStackId && source.panelIds.length === 1) return state
       const zones = { ...state.zones }
 
       // Find and update source and target stacks across all zones
@@ -481,9 +497,11 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         if (fromStack) {
           const newPanelIds = fromStack.panelIds.filter((id) => id !== panelId)
           if (newPanelIds.length === 0) {
+            const layout = removePanelFromTree(zoneState.layout, panelId)
             zones[pos] = {
               ...zoneState,
-              layout: removePanelFromTree(zoneState.layout, panelId),
+              layout,
+              visible: pos === 'center' ? true : (layout !== null ? zoneState.visible : false),
             }
           } else {
             const updated: DockTabStack = {
@@ -501,7 +519,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         // Add to target
         const toStack = findTabStack(zones[pos].layout, toStackId)
         if (toStack) {
-          const insertIndex = index ?? toStack.panelIds.length
+          const insertIndex = Math.max(0, Math.min(index ?? toStack.panelIds.length, toStack.panelIds.length))
           const newPanelIds = [...toStack.panelIds]
           newPanelIds.splice(insertIndex, 0, panelId)
           const updated: DockTabStack = {

@@ -104,12 +104,14 @@ test('source node is hidden while dragging', async () => {
   await page.mouse.move(grab!.x, grab!.y)
   await page.mouse.down()
   await page.mouse.move(grab!.x + 100, grab!.y + 80, { steps: 10 })
-  await page.waitForTimeout(250) // wait for opacity transition (150ms) + slop
-  const opacity = await page.evaluate(
-    (id) => getComputedStyle(document.querySelector(`[data-node-id="${id}"]`)!).opacity,
+  const style = await page.evaluate(
+    (id) => {
+      const computed = getComputedStyle(document.querySelector(`[data-node-id="${id}"]`)!)
+      return { visibility: computed.visibility, pointerEvents: computed.pointerEvents }
+    },
     nodeId,
   )
-  expect(parseFloat(opacity)).toBe(0)
+  expect(style).toEqual({ visibility: 'hidden', pointerEvents: 'none' })
   await page.mouse.up()
 })
 

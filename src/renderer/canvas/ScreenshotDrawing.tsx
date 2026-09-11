@@ -190,7 +190,7 @@ export function ScreenshotDrawing({ id, url, width, height, toolbarHost, onClose
         return <g key={callout.id} transform={`rotate(${callout.rotation} ${center.x} ${center.y})`}>
           <foreignObject x={callout.x} y={callout.y} width={callout.width} height={callout.height}
             onClick={event => event.stopPropagation()}>
-          <div className="group relative h-full w-full overflow-hidden rounded-2xl bg-black/30 text-white shadow-xl backdrop-blur-sm" xmlns="http://www.w3.org/1999/xhtml">
+          <div className="group relative h-full w-full overflow-hidden rounded-2xl bg-black/30 text-white shadow-xl backdrop-blur-sm">
             <button type="button" aria-label={`Move comment ${index + 1}`} title="Drag comment"
               className="absolute left-1.5 top-1/2 z-10 -translate-y-1/2 cursor-grab rounded-full p-1 text-white/65 hover:bg-white/15 hover:text-white active:cursor-grabbing"
               onClick={event => event.stopPropagation()}

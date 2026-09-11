@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { CaretLeft, CaretRight, DownloadSimple, Minus, Plus, X } from '@phosphor-icons/react'
+import { CaretLeft, CaretRight, DownloadSimple, Minus, PencilSimple, Plus, X } from '@phosphor-icons/react'
 import type { RecentScreenshot } from '../../shared/recentScreenshot'
 import { Tooltip } from '../ui/Tooltip'
 import { createPortal } from 'react-dom'

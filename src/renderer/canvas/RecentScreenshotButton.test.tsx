@@ -74,6 +74,29 @@ it('does not crash the canvas when an older preload lacks screenshot APIs', asyn
   }
 })
 
+it('renders the annotation marker for a saved screenshot', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  const originalAPI = window.electronAPI
+  window.electronAPI = {
+    ...originalAPI,
+    getRecentScreenshot: vi.fn().mockResolvedValue([{
+      id: 'annotated', filePath: '/annotated.png', dataUrl: 'data:image/png;base64,test', annotated: true,
+    }]),
+    onRecentScreenshotChanged: vi.fn(() => () => {}),
+    dragRecentScreenshot: vi.fn().mockResolvedValue(undefined),
+  }
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<RecentScreenshotButton />))
+    expect(host.querySelector('[aria-label="Annotated screenshot"]')).not.toBeNull()
+  } finally {
+    act(() => root.unmount())
+    window.electronAPI = originalAPI
+    vi.unstubAllGlobals()
+  }
+})
+
 it('opens clicked screenshots, navigates with overlay controls and keys, and closes the viewer', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   const originalAPI = window.electronAPI

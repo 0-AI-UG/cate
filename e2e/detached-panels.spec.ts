@@ -136,6 +136,7 @@ test('screenshot preview and comment editing stay in the detached canvas window'
   await expect.poll(() => calloutGroup.getAttribute('transform')).not.toBe(initialTransform)
   await detached.getByRole('button', { name: 'Save' }).click()
   await expect(detached.getByRole('dialog', { name: 'Screenshot preview' })).toHaveCount(0)
+  await expect(detached.getByLabel('Annotated screenshot')).toBeVisible()
   await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { __detachedAnnotation?: string }).__detachedAnnotation?.startsWith('data:image/png;base64,'))).toBe(true)
 })
 
