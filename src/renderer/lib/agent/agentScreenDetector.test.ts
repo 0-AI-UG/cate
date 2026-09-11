@@ -9,6 +9,7 @@ import {
   noteAgentInterruptSubmitted,
   noteAgentInputSubmitted,
   forgetAgentTracker,
+  canAgentReceivePrompt,
 } from './agentScreenDetector'
 import { sendOsNotification } from '../notifications/osNotificationSend'
 import { useStatusStore, setTerminalWorkspaceResolver } from '../../stores/statusStore'
@@ -125,11 +126,14 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
 
   it('session-end acts like turn-end for state but stays silent', () => {
     noteAgentPresence(PTY, true)
+    expect(canAgentReceivePrompt(PTY)).toBe(true)
     noteAgentHookEvent(hookEvent('turn-start'))
     expect(state()).toBe('running')
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
 
     noteAgentHookEvent(hookEvent('session-end')) // e.g. /clear mid-turn
     expect(state()).toBe('waitingForInput')
+    expect(canAgentReceivePrompt(PTY)).toBe(true)
     expect(sendOsNotification).not.toHaveBeenCalled()
   })
 
@@ -155,6 +159,7 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
 
     noteAgentHookEvent(hookEvent('permission-wait', 'claude-code', { message: 'Claude needs your permission' }))
     expect(state()).toBe('waitingForInput')
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
     expect(sendOsNotification).toHaveBeenCalledTimes(1)
     expect(sendOsNotification).toHaveBeenCalledWith(
       expect.objectContaining({

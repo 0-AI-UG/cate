@@ -6,7 +6,7 @@ const target = { kind: 'new', placement: { target: 'canvas' } } as unknown as Pa
 function host() {
   const actions = {
     pick: vi.fn(async () => target), openDiff: vi.fn(async () => true),
-    openFile: vi.fn(), createAgent: vi.fn(), openExternal: vi.fn(),
+    openFile: vi.fn(), createAgent: vi.fn(), openExternal: vi.fn(), relationContext: vi.fn(() => 'context'),
   }
   return { ...actions, dispatcher: createAgentHarnessHostDispatcher('thread', actions) }
 }
@@ -25,6 +25,12 @@ describe('chat host dispatcher', () => {
     await expect(h.dispatcher.handle('external', { url: 'file:///etc/passwd' })).rejects.toThrow('Unsupported')
     expect(h.openDiff).not.toHaveBeenCalled()
     expect(h.openExternal).not.toHaveBeenCalled()
+  })
+
+  it('passes the selected T3 provider to relation context generation', async () => {
+    const h = host()
+    expect(await h.dispatcher.handle('relation-context', { provider: 'codex' })).toBe('context')
+    expect(h.relationContext).toHaveBeenCalledWith('codex')
   })
 
   it('does not open files after disposal while placement is pending', async () => {

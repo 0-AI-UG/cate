@@ -13,11 +13,11 @@
 // =============================================================================
 
 import { ipcMain } from 'electron'
-import { AGENT_CHANGES_BIND, AGENT_CHANGES_LIST, AGENT_CHANGES_READ, AGENT_HOOKS_INSPECT, SHELL_AGENT_HOOK_EVENT } from '../../shared/ipc-channels'
+import { AGENT_CHANGES_BIND, AGENT_CHANGES_LIST, AGENT_CHANGES_READ, AGENT_HOOKS_INSPECT, AGENT_HOOKS_SET_PROMPT_CONTEXT, SHELL_AGENT_HOOK_EVENT } from '../../shared/ipc-channels'
 import type { AgentHookAgentState, AgentHookEvent } from '../../shared/agentHooks'
 import { runtimes } from '../runtime/runtimeManager'
 import { parseLocator, type RuntimeId } from '../../shared/runtimeLocator'
-import { getTerminalOwner } from './terminal'
+import { getRuntimeForTerminal, getTerminalOwner } from './terminal'
 import { sendToWindow, windowFromEvent } from '../windowRegistry'
 import { ingestAgentSessionStamp } from './agentSessionStamps'
 
@@ -58,6 +58,14 @@ export function registerAgentHookForwarding(): void {
   })
   // Settings UI: report a workspace's current per-agent injection state.
   ipcMain.handle(AGENT_HOOKS_INSPECT, (_event, locator: string) => inspectAgentHooks(locator))
+  ipcMain.handle(AGENT_HOOKS_SET_PROMPT_CONTEXT, async (event, terminalId: string, context: string | null) => {
+    const ownerWindowId = windowFromEvent(event)?.id
+    if (typeof terminalId !== 'string' || getTerminalOwner(terminalId) !== ownerWindowId) return
+    await getRuntimeForTerminal(terminalId)?.agentHooks.setPromptContext(
+      terminalId,
+      typeof context === 'string' && context ? context : null,
+    )
+  })
 
   runtimes.onConnected((id, runtime) => {
     unsubs.get(id)?.()

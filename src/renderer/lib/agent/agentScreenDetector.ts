@@ -257,6 +257,13 @@ export function noteAgentInputSubmitted(terminalId: string): void {
   recompute(terminalId)
 }
 
+/** Hook-derived readiness for addressed prompts. This deliberately excludes a
+ * mid-turn permission prompt even though both states render as "needs input". */
+export function canAgentReceivePrompt(terminalId: string): boolean {
+  const tracker = trackers.get(terminalId)
+  return Boolean(tracker?.present && !tracker.hookTurnActive && !tracker.hookPermissionWait)
+}
+
 /** Kiro 2.19's v3 TUI returns to its input prompt on Ctrl-C but emits no Stop
  * hook and exposes no transcript marker. Terminal input is therefore its only
  * deterministic interrupt boundary. Scope this recovery to a hook-proven,

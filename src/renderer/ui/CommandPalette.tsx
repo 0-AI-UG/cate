@@ -11,7 +11,7 @@ import { T3Logo } from './T3Logo'
 
 import { flushSync } from 'react-dom'
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { Terminal, Globe, FileText, Folders, Sidebar, FolderOpen, Trash, GraduationCap, X, Scan as Selection, Undo2 as ArrowUUpLeft, Redo2 as ArrowUUpRight, ChevronLeft as CaretLeft, ChevronRight as CaretRight, GitCompareArrows as GitDiff } from 'lucide-react'
+import { Terminal, Globe, FileText, Folders, Sidebar, FolderOpen, Trash, GraduationCap, X, Scan as Selection, Undo2 as ArrowUUpLeft, Redo2 as ArrowUUpRight, ChevronLeft as CaretLeft, ChevronRight as CaretRight, GitCompareArrows as GitDiff, Waypoints } from 'lucide-react'
 import { Grid2X2 as SquaresFour, Layers as Stack, Search as MagnifyingGlass, Maximize as ArrowsOutSimple, Save as FloppyDisk, RefreshCw as ArrowsClockwise, Puzzle as PuzzlePiece } from 'lucide-react'
 import { browserPanelUrl, SHORTCUT_ACTIONS, displayString, SHORTCUT_DISPLAY_NAMES, type PanelType, type MenuActionId, type ShortcutAction } from '../../shared/types'
 import { isNavigablePanelType } from '../../shared/panels'
@@ -19,6 +19,7 @@ import { isRemoteRuntimeConnection } from '../../shared/runtimeConnection'
 import { PaletteDialogShell } from './Modal'
 import { useUIStore } from '../stores/uiStore'
 import { useAppStore } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { useOtherWindowPanels } from '../stores/windowPanelStore'
 import { useResolvedShortcuts } from '../stores/shortcutStore'
 import { getFocusedLeafPanelId } from '../lib/focusedPanel'
@@ -36,6 +37,7 @@ import { PaletteTextInput } from './PaletteTextInput'
 import { useWorktrees } from '../stores/useWorktrees'
 import { selectedWorktree, worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
 import { getActivePanelId } from '../lib/activePanel'
+import { connectPanelToExisting } from '../lib/panelRelations/connectPanel'
 
 // -----------------------------------------------------------------------------
 // Command definitions
@@ -138,6 +140,7 @@ export const CommandPalette: React.FC = () => {
   const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
   const selectedWorkspaceId = useAppStore((s) => s.selectedWorkspaceId)
   const workspaces = useAppStore((s) => s.workspaces)
+  const panelRelationsEnabled = useSettingsStore((s) => s.panelRelationsEnabled)
   const canvasApi = useOptionalCanvasStoreApi()
   // Detached windows have no sidebar, so sidebar toggles are hidden there.
   const isMainWindow = useContext(WindowTypeContext) === 'main'
@@ -194,7 +197,13 @@ export const CommandPalette: React.FC = () => {
       icon: <GlobeIcon />,
       action: () => { void window.electronAPI.runNativeAction(`browser:${id}`) },
     })) : []),
-  ], [run, shortcuts, isMainWindow, isRemoteWorkspace, isBrowserFocused])
+    ...(panelRelationsEnabled && focusedPanelId && selectedWorkspaceId ? [{
+      id: 'connect-panel',
+      title: 'Panels: Connect focused panel…',
+      icon: <Waypoints size={ICON_SIZE} />,
+      action: () => { void connectPanelToExisting(selectedWorkspaceId, focusedPanelId) },
+    }] : []),
+  ], [run, shortcuts, isMainWindow, isRemoteWorkspace, isBrowserFocused, focusedPanelId, panelRelationsEnabled, selectedWorkspaceId])
 
   // Open panels in the current workspace.
   // Panels come from the SAME source as the sidebar workspace overview

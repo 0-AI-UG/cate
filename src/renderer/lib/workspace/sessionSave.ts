@@ -168,6 +168,7 @@ async function persistSession(): Promise<void> {
       rootPath: workspace.rootPath || null,
       dockState: dockSnapshot,
       panels,
+      panelRelations: workspace.panelRelations?.length ? workspace.panelRelations : undefined,
       // Geometry for every canvas, keyed by canvas panel id (incl. the primary).
       canvases,
       terminalCwds: Object.keys(terminalCwds).length ? terminalCwds : undefined,

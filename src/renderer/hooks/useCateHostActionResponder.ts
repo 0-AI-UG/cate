@@ -36,6 +36,7 @@ import { handleReviewMethod } from '../lib/review/reviewDriver'
 import { browserPanelUrl, isStartPageUrl, type PanelType, type Point } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { worktreeForPath } from '../lib/worktreeContext'
+import { sendPromptToAgentPanel } from '../lib/agent/agentPanelControl'
 
 // Host-API panel creation (CLI) is always non-interactive: callers
 // may add panels but must not open the placement picker, switch tabs, change
@@ -206,6 +207,21 @@ export function useCateHostActionResponder(): void {
         window.electronAPI.cateHostActionReply({ requestId, ok, ...extra })
 
       try {
+        if (method === 'cate.agent.send') {
+          const targetPanelId = typeof args.targetPanelId === 'string' ? args.targetPanelId : ''
+          const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
+          if (!targetPanelId) return reply(false, { error: 'panelId required' })
+          if (!prompt) return reply(false, { error: 'prompt required' })
+          const tracker = interactionTracker(workspaceId, payload.panelId, 'agent')
+          tracker.observe(targetPanelId)
+          const outcome = await finishTracked(
+            tracker,
+            () => sendPromptToAgentPanel(workspaceId, targetPanelId, prompt),
+            (result) => result.ok,
+          )
+          return outcome.ok ? reply(true) : reply(false, { error: outcome.error })
+        }
+
         // Browser-control surface (cate.browser.*) is executed by the browser
         // driver, which resolves the target browser panel and drives its live
         // <webview>. Delegating here keeps this switch focused on store mutations.

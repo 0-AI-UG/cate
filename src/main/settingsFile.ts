@@ -38,6 +38,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   systemLightThemeId: 'string',
   systemDarkThemeId: 'string',
   customThemes: 'array',
+  savedPanelRelationLabels: 'array',
   editorFontSize: 'number',
   editorFontFamily: 'string',
   uiScale: 'number',
@@ -50,6 +51,7 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   snapToGrid: 'boolean',
   placementPicker: 'boolean',
   showWorktreeTerritory: 'boolean',
+  panelRelationsEnabled: 'boolean',
   terminalFontFamily: 'string',
   terminalFontSize: 'number',
   terminalScrollback: 'number',
@@ -101,6 +103,9 @@ function valueMatchesSchema(key: keyof AppSettings, value: unknown): boolean {
   if (key === 'browserNewTabBehavior') return value === 'startPage' || value === 'homepage'
   if (key === 'terminalLinkOpenTarget') return value === 'ask' || value === 'canvas' || value === 'external'
   if (key === 'customThemes') return (value as unknown[]).every((theme) => validateTheme(theme).ok)
+  if (key === 'savedPanelRelationLabels') {
+    return (value as unknown[]).every((label) => typeof label === 'string' && label.trim().length > 0 && label.length <= 80)
+  }
   if (key === 'agentHookInjection') {
     return Object.values(value as Record<string, unknown>).every((workspace) => (
       isPlainObject(workspace) && Object.values(workspace).every((mode) => mode === 'auto' || mode === 'on' || mode === 'off')

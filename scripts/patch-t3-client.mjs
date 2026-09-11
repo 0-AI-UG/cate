@@ -8,9 +8,9 @@ export function patchT3ClientSource(source) {
   const finish = (value) => {
     const before = 'window.__cateHost.request("open-agent",{placementId:catePlacement,threadId:c,title:d})'
     const after = before + '.catch(()=>{K.add(Ia({type:"error",title:"Conversation started",description:"Open the new conversation from Cate’s conversation picker."}))})'
-    if (value.includes(after)) return patchT3ChangeSummaries(value)
+    if (value.includes(after)) return patchT3PromptContext(patchT3ChangeSummaries(value))
     if (value.split(before).length !== 2) throw new Error('T3 implementation handoff changed')
-    return patchT3ChangeSummaries(value.replace(before, after))
+    return patchT3PromptContext(patchT3ChangeSummaries(value.replace(before, after)))
   }
   if (source.includes(marker)) return finish(source)
   const replace = (before, after) => {
@@ -29,6 +29,43 @@ export function patchT3ClientSource(source) {
   replace('()=>we({to:`/$environmentId/$threadId`,params:{environmentId:q.environmentId,threadId:c}})',
     '()=>window.__cateHost?window.__cateHost.request("open-agent",{placementId:catePlacement,threadId:c,title:d}):we({to:`/$environmentId/$threadId`,params:{environmentId:q.environmentId,threadId:c}})')
   return finish(marker + source)
+}
+
+/** Add relation context after the visible draft has been captured for send.
+ * T3 is embedded, so this uses its host bridge rather than a CLI hook. */
+export function patchT3PromptContext(source) {
+  const marker = '/* cate: submit-time panel prompt context v3 */'
+  const oldRequest = 'window.__cateHost.request("relation-context",{})'
+  const providerRequest = 'window.__cateHost.request("relation-context",{provider:v})'
+  if (source.includes(marker)) return source.includes(oldRequest)
+    ? source.replace(oldRequest, providerRequest)
+    : source
+  const replace = (before, after) => {
+    if (source.split(before).length !== 2) throw new Error(`T3 panel prompt seam changed: ${before.slice(0, 80)}`)
+    source = source.replace(before, after)
+  }
+
+  const prompt = 'fe=sT({provider:v,model:b,models:S,effort:C,text:qe(de,ce)||`[User attached one or more files without additional text. Respond using the conversation context and the attached files.]`});if(ft.current?.validateProviderInput(fe)===!1)return;'
+  const submitPrompt = prompt.replace(
+    ';if(ft.current?.validateProviderInput(fe)===!1)return;',
+    ';let catePrompt=fe;if(window.__cateHost)try{let cateContext=await window.__cateHost.request("relation-context",{provider:v});if(cateContext)catePrompt=fe+`\\n\\n`+cateContext}catch{}if(ft.current?.validateProviderInput(catePrompt)===!1)return;',
+  )
+  const oldAugmentedPrompt = prompt.replace(
+    ';if(ft.current?.validateProviderInput(fe)===!1)return;',
+    ';let catePrompt=fe;if(window.__cateHost)try{catePrompt=await window.__cateHost.request("augment-prompt",{text:fe})}catch{}if(ft.current?.validateProviderInput(catePrompt)===!1)return;',
+  )
+  if (source.includes(oldAugmentedPrompt)) source = source.replace(oldAugmentedPrompt, submitPrompt)
+  else replace(prompt, submitPrompt)
+  if (source.includes('text:fe,attachments:Ee.value')) {
+    replace('text:fe,attachments:Ee.value', 'text:catePrompt,attachments:Ee.value')
+  }
+
+  const baseChat = 'window.__cateChat={store:ti,threadRef:J,openAgents:ud,closeAgents:()=>J&&ti.getState().close(J)};'
+  const v1Chat = 'window.__cateChat={store:ti,threadRef:J,openAgents:ud,closeAgents:()=>J&&ti.getState().close(J),sendText:async e=>(await sm({text:e,interactionMode:`default`}),true)};'
+  const v2Chat = 'window.__cateChat={store:ti,threadRef:J,openAgents:ud,closeAgents:()=>J&&ti.getState().close(J),sendText:async e=>(await sm({text:e,interactionMode:`default`}),true),appendText:e=>{let t=it.current?it.current+`\\n\\n`+e:e;it.current=t,Ie(ue,t);return!0}};'
+  if (source.includes(v2Chat)) source = source.replace(v2Chat, v1Chat)
+  else if (source.includes(baseChat)) replace(baseChat, v1Chat)
+  return source + '\n' + marker
 }
 
 export function patchT3ChangeSummaries(source) {

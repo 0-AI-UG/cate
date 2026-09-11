@@ -8,6 +8,7 @@ export type { Theme } from './theme'
 import type { AgentId } from './agents'
 import type { AgentHookMode } from './agentHooks'
 import type { CodingAgentLaunch, CodingAgentRun, CodingAgentRunStatus } from './codingAgentRuns'
+import type { PanelRelation } from './panelRelations'
 
 // -----------------------------------------------------------------------------
 // Geometry primitives
@@ -278,6 +279,11 @@ export interface PanelState {
   /** Agent panels only: the T3 thread rendered by this panel. Machine-local
    *  because the id belongs to the harness state on this execution host. */
   agentThreadId?: string
+  /** Terminal/T3 source panels: when to include reachable panel-relation
+   * context. Defaults to `once` when unset. */
+  panelRelationContextMode?: 'once' | 'always' | 'off'
+  /** @deprecated Pre-mode session compatibility. */
+  panelRelationContextEnabled?: boolean
 }
 
 // -----------------------------------------------------------------------------
@@ -468,6 +474,9 @@ export interface WindowPanelReport {
    *  overview can render a detached row's running shimmer / awaiting indicator
    *  exactly like a local row. */
   agentState?: AgentState
+  /** True only when the surface is at its normal prompt, not an approval or
+   * structured-input interruption that also appears as waitingForInput. */
+  agentCanReceivePrompt?: boolean
   /** Agent display name (gated on the agent still being present), so the owner's
    *  agent logo can be resolved for the detached row's icon. */
   agentName?: string | null
@@ -678,6 +687,8 @@ export interface WorkspaceState {
   rootPathError?: string | null
   isRootPathPending?: boolean
   panels: Record<string, PanelState>
+  /** Machine-local visual routing context compiled into agent prompts. */
+  panelRelations?: PanelRelation[]
   // PERSISTENCE-ONLY projection of the live per-workspace DockStore. Read via
   // getWorkspaceDockSnapshot(workspaceId), never directly.
   dockState?: DockStateSnapshot
@@ -1141,6 +1152,8 @@ export interface SessionSnapshot {
    *  canvas's child panels (including each canvas panel itself). Geometry lives
    *  in `canvases`; this carries type/title/filePath/browser tabs/etc. */
   panels?: Record<string, PanelState>
+  /** Machine-local panel graph; agent boundaries receive only their local segment. */
+  panelRelations?: PanelRelation[]
   /** Every canvas's geometry (nodes + viewport + zoom), keyed by canvas panel id,
    *  including the primary/center canvas. */
   canvases?: Record<string, CanvasSnapshot>
@@ -1266,6 +1279,8 @@ export interface ProjectSessionFile {
    *  terminal working directory, and unsaved scratch content kept out of the
    *  committed file. */
   panels: Record<string, ProjectSessionPanel>
+  /** Machine-local because relation topology can encode private working context. */
+  panelRelations?: PanelRelation[]
   /** Detached dock windows (machine-local, not committed). */
   dockWindows?: DetachedDockWindowSnapshot[]
   /** Git worktree registry (id/path/branch/color/label). Machine-local because
@@ -1377,6 +1392,8 @@ export interface AppSettings {
   systemDarkThemeId: string
   /** User-imported / agent-authored unified themes. */
   customThemes: Theme[]
+  /** User-authored panel connection meanings, available for reuse across workspaces. */
+  savedPanelRelationLabels: string[]
   editorFontSize: number
   /** CSS font-family for Monaco editor panels. Empty string = built-in default
    *  stack (Menlo, Monaco, "Courier New", monospace). */
@@ -1423,6 +1440,8 @@ export interface AppSettings {
   /** Paint the soft per-worktree "territory" backgrounds behind panels when a
    *  workspace has multiple git worktrees. Off hides the visualization. */
   showWorktreeTerritory: boolean
+  /** Enable user-authored panel relations and their agent prompt context. */
+  panelRelationsEnabled: boolean
 
   // Terminal
   terminalFontFamily: string
@@ -1572,6 +1591,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemLightThemeId: 'light-subtle',
   systemDarkThemeId: 'dark-cold',
   customThemes: [],
+  savedPanelRelationLabels: [],
   editorFontSize: 12,
   editorFontFamily: '',
   uiScale: 1.0,
@@ -1586,6 +1606,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   snapToGrid: false,
   placementPicker: true,
   showWorktreeTerritory: true,
+  panelRelationsEnabled: true,
 
   // Terminal
   terminalFontFamily: '',

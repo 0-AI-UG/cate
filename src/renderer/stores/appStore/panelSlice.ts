@@ -6,6 +6,7 @@ import { migrateNavigationPanel } from '../../../shared/panels'
 import log from '../../lib/logger'
 import { disambiguateTitle } from '../../lib/panelTitle'
 import type { PanelState, PanelType, ReviewPanelState } from '../../../shared/types'
+import type { PanelConnectionSide, PanelRelationKind } from '../../../shared/panelRelations'
 import { BROWSER_NEW_TAB_URL } from '../../../shared/types'
 import { resolvePanelSize } from '../../../shared/panels'
 import { useSettingsStore } from '../settingsStore'
@@ -59,8 +60,14 @@ type PanelSliceActions = Pick<
   | 'setPanelAgentSession'
   | 'setPanelCodingAgentLaunch'
   | 'setPanelCodingAgentRun'
+  | 'setPanelRelationContextMode'
   | 'addPanel'
   | 'removePanelRecord'
+  | 'addPanelRelation'
+  | 'updatePanelRelation'
+  | 'movePanelRelation'
+  | 'removePanelRelation'
+  | 'setPanelRelations'
   | 'clearCanvas'
   | 'closeAllPanels'
   | 'bumpReloadEpoch'
@@ -269,7 +276,15 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
           const remainingPanels = { ...ws.panels }
           delete remainingPanels[panelId]
           for (const id of childIds) delete remainingPanels[id]
-          return { ...ws, layoutRootPath: ws.rootPath, panels: remainingPanels }
+          const removed = new Set([panelId, ...childIds])
+          return {
+            ...ws,
+            layoutRootPath: ws.rootPath,
+            panels: remainingPanels,
+            panelRelations: ws.panelRelations?.filter(
+              (relation) => !removed.has(relation.fromPanelId) && !removed.has(relation.toPanelId),
+            ),
+          }
         }),
       }))
     },
@@ -392,6 +407,13 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       }))
     },
 
+    setPanelRelationContextMode(workspaceId, panelId, mode) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({
+        ...panel,
+        panelRelationContextMode: mode,
+      }))
+    },
+
     addPanel(workspaceId, panel) {
       panel = migrateNavigationPanel(panel)
       set((state) => ({
@@ -414,8 +436,81 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
           if (ws.id !== workspaceId) return ws
           if (!(panelId in ws.panels)) return ws
           const { [panelId]: _removed, ...remainingPanels } = ws.panels
-          return { ...ws, layoutRootPath: ws.rootPath, panels: remainingPanels }
+          return {
+            ...ws,
+            layoutRootPath: ws.rootPath,
+            panels: remainingPanels,
+            panelRelations: ws.panelRelations?.filter(
+              (relation) => relation.fromPanelId !== panelId && relation.toPanelId !== panelId,
+            ),
+          }
         }),
+      }))
+    },
+
+    addPanelRelation(
+      workspaceId,
+      fromPanelId,
+      toPanelId,
+      kind: PanelRelationKind,
+      fromSide?: PanelConnectionSide,
+      toSide?: PanelConnectionSide,
+    ) {
+      if (fromPanelId === toPanelId) return null
+      const workspace = get().workspaces.find((ws) => ws.id === workspaceId)
+      if (!workspace?.panels[fromPanelId] || !workspace.panels[toPanelId]) return null
+      const existing = workspace.panelRelations?.find(
+        (relation) => relation.fromPanelId === fromPanelId && relation.toPanelId === toPanelId,
+      )
+      const relationId = existing?.id ?? generateId()
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) => {
+          if (ws.id !== workspaceId || !ws.panels[fromPanelId] || !ws.panels[toPanelId]) return ws
+          const relations = ws.panelRelations ?? []
+          if (existing) {
+            return { ...ws, panelRelations: relations.map((relation) =>
+              relation.id === existing.id ? { ...relation, kind, fromSide, toSide } : relation) }
+          }
+          return {
+            ...ws,
+            panelRelations: [...relations, { id: relationId, fromPanelId, toPanelId, kind, fromSide, toSide }],
+          }
+        }),
+      }))
+      return relationId
+    },
+
+    updatePanelRelation(workspaceId, relationId, kind, label) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) => ws.id === workspaceId
+          ? { ...ws, panelRelations: ws.panelRelations?.map((relation) =>
+              relation.id === relationId ? { ...relation, kind, label: label?.trim() || undefined } : relation) }
+          : ws),
+      }))
+    },
+
+    movePanelRelation(workspaceId, relationId, waypoint) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) => ws.id === workspaceId
+          ? { ...ws, panelRelations: ws.panelRelations?.map((relation) =>
+              relation.id === relationId ? { ...relation, waypoint } : relation) }
+          : ws),
+      }))
+    },
+
+    removePanelRelation(workspaceId, relationId) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) => ws.id === workspaceId
+          ? { ...ws, panelRelations: ws.panelRelations?.filter((relation) => relation.id !== relationId) }
+          : ws),
+      }))
+    },
+
+    setPanelRelations(workspaceId, relations) {
+      set((state) => ({
+        workspaces: state.workspaces.map((ws) => ws.id === workspaceId
+          ? { ...ws, panelRelations: relations }
+          : ws),
       }))
     },
 
@@ -433,7 +528,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       }
       set((state) => ({
         workspaces: state.workspaces.map((w) =>
-          w.id === wsId ? { ...w, layoutRootPath: w.rootPath, panels: {} } : w,
+          w.id === wsId ? { ...w, layoutRootPath: w.rootPath, panels: {}, panelRelations: [] } : w,
         ),
       }))
 

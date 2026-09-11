@@ -12,6 +12,7 @@ import { useStatusStore, type StatusStore } from '../stores/statusStore'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { getAgentLogo } from '../lib/agent/agentLogos'
 import type { AgentState } from '../../shared/types'
+import { AGENTS, matchAgentDef, type AgentId } from '../../shared/agents'
 
 export interface AgentPanelInfo {
   state: AgentState | undefined
@@ -75,6 +76,64 @@ export function useAgentInfoByPanel(workspaceId: string | undefined): Record<str
   )
   const t3 = useT3ActivityStore()
   return { ...terminal, ...selectT3InfoByPanel(t3, workspaceId) }
+}
+
+/** Whether a recognized CLI agent is currently open in each terminal panel.
+ * Hook-confirmed presence is authoritative; matching the foreground process
+ * against the canonical agent registry covers the short interval before the
+ * first hook/presence update without teaching the prompt UI its own CLI list. */
+export function selectCliAgentOpenByPanel(
+  s: StatusStore,
+  workspaceId: string | undefined,
+): Record<string, boolean> {
+  const result: Record<string, boolean> = {}
+  const terminals = workspaceId ? s.workspaces[workspaceId]?.terminals : undefined
+  if (!terminals) return result
+  for (const [key, terminal] of Object.entries(terminals)) {
+    const processName = terminal.activity.type === 'running' ? terminal.activity.processName : null
+    result[resolvePanelId(key)] = terminal.agentPresent || Boolean(processName && matchAgentDef(processName))
+  }
+  return result
+}
+
+function booleanMapEqual(a: Record<string, boolean>, b: Record<string, boolean>): boolean {
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key])
+}
+
+export function useCliAgentOpenByPanel(workspaceId: string | undefined): Record<string, boolean> {
+  return useStoreWithEqualityFn(
+    useStatusStore,
+    (state) => selectCliAgentOpenByPanel(state, workspaceId),
+    booleanMapEqual,
+  )
+}
+
+export function selectCliAgentByPanel(
+  s: StatusStore,
+  workspaceId: string | undefined,
+): Record<string, AgentId | null> {
+  const result: Record<string, AgentId | null> = {}
+  const terminals = workspaceId ? s.workspaces[workspaceId]?.terminals : undefined
+  if (!terminals) return result
+  for (const [key, terminal] of Object.entries(terminals)) {
+    const processName = terminal.activity.type === 'running' ? terminal.activity.processName : null
+    const agent = (processName ? matchAgentDef(processName) : null)
+      ?? (terminal.agentPresent ? AGENTS.find((item) => item.displayName === terminal.agentName) : null)
+    result[resolvePanelId(key)] = agent?.id ?? null
+  }
+  return result
+}
+
+export function useCliAgentByPanel(workspaceId: string | undefined): Record<string, AgentId | null> {
+  return useStoreWithEqualityFn(
+    useStatusStore,
+    (state) => selectCliAgentByPanel(state, workspaceId),
+    (a, b) => {
+      const keys = Object.keys(a)
+      return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key])
+    },
+  )
 }
 
 export function selectT3InfoByPanel(t3: ReturnType<typeof useT3ActivityStore.getState>, workspaceId: string | undefined): Record<string, AgentPanelInfo> {

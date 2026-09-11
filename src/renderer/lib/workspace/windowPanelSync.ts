@@ -27,6 +27,8 @@ import { parseLocator } from '../../../shared/runtimeLocator'
 import { browserPanelUrl, isStartPageUrl, type WindowPanelReport } from '../../../shared/types'
 import { deriveCodingAgentRunStatus } from '../../../shared/codingAgentRuns'
 import { worktreeForPanel } from '../worktreeContext'
+import { canAgentReceivePrompt } from '../agent/agentScreenDetector'
+import { canT3ThreadReceivePrompt } from '../t3ThreadState'
 
 let cleanup: (() => void) | null = null
 
@@ -103,7 +105,8 @@ export function setupWindowPanelSync(): () => void {
       // never see it. Riding it on the union is the only way the overview's
       // "Other windows" rows can show the same shimmer/await/port dot as local
       // rows.
-      const agentInfo = { ...selectAgentInfoByPanel(status, ws.id), ...selectT3InfoByPanel(useT3ActivityStore.getState(), ws.id) }
+      const t3Activity = useT3ActivityStore.getState()
+      const agentInfo = { ...selectAgentInfoByPanel(status, ws.id), ...selectT3InfoByPanel(t3Activity, ws.id) }
       const withPorts = panelsWithPorts(ws.id)
       const activePanelId = useActivePanelStore.getState().activePanelId
       // Report only PLACED panels, using the same partition rules as the local
@@ -144,6 +147,18 @@ export function setupWindowPanelSync(): () => void {
           parentCanvasId: childToCanvas.get(p.id),
           worktreeId: worktreeForPanel(p, ws.worktrees ?? [])?.id ?? p.worktreeId,
           agentState: agentInfo[p.id]?.state,
+          agentCanReceivePrompt: p.type === 'terminal'
+            ? Boolean(terminalRegistry.getEntry(p.id)?.ptyId
+              && canAgentReceivePrompt(terminalRegistry.getEntry(p.id)!.ptyId!))
+            : p.type === 'agent'
+              ? (() => {
+                  const binding = t3Activity.panels[p.id]
+                  const thread = binding?.threadId
+                    ? t3Activity.instances[binding.partition]?.threads[binding.threadId]
+                    : undefined
+                  return Boolean(binding?.connected && thread && canT3ThreadReceivePrompt(thread))
+                })()
+              : undefined,
           agentName: agentInfo[p.id]?.name ?? null,
           codingAgentRunId: p.codingAgentRun?.id,
           codingAgentOwnerPanelId: p.codingAgentRun?.ownerPanelId,

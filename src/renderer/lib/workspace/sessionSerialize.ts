@@ -126,6 +126,7 @@ export function buildSessionFile(
     version: 1,
     workspaceId: snapshot.workspaceId,
     panels,
+    panelRelations: snapshot.panelRelations?.length ? snapshot.panelRelations : undefined,
     dockWindows: dockWindows?.length ? dockWindows : undefined,
     // Worktree registry is machine-local (gitignored checkouts) — kept here, not
     // in the committed workspace.json. Paths are absolute, like workingDirectory.
@@ -195,6 +196,8 @@ export function projectFilesToSnapshot(
     rootPath,
     dockState: pruneDockState(ws.dockState, removed),
     panels,
+    panelRelations: sess?.panelRelations?.filter((relation) =>
+      Boolean(panels?.[relation.fromPanelId] && panels?.[relation.toPanelId])),
     // Canvas geometry carries no file paths (only node geometry referencing panel
     // ids), so it passes through verbatim.
     canvases: ws.canvases && Object.fromEntries(Object.entries(ws.canvases).map(([id, canvas]) => [id, {

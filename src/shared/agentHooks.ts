@@ -690,9 +690,23 @@ const TOKEN = process.env.${CATE_HOOK_TOKEN_ENV}
 const TRACKED = new Set(["session.created", "session.status", "permission.asked", "permission.replied", "message.part.updated"])
 const SUBAGENT_SESSIONS = new Set()
 const PARENT_SESSIONS = new Map()
+async function promptContext() {
+  try {
+    const response = await fetch(ENDPOINT + "/prompt-context", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer " + TOKEN },
+      body: JSON.stringify({ agentId: "opencode", terminalId: process.env.${CATE_TERMINAL_ID_ENV} ?? null }),
+    })
+    return response.ok ? await response.text() : ""
+  } catch { return "" }
+}
 export const CateHookBridge = async () => {
   if (!ENDPOINT || !TOKEN) return {}
   return {
+    "experimental.chat.system.transform": async (_input, output) => {
+      const context = await promptContext()
+      if (context) output.system.push(context)
+    },
     event: async ({ event }) => {
       if (!event || !TRACKED.has(event.type)) return
       const props = event.properties ?? {}

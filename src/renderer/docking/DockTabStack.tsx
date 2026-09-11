@@ -12,6 +12,7 @@ import { PanelChromeProvider, type PanelChromeApi } from '../panels/panelChrome'
 import { Columns2 as Columns, Maximize2, Minimize2 } from 'lucide-react'
 import { DockTabBar } from './DockTabBar'
 import { WorktreePill } from '../canvas/WorktreePill'
+import { PanelRelationContextToggle } from '../canvas/PanelRelationContextToggle'
 import { AgentChangesPill } from '../canvas/AgentChangesPill'
 import { SPLIT_MENU_ITEMS } from './DockTabContextMenu'
 import type { SplitMenuItem } from './DockTabContextMenu'
@@ -408,6 +409,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           // matches the 6px top inset (top-1.5).
           <div data-browser-surface-overlay={activePanel.id} className="absolute top-1.5 right-3 z-10 flex items-center gap-1">
             <WorktreePill panel={activePanel} workspaceId={effectiveWorkspaceId} />
+            <PanelRelationContextToggle panel={activePanel} workspaceId={effectiveWorkspaceId} />
             <AgentChangesPill key={`changes:${activePanel.id}`} panel={activePanel} workspaceId={effectiveWorkspaceId} />
           </div>
         )}

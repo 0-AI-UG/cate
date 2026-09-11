@@ -19,6 +19,7 @@ import type {
   ReviewPanelState,
 } from '../../../shared/types'
 import type { CodingAgentLaunch, CodingAgentRun } from '../../../shared/codingAgentRuns'
+import type { PanelConnectionSide, PanelRelation, PanelRelationKind } from '../../../shared/panelRelations'
 
 // -----------------------------------------------------------------------------
 // Panel placement — specifies where a newly created panel should go
@@ -133,8 +134,25 @@ export interface AppStoreActions {
   setPanelAgentSession: (workspaceId: string, panelId: string, session: TerminalAgentSession | null) => void
   setPanelCodingAgentLaunch: (workspaceId: string, panelId: string, launch: CodingAgentLaunch | undefined) => void
   setPanelCodingAgentRun: (workspaceId: string, panelId: string, run: CodingAgentRun | undefined) => void
+  setPanelRelationContextMode: (
+    workspaceId: string,
+    panelId: string,
+    mode: 'once' | 'always' | 'off',
+  ) => void
   addPanel: (workspaceId: string, panel: PanelState) => void
   removePanelRecord: (workspaceId: string, panelId: string) => void
+  addPanelRelation: (
+    workspaceId: string,
+    fromPanelId: string,
+    toPanelId: string,
+    kind: PanelRelationKind,
+    fromSide?: PanelConnectionSide,
+    toSide?: PanelConnectionSide,
+  ) => string | null
+  updatePanelRelation: (workspaceId: string, relationId: string, kind: PanelRelationKind, label?: string) => void
+  movePanelRelation: (workspaceId: string, relationId: string, waypoint: Point) => void
+  removePanelRelation: (workspaceId: string, relationId: string) => void
+  setPanelRelations: (workspaceId: string, relations: PanelRelation[]) => void
 
   // Helpers
   getWorkspace: (id: string) => WorkspaceState | undefined

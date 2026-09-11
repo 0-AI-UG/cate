@@ -136,12 +136,15 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
   },
   {
     label: 'Agents & reviews',
-    prefixes: ['cate.codingAgent.', 'cate.review.'],
+    prefixes: ['cate.codingAgent.', 'cate.agent.', 'cate.review.'],
     readMethods: [
       'cate.codingAgent.list',
       'cate.codingAgent.wait',
       'cate.codingAgent.inspect',
       'cate.codingAgent.review',
+      'cate.agent.list',
+      'cate.agent.wait',
+      'cate.agent.inspect',
       'cate.review.inspect',
     ],
     read: {
@@ -156,7 +159,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Control',
       code: 'agent-control-disabled',
       detail:
-        '`cate agent create / send / apply / keep / discard / stop` and `cate review note / complete` — steer workers and record review results.',
+        '`cate agent send` and `cate review note / complete` — steer live terminal or T3 agents and record review results.',
     },
   },
 ]

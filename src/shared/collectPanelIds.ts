@@ -22,6 +22,17 @@ export function collectPanelIds(
   return out
 }
 
+/** Collect the panel currently visible in every leaf of a dock tree. A tab
+ * stack contributes only its active tab; every child of a split is visible. */
+export function collectVisiblePanelIds(layout: DockLayoutNode | null | undefined): string[] {
+  if (!layout) return []
+  if (layout.type === 'tabs') {
+    const panelId = layout.panelIds[layout.activeIndex] ?? layout.panelIds[0]
+    return panelId ? [panelId] : []
+  }
+  return layout.children.flatMap(collectVisiblePanelIds)
+}
+
 /** The visible panel in the first leaf of a dock tree. */
 export function activeDockPanelId(layout: DockLayoutNode | null | undefined): string | null {
   if (!layout) return null

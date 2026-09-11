@@ -82,6 +82,7 @@ import {
   SHELL_AGENT_SCREEN_STATE,
   SHELL_AGENT_HOOK_EVENT,
   AGENT_HOOKS_INSPECT,
+  AGENT_HOOKS_SET_PROMPT_CONTEXT,
   AGENT_CHANGES_LIST,
   AGENT_CHANGES_READ,
   AGENT_CHANGES_BIND,
@@ -417,6 +418,7 @@ const invokeForwarders = {
 
   // Settings
   agentHooksInspect: makeInvoker<'agentHooksInspect'>(AGENT_HOOKS_INSPECT),
+  agentHooksSetPromptContext: makeInvoker<'agentHooksSetPromptContext'>(AGENT_HOOKS_SET_PROMPT_CONTEXT),
   agentChangesList: makeInvoker<'agentChangesList'>(AGENT_CHANGES_LIST),
   agentChangesRead: makeInvoker<'agentChangesRead'>(AGENT_CHANGES_READ),
   agentChangesBind: makeInvoker<'agentChangesBind'>(AGENT_CHANGES_BIND),

@@ -251,6 +251,7 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
       bindChanges: (cwd, threadId, panelId, access) => agentHooks.bindChanges(validateCwd(cwd, access?.ownerWindowId, access?.scopeId), threadId, panelId),
       subscribe: (onEvent) => agentHooks.subscribe(onEvent),
       inspectWorkspace: (cwd) => agentHooks.inspectWorkspace(cwd),
+      setPromptContext: async (terminalId, context) => { agentHooks.setPromptContext(terminalId, context) },
     },
     file,
     vcs,

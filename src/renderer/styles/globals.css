@@ -174,8 +174,11 @@
     50% { transform: scale(1.15); opacity: 1; }
   }
 
-  .cate-panel-connection-active {
+  .cate-panel-connection {
     stroke-dasharray: 10 8;
+  }
+
+  .cate-panel-connection-active {
     animation: catePanelConnectionFlow 700ms linear infinite;
   }
 

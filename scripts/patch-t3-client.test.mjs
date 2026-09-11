@@ -13,6 +13,14 @@ describe('pinned T3 chat adapter', () => {
     expect(() => patchT3ClientSource('upstream changed')).toThrow('T3 chat bridge changed')
   })
 
+  it('routes addressed sends through the same submit function and relation-context hook', () => {
+    expect(source).not.toContain('window.__cateHost.request("augment-prompt"')
+    expect(source).toContain('sendText:async e=>(await sm({text:e,interactionMode:`default`}),true)')
+    expect(source).toContain('window.__cateHost.request("relation-context",{provider:v})')
+    expect(source).toContain('if(cateContext)catePrompt=fe+`\\n\\n`+cateContext')
+    expect(source).toContain('text:catePrompt,attachments:Ee.value')
+  })
+
   it.each([null, 'placement'])('waits for placement before creating or sending a plan (%s)', async (placement) => {
     const start = source.indexOf('cm=(0,X.useCallback)(async()=>') + 'cm=(0,X.useCallback)('.length
     const end = source.indexOf('},[Y,Zs,xf,q,Ec,so,E,D,Kt,Pc,qr,we,Dc,di,P,t,ft])', start) + 1
