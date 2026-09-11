@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Tooltip } from '../ui/Tooltip'
 import { workspaceIdForRoot } from '../stores/gitStatusStore'
 import { errorMessage } from '../lib/errorMessage'
-import { GitBranch, Check, X, GitPullRequest } from 'lucide-react'
+import { GitBranch, Check, X, GitPullRequest, RefreshCw } from 'lucide-react'
 import { ChevronRight as CaretRight, ChevronDown as CaretDown } from 'lucide-react'
 import { Spinner } from '../ui/Spinner'
 
@@ -63,6 +63,7 @@ export const CreateWorktreeForm: React.FC<{
   const [remoteExpanded, setRemoteExpanded] = useState(false)
   const [prsExpanded, setPrsExpanded] = useState(true)
   const [filter, setFilter] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
   const busyRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const filterRef = useRef<HTMLInputElement>(null)
@@ -70,21 +71,36 @@ export const CreateWorktreeForm: React.FC<{
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
-  useEffect(() => {
-    let cancelled = false
-    window.electronAPI.gitPrList(rootPath, workspaceIdForRoot(rootPath)).then((list) => {
-      if (!cancelled) setPrs(list)
-    }).catch(() => {})
-    window.electronAPI.gitBranchList(rootPath, workspaceIdForRoot(rootPath)).then((result) => {
-      if (cancelled) return
-      setBranches(
-        result.branches
-          .filter((b) => !b.name.includes('/HEAD'))
-          .map((b) => ({ name: b.name, isRemote: b.isRemote })),
-      )
-    }).catch(() => {})
-    return () => { cancelled = true }
+  const loadOptions = useCallback(async () => {
+    const [list, result] = await Promise.all([
+      window.electronAPI.gitPrList(rootPath, workspaceIdForRoot(rootPath)),
+      window.electronAPI.gitBranchList(rootPath, workspaceIdForRoot(rootPath)),
+    ])
+    setPrs(list)
+    setBranches(
+      result.branches
+        .filter((b) => !b.name.includes('/HEAD'))
+        .map((b) => ({ name: b.name, isRemote: b.isRemote })),
+    )
   }, [rootPath])
+
+  useEffect(() => {
+    void loadOptions().catch(() => {})
+  }, [loadOptions])
+
+  const refreshOptions = useCallback(async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    setError(null)
+    try {
+      await window.electronAPI.gitFetch(rootPath, undefined, workspaceIdForRoot(rootPath))
+      await loadOptions()
+    } catch (err: unknown) {
+      setError(errorMessage(err, 'Couldn’t refresh branches and pull requests.'))
+    } finally {
+      setRefreshing(false)
+    }
+  }, [loadOptions, refreshing, rootPath])
 
   useEffect(() => {
     if (!pickerOpen) return
@@ -219,7 +235,7 @@ export const CreateWorktreeForm: React.FC<{
                     }
               }
             >
-              <div className="px-2 py-1 border-b border-subtle">
+              <div className="flex items-center gap-1 px-2 py-1 border-b border-subtle">
                 <input
                   ref={filterRef}
                   value={filter}
@@ -230,6 +246,16 @@ export const CreateWorktreeForm: React.FC<{
                   placeholder="Filter branches & PRs…"
                   className="w-full text-[12px] bg-transparent outline-none text-primary placeholder:text-muted"
                 />
+                <Tooltip label="Refresh branches and pull requests">
+                  <button
+                    onClick={() => void refreshOptions()}
+                    disabled={refreshing}
+                    className="flex-shrink-0 p-0.5 rounded-lg text-muted hover:text-primary hover:bg-hover disabled:opacity-40"
+                    aria-label="Refresh branches and pull requests"
+                  >
+                    {refreshing ? <Spinner size={12} /> : <RefreshCw size={12} />}
+                  </button>
+                </Tooltip>
               </div>
               <div className="overflow-y-auto max-h-[220px]">
                 {localBranches.length > 0 && (

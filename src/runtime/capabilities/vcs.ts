@@ -642,7 +642,7 @@ export function createVcsCapability(deps: VcsCapabilityDeps): VcsHost {
       }
     },
     async fetch(cwd, remote, access) {
-      await simpleGit(validateCwd(cwd, access)).fetch(remote || 'origin')
+      await simpleGit(validateCwd(cwd, access)).fetch(remote || 'origin', ['--prune'])
     },
     async log(cwd, maxCount, access) {
       const logResult = await simpleGit(validateCwd(cwd, access)).log({ maxCount: maxCount || 50 })
