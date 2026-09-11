@@ -3,11 +3,13 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
-const { disposeGL, drawGL, canvasListeners, canvasApi } = vi.hoisted(() => {
+const { disposeGL, drawGL, resizeGL, setViewGL, canvasListeners, canvasApi } = vi.hoisted(() => {
   const listeners = new Set<() => void>()
   return {
     disposeGL: vi.fn(),
     drawGL: vi.fn(),
+    resizeGL: vi.fn(),
+    setViewGL: vi.fn(),
     canvasListeners: listeners,
     canvasApi: {
       getState: () => ({ zoomLevel: 1, viewportOffset: { x: 0, y: 0 }, nodes: {} }),
@@ -24,8 +26,8 @@ vi.mock('../../drag', () => ({ useDragStore: { getState: () => ({ source: null, 
 vi.mock('./useWorktreeMembership', () => ({ useWorktreeMembership: () => ({ groups: [] }) }))
 vi.mock('./territoryGL', () => ({
   createTerritoryGL: () => ({
-    resize: vi.fn(),
-    setView: vi.fn(),
+    resize: resizeGL,
+    setView: setViewGL,
     uploadGeometry: vi.fn(),
     uploadMask: vi.fn(),
     draw: drawGL,
@@ -34,6 +36,51 @@ vi.mock('./territoryGL', () => ({
   buildPrimitives: vi.fn(),
 }))
 import WorktreeTerritoryLayer from './WorktreeTerritoryLayer'
+
+it('resizes and repaints when moving between display scales without a container resize', () => {
+  const frames: FrameRequestCallback[] = []
+  const queries: { listener?: () => void; removeEventListener: ReturnType<typeof vi.fn> }[] = []
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  vi.stubGlobal('devicePixelRatio', 1)
+  const matchMedia = vi.fn(() => {
+    const query = {
+      listener: undefined as (() => void) | undefined,
+      addEventListener: vi.fn((_event: string, listener: () => void) => { query.listener = listener }),
+      removeEventListener: vi.fn(),
+    }
+    queries.push(query)
+    return query
+  })
+  vi.stubGlobal('matchMedia', matchMedia)
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  try {
+    act(() => root.render(<WorktreeTerritoryLayer containerWidth={800} containerHeight={600} />))
+    act(() => frames.shift()?.(0))
+    const canvas = host.querySelector<HTMLCanvasElement>('[data-worktree-territory]')!
+    for (const dpr of [2, 1, 1.5]) {
+      vi.stubGlobal('devicePixelRatio', dpr)
+      const previousQuery = queries.at(-1)!
+      act(() => previousQuery?.listener?.())
+      expect(frames).toHaveLength(1)
+      act(() => frames.shift()?.(16))
+      expect(canvas.width).toBe(800 * dpr)
+      expect(canvas.height).toBe(600 * dpr)
+      expect(resizeGL).toHaveBeenLastCalledWith(800 * dpr, 600 * dpr)
+      expect(setViewGL).toHaveBeenLastCalledWith(1, 0, 0, dpr)
+      expect(matchMedia).toHaveBeenLastCalledWith(`(resolution: ${dpr}dppx)`)
+      expect(previousQuery?.removeEventListener).toHaveBeenCalledWith('change', previousQuery.listener)
+    }
+  } finally {
+    act(() => root.unmount())
+    if (queries.length) expect(queries.at(-1)?.removeEventListener).toHaveBeenCalled()
+    vi.clearAllMocks()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  }
+})
+
 it('allocates the backing store once during setup and only resizes changed dimensions', () => {
   vi.stubGlobal('requestAnimationFrame', () => 1)
   vi.stubGlobal('cancelAnimationFrame', vi.fn())
