@@ -78,7 +78,7 @@ function startTarget(availability: 'new' | 'existing' | 'both', onSelected = vi.
 }
 
 describe('canvas chrome and panel-target gestures', () => {
-  const panelTypes: PanelType[] = ['terminal', 'browser', 'editor', 'agent', 'document', 'review']
+  const panelTypes: PanelType[] = ['terminal', 'browser', 'editor', 'agent', 'review']
   it.each(panelTypes.flatMap((panelType) => [0.75, 1, 1.5].map((zoom) => ({ panelType, zoom }))))(
     '$panelType creation at zoom $zoom preserves focus and offers multiple recommendations', ({ panelType, zoom }) => {
       store.setState({ zoomLevel: zoom })

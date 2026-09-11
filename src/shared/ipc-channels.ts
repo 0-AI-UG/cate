@@ -446,3 +446,6 @@ export const REMOTE_CONNECTIONS_LIST = 'remote-connections:list'
 export const REMOTE_CONNECTIONS_SAVE = 'remote-connections:save'
 export const REMOTE_CONNECTIONS_REMOVE = 'remote-connections:remove'
 export const REMOTE_CONNECTIONS_CHANGED = 'remote-connections:changed'
+
+export const RECENT_SCREENSHOT_SAVE = 'recentScreenshot:save'
+export const RECENT_SCREENSHOT_READ = 'recentScreenshot:read'

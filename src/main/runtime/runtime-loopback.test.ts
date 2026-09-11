@@ -175,15 +175,19 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
     // A file OUTSIDE any allowed root (not under rootDir, not under tmpdir): the
     // daemon's strict validation must reject it until the grant is forwarded.
     const outsideDir = await fs.realpath(await fs.mkdtemp(path.join(process.cwd(), 'cate-grant-')))
-    const outsideFile = path.join(outsideDir, 'granted.txt')
-    await fs.writeFile(outsideFile, 'secret\n')
+    const outsideFile = path.join(outsideDir, 'screenshot.png')
+    const original = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=', 'base64')
+    await fs.writeFile(outsideFile, original)
     try {
       await expect(remote.validatePathStrict(outsideFile, 1)).rejects.toThrow(/Access denied/)
+      await expect(remote.file.readBinary(outsideFile, { ownerWindowId: 1 })).rejects.toThrow(/Access denied/)
       await remote.grantFileAccess(outsideFile, 1)
       // Same window id now passes the daemon's authoritative strict check.
       await expect(remote.validatePathStrict(outsideFile, 1)).resolves.toBe(outsideFile)
+      await expect(remote.file.readBinary(outsideFile, { ownerWindowId: 1 })).resolves.toEqual(original)
       // A different window without the grant is still denied.
       await expect(remote.validatePathStrict(outsideFile, 2)).rejects.toThrow(/Access denied/)
+      await expect(remote.file.readBinary(outsideFile, { ownerWindowId: 2 })).rejects.toThrow(/Access denied/)
     } finally {
       clearFileGrantsForWindow(1)
       await fs.rm(outsideDir, { recursive: true, force: true })

@@ -178,31 +178,51 @@ it('refreshes canvas chrome when panel records settle without a layout change', 
   expect(host.querySelector('.dock-tab-bar')?.classList.contains('border-b')).toBe(false)
 })
 
-it('offers maximize and restore in each split header', () => {
+it('merges splits into tabs and restores the previous layout', () => {
   act(() => root.render(<FullDock />))
-  expect(host.querySelector('[aria-label="Maximize split"]')).toBeNull()
+  expect(host.querySelector('[aria-label="Merge splits into tabs"]')).toBeNull()
   act(() => (host.querySelector('[aria-label="Split Right"]') as HTMLButtonElement).click())
-  const buttons = host.querySelectorAll<HTMLButtonElement>('[aria-label="Maximize split"]')
+  const buttons = host.querySelectorAll<HTMLButtonElement>('[aria-label="Merge splits into tabs"]')
   expect(buttons).toHaveLength(2)
   const layout = dock.getState().zones.center.layout
   act(() => buttons[1].click())
-  const restore = host.querySelector<HTMLButtonElement>('[aria-label="Restore split"]')!
+  const restore = host.querySelector<HTMLButtonElement>('[aria-label="Restore previous layout"]')!
   expect(restore.getAttribute('aria-pressed')).toBe('true')
-  expect(dock.getState().zones.center.layout).toBe(layout)
+  expect(dock.getState().zones.center.layout?.type).toBe('tabs')
   act(() => restore.click())
-  expect(dock.getState().maximizedStackId).toBeNull()
-  expect(host.querySelectorAll('[aria-label="Maximize split"]')).toHaveLength(2)
+  expect(dock.getState().zones.center.layout).toBe(layout)
+  expect(host.querySelectorAll('[aria-label="Merge splits into tabs"]')).toHaveLength(2)
 })
 
+it('shows canvas-promotion restore only while the promoted panel is active', () => {
+  const restoreLayout = dock.getState().zones.center.layout!
+  useAppStore.getState().addPanel('test', { id: 'promoted', type: 'editor', title: 'Promoted', isDirty: false })
+  dock.getState().dockPanel('promoted', 'center', { type: 'tab', stackId })
+  const expectedLayout = dock.getState().zones.center.layout!
+  dock.getState().beginPresentation({
+    stackId,
+    panelId: 'promoted',
+    zone: 'center',
+    restoreLayout,
+    expectedLayout,
+  })
+  act(() => root.render(<FullDock />))
+  expect(host.querySelector('[aria-label="Restore previous layout"]')).not.toBeNull()
 
-it('splitting a maximized pane reveals the new pane', () => {
+  act(() => dock.getState().setActiveTab(stackId, 0))
+  expect(host.querySelector('[aria-label="Restore previous layout"]')).toBeNull()
+
+  act(() => dock.getState().setActiveTab(stackId, 1))
+  expect(host.querySelector('[aria-label="Restore previous layout"]')).not.toBeNull()
+})
+
+it('discards restore after changing the merged layout', () => {
   act(() => root.render(<FullDock />))
   act(() => (host.querySelector('[aria-label="Split Right"]') as HTMLButtonElement).click())
-  act(() => (host.querySelector('[aria-label="Maximize split"]') as HTMLButtonElement).click())
-  expect(dock.getState().maximizedStackId).not.toBeNull()
+  act(() => (host.querySelector('[aria-label="Merge splits into tabs"]') as HTMLButtonElement).click())
   act(() => (host.querySelector('[aria-label="Split Right"]') as HTMLButtonElement).click())
-  expect(dock.getState().maximizedStackId).toBeNull()
-  expect(host.querySelectorAll('[aria-label="Maximize split"]')).toHaveLength(3)
+  expect(dock.getState().presentation).toBeNull()
+  expect(host.querySelector('[aria-label="Restore previous layout"]')).toBeNull()
 })
 
 

@@ -34,6 +34,7 @@ import { LoadingState, Spinner } from '../ui/Spinner'
 import { PaletteTextInput } from '../ui/PaletteTextInput'
 import { InlineNotice } from '../ui/InlineNotice'
 import { IconButton } from '../ui/Button'
+import { POPOVER_SURFACE } from '../ui/Popover'
 import {
   SKILL_TARGETS,
   type InstalledSkill,
@@ -44,7 +45,7 @@ import {
 
 const api = () => window.electronAPI
 
-// The list of repos the curated catalog is crawled from. Linked at the bottom so
+// The list of repos the curated catalog is crawled from. Linked in the header so
 // anyone can PR a missing skill's source repo in (the CI crawler turns this into
 // skills-index.json).
 const SKILL_SOURCES_URL = 'https://github.com/0-AI-UG/cate/blob/main/registry/sources.json'
@@ -263,6 +264,15 @@ export function SkillsDialog() {
       <LeftSidebarReopen />
       <OverlayHeader title="Skills">
         {!contentSlot && <button type="button" onClick={close} className="text-sm text-muted hover:text-primary">Back</button>}
+        <button
+          type="button"
+          onClick={() => window.electronAPI?.openExternalUrl(SKILL_SOURCES_URL)}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-secondary hover:bg-hover hover:text-primary"
+          title="Suggest a missing skill for the catalog"
+        >
+          Add a skill source
+          <ArrowSquareOut size={13} />
+        </button>
       </OverlayHeader>
       <div className="mx-auto flex w-full max-w-[1040px] min-h-0 flex-1 flex-col px-6">
         <div className="py-4 shrink-0 flex items-center gap-2">
@@ -383,19 +393,6 @@ export function SkillsDialog() {
           ) : (
             <div className={itemsClassName}>{visibleBrowseRows.map((e) => renderRow(e, false))}</div>
           )}
-        </div>
-
-        {/* Pinned footer — PR a missing skill into the curated index. Stays put
-            below the (possibly very long) scrolling list so it's always seen. */}
-        <div className="shrink-0 border-t border-subtle px-3.5 py-2 text-[11px] text-muted">
-          Missing a skill?{' '}
-          <button
-            onClick={() => window.electronAPI?.openExternalUrl(SKILL_SOURCES_URL)}
-            className="inline-flex items-center gap-0.5 text-secondary hover:text-primary underline decoration-dotted underline-offset-2"
-          >
-            Add its source
-            <ArrowSquareOut size={11} />
-          </button>
         </div>
       </div>
     </section>,
@@ -643,11 +640,11 @@ function AgentMenu({
   return createPortal(
     <div
       ref={rootRef}
-      className="fixed z-[1000] w-[200px] rounded-lg border border-subtle bg-surface-3 shadow-xl py-1 text-xs"
+      className={`fixed z-[1000] w-[200px] ${POPOVER_SURFACE} p-1.5 text-xs`}
       style={{ top: anchor.top, left: anchor.left }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="px-2.5 pt-0.5 pb-1 text-[10px] uppercase tracking-wide text-muted select-none">Install for</div>
+      <div className="px-2.5 pt-0.5 pb-1 text-[11px] font-medium text-muted select-none">Install for</div>
       {SKILL_TARGETS.map((t) => {
         const on = installedKeys.has(`${entry.id}:${t.id}`)
         const working = busy === t.id
@@ -656,7 +653,7 @@ function AgentMenu({
             key={t.id}
             onClick={() => void toggle(t.id)}
             disabled={working}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-secondary hover:bg-surface-4 hover:text-primary disabled:opacity-50"
+            className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-primary hover:bg-hover focus-visible:bg-hover disabled:opacity-50"
             title={on ? 'Uninstall skill' : 'Install skill'}
           >
             <span className="w-3.5 shrink-0 flex items-center justify-center text-accent">

@@ -120,7 +120,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Control',
       code: 'editor-control-disabled',
       detail:
-        '`cate editor open <path[:line]>` — open a file in an editor panel (a PDF or docx opens a document panel).',
+        '`cate editor open <path[:line]>` — open a file in Files, including image, PDF, and DOCX previews.',
     },
   },
   {

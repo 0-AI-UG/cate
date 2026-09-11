@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
-import type { PanelProps } from './types'
-import { useAppStore } from '../stores/appStore'
+import { getDocumentType } from '../lib/fs/fileRouting'
 import { ArrowLeft, ArrowRight, Minus, Plus } from 'lucide-react'
 import { errorMessage } from '../lib/errorMessage'
 import { viewedArrayBuffer } from './documentBytes'
@@ -302,14 +301,8 @@ function DocxViewer({ data }: { data: Uint8Array }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function DocumentPanel({ panelId, workspaceId }: PanelProps) {
-  const panelState = useAppStore((s) => {
-    const ws = s.workspaces.find((w) => w.id === workspaceId) ?? s.workspaces.find((w) => w.id === s.selectedWorkspaceId)
-    return ws?.panels[panelId]
-  })
-
-  const filePath = panelState?.filePath
-  const storeDocumentType = panelState?.documentType
+export default function FilePreview({ filePath, workspaceId }: { filePath: string; workspaceId: string }) {
+  const storeDocumentType = getDocumentType(filePath)
 
   const [data, setData] = useState<Uint8Array | null>(null)
   const [loading, setLoading] = useState(true)

@@ -22,7 +22,7 @@ it('expands through the shared queue, refreshes one directory, and navigates vir
   mocks.read.mockImplementation(async (path: string) => path === '/repo'
     ? [file('/repo/a', true), file('/repo/b', true)]
     : Array.from({ length: 1000 + (extra ? 1 : 0) }, (_, index) => file(`${path}/${index}.ts`)))
-  Object.assign(window, { electronAPI: { fsReadDir: mocks.read, onSettingsChanged: () => vi.fn() } })
+  Object.assign(window, { electronAPI: { fsReadDir: mocks.read, runtimeRetryLocal: vi.fn().mockResolvedValue({ ok: true }), onSettingsChanged: () => vi.fn() } })
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -58,7 +58,7 @@ it('paints a warm expanded tree while revalidation is still pending', async () =
     return Promise.resolve(path === '/warm-a' ? [file('/warm-a/sub', true)]
       : path === '/warm-a/sub' ? [file('/warm-a/sub/leaf.ts')] : [file('/warm-b/other.ts')])
   })
-  Object.assign(window, { electronAPI: { fsReadDir: mocks.read, onSettingsChanged: () => vi.fn() } })
+  Object.assign(window, { electronAPI: { fsReadDir: mocks.read, runtimeRetryLocal: vi.fn().mockResolvedValue({ ok: true }), onSettingsChanged: () => vi.fn() } })
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -76,4 +76,25 @@ it('paints a warm expanded tree while revalidation is still pending', async () =
     pending.forEach((resolve) => resolve([]))
     host.remove()
   }
+})
+
+it('shows read failures instead of an empty folder and recovers on retry', async () => {
+  vi.useFakeTimers()
+  mocks.watch.mockReturnValue(vi.fn())
+  mocks.read.mockRejectedValue(new Error('No runtime registered for id "local"'))
+  Object.assign(window, { electronAPI: { fsReadDir: mocks.read, runtimeRetryLocal: vi.fn().mockResolvedValue({ ok: true }), onSettingsChanged: () => vi.fn() } })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<FileExplorer rootPath="/read-failure" />))
+    await act(async () => { await vi.runAllTimersAsync() })
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Could not load files')
+    expect(host.textContent).not.toContain('No files found')
+    mocks.read.mockResolvedValue([{ path: '/read-failure/file.ts', name: 'file.ts', isDirectory: false, fileExtension: 'ts' }])
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Retry')!.click())
+    await act(async () => { await vi.advanceTimersByTimeAsync(150) })
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+    expect(host.querySelector('[data-filepath="/read-failure/file.ts"]')).not.toBeNull()
+  } finally { await act(async () => root.unmount()); host.remove() }
 })

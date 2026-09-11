@@ -16,6 +16,8 @@ let page: Page
 
 test.beforeEach(async () => {
   ;({ electronApp: app, mainWindow: page } = await launchApp())
+  const window = await app.browserWindow(page)
+  await window.evaluate((browserWindow) => browserWindow.setContentSize(1600, 900))
   // Collapse the left sidebar. It's now a real flex item that PUSHES the canvas
   // (it used to overlay it), stealing ~260px of canvas width. With it open, a
   // node seeded at canvas x=1000 renders off the right window edge, so edge-drops

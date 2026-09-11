@@ -1,3 +1,4 @@
+vi.mock('./FilePreview', () => ({ default: () => <div data-testid="file-preview" /> }))
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -206,12 +207,19 @@ it('protects edits to the next file after discarding the previous file', async (
   await act(async () => { await h.open!(['/test/third.ts']) })
   expect(window.electronAPI.confirmUnsavedChanges).toHaveBeenCalledTimes(2)
 })
-it.each([['pdf', 'pdf'], ['docx', 'docx'], ['png', 'image']])('routes %s files to document panels', async (ext, documentType) => {
+it.each(['pdf', 'docx', 'png'])('previews %s in the current Files tab and returns to text', async (ext) => {
   await mount('/test/code.ts')
+  const editorCount = h.editors.length
   await act(async () => { await h.open!([`/test/document.${ext}`]) })
   const panels = Object.values(useAppStore.getState().getWorkspace('test')!.panels)
-  expect(panels).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'document', documentType, filePath: `/test/document.${ext}` })]))
-  expect(panels.find(p => p.id === 'editor')!.filePath).toBe('/test/code.ts')
+  expect(panels).toHaveLength(1)
+  expect(panels[0]).toMatchObject({ type: 'editor', filePath: `/test/document.${ext}` })
+  expect(h.editors).toHaveLength(editorCount)
+  expect(window.electronAPI.fsReadFile).not.toHaveBeenCalledWith(`/test/document.${ext}`, 'test')
+  expect(host.querySelector('[data-testid="file-preview"]')).not.toBeNull()
+  await act(async () => { await h.open!(['/test/next.ts']) })
+  expect(h.editors).toHaveLength(editorCount + 1)
+  expect(host.querySelector('[data-testid="file-preview"]')).toBeNull()
 })
 it('opens every selected file, reusing the current editor for the first text file', async () => {
   await mount('/test/code.ts')

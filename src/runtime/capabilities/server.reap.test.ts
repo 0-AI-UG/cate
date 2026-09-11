@@ -83,6 +83,36 @@ it('isolates E2E server bookkeeping from the installed app even with the same da
   expect(testApp).toBe(path.join('/tmp/cate-private-test/userdata', 'cate-runtime', `ext-servers-local-${process.pid}.json`))
 })
 
+it('killAll preserves bookkeeping owned by another capability with the same daemon id', async () => {
+  const first = createServerCapability({ daemonId: DAEMON_ID })
+  const second = createServerCapability({ daemonId: DAEMON_ID })
+  let firstExited!: () => void
+  let secondExited!: () => void
+  const firstExit = new Promise<void>(resolve => { firstExited = resolve })
+  const secondExit = new Promise<void>(resolve => { secondExited = resolve })
+  try {
+    const options = (id: string) => ({
+      id,
+      command: [process.execPath, '-e', "require('http').createServer((q,s)=>s.end('alive')).listen(process.env.PORT,'127.0.0.1')"],
+      cwd: process.cwd(), env: {}, portEnv: 'PORT', readyPath: '/', readyTimeoutMs: 5000,
+    })
+    const firstHandle = await first.start(options('first'), () => {}, () => firstExited())
+    const secondHandle = await second.start(options('second'), () => {}, () => secondExited())
+
+    first.killAll()
+    await firstExit
+
+    expect(JSON.parse(fs.readFileSync(serverPidFilePath(DAEMON_ID), 'utf8')))
+      .toEqual([expect.objectContaining({ pid: secondHandle.pid })])
+    expect(isAlive(firstHandle.pid)).toBe(false)
+    expect(isAlive(secondHandle.pid)).toBe(true)
+  } finally {
+    first.killAll()
+    second.killAll()
+    await Promise.allSettled([firstExit, secondExit])
+  }
+})
+
 
 it('preserves a server and its bookkeeping while its owning daemon is alive', async () => {
   const child = spawnDummy()

@@ -28,6 +28,12 @@ export function useDockStoreApi(): StoreApi<DockStore> {
   return store
 }
 
+/** Canvas panels are also rendered by isolated tests/previews without a dock
+ * host; those callers simply do not offer panel promotion. */
+export function useOptionalDockStoreApi(): StoreApi<DockStore> | null {
+  return useContext(DockStoreContext)
+}
+
 /** Reactive selector hook — reads from the context-provided dock store */
 export function useDockStoreContext<T>(selector: (s: DockStore) => T): T {
   const store = useContext(DockStoreContext)

@@ -268,9 +268,9 @@ export class EditorDocument {
   dispose(): void { this.identityRevision++; this.watchEpoch++; this.stopWatching?.(); this.stopWatching = undefined; this.watchKey = undefined; this.listeners.clear() }
 }
 
-export function editorDocument(workspaceId: string, panelId: string, filePath?: string, rootPath?: string): EditorDocument {
+export function editorDocument(workspaceId: string, panelId: string, filePath?: string | null, rootPath?: string): EditorDocument {
   const panel = useAppStore.getState().workspaces.find(ws => ws.id === workspaceId)?.panels[panelId]
-  filePath ??= panel?.filePath
+  filePath = filePath === null ? undefined : filePath ?? panel?.filePath
   const previous = panelDocuments.get(panelId)
   if (previous && previous.filePathRef.current !== filePath) releaseEditorPanel(panelId)
   const key = keyFor(panelId, filePath)
@@ -339,7 +339,7 @@ export function applyFileEntryMove(event: FileEntryMoved): void {
   }
   const app = useAppStore.getState()
   const movedPanels = app.workspaces.flatMap(ws => Object.values(ws.panels).flatMap(panel => {
-    const path = (panel.type === 'editor' || panel.type === 'document') ? movedPath(panel.filePath) : undefined
+    const path = panel.type === 'editor' ? movedPath(panel.filePath) : undefined
     return path ? [{ workspaceId: ws.id, panel, path }] : []
   }))
   for (const [oldPath, document] of [...documents]) {

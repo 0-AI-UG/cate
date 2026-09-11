@@ -269,15 +269,6 @@ describe('canvasStore — focusEpoch bumps on focus actions', () => {
     expect(store.getState().focusEpoch).toBe(before)
   })
 
-  it('toggleMaximize bumps focusEpoch', () => {
-    const store = createCanvasStore()
-    const id = store.getState().addNode('p1', 'terminal', { x: 0, y: 0 }, { width: 100, height: 80 })
-    store.getState().setContainerSize({ width: 800, height: 600 })
-
-    const before = store.getState().focusEpoch
-    store.getState().toggleMaximize(id, { width: 800, height: 600 })
-    expect(store.getState().focusEpoch).toBe(before + 1)
-  })
 })
 
 // =============================================================================

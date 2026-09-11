@@ -33,7 +33,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'document' | 'review' | 'surface'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'review' | 'surface'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -48,8 +48,6 @@ export interface CanvasNodeState {
   size: Size
   zOrder: number
   creationIndex: number
-  preMaximizeOrigin?: Point
-  preMaximizeSize?: Size
   isPinned?: boolean
   /** Per-node dock layout tree — what's actually rendered inside the node.
    *  Each canvas node owns a private DockStore whose `center` zone holds this
@@ -57,11 +55,6 @@ export interface CanvasNodeState {
    *  the main dock zones. */
   dockLayout: DockLayoutNode
   animationState?: 'entering' | 'exiting' | 'idle'
-}
-
-/** Computed helper — mirrors the Swift `isMaximized` computed property. */
-export function isMaximized(node: CanvasNodeState): boolean {
-  return node.preMaximizeOrigin != null
 }
 
 // -----------------------------------------------------------------------------
@@ -249,8 +242,6 @@ export interface PanelState {
    *  the terminal uses the workspace's `rootPath`. Set when the terminal was
    *  created from a dropped folder or worktree to scope it to that path. */
   cwd?: string
-  /** Document panels only: sub-type discriminator for the viewer. */
-  documentType?: 'pdf' | 'docx' | 'image'
   /** Checkout affinity for terminals, Agent, file-backed, and review panels. */
   worktreeId?: string
   /** Terminal panels only. Set to true the first time the user renames the
@@ -1261,8 +1252,6 @@ export interface ProjectPanelRef {
   activeTabId?: string
   /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
   proxyUrl?: string
-  /** Document panels only: sub-type discriminator for the viewer. */
-  documentType?: 'pdf' | 'docx' | 'image'
 }
 
 // -----------------------------------------------------------------------------
@@ -1519,7 +1508,7 @@ export interface AppSettings {
   cliPanelControlEnabled: boolean
   /** Read the active editor panel's file. On by default. */
   cliEditorReadEnabled: boolean
-  /** `cate editor open` — open a file in an editor/document panel. On by default. */
+  /** `cate editor open` — open a file in Files. On by default. */
   cliEditorControlEnabled: boolean
   /** `cate notify` — post a desktop notification. On by default. */
   cliNotifyEnabled: boolean
@@ -1709,7 +1698,6 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   editor: { width: 540, height: 420 },
   canvas: { width: 640, height: 480 },
   agent: { width: 520, height: 440 },
-  document: { width: 640, height: 480 },
   review: { width: 820, height: 560 },
 }
 

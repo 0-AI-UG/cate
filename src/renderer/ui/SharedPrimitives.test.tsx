@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Button } from './Button'
 import { Modal } from './Modal'
-import { useDismissableLayer } from './Popover'
+import { POPOVER_SURFACE, useDismissableLayer } from './Popover'
 import { Tooltip } from './Tooltip'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -29,6 +29,13 @@ function render(node: ReactNode): void {
 }
 
 describe('shared UI primitives', () => {
+  it('keeps popup surfaces aligned with the Cate menu treatment', () => {
+    expect(POPOVER_SURFACE).toContain('rounded-2xl')
+    expect(POPOVER_SURFACE).toContain('border-subtle')
+    expect(POPOVER_SURFACE).toContain('bg-surface-3')
+    expect(POPOVER_SURFACE).toContain('shadow-lg')
+  })
+
   it('shows an associated tooltip from keyboard focus and dismisses it with Escape', () => {
     vi.useFakeTimers()
     render(<Tooltip label="Refresh"><button type="button">Refresh</button></Tooltip>)

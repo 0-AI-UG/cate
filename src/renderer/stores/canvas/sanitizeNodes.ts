@@ -107,13 +107,17 @@ export function sanitizeLoadedCanvasNodes(
       dropped.push(key)
       continue
     }
-    const v = value as Partial<CanvasNodeState>
+    const legacy = value as Partial<CanvasNodeState> & {
+      preMaximizeOrigin?: Point
+      preMaximizeSize?: Size
+    }
+    const { preMaximizeOrigin: _legacyOrigin, preMaximizeSize: _legacySize, ...v } = legacy
     if (!isValidDockLayout(v.dockLayout)) {
       dropped.push(key)
       continue
     }
 
-    let touched = false
+    let touched = _legacyOrigin != null || _legacySize != null
     const repair = <T>(ok: boolean, good: T, fallback: T): T => {
       if (ok) return good
       touched = true
@@ -130,18 +134,6 @@ export function sanitizeLoadedCanvasNodes(
       size: repair(isValidSize(v.size), v.size as Size, { ...FALLBACK_SIZE }),
       zOrder: repair(isFiniteNumber(v.zOrder), v.zOrder as number, nextZ++),
       creationIndex: repair(isFiniteNumber(v.creationIndex), v.creationIndex as number, nextC++),
-    }
-
-    // A maximized node carries pre-maximize geometry that resize/restore code
-    // reads; if it's malformed, drop it back to a normal (un-maximized) node
-    // rather than risk a second crash.
-    if (node.preMaximizeOrigin != null && !isValidPoint(node.preMaximizeOrigin)) {
-      delete node.preMaximizeOrigin
-      touched = true
-    }
-    if (node.preMaximizeSize != null && !isValidSize(node.preMaximizeSize)) {
-      delete node.preMaximizeSize
-      touched = true
     }
 
     nodes[key] = node

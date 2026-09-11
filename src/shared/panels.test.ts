@@ -1,3 +1,4 @@
+import { migrateNavigationPanel } from './panels'
 import { describe, it, expect } from 'vitest'
 import {
   SPLIT_MENU_PANEL_TYPES,
@@ -56,12 +57,18 @@ describe('panel capabilities', () => {
 
   it('owns command-palette navigation policy', () => {
     expect(isNavigablePanelType('terminal')).toBe(true)
-    expect(isNavigablePanelType('document')).toBe(true)
+    expect(isNavigablePanelType('document')).toBe(false)
     expect(isNavigablePanelType('canvas')).toBe(false)
     expect(isNavigablePanelType('unknown')).toBe(false)
   })
 
   it('owns the ordered generic split-menu catalog', () => {
     expect(SPLIT_MENU_PANEL_TYPES).toEqual(['editor', 'terminal', 'browser', 'canvas', 'agent', 'review'])
+  })
+})
+
+ it('migrates document tabs into Files without losing their identity or path', () => {
+  expect(migrateNavigationPanel({ id: 'preview', type: 'document', filePath: '/repo/image.png' })).toEqual({
+    id: 'preview', type: 'editor', filePath: '/repo/image.png', sidebarView: 'explorer',
   })
 })

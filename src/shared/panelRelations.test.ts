@@ -132,6 +132,5 @@ describe('panel relation prompt context', () => {
     expect(panelRelationKindsForTarget(panel('editor', 'editor'))).toEqual(['context', 'use'])
     expect(panelRelationKindsForTarget(panel('review', 'review'))).toEqual(['verify', 'context'])
     expect(panelRelationKindsForTarget(panel('agent', 'agent'))).toEqual(['trigger'])
-    expect(panelRelationKindsForTarget(panel('document', 'document'))).toEqual(['context'])
   })
 })

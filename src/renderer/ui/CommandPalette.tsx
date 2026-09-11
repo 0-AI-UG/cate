@@ -372,7 +372,7 @@ export const CommandPalette: React.FC = () => {
       const wsId = appStore.selectedWorkspaceId
       const ws = appStore.workspaces.find((w) => w.id === wsId)
       const existing = Object.values(ws?.panels ?? {}).find(
-        (panel) => (panel.type === 'editor' || panel.type === 'document') && panel.filePath === file.path,
+        (panel) => (panel.type === 'editor') && panel.filePath === file.path,
       )
       const panelId = existing?.id ?? openFileAsPanel(wsId, file.path, undefined, placementForActivePanel())
       void revealPanel(wsId, panelId, { retry: true })

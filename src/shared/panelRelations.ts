@@ -140,9 +140,6 @@ function resourceInstruction(
       ? `${prefix}${target} Work in ${panel.filePath}.`
       : `${prefix}${target} Reference ${panel.filePath}.`
   }
-  if (panel.type === 'document' && panel.filePath) {
-    return `${prefix}${target} Read ${panel.filePath}.`
-  }
   if (panel.type === 'review') {
     return `${prefix}${target} Verify with it through Cate review commands.`
   }

@@ -70,15 +70,6 @@ describe('sanitizeLoadedCanvasNodes', () => {
     expect(Object.keys(nodes)).toEqual(['good'])
   })
 
-  it('strips malformed pre-maximize geometry rather than risk a second crash', () => {
-    const { nodes, repaired } = sanitizeLoadedCanvasNodes({
-      n1: { ...valid, preMaximizeOrigin: { x: 1, y: 2 }, preMaximizeSize: { width: 0, height: 0 } },
-    })
-    expect(repaired).toEqual(['n1'])
-    expect(nodes.n1.preMaximizeSize).toBeUndefined()
-    expect(nodes.n1.preMaximizeOrigin).toEqual({ x: 1, y: 2 })
-  })
-
   it('falls back to the map key when a node has no id', () => {
     const { nodes } = sanitizeLoadedCanvasNodes({ key1: { ...valid, id: undefined } })
     expect(nodes.key1.id).toBe('key1')

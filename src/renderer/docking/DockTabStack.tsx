@@ -53,15 +53,29 @@ interface DockTabStackProps {
   /** When true, this stack's drop-zone returns a null rect so it can't be
    *  hit-tested as a target. */
   dropDisabled?: boolean
+  /** Canvas-node stacks promote their active panel into the canvas's owning
+   *  dock instead of merging their private mini-dock. */
+  onPresentPanel?: (panelId: string) => void
 }
 
-export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, newTabControl, onTabBarMouseDown, localOnly, compact, dropDisabled }: DockTabStackProps) {
+export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, newTabControl, onTabBarMouseDown, localOnly, compact, dropDisabled, onPresentPanel }: DockTabStackProps) {
   const dockStoreApi = useDockStoreApi()
-  const canMaximize = useDockStoreContext((s) => Object.values(s.zones).some((zone) =>
-    zone.visible && zone.layout && (zone.layout.type === 'split' || zone.layout.id !== stack.id),
-  ))
-  const maximized = useDockStoreContext((s) => s.maximizedStackId === stack.id)
+  const presentation = useDockStoreContext((s) => s.presentation)
+  const zoneLayout = useDockStoreContext((s) => s.zones[zoneProp].layout)
+  const activePanelId = stack.panelIds[stack.activeIndex]
+  const ownsPresentation = presentation?.stackId === stack.id
+  const canRestore = !!ownsPresentation && dockStoreApi.getState().canRestorePresentation(stack.id)
+  const presented = ownsPresentation
+    && (!presentation.panelId || presentation.panelId === activePanelId)
+  const canMerge = !presentation && zoneLayout?.type === 'split'
   const stackRef = useRef<HTMLDivElement>(null)
+
+  // A structural mutation makes the saved reverse operation unsafe. Drop the
+  // transaction immediately so it cannot leave dead controls or block a later
+  // presentation; the already-mutated real dock tree remains authoritative.
+  useEffect(() => {
+    if (ownsPresentation && !canRestore) dockStoreApi.getState().discardPresentation()
+  }, [ownsPresentation, canRestore, dockStoreApi])
 
   const isDragging = useDragStore((s) => s.isDragging)
   const target = useDragStore((s) => s.target)
@@ -86,8 +100,6 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
       acceptsPanelType,
     })
   }, [stack.id, zoneProp, dockStoreApi, acceptsPanelType])
-
-  const activePanelId = stack.panelIds[stack.activeIndex]
 
   // Effective workspace for status lookups: explicit prop, else the selected
   // workspace (matches resolvePanel's fallback). Subscribed so a workspace
@@ -116,7 +128,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
     const viewport = element.closest<HTMLElement>('[data-dock-viewport]')
     const dock = dockStoreApi.getState()
     const layout = dock.zones[zoneProp].layout
-    if (viewport && layout && !dock.maximizedStackId) {
+    if (viewport && layout) {
       return canSplitLayout(layout, stack.id, viewport.clientWidth, viewport.clientHeight, (id) => resolvePanel(id)?.type)
     }
     return canSplitPane(Math.min(element.clientWidth, viewport?.clientWidth ?? element.clientWidth),
@@ -326,16 +338,24 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
           </Tooltip>
         )}
 
-        {canMaximize && <Tooltip label={maximized ? 'Restore split' : 'Maximize split'}>
+        {(presented || canMerge || !!onPresentPanel) && <Tooltip label={
+          presented
+            ? canRestore ? 'Restore previous layout' : 'Previous layout can no longer be restored'
+            : onPresentPanel ? 'Move panel into dock' : 'Merge splits into tabs'
+        }>
           <button
             type="button"
-            aria-label={maximized ? 'Restore split' : 'Maximize split'}
-            aria-pressed={maximized}
+            aria-label={presented ? 'Restore previous layout' : onPresentPanel ? 'Move panel into dock' : 'Merge splits into tabs'}
+            aria-pressed={presented}
             className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[22px] h-[22px]' : 'w-6 h-6'}`}
             onMouseDown={(event) => event.stopPropagation()}
-            onClick={() => dockStoreApi.getState().toggleStackMaximized(stack.id)}
+            onClick={() => {
+              if (presented) dockStoreApi.getState().restorePresentation(stack.id)
+              else if (onPresentPanel && activePanelId) onPresentPanel(activePanelId)
+              else dockStoreApi.getState().mergeSplitToStack(stack.id)
+            }}
           >
-            {maximized ? <Minimize2 size={compact ? 12 : 14} /> : <Maximize2 size={compact ? 12 : 14} />}
+            {presented ? <Minimize2 size={compact ? 12 : 14} /> : <Maximize2 size={compact ? 12 : 14} />}
           </button>
         </Tooltip>}
 

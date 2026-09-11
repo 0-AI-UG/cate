@@ -1,6 +1,6 @@
 // =============================================================================
 // Nodes slice — node lifecycle (create/remove/move/resize), focus, z-order,
-// maximize, per-node dock layout, and node queries.
+// per-node dock layout, and node queries.
 // =============================================================================
 
 import type { CanvasNodeState } from '../../../shared/types'
@@ -21,7 +21,6 @@ type NodesActions = Pick<
   | 'resizeNode'
   | 'focusNode'
   | 'unfocus'
-  | 'toggleMaximize'
   | 'focusAndCenter'
   | 'moveToFront'
   | 'moveToBack'
@@ -193,62 +192,6 @@ export function createNodesSlice(set: CanvasSet, get: CanvasGet): NodesActions {
       // Deactivate the lead but keep the selection (rings remain), matching the
       // old unfocus() which cleared focus without touching the selection.
       set({ selectionActive: false })
-    },
-
-    toggleMaximize(id, viewportSize) {
-      const state = get()
-      const node = state.nodes[id]
-      if (!node) return
-
-      const isMaximized = node.preMaximizeOrigin != null
-
-      let updated: CanvasNodeState
-      if (isMaximized) {
-        // Restore pre-maximize geometry
-        updated = {
-          ...node,
-          origin: node.preMaximizeOrigin!,
-          size: node.preMaximizeSize!,
-          preMaximizeOrigin: undefined,
-          preMaximizeSize: undefined,
-        }
-      } else {
-        // Save current geometry and maximize to fill visible canvas area
-        const cs = state.containerSize
-        const topLeft = get().viewToCanvas({ x: 0, y: 0 })
-        const bottomRight = get().viewToCanvas({
-          x: cs.width || viewportSize.width,
-          y: cs.height || viewportSize.height,
-        })
-        // The canvas tab bar floats over the viewport (32px tall). Leave
-        // another 8px below it, but fill the left, right, and bottom edges.
-        const topInset = 40 / state.zoomLevel
-
-        updated = {
-          ...node,
-          preMaximizeOrigin: { ...node.origin },
-          preMaximizeSize: { ...node.size },
-          origin: {
-            x: topLeft.x,
-            y: topLeft.y + topInset,
-          },
-          size: {
-            width: bottomRight.x - topLeft.x,
-            height: (bottomRight.y - topLeft.y) - topInset,
-          },
-        }
-      }
-
-      // Focus the node as well (bump zOrder)
-      updated = { ...updated, zOrder: state.nextZOrder }
-
-      set({
-        nodes: { ...state.nodes, [id]: updated },
-        nextZOrder: state.nextZOrder + 1,
-        selection: [id],
-        selectionActive: true,
-        focusEpoch: state.focusEpoch + 1,
-      })
     },
 
     nodeForPanel(panelId) {

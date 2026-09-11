@@ -1,5 +1,5 @@
 // =============================================================================
-// Pure byte helpers for DocumentPanel sub-viewers. Kept out of the React module
+// Pure byte helpers for FilePreview viewers. Kept out of the React module
 // so they can be unit-tested without jsdom/pdfjs/mammoth.
 // =============================================================================
 

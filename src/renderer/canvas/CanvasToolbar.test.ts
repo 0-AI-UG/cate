@@ -36,12 +36,14 @@ describe('CanvasToolbar — minimap section', () => {
     expect(SOURCE).not.toMatch(/\{showMinimap && \(/)
   })
 
-  it('collapses from measured overlap and expands vertically from the bottom-right', () => {
+  it('collapses from measured overlap and keeps compact actions left of a bottom-right minimap', () => {
     expect(SOURCE).toContain('horizontalCardRef.current')
     expect(SOURCE).toContain('shrink-0 w-max pointer-events-auto')
     expect(SOURCE).toContain('centeredRight <= areaWidth - bottomRightInset')
     expect(SOURCE).toContain('className="absolute bottom-4 z-50 pointer-events-none"')
-    expect(SOURCE).toContain("style={{ right: '1rem' }}")
+    expect(SOURCE).toContain('const compactToolbarRight = mmBottom && mmRight ? 16 + minimapWidth + 8 : 16')
+    expect(SOURCE).toContain('style={{ right: compactToolbarRight }}')
+    expect(SOURCE).toContain("...(mmRight ? { right: '1rem' } : { left: '1rem' })")
     expect(SOURCE).toContain('card.isConnected && card.offsetWidth > 0')
     expect(SOURCE).not.toContain('onMouseEnter={() => setHovered(true)}')
   })

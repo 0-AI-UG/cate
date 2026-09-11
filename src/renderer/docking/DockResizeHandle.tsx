@@ -4,6 +4,7 @@
 
 import React, { useCallback, useRef, useEffect } from 'react'
 import { pinDocumentCursor } from '../lib/dom/pinDocumentCursor'
+import { SPLIT_DIVIDER_SIZE } from './splitSizing'
 
 interface DockResizeHandleProps {
   direction: 'horizontal' | 'vertical' // horizontal = left/right drag, vertical = up/down drag
@@ -101,18 +102,17 @@ export default function DockResizeHandle({ direction, onResize, onDoubleClick }:
     <div
       className={`
         flex-shrink-0 relative z-30 group pointer-events-auto
-        ${isHorizontal ? 'w-[5px] cursor-col-resize' : 'h-[5px] cursor-row-resize'}
+        ${isHorizontal ? 'cursor-col-resize' : 'cursor-row-resize'}
       `}
       onMouseDown={handleMouseDown}
       onDoubleClick={onDoubleClick}
-      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      style={{ WebkitAppRegion: 'no-drag', [isHorizontal ? 'width' : 'height']: SPLIT_DIVIDER_SIZE } as React.CSSProperties}
     >
-      <div className={`absolute ${isHorizontal ? 'inset-y-0 -left-1 -right-1' : 'inset-x-0 -top-1 -bottom-1'}`} />
-      {/* Visible indicator on hover */}
+      <div className={`absolute ${isHorizontal ? 'inset-y-0 -left-[6px] -right-[6px]' : 'inset-x-0 -top-[6px] -bottom-[6px]'}`} />
+      {/* Fill the layout width so pane content meets the divider. */}
       <div
         className={`
-          absolute bg-surface-6 group-hover:bg-surface-6 transition-colors duration-150
-          ${isHorizontal ? 'inset-y-0 left-[2px] right-[2px]' : 'inset-x-0 top-[2px] bottom-[2px]'}
+          absolute inset-0 bg-surface-6 group-hover:bg-surface-6 transition-colors duration-150
         `}
       />
     </div>
