@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.0.0-beta.2] - 2026-09-11
+
+This beta sharpens canvas, screenshot, file-preview, and dock workflows while improving responsiveness and agent reliability.
+
+### Added
+
+- **Screenshot viewer and annotation**: open recent screenshots in a full-screen viewer, navigate and zoom between captures, and add freehand marks or comment callouts before saving.
+- **Browser downloads**: download page assets through browser automation and review them from the browser panel.
+- **Performance coverage**: exercise startup, panel creation, canvas scaling, workspace transitions, and worktree territories with dedicated performance scenarios.
+
+### Changed
+
+- **File previews**: open images, PDFs, and DOCX files through a unified editor-panel preview with content-based format detection.
+- **Canvas and dock presentation**: refine multi-node dragging, nested canvas behavior, resize handles, split sizing, tab presentation, and overflow rules.
+- **Workspace appearance**: assign distinct colors to synced worktrees and simplify canvas, repository, file navigation, and settings controls.
+
+### Fixed
+
+- **Canvas responsiveness**: reduce compositor work and avoid rendering off-screen nodes and worktree territories during canvas navigation.
+- **Browser alignment**: keep embedded webviews aligned while panning and improve background automation lifecycle behavior.
+- **Agent workflows**: keep agents running through approved commands, derive terminal-agent identity from hooks, and preserve review comments.
+- **Application controls**: restore the keep-awake bridge, center update feedback, and require confirmation before restoring default settings.
+
 ## [2.0.0-beta.1] - 2026-09-09
 
 The first Cate 2.0 beta refreshes the application interface, brings repository navigation into a shared overview, and improves panel, workspace, and session reliability.
