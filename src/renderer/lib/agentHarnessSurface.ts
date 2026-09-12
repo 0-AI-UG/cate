@@ -51,6 +51,22 @@ button[aria-label="New project"],
   border-radius: 22px !important;
 }
 
+/* The embedded guest is already composited with the zoomed canvas. T3's glass
+ * backdrops create another raster layer around small composer and notification
+ * text. Keep their translucent fills, but avoid the extra blur layer. */
+[data-slot="composer-shell"]::before,
+[data-chat-composer-main-surface],
+[data-slot="composer-context-strip"]::before,
+[data-composer-banner-surface]::before,
+[data-slot="composer-banner-peek"],
+.alert-glass,
+.dialog-glass,
+.dropdown-glass,
+.surface-glass {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 [data-slot="sidebar-inset"] {
   min-width: 0 !important;
   margin: 0 !important;
