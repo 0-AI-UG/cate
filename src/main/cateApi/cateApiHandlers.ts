@@ -26,14 +26,14 @@ import { showOsNotification } from '../ipc/notifications'
 import type { PanelType, WindowPanelInfo } from '../../shared/types'
 import type { CodingAgentRunStatus } from '../../shared/codingAgentRuns'
 
-const CATE_API_VERSION = 8
+const CATE_API_VERSION = 9
 
 const FORWARD_TIMEOUT_MS = 10_000
 const CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS = 65_000
 
 export function forwardTimeoutMs(method: string): number {
   if (method.startsWith('cate.browser.')) return 35_000
-  if (method === 'cate.codingAgent.wait') return CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS
+  if (method === 'cate.codingAgent.wait' || method === 'cate.agent.wait') return CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS
   return FORWARD_TIMEOUT_MS
 }
 
@@ -56,6 +56,62 @@ interface InvokePayload {
 }
 
 type InvokeResult = unknown | { error: string; method?: string }
+
+function liveAgentPanels(workspaceId: string): WindowPanelInfo[] {
+  return getWindowPanels().filter((panel) =>
+    panel.workspaceId === workspaceId && (
+      (panel.type === 'agent' && panel.agentState !== undefined)
+      || (panel.type === 'terminal' && panel.agentState !== undefined && panel.agentState !== 'notRunning')
+    ),
+  )
+}
+
+function agentPanelSummary(panel: WindowPanelInfo) {
+  return {
+    panelId: panel.panelId,
+    surface: panel.type === 'agent' ? 't3' : 'terminal',
+    title: panel.title,
+    agentName: panel.agentName ?? (panel.type === 'agent' ? 'T3 Code' : null),
+    state: panel.agentState ?? 'notRunning',
+    canReceivePrompt: panel.agentCanReceivePrompt === true,
+  }
+}
+
+function waitForAgentPanels(workspaceId: string, panelIds: string[], timeoutSeconds: unknown): Promise<InvokeResult> {
+  const requested = Number(timeoutSeconds ?? 30)
+  const timeoutMs = Math.max(5, Math.min(60, Number.isFinite(requested) ? requested : 30)) * 1_000
+  return new Promise((resolve) => {
+    let timer: ReturnType<typeof setTimeout>
+    let unsubscribe = () => {}
+    const check = () => {
+      const available = liveAgentPanels(workspaceId)
+      const selected = panelIds.length > 0
+        ? panelIds.map((id) => available.find((panel) => panel.panelId === id)).filter(Boolean) as WindowPanelInfo[]
+        : available
+      if (panelIds.length > 0 && selected.length !== panelIds.length) {
+        clearTimeout(timer)
+        unsubscribe()
+        resolve({ error: 'agent-panel-not-found', method: 'cate.agent.wait' })
+        return
+      }
+      if (selected.every((panel) => panel.agentCanReceivePrompt === true)) {
+        clearTimeout(timer)
+        unsubscribe()
+        resolve({ agents: selected.map(agentPanelSummary), timedOut: false })
+      }
+    }
+    unsubscribe = subscribeWindowPanels(check)
+    timer = setTimeout(() => {
+      unsubscribe()
+      const available = liveAgentPanels(workspaceId)
+      const selected = panelIds.length > 0
+        ? available.filter((panel) => panelIds.includes(panel.panelId))
+        : available
+      resolve({ agents: selected.map(agentPanelSummary), timedOut: true })
+    }, timeoutMs)
+    check()
+  })
+}
 
 export interface InvokeScope {
   workspaceId: string
@@ -348,6 +404,43 @@ export async function dispatchCateInvoke(
   if (denied) return denied
 
   const { workspaceId, panelId } = scope
+
+  if (method === 'cate.agent.list') {
+    return liveAgentPanels(workspaceId).map(agentPanelSummary)
+  }
+
+  if (method === 'cate.agent.inspect') {
+    const requestedId = typeof (args as Record<string, unknown> | null)?.panelId === 'string'
+      ? (args as Record<string, string>).panelId
+      : ''
+    const panel = liveAgentPanels(workspaceId).find((candidate) => candidate.panelId === requestedId)
+    return panel ? agentPanelSummary(panel) : { error: 'agent-panel-not-found', method }
+  }
+
+  if (method === 'cate.agent.wait') {
+    const values = (args ?? {}) as Record<string, unknown>
+    const panelIds = Array.isArray(values.panelIds)
+      ? values.panelIds.filter((id): id is string => typeof id === 'string')
+      : []
+    return waitForAgentPanels(workspaceId, panelIds, values.timeoutSeconds)
+  }
+
+  if (method === 'cate.agent.send') {
+    const routedArgs = (args ?? {}) as Record<string, unknown>
+    const targetPanelId = typeof routedArgs.targetPanelId === 'string' ? routedArgs.targetPanelId : ''
+    const info = liveAgentPanels(workspaceId).find((candidate) => candidate.panelId === targetPanelId)
+    if (!info) {
+      return { error: 'agent-panel-not-found', method }
+    }
+    const win = getWindow(info.ownerWindowId)
+    if (!win || win.isDestroyed()) return { error: 'no-host-window', method }
+    return forwardToOwner(win.webContents, {
+      workspaceId,
+      panelId: panelId ?? '',
+      method,
+      args: routedArgs,
+    })
+  }
 
   if (method.startsWith('cate.codingAgent.')) {
     const routedArgs: Record<string, unknown> = {

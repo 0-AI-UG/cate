@@ -7,6 +7,7 @@ interface HostActions {
   openFile(filePath: string, target: NewTarget): void
   createAgent(threadId: string, title: string | undefined, target: NewTarget): void
   openExternal(url: string): void
+  relationContext?(provider: string | null): string | null
 }
 
 /** Owns validation and the lifetime of placements issued by one panel binding. */
@@ -23,6 +24,10 @@ export function createAgentHarnessHostDispatcher(threadId: string | undefined, a
         if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Unsupported link.')
         actions.openExternal(url.href)
         return true
+      }
+      if (action === 'relation-context') {
+        const provider = typeof payload.provider === 'string' ? payload.provider : null
+        return actions.relationContext?.(provider) ?? null
       }
       if (payload.threadId && action !== 'open-agent' && payload.threadId !== threadId) throw new Error('Conversation changed. Please try again.')
       const relativePath = typeof payload.filePath === 'string' ? payload.filePath : undefined

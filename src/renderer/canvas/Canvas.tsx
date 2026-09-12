@@ -21,7 +21,7 @@ import type { Point, PanelType } from '../../shared/types'
 import { isWorktreePanelType, type WorktreePanelType } from '../../shared/panels'
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { setPendingReveal } from '../lib/editor/editorReveal'
-import { CanvasTopOverlayContext } from './CanvasTopOverlayContext'
+import { CanvasRelationOverlayContext, CanvasTopOverlayContext } from './CanvasTopOverlayContext'
 import { syncBrowserSurfaces } from '../panels/browserSurfaceRegistry'
 
 // Module-level style injection — shared across all Canvas instances
@@ -173,9 +173,16 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
   const topOverlayRef = useRef<HTMLDivElement>(null)
   const topOverlayWorldRef = useRef<HTMLDivElement | null>(null)
   const [topOverlayWorld, setTopOverlayWorld] = useState<HTMLDivElement | null>(null)
+  const relationOverlayRef = useRef<HTMLDivElement>(null)
+  const relationOverlayWorldRef = useRef<HTMLDivElement | null>(null)
+  const [relationOverlayWorld, setRelationOverlayWorld] = useState<HTMLDivElement | null>(null)
   const setTopOverlayWorldRef = useCallback((element: HTMLDivElement | null) => {
     topOverlayWorldRef.current = element
     setTopOverlayWorld(element)
+  }, [])
+  const setRelationOverlayWorldRef = useCallback((element: HTMLDivElement | null) => {
+    relationOverlayWorldRef.current = element
+    setRelationOverlayWorld(element)
   }, [])
   // Debounce handle for de-promoting the world layer after pan/zoom settles.
   const willChangeResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -224,7 +231,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
   useEffect(() => {
     const applyTransform = (zoom: number, offset: { x: number; y: number }, zoomChanged = false) => {
       const transform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
-      const layers = [worldRef.current, topOverlayWorldRef.current]
+      const layers = [worldRef.current, topOverlayWorldRef.current, relationOverlayWorldRef.current]
       if (!layers.some(Boolean)) return
       for (const el of layers) {
         if (!el) continue
@@ -247,7 +254,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
       if (zoomChanged) worldRef.current?.classList.add('canvas-world-zooming')
       if (willChangeResetRef.current) clearTimeout(willChangeResetRef.current)
       willChangeResetRef.current = setTimeout(() => {
-        for (const node of [worldRef.current, topOverlayWorldRef.current]) {
+        for (const node of [worldRef.current, topOverlayWorldRef.current, relationOverlayWorldRef.current]) {
           if (node) node.style.willChange = 'auto'
         }
         worldRef.current?.classList.remove('canvas-world-zooming')
@@ -279,13 +286,14 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
     const canvas = canvasRef.current
     if (!canvas) return
     const sync = () => {
-      const overlay = topOverlayRef.current
-      if (!overlay) return
       const rect = canvas.getBoundingClientRect()
-      overlay.style.left = `${rect.left}px`
-      overlay.style.top = `${rect.top}px`
-      overlay.style.width = `${rect.width}px`
-      overlay.style.height = `${rect.height}px`
+      for (const overlay of [topOverlayRef.current, relationOverlayRef.current]) {
+        if (!overlay) continue
+        overlay.style.left = `${rect.left}px`
+        overlay.style.top = `${rect.top}px`
+        overlay.style.width = `${rect.width}px`
+        overlay.style.height = `${rect.height}px`
+      }
     }
     sync()
     const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(sync)
@@ -644,6 +652,7 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
 
   return (
     <CanvasTopOverlayContext.Provider value={topOverlayWorld}>
+    <CanvasRelationOverlayContext.Provider value={relationOverlayWorld}>
       <div
         ref={canvasRef}
         data-canvas-container
@@ -745,7 +754,37 @@ const Canvas: React.FC<CanvasProps> = ({ children, overlayChildren, onCreateAtPo
         document.body,
       )}
 
+      {createPortal(
+        <div
+          ref={relationOverlayRef}
+          data-canvas-relation-overlay={panelId ?? ''}
+          hidden={showSettings}
+          style={{
+            position: 'fixed',
+            overflow: 'clip',
+            pointerEvents: 'none',
+            zIndex: 99999,
+          }}
+        >
+          <div
+            ref={setRelationOverlayWorldRef}
+            data-canvas-relation-overlay-world
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 1,
+              height: 1,
+              transformOrigin: '0 0',
+              pointerEvents: 'none',
+            }}
+          />
+        </div>,
+        document.body,
+      )}
+
       <PlacementHint canvasRef={canvasRef} />
+    </CanvasRelationOverlayContext.Provider>
     </CanvasTopOverlayContext.Provider>
   )
 }

@@ -2,10 +2,11 @@
 // Cate terminals. Browser JavaScript runs in an isolated persistent session.
 
 import { BROWSER_API_DOCUMENTATION } from '../shared/browserAutomation'
+import { SHORT_PANEL_ID_LEN, shortPanelId } from '../shared/panelIds'
 
-export const CLI_VERSION = '13'
+export const CLI_VERSION = '14'
 export const DEFAULT_TIMEOUT_MS = 30_000
-export const SHORT_ID_LEN = 8
+export const SHORT_ID_LEN = SHORT_PANEL_ID_LEN
 
 export class UsageError extends Error {}
 export class EnvError extends Error {}
@@ -20,14 +21,7 @@ export interface Flags {
   json: boolean
   help: boolean
   version: boolean
-  agentId?: string
-  title?: string
-  worktreeId?: string
-  newWorktree?: string
-  baseRef?: string
-  foreground: boolean
   waitTimeout?: string
-  terminalPanelId?: string
   reviewFile?: string
   reviewLine?: string
   reviewSide?: string
@@ -44,8 +38,8 @@ export interface Request {
   method: string
   args: Record<string, unknown>
   resolvePanel?: 'browser' | 'terminal' | 'review' | 'panel'
-  resolvePanelArg?: 'panelId' | 'terminalPanelId'
-  resolveAgentRuns?: boolean
+  resolvePanelArg?: 'panelId' | 'targetPanelId'
+  resolvePanelListArg?: 'panelIds'
 }
 
 function need(value: string | undefined, name: string): string {
@@ -79,7 +73,7 @@ export function parseFileTarget(target: string): Record<string, unknown> {
 
 /** Parse CLI flags while preserving quoted JavaScript as a single argument. */
 export function parseCli(argv: string[]): Parsed {
-  const flags: Flags = { json: false, help: false, version: false, foreground: false }
+  const flags: Flags = { json: false, help: false, version: false }
   const positionals: string[] = []
   const agentCommand = argv[0] === 'agent'
   const reviewCommand = argv[0] === 'review'
@@ -94,28 +88,8 @@ export function parseCli(argv: string[]): Parsed {
       flags.help = true
     } else if (part === '--version') {
       flags.version = true
-    } else if (agentCommand && part === '--agent') {
-      flags.agentId = need(argv[index + 1], 'agent')
-      index += 1
-    } else if (agentCommand && part === '--title') {
-      flags.title = need(argv[index + 1], 'title')
-      index += 1
-    } else if (agentCommand && part === '--worktree') {
-      flags.worktreeId = need(argv[index + 1], 'worktree')
-      index += 1
-    } else if (agentCommand && part === '--new-worktree') {
-      flags.newWorktree = need(argv[index + 1], 'new-worktree')
-      index += 1
-    } else if (agentCommand && part === '--base-ref') {
-      flags.baseRef = need(argv[index + 1], 'base-ref')
-      index += 1
-    } else if (agentCommand && part === '--foreground') {
-      flags.foreground = true
     } else if (agentCommand && part === '--wait-timeout') {
       flags.waitTimeout = need(argv[index + 1], 'wait-timeout')
-      index += 1
-    } else if (agentCommand && part === '--terminal') {
-      flags.terminalPanelId = need(argv[index + 1], 'terminal')
       index += 1
     } else if (reviewCommand && part === '--file') {
       flags.reviewFile = need(argv[index + 1], 'file')
@@ -142,49 +116,17 @@ export function parseCli(argv: string[]): Parsed {
 function agentRequest(args: string[], flags: Flags): Request {
   const command = need(args[0], 'agent command')
   const rest = args.slice(1)
-  if (flags.panel) throw new UsageError(`--panel is not valid for agent ${command}`)
-  const hasCreateOptions = Boolean(
-    flags.agentId || flags.title || flags.worktreeId || flags.newWorktree || flags.baseRef
-      || flags.foreground || flags.terminalPanelId,
-  )
-  if (command !== 'create' && hasCreateOptions) {
-    throw new UsageError(`create options are not valid for agent ${command}`)
-  }
+  if (flags.panel && command !== 'send') throw new UsageError(`--panel is not valid for agent ${command}`)
   if (command !== 'wait' && flags.waitTimeout) {
     throw new UsageError('--wait-timeout is only valid for agent wait')
   }
 
   if (command === 'list') {
     exact(rest, 0)
-    return { method: 'cate.codingAgent.list', args: {} }
-  }
-  if (command === 'create') {
-    const prompt = need(rest.join(' '), 'prompt')
-    if (flags.worktreeId && flags.newWorktree) {
-      throw new UsageError('use either --worktree or --new-worktree, not both')
-    }
-    if (flags.baseRef && !flags.newWorktree) {
-      throw new UsageError('--base-ref requires --new-worktree')
-    }
-    return {
-      method: 'cate.codingAgent.create',
-      args: {
-        prompt,
-        ...(flags.agentId ? { agentId: flags.agentId } : {}),
-        ...(flags.title ? { title: flags.title } : {}),
-        ...(flags.worktreeId ? { worktreeId: flags.worktreeId } : {}),
-        ...(flags.newWorktree ? { newWorktree: flags.newWorktree } : {}),
-        ...(flags.baseRef ? { baseRef: flags.baseRef } : {}),
-        ...(flags.foreground ? { background: false } : {}),
-        ...(flags.terminalPanelId ? { terminalPanelId: flags.terminalPanelId } : {}),
-      },
-      ...(flags.terminalPanelId
-        ? { resolvePanel: 'terminal' as const, resolvePanelArg: 'terminalPanelId' as const }
-        : {}),
-    }
+    return { method: 'cate.agent.list', args: {} }
   }
   if (command === 'wait') {
-    const runIds = rest.map((runId) => need(runId, 'runId'))
+    const panelIds = rest.map((panelId) => need(panelId, 'panelId'))
     const timeoutMs = flags.waitTimeout === undefined
       ? undefined
       : positiveInt(flags.waitTimeout, 'wait-timeout')
@@ -192,32 +134,28 @@ function agentRequest(args: string[], flags: Flags): Request {
       throw new UsageError('--wait-timeout must be between 5000 and 60000 ms')
     }
     return {
-      method: 'cate.codingAgent.wait',
+      method: 'cate.agent.wait',
       args: {
-        ...(runIds.length > 0 ? { runIds } : {}),
+        ...(panelIds.length > 0 ? { panelIds } : {}),
         ...(timeoutMs !== undefined ? { timeoutSeconds: timeoutMs / 1_000 } : {}),
       },
-      resolveAgentRuns: runIds.length > 0,
+      ...(panelIds.length > 0 ? { resolvePanelListArg: 'panelIds' as const } : {}),
     }
   }
   if (command === 'send') {
-    const runId = need(rest[0], 'runId')
-    const prompt = need(rest.slice(1).join(' '), 'prompt')
+    const targetPanelId = flags.panel ?? need(rest[0], 'panelId')
+    const promptParts = flags.panel ? rest : rest.slice(1)
+    const prompt = need(promptParts.join(' '), 'prompt')
     return {
-      method: 'cate.codingAgent.send',
-      args: { runId, prompt },
-      resolveAgentRuns: true,
+      method: 'cate.agent.send',
+      args: { targetPanelId, prompt },
+      resolvePanel: 'panel',
+      resolvePanelArg: 'targetPanelId',
     }
   }
-  if (
-    command === 'inspect' || command === 'review' || command === 'apply'
-    || command === 'keep' || command === 'discard' || command === 'stop'
-  ) {
-    return {
-      method: `cate.codingAgent.${command}`,
-      args: { runId: need(exact(rest, 1)[0], 'runId') },
-      resolveAgentRuns: true,
-    }
+  if (command === 'inspect') {
+    const panelId = need(exact(rest, 1)[0], 'panelId')
+    return { method: 'cate.agent.inspect', args: { panelId }, resolvePanel: 'panel' }
   }
   throw new UsageError(`unknown agent command: ${command}`)
 }
@@ -446,7 +384,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
 }
 
 export function shortId(id: string): string {
-  return id.length > SHORT_ID_LEN ? id.slice(0, SHORT_ID_LEN) : id
+  return shortPanelId(id)
 }
 
 export async function resolvePanel(
@@ -469,25 +407,6 @@ export async function resolvePanel(
   throw new UsageError(`ambiguous ${label} '${prefix}' matches ${matches.map(shortId).join(', ')}`)
 }
 
-export async function resolveAgentRuns(prefixes: string[], deps: SendDeps): Promise<string[]> {
-  const listed = await send('cate.codingAgent.list', {}, deps)
-  const ids = (Array.isArray(listed) ? listed : [])
-    .map(asObject)
-    .map((run) => run?.id)
-    .filter((id): id is string => typeof id === 'string')
-  return prefixes.map((prefix) => {
-    if (ids.includes(prefix)) return prefix
-    const matches = ids.filter((id) => id.startsWith(prefix))
-    if (matches.length === 1) return matches[0]
-    if (matches.length === 0) throw new UsageError(`no agent run matching '${prefix}'`)
-    throw new UsageError(`ambiguous agent run '${prefix}' matches ${matches.map(shortId).join(', ')}`)
-  })
-}
-
-export async function resolveAgentRun(prefix: string, deps: SendDeps): Promise<string> {
-  return (await resolveAgentRuns([prefix], deps))[0]
-}
-
 function renderPanelList(value: unknown): string {
   if (!Array.isArray(value)) return renderGeneric(value)
   return value.map((item) => {
@@ -504,7 +423,7 @@ function renderAgentRuns(value: unknown): string {
     const run = asObject(item)
     if (!run) return String(item)
     const title = run.title ?? run.agentName ?? run.agentId ?? ''
-    return `${shortId(String(run.id ?? '?'))}\t${run.status ?? '?'}${title ? `\t${title}` : ''}`
+    return `${shortId(String(run.panelId ?? run.id ?? '?'))}\t${run.state ?? run.status ?? '?'}${title ? `\t${title}` : ''}`
   }).join('\n') || '(no agent runs)'
 }
 
@@ -521,12 +440,13 @@ export function formatHuman(method: string, value: unknown): string {
     return block?.type === 'text' ? String(block.text ?? '') : block?.path ? `Screenshot: ${String(block.path)}\nOpen this file with your image-viewing tool to inspect the page visually.` : '[Browser image: use --json for image data]'
   }).join('\n')
   if (method === 'cate.panel.list') return renderPanelList(value)
-  if (method === 'cate.codingAgent.list') return renderAgentRuns(value)
-  if (method === 'cate.codingAgent.wait') {
-    return renderAgentRuns(asObject(value)?.runs)
+  if (method === 'cate.agent.list' || method === 'cate.codingAgent.list') return renderAgentRuns(value)
+  if (method === 'cate.agent.wait') {
+    return renderAgentRuns(asObject(value)?.agents)
   }
   if (
-    method === 'cate.codingAgent.inspect'
+    method === 'cate.agent.inspect'
+    || method === 'cate.codingAgent.inspect'
     || method === 'cate.codingAgent.review'
     || method === 'cate.review.inspect'
   ) {
@@ -563,7 +483,7 @@ const USAGE = `Usage:
   cate panel list|create|set|current|clear|close [args]
   cate editor open <path[:line[:column]]>
   cate terminal read|type|press [args] [--panel <id>]
-  cate agent list|create|send|wait|inspect|review|apply|keep|discard|stop [args]
+  cate agent list|send|wait|inspect [args]
   cate review inspect|note|complete [--panel <id>] [args]
   cate version
 
@@ -578,18 +498,14 @@ ${BROWSER_API_DOCUMENTATION}`
 
 const AGENT_USAGE = `Usage:
   cate agent list
-  cate agent create <prompt...> [--agent <id>] [--title <title>]
-      [--worktree <id> | --new-worktree <name> [--base-ref <ref>]]
-      [--terminal <panel-id>] [--foreground]
-  cate agent send <runId> <prompt...>
-  cate agent wait [runId...] [--wait-timeout <ms>]
-  cate agent inspect|review|apply|keep|discard|stop <runId>
+  cate agent send <panelId> <prompt...>
+  cate agent send --panel <panelId> <prompt...>
+  cate agent wait [panelId...] [--wait-timeout <ms>]
+  cate agent inspect <panelId>
 
-These commands launch and control terminal CLI workers, not T3 Code conversations.
-Provider ids refer to the shared provider registry; execution here is always in a terminal.
-
-Run ids may be full ids or unique prefixes from \`cate agent list\`. A worker
-may use the same commands to create and supervise its own workers.`
+List, send, wait, and inspect provide one hook-backed interface for terminal CLI agents and T3 panels.
+Send addresses a panel and delivers the prompt exactly as provided.
+Panel ids may be full ids or unique prefixes from \`cate agent list\`.`
 
 const REVIEW_USAGE = `Usage:
   cate review inspect [--panel <id>]
@@ -659,7 +575,7 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
   const sendDeps: SendDeps = {
     fetch: deps.fetch,
     env: deps.env,
-    timeout: request.method === 'cate.codingAgent.wait'
+    timeout: request.method === 'cate.codingAgent.wait' || request.method === 'cate.agent.wait'
       ? Math.max(DEFAULT_TIMEOUT_MS, Number(request.args.timeoutSeconds ?? 10) * 1_000 + 5_000)
       : request.method === 'cate.browser.run' ? 40_000 : DEFAULT_TIMEOUT_MS,
     cwd: deps.cwd,
@@ -673,15 +589,11 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
         sendDeps,
       )
     }
-    if (request.resolveAgentRuns) {
-      if (Array.isArray(request.args.runIds)) {
-        request.args.runIds = await resolveAgentRuns(
-          request.args.runIds.map((runId) => String(runId)),
-          sendDeps,
-        )
-      } else if (typeof request.args.runId === 'string') {
-        request.args.runId = await resolveAgentRun(request.args.runId, sendDeps)
-      }
+    if (request.resolvePanelListArg) {
+      request.args[request.resolvePanelListArg] = await Promise.all(
+        (request.args[request.resolvePanelListArg] as string[]).map((panelId) =>
+          resolvePanel(panelId, 'panel', sendDeps)),
+      )
     }
     const value = await send(request.method, request.args, sendDeps)
     if (!parsed.flags.json && request.method === 'cate.browser.run' && deps.writeImage) {

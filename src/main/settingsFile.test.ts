@@ -56,6 +56,7 @@ describe('settingsFile', () => {
     expect(fs.existsSync(settingsPath())).toBe(true)
     const onDisk = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'))
     expect(onDisk.zoomSpeed).toBe(DEFAULT_SETTINGS.zoomSpeed)
+    expect(onDisk.panelRelationsEnabled).toBe(true)
     expect(onDisk.cliAgentReadEnabled).toBe(true)
     expect(onDisk.cliAgentControlEnabled).toBe(true)
     expect(onDisk.showMinimap).toBeUndefined()
@@ -91,11 +92,36 @@ describe('settingsFile', () => {
     expect(m.setSetting('uiScale', 4)).toBe(false)
     expect(m.setSetting('agentHookInjection', null as never)).toBe(false)
     expect(m.setSetting('customShortcuts', { newTerminal: { key: 't' } } as never)).toBe(false)
+    expect(m.setSetting('savedPanelRelationLabels', ['valid', '', 42] as never)).toBe(false)
 
     expect(m.getSetting('canvasGridStyle')).toBe(DEFAULT_SETTINGS.canvasGridStyle)
     expect(m.getSetting('uiScale')).toBe(DEFAULT_SETTINGS.uiScale)
     expect(m.getSetting('agentHookInjection')).toEqual({})
     expect(m.getSetting('customShortcuts')).toEqual({})
+    expect(m.getSetting('savedPanelRelationLabels')).toEqual([])
+  })
+
+  it('persists reusable panel relationship labels', async () => {
+    const m = await freshModule()
+    m.loadSettingsSync()
+
+    expect(m.setSetting('savedPanelRelationLabels', ['summarizes for', 'checks with'])).toBe(true)
+    m.flushPendingWritesSync()
+
+    expect(JSON.parse(fs.readFileSync(settingsPath(), 'utf-8')).savedPanelRelationLabels).toEqual([
+      'summarizes for',
+      'checks with',
+    ])
+  })
+
+  it('persists the panel-relations master toggle', async () => {
+    const m = await freshModule()
+    m.loadSettingsSync()
+
+    expect(m.setSetting('panelRelationsEnabled', false)).toBe(true)
+    m.flushPendingWritesSync()
+
+    expect(JSON.parse(fs.readFileSync(settingsPath(), 'utf-8')).panelRelationsEnabled).toBe(false)
   })
 
   it('resets a key back to its default', async () => {

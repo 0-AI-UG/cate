@@ -39,8 +39,10 @@ import { useOwnedTerminalTelemetry } from '../../hooks/useProcessMonitor'
 import { terminalRegistry } from '../terminal/terminalRegistry'
 import { workspaceIdForTerminal } from '../../stores/statusStore'
 import type { AgentState } from '../../../shared/types'
+import { AGENTS } from '../../../shared/agents'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../stores/canvasStore'
+import { consumePanelRelationContextForSend } from '../agent/panelRelationPrompt'
 
 export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
   // Appearance: hydrate settings + UI state, then apply theme + scale on change.
@@ -91,6 +93,13 @@ export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
           event.title,
         )
         return
+      }
+      if (event.kind === 'turn-start'
+        && AGENTS.find((agent) => agent.id === event.agentId)?.promptContextHook != null) {
+        const workspaceId =
+          workspaceIdForTerminal(terminalId) ?? useAppStore.getState().selectedWorkspaceId
+        const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
+        if (workspaceId) consumePanelRelationContextForSend(workspaceId, panelId)
       }
       noteAgentHookEvent(event)
     })

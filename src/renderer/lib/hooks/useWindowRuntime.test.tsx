@@ -35,6 +35,7 @@ const h = vi.hoisted(() => ({
   closePanelWithConfirm: vi.fn(async () => true),
   removeWorktree: vi.fn(),
   retargetReviewPanel: vi.fn(),
+  consumePanelRelationContextForSend: vi.fn(),
 }))
 vi.mock('../../docking/useNavigationPanels', () => ({ useNavigationPanels: h.useNavigationPanels }))
 vi.mock('../../hooks/useShortcuts', () => ({ useShortcuts: h.useShortcuts }))
@@ -49,6 +50,9 @@ vi.mock('../workspace/panelReveal', () => ({ revealPanel: h.revealPanel }))
 vi.mock('../closePanelWithConfirm', () => ({ closePanelWithConfirm: h.closePanelWithConfirm }))
 vi.mock('../review/openReviewPanel', () => ({ retargetReviewPanel: h.retargetReviewPanel }))
 vi.mock('../../hooks/useProcessMonitor', () => ({ useOwnedTerminalTelemetry: h.useOwnedTerminalTelemetry }))
+vi.mock('../agent/panelRelationPrompt', () => ({
+  consumePanelRelationContextForSend: h.consumePanelRelationContextForSend,
+}))
 vi.mock('../../stores/settingsStore', () => ({
   useSettingsStore: { getState: () => ({ loadSettings: h.loadSettings }), subscribe: () => () => {} },
 }))
@@ -143,6 +147,14 @@ describe('useWindowRuntime', () => {
     const event = { terminalId: 'pty-1', agentId: 'claude-code', kind: 'turn-start', sessionId: 's', raw: {} }
     act(() => { captured.hook('pty-1', event) })
     expect(h.noteAgentHookEvent).toHaveBeenCalledWith(event)
+    expect(h.consumePanelRelationContextForSend).toHaveBeenCalledWith('ws-X', 'p9')
+  })
+
+  it('does not consume context for lifecycle events that are not prompt submissions', () => {
+    mount()
+    const event = { terminalId: 'pty-1', agentId: 'claude-code', kind: 'turn-resume', sessionId: 's', raw: {} }
+    act(() => { captured.hook('pty-1', event) })
+    expect(h.consumePanelRelationContextForSend).not.toHaveBeenCalled()
   })
 
   it('writes a resolved session title through the normal panel title action', () => {

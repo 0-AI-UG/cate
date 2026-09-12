@@ -13,7 +13,7 @@ import type { SearchFileResult, SearchStats } from '../shared/types'
 import type { AgentHookEvent } from '../shared/agentHooks'
 
 /** Bumped only on a wire-incompatible change. A mismatch is a hard failure. */
-export const RUNTIME_PROTOCOL_VERSION = 3
+export const RUNTIME_PROTOCOL_VERSION = 4
 
 // ---- Handshake -------------------------------------------------------------
 
@@ -111,6 +111,7 @@ export const Methods = {
   agentHooksUnsubscribe: 'agentHooks.unsubscribe',
   // inspect a workspace's per-agent hook-file injection state (Settings UI).
   agentHooksInspect: 'agentHooks.inspect',
+  agentHooksSetPromptContext: 'agentHooks.setPromptContext',
   agentChangesList: 'agentChanges.list',
   agentChangesRead: 'agentChanges.read',
   agentChangesBind: 'agentChanges.bind',

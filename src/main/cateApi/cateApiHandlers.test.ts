@@ -39,6 +39,9 @@ const { activeWindow, windowsById, windowPanelList, windowPanelListener, revealW
     filePath?: string
     url?: string
     focused?: boolean
+    agentState?: 'notRunning' | 'running' | 'waitingForInput' | 'finished'
+    agentCanReceivePrompt?: boolean
+    agentName?: string
     codingAgentRunId?: string
     codingAgentOwnerPanelId?: string
     codingAgentStatus?: 'starting' | 'working' | 'waiting' | 'ready' | 'stopped' | 'failed'
@@ -125,7 +128,55 @@ beforeEach(() => {
 
 describe('dispatchCateInvoke — CLI host API', () => {
   it('reports the API version for feature detection', async () => {
-    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(8)
+    expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(9)
+  })
+
+  it('lists and inspects hook-backed terminal and T3 agents by panel', async () => {
+    windowPanelList.value = [
+      { panelId: 'term-live', type: 'terminal', title: 'Codex', workspaceId: WS, ownerWindowId: 1, agentState: 'waitingForInput', agentCanReceivePrompt: true, agentName: 'Codex' },
+      { panelId: 't3-live', type: 'agent', title: 'Frontend', workspaceId: WS, ownerWindowId: 1, agentState: 'running' },
+      { panelId: 'plain-shell', type: 'terminal', title: 'Shell', workspaceId: WS, ownerWindowId: 1, agentState: 'notRunning' },
+      { panelId: 'other-workspace', type: 'agent', title: 'Other', workspaceId: 'ws-2', ownerWindowId: 1, agentState: 'finished' },
+    ]
+
+    expect(await dispatchCateInvoke(scope(), 'cate.agent.list', {})).toEqual([
+      { panelId: 'term-live', surface: 'terminal', title: 'Codex', agentName: 'Codex', state: 'waitingForInput', canReceivePrompt: true },
+      { panelId: 't3-live', surface: 't3', title: 'Frontend', agentName: 'T3 Code', state: 'running', canReceivePrompt: false },
+    ])
+    expect(await dispatchCateInvoke(scope(), 'cate.agent.inspect', { panelId: 't3-live' })).toEqual({
+      panelId: 't3-live', surface: 't3', title: 'Frontend', agentName: 'T3 Code', state: 'running', canReceivePrompt: false,
+    })
+  })
+
+  it('waits on hook-backed panel state without reading terminal output', async () => {
+    windowPanelList.value = [{
+      panelId: 'term-live', type: 'terminal', workspaceId: WS, ownerWindowId: 1,
+      agentState: 'waitingForInput', agentCanReceivePrompt: true, agentName: 'Codex',
+    }]
+    expect(await dispatchCateInvoke(scope(), 'cate.agent.wait', { panelIds: ['term-live'] })).toEqual({
+      agents: [{ panelId: 'term-live', surface: 'terminal', agentName: 'Codex', state: 'waitingForInput', canReceivePrompt: true }],
+      timedOut: false,
+    })
+  })
+
+  it('routes agent send to the exact owning panel window', async () => {
+    const send = vi.fn(() => { throw new Error('closed for test') })
+    windowsById.set(7, { isDestroyed: () => false, webContents: { send } })
+    windowPanelList.value = [{
+      panelId: 't3-live', type: 'agent', workspaceId: WS, ownerWindowId: 7,
+      agentState: 'waitingForInput',
+    }]
+
+    expect(await dispatchCateInvoke(scope(), 'cate.agent.send', {
+      targetPanelId: 't3-live', prompt: 'Continue the task',
+    })).toEqual({ error: 'no-owner', method: 'cate.agent.send' })
+    expect(send).toHaveBeenCalledOnce()
+    expect((send.mock.calls as unknown[][])[0]?.[1]).toMatchObject({
+      workspaceId: WS,
+      panelId: PANEL,
+      method: 'cate.agent.send',
+      args: { targetPanelId: 't3-live', prompt: 'Continue the task' },
+    })
   })
 
   it('suppresses ui.notify when the user disabled notifications', async () => {
@@ -740,6 +791,8 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
     expect(cliPermissionForMethod('cate.browser.somethingNew')?.key).toBe('cliBrowserControlEnabled')
     expect(cliPermissionForMethod('cate.panel.somethingNew')?.key).toBe('cliPanelControlEnabled')
     expect(cliPermissionForMethod('cate.codingAgent.somethingNew')?.key).toBe('cliAgentControlEnabled')
+    expect(cliPermissionForMethod('cate.agent.list')?.key).toBe('cliAgentReadEnabled')
+    expect(cliPermissionForMethod('cate.agent.send')?.key).toBe('cliAgentControlEnabled')
     expect(cliPermissionForMethod('cate.review.inspect')?.key).toBe('cliAgentReadEnabled')
     expect(cliPermissionForMethod('cate.review.somethingNew')?.key).toBe('cliAgentControlEnabled')
     // Unknown namespaces have no permission cell and are rejected by dispatch.

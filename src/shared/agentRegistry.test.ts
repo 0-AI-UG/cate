@@ -17,7 +17,7 @@
 // =============================================================================
 
 import { describe, expect, test } from 'vitest'
-import { AGENTS, AGENT_INTEGRATIONS, agentForSkillTarget, type AgentId } from './agents'
+import { AGENTS, AGENT_INTEGRATIONS, agentForSkillTarget, agentIdForT3Provider, type AgentId } from './agents'
 import { AGENT_HOOK_SPECS } from './agentHooks'
 import { SKILL_TARGETS, type SkillTargetId } from './skills'
 
@@ -30,6 +30,17 @@ const NO_SKILLS: ReadonlySet<AgentId> = new Set([])
 const NO_LOGO: ReadonlySet<AgentId> = new Set([])
 
 describe('agent registry coverage', () => {
+  test('native prompt context is gated to CLIs with a supported submit hook', () => {
+    expect(Object.fromEntries(AGENTS.map((agent) => [agent.id, agent.promptContextHook]))).toEqual({
+      'claude-code': 'additional-context',
+      codex: 'additional-context',
+      cursor: null,
+      grok: null,
+      kiro: 'stdout',
+      opencode: 'opencode',
+    })
+  })
+
   test('every agent declares a skills target, or is an explicit omission', () => {
     for (const a of AGENTS) {
       if (NO_SKILLS.has(a.id)) {
@@ -120,4 +131,11 @@ test('T3 integrations reuse canonical provider identities and skill targets', as
     expect(TERMINAL_AGENTS.find((cli) => cli.id === provider.id)).toBe(provider)
     expect(provider.skills).not.toBeNull()
   }
+})
+
+test('T3 provider and driver ids resolve to canonical execution identities', () => {
+  expect(agentIdForT3Provider('codex')).toBe('codex')
+  expect(agentIdForT3Provider('claude')).toBe('claude-code')
+  expect(agentIdForT3Provider('claudeAgent')).toBe('claude-code')
+  expect(agentIdForT3Provider('unknown')).toBeNull()
 })

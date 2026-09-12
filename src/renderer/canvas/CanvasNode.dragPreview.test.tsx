@@ -7,6 +7,7 @@ vi.mock('../lib/terminal/terminalRegistry', () => ({
     disposeWorkspace: vi.fn(),
     has: () => false,
     getEntry: () => undefined,
+    ptyIdForPanel: () => undefined,
   },
 }))
 

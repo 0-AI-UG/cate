@@ -89,6 +89,9 @@ export interface AgentDef {
   /** True when a shell child process with this (already-lowercased) name means
    *  this agent is the one running in that terminal. */
   matchProcess: (procName: string) => boolean
+  /** Native post-submit extension point Cate can use to add graph context
+   * without reading or rewriting the terminal's PTY input. */
+  promptContextHook: 'additional-context' | 'stdout' | 'opencode' | null
   /** Argv (after `command`) that re-attaches to `sessionId` on a terminal
    *  restore, or null when this CLI cannot resume by id. Every contract here is
    *  pinned live by agentHookContracts.itest.ts. */
@@ -124,6 +127,7 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentArgs: (prompt) => [prompt],
     codingAgentFollowUp: true,
     matchProcess: (n) => n === 'claude' || n === 'claude-code' || n.startsWith('claude'),
+    promptContextHook: 'additional-context',
     resumeArgs: (sid) => ['--resume', sid],
     // claude is the standard's origin: it REQUIRES frontmatter name === dir name.
     skills: folderSkills('claude-code', ['.claude', 'skills'], { nameMatchesDir: true }),
@@ -136,6 +140,7 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentArgs: (prompt) => [prompt],
     codingAgentFollowUp: true,
     matchProcess: (n) => n === 'codex',
+    promptContextHook: 'additional-context',
     resumeArgs: (sid) => ['resume', sid],
     skills: folderSkills('codex', ['.codex', 'skills']),
   },
@@ -150,6 +155,7 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentArgs: (prompt) => [prompt],
     codingAgentFollowUp: true,
     matchProcess: (n) => n === 'cursor-agent' || n === 'cursor',
+    promptContextHook: null,
     // --resume ADOPTS an unknown id (fresh chat under that id, exit 0) rather
     // than failing — a stale stamp degrades to a fresh session, never a wrong one.
     resumeArgs: (sid) => ['--resume', sid],
@@ -169,6 +175,7 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentArgs: (prompt) => [prompt],
     codingAgentFollowUp: true,
     matchProcess: (n) => n === 'grok' || /^grok-\d/.test(n),
+    promptContextHook: null,
     // --resume ERRORS on an id with no session on disk (pinned live), so a stale
     // stamp falls back to a plain shell instead of silently opening a fresh chat.
     resumeArgs: (sid) => ['--resume', sid],
@@ -188,6 +195,7 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentArgs: (prompt) => ['--prompt', prompt],
     codingAgentFollowUp: true,
     matchProcess: (n) => n === 'opencode',
+    promptContextHook: 'opencode',
     resumeArgs: (sid) => ['--session', sid],
     skills: folderSkills('opencode', ['.opencode', 'skills']),
   },
@@ -200,6 +208,7 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentArgs: (prompt) => ['chat', '--v3', prompt],
     codingAgentFollowUp: true,
     matchProcess: (n) => n === 'kiro-cli',
+    promptContextHook: 'stdout',
     resumeArgs: (sid) => ['chat', '--v3', '--resume-id', sid],
     skills: folderSkills('kiro', ['.kiro', 'skills'], { nameMatchesDir: true }),
   },
@@ -241,6 +250,14 @@ export function matchAgentDef(procName: string): AgentDef | null {
     if (a.matchProcess(lower)) return a
   }
   return null
+}
+
+/** Resolve the execution identity reported by T3. T3 has used both its public
+ * provider id and its internal driver id at integration boundaries, so accept
+ * either without treating the T3 panel itself as an agent. */
+export function agentIdForT3Provider(provider: string): AgentId | null {
+  return AGENTS.find((agent) =>
+    agent.t3?.providerId === provider || agent.t3?.driverId === provider)?.id ?? null
 }
 
 // Session-resume (AgentDef.resumeArgs) builds the command typed into a restored

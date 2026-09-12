@@ -22,7 +22,7 @@ vi.mock('./PanelTargetLayer', () => ({ default: () => null }))
 vi.mock('./worktree', () => ({ WorktreeTerritoryLayer: () => null }))
 
 import Canvas from './Canvas'
-import { CanvasTopOverlayContext } from './CanvasTopOverlayContext'
+import { CanvasRelationOverlayContext, CanvasTopOverlayContext } from './CanvasTopOverlayContext'
 import { CanvasStoreProvider } from '../stores/CanvasStoreContext'
 import { createCanvasStore } from '../stores/canvasStore'
 import { useUIStore } from '../stores/uiStore'
@@ -35,6 +35,11 @@ let root: Root
 function PortalledGlowProbe(): React.ReactElement | null {
   const target = React.useContext(CanvasTopOverlayContext)
   return target ? createPortal(<div data-glow-probe />, target) : null
+}
+
+function PortalledRelationProbe(): React.ReactElement | null {
+  const target = React.useContext(CanvasRelationOverlayContext)
+  return target ? createPortal(<div data-relation-probe />, target) : null
 }
 
 beforeEach(() => {
@@ -67,6 +72,7 @@ describe('Canvas top overlay', () => {
       <CanvasStoreProvider store={store}>
         <Canvas panelId="canvas-one" overlayChildren={<div data-toolbar-probe />}>
           <PortalledGlowProbe />
+          <PortalledRelationProbe />
         </Canvas>
       </CanvasStoreProvider>,
     ))
@@ -81,6 +87,11 @@ describe('Canvas top overlay', () => {
     expect(overlay.querySelector('[data-toolbar-probe]')).not.toBeNull()
     expect(container.querySelector('[data-canvas-marquee]')).toBeNull()
 
-    expect(world.style.transform).toBe('scale(2) translate(15px, 20px)')
+    const relationOverlay = document.body.querySelector<HTMLElement>('[data-canvas-relation-overlay="canvas-one"]')!
+    expect(relationOverlay.style.position).toBe('fixed')
+    expect(relationOverlay.style.zIndex).toBe('99999')
+    expect(relationOverlay.querySelector<HTMLElement>('[data-canvas-relation-overlay-world]')
+      ?.style.transform).toBe('scale(2) translate(15px, 20px)')
+    expect(relationOverlay.querySelector('[data-relation-probe]')).not.toBeNull()
   })
 })

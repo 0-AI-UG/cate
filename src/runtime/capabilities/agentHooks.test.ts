@@ -104,6 +104,61 @@ describe('agentHooks capability', () => {
     expect(env2.CATE_HOOK_TOKEN).not.toBe(env.CATE_HOOK_TOKEN)
   })
 
+  test('returns graph context through supported native submit hooks only', async () => {
+    const cap = makeCap()
+    const terminalId = 'rpty-context'
+    const endpoint = await cap.endpoint()
+    const token = endpoint.tokenFor(terminalId)
+    cap.setPromptContext(terminalId, 'Use Browser panel "Docs".')
+
+    const send = (agentId: string, payload: Record<string, unknown>, route = '/hook') => fetch(endpoint.url + route, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ agentId, terminalId, payload }),
+    })
+
+    const codex = await send('codex', { hook_event_name: 'UserPromptSubmit' })
+    expect(codex.status).toBe(200)
+    expect(await codex.json()).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext: 'Use Browser panel "Docs".',
+      },
+    })
+
+    const claude = await send('claude-code', { hook_event_name: 'UserPromptSubmit' })
+    expect(await claude.json()).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext: 'Use Browser panel "Docs".',
+      },
+    })
+
+    const kiro = await send('kiro', { hook_event_name: 'UserPromptSubmit' })
+    expect(await kiro.text()).toBe('Use Browser panel "Docs".')
+
+    const cursor = await send('cursor', { hook_event_name: 'beforeSubmitPrompt' })
+    expect(cursor.status).toBe(204)
+    expect(await cursor.text()).toBe('')
+
+    const grok = await send('grok', { hookEventName: 'user_prompt_submit' })
+    expect(grok.status).toBe(204)
+    expect(await grok.text()).toBe('')
+
+    const opencode = await send('opencode', {}, '/prompt-context')
+    expect(await opencode.text()).toBe('Use Browser panel "Docs".')
+
+    // The panel toggle clears this same hook state. Addressed `cate agent send`
+    // submissions enter through the agent's normal submit hook, so Off must
+    // leave the explicitly sent prompt unaugmented.
+    cap.setPromptContext(terminalId, null)
+    const codexOff = await send('codex', { hook_event_name: 'UserPromptSubmit' })
+    expect(codexOff.status).toBe(204)
+    expect(await codexOff.text()).toBe('')
+    const opencodeOff = await send('opencode', {}, '/prompt-context')
+    expect(await opencodeOff.text()).toBe('')
+  })
+
   test('a failed setup yields a plain shell, then a retry on the same dir succeeds', async () => {
     // Fail setup at the endpoint bind — the last setup step, so the stable
     // dir is already partially built. That partial dir is harmless (stale
@@ -295,6 +350,28 @@ describe('agentHooks capability', () => {
     // production it is the agent CLI (or its sh hook-command layer), which is
     // what the presence tracker walks up from.
     expect(posts).toEqual([{ terminalId: 'rpty-bridge', agentId: 'codex', pid: process.pid }])
+  })
+
+  test.skipIf(!posix)('the generated bridge writes native Codex context only on prompt submit', async () => {
+    const cap = makeCap()
+    const { dir } = await cap.endpoint()
+    const env = await cap.envForPty('rpty-native-context', { PATH: '/usr/bin:/bin' })
+    cap.setPromptContext('rpty-native-context', 'Use Browser panel "Docs".')
+
+    const stdout = await new Promise<string>((resolve, reject) => {
+      const child = execFile(path.join(dir, 'cate-hook-bridge-codex'), [], { env, timeout: 15_000 }, (err, output) => {
+        if (err) reject(err)
+        else resolve(output)
+      })
+      child.stdin!.end(JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 'session', cwd: '/w' }))
+    })
+
+    expect(JSON.parse(stdout)).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext: 'Use Browser panel "Docs".',
+      },
+    })
   })
 
   test.skipIf(!posix)('the wrapper exits silently when its node binary is gone', async () => {

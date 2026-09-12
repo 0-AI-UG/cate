@@ -15,6 +15,7 @@ import type { NodeActivityState, DockLayoutNode, DockTabStack as DockTabStackNod
 import { useCanvasStoreContext, useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { useAppStore, useSelectedWorkspace } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { useDragStore, useDragSourceVisibility } from '../drag'
 import { useNodeResize } from '../hooks/useNodeResize'
 import { useCanvasNodeStyle } from './useCanvasNodeStyle'
@@ -37,6 +38,9 @@ import { PANEL_DEFINITIONS } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
 import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
 import { worktreeForPanel } from '../lib/worktreeContext'
+import { PanelRelationHandle } from './PanelRelationHandle'
+import { connectPanelToExisting } from '../lib/panelRelations/connectPanel'
+import { isPanelRelationSourceAnchored } from '../../shared/panelRelations'
 
 // Node ids already reported for missing geometry, so a bad node that keeps
 // re-rendering warns/reports once instead of spamming.
@@ -469,6 +473,13 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     if (!id) return primaryPanel
     return currentWorkspace?.panels[id] ?? primaryPanel
   }, [layout, currentWorkspace, primaryPanel])
+  const panelRelationsEnabled = useSettingsStore((state) => state.panelRelationsEnabled)
+  const canConnectActivePanel = Boolean(panelRelationsEnabled && activePanel && currentWorkspace
+    && isPanelRelationSourceAnchored(
+      activePanel.id,
+      currentWorkspace.panels,
+      currentWorkspace.panelRelations ?? [],
+    ))
   // --- Worktree identity: follows the ACTIVE tab --------------------------
   // The node adopts whichever tab is open. Gated on 2+ worktrees (matching the
   // chip) so single-branch flows show no tint/sludge.
@@ -676,6 +687,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       const id = await window.electronAPI.showContextMenu([
         ...(!outerPresentationActive ? [{ id: 'maximize', label: 'Move into Dock' }] : []),
         { id: 'pin', label: node?.isPinned ? 'Unlock' : 'Lock' },
+        ...(canConnectActivePanel ? [{ id: 'connect', label: 'Connect to…' }] : []),
         { type: 'separator' },
         { id: 'front', label: 'Move to Front' },
         { id: 'back', label: 'Move to Back' },
@@ -689,12 +701,15 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           break
         }
         case 'pin': handleTogglePin(); break
+        case 'connect':
+          if (activePanel) void connectPanelToExisting(wsId, activePanel.id)
+          break
         case 'front': canvasApi.getState().moveToFront(nodeId); break
         case 'back': canvasApi.getState().moveToBack(nodeId); break
         case 'close': handleClose(); break
       }
     },
-    [node?.isPinned, handlePresentPanel, handleTogglePin, handleClose, canvasApi, dockStoreApi, nodeId, outerPresentationActive],
+    [node?.isPinned, activePanel, canConnectActivePanel, handlePresentPanel, handleTogglePin, handleClose, canvasApi, dockStoreApi, nodeId, outerPresentationActive, wsId],
   )
 
   // --- Computed styles -------------------------------------------------------
@@ -737,6 +752,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     <div
       ref={nodeRef}
       data-node-id={nodeId}
+      data-active-panel-id={activePanel?.id}
       data-node-active={isFocused ? 'true' : 'false'}
       style={containerStyle}
       onClick={handleClick}
@@ -882,6 +898,23 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         </DockStoreProvider>
       </div>
     </div>
+
+    {isFocused && activePanel && canConnectActivePanel && (
+      <div
+        data-panel-connection-handles-for={nodeId}
+        style={{
+          position: 'absolute',
+          left: node.origin.x,
+          top: node.origin.y,
+          width: node.size.width,
+          height: node.size.height,
+          zIndex: 1200 + node.zOrder,
+          pointerEvents: 'none',
+        }}
+      >
+        <PanelRelationHandle workspaceId={wsId} sourcePanelId={activePanel.id} />
+      </div>
+    )}
 
     {/* Resize band — sits just OUTSIDE the panel border, in the canvas gutter,
         so it never overlaps the panel interior or its content scrollbar.
