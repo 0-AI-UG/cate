@@ -1,8 +1,9 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { refreshAgentChanges, useAgentChanges } from './useAgentChanges'
-import type { AgentChangesSnapshot } from '../../shared/agentChanges'
+import { activeAgentChanges, refreshAgentChanges, useAgentChanges } from './useAgentChanges'
+import type { AgentChangeRecord, AgentChangesSnapshot } from '../../shared/agentChanges'
+import type { GitStatusSnapshot } from '../stores/gitStatusStore'
 
 ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
 const roots: ReturnType<typeof createRoot>[] = []
@@ -14,6 +15,27 @@ function mount(children: React.ReactNode) {
   return { root, host }
 }
 afterEach(async () => { for (const root of roots.splice(0)) act(() => root.unmount()); await Promise.resolve(); vi.useRealTimers() })
+
+const record = (id: string, path: string, oldPath?: string): AgentChangeRecord => ({
+  id, agentId: 'codex', sessionId: 'session', turnId: id, source: 't3', sourceId: 'thread', cwd: '/repo',
+  createdAt: '2026-01-01T00:00:00Z', mode: 'operation',
+  files: [{ path, oldPath, patch: '', hunks: [], additions: 1, deletions: 1, coverage: 'patch' }],
+})
+const git = (statusFiles: GitStatusSnapshot['statusFiles'], isRepo = true): GitStatusSnapshot => ({
+  isRepo, statusFiles, tracked: new Set(), branch: 'main', ahead: 0, behind: 0, worktrees: [], revision: 1,
+})
+
+it('keeps only agent files with staged or unstaged Git changes without deleting history', () => {
+  const history = [record('active', 'src/a.ts'), record('committed', 'src/b.ts'), record('renamed', 'src/new.ts', 'src/old.ts')]
+  const active = activeAgentChanges(history, git([
+    { path: 'src/a.ts', index: ' ', working_dir: 'M' },
+    { path: 'src/old.ts', index: 'R', working_dir: ' ' },
+  ]))
+  expect(active.map((item) => item.id)).toEqual(['active', 'renamed'])
+  expect(history).toHaveLength(3)
+  expect(activeAgentChanges(history, git([]))).toEqual([])
+  expect(activeAgentChanges(history, git([], false))).toEqual(history)
+})
 
 it('waits for the shared in-flight poll when manually refreshing', async () => {
   let resolve!: (value: AgentChangesSnapshot) => void

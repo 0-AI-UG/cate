@@ -4,13 +4,28 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   setWorktree: vi.fn(),
-  workspace: { id: 'ws', rootPath: '/repo', worktrees: [] as any[], panels: {} as Record<string, any> }, records: [] as any[], loading: false, setState: vi.fn(), refresh: vi.fn(), reveal: vi.fn(),
+  workspace: { id: 'ws', rootPath: '/repo', worktrees: [] as any[], panels: {} as Record<string, any> }, records: [] as any[], statusFiles: [] as any[], loading: false, setState: vi.fn(), refresh: vi.fn(), refreshGit: vi.fn(), reveal: vi.fn(),
 }))
 vi.mock('../stores/appStore', () => ({ useAppStore: Object.assign((selector: any) => selector({ workspaces: [h.workspace] }), {
   getState: () => ({ setPanelReviewState: h.setState, setPanelWorktreeId: h.setWorktree, getWorkspace: () => h.workspace }),
 }) }))
 vi.mock('../stores/useWorktrees', () => ({ useWorktrees: () => h.workspace.worktrees }))
-vi.mock('../lib/useAgentChanges', () => ({ useAgentChanges: () => ({ records: h.records, loading: h.loading }), refreshAgentChanges: h.refresh }))
+vi.mock('../stores/gitStatusStore', () => ({
+  useGitStatusSnapshot: () => ({ isRepo: true, statusFiles: h.statusFiles, revision: 1 }),
+  gitStatusStore: { refresh: h.refreshGit },
+  toPosixPath: (path: string) => path.replace(/\\/g, '/'),
+}))
+vi.mock('../lib/useAgentChanges', () => ({
+  useAgentChanges: () => ({ records: h.records, loading: h.loading }),
+  refreshAgentChanges: h.refresh,
+  activeAgentChanges: (records: any[], git: { statusFiles: Array<{ path: string }> }) => {
+    const changed = new Set(git.statusFiles.map((file) => file.path))
+    return records.flatMap((record) => {
+      const files = record.files.filter((file: { path: string }) => changed.has(file.path))
+      return files.length ? [{ ...record, files }] : []
+    })
+  },
+}))
 vi.mock('../lib/workspace/panelReveal', () => ({ revealPanel: h.reveal }))
 import AgentChangesView from './AgentChangesView'
 import { ReviewToolbar } from './ReviewToolbar'
@@ -33,6 +48,7 @@ beforeEach(() => {
     agentId: id === 'a' ? 'claude-code' : 'codex', sessionId: id, turnId: 'turn', mode: 'operation', createdAt: new Date().toISOString(),
     files: [{ path: `${id}.ts`, additions: 1, deletions: 1, coverage: 'fragment', hunks: [] }],
   }))
+  h.statusFiles = h.records.map((record) => ({ path: record.files[0].path, index: ' ', working_dir: 'M' }))
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
 afterEach(() => { act(() => root.unmount()); host.remove() })
@@ -49,6 +65,16 @@ it('shows only the source panel records and explains incomplete coverage', () =>
   const select = document.querySelector<HTMLSelectElement>('[aria-label="Filter by panel"]')!
   act(() => { select.value = 'b'; select.dispatchEvent(new Event('change', { bubbles: true })) })
   expect(h.setState).toHaveBeenLastCalledWith('ws', 'review', expect.objectContaining({ agentChanges: expect.objectContaining({ panelId: 'b' }) }))
+})
+
+it('shows only recorded edits whose files still have local Git changes, with history available', () => {
+  h.statusFiles = []
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
+  expect(host.textContent).toContain('No active agent edits')
+  expect(host.textContent).not.toContain('a.ts')
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="More review options"]')!.click())
+  act(() => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === 'Show recorded history')!.click())
+  expect(host.textContent).toContain('a.ts')
 })
 
 it('offers every comparison mode and switches directly to staged changes', async () => {
@@ -142,6 +168,7 @@ it('shows filtered totals and preserves filters when changing display options', 
   expect(host.textContent).toContain('1 files +1 -1')
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')!.click())
   expect(h.refresh).toHaveBeenCalledWith('/repo', 'ws')
+  expect(h.refreshGit).toHaveBeenCalledWith('/repo')
   act(() => host.querySelector<HTMLButtonElement>('[aria-label="Switch to split diff"]')!.click())
   expect(h.setState).toHaveBeenLastCalledWith('ws', 'review', expect.objectContaining({ agentChanges: { panelId: 'a' }, display: { split: true, wordDiff: true, wrap: false } }))
   act(() => host.querySelector<HTMLButtonElement>('[aria-label="More review options"]')!.click())
@@ -186,7 +213,7 @@ it('keeps closed source panels non-clickable and does not display their IDs', ()
 it('intersects the agent and panel filters, without falling back to Git', () => {
   h.workspace.panels.review.reviewState.agentChanges = { panelId: 'a', agentId: 'codex' }
   act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
-  expect(host.textContent).toContain('No recorded edits match')
+  expect(host.textContent).toContain('No active agent edits match')
   expect(host.textContent).not.toContain('a.ts')
   expect(host.textContent).not.toContain('b.ts')
 })
@@ -249,6 +276,7 @@ it('expands a collapsed recorded file when a deep link targets it again', () => 
 
 it('pages long histories while allowing a deep link beyond the first page', () => {
   h.records = Array.from({ length: 75 }, (_, index) => ({ ...h.records[0], id: `record-${index}`, files: [{ ...h.records[0].files[0], path: `${index}.ts` }] }))
+  h.statusFiles = h.records.map((record) => ({ path: record.files[0].path, index: ' ', working_dir: 'M' }))
   act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
   expect(host.querySelectorAll('section')).toHaveLength(50)
   h.workspace.panels.review.reviewState = { ...h.workspace.panels.review.reviewState, focusedFile: '70.ts', agentChanges: { panelId: 'a' } }

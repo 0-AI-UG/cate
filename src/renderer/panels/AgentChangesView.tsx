@@ -12,7 +12,8 @@ import type { AgentChangedFile, AgentChangesFilter } from '../../shared/agentCha
 import type { PanelProps } from './types'
 import type { GitReviewNote, ReviewPanelState, WorkspaceState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
-import { refreshAgentChanges, useAgentChanges } from '../lib/useAgentChanges'
+import { activeAgentChanges, refreshAgentChanges, useAgentChanges } from '../lib/useAgentChanges'
+import { gitStatusStore, useGitStatusSnapshot } from '../stores/gitStatusStore'
 import { revealPanel } from '../lib/workspace/panelReveal'
 import { LoadingState, Spinner } from '../ui/Spinner'
 import { PANEL_TYPE_TINT, TabIcon, useWorktreeColorByPanel } from '../docking/DockTabBar'
@@ -32,11 +33,13 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
   const agentInfo = useAgentInfoByPanel(workspaceId)
   const filter = useMemo(() => state.agentChanges ?? {}, [state.agentChanges])
   const { records, loading, error } = useAgentChanges(state.repoPath, workspaceId)
+  const git = useGitStatusSnapshot(state.repoPath)
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const popover = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [noteDraft, setNoteDraft] = useState<(NoteDraft & { agentChangeId: string }) | null>(null)
   const morePopover = useRef<HTMLDivElement>(null)
@@ -52,7 +55,8 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
   })
   const panels = Object.values(workspace?.panels ?? {}).filter((p) => p.type === 'terminal' || p.type === 'agent')
   const panelThread = filter.panelId ? workspace?.panels[filter.panelId]?.agentThreadId : undefined
-  const selected = useMemo(() => filterAgentChanges(records, filter, panelThread), [records, filter, panelThread])
+  const activeRecords = useMemo(() => git.revision === 0 ? [] : activeAgentChanges(records, git), [records, git])
+  const selected = useMemo(() => filterAgentChanges(showHistory ? records : activeRecords, filter, panelThread), [records, activeRecords, filter, panelThread, showHistory])
   const panelChoices = new Map(panels.map((p) => [p.id, p.title]))
   for (const record of records) for (const id of [record.panelId, ...(record.panelIds ?? [])]) if (id && !panelChoices.has(id)) panelChoices.set(id, `Closed panel ${panelChoices.size + 1}`)
   if (filter.panelId && !panelChoices.has(filter.panelId)) panelChoices.set(filter.panelId, 'Source panel (closed)')
@@ -114,14 +118,18 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
       <div className="review-toolbar-actions ml-auto flex shrink-0 items-center gap-1">
         <ReviewRunStatus state={state} workspace={workspace} workspaceId={workspaceId} panelId={panelId} />
         <ReviewStats files={new Set(files.map(({ file }) => file.path)).size} additions={totals.additions} deletions={totals.deletions} />
-        <ToolbarButton label="Refresh" disabled={loading || refreshing} onClick={async () => { setRefreshing(true); try { await refreshAgentChanges(state.repoPath, workspaceId) } finally { setRefreshing(false) } }}>{loading || refreshing ? <Spinner size={14} label="Refreshing changes" /> : <ArrowClockwise size={14} />}</ToolbarButton>
+        <ToolbarButton label="Refresh" disabled={loading || refreshing} onClick={async () => { setRefreshing(true); try { gitStatusStore.refresh(state.repoPath); await refreshAgentChanges(state.repoPath, workspaceId) } finally { setRefreshing(false) } }}>{loading || refreshing ? <Spinner size={14} label="Refreshing changes" /> : <ArrowClockwise size={14} />}</ToolbarButton>
         <RecordedReviewButton records={selected.map((record) => ({ ...record, files: record.files.filter((file) => !query || file.path.toLowerCase().includes(query)) }))} cwd={state.repoPath} workspaceId={workspaceId} panelId={panelId} working={state.agentReview?.status === 'working'} />
         <ToolbarButton label={display.split ? 'Switch to unified diff' : 'Switch to split diff'} onClick={() => updateDisplay({ split: !display.split })}>{display.split ? <Rows size={14} /> : <SplitHorizontal size={14} />}</ToolbarButton>
         <div ref={morePopover} className="relative">
           <ToolbarButton label="More review options" active={moreOpen} onClick={() => setMoreOpen(!moreOpen)}><DotsThree size={16} /></ToolbarButton>
-          {moreOpen && <div role="menu" className={`absolute right-0 top-8 z-50 w-56 ${POPOVER_SURFACE} p-1.5`}><ReviewDisplayOptions display={display} update={updateDisplay} /></div>}
+          {moreOpen && <div role="menu" className={`absolute right-0 top-8 z-50 w-56 ${POPOVER_SURFACE} p-1.5`}>
+            <button role="menuitem" aria-pressed={showHistory} onClick={() => setShowHistory(!showHistory)} className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs hover:bg-hover">{showHistory ? 'Show active changes' : 'Show recorded history'}</button>
+            <div className="my-1 border-t border-subtle" />
+            <ReviewDisplayOptions display={display} update={updateDisplay} />
+          </div>}
         </div>
-        <span className="text-muted" title="Recorded agent edits, not the current Git diff. Shell-generated or unreported edits may be missing. Counts are recorded edit totals."><Info size={14} aria-label="About recorded edits" /></span>
+        <span className="text-muted" title={showHistory ? 'Historical recorded agent edits. Shell-generated or unreported edits may be missing.' : 'Recorded agent edits limited to files with current staged or unstaged Git changes. Shell-generated or unreported edits may be missing.'}><Info size={14} aria-label="About recorded edits" /></span>
       </div>
     </ReviewToolbar>
     {chips.length > 0 && <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-subtle px-2 py-1.5">{chips.map((chip, index) => <button key={index} aria-label={`Remove ${chip.label} filter`} onClick={() => update(chip.patch)} className="flex h-6 max-w-48 items-center gap-1 rounded-md border border-subtle bg-surface-2 px-1.5 text-[11px]"><span className="truncate">{chip.label}</span><X size={10} className="shrink-0" /></button>)}</div>}
@@ -144,8 +152,8 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
     <ReviewFileFilter value={state.fileFilter ?? ''} onChange={(fileFilter) => useAppStore.getState().setPanelReviewState(workspaceId, panelId, { ...state, fileFilter })} allCollapsed={allCollapsed} disabled={!files.length} onToggleCollapsed={() => setCollapsed(new Set(allCollapsed ? [] : files.map(({ record, file }) => `${record.id}:${file.path}`)))} />
     {error && <p role="alert" className="px-3 py-2 text-xs text-red-400">{error}</p>}
     <div ref={root} className="min-h-0 flex-1 overflow-auto">
-      {loading && <LoadingState label="Loading recorded changes…" className="h-full p-4 text-xs" />}
-      {!loading && !files.length && <p className="p-4 text-xs text-muted">No recorded edits match these filters. This does not mean the agent made no changes.</p>}
+      {(loading || git.revision === 0) && <LoadingState label="Loading recorded changes…" className="h-full p-4 text-xs" />}
+      {!loading && git.revision !== 0 && !files.length && <p className="p-4 text-xs text-muted">{showHistory ? 'No recorded edits match these filters. This does not mean the agent made no changes.' : 'No active agent edits match these filters. Recorded history is still available from the review options.'}</p>}
       {files.slice(0, shownCount).map(({ record, file }) => {
         const key = `${record.id}:${file.path}`
         const logo = getAgentLogoById(record.agentId)

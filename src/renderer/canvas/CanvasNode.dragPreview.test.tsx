@@ -130,6 +130,25 @@ afterEach(() => {
 })
 
 describe('CanvasNode drag preview', () => {
+  it('hides the source connection ports while the drag ghost is rendered', () => {
+    const { canvasStore, panelId } = renderNode('terminal')
+
+    expect(container.querySelector('[data-panel-connection-handles-for="node"]')).not.toBeNull()
+
+    startDrag(canvasStore, panelId, 'terminal', {
+      kind: 'canvas-reposition',
+      canvasStoreApi: canvasStore,
+      nodeId: 'node',
+      origin: { x: 180, y: 160 },
+    })
+
+    expect(container.querySelector('[data-panel-connection-handles-for="node"]')).toBeNull()
+    expect(document.querySelector('[data-drag-overlay-ghost="true"]')).not.toBeNull()
+
+    act(() => useDragStore.getState().applyDragState(INITIAL_DRAG_STATE))
+    expect(container.querySelector('[data-panel-connection-handles-for="node"]')).not.toBeNull()
+  })
+
   it.each(['terminal', 'browser'] as const)('hides the live %s surface and always renders the ghost', (panelType) => {
     const { canvasStore, panelId } = renderNode(panelType)
     startDrag(canvasStore, panelId, panelType, {

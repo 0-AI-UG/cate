@@ -13,6 +13,11 @@ vi.hoisted(() => {
   })
 })
 
+vi.mock('../stores/gitStatusStore', () => ({
+  useGitStatusSnapshot: () => ({ isRepo: false, statusFiles: [], revision: 1 }),
+  toPosixPath: (path: string) => path.replace(/\\/g, '/'),
+}))
+
 import { useAppStore } from '../stores/appStore'
 import AgentPanel, { agentFileDropScript } from './AgentPanel'
 import { useActivePanelStore } from '../lib/activePanel'

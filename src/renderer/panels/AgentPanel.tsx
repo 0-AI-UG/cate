@@ -25,7 +25,7 @@ import { createAgentHarnessHostDispatcher } from '../lib/agentHarnessHostDispatc
 import { openFileAsPanel } from '../lib/fs/fileRouting'
 import { parseLocator, formatLocator } from '../../shared/runtimeLocator'
 import { openAgentChanges } from '../lib/review/openAgentChanges'
-import { useAgentChanges } from '../lib/useAgentChanges'
+import { useActiveAgentChanges } from '../lib/useAgentChanges'
 import { summarizeAgentChanges } from '../../shared/agentChanges'
 import { useFileDragActive } from '../drag/fileDropTarget'
 import { T3ConversationPill } from '../canvas/T3ConversationPill'
@@ -113,7 +113,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
   })
   const threadId = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId)?.panels[panelId]?.agentThreadId)
   const worktreeId = useAppStore((s) => s.workspaces.find((item) => item.id === workspaceId)?.panels[panelId]?.worktreeId)
-  const changes = useAgentChanges(cwd, workspaceId)
+  const changes = useActiveAgentChanges(cwd, workspaceId)
   useEffect(() => {
     if (threadId && cwd) void window.electronAPI.agentChangesBind?.(cwd, workspaceId, threadId, panelId).catch((cause) => setHostError(errorText(cause)))
   }, [cwd, workspaceId, threadId, panelId])

@@ -899,7 +899,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       </div>
     </div>
 
-    {isFocused && activePanel && canConnectActivePanel && (
+    {!isWholeNodeDragSource && isFocused && activePanel && canConnectActivePanel && (
       <div
         data-panel-connection-handles-for={nodeId}
         style={{
