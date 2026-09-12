@@ -44,6 +44,8 @@ interface UIStoreState {
   /** Worktree the focus lens is locked onto — dims non-members, rings members,
    *  and (on entry) frames the camera. Null when the lens is off. */
   focusedWorktreeId: string | null
+  /** Relation whose inline meaning selector should open after creation. */
+  editingPanelRelationId: string | null
   /** Checkout whose index/working tree is shown by Source Control's Changes
    *  section, keyed by repository root so multi-repo workspaces stay isolated. */
   sourceControlWorktreeByRepository: Record<string, string>
@@ -73,6 +75,7 @@ interface UIStoreActions {
   focusWorktree: (id: string | null) => void
   /** Clear both hover highlight and the focus lens. */
   clearWorktreeLens: () => void
+  openPanelRelationEditor: (relationId: string | null) => void
   setSourceControlWorktree: (repositoryRoot: string, worktreeId: string) => void
 }
 
@@ -107,6 +110,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   leftSidebarHidden: false,
   hoveredWorktreeId: null,
   focusedWorktreeId: null,
+  editingPanelRelationId: null,
   sourceControlWorktreeByRepository: {},
 
   // --- Actions ---
@@ -191,6 +195,10 @@ export const useUIStore = create<UIStore>((set, get) => ({
     const { hoveredWorktreeId, focusedWorktreeId } = get()
     if (hoveredWorktreeId === null && focusedWorktreeId === null) return
     set({ hoveredWorktreeId: null, focusedWorktreeId: null })
+  },
+
+  openPanelRelationEditor(relationId) {
+    set({ editingPanelRelationId: relationId })
   },
 
   setSourceControlWorktree(repositoryRoot, worktreeId) {

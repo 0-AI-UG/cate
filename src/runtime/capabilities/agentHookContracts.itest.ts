@@ -104,6 +104,7 @@ import {
   chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs'
 import { createAgentPresenceTracker } from './agentPresence'
+import { createAgentHooksCapability } from './agentHooks'
 import { snapshotProcessTree } from './process'
 import { AGENT_HOOK_SPECS, normalizeAgentHookPayload, type AgentHookEventKind } from '../../shared/agentHooks'
 import type { AgentId } from '../../shared/agents'
@@ -168,6 +169,9 @@ const LIVE = process.env.CATE_LIVE_AGENT_CLIS === '1'
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/
 const PROMPT = 'Reply with exactly: ok'
 const PROMPT2 = 'Reply with exactly: ok again'
+const CONTEXT_PROMPT = 'Follow the extra instruction supplied by the prompt-submit hook.'
+const CONTEXT_INSTRUCTION = 'The hidden integer is 41872. Reply with only that integer plus one.'
+const CONTEXT_RESULT = '41873'
 
 function hasBin(name: string): boolean {
   try {
@@ -450,6 +454,25 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
   const registerTranscriptCleanup = (transcriptPath: string): void => {
     cleanups.push(() => rmSync(dirname(transcriptPath), { recursive: true, force: true }))
   }
+
+  test('print mode: Cate native hook context reaches the model', { timeout: 300_000 }, async () => {
+    const cwd = makeCwd('claude-context')
+    const hooks = createAgentHooksCapability({ hooksDir: join(cwd, '.cate-hooks') })
+    cleanups.push(() => hooks.dispose())
+    await hooks.prepareWorkspace(cwd, { 'claude-code': 'on' })
+    const terminalId = `cate-term-claude-context-${Date.now()}`
+    const env = await hooks.envForPty(terminalId, cleanEnv())
+    hooks.setPromptContext(terminalId, CONTEXT_INSTRUCTION)
+
+    const result = await run(
+      'claude',
+      ['-p', CONTEXT_PROMPT, '--model', 'haiku'],
+      { cwd, env, timeout: 240_000 },
+    ).catch((error: NodeJS.ErrnoException & { stdout?: string; stderr?: string }) => {
+      throw new Error(`${error.message}\nstdout: ${error.stdout ?? ''}\nstderr: ${error.stderr ?? ''}`)
+    })
+    expect(result.stdout.trim()).toBe(CONTEXT_RESULT)
+  })
 
   test('TUI: hooks stream identity + turn status; /clear rotates with end/start handoff', { retry: 1, timeout: 420_000 }, async () => {
     const cwd = makeCwd('claude')
@@ -830,6 +853,27 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     '-c', folderTrustArg(root),
     '-c', hookTrustArg(root, bridge, events),
   ]
+
+  test('TUI: Cate native hook context reaches the model', { timeout: 360_000 }, async () => {
+    const cwd = makeCwd('codex-context')
+    const hooks = createAgentHooksCapability({ hooksDir: join(cwd, '.cate-hooks') })
+    cleanups.push(() => hooks.dispose())
+    await hooks.prepareWorkspace(cwd, { codex: 'on' })
+    const { dir } = await hooks.endpoint()
+    const bridge = join(dir, 'cate-hook-bridge-codex')
+    const terminalId = `cate-term-codex-context-${Date.now()}`
+    const env = await hooks.envForPty(terminalId, cleanEnv())
+    hooks.setPromptContext(terminalId, CONTEXT_INSTRUCTION)
+
+    const tui = await driveTui(codexBin(), [...trustArgs(cwd, bridge)], cwd, env)
+    await tui.send(CONTEXT_PROMPT)
+    await tui.waitFor(
+      () => new RegExp(`(^|\\D)${CONTEXT_RESULT}(\\D|$)`).test(stripAnsi(tui.peek())),
+      300_000,
+      'Codex model response using native prompt context',
+    )
+    tui.kill()
+  })
 
   test('exec: project-file hooks report identity + turn; exec resume reuses id and rollout', { timeout: 420_000 }, async () => {
     const cwd = makeCwd('codex')
@@ -1402,6 +1446,23 @@ export const CateEventLogger = async ({ directory }) => {
   const runTolerant = async (args: string[], cwd: string, env: Record<string, string>): Promise<void> => {
     await run('opencode', args, { cwd, env, timeout: 180_000 }).catch(() => {})
   }
+
+  test('run: Cate native plugin context reaches the model', { timeout: 300_000 }, async () => {
+    const cwd = makeCwd('opencode-context')
+    const hooks = createAgentHooksCapability({ hooksDir: join(cwd, '.cate-hooks') })
+    cleanups.push(() => hooks.dispose())
+    await hooks.prepareWorkspace(cwd, { opencode: 'on' })
+    const terminalId = `cate-term-opencode-context-${Date.now()}`
+    const env = await hooks.envForPty(terminalId, cleanEnv({ OPENCODE_DISABLE_AUTOUPDATE: '1' }))
+    hooks.setPromptContext(terminalId, CONTEXT_INSTRUCTION)
+
+    const result = await run(
+      'opencode',
+      ['run', CONTEXT_PROMPT],
+      { cwd, env, timeout: 240_000 },
+    )
+    expect(result.stdout).toMatch(new RegExp(`(^|\\D)${CONTEXT_RESULT}(\\D|$)`))
+  })
 
   // Injection is a plain file under <project>/.opencode/plugin/: opencode scans
   // `{plugin,plugins}/*.{ts,js}` under each config dir it resolves and imports
@@ -2250,6 +2311,25 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
       '',
     ].join('\n'))
   }
+
+  test('TUI: Cate native hook context reaches the model', { timeout: 360_000 }, async () => {
+    const cwd = makeCwd('kiro-context')
+    const hooks = createAgentHooksCapability({ hooksDir: join(cwd, '.cate-hooks') })
+    cleanups.push(() => hooks.dispose())
+    await hooks.prepareWorkspace(cwd, { kiro: 'on' })
+    const terminalId = `cate-term-kiro-context-${Date.now()}`
+    const env = await hooks.envForPty(terminalId, cleanEnv())
+    hooks.setPromptContext(terminalId, CONTEXT_INSTRUCTION)
+
+    const tui = await driveTui('kiro-cli', ['chat', '--v3', CONTEXT_PROMPT], cwd, env)
+    liveTuis.push(tui)
+    await tui.waitFor(
+      () => new RegExp(`(^|\\D)${CONTEXT_RESULT}(\\D|$)`).test(stripAnsi(tui.peek())),
+      300_000,
+      'Kiro model response using native prompt context',
+    )
+    tui.kill()
+  })
 
   test('TUI lifecycle hooks identify one session and resume by exact id', { timeout: 420_000 }, async () => {
     const cwd = makeCwd('kiro')

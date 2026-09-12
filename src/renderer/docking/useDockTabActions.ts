@@ -13,6 +13,7 @@ import { relativeDisplayPath } from '../lib/fs/displayPath'
 import { createTransferSnapshot } from '../lib/panelTransfer'
 import { removePanelFromWindow } from '../lib/panels/removePanelFromWindow'
 import { useAppStore } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import type { DockStore } from '../stores/dockStore'
 import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
 import { setActivePanel } from '../lib/activePanel'
@@ -23,6 +24,7 @@ import {
   type RenamePanelEventDetail,
 } from '../lib/focusedPanel'
 import { worktreeForPanel } from '../lib/worktreeContext'
+import { connectPanelToExisting } from '../lib/panelRelations/connectPanel'
 
 export interface DockTabActionsParams {
   stack: DockTabStackType
@@ -44,6 +46,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
     stack, zone, dockStoreApi, workspaceId, getPanelProp,
     onClosePanel, onClosePanels, onPanelRemoved, onPanelRenamed, excludePanelTypes, localOnly, canSplit,
   } = params
+  const panelRelationsEnabled = useSettingsStore((state) => state.panelRelationsEnabled)
 
   const setActiveTab = useCallback((stackId: string, index: number) => {
     dockStoreApi.getState().setActiveTab(stackId, index)
@@ -230,6 +233,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
             ] as NativeContextMenuItem[]
           : []),
         { id: 'rename', label: 'Rename' },
+        ...(panelRelationsEnabled ? [{ id: 'connect', label: 'Connect to…' } as NativeContextMenuItem] : []),
         // Path copies only for panels backed by a file, grouped with Rename as
         // in the explorer menu. The explorer's Alt+Cmd+C accelerators are
         // display-only labels (bound nowhere), so they're omitted here rather
@@ -261,6 +265,11 @@ export function useDockTabActions(params: DockTabActionsParams) {
         case 'rename':
           if (panel) beginRename(panelId, panel.title)
           break
+        case 'connect': {
+          const wsId = workspaceId ?? useAppStore.getState().selectedWorkspaceId
+          if (wsId) void connectPanelToExisting(wsId, panelId)
+          break
+        }
         case 'copy-path':
           // parseLocator strips the cate-runtime:// wrapper so a remote file
           // copies its host path, not the internal URI.
@@ -306,7 +315,7 @@ export function useDockTabActions(params: DockTabActionsParams) {
           break
       }
     },
-    [stack.panelIds, onClosePanel, onClosePanels, getPanelLocal, moveTabToNewWindow, splitPanel, canSplit, showMultiSelectionMenu, showCloseAll, beginRename, workspaceId],
+    [stack.panelIds, onClosePanel, onClosePanels, getPanelLocal, moveTabToNewWindow, splitPanel, canSplit, showMultiSelectionMenu, showCloseAll, beginRename, workspaceId, panelRelationsEnabled],
   )
 
   // Tab-bar (empty-area) context menu — split/new menus. Returns a handler

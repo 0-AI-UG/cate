@@ -61,6 +61,15 @@ export function CanvasSettings() {
           onChange={(v) => store.setSetting('showWorktreeTerritory', v)}
         />
       </SettingRow>
+      <SettingRow
+        label="Panel relations"
+        description="Connect panels and include their context in agent prompts. Existing relations are preserved while off."
+      >
+        <Toggle
+          checked={store.panelRelationsEnabled}
+          onChange={(v) => store.setSetting('panelRelationsEnabled', v)}
+        />
+      </SettingRow>
       <SettingRow label="Grid style">
         <Select
           value={store.canvasGridStyle}

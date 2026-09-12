@@ -79,6 +79,13 @@ function buildSnapshot(): { snapshot: SessionSnapshot; canvasSnapshot: CanvasSna
         proxyUrl: 'http://user:pass@proxy:8080',
       }),
     },
+    panelRelations: [{
+      id: 'relation-1',
+      fromPanelId: 'term-1',
+      toPanelId: 'web-1',
+      kind: 'use',
+      label: 'summarizes findings from',
+    }],
     canvases: { 'canvas-1': canvasSnapshot },
     terminalCwds: { 'term-1': WORKTREE_PATH },
     worktrees: [{ id: 'wt-1', path: WORKTREE_PATH, color: '#ff5555', label: 'fix-login' }],
@@ -132,6 +139,7 @@ describe('workspace.json + session.json round-trip', () => {
     expect(restored.panels!['web-1'].activeTabId).toBe('tab-2')
     expect(restored.panels!['web-1'].proxyUrl).toBe('http://user:pass@proxy:8080')
     expect(restored.terminalCwds).toEqual({ 'term-1': WORKTREE_PATH })
+    expect(restored.panelRelations).toEqual(snapshot.panelRelations)
 
     // Dock layout and canvas geometry survive byte-for-byte.
     expect(restored.dockState).toEqual(throughDisk(snapshot.dockState))
@@ -156,6 +164,7 @@ describe('workspace.json + session.json round-trip', () => {
     expect(wsText).not.toContain('wt-1')
     expect(wsText).not.toContain('workingDirectory')
     expect(wsText).not.toContain('worktreeViewScopes')
+    expect(wsText).not.toContain('relation-1')
   })
 
   it('keeps shareable metadata OUT of session.json and skips panels with no machine-local facts', () => {
@@ -173,6 +182,7 @@ describe('workspace.json + session.json round-trip', () => {
     })
     const sessText = JSON.stringify(sessFile)
     expect(sessFile.worktreeViewScopes).toEqual(snapshot.worktreeViewScopes)
+    expect(sessFile.panelRelations).toEqual(snapshot.panelRelations)
     expect(sessText).not.toContain('src/app.ts')
     expect(sessText).not.toContain('localhost:3000')
   })

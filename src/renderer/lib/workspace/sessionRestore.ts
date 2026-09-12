@@ -264,6 +264,7 @@ async function restoreSessionHydrate(snapshot: SessionSnapshot, workspaceId: str
   useAppStore.setState((state) => ({ workspaces: state.workspaces.map((w) =>
     w.id === wsId ? { ...w, layoutRootPath: w.rootPath } : w,
   ) }))
+  appStore.setPanelRelations(wsId, snapshot.panelRelations ?? [])
 
   // Seed the worktree registry first, so the panels restored below can resolve
   // their persisted worktreeId, and so the colors/labels here win over anything

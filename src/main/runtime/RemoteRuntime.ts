@@ -133,6 +133,7 @@ export class RemoteRuntime implements Runtime {
       subscribe: (onEvent) => subscribe(Methods.agentHooksSubscribe, Methods.agentHooksUnsubscribe, [],
         payload => onEvent(payload as AgentHookEvtPayload)),
       inspectWorkspace: (cwd) => call<AgentHookAgentState[]>(Methods.agentHooksInspect, [cwd]),
+      setPromptContext: (terminalId, context) => call(Methods.agentHooksSetPromptContext, [terminalId, context]),
     }
 
     this.server = {

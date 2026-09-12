@@ -105,6 +105,7 @@ export const SHELL_AGENT_HOOK_EVENT = 'shell:agentHookEvent'
 // Inspect a workspace's per-agent hook-file injection state (folder present /
 // injected) for the Settings UI — renderer -> main (invoke).
 export const AGENT_HOOKS_INSPECT = 'agentHooks:inspect'
+export const AGENT_HOOKS_SET_PROMPT_CONTEXT = 'agentHooks:setPromptContext'
 export const AGENT_CHANGES_LIST = 'agentChanges:list'
 export const AGENT_CHANGES_READ = 'agentChanges:read'
 export const AGENT_CHANGES_BIND = 'agentChanges:bind'

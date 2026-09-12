@@ -74,6 +74,7 @@ export class DeferredRuntime implements Runtime {
         }
       },
       inspectWorkspace: (cwd) => d((c) => c.agentHooks.inspectWorkspace(cwd)),
+      setPromptContext: (terminalId, context) => d((c) => c.agentHooks.setPromptContext(terminalId, context)),
     }
 
     this.server = {

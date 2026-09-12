@@ -22,7 +22,7 @@ function daemonApi(): Runtime {
 const stubProcess = {} as unknown as ProcessHost
 const stubServer = {} as unknown as ServerHost
 const stubTunnel = {} as unknown as TunnelHost
-const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {}, inspectWorkspace: async () => [], listChanges: async () => [], readChanges: async () => ({ revision: '', records: [] }), bindChanges: async () => {} }
+const stubAgentHooks: Runtime['agentHooks'] = { subscribe: () => () => {}, inspectWorkspace: async () => [], listChanges: async () => [], readChanges: async () => ({ revision: '', records: [] }), bindChanges: async () => {}, setPromptContext: async () => {} }
 
 // Wire an RpcServer and a RuntimeRpcClient back-to-back, in-process, over the
 // real LF-JSON framing. This proves the entire wire stack (framing, req/res
@@ -422,6 +422,7 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
         listChanges: async () => [],
         readChanges: async () => ({ revision: '', records: [] }),
         bindChanges: async () => {},
+        setPromptContext: async () => {},
       },
       server: stubServer,
       tunnel: stubTunnel,
@@ -462,6 +463,49 @@ describe('runtime loopback (protocol behaviors via a stub)', () => {
     unsubscribe()
     await flush()
     expect(emit).toBeNull() // daemon-side subscription torn down
+  })
+
+  test('agentHooks.setPromptContext reaches the daemon capability over RPC', async () => {
+    const calls: Array<[string, string | null]> = []
+    const api = {
+      id: 'srv_test',
+      process: stubProcess,
+      agentHooks: {
+        subscribe: () => () => {},
+        inspectWorkspace: async () => [],
+        listChanges: async () => [],
+        readChanges: async () => ({ revision: '', records: [] }),
+        bindChanges: async () => {},
+        setPromptContext: async (terminalId: string, context: string | null) => {
+          calls.push([terminalId, context])
+        },
+      },
+      server: stubServer,
+      tunnel: stubTunnel,
+      file: {} as unknown as FileHost,
+      vcs: {} as VcsHost,
+      validatePath: (p: string) => p,
+      validatePathStrict: async (p: string) => p,
+      validatePathForCreation: async (p: string) => p,
+      validateCwd: (p: string) => p,
+      addAllowedRoot: async () => {},
+      removeAllowedRoot: async () => {},
+      setExclusions: async () => {},
+      setIdleSuspend: async () => {},
+      grantFileAccess: async () => {},
+      registerScopedWriteAllowance: async () => {},
+      clearFileGrantsForWindow: async () => {},
+      clearScopedWriteAllowancesForWindow: async () => {},
+    } as Runtime
+
+    const { remote } = loopback(api)
+    await remote.agentHooks.setPromptContext('rpty-context', 'connected graph')
+    await remote.agentHooks.setPromptContext('rpty-context', null)
+
+    expect(calls).toEqual([
+      ['rpty-context', 'connected graph'],
+      ['rpty-context', null],
+    ])
   })
 
   test('file.searchContent streams batches over evt frames and cancel tears down the daemon search', async () => {

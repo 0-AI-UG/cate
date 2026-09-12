@@ -40,6 +40,7 @@
     "test:ssh:loopback": "CATE_LOCAL_SSH_E2E=1 vitest run --config vitest.live.config.ts sshLoopback",
     "test:runtime:linux-glibc": "node scripts/test-linux-node-pty-baseline.mjs",
     "test:agent-contracts": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts agentHookContracts",
+    "test:agent-prompt-context": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts agentHookContracts -t 'Cate native.*context reaches the model'",
     "test:e2e": "playwright test",
     "test:e2e:perf": "node scripts/run-e2e-perf.mjs",
     "test:e2e:agent": "playwright test e2e/t3-agent.spec.ts",

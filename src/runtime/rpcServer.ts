@@ -180,6 +180,8 @@ export class RpcServer {
       case Methods.agentHooksSubscribe: return this.startAgentHooks(s(0))
       case Methods.agentHooksUnsubscribe: return this.stopAgentHooks(s(0))
       case Methods.agentHooksInspect: return api.agentHooks.inspectWorkspace(s(0))
+      case Methods.agentHooksSetPromptContext:
+        return api.agentHooks.setPromptContext(s(0), typeof p[1] === 'string' ? p[1] : null)
       case Methods.agentChangesList: return api.agentHooks.listChanges(s(0), a(1))
       case Methods.agentChangesRead: return api.agentHooks.readChanges(s(0), typeof p[1] === 'string' ? p[1] : undefined, a(2))
       case Methods.agentChangesBind: return api.agentHooks.bindChanges(s(0), s(1), s(2), a(3))

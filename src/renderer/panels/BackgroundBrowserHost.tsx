@@ -36,8 +36,8 @@ const PersistentBrowserSurface = memo(function PersistentBrowserSurface({
   })
 
   useLayoutEffect(() => {
-    return registerBrowserSurface(panel.id, container, backgroundRoot)
-  }, [backgroundRoot, container, panel.id])
+    return registerBrowserSurface(panel.id, container, backgroundRoot, panel.type === 'agent')
+  }, [backgroundRoot, container, panel.id, panel.type])
 
   useLayoutEffect(() => () => container.remove(), [container])
 

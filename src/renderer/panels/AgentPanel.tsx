@@ -31,6 +31,10 @@ import { useFileDragActive } from '../drag/fileDropTarget'
 import { T3ConversationPill } from '../canvas/T3ConversationPill'
 import { WorktreePill } from '../canvas/WorktreePill'
 import { AgentChangesPill } from '../canvas/AgentChangesPill'
+import { registerAgentPanelSender } from '../lib/agent/agentPanelControl'
+import { PanelRelationContextToggle } from '../canvas/PanelRelationContextToggle'
+import { consumePanelRelationContextForSend } from '../lib/agent/panelRelationPrompt'
+import { agentIdForT3Provider } from '../../shared/agents'
 
 interface WebviewElement extends HTMLElement {
   getURL(): string
@@ -191,6 +195,11 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       pick: (panelType) => requestPanelTarget({ workspaceId, sourcePanelId: panelId, panelType, availability: 'new' }),
       openDiff: (focusedFile, turnId, isActive) => openAgentChanges({ workspaceId, panelId, cwd, focusedFile, sessionId: threadId, turnId, isActive }),
       openExternal: (url) => { window.electronAPI.openExternalUrl(url) },
+      relationContext: (provider) => consumePanelRelationContextForSend(
+        workspaceId,
+        panelId,
+        provider ? agentIdForT3Provider(provider) : null,
+      ),
       createAgent: (nextThreadId, title, target) => {
         const app = useAppStore.getState()
         const id = app.createAgent(workspaceId, undefined, target.placement, cwd, worktreeId, nextThreadId)
@@ -352,6 +361,21 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     })
   }, [state, guestReady, threadId, panelId, workspaceId])
 
+  useEffect(() => {
+    if (state.phase !== 'ready' || !guestReady || !threadId) return
+    const guest = webviewRef.current
+    if (!guest) return
+    return registerAgentPanelSender(panelId, async (prompt) => {
+      try {
+        return await guest.executeJavaScript(
+          `window.__cateChat?.sendText?.(${JSON.stringify(prompt)}) === true`,
+        ) === true
+      } catch {
+        return false
+      }
+    })
+  }, [state, guestReady, threadId, panelId])
+
   return (
     <div
       className="flex h-full w-full flex-col bg-surface-4"
@@ -365,6 +389,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
         {panel && <div className="absolute top-1.5 right-3 z-10 flex items-center gap-1" data-agent-controls={panelId}>
           <T3ConversationPill panel={panel} workspaceId={workspaceId} />
           <WorktreePill panel={panel} workspaceId={workspaceId} />
+          <PanelRelationContextToggle panel={panel} workspaceId={workspaceId} />
           <AgentChangesPill panel={panel} workspaceId={workspaceId} />
         </div>}
         {hostError && <div role="alert" className="absolute bottom-2 left-2 right-2 z-30 rounded bg-surface-2 p-2 text-xs text-primary">{hostError}<button className="ml-2 text-muted" onClick={() => setHostError('')}>Dismiss</button></div>}

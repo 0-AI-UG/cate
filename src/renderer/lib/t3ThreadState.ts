@@ -20,6 +20,13 @@ export function t3ThreadActivity(thread: T3Thread): AgentState {
   return thread.latestTurn ? 'waitingForInput' : 'notRunning'
 }
 
+export function canT3ThreadReceivePrompt(thread: T3Thread): boolean {
+  return !thread.hasPendingApprovals
+    && !thread.hasPendingUserInput
+    && !thread.hasActionableProposedPlan
+    && t3ThreadActivity(thread) !== 'running'
+}
+
 /** A separate authenticated subscription in the guest's persistent session.
  * Only shell metadata crosses the guest boundary; never conversation content.
  * Navigation destroys this connection. Reconnection starts from a full snapshot.
