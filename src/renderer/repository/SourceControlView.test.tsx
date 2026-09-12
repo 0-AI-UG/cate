@@ -18,7 +18,7 @@ let root: ReturnType<typeof createRoot>
 beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
   useUIStore.setState({ sourceControlWorktreeByRepository: {}, sourceControlDrafts: { '/repo': 'main draft', '/repo/feature': 'feature draft' } })
-  Object.assign(window.electronAPI, { gitLog: vi.fn().mockResolvedValue([]), gitBranchList: vi.fn().mockResolvedValue({ branches: [] }), gitStage: vi.fn().mockResolvedValue(undefined) })
+  Object.assign(window.electronAPI, { gitLog: vi.fn().mockResolvedValue([]), gitBranchList: vi.fn().mockResolvedValue({ branches: [] }), gitBranchDelete: vi.fn().mockResolvedValue(undefined), gitStage: vi.fn().mockResolvedValue(undefined) })
 })
 afterEach(() => { act(() => root.unmount()); host.remove() })
 it('scopes files and drafts to Changes while history remains on the repository root', async () => {
@@ -43,4 +43,25 @@ it('review buttons declare overlay routing and dismiss the overlay for the picke
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Review staged changes"]')!.click())
   expect(h.review).toHaveBeenCalledWith({ workspaceId: 'ws', repoPath: '/repo', spec: { kind: 'staged' }, focusedFile: undefined, openNew: false, source: 'overlay' })
   expect(useUIStore.getState().showPullRequests).toBe(false)
+})
+
+it('cleans merged local branches with safe deletes while preserving the current branch', async () => {
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+  vi.mocked(window.electronAPI.gitBranchList).mockResolvedValue({
+    current: 'main',
+    branches: [
+      { name: 'main', current: true, commit: 'a', label: '', isRemote: false },
+      { name: 'merged-one', current: false, commit: 'b', label: '', isRemote: false },
+      { name: 'merged-two', current: false, commit: 'c', label: '', isRemote: false },
+      { name: 'remotes/origin/main', current: false, commit: 'a', label: '', isRemote: true },
+    ],
+  })
+  await act(async () => root.render(<SourceControlView workspaceId="ws" rootPath="/repo" />))
+  await act(async () => [...host.querySelectorAll('button')].find((button) => button.textContent === 'Branches')!.click())
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Delete merged local branches"]')!.click())
+
+  expect(window.electronAPI.gitBranchDelete).toHaveBeenCalledTimes(2)
+  expect(window.electronAPI.gitBranchDelete).toHaveBeenCalledWith('/repo', 'merged-one', undefined, 'ws')
+  expect(window.electronAPI.gitBranchDelete).toHaveBeenCalledWith('/repo', 'merged-two', undefined, 'ws')
+  expect(window.electronAPI.gitBranchDelete).not.toHaveBeenCalledWith('/repo', 'main', undefined, 'ws')
 })

@@ -215,6 +215,7 @@ const BranchPicker: React.FC<{
   const [branches, setBranches] = useState<GitBranchInfo[]>([])
   const [filter, setFilter] = useState('')
   const [creating, setCreating] = useState(false)
+  const [cleaning, setCleaning] = useState(false)
   const [newBranchName, setNewBranchName] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -277,6 +278,28 @@ const BranchPicker: React.FC<{
   const localBranches = branches.filter(b => !b.isRemote)
   const remoteBranches = branches.filter(b => b.isRemote)
 
+  const handleCleanup = useCallback(async () => {
+    const candidates = localBranches.filter((branch) => branch.name !== currentBranch)
+    if (cleaning || candidates.length === 0) return
+    if (!window.confirm(`Delete local branches already merged into ${currentBranch || 'the current checkout'}? Unmerged or in-use branches will be kept.`)) return
+    setCleaning(true)
+    setError(null)
+    let skipped = 0
+    try {
+      for (const branch of candidates) {
+        try {
+          await window.electronAPI.gitBranchDelete(repositoryRoot, branch.name, undefined, workspaceIdForRoot(repositoryRoot))
+        } catch {
+          skipped++
+        }
+      }
+      await loadBranches()
+      if (skipped > 0) setError(`Kept ${skipped} unmerged or in-use ${skipped === 1 ? 'branch' : 'branches'}.`)
+    } finally {
+      setCleaning(false)
+    }
+  }, [cleaning, currentBranch, loadBranches, localBranches, repositoryRoot])
+
   const filtered = (list: GitBranchInfo[]) =>
     filter ? list.filter(b => b.name.toLowerCase().includes(filter.toLowerCase())) : list
 
@@ -333,6 +356,16 @@ const BranchPicker: React.FC<{
                     aria-label="New branch"
                   >
                     <Plus size={13} />
+                  </button>
+                </Tooltip>
+                <Tooltip label="Delete merged local branches">
+                  <button
+                    onClick={() => void handleCleanup()}
+                    disabled={cleaning || localBranches.every((branch) => branch.name === currentBranch)}
+                    className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-red-400 disabled:opacity-40"
+                    aria-label="Delete merged local branches"
+                  >
+                    {cleaning ? <Spinner size={13} /> : <Trash size={13} />}
                   </button>
                 </Tooltip>
               </div>
