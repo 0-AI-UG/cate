@@ -138,6 +138,89 @@ it('opens the picker from the split button and closes its placeholder through th
   expect(collectPanelIds(dock.getState().zones.center.layout)).toHaveLength(2)
 })
 
+it('keeps the existing panel mounted when creating the first split', () => {
+  const mounted = vi.fn()
+  const unmounted = vi.fn()
+  function PanelContent() {
+    React.useEffect(() => {
+      mounted()
+      return unmounted
+    }, [])
+    return <div>Canvas content</div>
+  }
+  function StableDock() {
+    const workspace = useAppStore((s) => s.workspaces[0])
+    return <DockStoreProvider store={dock}>
+      <DockZone position="center" workspaceId="test"
+        renderPanel={(id) => id === 'original' ? <PanelContent /> : <div>{workspace.panels[id]?.title}</div>}
+        getPanelTitle={(id) => workspace.panels[id]?.title ?? ''}
+        onClosePanel={(id) => useAppStore.getState().closePanel('test', id)}
+      />
+    </DockStoreProvider>
+  }
+
+  act(() => root.render(<StableDock />))
+  expect(mounted).toHaveBeenCalledTimes(1)
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Split Right"]')!.click())
+  expect(mounted).toHaveBeenCalledTimes(1)
+  expect(unmounted).not.toHaveBeenCalled()
+})
+
+it('keeps panels mounted through nested split creation and collapse', () => {
+  const mounts = new Map<string, number>()
+  const unmounts = new Map<string, number>()
+  function PanelContent({ id }: { id: string }) {
+    React.useEffect(() => {
+      mounts.set(id, (mounts.get(id) ?? 0) + 1)
+      return () => { unmounts.set(id, (unmounts.get(id) ?? 0) + 1) }
+    }, [id])
+    return <div data-stable-panel={id}>{id} content</div>
+  }
+  function StableDock() {
+    const workspace = useAppStore((s) => s.workspaces[0])
+    return <DockStoreProvider store={dock}>
+      <DockZone position="center" workspaceId="test"
+        renderPanel={(id) => <PanelContent id={id} />}
+        getPanelTitle={(id) => workspace.panels[id]?.title ?? ''}
+      />
+    </DockStoreProvider>
+  }
+  const addPanel = (id: string) => useAppStore.setState((state) => ({
+    workspaces: [{ ...state.workspaces[0], panels: {
+      ...state.workspaces[0].panels,
+      [id]: { id, type: 'terminal', title: id, isDirty: false },
+    } }],
+  }))
+
+  act(() => root.render(<StableDock />))
+  const originalElement = host.querySelector('[data-stable-panel="original"]')
+  act(() => {
+    addPanel('right')
+    dock.getState().dockPanel('right', 'center', { type: 'split', stackId, edge: 'right' })
+  })
+  const rightElement = host.querySelector('[data-stable-panel="right"]')
+  expect(mounts.get('original')).toBe(1)
+  expect(mounts.get('right')).toBe(1)
+
+  act(() => {
+    addPanel('below')
+    dock.getState().dockPanel('below', 'center', { type: 'split', stackId, edge: 'bottom' })
+  })
+  expect(mounts.get('original')).toBe(1)
+  expect(mounts.get('right')).toBe(1)
+  expect(unmounts.size).toBe(0)
+  expect(host.querySelector('[data-stable-panel="original"]')).toBe(originalElement)
+  expect(host.querySelector('[data-stable-panel="right"]')).toBe(rightElement)
+
+  act(() => dock.getState().undockPanel('below'))
+  expect(mounts.get('original')).toBe(1)
+  expect(mounts.get('right')).toBe(1)
+  expect(unmounts.get('original')).toBeUndefined()
+  expect(unmounts.get('right')).toBeUndefined()
+  expect(host.querySelector('[data-stable-panel="original"]')).toBe(originalElement)
+  expect(host.querySelector('[data-stable-panel="right"]')).toBe(rightElement)
+})
+
 it('places the new-tab menu after the last tab and creates only the selected type', () => {
   act(() => root.render(<FullDock />))
   const button = host.querySelector<HTMLButtonElement>('[aria-label="New Tab"]')!
