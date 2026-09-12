@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.0.0-beta.3] - 2026-09-12
+
+This beta adds visual relationships between panels and new branch maintenance controls while improving docked panels, embedded agents, and canvas alignment.
+
+### Added
+
+- **Panel relationships**: connect panels from the canvas, choose how related context is shared with agents, and preserve those connections across sessions and panel transfers.
+- **Branch maintenance**: refresh branch state and clean up branches from Source Control, with runtime and CLI support for the underlying repository operations.
+
+### Changed
+
+- **Docked panel continuity**: preserve panel DOM state while changing dock layouts so embedded surfaces remain mounted through layout transitions.
+
+### Fixed
+
+- **Embedded T3 reliability**: prevent provider process leaks, keep agent surfaces aligned during canvas movement, and render glass-surface text crisply.
+- **Canvas and repository polish**: keep worktree territories aligned when moving between displays and correct the Changes icon alignment.
+
 ## [2.0.0-beta.2] - 2026-09-11
 
 This beta sharpens canvas, screenshot, file-preview, and dock workflows while improving responsiveness and agent reliability.
