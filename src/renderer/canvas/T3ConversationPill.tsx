@@ -4,6 +4,7 @@ import { MessageCircleMore as ChatsCircle } from 'lucide-react'
 import type { PanelState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { Modal } from '../ui/Modal'
+import { errorMessage } from '../lib/errorMessage'
 
 export function T3ConversationPill({ panel, workspaceId }: { panel: PanelState; workspaceId: string }) {
   const [hovered, setHovered] = useState(false)
@@ -21,7 +22,7 @@ export function T3ConversationPill({ panel, workspaceId }: { panel: PanelState; 
     setError('')
     try {
       const result = await window.electronAPI.agentHarnessListConversations({ workspaceId, cwd })
-      if ('error' in result) { setError(result.error); return }
+      if ('error' in result) { setError(errorMessage(result.error, 'Could not load conversations.')); return }
       const threads = result.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       const choice = await window.electronAPI.showContextMenu([
         { id: '__new', label: 'New conversation' },
@@ -43,7 +44,7 @@ export function T3ConversationPill({ panel, workspaceId }: { panel: PanelState; 
       app.setPanelAgentThreadId(workspaceId, panel.id, thread?.id)
       app.updatePanelTitleFromAgent(workspaceId, panel.id, thread?.title ?? 'T3 Code')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not load conversations.')
+      setError(errorMessage(cause, 'Could not load conversations.'))
     } finally {
       setLoading(false)
     }
@@ -73,9 +74,9 @@ export function T3ConversationPill({ panel, workspaceId }: { panel: PanelState; 
       try {
         const title = renameTitle.trim()
         const result = await window.electronAPI.agentHarnessRenameConversation({ workspaceId, cwd: renameCwd, threadId: panel.agentThreadId, title })
-        if ('error' in result) { setError(result.error); return }
+        if ('error' in result) { setError(errorMessage(result.error, 'Could not rename conversation.')); return }
         setRenameTitle(null)
-      } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename conversation.') }
+      } catch (cause) { setError(errorMessage(cause, 'Could not rename conversation.')) }
       finally { setLoading(false) }
     }}>
       <label className="text-sm text-primary">Conversation name<input autoFocus value={renameTitle} disabled={loading} onChange={(event) => setRenameTitle(event.target.value)} className="mt-2 w-full rounded bg-surface-3 px-2 py-1 text-sm" /></label>

@@ -6,6 +6,7 @@ import { useRemoteConnectionsStore } from '../stores/remoteConnectionsStore'
 import { RemoteConnect, connectionInitial } from '../ui/RemoteConnect'
 import { SearchableBlock, SecondaryButton, SettingRow } from './SettingsComponents'
 import { SettingsSearchContext } from './SettingsSearchContext'
+import { errorMessage } from '../lib/errorMessage'
 
 const phaseLabels: Record<RuntimePhase, string> = {
   connected: 'Connected', connecting: 'Connecting…', installing: 'Installing…',
@@ -22,14 +23,14 @@ function ConnectionSettings({ connection }: { connection: RemoteRuntimeConnectio
   const runtime = status ?? workspaceStatus
   const busy = pending || runtime?.phase === 'connecting' || runtime?.phase === 'installing'
   useEffect(() => window.electronAPI.onRuntimeStatus((event) => {
-    if (event.runtimeId === connection.runtimeId) setStatus({ phase: event.phase, error: event.message })
+    if (event.runtimeId === connection.runtimeId) setStatus({ phase: event.phase, error: event.message ? errorMessage(event.message) : undefined })
   }), [connection.runtimeId])
 
   async function run(action: () => Promise<void>) {
     setPending(true)
     setError(null)
     try { await action() }
-    catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    catch (err) { setError(errorMessage(err, 'The remote operation failed.')) }
     finally { setPending(false) }
   }
   async function check(install = false) {
@@ -38,7 +39,7 @@ function ConnectionSettings({ connection }: { connection: RemoteRuntimeConnectio
       const result = await (install ? window.electronAPI.runtimeInstall(connection) : window.electronAPI.runtimeEnsure(connection))
       if (result.ok) setStatus({ phase: 'connected' })
       else {
-        setStatus((current) => current?.phase === 'missing' ? current : { phase: 'unreachable', error: result.error })
+        setStatus((current) => current?.phase === 'missing' ? current : { phase: 'unreachable', error: errorMessage(result.error, 'Could not connect to the runtime.') })
         throw new Error(result.error)
       }
     } catch (err) {
@@ -97,7 +98,7 @@ export function RemoteSettings() {
           setPending(true)
           setError(null)
           try { await save(spec); setAdding(false) }
-          catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+          catch (err) { setError(errorMessage(err, 'Could not save the connection.')) }
           finally { setPending(false) }
         }} />}
         {connections.map((connection) => <ConnectionSettings key={connection.runtimeId} connection={connection} />)}

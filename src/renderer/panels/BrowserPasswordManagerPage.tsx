@@ -7,6 +7,7 @@ import type {
 } from '../../shared/types'
 import { SecondaryButton, Select } from '../settings/SettingsComponents'
 import { LoadingState, Spinner } from '../ui/Spinner'
+import { errorMessage } from '../lib/errorMessage'
 
 type PasswordManagerTab = 'passwords' | 'advanced'
 
@@ -57,7 +58,7 @@ export function BrowserPasswordManagerPage(): JSX.Element {
       setMessage(`Imported ${result.imported} password${result.imported === 1 ? '' : 's'}.`)
       await load()
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Password import failed.')
+      setMessage(errorMessage(error, 'Password import failed.'))
     } finally {
       setBusy(false)
     }
@@ -76,7 +77,7 @@ export function BrowserPasswordManagerPage(): JSX.Element {
         await load()
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Password import failed.')
+      setMessage(errorMessage(error, 'Password import failed.'))
     } finally {
       setBusy(false)
     }
@@ -103,7 +104,7 @@ export function BrowserPasswordManagerPage(): JSX.Element {
       setAdding(false)
       await load()
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not save password.')
+      setMessage(errorMessage(error, 'Could not save password.'))
     } finally {
       setBusy(false)
     }

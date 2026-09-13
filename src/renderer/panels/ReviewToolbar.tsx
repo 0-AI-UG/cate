@@ -5,6 +5,7 @@ import { Spinner } from '../ui/Spinner'
 import { useWorktrees } from '../stores/useWorktrees'
 import { WorktreeSelector } from '../ui/WorktreeSelector'
 import { worktreeForPath } from '../lib/worktreeContext'
+import { errorMessage } from '../lib/errorMessage'
 
 const MODES = [
   { value: 'uncommitted', label: 'All Changes' },
@@ -67,7 +68,7 @@ export function ReviewToolbar({ state, workspaceId, panelId, children }: {
       if (latest && latest.repoPath === state.repoPath) app.setPanelReviewState(workspaceId, panelId, {
         ...latest, spec, agentChanges: kind === 'agent' ? latest.agentChanges ?? {} : undefined,
       })
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not change comparison') }
+    } catch (cause) { setError(errorMessage(cause, 'Could not change comparison')) }
     finally { setBusy(false) }
   }
   return <>

@@ -18,6 +18,7 @@ import { runtimes } from '../runtime/runtimeManager'
 import { t3HarnessManager } from '../t3Agent/T3HarnessManager'
 import { workspaceCateApi } from '../cateApi/workspaceCateApi'
 import { isUpdatePendingInstall } from '../auto-updater'
+import { errorMessage } from '../../shared/errorMessage'
 import {
   SESSION_FLUSH_SAVE,
   SESSION_FLUSH_SAVE_DONE,
@@ -170,7 +171,8 @@ export function registerLifecycleHandlers(): void {
       cleanup()
       resetQuitAttempt()
       log.warn('Session save failed; keeping windows open: %s', error)
-      dialog.showErrorBox('Unable to save session', `${error}\nYour windows remain open. Retry quitting after the problem is resolved.`)
+      const message = errorMessage(error, 'Cate could not save the current session.')
+      dialog.showErrorBox('Unable to save session', `${message}\nYour windows remain open. Retry quitting after the problem is resolved.`)
     }
     let flushingBrowser = false
     const proceed = () => {

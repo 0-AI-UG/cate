@@ -35,6 +35,7 @@ import { registerAgentPanelSender } from '../lib/agent/agentPanelControl'
 import { PanelRelationContextToggle } from '../canvas/PanelRelationContextToggle'
 import { consumePanelRelationContextForSend } from '../lib/agent/panelRelationPrompt'
 import { agentIdForT3Provider } from '../../shared/agents'
+import { errorMessage } from '../lib/errorMessage'
 
 interface WebviewElement extends HTMLElement {
   getURL(): string
@@ -78,7 +79,7 @@ type ResolveState =
   | { phase: 'error'; message: string }
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : 'The agent harness could not be started.'
+  return errorMessage(error, 'The agent harness could not be started.')
 }
 
 export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelProps) {
@@ -157,7 +158,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       route: 'thread',
     }).then((result) => {
       if (cancelled) return
-      if ('error' in result) setState({ phase: 'error', message: result.error })
+      if ('error' in result) setState({ phase: 'error', message: errorMessage(result.error, 'The agent harness could not be started.') })
       else setState({ phase: 'ready', ...result })
     }).catch((error: unknown) => {
       if (!cancelled) setState({ phase: 'error', message: errorText(error) })
@@ -179,7 +180,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       error: errorText(error),
     }))
     if (!result.ok) {
-      setState({ phase: 'error', message: result.error ?? 'The agent harness could not be restarted.' })
+      setState({ phase: 'error', message: errorMessage(result.error, 'The agent harness could not be restarted.') })
       return
     }
     setRetryNonce((value) => value + 1)
@@ -223,7 +224,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
         if (!disposed) setHostError('')
         reply(result)
       }).catch((cause: unknown) => {
-        const message = cause instanceof Error ? cause.message : 'Could not open panel.'
+        const message = errorMessage(cause, 'Could not open panel.')
         if (!disposed) setHostError(message)
         reply(null, message)
       })
@@ -303,7 +304,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     }
     const onFailed = (event: { errorCode?: number; errorDescription?: string; isMainFrame?: boolean }): void => {
       if (event.isMainFrame === false || event.errorCode === -3) return
-      setState({ phase: 'error', message: event.errorDescription ?? 'The agent page failed to load.' })
+      setState({ phase: 'error', message: errorMessage(event.errorDescription, 'The agent page failed to load.') })
     }
 
     webview.addEventListener('will-navigate', onWillNavigate)

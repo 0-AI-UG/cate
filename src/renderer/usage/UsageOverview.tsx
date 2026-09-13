@@ -8,6 +8,7 @@ import type { AgentHarnessPanelTarget } from '../../shared/t3Agent'
 import { AGENT_CHAT_ONLY_CSS, isAllowedAgentHarnessNavigation } from '../lib/agentHarnessSurface'
 import { USAGE_SURFACE_CSS, usageThemeScript } from './usageSurface'
 import { getActiveTheme, subscribeTheme } from '../lib/themeManager'
+import { errorMessage } from '../lib/errorMessage'
 
 interface UsageWebview extends HTMLElement {
   getURL(): string
@@ -52,9 +53,11 @@ function UsagePage() {
     }
     void getUsageUrl({ panelId }).then((result) => {
       if (disposed) return
-      setState('error' in result ? { phase: 'error', message: result.error } : { phase: 'ready', target: result })
+      setState('error' in result
+        ? { phase: 'error', message: errorMessage(result.error, 'Usage could not be loaded.') }
+        : { phase: 'ready', target: result })
     }).catch((error: unknown) => {
-      if (!disposed) setState({ phase: 'error', message: error instanceof Error ? error.message : String(error) })
+      if (!disposed) setState({ phase: 'error', message: errorMessage(error, 'Usage could not be loaded.') })
     })
     return () => {
       disposed = true
@@ -92,13 +95,13 @@ function UsagePage() {
         })`)
         if (!disposed) setReady(true)
       }).catch((error: unknown) => {
-        if (!disposed) setState({ phase: 'error', message: String(error) })
+        if (!disposed) setState({ phase: 'error', message: errorMessage(error, 'Usage could not be loaded.') })
       })
     }
     const onFailed = (event: Event) => {
       const failure = event as Event & { errorCode: number; isMainFrame: boolean; errorDescription: string }
       if (failure.isMainFrame === false || failure.errorCode === -3) return
-      setState({ phase: 'error', message: failure.errorDescription || 'Usage could not be loaded.' })
+      setState({ phase: 'error', message: errorMessage(failure.errorDescription, 'Usage could not be loaded.') })
     }
     const preventNewWindow = (event: Event) => event.preventDefault()
     guest.addEventListener('dom-ready', onReady)

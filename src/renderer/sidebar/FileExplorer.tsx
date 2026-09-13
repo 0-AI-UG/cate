@@ -709,7 +709,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
             if (isLocalLocator(rootPath)) {
               try {
                 const result = await window.electronAPI.runtimeRetryLocal()
-                if (!result.ok) { setLoadError(result.error ?? 'Could not reconnect to local files.'); return }
+                if (!result.ok) { setLoadError(errorMessage(result.error, 'Could not reconnect to local files.')); return }
               } catch (error) { setLoadError(errorMessage(error)); return }
             }
             loadTree(rootPath)

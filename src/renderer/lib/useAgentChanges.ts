@@ -2,6 +2,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { effectiveAgentChanges, type AgentChangeRecord } from '../../shared/agentChanges'
 import type { GitStatusSnapshot } from '../stores/gitStatusStore'
 import { useGitStatusSnapshot } from '../stores/gitStatusStore'
+import { errorMessage } from './errorMessage'
 
 interface Snapshot { records: AgentChangeRecord[]; loading: boolean; error?: string }
 const empty: Snapshot = { records: [], loading: true }
@@ -57,7 +58,7 @@ export function useAgentChanges(cwd: string, workspaceId: string): Snapshot {
             }
           } catch (cause) {
             if (stopped) return
-            entry.snapshot = { ...entry.snapshot, loading: false, error: cause instanceof Error ? cause.message : 'Could not load recorded changes' }
+            entry.snapshot = { ...entry.snapshot, loading: false, error: errorMessage(cause, 'Could not load recorded changes') }
             entry.listeners.forEach((notify) => notify())
           } finally {
             pending = undefined

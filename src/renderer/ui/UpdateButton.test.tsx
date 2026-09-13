@@ -76,12 +76,20 @@ it('centers update feedback above the button using the rendered message width', 
 })
 
 it('surfaces errors and lets the user retry', async () => {
-  act(() => emit({ state: 'error', version: null, message: 'Offline', manual: true }))
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Offline')
+  act(() => emit({
+    state: 'error',
+    version: null,
+    message: "Error invoking remote method 'updates:check': Error: connect ECONNREFUSED 127.0.0.1",
+    manual: true,
+  }))
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Couldn’t reach the host')
+  expect(button().getAttribute('aria-label')).toContain('Couldn’t reach the host')
+  expect(button().getAttribute('aria-label')).not.toContain('remote method')
   expect(button().getAttribute('aria-label')).toContain('Click to retry')
-  check.mockRejectedValueOnce(new Error('Connection lost'))
+  check.mockRejectedValueOnce(new Error("Error invoking remote method 'updates:check': Error: Connection lost"))
   await act(async () => button().click())
   expect(document.querySelector('[role="alert"]')?.textContent).toContain('Connection lost')
+  expect(document.querySelector('[role="alert"]')?.textContent).not.toContain('remote method')
   await act(async () => button().click())
   expect(check).toHaveBeenCalledTimes(2)
 })
