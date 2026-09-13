@@ -313,28 +313,29 @@ export function createDockStore(initialState?: DockStateSnapshot) {
     )!
     presentation.dispose?.()
     presentation.restoreExternal?.()
-    set((state) => ({
-      zones: {
-        ...state.zones,
-        [presentation.zone]: {
-          ...state.zones[presentation.zone],
-          layout: presentation.panelId
-            ? removePanelFromTree(state.zones[presentation.zone].layout, presentation.panelId)
-            : presentation.restoreLayout,
+    set((state) => {
+      const currentLayout = state.zones[presentation.zone].layout
+      if (!currentLayout) return state
+      return {
+        zones: {
+          ...state.zones,
+          [presentation.zone]: {
+            ...state.zones[presentation.zone],
+            layout: presentation.panelId
+              ? removePanelFromTree(currentLayout, presentation.panelId)
+              : presentation.restoreLayout,
+          },
         },
-      },
-      presentations: state.presentations
-        .filter((candidate) => candidate !== presentation)
-        .map((candidate) => candidate.panelId && candidate.zone === presentation.zone
-          ? {
-              ...candidate,
-              expectedLayout: removePanelFromTree(
-                state.zones[presentation.zone].layout,
-                presentation.panelId!,
-              )!,
-            }
-          : candidate),
-    }))
+        presentations: state.presentations
+          .filter((candidate) => candidate !== presentation)
+          .map((candidate) => candidate.panelId && candidate.zone === presentation.zone
+            ? {
+                ...candidate,
+                expectedLayout: removePanelFromTree(currentLayout, presentation.panelId!)!,
+              }
+            : candidate),
+      }
+    })
     return true
   },
 
