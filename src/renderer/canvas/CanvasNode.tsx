@@ -187,15 +187,15 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   useRenderCount('CanvasNode')
 
   const canvasApi = useCanvasStoreApi()
-  const [outerPresentationActive, setOuterPresentationActive] = useState(
-    () => !!outerDockStoreApi?.getState().presentation,
+  const [outerPresentationBlocked, setOuterPresentationBlocked] = useState(
+    () => !!outerDockStoreApi?.getState().presentations.some((presentation) => !presentation.panelId),
   )
   useEffect(() => {
     if (!outerDockStoreApi) return
-    setOuterPresentationActive(!!outerDockStoreApi.getState().presentation)
+    setOuterPresentationBlocked(outerDockStoreApi.getState().presentations.some((presentation) => !presentation.panelId))
     return outerDockStoreApi.subscribe((state, previous) => {
-      if (!!state.presentation !== !!previous.presentation) {
-        setOuterPresentationActive(!!state.presentation)
+      if (state.presentations !== previous.presentations) {
+        setOuterPresentationBlocked(state.presentations.some((presentation) => !presentation.panelId))
       }
     })
   }, [outerDockStoreApi])
@@ -395,7 +395,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
   const handlePresentPanel = useCallback((panelId: string) => {
     if (!outerDockStoreApi || !canvasPanelId) return
     const outer = outerDockStoreApi.getState()
-    if (outer.presentation) return
+    if (outer.presentations.some((presentation) => !presentation.panelId)) return
     const canvasLocation = outer.getPanelLocation(canvasPanelId)
     if (!canvasLocation || canvasLocation.type !== 'dock') return
     const restoreLayout = outer.zones[canvasLocation.zone].layout
@@ -407,20 +407,13 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     dockStoreApi.getState().undockPanel(panelId)
     if (!expectedSourceLayout) canvasApi.getState().finalizeRemoveNode(nodeId)
 
-    outerDockStoreApi.getState().dockPanel(panelId, canvasLocation.zone, {
-      type: 'tab',
-      stackId: canvasLocation.stackId,
-    })
-    const expectedLayout = outerDockStoreApi.getState().zones[canvasLocation.zone].layout
-    if (!expectedLayout) return
-
     let unsubscribeSource = () => {}
     const presentation = {
       stackId: canvasLocation.stackId,
       panelId,
       zone: canvasLocation.zone,
       restoreLayout,
-      expectedLayout,
+      expectedLayout: restoreLayout,
       canRestoreExternal: () => {
         const current = canvasApi.getState().nodes[nodeId]
         return expectedSourceLayout
@@ -450,13 +443,18 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       dispose: () => unsubscribeSource(),
     }
     outerDockStoreApi.getState().beginPresentation(presentation)
+    if (!outerDockStoreApi.getState().presentations.includes(presentation)) return
+    outerDockStoreApi.getState().dockPanel(panelId, canvasLocation.zone, {
+      type: 'tab',
+      stackId: canvasLocation.stackId,
+    })
     unsubscribeSource = canvasApi.subscribe(() => {
-      const current = outerDockStoreApi.getState().presentation
-      if (current !== presentation) {
+      const current = outerDockStoreApi.getState().presentations
+      if (!current.some((candidate) => candidate.panelId === panelId)) {
         unsubscribeSource()
         return
       }
-      if (!presentation.canRestoreExternal()) outerDockStoreApi.getState().discardPresentation()
+      if (!presentation.canRestoreExternal()) outerDockStoreApi.getState().discardPresentation(panelId)
     })
     setActivePanel(panelId)
   }, [outerDockStoreApi, canvasPanelId, canvasApi, nodeId, dockStoreApi])
@@ -549,7 +547,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
           excludePanelTypes={CANVAS_EXCLUDED_TYPES}
           localOnly
           compact
-          onPresentPanel={outerDockStoreApi && canvasPanelId && !outerPresentationActive ? handlePresentPanel : undefined}
+          onPresentPanel={outerDockStoreApi && canvasPanelId && !outerPresentationBlocked ? handlePresentPanel : undefined}
           onTabBarMouseDown={isHeaderHost ? handleHeaderMouseDown : undefined}
           trailingControls={isHeaderHost ? nodeControlButtons : undefined}
           dropDisabled={isWholeNodeDragSource}
@@ -666,14 +664,14 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       const target = e.target as HTMLElement
       if (target.closest('[data-grab-button]')) return
       e.stopPropagation()
-      if (e.detail === 2 && !outerPresentationActive) {
+      if (e.detail === 2 && !outerPresentationBlocked) {
         const panelId = activeLeafPanelId(dockStoreApi.getState().zones.center.layout)
         if (panelId) handlePresentPanel(panelId)
         return
       }
       handleDragStart(e)
     },
-    [handleDragStart, handlePresentPanel, dockStoreApi, outerPresentationActive],
+    [handleDragStart, handlePresentPanel, dockStoreApi, outerPresentationBlocked],
   )
 
   const handleGrabStripContextMenu = useCallback(
@@ -682,7 +680,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
       e.stopPropagation()
       if (!window.electronAPI) return
       const id = await window.electronAPI.showContextMenu([
-        ...(!outerPresentationActive ? [{ id: 'maximize', label: 'Move into Dock' }] : []),
+        ...(!outerPresentationBlocked ? [{ id: 'maximize', label: 'Move into Dock' }] : []),
         { id: 'pin', label: node?.isPinned ? 'Unlock' : 'Lock' },
         ...(canConnectActivePanel ? [{ id: 'connect', label: 'Connect to…' }] : []),
         { type: 'separator' },
@@ -706,7 +704,7 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
         case 'close': handleClose(); break
       }
     },
-    [node?.isPinned, activePanel, canConnectActivePanel, handlePresentPanel, handleTogglePin, handleClose, canvasApi, dockStoreApi, nodeId, outerPresentationActive, wsId],
+    [node?.isPinned, activePanel, canConnectActivePanel, handlePresentPanel, handleTogglePin, handleClose, canvasApi, dockStoreApi, nodeId, outerPresentationBlocked, wsId],
   )
 
   // --- Computed styles -------------------------------------------------------

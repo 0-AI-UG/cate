@@ -60,22 +60,27 @@ interface DockTabStackProps {
 
 export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPanelTitle, onClosePanel, onClosePanels, getPanel: getPanelProp, workspaceId: workspaceIdProp, onPanelRemoved, onPanelRenamed, excludePanelTypes, trailingControls, newTabControl, onTabBarMouseDown, localOnly, compact, dropDisabled, onPresentPanel }: DockTabStackProps) {
   const dockStoreApi = useDockStoreApi()
-  const presentation = useDockStoreContext((s) => s.presentation)
+  const presentations = useDockStoreContext((s) => s.presentations)
   const zoneLayout = useDockStoreContext((s) => s.zones[zoneProp].layout)
   const activePanelId = stack.panelIds[stack.activeIndex]
-  const ownsPresentation = presentation?.stackId === stack.id
-  const canRestore = !!ownsPresentation && dockStoreApi.getState().canRestorePresentation(stack.id)
-  const presented = ownsPresentation
-    && (!presentation.panelId || presentation.panelId === activePanelId)
-  const canMerge = !presentation && zoneLayout?.type === 'split'
+  const presentation = presentations.find((candidate) =>
+    candidate.stackId === stack.id && candidate.panelId === activePanelId,
+  ) ?? presentations.find((candidate) => candidate.stackId === stack.id && !candidate.panelId)
+  const ownsPresentation = !!presentation
+  const canRestore = !!presentation
+    && dockStoreApi.getState().canRestorePresentation(stack.id, presentation.panelId)
+  const presented = !!presentation
+  const canMerge = presentations.length === 0 && zoneLayout?.type === 'split'
   const stackRef = useRef<HTMLDivElement>(null)
 
   // A structural mutation makes the saved reverse operation unsafe. Drop the
   // transaction immediately so it cannot leave dead controls or block a later
   // presentation; the already-mutated real dock tree remains authoritative.
   useEffect(() => {
-    if (ownsPresentation && !canRestore) dockStoreApi.getState().discardPresentation()
-  }, [ownsPresentation, canRestore, dockStoreApi])
+    if (ownsPresentation && !canRestore) {
+      dockStoreApi.getState().discardPresentation(presentation?.panelId)
+    }
+  }, [ownsPresentation, canRestore, dockStoreApi, presentation?.panelId])
 
   const isDragging = useDragStore((s) => s.isDragging)
   const target = useDragStore((s) => s.target)
@@ -350,7 +355,7 @@ export default function DockTabStack({ stack, zone: zoneProp, renderPanel, getPa
             className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${compact ? 'w-[22px] h-[22px]' : 'w-6 h-6'}`}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={() => {
-              if (presented) dockStoreApi.getState().restorePresentation(stack.id)
+              if (presented) dockStoreApi.getState().restorePresentation(stack.id, presentation?.panelId)
               else if (onPresentPanel && activePanelId) onPresentPanel(activePanelId)
               else dockStoreApi.getState().mergeSplitToStack(stack.id)
             }}

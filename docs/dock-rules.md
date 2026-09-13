@@ -46,7 +46,8 @@ sibling instead of creating an unnecessary nested split.
 | Promoted canvas pane | Structurally change the source canvas node | Keep both the promoted pane and the edited source | Permanently invalidated | `CanvasNode.groupDrag.test.tsx`, `dock-rules.spec.ts` |
 | Promoted canvas pane | Add/remove/reorder/move/split/collapse in the destination, including moving away and back | Keep the user’s new destination | Permanently invalidated | `dockStore.presentation.test.ts`, `dock-rules.spec.ts` |
 | Promoted canvas pane, both sides unchanged | Minimize | Restore the exact node id, position, size, tabs, split tree, and active pane | Consumed | `CanvasNode.groupDrag.test.tsx`, `dock-rules.spec.ts` |
-| Any active presentation | Maximize another stack/pane | Ignore the second request; presentations never nest | Existing presentation remains valid | `dockStore.presentation.test.ts` |
+| One or more promoted canvas panes | Maximize another canvas pane | Promote it as another dock tab with its own restore target | Every unchanged promotion remains independently restorable | `CanvasNode.groupDrag.test.tsx` |
+| Active merged-dock presentation | Maximize another stack/pane | Ignore the second request; merged presentations never nest | Existing presentation remains valid | `dockStore.presentation.test.ts` |
 | Invalidated presentation | Minimize | No-op; the restore control is removed | Unavailable | `dockStore.presentation.test.ts`, `dock-rules.spec.ts` |
 
 The invalidation rule is intentionally structural. Tab selection and split

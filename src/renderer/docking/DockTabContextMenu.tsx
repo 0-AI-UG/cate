@@ -1,6 +1,6 @@
 // Panel-type menu shared by the new-tab buttons.
 
-import React, { useEffect, useLayoutEffect, useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { PanelType } from '../../shared/types'
 import { SPLIT_MENU_PANEL_TYPES } from '../../shared/panels'
@@ -27,12 +27,11 @@ export interface DockTabContextMenuProps {
   portalTarget?: HTMLElement | null
   anchorRef?: React.RefObject<HTMLButtonElement>
   ariaLabel?: string
-  onConnectionPortPositionChange?: (point: { x: number; y: number }) => void
+  showConnectionPort?: boolean
 }
 
-export function DockTabContextMenu({ open, position, items, onPick, onClose, anchorRef, portalTarget, ariaLabel = 'New Tab', onConnectionPortPositionChange }: DockTabContextMenuProps) {
+export function DockTabContextMenu({ open, position, items, onPick, onClose, anchorRef, portalTarget, ariaLabel = 'New Tab', showConnectionPort = false }: DockTabContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
-  const connectionPortRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (!open) return
     menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
@@ -47,17 +46,6 @@ export function DockTabContextMenu({ open, position, items, onPick, onClose, anc
       window.removeEventListener('resize', onResize)
     }
   }, [open, onClose, anchorRef])
-  useLayoutEffect(() => {
-    if (!open || !onConnectionPortPositionChange) return
-    const report = () => {
-      const rect = connectionPortRef.current?.getBoundingClientRect()
-      if (rect) onConnectionPortPositionChange({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
-    }
-    report()
-    const resize = typeof ResizeObserver === 'undefined' || !menuRef.current ? null : new ResizeObserver(report)
-    if (menuRef.current) resize?.observe(menuRef.current)
-    return () => resize?.disconnect()
-  }, [open, onConnectionPortPositionChange, position?.right, position?.top])
   if (!open || !position) return null
   return createPortal(
     <div
@@ -74,12 +62,17 @@ export function DockTabContextMenu({ open, position, items, onPick, onClose, anc
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
         buttons[next]?.focus()
       }}
-      style={{ position: portalTarget ? 'absolute' : 'fixed', top: position.top, right: position.right }}
+      style={{
+        position: portalTarget ? 'absolute' : 'fixed',
+        top: position.top,
+        right: position.right,
+        transform: showConnectionPort ? 'translateY(-50%)' : undefined,
+        animation: showConnectionPort ? 'none' : undefined,
+      }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {onConnectionPortPositionChange && (
+      {showConnectionPort && (
         <span
-          ref={connectionPortRef}
           data-panel-connection-menu-port
           className="pointer-events-none absolute left-[-12px] top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-focus bg-focus-blue"
           style={{ boxShadow: '0 0 0 4px color-mix(in srgb, var(--focus-blue) 18%, transparent)' }}

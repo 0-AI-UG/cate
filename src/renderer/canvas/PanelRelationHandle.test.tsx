@@ -42,7 +42,7 @@ describe('PanelRelationHandle', () => {
       'top', 'right', 'bottom', 'left',
     ])
     expect(handles.every((handle) => handle.classList.contains('h-5') && handle.classList.contains('w-5'))).toBe(true)
-    expect(handles.every((handle) => handle.querySelector('.h-2.w-2'))).toBe(true)
+    expect(handles.every((handle) => handle.querySelector('.h-2.w-2.bg-focus-blue'))).toBe(true)
   })
 
   it('snaps to a browser port without relying on webview pointer events', async () => {
@@ -122,15 +122,6 @@ describe('PanelRelationHandle', () => {
     })
     const relationPortal = document.createElement('div')
     Object.defineProperty(relationPortal, 'offsetWidth', { configurable: true, value: 1 })
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.hasAttribute('data-panel-connection-menu-port')) {
-        return {
-          left: 972, right: 980, top: 492, bottom: 500, width: 8, height: 8,
-          x: 972, y: 492, toJSON: () => ({}),
-        }
-      }
-      return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) }
-    })
     canvas.appendChild(container)
     document.body.append(canvas, relationPortal)
 
@@ -158,9 +149,12 @@ describe('PanelRelationHandle', () => {
     expect(menu.querySelector('[data-panel-connection-menu-port]')).not.toBeNull()
     const preview = relationPortal.querySelector<SVGPathElement>('[data-panel-connection-create-preview] path')!
     expect(preview.getAttribute('d')).toMatch(/^M 34 105 C /)
-    expect(preview.getAttribute('d')).toMatch(/, 428 203$/)
+    expect(preview.getAttribute('d')).toMatch(/, 440 130$/)
     expect(preview.getAttribute('stroke-dasharray')).toBe('6 5')
     expect(menu.style.top).toBe('130px')
+    expect(menu.style.right).toBe('-671px')
+    expect(menu.style.transform).toBe('translateY(-50%)')
+    expect(menu.style.animation).toBe('none')
     expect([...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).not.toContain('Canvas')
 
     await act(async () => {
@@ -173,17 +167,17 @@ describe('PanelRelationHandle', () => {
     const browser = Object.values(workspace.panels).find((panel) => panel.type === 'browser')!
     expect(workspace.panelRelations).toEqual([
       expect.objectContaining({
-        fromPanelId: 'source', toPanelId: browser.id, kind: 'use', fromSide: 'right', toSide: 'top',
+        fromPanelId: 'source', toPanelId: browser.id, kind: 'use', fromSide: 'right', toSide: 'left',
       }),
     ])
     const browserNodeId = store.getState().nodeForPanel(browser.id)!
     const browserNode = store.getState().nodes[browserNodeId]!
-    expect(browserNode.origin).toEqual({ x: 28, y: 215 })
-    expect(workspace.panelRelations?.[0].toSide).toBe('top')
+    expect(browserNode.origin).toEqual({ x: 452, y: -170 })
+    expect(workspace.panelRelations?.[0].toSide).toBe('left')
     expect(panelConnectionAnchor(
       { origin: browserNode.origin, size: browserNode.size },
       workspace.panelRelations![0].toSide!,
-    )).toEqual({ x: 428, y: 203 })
+    )).toEqual({ x: 440, y: 130 })
     expect(store.getState().selection).toEqual([browserNodeId])
     for (const nodeId of [sourceNodeId, browserNodeId]) {
       const frame = store.getState().viewFrame(nodeId)!

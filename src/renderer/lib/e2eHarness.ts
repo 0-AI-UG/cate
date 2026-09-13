@@ -309,11 +309,14 @@ export function installE2EHarness(): void {
         bottom: zone('bottom'),
         center: zone('center'),
       },
-      presentation: state.presentation
+      presentation: state.presentations[0]
         ? {
-            stackId: state.presentation.stackId,
-            panelId: state.presentation.panelId ?? null,
-            canRestore: state.canRestorePresentation(state.presentation.stackId),
+            stackId: state.presentations[0].stackId,
+            panelId: state.presentations[0].panelId ?? null,
+            canRestore: state.canRestorePresentation(
+              state.presentations[0].stackId,
+              state.presentations[0].panelId,
+            ),
           }
         : null,
     }
