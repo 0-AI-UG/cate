@@ -2,9 +2,7 @@ import { Check, CaretDown, PencilSimple, Trash, X } from '@phosphor-icons/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  PANEL_RELATION_LABELS,
-  PANEL_RELATION_DESCRIPTIONS,
-  panelRelationKindsForTarget,
+  panelRelationOptions,
   panelRelationLabel,
   type PanelRelation,
   type PanelRelationKind,
@@ -41,11 +39,13 @@ function RelationMenuPortal({ target, position, children }: {
 export function PanelRelationSelector({
   workspaceId,
   relation,
+  sourcePanel,
   targetPanel,
   position,
 }: {
   workspaceId: string
   relation: PanelRelation
+  sourcePanel: PanelState
   targetPanel: PanelState
   position: { x: number; y: number }
 }) {
@@ -62,10 +62,7 @@ export function PanelRelationSelector({
   const inputRef = useRef<HTMLInputElement>(null)
   const suppressClickRef = useRef(false)
   const canvasStore = useCanvasStoreApi()
-  const relevantChoices = panelRelationKindsForTarget(targetPanel)
-  const choices = relevantChoices.includes(relation.kind)
-    ? relevantChoices
-    : [...relevantChoices, relation.kind]
+  const choices = panelRelationOptions(sourcePanel, targetPanel)
 
   useEffect(() => {
     if (!requestedOpen) return
@@ -226,7 +223,9 @@ export function PanelRelationSelector({
           className="flex min-w-0 items-center gap-1 outline-none focus-visible:text-focus-blue"
           onClick={() => setOpen((value) => !value)}
         >
-          <span className="max-w-36 truncate whitespace-nowrap">{panelRelationLabel(relation)}</span>
+          <span className="max-w-36 truncate whitespace-nowrap">
+            {panelRelationLabel(relation, sourcePanel, targetPanel)}
+          </span>
           <CaretDown
             size={9}
             weight="bold"
@@ -256,28 +255,28 @@ export function PanelRelationSelector({
             : 'invisible -translate-y-1 scale-[0.98] opacity-0'
         }`}
       >
-        {choices.map((kind, index) => {
-          const selected = !relation.label && relation.kind === kind
+        {choices.map((choice, index) => {
+          const selected = !relation.label && relation.kind === choice.kind
           return (
             <button
-              key={kind}
+              key={choice.kind}
               type="button"
               role="menuitemradio"
               aria-checked={selected}
               tabIndex={open ? 0 : -1}
               className="flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-primary outline-none transition-colors duration-100 hover:bg-hover focus-visible:bg-hover motion-reduce:transition-none"
-              onClick={() => choose(kind)}
+              onClick={() => choose(choice.kind)}
             >
               <span className="mt-px grid h-3.5 w-3.5 shrink-0 place-items-center text-focus-blue">
                 {selected ? <Check size={11} weight="bold" /> : null}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
-                  <span>{PANEL_RELATION_LABELS[kind]}</span>
+                  <span>{choice.label}</span>
                   {index === 0 ? <span className="text-[8px] text-muted">Recommended</span> : null}
                 </span>
                 <span className="block truncate text-[9px] leading-3 text-muted">
-                  {PANEL_RELATION_DESCRIPTIONS[kind]}
+                  {choice.description}
                 </span>
               </span>
             </button>

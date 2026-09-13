@@ -24,17 +24,16 @@ export interface PanelRelationContext {
   relatedPanelIds: string[]
 }
 
+export interface PanelRelationOption {
+  kind: PanelRelationKind
+  label: string
+  description: string
+}
+
 /** A panel transport that can receive a prompt. The provider running through
  * it (Codex, Claude, etc.) is resolved separately at submission time. */
 export function isExecutionSurface(type: PanelType): boolean {
   return type === 'terminal' || type === 'agent'
-}
-
-export function defaultPanelRelationKind(target: PanelState): PanelRelationKind {
-  if (isExecutionSurface(target.type)) return 'trigger'
-  if (target.type === 'browser') return 'use'
-  if (target.type === 'review') return 'verify'
-  return 'context'
 }
 
 export const PANEL_RELATION_LABELS: Record<PanelRelationKind, string> = {
@@ -51,17 +50,68 @@ export const PANEL_RELATION_DESCRIPTIONS: Record<PanelRelationKind, string> = {
   trigger: 'Send the next task',
 }
 
-export function panelRelationLabel(relation: Pick<PanelRelation, 'kind' | 'label'>): string {
-  return relation.label?.trim() || PANEL_RELATION_LABELS[relation.kind]
+function option(kind: PanelRelationKind, label = PANEL_RELATION_LABELS[kind]): PanelRelationOption {
+  return { kind, label, description: PANEL_RELATION_DESCRIPTIONS[kind] }
 }
 
-/** Only offer intents that make sense for the destination. Recommended first. */
-export function panelRelationKindsForTarget(target: PanelState): PanelRelationKind[] {
-  if (isExecutionSurface(target.type)) return ['trigger']
-  if (target.type === 'browser') return ['use', 'verify', 'context']
-  if (target.type === 'editor') return ['context', 'use']
-  if (target.type === 'review') return ['verify', 'context']
-  return ['context']
+function executionTargetOptions(source: PanelState): PanelRelationOption[] {
+  if (isExecutionSurface(source.type)) {
+    return [
+      option('trigger'),
+      option('context', 'Share context with'),
+      option('verify', 'Ask to verify'),
+    ]
+  }
+  const contextLabel = source.type === 'editor'
+    ? 'Send changes to'
+    : source.type === 'browser' || source.type === 'review'
+      ? 'Send findings to'
+      : 'Send context to'
+  return [
+    option('context', contextLabel),
+    option('trigger', 'Continue in'),
+    option('verify', 'Ask to verify'),
+  ]
+}
+
+/** Return exactly three pair-aware intents. The first is the recommendation. */
+export function panelRelationOptions(source: PanelState, target: PanelState): PanelRelationOption[] {
+  if (isExecutionSurface(target.type)) return executionTargetOptions(source)
+  if (target.type === 'browser') {
+    if (isExecutionSurface(source.type)) return [option('use'), option('verify'), option('context')]
+    if (source.type === 'editor' || source.type === 'review') {
+      return [option('verify', 'Verify in'), option('use'), option('context')]
+    }
+    return [option('context'), option('verify'), option('use')]
+  }
+  if (target.type === 'editor') {
+    if (isExecutionSurface(source.type)) return [option('use'), option('context'), option('verify')]
+    if (source.type === 'review') return [option('use', 'Address in'), option('context'), option('verify')]
+    return [option('context'), option('use'), option('verify')]
+  }
+  if (target.type === 'review') {
+    return source.type === 'review'
+      ? [option('context'), option('verify'), option('use')]
+      : [option('verify'), option('context'), option('use')]
+  }
+  return [option('context'), option('use'), option('verify')]
+}
+
+export function defaultPanelRelationKind(source: PanelState, target: PanelState): PanelRelationKind {
+  return panelRelationOptions(source, target)[0].kind
+}
+
+export function panelRelationLabel(
+  relation: Pick<PanelRelation, 'kind' | 'label'>,
+  source?: PanelState,
+  target?: PanelState,
+): string {
+  const customLabel = relation.label?.trim()
+  if (customLabel) return customLabel
+  return source && target
+    ? panelRelationOptions(source, target).find((candidate) => candidate.kind === relation.kind)?.label
+      ?? PANEL_RELATION_LABELS[relation.kind]
+    : PANEL_RELATION_LABELS[relation.kind]
 }
 
 export function wouldCreatePanelRelationCycle(
@@ -131,20 +181,25 @@ function resourceInstruction(
   const prefix = actor ? `${panelRef(actor)}: ` : ''
   const target = `${panelRef(panel)}${customIntent(label)}`
   if (panel.type === 'browser') {
-    return kind === 'verify'
-      ? `${prefix}${target} Verify with it through Cate browser automation; don't open another browser.`
-      : `${prefix}${target} Use it through Cate browser automation; don't open another browser.`
+    const action = kind === 'verify'
+      ? 'Verify with it'
+      : kind === 'context' ? 'Use it as supporting context' : 'Use it'
+    return `${prefix}${target} ${action} through Cate browser automation; don't open another browser.`
   }
   if (panel.type === 'editor' && panel.filePath) {
     return kind === 'use'
       ? `${prefix}${target} Work in ${panel.filePath}.`
+      : kind === 'verify'
+        ? `${prefix}${target} Verify against ${panel.filePath}.`
       : `${prefix}${target} Reference ${panel.filePath}.`
   }
   if (panel.type === 'review') {
-    return `${prefix}${target} Verify with it through Cate review commands.`
+    const action = kind === 'verify' ? 'Verify with it' : kind === 'use' ? 'Work through it' : 'Reference it'
+    return `${prefix}${target} ${action} through Cate review commands.`
   }
   if (panel.type === 'canvas') {
-    return `${prefix}${target} Reference its panels when relevant.`
+    const action = kind === 'verify' ? 'Verify using its panels' : kind === 'use' ? 'Work through its panels' : 'Reference its panels'
+    return `${prefix}${target} ${action} when relevant.`
   }
   const action = kind === 'verify' ? 'Verify with it.' : kind === 'use' ? 'Use it.' : 'Reference it.'
   return `${prefix}${target} ${action}`
@@ -186,10 +241,16 @@ export function compilePanelRelationContext(
       if (!relatedPanelIds.includes(target.id)) relatedPanelIds.push(target.id)
       if (isExecutionSurface(target.type)) {
         if (!targetExecutionPanelIds.includes(target.id)) targetExecutionPanelIds.push(target.id)
+        const instruction = relation.kind === 'context'
+          ? 'Send relevant context by running'
+          : relation.kind === 'verify' ? 'Ask it to verify by running' : 'When ready, run'
+        const task = relation.kind === 'context'
+          ? '<relevant context and how to use it>'
+          : relation.kind === 'verify' ? '<result to verify and relevant findings>' : '<task and relevant findings>'
         instructions.push(
           `${actorId === sourcePanelId ? '' : `${panelRef(actor)}: `}`
-          + `${panelRef(target)}${customIntent(relation.label)} When ready, run `
-          + `cate agent send --panel ${shortPanelId(target.id)} "<task and relevant findings>".`,
+          + `${panelRef(target)}${customIntent(relation.label)} ${instruction} `
+          + `cate agent send --panel ${shortPanelId(target.id)} "${task}".`,
         )
         continue
       }

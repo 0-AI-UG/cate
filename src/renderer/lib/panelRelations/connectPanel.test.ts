@@ -55,6 +55,8 @@ describe('connectPanelToExisting', () => {
       id: 'kind:verify',
       label: expect.stringContaining('Verify'),
     }))
+    expect(showContextMenu.mock.calls[1][0]).toHaveLength(3)
+    expect(showContextMenu.mock.calls[1][0].filter((item) => item.label?.includes('Recommended'))).toHaveLength(1)
     expect(useAppStore.getState().workspaces[0].panelRelations).toEqual([
       expect.objectContaining({
         id: relationId,
@@ -63,6 +65,28 @@ describe('connectPanelToExisting', () => {
         kind: 'verify',
       }),
     ])
+  })
+
+  it('allows an unanchored browser to start authoring a flow', async () => {
+    showContextMenu
+      .mockResolvedValueOnce('target:agent')
+      .mockResolvedValueOnce('kind:context')
+
+    const relationId = await connectPanelToExisting('ws', 'browser')
+
+    expect(relationId).toBeTruthy()
+    expect(useAppStore.getState().workspaces[0].panelRelations).toEqual([
+      expect.objectContaining({
+        id: relationId,
+        fromPanelId: 'browser',
+        toPanelId: 'agent',
+        kind: 'context',
+      }),
+    ])
+    expect(showContextMenu.mock.calls[1][0][0]).toEqual(expect.objectContaining({
+      id: 'kind:context',
+      label: expect.stringContaining('Send findings to'),
+    }))
   })
 
   it('does not open menus or create a relation when disabled globally', async () => {

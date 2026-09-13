@@ -130,6 +130,12 @@ afterEach(() => {
 })
 
 describe('CanvasNode drag preview', () => {
+  it('shows connection ports on an unconnected browser', () => {
+    renderNode('browser')
+
+    expect(container.querySelector('[data-panel-connection-handles-for="node"]')).not.toBeNull()
+  })
+
   it('hides the source connection ports while the drag ghost is rendered', () => {
     const { canvasStore, panelId } = renderNode('terminal')
 

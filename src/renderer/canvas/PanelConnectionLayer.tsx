@@ -1,10 +1,11 @@
 import React, { useId, useMemo } from 'react'
 import type { CanvasNodeState, PanelState } from '../../shared/types'
 import { collectVisiblePanelIds } from '../../shared/collectPanelIds'
-import { useCanvasStoreContext } from '../stores/CanvasStoreContext'
+import { useCanvasStoreApi, useCanvasStoreContext } from '../stores/CanvasStoreContext'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { usePanelInteractionStore, type PanelInteraction } from '../lib/panelInteractions'
+import { useDragStore } from '../drag'
 import { panelConnectionMidpoint, panelConnectionPath } from './panelConnectionGeometry'
 import { isExecutionSurface, type PanelRelation } from '../../shared/panelRelations'
 import { PanelRelationSelector } from './PanelRelationSelector'
@@ -65,6 +66,7 @@ function relationFlowIndexes(
 
 export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
   const markerPrefix = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  const canvasStoreApi = useCanvasStoreApi()
   const nodes = useCanvasStoreContext((state) => state.nodes)
   const panels = useAppStore(
     (state) => state.workspaces.find((workspace) => workspace.id === workspaceId)?.panels ?? EMPTY_PANELS,
@@ -74,13 +76,34 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
     (state) => state.workspaces.find((workspace) => workspace.id === workspaceId)?.panelRelations ?? EMPTY_RELATIONS,
   )
   const panelRelationsEnabled = useSettingsStore((state) => state.panelRelationsEnabled)
+  const isDragging = useDragStore((state) => state.isDragging)
+  const dragSource = useDragStore((state) => state.source)
+  const dragTarget = useDragStore((state) => state.target)
+  const pendingDetach = useDragStore((state) => state.pendingDetach)
 
   const connections = useMemo(() => {
     const enabledRelations = panelRelationsEnabled ? relations : EMPTY_RELATIONS
     const flowIndexes = relationFlowIndexes(enabledRelations, panels)
     const panelToNode = new Map<string, CanvasNodeState>()
     for (const node of Object.values(nodes)) {
-      for (const panelId of collectVisiblePanelIds(node.dockLayout)) panelToNode.set(panelId, node)
+      if (pendingDetach.some((pending) => pending.nodeId === node.id)) continue
+
+      let renderedNode = node
+      if (
+        isDragging &&
+        dragSource?.origin.kind === 'canvas-node' &&
+        dragSource.origin.canvasStoreApi === canvasStoreApi &&
+        dragSource.origin.nodeId === node.id
+      ) {
+        if (
+          dragTarget?.kind !== 'canvas-reposition' ||
+          dragTarget.canvasStoreApi !== canvasStoreApi ||
+          dragTarget.nodeId !== node.id
+        ) continue
+        renderedNode = { ...node, origin: dragTarget.origin }
+      }
+
+      for (const panelId of collectVisiblePanelIds(node.dockLayout)) panelToNode.set(panelId, renderedNode)
     }
 
     const byNodePair = new Map<string, RenderedConnection>()
@@ -123,7 +146,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
       add(relation.fromPanelId, relation.toPanelId, false, undefined, relation)
     }
     return [...byNodePair.values()]
-  }, [interactions, nodes, panels, panelRelationsEnabled, relations, workspaceId])
+  }, [canvasStoreApi, dragSource, dragTarget, interactions, isDragging, nodes, panels, panelRelationsEnabled, pendingDetach, relations, workspaceId])
 
   if (connections.length === 0) return null
 
@@ -134,8 +157,9 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
     .filter((index): index is number => index !== undefined))]
   const selectors = connections.map((connection) => {
     if (!connection.relation) return null
+    const sourcePanel = panels[connection.relation.fromPanelId]
     const targetPanel = panels[connection.relation.toPanelId]
-    if (!targetPanel) return null
+    if (!sourcePanel || !targetPanel) return null
     const position = panelConnectionMidpoint(
       { origin: connection.source.origin, size: connection.source.size },
       { origin: connection.target.origin, size: connection.target.size },
@@ -149,6 +173,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
         key={`${connection.key}-selector`}
         workspaceId={workspaceId}
         relation={connection.relation}
+        sourcePanel={sourcePanel}
         targetPanel={targetPanel}
         position={position}
       />

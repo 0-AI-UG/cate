@@ -1,5 +1,6 @@
 import type { Point, Rect } from '../../shared/types'
 import type { PanelConnectionSide } from '../../shared/panelRelations'
+import { PLACEMENT_GAP } from './placement'
 
 const ENDPOINT_GAP = 7
 const PORT_ENDPOINT_GAP = 12
@@ -31,6 +32,53 @@ const SIDE_NORMAL: Record<PanelConnectionSide, Point> = {
   top: { x: 0, y: -1 },
   right: { x: 1, y: 0 },
   bottom: { x: 0, y: 1 },
+}
+
+function panelOriginForPort(end: Point, size: Rect['size'], side: PanelConnectionSide): Point {
+  switch (side) {
+    case 'left': return { x: end.x + PORT_ENDPOINT_GAP, y: end.y - size.height / 2 }
+    case 'right': return { x: end.x - size.width - PORT_ENDPOINT_GAP, y: end.y - size.height / 2 }
+    case 'top': return { x: end.x - size.width / 2, y: end.y + PORT_ENDPOINT_GAP }
+    case 'bottom': return { x: end.x - size.width / 2, y: end.y - size.height - PORT_ENDPOINT_GAP }
+  }
+}
+
+function overlapArea(a: Rect, b: Rect, padding = 0): number {
+  const left = Math.max(a.origin.x, b.origin.x - padding)
+  const top = Math.max(a.origin.y, b.origin.y - padding)
+  const right = Math.min(a.origin.x + a.size.width, b.origin.x + b.size.width + padding)
+  const bottom = Math.min(a.origin.y + a.size.height, b.origin.y + b.size.height + padding)
+  return Math.max(0, right - left) * Math.max(0, bottom - top)
+}
+
+/** Place a new panel so one of its ports lands exactly on `end`. The natural
+ * facing side wins when space is equal; surrounding panels can make any of the
+ * other three sides the less obstructed choice. */
+export function panelPlacementAtConnectionEnd(
+  end: Point,
+  size: Rect['size'],
+  obstacles: readonly Rect[],
+  preferredSide: PanelConnectionSide,
+  visibleBounds?: Rect,
+): { origin: Point; side: PanelConnectionSide } {
+  const sides = [preferredSide, ...(['top', 'right', 'bottom', 'left'] as PanelConnectionSide[])
+    .filter((side) => side !== preferredSide)]
+  let best = { origin: panelOriginForPort(end, size, sides[0]), side: sides[0], score: Number.POSITIVE_INFINITY }
+  for (const side of sides) {
+    const origin = panelOriginForPort(end, size, side)
+    const candidate = { origin, size }
+    const overlap = obstacles.reduce((sum, obstacle) => sum + overlapArea(candidate, obstacle), 0)
+    const clearance = obstacles.reduce(
+      (sum, obstacle) => sum + overlapArea(candidate, obstacle, PLACEMENT_GAP) - overlapArea(candidate, obstacle),
+      0,
+    )
+    const outside = visibleBounds
+      ? size.width * size.height - overlapArea(candidate, visibleBounds)
+      : 0
+    const score = overlap * 1_000_000 + outside * 1_000 + clearance
+    if (score < best.score) best = { origin, side, score }
+  }
+  return { origin: best.origin, side: best.side }
 }
 
 export function panelConnectionAnchor(rect: Rect, side: PanelConnectionSide): Point {

@@ -40,7 +40,6 @@ import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
 import { worktreeForPanel } from '../lib/worktreeContext'
 import { PanelRelationHandle } from './PanelRelationHandle'
 import { connectPanelToExisting } from '../lib/panelRelations/connectPanel'
-import { isPanelRelationSourceAnchored } from '../../shared/panelRelations'
 
 // Node ids already reported for missing geometry, so a bad node that keeps
 // re-rendering warns/reports once instead of spamming.
@@ -474,12 +473,10 @@ const CanvasNode: React.FC<CanvasNodeProps> = ({
     return currentWorkspace?.panels[id] ?? primaryPanel
   }, [layout, currentWorkspace, primaryPanel])
   const panelRelationsEnabled = useSettingsStore((state) => state.panelRelationsEnabled)
-  const canConnectActivePanel = Boolean(panelRelationsEnabled && activePanel && currentWorkspace
-    && isPanelRelationSourceAnchored(
-      activePanel.id,
-      currentWorkspace.panels,
-      currentWorkspace.panelRelations ?? [],
-    ))
+  // Authoring is allowed from any panel. A browser-first chain may not affect
+  // prompts until an execution surface anchors it, but hiding its ports makes
+  // it impossible to build that flow incrementally.
+  const canConnectActivePanel = Boolean(panelRelationsEnabled && activePanel)
   // --- Worktree identity: follows the ACTIVE tab --------------------------
   // The node adopts whichever tab is open. Gated on 2+ worktrees (matching the
   // chip) so single-branch flows show no tint/sludge.

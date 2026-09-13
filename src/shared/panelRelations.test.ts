@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { PanelState } from './types'
 import {
   compilePanelRelationContext,
+  defaultPanelRelationKind,
   isPanelRelationSourceAnchored,
-  panelRelationKindsForTarget,
+  panelRelationOptions,
   wouldCreatePanelRelationCycle,
   type PanelRelation,
 } from './panelRelations'
@@ -127,10 +128,45 @@ describe('panel relation prompt context', () => {
     expect(isPanelRelationSourceAnchored('editor', panels, [])).toBe(false)
   })
 
-  it('offers only intents relevant to the target panel', () => {
-    expect(panelRelationKindsForTarget(panel('browser', 'browser'))).toEqual(['use', 'verify', 'context'])
-    expect(panelRelationKindsForTarget(panel('editor', 'editor'))).toEqual(['context', 'use'])
-    expect(panelRelationKindsForTarget(panel('review', 'review'))).toEqual(['verify', 'context'])
-    expect(panelRelationKindsForTarget(panel('agent', 'agent'))).toEqual(['trigger'])
+  it('offers exactly three pair-aware intents with one recommendation', () => {
+    const types: PanelState['type'][] = ['terminal', 'browser', 'editor', 'canvas', 'agent', 'review', 'surface']
+    for (const sourceType of types) {
+      for (const targetType of types) {
+        const source = panel(`source-${sourceType}`, sourceType)
+        const target = panel(`target-${targetType}`, targetType)
+        const options = panelRelationOptions(source, target)
+        expect(options, `${sourceType} -> ${targetType}`).toHaveLength(3)
+        expect(new Set(options.map((option) => option.kind)).size, `${sourceType} -> ${targetType}`).toBe(3)
+        expect(defaultPanelRelationKind(source, target), `${sourceType} -> ${targetType}`).toBe(options[0].kind)
+      }
+    }
+  })
+
+  it('uses the source and target together for recommendations', () => {
+    expect(panelRelationOptions(panel('agent', 'agent'), panel('terminal', 'terminal'))[0])
+      .toMatchObject({ kind: 'trigger', label: 'Hand off' })
+    expect(panelRelationOptions(panel('browser', 'browser'), panel('terminal', 'terminal'))[0])
+      .toMatchObject({ kind: 'context', label: 'Send findings to' })
+    expect(panelRelationOptions(panel('editor', 'editor'), panel('browser', 'browser'))[0])
+      .toMatchObject({ kind: 'verify', label: 'Verify in' })
+    expect(panelRelationOptions(panel('review', 'review'), panel('editor', 'editor'))[0])
+      .toMatchObject({ kind: 'use', label: 'Address in' })
+    expect(panelRelationOptions(panel('terminal', 'terminal'), panel('editor', 'editor'))[0])
+      .toMatchObject({ kind: 'use', label: 'Work in' })
+  })
+
+  it('turns resource-to-execution context into a context send, not a handoff', () => {
+    const panels = {
+      agent: panel('agent', 'agent'),
+      browser: panel('browser', 'browser'),
+      terminal: panel('terminal', 'terminal'),
+    }
+    const context = compilePanelRelationContext('agent', panels, [
+      { id: 'browse', fromPanelId: 'agent', toPanelId: 'browser', kind: 'use' },
+      { id: 'report', fromPanelId: 'browser', toPanelId: 'terminal', kind: 'context' },
+    ])!
+
+    expect(context.text).toContain('Send relevant context by running cate agent send --panel terminal')
+    expect(context.text).not.toContain('terminal When ready')
   })
 })
