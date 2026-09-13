@@ -5,9 +5,12 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { StoreApi } from 'zustand'
 import { CanvasStoreProvider } from '../stores/CanvasStoreContext'
 import { createCanvasStore, type CanvasStore } from '../stores/canvasStore'
+import { createDockStore } from '../stores/dockStore'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { beginPanelInteraction, clearPanelInteractions } from '../lib/panelInteractions'
+import { useDragStore } from '../drag'
+import { INITIAL_DRAG_STATE } from '../drag/types'
 import { PanelConnectionLayer } from './PanelConnectionLayer'
 import { CanvasRelationOverlayContext } from './CanvasTopOverlayContext'
 
@@ -54,6 +57,7 @@ beforeEach(() => {
     value: { ...initialElectronAPI, settingsSet: vi.fn(async () => {}) },
   })
   useSettingsStore.setState({ savedPanelRelationLabels: [], panelRelationsEnabled: true })
+  useDragStore.getState().applyDragState(INITIAL_DRAG_STATE)
   clearPanelInteractions()
   useAppStore.setState({
     selectedWorkspaceId: WS,
@@ -87,6 +91,7 @@ afterEach(() => {
   act(() => root.unmount())
   container.remove()
   clearPanelInteractions()
+  useDragStore.getState().applyDragState(INITIAL_DRAG_STATE)
   useAppStore.setState(initialAppState, true)
   useSettingsStore.setState(initialSettingsState, true)
   Object.defineProperty(window, 'electronAPI', { configurable: true, value: initialElectronAPI })
@@ -149,6 +154,79 @@ describe('PanelConnectionLayer', () => {
     expect(selector?.classList.contains('z-[100001]')).toBe(true)
     expect(container.querySelector('textPath')).toBeNull()
     expect(container.textContent).toContain('Work in')
+    act(() => container.querySelector<HTMLElement>('[data-panel-relation-trigger]')!.click())
+    expect(container.querySelectorAll('[role="menuitemradio"]')).toHaveLength(3)
+    expect([...container.querySelectorAll('[role="menuitemradio"]')]
+      .filter((item) => item.textContent?.includes('Recommended'))).toHaveLength(1)
+  })
+
+  it('labels a browser-to-execution relation as sending findings', () => {
+    useAppStore.getState().addPanelRelation(WS, 'browser', 'agent', 'context')
+    act(() => {
+      root.render(
+        <CanvasStoreProvider store={canvasStore(1)}>
+          <PanelConnectionLayer workspaceId={WS} />
+        </CanvasStoreProvider>,
+      )
+    })
+
+    expect(container.querySelector('[data-panel-relation-chip]')?.textContent).toContain('Send findings to')
+    expect(container.querySelector('[data-panel-relation-chip]')?.textContent).not.toContain('Hand off')
+  })
+
+  it('moves connections with the drag ghost and hides them away from the canvas', () => {
+    useAppStore.getState().addPanelRelation(WS, 'agent', 'browser', 'use')
+    const store = canvasStore(1)
+    const dockStore = createDockStore()
+    act(() => {
+      root.render(
+        <CanvasStoreProvider store={store}>
+          <PanelConnectionLayer workspaceId={WS} />
+        </CanvasStoreProvider>,
+      )
+    })
+
+    const initialPath = container.querySelector('[data-panel-connection="relation"]')?.getAttribute('d')
+    const dragState = {
+      ...INITIAL_DRAG_STATE,
+      isDragging: true,
+      source: {
+        panelId: 'agent',
+        origin: { kind: 'canvas-node' as const, canvasStoreApi: store, nodeId: 'source' },
+      },
+      panel: { id: 'agent', type: 'agent' as const, title: 'Agent' },
+      grab: { x: 20, y: 10 },
+      ghostSize: { width: 200, height: 120 },
+      cursor: { client: { x: 300, y: 200 }, screen: { x: 300, y: 200 }, insideWindow: true },
+    }
+
+    act(() => useDragStore.getState().applyDragState({
+      ...dragState,
+      target: {
+        kind: 'canvas-reposition', canvasStoreApi: store, nodeId: 'source', origin: { x: 120, y: 180 },
+      },
+    }))
+    expect(container.querySelector('[data-panel-connection="relation"]')?.getAttribute('d')).not.toBe(initialPath)
+
+    act(() => useDragStore.getState().applyDragState({
+      ...dragState,
+      target: { kind: 'dock-tab', dockStoreApi: dockStore, stackId: 'nested-stack' },
+    }))
+    expect(container.querySelector('[data-panel-connection="relation"]')).toBeNull()
+
+    act(() => useDragStore.getState().applyDragState({
+      ...dragState,
+      target: { kind: 'detach', screen: { x: 900, y: 700 } },
+    }))
+    expect(container.querySelector('[data-panel-connection="relation"]')).toBeNull()
+
+    act(() => useDragStore.getState().applyDragState({
+      ...dragState,
+      target: {
+        kind: 'canvas-reposition', canvasStoreApi: store, nodeId: 'source', origin: { x: 160, y: 220 },
+      },
+    }))
+    expect(container.querySelector('[data-panel-connection="relation"]')).not.toBeNull()
   })
 
   it('hides user relations while preserving agent activity connections when disabled', () => {

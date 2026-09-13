@@ -12,7 +12,7 @@ import { viewToCanvas } from '../lib/canvas/coordinates'
 import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
 import { useAppStore } from '../stores/appStore'
 import { useOptionalCanvasStoreApi } from '../stores/CanvasStoreContext'
-import { panelConnectionPathFromPoints } from './panelConnectionGeometry'
+import { panelConnectionPathFromPoints, panelPlacementAtConnectionEnd } from './panelConnectionGeometry'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasRelationOverlayTarget } from './CanvasTopOverlayContext'
 
@@ -41,8 +41,11 @@ interface DragState {
 
 interface CreateMenuState {
   sourceSide: PanelConnectionSide
+  startCanvasPoint: Point
   screenPoint: Point
+  menuCanvasPoint: Point
   canvasPoint: Point
+  canvasRoot: HTMLElement
   canvasPanelId?: string
 }
 
@@ -117,29 +120,42 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
     setDrag(null)
     if (!current) return
     if (!target) {
-      const rect = current.canvasRoot?.getBoundingClientRect()
+      const canvasRoot = current.canvasRoot
+      const rect = canvasRoot?.getBoundingClientRect()
       const canvasState = canvasApi?.getState()
-      if (!rect || !canvasState) return
+      if (!canvasRoot || !rect || !canvasState) return
       setCreateMenu({
         sourceSide: current.sourceSide,
+        startCanvasPoint: viewToCanvas(
+          { x: current.start.x - rect.left, y: current.start.y - rect.top },
+          canvasState.zoomLevel,
+          canvasState.viewportOffset,
+        ),
         screenPoint: { x, y },
+        menuCanvasPoint: viewToCanvas(
+          { x: x - rect.left, y: y - rect.top },
+          canvasState.zoomLevel,
+          canvasState.viewportOffset,
+        ),
         canvasPoint: viewToCanvas(
           { x: x - rect.left, y: y - rect.top },
           canvasState.zoomLevel,
           canvasState.viewportOffset,
         ),
-        canvasPanelId: current.canvasRoot?.dataset.canvasPanelId,
+        canvasRoot,
+        canvasPanelId: canvasRoot.dataset.canvasPanelId,
       })
       return
     }
     const workspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
+    const sourcePanel = workspace?.panels[sourcePanelId]
     const targetPanel = workspace?.panels[target.panelId]
-    if (!workspace || !targetPanel) return
+    if (!workspace || !sourcePanel || !targetPanel) return
     if (wouldCreatePanelRelationCycle(workspace.panelRelations ?? [], sourcePanelId, target.panelId)) {
       await window.electronAPI.showContextMenu([{ label: 'This connection would create a cycle', enabled: false }])
       return
     }
-    const recommended = defaultPanelRelationKind(targetPanel)
+    const recommended = defaultPanelRelationKind(sourcePanel, targetPanel)
     const relationId = useAppStore.getState().addPanelRelation(
       workspaceId,
       sourcePanelId,
@@ -153,14 +169,49 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
 
   const closeCreateMenu = useCallback(() => setCreateMenu(null), [])
 
+  const updateCreatePortPosition = useCallback((screenPoint: Point) => {
+    setCreateMenu((current) => {
+      if (!current) return null
+      const rect = current.canvasRoot.getBoundingClientRect()
+      const canvas = canvasApi?.getState()
+      if (!canvas) return current
+      const canvasPoint = viewToCanvas(
+        { x: screenPoint.x - rect.left, y: screenPoint.y - rect.top },
+        canvas.zoomLevel,
+        canvas.viewportOffset,
+      )
+      if (canvasPoint.x === current.canvasPoint.x && canvasPoint.y === current.canvasPoint.y) return current
+      return { ...current, canvasPoint }
+    })
+  }, [canvasApi])
+
   const createAndConnect = useCallback((type: PanelType) => {
     if (!createMenu) return
     const workspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
     const sourcePanel = workspace?.panels[sourcePanelId]
     if (!workspace || !sourcePanel) return
+    const canvas = canvasApi?.getState()
+    const visibleOrigin = canvas && viewToCanvas(
+      { x: 0, y: 0 },
+      canvas.zoomLevel,
+      canvas.viewportOffset,
+    )
+    const placement = panelPlacementAtConnectionEnd(
+      createMenu.canvasPoint,
+      PANEL_DEFINITIONS[type].defaultSize,
+      Object.values(canvas?.nodes ?? {}).map((node) => ({ origin: node.origin, size: node.size })),
+      OPPOSITE_SIDE[createMenu.sourceSide],
+      canvas && visibleOrigin ? {
+        origin: visibleOrigin,
+        size: {
+          width: canvas.containerSize.width / canvas.zoomLevel,
+          height: canvas.containerSize.height / canvas.zoomLevel,
+        },
+      } : undefined,
+    )
     const targetPanelId = createInteractivePanel(type, {
       workspaceId,
-      canvasPoint: createMenu.canvasPoint,
+      canvasPoint: placement.origin,
       placement: {
         target: 'canvas',
         canvasPanelId: createMenu.canvasPanelId,
@@ -171,18 +222,18 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
     const targetPanel = useAppStore.getState().workspaces
       .find((item) => item.id === workspaceId)?.panels[targetPanelId]
     if (!targetPanel) return
+    const targetNodeId = canvas?.nodeForPanel(targetPanelId)
+    if (canvas && targetNodeId) canvas.moveNode(targetNodeId, placement.origin)
     const relationId = useAppStore.getState().addPanelRelation(
       workspaceId,
       sourcePanelId,
       targetPanelId,
-      defaultPanelRelationKind(targetPanel),
+      defaultPanelRelationKind(sourcePanel, targetPanel),
       createMenu.sourceSide,
-      OPPOSITE_SIDE[createMenu.sourceSide],
+      placement.side,
     )
     if (relationId) {
-      const canvas = canvasApi?.getState()
       const sourceNodeId = canvas?.nodeForPanel(sourcePanelId)
-      const targetNodeId = canvas?.nodeForPanel(targetPanelId)
       if (canvas && sourceNodeId && targetNodeId) {
         canvas.selectNodes([sourceNodeId, targetNodeId])
         canvas.zoomToSelection()
@@ -195,8 +246,8 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
   const createMenuPosition = createMenu
     ? relationOverlayTarget
       ? {
-          top: createMenu.canvasPoint.y,
-          right: relationOverlayTarget.offsetWidth - createMenu.canvasPoint.x - CREATE_MENU_WIDTH,
+          top: createMenu.menuCanvasPoint.y,
+          right: relationOverlayTarget.offsetWidth - createMenu.menuCanvasPoint.x - CREATE_MENU_WIDTH,
         }
       : {
           top: createMenu.screenPoint.y,
@@ -209,6 +260,12 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
     drag.end,
     drag.sourceSide,
     drag.target?.side ?? OPPOSITE_SIDE[drag.sourceSide],
+  )
+  const createPreviewPath = createMenu && panelConnectionPathFromPoints(
+    createMenu.startCanvasPoint,
+    createMenu.canvasPoint,
+    createMenu.sourceSide,
+    OPPOSITE_SIDE[createMenu.sourceSide],
   )
 
   return (
@@ -274,6 +331,26 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
         </div>,
         document.body,
       )}
+      {createMenu && relationOverlayTarget && createPortal(
+        <svg
+          aria-hidden
+          data-panel-connection-create-preview
+          width="1"
+          height="1"
+          style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 999 }}
+        >
+          <path
+            d={createPreviewPath ?? ''}
+            fill="none"
+            stroke="var(--focus-blue)"
+            strokeWidth="2.25"
+            strokeLinecap="round"
+            strokeDasharray="6 5"
+            className="cate-panel-connection-active"
+          />
+        </svg>,
+        relationOverlayTarget,
+      )}
       {createMenu && relationOverlayTarget !== null && (
         <DockTabContextMenu
           open
@@ -283,6 +360,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
           onClose={closeCreateMenu}
           portalTarget={relationOverlayTarget}
           ariaLabel="New linked panel"
+          onConnectionPortPositionChange={updateCreatePortPosition}
         />
       )}
     </>

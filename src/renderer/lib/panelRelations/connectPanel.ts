@@ -1,8 +1,5 @@
 import {
-  PANEL_RELATION_DESCRIPTIONS,
-  PANEL_RELATION_LABELS,
-  isPanelRelationSourceAnchored,
-  panelRelationKindsForTarget,
+  panelRelationOptions,
   wouldCreatePanelRelationCycle,
   type PanelRelationKind,
 } from '../../../shared/panelRelations'
@@ -18,13 +15,6 @@ export async function connectPanelToExisting(
   const workspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
   const source = workspace?.panels[sourcePanelId]
   if (!workspace || !source) return null
-  if (!isPanelRelationSourceAnchored(sourcePanelId, workspace.panels, workspace.panelRelations ?? [])) {
-    await window.electronAPI.showContextMenu([{
-      label: 'Start this flow from an agent or terminal panel',
-      enabled: false,
-    }])
-    return null
-  }
 
   const targets = Object.values(workspace.panels).filter((panel) =>
     panel.id !== sourcePanelId
@@ -44,10 +34,10 @@ export async function connectPanelToExisting(
     : undefined
   if (!target) return null
 
-  const kinds = panelRelationKindsForTarget(target)
-  const meaningChoice = await window.electronAPI.showContextMenu(kinds.map((kind) => ({
-    id: `kind:${kind}`,
-    label: `${PANEL_RELATION_LABELS[kind]} — ${PANEL_RELATION_DESCRIPTIONS[kind]}`,
+  const options = panelRelationOptions(source, target)
+  const meaningChoice = await window.electronAPI.showContextMenu(options.map((option, index) => ({
+    id: `kind:${option.kind}`,
+    label: `${option.label} — ${option.description}${index === 0 ? ' · Recommended' : ''}`,
   })))
   if (!meaningChoice?.startsWith('kind:')) return null
 
