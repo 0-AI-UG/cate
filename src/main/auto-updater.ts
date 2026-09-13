@@ -39,6 +39,7 @@ import { createJsonStateFile } from './jsonStateFile'
 import { broadcastToAll } from './windowRegistry'
 import { UPDATE_STATUS, UPDATE_QUIT_AND_INSTALL, UPDATE_GET_STATUS, UPDATE_CHECK } from '../shared/ipc-channels'
 import type { UpdateStatus } from '../shared/electron-api'
+import { errorMessage } from '../shared/errorMessage'
 import {
   decideInstallState,
   normalizeUpdateRecord,
@@ -207,7 +208,7 @@ function runCheck(eligible: boolean): Promise<unknown> {
   ).catch((err) => {
     log.warn('[auto-updater] check failed: %O', err)
     if (lastStatus.state !== 'error') {
-      pushStatus({ state: 'error', version: availableVersion, message: err instanceof Error ? err.message : String(err) })
+      pushStatus({ state: 'error', version: availableVersion, message: errorMessage(err, 'Could not check for updates. Try again.') })
     }
     return null
   }).finally(() => { checkInFlight = null })
@@ -284,9 +285,10 @@ function wireUpdaterEvents(eligible: boolean): void {
   })
 
   autoUpdater.on('error', (err) => {
-    const message = err?.message || String(err)
+    const rawMessage = err?.message || String(err)
+    const message = errorMessage(err, 'Update failed. Try again.')
     log.error('[auto-updater] error: %O', err)
-    track('update_error', { message })
+    track('update_error', { message: rawMessage })
     pushStatus({ state: 'error', version: availableVersion, message })
     // If a known update failed (e.g. Squirrel.Mac "ditto: Couldn't read PKZip
     // signature" — a signing/staging failure, the classic trapped-user cause),

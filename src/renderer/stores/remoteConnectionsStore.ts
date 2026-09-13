@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { RemoteConnectSpec } from '../../shared/types'
 import type { RemoteRuntimeConnection } from '../../shared/runtimeConnection'
+import { errorMessage } from '../lib/errorMessage'
 
 interface RemoteConnectionsState {
   connections: RemoteRuntimeConnection[]
@@ -28,7 +29,7 @@ export const useRemoteConnectionsStore = create<RemoteConnectionsState>((set, ge
     const started = revision
     loading = window.electronAPI.remoteConnectionsList().then((connections) => {
       if (started === revision) set({ connections, loaded: true, error: null })
-    }).catch((err) => { if (started === revision) set({ error: err instanceof Error ? err.message : String(err) }) }).finally(() => { loading = null })
+    }).catch((err) => { if (started === revision) set({ error: errorMessage(err, 'Could not load remote connections.') }) }).finally(() => { loading = null })
     return loading
   },
   async save(spec, previousId) {

@@ -7,6 +7,7 @@ import { LoadingState } from '../ui/Spinner'
 import { getAgentLogo } from '../lib/agent/agentLogos'
 import { T3_AGENTS } from '../../shared/agents'
 import { agentProductCopy, providerUpdateFeedback } from './providerUpdateFeedback'
+import { errorMessage } from '../lib/errorMessage'
 
 const drivers: string[] = T3_AGENTS.map((agent) => agent.t3.driverId)
 const names: Record<string, string> = Object.fromEntries(T3_AGENTS.map((agent) => [agent.t3.driverId, agent.displayName]))
@@ -68,7 +69,7 @@ export function AgentProviderConfiguration({ workspaceId, cwd, onChanged, authen
         if (feedback.error) setError(feedback.message)
         else setMessage(feedback.message)
       }
-    } catch (cause) { setError(agentProductCopy(cause instanceof Error ? cause.message : 'Provider operation failed.')) }
+    } catch (cause) { setError(agentProductCopy(errorMessage(cause, 'Provider operation failed.'))) }
     finally { setBusy(false) }
   }, [cwd, workspaceId, onChanged])
   useEffect(() => { void operate('read') }, [operate])

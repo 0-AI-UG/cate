@@ -14,6 +14,7 @@ import log from '../lib/logger'
 import { BaseErrorBoundary } from './BaseErrorBoundary'
 import { Button } from './Button'
 import { PanelCenteredState } from './PanelCenteredState'
+import { errorMessage } from '../lib/errorMessage'
 
 interface Props {
   children?: React.ReactNode
@@ -41,13 +42,14 @@ export function PanelErrorBoundary({ children, panelType, panelId }: Props): Rea
       }
       fallback={(error, reset) => {
         const label = panelType ? `This ${panelType} panel` : 'This panel'
+        const message = errorMessage(error, 'The panel could not be rendered.')
         return (
           <PanelCenteredState
             className="select-none"
             icon={<Warning size={30} />}
             title={`${label} hit an error`}
-            description={<span className="block max-w-[28ch] truncate" title={error.message}>
-              {error.message}
+            description={<span className="block max-w-[28ch] truncate" title={message}>
+              {message}
             </span>}
             actions={<Button size="sm" onClick={reset}>
               <ArrowClockwise size={13} />

@@ -4,6 +4,7 @@ import { CLI_PERMISSIONS, type CliPermissionCell } from '../../shared/cliPermiss
 import { useSelectedWorkspace } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { SearchableBlock, SecondaryButton, SettingRow, Toggle } from './SettingsComponents'
+import { errorMessage } from '../lib/errorMessage'
 
 // -----------------------------------------------------------------------------
 // Permission matrix — surface (row) × access level (column), rendered straight
@@ -57,11 +58,11 @@ export function CliSettings() {
             ok: true,
             message: `Reinstalled for ${result.installedTargets ?? 0} agent target${result.installedTargets === 1 ? '' : 's'}.`,
           }
-        : { ok: false, message: result.error ?? 'Could not reinstall the skill.' })
+        : { ok: false, message: errorMessage(result.error, 'Could not reinstall the skill.') })
     } catch (error) {
       setReinstallStatus({
         ok: false,
-        message: error instanceof Error ? error.message : 'Could not reinstall the skill.',
+        message: errorMessage(error, 'Could not reinstall the skill.'),
       })
     } finally {
       setReinstalling(false)

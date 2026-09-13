@@ -5,6 +5,7 @@ import { useAppStore } from '../stores/appStore'
 import { inspectReviewAgents, launchReviewAgent, trackReviewAgent, unavailableReviewAgents } from '../lib/review/reviewAgent'
 import { useDismissableLayer } from '../ui/Popover'
 import { AgentPickerPopover, ReviewActionButton, type AgentChoice } from './ReviewControls'
+import { errorMessage } from '../lib/errorMessage'
 
 export function recordedReviewPrompt(records: AgentChangeRecord[], panelId?: string): string {
   return ['Review only the recorded agent edits below. These are historical reported edits, not the current working-tree diff. Other agents may have changed the checkout since capture. Do not attribute unrelated Git changes to this review. Report findings without editing files. Fragments and unavailable patches are incomplete evidence; do not invent missing context.',
@@ -29,7 +30,7 @@ export function RecordedReviewButton({ records, cwd, workspaceId, panelId, worki
     void inspectReviewAgents(cwd, workspaceId, root).then((options) => {
       if (!active) return
       setChoices(options); setAgentId(options.find((option) => option.ready)?.agent.id ?? null)
-    }).catch((cause) => { if (active) { setChoices(unavailableReviewAgents()); setError(String(cause)) } })
+    }).catch((cause) => { if (active) { setChoices(unavailableReviewAgents()); setError(errorMessage(cause, 'Could not inspect available agents')) } })
     return () => { active = false }
   }, [open, cwd, workspaceId])
   const launch = async () => {
@@ -41,7 +42,7 @@ export function RecordedReviewButton({ records, cwd, workspaceId, panelId, worki
       if (!launched) return
       trackReviewAgent(workspaceId, panelId, launched)
       setOpen(false)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not start review') }
+    } catch (cause) { setError(errorMessage(cause, 'Could not start review')) }
     finally { setBusy(false) }
   }
   return <div ref={content} className="relative">

@@ -56,6 +56,7 @@ import { SearchView } from '../sidebar/SearchView'
 import { useActivePanelStore } from '../lib/activePanel'
 import { confirmCloseDirtyPanels } from '../lib/confirmCloseDirty'
 import { placementForPanel } from '../lib/workspace/canvasAccess'
+import { errorMessage } from '../lib/errorMessage'
 
 // -----------------------------------------------------------------------------
 // Editor font
@@ -327,7 +328,7 @@ export default function EditorPanel({
       await window.electronAPI.shellShowInFolder(filePath, workspaceId)
     } else if (id === 'default') {
       const result = await window.electronAPI.shellOpenPath(filePath, workspaceId)
-      if (!result.ok) window.alert(result.error ?? 'Could not open this file in another app.')
+      if (!result.ok) window.alert(errorMessage(result.error, 'Could not open this file in another app.'))
     } else if (id === 'github') {
       const result = await window.electronAPI.shellOpenFileOnGitHub(filePath, workspaceId)
       if (!result.ok) window.alert('This file is not in a local GitHub repository with an origin remote.')
@@ -438,7 +439,7 @@ export default function EditorPanel({
         openFileAsPanel(workspaceId, path, undefined, placement)
       }
     } catch (error) {
-      window.alert(`Could not switch files: ${String(error)}`)
+      window.alert(`Could not switch files: ${errorMessage(error, 'The operation failed.')}`)
     } finally {
       switchingFile.current = false
     }
@@ -600,7 +601,7 @@ export default function EditorPanel({
             // the path as failed (blocks save) and surface a visible error.
             markLoadFailed(targetPath)
             setFileLoading(false)
-            setLoadError(String((err as Error)?.message ?? err))
+            setLoadError(errorMessage(err, 'Could not load this file.'))
           })
       }
     } else {
@@ -893,8 +894,8 @@ export default function EditorPanel({
           {openApps.map((application) => <button key={application.id} onClick={() => {
             openMenu.setOpen(false)
             if (filePath) void window.electronAPI.shellOpenPath(filePath, workspaceId, application.id).then((result) => {
-              if (!result.ok) window.alert(result.error)
-            }).catch((error) => window.alert(String(error)))
+              if (!result.ok) window.alert(errorMessage(result.error, 'Could not open this file.'))
+            }).catch((error) => window.alert(errorMessage(error, 'Could not open this file.')))
           }} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-primary hover:bg-hover">
             {application.icon ? <img src={application.icon} alt="" className="w-4 h-4 object-contain" /> : <ExternalLink size={16} />}{application.name}
           </button>)}
@@ -906,7 +907,7 @@ export default function EditorPanel({
           ] as const).map(([id, label, Icon]) => <button key={id} onClick={() => {
             openMenu.setOpen(false)
             openButtonRef.current?.focus()
-            void runOpenAction(id).catch((error) => window.alert(String(error)))
+            void runOpenAction(id).catch((error) => window.alert(errorMessage(error, 'Could not open this file.')))
           }} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-primary hover:bg-hover focus-visible:bg-hover"><Icon size={16} className="text-muted" />{label}</button>)}
         </div>
       </NodePopover>}
@@ -924,8 +925,8 @@ export default function EditorPanel({
         {!previewType && loadError && (
           <PanelCenteredState
             className="absolute inset-0 z-20 bg-surface-1 px-6"
-            title={/ENOENT|no such file/i.test(loadError) ? 'File not found in this worktree' : 'Couldn’t open this file'}
-            description={<span className="break-all text-secondary">{/ENOENT|no such file/i.test(loadError)
+            title={/ENOENT|no such file|no longer exists/i.test(loadError) ? 'File not found in this worktree' : 'Couldn’t open this file'}
+            description={<span className="break-all text-secondary">{/ENOENT|no such file|no longer exists/i.test(loadError)
               ? `${filePath ? toRelativePath(filePath, explorerRoot) : 'This file'} is not present here. Choose another worktree or open a file from Files.`
               : loadError}</span>}
           />

@@ -1,13 +1,20 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   defaultPanelRelationKind,
   wouldCreatePanelRelationCycle,
   type PanelConnectionSide,
 } from '../../shared/panelRelations'
+import { PANEL_DEFINITIONS } from '../../shared/panels'
+import type { PanelType, Point } from '../../shared/types'
+import { DockTabContextMenu, SPLIT_MENU_ITEMS } from '../docking/DockTabContextMenu'
+import { viewToCanvas } from '../lib/canvas/coordinates'
+import { createInteractivePanel } from '../lib/panels/createInteractivePanel'
 import { useAppStore } from '../stores/appStore'
+import { useOptionalCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { panelConnectionPathFromPoints } from './panelConnectionGeometry'
 import { useUIStore } from '../stores/uiStore'
+import { useCanvasRelationOverlayTarget } from './CanvasTopOverlayContext'
 
 const SIDES: PanelConnectionSide[] = ['top', 'right', 'bottom', 'left']
 const PORT_OFFSET = 12
@@ -31,6 +38,16 @@ interface DragState {
   target: SnapTarget | null
   canvasRoot: HTMLElement | null
 }
+
+interface CreateMenuState {
+  sourceSide: PanelConnectionSide
+  screenPoint: Point
+  canvasPoint: Point
+  canvasPanelId?: string
+}
+
+const CREATE_MENU_WIDTH = 220
+const CREATE_MENU_ITEMS = SPLIT_MENU_ITEMS.filter(({ type }) => PANEL_DEFINITIONS[type].canLiveOnCanvas)
 
 function portsForRect(rect: DOMRect): Port[] {
   return [
@@ -68,6 +85,9 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
   sourcePanelId: string
 }) {
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [createMenu, setCreateMenu] = useState<CreateMenuState | null>(null)
+  const canvasApi = useOptionalCanvasStoreApi()
+  const relationOverlayTarget = useCanvasRelationOverlayTarget()
 
   const begin = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return
@@ -77,6 +97,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
     const rect = event.currentTarget.getBoundingClientRect()
     const start = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
     const canvasRoot = event.currentTarget.closest<HTMLElement>('[data-canvas-container]')
+    setCreateMenu(null)
     setDrag({ sourceSide, start, end: start, target: null, canvasRoot })
   }
 
@@ -94,7 +115,23 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
       ? nearestTarget(sourcePanelId, x, y, current.canvasRoot) ?? current.target
       : null
     setDrag(null)
-    if (!current || !target) return
+    if (!current) return
+    if (!target) {
+      const rect = current.canvasRoot?.getBoundingClientRect()
+      const canvasState = canvasApi?.getState()
+      if (!rect || !canvasState) return
+      setCreateMenu({
+        sourceSide: current.sourceSide,
+        screenPoint: { x, y },
+        canvasPoint: viewToCanvas(
+          { x: x - rect.left, y: y - rect.top },
+          canvasState.zoomLevel,
+          canvasState.viewportOffset,
+        ),
+        canvasPanelId: current.canvasRoot?.dataset.canvasPanelId,
+      })
+      return
+    }
     const workspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
     const targetPanel = workspace?.panels[target.panelId]
     if (!workspace || !targetPanel) return
@@ -113,6 +150,59 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
     )
     if (relationId) useUIStore.getState().openPanelRelationEditor(relationId)
   }
+
+  const closeCreateMenu = useCallback(() => setCreateMenu(null), [])
+
+  const createAndConnect = useCallback((type: PanelType) => {
+    if (!createMenu) return
+    const workspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
+    const sourcePanel = workspace?.panels[sourcePanelId]
+    if (!workspace || !sourcePanel) return
+    const targetPanelId = createInteractivePanel(type, {
+      workspaceId,
+      canvasPoint: createMenu.canvasPoint,
+      placement: {
+        target: 'canvas',
+        canvasPanelId: createMenu.canvasPanelId,
+        focus: false,
+      },
+    }, sourcePanel)
+    if (!targetPanelId) return
+    const targetPanel = useAppStore.getState().workspaces
+      .find((item) => item.id === workspaceId)?.panels[targetPanelId]
+    if (!targetPanel) return
+    const relationId = useAppStore.getState().addPanelRelation(
+      workspaceId,
+      sourcePanelId,
+      targetPanelId,
+      defaultPanelRelationKind(targetPanel),
+      createMenu.sourceSide,
+      OPPOSITE_SIDE[createMenu.sourceSide],
+    )
+    if (relationId) {
+      const canvas = canvasApi?.getState()
+      const sourceNodeId = canvas?.nodeForPanel(sourcePanelId)
+      const targetNodeId = canvas?.nodeForPanel(targetPanelId)
+      if (canvas && sourceNodeId && targetNodeId) {
+        canvas.selectNodes([sourceNodeId, targetNodeId])
+        canvas.zoomToSelection()
+        canvas.focusNode(targetNodeId)
+      }
+      useUIStore.getState().openPanelRelationEditor(relationId)
+    }
+  }, [canvasApi, createMenu, sourcePanelId, workspaceId])
+
+  const createMenuPosition = createMenu
+    ? relationOverlayTarget
+      ? {
+          top: createMenu.canvasPoint.y,
+          right: relationOverlayTarget.offsetWidth - createMenu.canvasPoint.x - CREATE_MENU_WIDTH,
+        }
+      : {
+          top: createMenu.screenPoint.y,
+          right: Math.max(8, window.innerWidth - Math.max(8, createMenu.screenPoint.x) - CREATE_MENU_WIDTH),
+        }
+    : null
 
   const previewPath = drag && panelConnectionPathFromPoints(
     drag.start,
@@ -183,6 +273,17 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
           ))}
         </div>,
         document.body,
+      )}
+      {createMenu && relationOverlayTarget !== null && (
+        <DockTabContextMenu
+          open
+          position={createMenuPosition}
+          items={CREATE_MENU_ITEMS}
+          onPick={createAndConnect}
+          onClose={closeCreateMenu}
+          portalTarget={relationOverlayTarget}
+          ariaLabel="New linked panel"
+        />
       )}
     </>
   )

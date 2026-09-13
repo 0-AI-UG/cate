@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PanelRelationHandle } from './PanelRelationHandle'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
+import { CanvasStoreProvider } from '../stores/CanvasStoreContext'
+import { getOrCreateCanvasStoreForPanel, releaseCanvasStoreForPanel } from '../stores/canvasStore'
+import { CanvasRelationOverlayContext } from './CanvasTopOverlayContext'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -23,6 +26,7 @@ afterEach(() => {
   act(() => root.unmount())
   container.remove()
   document.querySelector('[data-test-target]')?.remove()
+  releaseCanvasStoreForPanel('canvas')
   useAppStore.setState(initialAppState, true)
   useUIStore.getState().openPanelRelationEditor(null)
 })
@@ -87,5 +91,87 @@ describe('PanelRelationHandle', () => {
     expect(useUIStore.getState().editingPanelRelationId).toBe(
       useAppStore.getState().workspaces[0].panelRelations?.[0].id,
     )
+  })
+
+  it('opens the panel picker in the relation portal and links the created panel', async () => {
+    useAppStore.setState({
+      selectedWorkspaceId: 'ws',
+      workspaces: [{
+        id: 'ws',
+        panels: {
+          canvas: { id: 'canvas', type: 'canvas', title: 'Canvas' },
+          source: { id: 'source', type: 'terminal', title: 'Terminal' },
+        },
+      }],
+    } as never)
+    const store = getOrCreateCanvasStoreForPanel('canvas')
+    const sourceNodeId = store.getState().addNode('source', 'terminal', { x: 0, y: 0 }, { width: 100, height: 100 })
+    store.setState({
+      zoomLevel: 2,
+      viewportOffset: { x: 20, y: 40 },
+      containerSize: { width: 800, height: 600 },
+    })
+    const canvas = document.createElement('div')
+    canvas.dataset.canvasContainer = ''
+    canvas.dataset.canvasPanelId = 'canvas'
+    canvas.getBoundingClientRect = () => ({
+      left: 100, right: 1300, top: 50, bottom: 650, width: 1200, height: 600,
+      x: 100, y: 50, toJSON: () => ({}),
+    })
+    const relationPortal = document.createElement('div')
+    Object.defineProperty(relationPortal, 'offsetWidth', { configurable: true, value: 1 })
+    canvas.appendChild(container)
+    document.body.append(canvas, relationPortal)
+
+    act(() => root.render(
+      <CanvasStoreProvider store={store}>
+        <CanvasRelationOverlayContext.Provider value={relationPortal}>
+          <PanelRelationHandle workspaceId="ws" sourcePanelId="source" />
+        </CanvasRelationOverlayContext.Provider>
+      </CanvasStoreProvider>,
+    ))
+    const source = container.querySelector<HTMLElement>('[data-panel-connection-handle="right"]')!
+    source.getBoundingClientRect = () => ({
+      left: 180, right: 196, top: 292, bottom: 308, width: 16, height: 16,
+      x: 180, y: 292, toJSON: () => ({}),
+    })
+    act(() => source.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })))
+    const overlay = document.body.querySelector<HTMLElement>('.cursor-crosshair')!
+    await act(async () => {
+      overlay.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: 1000, clientY: 350 }))
+    })
+
+    expect(container.querySelector('[aria-label="New linked panel"]')).toBeNull()
+    const menu = relationPortal.querySelector<HTMLElement>('[aria-label="New linked panel"]')!
+    expect(menu).not.toBeNull()
+    expect(menu.style.top).toBe('130px')
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).not.toContain('Canvas')
+
+    await act(async () => {
+      ;[...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+        .find((item) => item.textContent === 'Browser')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const workspace = useAppStore.getState().workspaces[0]
+    const browser = Object.values(workspace.panels).find((panel) => panel.type === 'browser')!
+    expect(workspace.panelRelations).toEqual([
+      expect.objectContaining({
+        fromPanelId: 'source', toPanelId: browser.id, kind: 'use', fromSide: 'right', toSide: 'left',
+      }),
+    ])
+    const browserNodeId = store.getState().nodeForPanel(browser.id)!
+    expect(store.getState().nodes[browserNodeId]?.origin).toEqual({ x: 440, y: 140 })
+    expect(store.getState().selection).toEqual([browserNodeId])
+    for (const nodeId of [sourceNodeId, browserNodeId]) {
+      const frame = store.getState().viewFrame(nodeId)!
+      expect(frame.origin.x).toBeGreaterThanOrEqual(0)
+      expect(frame.origin.y).toBeGreaterThanOrEqual(0)
+      expect(frame.origin.x + frame.size.width).toBeLessThanOrEqual(800)
+      expect(frame.origin.y + frame.size.height).toBeLessThanOrEqual(600)
+    }
+
+    relationPortal.remove()
+    canvas.remove()
   })
 })

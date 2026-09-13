@@ -7,6 +7,7 @@ import { PopoverSurface, useNodePopover } from '../ui/Popover'
 import { useUIStore } from '../stores/uiStore'
 import { openPullRequest } from './openPullRequest'
 import type { PullRequestItem, GitHubLoginState, PullRequestsResult } from '../../shared/pullRequests'
+import { errorMessage } from '../lib/errorMessage'
 
 export default function PullRequestsOverview({ initialRepository = '' }: { initialRepository?: string }) {
   const visible = useUIStore((s) => s.showPullRequests)
@@ -21,7 +22,7 @@ export default function PullRequestsOverview({ initialRepository = '' }: { initi
     setOpening(pr.id)
     setOpenError(null)
     try { await openPullRequest(pr) }
-    catch (error) { setOpenError(error instanceof Error ? error.message : 'Could not open pull request.') }
+    catch (error) { setOpenError(errorMessage(error, 'Could not open pull request.')) }
     finally { openingRef.current = false; setOpening(null) }
   }
   const [query, setQuery] = useState('')

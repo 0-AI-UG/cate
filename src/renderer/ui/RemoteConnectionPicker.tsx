@@ -5,6 +5,7 @@ import { remoteConnectSpecFromConnection, runtimeConnectionLabel, runtimeConnect
 import { useRemoteConnectionsStore } from '../stores/remoteConnectionsStore'
 import { useAppStore } from '../stores/appStore'
 import { useUIStore } from '../stores/uiStore'
+import { errorMessage } from '../lib/errorMessage'
 
 export function RemoteConnectionPicker({ workspaceId }: { workspaceId: string }) {
   const [pending, setPending] = useState<string | null>(null)
@@ -22,7 +23,7 @@ export function RemoteConnectionPicker({ workspaceId }: { workspaceId: string })
       if (!targetId) throw new Error('Close a workspace before opening another connection.')
       const ok = await app.connectRemoteWorkspace(targetId, remoteConnectSpecFromConnection(connection))
       if (!ok) throw new Error('Could not open this connection. Check its details in Settings.')
-    } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
+    } catch (err) { setError(errorMessage(err, 'Could not open this connection.')) }
     finally { setPending(null) }
   }
   return <div>

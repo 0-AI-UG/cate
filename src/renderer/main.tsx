@@ -7,6 +7,7 @@ import { initRendererSentry, captureRendererException } from './lib/sentry'
 import App from './App'
 import { subscribeToOsNotificationClicks } from './lib/notifications/osNotifications'
 import { installGestureLockWatchdog } from './lib/dom/gestureLockWatchdog'
+import { errorMessage } from './lib/errorMessage'
 import './styles/globals.css'
 import '@xterm/xterm/css/xterm.css'
 
@@ -56,11 +57,11 @@ class ErrorBoundary extends React.Component<
   }
   render() {
     if (this.state.error) {
+      const message = errorMessage(this.state.error, 'Cate could not render this window.')
       return (
         <div style={{ color: 'red', padding: 20, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
           <h2>Render Error</h2>
-          <p>{this.state.error.message}</p>
-          <pre>{this.state.error.stack}</pre>
+          <p>{message}</p>
           <button
             onClick={() => window.location.reload()}
             style={{ marginTop: 16, padding: '8px 16px', cursor: 'pointer', background: '#333', color: '#fff', border: '1px solid #666', borderRadius: 4 }}

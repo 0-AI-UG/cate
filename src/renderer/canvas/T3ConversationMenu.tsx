@@ -11,6 +11,7 @@ import { useAppStore } from '../stores/appStore'
 import { useCanvasStoreApi } from '../stores/CanvasStoreContext'
 import { inheritedWorktreeFromSelection, type InheritedWorktree } from '../lib/inheritWorktree'
 import type { T3Conversation } from '../../shared/t3Agent'
+import { errorMessage } from '../lib/errorMessage'
 
 export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, tooltipPlacement, menuSide, onOpenChange }: {
   canvasPanelId: string; workspaceId: string; rootPath: string
@@ -41,9 +42,9 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
     setLoading(true); setError(''); setThreads([])
     void window.electronAPI.agentHarnessListConversations({ workspaceId, cwd }).then((result) => {
       if (cancelled) return
-      if ('error' in result) setError(result.error)
+      if ('error' in result) setError(errorMessage(result.error, 'Could not load conversations.'))
       else setThreads(result.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
-    }).catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load conversations.') })
+    }).catch((cause) => { if (!cancelled) setError(errorMessage(cause, 'Could not load conversations.')) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [position, cwd, workspaceId])
@@ -58,10 +59,10 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
     setError('')
     try {
       const result = await window.electronAPI.agentHarnessDeleteConversation({ workspaceId, cwd, threadId: thread.id })
-      if ('error' in result) { setError(result.error); return }
+      if ('error' in result) { setError(errorMessage(result.error, 'Could not delete conversation.')); return }
       setThreads((current) => current.filter((item) => item.id !== thread.id))
       setConfirmDelete(null)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not delete conversation.') }
+    } catch (cause) { setError(errorMessage(cause, 'Could not delete conversation.')) }
     finally { setDeleting(null) }
   }
   const rename = async (thread: T3Conversation) => {
@@ -70,10 +71,10 @@ export function T3ConversationMenu({ canvasPanelId, workspaceId, rootPath, toolt
     try {
       const nextTitle = title.trim()
       const result = await window.electronAPI.agentHarnessRenameConversation({ workspaceId, cwd, threadId: thread.id, title: nextTitle })
-      if ('error' in result) { setError(result.error); return }
+      if ('error' in result) { setError(errorMessage(result.error, 'Could not rename conversation.')); return }
       setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, title: nextTitle } : item))
       setRenaming(null)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename conversation.') }
+    } catch (cause) { setError(errorMessage(cause, 'Could not rename conversation.')) }
     finally { setSaving(false) }
   }
   const filtered = threads.filter((thread) => thread.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))

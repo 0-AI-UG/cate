@@ -26,9 +26,10 @@ export interface DockTabContextMenuProps {
   onClose: () => void
   portalTarget?: HTMLElement | null
   anchorRef?: React.RefObject<HTMLButtonElement>
+  ariaLabel?: string
 }
 
-export function DockTabContextMenu({ open, position, items, onPick, onClose, anchorRef, portalTarget }: DockTabContextMenuProps) {
+export function DockTabContextMenu({ open, position, items, onPick, onClose, anchorRef, portalTarget, ariaLabel = 'New Tab' }: DockTabContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
@@ -49,7 +50,7 @@ export function DockTabContextMenu({ open, position, items, onPick, onClose, anc
     <div
       ref={menuRef}
       role="menu"
-      aria-label="New Tab"
+      aria-label={ariaLabel}
       className={`dock-new-tab-menu pointer-events-auto z-[1000] w-[220px] max-w-[calc(100vw-16px)] overflow-y-auto ${POPOVER_SURFACE} p-1.5 text-[13px]`}
       onKeyDown={(event) => {
         if (event.key === 'Escape' || event.key === 'Tab') { onClose(); event.stopPropagation(); return }

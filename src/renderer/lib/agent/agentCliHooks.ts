@@ -13,6 +13,7 @@ import {
   resolveAgentHookMode,
   type AgentHookConfig,
 } from '../../../shared/agentHookModes'
+import { errorMessage } from '../errorMessage'
 
 export interface AgentCliHookState {
   agent: AgentDef
@@ -48,7 +49,7 @@ export async function inspectAgentCliHooks(locator: string): Promise<AgentCliHoo
   } catch (cause) {
     throw new AgentCliHookError(
       'inspect-failed',
-      `Cate could not verify agent hooks in this worktree: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `Cate could not verify agent hooks in this worktree: ${errorMessage(cause)}`,
     )
   }
   const byId = new Map(live.map((state) => [state.agentId, state]))

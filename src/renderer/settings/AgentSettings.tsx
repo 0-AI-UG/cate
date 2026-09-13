@@ -8,6 +8,7 @@ import { AgentProviderConfiguration } from './AgentProviderConfiguration'
 import { AgentHooksSettings } from './AgentHooksSettings'
 import { AGENT_PROVIDER_LOGINS, type AgentProviderLogin } from './providerAuthentication'
 import type { AgentProviderAuthSession, AgentProviderStatus } from '../../shared/t3Agent'
+import { errorMessage } from '../lib/errorMessage'
 
 export function AgentSettings() {
   const [authProvider, setAuthProvider] = useState<AgentProviderLogin | null>(null)
@@ -63,10 +64,10 @@ export function AgentSettings() {
           ? { provider: openCodeTarget.trim() }
           : {}),
       })
-      if ('error' in result) setAuthError(result.error)
+      if ('error' in result) setAuthError(errorMessage(result.error, 'Sign-in could not be started.'))
       else setAuthSession(result)
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Sign-in could not be started.')
+      setAuthError(errorMessage(error, 'Sign-in could not be started.'))
     } finally {
       setAuthStarting(false)
     }
@@ -102,7 +103,7 @@ export function AgentSettings() {
     const poll = window.setInterval(() => {
       void window.electronAPI.agentProviderAuthGet({ id: authSession.id }).then((result) => {
         if (cancelled) return
-        if ('error' in result) setAuthError(result.error)
+        if ('error' in result) setAuthError(errorMessage(result.error, 'Could not check sign-in status.'))
         else setAuthSession(result)
       })
     }, 400)

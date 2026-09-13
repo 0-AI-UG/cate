@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { Check, CircleAlert, Download, RefreshCw, RotateCw, X } from 'lucide-react'
 import type { UpdateStatus } from '../../shared/electron-api'
 import { Tooltip } from './Tooltip'
+import { errorMessage } from '../lib/errorMessage'
 
 export function UpdateButton({ className = '' }: { className?: string }) {
   const [status, setStatus] = useState<UpdateStatus>({ state: 'idle', version: null })
@@ -21,7 +22,7 @@ export function UpdateButton({ className = '' }: { className?: string }) {
       setStatus(next)
       if (next.manual && next.state === 'up-to-date') setFeedback('You’re up to date')
       else if (next.manual && (next.state === 'error' || next.state === 'disabled')) {
-        setFeedback(next.message ?? 'Could not check for updates. Try again.')
+        setFeedback(errorMessage(next.message, 'Could not check for updates. Try again.'))
       } else setFeedback(null)
     })
     window.electronAPI.getUpdateStatus().then((next) => {
@@ -64,11 +65,14 @@ export function UpdateButton({ className = '' }: { className?: string }) {
   const ready = status.state === 'downloaded'
   const failed = status.state === 'error'
   const busy = checking || downloading
+  const statusMessage = status.state === 'error' || status.state === 'disabled'
+    ? errorMessage(status.message, status.state === 'error' ? 'Update failed' : 'Updates unavailable in this build')
+    : ''
   const label = checking ? 'Checking for updates…'
     : downloading ? `Downloading update (${status.percent ?? 0}%)`
       : ready ? `Restart to update${status.version ? ` to v${status.version}` : ''}`
-        : failed ? `${status.message ?? 'Update failed'}. Click to retry.`
-          : status.state === 'disabled' ? status.message ?? 'Updates unavailable in this build'
+        : failed ? `${statusMessage}. Click to retry.`
+          : status.state === 'disabled' ? statusMessage
             : 'Check for updates'
   const Icon = checking ? RefreshCw : downloading ? Download : ready ? RotateCw : failed ? CircleAlert
     : status.state === 'up-to-date' ? Check : RefreshCw
@@ -82,7 +86,7 @@ export function UpdateButton({ className = '' }: { className?: string }) {
       // A staged update reopens the existing Restart now / Install on quit dialog.
       await window.electronAPI.checkForUpdates()
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not check for updates. Try again.'
+      const message = errorMessage(error, 'Could not check for updates. Try again.')
       setStatus({ state: 'error', version: status.version, message })
       setFeedback(message)
     } finally {

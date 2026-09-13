@@ -3,6 +3,7 @@ import { GitCompareArrows as GitDiff } from 'lucide-react'
 import type { PanelState } from '../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { openAgentChanges } from '../lib/review/openAgentChanges'
+import { errorMessage } from '../lib/errorMessage'
 
 export function AgentChangesPill({ panel, workspaceId }: { panel: PanelState; workspaceId: string }) {
   const [busy, setBusy] = useState(false)
@@ -19,7 +20,7 @@ export function AgentChangesPill({ panel, workspaceId }: { panel: PanelState; wo
         if (!cwd) return
         setBusy(true); setError('')
         try { await openAgentChanges({ workspaceId, panelId: panel.id, cwd }) }
-        catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not open agent changes') }
+        catch (cause) { setError(errorMessage(cause, 'Could not open agent changes')) }
         finally { setBusy(false) }
       }}>
       <GitDiff size={11} />

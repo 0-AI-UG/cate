@@ -10,6 +10,7 @@ import { SourceControlView } from './SourceControlView'
 import PullRequestsOverview from '../pullRequests/PullRequestsOverview'
 import { githubRepositoryUrl } from '../../shared/gitRemote'
 import { pathDisplayName } from '../lib/fs/displayPath'
+import { errorMessage } from '../lib/errorMessage'
 
 type Remote = { name: string; fetchUrl: string; pushUrl: string }
 export default function RepositoryOverview() {
@@ -32,7 +33,7 @@ export default function RepositoryOverview() {
     setDiscovery(null); setError(null); setLoading(!!workspace?.rootPath)
     if (workspace?.rootPath) void window.electronAPI.gitFindRepos(workspace.rootPath, 3, workspace.id).then(paths => {
       if (live) setDiscovery({ workspaceId: workspace.id, rootPath: workspace.rootPath, paths })
-    }).catch(e => { if (live) setError(e instanceof Error ? e.message : 'Could not discover repositories.') }).finally(() => { if (live) setLoading(false) })
+    }).catch(e => { if (live) setError(errorMessage(e, 'Could not discover repositories.')) }).finally(() => { if (live) setLoading(false) })
     return () => { live = false }
   }, [visible, workspace?.id, workspace?.rootPath])
   useEffect(() => {
@@ -41,7 +42,7 @@ export default function RepositoryOverview() {
     setRemoteLoading(!!(visible && root && workspace))
     if (visible && root && workspace) void window.electronAPI.gitRemotes(root, workspace.id).then(value => {
       if (live) setRemoteResult({ workspaceId: workspace.id, root, items: value })
-    }).catch(e => { if (live) setError(e instanceof Error ? e.message : 'Could not read remotes.') }).finally(() => { if (live) setRemoteLoading(false) })
+    }).catch(e => { if (live) setError(errorMessage(e, 'Could not read remotes.')) }).finally(() => { if (live) setRemoteLoading(false) })
     return () => { live = false }
   }, [visible, root, workspace?.id])
   if (!visible) return null

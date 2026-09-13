@@ -236,11 +236,16 @@ describe('initAutoUpdater — event telemetry', () => {
     expect(h.sendEvent).not.toHaveBeenCalledWith('update_not_available', expect.anything())
   })
 
-  it('emits update_error and logs on error', async () => {
+  it('keeps raw updater diagnostics in telemetry but normalizes renderer status', async () => {
     await initAndGet()
-    h.autoUpdater.emit('error', new Error('boom'))
+    const raw = "Error invoking remote method 'updates:check': Error: connect ECONNREFUSED 127.0.0.1"
+    h.autoUpdater.emit('error', new Error(raw))
     expect(h.log.error).toHaveBeenCalled()
-    expect(h.sendEvent).toHaveBeenCalledWith('update_error', expect.objectContaining({ message: 'boom' }))
+    expect(h.sendEvent).toHaveBeenCalledWith('update_error', expect.objectContaining({ message: raw }))
+    expect(h.broadcastToAll).toHaveBeenCalledWith(UPDATE_STATUS, expect.objectContaining({
+      state: 'error',
+      message: 'Couldn’t reach the host. Check your connection and try again.',
+    }))
   })
 
   it('throttles download-progress to milestone buckets', async () => {
