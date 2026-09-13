@@ -44,8 +44,6 @@ interface CreateMenuState {
   startCanvasPoint: Point
   screenPoint: Point
   menuCanvasPoint: Point
-  canvasPoint: Point
-  canvasRoot: HTMLElement
   canvasPanelId?: string
 }
 
@@ -137,12 +135,6 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
           canvasState.zoomLevel,
           canvasState.viewportOffset,
         ),
-        canvasPoint: viewToCanvas(
-          { x: x - rect.left, y: y - rect.top },
-          canvasState.zoomLevel,
-          canvasState.viewportOffset,
-        ),
-        canvasRoot,
         canvasPanelId: canvasRoot.dataset.canvasPanelId,
       })
       return
@@ -169,45 +161,17 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
 
   const closeCreateMenu = useCallback(() => setCreateMenu(null), [])
 
-  const updateCreatePortPosition = useCallback((screenPoint: Point) => {
-    setCreateMenu((current) => {
-      if (!current) return null
-      const rect = current.canvasRoot.getBoundingClientRect()
-      const canvas = canvasApi?.getState()
-      if (!canvas) return current
-      const canvasPoint = viewToCanvas(
-        { x: screenPoint.x - rect.left, y: screenPoint.y - rect.top },
-        canvas.zoomLevel,
-        canvas.viewportOffset,
-      )
-      if (canvasPoint.x === current.canvasPoint.x && canvasPoint.y === current.canvasPoint.y) return current
-      return { ...current, canvasPoint }
-    })
-  }, [canvasApi])
-
   const createAndConnect = useCallback((type: PanelType) => {
     if (!createMenu) return
     const workspace = useAppStore.getState().workspaces.find((item) => item.id === workspaceId)
     const sourcePanel = workspace?.panels[sourcePanelId]
     if (!workspace || !sourcePanel) return
     const canvas = canvasApi?.getState()
-    const visibleOrigin = canvas && viewToCanvas(
-      { x: 0, y: 0 },
-      canvas.zoomLevel,
-      canvas.viewportOffset,
-    )
     const placement = panelPlacementAtConnectionEnd(
-      createMenu.canvasPoint,
+      createMenu.menuCanvasPoint,
       PANEL_DEFINITIONS[type].defaultSize,
-      Object.values(canvas?.nodes ?? {}).map((node) => ({ origin: node.origin, size: node.size })),
+      [],
       OPPOSITE_SIDE[createMenu.sourceSide],
-      canvas && visibleOrigin ? {
-        origin: visibleOrigin,
-        size: {
-          width: canvas.containerSize.width / canvas.zoomLevel,
-          height: canvas.containerSize.height / canvas.zoomLevel,
-        },
-      } : undefined,
     )
     const targetPanelId = createInteractivePanel(type, {
       workspaceId,
@@ -247,7 +211,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
     ? relationOverlayTarget
       ? {
           top: createMenu.menuCanvasPoint.y,
-          right: relationOverlayTarget.offsetWidth - createMenu.menuCanvasPoint.x - CREATE_MENU_WIDTH,
+          right: relationOverlayTarget.offsetWidth - createMenu.menuCanvasPoint.x - CREATE_MENU_WIDTH - PORT_OFFSET,
         }
       : {
           top: createMenu.screenPoint.y,
@@ -263,7 +227,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
   )
   const createPreviewPath = createMenu && panelConnectionPathFromPoints(
     createMenu.startCanvasPoint,
-    createMenu.canvasPoint,
+    createMenu.menuCanvasPoint,
     createMenu.sourceSide,
     OPPOSITE_SIDE[createMenu.sourceSide],
   )
@@ -289,9 +253,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
             className={`group pointer-events-auto absolute ${position} z-20 grid h-5 w-5 place-items-center rounded-full border-0 bg-transparent p-0 outline-none`}
             style={{ cursor: 'crosshair' }}
           >
-            <span className="grid h-2 w-2 place-items-center rounded-full border border-focus bg-surface-3 shadow-sm transition-[transform,background-color,box-shadow] duration-150 ease-out group-hover:scale-125 group-hover:bg-focus-blue group-hover:shadow-md group-focus-visible:scale-125 group-focus-visible:ring-2 group-focus-visible:ring-focus-blue/30 motion-reduce:transition-none">
-              <span className="h-0.5 w-0.5 rounded-full bg-focus-blue transition-colors duration-150 group-hover:bg-white" />
-            </span>
+            <span className="h-2 w-2 rounded-full border border-focus bg-focus-blue shadow-sm transition-[transform,box-shadow,filter] duration-150 ease-out group-hover:scale-125 group-hover:brightness-110 group-hover:shadow-md group-focus-visible:scale-125 group-focus-visible:ring-2 group-focus-visible:ring-focus-blue/30 motion-reduce:transition-none" />
           </button>
         )
       })}
@@ -320,7 +282,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
                 left: port.x,
                 top: port.y,
                 opacity: port.side === drag.target?.side ? 1 : 0.55,
-                backgroundColor: port.side === drag.target?.side ? 'var(--focus-blue)' : 'var(--surface-3)',
+                backgroundColor: 'var(--focus-blue)',
                 boxShadow: port.side === drag.target?.side
                   ? '0 0 0 4px color-mix(in srgb, var(--focus-blue) 18%, transparent)'
                   : 'none',
@@ -360,7 +322,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
           onClose={closeCreateMenu}
           portalTarget={relationOverlayTarget}
           ariaLabel="New linked panel"
-          onConnectionPortPositionChange={updateCreatePortPosition}
+          showConnectionPort
         />
       )}
     </>

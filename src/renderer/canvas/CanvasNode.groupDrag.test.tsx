@@ -232,11 +232,11 @@ it('promotes one tab from a canvas node and restores the full mini-dock while un
     type: 'tab', stackId: 'stack-editor', index: 0,
   }))
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Move panel into dock"]')!.click())
-  expect(outerDock.getState().presentation).not.toBeNull()
+  expect(outerDock.getState().presentations).toHaveLength(1)
   act(() => nodeDock.getState().dockPanel('changed-source', 'center', {
     type: 'tab', stackId: 'stack-editor',
   }))
-  expect(outerDock.getState().presentation).toBeNull()
+  expect(outerDock.getState().presentations).toHaveLength(0)
   unsubscribe()
 })
 
@@ -278,6 +278,49 @@ it('removes and restores a singleton canvas node when its panel is promoted', ()
     size: { width: 400, height: 300 },
     dockLayout: { panelIds: ['editor'] },
   })
+})
+
+it('promotes two panels for the same file and restores each canvas node independently', () => {
+  const wsId = useAppStore.getState().addWorkspace('WS', '/tmp/ws', 'ws-present-two')
+  useAppStore.getState().addPanel(wsId, { id: 'canvas', type: 'canvas', title: 'Canvas', isDirty: false })
+  useAppStore.getState().addPanel(wsId, { id: 'editor-a', type: 'editor', title: 'same.ts', filePath: '/tmp/ws/same.ts', isDirty: false })
+  useAppStore.getState().addPanel(wsId, { id: 'editor-b', type: 'editor', title: 'same.ts', filePath: '/tmp/ws/same.ts', isDirty: false })
+  const canvas = freshCanvasStore()
+  addNode(canvas, 'node-a', 'editor-a', { x: 100, y: 200 }, { width: 400, height: 300 })
+  addNode(canvas, 'node-b', 'editor-b', { x: 600, y: 200 }, { width: 400, height: 300 })
+  const dockA = tabsDockStore('editor-a')
+  const dockB = tabsDockStore('editor-b')
+  const outerDock = createDockStore()
+  outerDock.getState().dockPanel('canvas', 'center')
+  const canvasLocation = outerDock.getState().getPanelLocation('canvas')!
+  if (canvasLocation.type !== 'dock') throw new Error('Expected dock location')
+
+  act(() => root.render(
+    <CanvasStoreProvider store={canvas}>
+      <CanvasNode nodeId="node-a" canvasPanelId="canvas" isFocused dockStoreApi={dockA} outerDockStoreApi={outerDock} renderPanel={() => <div />} />
+      <CanvasNode nodeId="node-b" canvasPanelId="canvas" isFocused dockStoreApi={dockB} outerDockStoreApi={outerDock} renderPanel={() => <div />} />
+    </CanvasStoreProvider>,
+  ))
+
+  act(() => container.querySelectorAll<HTMLButtonElement>('[aria-label="Move panel into dock"]')[0].click())
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Move panel into dock"]')!.click())
+
+  expect(outerDock.getState().zones.center.layout).toMatchObject({
+    type: 'tabs', panelIds: ['canvas', 'editor-a', 'editor-b'], activeIndex: 2,
+  })
+  expect(outerDock.getState().presentations.map((presentation) => presentation.panelId)).toEqual([
+    'editor-a',
+    'editor-b',
+  ])
+
+  act(() => { outerDock.getState().restorePresentation(canvasLocation.stackId, 'editor-b') })
+  expect(canvas.getState().nodes['node-b'].dockLayout).toMatchObject({ panelIds: ['editor-b'] })
+  expect(outerDock.getState().presentations.map((presentation) => presentation.panelId)).toEqual(['editor-a'])
+
+  act(() => { outerDock.getState().restorePresentation(canvasLocation.stackId, 'editor-a') })
+  expect(canvas.getState().nodes['node-a'].dockLayout).toMatchObject({ panelIds: ['editor-a'] })
+  expect(outerDock.getState().zones.center.layout).toMatchObject({ panelIds: ['canvas'] })
+  expect(outerDock.getState().presentations).toHaveLength(0)
 })
 
 describe('CanvasNode — group drag from the title bar', () => {

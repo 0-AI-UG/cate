@@ -153,7 +153,7 @@ export async function commitDrop(
 // Helpers
 // -----------------------------------------------------------------------------
 
-/** Add a panel as a node on a canvas, then size + focus it. Shared by the
+/** Add a panel as a node on a canvas at the user's drop position, then focus it. Shared by the
  *  same-window `canvas-add` commit and the cross-window remote-drop handler so
  *  both place panels identically. */
 export function placeNodeOnCanvas(
@@ -164,7 +164,9 @@ export function placeNodeOnCanvas(
   size: Size,
 ): void {
   const newNodeId = canvasStoreApi.getState().addNode(panelId, panelType, origin, size)
-  canvasStoreApi.getState().resizeNode(newNodeId, size)
+  // addNode auto-places positioned creates away from existing nodes. A direct
+  // drop must preserve the user's chosen position, including intentional overlap.
+  canvasStoreApi.getState().resizeNode(newNodeId, size, origin)
   canvasStoreApi.getState().focusNode(newNodeId)
 }
 

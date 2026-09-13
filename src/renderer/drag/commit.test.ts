@@ -190,7 +190,7 @@ describe('commitDrop — canvas-reposition', () => {
 // -----------------------------------------------------------------------------
 
 describe('commitDrop — canvas-add from dock-tab', () => {
-  it('undocks from source, then addNode + resizeNode + focusNode on target', async () => {
+  it('undocks from source, then preserves the exact drop origin on target', async () => {
     const dock = createMockDockStore()
     const canvas = createMockCanvasStore()
     const source: DragSource = {
@@ -215,6 +215,7 @@ describe('commitDrop — canvas-add from dock-tab', () => {
     expect(canvas.state.resizeNode).toHaveBeenCalledWith(
       'node-from-panel-1',
       { width: 300, height: 200 },
+      { x: 10, y: 20 },
     )
     expect(canvas.state.focusNode).toHaveBeenCalledWith('node-from-panel-1')
     expect(ctx.onRemovedFromCanvas).not.toHaveBeenCalled()

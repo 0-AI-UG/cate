@@ -96,7 +96,7 @@ describe('dock presentation', () => {
     const { store, stackId } = fixture()
     store.getState().mergeSplitToStack(stackId)
     store.getState().dockPanel('new', 'center', { type: 'tab', stackId })
-    expect(store.getState().presentation).toBeNull()
+    expect(store.getState().presentations).toHaveLength(0)
     expect(store.getState().canRestorePresentation(stackId)).toBe(false)
     expect(store.getState().restorePresentation(stackId)).toBe(false)
     expect(store.getState().getPanelLocation('new')).toBeDefined()
@@ -119,7 +119,7 @@ describe('dock presentation', () => {
     })
 
     store.getState().undockPanel('promoted')
-    expect(store.getState().presentation).toBeNull()
+    expect(store.getState().presentations).toHaveLength(0)
     store.getState().dockPanel('promoted', 'right')
     store.getState().dockPanel('promoted', 'center', { type: 'tab', stackId: location.stackId })
     expect(store.getState().canRestorePresentation(location.stackId)).toBe(false)
@@ -145,7 +145,7 @@ describe('dock presentation', () => {
       stackId: location.stackId,
       edge: 'right',
     })
-    expect(store.getState().presentation).toBeNull()
+    expect(store.getState().presentations).toHaveLength(0)
     expect(store.getState().zones.center.layout?.type).toBe('split')
   })
 
@@ -159,34 +159,34 @@ describe('dock presentation', () => {
   it.each(safeWhilePresented)('keeps restore after %s', (_label, mutate) => {
     const current = promotedFixture()
     mutate(current)
-    expect(current.store.getState().presentation).not.toBeNull()
+    expect(current.store.getState().presentations).toHaveLength(1)
     expect(current.store.getState().canRestorePresentation(current.stackId)).toBe(true)
   })
 
   it.each(invalidatingWhilePresented)('permanently discards restore after %s', (_label, mutate) => {
     const current = promotedFixture()
     mutate(current)
-    expect(current.store.getState().presentation).toBeNull()
+    expect(current.store.getState().presentations).toHaveLength(0)
     expect(current.store.getState().canRestorePresentation(current.stackId)).toBe(false)
   })
 
   it('discards immediately when the external canvas source is no longer restorable', () => {
     const current = promotedFixture()
-    const presentation = current.store.getState().presentation!
+    const presentation = current.store.getState().presentations[0]
     current.store.getState().discardPresentation()
     current.store.getState().beginPresentation({
       ...presentation,
       canRestoreExternal: () => false,
     })
-    expect(current.store.getState().presentation).toBeNull()
+    expect(current.store.getState().presentations).toHaveLength(0)
   })
 
   it('disposes external invalidation tracking exactly once', () => {
     const current = promotedFixture()
-    const presentation = current.store.getState().presentation!
+    const presentation = current.store.getState().presentations[0]
     let disposals = 0
     current.store.setState({
-      presentation: { ...presentation, dispose: () => { disposals += 1 } },
+      presentations: [{ ...presentation, dispose: () => { disposals += 1 } }],
     })
     current.store.getState().undockPanel('promoted')
     expect(disposals).toBe(1)
@@ -195,55 +195,55 @@ describe('dock presentation', () => {
   it('discards and disposes presentation state when a snapshot is restored', () => {
     const current = promotedFixture()
     const snapshot = current.store.getState().getSnapshot()
-    const presentation = current.store.getState().presentation!
+    const presentation = current.store.getState().presentations[0]
     let disposals = 0
     current.store.setState({
-      presentation: { ...presentation, dispose: () => { disposals += 1 } },
+      presentations: [{ ...presentation, dispose: () => { disposals += 1 } }],
     })
     current.store.getState().restoreSnapshot(snapshot)
-    expect(current.store.getState().presentation).toBeNull()
+    expect(current.store.getState().presentations).toHaveLength(0)
     expect(disposals).toBe(1)
   })
 
   it('keeps the transaction when restore is requested by the wrong stack', () => {
     const current = promotedFixture()
     expect(current.store.getState().restorePresentation(current.peerStackId)).toBe(false)
-    expect(current.store.getState().presentation).not.toBeNull()
+    expect(current.store.getState().presentations).toHaveLength(1)
   })
 
   it('runs external restore and disposes tracking exactly once on valid restore', () => {
     const current = promotedFixture()
-    const presentation = current.store.getState().presentation!
+    const presentation = current.store.getState().presentations[0]
     let restorations = 0
     let disposals = 0
     current.store.setState({
-      presentation: {
+      presentations: [{
         ...presentation,
         restoreExternal: () => { restorations += 1 },
         dispose: () => { disposals += 1 },
-      },
+      }],
     })
     expect(current.store.getState().restorePresentation(current.stackId)).toBe(true)
     expect(restorations).toBe(1)
     expect(disposals).toBe(1)
-    expect(current.store.getState().presentation).toBeNull()
+    expect(current.store.getState().presentations).toHaveLength(0)
   })
 
   it('disposes tracking on explicit discard', () => {
     const current = promotedFixture()
-    const presentation = current.store.getState().presentation!
+    const presentation = current.store.getState().presentations[0]
     let disposals = 0
     current.store.setState({
-      presentation: { ...presentation, dispose: () => { disposals += 1 } },
+      presentations: [{ ...presentation, dispose: () => { disposals += 1 } }],
     })
     current.store.getState().discardPresentation()
     expect(disposals).toBe(1)
-    expect(current.store.getState().presentation).toBeNull()
+    expect(current.store.getState().presentations).toHaveLength(0)
   })
 
   it('does not replace or nest an active presentation', () => {
     const current = promotedFixture()
-    const presentation = current.store.getState().presentation
+    const presentations = current.store.getState().presentations
     const layout = current.store.getState().zones.center.layout
     current.store.getState().mergeSplitToStack(current.peerStackId)
     current.store.getState().beginPresentation({
@@ -252,7 +252,7 @@ describe('dock presentation', () => {
       restoreLayout: layout!,
       expectedLayout: layout!,
     })
-    expect(current.store.getState().presentation).toBe(presentation)
+    expect(current.store.getState().presentations).toBe(presentations)
     expect(current.store.getState().zones.center.layout).toBe(layout)
   })
 })

@@ -94,7 +94,7 @@ describe('merged dock presentation rule matrix', () => {
   it.each(invalidAfterMerge)('is permanently invalidated by %s', (_label, action) => {
     const fixture = mergedFixture()
     action(fixture)
-    expect(fixture.store.getState().presentation).toBeNull()
+    expect(fixture.store.getState().presentations).toHaveLength(0)
     expect(fixture.store.getState().restorePresentation(fixture.stackId)).toBe(false)
   })
 })

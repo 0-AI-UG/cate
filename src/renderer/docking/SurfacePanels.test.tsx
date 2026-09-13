@@ -304,7 +304,7 @@ it('discards restore after changing the merged layout', () => {
   act(() => (host.querySelector('[aria-label="Split Right"]') as HTMLButtonElement).click())
   act(() => (host.querySelector('[aria-label="Merge splits into tabs"]') as HTMLButtonElement).click())
   act(() => (host.querySelector('[aria-label="Split Right"]') as HTMLButtonElement).click())
-  expect(dock.getState().presentation).toBeNull()
+  expect(dock.getState().presentations).toHaveLength(0)
   expect(host.querySelector('[aria-label="Restore previous layout"]')).toBeNull()
 })
 

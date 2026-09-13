@@ -168,7 +168,7 @@ function collectPanelIdsInTree(node: DockLayoutNode): string[] {
 // -----------------------------------------------------------------------------
 
 interface DockStoreState {
-  presentation: DockPresentation | null
+  presentations: DockPresentation[]
   zones: WindowDockState
 }
 
@@ -191,9 +191,9 @@ export interface DockPresentation {
 interface DockStoreActions {
   mergeSplitToStack: (stackId: string) => void
   beginPresentation: (presentation: DockPresentation) => void
-  discardPresentation: () => void
-  canRestorePresentation: (stackId: string) => boolean
-  restorePresentation: (stackId: string) => boolean
+  discardPresentation: (panelId?: string) => void
+  canRestorePresentation: (stackId: string, panelId?: string) => boolean
+  restorePresentation: (stackId: string, panelId?: string) => boolean
   // Zone visibility
   toggleZone: (position: DockZonePosition) => void
   setZoneSize: (position: DockZonePosition, size: number) => void
@@ -247,10 +247,10 @@ function samePresentationLayout(a: DockLayoutNode | null, b: DockLayoutNode | nu
 export function createDockStore(initialState?: DockStateSnapshot) {
   const store = create<DockStore>((set, get) => ({
   zones: initialState?.zones ?? createDefaultDockState(),
-  presentation: null,
+  presentations: [],
   mergeSplitToStack(stackId) {
     set((state) => {
-      if (state.presentation) return state
+      if (state.presentations.length) return state
       const zone = findZoneForStack(state.zones, stackId)
       if (!zone) return state
       const layout = state.zones[zone].layout
@@ -270,44 +270,72 @@ export function createDockStore(initialState?: DockStateSnapshot) {
           ...state.zones,
           [zone]: { ...state.zones[zone], layout: merged },
         },
-        presentation: {
+        presentations: [{
           stackId: merged.id,
           zone,
           restoreLayout: layout,
           expectedLayout: merged,
-        },
+        }],
       }
     })
   },
   beginPresentation(presentation) {
-    set((state) => state.presentation ? state : { presentation })
+    set((state) => {
+      if (state.presentations.some((current) => !current.panelId || !presentation.panelId)) return state
+      if (state.presentations.some((current) => current.panelId === presentation.panelId)) return state
+      return { presentations: [...state.presentations, presentation] }
+    })
   },
-  discardPresentation() {
-    get().presentation?.dispose?.()
-    set({ presentation: null })
+  discardPresentation(panelId) {
+    const discarded = panelId
+      ? get().presentations.filter((presentation) => presentation.panelId === panelId)
+      : get().presentations
+    discarded.forEach((presentation) => presentation.dispose?.())
+    set((state) => ({
+      presentations: panelId
+        ? state.presentations.filter((presentation) => presentation.panelId !== panelId)
+        : [],
+    }))
   },
-  canRestorePresentation(stackId) {
+  canRestorePresentation(stackId, panelId) {
     const state = get()
-    const presentation = state.presentation
-    if (!presentation || presentation.stackId !== stackId) return false
+    const presentation = state.presentations.find((candidate) =>
+      candidate.stackId === stackId && (panelId === undefined || candidate.panelId === panelId),
+    )
+    if (!presentation) return false
     return samePresentationLayout(state.zones[presentation.zone].layout, presentation.expectedLayout)
       && (presentation.canRestoreExternal?.() ?? true)
   },
-  restorePresentation(stackId) {
-    if (!get().canRestorePresentation(stackId)) return false
-    const presentation = get().presentation!
+  restorePresentation(stackId, panelId) {
+    if (!get().canRestorePresentation(stackId, panelId)) return false
+    const presentation = get().presentations.find((candidate) =>
+      candidate.stackId === stackId && (panelId === undefined || candidate.panelId === panelId),
+    )!
     presentation.dispose?.()
     presentation.restoreExternal?.()
-    set((state) => ({
-      zones: {
-        ...state.zones,
-        [presentation.zone]: {
-          ...state.zones[presentation.zone],
-          layout: presentation.restoreLayout,
+    set((state) => {
+      const currentLayout = state.zones[presentation.zone].layout
+      if (!currentLayout) return state
+      return {
+        zones: {
+          ...state.zones,
+          [presentation.zone]: {
+            ...state.zones[presentation.zone],
+            layout: presentation.panelId
+              ? removePanelFromTree(currentLayout, presentation.panelId)
+              : presentation.restoreLayout,
+          },
         },
-      },
-      presentation: null,
-    }))
+        presentations: state.presentations
+          .filter((candidate) => candidate !== presentation)
+          .map((candidate) => candidate.panelId && candidate.zone === presentation.zone
+            ? {
+                ...candidate,
+                expectedLayout: removePanelFromTree(currentLayout, presentation.panelId!)!,
+              }
+            : candidate),
+      }
+    })
     return true
   },
 
@@ -319,7 +347,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         ...state.zones,
         [position]: { ...state.zones[position], visible: !state.zones[position].visible },
       }
-      return { zones, presentation: state.presentation }
+      return { zones, presentations: state.presentations }
     })
   },
 
@@ -447,7 +475,19 @@ export function createDockStore(initialState?: DockStateSnapshot) {
       }
 
       zones[zone] = { ...zoneState, visible: activate ? true : zoneState.visible, layout: newLayout }
-      return { zones, presentation: state.presentation }
+      const composedPromotion = state.presentations.some((presentation) =>
+        presentation.panelId === panelId
+        && presentation.zone === zone
+        && target?.type === 'tab'
+        && presentation.stackId === target?.stackId,
+      )
+      const presentations = composedPromotion && newLayout
+        ? state.presentations.map((presentation) =>
+            presentation.panelId && presentation.zone === zone
+              ? { ...presentation, expectedLayout: newLayout }
+              : presentation)
+        : state.presentations
+      return { zones, presentations }
     })
   },
 
@@ -473,7 +513,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
           // Auto-hide zone if it's now empty (never hide center)
           visible: zone === 'center' ? true : (newLayout !== null ? zoneState.visible : false),
         },
-      }, presentation: state.presentation }
+      }, presentations: state.presentations }
     })
   },
 
@@ -536,7 +576,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         }
       }
 
-      return { zones, presentation: state.presentation }
+      return { zones, presentations: state.presentations }
     })
   },
 
@@ -553,7 +593,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
             ...zoneState,
             layout: replaceInTree(zoneState.layout, stackId, updated),
           }
-          return { zones, presentation: state.presentation }
+          return { zones, presentations: state.presentations }
         }
       }
       return state
@@ -619,7 +659,7 @@ export function createDockStore(initialState?: DockStateSnapshot) {
         break
       }
 
-      return { zones, presentation: state.presentation }
+      return { zones, presentations: state.presentations }
     })
   },
 
@@ -640,10 +680,10 @@ export function createDockStore(initialState?: DockStateSnapshot) {
   },
 
   restoreSnapshot(snapshot) {
-    get().presentation?.dispose?.()
+    get().presentations.forEach((presentation) => presentation.dispose?.())
     set({
       zones: snapshot.zones,
-      presentation: null,
+      presentations: [],
     })
   },
   }))
@@ -653,14 +693,15 @@ export function createDockStore(initialState?: DockStateSnapshot) {
   // moving or splitting a panel promoted from a canvas must not allow Restore
   // to reappear if the user later happens to recreate the old topology.
   store.subscribe((state) => {
-    const presentation = state.presentation
-    if (!presentation) return
-    const outerUnchanged = samePresentationLayout(
-      state.zones[presentation.zone].layout,
-      presentation.expectedLayout,
-    )
-    if (!outerUnchanged || !(presentation.canRestoreExternal?.() ?? true)) {
-      state.discardPresentation()
+    for (const presentation of state.presentations) {
+      const outerUnchanged = samePresentationLayout(
+        state.zones[presentation.zone].layout,
+        presentation.expectedLayout,
+      )
+      if (!outerUnchanged || !(presentation.canRestoreExternal?.() ?? true)) {
+        state.discardPresentation(presentation.panelId)
+        return
+      }
     }
   })
 
