@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-13
+
+Cate 2.0 refreshes the canvas workspace, brings repository and agent workflows together, and makes panels, sessions, remote workspaces, and embedded surfaces more reliable. This stable release includes the improvements from the 2.0 beta series.
+
+### Added
+
+- **Panel relationships**: connect panels from the canvas, choose how related context is shared with agents, and preserve those connections across sessions, docking, and panel transfers.
+- **Repository overview and branch maintenance**: browse Source Control and Pull Requests in a shared application overlay, refresh repository state, and clean up branches while keeping checkout-specific changes and commit drafts.
+- **Screenshot and usage history**: inspect agent usage, revisit recent screenshots, and annotate captures with freehand marks or comment callouts.
+- **Browser downloads**: download page assets through browser automation and review them from the browser panel.
+- **Dock split controls**: maximize individual splits, reveal newly created splits, and keep overflowing layouts usable with minimum panel sizes and scrolling.
+
+### Changed
+
+- **Refreshed workspace interface**: updated icons, panel styling, settings navigation, workspace controls, application menus, and distinct worktree colors.
+- **Editor navigation and previews**: Files and Search now live inside editor panels, with unified image, PDF, and DOCX previews and content-based format detection.
+- **Canvas and dock workflows**: refined multi-node dragging, nested canvases, resizing, tab presentation, panel connections, linked-panel placement, and dock layout continuity.
+- **Remote and browser workflows**: streamlined remote workspace startup and restoration while keeping browser surfaces aligned and available to background automation.
+- **Agent reviews**: unified agent change tracking and embedded T3 review flows, scoped change indicators to the active review, and improved user-facing errors.
+
+### Fixed
+
+- **Editor and panel transfers**: preserve unsaved content and search state across windows, validate saves against disk changes, recover interrupted handoffs, and restore linked panels to valid placements.
+- **Session persistence**: strengthen autosave, shutdown acknowledgements, external JSON reloads, and local recovery for remote workspaces and detached windows.
+- **Canvas and browser responsiveness**: reduce off-screen and compositor work, keep webviews and agent surfaces aligned during canvas navigation, and correct display-scale territory placement.
+- **Agent reliability**: prevent provider process leaks, keep agents running through approved commands, preserve review comments, and improve conversation recovery and status reporting.
+- **Application and platform reliability**: restore keep-awake behavior and macOS signing, improve Linux runtime compatibility, and correct update feedback, settings reset, and repository controls.
+
+### Removed
+
+- **Saved layouts**: removed the saved-layout feature.
+- **Standalone repository panels**: Source Control and Pull Requests now use the repository overview; obsolete saved panel records are pruned and commit drafts migrate to the overview.
+
 ## [2.0.0-beta.3] - 2026-09-12
 
 This beta adds visual relationships between panels and new branch maintenance controls while improving docked panels, embedded agents, and canvas alignment.
