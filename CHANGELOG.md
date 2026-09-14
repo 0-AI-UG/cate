@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-14
+
+This patch release improves panel placement and browser-agent cursor styling while fixing blank rows in the files sidebar.
+
+### Changed
+
+- **Panel placement**: align newly placed panels exactly with nearby edges and use more compact spacing.
+- **Browser-agent cursor**: refresh the automation cursor with rounded, layered styling.
+
+### Fixed
+
+- **Files sidebar scrolling**: prevent blank rows from appearing while scrolling through files.
+
 ## [2.0.0] - 2026-09-13
 
 Cate 2.0 refreshes the canvas workspace, brings repository and agent workflows together, and makes panels, sessions, remote workspaces, and embedded surfaces more reliable. This stable release includes the improvements from the 2.0 beta series.
