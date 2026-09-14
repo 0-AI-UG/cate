@@ -5,6 +5,29 @@ import { expect, it } from 'vitest'
 
 import { VirtualFileRows, type VirtualFileRowsHandle } from './VirtualFileRows'
 
+it('tracks scrolling when the parent scroll container mounts with the rows', () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const scroll = createRef<HTMLDivElement>()
+  const paths = Array.from({ length: 200 }, (_, i) => `file-${i}`)
+  try {
+    act(() => root.render(<div ref={scroll}>
+      <VirtualFileRows paths={paths} scrollRef={scroll} pinned={new Set()}
+        renderRow={(index) => <div data-file={paths[index]}>{paths[index]}</div>} />
+    </div>))
+    Object.defineProperty(scroll.current!, 'clientHeight', { value: 128 })
+    act(() => {
+      scroll.current!.scrollTop = 3200
+      scroll.current!.dispatchEvent(new Event('scroll'))
+    })
+    expect(host.querySelector('[data-file="file-100"]')).not.toBeNull()
+    expect(host.querySelector('[data-file="file-103"]')).not.toBeNull()
+    expect(host.querySelector('[data-file="file-0"]')).toBeNull()
+    expect(host.querySelectorAll('[data-file]').length).toBeLessThan(20)
+  } finally { act(() => root.unmount()); host.remove() }
+})
+
 it('bounds mounted rows, reveals keyboard targets, and retains offscreen editors', () => {
   const host = document.createElement('div')
   document.body.append(host)

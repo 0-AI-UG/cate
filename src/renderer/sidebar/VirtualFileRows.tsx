@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 
 export interface VirtualFileRowsHandle { reveal(path: string): void }
 interface Props {
@@ -25,7 +25,8 @@ export const VirtualFileRows = forwardRef<VirtualFileRowsHandle, Props>(function
     return result
   }, [paths, heights])
 
-  useLayoutEffect(() => {
+  // The parent scroll container's ref attaches after this child's layout effects.
+  useEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
     const update = () => setViewport({ top: Math.max(0, scroll.scrollTop - (list.current?.offsetTop ?? 0)), height: scroll.clientHeight || 600 })
