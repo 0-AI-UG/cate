@@ -15,7 +15,7 @@ import { viewToCanvas as viewToCanvasCoords } from '../lib/canvas/coordinates'
 /** A recommended spot for a new node, surfaced as a numbered, clickable "ghost".
  *  Best first; the on-screen number is the array index + 1. */
 export interface PlacementCandidate {
-  /** Snapped canvas-space top-left origin for the new node. */
+  /** Canvas-space top-left, aligned to neighboring edges when available. */
   point: Point
   /** The size the ghost (and resulting node) would have. */
   size: Size
@@ -112,8 +112,7 @@ export function findFreePosition(
   return { x: snap(ref.origin.x), y: snap(maxBottom + gap) }
 }
 
-/** Canvas-space gap kept between panels by every non-interactive placement
- *  (auto-place rays, ghost recommendations, the Agent grid). */
+/** Default canvas-space gutter. Recommendations can reuse tighter local spacing. */
 export const PLACEMENT_GAP = 40
 /** A recommendation is never smaller than MIN (a gap tighter than this is pruned,
  *  so it gets no recommendation) and, when it mirrors a large neighbor, never
@@ -134,6 +133,37 @@ const USEFUL_MIN_H = 340
 // aspect ratio — a narrow/tall or wide/flat gap would fill into an awkward tile.
 // (Mirror tiles match a real window's shape, so they're exempt.) Tunable via the viz.
 const FILL_AR_FACTOR = 1.6
+
+/** Reuse tight spacing from the nearest aligned pair. Large empty areas are
+ *  not evidence of a gutter; without a nearby pair use the default spacing. */
+function localPlacementGap(nodes: CanvasNodeState[], at: Point): number {
+  let gap = PLACEMENT_GAP
+  let nearest = Infinity
+  for (let i = 0; i < nodes.length; i++) {
+    const a = nodes[i]
+    for (const b of nodes.slice(i + 1)) {
+      const horizontal = Math.abs(a.origin.y - b.origin.y) <= EPS &&
+        Math.abs(a.size.height - b.size.height) <= EPS
+      const vertical = Math.abs(a.origin.x - b.origin.x) <= EPS &&
+        Math.abs(a.size.width - b.size.width) <= EPS
+      const spacing = horizontal
+        ? Math.max(a.origin.x, b.origin.x) - Math.min(a.origin.x + a.size.width, b.origin.x + b.size.width)
+        : vertical
+          ? Math.max(a.origin.y, b.origin.y) - Math.min(a.origin.y + a.size.height, b.origin.y + b.size.height)
+          : 0
+      if (spacing <= 0 || spacing > PLACEMENT_GAP) continue
+      const distance = Math.min(...[a, b].map((n) => Math.hypot(
+        n.origin.x + n.size.width / 2 - at.x,
+        n.origin.y + n.size.height / 2 - at.y,
+      )))
+      if (distance < nearest || (distance === nearest && spacing < gap)) {
+        nearest = distance
+        gap = spacing
+      }
+    }
+  }
+  return gap
+}
 
 /** Sorted, deduped alignment lines implied by the existing windows: each edge plus
  *  edge ± gap, so a new panel can land on a shared column/row or exactly one gap away. */
@@ -262,17 +292,12 @@ function freeRectangles(area: Rect, obstacles: Rect[]): Rect[] {
 /**
  * Recommend where a new node should go, for the interactive "ghost" picker.
  *
- * Model: decompose the free space (a place area minus the existing windows) into
- * empty rectangles, then PACK ghosts into it nearest-first — each step drops one
- * ghost into the free spot closest to the ranking point, carves it out, and repeats.
- * Using the nearest free space first means no closer empty spot is ever left unused,
- * so the result stays tight with no odd gaps even when the windows aren't on a grid.
- *
- * Sizing is a PURE MIRROR GRID: when a window is adjacent to the rect, the ghost
- * takes that neighbor's FULL size — both width and height — clamped to [MIN,MAX]. A
- * rect too small to host the full target size is SKIPPED (no shrunken slivers, no
- * grow-to-fill). Only when no window is adjacent does the ghost fall back to the
- * panel's default size.
+ * Decompose free space into rectangles and pack non-overlapping choices near
+ * the focus or cursor. First try exact cardinal copies of every neighbor that
+ * fits, including previously placed ghosts, to continue aligned rows and columns.
+ * Preserve off-grid edges and reuse compact spacing from nearby aligned panels.
+ * Where exact copies cannot fit, project a mirrored size into the free rectangle
+ * or fill a useful bounded gap, with minimum size and aspect-ratio guards.
  *
  *  - A focused node on screen → packs around it (ranked from its centre).
  *  - Nothing focused → packs across the viewport, ranked from the cursor.
@@ -292,7 +317,7 @@ export function recommendPlacements(
 ): PlacementCandidate[] {
   const grid = CANVAS_GRID_SIZE
   const snapPt = (p: Point): Point => snapToGrid(p, grid)
-  const gap = PLACEMENT_GAP
+  let gap = PLACEMENT_GAP
   const std = sizeOverride ?? PANEL_DEFAULT_SIZES[panelType]
 
   const { offset, zoom, containerSize } = viewport
@@ -385,6 +410,10 @@ export function recommendPlacements(
   // ranked from the cursor (a wider spread, biased to where you're looking).
   const focused = (focusedNodeId && nodes[focusedNodeId]) || null
   const focusedOnScreen = !!focused && onScreen({ origin: focused.origin, size: focused.size })
+  const spacingAt = focusedOnScreen && focused
+    ? { x: focused.origin.x + focused.size.width / 2, y: focused.origin.y + focused.size.height / 2 }
+    : anchor ?? viewCenter
+  gap = localPlacementGap(onScreenNodes, spacingAt)
   const pitchX = std.width + gap
   const pitchY = std.height + gap
 
@@ -403,16 +432,8 @@ export function recommendPlacements(
     area = viewRect
   }
 
-  // Pack ghosts into the FREE SPACE, nearest the ranking point first. Each step
-  // evaluates every free rectangle: it SIZES the ghost by mirroring an adjacent
-  // neighbor's FULL size (both axes), else the panel default — clamped to MIN/MAX.
-  // A rect too small to host that full size is SKIPPED (no fill, no slivers). It
-  // then POSITIONS the ghost by snapping each edge to the nearest alignment guide
-  // (else the grid) and clamping inside the rect. The rectangle whose result lands
-  // closest to the ranking point wins; that ghost (plus its gap) is carved out of
-  // the free space and the step repeats.
-  // Because the nearest free space is always used first, no closer empty spot is
-  // ever left unused — which is what keeps the result tight in irregular layouts.
+  // Keep both free rectangles and placed ghosts so each choice can continue
+  // the existing layout without colliding with another recommendation.
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
   const inflated = nodeRects.map((r) => inflateRect(r, gap))
   let free = freeRectangles(area, inflated)
@@ -428,12 +449,44 @@ export function recommendPlacements(
       | { point: Point; size: Size; score: number }
       | null = null
     for (const f of free) {
-      const ix0 = Math.ceil(f.origin.x / grid) * grid
-      const ix1 = Math.floor((f.origin.x + f.size.width) / grid) * grid
-      const iy0 = Math.ceil(f.origin.y / grid) * grid
-      const iy1 = Math.floor((f.origin.y + f.size.height) / grid) * grid
+      // Free boundaries already include clearance. Rounding them inward loses
+      // exact neighbor sizes and turns fractional gutters into uneven spacing.
+      const ix0 = f.origin.x
+      const ix1 = f.origin.x + f.size.width
+      const iy0 = f.origin.y
+      const iy1 = f.origin.y + f.size.height
       const availW = ix1 - ix0, availH = iy1 - iy0
       if (availW < PLACEMENT_MIN_W || availH < PLACEMENT_MIN_H) continue
+
+      // Try every neighbor at its exact cardinal positions before projecting
+      // the cursor into free space. A large neighbor must not hide a smaller
+      // matching tile, and cursor movement must not stagger an aligned row.
+      let aligned: (Raw & { score: number }) | null = null
+      for (const obstacle of obstacles) {
+        const size = {
+          width: obstacle.size.width - gap * 2,
+          height: obstacle.size.height - gap * 2,
+        }
+        if (size.width < PLACEMENT_MIN_W || size.width > PLACEMENT_MAX_W ||
+            size.height < PLACEMENT_MIN_H || size.height > PLACEMENT_MAX_H) continue
+        const x = obstacle.origin.x + gap
+        const y = obstacle.origin.y + gap
+        const points = [
+          { x: x + size.width + gap, y },
+          { x: x - size.width - gap, y },
+          { x, y: y + size.height + gap },
+          { x, y: y - size.height - gap },
+        ]
+        for (const point of points) {
+          if (!rectContains(f, { origin: point, size })) continue
+          const score = Math.hypot(point.x + size.width / 2 - rankAt.x, point.y + size.height / 2 - rankAt.y)
+          if (!aligned || score < aligned.score) aligned = { point, size, score }
+        }
+      }
+      if (aligned) {
+        if (!best || aligned.score < best.score) best = aligned
+        continue
+      }
 
       // Balanced sizing: mirror a neighbor when it fits (uniform tiles), else
       // grow-to-fill a genuinely empty gap that is at least USEFUL_MIN in both
