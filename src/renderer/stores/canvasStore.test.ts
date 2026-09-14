@@ -556,12 +556,17 @@ describe('canvasStore.recommendPlacements', () => {
     expect(best.point.y + best.size.height / 2).toBeCloseTo(anchor.y, -1)
   })
 
-  it('all recommendations are grid-snapped', () => {
-    const cands = recommendPlacements(toMap(node('a', 0, 0), node('b', 400, 0)), 'a', 'terminal', VIEWPORT, null)
+  it('recommendations stay grid-snapped when neighboring dimensions are on the grid', () => {
+    const cands = recommendPlacements(toMap(node('a', 0, 0, 400, 200), node('b', 440, 0, 400, 200)), 'a', 'terminal', VIEWPORT, null)
     cands.forEach((c) => {
       expect(c.point.x % CANVAS_GRID_SIZE === 0).toBe(true)
       expect(c.point.y % CANVAS_GRID_SIZE === 0).toBe(true)
     })
+  })
+
+  it('preserves exact spacing from off-grid panel edges', () => {
+    const cands = recommendPlacements(toMap(node('a', 0, 0, 400, 210)), 'a', 'terminal', VIEWPORT, null)
+    expect(cands[0]).toEqual({ point: { x: 0, y: 250 }, size: { width: 400, height: 210 } })
   })
 
   it('still yields ≥1 overlap-free recommendation when the focused node is boxed in', () => {
