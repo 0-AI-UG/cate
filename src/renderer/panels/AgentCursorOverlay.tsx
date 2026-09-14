@@ -20,7 +20,7 @@
 // meant for the page.
 // =============================================================================
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { subscribeAgentCursor, type AgentCursorEvent } from '../lib/browser/agentCursor'
 
 /** A click ripple's lifetime — purely decorative feedback for "it happened". */
@@ -42,6 +42,7 @@ export function AgentCursorOverlay({
   const [ripples, setRipples] = useState<Ripple[]>([])
   const [activitySerial, setActivitySerial] = useState(0)
   const rippleSerial = useRef(0)
+  const pointerGradientId = useId()
 
   useEffect(() => {
     const unsubscribe = subscribeAgentCursor(panelId, (next) => {
@@ -139,20 +140,35 @@ export function AgentCursorOverlay({
             transition: 'left 220ms cubic-bezier(0.22, 1, 0.36, 1), top 220ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         >
-          {/* Drawn rather than using an emoji/system cursor so it looks
-              identical on every platform and reads as "not your cursor". */}
           <svg
             key={`pointer-${activitySerial}`}
-            width="18"
-            height="22"
-            viewBox="0 0 18 22"
+            width={32}
+            height={32}
+            viewBox="0 0 32 32"
             style={{
-              filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.5))',
+              marginLeft: -4,
+              marginTop: -4,
+              overflow: 'visible',
+              filter: 'drop-shadow(0 1.5px 2px rgba(12,54,110,0.24))',
               animation: pointerAnimation,
-              transformOrigin: '2px 1px',
+              transformOrigin: '4px 4px',
             }}
           >
-            <path d="M2 1 L2 17 L6.2 13.2 L9 20 L12 18.6 L9.2 12 L14.5 12 Z" fill="#4A9EFF" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
+            <defs>
+              <path
+                id={`${pointerGradientId}-shape`}
+                d="M4 9 C2.6 5 5 2.6 9 4 L25 10 C29 11.5 29 15.2 25.2 17 L20.8 19 C20 19.4 19.4 20 19 20.8 L17 25.2 C15.2 29 11.5 29 10 25 Z"
+              />
+              <linearGradient id={pointerGradientId} x1="0" y1="0" x2="0.65" y2="1">
+                <stop offset="0%" stopColor="#ffffff" />
+                <stop offset="55%" stopColor="#f5fbff" />
+                <stop offset="100%" stopColor="#e9eaff" />
+              </linearGradient>
+            </defs>
+            <use href={`#${pointerGradientId}-shape`} fill="#1265d8" transform="translate(0.5 1.2) rotate(-12 16 16)" />
+            <use href={`#${pointerGradientId}-shape`} fill="#258dff" transform="translate(0.3 0.8) rotate(-7 16 16)" />
+            <use href={`#${pointerGradientId}-shape`} fill="#72c6ff" transform="translate(0.15 0.4) rotate(-3 16 16)" />
+            <use href={`#${pointerGradientId}-shape`} fill={`url(#${pointerGradientId})`} stroke="#c9e8ff" strokeWidth={0.35} />
           </svg>
         </div>
       )}
