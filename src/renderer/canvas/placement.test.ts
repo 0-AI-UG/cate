@@ -652,34 +652,66 @@ describe('recommendPlacements — neighbor-aware sizing', () => {
     }
   })
 
-  it('fills a useful empty gap that matches no neighbor (grow-to-fill)', () => {
-    // A center gap bounded by mismatched-size neighbors: a wide window above and
-    // below (1500x200) and tall narrow windows left/right (300x600). The longest-
-    // shared-run neighbor is the wide above/below window, whose 1500 width does NOT
-    // fit the 820-wide interior gap, so the mirror is rejected — but the gap is
-    // >= USEFUL_MIN in both dimensions, so it GROWS TO FILL rather than being
-    // skipped. (Under the old pure-mirror rule this obvious empty gap got nothing.)
-    const above = node(0, 0, 1500, 200)
-    const left = node(0, 240, 300, 600)
-    const right = node(1200, 240, 300, 600)
-    const below = node(0, 880, 1500, 200)
-    const ns = nodesOf(above, left, right, below)
-    const vp = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1500, height: 1080 } }
-    const out = recommendPlacements(ns, null, 'editor', vp, { x: 750, y: 540 }, 6)
-    // A candidate appears in the center gap, sized to (approximately) the gap.
-    const gapCand = out.find(
-      (c) => c.point.x >= 300 && c.point.x + c.size.width <= 1200 &&
-             c.point.y >= 200 && c.point.y + c.size.height <= 880,
+  it('uses a smaller aligned neighbor when the longest neighbor does not fit', () => {
+    const ns = nodesOf(
+      node(0, 0, 1500, 200),
+      node(0, 240, 300, 600),
+      node(1200, 240, 300, 600),
+      node(0, 880, 1500, 200),
     )
-    expect(gapCand, `expected a grow-to-fill candidate in the gap: ${JSON.stringify(out)}`).toBeTruthy()
-    // Grow-to-fill: it spans (about) the whole interior gap — 820 wide x 600 tall —
-    // which is wider than every neighbor (none is 820 wide).
-    expect(gapCand!.size).toEqual({ width: 820, height: 600 })
-    // Good aspect ratio (820/600 ~= 1.37) sits inside the terminal's AR band
-    // [1.0, 2.56], so the fill AR guard does NOT over-reject this useful gap.
-    const ar = gapCand!.size.width / gapCand!.size.height
-    expect(ar).toBeGreaterThan(1.0)
-    expect(ar).toBeLessThan(2.56)
+    const vp = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 1500, height: 1080 } }
+    const out = recommendPlacements(ns, null, 'editor', vp, { x: 750, y: 540 }, 1)
+    expect(out[0]).toEqual({ point: { x: 340, y: 240 }, size: { width: 300, height: 600 } })
+  })
+
+  it('fills a useful gap when none of the neighboring sizes fit', () => {
+    const ns = nodesOf(
+      node(0, 0, 2700, 200),
+      node(0, 240, 900, 600),
+      node(1800, 240, 900, 600),
+      node(0, 880, 2700, 200),
+    )
+    const vp = { offset: { x: 0, y: 0 }, zoom: 1, containerSize: { width: 2700, height: 1080 } }
+    const out = recommendPlacements(ns, null, 'editor', vp, { x: 1350, y: 540 }, 6)
+    expect(out[0]).toEqual({ point: { x: 940, y: 240 }, size: { width: 820, height: 600 } })
+  })
+
+  it.each([8, 12.5, 24])('completes a compact grid with its exact %s pixel gutter', (gap) => {
+    const width = 333.5, height = 222.25
+    const x = 500.5, y = 500.25
+    const ns = nodesOf(
+      node(x, y, width, height),
+      node(x + width + gap, y, width, height),
+      node(x, y + height + gap, width, height),
+    )
+    const expected = { point: { x: x + width + gap, y: y + height + gap }, size: { width, height } }
+    const out = recommendPlacements(ns, null, 'editor', VP, {
+      x: expected.point.x + width / 2, y: expected.point.y + height / 2,
+    })
+    expect(out[0]).toEqual(expected)
+    for (let i = 0; i < out.length; i++) {
+      for (const other of [...Object.values(ns).map((n) => ({ origin: n.origin, size: n.size })), ...out.slice(0, i).map(rectOf)]) {
+        expect(rectsOverlap(inflate(rectOf(out[i]), gap - 0.01), other)).toBe(false)
+      }
+    }
+  })
+
+  it('preserves exact off-grid dimensions in a tightly bounded hole', () => {
+    const x = 500.5, y = 500.25, width = 333.5, height = 222.25, gap = 40
+    const ns = nodesOf(
+      node(x - width - gap, y, width, height),
+      node(x + width + gap, y, width, height),
+      node(x, y - height - gap, width, height),
+      node(x, y + height + gap, width, height),
+    )
+    const out = recommendPlacements(ns, null, 'editor', VP, { x: x + width / 2, y: y + height / 2 })
+    expect(out[0]).toEqual({ point: { x, y }, size: { width, height } })
+  })
+
+  it('keeps a row aligned even when the cursor is far from its centerline', () => {
+    const ns = nodesOf(node(1000, 1000, 600, 400))
+    const out = recommendPlacements(ns, null, 'editor', VP, { x: 1900, y: 1320 }, 1)
+    expect(out[0]).toEqual({ point: { x: 1640, y: 1000 }, size: { width: 600, height: 400 } })
   })
 
   it('skips a grow-to-fill gap with an awkward aspect ratio (tall/narrow)', () => {
