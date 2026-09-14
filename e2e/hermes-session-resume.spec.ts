@@ -202,6 +202,12 @@ test('two Hermes terminals cold-restore their own exact profile-scoped sessions'
       nodes,
     )
     expect(restoredTerminalIds).toEqual(terminalIds)
+    for (const [index, node] of nodes.entries()) {
+      await expect.poll(
+        () => page.evaluate((id) => window.__cateE2E!.terminalText(id), node),
+        { timeout: 30_000 },
+      ).toContain(`FAKE_HERMES_RESUMED ${sessionIds[index]}`)
+    }
     await expect.poll(
       () => fakeLaunches(logPath).filter((entry) => entry.phase === 'resume'),
       { timeout: 30_000 },
