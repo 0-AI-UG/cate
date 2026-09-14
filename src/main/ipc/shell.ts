@@ -186,7 +186,7 @@ async function runActivityScan(): Promise<void> {
           // kills the poll loop itself, leaving the last stamp persisted —
           // exactly "what was running at save time".
           if (!agentPresent && prev.previousAgentPresent) {
-            clearAgentSessionStamp(terminalId)
+            clearAgentSessionStamp(terminalId, scanned?.endedAgentPid)
           }
         }
       }),

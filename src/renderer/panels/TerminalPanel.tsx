@@ -406,7 +406,11 @@ export default function TerminalPanel({
     const agentSession = useAppStore.getState().workspaces
       .find((w) => w.id === workspaceId)?.panels[panelId]?.agentSession
     const resumeCommand = agentSession
-      ? resumeCommandForAgent(agentSession.agentId, agentSession.sessionId) ?? undefined
+      ? resumeCommandForAgent(
+          agentSession.agentId,
+          agentSession.sessionId,
+          { profile: agentSession.profile },
+        ) ?? undefined
       : undefined
 
     // Keep the dead xterm visible behind the runtime lock while disconnected.

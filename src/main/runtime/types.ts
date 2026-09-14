@@ -104,6 +104,8 @@ export interface PtyActivity {
   activity: TerminalActivity
   agentName: string | null
   agentPresent: boolean
+  /** Pid whose disappearance produced an agent falling edge, when known. */
+  endedAgentPid?: number
 }
 
 export interface ProcessHost {

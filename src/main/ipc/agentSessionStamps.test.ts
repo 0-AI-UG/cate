@@ -52,8 +52,10 @@ function ev(
   kind: AgentHookEventKind,
   sessionId: string | null,
   cwd?: string,
+  profile?: string,
+  sourcePid?: number,
 ): AgentHookEvent {
-  return { terminalId, agentId, kind, sessionId, cwd, raw: {} }
+  return { terminalId, agentId, kind, sessionId, cwd, profile, sourcePid, raw: {} }
 }
 
 const stamps = (terminalId: string) => harness.sent.filter((s) => s.terminalId === terminalId).map((s) => s.session)
@@ -103,6 +105,77 @@ describe('kiro resumability gating', () => {
 
     ingestAgentSessionStamp(runtime, ev(tid, 'kiro', 'turn-start', 'id-1', '/w'))
     expect(stamps(tid)).toEqual([{ agentId: 'kiro', sessionId: 'id-1', cwd: '/w' }])
+  })
+})
+
+describe('Hermes resumability gating', () => {
+  it('waits for the first turn and preserves the named profile', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'session-start', 'id-1', '/w', 'work'))
+    expect(stamps(tid)).toEqual([])
+
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-1', '/w', 'work'))
+    expect(stamps(tid)).toEqual([
+      { agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' },
+    ])
+  })
+
+  it('clears an intentionally finalized session', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-1', '/w', 'work'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'session-end', 'id-1', '/w', 'work'))
+    expect(stamps(tid)).toEqual([
+      { agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' },
+      null,
+    ])
+  })
+
+  it('does not let a delayed finalize erase a newer session', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-1', '/w', 'work'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-2', '/w', 'work'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'session-end', 'id-1', '/w', 'work'))
+    expect(stamps(tid)).toEqual([
+      { agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' },
+      { agentId: 'hermes', sessionId: 'id-2', cwd: '/w', profile: 'work' },
+    ])
+  })
+
+  it('does not let a stale finalize cancel a newer pending cwd lookup', async () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-1', '/w', 'work'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-2', undefined, 'work'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'session-end', 'id-1', '/w', 'work'))
+
+    await resolveCwds()
+
+    expect(stamps(tid)).toEqual([
+      { agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' },
+      { agentId: 'hermes', sessionId: 'id-2', cwd: '/runtime-cwd', profile: 'work' },
+    ])
+  })
+
+  it('ignores an uncorrelated session-end with no session id', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-1', '/w', 'work', 101))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'session-end', null, '/w', 'work', 101))
+    expect(stamps(tid)).toEqual([
+      { agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' },
+    ])
+  })
+
+  it('ignores late events from an older process generation with the same identity', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-1', '/w', 'work', 101))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-1', '/w', 'work', 202))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-end', 'id-1', '/w', 'work', 101))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'session-end', 'id-1', '/w', 'work', 101))
+    expect(stamps(tid)).toEqual([
+      { agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' },
+    ])
+  })
+
+  it('ignores a falling edge from an older process generation', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-1', '/w', 'work', 101))
+    ingestAgentSessionStamp(runtime, ev(tid, 'hermes', 'turn-start', 'id-1', '/w', 'work', 202))
+    clearAgentSessionStamp(tid, 101)
+    expect(stamps(tid)).toEqual([
+      { agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' },
+    ])
   })
 })
 

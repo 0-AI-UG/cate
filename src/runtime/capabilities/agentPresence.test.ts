@@ -118,6 +118,29 @@ describe('notePost → presenceFor', () => {
     expect(t2.presenceFor(T, relaunched)).toEqual({ agentName: 'Claude Code', agentPresent: true })
   })
 
+  test('a post from a new process generation replaces a still-live registration', async () => {
+    const overlapping = tree([
+      [10, 1, 'zsh'],
+      [40, 10, 'hermes'],
+      [70, 10, 'hermes'],
+    ])
+    const { tracker, snapshot } = makeTracker(overlapping)
+    await tracker.notePost(T, 'hermes', 40, 'turn-start')
+    await tracker.notePost(T, 'hermes', 70, 'turn-start')
+    await tracker.notePost(T, 'hermes', 40, 'turn-end')
+    expect(snapshot).toHaveBeenCalledTimes(2)
+
+    const onlyNew = tree([[10, 1, 'zsh'], [70, 10, 'hermes']])
+    expect(tracker.presenceFor(T, onlyNew)).toEqual({ agentName: 'Hermes', agentPresent: true })
+
+    const ended = tree([[10, 1, 'zsh']])
+    expect(tracker.presenceFor(T, ended)).toEqual({
+      agentName: null,
+      agentPresent: false,
+      endedAgentPid: 70,
+    })
+  })
+
   test('a different agent in the same terminal replaces the registration', async () => {
     const both = tree([[10, 1, 'zsh'], [40, 10, 'claude'], [41, 40, 'sh'], [80, 10, 'codex'], [81, 80, 'sh']])
     const { tracker } = makeTracker(both)

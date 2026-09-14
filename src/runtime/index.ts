@@ -61,7 +61,7 @@ async function main(): Promise<void> {
   // Reap harness children left behind by a previous daemon crash.
   reapOrphanServers(args.id)
 
-  const { runtime, process: proc, killAll } = buildDaemonRuntime({
+  const { runtime, process: proc, agentHooks, killAll } = buildDaemonRuntime({
     id: args.id,
     exclusions: args.exclusions,
     idleSuspend: args.idleSuspend,
@@ -69,6 +69,10 @@ async function main(): Promise<void> {
   const server = new RpcServer(runtime, (line) => process.stdout.write(line))
 
   const shutdown = (): void => {
+    // Stop accepting lifecycle posts before killing PTYs. Otherwise an agent's
+    // graceful finalize hook can erase the resume stamp Cate is preserving for
+    // the next launch.
+    agentHooks.dispose()
     proc.killAllGroups()
     killAll()
     server.dispose()

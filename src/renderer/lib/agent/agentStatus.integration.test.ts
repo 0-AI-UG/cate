@@ -63,6 +63,12 @@ const fixtures: AgentLifecycleFixture[] = [
     turnEnd: { type: 'session.status', sessionID: SESSION, status: { type: 'idle' } },
   },
   {
+    agentId: 'hermes',
+    sessionStart: { hook_event_name: 'on_session_start', session_id: SESSION, platform: 'cli' },
+    turnStart: { hook_event_name: 'pre_llm_call', session_id: SESSION, platform: 'cli' },
+    turnEnd: { hook_event_name: 'on_session_end', session_id: SESSION, platform: 'cli' },
+  },
+  {
     agentId: 'kiro',
     sessionStart: { hook_event_name: 'agentSpawn', session_id: SESSION },
     turnStart: { hook_event_name: 'userPromptSubmit', session_id: SESSION },

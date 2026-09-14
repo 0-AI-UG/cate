@@ -31,11 +31,15 @@
 
 import type { AgentId } from '../../shared/agents'
 import { AGENTS } from '../../shared/agents'
+import type { AgentHookEventKind } from '../../shared/agentHooks'
 import type { ProcTree } from './procfs'
 
 export interface AgentPresence {
   agentName: string | null
   agentPresent: boolean
+  /** Agent pid whose disappearance produced this result. Present only for a
+   *  real falling edge, so downstream state can reject an older generation. */
+  endedAgentPid?: number
 }
 
 export interface AgentPresenceTracker {
@@ -43,7 +47,12 @@ export interface AgentPresenceTracker {
    *  re-resolves after an agent relaunch) the registered agent pid for the
    *  terminal. Await it before answering the post — the bridge's ancestry
    *  chain is only guaranteed alive while the post is in flight. */
-  notePost(terminalId: string, agentId: AgentId, pid: number | undefined): Promise<void>
+  notePost(
+    terminalId: string,
+    agentId: AgentId,
+    pid: number | undefined,
+    kind?: AgentHookEventKind,
+  ): Promise<void>
   /** Liveness verdict against a process-table snapshot (the scan tick's own).
    *  A registered pid that vanished — or changed comm (pid reuse) — is
    *  deregistered and reads absent: the falling edge. */
@@ -64,6 +73,9 @@ export interface AgentPresenceDeps {
 interface Registration {
   agentId: AgentId
   pid: number
+  /** Pid carried by the hook post. For in-process hooks this is the agent pid;
+   *  for bridge-based hooks it distinguishes repeated posts for the fast path. */
+  sourcePid: number
   /** comm at registration time — presenceFor requires it unchanged, so a
    *  recycled pid can't impersonate the agent. */
   comm: string
@@ -94,7 +106,7 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
   const registrations = new Map<string, Registration>()
 
   return {
-    async notePost(terminalId, agentId, pid) {
+    async notePost(terminalId, agentId, pid, kind) {
       // Reject anything that isn't a plain positive pid: posts are made by
       // processes inside the terminal, so the value is untrusted input (and
       // pid 0 / negatives address process GROUPS in kill()).
@@ -102,10 +114,19 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
       const def = AGENTS.find((a) => a.id === agentId)
       if (!def) return
 
-      // Fast path: this terminal's agent is already registered and alive —
-      // the common per-tool-call event needs no snapshot.
+      // Bridge-based integrations spawn a fresh helper pid for many events, so
+      // their live agent registration remains the fast-path authority. Hermes
+      // posts in-process: a changed source pid is therefore a new generation
+      // even while the previous process is still shutting down.
       const existing = registrations.get(terminalId)
-      if (existing && existing.agentId === agentId && isAlive(existing.pid)) return
+      const sameGeneration = agentId !== 'hermes' || existing?.sourcePid === pid
+      const canReplaceHermesGeneration = kind === 'session-start' || kind === 'turn-start'
+      if (
+        existing &&
+        existing.agentId === agentId &&
+        isAlive(existing.pid) &&
+        (sameGeneration || (agentId === 'hermes' && !canReplaceHermesGeneration))
+      ) return
 
       const tree = await deps.snapshot()
       const parent = parentMap(tree)
@@ -116,7 +137,7 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
         visited.add(p)
         const comm = tree.nameByPid.get(p)
         if (comm && def.matchProcess(comm.toLowerCase())) {
-          registrations.set(terminalId, { agentId, pid: p, comm })
+          registrations.set(terminalId, { agentId, pid: p, sourcePid: pid, comm })
           return
         }
       }
@@ -135,7 +156,7 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
       // Pid gone (or recycled under a different comm) — the falling edge.
       // The next agent run re-registers itself through fresh hook posts.
       registrations.delete(terminalId)
-      return { agentName: null, agentPresent: false }
+      return { agentName: null, agentPresent: false, endedAgentPid: reg.pid }
     },
 
     drop(terminalId) {

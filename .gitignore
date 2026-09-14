@@ -5,6 +5,8 @@ dist/
 dist-runtime/
 .DS_Store
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 .worktrees/
 
 # Build artifacts (keep signing entitlements tracked)

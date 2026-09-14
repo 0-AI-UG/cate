@@ -12,8 +12,15 @@ let directory: string
 let workspaceId: string
 test.beforeEach(async () => {
   directory = realpathSync(mkdtempSync(path.join(tmpdir(), 'cate-agent-capture-e2e-')))
-  ;({ electronApp: app, mainWindow: page } = await launchApp({ userDataDir: path.join(directory, 'userdata') }))
+  // Avoid launchApp's disposable seed project: re-rooting that workspace leaves
+  // two on-disk snapshots with the same id, and the empty one can win restore.
+  ;({ electronApp: app, mainWindow: page } = await launchApp({
+    userDataDir: path.join(directory, 'userdata'),
+    empty: true,
+  }))
   await openTrustedWorkspace(page, directory)
+  await page.evaluate(() => window.__cateE2E!.createPanel('canvas'))
+  await page.waitForSelector('[data-canvas-panel-id]')
   workspaceId = await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())
   await resetViewport(page)
 })
@@ -67,13 +74,27 @@ for (const agentId of ['claude-code', 'codex', 'cursor', 'grok', 'kiro', 'openco
       // The workspace, review panel, source association and recorded history
       // must all survive a full app/runtime restart, not only a fresh launch.
       await closeApp(app)
-      ;({ electronApp: app, mainWindow: page } = await launchApp({ userDataDir: path.join(directory, 'userdata') }))
+      ;({ electronApp: app, mainWindow: page } = await launchApp({
+        userDataDir: path.join(directory, 'userdata'),
+        empty: true,
+      }))
+      await page.waitForFunction(
+        () => performance.getEntriesByName('session-restored').length > 0,
+        undefined,
+        { timeout: 30_000 },
+      )
       await expect(page.getByText('This review panel hit an error')).toHaveCount(0)
+      await page.waitForFunction(
+        (id) => !!window.__cateE2E!.terminalPtyId(id),
+        node,
+        { timeout: 30_000 },
+      )
       await resetViewport(page)
-      const restoredSource = await titleBarCentre(page, node)
-      expect(restoredSource).not.toBeNull()
-      await page.mouse.click(restoredSource!.x, restoredSource!.y + 60)
-      await page.locator(`[data-node-id="${node}"]`).getByRole('button', { name: 'Open agent changes' }).click()
+      const restoredNode = page.locator(`[data-node-id="${node}"]`)
+      await expect(restoredNode).toBeVisible()
+      const unfocusedOverlay = restoredNode.locator('[data-unfocused-overlay="true"]')
+      if (await unfocusedOverlay.isVisible()) await unfocusedOverlay.click()
+      await restoredNode.getByRole('button', { name: 'Open agent changes' }).click()
       await page.getByRole('button', { name: /Use Agent changes/ }).click()
       await expect(page.locator('[data-review-file="own.ts"]')).toBeVisible()
       await expect(page.locator('[data-review-file="other.ts"]')).toHaveCount(0)

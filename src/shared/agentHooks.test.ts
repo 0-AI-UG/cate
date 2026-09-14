@@ -580,9 +580,47 @@ describe('reportsTurnEndOnInterrupt', () => {
       // Expected self-heal via stop{cancelled}; streaming path not yet
       // observed live (test account quota) — see grokSpec.
       grok: true,
+      // Hermes emits on_session_end for interrupted root CLI turns.
+      hermes: true,
       // Verified live: Ctrl-C returns to Kiro's prompt without a Stop hook;
       // renderer terminal input supplies the scoped recovery edge.
       kiro: false,
     })
+  })
+})
+
+describe('hermes spec', () => {
+  const spec = AGENT_HOOK_SPECS.hermes
+  const base = {
+    session_id: '20260911_131500_abcd1234',
+    cwd: 'C:/work/project',
+    profile: 'work',
+    platform: 'cli',
+  }
+
+  test('uses the profile-scoped external plugin delivery channel', () => {
+    expect(spec.externalPlugin).toEqual({ id: 'cate-agent-state' })
+    expect(spec.projectFiles).toBeUndefined()
+  })
+
+  test('normalizes root CLI session and turn lifecycle with profile identity', () => {
+    expect(norm('hermes', { hook_event_name: 'on_session_start', ...base })).toMatchObject({
+      agentId: 'hermes',
+      terminalId: 'term-1',
+      kind: 'session-start',
+      sessionId: base.session_id,
+      cwd: base.cwd,
+      profile: 'work',
+    })
+    expect(norm('hermes', { hook_event_name: 'on_session_reset', ...base })?.kind).toBe('session-start')
+    expect(norm('hermes', { hook_event_name: 'pre_llm_call', ...base })?.kind).toBe('turn-start')
+    expect(norm('hermes', { hook_event_name: 'on_session_end', ...base })?.kind).toBe('turn-end')
+    expect(norm('hermes', { hook_event_name: 'on_session_finalize', ...base })?.kind).toBe('session-end')
+  })
+
+  test('drops non-interactive child and background surfaces', () => {
+    for (const platform of ['subagent', 'cron', 'gateway']) {
+      expect(norm('hermes', { hook_event_name: 'pre_llm_call', ...base, platform })).toBeNull()
+    }
   })
 })

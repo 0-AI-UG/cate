@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AGENTS } from './agents'
+import { TERMINAL_AGENTS } from './agents'
 import {
   codingAgentCommand,
   codingAgentSupportsFollowUp,
@@ -10,7 +10,7 @@ describe('codingAgentCommand', () => {
   it('resolves only canonical agent ids to exact argv without a shell', () => {
     const task = 'Fix it; touch /tmp/pwned'
     const prefixed = `Complete this coding task:\n\n${task}`
-    expect(AGENTS.map((agent) => ({
+    expect(TERMINAL_AGENTS.map((agent) => ({
       id: agent.id,
       command: codingAgentCommand({ agentId: agent.id, prompt: task }),
       followUp: codingAgentSupportsFollowUp(agent.id),
@@ -45,6 +45,10 @@ describe('codingAgentCommand', () => {
   it('rejects unknown ids and blank tasks', () => {
     expect(parseCodingAgentId('/tmp/fake-agent')).toBeNull()
     expect(parseCodingAgentId('codex')).toBe('codex')
+    expect(parseCodingAgentId('hermes')).toBeNull()
+    expect(() => codingAgentCommand({ agentId: 'hermes', prompt: 'task' })).toThrow(
+      'Unsupported coding agent: hermes',
+    )
     expect(() => codingAgentCommand({ agentId: 'codex', prompt: '   ' })).toThrow(
       'A coding-agent prompt is required',
     )

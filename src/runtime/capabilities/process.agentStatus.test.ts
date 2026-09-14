@@ -25,6 +25,7 @@ const fixtures = [
   { agentId: 'opencode', start: { type: 'session.status', status: { type: 'busy' } }, wait: { type: 'permission.asked' } },
   // These CLIs have no permission-wait hook. Input must preserve their running state.
   { agentId: 'cursor', start: { hook_event_name: 'beforeSubmitPrompt' }, wait: null },
+  { agentId: 'hermes', start: { hook_event_name: 'pre_llm_call', platform: 'cli' }, wait: null },
   { agentId: 'kiro', start: { hook_event_name: 'UserPromptSubmit' }, wait: null },
 ] as const
 
