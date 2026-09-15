@@ -14,6 +14,7 @@ const flag = (name) => {
 const endpoint = process.env.CATE_HOOK_ENDPOINT
 const token = process.env.CATE_HOOK_TOKEN
 const terminalId = process.env.CATE_TERMINAL_ID
+const processStartedAt = process.hrtime.bigint().toString()
 const logPath = process.env.FAKE_HERMES_LOG
 const profile = flag('--profile') || 'default'
 const resumedSessionId = flag('--resume')
@@ -25,6 +26,7 @@ function post(hookEventName) {
     agentId: 'hermes',
     terminalId,
     pid: process.pid,
+    processStartedAt,
     payload: {
       hook_event_name: hookEventName,
       session_id: sessionId,

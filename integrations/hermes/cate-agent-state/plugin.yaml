@@ -1,5 +1,5 @@
 name: cate-agent-state
-version: 1.0.0
+version: 1.1.0
 description: "Report root Hermes CLI session lifecycle to Cate for exact terminal restore."
 author: "TheXRMonk"
 provides_hooks:

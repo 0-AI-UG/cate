@@ -18,10 +18,6 @@
 
 import { createHash } from 'crypto'
 import type { AgentId } from './agents'
-import {
-  resolveAgentHookMode,
-  type AgentHookConfig,
-} from './agentHookModes'
 export {
   resolveAgentHookMode,
   type AgentHookConfig,
@@ -83,6 +79,9 @@ export interface AgentHookEvent {
   /** Process that emitted an in-process hook. Used only to reject lifecycle
    *  events from an older process generation; never persisted across restarts. */
   sourcePid?: number
+  /** Monotonic process-start clock supplied by an in-process hook provider.
+   *  Unlike pid, this orders overlapping generations and is never persisted. */
+  sourceStartedAt?: string
   /** Present only for session-title events. */
   title?: string
   /** The raw payload as posted by the bridge, for consumers that need
@@ -92,6 +91,42 @@ export interface AgentHookEvent {
 
 export type NormalizedHookFields = Pick<AgentHookEvent, 'kind' | 'sessionId'> &
   Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath' | 'profile'>>
+
+/** Canonicalize an untrusted monotonic process-start timestamp. Decimal
+ * strings preserve nanosecond precision across the JSON/JavaScript boundary. */
+export function normalizeAgentSourceStartedAt(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !/^[0-9]{1,32}$/.test(value)) return undefined
+  try {
+    const parsed = BigInt(value)
+    return parsed > 0n ? parsed.toString() : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Compare two in-process hook generations. `null` means the legacy fields do
+ * not establish an order, so callers may use lifecycle-kind fallback rules. */
+export function compareAgentProcessGeneration(
+  incoming: Pick<AgentHookEvent, 'sourcePid' | 'sourceStartedAt'>,
+  current: Pick<AgentHookEvent, 'sourcePid' | 'sourceStartedAt'>,
+): -1 | 0 | 1 | null {
+  const incomingClock = normalizeAgentSourceStartedAt(incoming.sourceStartedAt)
+  const currentClock = normalizeAgentSourceStartedAt(current.sourceStartedAt)
+  if (incomingClock !== undefined && currentClock !== undefined) {
+    const left = BigInt(incomingClock)
+    const right = BigInt(currentClock)
+    if (left < right) return -1
+    if (left > right) return 1
+    return incoming.sourcePid === current.sourcePid ? 0 : -1
+  }
+  if (incomingClock !== undefined) return 1
+  if (currentClock !== undefined) {
+    // Once a clocked generation is authoritative, a legacy or malformed event
+    // cannot prove equality — even if the OS has reused the same pid.
+    return -1
+  }
+  return incoming.sourcePid !== undefined && incoming.sourcePid === current.sourcePid ? 0 : null
+}
 
 // ---------------------------------------------------------------------------
 // Injection declarations

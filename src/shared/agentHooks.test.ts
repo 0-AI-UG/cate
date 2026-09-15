@@ -9,7 +9,9 @@ import {
   AGENT_HOOK_SPECS,
   CATE_HOOK_MARKER,
   codexTrustedHash,
+  compareAgentProcessGeneration,
   normalizeAgentHookPayload,
+  normalizeAgentSourceStartedAt,
   type HookInjectionContext,
 } from './agentHooks'
 
@@ -19,6 +21,26 @@ const ctx: HookInjectionContext = {
 
 const norm = (agentId: string, payload: Record<string, unknown>) =>
   normalizeAgentHookPayload(agentId, 'term-1', payload)
+
+describe('in-process hook generation ordering', () => {
+  test('canonicalizes valid clocks and rejects untrusted values', () => {
+    expect(normalizeAgentSourceStartedAt('000123')).toBe('123')
+    expect(normalizeAgentSourceStartedAt('0')).toBeUndefined()
+    expect(normalizeAgentSourceStartedAt('-1')).toBeUndefined()
+    expect(normalizeAgentSourceStartedAt('not-a-clock')).toBeUndefined()
+    expect(normalizeAgentSourceStartedAt(123)).toBeUndefined()
+  })
+
+  test('orders overlapping process generations and fails closed on a missing old clock', () => {
+    const oldGeneration = { sourcePid: 101, sourceStartedAt: '100' }
+    const newGeneration = { sourcePid: 202, sourceStartedAt: '200' }
+    expect(compareAgentProcessGeneration(oldGeneration, newGeneration)).toBe(-1)
+    expect(compareAgentProcessGeneration(newGeneration, oldGeneration)).toBe(1)
+    expect(compareAgentProcessGeneration(newGeneration, newGeneration)).toBe(0)
+    expect(compareAgentProcessGeneration({ sourcePid: 101 }, newGeneration)).toBe(-1)
+    expect(compareAgentProcessGeneration({ sourcePid: 202 }, newGeneration)).toBe(-1)
+  })
+})
 
 describe('codex trusted hash', () => {
   test('pinned vector — the exact builder verified live against codex', () => {

@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from typing import Any, Callable
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 PLUGIN_ID = "cate-agent-state"
-PLUGIN_VERSION = "1.0.0"
+PLUGIN_VERSION = "1.1.0"
+_PROCESS_STARTED_AT = str(time.monotonic_ns())
 _INTERACTIVE_PLATFORMS = frozenset({"cli", "tui"})
 _PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _HOOKS = (
@@ -66,6 +68,7 @@ def _report(hook_event_name: str, profile: str, **kwargs: Any) -> None:
         "agentId": "hermes",
         "terminalId": terminal_id,
         "pid": os.getpid(),
+        "processStartedAt": _PROCESS_STARTED_AT,
         "payload": {
             "hook_event_name": hook_event_name,
             "session_id": kwargs.get("session_id"),

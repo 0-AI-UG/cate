@@ -215,6 +215,7 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentArgs: null,
     codingAgentFollowUp: false,
     matchProcess: (n) => n === 'hermes' || n === 'hermes.exe',
+    promptContextHook: null,
     resumeArgs: (sid, context) => context?.profile
       ? ['--profile', context.profile, 'chat', '--resume', sid]
       : null,

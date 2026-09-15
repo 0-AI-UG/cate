@@ -24,7 +24,10 @@ test.beforeEach(async () => {
   workspaceId = await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())
   await resetViewport(page)
 })
-test.afterEach(async () => { if (app) await closeApp(app); rmSync(directory, { recursive: true, force: true }) })
+test.afterEach(async () => {
+  if (app) await closeApp(app)
+  rmSync(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 })
+})
 
 for (const agentId of ['claude-code', 'codex', 'cursor', 'grok', 'kiro', 'opencode']) {
   test(`${agentId}: real terminal hooks reach the filtered diff panel without other sessions or Git changes`, async () => {

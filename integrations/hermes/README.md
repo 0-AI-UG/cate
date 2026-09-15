@@ -41,6 +41,7 @@ Exact session IDs are used instead of bare `--continue`, so two terminals in the
 - Processes launched inside a Cate terminal inherit that token and share the terminal's trust boundary; the token isolates terminals, not processes within one terminal.
 - The plugin ignores subagent, cron, and gateway sessions.
 - Hook delivery is synchronous but best-effort, with a 750 ms timeout; failures never abort the Hermes session.
+- Each Hermes process supplies an ephemeral monotonic start marker so delayed events from a superseded process cannot reclaim or clear the current session stamp; the marker is never persisted.
 - Cate accepts no command string from the plugin; session and profile values must be shell-safe tokens.
 - Install separately for every named Hermes profile used inside Cate.
 - Custom `HERMES_HOME` layouts report Hermes profile `custom` and are intentionally not stamped for automatic restore.

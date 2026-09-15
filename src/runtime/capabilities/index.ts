@@ -186,7 +186,8 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   // liveness — the one presence authority (no child scan).
   const agentPresence = createAgentPresenceTracker({ snapshot: snapshotProcessTree })
   const agentHooks = createAgentHooksCapability({
-    onPost: ({ terminalId, agentId, pid, kind }) => agentPresence.notePost(terminalId, agentId, pid, kind),
+    onPost: ({ terminalId, agentId, pid, kind, sourceStartedAt }) =>
+      agentPresence.notePost(terminalId, agentId, pid, kind, sourceStartedAt),
   })
 
   const innerProc = createProcessCapability({

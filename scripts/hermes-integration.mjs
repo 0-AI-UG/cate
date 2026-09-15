@@ -17,7 +17,8 @@ import { promisify } from 'node:util'
 
 export const PLUGIN_ID = 'cate-agent-state'
 export const OWNER_FILE = '.cate-managed.json'
-export const OWNER_SENTINEL = '{"schema":1,"owner":"Cate","plugin":"cate-agent-state"}\n'
+export const OWNER_SENTINEL = '{"schema":1,"owner":"Cate","plugin":"cate-agent-state"}'
+const LEGACY_OWNER_SENTINEL = `${OWNER_SENTINEL}\n`
 const SAFE_PROFILE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 const HERMES_COMMAND_TIMEOUT_MS = 30_000
 const execFileAsync = promisify(execFile)
@@ -70,7 +71,8 @@ function sameFileIdentity(left, right) {
 }
 
 async function hasExactOwnershipSentinel(markerPath) {
-  const expectedSize = Buffer.byteLength(OWNER_SENTINEL)
+  const acceptedSentinels = [OWNER_SENTINEL, LEGACY_OWNER_SENTINEL]
+  const acceptedSizes = new Set(acceptedSentinels.map((value) => Buffer.byteLength(value)))
   let before
   try {
     before = await lstat(markerPath)
@@ -78,7 +80,7 @@ async function hasExactOwnershipSentinel(markerPath) {
     if (error?.code === 'ENOENT') return false
     throw error
   }
-  if (!before.isFile() || before.isSymbolicLink() || before.size !== expectedSize) return false
+  if (!before.isFile() || before.isSymbolicLink() || !acceptedSizes.has(before.size)) return false
 
   // O_NOFOLLOW closes the lstat/open race on POSIX. On Windows, comparing the
   // lstat and opened-file identities rejects a link swapped in between calls.
@@ -87,14 +89,14 @@ async function hasExactOwnershipSentinel(markerPath) {
   try {
     handle = await open(markerPath, fsConstants.O_RDONLY | noFollow)
     const opened = await handle.stat()
-    if (!opened.isFile() || opened.size !== expectedSize || !sameFileIdentity(before, opened)) return false
+    if (!opened.isFile() || !acceptedSizes.has(opened.size) || !sameFileIdentity(before, opened)) return false
     const value = await handle.readFile('utf8')
     const after = await lstat(markerPath)
     return (
-      value === OWNER_SENTINEL &&
+      acceptedSentinels.includes(value) &&
       after.isFile() &&
       !after.isSymbolicLink() &&
-      after.size === expectedSize &&
+      acceptedSizes.has(after.size) &&
       sameFileIdentity(before, after)
     )
   } catch (error) {

@@ -241,7 +241,13 @@ describe('agentHooks capability', () => {
   })
 
   test('ingestion preserves Hermes profile identity from an authenticated plugin post', async () => {
-    const posts: Array<{ terminalId: string; agentId: string; pid?: number }> = []
+    const posts: Array<{
+      terminalId: string
+      agentId: string
+      pid?: number
+      kind?: string
+      sourceStartedAt?: string
+    }> = []
     const cap = makeCap({ onPost: (value) => { posts.push(value) } })
     const events = collect(cap)
     const { url, tokenFor } = await cap.endpoint()
@@ -254,7 +260,7 @@ describe('agentHooks capability', () => {
     }
 
     expect((await post(url, tokenFor('rpty-hermes'), {
-      agentId: 'hermes', terminalId: 'rpty-hermes', pid: 4321, payload,
+      agentId: 'hermes', terminalId: 'rpty-hermes', pid: 4321, processStartedAt: '123456789', payload,
     })).status).toBe(204)
     await waitFor(() => events.length === 1)
 
@@ -266,12 +272,14 @@ describe('agentHooks capability', () => {
       cwd: payload.cwd,
       profile: 'work',
       sourcePid: 4321,
+      sourceStartedAt: '123456789',
     })
     expect(posts).toEqual([{
       terminalId: 'rpty-hermes',
       agentId: 'hermes',
       pid: 4321,
       kind: 'turn-start',
+      sourceStartedAt: '123456789',
     }])
   })
 

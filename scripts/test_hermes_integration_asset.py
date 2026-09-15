@@ -129,6 +129,7 @@ class CateAgentStatePluginTests(unittest.TestCase):
         self.assertEqual(body["agentId"], "hermes")
         self.assertEqual(body["terminalId"], "term-1")
         self.assertEqual(body["pid"], os.getpid())
+        self.assertRegex(body["processStartedAt"], r"^[1-9][0-9]*$")
         self.assertEqual(
             body["payload"],
             {

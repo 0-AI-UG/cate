@@ -57,6 +57,7 @@ import {
   CATE_TERMINAL_ID_ENV,
   agentHookFolder,
   normalizeAgentHookPayload,
+  normalizeAgentSourceStartedAt,
   resolveAgentHookMode,
   type AgentHookAgentState,
   type AgentHookConfig,
@@ -136,6 +137,7 @@ export interface AgentHooksDeps {
     agentId: AgentId
     pid?: number
     kind?: AgentHookEventKind
+    sourceStartedAt?: string
   }) => void | Promise<void>
   /** Tests may replace the filesystem-backed CLI resolvers. */
   titleResolvers?: AgentTitleResolvers
@@ -414,6 +416,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
             agentId?: unknown
             terminalId?: unknown
             pid?: unknown
+            processStartedAt?: unknown
             payload?: unknown
             threadId?: string
             turnId?: string
@@ -456,6 +459,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
               return
             }
             const event = normalizeAgentHookPayload(body.agentId, body.terminalId, body.payload as Record<string, unknown>)
+            const sourceStartedAt = normalizeAgentSourceStartedAt(body.processStartedAt)
             if (
               event?.agentId === 'hermes' &&
               typeof body.pid === 'number' &&
@@ -463,6 +467,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
               body.pid > 0
             ) {
               event.sourcePid = body.pid
+              if (sourceStartedAt !== undefined) event.sourceStartedAt = sourceStartedAt
             }
             // Presence lineage: every authenticated post from a known agent
             // counts, even one whose payload normalizes to null — the post
@@ -474,7 +479,12 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
                   terminalId: body.terminalId,
                   agentId: body.agentId as AgentId,
                   pid: typeof body.pid === 'number' ? body.pid : undefined,
-                  ...(body.agentId === 'hermes' && event ? { kind: event.kind } : {}),
+                  ...(body.agentId === 'hermes' && event
+                    ? {
+                        kind: event.kind,
+                        ...(sourceStartedAt !== undefined ? { sourceStartedAt } : {}),
+                      }
+                    : {}),
                 })
               } catch { /* presence tracking must never fail the hook */ }
             }

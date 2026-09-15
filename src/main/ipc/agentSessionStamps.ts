@@ -24,7 +24,7 @@
 // =============================================================================
 
 import { SHELL_AGENT_SESSION_UPDATE } from '../../shared/ipc-channels'
-import type { AgentHookEvent } from '../../shared/agentHooks'
+import { compareAgentProcessGeneration, type AgentHookEvent } from '../../shared/agentHooks'
 import type { AgentId } from '../../shared/agents'
 import type { Runtime } from '../runtime/types'
 import type { TerminalAgentSession } from '../../shared/types'
@@ -68,7 +68,12 @@ interface StampState {
   latest?: Pick<TerminalAgentSession, 'agentId' | 'sessionId' | 'profile'> & {
     /** Process generation for in-process hook providers such as Hermes. */
     sourcePid?: number
+    sourceStartedAt?: string
   }
+  /** Highest Hermes process generation seen for this terminal. This survives
+   * session/falling-edge clears so delayed events cannot resurrect an older
+   * session after the newer process has exited. */
+  hermesHighWater?: Pick<AgentHookEvent, 'sourcePid' | 'sourceStartedAt'>
   /** Monotonic ingest counter — an async cwd lookup captures it and drops its
    *  result if a newer event (or a clear) landed while it was in flight. */
   seq: number
@@ -117,14 +122,30 @@ export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent)
   const { terminalId } = event
   if (event.kind === 'session-title' || event.kind === 'input-submit' || event.kind === 'input-interrupt') return
   const st = stateFor(terminalId)
-  if (
-    event.agentId === 'hermes' &&
-    st.latest?.agentId === 'hermes' &&
-    st.latest.sourcePid !== undefined &&
-    event.sourcePid !== st.latest.sourcePid &&
-    event.kind !== 'session-start' &&
-    event.kind !== 'turn-start'
-  ) return
+  if (event.agentId === 'hermes') {
+    const generationOrder = st.hermesHighWater
+      ? compareAgentProcessGeneration(event, st.hermesHighWater)
+      : null
+    if (generationOrder === -1) return
+    const canReplaceLegacyGeneration = event.kind === 'session-start' || event.kind === 'turn-start'
+    if (
+      !st.hermesHighWater ||
+      generationOrder === 1 ||
+      (generationOrder === null && canReplaceLegacyGeneration)
+    ) {
+      st.hermesHighWater = {
+        sourcePid: event.sourcePid,
+        sourceStartedAt: event.sourceStartedAt,
+      }
+    }
+    if (
+      generationOrder === null &&
+      st.latest?.agentId === 'hermes' &&
+      st.latest.sourcePid !== undefined &&
+      event.sourcePid !== st.latest.sourcePid &&
+      !canReplaceLegacyGeneration
+    ) return
+  }
   if (event.kind === 'session-end') {
     // An end without an identity cannot safely clear a resumable session.
     if (!event.sessionId) return
@@ -142,13 +163,29 @@ export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent)
   }
   if (event.sessionId == null) return
   st.seq++
+  const previousSession = st.session
   st.latest = {
     agentId: event.agentId,
     sessionId: event.sessionId,
     ...(event.profile ? { profile: event.profile } : {}),
     ...(event.sourcePid !== undefined ? { sourcePid: event.sourcePid } : {}),
+    ...(event.sourceStartedAt !== undefined ? { sourceStartedAt: event.sourceStartedAt } : {}),
   }
-  if (event.kind === 'session-start' && !RESUMABLE_FROM_SESSION_START[event.agentId]) return
+  if (event.kind === 'session-start' && !RESUMABLE_FROM_SESSION_START[event.agentId]) {
+    // A newly announced, not-yet-resumable Hermes session supersedes the old
+    // conversation before its first turn. Clear that old persisted identity
+    // now; a replacement process may register before the scan sees the old
+    // process fall, so relying on the falling edge can preserve a stale resume.
+    if (
+      event.agentId === 'hermes' &&
+      previousSession?.agentId === 'hermes' &&
+      (
+        previousSession.sessionId !== event.sessionId ||
+        previousSession.profile !== event.profile
+      )
+    ) emit(terminalId, null)
+    return
+  }
   const { agentId, sessionId } = event
   const profile = event.profile ? { profile: event.profile } : {}
   if (event.cwd) {
@@ -167,8 +204,21 @@ export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent)
 
 /** Falling edge: the agent exited while the terminal lives on — nothing to
  *  resume. Clears the stamp; the next agent run re-stamps via fresh events. */
-export function clearAgentSessionStamp(terminalId: string, endedAgentPid?: number): void {
+export function clearAgentSessionStamp(
+  terminalId: string,
+  endedAgentPid?: number,
+  endedAgentStartedAt?: string,
+): void {
   const st = stateFor(terminalId)
+  if (
+    endedAgentPid !== undefined &&
+    st.latest?.agentId === 'hermes' &&
+    st.hermesHighWater &&
+    compareAgentProcessGeneration(
+      { sourcePid: endedAgentPid, sourceStartedAt: endedAgentStartedAt },
+      st.hermesHighWater,
+    ) === -1
+  ) return
   if (
     endedAgentPid !== undefined &&
     st.latest?.sourcePid !== undefined &&

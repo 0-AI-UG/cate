@@ -11,7 +11,8 @@ import {
 
 const roots = []
 const OWNER_FILE = '.cate-managed.json'
-const OWNER_SENTINEL = '{"schema":1,"owner":"Cate","plugin":"cate-agent-state"}\n'
+const OWNER_SENTINEL = '{"schema":1,"owner":"Cate","plugin":"cate-agent-state"}'
+const LEGACY_OWNER_SENTINEL = `${OWNER_SENTINEL}\n`
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -75,6 +76,18 @@ describe('Hermes integration manager', () => {
       ['--profile', 'work', 'plugins', 'enable', 'cate-agent-state', '--no-allow-tool-override'],
       ['--profile', 'work', 'plugins', 'list', '--enabled', '--json'],
     ])
+  })
+
+  it('accepts the legacy LF-terminated marker and rewrites it canonically', async () => {
+    const { sourceDir, home } = await fixture()
+    const fake = fakeHermes(home)
+    await installHermesIntegration({ profile: 'work', sourceDir, runHermes: fake.runHermes })
+    const target = path.join(home, 'plugins', 'cate-agent-state')
+    await writeFile(path.join(target, OWNER_FILE), LEGACY_OWNER_SENTINEL)
+
+    await installHermesIntegration({ profile: 'work', sourceDir, runHermes: fake.runHermes })
+
+    expect(await readFile(path.join(target, OWNER_FILE), 'utf8')).toBe(OWNER_SENTINEL)
   })
 
   it('refuses to overwrite a foreign plugin directory', async () => {

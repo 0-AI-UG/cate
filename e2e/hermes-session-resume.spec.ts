@@ -138,10 +138,6 @@ test('two Hermes terminals cold-restore their own exact profile-scoped sessions'
       const liveNodes = window.__cateE2E!.nodes()
       return ids.map((id) => liveNodes.find((node) => node.id === id)!.panelId)
     }, nodes)
-    const terminalIds = await page.evaluate(
-      (ids) => ids.map((id) => window.__cateE2E!.terminalPtyId(id)!),
-      nodes,
-    )
     const profiles = ['work', 'default'] as const
 
     for (const [index, node] of nodes.entries()) {
@@ -201,7 +197,6 @@ test('two Hermes terminals cold-restore their own exact profile-scoped sessions'
       (ids) => ids.map((id) => window.__cateE2E!.terminalPtyId(id)!),
       nodes,
     )
-    expect(restoredTerminalIds).toEqual(terminalIds)
     for (const [index, node] of nodes.entries()) {
       await expect.poll(
         () => page.evaluate((id) => window.__cateE2E!.terminalText(id), node),

@@ -125,9 +125,10 @@ describe('notePost → presenceFor', () => {
       [70, 10, 'hermes'],
     ])
     const { tracker, snapshot } = makeTracker(overlapping)
-    await tracker.notePost(T, 'hermes', 40, 'turn-start')
-    await tracker.notePost(T, 'hermes', 70, 'turn-start')
-    await tracker.notePost(T, 'hermes', 40, 'turn-end')
+    await tracker.notePost(T, 'hermes', 40, 'turn-start', '100')
+    await tracker.notePost(T, 'hermes', 70, 'turn-start', '200')
+    await tracker.notePost(T, 'hermes', 40, 'turn-start', '100')
+    await tracker.notePost(T, 'hermes', 40, 'turn-end', '100')
     expect(snapshot).toHaveBeenCalledTimes(2)
 
     const onlyNew = tree([[10, 1, 'zsh'], [70, 10, 'hermes']])
@@ -138,6 +139,118 @@ describe('notePost → presenceFor', () => {
       agentName: null,
       agentPresent: false,
       endedAgentPid: 70,
+      endedAgentStartedAt: '200',
+    })
+  })
+
+  test('reverse snapshot completion cannot let an older generation overwrite a newer one', async () => {
+    const overlapping = tree([
+      [10, 1, 'zsh'],
+      [40, 10, 'hermes'],
+      [70, 10, 'hermes'],
+    ])
+    const resolvers: Array<(value: ProcTree) => void> = []
+    const tracker = createAgentPresenceTracker({
+      snapshot: () => new Promise<ProcTree>((resolve) => resolvers.push(resolve)),
+      isAlive: () => true,
+    })
+
+    const older = tracker.notePost(T, 'hermes', 40, 'turn-start', '100')
+    const newer = tracker.notePost(T, 'hermes', 70, 'turn-start', '200')
+    expect(resolvers).toHaveLength(2)
+    resolvers[1](overlapping)
+    await newer
+    resolvers[0](overlapping)
+    await older
+
+    const onlyNew = tree([[10, 1, 'zsh'], [70, 10, 'hermes']])
+    expect(tracker.presenceFor(T, onlyNew)).toEqual({ agentName: 'Hermes', agentPresent: true })
+  })
+
+  test('a removed newer registration still blocks an older pending generation', async () => {
+    const overlapping = tree([
+      [10, 1, 'zsh'],
+      [40, 10, 'hermes'],
+      [70, 10, 'hermes'],
+    ])
+    const resolvers: Array<(value: ProcTree) => void> = []
+    const tracker = createAgentPresenceTracker({
+      snapshot: () => new Promise<ProcTree>((resolve) => resolvers.push(resolve)),
+      isAlive: () => true,
+    })
+
+    const older = tracker.notePost(T, 'hermes', 40, 'turn-start', '100')
+    const newer = tracker.notePost(T, 'hermes', 70, 'turn-start', '200')
+    resolvers[1](overlapping)
+    await newer
+    expect(tracker.presenceFor(T, tree([[10, 1, 'zsh']]))).toMatchObject({
+      agentPresent: false,
+      endedAgentPid: 70,
+    })
+    resolvers[0](overlapping)
+    await older
+
+    expect(tracker.presenceFor(T, tree([[10, 1, 'zsh'], [40, 10, 'hermes']]))).toEqual({
+      agentName: null,
+      agentPresent: false,
+    })
+  })
+
+  test('a dead newer registration still blocks an older pending generation', async () => {
+    const overlapping = tree([
+      [10, 1, 'zsh'],
+      [40, 10, 'hermes'],
+      [70, 10, 'hermes'],
+    ])
+    const resolvers: Array<(value: ProcTree) => void> = []
+    let newerAlive = true
+    const tracker = createAgentPresenceTracker({
+      snapshot: () => new Promise<ProcTree>((resolve) => resolvers.push(resolve)),
+      isAlive: (pid) => pid !== 70 || newerAlive,
+    })
+
+    const older = tracker.notePost(T, 'hermes', 40, 'turn-start', '100')
+    const newer = tracker.notePost(T, 'hermes', 70, 'turn-start', '200')
+    resolvers[1](overlapping)
+    await newer
+    newerAlive = false
+    resolvers[0](overlapping)
+    await older
+
+    expect(tracker.presenceFor(T, tree([[10, 1, 'zsh'], [40, 10, 'hermes']]))).toEqual({
+      agentName: null,
+      agentPresent: false,
+      endedAgentPid: 70,
+      endedAgentStartedAt: '200',
+    })
+  })
+
+  test('drop cancels an in-flight registration', async () => {
+    const processTree = tree([[10, 1, 'zsh'], [40, 10, 'hermes']])
+    let resolveSnapshot!: (value: ProcTree) => void
+    const tracker = createAgentPresenceTracker({
+      snapshot: () => new Promise<ProcTree>((resolve) => { resolveSnapshot = resolve }),
+      isAlive: () => true,
+    })
+
+    const pending = tracker.notePost(T, 'hermes', 40, 'turn-start', '100')
+    tracker.drop(T)
+    resolveSnapshot(processTree)
+    await pending
+
+    expect(tracker.presenceFor(T, processTree)).toEqual({ agentName: null, agentPresent: false })
+  })
+
+  test('falling-edge identity includes the process-start marker across pid reuse', async () => {
+    const oldTree = tree([[10, 1, 'zsh'], [40, 10, 'hermes']])
+    const { tracker } = makeTracker(oldTree)
+    await tracker.notePost(T, 'hermes', 40, 'turn-start', '100')
+
+    expect(tracker.presenceFor(T, tree([[10, 1, 'zsh']]))).toEqual({
+      agentName: null,
+      agentPresent: false,
+      endedAgentPid: 40,
+      endedAgentStartedAt: '100',
     })
   })
 
