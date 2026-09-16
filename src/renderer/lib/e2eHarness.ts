@@ -104,6 +104,7 @@ declare global {
       panelTypes(wsId?: string): string[]
       panels(): PanelState[]
       createPanel(type: PanelType, filePath?: string): string
+      connectPanels(fromPanelId: string, toPanelId: string): string | null
       detachPanel(panelId: string): Promise<boolean>
       openApplicationOverlay(view: 'settings' | 'skills' | 'usage' | 'pullRequests', section?: string): void
       /** Seed N worktrees on the selected workspace (index 0 = primary, keyed by
@@ -614,6 +615,7 @@ export function installE2EHarness(): void {
     panelTypes,
     panels: () => Object.values(useAppStore.getState().getWorkspace(useAppStore.getState().selectedWorkspaceId)?.panels ?? {}),
     createPanel: (type, filePath) => getPanelDef(type).create({ filePath, workspaceId: useAppStore.getState().selectedWorkspaceId, placement: { target: 'dock', zone: 'center' } })!,
+    connectPanels: (from, to) => useAppStore.getState().addPanelRelation(useAppStore.getState().selectedWorkspaceId, from, to, 'use'),
     detachPanel: (id) => movePanelToNewWindow(useAppStore.getState().selectedWorkspaceId, id),
     openApplicationOverlay: (view, section) => {
       const ui = useUIStore.getState()

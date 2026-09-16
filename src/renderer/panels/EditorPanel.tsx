@@ -1,5 +1,6 @@
 import { useShortcutLabel } from '../stores/shortcutStore'
 import { captureEditorPanel } from '../lib/editor/editorDocuments'
+import { isEditorDraft } from '../../shared/editorDraft'
 import { panelSearchStore } from '../stores/panelSearchStores'
 // =============================================================================
 // EditorPanel — Monaco Editor wrapper for CanvasIDE editor panels.
@@ -340,7 +341,7 @@ export default function EditorPanel({
   // from one markdown file to the next. Keying it by panelId also keeps each
   // tab's choice independent across canvas switches.
   const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
-  const markdownPreview = isMarkdown && (panel?.markdownPreview ?? true)
+  const markdownPreview = isMarkdown && (panel?.markdownPreview ?? !isEditorDraft(filePath))
   const setMarkdownPreview = useCallback(
     (next: boolean) =>
       useAppStore.getState().setPanelMarkdownPreview(workspaceId, panelId, next),
@@ -802,10 +803,13 @@ export default function EditorPanel({
           title={filePath ?? explorerRoot}
         >
           <span className={`${filePath ? 'max-w-[40%]' : ''} truncate text-muted`}>{pathDisplayName(explorerRoot) || 'Files'}</span>
-          {filePath && <><ChevronRight size={12} className="shrink-0 text-muted" /><span className="truncate text-primary">{toRelativePath(filePath, explorerRoot)}</span></>}
+          {filePath && <><ChevronRight size={12} className="shrink-0 text-muted" /><span className="truncate text-primary">{isEditorDraft(filePath) ? panel?.title ?? 'Untitled' : toRelativePath(filePath, explorerRoot)}</span></>}
           <Copy size={12} className="shrink-0" />
           <ChevronDown size={11} className="shrink-0" />
         </button>
+        {sync.shared && <span className="shrink-0 text-muted" title="Edits autosave to the file shared with your agent.">Shared with agent</span>}
+        {isEditorDraft(filePath) && <button className="shrink-0 rounded px-2 py-1 text-primary hover:bg-hover" onClick={() => void save()}>Save As…</button>}
+        {sync.syncError && <button className="shrink-0 text-error" title={sync.syncError} onClick={() => void (sync.shared ? sync.flushShared() : save())}>Save failed · Retry</button>}
         <div className="shrink-0 max-w-40">
           <WorktreeSelector worktrees={worktrees} value={currentWorktree?.id} onChange={switchWorktree} title="File panel worktree" />
         </div>

@@ -2,6 +2,7 @@ import { compilePanelRelationContext } from '../../../shared/panelRelations'
 import type { AgentId } from '../../../shared/agents'
 import { useAppStore } from '../../stores/appStore'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { flushConnectedEditors } from '../editor/connectedEditors'
 
 const AGENT_PROMPT_GUIDANCE: Partial<Record<AgentId, string>> = {
   codex: [
@@ -14,6 +15,15 @@ const AGENT_PROMPT_GUIDANCE: Partial<Record<AgentId, string>> = {
 export function addAgentPromptGuidance(context: string, agentId: AgentId | null): string {
   const guidance = agentId ? AGENT_PROMPT_GUIDANCE[agentId] : null
   return guidance ? `${context}\n\n${guidance}` : context
+}
+
+export async function preparePanelRelationContextForSend(
+  workspaceId: string,
+  panelId: string,
+  agentId: AgentId | null = null,
+): Promise<string | null> {
+  await flushConnectedEditors(workspaceId, panelId)
+  return consumePanelRelationContextForSend(workspaceId, panelId, agentId)
 }
 
 /** Resolve context at the last possible moment so toggles and graph edits made

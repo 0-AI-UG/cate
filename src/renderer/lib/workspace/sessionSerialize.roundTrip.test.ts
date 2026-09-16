@@ -17,6 +17,7 @@ import {
 } from './sessionSerialize'
 import { createDockStore } from '../../stores/dockStore'
 import { createCanvasStore } from '../../stores/canvasStore'
+import { editorDraftPath, isEditorDraft } from '../../../shared/editorDraft'
 import type {
   SessionSnapshot,
   PanelState,
@@ -447,6 +448,17 @@ it.each(['edited file', ''])('round-trips a dirty file buffer (%j) and baseline 
   expect(workspace.panels!.editor).not.toHaveProperty('editorBaseline')
   const restored = projectFilesToSnapshot(workspace, session, ROOT)
   expect(restored.panels!.editor).toMatchObject({ unsavedContent: content, editorBaseline: 'disk baseline', isDirty: true })
+})
+
+it('restores the persistent working file and untitled label of a shared draft', () => {
+  const { snapshot } = buildSnapshot()
+  const filePath = editorDraftPath(ROOT, '12345678-1234-1234-1234-123456789abc')
+  snapshot.panels!['ed-scratch'] = panel({ id: 'ed-scratch', type: 'editor', title: 'Untitled', filePath })
+  const workspace = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+  const session = throughDisk(buildSessionFile(snapshot))
+  const restored = projectFilesToSnapshot(workspace, session, ROOT).panels!['ed-scratch']
+  expect(restored).toMatchObject({ title: 'Untitled', filePath, isDirty: false })
+  expect(isEditorDraft(restored.filePath)).toBe(true)
 })
 
 it('round-trips Search options through machine-local session state', () => {

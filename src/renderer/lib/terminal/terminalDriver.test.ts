@@ -51,6 +51,7 @@ vi.mock('../activePanel', () => ({
 
 vi.mock('./registryState', () => ({
   getEntry: (panelId: string) => h.entries.get(panelId),
+  ptyToPanel: new Map([['pty-1', 't1']]),
 }))
 
 import { handleTerminalMethod, sequenceForKey } from './terminalDriver'
