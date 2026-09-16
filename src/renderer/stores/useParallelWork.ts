@@ -291,9 +291,17 @@ export function useParallelWork(
         setError(`Couldn’t verify this worktree before discarding it: ${errorMessage(err, 'Status is unavailable.')}`)
         return
       }
+      let missing = false
       if (!status) {
-        setError('Couldn’t verify this worktree before discarding it. No files were removed.')
-        return
+        try {
+          await window.electronAPI.fsStat(wt.path, workspaceId)
+        } catch (err: unknown) {
+          missing = /\bENOENT\b|no such file or directory/i.test(String(err))
+        }
+        if (!missing) {
+          setError('Couldn’t verify this worktree before discarding it. No files were removed.')
+          return
+        }
       }
       const dirty = !!status?.dirty
       const branchAhead = (status?.ahead ?? 0) > 0
@@ -307,7 +315,8 @@ export function useParallelWork(
             : '') +
           (dirty ? '\nWARNING: uncommitted changes here will be lost.' : '') +
           (panelTargets.hasDirtyEditor ? '\nWARNING: an editor has unsaved changes.' : '') +
-          (branchAhead ? `\nWARNING: ${status?.ahead} unpublished commit(s) will be lost.` : ''),
+          (branchAhead ? `\nWARNING: ${status?.ahead} unpublished commit(s) will be lost.` : '') +
+          (missing ? '\nThe worktree folder is missing. Its Git record and branch will be removed.' : ''),
       )
       if (!ok) return
       if (!(await prepareWorktreePanelsForClose(workspaceId, panelTargets))) return
@@ -316,23 +325,42 @@ export function useParallelWork(
       // so that newly-written content cannot make an otherwise approved discard
       // fail halfway through cleanup.
       let removalDirty = dirty
-      try {
-        removalDirty = !!(await window.electronAPI.gitWorktreeStatus(wt.path, workspaceId))?.dirty
-      } catch (err: unknown) {
-        await cancelPreparedWorktreePanels(panelTargets)
-        setError(`Couldn’t re-verify this worktree before discarding it: ${errorMessage(err, 'Status is unavailable.')}`)
-        return
+      if (!missing) {
+        try {
+          removalDirty = !!(await window.electronAPI.gitWorktreeStatus(wt.path, workspaceId))?.dirty
+        } catch (err: unknown) {
+          await cancelPreparedWorktreePanels(panelTargets)
+          setError(`Couldn’t re-verify this worktree before discarding it: ${errorMessage(err, 'Status is unavailable.')}`)
+          return
+        }
       }
       // Removing a worktree shells out to git and can take several seconds, so
       // flag the row as busy to drive its inline spinner.
       setBusy?.(wt.id)
       try {
-        await window.electronAPI.gitWorktreeRemove(
-          rootPath,
-          wt.path,
-          { force: dirty || removalDirty || panelTargets.hasDirtyEditor },
-          workspaceId,
-        )
+        if (missing) {
+          await window.electronAPI.gitWorktreePrune(rootPath, workspaceId)
+          const list = await window.electronAPI.gitWorktreeList(rootPath, workspaceId)
+          if (!list.some((entry) => pathKey(entry.path) === pathKey(rootPath))) {
+            throw new Error('Couldn’t verify the live worktrees after cleanup. Refresh and try again.')
+          }
+          if (list.some((entry) => pathKey(entry.path) === pathKey(wt.path))) {
+            throw new Error('Git still lists this worktree. Refresh and try again.')
+          }
+          try {
+            await window.electronAPI.fsStat(wt.path, workspaceId)
+            throw new Error('The worktree folder reappeared. Refresh and try again.')
+          } catch (err: unknown) {
+            if (!/\bENOENT\b|no such file or directory/i.test(String(err))) throw err
+          }
+        } else {
+          await window.electronAPI.gitWorktreeRemove(
+            rootPath,
+            wt.path,
+            { force: dirty || removalDirty || panelTargets.hasDirtyEditor },
+            workspaceId,
+          )
+        }
         if (wt.branch) {
           try {
             await window.electronAPI.gitBranchDelete(rootPath, wt.branch, true, workspaceId)

@@ -7,13 +7,14 @@ import { panelSearchStore } from '../stores/panelSearchStores'
 // =============================================================================
 
 import { lazy, Suspense, useEffect, useRef, useCallback, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import type { CSSProperties } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { perfCount, useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import MarkdownCodeBlock from './MarkdownCodeBlock'
 import type { EditorPanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
 import { useWorktrees } from '../stores/useWorktrees'
@@ -42,7 +43,6 @@ import {
 } from '../lib/editor/modelCache'
 import { useFileSync } from '../lib/editor/useFileSync'
 import EditorConflictBanner from './EditorConflictBanner'
-import { Tooltip } from '../ui/Tooltip'
 import { isRuntimeLocator } from '../../shared/runtimeLocator'
 import { LoadingState } from '../ui/Spinner'
 import { PanelCenteredState } from '../ui/PanelCenteredState'
@@ -917,7 +917,7 @@ export default function EditorPanel({
       </NodePopover>}
       <div className="files-content flex-1 min-h-0 flex" style={{ backgroundColor: editorBackground, '--file-explorer-bg': editorBackground } as CSSProperties}>
       <div className={`${editorVisible ? 'flex-1' : 'hidden'} min-w-0 relative`}>
-        {previewType && filePath && <Suspense fallback={<LoadingState label="Loading preview…" className="h-full" />}><FilePreview key={filePath} filePath={filePath} workspaceId={workspaceId} /></Suspense>}
+        {previewType && filePath && <Suspense fallback={<LoadingState label="Loading preview…" className="h-full" />}><FilePreview key={filePath} filePath={filePath} workspaceId={workspaceId} rootPath={explorerRoot} /></Suspense>}
         {!previewType && showDiff && conflict?.kind === 'changed' && (
           <div className="absolute inset-0 z-30 bg-surface-1">
             <div ref={diffOverlayRef} className="w-full h-full" />
@@ -956,38 +956,6 @@ export default function EditorPanel({
 // -----------------------------------------------------------------------------
 // Markdown preview renderer
 // -----------------------------------------------------------------------------
-
-/** Fenced code block with a hover copy button, matching the agent chat's
- *  "Copy code" affordance (#373). */
-function MarkdownCodeBlock({ children }: { children: ReactNode }) {
-  const preRef = useRef<HTMLPreElement>(null)
-  const [copied, setCopied] = useState(false)
-  return (
-    <div className="relative group my-3">
-      <pre
-        ref={preRef}
-        className="rounded-md bg-surface-3 border border-subtle px-4 py-3 overflow-x-auto text-[12px] leading-snug"
-      >
-        {children}
-      </pre>
-      <Tooltip label="Copy code">
-        <button
-          onClick={() => {
-            void navigator.clipboard.writeText(preRef.current?.textContent ?? '')
-            setCopied(true)
-            window.setTimeout(() => setCopied(false), 1200)
-          }}
-          aria-label="Copy code"
-          className={`absolute top-1.5 right-1.5 p-1 rounded-[10px] bg-surface-3 text-muted transition-opacity hover:text-primary hover:bg-hover-strong ${
-            copied ? 'opacity-100 text-primary' : 'opacity-0 group-hover:opacity-100'
-          }`}
-        >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-        </button>
-      </Tooltip>
-    </div>
-  )
-}
 
 function MarkdownPreview({ content }: { content: string }) {
   return (
@@ -1033,7 +1001,7 @@ function MarkdownPreview({ content }: { content: string }) {
                 </code>
               )
             },
-            pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
+            pre: MarkdownCodeBlock,
             table: ({ children }) => (
               <div className="overflow-x-auto my-3">
                 <table className="min-w-full text-[12px] border border-subtle rounded-md">{children}</table>
