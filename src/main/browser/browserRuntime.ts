@@ -717,33 +717,51 @@ class BrowserTargetRuntime {
     // Layout/zoom values can update before Chromium submits their pixels.
     // One rAF runs before paint; the next gives that frame a chance to submit
     // before Electron immediately copies the current compositor surface.
-    let started = performance.now()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    try {
-      await Promise.race([
-        this.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))'),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new Error('browser-render-frame-timeout')), 5000)
-        }),
-      ])
-    } finally {
-      clearTimeout(timer)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        let started = performance.now()
+        let frameTimer: ReturnType<typeof setTimeout> | undefined
+        let frameReady: unknown
+        try {
+          frameReady = await Promise.race([
+            this.evaluate(`new Promise(resolve => {
+              let settled = false;
+              const finish = value => { if (!settled) { settled = true; resolve(value); } };
+              requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
+              setTimeout(() => finish(false), 5000);
+            })`),
+            new Promise<never>((_resolve, reject) => {
+              frameTimer = setTimeout(() => reject(new Error('browser-render-frame-timeout')), 5000)
+            }),
+          ])
+        } finally {
+          clearTimeout(frameTimer)
+        }
+        if (frameReady !== true) throw new Error('browser-render-frame-timeout')
+        if (profile) profile.frameWaitMs += performance.now() - started
+        this.activeGuard?.()
+        started = performance.now()
+        const capture = await this.contents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+        if (profile) profile.captureMs += performance.now() - started
+        started = performance.now()
+        const resized = capture.resize({ width: Math.round(viewport.width), height: Math.round(viewport.height) })
+        if (profile) profile.resizeMs += performance.now() - started
+        started = performance.now()
+        const data = resized.toPNG()
+        if (profile) { profile.pngMs += performance.now() - started; profile.imageBytes = data.length }
+        started = performance.now()
+        const encoded = data.toString('base64')
+        if (profile) profile.base64Ms += performance.now() - started
+        return { mimeType: 'image/png', data: encoded, width: data.readUInt32BE(16), height: data.readUInt32BE(20) }
+      } catch (error) {
+        if (attempt === 1) throw error
+        // Navigation can leave the old execution context or compositor frame
+        // unavailable for one turn. Let it settle and make one fresh attempt.
+        if (!(error instanceof Error) || !/browser-render-frame-timeout|Execution context was destroyed|capturePage/i.test(error.message)) throw error
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
     }
-    if (profile) profile.frameWaitMs += performance.now() - started
-    this.activeGuard?.()
-    started = performance.now()
-    const capture = await this.contents.capturePage(undefined, { stayHidden: true, stayAwake: true })
-    if (profile) profile.captureMs += performance.now() - started
-    started = performance.now()
-    const resized = capture.resize({ width: Math.round(viewport.width), height: Math.round(viewport.height) })
-    if (profile) profile.resizeMs += performance.now() - started
-    started = performance.now()
-    const data = resized.toPNG()
-    if (profile) { profile.pngMs += performance.now() - started; profile.imageBytes = data.length }
-    started = performance.now()
-    const encoded = data.toString('base64')
-    if (profile) profile.base64Ms += performance.now() - started
-    return { mimeType: 'image/png', data: encoded, width: data.readUInt32BE(16), height: data.readUInt32BE(20) }
+    throw new Error('browser-screenshot-failed')
   }
 
   private async observe(args: BrowserArgs = {}, screenshot = false, imageOnly = false): Promise<BrowserObservation> {

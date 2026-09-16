@@ -24,6 +24,7 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
         if (method === 'Page.createIsolatedWorld') return { executionContextId: 1 }
         if (method === 'Runtime.evaluate') {
           if (String(params.expression).includes('const promise=new Promise')) return { result: { objectId: 'wheel-watch' } }
+          if (String(params.expression).includes('requestAnimationFrame')) return { result: { value: true } }
           if (String(params.expression).includes('devicePixelRatio')) return { result: { value: { ...state.viewport } } }
           if (params.expression === 'document.activeElement') return { result: { objectId: 'active' } }
           return { result: { value: state.text } }
