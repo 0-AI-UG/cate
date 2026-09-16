@@ -1,5 +1,6 @@
 import type { PanelState, PanelType, Point } from './types'
 import { shortPanelId } from './panelIds'
+import { parseLocator } from './runtimeLocator'
 
 export type PanelRelationKind = 'use' | 'context' | 'verify' | 'trigger'
 export type PanelConnectionSide = 'top' | 'right' | 'bottom' | 'left'
@@ -187,11 +188,13 @@ function resourceInstruction(
     return `${prefix}${target} ${action} through Cate browser automation; don't open another browser.`
   }
   if (panel.type === 'editor' && panel.filePath) {
+    const path = JSON.stringify(parseLocator(panel.filePath).path)
+    const sync = ' Use your normal filesystem tools.'
     return kind === 'use'
-      ? `${prefix}${target} Work in ${panel.filePath}.`
+      ? `${prefix}${target} Work in ${path}.${sync}`
       : kind === 'verify'
-        ? `${prefix}${target} Verify against ${panel.filePath}.`
-      : `${prefix}${target} Reference ${panel.filePath}.`
+        ? `${prefix}${target} Verify against ${path}.${sync}`
+      : `${prefix}${target} Reference ${path}.${sync}`
   }
   if (panel.type === 'review') {
     const action = kind === 'verify' ? 'Verify with it' : kind === 'use' ? 'Work through it' : 'Reference it'

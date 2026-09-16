@@ -9,6 +9,7 @@ import { resolveTerminalKeySequence } from './terminalKeymap'
 import { openTerminalUrl } from './terminalUrlOpen'
 import { resolveTerminalLinkTarget } from './terminalLinks'
 import { IS_MAC } from '../platform'
+import { writeTerminalInput, reportTerminalWriteError } from './terminalWrite'
 
 // Route through the shared IS_MAC so the CATE_FAKE_PLATFORM dev override also
 // flips terminal keymap/paste-chord behavior, keeping one platform source.
@@ -119,7 +120,7 @@ export function makeTerminalKeyEventHandler(
     // matching VS Code / Cursor. Pure table lives in terminalKeymap.ts.
     const seq = resolveTerminalKeySequence(event, isMacPlatform)
     if (seq !== null) {
-      window.electronAPI.terminalWrite(ptyId, seq)
+      void writeTerminalInput(ptyId, seq).catch(error => reportTerminalWriteError(ptyId, error))
       event.preventDefault()
       return false
     }
@@ -139,7 +140,7 @@ export function makeTerminalKeyEventHandler(
     // Remaining Cmd+key combos are app shortcuts — let them propagate.
     if (event.metaKey) return true
 
-    window.electronAPI.terminalWrite(ptyId, `\x1b[${keyCode};${mod}u`)
+    void writeTerminalInput(ptyId, `\x1b[${keyCode};${mod}u`).catch(error => reportTerminalWriteError(ptyId, error))
     event.preventDefault()
     return false
   }

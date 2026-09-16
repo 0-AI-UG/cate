@@ -25,6 +25,7 @@
 import { useAppStore } from '../../stores/appStore'
 import { getActivePanelId } from '../activePanel'
 import { getEntry } from './registryState'
+import { writeTerminalInput } from './terminalWrite'
 import { readTerminalBuffer } from './terminalBuffer'
 import type { PanelTargetObserver } from '../panelInteractions'
 
@@ -39,7 +40,7 @@ export async function submitTerminalText(panelId: string, text: string): Promise
     entry.terminal.paste(text)
     // Let xterm emit the paste payload before the trailing Enter.
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
-    await window.electronAPI.terminalWrite(entry.ptyId, '\r')
+    await writeTerminalInput(entry.ptyId, '\r')
     return true
   } catch {
     return false
@@ -146,7 +147,7 @@ export async function handleTerminalMethod(
 
   try {
     // The exact write path user keystrokes take (terminalLifecycle's onData).
-    await window.electronAPI.terminalWrite(entry.ptyId, data)
+    await writeTerminalInput(entry.ptyId, data)
     return { ok: true }
   } catch {
     return { ok: false, error: 'terminal-not-ready' }

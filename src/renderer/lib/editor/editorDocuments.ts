@@ -1,5 +1,6 @@
 import { parseLocator, formatLocator } from '../../../shared/runtimeLocator'
 import { pathKey } from '../../../shared/pathUtils'
+import { editorDraftDirectory, editorDraftPath, isEditorDraft } from '../../../shared/editorDraft'
 // Document state outlives Monaco views. One file has one buffer/baseline and one
 // save/conflict owner; panel-specific presentation stays in EditorPanel.
 import { notifySessionMutation } from '../workspace/sessionMutations'
@@ -27,7 +28,7 @@ export class EditorDocument {
   private baseline: string | null
   private content: string | undefined
   private replacing = false
-  private state: { conflict: EditorConflict; showDiff: boolean } = { conflict: null, showDiff: false }
+  private state: { conflict: EditorConflict; showDiff: boolean; shared: boolean; syncError: string | null } = { conflict: null, showDiff: false, shared: false, syncError: null }
   private listeners = new Set<() => void>()
   private views = new Set<View>()
   readonly owners = new Map<string, Owner>()
@@ -35,7 +36,10 @@ export class EditorDocument {
   private watchEpoch = 0
   private watchKey: string | undefined
   private saving: Promise<boolean> | null = null
+  private autosaving = false
   private identityRevision = 0
+  private preparing: Promise<boolean> | null = null
+  private autosaveTimer: ReturnType<typeof setTimeout> | undefined
   constructor(path: string | undefined, panel?: PanelState) {
     this.filePathRef = { current: path }
     this.content = panel?.unsavedContent
@@ -79,7 +83,7 @@ export class EditorDocument {
     for (const owner of this.owners.values()) {
       app.setPanelDirty(owner.workspaceId, owner.panelId, dirty)
       const path = this.filePathRef.current
-      if (path) app.updatePanelTitle(owner.workspaceId, owner.panelId, `${pathDisplayName(path) || 'Untitled'}${dirty ? ' •' : ''}`)
+      if (path && !isEditorDraft(path)) app.updatePanelTitle(owner.workspaceId, owner.panelId, `${pathDisplayName(path) || 'Untitled'}${dirty ? ' •' : ''}`)
       // Clearing persisted recovery data is necessary after save/discard, so a
       // remount never revives an old snapshot over a clean live document.
       if (!dirty) app.setPanelUnsavedContent(owner.workspaceId, owner.panelId, undefined)
@@ -95,6 +99,82 @@ export class EditorDocument {
     this.content = this.read()
     if (!this.isDirtyRef.current) this.markDirty(true)
     notifySessionMutation()
+    this.scheduleAutosave()
+  }
+  setShared(shared: boolean): void {
+    if (this.state.shared === shared) return
+    this.publish({ shared })
+    clearTimeout(this.autosaveTimer)
+    if (shared) void this.flushShared()
+  }
+  private scheduleAutosave(): void {
+    clearTimeout(this.autosaveTimer)
+    if (this.state.shared) this.autosaveTimer = setTimeout(() => { void this.flushShared() }, 300)
+  }
+  /** Materialize once, without a Save As dialog or a dependency on Monaco. */
+  private async prepareWorkingFile(): Promise<boolean> {
+    const owner = this.owner()
+    if (!owner?.rootPath) throw new Error('Open a project to share this editor.')
+    const revision = this.identityRevision
+    const path = this.filePathRef.current
+    if (path) {
+      let disk: string
+      try { disk = await window.electronAPI.fsReadFile(path, owner.workspaceId) }
+      catch { throw new Error('Could not read the shared file. Check whether it was deleted or became unavailable.') }
+      if (revision !== this.identityRevision) return false
+      if (this.read() === undefined) {
+        this.content = disk
+        this.setBaseline(disk)
+      } else if (this.baseline === null) {
+        // A recovered dirty buffer without a baseline cannot be safely saved.
+        if (this.isDirtyRef.current && this.read() !== disk) {
+          this.publish({ conflict: { kind: 'changed', diskContent: disk } })
+          return false
+        }
+        this.setBaseline(disk)
+      } else if (disk !== this.baseline) {
+        // Catch up even if a native watcher notification has not arrived yet.
+        this.applyDisk(disk)
+      }
+      this.watch()
+      return true
+    }
+    const target = editorDraftPath(owner.rootPath, crypto.randomUUID())
+    const content = this.read() ?? ''
+    await window.electronAPI.fsWriteFile(target, content, owner.workspaceId, null)
+    if (revision !== this.identityRevision || !this.owners.size) return false
+    const latest = this.read() ?? content
+    documents.delete(keyFor(owner.panelId))
+    this.filePathRef.current = target
+    this.content = latest
+    this.setBaseline(content)
+    documents.set(target, this)
+    this.markDirty(latest !== content)
+    for (const own of this.owners.values()) {
+      if (latest !== content) useAppStore.getState().setPanelUnsavedContent(own.workspaceId, own.panelId, latest)
+      useAppStore.getState().setPanelMarkdownPreview(own.workspaceId, own.panelId, false)
+      useAppStore.getState().updatePanelFilePath(own.workspaceId, own.panelId, target)
+    }
+    this.watch()
+    return true
+  }
+  /** Flush before a prompt is submitted, including edits awaiting debounce. */
+  flushShared = async (): Promise<boolean> => {
+    clearTimeout(this.autosaveTimer)
+    try {
+      if (this.saving) await this.saving
+      if (!this.preparing) this.preparing = this.prepareWorkingFile().finally(() => { this.preparing = null })
+      if (!await this.preparing || this.state.conflict) return false
+      if (this.saving) await this.saving
+      if (this.state.conflict) return false
+      const saved = !this.isDirtyRef.current || await this.startSave(true)
+      if (saved) this.publish({ syncError: null })
+      else if (!this.state.conflict && !this.state.syncError) this.scheduleAutosave()
+      return saved
+    } catch (error) {
+      this.publish({ syncError: error instanceof Error ? error.message : 'Could not sync the shared editor.' })
+      return false
+    }
   }
   isExternalReplace = (): boolean => this.replacing
   private replace(content: string): void {
@@ -112,6 +192,8 @@ export class EditorDocument {
     } finally { this.replacing = false }
   }
   private applyDisk(content: string): void {
+    // Watch notifications from our own save may arrive after another keystroke.
+    if (this.isDirtyRef.current && content === this.baseline) return
     if (this.read() === content) {
       this.setBaseline(content); this.markDirty(false); this.publish({ conflict: null }); return
     }
@@ -121,18 +203,21 @@ export class EditorDocument {
   private watch(): void {
     const path = this.filePathRef.current
     const owner = [...this.owners.values()].find(candidate => candidate.rootPath)
-    const key = path && owner?.rootPath ? JSON.stringify([path, owner.rootPath, owner.workspaceId]) : undefined
+    // Workspace watches prune hidden directories; watch drafts explicitly.
+    const root = path && isEditorDraft(path) ? editorDraftDirectory(path) : owner?.rootPath
+    const key = path && root && owner ? JSON.stringify([path, root, owner.workspaceId]) : undefined
     if (key === this.watchKey) return
     this.watchEpoch++
     this.stopWatching?.()
     this.stopWatching = undefined
     this.watchKey = key
-    if (!path || !owner?.rootPath) return
+    if (!path || !root || !owner) return
     const epoch = this.watchEpoch
-    this.stopWatching = watchFsRoot(owner.rootPath, event => {
+    this.stopWatching = watchFsRoot(root, event => {
       if (event.path.replace(/\\/g, '/') !== path.replace(/\\/g, '/')) return
       const read = async (): Promise<void> => {
         try {
+          if (this.saving) await this.saving
           const content = await window.electronAPI.fsReadFile(path, owner.workspaceId)
           if (epoch === this.watchEpoch) this.applyDisk(content)
         } catch {
@@ -158,26 +243,39 @@ export class EditorDocument {
       if (content !== baseline) this.applyDisk(content)
     } catch { /* retain recovered edits if the file is temporarily unavailable */ }
   }
-  save = (): Promise<boolean> => {
-    if (!this.saving) this.saving = this.performSave().finally(() => { this.saving = null })
+  save = async (): Promise<boolean> => {
+    if (this.preparing) await this.preparing
+    if (this.saving) {
+      if (!this.autosaving) return this.saving
+      await this.saving
+    }
+    return this.startSave(false)
+  }
+  private startSave(autosave: boolean): Promise<boolean> {
+    if (!this.saving) {
+      this.autosaving = autosave
+      this.saving = this.performSave(autosave).finally(() => { this.saving = null; this.autosaving = false })
+    }
     return this.saving
   }
-  private async performSave(): Promise<boolean> {
+  private async performSave(autosave = false): Promise<boolean> {
     const revision = this.identityRevision
     const owner = this.owner()
     const content = this.read()
     if (!owner || content === undefined) return false
     let target = this.filePathRef.current
     if (target && isLoadFailed(target)) return false
-    const initial = !target
-    if (!target) {
+    const previousPath = target
+    const initial = !target || (!autosave && isEditorDraft(target))
+    if (initial) {
       const panel = useAppStore.getState().workspaces.find(ws => ws.id === owner.workspaceId)?.panels[owner.panelId]
       const name = panel?.title.replace(/\s•\s*$/, '').trim()
-      const defaultName = name && name !== 'Untitled' ? name : 'Untitled.txt'
+      const defaultName = name && name !== 'Untitled' ? name : isEditorDraft(previousPath) ? 'Untitled.md' : 'Untitled.txt'
       const chosen = await window.electronAPI.saveFileDialog({ defaultName, defaultPath: owner.rootPath ? `${owner.rootPath}/${defaultName}` : defaultName })
       if (!chosen || revision !== this.identityRevision) return false
       target = chosen
     }
+    if (!target) return false
     const existing = initial ? documents.get(target) : undefined
     if (existing && existing !== this && existing.isDirtyRef.current && existing.read() !== content) {
       this.publish({ conflict: { kind: 'changed', diskContent: existing.read() } })
@@ -186,7 +284,13 @@ export class EditorDocument {
     let expectedDiskContent: string | null | undefined
     if (!initial && this.baseline !== null) {
       let disk: string | null = null
-      try { disk = await window.electronAPI.fsReadFile(target, owner.workspaceId) } catch { /* deleted: saving restores */ }
+      try { disk = await window.electronAPI.fsReadFile(target, owner.workspaceId) } catch {
+        if (autosave) {
+          this.publish({ syncError: 'Could not read the shared file. Check whether it was deleted or became unavailable.' })
+          return false
+        }
+        // Explicit saving can restore a deleted file.
+      }
       expectedDiskContent = disk
       if (revision !== this.identityRevision) return false
       if (shouldBlockOverwrite(this.baseline, disk, content)) {
@@ -194,13 +298,13 @@ export class EditorDocument {
       }
     }
     try { await window.electronAPI.fsWriteFile(target, content, owner.workspaceId, expectedDiskContent) }
-    catch (error) { log.error('[editor] Save failed:', error); return false }
+    catch (error) { log.error('[editor] Save failed:', error); this.publish({ syncError: 'Could not save the editor. Retry after checking the file.' }); return false }
     if (revision !== this.identityRevision) return false
     const latest = this.read()
     this.filePathRef.current = target
     this.setBaseline(content)
     if (initial) {
-      documents.delete(keyFor(owner.panelId))
+      documents.delete(keyFor(owner.panelId, previousPath))
       if (existing && existing !== this) {
         existing.replace(latest ?? content)
         existing.setBaseline(content)
@@ -217,7 +321,7 @@ export class EditorDocument {
       this.watch()
     }
     this.markDirty(latest !== content)
-    this.publish({ conflict: null })
+    this.publish({ conflict: null, syncError: null })
     // An edit during the asynchronous save is still unsaved and must block close.
     return !this.isDirtyRef.current
   }
@@ -238,12 +342,14 @@ export class EditorDocument {
   keepMine = (): void => {
     if (this.state.conflict?.kind === 'changed' && this.state.conflict.diskContent !== undefined) this.setBaseline(this.state.conflict.diskContent)
     this.publish({ conflict: null, showDiff: false })
+    this.scheduleAutosave()
   }
   keepBoth = (): void => {
     if (this.state.conflict?.kind !== 'changed') return
     const theirs = this.state.conflict.diskContent ?? ''
     const { merged } = threeWayMerge(this.baseline ?? '', this.read() ?? '', theirs, { mine: 'Your changes', theirs: 'On disk' })
     this.replace(merged); this.setBaseline(theirs); this.markDirty(true); this.publish({ conflict: null, showDiff: false })
+    this.scheduleAutosave()
   }
   saveToRestore = async (): Promise<void> => { if (await this.save()) this.publish({ conflict: null, showDiff: false }) }
   dismiss = (): void => this.publish({ conflict: null, showDiff: false })
@@ -265,7 +371,7 @@ export class EditorDocument {
     this.watch()
     this.publish({ conflict: null, showDiff: false })
   }
-  dispose(): void { this.identityRevision++; this.watchEpoch++; this.stopWatching?.(); this.stopWatching = undefined; this.watchKey = undefined; this.listeners.clear() }
+  dispose(): void { clearTimeout(this.autosaveTimer); this.state = { ...this.state, shared: false }; this.identityRevision++; this.watchEpoch++; this.stopWatching?.(); this.stopWatching = undefined; this.watchKey = undefined; this.listeners.clear() }
 }
 
 export function editorDocument(workspaceId: string, panelId: string, filePath?: string | null, rootPath?: string): EditorDocument {
