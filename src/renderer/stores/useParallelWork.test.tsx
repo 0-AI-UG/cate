@@ -109,6 +109,7 @@ beforeEach(() => {
     gitPush: vi.fn().mockResolvedValue(undefined),
     gitCreatePR: vi.fn(),
     gitWorktreeStatus: vi.fn().mockResolvedValue(status()),
+    fsStat: vi.fn().mockResolvedValue({ isDirectory: true, isFile: false }),
     gitWorktreeRemove: vi.fn().mockResolvedValue(undefined),
     gitBranchDelete: vi.fn().mockResolvedValue(undefined),
     gitWorktreePrune: vi.fn().mockResolvedValue({ output: '' }),
@@ -310,6 +311,63 @@ describe('useParallelWork handleDelete', () => {
     expect(setError).toHaveBeenCalledWith(
       'Couldn’t verify this worktree before discarding it: runtime disconnected',
     )
+  })
+
+  it('cleans up a missing worktree after Git confirms its stale record is gone', async () => {
+    vi.mocked(window.electronAPI.gitWorktreeStatus).mockResolvedValueOnce(null)
+    vi.mocked(window.electronAPI.fsStat).mockRejectedValue(new Error('ENOENT: no such file or directory'))
+
+    await act(async () => {
+      await actions.handleDelete(worktree)
+    })
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('worktree folder is missing'))
+    expect(window.electronAPI.gitWorktreePrune).toHaveBeenCalledWith(ROOT, WS)
+    expect(window.electronAPI.gitWorktreeRemove).not.toHaveBeenCalled()
+    expect(window.electronAPI.gitBranchDelete).toHaveBeenCalledWith(ROOT, 'feature', true, WS)
+    expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(false)
+  })
+
+  it('keeps a missing worktree entry when Git still lists it after prune', async () => {
+    vi.mocked(window.electronAPI.gitWorktreeStatus).mockResolvedValueOnce(null)
+    vi.mocked(window.electronAPI.fsStat).mockRejectedValueOnce(new Error('ENOENT'))
+    vi.mocked(window.electronAPI.gitWorktreeList).mockResolvedValueOnce([
+      { path: ROOT, branch: 'main', isBare: false, isCurrent: true },
+      { path: worktree.path, branch: 'feature', isBare: false, isCurrent: false },
+    ])
+
+    await act(async () => {
+      await actions.handleDelete(worktree)
+    })
+
+    expect(window.electronAPI.gitBranchDelete).not.toHaveBeenCalled()
+    expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(true)
+  })
+
+  it('keeps the worktree entry if its folder reappears during cleanup', async () => {
+    vi.mocked(window.electronAPI.gitWorktreeStatus).mockResolvedValueOnce(null)
+    vi.mocked(window.electronAPI.fsStat)
+      .mockRejectedValueOnce(new Error('ENOENT'))
+      .mockResolvedValueOnce({ isDirectory: true, isFile: false })
+
+    await act(async () => {
+      await actions.handleDelete(worktree)
+    })
+
+    expect(window.electronAPI.gitBranchDelete).not.toHaveBeenCalled()
+    expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(true)
+  })
+
+  it('keeps an existing folder when its Git status is unavailable', async () => {
+    vi.mocked(window.electronAPI.gitWorktreeStatus).mockResolvedValueOnce(null)
+
+    await act(async () => {
+      await actions.handleDelete(worktree)
+    })
+
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(window.electronAPI.gitWorktreePrune).not.toHaveBeenCalled()
+    expect(workspace().worktrees?.some((wt) => wt.id === worktree.id)).toBe(true)
   })
 })
 
