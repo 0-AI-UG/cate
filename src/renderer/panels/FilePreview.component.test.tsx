@@ -15,6 +15,9 @@ vi.hoisted(() => {
 const pdfMocks = vi.hoisted(() => ({
   getDocument: vi.fn(),
 }))
+const watchFsRoot = vi.hoisted(() => vi.fn())
+
+vi.mock('../lib/fs/fsWatchManager', () => ({ watchFsRoot }))
 
 vi.mock('pdfjs-dist', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
@@ -51,7 +54,7 @@ function workspace(filePath?: string, _documentType?: 'pdf' | 'docx' | 'image'):
 
 function PreviewHarness() {
   const filePath = useAppStore(s => s.workspaces[0].panels['document-1'].filePath)
-  return <FilePreview filePath={filePath ?? ''} workspaceId="ws-1" />
+  return <FilePreview filePath={filePath ?? ''} workspaceId="ws-1" rootPath="/workspace" />
 }
 
 function mount(): void {
@@ -97,6 +100,27 @@ describe('FilePreview component', () => {
     expect(image?.alt).toBe('photo.png')
     expect(image?.getAttribute('src')).toBe('data:image/png;base64,iVBORw==')
     expect(pdfMocks.getDocument).not.toHaveBeenCalled()
+  })
+
+  it('refreshes a rendered image after an external file update', async () => {
+    useAppStore.setState({ workspaces: [workspace('/workspace/photo.png', 'image')], selectedWorkspaceId: 'ws-1' })
+    fsReadBinary
+      .mockResolvedValueOnce(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]).buffer)
+      .mockResolvedValueOnce(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x01]).buffer)
+    mount()
+    await flush()
+    expect(host.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,iVBORw==')
+
+    const onChange = watchFsRoot.mock.calls[0][1]
+    expect(watchFsRoot).toHaveBeenCalledWith('/workspace', expect.any(Function), 'ws-1')
+    await act(async () => {
+      onChange({ type: 'update', path: '/workspace/other.png' })
+      onChange({ type: 'update', path: '/workspace/photo.png' })
+      await Promise.resolve()
+    })
+
+    expect(fsReadBinary).toHaveBeenCalledTimes(2)
+    expect(host.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,iVBORwE=')
   })
 
   it('offers Finder recovery for a failed local file and forwards the workspace id', async () => {

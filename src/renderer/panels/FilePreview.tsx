@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { watchFsRoot } from '../lib/fs/fsWatchManager'
 import * as pdfjsLib from 'pdfjs-dist'
 import { getDocumentType } from '../lib/fs/fileRouting'
 import { ArrowLeft, ArrowRight, Minus, Plus } from 'lucide-react'
@@ -301,7 +302,7 @@ function DocxViewer({ data }: { data: Uint8Array }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function FilePreview({ filePath, workspaceId }: { filePath: string; workspaceId: string }) {
+export default function FilePreview({ filePath, workspaceId, rootPath }: { filePath: string; workspaceId: string; rootPath: string }) {
   const storeDocumentType = getDocumentType(filePath)
 
   const [data, setData] = useState<Uint8Array | null>(null)
@@ -331,24 +332,28 @@ export default function FilePreview({ filePath, workspaceId }: { filePath: strin
       return
     }
 
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-
-    window.electronAPI.fsReadBinary(filePath, workspaceId).then((buffer) => {
-      if (!cancelled) {
+    let revision = 0
+    const load = () => {
+      const current = ++revision
+      setLoading(true)
+      setError(null)
+      window.electronAPI.fsReadBinary(filePath, workspaceId).then((buffer) => {
+        if (current !== revision) return
         setData(new Uint8Array(buffer))
         setLoading(false)
-      }
-    }).catch((err) => {
-      if (!cancelled) {
+      }).catch((err) => {
+        if (current !== revision) return
         setError(errorMessage(err, 'Failed to load file'))
         setLoading(false)
-      }
-    })
+      })
+    }
+    load()
+    const stopWatching = rootPath ? watchFsRoot(rootPath, event => {
+      if (event.path.replace(/\\/g, '/') === filePath.replace(/\\/g, '/')) load()
+    }, workspaceId) : undefined
 
-    return () => { cancelled = true }
-  }, [filePath, workspaceId])
+    return () => { revision++; stopWatching?.() }
+  }, [filePath, workspaceId, rootPath])
 
   if (loading) {
     return (
