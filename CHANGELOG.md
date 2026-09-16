@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-09-16
+
+This release lets connected agents work with editor files, adds Mermaid diagrams to Markdown previews, and improves browser feedback, file previews, and worktree cleanup.
+
+### Added
+
+- **Connected editors**: share linked text editors with terminal and T3 agents through working files. Untitled editors receive persistent drafts, local edits sync automatically, and pending edits are saved before prompt submission.
+- **Markdown diagrams**: render Mermaid code blocks in editor Markdown previews.
+
+### Changed
+
+- **Browser-agent cursor**: animate the layered cursor in response to browser activity.
+
+### Fixed
+
+- **File previews**: refresh rendered previews when a file changes outside Cate.
+- **Worktree cleanup**: allow discarding a worktree whose folder is already missing.
+
 ## [2.0.1] - 2026-09-14
 
 This patch release improves panel placement and browser-agent cursor styling while fixing blank rows in the files sidebar.
