@@ -917,7 +917,7 @@ export default function EditorPanel({
       </NodePopover>}
       <div className="files-content flex-1 min-h-0 flex" style={{ backgroundColor: editorBackground, '--file-explorer-bg': editorBackground } as CSSProperties}>
       <div className={`${editorVisible ? 'flex-1' : 'hidden'} min-w-0 relative`}>
-        {previewType && filePath && <Suspense fallback={<LoadingState label="Loading preview…" className="h-full" />}><FilePreview key={filePath} filePath={filePath} workspaceId={workspaceId} /></Suspense>}
+        {previewType && filePath && <Suspense fallback={<LoadingState label="Loading preview…" className="h-full" />}><FilePreview key={filePath} filePath={filePath} workspaceId={workspaceId} rootPath={explorerRoot} /></Suspense>}
         {!previewType && showDiff && conflict?.kind === 'changed' && (
           <div className="absolute inset-0 z-30 bg-surface-1">
             <div ref={diffOverlayRef} className="w-full h-full" />
