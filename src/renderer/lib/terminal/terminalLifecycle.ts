@@ -32,6 +32,7 @@ import {
   effectiveCursorBlink,
 } from './terminalSettings'
 import { createTerminalLinkHandler, makeTerminalKeyEventHandler } from './terminalInput'
+import { writeTerminalInput, reportTerminalWriteError } from './terminalWrite'
 import { registerOsc52ClipboardHandler } from './terminalOsc52Clipboard'
 import { createFileLinkProvider, resolveLinkRoot } from './terminalFileLinkProvider'
 import { clearWebglDisabled, releaseWebglGrant } from './terminalDom'
@@ -218,7 +219,7 @@ export function wireTerminalListeners(args: {
   const dataDisposable = terminal.onData((data) => {
     // The runtime reports submission/interrupt edges alongside hooks, for
     // every write path (including automated input) and in delivery order.
-    electronAPI.terminalWrite(ptyId, data)
+    void writeTerminalInput(ptyId, data).catch(error => reportTerminalWriteError(ptyId, error))
   })
   cleanupListeners.push(() => dataDisposable.dispose())
 
@@ -390,7 +391,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     //      reach this line, so a remount that reuses a live registry entry never
     //      re-injects.
     if (opts.resumeCommand) {
-      void electronAPI.terminalWrite(ptyId, opts.resumeCommand + '\r')
+      void writeTerminalInput(ptyId, opts.resumeCommand + '\r').catch(error => reportTerminalWriteError(ptyId, error))
     }
 
     // 12. Replay scrollback log if this terminal was restored from a session

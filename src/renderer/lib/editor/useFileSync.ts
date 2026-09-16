@@ -25,6 +25,7 @@ export function useFileSync({ workspaceId, panelId, filePath, rootPath, getModel
     noteUserEdit: document.noteUserEdit,
     isExternalReplace: document.isExternalReplace,
     save: document.save,
+    flushShared: document.flushShared,
     resyncFromDisk: document.resyncFromDisk,
     discard: document.discard,
     reload: document.reload,

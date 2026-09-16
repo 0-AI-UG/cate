@@ -26,6 +26,13 @@ import { subscribeAgentCursor, type AgentCursorEvent } from '../lib/browser/agen
 /** A click ripple's lifetime — purely decorative feedback for "it happened". */
 const RIPPLE_MS = 600
 
+const POINTER_LAYERS = [
+  { name: 'deep', fill: '#1265d8', offset: 'translate(0.5 1.2) rotate(-12 16 16)', lag: 45 },
+  { name: 'middle', fill: '#258dff', offset: 'translate(0.3 0.8) rotate(-7 16 16)', lag: 30 },
+  { name: 'near', fill: '#72c6ff', offset: 'translate(0.15 0.4) rotate(-3 16 16)', lag: 15 },
+  { name: 'front', fill: '', offset: '', lag: 0 },
+] as const
+
 interface Ripple { id: number; x: number; y: number; delay: number }
 
 export function AgentCursorOverlay({
@@ -85,19 +92,22 @@ export function AgentCursorOverlay({
   const pointX = typeof event.x === 'number' ? event.x * scale : undefined
   const pointY = typeof event.y === 'number' ? event.y * scale : undefined
   const pointerAnimation = event.kind === 'click' || event.kind === 'dblclick'
-    ? 'cate-agent-pointer-click 220ms ease-out'
+    ? 'cate-agent-pointer-click 580ms cubic-bezier(0.22, 1, 0.36, 1)'
     : event.kind === 'type' || event.kind === 'press'
       ? 'cate-agent-pointer-type 520ms ease-out'
       : event.kind === 'scroll'
         ? 'cate-agent-pointer-scroll 520ms ease-in-out'
         : event.kind === 'hover'
           ? 'cate-agent-pointer-hover 700ms ease-in-out'
-          : undefined
+          : event.kind === 'move' || event.kind === 'drag'
+            ? 'cate-agent-pointer-move 700ms ease-in-out'
+            : undefined
 
   return (
     <div
+      data-agent-cursor-overlay
       className="absolute inset-0 z-30 overflow-hidden pointer-events-none"
-      style={{ opacity: visible ? 1 : 0, transition: 'opacity 400ms ease-out' }}
+      style={{ containerType: 'size', opacity: visible ? 1 : 0, transition: 'opacity 400ms ease-out' }}
       aria-hidden
     >
       {/* Drag path — a dashed line from origin to destination. */}
@@ -130,48 +140,61 @@ export function AgentCursorOverlay({
 
       {/* The pointer. Action feedback is visual only: click rings and pointer
           motion. Command labels/selectors stay out of the UI. */}
-      {hasPoint && (
+      {hasPoint && POINTER_LAYERS.map((layer) => (
         <div
-          data-agent-cursor
+          key={layer.name}
+          data-agent-cursor={layer.name === 'front' ? '' : undefined}
+          data-agent-cursor-layer={layer.name}
           className="absolute"
           style={{
             left: pointX,
             top: pointY,
-            transition: 'left 220ms cubic-bezier(0.22, 1, 0.36, 1), top 220ms cubic-bezier(0.22, 1, 0.36, 1)',
+            width: 'clamp(18px, min(3cqw, 4cqh), 25.6px)',
+            aspectRatio: '1',
+            transform: 'translate(-12.5%, -12.5%)',
+            transition: `left ${90 + layer.lag}ms cubic-bezier(0.22, 1, 0.36, 1), top ${90 + layer.lag}ms cubic-bezier(0.22, 1, 0.36, 1)`,
           }}
         >
-          <svg
-            key={`pointer-${activitySerial}`}
-            width={32}
-            height={32}
-            viewBox="0 0 32 32"
+          <div
+            data-agent-cursor-idle
             style={{
-              marginLeft: -4,
-              marginTop: -4,
-              overflow: 'visible',
-              filter: 'drop-shadow(0 1.5px 2px rgba(12,54,110,0.24))',
-              animation: pointerAnimation,
-              transformOrigin: '4px 4px',
+              width: '100%', height: '100%', transformOrigin: '12.5% 12.5%',
+              animation: `cate-agent-pointer-idle 6s ease-in-out ${-6000 + layer.lag * 4}ms infinite`,
             }}
           >
-            <defs>
-              <path
-                id={`${pointerGradientId}-shape`}
-                d="M4 9 C2.6 5 5 2.6 9 4 L25 10 C29 11.5 29 15.2 25.2 17 L20.8 19 C20 19.4 19.4 20 19 20.8 L17 25.2 C15.2 29 11.5 29 10 25 Z"
-              />
-              <linearGradient id={pointerGradientId} x1="0" y1="0" x2="0.65" y2="1">
-                <stop offset="0%" stopColor="#ffffff" />
-                <stop offset="55%" stopColor="#f5fbff" />
-                <stop offset="100%" stopColor="#e9eaff" />
-              </linearGradient>
-            </defs>
-            <use href={`#${pointerGradientId}-shape`} fill="#1265d8" transform="translate(0.5 1.2) rotate(-12 16 16)" />
-            <use href={`#${pointerGradientId}-shape`} fill="#258dff" transform="translate(0.3 0.8) rotate(-7 16 16)" />
-            <use href={`#${pointerGradientId}-shape`} fill="#72c6ff" transform="translate(0.15 0.4) rotate(-3 16 16)" />
-            <use href={`#${pointerGradientId}-shape`} fill={`url(#${pointerGradientId})`} stroke="#c9e8ff" strokeWidth={0.35} />
-          </svg>
+            <svg
+              key={`pointer-${activitySerial}`}
+              width="100%"
+              height="100%"
+              viewBox="0 0 32 32"
+              style={{
+                display: 'block',
+                overflow: 'visible',
+                filter: layer.name === 'deep' ? 'drop-shadow(0 1.5px 2px rgba(12,54,110,0.24))' : undefined,
+                animation: pointerAnimation,
+                animationDelay: `${layer.lag}ms`,
+                transformOrigin: '12.5% 12.5%',
+              }}
+            >
+              <defs>
+                <linearGradient id={`${pointerGradientId}-${layer.name}`} x1="0" y1="0" x2="0.65" y2="1">
+                  <stop offset="0%" stopColor="#ffffff" />
+                  <stop offset="55%" stopColor="#f5fbff" />
+                  <stop offset="100%" stopColor="#e9eaff" />
+                </linearGradient>
+              </defs>
+              <g transform={layer.offset}>
+                <path
+                  d="M4 9 C2.6 5 5 2.6 9 4 L25 10 C29 11.5 29 15.2 25.2 17 L20.8 19 C20 19.4 19.4 20 19 20.8 L17 25.2 C15.2 29 11.5 29 10 25 Z"
+                  fill={layer.fill || `url(#${pointerGradientId}-${layer.name})`}
+                  stroke={layer.name === 'front' ? '#c9e8ff' : undefined}
+                  strokeWidth={0.35}
+                />
+              </g>
+            </svg>
+          </div>
         </div>
-      )}
+      ))}
 
       <style>{`
         @keyframes cate-agent-ripple {
@@ -180,7 +203,17 @@ export function AgentCursorOverlay({
         }
         @keyframes cate-agent-pointer-click {
           0%, 100% { transform: scale(1); }
-          45% { transform: translate(1px, 1px) scale(0.78); }
+          24% { transform: translate(0.8px, 0.8px) scale(0.84); }
+          58% { transform: scale(1.07); }
+        }
+        @keyframes cate-agent-pointer-idle {
+          0%, 100% { transform: rotate(-7deg) scale(0.985); }
+          50% { transform: rotate(7deg) scale(1.025); }
+        }
+        @keyframes cate-agent-pointer-move {
+          0%, 100% { transform: rotate(0deg); }
+          35% { transform: rotate(-5deg) scale(1.04, 0.98); }
+          70% { transform: rotate(2deg); }
         }
         @keyframes cate-agent-pointer-type {
           0%, 100% { transform: rotate(0deg); }
@@ -194,6 +227,11 @@ export function AgentCursorOverlay({
         @keyframes cate-agent-pointer-hover {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-3px); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          [data-agent-cursor-layer], [data-agent-cursor-overlay] { transition: none !important; }
+          [data-agent-cursor-idle], [data-agent-cursor-layer] svg { animation: none !important; }
+          [data-agent-effect="click"] { animation: none !important; opacity: 0; }
         }
       `}</style>
     </div>

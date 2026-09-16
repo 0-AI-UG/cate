@@ -43,8 +43,10 @@ import { AGENTS } from '../../../shared/agents'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../../stores/canvasStore'
 import { consumePanelRelationContextForSend } from '../agent/panelRelationPrompt'
+import { startConnectedEditorSync } from '../editor/connectedEditors'
 
 export function useWindowRuntime(canvasStore?: StoreApi<CanvasStore>): void {
+  useEffect(startConnectedEditorSync, [])
   // Appearance: hydrate settings + UI state, then apply theme + scale on change.
   // The main App loads these inside its awaited init effect; calling them here
   // too is idempotent (the stores no-op a redundant load), so every window mounts

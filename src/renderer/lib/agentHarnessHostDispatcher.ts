@@ -7,7 +7,7 @@ interface HostActions {
   openFile(filePath: string, target: NewTarget): void
   createAgent(threadId: string, title: string | undefined, target: NewTarget): void
   openExternal(url: string): void
-  relationContext?(provider: string | null): string | null
+  relationContext?(provider: string | null): string | null | Promise<string | null>
 }
 
 /** Owns validation and the lifetime of placements issued by one panel binding. */

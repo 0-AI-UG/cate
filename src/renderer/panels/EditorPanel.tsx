@@ -1,18 +1,20 @@
 import { useShortcutLabel } from '../stores/shortcutStore'
 import { captureEditorPanel } from '../lib/editor/editorDocuments'
+import { isEditorDraft } from '../../shared/editorDraft'
 import { panelSearchStore } from '../stores/panelSearchStores'
 // =============================================================================
 // EditorPanel — Monaco Editor wrapper for CanvasIDE editor panels.
 // =============================================================================
 
 import { lazy, Suspense, useEffect, useRef, useCallback, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import type { CSSProperties } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, ExternalLink, FolderOpen, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { perfCount, useRenderCount } from '../lib/perf/perfClient'
 import log from '../lib/logger'
 import * as monaco from 'monaco-editor'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import MarkdownCodeBlock from './MarkdownCodeBlock'
 import type { EditorPanelProps } from './types'
 import { useAppStore } from '../stores/appStore'
 import { useWorktrees } from '../stores/useWorktrees'
@@ -41,7 +43,6 @@ import {
 } from '../lib/editor/modelCache'
 import { useFileSync } from '../lib/editor/useFileSync'
 import EditorConflictBanner from './EditorConflictBanner'
-import { Tooltip } from '../ui/Tooltip'
 import { isRuntimeLocator } from '../../shared/runtimeLocator'
 import { LoadingState } from '../ui/Spinner'
 import { PanelCenteredState } from '../ui/PanelCenteredState'
@@ -340,7 +341,7 @@ export default function EditorPanel({
   // from one markdown file to the next. Keying it by panelId also keeps each
   // tab's choice independent across canvas switches.
   const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
-  const markdownPreview = isMarkdown && (panel?.markdownPreview ?? true)
+  const markdownPreview = isMarkdown && (panel?.markdownPreview ?? !isEditorDraft(filePath))
   const setMarkdownPreview = useCallback(
     (next: boolean) =>
       useAppStore.getState().setPanelMarkdownPreview(workspaceId, panelId, next),
@@ -802,10 +803,13 @@ export default function EditorPanel({
           title={filePath ?? explorerRoot}
         >
           <span className={`${filePath ? 'max-w-[40%]' : ''} truncate text-muted`}>{pathDisplayName(explorerRoot) || 'Files'}</span>
-          {filePath && <><ChevronRight size={12} className="shrink-0 text-muted" /><span className="truncate text-primary">{toRelativePath(filePath, explorerRoot)}</span></>}
+          {filePath && <><ChevronRight size={12} className="shrink-0 text-muted" /><span className="truncate text-primary">{isEditorDraft(filePath) ? panel?.title ?? 'Untitled' : toRelativePath(filePath, explorerRoot)}</span></>}
           <Copy size={12} className="shrink-0" />
           <ChevronDown size={11} className="shrink-0" />
         </button>
+        {sync.shared && <span className="shrink-0 text-muted" title="Edits autosave to the file shared with your agent.">Shared with agent</span>}
+        {isEditorDraft(filePath) && <button className="shrink-0 rounded px-2 py-1 text-primary hover:bg-hover" onClick={() => void save()}>Save As…</button>}
+        {sync.syncError && <button className="shrink-0 text-error" title={sync.syncError} onClick={() => void (sync.shared ? sync.flushShared() : save())}>Save failed · Retry</button>}
         <div className="shrink-0 max-w-40">
           <WorktreeSelector worktrees={worktrees} value={currentWorktree?.id} onChange={switchWorktree} title="File panel worktree" />
         </div>
@@ -953,38 +957,6 @@ export default function EditorPanel({
 // Markdown preview renderer
 // -----------------------------------------------------------------------------
 
-/** Fenced code block with a hover copy button, matching the agent chat's
- *  "Copy code" affordance (#373). */
-function MarkdownCodeBlock({ children }: { children: ReactNode }) {
-  const preRef = useRef<HTMLPreElement>(null)
-  const [copied, setCopied] = useState(false)
-  return (
-    <div className="relative group my-3">
-      <pre
-        ref={preRef}
-        className="rounded-md bg-surface-3 border border-subtle px-4 py-3 overflow-x-auto text-[12px] leading-snug"
-      >
-        {children}
-      </pre>
-      <Tooltip label="Copy code">
-        <button
-          onClick={() => {
-            void navigator.clipboard.writeText(preRef.current?.textContent ?? '')
-            setCopied(true)
-            window.setTimeout(() => setCopied(false), 1200)
-          }}
-          aria-label="Copy code"
-          className={`absolute top-1.5 right-1.5 p-1 rounded-[10px] bg-surface-3 text-muted transition-opacity hover:text-primary hover:bg-hover-strong ${
-            copied ? 'opacity-100 text-primary' : 'opacity-0 group-hover:opacity-100'
-          }`}
-        >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-        </button>
-      </Tooltip>
-    </div>
-  )
-}
-
 function MarkdownPreview({ content }: { content: string }) {
   return (
     <div className="absolute inset-0 overflow-auto px-6 py-4">
@@ -1029,7 +1001,7 @@ function MarkdownPreview({ content }: { content: string }) {
                 </code>
               )
             },
-            pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
+            pre: MarkdownCodeBlock,
             table: ({ children }) => (
               <div className="overflow-x-auto my-3">
                 <table className="min-w-full text-[12px] border border-subtle rounded-md">{children}</table>

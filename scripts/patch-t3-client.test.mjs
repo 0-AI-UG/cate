@@ -15,10 +15,26 @@ describe('pinned T3 chat adapter', () => {
 
   it('routes addressed sends through the same submit function and relation-context hook', () => {
     expect(source).not.toContain('window.__cateHost.request("augment-prompt"')
-    expect(source).toContain('sendText:async e=>(await sm({text:e,interactionMode:`default`}),true)')
+    expect(source).toContain('sendText:async e=>(await sm({text:e,interactionMode:`default`}))!==!1')
     expect(source).toContain('window.__cateHost.request("relation-context",{provider:v})')
     expect(source).toContain('if(cateContext)catePrompt=fe+`\\n\\n`+cateContext')
     expect(source).toContain('text:catePrompt,attachments:Ee.value')
+  })
+
+  it('does not send stale context when the editor flush fails', async () => {
+    const start = source.indexOf('let catePrompt=fe;')
+    const end = source.indexOf('if(ft.current?.validateProviderInput(catePrompt)', start)
+    expect(start).toBeGreaterThan(0)
+    const send = vi.fn()
+    const add = vi.fn()
+    const result = await runInNewContext(`(async()=>{${source.slice(start, end)}send(catePrompt)})()`, {
+      fe: 'User prompt', v: 'codex', send,
+      window: { __cateHost: { request: async () => { throw new Error('Editor conflict') } } },
+      K: { add }, Ia: value => value,
+    })
+    expect(result).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ title: 'Editor sync failed' }))
   })
 
   it.each([null, 'placement'])('waits for placement before creating or sending a plan (%s)', async (placement) => {

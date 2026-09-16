@@ -33,7 +33,7 @@ import { WorktreePill } from '../canvas/WorktreePill'
 import { AgentChangesPill } from '../canvas/AgentChangesPill'
 import { registerAgentPanelSender } from '../lib/agent/agentPanelControl'
 import { PanelRelationContextToggle } from '../canvas/PanelRelationContextToggle'
-import { consumePanelRelationContextForSend } from '../lib/agent/panelRelationPrompt'
+import { preparePanelRelationContextForSend } from '../lib/agent/panelRelationPrompt'
 import { agentIdForT3Provider } from '../../shared/agents'
 import { errorMessage } from '../lib/errorMessage'
 
@@ -196,7 +196,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
       pick: (panelType) => requestPanelTarget({ workspaceId, sourcePanelId: panelId, panelType, availability: 'new' }),
       openDiff: (focusedFile, turnId, isActive) => openAgentChanges({ workspaceId, panelId, cwd, focusedFile, sessionId: threadId, turnId, isActive }),
       openExternal: (url) => { window.electronAPI.openExternalUrl(url) },
-      relationContext: (provider) => consumePanelRelationContextForSend(
+      relationContext: (provider) => preparePanelRelationContextForSend(
         workspaceId,
         panelId,
         provider ? agentIdForT3Provider(provider) : null,
@@ -369,7 +369,7 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     return registerAgentPanelSender(panelId, async (prompt) => {
       try {
         return await guest.executeJavaScript(
-          `window.__cateChat?.sendText?.(${JSON.stringify(prompt)}) === true`,
+          `(async () => (await window.__cateChat?.sendText?.(${JSON.stringify(prompt)})) === true)()`,
         ) === true
       } catch {
         return false

@@ -37,9 +37,9 @@ export function patchT3PromptContext(source) {
   const marker = '/* cate: submit-time panel prompt context v3 */'
   const oldRequest = 'window.__cateHost.request("relation-context",{})'
   const providerRequest = 'window.__cateHost.request("relation-context",{provider:v})'
-  if (source.includes(marker)) return source.includes(oldRequest)
+  if (source.includes(marker)) return patchT3EditorSyncBarrier(source.includes(oldRequest)
     ? source.replace(oldRequest, providerRequest)
-    : source
+    : source)
   const replace = (before, after) => {
     if (source.split(before).length !== 2) throw new Error(`T3 panel prompt seam changed: ${before.slice(0, 80)}`)
     source = source.replace(before, after)
@@ -65,7 +65,20 @@ export function patchT3PromptContext(source) {
   const v2Chat = 'window.__cateChat={store:ti,threadRef:J,openAgents:ud,closeAgents:()=>J&&ti.getState().close(J),sendText:async e=>(await sm({text:e,interactionMode:`default`}),true),appendText:e=>{let t=it.current?it.current+`\\n\\n`+e:e;it.current=t,Ie(ue,t);return!0}};'
   if (source.includes(v2Chat)) source = source.replace(v2Chat, v1Chat)
   else if (source.includes(baseChat)) replace(baseChat, v1Chat)
-  return source + '\n' + marker
+  return patchT3EditorSyncBarrier(source + '\n' + marker)
+}
+
+/** A failed editor flush must leave the prompt in the composer, not send it
+ * with stale file contents. Addressed sends report the same failure. */
+function patchT3EditorSyncBarrier(source) {
+  const marker = '/* cate: shared editor submit barrier v1 */'
+  if (source.includes(marker)) return source
+  const before = 'catch{}if(ft.current?.validateProviderInput(catePrompt)===!1)return;'
+  if (source.split(before).length !== 2) throw new Error('T3 editor sync barrier seam changed')
+  source = source.replace(before, 'catch(e){K.add(Ia({type:"error",title:"Editor sync failed",description:e instanceof Error?e.message:String(e)}));return!1}if(ft.current?.validateProviderInput(catePrompt)===!1)return;')
+  const send = 'sendText:async e=>(await sm({text:e,interactionMode:`default`}),true)'
+  if (source.split(send).length !== 2) throw new Error('T3 addressed submit seam changed')
+  return source.replace(send, 'sendText:async e=>(await sm({text:e,interactionMode:`default`}))!==!1') + '\n' + marker
 }
 
 export function patchT3ChangeSummaries(source) {
