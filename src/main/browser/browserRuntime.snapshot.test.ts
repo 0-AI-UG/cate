@@ -58,6 +58,19 @@ it('waits for a rendering boundary before copying native screenshot pixels', asy
   expect(await pending).toMatchObject({ result: { screenshot: { width: 800, height: 600 } } })
 })
 
+it('retries a transient render-frame failure after navigation settles', async () => {
+  let frameAttempts = 0
+  const { execute, contents } = await setupGuest(async (method, params) => {
+    if (method === 'Runtime.evaluate' && String(params.expression).includes('requestAnimationFrame')) {
+      frameAttempts++
+      if (frameAttempts === 1) return { result: { value: false } }
+    }
+  })
+  expect(await execute('getScreenshot')).toMatchObject({ result: { screenshot: { width: 800, height: 600 } } })
+  expect(frameAttempts).toBe(2)
+  expect(contents.capturePage).toHaveBeenCalledTimes(1)
+})
+
 it('does not capture pixels when navigation destroys the awaited render context', async () => {
   const { execute, contents } = await setupGuest(async (method, params) => {
     if (method === 'Runtime.evaluate' && String(params.expression).includes('requestAnimationFrame')) {
@@ -72,10 +85,10 @@ it('bounds an unavailable rendering frame instead of hanging the screenshot queu
   vi.useFakeTimers()
   try {
     const { execute, contents } = await setupGuest(async (method, params) => {
-      if (method === 'Runtime.evaluate' && String(params.expression).includes('requestAnimationFrame')) return new Promise(() => {})
+      if (method === 'Runtime.evaluate' && String(params.expression).includes('requestAnimationFrame')) return { result: { value: false } }
     })
     const pending = execute('getScreenshot')
-    await vi.advanceTimersByTimeAsync(5000)
+    await vi.advanceTimersByTimeAsync(50)
     expect(await pending).toMatchObject({ error: 'browser-render-frame-timeout' })
     expect(contents.capturePage).not.toHaveBeenCalled()
     expect(await execute('getAXState')).toHaveProperty('result')

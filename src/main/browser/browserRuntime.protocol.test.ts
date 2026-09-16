@@ -13,7 +13,10 @@ it('returns numeric stable IDs, request-scoped diffs and actual image bytes', as
     debugger: { isAttached: () => true, on: events.on.bind(events), removeListener: events.removeListener.bind(events), sendCommand: vi.fn(async (method: string, params: Record<string, unknown> = {}) => {
       if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main' } } }
       if (method === 'Page.createIsolatedWorld') return { executionContextId: 1 }
-      if (method === 'Runtime.evaluate') return { result: { value: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 } } }
+      if (method === 'Runtime.evaluate') {
+        if (String(params.expression).includes('requestAnimationFrame')) return { result: { value: true } }
+        return { result: { value: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 } } }
+      }
       if (method === 'Accessibility.getFullAXTree') return { nodes: [{ backendDOMNodeId: 7, role: { value: 'button' }, name: { value: 'Save' } }] }
       if (method === 'DOM.resolveNode') return { object: { objectId: 'save' } }
       if (method === 'Runtime.callFunctionOn') return { result: { value: String(params.functionDeclaration).includes('password: this instanceof HTMLInputElement') ? { visible: true, offscreen: false, password: false } : true } }
