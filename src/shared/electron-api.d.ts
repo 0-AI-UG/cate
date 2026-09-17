@@ -783,8 +783,9 @@ export interface ElectronAPI {
   /** App-wide idle sleep prevention; resets when Cate quits. */
   toggleKeepAwake(): Promise<boolean>
   getKeepAwake(): Promise<boolean>
-  setKeepAwake(enabled: boolean): Promise<boolean>
-  onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void
+  getKeepAwakeStatus(): Promise<{ enabled: boolean; endsAt: number | null }>
+  setKeepAwake(enabled: boolean, minutes?: number): Promise<boolean>
+  onKeepAwakeChanged(callback: (enabled: boolean, endsAt: number | null) => void): () => void
 
   /** Merge a partial into the boot snapshot so the next cold launch constructs
    *  the BrowserWindow with the persisted theme/background/appearance. */

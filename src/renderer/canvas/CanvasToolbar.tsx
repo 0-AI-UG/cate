@@ -217,7 +217,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   useCanvasToolbarAction('toggleCanvasToolbar', canvasPanelId, () => {
     if (!isHorizontal) setPinned(value => !value)
   })
-  const [openMenu, setOpenMenu] = useState<'worktree' | 't3' | null>(null)
+  const [openMenu, setOpenMenu] = useState<'worktree' | 't3' | 'coffee' | null>(null)
   const expanded = pinned || openMenu !== null
   const ToolIcon = activeTool === 'hand' ? Hand : Cursor
 
@@ -229,7 +229,7 @@ const CanvasToolbar: React.FC<CanvasToolbarProps> = ({
   const divider = <div className={isHorizontal ? 'w-px h-5 bg-surface-5 mx-1' : 'h-px w-6 bg-surface-5 my-1'} />
   const items = (
     <>
-      <KeepAwakeButton tooltipPlacement={place} />
+      <KeepAwakeButton tooltipPlacement={place} onOpenChange={(open) => setOpenMenu(open ? 'coffee' : null)} />
       {divider}
       <CanvasToolbarButton
         onClick={() => setActiveTool('select')}

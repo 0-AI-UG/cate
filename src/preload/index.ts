@@ -11,6 +11,7 @@ import {
   AGENT_HARNESS_RENAME_CONVERSATION,
   KEEP_AWAKE_TOGGLE,
   KEEP_AWAKE_GET,
+  KEEP_AWAKE_STATUS,
   KEEP_AWAKE_SET,
   KEEP_AWAKE_CHANGED,
   TERMINAL_CREATE,
@@ -802,10 +803,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getKeepAwake(): Promise<boolean> {
     return ipcRenderer.invoke(KEEP_AWAKE_GET)
   },
-  setKeepAwake(enabled: boolean): Promise<boolean> {
-    return ipcRenderer.invoke(KEEP_AWAKE_SET, enabled)
+  getKeepAwakeStatus(): Promise<{ enabled: boolean; endsAt: number | null }> {
+    return ipcRenderer.invoke(KEEP_AWAKE_STATUS)
   },
-  onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void {
+  setKeepAwake(enabled: boolean, minutes?: number): Promise<boolean> {
+    return ipcRenderer.invoke(KEEP_AWAKE_SET, enabled, minutes)
+  },
+  onKeepAwakeChanged(callback: (enabled: boolean, endsAt: number | null) => void): () => void {
     return createIpcListener(KEEP_AWAKE_CHANGED, callback)
   },
 
