@@ -41,6 +41,7 @@ function openCli(agentId: AgentId): void {
     codex: 'codex',
     cursor: 'cursor-agent',
     grok: 'grok',
+    hermes: 'hermes',
     kiro: 'kiro-cli',
     opencode: 'opencode',
   }
@@ -109,7 +110,7 @@ describe('PanelRelationContextToggle terminal hook registration', () => {
     })
   }
 
-  for (const agentId of ['cursor', 'grok'] as const) {
+  for (const agentId of ['cursor', 'grok', 'hermes'] as const) {
     it(`keeps ${agentId} gated because it has no native context hook`, async () => {
       act(() => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
       await act(async () => openCli(agentId))

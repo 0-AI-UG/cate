@@ -240,6 +240,49 @@ describe('agentHooks capability', () => {
     expect(events.length).toBe(1)
   })
 
+  test('ingestion preserves Hermes profile identity from an authenticated plugin post', async () => {
+    const posts: Array<{
+      terminalId: string
+      agentId: string
+      pid?: number
+      kind?: string
+      sourceStartedAt?: string
+    }> = []
+    const cap = makeCap({ onPost: (value) => { posts.push(value) } })
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    const payload = {
+      hook_event_name: 'pre_llm_call',
+      session_id: '20260911_131500_abcd1234',
+      cwd: 'C:/work/project',
+      profile: 'work',
+      platform: 'cli',
+    }
+
+    expect((await post(url, tokenFor('rpty-hermes'), {
+      agentId: 'hermes', terminalId: 'rpty-hermes', pid: 4321, processStartedAt: '123456789', payload,
+    })).status).toBe(204)
+    await waitFor(() => events.length === 1)
+
+    expect(events[0]).toMatchObject({
+      terminalId: 'rpty-hermes',
+      agentId: 'hermes',
+      kind: 'turn-start',
+      sessionId: payload.session_id,
+      cwd: payload.cwd,
+      profile: 'work',
+      sourcePid: 4321,
+      sourceStartedAt: '123456789',
+    })
+    expect(posts).toEqual([{
+      terminalId: 'rpty-hermes',
+      agentId: 'hermes',
+      pid: 4321,
+      kind: 'turn-start',
+      sourceStartedAt: '123456789',
+    }])
+  })
+
   test('resolves CLI metadata into a normal session-title event without delaying the hook', async () => {
     const resolver = vi.fn(async () => 'Fix terminal titles')
     const cap = makeCap({
@@ -686,6 +729,7 @@ describe('agentHooks capability', () => {
     // opencode injects a repo file like every other agent.
     expect(byId.opencode).toMatchObject({ folderPresent: false, injected: false })
     expect(byId.kiro).toMatchObject({ folderPresent: false, injected: false })
+    expect(byId.hermes).toBeUndefined()
     // Every agent carries a display name for the UI.
     expect(states.every((s) => s.displayName.length > 0)).toBe(true)
   })

@@ -31,6 +31,18 @@ import {
 
 const execFileP = promisify(execFile)
 
+/** Use Windows' bundled bsdtar directly. GUI Cate inherits the user's PATH,
+ * which can put Git's GNU tar first; GNU tar parses `C:\\...` archive paths as
+ * remote `host:path` specs and leaves runtime provisioning permanently empty. */
+export function runtimeTarExecutable(
+  platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return platform === 'win32'
+    ? path.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
+    : 'tar'
+}
+
 export interface LocalSubprocessOptions {
   root: string
   id: string
@@ -187,7 +199,7 @@ export class LocalSubprocessTransport implements RuntimeTransport {
     await rm(staging, { recursive: true, force: true })
     await mkdir(staging, { recursive: true })
     try {
-      await execFileP('tar', ['-xzf', tarballPath, '-C', staging])
+      await execFileP(runtimeTarExecutable(), ['-xzf', tarballPath, '-C', staging])
       await writeFile(path.join(staging, '.ok'), await this.marker(version))
       // Two renames, not one: POSIX has no atomic directory swap. The gap where
       // installDir is absent is a single syscall wide (vs. the minutes a full

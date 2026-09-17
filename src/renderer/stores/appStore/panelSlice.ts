@@ -369,7 +369,8 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
           session && prev &&
           prev.agentId === session.agentId &&
           prev.sessionId === session.sessionId &&
-          prev.cwd === session.cwd
+          prev.cwd === session.cwd &&
+          prev.profile === session.profile
         ) return panel
         return { ...panel, agentSession: session ?? undefined }
       })

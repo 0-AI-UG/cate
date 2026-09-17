@@ -20,12 +20,19 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { LocalSubprocessTransport } from './localTransport'
+import { LocalSubprocessTransport, runtimeTarExecutable } from './localTransport'
 import type { RuntimeTarget } from '../runtimeArtifacts'
 import { RUNTIME_VERSION } from '../../../runtime/version'
 
 const execFileP = promisify(execFile)
 const TARGET: RuntimeTarget = 'linux-x64' // fixed, so the layout assertions are host-independent
+
+test('Windows runtime extraction uses System32 bsdtar instead of an inherited Git tar', () => {
+  expect(runtimeTarExecutable('win32', { SystemRoot: 'D:\\Windows' })).toBe(
+    path.join('D:\\Windows', 'System32', 'tar.exe'),
+  )
+  expect(runtimeTarExecutable('linux', { PATH: '/usr/bin' })).toBe('tar')
+})
 const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
 
 let root: string
@@ -45,7 +52,7 @@ async function makeTarball(name: string, body: string): Promise<string> {
   await fs.writeFile(path.join(stage, 'runtime', 'bin', nodeName), body)
   await fs.writeFile(path.join(stage, 'runtime.cjs'), body)
   const tgz = path.join(root, `${name}.tgz`)
-  await execFileP('tar', ['-czf', tgz, '-C', stage, '.'])
+  await execFileP(runtimeTarExecutable(), ['-czf', tgz, '-C', stage, '.'])
   return tgz
 }
 

@@ -37,6 +37,7 @@ export type AgentId =
   | 'codex'
   | 'cursor'
   | 'grok'
+  | 'hermes'
   | 'kiro'
   | 'opencode'
 
@@ -73,6 +74,11 @@ export interface AgentSkillTarget {
 export type T3ProviderId = 'codex' | 'claude' | 'cursor' | 'grok' | 'opencode'
 export type T3DriverId = 'codex' | 'claudeAgent' | 'cursor' | 'grok' | 'opencode'
 
+export interface AgentResumeContext {
+  /** Named CLI profile that owns the persisted session. */
+  profile?: string
+}
+
 export interface AgentDef {
   id: AgentId
   /** Optional T3 integration of this same provider; readiness is integration-specific. */
@@ -83,7 +89,8 @@ export interface AgentDef {
    *  as the detected process name. */
   command: string
   /** Build the shell-free argv for a new Cate-owned mission worker. */
-  codingAgentArgs: (prompt: string) => string[]
+  /** Exact argv for a Cate-owned mission worker, or null when unsupported. */
+  codingAgentArgs: ((prompt: string) => string[]) | null
   /** Whether the launched surface accepts another prompt on the same PTY. */
   codingAgentFollowUp: boolean
   /** True when a shell child process with this (already-lowercased) name means
@@ -95,7 +102,7 @@ export interface AgentDef {
   /** Argv (after `command`) that re-attaches to `sessionId` on a terminal
    *  restore, or null when this CLI cannot resume by id. Every contract here is
    *  pinned live by agentHookContracts.itest.ts. */
-  resumeArgs: ((sessionId: string) => string[]) | null
+  resumeArgs: ((sessionId: string, context?: AgentResumeContext) => string[] | null) | null
   /** Project-skills integration, or null when Cate installs no skills for this
    *  agent. Verified against each CLI's own docs — see the per-agent notes. */
   skills: AgentSkillTarget | null
@@ -199,6 +206,22 @@ export const AGENTS: readonly AgentDef[] = [
     resumeArgs: (sid) => ['--session', sid],
     skills: folderSkills('opencode', ['.opencode', 'skills']),
   },
+  {
+    id: 'hermes',
+    displayName: 'Hermes',
+    command: 'hermes',
+    // Hermes `-q` is explicitly one-shot; terminal restore is supported, but
+    // Cate-owned interactive mission workers are not yet.
+    codingAgentArgs: null,
+    codingAgentFollowUp: false,
+    matchProcess: (n) => n === 'hermes' || n === 'hermes.exe',
+    promptContextHook: null,
+    resumeArgs: (sid, context) => context?.profile
+      ? ['--profile', context.profile, 'chat', '--resume', sid]
+      : null,
+    // Hermes skills are profile-scoped; Cate only installs project skills.
+    skills: null,
+  },
   // Kiro CLI with its v3 engine. Standalone workspace hooks require that engine, so select
   // it explicitly for fresh and resumed sessions.
   {
@@ -270,16 +293,32 @@ export function agentIdForT3Provider(provider: string): AgentId | null {
 // terminal process can forge, and a dash-led "id" (`--dangerously-skip-
 // permissions`) would otherwise be joined into the resume command as a flag.
 // Real ids are uuids / opencode `ses_*` — never dash-led.
-const SAFE_SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+const SAFE_SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
+const SAFE_PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 /** The full shell command that resumes `sessionId` for `agentId`, or null when
  *  the agent is unknown / can't resume by id (or the id isn't a bare token). */
-export function resumeCommandForAgent(agentId: string, sessionId: string): string | null {
+export function resumeCommandForAgent(
+  agentId: string,
+  sessionId: string,
+  context?: AgentResumeContext,
+): string | null {
   const def = AGENTS.find((a) => a.id === agentId)
   if (!def?.resumeArgs || !SAFE_SESSION_ID.test(sessionId)) return null
-  return [def.command, ...def.resumeArgs(sessionId)].join(' ')
+  if (context?.profile !== undefined && (
+    !SAFE_PROFILE_NAME.test(context.profile)
+    || (agentId === 'hermes' && context.profile === 'custom')
+  )) return null
+  const args = def.resumeArgs(sessionId, context)
+  return args ? [def.command, ...args].join(' ') : null
 }
 
 /** Shared identities, filtered by the execution integration required by the caller. */
-export const TERMINAL_AGENTS = AGENTS
+export type TerminalAgentDef = AgentDef & {
+  codingAgentArgs: (prompt: string) => string[]
+}
+
+export const TERMINAL_AGENTS: readonly TerminalAgentDef[] = AGENTS.filter(
+  (agent): agent is TerminalAgentDef => agent.codingAgentArgs !== null,
+)
 export const T3_AGENTS = AGENTS.filter((agent): agent is AgentDef & { t3: NonNullable<AgentDef['t3']> } => !!agent.t3)

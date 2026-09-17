@@ -72,6 +72,8 @@ export interface TerminalAgentSession {
   /** The cwd the session belongs to (from the hook payload, or the terminal's
    *  cwd when the payload carries none). */
   cwd: string
+  /** Named agent profile that owns this session, when the CLI exposes one. */
+  profile?: string
 }
 
 // -----------------------------------------------------------------------------

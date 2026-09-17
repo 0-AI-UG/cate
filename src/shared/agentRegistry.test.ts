@@ -22,12 +22,14 @@ import { AGENT_HOOK_SPECS } from './agentHooks'
 import { SKILL_TARGETS, type SkillTargetId } from './skills'
 
 /** Agents deliberately without a skills integration. Add an id here ONLY with a
- *  reason — the point of the failure is to force the decision, not to be muted. */
-const NO_SKILLS: ReadonlySet<AgentId> = new Set([])
+ *  reason — the point of the failure is to force the decision, not to be muted.
+ *  Hermes skills are profile-scoped; this feature adds only terminal restore. */
+const NO_SKILLS: ReadonlySet<AgentId> = new Set(['hermes'])
 
 /** Agents deliberately without a bundled logo (they fall back to the panel's
- *  default icon). */
-const NO_LOGO: ReadonlySet<AgentId> = new Set([])
+ *  default icon). Hermes uses the fallback until a redistributable brand asset
+ *  is selected. */
+const NO_LOGO: ReadonlySet<AgentId> = new Set(['hermes'])
 
 describe('agent registry coverage', () => {
   test('native prompt context is gated to CLIs with a supported submit hook', () => {
@@ -36,6 +38,7 @@ describe('agent registry coverage', () => {
       codex: 'additional-context',
       cursor: null,
       grok: null,
+      hermes: null,
       kiro: 'stdout',
       opencode: 'opencode',
     })
@@ -84,13 +87,14 @@ describe('agent registry coverage', () => {
     expect([...SKILL_TARGETS].map((t) => t.id).sort()).toEqual([...expected].sort())
   })
 
-  test('every agent has a hook spec', () => {
+  test('every agent has exactly one hook delivery channel', () => {
     // Total Record, so this is belt-and-braces — but it also catches a spec
-    // that is present and empty (no injection channel at all).
+    // that is present and empty or ambiguously declares two delivery channels.
     for (const a of AGENTS) {
       const spec = AGENT_HOOK_SPECS[a.id]
       expect(spec, `${a.id} hook spec`).toBeTruthy()
-      expect(spec.projectFiles?.length, `${a.id} has no project-file injection channel`).toBeTruthy()
+      const channels = Number(Boolean(spec.projectFiles?.length)) + Number(Boolean(spec.externalPlugin))
+      expect(channels, `${a.id} must declare one hook delivery channel`).toBe(1)
     }
   })
 
@@ -100,8 +104,11 @@ describe('agent registry coverage', () => {
       expect(a.matchProcess(a.command.toLowerCase()) || a.id === 'claude-code',
         `${a.id} does not detect its own command name`).toBe(true)
       // resumeArgs is nullable by design (a CLI may not resume by id) — assert
-      // it is a real decision, and that the argv it builds is non-empty.
-      if (a.resumeArgs) expect(a.resumeArgs('abc').length).toBeGreaterThan(0)
+      // it is a real decision, and that valid context yields non-empty argv.
+      if (a.resumeArgs) {
+        const args = a.resumeArgs('abc', a.id === 'hermes' ? { profile: 'default' } : undefined)
+        expect(args?.length).toBeGreaterThan(0)
+      }
     }
   })
 })

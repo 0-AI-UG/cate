@@ -1,10 +1,10 @@
 // =============================================================================
 // Agent hook abstraction — the per-CLI declarations that turn the agent
 // CLIs' hook/extension/plugin surfaces into ONE normalized push event stream.
-// Each agent entry declares (a) WHICH workspace-scoped files Cate writes to
-// inject its hook bridge and (b) how that CLI's raw hook payload normalizes
-// into an AgentHookEvent. Adding a CLI is one entry here plus its AgentDef in
-// agents.ts.
+// Each agent entry declares (a) its delivery channel (workspace-scoped files
+// or an explicitly installed user plugin) and (b) how that CLI's raw hook
+// payload normalizes into an AgentHookEvent. Adding a CLI is one entry here
+// plus its AgentDef in agents.ts.
 //
 // The injection/payload contracts are pinned LIVE against the installed CLIs
 // by src/runtime/capabilities/agentHookContracts.itest.ts — when a CLI update
@@ -18,10 +18,6 @@
 
 import { createHash } from 'crypto'
 import type { AgentId } from './agents'
-import {
-  resolveAgentHookMode,
-  type AgentHookConfig,
-} from './agentHookModes'
 export {
   resolveAgentHookMode,
   type AgentHookConfig,
@@ -78,6 +74,14 @@ export interface AgentHookEvent {
   /** The transcript / rollout / session file backing the session, when the
    *  payload carries one. */
   transcriptPath?: string
+  /** Named CLI profile that owns the session, when the agent exposes one. */
+  profile?: string
+  /** Process that emitted an in-process hook. Used only to reject lifecycle
+   *  events from an older process generation; never persisted across restarts. */
+  sourcePid?: number
+  /** Monotonic process-start clock supplied by an in-process hook provider.
+   *  Unlike pid, this orders overlapping generations and is never persisted. */
+  sourceStartedAt?: string
   /** Present only for session-title events. */
   title?: string
   /** The raw payload as posted by the bridge, for consumers that need
@@ -86,7 +90,43 @@ export interface AgentHookEvent {
 }
 
 export type NormalizedHookFields = Pick<AgentHookEvent, 'kind' | 'sessionId'> &
-  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath'>>
+  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath' | 'profile'>>
+
+/** Canonicalize an untrusted monotonic process-start timestamp. Decimal
+ * strings preserve nanosecond precision across the JSON/JavaScript boundary. */
+export function normalizeAgentSourceStartedAt(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !/^[0-9]{1,32}$/.test(value)) return undefined
+  try {
+    const parsed = BigInt(value)
+    return parsed > 0n ? parsed.toString() : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Compare two in-process hook generations. `null` means the legacy fields do
+ * not establish an order, so callers may use lifecycle-kind fallback rules. */
+export function compareAgentProcessGeneration(
+  incoming: Pick<AgentHookEvent, 'sourcePid' | 'sourceStartedAt'>,
+  current: Pick<AgentHookEvent, 'sourcePid' | 'sourceStartedAt'>,
+): -1 | 0 | 1 | null {
+  const incomingClock = normalizeAgentSourceStartedAt(incoming.sourceStartedAt)
+  const currentClock = normalizeAgentSourceStartedAt(current.sourceStartedAt)
+  if (incomingClock !== undefined && currentClock !== undefined) {
+    const left = BigInt(incomingClock)
+    const right = BigInt(currentClock)
+    if (left < right) return -1
+    if (left > right) return 1
+    return incoming.sourcePid === current.sourcePid ? 0 : -1
+  }
+  if (incomingClock !== undefined) return 1
+  if (currentClock !== undefined) {
+    // Once a clocked generation is authoritative, a legacy or malformed event
+    // cannot prove equality — even if the OS has reused the same pid.
+    return -1
+  }
+  return incoming.sourcePid !== undefined && incoming.sourcePid === current.sourcePid ? 0 : null
+}
 
 // ---------------------------------------------------------------------------
 // Injection declarations
@@ -188,6 +228,8 @@ export interface AgentHookSpec {
      */
     strip?(existing: string): AgentHookStrip
   }>
+  /** User-global plugin that delivers hooks without writing project files. */
+  externalPlugin?: { id: string }
   /** Normalize one raw payload posted by this agent's bridge. Null = drop
    *  (an event Cate doesn't track, e.g. claude's idle_prompt notification). */
   normalize(payload: Record<string, unknown>): NormalizedHookFields | null
@@ -829,6 +871,36 @@ const kiroSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
+// hermes — a profile-scoped user plugin posts lifecycle events directly to
+// Cate's authenticated per-PTY endpoint. It is installed explicitly by the
+// integration script and is a silent no-op outside Cate terminals.
+// ---------------------------------------------------------------------------
+
+const HERMES_INTERACTIVE_PLATFORMS = new Set(['cli', 'tui'])
+
+const hermesSpec: AgentHookSpec = {
+  reportsTurnEndOnInterrupt: true,
+  externalPlugin: { id: 'cate-agent-state' },
+  normalize: (p) => {
+    const platform = str(p.platform)
+    if (platform && !HERMES_INTERACTIVE_PLATFORMS.has(platform)) return null
+    const base = {
+      sessionId: str(p.session_id),
+      cwd: str(p.cwd) ?? undefined,
+      profile: str(p.profile) ?? undefined,
+    }
+    switch (p.hook_event_name) {
+      case 'on_session_start':
+      case 'on_session_reset': return { kind: 'session-start', ...base }
+      case 'pre_llm_call': return { kind: 'turn-start', ...base }
+      case 'on_session_end': return { kind: 'turn-end', ...base }
+      case 'on_session_finalize': return { kind: 'session-end', ...base }
+      default: return null
+    }
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Registry + normalization entry point
 // ---------------------------------------------------------------------------
 
@@ -837,6 +909,7 @@ export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
   codex: codexSpec,
   cursor: cursorSpec,
   grok: grokSpec,
+  hermes: hermesSpec,
   kiro: kiroSpec,
   opencode: opencodeSpec,
 }

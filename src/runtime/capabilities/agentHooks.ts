@@ -57,10 +57,12 @@ import {
   CATE_TERMINAL_ID_ENV,
   agentHookFolder,
   normalizeAgentHookPayload,
+  normalizeAgentSourceStartedAt,
   resolveAgentHookMode,
   type AgentHookAgentState,
   type AgentHookConfig,
   type AgentHookEvent,
+  type AgentHookEventKind,
   type HookInjectionContext,
 } from '../../shared/agentHooks'
 
@@ -76,10 +78,9 @@ export interface AgentHooksCapability {
    * native prompt-submit hooks. Null clears it. */
   setPromptContext(terminalId: string, context: string | null): void
   /** The full spawn env for a PTY: hook endpoint + this terminal's derived
-   *  token + CATE_TERMINAL_ID=ptyId. Agent-agnostic (the per-agent tri-state
-   *  is enforced by prepareWorkspace, the only injection channel) and repo-free,
-   *  so it is planted unconditionally: a hook file that was never written
-   *  simply never reads it. Lazily boots the ingestion endpoint + hooks dir on
+   *  token + CATE_TERMINAL_ID=ptyId. Agent-agnostic and repo-free, so it is
+   *  planted unconditionally: project hook files and explicitly installed
+   *  user plugins read the same endpoint contract. Lazily boots the ingestion endpoint + hooks dir on
    *  first use; returns `env` unchanged when hook setup fails (a plain shell is
    *  always spawnable). */
   envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
@@ -127,10 +128,17 @@ export interface AgentHooksDeps {
   /** Called on every AUTHENTICATED post for a known agent — including ones
    *  whose payload normalizes to null — with the poster's lineage claim
    *  (`pid`: the bridge's parent / the in-process agent itself; undefined
-   *  when the poster didn't send one). AWAITED before the HTTP response goes
+   *  when the poster didn't send one; `kind`: normalized lifecycle generation
+   *  signal for in-process integrations). AWAITED before the HTTP response goes
    *  out: the presence tracker's ancestry walk needs the bridge's process
    *  chain alive, and the bridge holds it exactly until it hears back. */
-  onPost?: (post: { terminalId: string; agentId: AgentId; pid?: number }) => void | Promise<void>
+  onPost?: (post: {
+    terminalId: string
+    agentId: AgentId
+    pid?: number
+    kind?: AgentHookEventKind
+    sourceStartedAt?: string
+  }) => void | Promise<void>
   /** Tests may replace the filesystem-backed CLI resolvers. */
   titleResolvers?: AgentTitleResolvers
   /** Runtime-host home containing each CLI's session store. */
@@ -408,6 +416,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
             agentId?: unknown
             terminalId?: unknown
             pid?: unknown
+            processStartedAt?: unknown
             payload?: unknown
             threadId?: string
             turnId?: string
@@ -449,6 +458,17 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
               res.end()
               return
             }
+            const event = normalizeAgentHookPayload(body.agentId, body.terminalId, body.payload as Record<string, unknown>)
+            const sourceStartedAt = normalizeAgentSourceStartedAt(body.processStartedAt)
+            if (
+              event?.agentId === 'hermes' &&
+              typeof body.pid === 'number' &&
+              Number.isInteger(body.pid) &&
+              body.pid > 0
+            ) {
+              event.sourcePid = body.pid
+              if (sourceStartedAt !== undefined) event.sourceStartedAt = sourceStartedAt
+            }
             // Presence lineage: every authenticated post from a known agent
             // counts, even one whose payload normalizes to null — the post
             // itself proves the agent is alive. Awaited BEFORE responding so
@@ -459,10 +479,15 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
                   terminalId: body.terminalId,
                   agentId: body.agentId as AgentId,
                   pid: typeof body.pid === 'number' ? body.pid : undefined,
+                  ...(body.agentId === 'hermes' && event
+                    ? {
+                        kind: event.kind,
+                        ...(sourceStartedAt !== undefined ? { sourceStartedAt } : {}),
+                      }
+                    : {}),
                 })
               } catch { /* presence tracking must never fail the hook */ }
             }
-            const event = normalizeAgentHookPayload(body.agentId, body.terminalId, body.payload as Record<string, unknown>)
             if (body.agentId in AGENT_HOOK_SPECS) {
               try { await changes.ingestHook(body.terminalId, body.agentId as AgentId, body.payload as Record<string, unknown>, event) }
               catch (error) { console.warn('[agent changes] Could not save reported edit', error) }
@@ -674,6 +699,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       const states: AgentHookAgentState[] = []
       for (const agent of AGENTS) {
         const spec = AGENT_HOOK_SPECS[agent.id]
+        if (!spec.projectFiles) continue
         let folderPresent = false
         let injected = false
         // Only touch the filesystem for a real repo cwd (never ~ or a relative

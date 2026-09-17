@@ -7,6 +7,7 @@ describe('agentForLaunchCommand', () => {
     expect(agentForLaunchCommand('/usr/local/bin/codex --some-flag')?.id).toBe('codex')
     expect(agentForLaunchCommand('"C:\\tools\\cursor-agent"')?.id).toBe('cursor')
     expect(agentForLaunchCommand('/usr/local/bin/kiro-cli chat')?.id).toBe('kiro')
+    expect(agentForLaunchCommand('"C:\\tools\\hermes" --profile work')?.id).toBe('hermes')
   })
 
   it('does not guess through compound shell syntax', () => {
@@ -23,6 +24,8 @@ describe('matchAgentDef', () => {
     expect(matchAgentDef('cursor-agent')?.id).toBe('cursor')
     expect(matchAgentDef('cursor')?.id).toBe('cursor')
     expect(matchAgentDef('kiro-cli')?.id).toBe('kiro')
+    expect(matchAgentDef('hermes')?.id).toBe('hermes')
+    expect(matchAgentDef('Hermes.exe')?.id).toBe('hermes')
     expect(matchAgentDef('node')).toBeNull()
   })
 })
@@ -38,6 +41,13 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('grok', uuid)).toBe(`grok --resume ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
     expect(resumeCommandForAgent('kiro', uuid)).toBe(`kiro-cli chat --v3 --resume-id ${uuid}`)
+    expect(resumeCommandForAgent('hermes', uuid)).toBeNull()
+    expect(resumeCommandForAgent('hermes', uuid, { profile: 'work' })).toBe(
+      `hermes --profile work chat --resume ${uuid}`,
+    )
+    expect(resumeCommandForAgent('hermes', uuid, { profile: 'default' })).toBe(
+      `hermes --profile default chat --resume ${uuid}`,
+    )
   })
 
   it('returns null for unknown agent ids', () => {
@@ -49,11 +59,18 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('claude-code', 'abc def')).toBeNull()
     expect(resumeCommandForAgent('claude-code', '$(evil)')).toBeNull()
     expect(resumeCommandForAgent('claude-code', '')).toBeNull()
+    expect(resumeCommandForAgent('claude-code', 'a'.repeat(129))).toBeNull()
   })
 
   it('rejects dash-led session ids (flag injection into the resume argv)', () => {
     expect(resumeCommandForAgent('claude-code', '--dangerously-skip-permissions')).toBeNull()
     expect(resumeCommandForAgent('codex', '-x')).toBeNull()
     expect(resumeCommandForAgent('opencode', '_leading-underscore')).toBeNull()
+  })
+
+  it('rejects unsafe Hermes profile names', () => {
+    for (const profile of ['work; calc', '../work', '-p', 'work profile', '', 'Work', 'custom', 'a'.repeat(65)]) {
+      expect(resumeCommandForAgent('hermes', 'session-1', { profile })).toBeNull()
+    }
   })
 })
