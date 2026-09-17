@@ -288,6 +288,7 @@ export const NOTIFY_ACTION = 'notify:action' // main -> renderer (OS notificatio
 export const WINDOW_SET_TITLE = 'window:setTitle'
 
 export const KEEP_AWAKE_GET = 'keepAwake:get'
+export const KEEP_AWAKE_STATUS = 'keepAwake:status'
 export const KEEP_AWAKE_SET = 'keepAwake:set'
 export const KEEP_AWAKE_CHANGED = 'keepAwake:changed'
 // Custom window controls (frameless Windows/Linux chrome). Each is per-window —

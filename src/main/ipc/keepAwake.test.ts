@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { KEEP_AWAKE_TOGGLE, KEEP_AWAKE_GET, KEEP_AWAKE_SET, KEEP_AWAKE_CHANGED } from '../../shared/ipc-channels'
+import { KEEP_AWAKE_TOGGLE, KEEP_AWAKE_GET, KEEP_AWAKE_STATUS, KEEP_AWAKE_SET, KEEP_AWAKE_CHANGED } from '../../shared/ipc-channels'
 import { registerKeepAwakeHandlers } from './keepAwake'
 
 const mocks = vi.hoisted(() => ({
@@ -17,8 +17,8 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../windowRegistry', () => ({ broadcastToAll: mocks.broadcast }))
 
-function invoke(channel: string, value?: unknown) {
-  return mocks.handle.mock.calls.find(([name]) => name === channel)![1]({}, value)
+function invoke(channel: string, value?: unknown, minutes?: unknown) {
+  return mocks.handle.mock.calls.find(([name]) => name === channel)![1]({}, value, minutes)
 }
 
 beforeEach(() => {
@@ -38,12 +38,12 @@ describe('keep awake', () => {
     expect(invoke(KEEP_AWAKE_SET, true)).toBe(true)
     expect(mocks.start).toHaveBeenCalledExactlyOnceWith('prevent-display-sleep')
     expect(invoke(KEEP_AWAKE_GET)).toBe(true)
-    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, true)
+    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, true, null)
 
     expect(invoke(KEEP_AWAKE_SET, false)).toBe(false)
     expect(invoke(KEEP_AWAKE_SET, false)).toBe(false)
     expect(mocks.stop).toHaveBeenCalledExactlyOnceWith(0)
-    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, false)
+    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, false, null)
     expect(invoke(KEEP_AWAKE_SET, true)).toBe(true)
     expect(mocks.start).toHaveBeenCalledTimes(2)
   })
@@ -70,5 +70,50 @@ it('toggles the shared state atomically and broadcasts both transitions', () => 
   expect(invoke(KEEP_AWAKE_TOGGLE)).toBe(false)
   expect(mocks.start).toHaveBeenCalledTimes(1)
   expect(mocks.stop).toHaveBeenCalledTimes(1)
-  expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, false)
+  expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, false, null)
+})
+
+it('expires a selected duration and resets the timer when a new duration is selected', () => {
+  vi.useFakeTimers()
+  try {
+    expect(invoke(KEEP_AWAKE_SET, true, 15)).toBe(true)
+    expect(invoke(KEEP_AWAKE_STATUS)).toEqual({ enabled: true, endsAt: Date.now() + 15 * 60_000 })
+    vi.advanceTimersByTime(10 * 60_000)
+    expect(invoke(KEEP_AWAKE_SET, true, 30)).toBe(true)
+    vi.advanceTimersByTime(15 * 60_000)
+    expect(invoke(KEEP_AWAKE_GET)).toBe(true)
+    vi.advanceTimersByTime(15 * 60_000)
+    expect(invoke(KEEP_AWAKE_GET)).toBe(false)
+    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, false, null)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('cancels expiry when turned off and rejects unsupported durations', () => {
+  vi.useFakeTimers()
+  try {
+    expect(() => invoke(KEEP_AWAKE_SET, true, 5)).toThrow('Expected a keep-awake duration')
+    invoke(KEEP_AWAKE_SET, true, 15)
+    invoke(KEEP_AWAKE_SET, false)
+    vi.advanceTimersByTime(15 * 60_000)
+    expect(mocks.broadcast).toHaveBeenCalledTimes(2)
+    expect(invoke(KEEP_AWAKE_GET)).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('clears a timed expiry when changed to unlimited keep awake', () => {
+  vi.useFakeTimers()
+  try {
+    invoke(KEEP_AWAKE_SET, true, 15)
+    invoke(KEEP_AWAKE_SET, true)
+    expect(invoke(KEEP_AWAKE_STATUS)).toEqual({ enabled: true, endsAt: null })
+    vi.advanceTimersByTime(60 * 60_000)
+    expect(invoke(KEEP_AWAKE_GET)).toBe(true)
+    expect(mocks.stop).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
 })

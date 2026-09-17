@@ -6,13 +6,13 @@ import { KeepAwakeButton } from './KeepAwakeButton'
 import { useSettingsStore } from '../stores/settingsStore'
 import { storedShortcut } from '../../shared/types'
 
-it('shows the actual binding and toggles the shared power state', async () => {
+it('opens a centered duration menu and starts a timed keep-awake session', async () => {
   const originalApi = window.electronAPI
   const originalMatchMedia = window.matchMedia
-  let changed: (enabled: boolean) => void = () => {}
-  const toggle = vi.fn(async () => { changed(true); return true })
+  let changed: (enabled: boolean, endsAt: number | null) => void = () => {}
+  const setKeepAwake = vi.fn(async (_active: boolean, minutes?: number) => { changed(true, minutes ? Date.now() + minutes * 60_000 : null); return true })
   window.electronAPI = { ...originalApi,
-    getKeepAwake: async () => false, toggleKeepAwake: toggle,
+    getKeepAwakeStatus: async () => ({ enabled: false, endsAt: null }), setKeepAwake,
     onKeepAwakeChanged: (callback) => { changed = callback; return () => {} },
   }
   window.matchMedia = vi.fn(() => ({ matches: true })) as never
@@ -28,8 +28,21 @@ it('shows the actual binding and toggles the shared power state', async () => {
     act(() => useSettingsStore.setState({ customShortcuts: { toggleKeepAwake: storedShortcut('j', { command: true, option: true }) } }))
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Keep awake: off (⌥⌘J)')
     await act(async () => button.click())
-    expect(toggle).toHaveBeenCalledOnce()
-    expect(button.getAttribute('aria-checked')).toBe('true')
+    const menu = document.querySelector('[aria-label="Keep awake duration"]')!
+    expect(menu.textContent).toContain('15 min')
+    expect(menu.textContent).toContain('60 min')
+    expect(menu.textContent).toContain('∞ · Until turned off')
+    await act(async () => (Array.from(menu.querySelectorAll('button')).find((item) => item.textContent === '30 min')!).click())
+    expect(setKeepAwake).toHaveBeenCalledWith(true, 30)
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    expect(button.textContent).toContain('30')
+    act(() => vi.advanceTimersByTime(60_000))
+    expect(button.textContent).toContain('29')
+    await act(async () => button.click())
+    await act(async () => (Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Keep awake duration"] button')).find((item) => item.textContent?.startsWith('∞'))!).click())
+    expect(setKeepAwake).toHaveBeenLastCalledWith(true, undefined)
+    expect(button.textContent).toContain('∞')
   } finally {
     act(() => root.unmount())
     host.remove()
