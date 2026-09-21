@@ -132,6 +132,13 @@ afterEach(() => {
 })
 
 describe('BackgroundBrowserHost', () => {
+  it('mounts a browser surface without requiring a project folder', async () => {
+    act(() => useAppStore.setState({ workspaces: [{ ...workspace('one'), rootPath: '' }], selectedWorkspaceId: 'one' }))
+    await renderHost()
+    expect(container.querySelector('[data-browser-panel="browser-one"]')).not.toBeNull()
+    expect(container.querySelector('[data-workspace-required]')).toBeNull()
+  })
+
   it('hides portaled browsers during settings without remounting their guests', async () => {
     await renderHost()
     const browser = container.querySelector('[data-browser-panel="browser-one"]')
@@ -290,13 +297,13 @@ it('moves the retained T3 surface into its canvas slot without remounting it', a
   expect(original.closest('[data-browser-surface-slot="agent-one"]')).not.toBeNull()
 })
 
-it('does not mount persistent browser or T3 guests for an unconfigured workspace', async () => {
+it('mounts browsers but keeps T3 guests gated until a project folder is selected', async () => {
   const ws = workspace('one')
   ws.rootPath = ''
   ws.panels.agent = { id: 'agent', type: 'agent', title: 'T3' } as never
   act(() => useAppStore.setState({ workspaces: [ws] }))
   await renderHost()
-  expect(container.querySelector('[data-browser-panel]')).toBeNull()
+  expect(container.querySelector('[data-browser-panel]')).not.toBeNull()
   expect(container.querySelector('[data-retained-agent]')).toBeNull()
   act(() => useAppStore.setState({ workspaces: [{ ...ws, rootPath: '/project' }] }))
   expect(container.querySelector('[data-browser-panel]')).not.toBeNull()

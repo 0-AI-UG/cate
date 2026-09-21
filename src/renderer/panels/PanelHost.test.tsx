@@ -131,3 +131,11 @@ it.each(['canvas', 'terminal', 'editor', 'browser', 'agent', 'review', 'surface'
   expect(host.textContent).toContain('No workspace selected')
   expect(mounted).not.toHaveBeenCalled()
 })
+
+
+it.each(['browser', 'terminal'] as const)('allows only browser panels to render in a workspace without a project folder (%s)', (type) => {
+  registryMocks.renderPanelComponent.mockReturnValue(<span>Panel content</span>)
+  act(() => useAppStore.setState({ workspaces: [{ id: 'empty', rootPath: '', panels: {} } as never] }))
+  act(() => root.render(<PanelHost panelId="p" panels={{ p: panel('p', type) }} workspaceId="empty" />))
+  expect(host.textContent).toContain(type === 'browser' ? 'Panel content' : 'No workspace selected')
+})

@@ -27,7 +27,9 @@ export function registerOpenUrlHandler(createMainWindow: () => BrowserWindow): v
     }
     if (!tracked.has(event.sender)) {
       tracked.add(event.sender)
-      event.sender.on('did-start-loading', () => ready.delete(event.sender))
+      event.sender.on('did-start-navigation', (details) => {
+        if (details.isMainFrame && !details.isSameDocument) ready.delete(event.sender)
+      })
     }
     ready.add(event.sender)
     started = true

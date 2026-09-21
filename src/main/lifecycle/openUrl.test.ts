@@ -66,9 +66,12 @@ describe('macOS web URL delivery', () => {
     const { win, event } = windowFixture()
     state.active = win
     state.ipc.emit(APP_OPEN_URL_READY, event, true)
+    win.webContents.emit('did-start-loading')
+    win.webContents.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false })
+    win.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true })
     open('https://example.com/one')
     expect(state.send).toHaveBeenCalledTimes(1)
-    win.webContents.emit('did-start-loading')
+    win.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
     open('https://example.com/two')
     expect(state.send).toHaveBeenCalledTimes(1)
     state.ipc.emit(APP_OPEN_URL_READY, event, true)
