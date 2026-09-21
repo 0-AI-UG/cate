@@ -10,6 +10,7 @@ export function registerOpenUrlHandler(createMainWindow: () => BrowserWindow): v
   const pending: string[] = []
   const ready = new WeakSet<WebContents>()
   const tracked = new WeakSet<WebContents>()
+  let started = false
 
   const flush = (win: BrowserWindow): void => {
     if (!ready.has(win.webContents) || win.isDestroyed()) return
@@ -29,6 +30,7 @@ export function registerOpenUrlHandler(createMainWindow: () => BrowserWindow): v
       event.sender.on('did-start-loading', () => ready.delete(event.sender))
     }
     ready.add(event.sender)
+    started = true
     flush(win)
   })
 
@@ -36,7 +38,9 @@ export function registerOpenUrlHandler(createMainWindow: () => BrowserWindow): v
     event.preventDefault()
     if (!isWebUrl(url)) return
     pending.push(url)
-    const win = getActiveMainWindow() ?? (app.isReady() ? createMainWindow() : undefined)
+    // app.ready can precede asynchronous bootstrap and IPC registration. Let
+    // bootstrap create the first window; only recreate one after startup.
+    const win = getActiveMainWindow() ?? (started && app.isReady() ? createMainWindow() : undefined)
     if (win) flush(win)
   })
 }

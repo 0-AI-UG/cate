@@ -45,6 +45,8 @@ describe('macOS web URL delivery', () => {
     registerOpenUrlHandler(create)
     open('https://example.com/login?next=%2Fdocs#section')
     open('http://localhost:8080/test')
+    state.app.isReady = () => true
+    open('https://example.com/during-bootstrap')
     expect(create).not.toHaveBeenCalled()
     const { win, event } = windowFixture()
     state.active = win
@@ -53,9 +55,10 @@ describe('macOS web URL delivery', () => {
     expect(state.send.mock.calls).toEqual([
       [1, APP_OPEN_URL, 'https://example.com/login?next=%2Fdocs#section'],
       [1, APP_OPEN_URL, 'http://localhost:8080/test'],
+      [1, APP_OPEN_URL, 'https://example.com/during-bootstrap'],
     ])
     state.ipc.emit(APP_OPEN_URL_READY, event, true)
-    expect(state.send).toHaveBeenCalledTimes(2)
+    expect(state.send).toHaveBeenCalledTimes(3)
   })
 
   it('delivers warm opens and queues again during renderer reload', () => {
@@ -78,6 +81,7 @@ describe('macOS web URL delivery', () => {
     const { win, event } = windowFixture()
     const create = vi.fn(() => { state.active = win; return win })
     registerOpenUrlHandler(create as never)
+    state.ipc.emit(APP_OPEN_URL_READY, windowFixture(2).event, true)
     open('https://example.com/')
     expect(create).toHaveBeenCalledOnce()
     state.ipc.emit(APP_OPEN_URL_READY, event, true)
