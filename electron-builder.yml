@@ -78,9 +78,8 @@ publish:
   repo: cate
   releaseType: release
 mac:
-  # Registered Apple App ID for the browser passkey capability. Keep the
-  # product name unchanged so existing Cate userData and safe-storage names persist.
-  appId: com.0ai.cate
+  # Inherit com.cate.app: existing installations must retain their signing
+  # identity so Squirrel updates and macOS identity checks remain compatible.
   protocols:
     - name: Web URLs
       schemes: [http, https]

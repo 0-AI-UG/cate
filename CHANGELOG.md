@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-## [2.0.3-beta.1] - 2026-09-21
+### Fixed
+
+- **macOS update compatibility**: preserve the existing `com.cate.app` bundle ID while adding HTTP/HTTPS browser registration. The incompatible 2.0.3-beta.1 release has been withdrawn; existing users must not be required to reinstall Cate.
+
+## [2.0.3-beta.1] - 2026-09-21 (withdrawn)
 
 This beta enables macOS to recognize Cate as a web browser and opens links from other apps in Cate. It prepares the app for Apple's browser passkey entitlement review; website passkey support still requires Apple's approval and the native integration.
 
@@ -17,7 +21,7 @@ This beta enables macOS to recognize Cate as a web browser and opens links from 
 
 ### Changed
 
-- **macOS app identity**: use the registered Apple bundle ID `com.0ai.cate`. Existing Mac installations should install this beta manually by replacing Cate in Applications. The app name and data folder remain unchanged; macOS may request permissions again. Automatic updates from the previous bundle ID may fail signature validation.
+- **Withdrawn identity change**: this beta changed the macOS bundle ID to `com.0ai.cate`, which was incompatible with existing automatic updates. It is no longer offered. The replacement retains `com.cate.app`.
 
 ## [2.0.2] - 2026-09-16
 
