@@ -78,6 +78,13 @@ publish:
   repo: cate
   releaseType: release
 mac:
+  # Registered Apple App ID for the browser passkey capability. Keep the
+  # product name unchanged so existing Cate userData and safe-storage names persist.
+  appId: com.0ai.cate
+  protocols:
+    - name: Web URLs
+      schemes: [http, https]
+      role: Viewer
   icon: build/icon.icns
   category: public.app-category.developer-tools
   hardenedRuntime: true

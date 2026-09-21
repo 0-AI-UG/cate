@@ -102,6 +102,8 @@ import {
   WORKSPACE_EXTERNAL_EDIT_DISMISS,
   BOOT_SNAPSHOT_WRITE,
   APP_OPEN_PATH,
+  APP_OPEN_URL,
+  APP_OPEN_URL_READY,
   MENU_OPEN_SETTINGS,
   MENU_TRIGGER_ACTION,
   BROWSER_SHORTCUT,
@@ -764,6 +766,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onOpenPath(callback: (filePath: string) => void): () => void {
     return createIpcListener(APP_OPEN_PATH, callback)
+  },
+
+  onOpenUrl(callback: (url: string) => void): () => void {
+    // Subscribe before announcing readiness so cold-launch URLs cannot be lost.
+    const unsubscribe = createIpcListener(APP_OPEN_URL, callback)
+    ipcRenderer.send(APP_OPEN_URL_READY, true)
+    return () => {
+      ipcRenderer.send(APP_OPEN_URL_READY, false)
+      unsubscribe()
+    }
   },
 
   // ---------------------------------------------------------------------------
