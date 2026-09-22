@@ -12,7 +12,7 @@ import { bundledSkillSource } from './bundledSkillSource'
 // runtime connects only after create/attach.
 //   - gated by the cliSkillInstallEnabled setting (Settings → CLI);
 //   - every target (one per agent CLI that declares `skills` in
-//     src/shared/agents.ts — claude-code, codex, cursor, grok, kiro, opencode,
+//     src/shared/agents.ts — claude-code, codex, cursor, grok, hermes, kiro, opencode —
 //     is seeded only when its tool dir (`.claude`, `.codex`, etc.)
 //     already exists in the workspace, so repos don't grow dot-dirs for agents
 //     nobody uses there. A tool dir created later is picked up on a subsequent

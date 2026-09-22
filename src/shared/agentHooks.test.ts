@@ -548,6 +548,24 @@ describe('kiro spec', () => {
   })
 })
 
+describe('hermes spec', () => {
+  const base = { session_id: 'session-1', turn_id: 'turn-1', profile: 'work', cwd: '/repo', platform: 'cli' }
+
+  test('normalizes lifecycle, approvals, and interactive-platform events', () => {
+    expect(norm('hermes', { hook_event_name: 'on_session_start', ...base })).toMatchObject({
+      kind: 'session-start', sessionId: 'session-1', turnId: 'turn-1', profile: 'work', cwd: '/repo',
+    })
+    expect(norm('hermes', { hook_event_name: 'pre_llm_call', ...base })?.kind).toBe('turn-start')
+    expect(norm('hermes', { hook_event_name: 'on_session_end', ...base })?.kind).toBe('turn-end')
+    expect(norm('hermes', { hook_event_name: 'pre_approval_request', ...base })?.kind).toBe('permission-wait')
+    expect(norm('hermes', { hook_event_name: 'post_approval_response', ...base })?.kind).toBe('turn-resume')
+    expect(norm('hermes', { hook_event_name: 'post_tool_call', ...base })?.kind).toBe('turn-resume')
+    expect(norm('hermes', { hook_event_name: 'on_session_finalize', ...base })?.kind).toBe('session-end')
+    expect(norm('hermes', { hook_event_name: 'pre_llm_call', ...base, platform: 'gateway' })).toBeNull()
+    expect(AGENT_HOOK_SPECS.hermes.externalPlugin).toEqual({ id: 'cate-agent-state' })
+  })
+})
+
 describe('normalizeAgentHookPayload', () => {
   test('unknown agents and untracked payloads drop; raw payload rides along', () => {
     expect(normalizeAgentHookPayload('not-an-agent', 't', { hook_event_name: 'Stop' })).toBeNull()
@@ -580,6 +598,7 @@ describe('reportsTurnEndOnInterrupt', () => {
       // Expected self-heal via stop{cancelled}; streaming path not yet
       // observed live (test account quota) — see grokSpec.
       grok: true,
+      hermes: true,
       // Verified live: Ctrl-C returns to Kiro's prompt without a Stop hook;
       // renderer terminal input supplies the scoped recovery edge.
       kiro: false,
