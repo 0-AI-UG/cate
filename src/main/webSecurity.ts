@@ -66,7 +66,7 @@ function isAllowedGuestUrl(url: string): boolean {
     // remote page into file:// are blocked by the same-origin policy.
     // data: is useful for self-contained agent fixtures and remains isolated:
     // browser guests are sandboxed, have no Node integration, and receive only
-    // the one-way password-focus preload.
+    // the restricted browser preload.
     return parsed.protocol === 'http:'
       || parsed.protocol === 'https:'
       || parsed.protocol === 'file:'
@@ -234,7 +234,7 @@ export function installWebContentsSecurity(): void {
         return
       }
 
-      // Pin the one-way browser observer; never trust renderer-supplied preloads.
+      // Pin the restricted browser preload; never trust renderer-supplied preloads.
       ;(webPreferences as { preload?: string }).preload = getBrowserGuestPreloadPath()
       delete (webPreferences as { preloadURL?: string }).preloadURL
       webPreferences.nodeIntegration = false

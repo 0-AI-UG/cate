@@ -1,8 +1,17 @@
-// Browser-guest preload — deliberately tiny and one-way. Remote pages receive
-// no API. The preload reports password focus for autofill and sends submitted
-// login credentials directly to main for a native, user-approved save prompt.
+// Browser-guest preload. The optional passkey bridge is restricted to WebAuthn;
+// no general Electron API is exposed to remote pages. Password focus is sent
+// to the host, and submitted credentials go directly to main for a save prompt.
 
-import { ipcRenderer, webFrame } from 'electron'
+import { contextBridge, ipcRenderer, webFrame } from 'electron'
+import { installPasskeyPageBridge } from './passkeyPageBridge'
+
+if (process.isMainFrame && ipcRenderer.sendSync('cate-passkeys-available')) {
+  contextBridge.exposeInMainWorld('__catePasskeys', {
+    request: (input: unknown) => ipcRenderer.invoke('cate-passkeys-request', input),
+    cancel: (id: string) => ipcRenderer.send('cate-passkeys-cancel', id),
+  })
+  contextBridge.executeInMainWorld({ func: installPasskeyPageBridge })
+}
 
 // Keep this preload self-contained. Sharing the IPC constants module with the
 // renderer preload makes electron-vite emit a chunk that Electron's sandboxed
@@ -56,7 +65,10 @@ for (const eventName of ['pointerdown', 'keydown', 'wheel'] as const) {
 
 document.addEventListener('focusin', (event) => {
   const input = event.target
-  if (!(input instanceof HTMLInputElement) || input.type.toLowerCase() !== 'password') return
+  if (!(input instanceof HTMLInputElement) || input.type.toLowerCase() !== 'password') {
+    ipcRenderer.sendToHost(CHANNEL, { dismiss: true })
+    return
+  }
 
   if (marked && marked !== input) marked.removeAttribute(TARGET_ATTRIBUTE)
   const targetId = crypto.randomUUID()
@@ -64,7 +76,7 @@ document.addEventListener('focusin', (event) => {
   marked = input
 
   const rect = input.getBoundingClientRect()
-  ipcRenderer.send(CHANNEL, {
+  ipcRenderer.sendToHost(CHANNEL, {
     targetId,
     rect: {
       left: rect.left,
@@ -73,6 +85,12 @@ document.addEventListener('focusin', (event) => {
       height: rect.height,
     },
   })
+}, true)
+
+// A scrolled field no longer has the coordinates sent with its focus event.
+document.addEventListener('scroll', () => ipcRenderer.sendToHost(CHANNEL, { dismiss: true }), true)
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') ipcRenderer.sendToHost(CHANNEL, { dismiss: true })
 }, true)
 
 function elementName(input: HTMLInputElement): string {
