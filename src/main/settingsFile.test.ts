@@ -62,6 +62,20 @@ describe('settingsFile', () => {
     expect(onDisk.showMinimap).toBeUndefined()
   })
 
+  it('persists, reloads, and clears the Jev OpenRouter setting', async () => {
+    let m = await freshModule()
+    m.loadSettingsSync()
+    expect(m.getSetting('cliOpenRouterApiKey')).toBe('')
+    expect(m.setSetting('cliOpenRouterApiKey', 'saved-test-key')).toBe(true)
+    m.flushPendingWritesSync()
+    m = await freshModule()
+    m.loadSettingsSync()
+    expect(m.getSetting('cliOpenRouterApiKey')).toBe('saved-test-key')
+    expect(m.setSetting('cliOpenRouterApiKey', '')).toBe(true)
+    m.flushPendingWritesSync()
+    expect(JSON.parse(fs.readFileSync(settingsPath(), 'utf8')).cliOpenRouterApiKey).toBe('')
+  })
+
   it('loads an existing settings.json over defaults', async () => {
     fs.writeFileSync(settingsPath(), JSON.stringify({ terminalScrollback: 9000 }))
     const m = await freshModule()

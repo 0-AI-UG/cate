@@ -160,18 +160,18 @@ export function createAgentChangesStore(directory = path.join(
       const cursorEdit = agentId === 'cursor' && name === 'afterFileEdit'
       const part = object(raw.part)
       const partState = object(part.state)
-      const completed = cursorEdit || /^(PostToolUse|postToolUse|post_tool_use)$/.test(name)
+      const completed = cursorEdit || /^(PostToolUse|postToolUse|post_tool_use|post_tool_call)$/.test(name)
         || (name === 'message.part.updated' && part.type === 'tool' && partState.status === 'completed')
       if (!completed) return
       const output = raw.tool_response ?? raw.toolResponse ?? raw.tool_output ?? raw.result ?? partState.metadata
-      if (object(output).is_error === true || object(output).success === false || raw.success === false
+      if (object(output).is_error === true || object(output).success === false || raw.success === false || raw.error_type
         || ['error', 'failed', 'declined'].includes(String(object(output).status ?? raw.status))) return
       const toolName = cursorEdit ? 'Edit' : string(raw.tool_name ?? raw.toolName ?? part.tool) ?? ''
       // Cursor emits both afterFileEdit (the before/after fragments) and a
       // generic Write completion (only new contents), without a shared ID.
       // The dedicated hook is authoritative; storing both duplicates edits.
       if (agentId === 'cursor' && !cursorEdit && toolName === 'Write') return
-      const input = cursorEdit ? raw : raw.tool_input ?? raw.toolInput ?? raw.input ?? partState.input
+      const input = cursorEdit ? raw : raw.tool_input ?? raw.toolInput ?? raw.args ?? raw.input ?? partState.input
       const reportedCwd = event?.cwd ?? string(raw.cwd ?? raw.directory)
       if (reportedCwd && (!path.isAbsolute(reportedCwd) || reportedCwd.includes('\0'))) return
       const executionCwd = reportedCwd ? canonical(reportedCwd) : source.cwd

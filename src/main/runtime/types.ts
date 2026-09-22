@@ -104,6 +104,10 @@ export interface PtyActivity {
   activity: TerminalActivity
   agentName: string | null
   agentPresent: boolean
+  /** Process identity for a confirmed falling edge. Used to avoid clearing a
+   *  resume stamp belonging to a newer overlapping agent process. */
+  endedAgentPid?: number
+  endedAgentStartedAt?: string
 }
 
 export interface ProcessHost {

@@ -191,9 +191,10 @@ describe('workspace.json + session.json round-trip', () => {
   it('round-trips a terminal agent-session stamp through session.json only', () => {
     const { snapshot } = buildSnapshot()
     const agentSession = {
-      agentId: 'claude-code',
+      agentId: 'hermes',
       sessionId: '11111111-1111-4111-8111-111111111111',
       cwd: WORKTREE_PATH,
+      profile: 'work',
     }
     snapshot.panels!['term-1'] = { ...snapshot.panels!['term-1'], agentSession }
 

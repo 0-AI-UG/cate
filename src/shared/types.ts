@@ -72,6 +72,8 @@ export interface TerminalAgentSession {
   /** The cwd the session belongs to (from the hook payload, or the terminal's
    *  cwd when the payload carries none). */
   cwd: string
+  /** Named CLI profile that owns this session, when the agent exposes one. */
+  profile?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -1471,6 +1473,8 @@ export interface AppSettings {
    *  Existing installs keep the value already written in their settings.json
    *  (the file is seeded with full defaults on first run). */
   cliEnabled: boolean
+  /** OpenRouter credential used by Jev browser control in the main process. */
+  cliOpenRouterApiKey: string
   /** Auto-install the bundled cate-cli skill so agents learn the `cate` command:
    *  seeded into each opened workspace through the skills installer, the same
    *  way for local and remote hosts. Supported external agents are seeded when their tool dir
@@ -1607,6 +1611,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalOptionIsMeta: true,
   autoSuspendIdleTerminals: true,
   cliEnabled: true,
+  cliOpenRouterApiKey: '',
   cliSkillInstallEnabled: true,
   cliBrowserReadEnabled: true,
   cliBrowserControlEnabled: true,

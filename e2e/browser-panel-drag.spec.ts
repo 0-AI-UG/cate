@@ -77,3 +77,29 @@ test('does not focus the address bar while dragging a browser panel', async () =
   await page.mouse.move(grab!.x + 180, grab!.y + 120, { steps: 20 })
   await page.mouse.up()
 })
+
+test('closes active and inactive new tabs with a single click on their close buttons', async () => {
+  const browser = await page.evaluate(() => window.__cateE2E!.createBrowser(
+    'cate://newtab',
+    { x: 120, y: 120 },
+  ))
+  const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
+  await expect(surface).toHaveAttribute('data-browser-surface-visible', 'true')
+  const newTab = surface.getByRole('button', { name: 'New tab', exact: true })
+  const closeTabs = surface.getByRole('button', { name: 'Close tab', exact: true })
+  await newTab.click()
+  await newTab.click()
+  await expect(closeTabs).toHaveCount(3)
+
+  // Close the active new tab, then the inactive one. Each click must remove
+  // exactly one tab, and the remaining start page must keep its empty address.
+  await expect(closeTabs.nth(2)).toBeEnabled()
+  await closeTabs.nth(2).click()
+  await expect(closeTabs).toHaveCount(2)
+  await expect(surface.locator('input').first()).toHaveValue('')
+  await closeTabs.first().hover()
+  await expect(closeTabs.first()).toBeEnabled()
+  await closeTabs.first().click()
+  await expect(closeTabs).toHaveCount(1)
+  await expect(surface.locator('input').first()).toHaveValue('')
+})
