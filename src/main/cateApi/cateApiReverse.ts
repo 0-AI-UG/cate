@@ -175,7 +175,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
             ? 'review'
           : undefined
       const usesSelectedPanel = targetType
-        && method !== 'cate.browser.run' && method !== 'cate.browser.reset'
+        && method !== 'cate.browser.run' && method !== 'cate.browser.reset' && method !== 'cate.browser.jevDecision'
         && selectedPanelId
         && args.panelId === undefined
         && !(method === 'cate.browser.createTab' && args.newPanel === true)

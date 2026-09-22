@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+const requestJevDecision = vi.hoisted(() => vi.fn(async () => ({ answers: {} })))
+vi.mock('../browser/jevDecision', () => ({ requestJevDecision }))
+
 // --- electron: only app is touched at module load (will-quit handler) --------
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
@@ -799,4 +802,18 @@ describe('dispatchCateInvoke — first-party trust boundary (characterization)',
     expect(cliPermissionForMethod('cate.unknown.get')).toBeUndefined()
     expect(cliPermissionForMethod('cate.version')).toBeUndefined()
   })
+})
+
+it('runs Jev decisions in main only when both Browser permissions are enabled', async () => {
+  requestJevDecision.mockClear()
+  const request = { state: {}, instructions: 'Choose', criteria: { a: 'A', b: 'B' } }
+  expect(await dispatchCateInvoke(scope(), 'cate.browser.jevDecision', request)).toEqual({ answers: {} })
+  expect(requestJevDecision).toHaveBeenCalledWith(request)
+  requestJevDecision.mockClear()
+  settings.cliBrowserReadEnabled = false
+  expect(await dispatchCateInvoke(scope(), 'cate.browser.jevDecision', request)).toMatchObject({ error: expect.stringContaining('browser-read-disabled') })
+  settings.cliBrowserReadEnabled = true
+  settings.cliBrowserControlEnabled = false
+  expect(await dispatchCateInvoke(scope(), 'cate.browser.jevDecision', request)).toMatchObject({ error: expect.stringContaining('browser-control-disabled') })
+  expect(requestJevDecision).not.toHaveBeenCalled()
 })
