@@ -6,9 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-09-22
+
+This patch release adds Hermes CLI integration and browser controls, improves browser automation, and fixes browser tab and Markdown preview interactions.
+
+### Added
+
+- **Hermes CLI**: use Hermes as an integrated coding agent, with profile-aware session restoration, lifecycle status, context delivery, and edit tracking.
+- **Jev browser automation**: control browser tabs through `cate browser jev` using an OpenRouter API key saved in Settings.
+- **Browser viewport controls**: adjust the browser viewport from the browser menu.
+- **macOS browser registration**: select Cate as the default browser and open external web links in visible panels, including during startup and session restoration.
+- **Optional macOS passkeys**: add native passkey integration for builds with Apple's approved browser entitlement and provisioning profile.
+
+### Changed
+
+- **Skills catalog**: refresh the available skills index.
+
 ### Fixed
 
-- **macOS update compatibility**: preserve the existing `com.cate.app` bundle ID while adding HTTP/HTTPS browser registration. The incompatible 2.0.3-beta.1 release has been withdrawn; existing users must not be required to reinstall Cate.
+- **Markdown previews**: keep code-copy buttons and scrollbar dragging responsive across focus changes, including code blocks inside lists and quotes; show accurate clipboard feedback.
+- **Browser tabs**: restore single-click closing of new tabs and preserve start-page focus and content when switching or closing tabs.
+- **Browser screenshots**: wait for navigation to settle before capturing screenshots.
+- **Password autofill**: improve browser password autofill behavior.
+- **macOS update compatibility**: preserve the existing `com.cate.app` bundle ID while registering HTTP and HTTPS links. The incompatible 2.0.3-beta.1 release remains withdrawn.
 
 ## [2.0.3-beta.1] - 2026-09-21 (withdrawn)
 
