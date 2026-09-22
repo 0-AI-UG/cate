@@ -124,4 +124,41 @@ describe('BrowserTabStrip', () => {
     expect(setPointerCapture).not.toHaveBeenCalled()
     expect(onClose).toHaveBeenCalledWith('tab-1')
   })
+
+  it('closes a new tab on the first press after a drag without a compatibility click', () => {
+    const onClose = vi.fn()
+    act(() => root.render(
+      <BrowserTabStrip
+        tabs={[
+          { id: 'tab-1', url: 'cate://newtab', title: '' },
+          { id: 'tab-2', url: 'cate://newtab', title: '' },
+        ]}
+        activeTabId="tab-2"
+        onSelect={vi.fn()}
+        onClose={onClose}
+        onNewTab={vi.fn()}
+        onTogglePin={vi.fn()}
+      />,
+    ))
+    const strip = host.querySelector('[aria-label="Browser tabs"]') as HTMLDivElement
+    Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: 600 })
+    Object.defineProperty(strip, 'clientWidth', { configurable: true, value: 300 })
+    const pointer = (type: string, clientX: number): Event => Object.assign(
+      new MouseEvent(type, { bubbles: true, button: 0, clientX }),
+      { pointerId: 1 },
+    )
+    act(() => {
+      strip.dispatchEvent(pointer('pointerdown', 120))
+      strip.dispatchEvent(pointer('pointermove', 70))
+      strip.dispatchEvent(pointer('pointerup', 70))
+    })
+
+    const icon = host.querySelectorAll('button[aria-label="Close tab"] svg')[1]
+    act(() => {
+      icon.dispatchEvent(pointer('pointerdown', 100))
+      icon.dispatchEvent(pointer('pointerup', 100))
+      icon.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }))
+    })
+    expect(onClose).toHaveBeenCalledExactlyOnceWith('tab-2')
+  })
 })
