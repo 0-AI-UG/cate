@@ -186,7 +186,8 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   // liveness — the one presence authority (no child scan).
   const agentPresence = createAgentPresenceTracker({ snapshot: snapshotProcessTree })
   const agentHooks = createAgentHooksCapability({
-    onPost: ({ terminalId, agentId, pid }) => agentPresence.notePost(terminalId, agentId, pid),
+    onPost: ({ terminalId, agentId, pid, sourceStartedAt }) =>
+      agentPresence.notePost(terminalId, agentId, pid, sourceStartedAt),
   })
 
   const innerProc = createProcessCapability({
@@ -202,8 +203,9 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     hooks: {
       noteInput: (ptyId, data) => agentHooks.noteInput(ptyId, data),
       forgetTerminal: (ptyId) => agentHooks.forgetTerminal(ptyId),
-      envForPty: (ptyId, env) => agentHooks.envForPty(ptyId, env),
-      prepareWorkspace: (cwd, config, baseCwd) => agentHooks.prepareWorkspace(cwd, config, baseCwd),
+      envForPty: (ptyId, env, config, cwd, baseCwd, launchedAgentId) =>
+        agentHooks.envForPty(ptyId, env, config, cwd, baseCwd, launchedAgentId),
+      prepareWorkspace: (cwd, config, baseCwd, launchedAgentId) => agentHooks.prepareWorkspace(cwd, config, baseCwd, launchedAgentId),
     },
     agentPresence,
   })
@@ -303,6 +305,8 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
     server,
     tunnel,
     agentHooks,
-    killAll: () => { server.killAll(); tunnel.closeAll(); agentHooks.dispose() },
+    // Stop hook ingestion before terminating PTYs: graceful agent finalizers
+    // must not erase the resume stamp Cate is preserving for cold restore.
+    killAll: () => { agentHooks.dispose(); server.killAll(); tunnel.closeAll() },
   }
 }

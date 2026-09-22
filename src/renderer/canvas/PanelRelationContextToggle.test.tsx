@@ -41,6 +41,7 @@ function openCli(agentId: AgentId): void {
     codex: 'codex',
     cursor: 'cursor-agent',
     grok: 'grok',
+    hermes: 'hermes',
     kiro: 'kiro-cli',
     opencode: 'opencode',
   }

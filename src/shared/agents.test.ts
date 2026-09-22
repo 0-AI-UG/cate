@@ -7,6 +7,7 @@ describe('agentForLaunchCommand', () => {
     expect(agentForLaunchCommand('/usr/local/bin/codex --some-flag')?.id).toBe('codex')
     expect(agentForLaunchCommand('"C:\\tools\\cursor-agent"')?.id).toBe('cursor')
     expect(agentForLaunchCommand('/usr/local/bin/kiro-cli chat')?.id).toBe('kiro')
+    expect(agentForLaunchCommand('hermes chat')?.id).toBe('hermes')
   })
 
   it('does not guess through compound shell syntax', () => {
@@ -23,6 +24,7 @@ describe('matchAgentDef', () => {
     expect(matchAgentDef('cursor-agent')?.id).toBe('cursor')
     expect(matchAgentDef('cursor')?.id).toBe('cursor')
     expect(matchAgentDef('kiro-cli')?.id).toBe('kiro')
+    expect(matchAgentDef('hermes')?.id).toBe('hermes')
     expect(matchAgentDef('node')).toBeNull()
   })
 })
@@ -38,6 +40,9 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('grok', uuid)).toBe(`grok --resume ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
     expect(resumeCommandForAgent('kiro', uuid)).toBe(`kiro-cli chat --v3 --resume-id ${uuid}`)
+    expect(resumeCommandForAgent('hermes', uuid, { profile: 'work' })).toBe(`hermes --profile work chat --resume ${uuid}`)
+    expect(resumeCommandForAgent('hermes', uuid)).toBeNull()
+    expect(resumeCommandForAgent('hermes', uuid, { profile: 'custom' })).toBeNull()
   })
 
   it('returns null for unknown agent ids', () => {

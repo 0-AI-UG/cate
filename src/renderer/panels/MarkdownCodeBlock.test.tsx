@@ -6,6 +6,7 @@ import MarkdownCodeBlock from './MarkdownCodeBlock'
 
 const mocks = vi.hoisted(() => ({
   render: vi.fn(), initialize: vi.fn(), loaded: vi.fn(),
+  writeText: vi.fn(),
   themeChanged: null as null | ((theme: { type: string }) => void),
 }))
 vi.mock('mermaid', () => {
@@ -23,6 +24,7 @@ vi.mock('../ui/Tooltip', () => ({ Tooltip: ({ children }: any) => children }))
 
 let host: HTMLDivElement
 let root: Root
+const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
 const fence = (source: string, language = 'mermaid') => `\`\`\`${language}\n${source}\n\`\`\``
 async function show(content: string) {
   await act(async () => root.render(<ReactMarkdown components={{ pre: MarkdownCodeBlock }}>{content}</ReactMarkdown>))
@@ -34,10 +36,17 @@ beforeEach(() => {
   root = createRoot(host)
   mocks.render.mockReset().mockResolvedValue({ svg: '<svg><text>Diagram</text></svg>' })
   mocks.initialize.mockClear()
+  mocks.writeText.mockReset().mockResolvedValue(undefined)
+  vi.stubGlobal('electronAPI', { terminalClipboardWrite: mocks.writeText })
+  // Clipboard writes can be unavailable to the browser renderer in Electron.
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
 })
 afterEach(async () => {
   await act(async () => root.unmount())
   host.remove()
+  vi.unstubAllGlobals()
+  if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard)
+  else Reflect.deleteProperty(navigator, 'clipboard')
 })
 
 it('keeps ordinary fenced and inline code without loading Mermaid', async () => {
@@ -47,16 +56,38 @@ it('keeps ordinary fenced and inline code without loading Mermaid', async () => 
   expect(mocks.loaded).not.toHaveBeenCalled()
 })
 
+it('copies the exact code through the native clipboard and waits for success', async () => {
+  let finish!: () => void
+  mocks.writeText.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+  const source = 'cate panel list\n  echo "Grüße <>&"'
+  await show(fence(source, 'sh'))
+  const button = host.querySelector('button')!
+  await act(async () => button.click())
+  expect(mocks.writeText).toHaveBeenCalledWith(source + '\n')
+  expect(button.getAttribute('aria-label')).toBe('Copy code')
+  await act(async () => finish())
+  expect(button.getAttribute('aria-label')).toBe('Copied')
+})
+
+it('reports a failed copy and allows retrying', async () => {
+  mocks.writeText.mockRejectedValueOnce(new Error('Clipboard unavailable'))
+  await show(fence('cate panel list', 'sh'))
+  const button = host.querySelector('button')!
+  await act(async () => button.click())
+  expect(button.getAttribute('aria-label')).toBe('Copy failed. Try again')
+  await act(async () => button.click())
+  expect(mocks.writeText).toHaveBeenCalledTimes(2)
+  expect(button.getAttribute('aria-label')).toBe('Copied')
+})
+
 it('renders Mermaid outside pre, keeps copyable source, and skips unchanged diagrams', async () => {
   const source = 'graph LR; A-->B'
   await show('Original prose\n\n' + fence(source))
   expect(host.querySelector('[role="img"] svg')).not.toBeNull()
   expect(host.querySelector('pre svg')).toBeNull()
   expect(mocks.initialize).toHaveBeenCalledWith(expect.objectContaining({ securityLevel: 'strict', startOnLoad: false }))
-  const writeText = vi.fn().mockResolvedValue(undefined)
-  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
   await act(async () => (host.querySelector('[aria-label="Copy code"]') as HTMLButtonElement).click())
-  expect(writeText).toHaveBeenCalledWith(source + '\n')
+  expect(mocks.writeText).toHaveBeenCalledWith(source + '\n')
   await show('Changed prose\n\n' + fence(source))
   expect(mocks.render).toHaveBeenCalledTimes(1)
 })

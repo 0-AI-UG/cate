@@ -15,13 +15,13 @@ vi.mock('./UrlSuggestions', () => ({ UrlSuggestions: () => null }))
 vi.mock('./StartPage', () => ({ StartPage: () => <div>Start page</div> }))
 vi.mock('./BrowserHistoryPage', () => ({ BrowserHistoryPage: () => <div data-testid="browser-history" /> }))
 vi.mock('./BrowserPasswordManagerPage', () => ({ BrowserPasswordManagerPage: () => null }))
-vi.mock('./BrowserTabStrip', () => ({ BrowserTabStrip: () => <div data-testid="browser-tabs" /> }))
 vi.mock('./BrowserBookmarksSidebar', () => ({ BrowserBookmarksSidebar: () => null }))
 
 import BrowserPanel from './BrowserPanel'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useActivePanelStore } from '../lib/activePanel'
 
 const browserControl = vi.fn(async () => ({ ok: true }))
 let downloadsChanged: ((payload: {
@@ -49,6 +49,7 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
+  useActivePanelStore.setState({ activePanelId: null })
   useAppStore.setState({
     updatePanelTitle: vi.fn(), updateBrowserActiveTabUrl: vi.fn(), updatePanelTabs: vi.fn(),
   })
@@ -79,6 +80,43 @@ function mount(tabs = [{ id: 'tab-1', url: 'https://example.test/', title: 'Exam
 }
 
 describe('BrowserPanel live webview', () => {
+  it.each(['ready', 'starting'])('closes new tabs and keeps the remaining start page when its guest is %s', (guestState) => {
+    mount([{ id: 'tab-1', url: 'cate://newtab', title: '' }])
+    const firstGuest = host.querySelector('webview') as HTMLElement
+    const methods = installWebviewMethods(firstGuest)
+    methods.getURL.mockReturnValue('about:blank')
+    if (guestState === 'starting') {
+      methods.getURL.mockImplementation(() => { throw new Error('The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called.') })
+    }
+    act(() => (host.querySelector('button[aria-label="New tab"]') as HTMLButtonElement).click())
+
+    const closeButtons = host.querySelectorAll<HTMLButtonElement>('button[aria-label="Close tab"]')
+    expect(closeButtons).toHaveLength(2)
+    expect(closeButtons[1].disabled).toBe(false)
+    act(() => closeButtons[1].click())
+
+    expect(host.querySelectorAll('button[aria-label="Close tab"]')).toHaveLength(1)
+    expect(host.querySelector('webview')).toBe(firstGuest)
+    expect(host.textContent).toContain('Start page')
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('')
+    expect(useAppStore.getState().updatePanelTabs).toHaveBeenLastCalledWith(
+      'workspace-1', 'browser-1', [{ id: 'tab-1', url: 'cate://newtab', title: '' }], 'tab-1',
+    )
+  })
+
+  it('keeps the start page when selecting an inactive new tab and closing it', () => {
+    mount([{ id: 'tab-1', url: 'cate://newtab', title: '' }])
+    act(() => (host.querySelector('button[aria-label="New tab"]') as HTMLButtonElement).click())
+    act(() => (host.querySelector('[title="New Tab · right-click to pin"]') as HTMLElement).click())
+    expect(host.textContent).toContain('Start page')
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('')
+
+    act(() => (host.querySelector('button[aria-label="Close tab"]') as HTMLButtonElement).click())
+    expect(host.querySelectorAll('button[aria-label="Close tab"]')).toHaveLength(1)
+    expect(host.textContent).toContain('Start page')
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('')
+  })
+
   it('lets users inspect, replace, and reset an agent-set viewport from the menu', () => {
     mount()
     const controller = portalMocks.registerController.mock.calls[0][1]
@@ -175,6 +213,25 @@ describe('BrowserPanel live webview', () => {
     mount()
     expect(focus).not.toHaveBeenCalled()
     focus.mockRestore()
+  })
+
+  it('does not move focus from new-tab chrome into the hidden guest', () => {
+    const frames = new Map<number, FrameRequestCallback>()
+    let frameId = 0
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.set(++frameId, callback)
+      return frameId
+    })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => { frames.delete(id) })
+    useActivePanelStore.setState({ activePanelId: 'browser-1' })
+    mount([{ id: 'tab-1', url: 'cate://newtab', title: '' }])
+    const guestFocus = vi.spyOn(host.querySelector('webview') as HTMLElement, 'focus')
+    act(() => {
+      for (const callback of frames.values()) callback(0)
+      frames.clear()
+    })
+    expect(document.activeElement).toBe(host.querySelector('input'))
+    expect(guestFocus).not.toHaveBeenCalled()
   })
 
   it('shows download progress in a toolbar popover for its guest', () => {

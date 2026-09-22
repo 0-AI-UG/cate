@@ -37,6 +37,7 @@ export type AgentId =
   | 'codex'
   | 'cursor'
   | 'grok'
+  | 'hermes'
   | 'kiro'
   | 'opencode'
 
@@ -89,13 +90,16 @@ export interface AgentDef {
   /** True when a shell child process with this (already-lowercased) name means
    *  this agent is the one running in that terminal. */
   matchProcess: (procName: string) => boolean
+  /** In-process hooks can prove identity from the authenticated posting pid
+   * even when the interpreter hides the CLI name in `ps comm`. */
+  hookProcess?: 'self'
   /** Native post-submit extension point Cate can use to add graph context
    * without reading or rewriting the terminal's PTY input. */
-  promptContextHook: 'additional-context' | 'stdout' | 'opencode' | null
+  promptContextHook: 'additional-context' | 'stdout' | 'opencode' | 'hermes' | null
   /** Argv (after `command`) that re-attaches to `sessionId` on a terminal
    *  restore, or null when this CLI cannot resume by id. Every contract here is
    *  pinned live by agentHookContracts.itest.ts. */
-  resumeArgs: ((sessionId: string) => string[]) | null
+  resumeArgs: ((sessionId: string, context?: { profile?: string }) => string[] | null) | null
   /** Project-skills integration, or null when Cate installs no skills for this
    *  agent. Verified against each CLI's own docs — see the per-agent notes. */
   skills: AgentSkillTarget | null
@@ -199,6 +203,23 @@ export const AGENTS: readonly AgentDef[] = [
     resumeArgs: (sid) => ['--session', sid],
     skills: folderSkills('opencode', ['.opencode', 'skills']),
   },
+  {
+    id: 'hermes',
+    displayName: 'Hermes',
+    command: 'hermes',
+    // Hermes >=0.21 keeps `chat -q` interactive when attached to Cate's PTY.
+    codingAgentArgs: (prompt) => ['chat', '-q', prompt],
+    codingAgentFollowUp: true,
+    matchProcess: (n) => n === 'hermes' || n === 'hermes.exe',
+    hookProcess: 'self',
+    promptContextHook: 'hermes',
+    // Profiles have independent session stores, so an exact resume must carry
+    // the profile that emitted the session lifecycle event.
+    resumeArgs: (sid, context) => context?.profile
+      ? ['--profile', context.profile, 'chat', '--resume', sid]
+      : null,
+    skills: folderSkills('hermes', ['.hermes', 'skills']),
+  },
   // Kiro CLI with its v3 engine. Standalone workspace hooks require that engine, so select
   // it explicitly for fresh and resumed sessions.
   {
@@ -270,14 +291,23 @@ export function agentIdForT3Provider(provider: string): AgentId | null {
 // terminal process can forge, and a dash-led "id" (`--dangerously-skip-
 // permissions`) would otherwise be joined into the resume command as a flag.
 // Real ids are uuids / opencode `ses_*` — never dash-led.
-const SAFE_SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+const SAFE_SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
+const SAFE_PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 /** The full shell command that resumes `sessionId` for `agentId`, or null when
  *  the agent is unknown / can't resume by id (or the id isn't a bare token). */
-export function resumeCommandForAgent(agentId: string, sessionId: string): string | null {
+export function resumeCommandForAgent(
+  agentId: string,
+  sessionId: string,
+  context?: { profile?: string },
+): string | null {
   const def = AGENTS.find((a) => a.id === agentId)
   if (!def?.resumeArgs || !SAFE_SESSION_ID.test(sessionId)) return null
-  return [def.command, ...def.resumeArgs(sessionId)].join(' ')
+  if (context?.profile !== undefined && (
+    !SAFE_PROFILE_NAME.test(context.profile) || (agentId === 'hermes' && context.profile === 'custom')
+  )) return null
+  const args = def.resumeArgs(sessionId, context)
+  return args ? [def.command, ...args].join(' ') : null
 }
 
 /** Shared identities, filtered by the execution integration required by the caller. */

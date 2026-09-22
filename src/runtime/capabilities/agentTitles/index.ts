@@ -3,6 +3,7 @@ import { resolveClaudeTitle } from './claude'
 import { resolveCodexTitle } from './codex'
 import { resolveCursorTitle } from './cursor'
 import { resolveGrokTitle } from './grok'
+import { resolveHermesTitle } from './hermes'
 import { resolveKiroTitle } from './kiro'
 import { resolveOpenCodeTitle } from './opencode'
 
@@ -12,6 +13,7 @@ export const AGENT_TITLE_RESOLVERS: AgentTitleResolvers = {
   codex: resolveCodexTitle,
   cursor: resolveCursorTitle,
   grok: resolveGrokTitle,
+  hermes: resolveHermesTitle,
   kiro: resolveKiroTitle,
   opencode: resolveOpenCodeTitle,
 }

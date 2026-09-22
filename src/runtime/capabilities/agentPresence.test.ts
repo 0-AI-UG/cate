@@ -61,7 +61,7 @@ describe('notePost → presenceFor', () => {
   })
 
   test('falling edge: registered pid gone from the snapshot → absent and deregistered', async () => {
-    const { tracker } = makeTracker(TMUX_TREE)
+    const { tracker } = makeTracker(TMUX_TREE, { alive: () => false })
     await tracker.notePost(T, 'claude-code', 41)
 
     const without = tree([[10, 1, 'zsh'], [20, 10, 'tmux'], [30, 1, 'tmux'], [31, 30, 'zsh']])
@@ -124,6 +124,42 @@ describe('notePost → presenceFor', () => {
     await tracker.notePost(T, 'claude-code', 41)
     await tracker.notePost(T, 'codex', 81)
     expect(tracker.presenceFor(T, both)).toEqual({ agentName: 'Codex', agentPresent: true })
+  })
+
+  test('Hermes uses its authenticated in-process pid and rejects an older generation', async () => {
+    const processes = tree([[90, 10, 'python3'], [91, 10, 'python3']])
+    const { tracker } = makeTracker(processes)
+    await tracker.notePost(T, 'hermes', 90, '100')
+    expect(tracker.presenceFor(T, processes)).toEqual({ agentName: 'Hermes', agentPresent: true })
+    await tracker.notePost(T, 'hermes', 91, '200')
+    await tracker.notePost(T, 'hermes', 90, '100')
+    const onlyNew = tree([[91, 10, 'python3']])
+    expect(tracker.presenceFor(T, onlyNew)).toEqual({ agentName: 'Hermes', agentPresent: true })
+  })
+
+  test('a slower old Hermes lookup cannot overwrite a newer generation', async () => {
+    const oldTree = tree([[90, 10, 'python3']])
+    const newTree = tree([[91, 10, 'python3']])
+    let resolveOld!: (value: ProcTree) => void
+    const oldSnapshot = new Promise<ProcTree>((resolve) => { resolveOld = resolve })
+    const snapshot = vi.fn()
+      .mockReturnValueOnce(oldSnapshot)
+      .mockResolvedValueOnce(newTree)
+    const tracker = createAgentPresenceTracker({ snapshot, isAlive: () => true })
+
+    const oldPost = tracker.notePost(T, 'hermes', 90, '100')
+    await tracker.notePost(T, 'hermes', 91, '200')
+    resolveOld(oldTree)
+    await oldPost
+
+    expect(tracker.presenceFor(T, newTree)).toEqual({ agentName: 'Hermes', agentPresent: true })
+  })
+
+  test('a process missing from a stale snapshot remains present when it is alive', async () => {
+    const processes = tree([[90, 10, 'python3']])
+    const { tracker } = makeTracker(processes, { alive: () => true })
+    await tracker.notePost(T, 'hermes', 90, '100')
+    expect(tracker.presenceFor(T, tree([]))).toEqual({ agentName: 'Hermes', agentPresent: true })
   })
 
   test('a cyclic parent chain terminates', async () => {
