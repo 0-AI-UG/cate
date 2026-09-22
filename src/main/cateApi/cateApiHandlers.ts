@@ -22,6 +22,7 @@ import {
   upsertWindowPanel,
 } from '../windowPanels'
 import { getSetting } from '../settingsFile'
+import { requestJevDecision } from '../browser/jevDecision'
 import { showOsNotification } from '../ipc/notifications'
 import type { PanelType, WindowPanelInfo } from '../../shared/types'
 import type { CodingAgentRunStatus } from '../../shared/codingAgentRuns'
@@ -404,6 +405,11 @@ export async function dispatchCateInvoke(
   if (denied) return denied
 
   const { workspaceId, panelId } = scope
+
+  if (method === 'cate.browser.jevDecision') {
+    if (getSetting('cliBrowserReadEnabled') !== true) return { error: BROWSER_READ_DISABLED, method }
+    return requestJevDecision(args)
+  }
 
   if (method === 'cate.agent.list') {
     return liveAgentPanels(workspaceId).map(agentPanelSummary)

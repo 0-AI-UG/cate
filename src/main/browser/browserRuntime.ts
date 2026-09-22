@@ -155,14 +155,15 @@ class BrowserTargetRuntime {
   }
 
   execute(method: string, args: BrowserArgs): Promise<BrowserRuntimeResult> {
-    return this.enqueue(() => this.executeBound(method, args), args._codeCellId).catch((error) => ({ error: error instanceof Error ? error.message : 'browser-command-failed', recovery: 'Observe the bound tab again before retrying; input may already have been dispatched.' }))
+    return this.enqueue(() => this.executeBound(method, args), args._codeCellId, args._userInputEpoch).catch((error) => ({ error: error instanceof Error ? error.message : 'browser-command-failed', recovery: 'Observe the bound tab again before retrying; input may already have been dispatched.' }))
   }
 
-  private enqueue<T>(operation: () => Promise<T>, codeCellId?: unknown): Promise<T> {
+  private enqueue<T>(operation: () => Promise<T>, codeCellId?: unknown, expectedEpoch?: unknown): Promise<T> {
     // Capture takeover at submission, so input also invalidates waiting work.
     const epoch = this.userInputEpoch
     const guard = (): void => {
       assertBrowserCodeCell(codeCellId)
+      if (expectedEpoch !== undefined && expectedEpoch !== this.userInputEpoch) throw new Error('browser-action-preempted-by-user')
       if (this.contents.isDestroyed()) throw new Error('browser-target-destroyed')
       if (this.userInputEpoch !== epoch) throw new Error('browser-action-preempted-by-user')
     }
@@ -790,6 +791,7 @@ class BrowserTargetRuntime {
         state = [...removed, ...added].join('\n') || 'No changes.'
       }
       const observation: BrowserObservation = {
+        userInputEpoch: this.userInputEpoch,
         kind: imageOnly ? 'image' : 'ax',
         panelId: this.identity.panelId, tabId: this.identity.tabId, observationId: `${documentId}:o${++this.observationCounter}`,
         documentId, url: this.contents.getURL(), title: this.contents.getTitle(), viewport: after,

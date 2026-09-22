@@ -13,7 +13,6 @@ vi.mock('../lib/portalRegistry', () => ({ portalRegistry: portalMocks }))
 vi.mock('../ui/Tooltip', () => ({ Tooltip: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('./UrlSuggestions', () => ({ UrlSuggestions: () => null }))
 vi.mock('./StartPage', () => ({ StartPage: () => <div>Start page</div> }))
-vi.mock('./BrowserMenu', () => ({ BrowserMenu: () => null }))
 vi.mock('./BrowserHistoryPage', () => ({ BrowserHistoryPage: () => <div data-testid="browser-history" /> }))
 vi.mock('./BrowserPasswordManagerPage', () => ({ BrowserPasswordManagerPage: () => null }))
 vi.mock('./BrowserTabStrip', () => ({ BrowserTabStrip: () => <div data-testid="browser-tabs" /> }))
@@ -80,6 +79,58 @@ function mount(tabs = [{ id: 'tab-1', url: 'https://example.test/', title: 'Exam
 }
 
 describe('BrowserPanel live webview', () => {
+  it('lets users inspect, replace, and reset an agent-set viewport from the menu', () => {
+    mount()
+    const controller = portalMocks.registerController.mock.calls[0][1]
+    act(() => { void controller.setViewport({ preset: 'custom', width: 1440, height: 900 }) })
+    act(() => (host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click())
+    const select = host.querySelector('select[aria-label="Viewport"]') as HTMLSelectElement
+    const inputs = () => [...host.querySelectorAll<HTMLInputElement>('input[type="number"]')]
+    const webview = host.querySelector('webview') as HTMLElement
+    expect(select.value).toBe('custom')
+    expect(inputs().map((input) => input.value)).toEqual(['1440', '900'])
+
+    // Changes made by the agent while the menu is open are reflected too.
+    act(() => { void controller.setViewport({ preset: 'desktop', width: 1600, height: 1000 }) })
+    expect(select.value).toBe('desktop')
+    expect(inputs().map((input) => input.value)).toEqual(['1600', '1000'])
+
+    for (const [preset, width, height] of [['mobile', '390', '844'], ['desktop', '1280', '800']]) {
+      act(() => {
+        select.value = preset
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      expect(webview.style.width).toBe(`${width}px`)
+      expect(webview.style.height).toBe(`${height}px`)
+    }
+
+    const setInput = (input: HTMLInputElement, value: string) => {
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const apply = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Apply')!
+    for (const invalid of ['', '0', '-10', '1.5']) {
+      setInput(inputs()[0], invalid)
+      expect(apply.disabled).toBe(true)
+    }
+    setInput(inputs()[0], '1024')
+    setInput(inputs()[1], '768')
+    act(() => apply.click())
+    expect(select.value).toBe('custom')
+    expect(webview.style.width).toBe('1024px')
+    expect(webview.style.height).toBe('768px')
+
+    act(() => {
+      select.value = 'compact'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(inputs()).toHaveLength(0)
+    expect(webview.style.width).toContain('%')
+    expect(webview.style.height).toContain('%')
+  })
+
   it('backs transparent guest pages with white independently of the app theme', () => {
     mount()
     expect((host.querySelector('webview') as HTMLElement).style.backgroundColor).toBe('rgb(255, 255, 255)')

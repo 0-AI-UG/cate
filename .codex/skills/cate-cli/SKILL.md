@@ -38,6 +38,35 @@ panel. If a selected panel was closed, select another panel before continuing.
 
 ## Browser workflow
 
+### Jev mode
+
+Give Jev a natural-language task for the selected browser panel:
+
+```bash
+cate browser jev 'Set the Greeting field to Hi and click Save' --panel <id>
+cate browser jev 'Open the Settings tab' --max-steps 10 --json
+```
+
+Save your OpenRouter API key in **Cate Settings → CLI → OpenRouter API key**.
+No terminal export is needed. Enable Browser Read and Control in the same settings.
+This mode sends the prompt and
+page accessibility text to Jev (`typesafe/jev-1.13`) through OpenRouter's Decisions
+API. Cate makes provider requests using the saved key; the key is not sent to the CLI.
+Clearing the setting disables Jev. No other model is used: Jev selects browser
+operations, elements, and complete destination URLs supplied in the prompt.
+For text input, the prompt is split on whitespace and Jev selects one word as the
+entire field value. Duplicate words are offered once; punctuation is preserved.
+Words cannot be combined and new text cannot be generated. Include the exact field
+value as a single word and supply absolute HTTP/HTTPS destination URLs explicitly.
+
+Supported operations are HTTP/HTTPS navigation, clicks, field replacement, keys, page scrolling, and
+waits. Runs pin the panel/tab and stop on user takeover, uncertainty, errors,
+180 seconds, or the step limit (20 by default, up to 100). `--json` returns
+the status, action trace, model-call count, and final URL; only `done` exits zero.
+Completion is a model judgment based on the page; verify important outcomes.
+
+### JavaScript mode
+
 Browser control uses persistent JavaScript with the `cua` tab API. The old argv
 actions, selectors, page evaluation, and revisioned string refs have been removed.
 Start by binding a tab to get its accessibility state, then request a screenshot
