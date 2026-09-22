@@ -1306,6 +1306,8 @@ export default function BrowserPanel({
           onZoomOut={() => adjustBrowserZoom(-1)}
           onZoomIn={() => adjustBrowserZoom(1)}
           onZoomReset={() => applyBrowserZoom(1)}
+          viewport={browserViewport}
+          onViewportChange={setSettledBrowserViewport}
           onClose={() => setMenuOpen(false)}
           triggerRef={menuButtonRef}
         />
