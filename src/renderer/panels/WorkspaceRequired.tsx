@@ -6,8 +6,12 @@ import { Button } from '../ui/Button'
 import { LoadingState } from '../ui/Spinner'
 
 /** Shared mount boundary for all panel types, including persistent guests. */
-export function WorkspaceRequired({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
-  const availability = useAppStore((s) => workspaceAvailability(s.workspaces.find((w) => w.id === workspaceId)))
+export function WorkspaceRequired({ workspaceId, children, requiresFolder = true }: { workspaceId: string; children: ReactNode; requiresFolder?: boolean }) {
+  const availability = useAppStore((s) => {
+    const workspace = s.workspaces.find((w) => w.id === workspaceId)
+    // Web browsing needs a workspace to own its panels, but no project folder.
+    return workspace && !requiresFolder ? 'ready' : workspaceAvailability(workspace)
+  })
   if (availability === 'ready') return <>{children}</>
   return <div data-workspace-required className="flex h-full min-h-0 items-center justify-center overflow-auto p-6">
     {availability === 'opening' ? <LoadingState label="Opening workspace…" /> : <div className="flex flex-col items-center gap-3 text-center">

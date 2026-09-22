@@ -115,7 +115,30 @@ test('lists a saved password and autofills username and password without exposin
     ).not.toBeNull().then(() => page.evaluate(
       (panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId,
     ))
-    await expect(inspectFixture(app!, page, browser, 'document.querySelector("#password").focus(); true')).resolves.toMatchObject({ ok: true })
+    const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
+    const popup = surface.locator('[data-browser-autofill]')
+    // Exercise both canvas transforms and page zoom. Compare the displayed
+    // popup against the independently measured field and webview rectangles.
+    for (const zoom of [1, 0.75]) {
+      await page.evaluate((zoom) => window.__cateE2E!.setZoom(zoom), zoom)
+      await app.evaluate(({ webContents }, id) => webContents.fromId(id!)!.setZoomFactor(1.2), webContentsId)
+      await expect(act(page, browser, 'click', 'Email', {}, 'textbox')).resolves.toMatchObject({ ok: true })
+      await expect(act(page, browser, 'click', 'Password', {}, 'textbox')).resolves.toMatchObject({ ok: true })
+      await expect(popup).toBeVisible()
+      const field = await inspectFixture(app!, page, browser, 'JSON.parse(JSON.stringify(document.querySelector("#password").getBoundingClientRect()))')
+      const rect = field.result.value as { left: number; bottom: number }
+      const guest = surface.locator('webview').first()
+      const guestBox = (await guest.boundingBox())!
+      const guestWidth = await guest.evaluate((element) => (element as HTMLElement).offsetWidth)
+      const scale = guestBox.width / guestWidth
+      await expect.poll(async () => {
+        const box = (await popup.boundingBox())!
+        return Math.abs(box.y - (guestBox.y + rect.bottom * 1.2 * scale + 6 * zoom))
+      }).toBeLessThan(3)
+      const box = (await popup.boundingBox())!
+      expect(box.x).toBeGreaterThanOrEqual(guestBox.x - 1)
+      expect(box.x + box.width).toBeLessThanOrEqual(guestBox.x + guestBox.width + 1)
+    }
     const target = await inspectFixture(app!, page, browser, "document.querySelector(\"#password\")?.getAttribute(\"data-cate-autofill-target\")") as {
       ok: boolean
       result: { value: string }
@@ -128,12 +151,8 @@ test('lists a saved password and autofills username and password without exposin
       origin,
       username: 'saved@example.test',
     }])
-    await expect(page.evaluate(({ webContentsId, credentialId, targetId }) =>
-      window.electronAPI.browserCredentialFill({ webContentsId: webContentsId!, credentialId, targetId }), {
-      webContentsId,
-      credentialId,
-      targetId: target.result.value,
-    })).resolves.toMatchObject({ ok: true })
+    await popup.getByRole('button', { name: /saved@example.test/ }).click()
+    await expect(popup).toBeHidden()
     await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#email\")?.value")).resolves
       .toMatchObject({ ok: true, result: { value: 'saved@example.test' } })
     await expect(inspectFixture(app!, page, browser, 'document.querySelector("#password").value')).resolves.toMatchObject({ ok: true, result: { value: 'autofill secret' } })

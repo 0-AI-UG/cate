@@ -55,7 +55,7 @@ const PanelContent = memo(function PanelContent({
   if (!panel) return null
   if (!allowCanvas && !getPanelDef(panel.type).canLiveOnCanvas) return null
   if ((panel.type === 'browser' || panel.type === 'agent') && persistentBrowserHost) {
-    return <WorkspaceRequired workspaceId={workspaceId}><BrowserPanelSurfaceSlot panelId={panel.id} /></WorkspaceRequired>
+    return <WorkspaceRequired workspaceId={workspaceId} requiresFolder={panel.type !== 'browser'}><BrowserPanelSurfaceSlot panelId={panel.id} /></WorkspaceRequired>
   }
   const content = renderPanelComponent(panel, {
     workspaceId,
@@ -63,5 +63,5 @@ const PanelContent = memo(function PanelContent({
     zoomLevel,
     renderPanelContent,
   })
-  return content ? <WorkspaceRequired workspaceId={workspaceId}><PanelSuspense key={panel.id}>{content}</PanelSuspense></WorkspaceRequired> : null
+  return content ? <WorkspaceRequired workspaceId={workspaceId} requiresFolder={panel.type !== 'browser'}><PanelSuspense key={panel.id}>{content}</PanelSuspense></WorkspaceRequired> : null
 })

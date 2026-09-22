@@ -144,7 +144,7 @@ export async function createLiveChangeFixture(agentId: AgentId) {
       '-c', `core.hooksPath=${path.join(directory, 'empty-git-hooks')}`, 'commit', '-qm', 'Fixture'], { cwd, env: baseEnv })
     hooks.registerChangeSource(terminalId, { cwd, panelId, kind: 'terminal' })
     await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
-    const env = await hooks.envForPty(terminalId, baseEnv)
+    const env = await hooks.envForPty(terminalId, baseEnv, { [agentId]: 'on' }, cwd, undefined, agentId)
     await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
     env.CATE_HOOK_ENDPOINT = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`
     return {

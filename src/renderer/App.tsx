@@ -47,6 +47,7 @@ import { useWindowRuntime } from './lib/hooks/useWindowRuntime'
 import { closePanelWithConfirm, closePanelsWithConfirm } from './lib/closePanelWithConfirm'
 import { IS_MAC } from './lib/platform'
 import pkg from '../../package.json'
+import { openWebUrl } from './lib/openWebUrl'
 import { PersistentBrowserHostContext } from './panels/browserSurfaceRegistry'
 
 const BackgroundBrowserHost = React.lazy(() => import('./panels/BackgroundBrowserHost'))
@@ -130,6 +131,10 @@ function MainApp() {
 
   const sidebarTintOpacity = useSettingsStore((s) => s.sidebarTintOpacity)
   const [initializing, setInitializing] = useState(true)
+  useEffect(() => {
+    if (initializing) return
+    return window.electronAPI.onOpenUrl(openWebUrl)
+  }, [initializing])
   const initializedRef = useRef(false)
   // Guards against stacking reload-confirm dialogs when the detector re-fires.
   const reloadPromptOpenRef = useRef(false)

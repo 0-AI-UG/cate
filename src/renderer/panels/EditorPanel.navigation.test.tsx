@@ -10,6 +10,7 @@ import { DockStoreProvider } from '../stores/DockStoreContext'
 import { registerWorkspaceDockStore, releaseWorkspaceDockStore } from '../lib/workspace/dockRegistry'
 import { useNavigationPanels } from '../docking/useNavigationPanels'
 import { useUIStore } from '../stores/uiStore'
+import { useActivePanelStore } from '../lib/activePanel'
 
 const h = vi.hoisted(() => ({
   open: null as null | ((paths: string[], mode?: 'dock' | 'canvas') => Promise<void>),
@@ -140,6 +141,32 @@ it.each(['md', 'mdx'])('opens %s in preview by default and keeps the source togg
   const preview = toolbar.querySelector<HTMLButtonElement>('[title="Preview markdown"]')!
   await act(async () => preview.click())
   expect(useAppStore.getState().getWorkspace('test')!.panels.editor.markdownPreview).toBe(true)
+})
+it.each([
+  '```sh\ncate panel list\n```',
+  '1. Commands\n\n   ```sh\n   cate panel list\n   ```',
+  '> ```sh\n> cate panel list\n> ```',
+])('preserves Markdown controls during pointer focus changes: %s', async (content) => {
+  vi.mocked(window.electronAPI.fsReadFile).mockResolvedValue(content)
+  await mount('/test/readme.md')
+  const pre = host.querySelector('pre')!
+  const button = host.querySelector<HTMLButtonElement>('[aria-label="Copy code"]')!
+  pre.scrollLeft = 40
+  button.focus()
+  const previousActive = useActivePanelStore.getState().activePanelId
+  try {
+    // Canvas pointerdown and mousedown change the active panel while a press
+    // is in progress. Replacing DOM here cancels clicks and scrollbar drags.
+    for (const panelId of ['canvas', 'editor']) {
+      await act(async () => useActivePanelStore.getState().setActivePanel(panelId))
+      expect(host.querySelector('pre')).toBe(pre)
+      expect(host.querySelector('[aria-label="Copy code"]')).toBe(button)
+      expect(document.activeElement).toBe(button)
+      expect(pre.scrollLeft).toBe(40)
+    }
+  } finally {
+    await act(async () => useActivePanelStore.getState().setActivePanel(previousActive))
+  }
 })
 it('switches the open relative file between worktrees and explains missing files', async () => {
   h.worktrees = [

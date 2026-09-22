@@ -57,6 +57,12 @@ const fixtures: AgentLifecycleFixture[] = [
     turnEnd: { hookEventName: 'stop', sessionId: SESSION },
   },
   {
+    agentId: 'hermes',
+    sessionStart: { hook_event_name: 'on_session_start', session_id: SESSION, profile: 'default', platform: 'cli' },
+    turnStart: { hook_event_name: 'pre_llm_call', session_id: SESSION, profile: 'default', platform: 'cli' },
+    turnEnd: { hook_event_name: 'on_session_end', session_id: SESSION, profile: 'default', platform: 'cli' },
+  },
+  {
     agentId: 'opencode',
     sessionStart: { type: 'session.created', sessionID: SESSION },
     turnStart: { type: 'session.status', sessionID: SESSION, status: { type: 'busy' } },
@@ -96,6 +102,13 @@ const permissionFixtures: PermissionFixture[] = [
       hookEventName: 'notification',
       notificationType: 'permission_prompt',
       sessionId: SESSION,
+    },
+  },
+  {
+    agentId: 'hermes',
+    turnStart: { hook_event_name: 'pre_llm_call', session_id: SESSION, profile: 'default', platform: 'cli' },
+    permissionWait: {
+      hook_event_name: 'pre_approval_request', session_id: SESSION, profile: 'default', platform: 'cli',
     },
   },
   {

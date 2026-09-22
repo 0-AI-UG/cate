@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS update compatibility**: preserve the existing `com.cate.app` bundle ID while adding HTTP/HTTPS browser registration. The incompatible 2.0.3-beta.1 release has been withdrawn; existing users must not be required to reinstall Cate.
+
+## [2.0.3-beta.1] - 2026-09-21 (withdrawn)
+
+This beta enables macOS to recognize Cate as a web browser and opens links from other apps in Cate. It prepares the app for Apple's browser passkey entitlement review; website passkey support still requires Apple's approval and the native integration.
+
+### Added
+
+- **macOS browser registration**: advertise HTTP and HTTPS support so Cate can be selected as the default browser.
+- **External web links**: open incoming links in visible browser panels, including links received while Cate is starting or restoring a session.
+
+### Changed
+
+- **Withdrawn identity change**: this beta changed the macOS bundle ID to `com.0ai.cate`, which was incompatible with existing automatic updates. It is no longer offered. The replacement retains `com.cate.app`.
+
 ## [2.0.2] - 2026-09-16
 
 This release lets connected agents work with editor files, adds Mermaid diagrams to Markdown previews, and improves browser feedback, file previews, and worktree cleanup.

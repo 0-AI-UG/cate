@@ -17,11 +17,7 @@
 // =============================================================================
 
 import { createHash } from 'crypto'
-import type { AgentId } from './agents'
-import {
-  resolveAgentHookMode,
-  type AgentHookConfig,
-} from './agentHookModes'
+import { AGENTS, type AgentId } from './agents'
 export {
   resolveAgentHookMode,
   type AgentHookConfig,
@@ -78,6 +74,12 @@ export interface AgentHookEvent {
   /** The transcript / rollout / session file backing the session, when the
    *  payload carries one. */
   transcriptPath?: string
+  /** Named CLI profile that owns the session, when the agent exposes one. */
+  profile?: string
+  /** Process that emitted an in-process hook; never persisted. */
+  sourcePid?: number
+  /** Monotonic process-start clock supplied by an in-process hook. */
+  sourceStartedAt?: string
   /** Present only for session-title events. */
   title?: string
   /** The raw payload as posted by the bridge, for consumers that need
@@ -86,7 +88,12 @@ export interface AgentHookEvent {
 }
 
 export type NormalizedHookFields = Pick<AgentHookEvent, 'kind' | 'sessionId'> &
-  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath'>>
+  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath' | 'profile'>>
+
+export function normalizeAgentSourceStartedAt(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !/^[0-9]{1,32}$/.test(value)) return undefined
+  try { return BigInt(value) > 0n ? BigInt(value).toString() : undefined } catch { return undefined }
+}
 
 // ---------------------------------------------------------------------------
 // Injection declarations
@@ -188,6 +195,8 @@ export interface AgentHookSpec {
      */
     strip?(existing: string): AgentHookStrip
   }>
+  /** Profile-scoped plugin managed on the runtime host instead of in the repo. */
+  externalPlugin?: { id: string }
   /** Normalize one raw payload posted by this agent's bridge. Null = drop
    *  (an event Cate doesn't track, e.g. claude's idle_prompt notification). */
   normalize(payload: Record<string, unknown>): NormalizedHookFields | null
@@ -319,13 +328,12 @@ function stripSharedHooksFile(existing: string, events: readonly string[]): Agen
 }
 
 /** The repo-local config folder whose presence gates 'auto' injection for one
- *  agent (`.claude`, `.codex`, `.cursor`, `.opencode`), or null for an
- *  agent that writes no project files. Derived from the agent's first project
- *  file so it stays in lockstep with the spec. */
+ *  agent (`.claude`, `.codex`, `.cursor`, `.opencode`). Project-file hooks
+ *  derive it from their first file; external plugins use their skills dir. */
 export function agentHookFolder(agentId: AgentId): string | null {
   const rel = AGENT_HOOK_SPECS[agentId]?.projectFiles?.[0]?.relPath
-  if (!rel) return null
-  return rel.split('/')[0]
+  if (rel) return rel.split('/')[0]
+  return AGENTS.find((agent) => agent.id === agentId)?.skills?.baseSegments[0] ?? null
 }
 
 // ---------------------------------------------------------------------------
@@ -829,6 +837,43 @@ const kiroSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
+// Hermes — a profile-scoped Python plugin posts lifecycle and tool events to
+// Cate's authenticated per-PTY endpoint. The managed plugin is a no-op outside
+// Cate terminals and returns connected-panel context from pre_llm_call.
+// ---------------------------------------------------------------------------
+
+const HERMES_INTERACTIVE_PLATFORMS = new Set(['cli', 'tui'])
+
+const hermesSpec: AgentHookSpec = {
+  reportsTurnEndOnInterrupt: true,
+  externalPlugin: { id: 'cate-agent-state' },
+  normalize: (p) => {
+    const platform = str(p.platform)
+    if (platform && !HERMES_INTERACTIVE_PLATFORMS.has(platform)) return null
+    const base = {
+      sessionId: str(p.session_id),
+      turnId: str(p.turn_id),
+      cwd: str(p.cwd) ?? undefined,
+      profile: str(p.profile) ?? undefined,
+    }
+    switch (p.hook_event_name) {
+      case 'on_session_start':
+      case 'on_session_reset': return { kind: 'session-start', ...base }
+      case 'pre_llm_call': return { kind: 'turn-start', ...base }
+      case 'on_session_end': return { kind: 'turn-end', ...base }
+      case 'pre_approval_request': return { kind: 'permission-wait', ...base }
+      case 'post_approval_response': return { kind: 'turn-resume', ...base }
+      // Confirms execution resumed even if an older/custom approval flow did
+      // not emit post_approval_response; it also keeps status active across
+      // ordinary tool calls while edit ingestion consumes the raw payload.
+      case 'post_tool_call': return { kind: 'turn-resume', ...base }
+      case 'on_session_finalize': return { kind: 'session-end', ...base }
+      default: return null
+    }
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Registry + normalization entry point
 // ---------------------------------------------------------------------------
 
@@ -837,6 +882,7 @@ export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
   codex: codexSpec,
   cursor: cursorSpec,
   grok: grokSpec,
+  hermes: hermesSpec,
   kiro: kiroSpec,
   opencode: opencodeSpec,
 }

@@ -132,7 +132,7 @@ export function AgentSettings() {
   }, [authSession?.phase, authSession?.providerId, refreshProviderStatuses])
 
   return (
-    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok opencode kiro hooks activity status advanced display name accent color binary path home launch arguments custom models environment variables server password endpoint auto-compact updates archive chats merge generated titles">
+    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok hermes opencode kiro hooks activity status advanced display name accent color binary path home launch arguments custom models environment variables server password endpoint auto-compact updates archive chats merge generated titles">
       <div className="flex flex-col gap-4">
         <AgentProviderConfiguration workspaceId={workspaceId} cwd={cwd} onChanged={refreshProviderStatuses} authentication={(driver) => (
           <div>

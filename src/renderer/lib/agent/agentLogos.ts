@@ -10,6 +10,7 @@ import claudeLogo from '../../assets/agentLogos/claude.svg?url'
 import codexLogo from '../../assets/agentLogos/codex.svg?url'
 import cursorLogo from '../../assets/agentLogos/cursor.svg?url'
 import grokLogo from '../../assets/agentLogos/grok.svg?url'
+import hermesLogo from '../../assets/agentLogos/hermes.svg?url'
 import kiroLogo from '../../assets/agentLogos/kiro.svg?url'
 import opencodeLogo from '../../assets/agentLogos/opencode.svg?url'
 
@@ -18,6 +19,7 @@ const LOGO_BY_ID: Partial<Record<AgentId, string>> = {
   codex: codexLogo,
   cursor: cursorLogo,
   grok: grokLogo,
+  hermes: hermesLogo,
   kiro: kiroLogo,
   opencode: opencodeLogo,
 }

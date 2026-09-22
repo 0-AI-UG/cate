@@ -13,16 +13,15 @@ vi.mock('../lib/portalRegistry', () => ({ portalRegistry: portalMocks }))
 vi.mock('../ui/Tooltip', () => ({ Tooltip: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('./UrlSuggestions', () => ({ UrlSuggestions: () => null }))
 vi.mock('./StartPage', () => ({ StartPage: () => <div>Start page</div> }))
-vi.mock('./BrowserMenu', () => ({ BrowserMenu: () => null }))
 vi.mock('./BrowserHistoryPage', () => ({ BrowserHistoryPage: () => <div data-testid="browser-history" /> }))
 vi.mock('./BrowserPasswordManagerPage', () => ({ BrowserPasswordManagerPage: () => null }))
-vi.mock('./BrowserTabStrip', () => ({ BrowserTabStrip: () => <div data-testid="browser-tabs" /> }))
 vi.mock('./BrowserBookmarksSidebar', () => ({ BrowserBookmarksSidebar: () => null }))
 
 import BrowserPanel from './BrowserPanel'
 import { useAppStore } from '../stores/appStore'
 import { useBrowserStore } from '../stores/browserStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useActivePanelStore } from '../lib/activePanel'
 
 const browserControl = vi.fn(async () => ({ ok: true }))
 let downloadsChanged: ((payload: {
@@ -50,6 +49,7 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
+  useActivePanelStore.setState({ activePanelId: null })
   useAppStore.setState({
     updatePanelTitle: vi.fn(), updateBrowserActiveTabUrl: vi.fn(), updatePanelTabs: vi.fn(),
   })
@@ -80,6 +80,95 @@ function mount(tabs = [{ id: 'tab-1', url: 'https://example.test/', title: 'Exam
 }
 
 describe('BrowserPanel live webview', () => {
+  it.each(['ready', 'starting'])('closes new tabs and keeps the remaining start page when its guest is %s', (guestState) => {
+    mount([{ id: 'tab-1', url: 'cate://newtab', title: '' }])
+    const firstGuest = host.querySelector('webview') as HTMLElement
+    const methods = installWebviewMethods(firstGuest)
+    methods.getURL.mockReturnValue('about:blank')
+    if (guestState === 'starting') {
+      methods.getURL.mockImplementation(() => { throw new Error('The WebView must be attached to the DOM and the dom-ready event emitted before this method can be called.') })
+    }
+    act(() => (host.querySelector('button[aria-label="New tab"]') as HTMLButtonElement).click())
+
+    const closeButtons = host.querySelectorAll<HTMLButtonElement>('button[aria-label="Close tab"]')
+    expect(closeButtons).toHaveLength(2)
+    expect(closeButtons[1].disabled).toBe(false)
+    act(() => closeButtons[1].click())
+
+    expect(host.querySelectorAll('button[aria-label="Close tab"]')).toHaveLength(1)
+    expect(host.querySelector('webview')).toBe(firstGuest)
+    expect(host.textContent).toContain('Start page')
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('')
+    expect(useAppStore.getState().updatePanelTabs).toHaveBeenLastCalledWith(
+      'workspace-1', 'browser-1', [{ id: 'tab-1', url: 'cate://newtab', title: '' }], 'tab-1',
+    )
+  })
+
+  it('keeps the start page when selecting an inactive new tab and closing it', () => {
+    mount([{ id: 'tab-1', url: 'cate://newtab', title: '' }])
+    act(() => (host.querySelector('button[aria-label="New tab"]') as HTMLButtonElement).click())
+    act(() => (host.querySelector('[title="New Tab · right-click to pin"]') as HTMLElement).click())
+    expect(host.textContent).toContain('Start page')
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('')
+
+    act(() => (host.querySelector('button[aria-label="Close tab"]') as HTMLButtonElement).click())
+    expect(host.querySelectorAll('button[aria-label="Close tab"]')).toHaveLength(1)
+    expect(host.textContent).toContain('Start page')
+    expect((host.querySelector('input') as HTMLInputElement).value).toBe('')
+  })
+
+  it('lets users inspect, replace, and reset an agent-set viewport from the menu', () => {
+    mount()
+    const controller = portalMocks.registerController.mock.calls[0][1]
+    act(() => { void controller.setViewport({ preset: 'custom', width: 1440, height: 900 }) })
+    act(() => (host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click())
+    const select = host.querySelector('select[aria-label="Viewport"]') as HTMLSelectElement
+    const inputs = () => [...host.querySelectorAll<HTMLInputElement>('input[type="number"]')]
+    const webview = host.querySelector('webview') as HTMLElement
+    expect(select.value).toBe('custom')
+    expect(inputs().map((input) => input.value)).toEqual(['1440', '900'])
+
+    // Changes made by the agent while the menu is open are reflected too.
+    act(() => { void controller.setViewport({ preset: 'desktop', width: 1600, height: 1000 }) })
+    expect(select.value).toBe('desktop')
+    expect(inputs().map((input) => input.value)).toEqual(['1600', '1000'])
+
+    for (const [preset, width, height] of [['mobile', '390', '844'], ['desktop', '1280', '800']]) {
+      act(() => {
+        select.value = preset
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      expect(webview.style.width).toBe(`${width}px`)
+      expect(webview.style.height).toBe(`${height}px`)
+    }
+
+    const setInput = (input: HTMLInputElement, value: string) => {
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const apply = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Apply')!
+    for (const invalid of ['', '0', '-10', '1.5']) {
+      setInput(inputs()[0], invalid)
+      expect(apply.disabled).toBe(true)
+    }
+    setInput(inputs()[0], '1024')
+    setInput(inputs()[1], '768')
+    act(() => apply.click())
+    expect(select.value).toBe('custom')
+    expect(webview.style.width).toBe('1024px')
+    expect(webview.style.height).toBe('768px')
+
+    act(() => {
+      select.value = 'compact'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(inputs()).toHaveLength(0)
+    expect(webview.style.width).toContain('%')
+    expect(webview.style.height).toContain('%')
+  })
+
   it('backs transparent guest pages with white independently of the app theme', () => {
     mount()
     expect((host.querySelector('webview') as HTMLElement).style.backgroundColor).toBe('rgb(255, 255, 255)')
@@ -124,6 +213,25 @@ describe('BrowserPanel live webview', () => {
     mount()
     expect(focus).not.toHaveBeenCalled()
     focus.mockRestore()
+  })
+
+  it('does not move focus from new-tab chrome into the hidden guest', () => {
+    const frames = new Map<number, FrameRequestCallback>()
+    let frameId = 0
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.set(++frameId, callback)
+      return frameId
+    })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => { frames.delete(id) })
+    useActivePanelStore.setState({ activePanelId: 'browser-1' })
+    mount([{ id: 'tab-1', url: 'cate://newtab', title: '' }])
+    const guestFocus = vi.spyOn(host.querySelector('webview') as HTMLElement, 'focus')
+    act(() => {
+      for (const callback of frames.values()) callback(0)
+      frames.clear()
+    })
+    expect(document.activeElement).toBe(host.querySelector('input'))
+    expect(guestFocus).not.toHaveBeenCalled()
   })
 
   it('shows download progress in a toolbar popover for its guest', () => {

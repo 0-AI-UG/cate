@@ -1,5 +1,5 @@
-import { BrowserWindow, dialog, ipcMain, Menu } from 'electron'
-import type { IpcMainEvent, MenuItemConstructorOptions, OpenDialogOptions } from 'electron'
+import { BrowserWindow, dialog, ipcMain } from 'electron'
+import type { IpcMainEvent, OpenDialogOptions } from 'electron'
 import {
   BROWSER_CREDENTIAL_CLEAR,
   BROWSER_CREDENTIAL_FILL,
@@ -28,49 +28,11 @@ import { browserRuntime } from '../browser/browserRuntime'
 import { wrapHandler } from './handlerError'
 import { resolveBrowserGuest } from './browserControl'
 
-const BROWSER_PASSWORD_FOCUS = 'cate-browser-password-focus'
 const BROWSER_PASSWORD_SUBMIT = 'cate-browser-password-submit'
 const savePrompts = new Set<number>()
 
-interface PasswordFocusRequest {
-  targetId?: unknown
-  rect?: { left?: unknown; bottom?: unknown }
-}
-
 interface PasswordSubmitRequest extends BrowserCredentialSaveInput {
   automated?: unknown
-}
-
-function menuLabel(username: string): string {
-  return (username || 'Saved password').replaceAll('&', '&&')
-}
-
-async function showCredentialSuggestions(event: IpcMainEvent, request: PasswordFocusRequest): Promise<void> {
-  const contents = event.sender
-  if (contents.getType() !== 'webview' || !contents.isFocused() || !browserRuntime.isRegistered(contents.id)) return
-  if (typeof request.targetId !== 'string' || !/^[0-9a-f-]{36}$/i.test(request.targetId)) return
-  const owner = BrowserWindow.fromWebContents(contents)
-  if (!owner || owner.isDestroyed()) return
-  const suggestions = await getCredentialSuggestions(contents.getURL())
-  if (!suggestions.length || !contents.isFocused()) return
-
-  const template: MenuItemConstructorOptions[] = suggestions.map((suggestion) => ({
-    label: menuLabel(suggestion.username),
-    sublabel: suggestion.origin,
-    click: () => {
-      void getCredentialForFill(suggestion.id, contents.getURL()).then((credential) => {
-        if (!credential || contents.isDestroyed()) return
-        return browserRuntime.fillCredential(contents.id, request.targetId as string, credential)
-      })
-    },
-  }))
-  const left = typeof request.rect?.left === 'number' ? request.rect.left : 0
-  const bottom = typeof request.rect?.bottom === 'number' ? request.rect.bottom : 0
-  Menu.buildFromTemplate(template).popup({
-    window: owner,
-    x: Math.max(0, Math.round(left)),
-    y: Math.max(0, Math.round(bottom + 4)),
-  })
 }
 
 async function offerToSaveCredential(event: IpcMainEvent, request: PasswordSubmitRequest): Promise<void> {
@@ -110,9 +72,6 @@ async function offerToSaveCredential(event: IpcMainEvent, request: PasswordSubmi
 }
 
 export function registerBrowserCredentialHandlers(): void {
-  ipcMain.on(BROWSER_PASSWORD_FOCUS, (event, request: PasswordFocusRequest) => {
-    void showCredentialSuggestions(event, request).catch(() => undefined)
-  })
   ipcMain.on(BROWSER_PASSWORD_SUBMIT, (event, request: PasswordSubmitRequest) => {
     void offerToSaveCredential(event, request).catch(() => undefined)
   })

@@ -508,6 +508,7 @@ export interface ElectronAPI {
    *  dropped a folder on the dock icon or opened one via "Open With Cate".
    *  Returns an unsubscribe function. */
   onOpenPath(callback: (filePath: string) => void): () => void
+  onOpenUrl(callback: (url: string) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Dialog

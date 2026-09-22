@@ -1,13 +1,14 @@
 // =============================================================================
 // BrowserMenu — the URL-bar overflow (⋮) dropdown for a browser panel.
 // =============================================================================
-import { useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Bookmark as BookmarkSimple, ChevronLeft as CaretLeft, History as ClockCounterClockwise, Minus, Plus, Settings as Gear, Key } from 'lucide-react'
 import { useBrowserStore } from '../stores/browserStore'
 import { useUIStore } from '../stores/uiStore'
 import { BrowserFavicon } from './BrowserFavicon'
 import { faviconForUrl } from './browserUrl'
 import { POPOVER_SURFACE, useDismissableLayer } from '../ui/Popover'
+import type { BrowserViewport } from '../lib/portalRegistry'
 
 interface Props {
   onNewTab: () => void
@@ -18,6 +19,8 @@ interface Props {
   onZoomOut: () => void
   onZoomIn: () => void
   onZoomReset: () => void
+  viewport: BrowserViewport
+  onViewportChange: (viewport: BrowserViewport) => void
   onClose: () => void
   triggerRef: RefObject<HTMLElement | null>
 }
@@ -31,12 +34,22 @@ export function BrowserMenu({
   onZoomOut,
   onZoomIn,
   onZoomReset,
+  viewport,
+  onViewportChange,
   onClose,
   triggerRef,
 }: Props): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const [bookmarksOpen, setBookmarksOpen] = useState(false)
   const bookmarks = useBrowserStore((s) => s.bookmarks)
+  const [width, setWidth] = useState('')
+  const [height, setHeight] = useState('')
+  useEffect(() => {
+    setWidth(viewport.preset === 'compact' ? '1280' : String(viewport.width))
+    setHeight(viewport.preset === 'compact' ? '800' : String(viewport.height))
+  }, [viewport])
+  const validSize = Number.isSafeInteger(Number(width)) && Number(width) > 0
+    && Number.isSafeInteger(Number(height)) && Number(height) > 0
 
   useDismissableLayer({ open: true, contentRef: ref, triggerRefs: [triggerRef], onDismiss: onClose })
 
@@ -135,6 +148,62 @@ export function BrowserMenu({
           </button>
         </div>
       </div>
+      <label className="flex h-9 items-center gap-3 px-2.5 text-[13px] text-primary">
+        <span className="flex-1">Viewport</span>
+        <select
+          aria-label="Viewport"
+          className="h-7 min-w-0 rounded-lg border border-subtle bg-surface-4 px-1.5 text-xs text-primary"
+          value={viewport.preset}
+          onChange={(event) => {
+            const preset = event.target.value
+            if (preset === 'compact') onViewportChange({ preset: 'compact' })
+            else if (preset === 'mobile') onViewportChange({ preset: 'mobile', width: 390, height: 844 })
+            else if (preset === 'desktop') onViewportChange({ preset: 'desktop', width: 1280, height: 800 })
+            else onViewportChange({
+              preset: 'custom',
+              width: viewport.preset === 'compact' ? 1280 : viewport.width,
+              height: viewport.preset === 'compact' ? 800 : viewport.height,
+            })
+          }}
+        >
+          <option value="compact">Fit panel</option>
+          <option value="desktop">Desktop</option>
+          <option value="mobile">Mobile</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      {viewport.preset !== 'compact' && (
+        <form
+          className="flex items-end gap-1.5 px-2.5 py-1.5"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (validSize) onViewportChange({ preset: 'custom', width: Number(width), height: Number(height) })
+          }}
+        >
+          <label className="min-w-0 flex-1 text-xs text-secondary">
+            Width
+            <input
+              type="number" min="1" step="1" required value={width}
+              onChange={(event) => setWidth(event.target.value)}
+              className="mt-1 h-7 w-full rounded-lg border border-subtle bg-surface-4 px-1.5 text-xs text-primary"
+            />
+          </label>
+          <label className="min-w-0 flex-1 text-xs text-secondary">
+            Height
+            <input
+              type="number" min="1" step="1" required value={height}
+              onChange={(event) => setHeight(event.target.value)}
+              className="mt-1 h-7 w-full rounded-lg border border-subtle bg-surface-4 px-1.5 text-xs text-primary"
+            />
+          </label>
+          <button
+            type="submit" disabled={!validSize}
+            className="h-7 rounded-lg border border-subtle px-2 text-xs text-primary hover:bg-hover focus-visible:bg-hover disabled:opacity-30"
+          >
+            Apply
+          </button>
+        </form>
+      )}
       <div className="mx-2.5 my-1.5 border-t border-subtle" />
       <button
         className={item}

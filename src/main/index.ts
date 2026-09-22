@@ -38,12 +38,14 @@ import { registerCaptureHandlers } from './ipc/capture'
 import { registerRecentScreenshotHandlers } from './ipc/recentScreenshot'
 import { registerBrowserControlHandlers } from './ipc/browserControl'
 import { registerBrowserCredentialHandlers } from './ipc/browserCredentials'
+import { registerBrowserPasskeys } from './browser/browserPasskeys'
 import { registerWindowControlHandlers } from './ipc/windowControls'
 import { registerKeepAwakeHandlers } from './ipc/keepAwake'
 import { registerDockWindowHandlers } from './ipc/dockWindows'
 import { registerWindowPanelHandlers } from './ipc/windowPanels'
 import { registerDragHandlers } from './ipc/dragHandlers'
 import { setMainWindowReady, flushPendingOpenPaths, registerOpenFileHandler } from './lifecycle/openPath'
+import { registerOpenUrlHandler } from './lifecycle/openUrl'
 import { fireStartupTelemetry, registerTelemetryNoticeHandler } from './lifecycle/telemetry'
 import { registerLifecycleHandlers } from './lifecycle/shutdown'
 import { registerPullRequestHandlers } from './ipc/pullRequests'
@@ -99,6 +101,7 @@ function registerCriticalHandlers(): void {
   registerRecentScreenshotHandlers()
   registerBrowserControlHandlers()
   registerBrowserCredentialHandlers()
+  registerBrowserPasskeys()
   registerWindowControlHandlers()
   registerKeepAwakeHandlers()
   registerDockWindowHandlers({ createWindow })
@@ -214,6 +217,7 @@ if (process.env.CATE_E2E === '1') {
 // Register the macOS open-file handler at top level: the event can fire before
 // app-ready, so we must be listening early to queue paths into pendingOpenPaths.
 registerOpenFileHandler()
+registerOpenUrlHandler(() => createWindow({ type: 'main' }))
 
 // Build application menu
 buildApplicationMenu()

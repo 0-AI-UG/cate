@@ -221,6 +221,10 @@ export async function handleBrowserMethod(
   }
 
   if (name === 'goto' || name === 'reload' || name === 'back' || name === 'forward' || name === 'download' || name === 'downloads') {
+    if (args._userInputEpoch !== undefined) {
+      const checked = await control(workspaceId, panel, webview, { op: 'execute', method: 'getAXState', args })
+      if (checked.error) return { ok: false, error: checked.error }
+    }
     if (name === 'goto') {
       const url = stringArg(args, 'url')
       if (!url) return { ok: false, error: 'url-required' }
