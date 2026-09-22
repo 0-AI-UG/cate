@@ -49,6 +49,7 @@ import { AGENTS, type AgentId } from '../../shared/agents'
 import { createAgentChangesStore, type AgentChangeSource } from './agentChanges'
 import { AGENT_TITLE_RESOLVERS, createAgentTitleTracker } from './agentTitles'
 import type { AgentTitleResolvers } from './agentTitles/types'
+import { ensureHermesIntegration, inspectHermesIntegration } from './hermesIntegration'
 import {
   AGENT_HOOK_SPECS,
   CATE_HOOK_MARKER,
@@ -57,6 +58,7 @@ import {
   CATE_TERMINAL_ID_ENV,
   agentHookFolder,
   normalizeAgentHookPayload,
+  normalizeAgentSourceStartedAt,
   resolveAgentHookMode,
   type AgentHookAgentState,
   type AgentHookConfig,
@@ -82,7 +84,14 @@ export interface AgentHooksCapability {
    *  simply never reads it. Lazily boots the ingestion endpoint + hooks dir on
    *  first use; returns `env` unchanged when hook setup fails (a plain shell is
    *  always spawnable). */
-  envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
+  envForPty(
+    ptyId: string,
+    env: Record<string, string>,
+    config?: AgentHookConfig,
+    cwd?: string,
+    baseCwd?: string,
+    launchedAgentId?: AgentId,
+  ): Promise<Record<string, string>>
   /** Write (or, for 'off', remove) workspace-scoped hook files for the PTY's
    *  cwd and keep the ones we wrote out of git status via .git/info/exclude.
    *  `config` carries per-agent tri-state overrides: 'auto' (default) injects
@@ -92,7 +101,7 @@ export interface AgentHooksCapability {
    *  Best-effort and idempotent; never touches the user's home dir (~/.codex,
    *  ~/.claude etc. are the CLIs' USER-GLOBAL config dirs — injection stays
    *  repo-local). */
-  prepareWorkspace(cwd: string, config?: AgentHookConfig, baseCwd?: string): Promise<void>
+  prepareWorkspace(cwd: string, config?: AgentHookConfig, baseCwd?: string, launchedAgentId?: AgentId): Promise<void>
   /** Inspect a workspace's per-agent hook-file injection state (for the
    *  Settings UI): which agents write repo files, whether each one's config
    *  folder is already in the repo (the 'auto' signal), and whether Cate has
@@ -130,7 +139,7 @@ export interface AgentHooksDeps {
    *  when the poster didn't send one). AWAITED before the HTTP response goes
    *  out: the presence tracker's ancestry walk needs the bridge's process
    *  chain alive, and the bridge holds it exactly until it hears back. */
-  onPost?: (post: { terminalId: string; agentId: AgentId; pid?: number }) => void | Promise<void>
+  onPost?: (post: { terminalId: string; agentId: AgentId; pid?: number; sourceStartedAt?: string }) => void | Promise<void>
   /** Tests may replace the filesystem-backed CLI resolvers. */
   titleResolvers?: AgentTitleResolvers
   /** Runtime-host home containing each CLI's session store. */
@@ -248,7 +257,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
         hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context },
       })
     }
-    return hook === 'stdout' ? context : ''
+    return hook === 'stdout' || hook === 'hermes' ? context : ''
   }
 
   let titleTracker: ReturnType<typeof createAgentTitleTracker> | null = null
@@ -408,6 +417,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
             agentId?: unknown
             terminalId?: unknown
             pid?: unknown
+            processStartedAt?: unknown
             payload?: unknown
             threadId?: string
             turnId?: string
@@ -459,10 +469,17 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
                   terminalId: body.terminalId,
                   agentId: body.agentId as AgentId,
                   pid: typeof body.pid === 'number' ? body.pid : undefined,
+                  ...(normalizeAgentSourceStartedAt(body.processStartedAt)
+                    ? { sourceStartedAt: normalizeAgentSourceStartedAt(body.processStartedAt) }
+                    : {}),
                 })
               } catch { /* presence tracking must never fail the hook */ }
             }
             const event = normalizeAgentHookPayload(body.agentId, body.terminalId, body.payload as Record<string, unknown>)
+            if (event?.agentId === 'hermes' && typeof body.pid === 'number' && Number.isInteger(body.pid) && body.pid > 0) {
+              event.sourcePid = body.pid
+              event.sourceStartedAt = normalizeAgentSourceStartedAt(body.processStartedAt)
+            }
             if (body.agentId in AGENT_HOOK_SPECS) {
               try { await changes.ingestHook(body.terminalId, body.agentId as AgentId, body.payload as Record<string, unknown>, event) }
               catch (error) { console.warn('[agent changes] Could not save reported edit', error) }
@@ -582,7 +599,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     listChanges: (cwd) => changes.list(cwd),
     readChanges: (cwd, knownRevision) => changes.readChanges(cwd, knownRevision),
     bindChanges: (cwd, threadId, panelId) => changes.bind(cwd, threadId, panelId),
-    async envForPty(ptyId, env) {
+    async envForPty(ptyId, env, config, cwd, baseCwd, launchedAgentId) {
       if (disposed) return env
       let state: HookState
       try {
@@ -594,10 +611,23 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       out[CATE_HOOK_ENDPOINT_ENV] = state.url
       out[CATE_HOOK_TOKEN_ENV] = hookTokenForTerminal(state.secret, ptyId)
       out[CATE_TERMINAL_ID_ENV] = ptyId
+      const hermesMode = resolveAgentHookMode(config, 'hermes')
+      const hermesFolder = agentHookFolder('hermes')
+      const hermesConfigured = hermesMode === 'on' || (
+        hermesMode === 'auto' && (
+          launchedAgentId === 'hermes' || !!(
+            cwd && hermesFolder && (
+              await dirExists(path.join(cwd, hermesFolder)) ||
+              (baseCwd ? await dirExists(path.join(baseCwd, hermesFolder)) : false)
+            )
+          )
+        )
+      )
+      out.CATE_HERMES_HOOKS = hermesConfigured ? '1' : '0'
       return out
     },
 
-    async prepareWorkspace(cwd, config, baseCwd) {
+    async prepareWorkspace(cwd, config, baseCwd, launchedAgentId) {
       if (disposed) return
       // Never plant (or strip) agent files in the user's home dir or against a
       // non-absolute cwd — see isRepoLocalCwd.
@@ -614,8 +644,23 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       const excludeRels: string[] = []
       for (const agent of AGENTS) {
         const spec = AGENT_HOOK_SPECS[agent.id]
-        if (!spec.projectFiles) continue
         const mode = resolveAgentHookMode(config, agent.id)
+        if (spec.externalPlugin) {
+          if (mode !== 'off') {
+            const folder = agentHookFolder(agent.id)
+            const configured = mode === 'on' || launchedAgentId === agent.id || !!(
+              folder && (
+                await dirExists(path.join(cwd, folder)) ||
+                (autoBaseCwd && await dirExists(path.join(autoBaseCwd, folder)))
+              )
+            )
+            if (configured && agent.id === 'hermes') {
+              try { await ensureHermesIntegration() } catch { /* hooks must not block a terminal */ }
+            }
+          }
+          continue
+        }
+        if (!spec.projectFiles) continue
         // 'off': reclaim anything we previously injected, then move on.
         if (mode === 'off') {
           for (const pf of spec.projectFiles) {
@@ -690,6 +735,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
               }
             } catch { /* absent — not injected via this path */ }
           }
+          if (agent.id === 'hermes') injected = await inspectHermesIntegration()
         }
         states.push({ agentId: agent.id, displayName: agent.displayName, folderPresent, injected })
       }

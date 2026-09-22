@@ -1,8 +1,9 @@
 // =============================================================================
 // Agent hooks settings — per-workspace, per-agent control over Cate's hook
-// injection (the push-based agent status/session events). Every agent injects
-// through workspace files, so every agent gets the same tri-state: Auto (inject
-// only when the agent's own config folder is already in the repo), On, or Off.
+// injection (the push-based agent status/session events). Most agents inject
+// through workspace files; profile-scoped integrations are installed by the
+// runtime host. Both use the same tri-state: Auto (enable when the agent's own
+// config folder is already in the repo), On, or Off.
 //
 // Overrides live in settings.agentHookInjection keyed by workspace id and are
 // applied by the terminal layer on the NEXT terminal spawn (injection is a
@@ -74,7 +75,7 @@ export function AgentHooksSettings() {
   }
 
   return (
-    <SearchableBlock keywords="agent hooks injection claude codex cursor grok kiro opencode status presence auto on off">
+    <SearchableBlock keywords="agent hooks injection claude codex cursor grok hermes kiro opencode status presence auto on off">
       {agents === null && <LoadingState label="Loading agent hooks…" size={14} className="justify-start py-3 text-xs" />}
       {error && <p role="alert" className="py-3 text-xs text-muted">Could not check agent hooks. Reopen settings to try again.</p>}
       {!!agents?.length && <div>

@@ -34,6 +34,7 @@ export type SkillTargetId =
   | 'codex'
   | 'cursor'
   | 'grok'
+  | 'hermes'
   | 'kiro'
 
 /** Where a skill lives in a source repo: the directory that contains its
