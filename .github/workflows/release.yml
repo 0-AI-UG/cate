@@ -186,6 +186,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Set only after Apple grants the browser passkey capability and Paul
+          # creates a Developer ID provisioning profile for com.cate.app.
+          CATE_PASSKEYS_PROFILE_BASE64: ${{ secrets.CATE_PASSKEYS_PROFILE_BASE64 }}
 
       - name: Package (Linux)
         if: matrix.platform == 'linux'
