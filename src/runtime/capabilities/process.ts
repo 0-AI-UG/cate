@@ -17,6 +17,7 @@ import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../.
 import type { TerminalActivity } from '../../shared/types'
 import type { AgentPresenceTracker } from './agentPresence'
 import type { AgentHookConfig } from '../../shared/agentHooks'
+import { agentForLaunchCommand, type AgentId } from '../../shared/agents'
 import { catePathEnv } from '../cateCli'
 import {
   type ProcTree,
@@ -165,8 +166,8 @@ export interface ProcessDeps {
    * tests without hook support spawn plain shells.
    */
   hooks?: {
-    envForPty(ptyId: string, env: Record<string, string>): Promise<Record<string, string>>
-    prepareWorkspace(cwd: string, config?: AgentHookConfig, baseCwd?: string): Promise<void>
+    envForPty(ptyId: string, env: Record<string, string>, config?: AgentHookConfig, cwd?: string, baseCwd?: string, launchedAgentId?: AgentId): Promise<Record<string, string>>
+    prepareWorkspace(cwd: string, config?: AgentHookConfig, baseCwd?: string, launchedAgentId?: AgentId): Promise<void>
     noteInput?(ptyId: string, data: string): void
     forgetTerminal?(ptyId: string): void
   }
@@ -271,8 +272,13 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       // must never fail to open over hooks.
       if (deps.hooks && opts.agentHooks) {
         try {
-          env = await deps.hooks.envForPty(id, env)
-          await deps.hooks.prepareWorkspace(cwd, opts.agentHookConfig, opts.workspaceBaseCwd)
+          const launchedAgent = opts.command ? agentForLaunchCommand(opts.command.executable) : null
+          env = await deps.hooks.envForPty(id, env, opts.agentHookConfig, cwd, opts.workspaceBaseCwd, launchedAgent?.id)
+          if (launchedAgent) {
+            await deps.hooks.prepareWorkspace(cwd, opts.agentHookConfig, opts.workspaceBaseCwd, launchedAgent.id)
+          } else {
+            await deps.hooks.prepareWorkspace(cwd, opts.agentHookConfig, opts.workspaceBaseCwd)
+          }
         } catch { /* hook injection unavailable */ }
       }
       const pty = ptySpawn(executable, args, {

@@ -15,6 +15,7 @@ const adapters = [
   { id: 'codex', tool: 'apply_patch', wrap: (input: unknown, output: unknown, session: string, call: string) => ({ hook_event_name: 'PostToolUse', session_id: session, tool_use_id: call, tool_name: 'apply_patch', tool_input: input, tool_response: output }) },
   { id: 'cursor', tool: 'edit', wrap: (input: unknown, output: unknown, session: string, call: string) => ({ hook_event_name: 'postToolUse', conversation_id: session, tool_use_id: call, tool_name: 'edit', tool_input: input, tool_output: output }) },
   { id: 'grok', tool: 'replace_file_content', wrap: (input: unknown, output: unknown, session: string, call: string) => ({ hookEventName: 'post_tool_use', sessionId: session, toolUseId: call, toolName: 'replace_file_content', toolInput: input, toolResponse: output }) },
+  { id: 'hermes', tool: 'patch', wrap: (input: unknown, output: unknown, session: string, call: string) => ({ hook_event_name: 'post_tool_call', session_id: session, tool_call_id: call, tool_name: 'patch', args: input, result: output, status: 'completed', profile: 'default', platform: 'cli' }) },
   { id: 'kiro', tool: 'fs_write', wrap: (input: unknown, output: unknown, session: string, call: string) => ({ hook_event_name: 'PostToolUse', session_id: session, tool_use_id: call, tool_name: 'fs_write', tool_input: input, tool_response: output }) },
   { id: 'opencode', tool: 'edit', wrap: (input: unknown, output: unknown, session: string, call: string) => ({ type: 'message.part.updated', sessionID: session, part: { type: 'tool', tool: 'edit', callID: call, state: { status: 'completed', input, metadata: output } } }) },
 ] as const
@@ -37,7 +38,9 @@ describe.each(adapters)('$id capture contract', (adapter) => {
   it('tracks successive turn boundaries without merging reused tool-call IDs', async () => {
     const lifecycle = (start: boolean) => adapter.id === 'opencode'
       ? { type: 'session.status', sessionID: 'session', status: { type: start ? 'busy' : 'idle' } }
-      : adapter.id === 'grok'
+      : adapter.id === 'hermes'
+        ? { hook_event_name: start ? 'pre_llm_call' : 'on_session_end', session_id: 'session', profile: 'default', platform: 'cli' }
+        : adapter.id === 'grok'
         ? { hookEventName: start ? 'user_prompt_submit' : 'stop', sessionId: 'session' }
         : adapter.id === 'cursor'
           ? { hook_event_name: start ? 'beforeSubmitPrompt' : 'stop', conversation_id: 'session' }

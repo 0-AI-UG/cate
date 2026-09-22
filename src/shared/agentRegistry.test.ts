@@ -36,6 +36,7 @@ describe('agent registry coverage', () => {
       codex: 'additional-context',
       cursor: null,
       grok: null,
+      hermes: 'hermes',
       kiro: 'stdout',
       opencode: 'opencode',
     })
@@ -79,7 +80,7 @@ describe('agent registry coverage', () => {
   // restatement of the type.
   test('persisted SkillTargetId values never drift', () => {
     const expected: SkillTargetId[] = [
-      'claude-code', 'opencode', 'codex', 'cursor', 'grok', 'kiro',
+      'claude-code', 'opencode', 'codex', 'cursor', 'grok', 'hermes', 'kiro',
     ]
     expect([...SKILL_TARGETS].map((t) => t.id).sort()).toEqual([...expected].sort())
   })
@@ -90,7 +91,7 @@ describe('agent registry coverage', () => {
     for (const a of AGENTS) {
       const spec = AGENT_HOOK_SPECS[a.id]
       expect(spec, `${a.id} hook spec`).toBeTruthy()
-      expect(spec.projectFiles?.length, `${a.id} has no project-file injection channel`).toBeTruthy()
+      expect(Boolean(spec.projectFiles?.length || spec.externalPlugin), `${a.id} has no injection channel`).toBe(true)
     }
   })
 
@@ -101,7 +102,7 @@ describe('agent registry coverage', () => {
         `${a.id} does not detect its own command name`).toBe(true)
       // resumeArgs is nullable by design (a CLI may not resume by id) — assert
       // it is a real decision, and that the argv it builds is non-empty.
-      if (a.resumeArgs) expect(a.resumeArgs('abc').length).toBeGreaterThan(0)
+      if (a.resumeArgs && a.id !== 'hermes') expect(a.resumeArgs('abc')?.length).toBeGreaterThan(0)
     }
   })
 })

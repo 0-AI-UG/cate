@@ -21,6 +21,12 @@ import {
 const flags: Flags = { json: false, help: false, version: false }
 
 describe('browser code CLI', () => {
+  it('accepts Jev natural-language prompts, panel overrides, and bounded steps', () => {
+    const parsed = parseCli(['browser', 'jev', 'Fill Name and save', '--panel', 'abcd', '--max-steps', '8'])
+    expect(buildRequest(parsed.positionals, parsed.flags)).toEqual({ method: 'cate.browser.jev', args: { prompt: 'Fill Name and save', panelId: 'abcd', maxSteps: 8 }, resolvePanel: 'browser' })
+    for (const maxSteps of ['0', '101', '1.5', 'NaN']) expect(() => buildRequest(['browser', 'jev', 'Click Save'], { ...flags, maxSteps })).toThrow(UsageError)
+    expect(() => buildRequest(['browser', 'jev', '  '], flags)).toThrow(UsageError)
+  })
   it('rejects the removed observe shortcut', () => {
     expect(() => buildRequest(['browser', 'observe'], flags)).toThrow(UsageError)
   })
@@ -315,6 +321,37 @@ describe('output and run loop', () => {
     expect(await run(['--version'], deps)).toBe(0)
     expect(deps.out).toEqual([`cate cli ${CLI_VERSION}`])
     expect(deps.fetch).not.toHaveBeenCalled()
+  })
+
+  it('runs Jev through Cate without a terminal OpenRouter credential', async () => {
+    const deps = runDeps()
+    const rpc: Array<{ method: string }> = []
+    deps.fetch = vi.fn(async (url, init) => {
+      expect(String(url)).not.toContain('openrouter.ai')
+      const body = JSON.parse(String(init?.body))
+      rpc.push(body)
+      const result = body.method.endsWith('getTab') ? { panelId: 'browser', tabId: 'tab' }
+        : body.method.endsWith('jevDecision') ? { answers: { decision: { type: 'choice', choice: 'done', confidence: 1, probabilities: { done: 1 } } } }
+        : { kind: 'ax', panelId: 'browser', tabId: 'tab', userInputEpoch: 0, state: 'Saved', elements: [], url: 'https://example.test' }
+      return new Response(JSON.stringify({ result }))
+    }) as typeof fetch
+    expect(await run(['browser', 'jev', 'Verify Saved is visible', '--json'], deps)).toBe(0)
+    expect(JSON.parse(deps.out[0])).toMatchObject({ status: 'done', modelCalls: 1, isError: false })
+    expect(rpc.map(item => item.method)).toEqual(['cate.browser.getTab', 'cate.browser.getAXState', 'cate.browser.jevDecision', 'cate.browser.getAXState'])
+    expect(deps.err).toEqual([])
+  })
+
+  it('returns a nonzero Jev status when Cate has no saved key', async () => {
+    const deps = runDeps()
+    deps.fetch = vi.fn(async (_url, init) => {
+      const { method } = JSON.parse(String(init?.body))
+      const result = method.endsWith('getTab') ? { panelId: 'browser', tabId: 'tab' }
+        : method.endsWith('jevDecision') ? { error: 'Set the OpenRouter API key in Cate Settings → CLI.' }
+        : { kind: 'ax', panelId: 'browser', tabId: 'tab', userInputEpoch: 0, state: 'Saved', elements: [], url: 'https://example.test' }
+      return new Response(JSON.stringify({ result }))
+    }) as typeof fetch
+    expect(await run(['browser', 'jev', 'Click Save', '--json'], deps)).toBe(1)
+    expect(JSON.parse(deps.out[0])).toMatchObject({ status: 'error', message: expect.stringContaining('Settings → CLI') })
   })
 
   it('sends a complete code cell in one request', async () => {

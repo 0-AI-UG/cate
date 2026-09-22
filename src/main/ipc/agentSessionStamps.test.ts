@@ -106,6 +106,46 @@ describe('kiro resumability gating', () => {
   })
 })
 
+describe('hermes profile-aware resumability', () => {
+  it('waits for the first turn and persists the exact profile', () => {
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-start', 'id-1', '/w'), profile: 'work' })
+    expect(stamps(tid)).toEqual([])
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'turn-start', 'id-1', '/w'), profile: 'work' })
+    expect(stamps(tid)).toEqual([{ agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' }])
+  })
+
+  it('does not let an older finalize clear a newer profile session', () => {
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'turn-start', 'new', '/w'), profile: 'work', sourcePid: 22 })
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-end', 'old', '/w'), profile: 'default', sourcePid: 11 })
+    expect(stamps(tid)).toEqual([{ agentId: 'hermes', sessionId: 'new', cwd: '/w', profile: 'work' }])
+  })
+
+  it('clears the old stamp when a replacement session starts, then rejects the old finalize', () => {
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'turn-start', 'old', '/w'), profile: 'default', sourcePid: 11 })
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-start', 'new', '/w'), profile: 'work', sourcePid: 22 })
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-end', 'old', '/w'), profile: 'default', sourcePid: 11 })
+    expect(stamps(tid)).toEqual([
+      { agentId: 'hermes', sessionId: 'old', cwd: '/w', profile: 'default' },
+      null,
+    ])
+  })
+
+  it('does not let an old presence falling edge clear a newer process stamp', () => {
+    ingestAgentSessionStamp(runtime, {
+      ...ev(tid, 'hermes', 'turn-start', 'old', '/w'),
+      profile: 'default', sourcePid: 11, sourceStartedAt: '100',
+    })
+    ingestAgentSessionStamp(runtime, {
+      ...ev(tid, 'hermes', 'turn-start', 'new', '/w'),
+      profile: 'work', sourcePid: 22, sourceStartedAt: '200',
+    })
+    clearAgentSessionStamp(tid, 11, '100')
+    expect(stamps(tid).at(-1)).toEqual({
+      agentId: 'hermes', sessionId: 'new', cwd: '/w', profile: 'work',
+    })
+  })
+})
+
 describe('agents whose first sessionId-bearing event is already persisted', () => {
   it.each(['codex', 'cursor', 'opencode'] as const)('%s stamps on session-start', (agentId) => {
     ingestAgentSessionStamp(runtime, ev(tid, agentId, 'session-start', 'id-1', '/w'))

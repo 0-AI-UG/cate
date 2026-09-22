@@ -24,7 +24,7 @@
 // =============================================================================
 
 import { SHELL_AGENT_SESSION_UPDATE } from '../../shared/ipc-channels'
-import type { AgentHookEvent } from '../../shared/agentHooks'
+import { normalizeAgentSourceStartedAt, type AgentHookEvent } from '../../shared/agentHooks'
 import type { AgentId } from '../../shared/agents'
 import type { Runtime } from '../runtime/types'
 import type { TerminalAgentSession } from '../../shared/types'
@@ -47,6 +47,8 @@ const RESUMABLE_FROM_SESSION_START: Record<AgentId, boolean> = {
   // already open and on disk when the id arrives — a session killed mid-turn,
   // before its Stop, still resumes (pinned live).
   grok: true,
+  // Hermes creates the record before its first persisted user turn.
+  hermes: false,
   // Kiro documents that sessions are saved on each conversation turn; its
   // agentSpawn event precedes that first turn, so stamp from prompt submit.
   kiro: false,
@@ -57,6 +59,11 @@ interface StampState {
   /** Dedup key of the last SHELL_AGENT_SESSION_UPDATE sent, so an unchanged
    *  stamp doesn't re-emit (and re-touch renderer panel state). */
   key?: string | null
+  latest?: Pick<TerminalAgentSession, 'agentId' | 'sessionId' | 'profile'> & {
+    sourcePid?: number
+    sourceStartedAt?: string
+  }
+  hermesHighWater?: bigint
   /** Monotonic ingest counter — an async cwd lookup captures it and drops its
    *  result if a newer event (or a clear) landed while it was in flight. */
   seq: number
@@ -78,7 +85,9 @@ function emit(terminalId: string, session: TerminalAgentSession | null): void {
   const ownerWindowId = getTerminalOwner(terminalId)
   if (ownerWindowId == null) return
   const st = stateFor(terminalId)
-  const key = session ? `${session.agentId}\0${session.sessionId}\0${session.cwd}` : null
+  const key = session
+    ? `${session.agentId}\0${session.sessionId}\0${session.cwd}\0${session.profile ?? ''}`
+    : null
   if (st.key === key) return
   st.key = key
   sendToWindow(ownerWindowId, SHELL_AGENT_SESSION_UPDATE, terminalId, session)
@@ -102,16 +111,51 @@ export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent)
   const { terminalId } = event
   if (event.kind === 'session-title' || event.kind === 'input-submit' || event.kind === 'input-interrupt') return
   const st = stateFor(terminalId)
-  st.seq++
+  if (event.agentId === 'hermes') {
+    const startedAt = normalizeAgentSourceStartedAt(event.sourceStartedAt)
+    if (!startedAt && st.hermesHighWater !== undefined) return
+    if (startedAt) {
+      const incoming = BigInt(startedAt)
+      if (st.hermesHighWater !== undefined && incoming < st.hermesHighWater) return
+      st.hermesHighWater = incoming
+    }
+  }
   if (event.kind === 'session-end') {
+    if (!event.sessionId) return
+    if (st.latest && (
+      st.latest.agentId !== event.agentId ||
+      st.latest.sessionId !== event.sessionId ||
+      (event.profile !== undefined && st.latest.profile !== event.profile) ||
+      (event.sourcePid !== undefined && st.latest.sourcePid !== undefined && st.latest.sourcePid !== event.sourcePid) ||
+      (event.sourceStartedAt !== undefined && st.latest.sourceStartedAt !== undefined && st.latest.sourceStartedAt !== event.sourceStartedAt)
+    )) return
+    st.seq++
+    st.latest = undefined
     emit(terminalId, null)
     return
   }
   if (event.sessionId == null) return
-  if (event.kind === 'session-start' && !RESUMABLE_FROM_SESSION_START[event.agentId]) return
+  st.seq++
   const { agentId, sessionId } = event
+  const profile = event.profile ? { profile: event.profile } : {}
+  const identity = {
+    agentId,
+    sessionId,
+    ...profile,
+    ...(event.sourcePid ? { sourcePid: event.sourcePid } : {}),
+    ...(event.sourceStartedAt ? { sourceStartedAt: event.sourceStartedAt } : {}),
+  }
+  if (event.kind === 'session-start' && !RESUMABLE_FROM_SESSION_START[event.agentId]) {
+    const previous = st.latest
+    st.latest = identity
+    if (agentId === 'hermes' && previous?.agentId === 'hermes' && (
+      previous.sessionId !== sessionId || previous.profile !== event.profile
+    )) emit(terminalId, null)
+    return
+  }
+  st.latest = identity
   if (event.cwd) {
-    emit(terminalId, { agentId, sessionId, cwd: event.cwd })
+    emit(terminalId, { agentId, sessionId, cwd: event.cwd, ...profile })
     return
   }
   const seq = st.seq
@@ -119,16 +163,27 @@ export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent)
     .getCwd(terminalId)
     .then((cwd) => {
       if (states.get(terminalId)?.seq !== seq) return // superseded while in flight
-      emit(terminalId, { agentId, sessionId, cwd: cwd ?? '' })
+      emit(terminalId, { agentId, sessionId, cwd: cwd ?? '', ...profile })
     })
     .catch(() => { /* runtime gone — no stamp beats a cwd-less guess */ })
 }
 
 /** Falling edge: the agent exited while the terminal lives on — nothing to
  *  resume. Clears the stamp; the next agent run re-stamps via fresh events. */
-export function clearAgentSessionStamp(terminalId: string): void {
+export function clearAgentSessionStamp(
+  terminalId: string,
+  endedAgentPid?: number,
+  endedAgentStartedAt?: string,
+): void {
   const st = stateFor(terminalId)
+  if (endedAgentPid !== undefined && st.latest?.sourcePid !== undefined && st.latest.sourcePid !== endedAgentPid) return
+  if (
+    endedAgentStartedAt !== undefined &&
+    st.latest?.sourceStartedAt !== undefined &&
+    st.latest.sourceStartedAt !== endedAgentStartedAt
+  ) return
   st.seq++
+  st.latest = undefined
   emit(terminalId, null)
 }
 
