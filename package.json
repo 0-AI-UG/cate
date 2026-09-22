@@ -22,7 +22,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/patch-t3.mjs && bash scripts/patch-electron-name.sh",
-    "predev": "node scripts/patch-t3.mjs && npm run build:runtime && bash scripts/patch-electron-name.sh",
+    "predev": "node scripts/patch-t3.mjs && npm run build:runtime && npm run build:passkeys && bash scripts/patch-electron-name.sh",
     "setup": "bun install && bun run runtime:tarball",
     "dev": "electron-vite dev",
     "dev:dialog": "DEV_FORCE_DIALOG=1 electron-vite dev",
@@ -33,6 +33,7 @@
     "dev:update:patch": "CATE_SIMULATE_UPDATE=patch electron-vite dev",
     "sentry:test": "node scripts/sentry-test.mjs",
     "build": "electron-vite build",
+    "build:passkeys": "node scripts/build-passkeys.mjs",
     "build:runtime": "node scripts/build-runtime.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -101,6 +102,7 @@
     "remark-gfm": "^4.0.1",
     "simple-git": "^3.27.0",
     "t3": "0.0.39",
+    "tldts": "^7.4.9",
     "use-sync-external-store": "^1.6.0",
     "ws": "^8.21.3",
     "zustand": "^5.0.0"
@@ -121,6 +123,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^15.15.0",
     "jsdom": "^29.1.1",
+    "node-api-headers": "^1.9.0",
     "node-pty": "^1.0.0",
     "playwright": "^1.60.0",
     "png-to-ico": "^3.0.1",

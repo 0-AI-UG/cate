@@ -289,6 +289,8 @@ export default function BrowserPanel({
   const webviewRef = useRef<WebviewElement | null>(null)
   const [webviewEl, setWebviewEl] = useState<WebviewElement | null>(null)
   const [autofillPopup, setAutofillPopup] = useState<AutofillPopup | null>(null)
+  const autofillPopupRef = useRef<HTMLDivElement | null>(null)
+  const fillingCredentialRef = useRef(false)
   const attachWebview = useCallback((tabId: string, element: WebviewElement | null) => {
     if (element) webviewsByTabRef.current.set(tabId, element)
     else webviewsByTabRef.current.delete(tabId)
@@ -891,7 +893,9 @@ export default function BrowserPanel({
       setIsLoading(false)
     }
 
+    let autofillRequest = 0
     const onDidStartLoading = () => {
+      autofillRequest++
       setIsLoading(true)
       setLoadError(null)
       setCrashed(false)
@@ -913,17 +917,24 @@ export default function BrowserPanel({
 
     const onIpcMessage = (event: any) => {
       if (event?.channel !== 'cate-browser-password-focus') return
+      const request = ++autofillRequest
+      if (fillingCredentialRef.current) return
+      if (event.args?.[0]?.dismiss) {
+        setAutofillPopup(null)
+        return
+      }
       const payload = event.args?.[0] as Partial<AutofillPopup> | undefined
       if (
         !payload
         || typeof payload.targetId !== 'string'
         || !payload.rect
-        || typeof payload.rect.left !== 'number'
-        || typeof payload.rect.bottom !== 'number'
+        || ![payload.rect.left, payload.rect.bottom, payload.rect.width, payload.rect.height].every(Number.isFinite)
       ) return
       let webContentsId: number
       try { webContentsId = webview.getWebContentsId() } catch { return }
+      setBrowserZoomFactor(webview.getZoomFactor())
       void window.electronAPI.browserCredentialSuggestions(webContentsId).then((result) => {
+        if (request !== autofillRequest || fillingCredentialRef.current) return
         if (webviewRef.current !== webview || !result.suggestions?.length) {
           setAutofillPopup(null)
           return
@@ -933,7 +944,7 @@ export default function BrowserPanel({
           rect: payload.rect as AutofillPopup['rect'],
           suggestions: result.suggestions,
         })
-      }).catch(() => setAutofillPopup(null))
+      }).catch(() => { if (request === autofillRequest) setAutofillPopup(null) })
     }
     webview.addEventListener('ipc-message', onIpcMessage)
 
@@ -1002,6 +1013,7 @@ export default function BrowserPanel({
       webview.removeEventListener('did-start-loading', onDidStartLoading)
       webview.removeEventListener('did-stop-loading', onDidStopLoading)
       webview.removeEventListener('render-process-gone', onRenderProcessGone)
+      autofillRequest++
       webview.removeEventListener('ipc-message', onIpcMessage)
     }
     // `webviewEl` is the dep that matters: it changes identity whenever the
@@ -1017,12 +1029,35 @@ export default function BrowserPanel({
     if (!popup || !webview) return
     let webContentsId: number
     try { webContentsId = webview.getWebContentsId() } catch { return }
-    await window.electronAPI.browserCredentialFill({
-      webContentsId,
-      credentialId,
-      targetId: popup.targetId,
-    })
+    fillingCredentialRef.current = true
+    try {
+      await window.electronAPI.browserCredentialFill({
+        webContentsId,
+        credentialId,
+        targetId: popup.targetId,
+      })
+    } finally {
+      fillingCredentialRef.current = false
+      setAutofillPopup(null)
+    }
   }, [autofillPopup])
+
+  useLayoutEffect(() => {
+    const popup = autofillPopupRef.current
+    const container = viewportContainerRef.current
+    if (!autofillPopup || !popup || !container) return
+    // Both elements share the canvas transform. Only page zoom and the browser
+    // viewport's display scale belong here; canvas zoom must not be applied twice.
+    const scale = browserZoomFactor * viewportDisplayScale
+    const fieldBottom = autofillPopup.rect.bottom * scale
+    const fieldTop = (autofillPopup.rect.bottom - autofillPopup.rect.height) * scale
+    const left = Math.max(0, Math.min(autofillPopup.rect.left * scale, container.clientWidth - popup.offsetWidth))
+    const below = fieldBottom + 6
+    const top = below + popup.offsetHeight <= container.clientHeight
+      ? below : Math.max(0, fieldTop - popup.offsetHeight - 6)
+    popup.style.left = `${left}px`
+    popup.style.top = `${top}px`
+  }, [autofillPopup, browserZoomFactor, viewportDisplayScale, viewportContainerSize])
 
   // Expose this panel's control surface to the reverse API for its whole mounted
   // lifetime. Navigation and tabs are panel-level state rather than guest APIs.
@@ -1271,6 +1306,8 @@ export default function BrowserPanel({
           onZoomOut={() => adjustBrowserZoom(-1)}
           onZoomIn={() => adjustBrowserZoom(1)}
           onZoomReset={() => applyBrowserZoom(1)}
+          viewport={browserViewport}
+          onViewportChange={setSettledBrowserViewport}
           onClose={() => setMenuOpen(false)}
           triggerRef={menuButtonRef}
         />
@@ -1348,17 +1385,12 @@ export default function BrowserPanel({
             IPC; the selected password is decrypted and filled in main. */}
         {autofillPopup && (
           <div
-            className={`absolute z-40 min-w-56 max-w-[calc(100%-1rem)] overflow-hidden ${POPOVER_SURFACE}`}
-            style={{
-              left: Math.max(
-                8,
-                autofillPopup.rect.left * browserZoomFactor * viewportDisplayScale,
-              ),
-              top: Math.max(
-                8,
-                autofillPopup.rect.bottom * browserZoomFactor * viewportDisplayScale + 6,
-              ),
-            }}
+            ref={autofillPopupRef}
+            data-browser-autofill
+            role="group"
+            aria-label="Saved passwords"
+            className={`absolute z-40 min-w-56 max-w-[calc(100%-1rem)] max-h-60 overflow-auto ${POPOVER_SURFACE}`}
+            onKeyDown={(event) => { if (event.key === 'Escape') setAutofillPopup(null) }}
           >
             <div className="flex items-center gap-2 border-b border-subtle px-3 py-2 text-xs text-muted">
               <Key size={13} />
@@ -1368,10 +1400,8 @@ export default function BrowserPanel({
               <button
                 key={suggestion.id}
                 className="flex w-full flex-col px-3 py-2 text-left hover:bg-hover"
-                onMouseDown={(event) => {
-                  event.preventDefault()
-                  void fillCredential(suggestion.id)
-                }}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => { void fillCredential(suggestion.id) }}
               >
                 <span className="max-w-72 truncate text-sm text-primary">
                   {suggestion.username || 'Saved password'}

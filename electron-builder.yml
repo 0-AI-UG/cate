@@ -1,5 +1,7 @@
 appId: com.cate.app
 productName: Cate
+beforePack: scripts/passkey-packaging.cjs
+afterSign: scripts/verify-passkey-signing.cjs
 directories:
   output: release
 # T3 is carried once inside runtime-host*.tgz. Exclude its npm copy and the
@@ -84,6 +86,9 @@ mac:
     - name: Web URLs
       schemes: [http, https]
       role: Viewer
+  extraResources:
+    - from: dist-native/passkeys.node
+      to: passkeys.node
   icon: build/icon.icns
   category: public.app-category.developer-tools
   hardenedRuntime: true

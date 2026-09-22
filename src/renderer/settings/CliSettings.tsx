@@ -1,9 +1,9 @@
 import { Check } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CLI_PERMISSIONS, type CliPermissionCell } from '../../shared/cliPermissions'
 import { useSelectedWorkspace } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { SearchableBlock, SecondaryButton, SettingRow, Toggle } from './SettingsComponents'
+import { SearchableBlock, SecondaryButton, SettingRow, TextInput, Toggle } from './SettingsComponents'
 import { errorMessage } from '../lib/errorMessage'
 
 // -----------------------------------------------------------------------------
@@ -45,6 +45,13 @@ export function CliSettings() {
   const workspace = useSelectedWorkspace()
   const [reinstalling, setReinstalling] = useState(false)
   const [reinstallStatus, setReinstallStatus] = useState<{ ok: boolean; message: string } | null>(null)
+  const [keyDraft, setKeyDraft] = useState(store.cliOpenRouterApiKey)
+  useEffect(() => setKeyDraft(store.cliOpenRouterApiKey), [store.cliOpenRouterApiKey])
+  const saveKey = () => {
+    const key = keyDraft.trim()
+    setKeyDraft(key)
+    if (key !== store.cliOpenRouterApiKey) store.setSetting('cliOpenRouterApiKey', key)
+  }
   const off = !store.cliEnabled
 
   const reinstallSkill = async () => {
@@ -90,6 +97,22 @@ export function CliSettings() {
         <Toggle
           checked={store.cliEnabled}
           onChange={(v) => store.setSetting('cliEnabled', v)}
+        />
+      </SettingRow>
+
+      <SettingRow
+        label="OpenRouter API key"
+        keywords="Jev browser natural language"
+        description="Used by cate browser jev. Your prompt and browser page text are sent to Jev through OpenRouter. Leave empty to disable Jev."
+      >
+        <TextInput
+          type="password"
+          value={keyDraft}
+          onChange={setKeyDraft}
+          onBlur={saveKey}
+          onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+          placeholder="sk-or-…"
+          layoutClassName="w-72 px-2"
         />
       </SettingRow>
 

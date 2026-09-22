@@ -38,6 +38,7 @@ import { registerCaptureHandlers } from './ipc/capture'
 import { registerRecentScreenshotHandlers } from './ipc/recentScreenshot'
 import { registerBrowserControlHandlers } from './ipc/browserControl'
 import { registerBrowserCredentialHandlers } from './ipc/browserCredentials'
+import { registerBrowserPasskeys } from './browser/browserPasskeys'
 import { registerWindowControlHandlers } from './ipc/windowControls'
 import { registerKeepAwakeHandlers } from './ipc/keepAwake'
 import { registerDockWindowHandlers } from './ipc/dockWindows'
@@ -100,6 +101,7 @@ function registerCriticalHandlers(): void {
   registerRecentScreenshotHandlers()
   registerBrowserControlHandlers()
   registerBrowserCredentialHandlers()
+  registerBrowserPasskeys()
   registerWindowControlHandlers()
   registerKeepAwakeHandlers()
   registerDockWindowHandlers({ createWindow })
