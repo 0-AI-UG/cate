@@ -42,7 +42,7 @@ const PersistentBrowserSurface = memo(function PersistentBrowserSurface({
   useLayoutEffect(() => () => container.remove(), [container])
 
   return createPortal(
-    <WorkspaceRequired workspaceId={workspaceId}>{panel.type === 'agent' ? <Suspense fallback={null}><AgentPanel panelId={panel.id} workspaceId={workspaceId} /></Suspense> : <BrowserPanel
+    <WorkspaceRequired workspaceId={workspaceId} requiresFolder={panel.type !== 'browser'}>{panel.type === 'agent' ? <Suspense fallback={null}><AgentPanel panelId={panel.id} workspaceId={workspaceId} /></Suspense> : <BrowserPanel
       panelId={panel.id}
       workspaceId={workspaceId}
       tabs={panel.tabs!}

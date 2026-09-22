@@ -80,6 +80,12 @@ publish:
   repo: cate
   releaseType: release
 mac:
+  # Inherit com.cate.app: existing installations must retain their signing
+  # identity so Squirrel updates and macOS identity checks remain compatible.
+  protocols:
+    - name: Web URLs
+      schemes: [http, https]
+      role: Viewer
   extraResources:
     - from: dist-native/passkeys.node
       to: passkeys.node

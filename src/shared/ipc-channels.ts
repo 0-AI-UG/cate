@@ -153,6 +153,8 @@ export const BOOT_SNAPSHOT_WRITE = 'boot:snapshotWrite' // renderer -> main
 /** Main -> renderer: user dropped a folder on the dock icon (or opened one
  *  via OS "Open With..."). Renderer opens it as a new workspace. */
 export const APP_OPEN_PATH = 'app:openPath'
+export const APP_OPEN_URL = 'app:openUrl'
+export const APP_OPEN_URL_READY = 'app:openUrlReady'
 
 // Auto-updater — in-app "update ready" modal
 // Main -> renderer: update lifecycle status. Payload: UpdateStatus
