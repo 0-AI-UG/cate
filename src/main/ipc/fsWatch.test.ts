@@ -42,8 +42,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
  * Wait until a FS_WATCH_EVENT matching `predicate` reaches the window. Calls
- * `poke` between checks — chokidar drops events that fire before its initial
- * scan finishes, so the change under test is re-applied until it's observed.
+ * `poke` between checks — native watcher setup is asynchronous, so the
+ * change under test is re-applied until it is observed.
  */
 async function waitForWatchEvent(
   predicate: (event: { type: string; path: string }) => boolean,
@@ -53,7 +53,7 @@ async function waitForWatchEvent(
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     await poke()
-    await sleep(100)
+    await sleep(300)
     const hit = sendToWindow.mock.calls.some(
       ([, channel, event]) =>
         channel === FS_WATCH_EVENT && predicate(event as { type: string; path: string }),
@@ -75,7 +75,7 @@ describe('fs watch events for nested paths', () => {
   })
 
   afterEach(async () => {
-    await watchStop(fakeEvent, root)
+    await watchStop(fakeEvent, root, 'local')
     removeAllowedRoot(root, 'local')
     await fs.rm(root, { recursive: true, force: true })
   })
@@ -99,14 +99,13 @@ describe('fs watch events for nested paths', () => {
 
     await watchStart(fakeEvent, root, 'local')
 
-    let rev = 0
     const seen = await waitForWatchEvent(
       (event) =>
         (event.type === 'update' || event.type === 'create') && event.path === nestedFile,
-      () => fs.writeFile(nestedFile, `v${++rev}`, 'utf8'),
+      () => fs.appendFile(nestedFile, 'next\n', 'utf8'),
     )
     expect(seen).toBe(true)
-  })
+  }, 10_000)
 
   test('does not report changes under an excluded folder', async () => {
     const excludedDir = path.join(root, 'node_modules', 'pkg')
@@ -120,13 +119,11 @@ describe('fs watch events for nested paths', () => {
 
     // Poke both files; once the marker's event arrives the watcher is provably
     // live, so the absence of the excluded file's event is meaningful.
-    let rev = 0
     const markerSeen = await waitForWatchEvent(
       (event) => event.path === markerFile,
       async () => {
-        rev++
-        await fs.writeFile(excludedFile, `v${rev}`, 'utf8')
-        await fs.writeFile(markerFile, `v${rev}`, 'utf8')
+        await fs.appendFile(excludedFile, 'next\n', 'utf8')
+        await fs.appendFile(markerFile, 'next\n', 'utf8')
       },
     )
     expect(markerSeen).toBe(true)
@@ -136,5 +133,5 @@ describe('fs watch events for nested paths', () => {
         channel === FS_WATCH_EVENT && (event as { path: string }).path === excludedFile,
     )
     expect(excludedSeen).toBe(false)
-  })
+  }, 10_000)
 })

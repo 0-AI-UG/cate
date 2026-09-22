@@ -38,10 +38,10 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
     if (event.button !== 0) return
-    if (event.target instanceof Element && event.target.closest('button')) return
     // If a previous drag ended without Chromium emitting its compatibility
     // click, a new press is unambiguously a fresh interaction.
     suppressNextClickRef.current = false
+    if (event.target instanceof Element && event.target.closest('button')) return
     if (event.currentTarget.scrollWidth <= event.currentTarget.clientWidth) return
     dragRef.current = {
       pointerId: event.pointerId,

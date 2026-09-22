@@ -433,7 +433,8 @@ export default function BrowserPanel({
     if (!tab) return
     activeTabIdRef.current = id
     setActiveTabId(id)
-    const webview = webviewsByTabRef.current.get(id)
+    // The start page's hidden about:blank guest is only an automation host.
+    const webview = isStartPageUrl(tab.url) ? undefined : webviewsByTabRef.current.get(id)
     const url = webview?.getURL() || tab.url
     setCurrentUrl(url)
     setInputUrl(addressBarValue(url))
@@ -496,7 +497,7 @@ export default function BrowserPanel({
       const neighbor = next[Math.min(idx, next.length - 1)]
       activeTabIdRef.current = neighbor.id
       setActiveTabId(neighbor.id)
-      const webview = webviewsByTabRef.current.get(neighbor.id)
+      const webview = isStartPageUrl(neighbor.url) ? undefined : webviewsByTabRef.current.get(neighbor.id)
       const url = webview?.getURL() || neighbor.url
       setCurrentUrl(url)
       setInputUrl(addressBarValue(url))
@@ -753,6 +754,9 @@ export default function BrowserPanel({
     const webview = webviewRef.current
     if (!webview) return
     const frame = requestAnimationFrame(() => {
+      // Start pages keep an invisible guest for automation; user focus belongs
+      // to the address bar and tab controls, never that guest.
+      if (isStartPageUrl(currentUrlRef.current)) return
       // Canvas-node focus happens on mousedown, before the drag dead zone has
       // armed. Focusing a <webview> switches webContents and blurs the host
       // window, which cancels that pending drag. Keep focus on the title bar
