@@ -301,39 +301,39 @@ describe('runtime loopback (real daemon capabilities over the wire)', () => {
 
     const events: string[] = []
     const unsub = remote.file.watch(safe, (changedPath) => { events.push(path.basename(changedPath)) })
-    await new Promise((r) => setTimeout(r, 300)) // let chokidar attach
+    try {
+      // Native subscriptions attach asynchronously. Keep changing the file until
+      // an event arrives instead of assuming a fixed sleep means it is ready.
+      await waitForWatchEvent(() => events.includes('before.txt'), () =>
+        fs.appendFile(path.join(rootDir, 'before.txt'), 'one\n'))
 
-    // Baseline: a write under the watched root produces an event.
-    await fs.writeFile(path.join(rootDir, 'before.txt'), 'one\n')
-    await waitFor(() => events.includes('before.txt'), 2000)
+      // Live exclusion change: this recreates the active watcher.
+      await remote.setExclusions(['whatever'])
+      events.length = 0
+      await waitForWatchEvent(() => events.includes('after.txt'), () =>
+        fs.appendFile(path.join(rootDir, 'after.txt'), 'two\n'))
 
-    // Live exclusion change: this closes + recreates the active watcher.
-    await remote.setExclusions(['whatever'])
-    await new Promise((r) => setTimeout(r, 300)) // let the rebuilt watcher attach
-    events.length = 0
-
-    // The rebuilt watcher is live and keeps delivering events for kept files.
-    await fs.writeFile(path.join(rootDir, 'after.txt'), 'two\n')
-    await waitFor(() => events.includes('after.txt'), 2000)
-
-    // Unsubscribe stops events even right after a rebuild (registry handled it).
-    unsub()
-    await new Promise((r) => setTimeout(r, 200))
-    events.length = 0
-    await fs.writeFile(path.join(rootDir, 'post-unsub.txt'), 'three\n')
-    await new Promise((r) => setTimeout(r, 400))
-    expect(events).not.toContain('post-unsub.txt')
-
-    await remote.setExclusions([])
-  })
+      // Unsubscribe stops events even right after a rebuild (registry handled it).
+      unsub()
+      await flush()
+      events.length = 0
+      await fs.writeFile(path.join(rootDir, 'post-unsub.txt'), 'three\n')
+      await new Promise((r) => setTimeout(r, 400))
+      expect(events).not.toContain('post-unsub.txt')
+    } finally {
+      unsub()
+      await remote.setExclusions([])
+    }
+  }, 15_000)
 })
 
-/** Poll a predicate until true or the timeout elapses. */
-async function waitFor(pred: () => boolean, timeoutMs: number): Promise<void> {
-  const start = Date.now()
+/** Retry writes across native watcher startup, with a bound for broken delivery. */
+async function waitForWatchEvent(pred: () => boolean, poke: () => Promise<void>): Promise<void> {
+  const deadline = Date.now() + 5000
   while (!pred()) {
-    if (Date.now() - start > timeoutMs) throw new Error('waitFor timed out')
-    await new Promise((r) => setTimeout(r, 25))
+    if (Date.now() >= deadline) throw new Error('waitForWatchEvent timed out')
+    await poke()
+    await new Promise((r) => setTimeout(r, 300))
   }
 }
 
