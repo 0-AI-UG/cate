@@ -332,7 +332,8 @@ describe('output and run loop', () => {
       rpc.push(body)
       const result = body.method.endsWith('getTab') ? { panelId: 'browser', tabId: 'tab' }
         : body.method.endsWith('jevDecision') ? { answers: { decision: { type: 'choice', choice: 'done', confidence: 1, probabilities: { done: 1 } } } }
-        : { kind: 'ax', panelId: 'browser', tabId: 'tab', userInputEpoch: 0, state: 'Saved', elements: [], url: 'https://example.test' }
+        : { kind: 'ax', panelId: 'browser', tabId: 'tab', userInputEpoch: 0, state: 'Saved', elements: [], url: 'https://example.test',
+            ...(body.method.endsWith('getAXStateAndScreenshot') ? { screenshot: { mimeType: 'image/png', data: 'cG5n', width: 800, height: 600 } } : {}) }
       return new Response(JSON.stringify({ result }))
     }) as typeof fetch
     expect(await run(['browser', 'jev', 'Verify Saved is visible', '--json'], deps)).toBe(0)
@@ -358,6 +359,23 @@ describe('output and run loop', () => {
     expect(deps.out[0]).toContain('button Saved [2]')
     expect(deps.out[0]).toContain('Screenshot: /tmp/jev.png')
     expect(deps.out[0]).not.toContain('cG5n')
+  })
+
+  it('returns a nonzero Jev result and recovery instruction when final capture fails', async () => {
+    const deps = runDeps()
+    deps.fetch = vi.fn(async (_url, init) => {
+      const { method } = JSON.parse(String(init?.body))
+      const result = method.endsWith('getTab') ? { panelId: 'browser', tabId: 'tab' }
+        : method.endsWith('jevDecision') ? { answers: { decision: { type: 'choice', choice: 'done', confidence: 1, probabilities: { done: 1 } } } }
+        : method.endsWith('getAXStateAndScreenshot') ? { error: 'browser-screenshot-failed' }
+        : { kind: 'ax', panelId: 'browser', tabId: 'tab', userInputEpoch: 0, state: 'Prior page', elements: [], url: 'https://example.test' }
+      return new Response(JSON.stringify({ result }))
+    }) as typeof fetch
+    expect(await run(['browser', 'jev', 'Verify Saved'], deps)).toBe(1)
+    expect(deps.out[0]).toContain('Final browser observation unavailable:')
+    expect(deps.out[0]).toContain('browser-screenshot-failed')
+    expect(deps.out[0]).toContain('Run a browser read to inspect the current page.')
+    expect(deps.out[0]).not.toContain('Prior page')
   })
 
   it('returns a nonzero Jev status when Cate has no saved key', async () => {

@@ -450,7 +450,7 @@ export function formatHuman(method: string, value: unknown): string {
     const result = asObject(value)
     const observation = asObject(result?.observation)
     const screenshot = asObject(observation?.screenshot)
-    return `Jev: ${result?.status} — ${result?.message}\n${Array.isArray(result?.actions) ? result.actions.length : 0} steps, ${result?.modelCalls} model calls${result?.url ? `\n${result.url}` : ''}${typeof observation?.state === 'string' ? `\n${observation.state}` : ''}${typeof screenshot?.path === 'string' ? `\nScreenshot: ${screenshot.path}\nOpen this file with your image-viewing tool to inspect the page visually.` : ''}`
+    return `Jev: ${result?.status} — ${result?.message}\n${Array.isArray(result?.actions) ? result.actions.length : 0} steps, ${result?.modelCalls} model calls${result?.url ? `\n${result.url}` : ''}${typeof observation?.state === 'string' ? `\n${observation.state}` : ''}${typeof screenshot?.path === 'string' ? `\nScreenshot: ${screenshot.path}\nOpen this file with your image-viewing tool to inspect the page visually.` : ''}${typeof result?.observationError === 'string' ? `\nFinal browser observation unavailable: ${result.observationError}\nRun a browser read to inspect the current page.` : ''}`
   }
   const content = asObject(value)?.content
   if ((method === 'cate.browser.run' || method === 'cate.browser.reset') && Array.isArray(content)) return content.map((item) => {

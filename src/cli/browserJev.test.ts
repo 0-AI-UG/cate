@@ -38,6 +38,21 @@ describe('Jev browser control', () => {
     expect(invoke.mock.calls.filter(([method]) => method.endsWith('setValue'))).toHaveLength(1)
   })
 
+  it.each([
+    { error: 'browser-screenshot-failed' },
+    { kind: 'ax', panelId: 'browser', tabId: 'tab', state: 'Saved successfully' },
+  ])('reports a failed final capture without returning stale AX state', async finalRead => {
+    const { options, invoke } = fixture(['done'])
+    const original = invoke.getMockImplementation()!
+    invoke.mockImplementation((method, args) => method.endsWith('getAXStateAndScreenshot')
+      ? Promise.resolve(finalRead as never) : original(method, args))
+    const result = await runBrowserJev(options)
+    expect(result).toMatchObject({ status: 'done', isError: true, observationError: expect.any(String) })
+    expect(result.observation).toBeUndefined()
+    expect(result.url).toBeUndefined()
+    expect(invoke.mock.calls.at(-1)?.[0]).toBe('cate.browser.getAXStateAndScreenshot')
+  })
+
   it('offers distinct whitespace-separated words verbatim, preserving punctuation and Unicode', async () => {
     const { options, decide, invoke } = fixture(['setValue', 'c0', { word: 'café!' }, 'done'])
     const result = await runBrowserJev({ ...options, prompt: '  Enter\tcafé!\ninto Name café!  ' })
