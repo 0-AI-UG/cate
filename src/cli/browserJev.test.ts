@@ -14,6 +14,7 @@ function fixture(decisions: Array<string | { word: string }>, overrides: Partial
     if (method.endsWith('getTab')) return { panelId: 'browser', tabId: 'tab' }
     if (method.endsWith('setValue')) observation = { ...observation, state: `textbox Name value ${args.value}, button Save` }
     if (method.endsWith('click')) observation = { ...observation, state: 'Saved successfully' }
+    if (method.endsWith('getAXStateAndScreenshot')) return { ...observation, screenshot: { mimeType: 'image/png', data: 'cG5n', width: 800, height: 600 } }
     return observation
   })
   const decide = vi.fn(async (request: { state: any; instructions: string; criteria: Record<string, string> }) => {
@@ -31,6 +32,8 @@ describe('Jev browser control', () => {
     const { options, invoke } = fixture(['setValue', 'c0', { word: 'Hi' }, 'click', 'c0', 'done'])
     const result = await runBrowserJev(options)
     expect(result).toMatchObject({ status: 'done', isError: false, modelCalls: 6, actions: [{ method: 'setValue', target: 1 }, { method: 'click', target: 2 }] })
+    expect(result.observation).toMatchObject({ state: 'Saved successfully', screenshot: { data: 'cG5n' } })
+    expect(invoke.mock.calls.at(-1)?.[0]).toBe('cate.browser.getAXStateAndScreenshot')
     expect(invoke).toHaveBeenCalledWith('cate.browser.setValue', expect.objectContaining({ value: 'Hi', target: 1, panelId: 'browser', tabId: 'tab', _userInputEpoch: 0 }))
     expect(invoke.mock.calls.filter(([method]) => method.endsWith('setValue'))).toHaveLength(1)
   })
@@ -101,7 +104,7 @@ describe('Jev browser control', () => {
   it('rejects a choice outside the code-owned action set', async () => {
     const { options, invoke } = fixture(['arbitrary-code'])
     expect(await runBrowserJev(options)).toMatchObject({ status: 'error', message: 'Invalid OpenRouter Jev Choice response' })
-    expect(invoke.mock.calls.every(([method]) => method.endsWith('getTab') || method.endsWith('getAXState'))).toBe(true)
+    expect(invoke.mock.calls.every(([method]) => method.endsWith('getTab') || method.endsWith('getAXState') || method.endsWith('getAXStateAndScreenshot'))).toBe(true)
   })
 
   it('stops on low confidence and does not repeat provider failures', async () => {
