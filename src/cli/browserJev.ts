@@ -13,6 +13,8 @@ export interface JevResult {
   actions: Array<{ method: string; target?: number }>
   modelCalls: number
   url?: string
+  observation?: BrowserObservation
+  observationError?: string
   isError: boolean
 }
 interface JevOptions {
@@ -106,7 +108,28 @@ export async function runBrowserJev(options: JevOptions): Promise<JevResult> {
   const client = new JevClient(options, signal)
   const actions: JevResult['actions'] = []
   let observation: BrowserObservation | undefined
-  const finish = (status: Status, message: string): JevResult => ({ status, message, actions, modelCalls: client.calls, url: observation?.url, isError: status !== 'done' })
+  let finalBinding: { panelId: string; tabId: string } | undefined
+  const finish = async (status: Status, message: string): Promise<JevResult> => {
+    let finalObservation: BrowserObservation | undefined
+    let observationError: string | undefined
+    if (finalBinding) {
+      try {
+        const current = object(await options.invoke('cate.browser.getAXStateAndScreenshot', finalBinding))
+        if (current.error) throw new Error(String(current.error))
+        const screenshot = object(current.screenshot)
+        if (current.kind !== 'ax' || current.panelId !== finalBinding.panelId || current.tabId !== finalBinding.tabId
+          || typeof current.state !== 'string' || screenshot.mimeType !== 'image/png' || typeof screenshot.data !== 'string') {
+          throw new Error('Invalid final browser observation')
+        }
+        finalObservation = current as unknown as BrowserObservation
+      } catch (error) {
+        observationError = error instanceof Error ? error.message : 'Final browser observation failed'
+      }
+    }
+    return { status, message, actions, modelCalls: client.calls, url: finalObservation?.url,
+      ...(finalObservation ? { observation: finalObservation } : {}), ...(observationError ? { observationError } : {}),
+      isError: status !== 'done' || observationError !== undefined }
+  }
   try {
     if (!options.prompt.trim() || options.prompt.length > 8_000) throw new Error('Jev prompt must contain 1–8000 characters.')
     if (!Number.isInteger(options.maxSteps) || options.maxSteps < 1 || options.maxSteps > 100) throw new Error('Jev max steps must be between 1 and 100.')
@@ -120,6 +143,7 @@ export async function runBrowserJev(options: JevOptions): Promise<JevResult> {
     const bound = object(await invoke('getTab', options.panelId ? { panelId: options.panelId } : {}))
     if (typeof bound.panelId !== 'string' || typeof bound.tabId !== 'string') throw new Error('Browser binding did not resolve a panel and tab.')
     const binding = { panelId: bound.panelId, tabId: bound.tabId }
+    finalBinding = binding
     let userInputEpoch: number | undefined
     const observe = async (): Promise<void> => {
       const next = object(await invoke('getAXState', { ...binding, _userInputEpoch: userInputEpoch, disableDiffing: true }))

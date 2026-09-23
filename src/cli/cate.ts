@@ -448,7 +448,9 @@ function renderGeneric(value: unknown): string {
 export function formatHuman(method: string, value: unknown): string {
   if (method === 'cate.browser.jev') {
     const result = asObject(value)
-    return `Jev: ${result?.status} — ${result?.message}\n${Array.isArray(result?.actions) ? result.actions.length : 0} steps, ${result?.modelCalls} model calls${result?.url ? `\n${result.url}` : ''}`
+    const observation = asObject(result?.observation)
+    const screenshot = asObject(observation?.screenshot)
+    return `Jev: ${result?.status} — ${result?.message}\n${Array.isArray(result?.actions) ? result.actions.length : 0} steps, ${result?.modelCalls} model calls${result?.url ? `\n${result.url}` : ''}${typeof observation?.state === 'string' ? `\n${observation.state}` : ''}${typeof screenshot?.path === 'string' ? `\nScreenshot: ${screenshot.path}\nOpen this file with your image-viewing tool to inspect the page visually.` : ''}${typeof result?.observationError === 'string' ? `\nFinal browser observation unavailable: ${result.observationError}\nRun a browser read to inspect the current page.` : ''}`
   }
   const content = asObject(value)?.content
   if ((method === 'cate.browser.run' || method === 'cate.browser.reset') && Array.isArray(content)) return content.map((item) => {
@@ -631,6 +633,13 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
           progress: parsed.flags.json ? undefined : deps.stderr,
         })
       : await send(request.method, request.args, sendDeps)
+    if (!parsed.flags.json && request.method === 'cate.browser.jev' && deps.writeImage) {
+      const screenshot = asObject(asObject(asObject(value)?.observation)?.screenshot)
+      if (screenshot && typeof screenshot.data === 'string') {
+        screenshot.path = await deps.writeImage(screenshot.data)
+        delete screenshot.data
+      }
+    }
     if (!parsed.flags.json && request.method === 'cate.browser.run' && deps.writeImage) {
       const content = asObject(value)?.content
       if (Array.isArray(content)) for (const item of content) {

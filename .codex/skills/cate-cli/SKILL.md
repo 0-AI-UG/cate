@@ -61,8 +61,12 @@ value as a single word and supply absolute HTTP/HTTPS destination URLs explicitl
 
 Supported operations are HTTP/HTTPS navigation, clicks, field replacement, keys, page scrolling, and
 waits. Runs pin the panel/tab and stop on user takeover, uncertainty, errors,
-180 seconds, or the step limit (20 by default, up to 100). `--json` returns
-the status, action trace, model-call count, and final URL; only `done` exits zero.
+180 seconds, or the step limit (20 by default, up to 100). Each run returns
+the final AX state and screenshot. Human output saves the screenshot to a temporary
+PNG file; `--json` includes the observation with base64 image data, status,
+action trace, model-call count, and final URL. If capture fails, the result
+reports `observationError` and exits nonzero instead of returning stale state.
+Only `done` with a successful capture exits zero.
 Completion is a model judgment based on the page; verify important outcomes.
 
 ### JavaScript mode
