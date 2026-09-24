@@ -28,6 +28,16 @@ export interface AgentHarnessStatus {
   message?: string
 }
 
+export type T3RemoteOperation = 'status' | 'link' | 'unlink'
+
+export interface T3RemoteSession {
+  id: string
+  operation: T3RemoteOperation
+  phase: 'running' | 'succeeded' | 'failed' | 'cancelled'
+  output: string
+  message?: string
+}
+
 export type AgentProviderId = import('./agents').T3ProviderId
 
 export type AgentProviderAuthPhase = 'running' | 'succeeded' | 'failed' | 'cancelled'

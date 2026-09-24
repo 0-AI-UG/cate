@@ -22,6 +22,7 @@ function runtime() {
 function instance(key: string, rt: ReturnType<typeof runtime>) {
   return {
     key, runtimeId: key.startsWith('local:') ? 'local' : 'remote', runtime: rt, environmentId: 'env', proxyPort: 4321,
+    entryPath: '/bundled/t3/bin.mjs', baseDir: `/app/harness/instances/${key}`,
     serverId: key, panels: new Set<string>(),
     proxy: { close: vi.fn((done: () => void) => done()) },
   }
@@ -180,6 +181,32 @@ describe('T3 provider sign-in ownership', () => {
     mocks.disconnected.mock.calls.at(-1)![0]('remote')
     expect(manager.getProviderAuth(auth.id, 1).phase).toBe('failed')
     expect(manager.getProviderAuth(sibling.id, 1).phase).toBe('running')
+  })
+})
+
+describe('T3 Connect', () => {
+  it('runs the bundled CLI against the selected checkout and restarts after linking', async () => {
+    const session = await manager.startRemote({ workspaceId: 'ws', cwd: '/alias', operation: 'link' }, 1)
+    expect(local.process.create).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: '/repo', scopeId: 'ws',
+      command: expect.objectContaining({ args: ['/bundled/t3/bin.mjs', 'connect', 'link', '--base-dir', '/app/harness/instances/local:/repo', '--headless'] }),
+    }), expect.any(Function), expect.any(Function))
+    expect(() => manager.getRemote(session.id, 2)).toThrow('not found')
+    expect(() => manager.writeRemote(session.id, 2, 'yes')).toThrow('not found')
+    manager.writeRemote(session.id, 1, 'yes\n')
+    expect(local.process.write).toHaveBeenCalledWith(session.id, 'yes\n')
+    local.process.create.mock.calls[0][2](session.id, 0)
+    await vi.waitFor(() => expect(manager.getRemote(session.id, 1).phase).toBe('succeeded'))
+    expect(local.server.stop).toHaveBeenCalledWith('local:/repo')
+    expect(start).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects remote workspaces and concurrent operations', async () => {
+    await expect(manager.startRemote({ workspaceId: 'ws', cwd: 'ssh:/repo', operation: 'link' }, 1)).rejects.toThrow('local workspaces')
+    const session = await manager.startRemote({ workspaceId: 'ws', cwd: '/repo', operation: 'status' }, 1)
+    await expect(manager.startRemote({ workspaceId: 'ws', cwd: '/alias', operation: 'unlink' }, 1)).rejects.toThrow('already running')
+    manager.cancelRemote(session.id, 1)
+    expect(local.process.kill).toHaveBeenCalledWith(session.id)
   })
 })
 
