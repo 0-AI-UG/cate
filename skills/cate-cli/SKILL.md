@@ -38,6 +38,17 @@ panel. If a selected panel was closed, select another panel before continuing.
 
 ## Browser workflow
 
+To open a new browser panel, use the panel command. The URL is optional:
+
+```bash
+cate panel create browser https://example.com
+cate panel create browser
+```
+
+Use `cate browser run` to inspect and control a panel's live tab, or to open
+another tab within a browser panel. `cua.createBrowserTab(..., {newPanel:true})`
+also creates a panel when browser code needs to do so.
+
 Browser control uses persistent JavaScript with the `cua` tab API. The old argv
 actions, selectors, page evaluation, and revisioned string refs have been removed.
 Start by binding a tab to get its accessibility state, then request a screenshot
@@ -133,6 +144,7 @@ minimum.
 
 ```bash
 cate editor open src/app.tsx:42
+cate panel create browser https://example.com
 cate panel create terminal
 cate panel create canvas
 cate panel set <id>

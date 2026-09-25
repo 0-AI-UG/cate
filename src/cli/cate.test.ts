@@ -61,7 +61,7 @@ describe('global parsing', () => {
 })
 
 describe('non-browser surface', () => {
-  it('opens file positions and creates only supported panel types', () => {
+  it('opens file positions and creates supported panel types', () => {
     expect(parseFileTarget('src/a.ts:42:7')).toEqual({ path: 'src/a.ts', line: 42, column: 7 })
     expect(parseFileTarget('C:\\x\\a.ts')).toEqual({ path: 'C:\\x\\a.ts' })
     expect(buildRequest(['editor', 'open', 'src/a.ts:42'], flags)).toEqual({
@@ -72,7 +72,16 @@ describe('non-browser surface', () => {
       method: 'cate.canvas.createPanel',
       args: { type: 'terminal' },
     })
-    expect(() => buildRequest(['panel', 'create', 'browser'], flags)).toThrow(/supports terminal or canvas/)
+    expect(buildRequest(['panel', 'create', 'browser'], flags)).toEqual({
+      method: 'cate.canvas.createPanel',
+      args: { type: 'browser' },
+    })
+    expect(buildRequest(['panel', 'create', 'browser', 'https://example.com'], flags)).toEqual({
+      method: 'cate.canvas.createPanel',
+      args: { type: 'browser', url: 'https://example.com' },
+    })
+    expect(() => buildRequest(['panel', 'create', 'browser', 'https://example.com', 'extra'], flags)).toThrow(UsageError)
+    expect(() => buildRequest(['panel', 'create', 'editor'], flags)).toThrow(/supports browser, terminal or canvas/)
   })
 
   it('requires explicit targeting for terminal input', () => {
