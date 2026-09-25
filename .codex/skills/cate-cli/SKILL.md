@@ -46,8 +46,7 @@ cate panel create browser
 ```
 
 Use `cate browser run` to inspect and control a panel's live tab, or to open
-another tab within a browser panel. `cua.createBrowserTab(..., {newPanel:true})`
-also creates a panel when browser code needs to do so.
+another tab within an existing browser panel.
 
 Browser control uses persistent JavaScript with the `cua` tab API. The old argv
 actions, selectors, page evaluation, and revisioned string refs have been removed.
@@ -62,8 +61,9 @@ cate browser run 'await tab.getAXStateAndScreenshot();'
 Use full panel IDs inside JavaScript. `--panel <id>` supports short IDs as an
 override for CLI panel resolution. Discover tabs with `await cua.listTabs()`.
 Create a tab with `await cua.createBrowserTab("https://example.com")`, or pass
-`{panelId:tab.panelId}` as the second argument to choose its panel. Pass
-`{newPanel:true}` to create a separate panel; Cate also creates one when needed.
+`{panelId:tab.panelId}` as the second argument to choose its panel. Use the full
+panel ID inside JavaScript. If no browser panel exists, create one with
+`cate panel create browser [url]` first.
 Bindings pin both panel and tab; they never silently follow a user's tab switch.
 
 Use numeric IDs from the latest AX observation. For example, after observing a form
