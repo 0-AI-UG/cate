@@ -74,14 +74,52 @@ const post = (url: string, token: string | null, body: unknown): Promise<Respons
   })
 
 describe('agentHooks capability', () => {
-  test('Windows hook commands run .cmd wrappers through cmd.exe', () => {
+  test('Windows hook commands use a quoted forward-slash wrapper path', () => {
     const wrapper = 'C:\\Users\\N3231\\.cate\\agent-hooks\\cate-hook-bridge-claude-code.cmd'
 
-    expect(bridgeHookCommand(wrapper, 'win32')).toBe(`cmd.exe /d /c "${wrapper}"`)
+    expect(bridgeHookCommand(wrapper, 'win32')).toBe('"C:/Users/N3231/.cate/agent-hooks/cate-hook-bridge-claude-code.cmd"')
     expect(bridgeHookCommand('/home/u/.cate/agent-hooks/cate-hook-bridge-claude-code', 'linux')).toBe(
       '/home/u/.cate/agent-hooks/cate-hook-bridge-claude-code',
     )
   })
+
+  test.skipIf(posix)('the Windows Claude hook command passes stdin through Git Bash to the bridge', async () => {
+    const cap = makeCap({ hooksDir: path.join(tmpDir('windows-bridge'), 'hooks with spaces') })
+    const events = collect(cap)
+    const cwd = path.join(tmpDir('windows-workspace'), 'workspace with spaces')
+    mkdirSync(cwd)
+    const env = await cap.envForPty('rpty-windows-bridge', { PATH: process.env.PATH ?? '' })
+    await cap.prepareWorkspace(cwd, { 'claude-code': 'on' })
+
+    const settings = JSON.parse(readFileSync(path.join(cwd, '.claude', 'settings.local.json'), 'utf-8')) as {
+      hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> }
+    }
+    const command = settings.hooks.SessionStart[0].hooks[0].command
+    const payload = {
+      hook_event_name: 'SessionStart',
+      session_id: '99999999-1111-4222-8333-444444444444',
+      cwd,
+    }
+    const output = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      const child = execFile('bash', ['-c', command], {
+        cwd,
+        env: { ...process.env, ...env },
+        timeout: 15_000,
+      }, (err, stdout, stderr) => {
+        if (err) reject(err)
+        else resolve({ stdout, stderr })
+      })
+      child.stdin!.end(JSON.stringify(payload))
+    })
+    expect(output).toEqual({ stdout: '', stderr: '' })
+    await waitFor(() => events.length === 1)
+    expect(events[0]).toMatchObject({
+      terminalId: 'rpty-windows-bridge',
+      agentId: 'claude-code',
+      kind: 'session-start',
+      sessionId: payload.session_id,
+    })
+  }, 20_000)
 
   test('envForPty plants the hook env, agent-agnostic and non-clobbering', async () => {
     const cap = makeCap()
@@ -102,6 +140,21 @@ describe('agentHooks capability', () => {
     // The token is PER TERMINAL — one pty's env spoofs nothing for another.
     expect(env2.CATE_HOOK_TOKEN).toMatch(/^[0-9a-f]{64}$/)
     expect(env2.CATE_HOOK_TOKEN).not.toBe(env.CATE_HOOK_TOKEN)
+  })
+
+  test('plain Codex in a hooked workspace uses its terminal environment instead of a shared daemon', async () => {
+    const cap = makeCap()
+    const cwd = tmpDir('codex-workspace')
+    mkdirSync(path.join(cwd, '.codex'))
+
+    const env = await cap.envForPty('rpty-codex', { PATH: '/usr/bin:/bin' }, undefined, cwd)
+    expect(env.CODEX_EXEC_SERVER_URL).toBe('')
+    expect(env.CATE_TERMINAL_ID).toBe('rpty-codex')
+
+    const explicit = await cap.envForPty('rpty-explicit', { CODEX_EXEC_SERVER_URL: 'ws://localhost:8765' }, undefined, cwd)
+    expect(explicit.CODEX_EXEC_SERVER_URL).toBe('ws://localhost:8765')
+    expect((await cap.envForPty('rpty-off', {}, { codex: 'off' }, cwd)).CODEX_EXEC_SERVER_URL).toBeUndefined()
+    expect((await cap.envForPty('rpty-no-codex', {}, undefined, tmpDir('other-workspace'))).CODEX_EXEC_SERVER_URL).toBeUndefined()
   })
 
   test('returns graph context through supported native submit hooks only', async () => {

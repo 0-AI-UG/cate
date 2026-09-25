@@ -166,25 +166,20 @@ beforeEach(() => {
 })
 
 describe('browser-control integration — HTTP → real dispatch → forward → renderer reply', () => {
-  it('records a newly opened browser immediately so its returned id is routable', async () => {
-    const owner = makeWindow({ id: 77, replyResult: { panelId: 'new-browser', url: 'https://x.test' } })
+  it('does not register a new panel when creating a browser tab', async () => {
+    const owner = makeWindow({ id: 77, replyResult: { panelId: 'b1', tabId: 't2', url: 'https://x.test' } })
     activeWindow.value = owner.win
+    windowsById.set(77, owner.win)
+    windowPanelList.value = [{ panelId: 'b1', type: 'browser', ownerWindowId: 77 }]
 
     const { runtime, output } = makeRuntime()
     const endpoint = firstPartySession(runtime)
     const res = await request(endpoint, output, {
-      json: { method: 'cate.browser.createTab', args: { url: 'https://x.test' } },
+      json: { method: 'cate.browser.createTab', args: { url: 'https://x.test', panelId: 'b1' } },
     })
 
-    expect(res.body).toEqual({ result: { panelId: 'new-browser', url: 'https://x.test' } })
-    expect(upsertWindowPanel).toHaveBeenCalledWith(77, {
-      panelId: 'new-browser',
-      type: 'browser',
-      title: 'https://x.test',
-      workspaceId: WS,
-      url: 'https://x.test',
-      focused: false,
-    })
+    expect(res.body).toEqual({ result: { panelId: 'b1', tabId: 't2', url: 'https://x.test' } })
+    expect(upsertWindowPanel).not.toHaveBeenCalled()
     endpoint.dispose()
   })
 

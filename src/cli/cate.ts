@@ -2,10 +2,9 @@
 // Cate terminals. Browser JavaScript runs in an isolated persistent session.
 
 import { BROWSER_API_DOCUMENTATION } from '../shared/browserAutomation'
-import { runBrowserJev } from './browserJev'
 import { SHORT_PANEL_ID_LEN, shortPanelId } from '../shared/panelIds'
 
-export const CLI_VERSION = '19'
+export const CLI_VERSION = '14'
 export const DEFAULT_TIMEOUT_MS = 30_000
 export const SHORT_ID_LEN = SHORT_PANEL_ID_LEN
 
@@ -23,7 +22,6 @@ export interface Flags {
   help: boolean
   version: boolean
   waitTimeout?: string
-  maxSteps?: string
   reviewFile?: string
   reviewLine?: string
   reviewSide?: string
@@ -90,9 +88,6 @@ export function parseCli(argv: string[]): Parsed {
       flags.help = true
     } else if (part === '--version') {
       flags.version = true
-    } else if (argv[0] === 'browser' && argv[1] === 'jev' && part === '--max-steps') {
-      flags.maxSteps = need(argv[index + 1], 'max-steps')
-      index += 1
     } else if (agentCommand && part === '--wait-timeout') {
       flags.waitTimeout = need(argv[index + 1], 'wait-timeout')
       index += 1
@@ -226,13 +221,6 @@ function reviewRequest(args: string[], flags: Flags): Request {
 
 function browserRequest(args: string[], flags: Flags): Request {
   const command = need(args[0], 'browser command')
-  if (command === 'jev') {
-    const prompt = need(exact(args.slice(1), 1)[0], 'prompt')
-    if (!prompt.trim() || prompt.length > 8_000) throw new UsageError('Jev prompt must contain 1–8000 characters')
-    const maxSteps = flags.maxSteps === undefined ? 20 : positiveInt(flags.maxSteps, 'max-steps')
-    if (maxSteps > 100) throw new UsageError('--max-steps must be between 1 and 100')
-    return withPanel({ method: 'cate.browser.jev', args: { prompt, maxSteps } }, flags.panel, 'browser')
-  }
   if (command === 'run') {
     const code = need(exact(args.slice(1), 1)[0], 'JavaScript code')
     return withPanel({ method: 'cate.browser.run', args: { code } }, flags.panel, 'browser')
@@ -241,7 +229,7 @@ function browserRequest(args: string[], flags: Flags): Request {
     exact(args.slice(1), 0)
     return { method: 'cate.browser.reset', args: {} }
   }
-  throw new UsageError('Use cate browser run <JavaScript>, cate browser jev <prompt>, or cate browser reset. See cate browser --help.')
+  throw new UsageError('Use cate browser run <JavaScript> or cate browser reset. See cate browser --help.')
 }
 
 export function buildRequest(positionals: string[], flags: Flags): Request {
@@ -271,10 +259,16 @@ export function buildRequest(positionals: string[], flags: Flags): Request {
       return { method: 'cate.panel.list', args: {} }
     }
     if (command === 'create') {
-      const type = need(exact(rest, 1)[0], 'terminal|canvas')
-      if (type !== 'terminal' && type !== 'canvas') {
-        throw new UsageError(`panel create supports terminal or canvas, got: ${type}`)
+      const type = need(rest[0], 'browser|terminal|canvas')
+      if (type !== 'browser' && type !== 'terminal' && type !== 'canvas') {
+        throw new UsageError(`panel create supports browser, terminal or canvas, got: ${type}`)
       }
+      if (type === 'browser') {
+        if (rest.length > 2) throw new UsageError('panel create browser accepts at most one URL')
+        const url = rest[1]
+        return { method: 'cate.canvas.createPanel', args: url ? { type, url } : { type } }
+      }
+      exact(rest, 1)
       return { method: 'cate.canvas.createPanel', args: { type } }
     }
     if (command === 'set') {
@@ -446,12 +440,6 @@ function renderGeneric(value: unknown): string {
 }
 
 export function formatHuman(method: string, value: unknown): string {
-  if (method === 'cate.browser.jev') {
-    const result = asObject(value)
-    const observation = asObject(result?.observation)
-    const screenshot = asObject(observation?.screenshot)
-    return `Jev: ${result?.status} — ${result?.message}\n${Array.isArray(result?.actions) ? result.actions.length : 0} steps, ${result?.modelCalls} model calls${result?.url ? `\n${result.url}` : ''}${typeof observation?.state === 'string' ? `\n${observation.state}` : ''}${typeof screenshot?.path === 'string' ? `\nScreenshot: ${screenshot.path}\nOpen this file with your image-viewing tool to inspect the page visually.` : ''}${typeof result?.observationError === 'string' ? `\nFinal browser observation unavailable: ${result.observationError}\nRun a browser read to inspect the current page.` : ''}`
-  }
   const content = asObject(value)?.content
   if ((method === 'cate.browser.run' || method === 'cate.browser.reset') && Array.isArray(content)) return content.map((item) => {
     const block = asObject(item)
@@ -497,7 +485,6 @@ export function formatHuman(method: string, value: unknown): string {
 
 const USAGE = `Usage:
   cate browser run <JavaScript> [--panel <id>]
-  cate browser jev <prompt> [--panel <id>] [--max-steps <1-100>]
   cate browser reset
   cate panel list|create|set|current|clear|close [args]
   cate editor open <path[:line[:column]]>
@@ -511,17 +498,7 @@ Browser code runs in a persistent isolated session against Cate's live tabs.
 Global flags: --panel <id> --json -h|--help --version`
 
 const BROWSER_USAGE = `Usage: cate browser run <JavaScript> [--panel <id>]
-       cate browser jev <prompt> [--panel <id>] [--max-steps <1-100>]
        cate browser reset
-
-Jev mode takes a quoted natural-language prompt and controls the selected live tab.
-Set the OpenRouter API key in Cate Settings → CLI. Jev receives the prompt and page accessibility
-text via OpenRouter. For text input, Jev selects one whitespace-separated word from
-the prompt, preserving its punctuation. It cannot combine words or generate new text.
-Include destination URLs explicitly; Jev selects complete HTTP/HTTPS URLs from the prompt.
-No second model is used. Runs stop on uncertainty, user takeover, 180 seconds,
-or the step limit (default 20).
-Jev supports navigation, clicks, field replacement, keys, page scrolling, and waits.
 
 ${BROWSER_API_DOCUMENTATION}`
 
@@ -550,7 +527,7 @@ function helpFor(positionals: string[]): string {
   if (positionals[0] === 'agent') return AGENT_USAGE
   if (positionals[0] === 'review') return REVIEW_USAGE
   if (positionals[0] === 'panel') {
-    return 'Usage: cate panel list | create terminal|canvas | set <id> | current | clear | close <id>'
+    return 'Usage: cate panel list | create browser [url] | create terminal|canvas | set <id> | current | clear | close <id>'
   }
   if (positionals[0] === 'editor') return 'Usage: cate editor open <path[:line[:column]]>'
   if (positionals[0] === 'terminal') {
@@ -624,22 +601,7 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
           resolvePanel(panelId, 'panel', sendDeps)),
       )
     }
-    const value = request.method === 'cate.browser.jev'
-      ? await runBrowserJev({
-          prompt: String(request.args.prompt), panelId: request.args.panelId as string | undefined,
-          maxSteps: Number(request.args.maxSteps),
-          decide: (decision) => send('cate.browser.jevDecision', decision, sendDeps),
-          invoke: (method, args) => send(method, args, sendDeps),
-          progress: parsed.flags.json ? undefined : deps.stderr,
-        })
-      : await send(request.method, request.args, sendDeps)
-    if (!parsed.flags.json && request.method === 'cate.browser.jev' && deps.writeImage) {
-      const screenshot = asObject(asObject(asObject(value)?.observation)?.screenshot)
-      if (screenshot && typeof screenshot.data === 'string') {
-        screenshot.path = await deps.writeImage(screenshot.data)
-        delete screenshot.data
-      }
-    }
+    const value = await send(request.method, request.args, sendDeps)
     if (!parsed.flags.json && request.method === 'cate.browser.run' && deps.writeImage) {
       const content = asObject(value)?.content
       if (Array.isArray(content)) for (const item of content) {

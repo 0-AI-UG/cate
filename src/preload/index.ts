@@ -816,16 +816,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(WINDOW_SET_TITLE, title)
   },
 
-  toggleKeepAwake(): Promise<boolean> {
+  toggleKeepAwake(): Promise<import('../shared/keepAwake').KeepAwakeState> {
     return ipcRenderer.invoke(KEEP_AWAKE_TOGGLE)
   },
-  getKeepAwake(): Promise<boolean> {
+  getKeepAwake(): Promise<import('../shared/keepAwake').KeepAwakeState> {
     return ipcRenderer.invoke(KEEP_AWAKE_GET)
   },
-  setKeepAwake(enabled: boolean): Promise<boolean> {
-    return ipcRenderer.invoke(KEEP_AWAKE_SET, enabled)
+  setKeepAwake(durationMinutes: 30 | 60 | 300 | null | false): Promise<import('../shared/keepAwake').KeepAwakeState> {
+    return ipcRenderer.invoke(KEEP_AWAKE_SET, durationMinutes)
   },
-  onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void {
+  onKeepAwakeChanged(callback: (state: import('../shared/keepAwake').KeepAwakeState) => void): () => void {
     return createIpcListener(KEEP_AWAKE_CHANGED, callback)
   },
 

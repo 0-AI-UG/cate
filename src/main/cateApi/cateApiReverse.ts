@@ -175,10 +175,9 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
             ? 'review'
           : undefined
       const usesSelectedPanel = targetType
-        && method !== 'cate.browser.run' && method !== 'cate.browser.reset' && method !== 'cate.browser.jevDecision'
+        && method !== 'cate.browser.run' && method !== 'cate.browser.reset'
         && selectedPanelId
         && args.panelId === undefined
-        && !(method === 'cate.browser.createTab' && args.newPanel === true)
       if (usesSelectedPanel) {
         const panel = getWindowPanels().find(
           (candidate) => candidate.panelId === selectedPanelId && candidate.workspaceId === session.workspaceId,
@@ -208,7 +207,7 @@ export function createCateApiReverse(session: ReverseSession): CateApiReverseEnd
         if (typeof args.code !== 'string') { send(200, { result: { error: 'code-required' } }); return }
         const defaultPanel = args.panelId ?? selectedPanelId
         const result = await browserCodeSessions.run(key, args.code, (nestedMethod, nestedArgs) => dispatchCateInvoke(invokeScope, nestedMethod,
-          defaultPanel && !nestedArgs.panelId && nestedMethod !== 'cate.browser.listTabs' && !(nestedMethod === 'cate.browser.createTab' && nestedArgs.newPanel)
+          defaultPanel && !nestedArgs.panelId && nestedMethod !== 'cate.browser.listTabs'
             ? { ...nestedArgs, panelId: defaultPanel } : nestedArgs))
         send(200, { result })
         return

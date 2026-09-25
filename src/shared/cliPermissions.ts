@@ -102,7 +102,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Control',
       code: 'panel-control-disabled',
       detail:
-        '`cate panel create / close` — add terminal or canvas panels and close panels.',
+        '`cate panel create / close` — add browser, terminal, or canvas panels and close panels.',
     },
   },
   {

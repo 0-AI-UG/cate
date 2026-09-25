@@ -186,10 +186,11 @@ async function dirExists(dir: string): Promise<boolean> {
 
 const shQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
 
-/** Hook runners may pass command strings through Bash even on Windows. Route
- *  .cmd wrappers through cmd.exe so Bash does not consume path backslashes. */
+/** Hook runners may pass command strings through Bash even on Windows. Use
+ * forward slashes so Bash preserves the wrapper path without converting
+ * cmd.exe's /d and /c switches into drive paths. */
 export function bridgeHookCommand(wrapper: string, platform: NodeJS.Platform): string {
-  return platform === 'win32' ? `cmd.exe /d /c "${wrapper}"` : wrapper
+  return platform === 'win32' ? `"${wrapper.replaceAll('\\', '/')}"` : wrapper
 }
 
 /** The generic stdin→HTTP bridge all stdin-JSON CLIs share. The daemon's
@@ -611,6 +612,27 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       out[CATE_HOOK_ENDPOINT_ENV] = state.url
       out[CATE_HOOK_TOKEN_ENV] = hookTokenForTerminal(state.secret, ptyId)
       out[CATE_TERMINAL_ID_ENV] = ptyId
+      // Codex's shared app-server daemon launches hooks with the daemon's
+      // environment, so a hook cannot identify the terminal that submitted a
+      // prompt. An explicitly present (but empty) executor URL makes Codex
+      // use its local executor and embedded app-server, preserving this PTY's
+      // hook identity for a plain `codex` invocation. Respect a user-selected
+      // executor URL and leave workspaces without Codex hooks alone.
+      const codexMode = resolveAgentHookMode(config, 'codex')
+      const codexFolder = agentHookFolder('codex')
+      const codexConfigured = codexMode === 'on' || (
+        codexMode === 'auto' && (
+          launchedAgentId === 'codex' || !!(
+            cwd && codexFolder && (
+              await dirExists(path.join(cwd, codexFolder)) ||
+              (baseCwd ? await dirExists(path.join(baseCwd, codexFolder)) : false)
+            )
+          )
+        )
+      )
+      if (codexConfigured && out.CODEX_EXEC_SERVER_URL === undefined) {
+        out.CODEX_EXEC_SERVER_URL = ''
+      }
       const hermesMode = resolveAgentHookMode(config, 'hermes')
       const hermesFolder = agentHookFolder('hermes')
       const hermesConfigured = hermesMode === 'on' || (

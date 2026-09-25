@@ -96,7 +96,7 @@ describe('PanelRelationContextToggle terminal hook registration', () => {
   for (const agentId of ['claude-code', 'codex', 'kiro', 'opencode'] as const) {
     it(`registers compiled graph context when ${agentId} opens`, async () => {
       act(() => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
-      expect(host.querySelector('button')).toBeNull()
+      expect(host.querySelector('button')).not.toBeNull()
 
       await act(async () => openCli(agentId))
 
@@ -109,6 +109,23 @@ describe('PanelRelationContextToggle terminal hook registration', () => {
       expect(context.includes('outside the Codex sandbox')).toBe(agentId === 'codex')
     })
   }
+
+  it('arms a terminal handoff before the first Codex submit hook identifies the agent', async () => {
+    const target = { id: 'target', type: 'terminal', title: 'Terminal 3', isDirty: false } as const
+    useAppStore.setState({
+      workspaces: [{ ...workspace(), panels: { source, target }, panelRelations: [
+        { id: 'handoff', fromPanelId: 'source', toPanelId: 'target', kind: 'trigger', label: 'running here' },
+      ] }],
+    })
+
+    await act(async () => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
+
+    expect(host.querySelector('button')?.getAttribute('aria-label')).toBe('1 connected panels, next message')
+    expect(setPromptContext).toHaveBeenLastCalledWith(
+      'pty-source',
+      expect.stringContaining('cate agent send --panel target'),
+    )
+  })
 
   for (const agentId of ['cursor', 'grok'] as const) {
     it(`keeps ${agentId} gated because it has no native context hook`, async () => {

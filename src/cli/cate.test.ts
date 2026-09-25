@@ -21,12 +21,6 @@ import {
 const flags: Flags = { json: false, help: false, version: false }
 
 describe('browser code CLI', () => {
-  it('accepts Jev natural-language prompts, panel overrides, and bounded steps', () => {
-    const parsed = parseCli(['browser', 'jev', 'Fill Name and save', '--panel', 'abcd', '--max-steps', '8'])
-    expect(buildRequest(parsed.positionals, parsed.flags)).toEqual({ method: 'cate.browser.jev', args: { prompt: 'Fill Name and save', panelId: 'abcd', maxSteps: 8 }, resolvePanel: 'browser' })
-    for (const maxSteps of ['0', '101', '1.5', 'NaN']) expect(() => buildRequest(['browser', 'jev', 'Click Save'], { ...flags, maxSteps })).toThrow(UsageError)
-    expect(() => buildRequest(['browser', 'jev', '  '], flags)).toThrow(UsageError)
-  })
   it('rejects the removed observe shortcut', () => {
     expect(() => buildRequest(['browser', 'observe'], flags)).toThrow(UsageError)
   })
@@ -67,7 +61,7 @@ describe('global parsing', () => {
 })
 
 describe('non-browser surface', () => {
-  it('opens file positions and creates only supported panel types', () => {
+  it('opens file positions and creates supported panel types', () => {
     expect(parseFileTarget('src/a.ts:42:7')).toEqual({ path: 'src/a.ts', line: 42, column: 7 })
     expect(parseFileTarget('C:\\x\\a.ts')).toEqual({ path: 'C:\\x\\a.ts' })
     expect(buildRequest(['editor', 'open', 'src/a.ts:42'], flags)).toEqual({
@@ -78,7 +72,16 @@ describe('non-browser surface', () => {
       method: 'cate.canvas.createPanel',
       args: { type: 'terminal' },
     })
-    expect(() => buildRequest(['panel', 'create', 'browser'], flags)).toThrow(/supports terminal or canvas/)
+    expect(buildRequest(['panel', 'create', 'browser'], flags)).toEqual({
+      method: 'cate.canvas.createPanel',
+      args: { type: 'browser' },
+    })
+    expect(buildRequest(['panel', 'create', 'browser', 'https://example.com'], flags)).toEqual({
+      method: 'cate.canvas.createPanel',
+      args: { type: 'browser', url: 'https://example.com' },
+    })
+    expect(() => buildRequest(['panel', 'create', 'browser', 'https://example.com', 'extra'], flags)).toThrow(UsageError)
+    expect(() => buildRequest(['panel', 'create', 'editor'], flags)).toThrow(/supports browser, terminal or canvas/)
   })
 
   it('requires explicit targeting for terminal input', () => {
@@ -321,74 +324,6 @@ describe('output and run loop', () => {
     expect(await run(['--version'], deps)).toBe(0)
     expect(deps.out).toEqual([`cate cli ${CLI_VERSION}`])
     expect(deps.fetch).not.toHaveBeenCalled()
-  })
-
-  it('runs Jev through Cate without a terminal OpenRouter credential', async () => {
-    const deps = runDeps()
-    const rpc: Array<{ method: string }> = []
-    deps.fetch = vi.fn(async (url, init) => {
-      expect(String(url)).not.toContain('openrouter.ai')
-      const body = JSON.parse(String(init?.body))
-      rpc.push(body)
-      const result = body.method.endsWith('getTab') ? { panelId: 'browser', tabId: 'tab' }
-        : body.method.endsWith('jevDecision') ? { answers: { decision: { type: 'choice', choice: 'done', confidence: 1, probabilities: { done: 1 } } } }
-        : { kind: 'ax', panelId: 'browser', tabId: 'tab', userInputEpoch: 0, state: 'Saved', elements: [], url: 'https://example.test',
-            ...(body.method.endsWith('getAXStateAndScreenshot') ? { screenshot: { mimeType: 'image/png', data: 'cG5n', width: 800, height: 600 } } : {}) }
-      return new Response(JSON.stringify({ result }))
-    }) as typeof fetch
-    expect(await run(['browser', 'jev', 'Verify Saved is visible', '--json'], deps)).toBe(0)
-    expect(JSON.parse(deps.out[0])).toMatchObject({ status: 'done', modelCalls: 1, isError: false })
-    expect(rpc.map(item => item.method)).toEqual(['cate.browser.getTab', 'cate.browser.getAXState', 'cate.browser.jevDecision', 'cate.browser.getAXState', 'cate.browser.getAXStateAndScreenshot'])
-    expect(JSON.parse(deps.out[0]).observation.state).toBe('Saved')
-    expect(deps.err).toEqual([])
-  })
-
-  it('prints Jev AX state and saves its final screenshot', async () => {
-    const deps = runDeps()
-    deps.fetch = vi.fn(async (_url, init) => {
-      const { method } = JSON.parse(String(init?.body))
-      const result = method.endsWith('getTab') ? { panelId: 'browser', tabId: 'tab' }
-        : method.endsWith('jevDecision') ? { answers: { decision: { type: 'choice', choice: 'done', confidence: 1, probabilities: { done: 1 } } } }
-        : { kind: 'ax', panelId: 'browser', tabId: 'tab', userInputEpoch: 0, state: 'button Saved [2]', elements: [], url: 'https://example.test',
-            ...(method.endsWith('getAXStateAndScreenshot') ? { screenshot: { mimeType: 'image/png', data: 'cG5n', width: 800, height: 600 } } : {}) }
-      return new Response(JSON.stringify({ result }))
-    }) as typeof fetch
-    const writeImage = vi.fn(async () => '/tmp/jev.png')
-    expect(await run(['browser', 'jev', 'Verify Saved'], { ...deps, writeImage })).toBe(0)
-    expect(writeImage).toHaveBeenCalledWith('cG5n')
-    expect(deps.out[0]).toContain('button Saved [2]')
-    expect(deps.out[0]).toContain('Screenshot: /tmp/jev.png')
-    expect(deps.out[0]).not.toContain('cG5n')
-  })
-
-  it('returns a nonzero Jev result and recovery instruction when final capture fails', async () => {
-    const deps = runDeps()
-    deps.fetch = vi.fn(async (_url, init) => {
-      const { method } = JSON.parse(String(init?.body))
-      const result = method.endsWith('getTab') ? { panelId: 'browser', tabId: 'tab' }
-        : method.endsWith('jevDecision') ? { answers: { decision: { type: 'choice', choice: 'done', confidence: 1, probabilities: { done: 1 } } } }
-        : method.endsWith('getAXStateAndScreenshot') ? { error: 'browser-screenshot-failed' }
-        : { kind: 'ax', panelId: 'browser', tabId: 'tab', userInputEpoch: 0, state: 'Prior page', elements: [], url: 'https://example.test' }
-      return new Response(JSON.stringify({ result }))
-    }) as typeof fetch
-    expect(await run(['browser', 'jev', 'Verify Saved'], deps)).toBe(1)
-    expect(deps.out[0]).toContain('Final browser observation unavailable:')
-    expect(deps.out[0]).toContain('browser-screenshot-failed')
-    expect(deps.out[0]).toContain('Run a browser read to inspect the current page.')
-    expect(deps.out[0]).not.toContain('Prior page')
-  })
-
-  it('returns a nonzero Jev status when Cate has no saved key', async () => {
-    const deps = runDeps()
-    deps.fetch = vi.fn(async (_url, init) => {
-      const { method } = JSON.parse(String(init?.body))
-      const result = method.endsWith('getTab') ? { panelId: 'browser', tabId: 'tab' }
-        : method.endsWith('jevDecision') ? { error: 'Set the OpenRouter API key in Cate Settings → CLI.' }
-        : { kind: 'ax', panelId: 'browser', tabId: 'tab', userInputEpoch: 0, state: 'Saved', elements: [], url: 'https://example.test' }
-      return new Response(JSON.stringify({ result }))
-    }) as typeof fetch
-    expect(await run(['browser', 'jev', 'Click Save', '--json'], deps)).toBe(1)
-    expect(JSON.parse(deps.out[0])).toMatchObject({ status: 'error', message: expect.stringContaining('Settings → CLI') })
   })
 
   it('sends a complete code cell in one request', async () => {

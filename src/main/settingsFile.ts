@@ -61,7 +61,6 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   terminalOptionIsMeta: 'boolean',
   autoSuspendIdleTerminals: 'boolean',
   cliEnabled: 'boolean',
-  cliOpenRouterApiKey: 'string',
   cliSkillInstallEnabled: 'boolean',
   cliBrowserReadEnabled: 'boolean',
   cliBrowserControlEnabled: 'boolean',
