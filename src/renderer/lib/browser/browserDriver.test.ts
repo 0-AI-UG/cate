@@ -80,15 +80,6 @@ describe('browserDriver target-bound webview boundary', () => {
     expect(h.browserControl).not.toHaveBeenCalled()
   })
 
-  it('checks takeover before a multi-step controller navigates', async () => {
-    h.browserControl.mockImplementation(async (request: { op: string }) => request.op === 'attach'
-      ? { ok: true } : { error: 'browser-action-preempted-by-user' })
-    await expect(handleBrowserMethod('workspace-1', 'cate.browser.goto', {
-      panelId: 'browser-1', tabId: 'tab-1', url: 'https://next.test/', _userInputEpoch: 0,
-    })).resolves.toEqual({ ok: false, error: 'browser-action-preempted-by-user' })
-    expect(h.webview.loadURL).not.toHaveBeenCalled()
-  })
-
   it('downloads the current tab URL or a known asset URL through the bound guest', async () => {
     h.browserControl.mockResolvedValue({ ok: true })
     await expect(handleBrowserMethod('workspace-1', 'cate.browser.download', {

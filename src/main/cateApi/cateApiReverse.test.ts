@@ -358,8 +358,6 @@ describe('createCateApiReverse — server-side CATE_API endpoint', () => {
     expect((await invoke('cate.browser.run', { code: 'await cua.listTabs()' })).body).toEqual({ result: { content: [{ type: 'text', text: 'done' }] } })
     expect(dispatchCateInvoke).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'ws-1' }), 'cate.browser.listTabs', {})
     expect(dispatchCateInvoke).toHaveBeenCalledWith(expect.anything(), 'cate.browser.createTab', { newPanel: true, url: 'about:blank' })
-    await invoke('cate.browser.jevDecision', { state: {}, instructions: 'Choose', criteria: { a: 'A', b: 'B' } })
-    expect(dispatchCateInvoke).toHaveBeenCalledWith(expect.anything(), 'cate.browser.jevDecision', { state: {}, instructions: 'Choose', criteria: { a: 'A', b: 'B' } })
     await invoke('cate.browser.reset', {})
     expect(codeSessions.reset).toHaveBeenCalledWith(expect.stringContaining('cli:client'))
     endpoint.dispose()

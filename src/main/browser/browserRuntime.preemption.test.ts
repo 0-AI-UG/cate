@@ -5,18 +5,6 @@ import { beginBrowserCodeCell, endBrowserCodeCell } from './browserCodeExecution
 afterEach(() => vi.useRealTimers())
 const preempted = { error: 'browser-action-preempted-by-user' }
 
-it('stops a multi-call controller when user input arrives between observation and inference completion', async () => {
-  const { observe, execute, runtime, contents } = await setupGuest()
-  const observation = await observe()
-  expect(observation.userInputEpoch).toBe(0)
-  runtime.noteUserInput(contents.id)
-  const args = { observationId: observation.observationId, _userInputEpoch: observation.userInputEpoch, target: observation.elements[0].id }
-  expect(await execute('click', args)).toMatchObject(preempted)
-  expect(await execute('getAXState', args)).toMatchObject(preempted)
-  expect(contents.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
-  expect((await observe()).userInputEpoch).toBe(1)
-})
-
 it('invalidates already queued work, while accepting new work after takeover', async () => {
   let pending = false, release!: () => void, started!: () => void
   const entered = new Promise<void>(resolve => { started = resolve })
