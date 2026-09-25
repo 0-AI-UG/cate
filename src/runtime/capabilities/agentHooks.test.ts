@@ -83,6 +83,47 @@ describe('agentHooks capability', () => {
     )
   })
 
+  test.skipIf(posix)('the Windows Claude hook command passes stdin through Git Bash to the bridge', async () => {
+    const cap = makeCap({ hooksDir: path.join(tmpDir('windows-bridge'), 'hooks with spaces') })
+    const events = collect(cap)
+    const cwd = path.join(tmpDir('windows-workspace'), 'workspace with spaces')
+    mkdirSync(cwd)
+    const env = await cap.envForPty('rpty-windows-bridge', { PATH: process.env.PATH ?? '' })
+    await cap.prepareWorkspace(cwd, { 'claude-code': 'on' })
+
+    const settings = JSON.parse(readFileSync(path.join(cwd, '.claude', 'settings.local.json'), 'utf-8')) as {
+      hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> }
+    }
+    const command = settings.hooks.SessionStart[0].hooks[0].command
+    const payload = {
+      hook_event_name: 'SessionStart',
+      session_id: '99999999-1111-4222-8333-444444444444',
+      cwd,
+    }
+    await new Promise<void>((resolve, reject) => {
+      const child = execFile('bash', ['-c', command], {
+        cwd,
+        env: { ...process.env, ...env },
+        timeout: 15_000,
+      }, (err, stdout, stderr) => {
+        if (err) reject(err)
+        else {
+          expect(stdout).toBe('')
+          expect(stderr).toBe('')
+          resolve()
+        }
+      })
+      child.stdin!.end(JSON.stringify(payload))
+    })
+    await waitFor(() => events.length === 1)
+    expect(events[0]).toMatchObject({
+      terminalId: 'rpty-windows-bridge',
+      agentId: 'claude-code',
+      kind: 'session-start',
+      sessionId: payload.session_id,
+    })
+  })
+
   test('envForPty plants the hook env, agent-agnostic and non-clobbering', async () => {
     const cap = makeCap()
     const env = await cap.envForPty('rpty-1-local', { PATH: '/usr/bin:/bin', HOME: '/home/u' })
