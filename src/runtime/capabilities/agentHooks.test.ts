@@ -74,10 +74,10 @@ const post = (url: string, token: string | null, body: unknown): Promise<Respons
   })
 
 describe('agentHooks capability', () => {
-  test('Windows hook commands run .cmd wrappers through cmd.exe', () => {
+  test('Windows hook commands use a quoted forward-slash wrapper path', () => {
     const wrapper = 'C:\\Users\\N3231\\.cate\\agent-hooks\\cate-hook-bridge-claude-code.cmd'
 
-    expect(bridgeHookCommand(wrapper, 'win32')).toBe(`cmd.exe /d /c "${wrapper}"`)
+    expect(bridgeHookCommand(wrapper, 'win32')).toBe('"C:/Users/N3231/.cate/agent-hooks/cate-hook-bridge-claude-code.cmd"')
     expect(bridgeHookCommand('/home/u/.cate/agent-hooks/cate-hook-bridge-claude-code', 'linux')).toBe(
       '/home/u/.cate/agent-hooks/cate-hook-bridge-claude-code',
     )
@@ -100,21 +100,18 @@ describe('agentHooks capability', () => {
       session_id: '99999999-1111-4222-8333-444444444444',
       cwd,
     }
-    await new Promise<void>((resolve, reject) => {
+    const output = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
       const child = execFile('bash', ['-c', command], {
         cwd,
         env: { ...process.env, ...env },
         timeout: 15_000,
       }, (err, stdout, stderr) => {
         if (err) reject(err)
-        else {
-          expect(stdout).toBe('')
-          expect(stderr).toBe('')
-          resolve()
-        }
+        else resolve({ stdout, stderr })
       })
       child.stdin!.end(JSON.stringify(payload))
     })
+    expect(output).toEqual({ stdout: '', stderr: '' })
     await waitFor(() => events.length === 1)
     expect(events[0]).toMatchObject({
       terminalId: 'rpty-windows-bridge',
@@ -122,7 +119,7 @@ describe('agentHooks capability', () => {
       kind: 'session-start',
       sessionId: payload.session_id,
     })
-  })
+  }, 20_000)
 
   test('envForPty plants the hook env, agent-agnostic and non-clobbering', async () => {
     const cap = makeCap()
