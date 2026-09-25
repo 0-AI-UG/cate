@@ -33,8 +33,6 @@ export interface BrowserElement {
 }
 
 export interface BrowserObservation extends BrowserBinding {
-  /** Allows a multi-step controller to stop after user input between calls. */
-  userInputEpoch?: number
   /** Image observations do not refresh numeric element IDs or accessibility state. */
   kind: 'ax' | 'image'
   observationId: string
