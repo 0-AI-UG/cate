@@ -146,6 +146,16 @@ async function nodeForPanel(shortPanelId: string): Promise<string> {
   ))
 }
 
+async function fullPanelId(shortPanelId: string): Promise<string> {
+  return expect.poll(
+    () => page.evaluate((prefix) => window.__cateE2E!.nodes().find((node) => node.panelId.startsWith(prefix))?.panelId ?? '', shortPanelId),
+    { timeout: 15_000 },
+  ).not.toBe('').then(() => page.evaluate(
+    (prefix) => window.__cateE2E!.nodes().find((node) => node.panelId.startsWith(prefix))!.panelId,
+    shortPanelId,
+  ))
+}
+
 test.beforeAll(async () => {
   await startFixtureServer()
 })
@@ -210,14 +220,16 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   }
   const freshDataOne = `data:text/html,${encodeURIComponent('<title>Fresh One</title>')}`
   const freshDataTwo = `data:text/html,${encodeURIComponent('<title>Fresh Two</title>')}`
-  const fresh = await createBinding(`var fresh = await cua.createBrowserTab(${JSON.stringify(freshDataOne)}, {newPanel:true}); await nodeRepl.write({testBinding:{panelId:fresh.panelId,tabId:fresh.tabId}});`)
+  const freshPanelId = await fullPanelId(await runCate(controlNode, 'panel', 'create', 'browser'))
+  const fresh = await createBinding(`var fresh = await cua.createBrowserTab(${JSON.stringify(freshDataOne)}, {panelId:${JSON.stringify(freshPanelId)}}); await nodeRepl.write({testBinding:{panelId:fresh.panelId,tabId:fresh.tabId}});`)
   await runBrowser(`var second = await cua.createBrowserTab(${JSON.stringify(freshDataTwo)}, {panelId:fresh.panelId});`)
   const freshTabs = await runBrowser('await cua.listTabs();')
   expect(freshTabs).toContain(freshDataOne)
   expect(freshTabs).toContain(freshDataTwo)
   expect(await runCate(controlNode, 'panel', 'close', fresh.panelId)).toBe('ok')
 
-  const opened = await createBinding(`var tab = await cua.createBrowserTab(${JSON.stringify(baseUrl)}, {newPanel:true}); await nodeRepl.write({testBinding:{panelId:tab.panelId,tabId:tab.tabId}});`)
+  const openedPanelId = await fullPanelId(await runCate(controlNode, 'panel', 'create', 'browser'))
+  const opened = await createBinding(`var tab = await cua.createBrowserTab(${JSON.stringify(baseUrl)}, {panelId:${JSON.stringify(openedPanelId)}}); await nodeRepl.write({testBinding:{panelId:tab.panelId,tabId:tab.tabId}});`)
   const browserId = opened.panelId
   expect(browserId).toMatch(/^[a-z0-9-]+$/i)
   const oracle = (expression: string) => fixtureEvaluate(app, page, { workspaceId: '', panelId: browserId }, expression)
