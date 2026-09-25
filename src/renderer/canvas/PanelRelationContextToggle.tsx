@@ -37,7 +37,9 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
   const mode = currentPanel.panelRelationContextMode
     ?? (currentPanel.panelRelationContextEnabled === false ? 'off' : 'once')
   const enabled = mode !== 'off'
-  const transportSupported = panel.type === 'agent' || cliAgent?.promptContextHook != null
+  // A terminal's first submit hook identifies its agent. Register graph
+  // context before that hook so the first prompt receives it too.
+  const transportSupported = panel.type === 'agent' || cliAgentId === null || cliAgent?.promptContextHook != null
   const ptyId = panel.type === 'terminal' ? terminalRegistry.ptyIdForPanel(panel.id) : null
   const expanded = hovered || keyboardFocused || menuOpen
 

@@ -104,6 +104,21 @@ describe('agentHooks capability', () => {
     expect(env2.CATE_HOOK_TOKEN).not.toBe(env.CATE_HOOK_TOKEN)
   })
 
+  test('plain Codex in a hooked workspace uses its terminal environment instead of a shared daemon', async () => {
+    const cap = makeCap()
+    const cwd = tmpDir('codex-workspace')
+    mkdirSync(path.join(cwd, '.codex'))
+
+    const env = await cap.envForPty('rpty-codex', { PATH: '/usr/bin:/bin' }, undefined, cwd)
+    expect(env.CODEX_EXEC_SERVER_URL).toBe('')
+    expect(env.CATE_TERMINAL_ID).toBe('rpty-codex')
+
+    const explicit = await cap.envForPty('rpty-explicit', { CODEX_EXEC_SERVER_URL: 'ws://localhost:8765' }, undefined, cwd)
+    expect(explicit.CODEX_EXEC_SERVER_URL).toBe('ws://localhost:8765')
+    expect((await cap.envForPty('rpty-off', {}, { codex: 'off' }, cwd)).CODEX_EXEC_SERVER_URL).toBeUndefined()
+    expect((await cap.envForPty('rpty-no-codex', {}, undefined, tmpDir('other-workspace'))).CODEX_EXEC_SERVER_URL).toBeUndefined()
+  })
+
   test('returns graph context through supported native submit hooks only', async () => {
     const cap = makeCap()
     const terminalId = 'rpty-context'
