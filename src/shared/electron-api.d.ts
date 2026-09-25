@@ -1,4 +1,5 @@
 import type { RecentScreenshot } from './recentScreenshot'
+import type { KeepAwakeState } from './keepAwake'
 // =============================================================================
 // Type declaration for window.electronAPI exposed via contextBridge
 // =============================================================================
@@ -782,10 +783,10 @@ export interface ElectronAPI {
   windowSetTitle(title: string): Promise<void>
 
   /** App-wide idle sleep prevention; resets when Cate quits. */
-  toggleKeepAwake(): Promise<boolean>
-  getKeepAwake(): Promise<boolean>
-  setKeepAwake(enabled: boolean): Promise<boolean>
-  onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void
+  toggleKeepAwake(): Promise<KeepAwakeState>
+  getKeepAwake(): Promise<KeepAwakeState>
+  setKeepAwake(durationMinutes: 30 | 60 | 300 | null | false): Promise<KeepAwakeState>
+  onKeepAwakeChanged(callback: (state: KeepAwakeState) => void): () => void
 
   /** Merge a partial into the boot snapshot so the next cold launch constructs
    *  the BrowserWindow with the persisted theme/background/appearance. */
