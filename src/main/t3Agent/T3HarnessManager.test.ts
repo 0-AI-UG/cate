@@ -189,7 +189,7 @@ describe('T3 Connect', () => {
     const session = await manager.startRemote({ workspaceId: 'ws', cwd: '/alias', operation: 'link' }, 1)
     expect(local.process.create).toHaveBeenCalledWith(expect.objectContaining({
       cwd: '/repo', scopeId: 'ws',
-      command: expect.objectContaining({ args: ['/bundled/t3/bin.mjs', 'connect', 'link', '--base-dir', '/app/harness/instances/local:/repo', '--headless'] }),
+      command: expect.objectContaining({ args: ['/bundled/t3/bin.mjs', 'connect', 'link', '--base-dir', '/app/harness/instances/local:/repo'] }),
     }), expect.any(Function), expect.any(Function))
     expect(() => manager.getRemote(session.id, 2)).toThrow('not found')
     expect(() => manager.writeRemote(session.id, 2, 'yes')).toThrow('not found')
@@ -199,6 +199,30 @@ describe('T3 Connect', () => {
     await vi.waitFor(() => expect(manager.getRemote(session.id, 1).phase).toBe('succeeded'))
     expect(local.server.stop).toHaveBeenCalledWith('local:/repo')
     expect(start).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns a complete authorization URL and requests machine-readable status', async () => {
+    const link = await manager.startRemote({ workspaceId: 'ws', cwd: '/repo', operation: 'link' }, 1)
+    const output = local.process.create.mock.calls[0][1]
+    output(link.id, 'Open this URL: https://app.t3.codes/connect')
+    expect(manager.getRemote(link.id, 1).authorizationUrl).toBeUndefined()
+    output(link.id, `#state=${'a'.repeat(22)}&challenge=${'b'.repeat(43)}&port=34338\r\n`)
+    expect(manager.getRemote(link.id, 1).authorizationUrl).toBe(`https://app.t3.codes/connect#state=${'a'.repeat(22)}&challenge=${'b'.repeat(43)}&port=34338`)
+    manager.cancelRemote(link.id, 1)
+
+    await manager.startRemote({ workspaceId: 'ws', cwd: '/repo', operation: 'status' }, 1)
+    expect(local.process.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      cols: 1024,
+      command: expect.objectContaining({ args: expect.arrayContaining(['status', '--json']) }),
+    }), expect.any(Function), expect.any(Function))
+  })
+
+  it('does not enable Connect when relay installation is skipped', async () => {
+    const session = await manager.startRemote({ workspaceId: 'ws', cwd: '/repo', operation: 'link' }, 1)
+    local.process.create.mock.calls[0][1](session.id, 'T3 Connect setup cancelled. The relay client was not installed.\r\n')
+    local.process.create.mock.calls[0][2](session.id, 0)
+    expect(manager.getRemote(session.id, 1)).toMatchObject({ phase: 'cancelled', message: 'T3 Connect setup was cancelled.' })
+    expect(local.server.stop).not.toHaveBeenCalled()
   })
 
   it('rejects remote workspaces and concurrent operations', async () => {

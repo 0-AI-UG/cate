@@ -35,6 +35,7 @@ export interface T3RemoteSession {
   operation: T3RemoteOperation
   phase: 'running' | 'succeeded' | 'failed' | 'cancelled'
   output: string
+  authorizationUrl?: string
   message?: string
 }
 
