@@ -77,7 +77,8 @@ export const BROWSER_READ_METHODS = new Set([...BROWSER_OBSERVATION_METHODS, ...
 export const BROWSER_API_DOCUMENTATION = `Cate browser control runs JavaScript in a persistent, isolated session. No Node.js, filesystem, network, DOM evaluation, or browser engine access is exposed. Use only cua and output helpers.
 
 Start with: var tab = await cua.getTab({panelId: "..."});
-Or: var tab = await cua.createBrowserTab("https://example.com");
+Or, in an existing browser panel: var tab = await cua.createBrowserTab("https://example.com");
+Create a browser panel first with cate panel create browser [url] when needed.
 await cua.listTabs(); // discover panelId and tabId
 Tab bindings pin panel and tab; they never follow a user's tab switch.
 

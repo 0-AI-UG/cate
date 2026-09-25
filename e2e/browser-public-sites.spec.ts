@@ -77,14 +77,15 @@ test('@public-network controls public sites from a real Cate terminal', async ()
   ).not.toBeNull()
 
   const run = (code: string) => runCate(terminalNodeId, 'browser', 'run', code)
-  const createdResult = JSON.parse(await runCate(terminalNodeId, 'browser', 'run',
-    'var tab = await cua.createBrowserTab("https://httpbin.org/forms/post"); await nodeRepl.write({createdPanel:tab.panelId});', '--json')) as { content: Array<{ type: string; text?: string }> }
-  const created = createdResult.content.filter((item) => item.type === 'text').map((item) => {
-    try { return JSON.parse(item.text!) as { createdPanel?: string } } catch { return {} }
-  }).find((item) => item.createdPanel)!
-  expect(created.createdPanel).toMatch(/^[a-z0-9-]+$/i)
+  const shortPanelId = await runCate(terminalNodeId, 'panel', 'create', 'browser', 'https://httpbin.org/forms/post')
+  const createdPanel = await expect.poll(() => page.evaluate(
+    (prefix) => window.__cateE2E!.nodes().find((node) => node.panelId.startsWith(prefix))?.panelId ?? '', shortPanelId,
+  ), { timeout: 15_000 }).not.toBe('').then(() => page.evaluate(
+    (prefix) => window.__cateE2E!.nodes().find((node) => node.panelId.startsWith(prefix))!.panelId, shortPanelId,
+  ))
+  await run(`var tab = await cua.getTab({panelId:${JSON.stringify(createdPanel)}});`)
   await expect.poll(() => page.evaluate(
-    (panelId) => window.__cateE2E!.nodes().some((node) => node.panelId === panelId), created.createdPanel!,
+    (panelId) => window.__cateE2E!.nodes().some((node) => node.panelId === panelId), createdPanel,
   ), { timeout: 15_000 }).toBe(true)
 
   // Resolve only IDs present in the observed accessibility tree. This helper
@@ -130,7 +131,7 @@ test('@public-network controls public sites from a real Cate terminal', async ()
   // TodoMVC hides its native checkbox (opacity:0) and paints the control on
   // the label. Exercise visual input: only screenshot coordinates cross the
   // browser tool; the independent fixture oracle supplies/verifies the hit point.
-  const todoBrowser = { workspaceId: '', panelId: created.createdPanel! }
+  const todoBrowser = { workspaceId: '', panelId: createdPanel }
   const point = await fixtureEvaluate(app, page, todoBrowser, `(() => {
     const box=document.querySelector('.todo-list .toggle').getBoundingClientRect();
     return [box.x+box.width/2,box.y+box.height/2];
