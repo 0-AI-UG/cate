@@ -1104,6 +1104,11 @@ export interface ElectronAPI {
 
   agentHarnessGetStatus(request: { cwd: string }): Promise<AgentHarnessStatus>
 
+  agentRemoteStart(request: AgentProviderStatusRequest & { operation: import('./t3Agent').T3RemoteOperation }): Promise<import('./t3Agent').T3RemoteSession | AgentHarnessError>
+  agentRemoteGet(request: { id: string }): Promise<import('./t3Agent').T3RemoteSession | AgentHarnessError>
+  agentRemoteWrite(request: { id: string; data: string }): Promise<{ ok: boolean; error?: string }>
+  agentRemoteCancel(request: { id: string }): Promise<{ ok: boolean; error?: string }>
+
   agentProviderAuthStart(
     request: AgentProviderAuthRequest,
   ): Promise<AgentProviderAuthSession | AgentHarnessError>

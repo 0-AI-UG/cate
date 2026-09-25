@@ -15,8 +15,12 @@ import {
   AGENT_PROVIDER_AUTH_CANCEL,
   AGENT_PROVIDER_STATUS_GET,
   AGENT_PROVIDER_SETTINGS,
+  AGENT_REMOTE_START,
+  AGENT_REMOTE_GET,
+  AGENT_REMOTE_WRITE,
+  AGENT_REMOTE_CANCEL,
 } from '../../shared/ipc-channels'
-import type { AgentHarnessPanelRequest, AgentProviderAuthRequest, AgentProviderId, AgentProviderStatusRequest } from '../../shared/t3Agent'
+import type { AgentHarnessPanelRequest, AgentProviderAuthRequest, AgentProviderId, AgentProviderStatusRequest, T3RemoteOperation } from '../../shared/t3Agent'
 import { t3HarnessManager } from '../t3Agent/T3HarnessManager'
 import { broadcastToAll, windowFromEvent } from '../windowRegistry'
 
@@ -77,6 +81,32 @@ function requireWindowId(event: IpcMainInvokeEvent): number {
 }
 
 export function registerT3AgentHandlers(): void {
+  ipcMain.handle(AGENT_REMOTE_START, async (event, input: unknown) => {
+    try {
+      const request = validateProviderStatusRequest(input)
+      const operation = (input as { operation?: unknown }).operation
+      if (operation !== 'status' && operation !== 'link' && operation !== 'unlink') throw new Error('Invalid T3 Connect operation')
+      return await t3HarnessManager.startRemote({ ...request, operation: operation as T3RemoteOperation }, requireWindowId(event))
+    } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
+  })
+  ipcMain.handle(AGENT_REMOTE_GET, (event, input: unknown) => {
+    try {
+      return t3HarnessManager.getRemote(requireText((input as { id?: unknown } | null)?.id, 'id'), requireWindowId(event))
+    } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
+  })
+  ipcMain.handle(AGENT_REMOTE_WRITE, (event, input: unknown) => {
+    try {
+      const request = input as { id?: unknown; data?: unknown } | null
+      t3HarnessManager.writeRemote(requireText(request?.id, 'id'), requireWindowId(event), typeof request?.data === 'string' ? request.data : '')
+      return { ok: true }
+    } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+  })
+  ipcMain.handle(AGENT_REMOTE_CANCEL, (event, input: unknown) => {
+    try {
+      t3HarnessManager.cancelRemote(requireText((input as { id?: unknown } | null)?.id, 'id'), requireWindowId(event))
+      return { ok: true }
+    } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) } }
+  })
   ipcMain.handle(AGENT_HARNESS_RENAME_CONVERSATION, async (event, input: unknown) => {
     try {
       const request = validateProviderStatusRequest(input)
