@@ -186,10 +186,11 @@ async function dirExists(dir: string): Promise<boolean> {
 
 const shQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
 
-/** Hook runners may pass command strings through Bash even on Windows. Route
- *  .cmd wrappers through cmd.exe so Bash does not consume path backslashes. */
+/** Hook runners may pass command strings through Bash even on Windows. Use
+ * forward slashes so Bash preserves the wrapper path without converting
+ * cmd.exe's /d and /c switches into drive paths. */
 export function bridgeHookCommand(wrapper: string, platform: NodeJS.Platform): string {
-  return platform === 'win32' ? `cmd.exe /d /c "${wrapper}"` : wrapper
+  return platform === 'win32' ? `"${wrapper.replaceAll('\\', '/')}"` : wrapper
 }
 
 /** The generic stdin→HTTP bridge all stdin-JSON CLIs share. The daemon's
