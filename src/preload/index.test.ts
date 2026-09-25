@@ -67,10 +67,10 @@ beforeEach(() => {
 
 describe('electronAPI preload bridge', () => {
   it('exposes the keep-awake toggle and returns its IPC result', async () => {
-    electron.invoke.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    electron.invoke.mockResolvedValueOnce({ enabled: true, endsAt: null }).mockResolvedValueOnce({ enabled: false, endsAt: null })
 
-    expect(await api.toggleKeepAwake()).toBe(true)
-    expect(await api.toggleKeepAwake()).toBe(false)
+    expect(await api.toggleKeepAwake()).toEqual({ enabled: true, endsAt: null })
+    expect(await api.toggleKeepAwake()).toEqual({ enabled: false, endsAt: null })
     expect(electron.invoke.mock.calls).toEqual([
       [KEEP_AWAKE_TOGGLE],
       [KEEP_AWAKE_TOGGLE],

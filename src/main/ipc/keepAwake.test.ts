@@ -33,42 +33,61 @@ beforeEach(() => {
 
 describe('keep awake', () => {
   it('starts disabled, shares one display-sleep blocker, and broadcasts changes to all windows', () => {
-    expect(invoke(KEEP_AWAKE_GET)).toBe(false)
-    expect(invoke(KEEP_AWAKE_SET, true)).toBe(true)
-    expect(invoke(KEEP_AWAKE_SET, true)).toBe(true)
+    expect(invoke(KEEP_AWAKE_GET)).toEqual({ enabled: false, endsAt: null })
+    expect(invoke(KEEP_AWAKE_SET, null)).toEqual({ enabled: true, endsAt: null })
+    expect(invoke(KEEP_AWAKE_SET, null)).toEqual({ enabled: true, endsAt: null })
     expect(mocks.start).toHaveBeenCalledExactlyOnceWith('prevent-display-sleep')
-    expect(invoke(KEEP_AWAKE_GET)).toBe(true)
-    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, true)
+    expect(invoke(KEEP_AWAKE_GET)).toEqual({ enabled: true, endsAt: null })
+    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, { enabled: true, endsAt: null })
 
-    expect(invoke(KEEP_AWAKE_SET, false)).toBe(false)
-    expect(invoke(KEEP_AWAKE_SET, false)).toBe(false)
+    expect(invoke(KEEP_AWAKE_SET, false)).toEqual({ enabled: false, endsAt: null })
+    expect(invoke(KEEP_AWAKE_SET, false)).toEqual({ enabled: false, endsAt: null })
     expect(mocks.stop).toHaveBeenCalledExactlyOnceWith(0)
-    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, false)
-    expect(invoke(KEEP_AWAKE_SET, true)).toBe(true)
+    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, { enabled: false, endsAt: null })
+    expect(invoke(KEEP_AWAKE_SET, null)).toEqual({ enabled: true, endsAt: null })
     expect(mocks.start).toHaveBeenCalledTimes(2)
   })
 
   it('releases the blocker when Cate quits', () => {
-    invoke(KEEP_AWAKE_SET, true)
+    invoke(KEEP_AWAKE_SET, null)
     mocks.on.mock.calls.find(([event]) => event === 'will-quit')![1]()
     expect(mocks.stop).toHaveBeenCalledWith(0)
-    expect(invoke(KEEP_AWAKE_GET)).toBe(false)
+    expect(invoke(KEEP_AWAKE_GET)).toEqual({ enabled: false, endsAt: null })
   })
 
   it('rejects invalid input and leaves state off if the OS call fails', () => {
-    expect(() => invoke(KEEP_AWAKE_SET, 'true')).toThrow('Expected a boolean')
+    expect(() => invoke(KEEP_AWAKE_SET, 'true')).toThrow('Expected a keep-awake duration')
     expect(mocks.start).not.toHaveBeenCalled()
     mocks.start.mockImplementation(() => { throw new Error('unavailable') })
-    expect(() => invoke(KEEP_AWAKE_SET, true)).toThrow('unavailable')
-    expect(invoke(KEEP_AWAKE_GET)).toBe(false)
+    expect(() => invoke(KEEP_AWAKE_SET, null)).toThrow('unavailable')
+    expect(invoke(KEEP_AWAKE_GET)).toEqual({ enabled: false, endsAt: null })
     expect(mocks.broadcast).not.toHaveBeenCalled()
   })
 })
 
 it('toggles the shared state atomically and broadcasts both transitions', () => {
-  expect(invoke(KEEP_AWAKE_TOGGLE)).toBe(true)
-  expect(invoke(KEEP_AWAKE_TOGGLE)).toBe(false)
+  expect(invoke(KEEP_AWAKE_TOGGLE)).toEqual({ enabled: true, endsAt: null })
+  expect(invoke(KEEP_AWAKE_TOGGLE)).toEqual({ enabled: false, endsAt: null })
   expect(mocks.start).toHaveBeenCalledTimes(1)
   expect(mocks.stop).toHaveBeenCalledTimes(1)
-  expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, false)
+  expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, { enabled: false, endsAt: null })
+})
+
+it('expires a duration and replaces the old timer when a new duration is selected', () => {
+  vi.useFakeTimers()
+  try {
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+    const first = invoke(KEEP_AWAKE_SET, 30)
+    expect(first).toEqual({ enabled: true, endsAt: Date.now() + 30 * 60_000 })
+    vi.advanceTimersByTime(10 * 60_000)
+    expect(invoke(KEEP_AWAKE_SET, 60)).toEqual({ enabled: true, endsAt: Date.now() + 60 * 60_000 })
+    vi.advanceTimersByTime(30 * 60_000)
+    expect(invoke(KEEP_AWAKE_GET)).toMatchObject({ enabled: true })
+    vi.advanceTimersByTime(30 * 60_000)
+    expect(invoke(KEEP_AWAKE_GET)).toEqual({ enabled: false, endsAt: null })
+    expect(mocks.stop).toHaveBeenCalledExactlyOnceWith(0)
+    expect(mocks.broadcast).toHaveBeenLastCalledWith(KEEP_AWAKE_CHANGED, { enabled: false, endsAt: null })
+  } finally {
+    vi.useRealTimers()
+  }
 })
