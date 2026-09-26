@@ -205,6 +205,10 @@ export async function handleBrowserMethod(
   }
 
   if (name === 'goto' || name === 'reload' || name === 'back' || name === 'forward' || name === 'download' || name === 'downloads') {
+    if (args._userInputEpoch !== undefined) {
+      const checked = await control(workspaceId, panel, webview, { op: 'execute', method: 'getAXState', args })
+      if (checked.error) return { ok: false, error: checked.error }
+    }
     if (name === 'goto') {
       const url = stringArg(args, 'url')
       if (!url) return { ok: false, error: 'url-required' }
@@ -212,6 +216,10 @@ export async function handleBrowserMethod(
       if (!controller) return { ok: false, error: 'panel-not-mounted' }
       await checkCell()
       if (currentPanel(workspaceId, panel.id)?.activeTabId !== panel.activeTabId) return { ok: false, error: 'browser-tab-changed' }
+      if (args._userInputEpoch !== undefined) {
+        const checked = await control(workspaceId, panel, webview, { op: 'execute', method: 'getAXState', args })
+        if (checked.error) return { ok: false, error: checked.error }
+      }
       controller.navigate(url)
     }
     if (name === 'reload') webview.reload()

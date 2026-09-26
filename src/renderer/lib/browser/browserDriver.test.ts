@@ -82,6 +82,29 @@ describe('browserDriver target-bound webview boundary', () => {
     expect(h.browserControl).not.toHaveBeenCalled()
   })
 
+  it('checks takeover before a multi-step controller navigates', async () => {
+    h.browserControl.mockImplementation(async (request: { op: string }) => request.op === 'attach'
+      ? { ok: true } : { error: 'browser-action-preempted-by-user' })
+    await expect(handleBrowserMethod('workspace-1', 'cate.browser.goto', {
+      panelId: 'browser-1', tabId: 'tab-1', url: 'https://next.test/', _userInputEpoch: 0,
+    })).resolves.toEqual({ ok: false, error: 'browser-action-preempted-by-user' })
+    expect(h.webview.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('checks takeover again after waiting for the navigation controller', async () => {
+    let checks = 0
+    h.browserControl.mockImplementation(async (request: { op: string }) => {
+      if (request.op === 'attach') return { ok: true }
+      if (request.op === 'execute' && ++checks === 1) return { result: {} }
+      return { error: 'browser-action-preempted-by-user' }
+    })
+    await expect(handleBrowserMethod('workspace-1', 'cate.browser.goto', {
+      panelId: 'browser-1', tabId: 'tab-1', url: 'https://next.test/', _userInputEpoch: 0,
+    })).resolves.toEqual({ ok: false, error: 'browser-action-preempted-by-user' })
+    expect(checks).toBe(2)
+    expect(h.webview.loadURL).not.toHaveBeenCalled()
+  })
+
   it('rejects panel creation through createTab', async () => {
     await expect(handleBrowserMethod('workspace-1', 'cate.browser.createTab', {
       url: 'https://example.test', newPanel: true,
