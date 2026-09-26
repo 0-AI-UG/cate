@@ -259,10 +259,16 @@ export function buildRequest(positionals: string[], flags: Flags): Request {
       return { method: 'cate.panel.list', args: {} }
     }
     if (command === 'create') {
-      const type = need(exact(rest, 1)[0], 'terminal|canvas')
-      if (type !== 'terminal' && type !== 'canvas') {
-        throw new UsageError(`panel create supports terminal or canvas, got: ${type}`)
+      const type = need(rest[0], 'browser|terminal|canvas')
+      if (type !== 'browser' && type !== 'terminal' && type !== 'canvas') {
+        throw new UsageError(`panel create supports browser, terminal or canvas, got: ${type}`)
       }
+      if (type === 'browser') {
+        if (rest.length > 2) throw new UsageError('panel create browser accepts at most one URL')
+        const url = rest[1]
+        return { method: 'cate.canvas.createPanel', args: url ? { type, url } : { type } }
+      }
+      exact(rest, 1)
       return { method: 'cate.canvas.createPanel', args: { type } }
     }
     if (command === 'set') {
@@ -521,7 +527,7 @@ function helpFor(positionals: string[]): string {
   if (positionals[0] === 'agent') return AGENT_USAGE
   if (positionals[0] === 'review') return REVIEW_USAGE
   if (positionals[0] === 'panel') {
-    return 'Usage: cate panel list | create terminal|canvas | set <id> | current | clear | close <id>'
+    return 'Usage: cate panel list | create browser [url] | create terminal|canvas | set <id> | current | clear | close <id>'
   }
   if (positionals[0] === 'editor') return 'Usage: cate editor open <path[:line[:column]]>'
   if (positionals[0] === 'terminal') {

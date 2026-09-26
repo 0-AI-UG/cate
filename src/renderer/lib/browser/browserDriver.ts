@@ -5,7 +5,7 @@
 import { useAppStore } from '../../stores/appStore'
 import { getActivePanelId } from '../activePanel'
 import { portalRegistry, type PortalWebview } from '../portalRegistry'
-import { getCanvasOpsById, placementForBackgroundPanel, resolvePanelLocation } from '../workspace/canvasAccess'
+import { getCanvasOpsById, resolvePanelLocation } from '../workspace/canvasAccess'
 import { emitAgentCursor } from './agentCursor'
 import { PANEL_MINIMUM_SIZES, type PanelState } from '../../../shared/types'
 import { BROWSER_METHODS, BROWSER_ACTION_METHODS } from '../../../shared/browserAutomation'
@@ -115,17 +115,6 @@ function currentPanel(workspaceId: string, panelId: string): PanelState | undefi
   return useAppStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)?.panels[panelId]
 }
 
-async function createBrowserPanel(workspaceId: string, url: string, args: Record<string, unknown>): Promise<BrowserOutcome> {
-  const panelId = useAppStore.getState().createBrowser(
-    workspaceId, url, undefined,
-    placementForBackgroundPanel(workspaceId, stringArg(args, 'placementGroupId')),
-  )
-  const webview = await waitForWebview(panelId)
-  if (!webview) return { ok: false, error: 'panel-not-mounted' }
-  await waitForGuestReady(webview)
-  return { ok: true, result: { panelId, tabId: currentPanel(workspaceId, panelId)?.activeTabId, url: webview.getURL() || url } }
-}
-
 export async function handleBrowserMethod(
   workspaceId: string,
   method: string,
@@ -148,12 +137,7 @@ export async function handleBrowserMethod(
     const tabs = panels.flatMap((panel) => (panel.tabs ?? []).map((tab) => ({ ...tab, panelId: panel.id, tabId: tab.id, active: panel.activeTabId === tab.id })))
     return { ok: true, result: { tabs } }
   }
-  const initialTarget = resolveTargetPanel(workspaceId, args)
-  if (name === 'createTab' && (args.newPanel === true || 'error' in initialTarget && initialTarget.error === 'no-browser')) {
-    const created = await createBrowserPanel(workspaceId, stringArg(args, 'url') ?? 'about:blank', args)
-    if (created.ok) onTargetResolved?.((created.result as { panelId: string }).panelId)
-    return created
-  }
+  if (name === 'createTab' && 'newPanel' in args) return { ok: false, error: 'newPanel is unsupported; use cate panel create browser' }
   const target = resolveTargetPanel(workspaceId, args)
   if ('error' in target) return { ok: false, error: target.error }
   const panel = target.panel
@@ -232,6 +216,10 @@ export async function handleBrowserMethod(
       if (!controller) return { ok: false, error: 'panel-not-mounted' }
       await checkCell()
       if (currentPanel(workspaceId, panel.id)?.activeTabId !== panel.activeTabId) return { ok: false, error: 'browser-tab-changed' }
+      if (args._userInputEpoch !== undefined) {
+        const checked = await control(workspaceId, panel, webview, { op: 'execute', method: 'getAXState', args })
+        if (checked.error) return { ok: false, error: checked.error }
+      }
       controller.navigate(url)
     }
     if (name === 'reload') webview.reload()

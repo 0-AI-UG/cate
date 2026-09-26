@@ -241,6 +241,10 @@ import {
   AGENT_HARNESS_PANEL_CLOSED,
   AGENT_HARNESS_RESTART,
   AGENT_HARNESS_GET_STATUS,
+  AGENT_REMOTE_START,
+  AGENT_REMOTE_GET,
+  AGENT_REMOTE_WRITE,
+  AGENT_REMOTE_CANCEL,
   AGENT_PROVIDER_AUTH_START,
   AGENT_PROVIDER_AUTH_GET,
   AGENT_PROVIDER_AUTH_WRITE,
@@ -509,6 +513,10 @@ const invokeForwarders = {
   agentHarnessGetPanelUrl: makeInvoker<'agentHarnessGetPanelUrl'>(AGENT_HARNESS_GET_PANEL_URL),
   agentHarnessRestart: makeInvoker<'agentHarnessRestart'>(AGENT_HARNESS_RESTART),
   agentHarnessGetStatus: makeInvoker<'agentHarnessGetStatus'>(AGENT_HARNESS_GET_STATUS),
+  agentRemoteStart: makeInvoker<'agentRemoteStart'>(AGENT_REMOTE_START),
+  agentRemoteGet: makeInvoker<'agentRemoteGet'>(AGENT_REMOTE_GET),
+  agentRemoteWrite: makeInvoker<'agentRemoteWrite'>(AGENT_REMOTE_WRITE),
+  agentRemoteCancel: makeInvoker<'agentRemoteCancel'>(AGENT_REMOTE_CANCEL),
   agentProviderAuthStart: makeInvoker<'agentProviderAuthStart'>(AGENT_PROVIDER_AUTH_START),
   agentProviderAuthGet: makeInvoker<'agentProviderAuthGet'>(AGENT_PROVIDER_AUTH_GET),
   agentProviderAuthWrite: makeInvoker<'agentProviderAuthWrite'>(AGENT_PROVIDER_AUTH_WRITE),
@@ -808,16 +816,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke(WINDOW_SET_TITLE, title)
   },
 
-  toggleKeepAwake(): Promise<boolean> {
+  toggleKeepAwake(): Promise<import('../shared/keepAwake').KeepAwakeState> {
     return ipcRenderer.invoke(KEEP_AWAKE_TOGGLE)
   },
-  getKeepAwake(): Promise<boolean> {
+  getKeepAwake(): Promise<import('../shared/keepAwake').KeepAwakeState> {
     return ipcRenderer.invoke(KEEP_AWAKE_GET)
   },
-  setKeepAwake(enabled: boolean): Promise<boolean> {
-    return ipcRenderer.invoke(KEEP_AWAKE_SET, enabled)
+  setKeepAwake(durationMinutes: 30 | 60 | 300 | null | false): Promise<import('../shared/keepAwake').KeepAwakeState> {
+    return ipcRenderer.invoke(KEEP_AWAKE_SET, durationMinutes)
   },
-  onKeepAwakeChanged(callback: (enabled: boolean) => void): () => void {
+  onKeepAwakeChanged(callback: (state: import('../shared/keepAwake').KeepAwakeState) => void): () => void {
     return createIpcListener(KEEP_AWAKE_CHANGED, callback)
   },
 

@@ -854,6 +854,27 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     '-c', hookTrustArg(root, bridge, events),
   ]
 
+  test('TUI: a plain Codex launch posts its prompt hook to this terminal', { timeout: 120_000 }, async () => {
+    const cwd = makeCwd('codex-terminal-identity')
+    const hooks = createAgentHooksCapability({ hooksDir: join(cwd, '.cate-hooks') })
+    cleanups.push(() => hooks.dispose())
+    await hooks.prepareWorkspace(cwd, { codex: 'on' })
+    const { dir } = await hooks.endpoint()
+    const terminalId = `cate-term-codex-identity-${Date.now()}`
+    const env = await hooks.envForPty(terminalId, cleanEnv(), { codex: 'on' }, cwd)
+    expect(env.CODEX_EXEC_SERVER_URL).toBe('')
+    const events: string[] = []
+    cleanups.push(hooks.subscribe((event) => {
+      if (event.kind === 'turn-start') events.push(event.terminalId)
+    }))
+
+    const tui = await driveTui(codexBin(), trustArgs(cwd, join(dir, 'cate-hook-bridge-codex')), cwd, env)
+    await tui.send('Reply OK.')
+    await tui.waitFor(() => events.length > 0, 90_000, 'Codex prompt hook')
+    expect(events).toEqual([terminalId])
+    tui.kill()
+  })
+
   test('TUI: Cate native hook context reaches the model', { timeout: 360_000 }, async () => {
     const cwd = makeCwd('codex-context')
     const hooks = createAgentHooksCapability({ hooksDir: join(cwd, '.cate-hooks') })
@@ -862,7 +883,8 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     const { dir } = await hooks.endpoint()
     const bridge = join(dir, 'cate-hook-bridge-codex')
     const terminalId = `cate-term-codex-context-${Date.now()}`
-    const env = await hooks.envForPty(terminalId, cleanEnv())
+    const env = await hooks.envForPty(terminalId, cleanEnv(), { codex: 'on' }, cwd)
+    expect(env.CODEX_EXEC_SERVER_URL).toBe('')
     hooks.setPromptContext(terminalId, CONTEXT_INSTRUCTION)
 
     const tui = await driveTui(codexBin(), [...trustArgs(cwd, bridge)], cwd, env)

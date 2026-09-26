@@ -38,6 +38,16 @@ panel. If a selected panel was closed, select another panel before continuing.
 
 ## Browser workflow
 
+To open a new browser panel, use the panel command. The URL is optional:
+
+```bash
+cate panel create browser https://example.com
+cate panel create browser
+```
+
+Use `cate browser run` to inspect and control a panel's live tab, or to open
+another tab within an existing browser panel.
+
 Browser control uses persistent JavaScript with the `cua` tab API. The old argv
 actions, selectors, page evaluation, and revisioned string refs have been removed.
 Start by binding a tab to get its accessibility state, then request a screenshot
@@ -51,8 +61,9 @@ cate browser run 'await tab.getAXStateAndScreenshot();'
 Use full panel IDs inside JavaScript. `--panel <id>` supports short IDs as an
 override for CLI panel resolution. Discover tabs with `await cua.listTabs()`.
 Create a tab with `await cua.createBrowserTab("https://example.com")`, or pass
-`{panelId:tab.panelId}` as the second argument to choose its panel. Pass
-`{newPanel:true}` to create a separate panel; Cate also creates one when needed.
+`{panelId:tab.panelId}` as the second argument to choose its panel. Use the full
+panel ID inside JavaScript. If no browser panel exists, create one with
+`cate panel create browser [url]` first.
 Bindings pin both panel and tab; they never silently follow a user's tab switch.
 
 Use numeric IDs from the latest AX observation. For example, after observing a form
@@ -133,6 +144,7 @@ minimum.
 
 ```bash
 cate editor open src/app.tsx:42
+cate panel create browser https://example.com
 cate panel create terminal
 cate panel create canvas
 cate panel set <id>

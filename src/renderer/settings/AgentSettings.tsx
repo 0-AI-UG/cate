@@ -9,6 +9,7 @@ import { AgentHooksSettings } from './AgentHooksSettings'
 import { AGENT_PROVIDER_LOGINS, type AgentProviderLogin } from './providerAuthentication'
 import type { AgentProviderAuthSession, AgentProviderStatus } from '../../shared/t3Agent'
 import { errorMessage } from '../lib/errorMessage'
+import { T3RemoteAccess } from './T3RemoteAccess'
 
 export function AgentSettings() {
   const [authProvider, setAuthProvider] = useState<AgentProviderLogin | null>(null)
@@ -132,7 +133,7 @@ export function AgentSettings() {
   }, [authSession?.phase, authSession?.providerId, refreshProviderStatuses])
 
   return (
-    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok hermes opencode kiro hooks activity status advanced display name accent color binary path home launch arguments custom models environment variables server password endpoint auto-compact updates archive chats merge generated titles">
+    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok hermes opencode kiro hooks activity status advanced display name accent color binary path home launch arguments custom models environment variables server password endpoint auto-compact updates archive chats merge generated titles remote phone connect tunnel">
       <div className="flex flex-col gap-4">
         <AgentProviderConfiguration workspaceId={workspaceId} cwd={cwd} onChanged={refreshProviderStatuses} authentication={(driver) => (
           <div>
@@ -182,6 +183,7 @@ export function AgentSettings() {
             })}
           </div>
         )} />
+        <T3RemoteAccess workspaceId={workspaceId} cwd={cwd} />
         <div>
           <h3 className="mb-2 text-sm font-medium text-primary">Agent hooks</h3>
           <AgentHooksSettings />

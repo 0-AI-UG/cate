@@ -612,6 +612,27 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       out[CATE_HOOK_ENDPOINT_ENV] = state.url
       out[CATE_HOOK_TOKEN_ENV] = hookTokenForTerminal(state.secret, ptyId)
       out[CATE_TERMINAL_ID_ENV] = ptyId
+      // Codex's shared app-server daemon launches hooks with the daemon's
+      // environment, so a hook cannot identify the terminal that submitted a
+      // prompt. An explicitly present (but empty) executor URL makes Codex
+      // use its local executor and embedded app-server, preserving this PTY's
+      // hook identity for a plain `codex` invocation. Respect a user-selected
+      // executor URL and leave workspaces without Codex hooks alone.
+      const codexMode = resolveAgentHookMode(config, 'codex')
+      const codexFolder = agentHookFolder('codex')
+      const codexConfigured = codexMode === 'on' || (
+        codexMode === 'auto' && (
+          launchedAgentId === 'codex' || !!(
+            cwd && codexFolder && (
+              await dirExists(path.join(cwd, codexFolder)) ||
+              (baseCwd ? await dirExists(path.join(baseCwd, codexFolder)) : false)
+            )
+          )
+        )
+      )
+      if (codexConfigured && out.CODEX_EXEC_SERVER_URL === undefined) {
+        out.CODEX_EXEC_SERVER_URL = ''
+      }
       const hermesMode = resolveAgentHookMode(config, 'hermes')
       const hermesFolder = agentHookFolder('hermes')
       const hermesConfigured = hermesMode === 'on' || (

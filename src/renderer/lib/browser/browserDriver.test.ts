@@ -11,10 +11,11 @@ const h = vi.hoisted(() => ({
     loadURL: vi.fn(), reload: vi.fn(), goBack: vi.fn(), goForward: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(),
   },
   newTab: vi.fn(), browserControl: vi.fn(), emitAgentCursor: vi.fn(), setViewport: vi.fn(), resizeNode: vi.fn(), resolvePanelLocation: vi.fn(),
+  noBrowser: false,
 }))
 
 vi.mock('../../stores/appStore', () => ({
-  useAppStore: { getState: () => ({ workspaces: [{ id: 'workspace-1', panels: { 'browser-1': h.panel } }] }) },
+  useAppStore: { getState: () => ({ workspaces: [{ id: 'workspace-1', panels: h.noBrowser ? {} : { 'browser-1': h.panel } }] }) },
 }))
 vi.mock('../activePanel', () => ({ getActivePanelId: () => 'browser-1' }))
 vi.mock('../portalRegistry', () => ({
@@ -36,6 +37,7 @@ describe('browserDriver target-bound webview boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     h.newTab.mockReset()
+    h.noBrowser = false
     h.panel.activeTabId = 'tab-1'
     h.browserControl.mockImplementation(async (request: { op: string }) => request.op === 'attach'
       ? { ok: true }
@@ -87,6 +89,34 @@ describe('browserDriver target-bound webview boundary', () => {
       panelId: 'browser-1', tabId: 'tab-1', url: 'https://next.test/', _userInputEpoch: 0,
     })).resolves.toEqual({ ok: false, error: 'browser-action-preempted-by-user' })
     expect(h.webview.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('checks takeover again after waiting for the navigation controller', async () => {
+    let checks = 0
+    h.browserControl.mockImplementation(async (request: { op: string }) => {
+      if (request.op === 'attach') return { ok: true }
+      if (request.op === 'execute' && ++checks === 1) return { result: {} }
+      return { error: 'browser-action-preempted-by-user' }
+    })
+    await expect(handleBrowserMethod('workspace-1', 'cate.browser.goto', {
+      panelId: 'browser-1', tabId: 'tab-1', url: 'https://next.test/', _userInputEpoch: 0,
+    })).resolves.toEqual({ ok: false, error: 'browser-action-preempted-by-user' })
+    expect(checks).toBe(2)
+    expect(h.webview.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('rejects panel creation through createTab', async () => {
+    await expect(handleBrowserMethod('workspace-1', 'cate.browser.createTab', {
+      url: 'https://example.test', newPanel: true,
+    })).resolves.toMatchObject({ ok: false, error: expect.stringContaining('cate panel create browser') })
+    await expect(handleBrowserMethod('workspace-1', 'cate.browser.createTab', {
+      panelId: 'missing', url: 'https://example.test',
+    })).resolves.toEqual({ ok: false, error: 'panel-not-in-window' })
+    h.noBrowser = true
+    await expect(handleBrowserMethod('workspace-1', 'cate.browser.createTab', {
+      url: 'https://example.test',
+    })).resolves.toEqual({ ok: false, error: 'no-browser' })
+    expect(h.newTab).not.toHaveBeenCalled()
   })
 
   it('downloads the current tab URL or a known asset URL through the bound guest', async () => {

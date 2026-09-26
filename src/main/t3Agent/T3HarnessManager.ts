@@ -26,6 +26,7 @@ import {
   isProviderSecretFile,
 } from './providerProfile'
 import { cleanProviderAuthOutput, providerAuthCode, providerAuthCommand, providerAuthUrl } from './providerAuth'
+import { remoteAuthorizationUrl } from './remoteAuthorizationUrl'
 import { PROVIDER_STATUS_CACHE, providerStatusFromSnapshot } from './providerStatus'
 import { settingsRpc } from './settingsRpc'
 import type {
@@ -37,6 +38,8 @@ import type {
   AgentProviderId,
   AgentProviderStatus,
   AgentProviderStatusRequest,
+  T3RemoteOperation,
+  T3RemoteSession,
 } from '../../shared/t3Agent'
 
 const READY_PATH = '/.well-known/t3/environment'
@@ -73,6 +76,14 @@ interface ProviderAuthState extends AgentProviderAuthSession {
   processId?: string
   ownerWindowId: number
   runtimeId: string
+  runtime: Runtime
+  rawOutput: string
+}
+
+interface RemoteSessionState extends T3RemoteSession {
+  ownerWindowId: number
+  key: string
+  processId?: string
   runtime: Runtime
   rawOutput: string
 }
@@ -146,6 +157,7 @@ export class T3HarnessManager {
   private readonly panelRoute = new Map<string, AgentHarnessPanelRequest['route']>()
   private readonly locatorHarness = new Map<string, string>()
   private readonly providerAuth = new Map<string, ProviderAuthState>()
+  private readonly remoteSessions = new Map<string, RemoteSessionState>()
 
   constructor() {
     const onDisconnected = runtimes.onDisconnected?.bind(runtimes)
@@ -166,7 +178,100 @@ export class T3HarnessManager {
           this.cancelProviderAuth(auth.id, windowId)
         }
       }
+      for (const remote of this.remoteSessions.values()) {
+        if (remote.ownerWindowId === windowId && remote.phase === 'running') this.cancelRemote(remote.id, windowId)
+      }
     })
+  }
+
+  async startRemote(request: AgentProviderStatusRequest & { operation: T3RemoteOperation }, ownerWindowId: number): Promise<T3RemoteSession> {
+    const resolved = resolveLocator(request.cwd)
+    if (resolved.runtimeId !== 'local') throw new Error('T3 Connect is currently available for local workspaces only')
+    const cwd = await resolved.runtime.validatePathStrict(resolved.path, ownerWindowId, request.workspaceId)
+    const key = harnessKey(resolved.runtimeId, cwd)
+    if ([...this.remoteSessions.values()].some((session) => session.key === key && session.phase === 'running')) {
+      throw new Error('A T3 Connect operation is already running for this checkout')
+    }
+    const instance = await this.ensureInstance(key, resolved.runtimeId, resolved.runtime, cwd, request.workspaceId)
+    const id = `t3-remote-${randomUUID()}`
+    const state: RemoteSessionState = {
+      id, operation: request.operation, phase: 'running', output: '', rawOutput: '', ownerWindowId,
+      key, runtime: resolved.runtime,
+    }
+    this.remoteSessions.set(id, state)
+    try {
+      const handle = await resolved.runtime.process.create({
+        id, cols: 1024, rows: 30, cwd, scopeId: request.workspaceId,
+        command: {
+          executable: harnessNodeExecutable(resolved.runtimeId, app.isPackaged),
+          args: [instance.entryPath, 'connect', request.operation, '--base-dir', instance.baseDir,
+            ...(request.operation === 'status' ? ['--json'] : [])],
+        },
+        env: { TERM: 'xterm-256color' },
+      }, (_id, chunk) => {
+        const current = this.remoteSessions.get(id)
+        if (current) {
+          current.rawOutput = `${current.rawOutput}${chunk}`.slice(-32_768)
+          current.output = cleanProviderAuthOutput(current.rawOutput).slice(-24_000)
+          current.authorizationUrl = remoteAuthorizationUrl(current.rawOutput)
+        }
+      }, (_id, exitCode) => {
+        const current = this.remoteSessions.get(id)
+        if (!current || current.phase !== 'running') return
+        if (exitCode !== 0) {
+          current.phase = 'failed'
+          current.message = `T3 Connect exited with code ${exitCode}.`
+        } else if (request.operation === 'link' && current.output.includes('T3 Connect setup cancelled.')) {
+          current.phase = 'cancelled'
+          current.message = 'T3 Connect setup was cancelled.'
+        } else if (request.operation === 'link') {
+          void this.restart(cwd).then(() => this.ensureInstance(key, resolved.runtimeId, resolved.runtime, cwd, request.workspaceId)).then(() => {
+            current.phase = 'succeeded'
+            current.message = 'T3 Connect is enabled for this checkout.'
+          }).catch((error) => {
+            current.phase = 'failed'
+            current.message = `T3 Connect was authorized, but the server could not restart: ${errorMessage(error)}`
+          })
+        } else {
+          current.phase = 'succeeded'
+          current.message = request.operation === 'unlink' ? 'T3 Connect is disabled for this checkout.' : undefined
+        }
+      })
+      state.processId = handle.id
+      if (state.phase === 'cancelled') resolved.runtime.process.kill(handle.id)
+      return this.remoteSnapshot(state)
+    } catch (error) {
+      this.remoteSessions.delete(id)
+      throw error
+    }
+  }
+
+  getRemote(id: string, ownerWindowId: number): T3RemoteSession {
+    return this.remoteSnapshot(this.ownedRemote(id, ownerWindowId))
+  }
+
+  writeRemote(id: string, ownerWindowId: number, data: string): void {
+    const state = this.ownedRemote(id, ownerWindowId)
+    if (state.phase === 'running' && state.processId) state.runtime.process.write(state.processId, data)
+  }
+
+  cancelRemote(id: string, ownerWindowId: number): void {
+    const state = this.ownedRemote(id, ownerWindowId)
+    if (state.phase !== 'running') return
+    state.phase = 'cancelled'
+    if (state.processId) state.runtime.process.kill(state.processId)
+  }
+
+  private ownedRemote(id: string, ownerWindowId: number): RemoteSessionState {
+    const state = this.remoteSessions.get(id)
+    if (!state || state.ownerWindowId !== ownerWindowId) throw new Error('T3 Connect session was not found')
+    return state
+  }
+
+  private remoteSnapshot(state: RemoteSessionState): T3RemoteSession {
+    return { id: state.id, operation: state.operation, phase: state.phase, output: state.output,
+      ...(state.authorizationUrl ? { authorizationUrl: state.authorizationUrl } : {}),
+      ...(state.message ? { message: state.message } : {}) }
   }
 
   async startProviderAuth(
@@ -480,6 +585,10 @@ export class T3HarnessManager {
 
   async disposeAll(): Promise<void> {
     this.panelAcquisitions.clear()
+    for (const remote of this.remoteSessions.values()) {
+      if (remote.phase === 'running' && remote.processId) remote.runtime.process.kill(remote.processId)
+    }
+    this.remoteSessions.clear()
     for (const auth of this.providerAuth.values()) {
       if (auth.phase === 'running' && auth.processId) auth.runtime.process.kill(auth.processId)
     }

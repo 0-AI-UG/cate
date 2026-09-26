@@ -539,21 +539,7 @@ export async function dispatchCateInvoke(
     const a = (args ?? {}) as { panelId?: string }
     const target = resolvePanelTargetWindow(typeof a.panelId === 'string' ? a.panelId : undefined, 'browser')
     if ('error' in target) return { error: target.error, method }
-    const result = await forwardToOwner(target.wc, { workspaceId, panelId: panelId ?? '', method, args })
-    if (method === 'cate.browser.createTab' && !a.panelId && result && typeof result === 'object') {
-      const opened = result as { panelId?: unknown; url?: unknown }
-      if (typeof opened.panelId === 'string') {
-        upsertWindowPanel(target.ownerWindowId, {
-          panelId: opened.panelId,
-          type: 'browser',
-          title: typeof opened.url === 'string' ? opened.url : 'Browser',
-          workspaceId,
-          url: typeof opened.url === 'string' ? opened.url : '',
-          focused: false,
-        })
-      }
-    }
-    return result
+    return forwardToOwner(target.wc, { workspaceId, panelId: panelId ?? '', method, args })
   }
 
   // Terminal control: route to the OWNER window of the addressed terminal panel
