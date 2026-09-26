@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-09-26
+
+This patch release adds T3 remote access setup, improves browser and agent controls, and fixes interrupted browser actions.
+
+### Added
+
+- **T3 Connect setup**: configure remote access for local Cate workspaces.
+- **Browser panel CLI**: create browser panels directly from the Cate CLI.
+- **Keep awake controls**: choose a timed duration and see the remaining time on the canvas.
+
+### Changed
+
+- **Jev browser control**: remove the Jev mode and its settings.
+
+### Fixed
+
+- **Browser takeover**: stop stale controller actions after direct user input, including navigation and downloads.
+- **Agent hooks**: keep Codex hooks bound to Cate terminals and run Windows hook commands through Git Bash.
+- **Electron setup**: detect and repair incomplete Electron installations during development setup.
+
 ## [2.0.3] - 2026-09-22
 
 This patch release adds Hermes CLI integration and browser controls, improves browser automation, and fixes browser tab and Markdown preview interactions.
