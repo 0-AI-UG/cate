@@ -5,6 +5,15 @@ import path from 'node:path'
 // real server). Separate from vitest.config.ts so the normal suite never picks
 // them up. Reuses the electron-log stub so the import graph doesn't hang.
 export default defineConfig({
+  plugins: [{
+    // Match vitest.config.ts: Node 22 omits node:sqlite from builtinModules,
+    // so the jsdom lifecycle harness otherwise tries to bundle this builtin.
+    name: 'externalize-node-sqlite',
+    enforce: 'pre',
+    resolveId(id) {
+      if (id === 'node:sqlite') return { id, external: true }
+    },
+  }],
   resolve: {
     alias: {
       'electron-log/renderer': path.resolve(__dirname, 'src/test/electronLogStub.ts'),
