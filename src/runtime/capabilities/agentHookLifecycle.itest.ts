@@ -181,7 +181,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
               const permission = agentId === 'codex' ? events.some((event) => event.kind === 'permission-check')
                 : events.some((event) => event.kind === 'permission-wait')
               if (scenario.startsWith('permission-') && !permission) return undefined
-              if (!approved && /Do you want to|Would you like to|Allow.*once|requires approval|Approve|Yes, proceed|Allow command|Allow execution/.test(screen)) {
+              if (!approved && /Do you want to|Would you like to|Allow.*once|requires approval|Approve|Yes, proceed|Allow command|Allow execution|Allow Edit to/.test(screen)) {
                 // Codex briefly debounces keys after painting a new approval dialog.
                 if (!approvalMenuAt) approvalMenuAt = Date.now()
                 if (Date.now() - approvalMenuAt < 1000) return undefined
@@ -199,7 +199,14 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
               }
               return undefined
             },
-            complete: (screen) => {
+            complete: async (screen) => {
+              if (scenario === 'resume' && agentId === 'claude-code') {
+                // Stop precedes Claude's asynchronous transcript flush. Preserve
+                // a resumable conversation before this fixture kills the PTY.
+                const transcript = events.find((event) => event.transcriptPath)?.transcriptPath
+                if (!transcript) return false
+                try { if (!(await readFile(transcript, 'utf8')).includes(provider.answer)) return false } catch { return false }
+              }
               if (scenario === 'session-end') return events.some((event) => event.kind === 'session-end')
               if (scenario === 'session-reset') return events.filter((event) => event.kind === 'session-start').length >= 2
               const lastStart = events.findLastIndex((event) => event.kind === 'turn-start')
