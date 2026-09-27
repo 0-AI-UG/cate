@@ -342,7 +342,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     // worker. A terminated entry stays registered to retain its xterm panel.
     if (!registry.has(panelId) || entry.alive === false) {
       electronAPI.terminalKill(ptyId).catch((err) => log.warn('[terminal] Kill failed:', err))
-      if (!registry.has(panelId)) terminal.dispose()
+      if (!registry.has(panelId)) disposeXtermTerminal(terminal)
       return entry
     }
 
@@ -404,7 +404,7 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     failures.set(panelId, errorMessage(err, 'Terminal failed to start'))
     if (registry.get(panelId) === entry) {
       registry.delete(panelId)
-      try { terminal.dispose() } catch { /* ignore */ }
+      try { disposeXtermTerminal(terminal) } catch { /* ignore */ }
     }
     notifyFailure(panelId)
   }
@@ -551,6 +551,21 @@ export function release(panelId: string): void {
   teardownEntry(entry)
 }
 
+function disposeXtermTerminal(terminal: Terminal): void {
+  // xterm 5.5's CoreBrowserService creates ScreenDprMonitor without registering
+  // it for disposal. Its window resize and MediaQueryList listeners otherwise
+  // retain a monitor for every closed terminal. Remove this workaround when
+  // upgrading to an xterm version that owns the monitor's lifetime.
+  const core = (terminal as unknown as {
+    _core?: { _coreBrowserService?: { _screenDprMonitor?: { dispose(): void } } }
+  })._core
+  try {
+    core?._coreBrowserService?._screenDprMonitor?.dispose()
+  } finally {
+    terminal.dispose()
+  }
+}
+
 /**
  * Shared teardown for a registry entry: removes IPC listeners and xterm
  * disposables, detaches the DOM element, and disposes addons + the Terminal.
@@ -584,7 +599,7 @@ function teardownEntry(entry: RegistryEntry): void {
 
   try { serializeAddon.dispose() } catch { /* ignore */ }
 
-  try { terminal.dispose() } catch { /* ignore */ }
+  try { disposeXtermTerminal(terminal) } catch { /* ignore */ }
 }
 
 /**

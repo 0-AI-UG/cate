@@ -110,7 +110,7 @@ export interface AgentHooksCapability {
   /** Report accepted PTY input on the same ordered stream as lifecycle hooks.
    *  Only terminals identified by a hook emit events; typed text is never sent. */
   noteInput(terminalId: string, data: string): void
-  /** Forget the input correlation when a PTY exits or is killed. */
+  /** Release terminal-owned hook state when a PTY exits or is killed. */
   forgetTerminal(terminalId: string): void
   /** Subscribe to normalized hook events. Returns an unsubscribe. */
   subscribe(onEvent: (event: AgentHookEvent) => void): () => void
@@ -588,6 +588,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       if (data.includes('\x03')) emit({ terminalId, ...session, kind: 'input-interrupt', raw: {} })
     },
     forgetTerminal(terminalId) {
+      titleTracker?.forget(terminalId)
       inputSessions.delete(terminalId)
       promptContexts.delete(terminalId)
     },
