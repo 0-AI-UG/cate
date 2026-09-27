@@ -10,7 +10,7 @@ export function parseFrontmatter(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
   const fm = {}
   if (m) {
-    const lines = m[1].split('\n')
+    const lines = m[1].split(/\r?\n/)
     let i = 0
     while (i < lines.length) {
       const mm = /^([a-zA-Z0-9_-]+):\s*(.*)$/.exec(lines[i])
@@ -19,8 +19,12 @@ export function parseFrontmatter(text) {
       const raw = mm[2].trim()
       // Block scalar: `key: |` (literal) or `key: >` (folded), with optional
       // chomping (+/-). Gather the following more-indented (or blank) lines.
-      if (/^[|>][+-]?$/.test(raw)) {
-        const fold = raw[0] === '>'
+      // Descriptions may also be plain YAML scalars continued on indented
+      // lines, including `description:` with the entire value on the next line.
+      const blockScalar = /^[|>][+-]?$/.test(raw)
+      const plainDescription = key === 'description' && !/^["']/.test(raw)
+      if (blockScalar || plainDescription) {
+        const fold = raw[0] !== '|'
         const block = []
         i++
         while (i < lines.length && (lines[i].trim() === '' || /^[ \t]/.test(lines[i]))) {
@@ -28,6 +32,7 @@ export function parseFrontmatter(text) {
         }
         while (block.length && !block[block.length - 1].trim()) block.pop()
         const body = dedent(block)
+        if (!blockScalar && raw) body.unshift(raw)
         // Folded: join lines within a paragraph by spaces, keep blank-line breaks.
         fm[key] = fold
           ? body.join('\n').split(/\n{2,}/).map((p) => p.split('\n').join(' ').trim()).join('\n').trim()
