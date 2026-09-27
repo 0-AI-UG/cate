@@ -86,4 +86,30 @@ describe('agent title tracker', () => {
     tracker.dispose()
     vi.useRealTimers()
   })
+
+  it('ignores an in-flight lookup after the terminal id is forgotten and reused', async () => {
+    vi.useFakeTimers()
+    let finishOld!: (title: string) => void
+    const emit = vi.fn()
+    const resolve = vi.fn()
+      .mockImplementationOnce(() => new Promise<string>(done => { finishOld = done }))
+      .mockResolvedValue('New session title')
+    const tracker = createAgentTitleTracker({
+      homeDir: '/home/me', resolvers: resolvers(resolve), emit, retryDelaysMs: [0],
+    })
+    try {
+      tracker.note(event())
+      await vi.advanceTimersByTimeAsync(0)
+      tracker.forget('pty-1')
+      tracker.note(event({ sessionId: 'session-2' }))
+      await vi.advanceTimersByTimeAsync(0)
+      finishOld('Stale title')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(emit).toHaveBeenCalledTimes(1)
+      expect(emit).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-2', title: 'New session title' }))
+    } finally {
+      tracker.dispose()
+      vi.useRealTimers()
+    }
+  })
 })

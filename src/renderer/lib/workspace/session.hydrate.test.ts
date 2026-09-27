@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // =============================================================================
-// hydrateWorkspaceFromDiskIfEmpty — the runtime "load saved layout on open" path
+// hydrateWorkspaceFromDiskIfEmpty — the runtime "restore session on open" path
 // that fixes close-then-reopen coming up blank. These tests pin the guards (it
 // must be a safe no-op unless the workspace is freshly opened and empty) and the
 // happy path (an empty workspace with a saved .cate/ layout gets it restored).
@@ -116,7 +116,7 @@ describe('hydrateWorkspaceFromDiskIfEmpty — guards', () => {
     deferredSnapshots.delete(id)
   })
 
-  it('no-ops when the disk has no saved layout', async () => {
+  it('no-ops when the disk has no saved workspace state', async () => {
     const id = await freshWorkspace('ws-nostate')
     projectStateLoad.mockResolvedValue(null)
     await hydrateWorkspaceFromDiskIfEmpty(id)
@@ -240,7 +240,7 @@ describe('intentional empty layouts', () => {
     expect(projectStateLoad).not.toHaveBeenCalled()
     expect(useAppStore.getState().getWorkspace(id)?.panels).toEqual({})
   })
-  it('initializes a missing saved layout only once', async () => {
+  it('initializes missing saved workspace state only once', async () => {
     const id = await freshWorkspace('empty')
     projectStateLoad.mockResolvedValue(null)
     await hydrateWorkspaceFromDiskIfEmpty(id)

@@ -3,8 +3,8 @@
 This document defines the supported dock state transitions. “Maximize” means a
 reversible presentation: a main-dock split is merged into tabs, or one pane of a
 canvas node is promoted beside its containing canvas. “Minimize” means restoring
-that saved layout. A presentation is restorable only while both its destination
-and, for a promoted canvas pane, its source topology remain unchanged.
+the previous dock arrangement. A presentation is restorable only while both its
+destination and, for a promoted canvas pane, its source topology remain unchanged.
 
 ## Drag and placement rules
 

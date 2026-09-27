@@ -48,7 +48,7 @@ export function WorkspaceTrustDialog(): JSX.Element | null {
       bodyClassName="px-5 py-4"
     >
       <p className="text-[13px] leading-relaxed text-secondary">
-        Opening a project restores its saved layout, which can start terminals, agents and
+        Opening a project restores its saved session, which can start terminals, agents and
         tools from that folder. Opening it can run its code on your machine.
       </p>
 

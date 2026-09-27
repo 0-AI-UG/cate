@@ -807,7 +807,6 @@ export default function EditorPanel({
           <Copy size={12} className="shrink-0" />
           <ChevronDown size={11} className="shrink-0" />
         </button>
-        {sync.shared && <span className="shrink-0 text-muted" title="Edits autosave to the file shared with your agent.">Shared with agent</span>}
         {isEditorDraft(filePath) && <button className="shrink-0 rounded px-2 py-1 text-primary hover:bg-hover" onClick={() => void save()}>Save As…</button>}
         {sync.syncError && <button className="shrink-0 text-error" title={sync.syncError} onClick={() => void (sync.shared ? sync.flushShared() : save())}>Save failed · Retry</button>}
         <div className="shrink-0 max-w-40">

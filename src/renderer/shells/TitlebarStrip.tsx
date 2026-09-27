@@ -22,7 +22,7 @@ import { IS_MAC } from '../lib/platform'
 
 // Drawn application menu bar for the frameless Windows/Linux title bar. Reads the
 // top-level labels from main and pops the real native submenu under each label,
-// so accelerators, native roles, and dynamic items (layouts, open windows) all
+// so accelerators, native roles, and dynamic items (open windows) all
 // keep working without re-implementing the menu in the renderer.
 function MenuBar(): React.ReactElement | null {
   const [labels, setLabels] = useState<string[]>([])

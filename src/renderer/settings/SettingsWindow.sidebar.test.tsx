@@ -19,6 +19,7 @@ vi.mock('./ShortcutSettings', () => ({ ShortcutSettings: () => <div>Shortcut con
 vi.mock('./NotificationSettings', () => ({ NotificationSettings: () => <div>Notification content</div> }))
 vi.mock('./UpdatesSettings', () => ({ UpdatesSettings: () => <div>Updates content</div> }))
 vi.mock('./AgentSettings', () => ({ AgentSettings: () => <div>Agent content</div> }))
+vi.mock('./AgentHooksSettings', () => ({ AgentHooksSettings: () => <div>Hooks content</div> }))
 vi.mock('./GitHubSettings', () => ({ GitHubSettings: () => <div>GitHub content</div> }))
 vi.mock('./SkillsSettings', () => ({ SkillsSettings: () => <div>Skills content</div> }))
 
@@ -59,7 +60,7 @@ it('uses the Workspace sidebar for settings with only Back and updates in its fo
   act(() => restoreButton.click())
   expect(resetAll).toHaveBeenCalledOnce()
   expect(left.querySelector('[aria-label="Check for updates"]')).not.toBeNull()
-  for (const label of ['Skills', 'Saved Layouts', 'Usage', 'Settings']) {
+  for (const label of ['Skills', 'Usage', 'Settings']) {
     expect(left.querySelector(`[aria-label="${label}"]`)).toBeNull()
   }
   expect(left.querySelector('[aria-label="Cate"]')).not.toBeNull()

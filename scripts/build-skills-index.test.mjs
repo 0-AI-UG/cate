@@ -52,4 +52,16 @@ describe('curateSkills', () => {
     const ids = curateSkills(entries, firstPartyIds).map((s) => s.id)
     expect(ids).toEqual(['other/good'])
   })
+
+  it('requires at least 10,000 stars for every external source', () => {
+    const entries = [
+      entry({ id: 'openai-plugins/example', sourceId: 'openai-plugins', stars: 7_000 }),
+      entry({ id: 'other/below', sourceId: 'other', stars: 9_999 }),
+      entry({ id: 'other/unknown', sourceId: 'other' }),
+      entry({ id: 'other/at-floor', sourceId: 'other', stars: 10_000 }),
+    ]
+    const curated = curateSkills(entries, firstPartyIds)
+    expect(curated.map((s) => s.id)).toEqual(['other/at-floor'])
+    expect(curated[0].firstParty).toBeUndefined()
+  })
 })
