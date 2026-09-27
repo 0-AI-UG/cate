@@ -6,10 +6,11 @@ forks and stacked PRs), merge queues, daily at 06:23 UTC, and manual dispatch. T
 catches upstream changes without waiting for a Cate commit. Each job prints
 the installed version and uploads a JUnit report.
 
-No API keys or paid model calls are required. Only the provider service is fake:
+No API keys or paid model calls are required. Model services are local fixtures:
 the installed CLI, PTY, Cate hook files/plugins, environment injection,
 authenticated HTTP receiver, change storage, event normalization, and renderer
-state handling are real. Only OS notification delivery is mocked. The fixture never
+state handling are real. Electron reporting and OS notification delivery are stubbed.
+The fixture never
 sends a hook itself. Two fresh sessions run in the same workspace with different
 terminal IDs. The first terminal stays open while the second connects, so a
 shared daemon cannot be reset by test cleanup between connections. Each must produce:
