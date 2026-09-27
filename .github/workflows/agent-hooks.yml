@@ -1,0 +1,73 @@
+name: Agent CLI hooks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      agents: ${{ steps.agents.outputs.agents }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: agents
+        run: echo "agents=$(node -p 'JSON.stringify(require("./scripts/agent-cli-matrix.json"))')" >> "$GITHUB_OUTPUT"
+
+  hooks:
+    needs: matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        agent: ${{ fromJSON(needs.matrix.outputs.agents) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: npm ci
+      - name: Verify hook coverage and Cate approval state handling
+        run: >-
+          npx vitest run
+          agentHookSmoke.config.test.ts agentHookLifecycle.config.test.ts
+          agentChanges.liveHarness.test.ts agentApprovalConfig.test.ts
+          agentApprovalPersistence.test.ts agentScreenDetector.test.ts
+          agentStatus.integration.test.ts agentHooks.test.ts
+          hermesIntegration.test.ts process.agentStatus.test.ts
+          AgentHooksSettings.test.tsx
+      - name: Install current agent CLI
+        run: bash scripts/install-agent-cli.sh "${{ matrix.agent }}"
+      - name: Verify installed terminal hooks against fake providers
+        run: npm run test:agent-hooks:ci -- --reporter=default --reporter=junit --outputFile.junit=reports/agent-hooks.xml
+        env:
+          CATE_HOOK_SMOKE_AGENTS: ${{ matrix.agent }}
+          CATE_HOOK_SMOKE_PROVIDER: mock
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: agent-hooks-${{ matrix.agent }}
+          path: reports/agent-hooks.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  hook-regression-gate:
+    name: Agent hook regression gate
+    if: always()
+    needs: [matrix, hooks]
+    runs-on: ubuntu-latest
+    steps:
+      - run: test '${{ needs.hooks.result }}' = success
