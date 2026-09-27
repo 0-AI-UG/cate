@@ -22,7 +22,7 @@ const fixtures = [
   { agentId: 'codex', start: { hook_event_name: 'UserPromptSubmit' }, wait: { hook_event_name: 'PermissionRequest' } },
   { agentId: 'claude-code', start: { hook_event_name: 'UserPromptSubmit' }, wait: { hook_event_name: 'PermissionRequest' } },
   { agentId: 'grok', start: { hookEventName: 'user_prompt_submit' }, wait: { hookEventName: 'notification', notificationType: 'permission_prompt' } },
-  { agentId: 'hermes', start: { hook_event_name: 'pre_llm_call', platform: 'cli' }, wait: { hook_event_name: 'pre_approval_request', platform: 'cli' } },
+  { agentId: 'hermes', start: { hook_event_name: 'pre_llm_call', platform: 'cli' }, wait: { hook_event_name: 'pre_approval_request', platform: 'cli', surface: 'cli' } },
   { agentId: 'opencode', start: { type: 'session.status', status: { type: 'busy' } }, wait: { type: 'permission.asked' } },
   // These CLIs have no permission-wait hook. Input must preserve their running state.
   { agentId: 'cursor', start: { hook_event_name: 'beforeSubmitPrompt' }, wait: null },
@@ -94,7 +94,7 @@ describe('PTY input and agent hooks share an ordered status stream', () => {
       if (wait) await post(agentId, wait)
       if (!delayedRenderer) {
         flush()
-        expect(state()).toBe(wait ? 'waitingForInput' : 'running')
+        expect(state()).toBe(!wait ? 'running' : agentId === 'codex' || agentId === 'claude-code' ? 'running' : 'waitingForInput')
       }
       // The common runtime write is used by physical keys AND cate.terminal.press.
       // Delaying delivery reproduces approval arriving before the renderer sees the wait.
@@ -120,7 +120,7 @@ describe('PTY input and agent hooks share an ordered status stream', () => {
     process.write(terminalId, '\r')
     expect(queued).toEqual([])
     flush()
-    expect(state()).toBe('waitingForInput')
+    expect(state()).toBe('running')
   })
 
   it('never forwards typed text and does not turn an idle agent into running', async () => {

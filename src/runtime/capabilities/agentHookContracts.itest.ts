@@ -20,10 +20,9 @@
 //             transcript_path/cwd on every event; /clear = SessionEnd(
 //             reason=clear) + SessionStart(source=clear, new id). Works in
 //             -p and TUI.
-//             Permission-wait: PermissionRequest fires immediately before the
-//             approval UI. PreToolUse follows approval immediately before
-//             execution; PostToolUse fires once the tool finishes. StopFailure
-//             closes API/error turns.
+//             PermissionRequest begins a permission check, which a hook may
+//             resolve automatically. Notification(permission_prompt) confirms
+//             a waiting human prompt. StopFailure closes API/error turns.
 //   codex   · JSON-on-stdin hooks configured in <project root>/.codex/
 //             hooks.json (repo scope, discovered by codex itself —
 //             launch-method independent, unlike the six per-invocation -c
@@ -43,7 +42,7 @@
 //             the same id + file (source="resume"). SessionEnd never fires.
 //             In the TUI, NO hook fires at launch — SessionStart(source=
 //             startup) + everything else arrives at the FIRST prompt submit.
-//             Permission-wait: PermissionRequest hook (session_id, turn_id,
+//             Permission-check: PermissionRequest hook (session_id, turn_id,
 //             tool_name, tool_input) — fires in exec mode too, where the
 //             unanswerable approval is then auto-rejected and the turn Stops.
 //             PreToolUse fires after approval, immediately before execution;
@@ -81,7 +80,8 @@
 //             Approval resolution: permission.replied (sessionID, requestID =
 //             the asked id, reply "once"/"always"/"reject"), then busy resumes.
 //
-// Permission-wait exists on claude/codex/grok/opencode. pi has no approval
+// Confirmed permission-wait exists on claude/grok/opencode and Hermes's CLI
+// surface. Codex hooks cannot identify the reviewer. pi has no approval
 // concept at all (tools execute directly — verified: zero approval strings in
 // its dist). Cursor and Kiro have native approval prompts but no hook event
 // that distinguishes a blocked approval from an automatically allowed tool;
@@ -360,13 +360,19 @@ async function driveTui(
   cleanups.push(() => { if (!exited) p.kill() })
 
   // First-run interstitials, checked on every poll tick: folder-trust prompts
-  // (claude and codex ask in a fresh cwd; default is "yes, trust") and
+  // (claude and codex ask in a fresh cwd) and
   // update banners. NEVER Enter through an update banner — Enter ACCEPTS the
   // self-update (observed: opencode updated itself). Esc dismisses.
   const handleInterstitials = async (): Promise<void> => {
     if (!trusted && /trust/i.test(buf)) {
       trusted = true
       await sleep(500)
+      // New Claude versions default to "No, exit" in the isolated test
+      // directory. Select the visible trust option instead of exiting.
+      if (/❯\s*No,\s*exit/.test(stripAnsi(buf))) {
+        p.write('\x1b[B')
+        await sleep(100)
+      }
       p.write('\r')
     }
     if (opts.dismissUpdateBanner !== false && /Update available/i.test(buf)) {
@@ -431,10 +437,10 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     'ElicitationResult', 'ConfigChange', 'InstructionsLoaded', 'MessageDisplay',
   ]
 
-  /** The eight events claudeSpec actually injects in the shipped product. */
+  /** Events claudeSpec injects in the shipped product. */
   const SHIPPED_CLAUDE_EVENTS = [
-    'SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PreToolUse', 'PostToolUse',
-    'Stop', 'StopFailure', 'SessionEnd',
+    'SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'Notification', 'PreToolUse', 'PostToolUse',
+    'PostToolUseFailure', 'PermissionDenied', 'Stop', 'StopFailure', 'SessionEnd',
   ]
 
   const writeClaudeSettings = (cwd: string, bridge: string, events = SHIPPED_CLAUDE_EVENTS): void => {
@@ -603,10 +609,9 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     expectEcho(resumeEvents, tid)
   })
 
-  // PermissionRequest fires immediately before Claude displays an approval
-  // prompt. Approving runs PreToolUse before execution and PostToolUse after
-  // completion, so long-running commands resume at their actual start.
-  test('TUI: PermissionRequest while blocked; approval resumes via PreToolUse', { retry: 1, timeout: 420_000 }, async () => {
+  // A permission check is not a human wait until Claude reports its prompt.
+  // Runtime input resumes immediately; tool hooks confirm subsequent activity.
+  test('TUI: PermissionRequest while blocked; Notification confirms the human prompt', { retry: 1, timeout: 420_000 }, async () => {
     const cwd = makeCwd('claude-perm')
     const eventsFile = join(cwd, 'events.jsonl')
     const bridge = writeBridge(cwd)
@@ -616,7 +621,7 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
 
     const tui = await driveTui(
       'claude',
-      ['--model', 'haiku'],
+      ['--model', 'haiku', '--permission-mode', 'default'],
       cwd,
       cleanEnv({ CATE_EVENTS_FILE: eventsFile, CATE_TERMINAL_ID: tid }),
     )
@@ -637,11 +642,15 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     expect(perm?.tool_name).toBe('Bash')
     // The turn is still in flight — the wait signal precedes any Stop.
     expect(byName(events(), 'Stop').length, 'no Stop while blocked on approval').toBe(0)
+    await tui.waitFor(
+      () => byName(events(), 'Notification').some(e => e.payload.notification_type === 'permission_prompt'),
+      30_000,
+      'human permission-prompt notification',
+    )
     expect(replayAgentState('claude-code', tid, events()), 'the workspace overview shows Claude awaiting approval')
       .toBe('waitingForInput')
 
-    // Approve (Enter accepts the highlighted "Yes"): PreToolUse pushes the
-    // back-in-flight signal before the tool runs, then the turn completes.
+    // Approve (Enter accepts the highlighted "Yes").
     await tui.send('')
     expect(
       replayAgentState('claude-code', tid, events(), { permissionAnswered: true }),
@@ -955,7 +964,7 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     tui.kill()
   })
 
-  // Permission-wait is PUSHED: PermissionRequest fires the moment a tool call
+  // Permission-check is PUSHED: PermissionRequest fires the moment a tool call
   // needs approval — in exec mode too, where codex then auto-rejects ("approval
   // is not supported in exec mode") and the turn completes with a Stop. That
   // auto-reject makes exec the cheap deterministic harness for this contract.
@@ -985,6 +994,10 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     expect(perm?.turn_id, 'permission-wait identifies the turn').toBeTruthy()
     expect(perm?.tool_name).toBe('Bash')
     expect((perm?.tool_input as { command?: string })?.command).toContain('touch')
+
+    const permissionIndex = events.findIndex(e => e.payload.hook_event_name === 'PermissionRequest')
+    expect(replayAgentState('codex', tid, events.slice(0, permissionIndex + 1)))
+      .toBe('running')
 
     // Event order pins the state machine the tracker runs: submit → wait → end.
     const names = events.map((e) => e.payload.hook_event_name)
@@ -1064,8 +1077,10 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
       ),
       'deferred SessionStart/UserPromptSubmit order resolves to running',
     ).toBe('running')
-    expect(replayAgentState('codex', tid, events()), 'the workspace overview shows Codex awaiting approval')
-      .toBe('waitingForInput')
+    // Raw hooks cannot identify the reviewer; runtime config inspection adds
+    // that metadata separately. A raw permission check must remain busy.
+    expect(replayAgentState('codex', tid, throughFirst(events(), (event) => event.payload.hook_event_name === 'PermissionRequest')))
+      .toBe('running')
     expect(
       replayAgentState('codex', tid, events(), { permissionAnswered: true }),
       'submitting the approval resumes Codex before PostToolUse',

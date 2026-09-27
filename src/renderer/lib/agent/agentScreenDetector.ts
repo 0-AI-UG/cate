@@ -6,10 +6,10 @@
 // noteAgentHookEvent): turn-start flips to 'running' immediately, turn-end
 // flips back to 'waitingForInput' and fires the "needs input" notification,
 // and session-end is treated like turn-end for state (the process may keep
-// running after /clear). permission-wait (the CLI is blocked on tool approval)
-// flips to 'waitingForInput' immediately with a "needs permission"
-// notification whose body carries the blocked command; turn-resume (the
-// CLI reported a permission reply or a tool completed) flips back to 'running'
+// running after /clear). Codex permission-check is interpreted using config: hooks can
+// run before an automatic reviewer or another hook resolves the request. Manual
+// config and confirmed permission-wait send a permission notification.
+// turn-resume (a permission reply or tool activity) flips back to 'running'
 // silently. For CLIs with no approval-reply hook, runtime PTY input supplies the
 // earlier resume edge on the same ordered stream as the hooks. The signals
 // are authoritative, so no settle timer is involved.
@@ -33,20 +33,22 @@ import { useStatusStore, workspaceIdForTerminal } from '../../stores/statusStore
 import { sendOsNotification } from '../notifications/osNotificationSend'
 import type { AgentHookEvent } from '../../../shared/agentHooks'
 import type { AgentState } from '../../../shared/types'
+import type { AgentApprovalMode } from '../../../shared/agentApprovalModes'
 
 export interface DetectorSignals {
   /** Main's process-tree scan found the agent CLI for this terminal. */
   present: boolean
   /** The agent was present on the previous observation (for finished edge). */
   wasPresent: boolean
-  /** A turn is in flight (hook turn-start seen more recently than a turn-end)
-   *  and not parked on a permission prompt. */
+  /** A turn is in flight (hook turn-start seen more recently than a turn-end). */
   active: boolean
+  permission?: 'checking' | 'waiting' | null
 }
 
 export function resolveAgentState(s: DetectorSignals): AgentState {
   if (!s.present && s.wasPresent) return 'finished'
   if (!s.present) return 'notRunning'
+  if (s.permission === 'waiting') return 'waitingForInput'
   if (s.active) return 'running'
   return 'waitingForInput'
 }
@@ -70,11 +72,11 @@ interface Tracker {
   activeTurnId: string | null
   /** turn-start seen more recently than turn-end/session-end. */
   hookTurnActive: boolean
-  /** The in-flight turn is parked on a permission prompt (permission-wait seen
-   *  more recently than turn-resume/turn-start/turn-end). Splits "turn active"
-   *  from "turn active but blocked" so the 1 Hz presence tick keeps showing
-   *  waitingForInput while blocked instead of flipping back to running. */
-  hookPermissionWait: boolean
+  /** Only 'waiting' proves that a human response is needed. */
+  permission: 'checking' | 'waiting' | null
+  approvalMode?: AgentApprovalMode
+  /** Reject late lifecycle events from the last completed turn. */
+  endedTurnId: string | null
   state: AgentState
 }
 
@@ -91,7 +93,8 @@ function trackerFor(terminalId: string): Tracker {
       agentId: null,
       activeTurnId: null,
       hookTurnActive: false,
-      hookPermissionWait: false,
+      permission: null,
+      endedTurnId: null,
       state: 'notRunning',
     }
     trackers.set(terminalId, t)
@@ -104,7 +107,7 @@ function workspaceFor(terminalId: string): string | undefined {
 }
 
 /** Apply a resolved state to the store + mirror it to other windows. `notify`
- *  fires the OS notification; hook turn-end and permission-wait pass true.
+ *  fires the OS notification for completion or a manual permission request.
  *  `permissionBody` switches the text to the "needs permission" variant
  *  carrying what the agent is blocked on. The agent name is read from
  *  statusStore (its single home) at commit time — the tracker doesn't cache a
@@ -153,9 +156,8 @@ function permissionBodyFor(event: AgentHookEvent): string {
   return text.length > 120 ? `${text.slice(0, 119)}…` : text
 }
 
-/** `notifyOnIdle` is set only by hook turn-end and permission-wait: the event
- *  is authoritative, so a resulting flip to waitingForInput notifies
- *  immediately (commit no-ops when the state didn't actually change, so only
+/** Completion and permission events set `notifyOnIdle`: a resulting flip to
+ *  waitingForInput notifies immediately (commit no-ops when the state didn't actually change, so only
  *  the running→waiting edge fires). `permissionBody` rides along for the
  *  permission variant. */
 function recompute(terminalId: string, notifyOnIdle = false, permissionBody?: string): void {
@@ -165,7 +167,9 @@ function recompute(terminalId: string, notifyOnIdle = false, permissionBody?: st
   const raw = resolveAgentState({
     present: t.present,
     wasPresent: t.wasPresent,
-    active: t.hookTurnActive && !t.hookPermissionWait,
+    active: t.hookTurnActive,
+    permission: t.permission === 'checking' && t.agentId === 'codex' && t.approvalMode === 'manual'
+      ? 'waiting' : t.permission,
   })
   commit(terminalId, raw, notifyOnIdle, permissionBody)
 }
@@ -173,7 +177,17 @@ function recompute(terminalId: string, notifyOnIdle = false, permissionBody?: st
 /** A normalized agent-hook event arrived for a terminal this window owns. */
 export function noteAgentHookEvent(event: AgentHookEvent): void {
   const t = trackerFor(event.terminalId)
+  // Metadata and delayed child/previous-session hooks cannot end or block the
+  // current turn. Session/turn starts are the explicit identity boundaries.
+  if (!['session-start', 'turn-start', 'session-title'].includes(event.kind)) {
+    if (t.agentId && t.agentId !== event.agentId) return
+    if (t.sessionId && event.sessionId && t.sessionId !== event.sessionId) return
+    if (t.activeTurnId && event.turnId && t.activeTurnId !== event.turnId) return
+    if (event.turnId && event.turnId === t.endedTurnId) return
+  }
+  if (event.kind === 'session-title') return
   t.agentId = event.agentId
+  t.sessionId ??= event.sessionId
   switch (event.kind) {
     case 'input-submit':
       noteAgentInputSubmitted(event.terminalId)
@@ -184,25 +198,26 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
     case 'turn-start':
       t.sessionId = event.sessionId
       t.activeTurnId = event.turnId ?? null
+      t.endedTurnId = null
       t.hookTurnActive = true
-      t.hookPermissionWait = false
+      t.permission = null
       recompute(event.terminalId)
       break
     case 'turn-resume':
       // A permission reply arrived or a tool completed — either way the turn
       // is in flight. Idempotent and silent.
-      if (t.activeTurnId && event.turnId && t.activeTurnId !== event.turnId) break
       t.hookTurnActive = true
-      t.hookPermissionWait = false
+      t.activeTurnId ??= event.turnId ?? null
+      t.permission = null
       recompute(event.terminalId)
       break
     case 'turn-end':
       // Also lands after a DENIED permission: state is already waiting then,
       // so commit's transition gate swallows the would-be second notification.
-      if (t.activeTurnId && event.turnId && t.activeTurnId !== event.turnId) break
+      t.endedTurnId = event.turnId ?? t.activeTurnId
       t.activeTurnId = null
       t.hookTurnActive = false
-      t.hookPermissionWait = false
+      t.permission = null
       recompute(event.terminalId, true)
       break
     case 'session-end':
@@ -210,7 +225,7 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
       // but silent — only a genuine turn end notifies.
       t.activeTurnId = null
       t.hookTurnActive = false
-      t.hookPermissionWait = false
+      t.permission = null
       recompute(event.terminalId)
       break
     case 'session-start':
@@ -221,15 +236,22 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
       // waitingForInput. A genuinely new session (e.g. /clear) still starts
       // idle.
       if (t.sessionId === event.sessionId && t.hookTurnActive) break
+      if (t.sessionId !== event.sessionId) t.endedTurnId = null
       t.sessionId = event.sessionId
       t.activeTurnId = null
       t.hookTurnActive = false
-      t.hookPermissionWait = false
+      t.permission = null
       recompute(event.terminalId)
       break
-    case 'session-title':
-      // Metadata only. useWindowRuntime applies it to panel state; the activity
-      // FSM deliberately has no transition for a title update.
+    case 'permission-check':
+      // Keep this turn busy, including when the first event we saw was the
+      // approval hook. Never downgrade a confirmed human wait to an ambiguous
+      // check (parallel tool calls can emit both).
+      t.hookTurnActive = true
+      t.activeTurnId ??= event.turnId ?? null
+      if (t.permission !== 'waiting') t.permission = 'checking'
+      t.approvalMode = event.approvalMode
+      recompute(event.terminalId, true, permissionBodyFor(event))
       break
     case 'permission-wait':
       // Mid-turn block on the user's approval: show waiting NOW and say what
@@ -237,8 +259,9 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
       // notification is skipped with the state change (same pre-presence
       // semantics as every other hook event); the model needs seconds to
       // reach a tool call, so in practice presence always lands first.
-      if (t.activeTurnId && event.turnId && t.activeTurnId !== event.turnId) break
-      t.hookPermissionWait = true
+      t.hookTurnActive = true
+      t.activeTurnId ??= event.turnId ?? null
+      t.permission = 'waiting'
       recompute(event.terminalId, true, permissionBodyFor(event))
       break
   }
@@ -246,14 +269,14 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
 
 /** The user submitted a response while the CLI was parked on a permission
  *  prompt. Claude, Codex, and Grok do not expose an "approval answered" hook:
- *  their next hook is PostToolUse, after the approved tool has FINISHED. The
- *  runtime-observed Enter supplies the earlier resume edge. A denial also
+ *  runtime-observed Enter supplies an early resume edge, including a human
+ *  response to an ambiguous permission-check. A denial also
  *  resumes the agent while it processes that answer, before its Stop. */
 export function noteAgentInputSubmitted(terminalId: string): void {
   const t = trackers.get(terminalId)
-  if (!t?.hookPermissionWait) return
+  if (!t?.permission) return
   t.hookTurnActive = true
-  t.hookPermissionWait = false
+  t.permission = null
   recompute(terminalId)
 }
 
@@ -261,7 +284,7 @@ export function noteAgentInputSubmitted(terminalId: string): void {
  * mid-turn permission prompt even though both states render as "needs input". */
 export function canAgentReceivePrompt(terminalId: string): boolean {
   const tracker = trackers.get(terminalId)
-  return Boolean(tracker?.present && !tracker.hookTurnActive && !tracker.hookPermissionWait)
+  return Boolean(tracker?.present && !tracker.hookTurnActive && !tracker.permission)
 }
 
 /** Kiro 2.19's v3 TUI returns to its input prompt on Ctrl-C but emits no Stop
@@ -273,7 +296,7 @@ export function noteAgentInterruptSubmitted(terminalId: string): void {
   if (t?.agentId !== 'kiro' || !t.hookTurnActive) return
   t.activeTurnId = null
   t.hookTurnActive = false
-  t.hookPermissionWait = false
+  t.permission = null
   recompute(terminalId)
 }
 
@@ -288,8 +311,11 @@ export function noteAgentPresence(terminalId: string, present: boolean): void {
     // The process is gone; any in-flight turn died with it. The next launch
     // starts idle and re-proves itself through fresh hook events.
     t.activeTurnId = null
+    t.endedTurnId = null
+    t.sessionId = null
+    t.agentId = null
     t.hookTurnActive = false
-    t.hookPermissionWait = false
+    t.permission = null
   }
   recompute(terminalId)
 }

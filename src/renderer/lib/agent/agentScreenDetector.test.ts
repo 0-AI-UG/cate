@@ -79,6 +79,26 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
   beforeEach(() => setUpCoordinator('Claude Code'))
   afterEach(stopAgentScreenDetector)
 
+  it.each([
+    ['automatic', 'running'],
+    ['manual', 'waitingForInput'],
+    ['unknown', 'running'],
+  ] as const)('Codex config=%s gives %s', (approvalMode, expected) => {
+    setUpCoordinator('Codex')
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start', 'codex'))
+    noteAgentHookEvent({ ...hookEvent('permission-check', 'codex'), approvalMode })
+    expect(state()).toBe(expected)
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
+    expect(sendOsNotification).toHaveBeenCalledTimes(expected === 'waitingForInput' ? 1 : 0)
+    if (expected === 'waitingForInput') {
+      expect(sendOsNotification).toHaveBeenCalledWith(expect.objectContaining({ title: 'Codex needs permission' }))
+    }
+    noteAgentHookEvent(hookEvent('turn-end', 'codex'))
+    expect(state()).toBe('waitingForInput')
+    expect(canAgentReceivePrompt(PTY)).toBe(true)
+  })
+
   it('turn-start → running immediately; turn-end → waitingForInput + notification', () => {
     noteAgentPresence(PTY, true)
     expect(state()).toBe('waitingForInput')
@@ -107,6 +127,37 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     noteAgentHookEvent({ ...hookEvent('turn-end', 'codex'), turnId: 'turn-b' })
     expect(state()).toBe('waitingForInput')
     expect(sendOsNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores approval and resume events arriving after their turn ended', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent({ ...hookEvent('turn-start', 'codex'), turnId: 'turn-a' })
+    noteAgentHookEvent({ ...hookEvent('turn-end', 'codex'), turnId: 'turn-a' })
+    for (const kind of ['permission-check', 'permission-wait', 'turn-resume'] as const) {
+      noteAgentHookEvent({ ...hookEvent(kind, 'codex'), turnId: 'turn-a' })
+      expect(state()).toBe('waitingForInput')
+      expect(canAgentReceivePrompt(PTY)).toBe(true)
+    }
+    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('a permission check cannot overwrite a confirmed human wait', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start'))
+    noteAgentHookEvent(hookEvent('permission-wait'))
+    noteAgentHookEvent(hookEvent('permission-check'))
+    expect(state()).toBe('waitingForInput')
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
+    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+  })
+
+  it('a deferred session-start cannot idle a permission check that arrived first', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('permission-check', 'codex'))
+    noteAgentHookEvent(hookEvent('session-start', 'codex'))
+    expect(state()).toBe('running')
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
+    expect(sendOsNotification).not.toHaveBeenCalled()
   })
 
   it('presence without turn events shows waitingForInput and never notifies', () => {
@@ -171,13 +222,13 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
 
   it('permission notification body comes from the per-CLI payload', () => {
     noteAgentPresence(PTY, true)
-    noteAgentHookEvent(hookEvent('turn-start'))
+    noteAgentHookEvent(hookEvent('turn-start', 'codex'))
     noteAgentHookEvent(
       hookEvent('permission-wait', 'codex', { tool_name: 'Bash', tool_input: { command: 'touch x' } }),
     )
     expect(sendOsNotification).toHaveBeenCalledWith(expect.objectContaining({ body: 'touch x' }))
 
-    noteAgentHookEvent(hookEvent('turn-resume', 'codex'))
+    noteAgentHookEvent(hookEvent('turn-start', 'opencode'))
     noteAgentHookEvent(hookEvent('permission-wait', 'opencode', { metadata: { command: 'rm -rf ./dist' } }))
     expect(sendOsNotification).toHaveBeenLastCalledWith(expect.objectContaining({ body: 'rm -rf ./dist' }))
 
