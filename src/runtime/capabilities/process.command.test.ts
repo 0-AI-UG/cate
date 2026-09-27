@@ -23,9 +23,10 @@ it('resolves bundled Node and install paths for trusted PTY commands', async () 
   }, (_id, data) => { output += data }, (_id, code) => { exited(code) })
   try {
     expect(await exit, output).toBe(0)
-    expect(JSON.parse(stripVTControlCharacters(output).trim())).toEqual([
+    // ConPTY can repaint the result, so the full terminal stream is not JSON.
+    expect(stripVTControlCharacters(output)).toContain(JSON.stringify([
       process.execPath, `${installRoot()}/t3/dist/bin.mjs`, 'connect', 'status', '--json',
-    ])
+    ]))
     expect(handle.shell).toBe(process.execPath)
   } finally {
     capability.kill(handle.id)
