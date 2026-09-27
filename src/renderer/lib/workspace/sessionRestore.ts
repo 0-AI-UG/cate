@@ -135,7 +135,7 @@ export function isWorkspaceEffectivelyEmpty(wsId: string): boolean {
 }
 
 /**
- * Load a workspace's saved layout from its `.cate/` files when it's opened at
+ * Load a workspace's saved state from its `.cate/` files when it's opened at
  * runtime with no live layout yet — the close-then-reopen path. Without this,
  * opening a workspace folder again (after closing it, or via a fresh
  * addWorkspace) comes up as a blank canvas because the layout is only read at

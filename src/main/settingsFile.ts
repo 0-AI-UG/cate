@@ -3,8 +3,8 @@
 //
 // VS Code model: a dedicated `<userData>/settings.json` is the source of truth
 // for AppSettings. It holds ONLY user settings; the workspace/session state
-// (recentProjects, layouts, remoteProjects, sidebarSession) lives in its own
-// files (see ./workspaceStateStore).
+// (recent projects, trusted projects, remote workspaces, sidebar session) lives
+// in its own files (see ./workspaceStateStore).
 //
 // This is a thin wrapper over ./jsonStateFile (the reusable "JSON file is the
 // source of truth" store that was itself lifted from this module): jsonStateFile

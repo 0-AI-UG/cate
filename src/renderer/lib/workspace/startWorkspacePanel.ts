@@ -2,7 +2,7 @@ import { useAppStore } from '../../stores/appStore'
 import { ensureWorkspaceFolder } from '../runAction'
 import { createInteractivePanel } from '../panels/createInteractivePanel'
 
-/** Finish a chooser action after folder selection, trust, and saved-layout restore. */
+/** Finish a chooser action after folder selection, trust, and session restore. */
 export async function startWorkspacePanel(workspaceId: string, type: 'terminal' | 'agent' | 'editor' | 'browser'): Promise<string | null> {
   const targetId = await ensureWorkspaceFolder(workspaceId)
   if (!targetId) return null

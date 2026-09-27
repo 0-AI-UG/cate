@@ -60,7 +60,7 @@ it('uses the Workspace sidebar for settings with only Back and updates in its fo
   act(() => restoreButton.click())
   expect(resetAll).toHaveBeenCalledOnce()
   expect(left.querySelector('[aria-label="Check for updates"]')).not.toBeNull()
-  for (const label of ['Skills', 'Saved Layouts', 'Usage', 'Settings']) {
+  for (const label of ['Skills', 'Usage', 'Settings']) {
     expect(left.querySelector(`[aria-label="${label}"]`)).toBeNull()
   }
   expect(left.querySelector('[aria-label="Cate"]')).not.toBeNull()

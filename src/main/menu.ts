@@ -73,8 +73,8 @@ export function rebuildApplicationMenu(): void {
 
 // The live application menu, kept so the frameless Windows/Linux title bar can
 // render its top-level labels and pop the matching native submenus. Reassigned
-// on every buildApplicationMenu() so dynamic submenus (layout names, open panel
-// windows) stay current without the renderer re-fetching anything.
+// on every buildApplicationMenu() so dynamic submenus (open panel windows)
+// stay current without the renderer re-fetching anything.
 let currentMenu: Electron.Menu | null = null
 
 /** Ordered top-level menu labels (App, File, Edit, …) for the custom menu bar.

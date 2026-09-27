@@ -300,7 +300,7 @@ export async function saveProjectStateLocal(
       // next load. This disk-boundary guard is the backstop that also covers
       // deferred/non-selected workspaces serializing a momentarily-empty canvas.
       log.warn('Refusing to overwrite a non-empty canvas with an empty one for %s (issue #220 guard)', cateDir(rootPath))
-      heldReason = 'Refusing an empty workspace overwrite while a saved layout exists.'
+      heldReason = 'Refusing an empty workspace overwrite while saved workspace state exists.'
     } else {
       writes.push(atomicWriteWithBak(workspacePath(rootPath), wsJson).then(() => rememberWorkspaceContent(rootPath, wsJson)))
     }
@@ -426,7 +426,7 @@ async function saveProjectStateRemote(
     await write(workspaceFile, workspace, isValidWorkspace)
     rememberWorkspaceContent(rootPath, JSON.stringify(workspace, null, 2))
   } else {
-    throw new Error('Refusing an empty workspace overwrite while a saved layout exists.')
+    throw new Error('Refusing an empty workspace overwrite while saved workspace state exists.')
   }
   log.debug('Remote project state saved to %s', rootPath)
 }
