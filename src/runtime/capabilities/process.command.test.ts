@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest'
+import { stripVTControlCharacters } from 'node:util'
 import { RUNTIME_INSTALL_ROOT_PLACEHOLDER, RUNTIME_NODE_EXECUTABLE } from '../../main/runtime/types'
 import { installRoot } from '../installRoot'
 import { createProcessCapability } from './process'
@@ -6,7 +7,8 @@ import { createProcessCapability } from './process'
 it('resolves bundled Node and install paths for trusted PTY commands', async () => {
   const capability = createProcessCapability({
     resolveShell: () => ({ path: '/bin/sh', args: ['-l'] }),
-    getEnv: () => ({}),
+    // Windows Node needs system environment variables such as SystemRoot.
+    getEnv: () => ({ ...process.env }) as Record<string, string>,
   })
   let output = ''
   let exited!: (code: number) => void
@@ -20,8 +22,8 @@ it('resolves bundled Node and install paths for trusted PTY commands', async () 
     },
   }, (_id, data) => { output += data }, (_id, code) => { exited(code) })
   try {
-    expect(await exit).toBe(0)
-    expect(JSON.parse(output.trim())).toEqual([
+    expect(await exit, output).toBe(0)
+    expect(JSON.parse(stripVTControlCharacters(output).trim())).toEqual([
       process.execPath, `${installRoot()}/t3/dist/bin.mjs`, 'connect', 'status', '--json',
     ])
     expect(handle.shell).toBe(process.execPath)
