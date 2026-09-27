@@ -19,6 +19,7 @@ vi.mock('./ShortcutSettings', () => ({ ShortcutSettings: () => <div>Shortcut con
 vi.mock('./NotificationSettings', () => ({ NotificationSettings: () => <div>Notification content</div> }))
 vi.mock('./UpdatesSettings', () => ({ UpdatesSettings: () => <div>Updates content</div> }))
 vi.mock('./AgentSettings', () => ({ AgentSettings: () => <div>Agent content</div> }))
+vi.mock('./AgentHooksSettings', () => ({ AgentHooksSettings: () => <div>Hooks content</div> }))
 vi.mock('./GitHubSettings', () => ({ GitHubSettings: () => <div>GitHub content</div> }))
 vi.mock('./SkillsSettings', () => ({ SkillsSettings: () => <div>Skills content</div> }))
 

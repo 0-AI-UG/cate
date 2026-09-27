@@ -6,7 +6,6 @@ import log from '../lib/logger'
 
 import { create } from 'zustand'
 import type { SidebarView } from '../../shared/types'
-import { useSettingsStore } from './settingsStore'
 
 // -----------------------------------------------------------------------------
 // Store interface
@@ -211,16 +210,3 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
 
 }))
-
-// Apply the file panel launch preference once settings finish loading.
-let launchSidebarViewApplied = false
-function applyLaunchSidebarView(loaded: boolean): void {
-  if (launchSidebarViewApplied || !loaded) return
-  launchSidebarViewApplied = true
-  const { showFileExplorerOnLaunch } = useSettingsStore.getState()
-  if (!showFileExplorerOnLaunch) return
-  if (useUIStore.getState().requestedNavigationView !== null) return
-  useUIStore.getState().requestNavigationView('explorer')
-}
-applyLaunchSidebarView(useSettingsStore.getState()._loaded)
-useSettingsStore.subscribe((s) => applyLaunchSidebarView(s._loaded))

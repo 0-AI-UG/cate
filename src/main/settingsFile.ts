@@ -79,7 +79,6 @@ const SETTINGS_SCHEMA: Record<keyof AppSettings, string> = {
   browserNewTabBehavior: 'string',
   terminalLinkOpenTarget: 'string',
   sidebarTintOpacity: 'number',
-  showFileExplorerOnLaunch: 'boolean',
   showSkillsInWorkspaceOverview: 'boolean',
   notificationsEnabled: 'boolean',
   notifyOnlyWhenUnfocused: 'boolean',

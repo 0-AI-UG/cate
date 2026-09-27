@@ -39,6 +39,7 @@ import { ShortcutSettings } from './ShortcutSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { UpdatesSettings } from './UpdatesSettings'
 import { AgentSettings } from './AgentSettings'
+import { AgentHooksSettings } from './AgentHooksSettings'
 import { RemoteSettings } from './RemoteSettings'
 import { GitHubSettings } from './GitHubSettings'
 import { SkillsSettings } from './SkillsSettings'
@@ -59,6 +60,7 @@ const SECTION_COMPONENTS = {
   'Remote Connections': RemoteSettings,
   Notifications: NotificationSettings,
   'T3 Code': AgentSettings,
+  Hooks: AgentHooksSettings,
   Skills: SkillsSettings,
   GitHub: GitHubSettings,
   Updates: UpdatesSettings,
@@ -69,7 +71,7 @@ const NAV_GROUPS = [
   { title: 'General', icon: Settings2, sections: ['General', 'Appearance', 'Notifications', 'Updates'] },
   { title: 'Workspace', icon: LayoutDashboard, sections: ['Canvas', 'Sidebar', 'Worktrees', 'Remote Connections'] },
   { title: 'Tools', icon: Wrench, sections: ['Terminal', 'Browser', 'CLI', 'GitHub', 'Shortcuts'] },
-  { title: 'Agents', icon: Sparkles, sections: ['T3 Code', 'Skills'] },
+  { title: 'Agents', icon: Sparkles, sections: ['T3 Code', 'Hooks', 'Skills'] },
 ] as const
 
 const SECTIONS = NAV_GROUPS.flatMap((group) =>
