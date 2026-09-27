@@ -20,6 +20,38 @@ describe('parseFrontmatter', () => {
     expect(fm).toEqual({})
     expect(tags).toEqual([])
   })
+
+  it.each(['\n', '\r\n'])('parses Vercel-style plain multiline descriptions with %j line endings', (newline) => {
+    const text = [
+      '---',
+      'name: vercel-composition-patterns',
+      'description:',
+      '  React composition patterns that scale. Use when refactoring components with',
+      '  boolean prop proliferation, building flexible component libraries, or',
+      '  designing reusable APIs.',
+      'license: MIT',
+      'metadata:',
+      '  author: vercel',
+      'tags: [react, composition]',
+      '---',
+    ].join(newline)
+    const { fm, tags } = parseFrontmatter(text)
+    expect(fm.description).toBe('React composition patterns that scale. Use when refactoring components with boolean prop proliferation, building flexible component libraries, or designing reusable APIs.')
+    expect(fm.license).toBe('MIT')
+    expect(fm.metadata).toBe('')
+    expect(tags).toEqual(['react', 'composition'])
+  })
+
+  it('folds plain descriptions that start inline and preserves paragraph breaks', () => {
+    const { fm } = parseFrontmatter('---\ndescription: First line\n  continued here.\n\n  Second paragraph.\nname: demo\n---')
+    expect(fm.description).toBe('First line continued here.\nSecond paragraph.')
+    expect(fm.name).toBe('demo')
+  })
+
+  it('preserves quoted descriptions and empty description values', () => {
+    expect(parseFrontmatter('---\ndescription: "Use React: composition patterns"\n---').fm.description).toBe('Use React: composition patterns')
+    expect(parseFrontmatter('---\ndescription:\nname: demo\n---').fm.description).toBe('')
+  })
 })
 
 describe('ensureSkillName', () => {
