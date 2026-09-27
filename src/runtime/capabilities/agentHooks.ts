@@ -50,6 +50,8 @@ import { createAgentChangesStore, type AgentChangeSource } from './agentChanges'
 import { AGENT_TITLE_RESOLVERS, createAgentTitleTracker } from './agentTitles'
 import type { AgentTitleResolvers } from './agentTitles/types'
 import { ensureHermesIntegration, inspectHermesIntegration } from './hermesIntegration'
+import { AGENT_APPROVAL_DETECTION, type AgentApprovalDetection } from '../../shared/agentApprovalModes'
+import { readCodexApprovalConfig } from './agentApprovalConfig'
 import {
   AGENT_HOOK_SPECS,
   CATE_HOOK_MARKER,
@@ -123,6 +125,7 @@ export interface AgentHooksCapability {
 }
 
 export interface AgentHooksDeps {
+  approvalConfigReader?: typeof readCodexApprovalConfig
   changesDir?: string
   /** Override the stable hooks dir (tests). Default: ~/.cate/agent-hooks. */
   hooksDir?: string
@@ -248,6 +251,26 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
   let disposed = false
   const inputSessions = new Map<string, Pick<AgentHookEvent, 'agentId' | 'sessionId'>>()
   const promptContexts = new Map<string, string>()
+  const approvalEnvs = new Map<string, NodeJS.ProcessEnv>()
+  const approvalCache = new Map<string, { time: number; value: Promise<AgentApprovalDetection> }>()
+  const deliveries = new Map<string, Promise<void>>()
+  const deliver = (terminalId: string, work: () => Promise<void>): Promise<void> => {
+    const next = (deliveries.get(terminalId) ?? Promise.resolve()).catch(() => {}).then(work)
+    deliveries.set(terminalId, next)
+    void next.finally(() => {
+      if (deliveries.get(terminalId) === next) deliveries.delete(terminalId)
+    }).catch(() => {})
+    return next
+  }
+  const approvalConfig = (cwd: string, env?: NodeJS.ProcessEnv, refresh = false) => {
+    const key = JSON.stringify([cwd, env?.CODEX_HOME ?? process.env.CODEX_HOME, env?.HOME ?? process.env.HOME, env?.PATH ?? process.env.PATH])
+    const cached = approvalCache.get(key)
+    if (!refresh && cached && Date.now() - cached.time < 30_000) return cached.value
+    const value = (deps.approvalConfigReader ?? readCodexApprovalConfig)(cwd, { env })
+      .catch(() => AGENT_APPROVAL_DETECTION.codex)
+    approvalCache.set(key, { time: Date.now(), value })
+    return value
+  }
 
   const encodedPromptContext = (agentId: AgentId, terminalId: string): string => {
     const context = promptContexts.get(terminalId)
@@ -460,38 +483,48 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
               res.end()
               return
             }
-            // Presence lineage: every authenticated post from a known agent
-            // counts, even one whose payload normalizes to null — the post
-            // itself proves the agent is alive. Awaited BEFORE responding so
-            // the bridge keeps its ancestry chain alive through the walk.
-            if (deps.onPost && body.agentId in AGENT_HOOK_SPECS) {
-              try {
-                await deps.onPost({
-                  terminalId: body.terminalId,
-                  agentId: body.agentId as AgentId,
-                  pid: typeof body.pid === 'number' ? body.pid : undefined,
-                  ...(normalizeAgentSourceStartedAt(body.processStartedAt)
-                    ? { sourceStartedAt: normalizeAgentSourceStartedAt(body.processStartedAt) }
-                    : {}),
-                })
-              } catch { /* presence tracking must never fail the hook */ }
-            }
             const event = normalizeAgentHookPayload(body.agentId, body.terminalId, body.payload as Record<string, unknown>)
-            if (event?.agentId === 'hermes' && typeof body.pid === 'number' && Number.isInteger(body.pid) && body.pid > 0) {
-              event.sourcePid = body.pid
-              event.sourceStartedAt = normalizeAgentSourceStartedAt(body.processStartedAt)
-            }
-            if (body.agentId in AGENT_HOOK_SPECS) {
-              try { await changes.ingestHook(body.terminalId, body.agentId as AgentId, body.payload as Record<string, unknown>, event) }
-              catch (error) { console.warn('[agent changes] Could not save reported edit', error) }
-            }
-            if (event) {
-              emit(event)
-              // Awaited (a cheap local stat) so the watch is armed by the time
-              // the bridge's post resolves — no window where the interrupt
-              // marker could land before the baseline is taken.
-              await updateInterruptWatch(event)
-            }
+            const agentId = body.agentId
+            const terminalId = body.terminalId
+            await deliver(terminalId, async () => {
+              if (disposed) return
+              // Presence lineage: every authenticated post from a known agent
+              // counts, even one whose payload normalizes to null — the post
+              // itself proves the agent is alive. Awaited BEFORE responding so
+              // the bridge keeps its ancestry chain alive through the walk.
+              if (deps.onPost && agentId in AGENT_HOOK_SPECS) {
+                try {
+                  await deps.onPost({
+                    terminalId,
+                    agentId: agentId as AgentId,
+                    pid: typeof body.pid === 'number' ? body.pid : undefined,
+                    ...(normalizeAgentSourceStartedAt(body.processStartedAt)
+                      ? { sourceStartedAt: normalizeAgentSourceStartedAt(body.processStartedAt) }
+                      : {}),
+                  })
+                } catch { /* presence tracking must never fail the hook */ }
+              }
+              if (event?.kind === 'permission-check' && AGENT_APPROVAL_DETECTION[event.agentId].source === 'config') {
+                event.approvalMode = event.cwd && path.isAbsolute(event.cwd)
+                  ? (await approvalConfig(event.cwd, approvalEnvs.get(event.terminalId))).mode : 'unknown'
+              }
+              if (disposed) return
+              if (event?.agentId === 'hermes' && typeof body.pid === 'number' && Number.isInteger(body.pid) && body.pid > 0) {
+                event.sourcePid = body.pid
+                event.sourceStartedAt = normalizeAgentSourceStartedAt(body.processStartedAt)
+              }
+              if (agentId in AGENT_HOOK_SPECS) {
+                try { await changes.ingestHook(terminalId, agentId as AgentId, body.payload as Record<string, unknown>, event) }
+                catch (error) { console.warn('[agent changes] Could not save reported edit', error) }
+              }
+              if (event) {
+                emit(event)
+                // Awaited (a cheap local stat) so the watch is armed by the time
+                // the bridge's post resolves — no window where the interrupt
+                // marker could land before the baseline is taken.
+                await updateInterruptWatch(event)
+              }
+            })
             if (event?.kind === 'turn-start') {
               const output = encodedPromptContext(body.agentId as AgentId, body.terminalId)
               if (output) {
@@ -579,17 +612,27 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
 
   return {
     noteInput(terminalId, data) {
-      const session = inputSessions.get(terminalId)
-      if (!session || disposed) return
+      if (disposed) return
       // The PTY write and hook ingestion run on this host. A busy renderer
       // therefore receives permission-wait before its corresponding input,
       // even when both events are still queued for delivery.
-      if (data.includes('\r')) emit({ terminalId, ...session, kind: 'input-submit', raw: {} })
-      if (data.includes('\x03')) emit({ terminalId, ...session, kind: 'input-interrupt', raw: {} })
+      const submit = data.includes('\r')
+      const interrupt = data.includes('\x03')
+      const report = () => {
+        const session = inputSessions.get(terminalId)
+        if (!session || disposed) return
+        if (submit) emit({ terminalId, ...session, kind: 'input-submit', raw: {} })
+        if (interrupt) emit({ terminalId, ...session, kind: 'input-interrupt', raw: {} })
+      }
+      // Config inspection can be asynchronous; input must not overtake the
+      // permission event that prompted the user's response.
+      if (deliveries.has(terminalId)) void deliver(terminalId, async () => report()).catch(() => {})
+      else report()
     },
     forgetTerminal(terminalId) {
       inputSessions.delete(terminalId)
       promptContexts.delete(terminalId)
+      approvalEnvs.delete(terminalId)
     },
     setPromptContext(terminalId, context) {
       if (context) promptContexts.set(terminalId, context)
@@ -602,6 +645,9 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     bindChanges: (cwd, threadId, panelId) => changes.bind(cwd, threadId, panelId),
     async envForPty(ptyId, env, config, cwd, baseCwd, launchedAgentId) {
       if (disposed) return env
+      approvalEnvs.set(ptyId, Object.fromEntries(
+        ['PATH', 'HOME', 'USERPROFILE', 'CODEX_HOME'].filter(key => env[key] !== undefined).map(key => [key, env[key]]),
+      ))
       let state: HookState
       try {
         state = await ensureReady()
@@ -737,6 +783,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     },
 
     async inspectWorkspace(cwd) {
+      approvalCache.clear()
       const repoLocal = isRepoLocalCwd(cwd, os.homedir())
       const states: AgentHookAgentState[] = []
       for (const agent of AGENTS) {
@@ -759,7 +806,11 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
           }
           if (agent.id === 'hermes') injected = await inspectHermesIntegration()
         }
-        states.push({ agentId: agent.id, displayName: agent.displayName, folderPresent, injected })
+        states.push({
+          agentId: agent.id, displayName: agent.displayName, folderPresent, injected,
+          approvalDetection: agent.id === 'codex' && repoLocal
+            ? await approvalConfig(cwd, undefined, true) : AGENT_APPROVAL_DETECTION[agent.id],
+        })
       }
       return states
     },
@@ -784,6 +835,8 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       titleTracker = null
       listeners.clear()
       inputSessions.clear()
+      approvalEnvs.clear()
+      approvalCache.clear()
       interruptWatches.clear()
       if (interruptTimer) {
         clearInterval(interruptTimer)

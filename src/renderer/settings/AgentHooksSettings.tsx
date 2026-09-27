@@ -36,6 +36,7 @@ export function AgentHooksSettings() {
   const workspace = useSelectedWorkspace()
   const [error, setError] = useState(false)
   const [agents, setAgents] = useState<AgentCliHookState[] | null>(null)
+  const [refresh, setRefresh] = useState(0)
 
   const locator = workspace?.rootPath
   useEffect(() => {
@@ -56,7 +57,7 @@ export function AgentHooksSettings() {
     return () => {
       live = false
     }
-  }, [locator])
+  }, [locator, refresh])
 
   if (!workspace) {
     return <p className="text-xs text-muted py-2">Open a workspace to configure its agent hooks.</p>
@@ -75,9 +76,10 @@ export function AgentHooksSettings() {
   }
 
   return (
-    <SearchableBlock keywords="agent hooks injection claude codex cursor grok hermes kiro opencode status presence auto on off">
+    <SearchableBlock keywords="agent hooks injection claude codex cursor grok hermes kiro opencode status presence auto on off approval automatic manual permissions">
+      <button type="button" className="text-xs text-muted hover:text-primary" onClick={() => setRefresh(value => value + 1)}>Refresh detection</button>
       {agents === null && <LoadingState label="Loading agent hooks…" size={14} className="justify-start py-3 text-xs" />}
-      {error && <p role="alert" className="py-3 text-xs text-muted">Could not check agent hooks. Reopen settings to try again.</p>}
+      {error && <p role="alert" className="py-3 text-xs text-muted">Could not check agent hooks. Refresh detection to try again.</p>}
       {!!agents?.length && <div>
         {agents.map((a) => {
           const evaluation = evaluateAgentCliHooks(a, overrides)
@@ -108,6 +110,9 @@ export function AgentHooksSettings() {
                 options={MODE_OPTIONS}
                 onChange={(v) => setMode(a.agent.id, v as AgentHookMode)}
               />
+              {a.approvalDetection?.source === 'config' && <span className="w-full pl-8 text-[11px] text-muted" title={a.approvalDetection.detail}>
+                Approvals: {a.approvalDetection.mode === 'automatic' ? 'Automatic' : a.approvalDetection.mode === 'manual' ? 'Manual' : 'Unknown'}
+              </span>}
             </div>
           )
         })}

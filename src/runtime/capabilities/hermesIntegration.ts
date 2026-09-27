@@ -51,6 +51,7 @@ _TOOL_KEYS = {
     "tool_name", "args", "result", "tool_call_id", "duration_ms", "status",
     "error_type", "error_message",
 }
+_APPROVAL_KEYS = {"surface"}
 
 def _connection():
     if os.environ.get("CATE_HERMES_HOOKS") != "1":
@@ -79,6 +80,8 @@ def _report(name, profile, **kwargs):
     # history. Cate needs neither; keep the bridge's data boundary limited to
     # lifecycle identity and post-tool change evidence.
     allowed = _COMMON_KEYS | (_TOOL_KEYS if name == "post_tool_call" else set())
+    if name in {"pre_approval_request", "post_approval_response"}:
+        allowed |= _APPROVAL_KEYS
     payload = {key: value for key, value in kwargs.items() if key in allowed}
     payload.update({
         "hook_event_name": name,

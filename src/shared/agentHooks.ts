@@ -18,6 +18,7 @@
 
 import { createHash } from 'crypto'
 import { AGENTS, type AgentId } from './agents'
+import type { AgentApprovalDetection, AgentApprovalMode } from './agentApprovalModes'
 export {
   resolveAgentHookMode,
   type AgentHookConfig,
@@ -46,6 +47,10 @@ export type AgentHookEventKind =
   | 'session-title'
   | 'turn-start'
   | 'turn-end'
+  /** A permission decision is in progress; it may be resolved automatically.
+   *  This is NOT evidence that a human needs to respond. */
+  | 'permission-check'
+  /** A CLI has confirmed that a human permission prompt is waiting. */
   | 'permission-wait'
   /** An idempotent "the turn is running" re-assertion. OpenCode emits it when
    *  a permission reply arrives; other CLIs emit it after a tool completes.
@@ -82,6 +87,8 @@ export interface AgentHookEvent {
   sourceStartedAt?: string
   /** Present only for session-title events. */
   title?: string
+  /** Config fallback for ambiguous permission checks, read on the CLI host. */
+  approvalMode?: AgentApprovalMode
   /** The raw payload as posted by the bridge, for consumers that need
    *  per-CLI detail (e.g. codex's turn_id / tool_input on permission-wait). */
   raw: Record<string, unknown>
@@ -136,6 +143,7 @@ export interface AgentHookAgentState {
   folderPresent: boolean
   /** A repo hook file carrying Cate's marker is present (we've injected here). */
   injected: boolean
+  approvalDetection?: AgentApprovalDetection
 }
 
 export interface AgentHookSpec {
@@ -348,8 +356,8 @@ export function agentHookFolder(agentId: AgentId): string | null {
 // ---------------------------------------------------------------------------
 
 const CLAUDE_EVENTS = [
-  'SessionStart', 'UserPromptSubmit', 'PermissionRequest',
-  'PreToolUse', 'PostToolUse', 'Stop', 'StopFailure', 'SessionEnd',
+  'SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'Notification',
+  'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PermissionDenied', 'Stop', 'StopFailure', 'SessionEnd',
 ]
 
 const claudeSpec: AgentHookSpec = {
@@ -380,17 +388,21 @@ const claudeSpec: AgentHookSpec = {
     switch (p.hook_event_name) {
       case 'SessionStart': return { kind: 'session-start', ...base }
       case 'UserPromptSubmit': return { kind: 'turn-start', ...base }
-      // PermissionRequest precedes the approval UI; PreToolUse follows the
-      // resolved approval immediately before execution. This also covers
-      // approvals granted by another hook, where no terminal Enter occurs.
+      // PreToolUse is activity, not evidence that approval was granted.
       case 'PreToolUse': return { kind: 'turn-resume', ...base }
       // Fires after EVERY executed tool call. This confirms the turn is still
       // active and remains a fallback resume edge for older Claude versions.
-      case 'PostToolUse': return { kind: 'turn-resume', ...base }
+      case 'PostToolUse':
+      case 'PostToolUseFailure':
+      case 'PermissionDenied': return { kind: 'turn-resume', ...base }
       case 'Stop': return { kind: 'turn-end', ...base }
       case 'StopFailure': return { kind: 'turn-end', ...base }
       case 'SessionEnd': return { kind: 'session-end', ...base }
-      case 'PermissionRequest': return { kind: 'permission-wait', ...base }
+      case 'PermissionRequest': return { kind: 'permission-check', ...base }
+      // Unlike PermissionRequest (which other hooks may auto-resolve), this
+      // notification confirms a human prompt. Claude applies its own delay.
+      case 'Notification':
+        return p.notification_type === 'permission_prompt' ? { kind: 'permission-wait', ...base } : null
       default: return null
     }
   },
@@ -462,7 +474,10 @@ const codexSpec: AgentHookSpec = {
       case 'UserPromptSubmit': return { kind: 'turn-start', ...base }
       case 'Stop': return { kind: 'turn-end', ...base }
       case 'Interrupt': return { kind: 'turn-end', ...base }
-      case 'PermissionRequest': return { kind: 'permission-wait', ...base }
+      // Runs BEFORE Codex chooses hooks, automatic review, or the user. The
+      // hook's permission_mode describes policy, not the selected reviewer.
+      // Codex exposes no hook for the later human-prompt boundary.
+      case 'PermissionRequest': return { kind: 'permission-check', ...base }
       // Fires after an approval is resolved and immediately before the tool
       // starts. This clears permission-wait while a long-running command is
       // executing instead of leaving the UI blocked until PostToolUse.
@@ -861,7 +876,10 @@ const hermesSpec: AgentHookSpec = {
       case 'on_session_reset': return { kind: 'session-start', ...base }
       case 'pre_llm_call': return { kind: 'turn-start', ...base }
       case 'on_session_end': return { kind: 'turn-end', ...base }
-      case 'pre_approval_request': return { kind: 'permission-wait', ...base }
+      case 'pre_approval_request':
+        // Smart review and plugin transports may resolve without a human.
+        // Older bridges omit surface; absence is not proof of a human wait.
+        return { kind: p.surface === 'cli' ? 'permission-wait' : 'permission-check', ...base }
       case 'post_approval_response': return { kind: 'turn-resume', ...base }
       // Confirms execution resumed even if an older/custom approval flow did
       // not emit post_approval_response; it also keeps status active across
@@ -896,6 +914,9 @@ export function normalizeAgentHookPayload(
 ): AgentHookEvent | null {
   const spec = AGENT_HOOK_SPECS[agentId as AgentId]
   if (!spec) return null
+  // Child agents inherit the parent's terminal env. Their approval/Stop hooks
+  // must not change the parent terminal's activity or announce it as ready.
+  if ((agentId === 'codex' || agentId === 'claude-code') && typeof payload.agent_id === 'string' && payload.agent_id) return null
   const fields = spec.normalize(payload)
   if (!fields) return null
   const turnId = str(payload.turn_id) ?? str(payload.turnId) ?? str(payload.promptId) ?? undefined
