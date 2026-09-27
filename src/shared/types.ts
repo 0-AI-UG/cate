@@ -1537,7 +1537,6 @@ export interface AppSettings {
 
   // Sidebar
   sidebarTintOpacity: number
-  showFileExplorerOnLaunch: boolean
   /** Show installed agent skills in each expanded workspace overview. */
   showSkillsInWorkspaceOverview: boolean
 
@@ -1631,7 +1630,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   // Sidebar
   sidebarTintOpacity: 1.0,
-  showFileExplorerOnLaunch: false,
   showSkillsInWorkspaceOverview: true,
 
   // Notifications (OS-level only)

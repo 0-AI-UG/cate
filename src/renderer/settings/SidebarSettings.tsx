@@ -6,9 +6,6 @@ export function SidebarSettings() {
 
   return (
     <div className="flex flex-col gap-1">
-      <SettingRow label="Show file explorer on launch">
-        <Toggle checked={store.showFileExplorerOnLaunch} onChange={(v) => store.setSetting('showFileExplorerOnLaunch', v)} />
-      </SettingRow>
       <SettingRow
         label="Show skills in workspace overview"
         description="List installed agent skills beneath expanded workspaces."
