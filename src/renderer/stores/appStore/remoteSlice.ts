@@ -182,7 +182,7 @@ export function createRemoteSlice(set: AppSet, get: AppGet): RemoteSliceActions 
       // 'missing' → the canvas lock offers Install.)
       await get().ensureWorkspaceRuntime(wsId)
       // Runtime is live now, so its .cate/ (next to the remote repo) is
-      // readable: load any saved layout for a reconnected workspace. Awaited so a
+      // readable: load any saved session for a reconnected workspace. Awaited so a
       // caller that then spawns a terminal does so only after the restore.
       await hydrateWorkspaceFromDisk(wsId)
       return true

@@ -27,7 +27,7 @@ test('the shell owns project selection and an empty project has no implicit pane
     await expect(welcome).toHaveCount(0)
     await page.evaluate(() => window.__cateE2E!.createTerminal({ x: 80, y: 80 }))
     // Wait for the non-empty layout to reach disk before clearing it: empty
-    // saves must replace a previously saved layout, not just initialize one.
+    // saves must replace previously saved workspace state, not just initialize it.
     await expect.poll(() => {
       try { return Object.keys(JSON.parse(readFileSync(path.join(directory, '.cate/workspace.json'), 'utf8')).panels ?? {}).length }
       catch { return 0 }

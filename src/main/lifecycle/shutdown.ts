@@ -253,7 +253,7 @@ export function registerLifecycleHandlers(): void {
     // survives the quit (the async writer wouldn't fire before process exit).
     flushSettingsPendingWritesSync()
     // Same for the workspace-state files (recent projects, sidebar, remote
-    // workspaces, layouts) — flush their debounced writes before the process exits.
+    // workspaces, trusted projects) — flush their debounced writes before exit.
     flushWorkspaceStateSync()
     // Same for the global browser history/bookmarks files.
     flushBrowserStateSync()
