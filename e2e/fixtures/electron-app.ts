@@ -79,7 +79,10 @@ export async function launchApp(opts: {
   // print a warning before its own stdout, which is not a Cate behavior.
   delete env.NO_COLOR
   const electronApp = await electron.launch({
-    args: ['.'],
+    // Reproduce packaged-only failures with the released app and engine while
+    // retaining this fixture's isolated profile and runtime.
+    executablePath: process.env.CATE_E2E_EXECUTABLE,
+    args: [process.env.CATE_E2E_APP_PATH ?? '.'],
     cwd: REPO_ROOT,
     env,
   })

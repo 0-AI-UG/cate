@@ -6,6 +6,7 @@ const MAX_TITLE_LENGTH = 120
 
 export interface AgentTitleTracker {
   note(event: AgentHookEvent): void
+  forget(terminalId: string): void
   dispose(): void
 }
 
@@ -36,6 +37,7 @@ export function createAgentTitleTracker(options: AgentTitleTrackerOptions): Agen
   const generations = new Map<string, number>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const lastEmitted = new Map<string, string>()
+  let sequence = 0
   let disposed = false
 
   const clearTimer = (terminalId: string): void => {
@@ -44,12 +46,20 @@ export function createAgentTitleTracker(options: AgentTitleTrackerOptions): Agen
     timers.delete(terminalId)
   }
 
+  const forget = (terminalId: string): void => {
+    clearTimer(terminalId)
+    generations.delete(terminalId)
+    lastEmitted.delete(terminalId)
+  }
+
   const schedule = (event: AgentHookEvent): void => {
     const { terminalId, agentId, sessionId } = event
     if (!sessionId) return
 
     clearTimer(terminalId)
-    const generation = (generations.get(terminalId) ?? 0) + 1
+    // A reused terminal id must not revive an in-flight lookup from before
+    // forget(). Use a tracker-wide sequence so deleting its entry is safe.
+    const generation = ++sequence
     generations.set(terminalId, generation)
 
     const attempt = async (attemptIndex: number): Promise<void> => {
@@ -109,13 +119,12 @@ export function createAgentTitleTracker(options: AgentTitleTrackerOptions): Agen
     note(event) {
       if (disposed || event.kind === 'session-title' || event.kind === 'input-submit' || event.kind === 'input-interrupt') return
       if (event.kind === 'session-end') {
-        clearTimer(event.terminalId)
-        generations.set(event.terminalId, (generations.get(event.terminalId) ?? 0) + 1)
-        lastEmitted.delete(event.terminalId)
+        forget(event.terminalId)
         return
       }
       schedule(event)
     },
+    forget,
     dispose() {
       disposed = true
       for (const terminalId of timers.keys()) clearTimer(terminalId)
