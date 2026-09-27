@@ -9,6 +9,7 @@
 
 import { TERMINAL_AGENTS, type AgentDef } from '../../../shared/agents'
 import type { AgentHookAgentState } from '../../../shared/agentHooks'
+import { AGENT_APPROVAL_DETECTION, type AgentApprovalDetection } from '../../../shared/agentApprovalModes'
 import {
   resolveAgentHookMode,
   type AgentHookConfig,
@@ -19,6 +20,7 @@ export interface AgentCliHookState {
   agent: AgentDef
   folderPresent: boolean
   injected: boolean
+  approvalDetection?: AgentApprovalDetection
 }
 
 export interface AgentCliHookEvaluation {
@@ -59,6 +61,7 @@ export async function inspectAgentCliHooks(locator: string): Promise<AgentCliHoo
       agent,
       folderPresent: state?.folderPresent ?? false,
       injected: state?.injected ?? false,
+      approvalDetection: state?.approvalDetection ?? AGENT_APPROVAL_DETECTION[agent.id],
     }
   })
 }

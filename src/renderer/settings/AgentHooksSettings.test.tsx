@@ -90,4 +90,35 @@ describe('AgentHooksSettings', () => {
 
     expect(host.querySelector('[data-srow]')).not.toBeNull()
   })
+
+  it.each([
+    ['automatic', 'Automatic'], ['manual', 'Manual'], ['unknown', 'Unknown'],
+  ])('shows a short read-only approval label for %s', async (mode, label) => {
+    inspect.mockResolvedValue([{
+      agentId: 'codex', displayName: 'Codex', folderPresent: true, injected: true,
+      approvalDetection: { source: 'config', mode, detail: '/home/test/.codex/config.toml' },
+    }])
+    await act(async () => { root.render(<AgentHooksSettings />) })
+    expect(host.textContent).toContain(`Approvals: ${label}`)
+    expect(host.textContent).not.toContain('/home/test/.codex/config.toml')
+    expect(host.querySelector('[title="/home/test/.codex/config.toml"]')).not.toBeNull()
+    expect(host.querySelector('[aria-label="Codex approval mode"]')).toBeNull()
+    expect(host.querySelector('[aria-label="Codex hooks"]')).not.toBeNull()
+    expect(window.electronAPI.settingsSet).not.toHaveBeenCalled()
+    expect(host.textContent).not.toContain('human permission-prompt notification')
+  })
+
+  it('refreshes detected configuration', async () => {
+    inspect.mockResolvedValue([])
+    await act(async () => { root.render(<AgentHooksSettings />) })
+    expect(host.textContent).toContain('Approvals: Unknown')
+    inspect.mockResolvedValue([{
+      agentId: 'codex', displayName: 'Codex', folderPresent: true, injected: true,
+      approvalDetection: { source: 'config', mode: 'manual', detail: 'Codex default: approvals_reviewer = user' },
+    }])
+    await act(async () => { [...host.querySelectorAll('button')].find(b => b.textContent === 'Refresh detection')!.click() })
+    expect(inspect).toHaveBeenCalledTimes(2)
+    expect(host.textContent).toContain('Approvals: Manual')
+    expect(window.electronAPI.settingsSet).not.toHaveBeenCalled()
+  })
 })
