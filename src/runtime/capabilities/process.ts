@@ -14,11 +14,13 @@ import type { IPty } from 'node-pty'
 import os from 'os'
 import { execFile } from 'child_process'
 import type { ProcessHost, PtyCreateOptions, PtyHandle, PtyActivity } from '../../main/runtime/types'
+import { RUNTIME_INSTALL_ROOT_PLACEHOLDER, RUNTIME_NODE_EXECUTABLE } from '../../main/runtime/types'
 import type { TerminalActivity } from '../../shared/types'
 import type { AgentPresenceTracker } from './agentPresence'
 import type { AgentHookConfig } from '../../shared/agentHooks'
 import { agentForLaunchCommand, type AgentId } from '../../shared/agents'
 import { catePathEnv } from '../cateCli'
+import { installRoot } from '../installRoot'
 import {
   type ProcTree,
   snapshotProcessTreeProc,
@@ -260,8 +262,16 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
       const id = opts.id ?? `pty-${Date.now()}-${Math.round(seq++ + Math.random() * 1e6).toString(36)}`
       const ptySpawn = await getPtySpawn()
       const shell = deps.resolveShell(opts.shell)
-      const executable = opts.command?.executable ?? shell.path
-      const args = opts.command?.args ?? shell.args
+      // Trusted commands use the same runtime paths as server.start (including
+      // T3 Connect in packaged builds). Shell launches stay literal.
+      const resolveArg = (value: string): string =>
+        value.replaceAll(RUNTIME_INSTALL_ROOT_PLACEHOLDER, installRoot())
+      const executable = opts.command
+        ? opts.command.executable === RUNTIME_NODE_EXECUTABLE
+          ? process.execPath
+          : resolveArg(opts.command.executable)
+        : shell.path
+      const args = opts.command ? opts.command.args.map(resolveArg) : shell.args
       const cwd = opts.cwd || os.homedir()
       // Merge caller env over the host env; when a CLI endpoint was injected
       // (CATE_API), also put the bundled `cate` on PATH so agents can run it.
