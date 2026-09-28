@@ -67,6 +67,15 @@ button[aria-label="New project"],
   backdrop-filter: none !important;
 }
 
+/* The message timeline scroller carries a mask-image fade (for the hidden chat
+ * header) and scroll areas fade their edges the same way. A masked scroller is
+ * rasterized as its own layer, which blurs every message inside it. */
+.topbar-scroll-fade,
+.virtualized-scroll-fade {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
 [data-slot="sidebar-inset"] {
   min-width: 0 !important;
   margin: 0 !important;
