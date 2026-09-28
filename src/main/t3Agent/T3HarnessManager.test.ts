@@ -14,7 +14,10 @@ vi.mock('../windowRegistry', () => ({ onWindowClosed: mocks.windowClosed }))
 function runtime() {
   return {
     validatePathStrict: vi.fn(async (path: string) => path.replace('/alias', '/repo')),
-    file: { harnessRoot: vi.fn().mockResolvedValue('/app/harness') },
+    file: {
+      harnessRoot: vi.fn().mockResolvedValue('/app/harness'),
+      readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+    },
     server: { stop: vi.fn() },
     process: { create: vi.fn().mockImplementation(async (opts: { id: string }) => ({ id: opts.id, pid: 123 })), write: vi.fn(), kill: vi.fn() },
   }
@@ -261,6 +264,18 @@ it('routes provider sign-in input and cancellation to the actual process handle'
   manager.cancelProviderAuth(session.id, 1)
   expect(local.process.write).toHaveBeenCalledWith('actual-pty', 'code\n')
   expect(local.process.kill).toHaveBeenCalledWith('actual-pty')
+})
+
+it('launches provider sign-in with the binary and home from the provider profile', async () => {
+  local.file.readFile.mockImplementation(async (file: string) => {
+    if (file !== '/app/harness/provider-profile.json') throw new Error('ENOENT')
+    return JSON.stringify({ providers: { codex: { binaryPath: '/opt/codex', shadowHomePath: '/auth/codex' } } })
+  })
+  await manager.startProviderAuth({ workspaceId: 'ws', cwd: '/repo', providerId: 'codex' }, 1)
+  expect(local.process.create).toHaveBeenCalledWith(expect.objectContaining({
+    command: { executable: '/opt/codex', args: ['login', '--device-auth'] },
+    env: { CODEX_HOME: '/auth/codex', TERM: 'xterm-256color' },
+  }), expect.any(Function), expect.any(Function))
 })
 
 it('does not register ownership when a pending panel acquisition is closed', async () => {

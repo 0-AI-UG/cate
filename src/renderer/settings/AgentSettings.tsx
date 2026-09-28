@@ -17,6 +17,7 @@ export function AgentSettings() {
   const [authStarting, setAuthStarting] = useState(false)
   const [openCodeProvider, setOpenCodeProvider] = useState('')
   const [copiedDeviceCode, setCopiedDeviceCode] = useState(false)
+  const [authInput, setAuthInput] = useState('')
   const [providerStatuses, setProviderStatuses] = useState<AgentProviderStatus[]>([])
   const [providerStatusesLoading, setProviderStatusesLoading] = useState(false)
   const openedAuthUrlRef = useRef<string | null>(null)
@@ -53,6 +54,7 @@ export function AgentSettings() {
     setAuthSession(null)
     setAuthError(null)
     setAuthStarting(true)
+    setAuthInput('')
     setCopiedDeviceCode(false)
     openedAuthUrlRef.current = null
     try {
@@ -90,6 +92,7 @@ export function AgentSettings() {
     setAuthProvider(null)
     setAuthSession(null)
     setAuthError(null)
+    setAuthInput('')
   }
 
   const sendProviderLoginInput = (data: string): void => {
@@ -268,6 +271,30 @@ export function AgentSettings() {
                 <pre className="max-h-64 min-h-28 overflow-auto whitespace-pre-wrap break-words rounded-md border border-subtle bg-surface-0 p-3 font-mono text-xs leading-5 text-secondary select-text">
                   {authSession.output.trim() || 'Waiting for the provider to begin the login flow…'}
                 </pre>
+                {authSession.phase === 'running' && (
+                  <form
+                    className="flex items-center gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      if (!authInput) return
+                      sendProviderLoginInput(`${authInput}\r`)
+                      setAuthInput('')
+                    }}
+                  >
+                    <input
+                      aria-label="Sign-in response"
+                      type="password"
+                      autoComplete="off"
+                      value={authInput}
+                      onChange={(event) => setAuthInput(event.target.value)}
+                      placeholder="Paste a code or API key if the provider asks for one"
+                      className={inputCls}
+                    />
+                    <button type="submit" className={btn.secondary} disabled={!authInput}>
+                      Send
+                    </button>
+                  </form>
+                )}
                 {authSession.phase === 'running' && (
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-xs text-muted">
