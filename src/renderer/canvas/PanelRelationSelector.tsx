@@ -14,16 +14,19 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { useCanvasRelationOverlayTarget } from './CanvasTopOverlayContext'
 
-function RelationMenuPortal({ target, position, children }: {
+function RelationMenuPortal({ target, position, open, children }: {
   target: HTMLElement | null | undefined
   position: { x: number; y: number }
+  open: boolean
   children: ReactNode
 }) {
   if (!target) return children
+  // The overlay lives outside the canvas's wheel listener, so the closed
+  // (invisible but still sized) menu must not swallow pan gestures.
   return createPortal(
     <div
       data-panel-relation-menu-portal
-      className="pointer-events-auto absolute z-[100001]"
+      className={`${open ? 'pointer-events-auto' : 'pointer-events-none'} absolute z-[100001]`}
       style={{
         left: position.x,
         top: position.y + 16,
@@ -243,7 +246,7 @@ export function PanelRelationSelector({
         </button>
       </div>
 
-      <RelationMenuPortal target={relationOverlayTarget} position={position}>
+      <RelationMenuPortal target={relationOverlayTarget} position={position} open={open}>
       <div
         ref={menuRef}
         role="menu"

@@ -290,6 +290,10 @@ test('runs every provider sign-in inside settings without creating terminal pane
       await page.getByRole('button', { name: 'Continue', exact: true }).click()
     }
     await expect(page.getByText('CATE-1234', { exact: true })).toBeVisible({ timeout: 15_000 })
+    if (provider.id === 'claude') {
+      await page.getByLabel('Sign-in response').fill('pasted-code#state')
+      await page.getByRole('button', { name: 'Send', exact: true }).click()
+    }
     await expect(page.getByText('Sign-in completed.', { exact: true })).toBeVisible({ timeout: 15_000 })
     await page.getByRole('button', { name: 'Done', exact: true }).click()
   }
