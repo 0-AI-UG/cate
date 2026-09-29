@@ -36,6 +36,8 @@ const PASSTHROUGH_PANEL_FIELDS = [
   'tabs',
   'activeTabId',
   'proxyUrl',
+  'browserZoom',
+  'browserViewport',
   'sidebarView',
   'sidebarVisible',
 ] as const

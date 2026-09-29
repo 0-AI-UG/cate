@@ -48,6 +48,7 @@ type PanelSliceActions = Pick<
   | 'renamePanelByUser'
   | 'updateBrowserActiveTabUrl'
   | 'updatePanelTabs'
+  | 'updatePanelBrowserView'
   | 'updatePanelProxy'
   | 'updatePanelFilePath'
   | 'setPanelNavigation'
@@ -327,6 +328,14 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
 
     updatePanelProxy(workspaceId, panelId, proxyUrl) {
       setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, proxyUrl: proxyUrl || undefined }))
+    },
+
+    updatePanelBrowserView(workspaceId, panelId, { zoom, viewport }) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({
+        ...panel,
+        ...(zoom !== undefined ? { browserZoom: zoom === 1 ? undefined : zoom } : {}),
+        ...(viewport ? { browserViewport: viewport.preset === 'compact' ? undefined : viewport } : {}),
+      }))
     },
 
     updatePanelFilePath(workspaceId, panelId, filePath) {

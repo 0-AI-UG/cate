@@ -124,6 +124,8 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     props: (panel, ctx) => ({
       ...baseProps(panel, ctx),
       proxyUrl: panel.proxyUrl,
+      browserZoom: panel.browserZoom,
+      browserViewport: panel.browserViewport,
       tabs: panel.tabs,
       activeTabId: panel.activeTabId,
       zoomLevel: ctx.zoomLevel ?? 1,

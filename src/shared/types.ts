@@ -232,6 +232,10 @@ export interface PanelState {
    *  suffix, and `pac://` PAC scripts. See `configureBrowserProxy` in
    *  `src/main/browserProxy.ts`. */
   proxyUrl?: string
+  /** Browser panels only: page zoom factor applied to every tab (default 1). */
+  browserZoom?: number
+  /** Browser panels only: emulated page viewport (default compact). */
+  browserViewport?: BrowserViewport
   /** Review panels only: comparison query, view preferences, expansion, and notes. */
   reviewState?: ReviewPanelState
   /** Editor panels with a markdown file only: render the rendered preview
@@ -936,6 +940,10 @@ export interface BrowserCredentialProfilesResult {
 
 /** One open tab in a browser panel. Main owns its persistent page; this light
  *  record is the renderer-visible restore state. */
+export type BrowserViewport =
+  | { preset: 'compact' }
+  | { preset: 'desktop' | 'mobile' | 'custom'; width: number; height: number }
+
 export interface BrowserTab {
   id: string
   url: string
@@ -1261,6 +1269,8 @@ export interface ProjectPanelRef {
   activeTabId?: string
   /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
   proxyUrl?: string
+  browserZoom?: number
+  browserViewport?: BrowserViewport
 }
 
 // -----------------------------------------------------------------------------

@@ -20,10 +20,10 @@ import { BrowserHistoryPage } from './BrowserHistoryPage'
 import { BrowserDownloadsPopover, type BrowserPanelDownload } from './BrowserDownloadsPopover'
 import { BrowserPasswordManagerPage } from './BrowserPasswordManagerPage'
 import { BrowserTabStrip } from './BrowserTabStrip'
-import type { BrowserCredentialSuggestion, BrowserTab } from '../../shared/types'
+import type { BrowserCredentialSuggestion, BrowserTab, BrowserViewport } from '../../shared/types'
 import type { BrowserPanelProps } from './types'
 import type { BrowserShortcutAction } from '../../shared/types'
-import { portalRegistry, type BrowserPanelController, type BrowserViewport } from '../lib/portalRegistry'
+import { portalRegistry, type BrowserPanelController } from '../lib/portalRegistry'
 import { releaseAgentCursor } from '../lib/browser/agentCursor'
 import { writeCateFileDrag } from '../drag/fileDragPayload'
 import { isUrl, normalizeUrl } from './browserUrl'
@@ -207,6 +207,45 @@ function BrowserWebviewSlot({
   )
 }
 
+/** Keeps an inactive tab's record current from its own guest's events. */
+function listenInBackground(
+  webview: WebviewElement,
+  tabId: string,
+  activeTabIdRef: { current: string },
+  setTabs: React.Dispatch<React.SetStateAction<BrowserTab[]>>,
+  recordVisit: (url: string, title: string) => void,
+): () => void {
+  const patch = (fields: Partial<BrowserTab>) => {
+    if (tabId === activeTabIdRef.current) return
+    setTabs((prev) => prev.map((tab) => (tab.id === tabId ? { ...tab, ...fields } : tab)))
+  }
+  const onNavigate = (event: any) => {
+    const url = event.url ?? webview.getURL()
+    if (url === 'about:blank' || tabId === activeTabIdRef.current) return
+    const title = webview.getTitle() || ''
+    patch(event.type === 'did-navigate' ? { url, title } : { url })
+    if (event.type === 'did-navigate') recordVisit(url, title)
+  }
+  const onTitle = (event: any) => {
+    const title = event.title ?? webview.getTitle()
+    if (title) patch({ title })
+  }
+  const onFavicon = (event: any) => {
+    const favicon = Array.isArray(event.favicons) ? event.favicons[0] : undefined
+    if (favicon) patch({ favicon })
+  }
+  webview.addEventListener('did-navigate', onNavigate)
+  webview.addEventListener('did-navigate-in-page', onNavigate)
+  webview.addEventListener('page-title-updated', onTitle)
+  webview.addEventListener('page-favicon-updated', onFavicon)
+  return () => {
+    webview.removeEventListener('did-navigate', onNavigate)
+    webview.removeEventListener('did-navigate-in-page', onNavigate)
+    webview.removeEventListener('page-title-updated', onTitle)
+    webview.removeEventListener('page-favicon-updated', onFavicon)
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
@@ -218,6 +257,8 @@ export default function BrowserPanel({
   tabs: tabsProp,
   activeTabId: activeTabIdProp,
   proxyUrl,
+  browserZoom,
+  browserViewport: browserViewportProp,
 }: BrowserPanelProps) {
   const browserHomepage = useSettingsStore((s) => s.browserHomepage)
   const browserSearchEngine = useSettingsStore((s) => s.browserSearchEngine)
@@ -226,6 +267,7 @@ export default function BrowserPanel({
   const updatePanelTitle = useAppStore((s) => s.updatePanelTitle)
   const updateBrowserActiveTabUrl = useAppStore((s) => s.updateBrowserActiveTabUrl)
   const updatePanelTabs = useAppStore((s) => s.updatePanelTabs)
+  const updatePanelBrowserView = useAppStore((s) => s.updatePanelBrowserView)
 
   // Global browser history + bookmarks (shared across all panels/windows).
   const recordVisit = useBrowserStore((s) => s.recordVisit)
@@ -285,19 +327,25 @@ export default function BrowserPanel({
     seededPartitionRef.current = partition
   }
   const webviewsByTabRef = useRef(new Map<string, WebviewElement>())
-  const zoomInitializedWebviewsRef = useRef(new WeakSet<WebviewElement>())
   const webviewRef = useRef<WebviewElement | null>(null)
   const [webviewEl, setWebviewEl] = useState<WebviewElement | null>(null)
   const [autofillPopup, setAutofillPopup] = useState<AutofillPopup | null>(null)
   const autofillPopupRef = useRef<HTMLDivElement | null>(null)
   const fillingCredentialRef = useRef(false)
+  // Background tabs keep navigating (redirects, slow loads, SPA routes); keep
+  // their url/title/favicon current. The active tab is handled by the effect below.
+  const tabListenersRef = useRef(new Map<string, () => void>())
   const attachWebview = useCallback((tabId: string, element: WebviewElement | null) => {
-    if (element) webviewsByTabRef.current.set(tabId, element)
-    else webviewsByTabRef.current.delete(tabId)
+    tabListenersRef.current.get(tabId)?.()
+    tabListenersRef.current.delete(tabId)
+    if (element) {
+      webviewsByTabRef.current.set(tabId, element)
+      tabListenersRef.current.set(tabId, listenInBackground(element, tabId, activeTabIdRef, setTabs, recordVisit))
+    } else webviewsByTabRef.current.delete(tabId)
     if (tabId !== activeTabIdRef.current) return
     webviewRef.current = element
     setWebviewEl(element)
-  }, [])
+  }, [recordVisit])
   useEffect(() => {
     const element = webviewsByTabRef.current.get(activeTabId) ?? null
     webviewRef.current = element
@@ -320,9 +368,10 @@ export default function BrowserPanel({
   const [canGoForward, setCanGoForward] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [browserZoomFactor, setBrowserZoomFactor] = useState(1)
-  const browserZoomFactorRef = useRef(1)
-  const [browserViewport, setBrowserViewport] = useState<BrowserViewport>({ preset: 'compact' })
+  // Zoom and viewport persist on the record; the record seeds a fresh mount.
+  const [browserZoomFactor, setBrowserZoomFactor] = useState(browserZoom ?? 1)
+  const browserZoomFactorRef = useRef(browserZoom ?? 1)
+  const [browserViewport, setBrowserViewport] = useState<BrowserViewport>(browserViewportProp ?? { preset: 'compact' })
   const [viewportContainerSize, setViewportContainerSize] = useState({ width: 0, height: 0 })
   const viewportContainerRef = useRef<HTMLDivElement | null>(null)
   const viewportDisplayScale = browserViewportScale(browserViewport, viewportContainerSize)
@@ -331,8 +380,9 @@ export default function BrowserPanel({
   const setSettledBrowserViewport = useCallback((viewport: BrowserViewport): Promise<void> => {
     const generation = ++viewportGenerationRef.current
     setBrowserViewport(viewport)
+    updatePanelBrowserView(workspaceId, panelId, { viewport })
     return new Promise((resolve) => pendingViewportRef.current.set(generation, resolve))
-  }, [])
+  }, [updatePanelBrowserView, workspaceId, panelId])
   useLayoutEffect(() => {
     if (pendingViewportRef.current.size === 0) return
     const committedGeneration = viewportGenerationRef.current
@@ -532,10 +582,11 @@ export default function BrowserPanel({
   const applyBrowserZoom = useCallback((factor: number) => {
     browserZoomFactorRef.current = factor
     setBrowserZoomFactor(factor)
+    updatePanelBrowserView(workspaceId, panelId, { zoom: factor })
     for (const webview of webviewsByTabRef.current.values()) {
       try { webview.setZoomFactor(factor) } catch { /* guest not ready */ }
     }
-  }, [])
+  }, [updatePanelBrowserView, workspaceId, panelId])
 
   const adjustBrowserZoom = useCallback((direction: -1 | 1) => {
     const current = browserZoomFactorRef.current
@@ -838,7 +889,9 @@ export default function BrowserPanel({
 
   useEffect(() => {
     const webview = webviewEl
-    if (!webview) return
+    // Right after a tab switch this runs once with the previous tab's element;
+    // wait for the render that binds the new tab's own guest.
+    if (!webview || webview !== webviewsByTabRef.current.get(activeTabId)) return
 
     const onDidNavigate = (event: any) => {
       const url = event.url ?? webview.getURL()
@@ -936,7 +989,8 @@ export default function BrowserPanel({
       ) return
       let webContentsId: number
       try { webContentsId = webview.getWebContentsId() } catch { return }
-      setBrowserZoomFactor(webview.getZoomFactor())
+      browserZoomFactorRef.current = webview.getZoomFactor()
+      setBrowserZoomFactor(browserZoomFactorRef.current)
       void window.electronAPI.browserCredentialSuggestions(webContentsId).then((result) => {
         if (request !== autofillRequest || fillingCredentialRef.current) return
         if (webviewRef.current !== webview || !result.suggestions?.length) {
@@ -970,12 +1024,9 @@ export default function BrowserPanel({
       let webContentsId: number
       try { webContentsId = webview.getWebContentsId() } catch { return }
       try { portalRegistry.register(panelId, webview as any) } catch { /* ignore */ }
-      if (!zoomInitializedWebviewsRef.current.has(webview)) {
-        try {
-          webview.setZoomFactor(browserZoomFactorRef.current)
-          zoomInitializedWebviewsRef.current.add(webview)
-        } catch { /* detached */ }
-      }
+      // Chromium keeps zoom per origin, so a cross-origin navigation resets it:
+      // re-apply the panel's zoom on every new document.
+      try { webview.setZoomFactor(browserZoomFactorRef.current) } catch { /* detached */ }
       try {
         void webview.insertCSS(browserGuestScrollbarCss()).catch(() => { /* guest gone */ })
       } catch { /* detached */ }

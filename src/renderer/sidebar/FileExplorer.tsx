@@ -338,7 +338,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
       refreshRef.current = null
       releaseWatch()
     }
-  }, [rootPath, selectedWorkspaceId])
+  }, [rootPath, selectedWorkspaceId, panelId, ensureChildrenLoaded])
   useEffect(() => {
     viewRef.current = { nodes, children: childrenCache, expanded: expandedPaths, selected: selectedPaths }
   }, [nodes, childrenCache, expandedPaths, selectedPaths])
