@@ -264,14 +264,19 @@ describe('cate-runtime daemon (real subprocess)', () => {
     let resolveDelete!: () => void
     const sawCreate = new Promise<void>((resolve) => { resolveCreate = resolve })
     const sawDelete = new Promise<void>((resolve) => { resolveDelete = resolve })
+    let watcherReady = false
     runtime.file.watch(workspace, (p, type) => {
+      watcherReady = true
       changes.push({ path: p, type })
       if (p.includes('fresh.txt') && type === 'create') resolveCreate()
       if (p.includes('fresh.txt') && type === 'delete') resolveDelete()
     })
 
-    // Give the daemon's watcher a moment to initialize, then create a file.
-    await new Promise((r) => setTimeout(r, 400))
+    // Wait until the watcher reports a probe file (slow to arm on Windows), then create the real one.
+    for (let i = 0; !watcherReady && i < 50; i++) {
+      await fs.writeFile(path.join(workspace, 'probe.txt'), String(i))
+      await new Promise((r) => setTimeout(r, 200))
+    }
     const freshPath = path.join(workspace, 'fresh.txt')
     await fs.writeFile(freshPath, 'new\n')
 
