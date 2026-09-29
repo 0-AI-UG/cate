@@ -6,7 +6,7 @@
 //
 //   sender:   terminalRegistry.getOrCreate (live PTY) → createTransferSnapshot
 //             → terminalRegistry.release (panelTeardown — PTY stays alive)
-//   receiver: hydrateReceivedPanel + ensurePanelsInAppStore (the PANEL_RECEIVE
+//   receiver: hydrateReceivedPanel + ensurePanelsInAppStore (the live-detach INIT
 //             preamble in DockWindowShell/App) → terminalRegistry.getOrCreate
 //             (the TerminalPanel mount) → attach (reconnect finalization)
 //
@@ -245,7 +245,7 @@ describe('hydrateReceivedPanel — happy path round trips', () => {
     terminalRegistry.release('hrp-term')
     expect(terminalKill).not.toHaveBeenCalled()
 
-    // Receiver PANEL_RECEIVE preamble (DockWindowShell.onPanelReceive order).
+    // Receiver live-detach preamble (DockWindowShell INIT order).
     hydrateReceivedPanel('ws-recv', snapshot)
     ensurePanelsInAppStore('ws-recv', { [snapshot.panel.id]: snapshot.panel }, snapshot.rootPath, snapshot.worktrees)
 
@@ -437,7 +437,7 @@ describe('canvas snapshot with a vanished child panel record', () => {
 })
 
 // ===========================================================================
-// 5. Edge: second PANEL_RECEIVE deposit before the first panel mounts
+// 5. Edge: second transfer deposit before the first panel mounts
 // ===========================================================================
 describe('two deposits race before the panel mounts', () => {
   it('same panel id: the SECOND deposit clobbers the first; the first PTY is orphaned', async () => {

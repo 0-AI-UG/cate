@@ -515,8 +515,12 @@ export interface DockWindowInitPayload {
   /** Session-restore marker. When true, the receiving shell arms scrollback
    *  replay for EVERY terminal panel (top-level + canvas children) by its stable
    *  panelId — identical to the main window's restore. Absent/false for a fresh
-   *  live detach, where the terminal arrives live via PANEL_RECEIVE instead. */
+   *  live detach, where the terminal arrives live via `transfer` instead. */
   restore?: boolean
+  /** Live detach only: the accepted snapshot. The shell arms its hand-off
+   *  (PTY, canvas children) BEFORE adopting the record, so no view can spawn a
+   *  fresh PTY first. */
+  transfer?: PanelTransferSnapshot
   /** Session-restore only: per terminal panelId → its last working directory, so
    *  a respawned terminal lands where it was. Keyed by the stable panelId (same
    *  as the main window's snapshot.terminalCwds). */

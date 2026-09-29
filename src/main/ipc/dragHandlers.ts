@@ -48,7 +48,6 @@ import type { CateWindowParams, PanelTransferSnapshot } from '../../shared/types
 import {
   DRAG_DETACH,
   DRAG_END,
-  PANEL_RECEIVE,
   DOCK_WINDOW_INIT,
   CROSS_WINDOW_DRAG_START,
   CROSS_WINDOW_DRAG_UPDATE,
@@ -138,8 +137,7 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
       if (win.isDestroyed()) return // retained recovery snapshot remains session-owned
       cacheTransfer(transfer)
       for (const id of terminalIds(snapshot)) setTerminalTransferTarget(id, win.id)
-      sendToWindow(win.id, DOCK_WINDOW_INIT, { panels: { [snapshot.panel.id]: snapshot.panel }, dockState: buildSinglePanelDockState(snapshot.panel.id), workspaceId, rootPath: snapshot.rootPath, worktrees: snapshot.worktrees })
-      sendToWindow(win.id, PANEL_RECEIVE, snapshot)
+      sendToWindow(win.id, DOCK_WINDOW_INIT, { panels: { [snapshot.panel.id]: snapshot.panel }, dockState: buildSinglePanelDockState(snapshot.panel.id), workspaceId, rootPath: snapshot.rootPath, worktrees: snapshot.worktrees, transfer: snapshot })
       revealWindow(win, { focus: true })
     }
     if (transfer.win.isDestroyed()) {

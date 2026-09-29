@@ -308,7 +308,6 @@ export const WINDOW_CLOSE_FOR_WORKSPACE = 'window:closeForWorkspace' // renderer
 export const RUN_ACTION_IN_MAIN = 'window:runActionInMain' // renderer -> main
 
 // Panel transfer (cross-window)
-export const PANEL_RECEIVE = 'panel:receive'       // main -> renderer
 export const PANEL_TRANSFER_ACK = 'panel:transferAck'
 
 // Cross-window drag-and-drop

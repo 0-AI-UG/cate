@@ -808,7 +808,6 @@ export interface ElectronAPI {
   panelTransferAck(ptyId?: string): Promise<void>
 
   /** Subscribe to incoming panel transfers (main -> renderer). */
-  onPanelReceive(callback: (snapshot: PanelTransferSnapshot) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Cross-window drag-and-drop
