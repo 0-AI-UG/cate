@@ -268,7 +268,7 @@ it('routes provider sign-in input and cancellation to the actual process handle'
 
 it('launches provider sign-in with the binary and home from the provider profile', async () => {
   local.file.readFile.mockImplementation(async (file: string) => {
-    if (file !== '/app/harness/provider-profile.json') throw new Error('ENOENT')
+    if (file.replace(/\\/g, '/') !== '/app/harness/provider-profile.json') throw new Error('ENOENT')
     return JSON.stringify({ providers: { codex: { binaryPath: '/opt/codex', shadowHomePath: '/auth/codex' } } })
   })
   await manager.startProviderAuth({ workspaceId: 'ws', cwd: '/repo', providerId: 'codex' }, 1)
