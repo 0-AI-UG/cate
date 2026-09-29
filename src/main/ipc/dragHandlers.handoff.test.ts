@@ -109,3 +109,16 @@ it('keeps source ownership when an existing target closes before acknowledging h
   expect(await result).toEqual({ claimed: false })
   expect(h.abort).toHaveBeenCalledWith('pty')
 })
+
+it('hands the claiming window the snapshot the source captured at release', async () => {
+  const win = receiver(2)
+  registerDragHandlers({ createWindow: () => win as any })
+  const panel = { id: 'editor', type: 'editor', title: 'Editor' }
+  await h.handlers.get(CROSS_WINDOW_DRAG_START)!({ window: { id: 1 } }, { panel, geometry: { size: { width: 500, height: 400 } } })
+  const fresh = { panel: { ...panel, title: 'Edited during drag' }, geometry: { size: { width: 500, height: 400 } } }
+  const result = h.handlers.get(CROSS_WINDOW_DRAG_RESOLVE)!({ window: { id: 1 } }, fresh)
+  const reserved = await h.handlers.get(CROSS_WINDOW_DRAG_DROP)!({ window: win }, 'editor')
+  expect(reserved).toEqual(expect.objectContaining({ accepted: true, snapshot: fresh }))
+  await h.handlers.get(PANEL_TRANSFER_READY)!({ window: win }, reserved.transferId, 'received')
+  expect(await result).toEqual({ claimed: true })
+})

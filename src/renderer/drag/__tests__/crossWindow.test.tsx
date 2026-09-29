@@ -103,7 +103,7 @@ beforeEach(() => {
   // restoreMocks wipes implementations before each test, so the accept default
   // from setup.ts does not survive — re-arm it here. Drops are claim-first:
   // onDrop only fires when main answers accepted=true.
-  stub.crossWindowDragDrop.mockResolvedValue({ accepted: true })
+  stub.crossWindowDragDrop.mockResolvedValue({ accepted: true, snapshot: makeSnapshot() })
   stub.onCrossWindowDragUpdate.mockClear()
   stub.onDragEnd.mockClear()
 })
@@ -208,7 +208,7 @@ describe('cross-window — remote drag', () => {
 
   it.each([true, false])('acknowledges dock hydration outcome after onDrop returns %s', async (accepted) => {
     const stub = electronStub()
-    stub.crossWindowDragDrop.mockResolvedValueOnce({ accepted: true, transferId: 'receipt' })
+    stub.crossWindowDragDrop.mockResolvedValueOnce({ accepted: true, transferId: 'receipt', snapshot: makeSnapshot() })
     const receipt = vi.fn()
     window.electronAPI.panelTransferReady = receipt
     const onDrop = vi.fn<RemoteDropHandler>(() => { expect(receipt).not.toHaveBeenCalled(); return accepted })
@@ -369,6 +369,7 @@ describe('cross-window — remote drag', () => {
       terminalScrollback: 'last output',
     } as Partial<PanelTransferSnapshot>)
 
+    electronStub().crossWindowDragDrop.mockResolvedValueOnce({ accepted: true, snapshot: termSnap })
     bridge.fireUpdate({ x: 400, y: 300 }, termSnap)
     bridge.fireDragEnd()
     await flushAsync()
@@ -381,6 +382,23 @@ describe('cross-window — remote drag', () => {
     expect(callOrder[0]).toBe('setPendingTransfer')
     expect(callOrder[1]).toBe('onDrop')
 
+    bridge.cleanup()
+  })
+
+  it('materializes the source capture published at release, not the drag-start preview', async () => {
+    const fresh = makeSnapshot({ panel: { id: 'remote-panel', type: 'editor', title: 'Edited during drag', isDirty: true } })
+    electronStub().crossWindowDragDrop.mockResolvedValueOnce({ accepted: true, snapshot: fresh })
+    const onDrop = vi.fn()
+    const bridge = attachBridge(onDrop)
+    scene = renderDragScene({ canvases: [{ panelId: 'c1', rect: { x: 0, y: 0, w: 1000, h: 800 } }] })
+    Object.defineProperty(window, 'screenX', { value: 0, configurable: true })
+    Object.defineProperty(window, 'screenY', { value: 0, configurable: true })
+
+    bridge.fireUpdate({ x: 400, y: 300 }, makeSnapshot())
+    bridge.fireDragEnd()
+    await flushAsync()
+
+    expect(onDrop).toHaveBeenCalledWith(fresh, expect.objectContaining({ kind: 'canvas' }))
     bridge.cleanup()
   })
 

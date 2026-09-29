@@ -357,7 +357,7 @@ describe('commitDrop — detach', () => {
       dragDetach: vi.fn(async () => 1),
     })
     await commitDrop(source, target, panel, ctx)
-    expect(ctx.crossWindowResolve).toHaveBeenCalled()
+    expect(ctx.crossWindowResolve).toHaveBeenCalledWith(vi.mocked(ctx.buildSnapshot).mock.results[0].value)
     expect(ctx.dragDetach).not.toHaveBeenCalled()
     expect(srcCanvas.state.finalizeRemoveNode).toHaveBeenCalledWith('node-S')
     expect(ctx.onRemovedFromCanvas).toHaveBeenCalledWith('panel-1', 'editor')

@@ -349,7 +349,7 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
     remoteReceipt = { id: transferId, targetId: targetWin.id, done, complete }
     targetWin.once('closed', failed)
     targetWin.webContents.once('render-process-gone', failed)
-    return { accepted: true, transferId }
+    return { accepted: true, transferId, snapshot: drag.snapshot }
   })
 
   ipcMain.handle(CROSS_WINDOW_DRAG_CANCEL, async () => {
@@ -366,7 +366,7 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
   // Broadcasts DRAG_END, waits briefly for a target window to claim via
   // CROSS_WINDOW_DRAG_DROP, then returns whether the drop was claimed. If not,
   // source falls back to DRAG_DETACH.
-  ipcMain.handle(CROSS_WINDOW_DRAG_RESOLVE, async () => {
+  ipcMain.handle(CROSS_WINDOW_DRAG_RESOLVE, async (_event, snapshot?: PanelTransferSnapshot | null) => {
     // The live state may already be gone if a DROP landed (and cleared it)
     // before this RESOLVE arrived. In that case the claim outcome lives in the
     // dragId-keyed record, NOT in the (nulled) pointer — read it there so a
@@ -380,6 +380,9 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
       return { claimed }
     }
 
+    // The claiming window materializes the source's capture taken at release,
+    // not the one from drag start.
+    if (snapshot?.panel.id === crossWindowDragState.snapshot.panel.id) crossWindowDragState = { ...crossWindowDragState, snapshot }
     const sourceId = crossWindowDragState.sourceWindowId
     const dragId = crossWindowDragState.dragId
 
