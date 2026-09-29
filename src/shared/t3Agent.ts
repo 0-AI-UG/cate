@@ -28,6 +28,30 @@ export interface AgentHarnessStatus {
   message?: string
 }
 
+/** Fields of T3's OrchestrationThreadShell Cate tracks (t3@0.0.39): activity,
+ *  title, and the provider running the thread. Not provider-process state. */
+export interface T3Thread {
+  id: string
+  title: string
+  latestTurn?: { state: string } | null
+  /** `providerName` is the T3 provider running the thread (see agentIdForT3Provider). */
+  session?: { status: string; activeTurnId: string | null; providerName?: string | null } | null
+  hasPendingApprovals?: boolean
+  hasPendingUserInput?: boolean
+  hasActionableProposedPlan?: boolean
+  backgroundLiveness?: 'working' | 'monitoring' | null
+}
+
+/** The live thread shells of one T3 harness (keyed by its session partition),
+ *  pushed by main's shell subscription. Always a full snapshot. */
+export interface T3ShellSnapshot {
+  partition: string
+  connected: boolean
+  /** T3's orchestration sequence; a snapshot never replaces a newer one. */
+  sequence: number
+  threads: Record<string, T3Thread>
+}
+
 export type T3RemoteOperation = 'status' | 'link' | 'unlink'
 
 export interface T3RemoteSession {

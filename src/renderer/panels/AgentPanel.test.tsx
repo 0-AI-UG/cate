@@ -19,6 +19,7 @@ vi.mock('../stores/gitStatusStore', () => ({
 }))
 
 import { useAppStore } from '../stores/appStore'
+import { useT3ActivityStore } from '../stores/t3ActivityStore'
 import AgentPanel, { agentFileDropScript } from './AgentPanel'
 import { useActivePanelStore } from '../lib/activePanel'
 import { useUIStore } from '../stores/uiStore'
@@ -300,41 +301,27 @@ describe('AgentPanel', () => {
   })
 })
 
-it('uses only the bound connected thread title, preserves user titles, and ignores an old guest after switching', async () => {
-  vi.useFakeTimers()
-  try {
-    useAppStore.getState().setPanelAgentThreadId('ws', 'agent', 'first')
-    getPanelUrl.mockResolvedValue({ url: 'http://127.0.0.1:49152/local-env/first', partition: 'persist:title-test', runtimeId: 'local', environmentId: 'local-env' })
-    await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
-    const guest = host.querySelector('webview')! as HTMLElement & { getURL: () => string; insertCSS: ReturnType<typeof vi.fn>; executeJavaScript: ReturnType<typeof vi.fn> }
-    let snapshot = { connected: true, revision: 1, threads: { first: { id: 'first', title: 'Extracted title' }, other: { id: 'other', title: 'Wrong conversation' } } }
-    guest.getURL = () => 'http://127.0.0.1:49152/local-env/first'
-    guest.insertCSS = vi.fn().mockResolvedValue('css')
-    guest.executeJavaScript = vi.fn(async (script: string) => script.startsWith('/* cate-t3-poll */') ? snapshot : undefined)
-    const title = () => useAppStore.getState().workspaces[0].panels.agent.title
-    await act(async () => guest.dispatchEvent(new Event('dom-ready')))
-    expect(title()).toBe('Extracted title')
-    snapshot = { ...snapshot, connected: false, revision: 2, threads: { ...snapshot.threads, first: { id: 'first', title: 'Stale title' } } }
-    await act(async () => vi.advanceTimersByTimeAsync(1000))
-    expect(title()).toBe('Extracted title')
-    snapshot = { ...snapshot, connected: true, revision: 3, threads: { ...snapshot.threads, first: { id: 'first', title: '' } } }
-    await act(async () => vi.advanceTimersByTimeAsync(1000))
-    expect(title()).toBe('Extracted title')
-    await act(async () => useAppStore.getState().renamePanelByUser('ws', 'agent', 'My chosen title'))
-    snapshot = { ...snapshot, revision: 4, threads: { ...snapshot.threads, first: { id: 'first', title: 'New generated title' } } }
-    await act(async () => vi.advanceTimersByTimeAsync(1000))
-    expect(title()).toBe('My chosen title')
-    let release: ((value: unknown) => void) | undefined
-    guest.executeJavaScript.mockImplementation((script: string) => script.startsWith('/* cate-t3-poll */') ? new Promise(resolve => { release = resolve }) : Promise.resolve())
-    await act(async () => vi.advanceTimersByTimeAsync(1000))
-    expect(release).toBeDefined()
-    await act(async () => useAppStore.getState().setPanelAgentThreadId('ws', 'agent', 'other'))
-    mockGuest()
-    const update = vi.spyOn(useAppStore.getState(), 'updatePanelTitleFromAgent')
-    await act(async () => release!(snapshot))
-    expect(update).not.toHaveBeenCalled()
-    update.mockRestore()
-  } finally {
-    vi.useRealTimers()
-  }
+it('uses only the bound connected thread title and preserves user titles', async () => {
+  useAppStore.getState().setPanelAgentThreadId('ws', 'agent', 'first')
+  getPanelUrl.mockResolvedValue({ url: 'http://127.0.0.1:49152/local-env/first', partition: 'persist:title-test', runtimeId: 'local', environmentId: 'local-env' })
+  await act(async () => root.render(<AgentPanel panelId="agent" workspaceId="ws" />))
+  const title = () => useAppStore.getState().workspaces[0].panels.agent.title
+  const panel = () => host.querySelector('[data-agent-panel-id="agent"]')!
+  let sequence = 0
+  const push = (connected: boolean, first: string) => act(async () => useT3ActivityStore.getState().apply({
+    partition: 'persist:title-test', connected, sequence: ++sequence,
+    threads: { first: { id: 'first', title: first }, other: { id: 'other', title: 'Wrong conversation' } },
+  }))
+  expect(panel().getAttribute('data-agent-connected')).toBe('false')
+  await push(true, 'Extracted title')
+  expect(title()).toBe('Extracted title')
+  expect(panel().getAttribute('data-agent-connected')).toBe('true')
+  await push(false, 'Stale title')
+  expect(title()).toBe('Extracted title')
+  expect(panel().getAttribute('data-agent-connected')).toBe('false')
+  await push(true, '')
+  expect(title()).toBe('Extracted title')
+  await act(async () => useAppStore.getState().renamePanelByUser('ws', 'agent', 'My chosen title'))
+  await push(true, 'New generated title')
+  expect(title()).toBe('My chosen title')
 })

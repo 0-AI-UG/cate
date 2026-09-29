@@ -6,6 +6,8 @@ import {
   AGENT_HARNESS_LIST_CONVERSATIONS,
   AGENT_HARNESS_DELETE_CONVERSATION,
   AGENT_CONVERSATION_DELETED,
+  AGENT_HARNESS_THREAD_SHELLS,
+  AGENT_HARNESS_START_TURN,
   AGENT_HARNESS_GET_STATUS,
   AGENT_HARNESS_PANEL_CLOSED,
   AGENT_HARNESS_RESTART,
@@ -131,6 +133,19 @@ export function registerT3AgentHandlers(): void {
       const threadId = requireText((input as { threadId?: unknown }).threadId, 'threadId')
       const partition = await t3HarnessManager.deleteConversation({ ...request, threadId }, requireWindowId(event))
       broadcastToAll(AGENT_CONVERSATION_DELETED, { workspaceId: request.workspaceId, partition, threadId })
+      return { ok: true }
+    } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
+  })
+  ipcMain.handle(AGENT_HARNESS_THREAD_SHELLS, (_event, input: unknown) => {
+    const partition = (input as { partition?: unknown } | null)?.partition
+    return typeof partition === 'string' ? t3HarnessManager.threadShells(partition) : null
+  })
+  ipcMain.handle(AGENT_HARNESS_START_TURN, async (event, input: unknown) => {
+    try {
+      const request = validateProviderStatusRequest(input)
+      const threadId = requireText((input as { threadId?: unknown }).threadId, 'threadId')
+      const text = requireText((input as { text?: unknown }).text, 'text')
+      await t3HarnessManager.startTurn({ ...request, threadId, text }, requireWindowId(event))
       return { ok: true }
     } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
   })
