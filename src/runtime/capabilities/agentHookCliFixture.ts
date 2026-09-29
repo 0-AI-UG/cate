@@ -57,7 +57,8 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
       // those argv overrides independently disable the shared daemon and would
       // mask a regression in Cate's envForPty workaround (#708).
       await writeFile(path.join(env.CODEX_HOME, 'config.toml'), [
-        `model = ${JSON.stringify(model ?? 'openai/gpt-5.4-mini')}`,
+        // The mock model must match Codex's bundled catalog, or apply_patch is not offered.
+        `model = ${JSON.stringify(model ?? (mockUrl ? 'openai/gpt-5.5' : 'openai/gpt-5.4-mini'))}`,
         'model_provider = "openrouter"', 'model_reasoning_effort = "low"',
         'check_for_update_on_startup = false',
         '[model_providers.openrouter]', 'name = "OpenRouter"',
