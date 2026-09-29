@@ -471,3 +471,13 @@ it('round-trips Search options through machine-local session state', () => {
   expect(workspace.panels!.editor).not.toHaveProperty('searchState')
   expect(projectFilesToSnapshot(workspace, session, ROOT).panels!.editor.searchState).toEqual(searchState)
 })
+
+it('round-trips Files explorer expansion and selection through machine-local session state', () => {
+  const { snapshot } = buildSnapshot()
+  const explorerState = { rootPath: ROOT, expandedPaths: [`${ROOT}/src`], selectedPaths: [`${ROOT}/src/a.ts`] }
+  snapshot.panels = { editor: panel({ id: 'editor', type: 'editor', explorerState }) }
+  const workspace = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+  const session = throughDisk(buildSessionFile(snapshot))
+  expect(workspace.panels!.editor).not.toHaveProperty('explorerState')
+  expect(projectFilesToSnapshot(workspace, session, ROOT).panels!.editor.explorerState).toEqual(explorerState)
+})

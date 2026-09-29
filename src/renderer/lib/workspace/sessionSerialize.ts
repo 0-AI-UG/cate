@@ -102,6 +102,7 @@ export function buildSessionFile(
       !workingDirectory &&
       p.unsavedContent === undefined &&
       !p.searchState &&
+      !p.explorerState &&
       !p.agentSession &&
       !p.codingAgentRun &&
       !p.reviewState &&
@@ -113,6 +114,7 @@ export function buildSessionFile(
       unsavedContent: p.unsavedContent,
       editorBaseline: p.editorBaseline,
       searchState: p.searchState,
+      explorerState: p.explorerState,
       worktreeId,
       agentSession: p.agentSession,
       codingAgentRun: p.codingAgentRun,
@@ -174,6 +176,7 @@ export function projectFilesToSnapshot(
         unsavedContent: sp?.unsavedContent,
         editorBaseline: sp?.editorBaseline,
         searchState: sp?.searchState,
+        explorerState: sp?.explorerState,
         // The agent session to resume in this terminal — TerminalPanel types
         // the resume command into the fresh shell and retains the stamp until
         // observed agent evidence replaces or clears it.

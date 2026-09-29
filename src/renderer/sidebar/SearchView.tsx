@@ -12,6 +12,7 @@ import { createSearchStore, type SearchStore, lineKey } from '../stores/searchSt
 import { SearchStoreContext, useSearchStoreContext as useSearchStore } from '../stores/SearchStoreContext'
 import { subscribeSearchStore } from '../stores/searchIpc'
 import log from '../lib/logger'
+import { errorMessage } from '../../shared/errorMessage'
 import { Spinner } from '../ui/Spinner'
 
 const DEBOUNCE_MS = 250
@@ -132,7 +133,10 @@ function SearchContent({ rootPath, workspaceId, scopeControl, onOpenMatch, focus
           excludes: splitGlobs(excludes),
           respectIgnore,
         }, workspaceId)
-        .catch((err) => log.warn('[search] start failed:', err))
+        .catch((err) => {
+          log.warn('[search] start failed:', err)
+          store.getState().finishSearch(searchId, { files: 0, matches: 0, truncated: false }, errorMessage(err, 'Could not search files.'))
+        })
     }, DEBOUNCE_MS)
     return () => {
       window.clearTimeout(handle)

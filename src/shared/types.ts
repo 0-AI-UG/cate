@@ -238,6 +238,7 @@ export interface PanelState {
   /** Legacy Source Control panel state, read only during session migration. */
   sourceControlState?: Record<string, SourceControlRepositoryState>
   searchState?: PanelSearchSnapshot
+  explorerState?: PanelExplorerSnapshot
   /** Disk baseline for a recoverable dirty editor document (machine-local). */
   editorBaseline?: string
   /** Terminal panels only: explicit working directory override. When unset
@@ -1302,6 +1303,7 @@ export interface ProjectSessionPanel {
   /** Legacy Source Control panel state, read only during session migration. */
   sourceControlState?: Record<string, SourceControlRepositoryState>
   searchState?: PanelSearchSnapshot
+  explorerState?: PanelExplorerSnapshot
   /** Disk baseline for a recoverable dirty editor document (machine-local). */
   editorBaseline?: string
   /** Worktree this panel is associated with. Machine-local (worktree ids are
@@ -1752,6 +1754,13 @@ export interface PerfSnapshot {
 }
 
 export interface FileEntryMoved { from: string; to: string }
+/** Files panel tree view, scoped to the root it was captured under. */
+export interface PanelExplorerSnapshot {
+  rootPath: string
+  expandedPaths: string[]
+  selectedPaths: string[]
+}
+
 export interface PanelSearchSnapshot {
   rootPath: string
   query: string
