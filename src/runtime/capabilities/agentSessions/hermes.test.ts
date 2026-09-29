@@ -77,10 +77,11 @@ describe.runIf(nodeSqliteAvailable)('Hermes session conversation', () => {
     const db = await createDatabase(path.join(homeDir, '.hermes'))
     const insert = db.prepare(`INSERT INTO messages
       (session_id, role, content, timestamp, active, compacted, _compressed_summary, display_kind, display_metadata, display_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      VALUES (?, ?, CAST(? AS TEXT), ?, ?, ?, ?, ?, ?, ?)`)
+    // Bound as bytes: Node 22 truncates a bound string at its first NUL.
     const row = (role: string, content: string, order: number, extra: Partial<{
       active: number; compacted: number; summary: number; kind: string | null; metadata: string | null; timestamp: number; session: string
-    }> = {}) => insert.run(extra.session ?? SESSION_ID, role, content, extra.timestamp ?? 1790590000 + order, extra.active ?? 1,
+    }> = {}) => insert.run(extra.session ?? SESSION_ID, role, Buffer.from(content), extra.timestamp ?? 1790590000 + order, extra.active ?? 1,
       extra.compacted ?? 0, extra.summary ?? 0, extra.kind ?? null, extra.metadata ?? null, order)
 
     row('user', 'Fix the hooks', 1)

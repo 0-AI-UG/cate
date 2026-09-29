@@ -43,7 +43,7 @@ interface MessageRow {
  *  in-place compaction, deduplicated per `display_order` (highest `active`,
  *  then newest id), without hidden, model-only, or compression-summary rows. */
 const DISPLAY_QUERY = `
-  SELECT role, content, timestamp, display_kind FROM (
+  SELECT role, CAST(content AS BLOB) AS content, timestamp, display_kind FROM (
     SELECT m.*, ROW_NUMBER() OVER (PARTITION BY display_order ORDER BY active DESC, id DESC) AS rn
     FROM messages m
     WHERE session_id = ?
@@ -59,10 +59,10 @@ const DISPLAY_QUERY = `
 /** Stores that predate the display columns: live rows in insertion order
  *  (and, before in-place compaction existed, every row). */
 const LEGACY_QUERIES = [
-  `SELECT role, content, timestamp FROM messages
+  `SELECT role, CAST(content AS BLOB) AS content, timestamp FROM messages
    WHERE session_id = ? AND active = 1 AND role IN ('user', 'assistant')
    ORDER BY id`,
-  `SELECT role, content, timestamp FROM messages
+  `SELECT role, CAST(content AS BLOB) AS content, timestamp FROM messages
    WHERE session_id = ? AND role IN ('user', 'assistant')
    ORDER BY id`,
 ]
@@ -79,8 +79,10 @@ const MACHINE_USER_KINDS = new Set([
 
 const CONTENT_JSON_PREFIX = '\x00json:'
 
-/** Hermes stores list/multimodal content as `\x00json:` + JSON parts. */
-function contentText(content: unknown): string {
+/** Hermes stores list/multimodal content as `\x00json:` + JSON parts. Content
+ *  is read as bytes: Node 22's node:sqlite cuts TEXT at the NUL, returning ''. */
+function contentText(raw: unknown): string {
+  const content = raw instanceof Uint8Array ? Buffer.from(raw).toString('utf8') : raw
   if (typeof content !== 'string') return ''
   if (!content.startsWith(CONTENT_JSON_PREFIX)) return content
   let parts: unknown

@@ -37,9 +37,13 @@ it('preserves concurrent writes and bindings from independent store instances', 
 
 it('preserves concurrently published records across independent Node processes', async () => {
   const bundled = await build({ entryPoints: ['src/runtime/capabilities/agentChanges.ts'], bundle: true, platform: 'node', format: 'cjs', packages: 'external', write: false })
+  // Loaded from a file: inlined into -e, the bundle exceeds Windows' command-line limit.
+  const bundleDir = await mkdtemp(path.join(os.tmpdir(), 'cate-agent-changes-bundle-'))
+  const bundleFile = path.join(bundleDir, 'agentChanges.cjs')
+  await writeFile(bundleFile, bundled.outputFiles[0].text)
   const children = Array.from({ length: 4 }, (_, index) => {
-    const script = bundled.outputFiles[0].text + `
-      const store = module.exports.createAgentChangesStore(${JSON.stringify(directory)});
+    const script = `
+      const store = require(${JSON.stringify(bundleFile)}).createAgentChangesStore(${JSON.stringify(directory)});
       store.registerSource('source', {cwd:'/repo', kind:'t3'});
       process.stdin.once('data', async () => {
         try {
@@ -50,7 +54,9 @@ it('preserves concurrently published records across independent Node processes',
       });
       process.stdout.write('ready');
     `
-    const child = spawn(process.execPath, ['-e', script], { stdio: 'pipe' })
+    const child = spawn(process.execPath, ['-e', script], {
+      stdio: 'pipe', env: { ...process.env, NODE_PATH: path.resolve('node_modules') },
+    })
     const ready = new Promise<void>((resolve, reject) => { child.stdout.once('data', () => resolve()); child.once('error', reject) })
     const done = new Promise<void>((resolve, reject) => {
       let stderr = ''
@@ -67,7 +73,10 @@ it('preserves concurrently published records across independent Node processes',
     const records = await createAgentChangesStore(directory).list('/repo')
     expect(records).toHaveLength(4)
     expect(records.every((record) => record.panelIds?.length === 1)).toBe(true)
-  } finally { children.forEach(({ child }) => child.kill()) }
+  } finally {
+    children.forEach(({ child }) => child.kill())
+    await rm(bundleDir, { recursive: true, force: true })
+  }
 })
 
 it('returns only a revision for unchanged history and observes other writers', async () => {
