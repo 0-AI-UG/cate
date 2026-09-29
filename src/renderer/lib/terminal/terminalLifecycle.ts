@@ -340,9 +340,12 @@ export async function getOrCreate(panelId: string, opts: CreateOpts): Promise<Re
     // operation could kill the PTY (ptyId was still '') — kill the freshly
     // created one here so a mission deleted during startup cannot leak a live
     // worker. A terminated entry stays registered to retain its xterm panel.
-    if (!registry.has(panelId) || entry.alive === false) {
+    // Compare identity, not presence: a replacement entry registered under the
+    // same panel id (worktree switch, reconnect) must not adopt this stale PTY.
+    const replaced = registry.get(panelId) !== entry
+    if (replaced || entry.alive === false) {
       electronAPI.terminalKill(ptyId).catch((err) => log.warn('[terminal] Kill failed:', err))
-      if (!registry.has(panelId)) disposeXtermTerminal(terminal)
+      if (replaced) disposeXtermTerminal(terminal)
       return entry
     }
 

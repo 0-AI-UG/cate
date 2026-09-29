@@ -304,6 +304,22 @@ describe('spawn → wire → dispose happy path', () => {
     LC.dispose('panel-race')
   })
 
+  it('kills a stale spawn that finishes after its entry was replaced under the same panel id', async () => {
+    let finishStale!: (ptyId: string) => void
+    terminalCreate.mockImplementationOnce(() => new Promise<string>((resolve) => { finishStale = resolve }))
+    const stale = LC.getOrCreate('panel-respawn', { workspaceId: 'ws-1' })
+    await vi.waitFor(() => expect(terminalCreate).toHaveBeenCalledTimes(1))
+    LC.dispose('panel-respawn')
+    terminalCreate.mockResolvedValueOnce('pty-fresh')
+    await LC.getOrCreate('panel-respawn', { workspaceId: 'ws-1' })
+
+    finishStale('pty-stale')
+    await stale
+    expect(terminalKill).toHaveBeenCalledWith('pty-stale')
+    expect(RS.ptyIdForPanel('panel-respawn')).toBe('pty-fresh')
+    LC.dispose('panel-respawn')
+  })
+
   it('terminates the PTY without disposing the xterm kept by a stopped panel', async () => {
     terminalCreate.mockResolvedValueOnce('pty-stopped')
     const entry = await LC.getOrCreate('panel-stopped', { workspaceId: 'ws-1' })
