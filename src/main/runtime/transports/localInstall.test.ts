@@ -19,7 +19,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { LocalSubprocessTransport } from './localTransport'
 import type { RuntimeTarget } from '../runtimeArtifacts'
 import { RUNTIME_VERSION } from '../../../runtime/version'
@@ -27,6 +27,9 @@ import { RUNTIME_VERSION } from '../../../runtime/version'
 const execFileP = promisify(execFile)
 const TARGET: RuntimeTarget = 'linux-x64' // fixed, so the layout assertions are host-independent
 const nodeName = process.platform === 'win32' ? 'node.exe' : 'node'
+
+// Every test shells out to real tar, which is slow on Windows runners.
+vi.setConfig({ testTimeout: 30_000 })
 
 let root: string
 
