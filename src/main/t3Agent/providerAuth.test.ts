@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanProviderAuthOutput, providerAuthCode, providerAuthCommand, providerAuthUrl } from './providerAuth'
+import { cleanProviderAuthOutput, providerAuthCode, providerAuthCommand, providerAuthLaunch, providerAuthUrl } from './providerAuth'
 
 describe('providerAuthCommand', () => {
   it('uses device authentication where the provider supports it', () => {
@@ -15,6 +15,35 @@ describe('providerAuthCommand', () => {
       executable: 'opencode',
       args: ['auth', 'login', '--provider', 'anthropic'],
     })
+  })
+})
+
+describe('providerAuthLaunch', () => {
+  it('uses the default command when no provider profile exists', () => {
+    expect(providerAuthLaunch('claude', null, '/Users/me')).toEqual({
+      command: { executable: 'claude', args: ['auth', 'login'] },
+      env: {},
+    })
+  })
+
+  it('uses the configured binary and Claude config directory', () => {
+    const profile = { providers: { claudeAgent: { binaryPath: '~/bin/claude', homePath: '~/.claude-work' } } }
+    expect(providerAuthLaunch('claude', profile, '/Users/me')).toEqual({
+      command: { executable: '/Users/me/bin/claude', args: ['auth', 'login'] },
+      env: { CLAUDE_CONFIG_DIR: '/Users/me/.claude-work' },
+    })
+  })
+
+  it('signs Codex into the shadow home when one is configured', () => {
+    expect(providerAuthLaunch('codex', { providers: { codex: { homePath: '/shared' } } }, null).env)
+      .toEqual({ CODEX_HOME: '/shared' })
+    expect(providerAuthLaunch('codex', { providers: { codex: { homePath: '/shared', shadowHomePath: '/auth' } } }, null).env)
+      .toEqual({ CODEX_HOME: '/auth' })
+  })
+
+  it('keeps OpenCode provider selection alongside a custom binary', () => {
+    expect(providerAuthLaunch('opencode', { providers: { opencode: { binaryPath: '/opt/opencode' } } }, null, 'openai').command)
+      .toEqual({ executable: '/opt/opencode', args: ['auth', 'login', '--provider', 'openai'] })
   })
 })
 

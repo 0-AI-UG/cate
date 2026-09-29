@@ -2,6 +2,7 @@ import { app, session } from 'electron'
 import type { Duplex } from 'stream'
 import { createHash, randomBytes, randomUUID } from 'crypto'
 import net, { type Server as NetServer, type Socket } from 'net'
+import os from 'os'
 import path from 'path'
 import log from '../logger'
 import { resolveLocator, runtimes } from '../runtime/runtimeManager'
@@ -25,7 +26,7 @@ import {
   extractProviderProfile,
   isProviderSecretFile,
 } from './providerProfile'
-import { cleanProviderAuthOutput, providerAuthCode, providerAuthCommand, providerAuthUrl } from './providerAuth'
+import { cleanProviderAuthOutput, providerAuthCode, providerAuthLaunch, providerAuthUrl } from './providerAuth'
 import { remoteAuthorizationUrl } from './remoteAuthorizationUrl'
 import { PROVIDER_STATUS_CACHE, providerStatusFromSnapshot } from './providerStatus'
 import { settingsRpc } from './settingsRpc'
@@ -284,7 +285,20 @@ export class T3HarnessManager {
       ownerWindowId,
       request.workspaceId,
     )
-    const command = providerAuthCommand(request.providerId, request.provider)
+    // The published provider profile holds the binary path and home directory
+    // T3 launches the provider with; sign-in must write credentials there too.
+    const harnessRoot = await resolved.runtime.file.harnessRoot()
+    const profile = await this.readJsonObject(
+      resolved.runtime,
+      harnessPaths(resolved.runtimeId, harnessRoot, cwd).providerProfilePath,
+      'T3 provider profile',
+    )
+    const { command, env } = providerAuthLaunch(
+      request.providerId,
+      profile,
+      resolved.runtimeId === 'local' ? os.homedir() : null,
+      request.provider,
+    )
     const id = `provider-auth-${randomUUID()}`
     const state: ProviderAuthState = {
       id,
@@ -305,7 +319,7 @@ export class T3HarnessManager {
         cwd,
         command,
         scopeId: request.workspaceId,
-        env: { TERM: 'xterm-256color' },
+        env: { ...env, TERM: 'xterm-256color' },
       }, (_id, chunk) => {
         const current = this.providerAuth.get(id)
         if (!current) return
