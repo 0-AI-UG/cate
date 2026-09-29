@@ -37,6 +37,7 @@ import type { RuntimeRpcClient } from './rpcClient'
 import type { FsWatchEvtPayload, PtyEvtPayload, AgentHookEvtPayload, SearchEvtPayload, ServerEvtPayload, TunnelEvtPayload, TunnelListenEvtPayload } from '../../runtime/protocol'
 import type { FileTreeNode, FileSearchResult, GitComparisonResult, GitFileContent, GitFileDiff } from '../../shared/types'
 import type { AgentHookAgentState } from '../../shared/agentHooks'
+import type { AgentConversationMessage } from '../../shared/agentConversation'
 
 export class RemoteRuntime implements Runtime {
   readonly process: ProcessHost
@@ -133,6 +134,7 @@ export class RemoteRuntime implements Runtime {
       subscribe: (onEvent) => subscribe(Methods.agentHooksSubscribe, Methods.agentHooksUnsubscribe, [],
         payload => onEvent(payload as AgentHookEvtPayload)),
       inspectWorkspace: (cwd) => call<AgentHookAgentState[]>(Methods.agentHooksInspect, [cwd]),
+      readConversation: (session) => call<AgentConversationMessage[] | null>(Methods.agentConversationRead, [session]),
       setPromptContext: (terminalId, context) => call(Methods.agentHooksSetPromptContext, [terminalId, context]),
     }
 

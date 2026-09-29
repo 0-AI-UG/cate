@@ -20,40 +20,16 @@
 // Resumability gating: a stamp is only worth persisting if resuming it works.
 // Claude announces an id before its transcript exists; Kiro announces one
 // before its first conversation turn is saved. Both are stamped from their
-// first turn event. See RESUMABLE_FROM_SESSION_START below.
+// first turn event. See AgentDef.resumableFromSessionStart.
 // =============================================================================
 
 import { SHELL_AGENT_SESSION_UPDATE } from '../../shared/ipc-channels'
 import { normalizeAgentSourceStartedAt, type AgentHookEvent } from '../../shared/agentHooks'
-import type { AgentId } from '../../shared/agents'
+import { AGENTS } from '../../shared/agents'
 import type { Runtime } from '../runtime/types'
 import type { TerminalAgentSession } from '../../shared/types'
 import { getTerminalOwner } from './terminal'
 import { sendToWindow } from '../windowRegistry'
-
-/**
- * Whether this agent's session is already resumable when its session-start
- * event arrives. Claude and Kiro wait for the first turn event; every other
- * CLI's first sessionId-bearing event is already tied to a persisted store.
- * Contracts are pinned live in agentHookContracts.itest.ts.
- */
-const RESUMABLE_FROM_SESSION_START: Record<AgentId, boolean> = {
-  'claude-code': false,
-  codex: true,
-  // A never-used sessionStart id is resumable (--resume even ADOPTS unknown
-  // ids as a fresh chat rather than failing) — pinned live.
-  cursor: true,
-  // grok's TUI defers SessionStart to the first prompt submit, so a session is
-  // already open and on disk when the id arrives — a session killed mid-turn,
-  // before its Stop, still resumes (pinned live).
-  grok: true,
-  // Hermes creates the record before its first persisted user turn.
-  hermes: false,
-  // Kiro documents that sessions are saved on each conversation turn; its
-  // agentSpawn event precedes that first turn, so stamp from prompt submit.
-  kiro: false,
-  opencode: true,
-}
 
 interface StampState {
   /** Dedup key of the last SHELL_AGENT_SESSION_UPDATE sent, so an unchanged
@@ -63,7 +39,8 @@ interface StampState {
     sourcePid?: number
     sourceStartedAt?: string
   }
-  hermesHighWater?: bigint
+  /** Newest process start clock seen from an in-process (hookProcess 'self') agent. */
+  sourceStartedHighWater?: bigint
   /** Monotonic ingest counter — an async cwd lookup captures it and drops its
    *  result if a newer event (or a clear) landed while it was in flight. */
   seq: number
@@ -109,15 +86,18 @@ function emit(terminalId: string, session: TerminalAgentSession | null): void {
  */
 export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent): void {
   const { terminalId } = event
-  if (event.kind === 'session-title' || event.kind === 'input-submit' || event.kind === 'input-interrupt') return
+  if (event.kind === 'session-title' || event.kind === 'input-submit') return
   const st = stateFor(terminalId)
-  if (event.agentId === 'hermes') {
+  const agent = AGENTS.find((candidate) => candidate.id === event.agentId)
+  // An in-process hook stamps each event with its process start clock; drop
+  // events from an older process of the agent in this terminal.
+  if (agent?.hookProcess === 'self') {
     const startedAt = normalizeAgentSourceStartedAt(event.sourceStartedAt)
-    if (!startedAt && st.hermesHighWater !== undefined) return
+    if (!startedAt && st.sourceStartedHighWater !== undefined) return
     if (startedAt) {
       const incoming = BigInt(startedAt)
-      if (st.hermesHighWater !== undefined && incoming < st.hermesHighWater) return
-      st.hermesHighWater = incoming
+      if (st.sourceStartedHighWater !== undefined && incoming < st.sourceStartedHighWater) return
+      st.sourceStartedHighWater = incoming
     }
   }
   if (event.kind === 'session-end') {
@@ -145,10 +125,12 @@ export function ingestAgentSessionStamp(runtime: Runtime, event: AgentHookEvent)
     ...(event.sourcePid ? { sourcePid: event.sourcePid } : {}),
     ...(event.sourceStartedAt ? { sourceStartedAt: event.sourceStartedAt } : {}),
   }
-  if (event.kind === 'session-start' && !RESUMABLE_FROM_SESSION_START[event.agentId]) {
+  if (event.kind === 'session-start' && !agent?.resumableFromSessionStart) {
     const previous = st.latest
     st.latest = identity
-    if (agentId === 'hermes' && previous?.agentId === 'hermes' && (
+    // A new session replaced the stamped one without ending it first (e.g.
+    // Hermes's session reset): the old stamp is no longer what runs here.
+    if (previous?.agentId === agentId && (
       previous.sessionId !== sessionId || previous.profile !== event.profile
     )) emit(terminalId, null)
     return

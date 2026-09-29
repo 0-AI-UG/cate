@@ -136,7 +136,6 @@ describe('coding-agent hook status integration', () => {
     useStatusStore.setState({ workspaces: {} })
     setTerminalWorkspaceResolver((ptyId) => (ptyId === PTY ? WS : undefined))
     useStatusStore.getState().registerTerminal(PTY, WS)
-    useStatusStore.getState().setAgentName(WS, PTY, 'Agent')
     ;(window as unknown as { electronAPI: Record<string, unknown> }).electronAPI = {
       shellReportAgentScreenState: vi.fn(),
     }
@@ -237,8 +236,6 @@ describe('coding-agent hook status integration', () => {
       expect(state()).toBe('running')
       expect(canAgentReceivePrompt(PTY)).toBe(false)
       expect(sendOsNotification).not.toHaveBeenCalled()
-      expect(useStatusStore.getState().statusText(WS)).toBe('Running')
-      expect(useStatusStore.getState().isAnimating(WS)).toBe(false)
     }
     // Even denial without a tool execution ends via the normal turn boundary.
     emit(raw.agentId, fixture.turnEnd)

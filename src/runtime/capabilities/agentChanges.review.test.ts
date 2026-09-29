@@ -8,7 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createAgentChangesStore } from './agentChanges'
 import { filesFromPatch, filesFromTool } from './agentChangeEdits'
-import { normalizeAgentHookPayload } from '../../shared/agentHooks'
+import { AGENT_HOOK_SPECS, normalizeAgentHookPayload } from '../../shared/agentHooks'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -154,10 +154,10 @@ it('resolves reported relative paths from the agent cwd within the source worksp
   store.registerSource('pty', { cwd, kind: 'terminal' })
   const payload = { hook_event_name: 'PostToolUse', session_id: 'session', tool_use_id: 'edit', cwd: agentCwd,
     tool_name: 'Edit', tool_input: { file_path: 'src/a.ts', old_string: 'a', new_string: 'b' } }
-  await store.ingestHook('pty', 'claude-code', payload, normalizeAgentHookPayload('claude-code', 'pty', payload))
+  await store.ingestHook('pty', 'claude-code', normalizeAgentHookPayload('claude-code', 'pty', payload), AGENT_HOOK_SPECS['claude-code'].toolCall(payload))
   expect((await store.list(cwd))[0].files[0].path).toBe('packages/app/src/a.ts')
   const outside = { ...payload, tool_use_id: 'outside', cwd: directory }
-  await store.ingestHook('pty', 'claude-code', outside, normalizeAgentHookPayload('claude-code', 'pty', outside))
+  await store.ingestHook('pty', 'claude-code', normalizeAgentHookPayload('claude-code', 'pty', outside), AGENT_HOOK_SPECS['claude-code'].toolCall(outside))
   expect(await store.list(cwd)).toHaveLength(1)
 })
 
@@ -185,7 +185,7 @@ it('captures the command-wrapped apply_patch input emitted by real Codex CLI 0.1
     tool_response: 'Exit code: 0\nWall time: 0 seconds\nOutput:\nSuccess. Updated the following files:\nA target.txt\n',
     tool_use_id: 'live-call',
   }
-  await store.ingestHook('pty', 'codex', payload, normalizeAgentHookPayload('codex', 'pty', payload))
+  await store.ingestHook('pty', 'codex', normalizeAgentHookPayload('codex', 'pty', payload), AGENT_HOOK_SPECS['codex'].toolCall(payload))
   expect(await store.list('/repo')).toMatchObject([{ agentId: 'codex', sessionId: 'live-session', turnId: 'live-turn', panelId: 'panel',
     files: [{ path: 'target.txt', additions: 1, deletions: 0, coverage: 'fragment' }] }])
   expect(filesFromTool('/repo', 'Bash', payload.tool_input, payload.tool_response)).toEqual([])

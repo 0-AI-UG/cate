@@ -1,10 +1,12 @@
 // =============================================================================
 // Agent hook abstraction — the per-CLI declarations that turn the agent
 // CLIs' hook/extension/plugin surfaces into ONE normalized push event stream.
-// Each agent entry declares (a) WHICH workspace-scoped files Cate writes to
-// inject its hook bridge and (b) how that CLI's raw hook payload normalizes
-// into an AgentHookEvent. Adding a CLI is one entry here plus its AgentDef in
-// agents.ts.
+// Each agent entry declares everything Cate knows about that CLI's hooks:
+// how they are injected (workspace files or a profile plugin, plus any PTY
+// env), how a raw payload normalizes into an AgentHookEvent (including the
+// permission detail), which completed tool call it reports for edit capture,
+// and how a user interrupt ends a turn. Raw payloads are read here and nowhere
+// else. Adding a CLI is one entry here plus its AgentDef in agents.ts.
 //
 // The injection/payload contracts are pinned LIVE against the installed CLIs
 // by src/runtime/capabilities/agentHookContracts.itest.ts — when a CLI update
@@ -20,6 +22,8 @@ import { createHash } from 'crypto'
 import { AGENTS, type AgentId } from './agents'
 import type { AgentApprovalDetection, AgentApprovalMode } from './agentApprovalModes'
 export {
+  agentHookInUse,
+  agentHooksEnabled,
   resolveAgentHookMode,
   type AgentHookConfig,
   type AgentHookMode,
@@ -57,10 +61,9 @@ export type AgentHookEventKind =
    *  Claude/Codex/Grok do not hook the actual approval reply, so
    *  runtime PTY input supplies that earlier resume edge. */
   | 'turn-resume'
-  /** Runtime-observed PTY input, ordered with hooks rather than guessed in
-   *  the renderer. These events carry no typed text. */
+  /** Runtime-observed PTY Enter, ordered with hooks rather than guessed in
+   *  the renderer. Carries no typed text. */
   | 'input-submit'
-  | 'input-interrupt'
 
 export interface AgentHookEvent {
   /** The pty id whose env the hook echoed back (CATE_TERMINAL_ID). */
@@ -89,13 +92,35 @@ export interface AgentHookEvent {
   title?: string
   /** Config fallback for ambiguous permission checks, read on the CLI host. */
   approvalMode?: AgentApprovalMode
+  /** permission-check / permission-wait only: what the agent asks to do, when the CLI says. */
+  permission?: string
+  /** turn-end only: the runtime recovered this turn end from a user
+   *  interrupt the CLI did not report (see AgentHookSpec.interrupt). */
+  interrupted?: true
   /** The raw payload as posted by the bridge, for consumers that need
    *  per-CLI detail (e.g. codex's turn_id / tool_input on permission-wait). */
   raw: Record<string, unknown>
 }
 
+/** One completed, successful tool call reported by a hook payload: the input
+ *  edit capture consumes. Each agent's spec maps its own payload spelling onto
+ *  this, so nothing downstream reads raw CLI payloads. */
+export interface AgentToolCall {
+  sessionId: string | null
+  turnId?: string
+  name: string
+  input: unknown
+  output: unknown
+  /** The CLI's id for this call; a retried post of the same call dedupes on it. */
+  callId?: string
+  /** Where the tool ran, when the payload says and no lifecycle event does. */
+  cwd?: string
+  /** The spawning session, when the call ran in a subagent session. */
+  parentSessionId?: string
+}
+
 export type NormalizedHookFields = Pick<AgentHookEvent, 'kind' | 'sessionId'> &
-  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath' | 'profile'>>
+  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath' | 'profile' | 'permission'>>
 
 export function normalizeAgentSourceStartedAt(value: unknown): string | undefined {
   if (typeof value !== 'string' || !/^[0-9]{1,32}$/.test(value)) return undefined
@@ -148,34 +173,18 @@ export interface AgentHookAgentState {
 
 export interface AgentHookSpec {
   /**
-   * Whether this CLI pushes a mapped turn-end when the USER INTERRUPTS a
-   * running turn (Esc / Ctrl+C), the one turn boundary that is NOT a normal
-   * completion.
-   *
-   *  - true: the CLI's interrupt path fires an event that normalize() turns
-   *    into 'turn-end' (codex's Interrupt, cursor's stop{status:aborted}, pi's
-   *    agent_end, opencode's session.status{idle}). Cate's FSM idles correctly,
-   *    unaided.
-   *  - false: the CLI pushes no interrupt event. Claude is recovered from its
-   *    transcript marker; Kiro is recovered from the terminal input edge.
-   *
-   * Kiro exposes neither a Stop hook nor a transcript marker on interrupt, so
-   * its v3 TUI is recovered from the Ctrl-C input edge while a hook-proven turn
-   * is active.
+   * How a USER INTERRUPT (Esc / Ctrl+C) ends the running turn, the one turn
+   * boundary that is not a normal completion. Each is pinned live by the
+   * "user interrupt" tests in agentHookContracts.itest.ts.
+   *  - hook: the CLI pushes an event normalize() maps to turn-end (codex's
+   *    Interrupt, cursor's stop{status:aborted}, opencode's idle status).
+   *  - transcript: no hook fires, but the CLI appends `marker` to its
+   *    transcript; the runtime tails it during a turn and emits the turn-end.
+   *  - input: no hook and no transcript marker; the runtime ends a hook-proven
+   *    active turn on the terminal's own Ctrl-C input edge.
+   * Recovered turn-ends carry `interrupted: true`.
    */
-  reportsTurnEndOnInterrupt: boolean
-  /**
-   * For an agent that pushes NO hook on interrupt (reportsTurnEndOnInterrupt
-   * false), how the runtime recovers the turn-end from the transcript instead.
-   * `marker` matches the transcript's newly-appended tail once the CLI has
-   * written its interrupt marker for the just-aborted turn (claude's
-   * "[Request interrupted by user]", codex's rollout abort record) — both
-   * pinned live against the real transcript in agentHookContracts.itest.ts.
-   * Undefined for the self-healing agents (they get a real hook turn-end and
-   * never need this) and for any false agent whose transcript carries no
-   * distinguishable marker (then the gap simply stays open, honestly).
-   */
-  interruptRecovery?: { marker: RegExp }
+  interrupt: { via: 'hook' } | { via: 'transcript'; marker: RegExp } | { via: 'input' }
   /**
    * Workspace-scoped hook files (claude's .claude/settings.local.json,
    * codex's .codex/hooks.json, and opencode's .opencode/plugin/cate-hook.js)
@@ -203,11 +212,20 @@ export interface AgentHookSpec {
      */
     strip?(existing: string): AgentHookStrip
   }>
-  /** Profile-scoped plugin managed on the runtime host instead of in the repo. */
+  /** Profile-scoped plugin managed on the runtime host instead of in the
+   *  repo. The runtime installs it (and reports it as injected) by this id. */
   externalPlugin?: { id: string }
+  /** Extra env this CLI needs on every Cate PTY, given whether its hooks are
+   *  enabled there. Never overrides a variable the user already set. */
+  ptyEnv?(hooksEnabled: boolean): Record<string, string>
   /** Normalize one raw payload posted by this agent's bridge. Null = drop
    *  (an event Cate doesn't track, e.g. claude's idle_prompt notification). */
   normalize(payload: Record<string, unknown>): NormalizedHookFields | null
+  /** The completed, successful tool call this payload reports, or null. */
+  toolCall(payload: Record<string, unknown>): AgentToolCall | null
+  /** The CLI re-announces turn-start while a turn is already running (so a
+   *  repeated turn-start without a turn id is the same turn, not a new one). */
+  repeatsTurnStart?: boolean
 }
 
 /** Marker every generated bridge/wrapper path contains — how the project-file
@@ -217,6 +235,39 @@ export interface AgentHookSpec {
 export const CATE_HOOK_MARKER = 'cate-hook'
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null)
+const obj = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
+
+/** The `permission` field for a permission-wait, from the CLI's own wording. */
+function permission(detail: unknown): Pick<AgentHookEvent, 'permission'> {
+  return typeof detail === 'string' && detail.trim() ? { permission: detail.trim() } : {}
+}
+
+/** The turn id a payload carries, in any CLI's spelling. */
+function payloadTurnId(p: Record<string, unknown>): string | undefined {
+  return str(p.turn_id) ?? str(p.turnId) ?? str(p.promptId) ?? undefined
+}
+
+/** A reported tool call, unless the CLI marked it failed. The CLIs all flag
+ *  failure one of these ways, on the tool output or the payload itself. */
+function succeededToolCall(p: Record<string, unknown>, call: Omit<AgentToolCall, 'turnId'>): AgentToolCall | null {
+  const output = obj(call.output)
+  if (output.is_error === true || output.success === false || p.success === false || p.error_type
+    || ['error', 'failed', 'declined'].includes(String(output.status ?? p.status))) return null
+  return { ...call, turnId: payloadTurnId(p) }
+}
+
+/** The shape shared by the CLIs with snake_case PostToolUse-style payloads. */
+function snakeCaseToolCall(p: Record<string, unknown>, sessionId: string | null): AgentToolCall | null {
+  return succeededToolCall(p, {
+    sessionId,
+    name: str(p.tool_name) ?? '',
+    input: p.tool_input,
+    output: p.tool_response,
+    callId: str(p.tool_use_id) ?? undefined,
+    cwd: str(p.cwd) ?? undefined,
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Shared {hooks: {<Event>: [groups]}} file merge — claude's
@@ -361,12 +412,10 @@ const CLAUDE_EVENTS = [
 ]
 
 const claudeSpec: AgentHookSpec = {
-  // No hook fires on a user interrupt — pinned live (see the field doc).
-  reportsTurnEndOnInterrupt: false,
-  // Recovered from the transcript: claude appends a user-role message whose
-  // content is exactly "[Request interrupted by user]" (also the "…for tool
-  // use" variant) when a turn is aborted. Pinned live in agentHookContracts.
-  interruptRecovery: { marker: /\[Request interrupted by user/ },
+  // No hook fires on a user interrupt, but claude appends a user-role message
+  // "[Request interrupted by user]" (also the "…for tool use" variant) to its
+  // transcript when a turn is aborted. Pinned live in agentHookContracts.
+  interrupt: { via: 'transcript', marker: /\[Request interrupted by user/ },
   projectFiles: [
     {
       relPath: '.claude/settings.local.json',
@@ -402,10 +451,11 @@ const claudeSpec: AgentHookSpec = {
       // Unlike PermissionRequest (which other hooks may auto-resolve), this
       // notification confirms a human prompt. Claude applies its own delay.
       case 'Notification':
-        return p.notification_type === 'permission_prompt' ? { kind: 'permission-wait', ...base } : null
+        return p.notification_type === 'permission_prompt' ? { kind: 'permission-wait', ...base, ...permission(p.message) } : null
       default: return null
     }
   },
+  toolCall: (p) => p.hook_event_name === 'PostToolUse' ? snakeCaseToolCall(p, str(p.session_id)) : null,
 }
 
 // ---------------------------------------------------------------------------
@@ -447,7 +497,7 @@ const CODEX_HOOK_TIMEOUT = 60
 const codexSpec: AgentHookSpec = {
   // Current Codex emits Interrupt with the interrupted turn_id. Hook-native on
   // purpose: its transcript format is explicitly not a stable hook interface.
-  reportsTurnEndOnInterrupt: true,
+  interrupt: { via: 'hook' },
   projectFiles: [
     {
       relPath: '.codex/hooks.json',
@@ -463,6 +513,12 @@ const codexSpec: AgentHookSpec = {
       strip: (existing) => stripSharedHooksFile(existing, CODEX_EVENTS),
     },
   ],
+  // Codex's shared app-server daemon launches hooks with the daemon's
+  // environment, so a hook cannot identify the terminal that submitted a
+  // prompt. An explicitly present (but empty) executor URL makes Codex use its
+  // local executor and embedded app-server, preserving this PTY's hook
+  // identity for a plain `codex` invocation. A user-selected executor URL wins.
+  ptyEnv: (enabled): Record<string, string> => enabled ? { CODEX_EXEC_SERVER_URL: '' } : {},
   normalize: (p) => {
     const base = {
       sessionId: str(p.session_id),
@@ -477,7 +533,8 @@ const codexSpec: AgentHookSpec = {
       // Runs BEFORE Codex chooses hooks, automatic review, or the user. The
       // hook's permission_mode describes policy, not the selected reviewer.
       // Codex exposes no hook for the later human-prompt boundary.
-      case 'PermissionRequest': return { kind: 'permission-check', ...base }
+      case 'PermissionRequest':
+        return { kind: 'permission-check', ...base, ...permission(obj(p.tool_input).command ?? p.tool_name) }
       // Fires after an approval is resolved and immediately before the tool
       // starts. This clears permission-wait while a long-running command is
       // executing instead of leaving the UI blocked until PostToolUse.
@@ -489,6 +546,7 @@ const codexSpec: AgentHookSpec = {
       default: return null
     }
   },
+  toolCall: (p) => p.hook_event_name === 'PostToolUse' ? snakeCaseToolCall(p, str(p.session_id)) : null,
 }
 
 // ---------------------------------------------------------------------------
@@ -526,7 +584,7 @@ interface CursorHooksJson {
 
 const cursorSpec: AgentHookSpec = {
   // Interrupt (Esc) pushes stop{status:aborted} ~100ms later → turn-end.
-  reportsTurnEndOnInterrupt: true,
+  interrupt: { via: 'hook' },
   projectFiles: [
     {
       relPath: '.cursor/hooks.json',
@@ -608,6 +666,24 @@ const cursorSpec: AgentHookSpec = {
       default: return null
     }
   },
+  toolCall: (p) => {
+    const sessionId = str(p.session_id) ?? str(p.conversation_id)
+    // afterFileEdit carries the before/after fragments on the payload itself.
+    if (p.hook_event_name === 'afterFileEdit') {
+      return succeededToolCall(p, { sessionId, name: 'Edit', input: p, output: undefined, callId: str(p.tool_use_id) ?? undefined })
+    }
+    if (p.hook_event_name !== 'postToolUse') return null
+    // Cursor also reports a generic Write completion (new contents only) for
+    // the same edit, without a shared id; afterFileEdit is authoritative.
+    if (p.tool_name === 'Write') return null
+    return succeededToolCall(p, {
+      sessionId,
+      name: str(p.tool_name) ?? '',
+      input: p.tool_input,
+      output: p.tool_output,
+      callId: str(p.tool_use_id) ?? undefined,
+    })
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -644,7 +720,7 @@ const GROK_HOOK_TIMEOUT = 60
 const grokSpec: AgentHookSpec = {
   // Current Grok emits StopCancelled on user interrupt; promptId correlates a
   // possibly-late cancellation with the turn it actually ended.
-  reportsTurnEndOnInterrupt: true,
+  interrupt: { via: 'hook' },
   projectFiles: [
     {
       // `cate.json` is ours alone — grok merges every file in the dir, so a
@@ -685,6 +761,17 @@ const grokSpec: AgentHookSpec = {
       default: return null
     }
   },
+  // Subagent edits are real workspace edits, so unlike normalize() this keeps them.
+  toolCall: (p) => p.hookEventName === 'post_tool_use'
+    ? succeededToolCall(p, {
+        sessionId: str(p.sessionId),
+        name: str(p.toolName) ?? '',
+        input: p.toolInput,
+        output: p.toolResponse,
+        callId: str(p.toolUseId) ?? undefined,
+        cwd: str(p.cwd) ?? undefined,
+      })
+    : null,
 }
 
 // ---------------------------------------------------------------------------
@@ -766,7 +853,7 @@ export const CateHookBridge = async () => {
 
 const opencodeSpec: AgentHookSpec = {
   // Interrupt (Ctrl+C) returns session.status to idle → turn-end.
-  reportsTurnEndOnInterrupt: true,
+  interrupt: { via: 'hook' },
   projectFiles: [
     {
       // `.js`, not `.mjs`: opencode's scan glob is `*.{ts,js}` only.
@@ -787,7 +874,7 @@ const opencodeSpec: AgentHookSpec = {
         // session.status is OpenCode's canonical busy/idle lifecycle event.
         if ((p.status as { type?: unknown } | null)?.type === 'busy') return { kind: 'turn-start', ...base }
         return (p.status as { type?: unknown } | null)?.type === 'idle' ? { kind: 'turn-end', ...base } : null
-      case 'permission.asked': return { kind: 'permission-wait', ...base }
+      case 'permission.asked': return { kind: 'permission-wait', ...base, ...permission(obj(p.metadata).command) }
       // The user answered the permission prompt. Even a "reject" reply keeps
       // the turn in flight (the model receives the denial, produces text, and
       // idles), so every reply maps to turn-resume — the later turn-end
@@ -795,6 +882,22 @@ const opencodeSpec: AgentHookSpec = {
       case 'permission.replied': return { kind: 'turn-resume', ...base }
       default: return null
     }
+  },
+  // session.status busy repeats while one turn runs.
+  repeatsTurnStart: true,
+  toolCall: (p) => {
+    const part = obj(p.part)
+    const state = obj(part.state)
+    if (p.type !== 'message.part.updated' || part.type !== 'tool' || state.status !== 'completed') return null
+    return succeededToolCall(p, {
+      sessionId: str(p.sessionID),
+      name: str(part.tool) ?? '',
+      input: state.input,
+      output: state.metadata,
+      callId: str(part.callID) ?? undefined,
+      cwd: str(p.directory) ?? undefined,
+      parentSessionId: str(p.parentSessionId) ?? undefined,
+    })
   },
 }
 
@@ -819,9 +922,9 @@ function kiroHookSource(ctx: HookInjectionContext): string {
 }
 
 const kiroSpec: AgentHookSpec = {
-  // Verified live against Kiro CLI 2.19.0: Ctrl-C returns to the prompt without
-  // a Stop hook. The renderer recovers from that terminal input edge.
-  reportsTurnEndOnInterrupt: false,
+  // Verified live against Kiro CLI 2.19.0: Ctrl-C returns to the prompt with
+  // neither a Stop hook nor a transcript marker.
+  interrupt: { via: 'input' },
   projectFiles: [
     {
       relPath: '.kiro/hooks/cate-hook.json',
@@ -849,6 +952,9 @@ const kiroSpec: AgentHookSpec = {
       default: return null
     }
   },
+  toolCall: (p) => p.hook_event_name === 'PostToolUse' || p.hook_event_name === 'postToolUse'
+    ? snakeCaseToolCall(p, str(p.session_id))
+    : null,
 }
 
 // ---------------------------------------------------------------------------
@@ -860,8 +966,10 @@ const kiroSpec: AgentHookSpec = {
 const HERMES_INTERACTIVE_PLATFORMS = new Set(['cli', 'tui'])
 
 const hermesSpec: AgentHookSpec = {
-  reportsTurnEndOnInterrupt: true,
+  interrupt: { via: 'hook' },
   externalPlugin: { id: 'cate-agent-state' },
+  // The profile-wide plugin reports only for terminals where it is enabled.
+  ptyEnv: (enabled) => ({ CATE_HERMES_HOOKS: enabled ? '1' : '0' }),
   normalize: (p) => {
     const platform = str(p.platform)
     if (platform && !HERMES_INTERACTIVE_PLATFORMS.has(platform)) return null
@@ -889,6 +997,17 @@ const hermesSpec: AgentHookSpec = {
       default: return null
     }
   },
+  toolCall: (p) => p.hook_event_name === 'post_tool_call'
+    ? succeededToolCall(p, {
+        sessionId: str(p.session_id),
+        name: str(p.tool_name) ?? '',
+        input: p.args,
+        output: p.result,
+        callId: str(p.tool_call_id) ?? undefined,
+        cwd: str(p.cwd) ?? undefined,
+        parentSessionId: str(p.parent_session_id) ?? undefined,
+      })
+    : null,
 }
 
 // ---------------------------------------------------------------------------
@@ -919,6 +1038,6 @@ export function normalizeAgentHookPayload(
   if ((agentId === 'codex' || agentId === 'claude-code') && typeof payload.agent_id === 'string' && payload.agent_id) return null
   const fields = spec.normalize(payload)
   if (!fields) return null
-  const turnId = str(payload.turn_id) ?? str(payload.turnId) ?? str(payload.promptId) ?? undefined
+  const turnId = payloadTurnId(payload)
   return { terminalId, agentId: agentId as AgentId, raw: payload, turnId, ...fields }
 }

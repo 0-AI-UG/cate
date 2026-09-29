@@ -18,6 +18,7 @@ import {
   createAgentHooksCapability,
   ensureGitExcluded,
   isRepoLocalCwd,
+  withoutInheritedHookIdentity,
   type AgentHooksCapability,
   type AgentHooksDeps,
 } from './agentHooks'
@@ -334,7 +335,7 @@ describe('agentHooks capability', () => {
   test('resolves CLI metadata into a normal session-title event without delaying the hook', async () => {
     const resolver = vi.fn(async () => 'Fix terminal titles')
     const cap = makeCap({
-      titleResolvers: new Proxy({}, { get: () => resolver }) as AgentHooksDeps['titleResolvers'],
+      sessionStores: new Proxy({}, { get: () => ({ title: resolver, conversation: async () => null }) }) as AgentHooksDeps['sessionStores'],
       titleRetryDelaysMs: [0],
     })
     const events = collect(cap)
@@ -844,7 +845,7 @@ describe('agentHooks interrupt recovery', () => {
   const CLAUDE_INTERRUPT =
     '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}\n'
   const synthEnds = (events: AgentHookEvent[]): AgentHookEvent[] =>
-    events.filter((e) => e.kind === 'turn-end' && (e.raw as { __cateInterruptRecovery?: unknown }).__cateInterruptRecovery)
+    events.filter((e) => e.kind === 'turn-end' && e.interrupted)
 
   function transcriptFile(seed: string): string {
     const dir = tmpDir('transcript')
@@ -946,5 +947,64 @@ describe('agentHooks interrupt recovery', () => {
     appendFileSync(transcript, CLAUDE_INTERRUPT)
     await sleep(120)
     expect(synthEnds(events)).toHaveLength(0)
+  })
+  test('kiro: Ctrl-C during a hook-proven turn synthesizes turn-end; outside a turn or for other agents it does not', async () => {
+    const cap = makeCap()
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    const turn = (terminalId: string, agentId: string, payload: Record<string, unknown>) =>
+      post(url, tokenFor(terminalId), { agentId, terminalId, payload })
+
+    // Kiro reports neither a hook nor a transcript marker on interrupt.
+    await turn('t-kiro', 'kiro', { hook_event_name: 'SessionStart', session_id: 'k1', cwd: '/w' })
+    cap.noteInput('t-kiro', '\x03')
+    expect(synthEnds(events)).toHaveLength(0)
+    await turn('t-kiro', 'kiro', { hook_event_name: 'UserPromptSubmit', session_id: 'k1', cwd: '/w' })
+    cap.noteInput('t-kiro', '\x03')
+    expect(synthEnds(events)).toMatchObject([{ agentId: 'kiro', terminalId: 't-kiro', sessionId: 'k1' }])
+    cap.noteInput('t-kiro', '\x03')
+    expect(synthEnds(events)).toHaveLength(1)
+
+    // Claude recovers from its transcript instead, so its Ctrl-C is ignored.
+    await turn('t-cl', 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'c1', cwd: '/w' })
+    cap.noteInput('t-cl', '\x03')
+    expect(synthEnds(events)).toHaveLength(1)
+  })
+
+  test('kiro: an exited agent\'s in-flight turn is dropped, so a later Ctrl-C cannot end (and re-stamp) the dead session', async () => {
+    const cap = makeCap()
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    await post(url, tokenFor('t-kiro'), { agentId: 'kiro', terminalId: 't-kiro', payload: { hook_event_name: 'UserPromptSubmit', session_id: 'k1', cwd: '/w' } })
+    cap.noteAgentExited('t-kiro')
+    cap.noteInput('t-kiro', '\x03')
+    expect(synthEnds(events)).toHaveLength(0)
+  })
+
+  test('kiro: a late turn-end for a replaced turn keeps the follow-up turn in flight', async () => {
+    const cap = makeCap()
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    const hook = (payload: Record<string, unknown>) =>
+      post(url, tokenFor('t-kiro'), { agentId: 'kiro', terminalId: 't-kiro', payload: { session_id: 'k1', cwd: '/w', ...payload } })
+    await hook({ hook_event_name: 'UserPromptSubmit', turn_id: 'a' })
+    await hook({ hook_event_name: 'UserPromptSubmit', turn_id: 'b' })
+    await hook({ hook_event_name: 'Stop', turn_id: 'a' })
+    cap.noteInput('t-kiro', '\x03')
+    expect(synthEnds(events)).toMatchObject([{ sessionId: 'k1', turnId: 'b' }])
+  })
+})
+
+describe('withoutInheritedHookIdentity', () => {
+  test('strips the hook identity and every value an agent spec plants through ptyEnv; keeps user values', () => {
+    expect(withoutInheritedHookIdentity({
+      PATH: '/bin',
+      CATE_TERMINAL_ID: 'pty-1',
+      CATE_HERMES_HOOKS: '0',
+      CODEX_EXEC_SERVER_URL: '',
+      UNSET: undefined,
+    })).toEqual({ PATH: '/bin' })
+    // A user-selected executor URL is the user's, not Cate's.
+    expect(withoutInheritedHookIdentity({ CODEX_EXEC_SERVER_URL: 'ws://exec' })).toEqual({ CODEX_EXEC_SERVER_URL: 'ws://exec' })
   })
 })

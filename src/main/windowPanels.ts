@@ -31,36 +31,40 @@ const pendingPanelCloses = new Map<string, {
 }>()
 let nextPanelCloseRequest = 1
 
+/** One reported panel, stamped with its owner window's id + type. */
+function panelInfo(windowId: number, ownerWindowType: WindowPanelInfo['ownerWindowType'], p: WindowPanelReport): WindowPanelInfo {
+  return {
+    panelId: p.panelId,
+    type: p.type,
+    title: p.title || p.type,
+    workspaceId: p.workspaceId,
+    filePath: p.filePath,
+    url: p.url,
+    reviewRepoPath: p.reviewRepoPath,
+    focused: p.focused,
+    ownerWindowId: windowId,
+    ownerWindowType,
+    parentCanvasId: p.parentCanvasId,
+    worktreeId: p.worktreeId,
+    agentState: p.agentState,
+    agentCanReceivePrompt: p.agentCanReceivePrompt,
+    agentId: p.agentId,
+    agentName: p.agentName,
+    agentSession: p.agentSession,
+    hasPorts: p.hasPorts,
+    codingAgentRunId: p.codingAgentRunId,
+    codingAgentOwnerPanelId: p.codingAgentOwnerPanelId,
+    codingAgentStatus: p.codingAgentStatus,
+  }
+}
+
 /** Store a window's reported panels (stamped with its owner id + type) and
  *  rebroadcast the union. Ignored if the window isn't tracked (e.g. a late
  *  report from a window that has since closed). */
 export function setWindowPanels(windowId: number, report: WindowPanelReport[]): void {
   const ownerWindowType = getWindowType(windowId)
   if (!ownerWindowType) return
-  windowPanels.set(
-    windowId,
-    report.map((p) => ({
-      panelId: p.panelId,
-      type: p.type,
-      title: p.title || p.type,
-      workspaceId: p.workspaceId,
-      filePath: p.filePath,
-      url: p.url,
-      reviewRepoPath: p.reviewRepoPath,
-      focused: p.focused,
-      ownerWindowId: windowId,
-      ownerWindowType,
-      parentCanvasId: p.parentCanvasId,
-      worktreeId: p.worktreeId,
-      agentState: p.agentState,
-      agentCanReceivePrompt: p.agentCanReceivePrompt,
-      agentName: p.agentName,
-      hasPorts: p.hasPorts,
-      codingAgentRunId: p.codingAgentRunId,
-      codingAgentOwnerPanelId: p.codingAgentOwnerPanelId,
-      codingAgentStatus: p.codingAgentStatus,
-    })),
-  )
+  windowPanels.set(windowId, report.map((p) => panelInfo(windowId, ownerWindowType, p)))
   broadcastWindowPanels()
 }
 
@@ -72,27 +76,7 @@ export function upsertWindowPanel(windowId: number, panel: WindowPanelReport): v
   const ownerWindowType = getWindowType(windowId)
   if (!ownerWindowType) return
   const panels = windowPanels.get(windowId) ?? []
-  const next = {
-    panelId: panel.panelId,
-    type: panel.type,
-    title: panel.title || panel.type,
-    workspaceId: panel.workspaceId,
-    filePath: panel.filePath,
-    url: panel.url,
-    reviewRepoPath: panel.reviewRepoPath,
-    focused: panel.focused,
-    ownerWindowId: windowId,
-    ownerWindowType,
-    parentCanvasId: panel.parentCanvasId,
-    worktreeId: panel.worktreeId,
-    agentState: panel.agentState,
-    agentCanReceivePrompt: panel.agentCanReceivePrompt,
-    agentName: panel.agentName,
-    hasPorts: panel.hasPorts,
-    codingAgentRunId: panel.codingAgentRunId,
-    codingAgentOwnerPanelId: panel.codingAgentOwnerPanelId,
-    codingAgentStatus: panel.codingAgentStatus,
-  }
+  const next = panelInfo(windowId, ownerWindowType, panel)
   const index = panels.findIndex((candidate) => candidate.panelId === panel.panelId)
   windowPanels.set(windowId, index < 0
     ? [...panels, next]
@@ -148,7 +132,7 @@ let lastWindowPanelSignature = ''
 export function broadcastWindowPanels(): void {
   const panels = getWindowPanels()
   const signature = panels
-    .map((p) => `${p.ownerWindowId}:${p.panelId}:${p.type}:${p.title}:${p.workspaceId}:${p.filePath ?? ''}:${p.url ?? ''}:${p.reviewRepoPath ?? ''}:${p.focused ? 1 : 0}:${p.parentCanvasId ?? ''}:${p.worktreeId ?? ''}:${p.agentState ?? ''}:${p.agentCanReceivePrompt ? 1 : 0}:${p.agentName ?? ''}:${p.hasPorts ? 1 : 0}:${p.codingAgentRunId ?? ''}:${p.codingAgentOwnerPanelId ?? ''}:${p.codingAgentStatus ?? ''}`)
+    .map((p) => `${p.ownerWindowId}:${p.panelId}:${p.type}:${p.title}:${p.workspaceId}:${p.filePath ?? ''}:${p.url ?? ''}:${p.reviewRepoPath ?? ''}:${p.focused ? 1 : 0}:${p.parentCanvasId ?? ''}:${p.worktreeId ?? ''}:${p.agentState ?? ''}:${p.agentCanReceivePrompt ? 1 : 0}:${p.agentId ?? ''}:${p.agentName ?? ''}:${JSON.stringify(p.agentSession ?? null)}:${p.hasPorts ? 1 : 0}:${p.codingAgentRunId ?? ''}:${p.codingAgentOwnerPanelId ?? ''}:${p.codingAgentStatus ?? ''}`)
     .sort()
     .join('|')
   if (signature === lastWindowPanelSignature) return

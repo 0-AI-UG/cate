@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { StatusStore } from '../stores/statusStore'
+import type { AgentId } from '../../shared/agents'
 
 vi.mock('../lib/terminal/terminalRegistry', () => ({
   terminalRegistry: { panelIdForPty: (id: string) => id === 'pty-1' ? 'terminal-1' : null },
@@ -7,7 +8,9 @@ vi.mock('../lib/terminal/terminalRegistry', () => ({
 
 import { selectCliAgentByPanel, selectCliAgentOpenByPanel } from './useAgentPanelInfo'
 
-function status(agentPresent: boolean, processName: string | null): StatusStore {
+// statusStore holds the open agent as the scan rule (openTerminalAgent) set
+// it, so these selectors only read agentPresent/agentId.
+function status(agentPresent: boolean, agentId: AgentId | null, processName: string | null = null): StatusStore {
   return {
     workspaces: {
       ws: {
@@ -15,7 +18,7 @@ function status(agentPresent: boolean, processName: string | null): StatusStore 
           'pty-1': {
             activity: { type: 'running', processName },
             agentState: 'notRunning',
-            agentName: null,
+            agentId,
             agentPresent,
             listeningPorts: [],
             cwd: '',
@@ -27,20 +30,18 @@ function status(agentPresent: boolean, processName: string | null): StatusStore 
 }
 
 describe('terminal CLI availability', () => {
-  it('recognizes a canonical agent process before hook presence settles', () => {
-    expect(selectCliAgentOpenByPanel(status(false, 'codex'), 'ws')).toEqual({ 'terminal-1': true })
+  it('reads the open agent recorded for the terminal', () => {
+    expect(selectCliAgentOpenByPanel(status(true, 'codex', 'codex'), 'ws')).toEqual({ 'terminal-1': true })
+    expect(selectCliAgentOpenByPanel(status(true, 'hermes', 'python3'), 'ws')).toEqual({ 'terminal-1': true })
   })
 
-  it('uses hook-confirmed presence even when process activity has no name', () => {
-    expect(selectCliAgentOpenByPanel(status(true, null), 'ws')).toEqual({ 'terminal-1': true })
-  })
-
-  it('does not classify an ordinary foreground process as an agent', () => {
-    expect(selectCliAgentOpenByPanel(status(false, 'npm'), 'ws')).toEqual({ 'terminal-1': false })
+  it('an exited agent keeps its id but is not open', () => {
+    expect(selectCliAgentOpenByPanel(status(false, 'codex'), 'ws')).toEqual({ 'terminal-1': false })
+    expect(selectCliAgentByPanel(status(false, 'codex'), 'ws')).toEqual({ 'terminal-1': null })
   })
 
   it('returns the canonical agent id used to gate native prompt context', () => {
-    expect(selectCliAgentByPanel(status(false, 'codex'), 'ws')).toEqual({ 'terminal-1': 'codex' })
-    expect(selectCliAgentByPanel(status(false, 'cursor-agent'), 'ws')).toEqual({ 'terminal-1': 'cursor' })
+    expect(selectCliAgentByPanel(status(true, 'codex'), 'ws')).toEqual({ 'terminal-1': 'codex' })
+    expect(selectCliAgentByPanel(status(true, 'cursor'), 'ws')).toEqual({ 'terminal-1': 'cursor' })
   })
 })

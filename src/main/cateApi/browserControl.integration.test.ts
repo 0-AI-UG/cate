@@ -38,6 +38,7 @@ vi.mock('../windowPanels', () => ({
   getWindowPanels: () => windowPanelList.value,
   upsertWindowPanel,
 }))
+vi.mock('../agentConversations', () => ({ readAgentConversation: vi.fn() }))
 vi.mock('../workspaceManager', () => ({ getWorkspaceInfo: vi.fn(() => ({ rootPath: '/ws/root' })) }))
 vi.mock('../../shared/runtimeLocator', () => ({
   LOCAL_RUNTIME_ID: 'local',

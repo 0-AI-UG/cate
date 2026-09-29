@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, test, vi } from 'vitest'
 import { AGENTS } from '../../shared/agents'
-import type { AgentHookEvent } from '../../shared/agentHooks'
+import { AGENT_HOOK_SPECS, type AgentHookEvent } from '../../shared/agentHooks'
 import { createAgentHooksCapability } from './agentHooks'
 import { createAgentChangesStore } from './agentChanges'
 import { cleanHookEnv, configureHookCli, HOOK_PROVIDER_IS_MOCK } from './agentHookCliFixture'
@@ -38,7 +38,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         useStatusStore.setState({ workspaces: {} })
         setTerminalWorkspaceResolver((id) => id === terminalId ? cwd : undefined)
         useStatusStore.getState().registerTerminal(terminalId, cwd)
-        useStatusStore.getState().setAgentName(cwd, terminalId, agentId)
+        useStatusStore.getState().setAgentId(cwd, terminalId, agentId)
         Object.assign(window, { electronAPI: { shellReportAgentScreenState: vi.fn() } })
         vi.mocked(sendOsNotification).mockClear()
         startAgentScreenDetector(); noteAgentPresence(terminalId, true)
@@ -225,10 +225,10 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
             expect(events.some((event) => event.kind === kind && (event.raw.hook_event_name ?? event.raw.hookEventName ?? event.raw.type) === name), `Cate normalized ${name} as ${kind}`).toBe(true)
           }
           if (scenario === 'interrupt') {
-            expect(events.some((event) => event.kind === 'turn-end') || agentId === 'kiro', 'native cancellation or documented Kiro input recovery').toBe(true)
+            expect(events.some((event) => event.kind === 'turn-end'), 'native cancellation or runtime interrupt recovery').toBe(true)
             expect(events.filter((event) => event.kind === 'turn-start').length).toBeGreaterThanOrEqual(2)
-            if (!['cursor', 'claude-code', 'opencode'].includes(agentId)) expect(events.some((event) => event.kind === 'input-interrupt')).toBe(true)
-            if (agentId === 'claude-code') expect(events.some((event) => event.raw.__cateInterruptRecovery)).toBe(true)
+            // Transcript- and input-recovered interrupts are marked by the runtime.
+            if (AGENT_HOOK_SPECS[agentId].interrupt.via !== 'hook') expect(events.some((event) => event.kind === 'turn-end' && event.interrupted)).toBe(true)
             if (agentId === 'cursor') expect(posts.some((post) => post.hook_event_name === 'stop' && post.status === 'aborted')).toBe(true)
           }
           if (scenario === 'resume') {

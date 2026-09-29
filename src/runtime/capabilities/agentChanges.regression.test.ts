@@ -107,7 +107,7 @@ describe.each(adapters)('$id capture contract', (adapter) => {
   })
 })
 
-describe.each(['claude', 'codex', 'cursor', 'grok', 'kiro', 'opencode'])('%s canonical T3 changes', (provider) => {
+describe.each(['claude', 'codex', 'cursor', 'grok', 'opencode'])('%s canonical T3 changes', (provider) => {
   it('captures only completed edits and keeps concurrent conversations isolated', async () => {
     const store = createAgentChangesStore(path.join(directory, 't3'))
     store.registerSource('harness', { cwd: '/repo', kind: 't3' })

@@ -10,7 +10,8 @@ import t3Logo from '../assets/t3-code.svg?url'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { useStatusStore, type StatusStore } from '../stores/statusStore'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
-import { getAgentLogo } from '../lib/agent/agentLogos'
+import { getAgentLogoById } from '../lib/agent/agentLogos'
+import { terminalAgent } from '../lib/agent/terminalAgent'
 import type { AgentState } from '../../shared/types'
 import { AGENTS, matchAgentDef, type AgentId } from '../../shared/agents'
 
@@ -41,11 +42,11 @@ export function selectAgentInfoByPanel(
     // `agentPresent` so the icon reverts to the terminal glyph the moment
     // the process is gone; leave `state` ungated so the finished/awaiting
     // indicators still render.
-    const name = terminal.agentPresent ? terminal.agentName : null
+    const agent = terminalAgent(terminal)
     out[resolvePanelId(key)] = {
       state: terminal.agentState,
-      name,
-      logo: getAgentLogo(name),
+      name: agent?.displayName ?? null,
+      logo: getAgentLogoById(agent?.id),
     }
   }
   return out
@@ -90,8 +91,7 @@ export function selectCliAgentOpenByPanel(
   const terminals = workspaceId ? s.workspaces[workspaceId]?.terminals : undefined
   if (!terminals) return result
   for (const [key, terminal] of Object.entries(terminals)) {
-    const processName = terminal.activity.type === 'running' ? terminal.activity.processName : null
-    result[resolvePanelId(key)] = terminal.agentPresent || Boolean(processName && matchAgentDef(processName))
+    result[resolvePanelId(key)] = terminal.agentPresent
   }
   return result
 }
@@ -117,10 +117,7 @@ export function selectCliAgentByPanel(
   const terminals = workspaceId ? s.workspaces[workspaceId]?.terminals : undefined
   if (!terminals) return result
   for (const [key, terminal] of Object.entries(terminals)) {
-    const processName = terminal.activity.type === 'running' ? terminal.activity.processName : null
-    const agent = (processName ? matchAgentDef(processName) : null)
-      ?? (terminal.agentPresent ? AGENTS.find((item) => item.displayName === terminal.agentName) : null)
-    result[resolvePanelId(key)] = agent?.id ?? null
+    result[resolvePanelId(key)] = terminalAgent(terminal)?.id ?? null
   }
   return result
 }

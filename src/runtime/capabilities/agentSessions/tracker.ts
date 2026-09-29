@@ -1,5 +1,5 @@
 import type { AgentHookEvent } from '../../../shared/agentHooks'
-import type { AgentTitleResolvers } from './types'
+import type { AgentSessionStores } from './types'
 
 const DEFAULT_RETRY_DELAYS_MS = [0, 250, 1_000, 3_000] as const
 const MAX_TITLE_LENGTH = 120
@@ -12,7 +12,7 @@ export interface AgentTitleTracker {
 
 export interface AgentTitleTrackerOptions {
   homeDir: string
-  resolvers: AgentTitleResolvers
+  stores: AgentSessionStores
   emit: (event: AgentHookEvent) => void
   retryDelaysMs?: readonly number[]
 }
@@ -66,8 +66,14 @@ export function createAgentTitleTracker(options: AgentTitleTrackerOptions): Agen
       if (disposed || generations.get(terminalId) !== generation) return
       let title: string | null = null
       try {
-        title = normalizeAgentTitle(await options.resolvers[agentId]({
-          event,
+        title = normalizeAgentTitle(await options.stores[agentId].title({
+          session: {
+            agentId,
+            sessionId,
+            cwd: event.cwd,
+            profile: event.profile,
+            transcriptPath: event.transcriptPath,
+          },
           homeDir: options.homeDir,
         }))
       } catch {
@@ -117,7 +123,7 @@ export function createAgentTitleTracker(options: AgentTitleTrackerOptions): Agen
 
   return {
     note(event) {
-      if (disposed || event.kind === 'session-title' || event.kind === 'input-submit' || event.kind === 'input-interrupt') return
+      if (disposed || event.kind === 'session-title' || event.kind === 'input-submit') return
       if (event.kind === 'session-end') {
         forget(event.terminalId)
         return

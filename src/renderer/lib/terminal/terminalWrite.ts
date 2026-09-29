@@ -21,7 +21,7 @@ export function writeTerminalInput(ptyId: string, data: string): Promise<void> {
       await flushConnectedEditors(workspace.id, panelId)
       const status = useStatusStore.getState().workspaces[workspace.id]?.terminals[ptyId]
       const agent = (status?.activity.type === 'running' && status.activity.processName ? matchAgentDef(status.activity.processName) : null)
-        ?? (status?.agentPresent ? AGENTS.find(item => item.displayName === status.agentName) : null)
+        ?? (status?.agentPresent ? AGENTS.find(item => item.id === status.agentId) : null)
       // Publish the materialized paths before Enter can invoke a native hook.
       if (agent?.promptContextHook) await window.electronAPI.agentHooksSetPromptContext(
         ptyId, panelRelationContextForSend(workspace.id, panelId, agent.id),

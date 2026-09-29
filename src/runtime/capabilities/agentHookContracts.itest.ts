@@ -105,9 +105,10 @@ import {
 } from 'node:fs'
 import { createAgentPresenceTracker } from './agentPresence'
 import { createAgentHooksCapability } from './agentHooks'
-import { snapshotProcessTree } from './process'
+import { createProcessCapability, snapshotProcessTree } from './process'
+import { ensureHermesIntegration } from './hermesIntegration'
 import { AGENT_HOOK_SPECS, normalizeAgentHookPayload, type AgentHookEventKind } from '../../shared/agentHooks'
-import type { AgentId } from '../../shared/agents'
+import { AGENTS, type AgentId } from '../../shared/agents'
 import type { AgentState } from '../../shared/types'
 import {
   noteAgentHookEvent,
@@ -117,6 +118,7 @@ import {
   stopAgentScreenDetector,
 } from '../../renderer/lib/agent/agentScreenDetector'
 import { setTerminalWorkspaceResolver, useStatusStore } from '../../renderer/stores/statusStore'
+import { openTerminalAgent } from '../../renderer/lib/agent/terminalAgent'
 
 // --- the interrupt contract, shared by every CLI ----------------------------
 // A USER INTERRUPT (Esc / Ctrl+C on a running turn) leaves the CLI back at its
@@ -300,7 +302,7 @@ function replayAgentState(
   useStatusStore.setState({ workspaces: {} })
   setTerminalWorkspaceResolver((id) => (id === terminalId ? workspaceId : undefined))
   useStatusStore.getState().registerTerminal(terminalId, workspaceId)
-  useStatusStore.getState().setAgentName(workspaceId, terminalId, agentId)
+  useStatusStore.getState().setAgentId(workspaceId, terminalId, agentId)
   startAgentScreenDetector()
   noteAgentPresence(terminalId, true)
   for (const captured of events) {
@@ -525,7 +527,7 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
       .toBe('waitingForInput')
 
     // transcript_path points at a real transcript once the first prompt ran —
-    // the moment the RESUMABLE_FROM_SESSION_START gating counts on.
+    // the moment the AgentDef.resumableFromSessionStart gating counts on.
     expect(existsSync(transcript1), 'transcript exists after first prompt').toBe(true)
 
     // Presence lineage contract: every hook process is a descendant of the
@@ -540,7 +542,7 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     expect(
       tracker.presenceFor(tid, await snapshotProcessTree()),
       'ancestry walk lands on the live claude',
-    ).toEqual({ agentName: 'Claude Code', agentPresent: true })
+    ).toEqual({ agentId: 'claude-code', agentPresent: true })
 
     // /clear rotates IN the same process: old session ends (reason=clear),
     // new one starts (source=clear) with a fresh id — the push signal that
@@ -736,18 +738,18 @@ describe.skipIf(!LIVE || !hasBin('claude'))('claude hook contract', () => {
     // Stated in the FSM's own terms: no turn-end reaches Cate. This is the
     // measured fact behind the declared flag — keep them in lockstep.
     expect(normalizedKinds('claude-code', after)).not.toContain('turn-end')
-    expect(AGENT_HOOK_SPECS['claude-code'].reportsTurnEndOnInterrupt, 'declared gap matches reality').toBe(false)
+    expect(AGENT_HOOK_SPECS['claude-code'].interrupt.via, 'declared gap matches reality').toBe('transcript')
 
     // ...but the interrupt IS recoverable from the TRANSCRIPT: claude persists
     // its "[Request interrupted by user]" marker there, and that is the
     // file-based signal the runtime's tail-watch maps to a synthetic turn-end
-    // (interrupt recovery, agentHooks capability). Pin interruptRecovery.marker
+    // (interrupt recovery, agentHooks capability). Pin the interrupt marker
     // against the real transcript so a wrong regex fails HERE, with the file's
     // own tail in the failure message.
     const claudeTranscript = byName(events(), 'SessionStart')[0].payload.transcript_path as string
     const claudeTail = readFileSync(claudeTranscript, 'utf8').slice(-8000)
     expect(claudeTail, 'claude persists its interrupt marker to the transcript').toMatch(
-      AGENT_HOOK_SPECS['claude-code'].interruptRecovery!.marker,
+      (AGENT_HOOK_SPECS['claude-code'].interrupt as { marker: RegExp }).marker,
     )
 
     // The turn is over as far as claude is concerned: a fresh prompt runs
@@ -1129,8 +1131,7 @@ describe.skipIf(!LIVE || !hasBin('codex'))('codex hook contract', () => {
     const interrupted = events().find((e) => e.payload.hook_event_name === 'Interrupt')?.payload
     expect(interrupted?.turn_id, 'Interrupt identifies the submitted turn').toBe(submitted?.turn_id)
     expect(normalizedKinds('codex', events())).toContain('turn-end')
-    expect(AGENT_HOOK_SPECS.codex.reportsTurnEndOnInterrupt, 'declared native self-heal matches reality').toBe(true)
-    expect(AGENT_HOOK_SPECS.codex.interruptRecovery, 'no transcript fallback remains').toBeUndefined()
+    expect(AGENT_HOOK_SPECS.codex.interrupt.via, 'declared native self-heal matches reality').toBe('hook')
     expectEcho(events(), tid)
     tui.kill()
   })
@@ -1348,7 +1349,7 @@ describe.skipIf(!LIVE || !hasBin('cursor-agent'))('cursor hook contract', () => 
     for (const s of stops) expect(s.payload.session_id, 'the stop identifies the session').toBe(id)
     // What the FSM actually receives — and the flag that declares it does:
     expect(normalizedKinds('cursor', stops)).toContain('turn-end')
-    expect(AGENT_HOOK_SPECS.cursor.reportsTurnEndOnInterrupt, 'declared self-heal matches reality').toBe(true)
+    expect(AGENT_HOOK_SPECS.cursor.interrupt.via, 'declared self-heal matches reality').toBe('hook')
     // The transcript_path on the ABORTED stop is null (only the sibling
     // "error" stop carries one) — a consumer must not overwrite a known
     // transcript with it. Cate's stamp never reads transcriptPath, so this is
@@ -2105,7 +2106,7 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
     ).rejects.toThrow()
   })
 
-  // The gate behind RESUMABLE_FROM_SESSION_START (agentSessionStamps.ts): is
+  // The gate behind AgentDef.resumableFromSessionStart (agentSessionStamps.ts): is
   // the id announced by SessionStart resumable BEFORE the turn it opened for
   // finished? For claude it is not — it announces at TUI launch, and resuming
   // that empty id fails, so claude is stamped only from its first turn event.
@@ -2220,7 +2221,7 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
     expect(
       tracker.presenceFor(tid, await snapshotProcessTree()),
       'ancestry walk lands on the live grok',
-    ).toEqual({ agentName: 'Grok', agentPresent: true })
+    ).toEqual({ agentId: 'grok', agentPresent: true })
 
     await tui.waitFor(() => byName(events(), 'stop').length > 0, 180_000, 'Stop')
     expect(byName(events(), 'stop')[0].payload.sessionId).toBe(start.sessionId)
@@ -2303,7 +2304,7 @@ describe.skipIf(!LIVE || !hasBin('grok'))('grok hook contract', () => {
     expect(byName(events(), 'stop_cancelled')[0].payload.sessionId).toBe(id)
     expect(byName(events(), 'stop_cancelled')[0].payload.promptId).toBeTruthy()
     expect(normalizedKinds('grok', byName(events(), 'stop_cancelled'))).toContain('turn-end')
-    expect(AGENT_HOOK_SPECS.grok.reportsTurnEndOnInterrupt, 'declared self-heal matches reality').toBe(true)
+    expect(AGENT_HOOK_SPECS.grok.interrupt.via, 'declared self-heal matches reality').toBe('hook')
     // The gated command never ran.
     expect(existsSync(join(cwd, 'needs-approval.txt')), 'cancelled tool call did not execute').toBe(false)
     expectEcho(events(), tid)
@@ -2478,9 +2479,78 @@ describe.skipIf(!LIVE || !hasBin('kiro-cli'))('kiro hook contract', () => {
     const selfHeals = normalizedKinds('kiro', after).includes('turn-end')
     expect(selfHeals, 'Kiro emits no turn-end after Ctrl-C').toBe(false)
     expect(
-      AGENT_HOOK_SPECS.kiro.reportsTurnEndOnInterrupt,
+      AGENT_HOOK_SPECS.kiro.interrupt.via === 'hook',
       `declared interrupt behavior must match live events: ${after.map((event) => event.payload.hook_event_name).join(', ')}`,
     ).toBe(selfHeals)
     tui.kill()
   })
+})
+
+// =============================================================================
+// Opened before the first prompt — one contract for every CLI. codex, grok,
+// opencode and kiro fire no hook until the first prompt; Cate still treats
+// each as open from launch (openTerminalAgent: hook-present, or the
+// terminal's foreground program is the agent's command). Hermes runs as
+// python3, so it announces itself from Cate's plugin when Hermes loads it.
+// This drives the production path end to end: a real Cate PTY shell with hook
+// injection, the bare command typed at its prompt, the real process scan, and
+// the renderer's rule applied to that scan result. Hermes uses a throwaway
+// profile so the user's default profile is never modified.
+// =============================================================================
+
+describe.skipIf(!LIVE)('opened before the first prompt', () => {
+  const HERMES_PROFILE = 'cateliveopen'
+  // Lazy: the describe body runs even when skipped.
+  let hermesProfile: Promise<void> | undefined
+  const hermesReady = () => hermesProfile ??= (async () => {
+    execFileSync('hermes', ['profile', 'create', HERMES_PROFILE, '--clone', '--no-alias'], { stdio: 'ignore' })
+    cleanups.push(() => execFileSync('hermes', ['profile', 'delete', HERMES_PROFILE, '--yes'], { stdio: 'ignore' }))
+    await ensureHermesIntegration(HERMES_PROFILE)
+  })()
+
+  for (const agent of AGENTS) {
+    test.skipIf(!hasBin(agent.command))(`${agent.displayName}: \`${agent.command}\` is open with no prompt`, { timeout: 120_000 }, async () => {
+      if (agent.id === 'hermes') await hermesReady()
+      const cwd = makeCwd(`opened-${agent.id}`)
+      const presence = createAgentPresenceTracker({ snapshot: snapshotProcessTree })
+      const hooks = createAgentHooksCapability({
+        hooksDir: join(cwd, '.cate-hooks'),
+        onPost: ({ terminalId, agentId, pid, sourceStartedAt }) => presence.notePost(terminalId, agentId, pid, sourceStartedAt),
+      })
+      cleanups.push(() => hooks.dispose())
+      const config = Object.fromEntries(AGENTS.map((item) => [item.id, 'on'])) as Record<AgentId, 'on'>
+      // Hermes' plugin lives in its profile, installed above.
+      await hooks.prepareWorkspace(cwd, { ...config, hermes: 'off' })
+      const proc = createProcessCapability({
+        resolveShell: () => ({ path: '/bin/zsh', args: ['-f'] }),
+        getEnv: () => cleanEnv({ OPENCODE_DISABLE_AUTOUPDATE: '1' }),
+        hooks,
+        agentPresence: presence,
+      })
+      let screen = ''
+      const { id } = await proc.create(
+        { cols: 120, rows: 40, cwd, agentHooks: true, agentHookConfig: config },
+        (_id, data) => { screen += data },
+        () => {},
+      )
+      try {
+        await sleep(500)
+        const launch = agent.id === 'hermes' ? `hermes --profile ${HERMES_PROFILE}` : agent.command
+        proc.write(id, `${launch}\r`)
+        const opened = async () => {
+          const scan = (await proc.scanActivity([id]))[id]
+          return scan ? openTerminalAgent(scan.activity, scan.agentId, scan.agentPresent) : null
+        }
+        const deadline = Date.now() + 45_000
+        let agentOpen = await opened()
+        while (!agentOpen && Date.now() < deadline) {
+          await sleep(500)
+          agentOpen = await opened()
+        }
+        expect(agentOpen?.id, `screen tail: ${stripAnsi(screen).slice(-400)}`).toBe(agent.id)
+      } finally {
+        proc.killAllGroups()
+      }
+    })
+  }
 })
