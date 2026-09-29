@@ -180,7 +180,13 @@ export interface ReviewPanelState {
     fullFile: boolean
     advancedPreview: boolean
   }
+  /** Git paths, or `${recordId}:${path}` for recorded agent edits. */
   collapsedFiles?: string[]
+  /** Git comparisons: files shown in full, and per-file context line counts. */
+  expandedFiles?: string[]
+  contextLines?: Record<string, number>
+  /** Agent changes: show every recorded edit instead of only active ones. */
+  showHistory?: boolean
   notes?: GitReviewNote[]
   sourceAgent?: { runId: string; ownerPanelId: string; panelId: string }
   agentReview?: {

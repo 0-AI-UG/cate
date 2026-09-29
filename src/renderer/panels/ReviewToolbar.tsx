@@ -6,6 +6,7 @@ import { useWorktrees } from '../stores/useWorktrees'
 import { WorktreeSelector } from '../ui/WorktreeSelector'
 import { worktreeForPath } from '../lib/worktreeContext'
 import { errorMessage } from '../lib/errorMessage'
+import { switchReviewCheckout } from '../lib/review/switchReviewCheckout'
 
 const MODES = [
   { value: 'uncommitted', label: 'All Changes' },
@@ -27,19 +28,7 @@ export function ReviewToolbar({ state, workspaceId, panelId, children }: {
   const switchWorktree = (id: string) => {
     const target = worktrees.find((worktree) => worktree.id === id && !worktree.isOrphan)
     if (!target || target.path === state.repoPath || busy) return
-    const { worktreeStates = {}, ...current } = state
-    const restored = worktreeStates[target.path]
-    const spec: GitComparisonSpec = state.spec.kind === 'branch'
-      ? { ...state.spec, target: target.branch || 'HEAD' }
-      : state.spec
-    const next: ReviewPanelState = {
-      ...(restored ?? { repoPath: target.path, spec, agentChanges: state.agentChanges ? {} : undefined }),
-      display: state.display,
-      worktreeStates: { ...worktreeStates, [state.repoPath]: current },
-    }
-    const app = useAppStore.getState()
-    app.setPanelReviewState(workspaceId, panelId, next)
-    app.setPanelWorktreeId(workspaceId, panelId, target.id)
+    switchReviewCheckout(workspaceId, panelId, target)
   }
   const select = async (kind: GitComparisonSpec['kind'] | 'agent') => {
     setError(''); setBusy(true)

@@ -39,12 +39,19 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
   const popover = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
+  // History mode and collapsed files live in reviewState so they survive remounts.
+  const patchState = (patch: Partial<ReviewPanelState>) => {
+    const latest = useAppStore.getState().getWorkspace(workspaceId)?.panels[panelId]?.reviewState
+    if (latest) useAppStore.getState().setPanelReviewState(workspaceId, panelId, { ...latest, ...patch })
+  }
+  const showHistory = !!state.showHistory
+  const setShowHistory = (value: boolean) => patchState({ showHistory: value })
   const [refreshing, setRefreshing] = useState(false)
   const [noteDraft, setNoteDraft] = useState<(NoteDraft & { agentChangeId: string }) | null>(null)
   const morePopover = useRef<HTMLDivElement>(null)
   useDismissableLayer({ open: moreOpen, contentRef: morePopover, onDismiss: () => setMoreOpen(false) })
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const collapsed = new Set(state.collapsedFiles ?? [])
+  const setCollapsed = (next: Set<string>) => patchState({ collapsedFiles: [...next] })
   const [visibleCount, setVisibleCount] = useState(50)
   const { pos, portalTarget } = useViewportPopoverPosition(trigger, open, (rect) => ({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 264)), gap: 6, height: 180 }), popover)
   useDismissableLayer({ open, contentRef: popover, triggerRefs: [trigger], onDismiss: () => setOpen(false) })
@@ -97,10 +104,6 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
       notes: (latest.notes ?? []).map((note) => note.id === noteId ? { ...note, status: note.status === 'resolved' ? 'open' : 'resolved' } : note),
     })
   }
-  useEffect(() => {
-    if (!state.focusedFile) return
-    setCollapsed((previous) => new Set([...previous].filter((key) => !key.endsWith(`:${state.focusedFile}`))))
-  }, [state.focusedFile, state.agentChanges])
   useEffect(() => {
     if (!state.focusedFile) return
     root.current?.querySelector(`[data-review-file="${encodeURIComponent(state.focusedFile)}"]`)?.scrollIntoView?.({ block: 'start' })
@@ -164,7 +167,7 @@ function AgentChangesContent({ workspaceId, panelId, workspace, state }: PanelPr
         const sourcePanels = [...sourceIds].map((id) => workspace.panels[id]).filter((panel) => panel?.type === 'terminal' || panel?.type === 'agent')
         return <section key={key} data-review-file={encodeURIComponent(file.path)} className="min-w-0 border-b border-subtle scroll-mt-2">
           <div className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-subtle bg-surface-2/95 px-2 py-1.5 backdrop-blur">
-          <button aria-expanded={!collapsed.has(key)} onClick={() => setCollapsed((previous) => { const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next })} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <button aria-expanded={!collapsed.has(key)} onClick={() => { const next = new Set(collapsed); if (next.has(key)) next.delete(key); else next.add(key); setCollapsed(next) }} className="flex min-w-0 flex-1 items-center gap-2 text-left">
             {collapsed.has(key) ? <CaretRight size={12} /> : <CaretDown size={12} />}
             {logo && <img src={logo} alt={agent} title={agent} className="h-4 w-4 shrink-0" />}
             <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{file.oldPath ? `${file.oldPath} → ` : ''}{file.path}</span>

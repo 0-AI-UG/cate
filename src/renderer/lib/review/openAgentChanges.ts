@@ -2,6 +2,7 @@ import type { AgentChangesFilter } from '../../../shared/agentChanges'
 import { useAppStore } from '../../stores/appStore'
 import { requestPanelTarget } from '../panelTargetPicker'
 import { retargetReviewPanel } from './openReviewPanel'
+import { switchReviewCheckout } from './switchReviewCheckout'
 
 export async function openAgentChanges(options: {
   workspaceId: string
@@ -23,9 +24,7 @@ export async function openAgentChanges(options: {
   const currentCwd = source.cwd ?? workspace?.worktrees?.find((w) => w.id === source.worktreeId)?.path ?? workspace?.rootPath
   if (currentCwd !== cwd) return false
   if (target.kind === 'existing') {
-    const state = app.getWorkspace(workspaceId)?.panels[target.panelId]?.reviewState
-    if (!state) return false
-    if (state.repoPath !== cwd) app.setPanelReviewState(workspaceId, target.panelId, { ...state, repoPath: cwd, notes: [], collapsedFiles: [] })
+    if (!switchReviewCheckout(workspaceId, target.panelId, { path: cwd })) return false
     return retargetReviewPanel(workspaceId, target.panelId, { spec: { kind: 'uncommitted' }, agentChanges, focusedFile })
   }
   const id = app.createReview(workspaceId, cwd, { spec: { kind: 'uncommitted' }, agentChanges, focusedFile }, undefined, target.placement)

@@ -37,7 +37,7 @@ function nextReviewState(
     agentChanges: request.agentChanges,
     agentReview: sourceChanged ? undefined : current.agentReview,
     collapsedFiles: request.focusedFile
-      ? (current.collapsedFiles ?? []).filter((path) => path !== request.focusedFile)
+      ? (current.collapsedFiles ?? []).filter((key) => key !== request.focusedFile && !key.endsWith(`:${request.focusedFile}`))
       : current.collapsedFiles,
   }
 }

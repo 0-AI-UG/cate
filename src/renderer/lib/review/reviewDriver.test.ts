@@ -109,6 +109,22 @@ describe('review CLI driver', () => {
     expect(state.workspace.panels.review.reviewState.notes).toHaveLength(1)
   })
 
+  it('keeps notes added in parallel and refuses a note for a switched comparison', async () => {
+    let n = 0
+    vi.stubGlobal('crypto', { randomUUID: () => `note-${++n}` })
+    const add = () => handleReviewMethod('ws', 'reviewer', 'cate.review.note.add', {
+      panelId: 'review', file: 'src/a.ts', line: 4, side: 'new', body: 'Check this.',
+    })
+    await Promise.all([add(), add()])
+    expect(state.workspace.panels.review.reviewState.notes.map((note: { id: string }) => note.id)).toEqual(['note-1', 'note-2'])
+
+    const pending = add()
+    state.workspace.panels.review.reviewState = { ...state.workspace.panels.review.reviewState, repoPath: '/other' }
+    await expect(pending).resolves.toEqual({ ok: false, error: 'review-changed' })
+    expect(state.workspace.panels.review.reviewState.repoPath).toBe('/other')
+    expect(state.workspace.panels.review.reviewState.notes).toHaveLength(2)
+  })
+
   it('rejects targets outside the reviewed diff', async () => {
     await expect(handleReviewMethod('ws', 'reviewer', 'cate.review.note.add', {
       panelId: 'review',
