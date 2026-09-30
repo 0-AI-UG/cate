@@ -333,6 +333,16 @@ describe('workspace.json + session.json round-trip', () => {
     expect(restored.canvases).toEqual(throughDisk(snapshot.canvases))
   })
 
+  it('drops the dirty dot older builds saved into editor titles', () => {
+    const { snapshot } = buildSnapshot()
+    const wsFile = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+    wsFile.panels!['ed-1'].title = 'app.ts •'
+    wsFile.panels!['term-1'].title = 'zsh •'
+    const restored = projectFilesToSnapshot(wsFile, null, ROOT)
+    expect(restored.panels!['ed-1'].title).toBe('app.ts')
+    expect(restored.panels!['term-1'].title).toBe('zsh •')
+  })
+
   it('includes detached dock windows in session.json only when there are any', () => {
     const { snapshot } = buildSnapshot()
     expect(buildSessionFile(snapshot, []).dockWindows).toBeUndefined()

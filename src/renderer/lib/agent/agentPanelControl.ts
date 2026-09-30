@@ -74,5 +74,6 @@ export async function sendPromptToAgentPanel(
   const result = await window.electronAPI.agentHarnessStartTurn({
     workspaceId, cwd: agentPanelCwd(workspace, panel), threadId, text: context ? `${prompt}\n\n${context}` : prompt,
   }).catch(() => ({ error: 'unavailable' }))
-  return 'error' in result ? { ok: false, error: 'agent-panel-unavailable' } : { ok: true }
+  if (!('error' in result)) return { ok: true }
+  return { ok: false, error: result.error === 'agent-busy' ? 'agent-busy' : 'agent-panel-unavailable' }
 }

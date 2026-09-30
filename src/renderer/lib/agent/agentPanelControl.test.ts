@@ -34,6 +34,15 @@ it('sends to a bound T3 thread through main once the harness is connected', asyn
   await expect(sendPromptToAgentPanel('ws', 't3', 'again')).resolves.toEqual({ ok: false, error: 'agent-busy' })
 })
 
+it('reports a turn main refused as busy', async () => {
+  agentPanel({ agentThreadId: 'th' })
+  report({ th: { id: 'th', title: 'Chat' } })
+  startTurn.mockResolvedValueOnce({ error: 'agent-busy' } as never)
+  await expect(sendPromptToAgentPanel('ws', 't3', 'hi')).resolves.toEqual({ ok: false, error: 'agent-busy' })
+  startTurn.mockResolvedValueOnce({ error: 'T3 turn start returned HTTP 500' } as never)
+  await expect(sendPromptToAgentPanel('ws', 't3', 'hi')).resolves.toEqual({ ok: false, error: 'agent-panel-unavailable' })
+})
+
 it('lets a connected fresh chat take its first prompt through the page composer', async () => {
   agentPanel()
   await expect(sendPromptToAgentPanel('ws', 't3', 'hi')).resolves.toEqual({ ok: false, error: 'agent-not-running' })
