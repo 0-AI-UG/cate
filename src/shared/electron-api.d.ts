@@ -1085,6 +1085,9 @@ export interface ElectronAPI {
   agentHarnessDeleteConversation(request: AgentProviderStatusRequest & { threadId: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessRenameConversation(request: AgentProviderStatusRequest & { threadId: string; title: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessListConversations(request: AgentProviderStatusRequest): Promise<import('./t3Agent').T3Conversation[] | AgentHarnessError>
+  agentHarnessThreadShells(request: { partition: string }): Promise<import('./t3Agent').T3ShellSnapshot | null>
+  onAgentHarnessThreadShells(callback: (snapshot: import('./t3Agent').T3ShellSnapshot) => void): () => void
+  agentHarnessStartTurn(request: AgentProviderStatusRequest & { threadId: string; text: string }): Promise<{ ok: true } | AgentHarnessError>
 
   githubConnection(): Promise<import('./pullRequests').GitHubConnection>
   githubPrContext(workspaceId: string, repository: string, number: number): Promise<import('./pullRequests').PullRequestContext | null>

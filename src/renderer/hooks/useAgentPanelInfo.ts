@@ -1,5 +1,4 @@
-import { useT3ActivityStore } from '../stores/t3ActivityStore'
-import { t3ThreadActivity } from '../lib/t3ThreadState'
+import { t3PanelActivity, t3PanelConnected, t3ThreadForPanel, useT3ActivityStore } from '../stores/t3ActivityStore'
 import t3Logo from '../assets/t3-code.svg?url'
 // Per-panel agent status (state + name + logo) for the sidebar tree and dock
 // tabs. Owns the two bits of glue both consumers used to re-derive by hand:
@@ -13,7 +12,7 @@ import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { terminalAgent } from '../lib/agent/terminalAgent'
 import type { AgentState } from '../../shared/types'
-import { AGENTS, matchAgentDef, type AgentId } from '../../shared/agents'
+import { AGENTS, agentIdForT3Provider, matchAgentDef, type AgentId } from '../../shared/agents'
 
 export interface AgentPanelInfo {
   state: AgentState | undefined
@@ -137,10 +136,15 @@ export function selectT3InfoByPanel(t3: ReturnType<typeof useT3ActivityStore.get
   const result: Record<string, AgentPanelInfo> = {}
   for (const [id, binding] of Object.entries(t3.panels)) {
     if (binding.workspaceId !== workspaceId) continue
-    const instance = t3.instances[binding.partition]
-    const thread = binding.threadId ? instance?.threads[binding.threadId] : undefined
-    result[id] = { state: binding.connected && thread ? t3ThreadActivity(thread) : undefined,
-      name: binding.connected ? 'T3 Code' : 'T3 Code (disconnected)', logo: t3Logo }
+    const thread = t3ThreadForPanel(t3, id)
+    const connected = t3PanelConnected(t3, id)
+    // Like a terminal, name the agent CLI running the conversation; T3 itself
+    // is only the fallback until the thread's provider session is known.
+    const provider = thread?.session?.providerName
+    const agent = provider ? AGENTS.find((candidate) => candidate.id === agentIdForT3Provider(provider)) : undefined
+    const name = agent?.displayName ?? 'T3 Code'
+    result[id] = { state: t3PanelActivity(t3, id),
+      name: connected ? name : `${name} (disconnected)`, logo: getAgentLogoById(agent?.id) ?? t3Logo }
   }
   return result
 }
