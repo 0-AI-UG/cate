@@ -432,10 +432,6 @@ async function seedConversation(title: string): Promise<void> {
     document.querySelector('#composer').requestSubmit()
   })()`)
   await expect.poll(() => page.evaluate((id) => window.__cateE2E!.agentPanelSnapshot(id)?.threadId, agent.panelId)).toBe('thread-e2e')
-  await expect.poll(async () => {
-    const state = await guestEval(agentWebview(), 'JSON.stringify(window.__cateT3Threads)')
-    return state
-  }).toContain(title)
   await expect(page.locator(`[data-tab-panel-id="${agent.panelId}"]`)).toContainText(title)
 }
 
@@ -1108,7 +1104,7 @@ test('real T3 lifecycle recovers a mounted panel after its server process exits'
   }, { timeout: 15_000 }).toBe(true)
   await expect.poll(() => page.evaluate(cwd => window.electronAPI.agentHarnessGetStatus({ cwd }), workspaceRoot),
     { timeout: 15_000 }).toMatchObject({ phase: 'running' })
-  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), {timeout: 15_000}).toBe(true)
+  await expect(page.locator(`[data-agent-panel-id="${agent.panelId}"]`)).toHaveAttribute('data-agent-connected', 'true', { timeout: 15_000 })
   expect((await realThreadState())?.id).toBe(threadId)
   expect(await guestEval<string>(agentWebview(), 'location.origin')).toBe(origin)
   expect(await agentWebview().evaluate(el => (el as any).getWebContentsId())).toBe(guestId)
@@ -1143,7 +1139,7 @@ test('real T3 lifecycle reconnects after transient socket loss without restartin
   await electronApp!.evaluate(async ({ webContents }, id) => {
     await webContents.fromId(id)!.session.closeAllConnections()
   }, id)
-  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true').catch(() => false), {timeout: 15_000}).toBe(true)
+  await expect(page.locator(`[data-agent-panel-id="${agent.panelId}"]`)).toHaveAttribute('data-agent-connected', 'true', { timeout: 15_000 })
   expect(await agentWebview().evaluate(el => (el as any).getWebContentsId())).toBe(id)
   expect(readFileSync(pidPath, 'utf8')).toBe(before)
   await submitRealChat('after socket loss')
@@ -1161,10 +1157,10 @@ test('real T3 lifecycle bounds automatic crash recovery and allows an explicit r
     const oldPid = currentPid()!
     process.kill(oldPid, 'SIGKILL')
     await expect.poll(() => Boolean(currentPid() && currentPid() !== oldPid), {timeout: 15_000}).toBe(true)
-    await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true'), {timeout: 15_000}).toBe(true)
+    await expect(page.locator(`[data-agent-panel-id="${agent.panelId}"]`)).toHaveAttribute('data-agent-connected', 'true', { timeout: 15_000 })
   }
   process.kill(currentPid()!, 'SIGKILL')
-  await expect.poll(() => guestEval<boolean>(agentWebview(), 'window.__cateT3Threads?.connected === true')).toBe(false)
+  await expect(page.locator(`[data-agent-panel-id="${agent.panelId}"]`)).toHaveAttribute('data-agent-connected', 'false')
   await page.waitForTimeout(3_000)
   expect(currentPid()).toBeUndefined()
   await page.getByRole('status').filter({ hasText: 'T3 Code activity disconnected' }).getByRole('button', {name: 'Retry', exact: true}).click()

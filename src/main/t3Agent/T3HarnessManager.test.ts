@@ -9,7 +9,8 @@ vi.mock('electron', () => ({ app: {}, session: {} }))
 vi.mock('../runtime/runtimeManager', () => ({ resolveLocator: mocks.resolve, runtimes: { resolve: mocks.runtime, onDisconnected: mocks.disconnected } }))
 vi.mock('../cateApi/serverTunnel', () => ({ openTunnelDuplex: vi.fn() }))
 vi.mock('../cateApi/workspaceCateApi', () => ({ workspaceCateApi: {} }))
-vi.mock('../windowRegistry', () => ({ onWindowClosed: mocks.windowClosed }))
+vi.mock('../windowRegistry', () => ({ onWindowClosed: mocks.windowClosed, broadcastToAll: vi.fn() }))
+vi.mock('./threadShells', () => ({ ThreadShellSubscription: class { state = { partition: '', connected: false, sequence: 0, threads: {} }; resume() {} stop() {} } }))
 
 function runtime() {
   return {
