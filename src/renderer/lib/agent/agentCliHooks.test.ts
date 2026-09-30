@@ -35,6 +35,14 @@ describe('agent CLI hook readiness', () => {
     })
   })
 
+  it('Auto counts only the in-use signals the runtime injects on, never a profile-wide install', async () => {
+    // Hermes' plugin is installed per profile, not per checkout: the runtime
+    // still plants CATE_HERMES_HOOKS=0 on a plain terminal in Auto.
+    inspect.mockResolvedValue([{ agentId: 'hermes', displayName: 'Hermes', folderPresent: false, injected: true }])
+    const hermes = (await inspectAgentCliHooks('/repo')).find((state) => state.agent.id === 'hermes')!
+    expect(evaluateAgentCliHooks(hermes)).toEqual({ mode: 'auto', ready: false, autoSkipped: true })
+  })
+
   it('uses registry order instead of inspection response order', async () => {
     inspect.mockResolvedValue([
       { agentId: 'codex', displayName: 'Codex', folderPresent: true, injected: true },

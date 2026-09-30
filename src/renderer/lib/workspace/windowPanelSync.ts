@@ -29,6 +29,8 @@ import { deriveCodingAgentRunStatus } from '../../../shared/codingAgentRuns'
 import { worktreeForPanel } from '../worktreeContext'
 import { canAgentReceivePrompt } from '../agent/agentScreenDetector'
 import { canT3ThreadReceivePrompt } from '../t3ThreadState'
+import { agentSessionForPanel } from '../agent/agentSessionRef'
+import { AGENTS } from '../../../shared/agents'
 
 let cleanup: (() => void) | null = null
 
@@ -55,7 +57,7 @@ function statusSignature(): string {
   const parts: string[] = []
   for (const [wsId, ws] of Object.entries(useStatusStore.getState().workspaces)) {
     for (const [id, terminal] of Object.entries(ws.terminals)) {
-      const name = terminal.agentPresent ? terminal.agentName ?? '' : ''
+      const name = terminal.agentPresent ? terminal.agentId ?? '' : ''
       parts.push(`${wsId}:${id}:${terminal.agentState}:${name}`)
       if (terminal.listeningPorts.length) parts.push(`${wsId}:p:${id}`)
     }
@@ -160,6 +162,8 @@ export function setupWindowPanelSync(): () => void {
                 })()
               : undefined,
           agentName: agentInfo[p.id]?.name ?? null,
+          agentId: agentInfo[p.id]?.name ? AGENTS.find((a) => a.displayName === agentInfo[p.id]?.name)?.id ?? null : null,
+          agentSession: agentSessionForPanel(ws, p),
           codingAgentRunId: p.codingAgentRun?.id,
           codingAgentOwnerPanelId: p.codingAgentRun?.ownerPanelId,
           codingAgentStatus: p.codingAgentRun

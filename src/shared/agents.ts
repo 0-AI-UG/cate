@@ -7,7 +7,8 @@
 //   • identity verification — agentPresence.ts matches the ancestry of an
 //     authenticated hook post against `matchProcess` before registering its pid.
 //   • resume — `resumeArgs`, the argv that re-attaches a restored terminal to
-//     the session it had open (null when the CLI cannot resume by id).
+//     the session it had open (null when the CLI cannot resume by id), and
+//     `resumableFromSessionStart`, when a hook-announced session is resumable.
 //   • skills — `skills`, where this agent reads project skills from and how
 //     they are laid out (null when Cate installs no skills for it).
 //     src/shared/skills.ts and src/skills/main/targets.ts DERIVE from it.
@@ -15,10 +16,11 @@
 // Keyed by AgentId elsewhere, each a TOTAL Record<AgentId, …> so a new id is a
 // COMPILE ERROR until it is filled in — that is the forget-proofing, do not
 // loosen these to Partial:
-//   • hooks — AGENT_HOOK_SPECS in src/shared/agentHooks.ts (injection channel +
-//     payload normalizer).
-//   • resumability — RESUMABLE_FROM_SESSION_START in
-//     src/main/ipc/agentSessionStamps.ts.
+//   • hooks — AGENT_HOOK_SPECS in src/shared/agentHooks.ts (injection channel,
+//     PTY env, payload normalizer, tool calls, interrupt behavior).
+//   • sessions — AGENT_SESSION_STORES in src/runtime/capabilities/
+//     agentSessions/ (where the CLI persists its sessions: native title and
+//     conversation). Runtime-only because it reads the host's filesystem.
 // The one table that CANNOT be exhaustive is the logo map
 // (src/renderer/lib/agent/agentLogos.ts): it is renderer-only because it
 // imports SVG assets, and a missing logo degrades to a default icon rather than
@@ -94,12 +96,19 @@ export interface AgentDef {
    * even when the interpreter hides the CLI name in `ps comm`. */
   hookProcess?: 'self'
   /** Native post-submit extension point Cate can use to add graph context
-   * without reading or rewriting the terminal's PTY input. */
-  promptContextHook: 'additional-context' | 'stdout' | 'opencode' | 'hermes' | null
+   * without reading or rewriting the terminal's PTY input: the turn-start hook
+   * response as a JSON `additionalContext` or as plain text, or an in-process
+   * plugin that fetches it from the hook endpoint's /prompt-context. */
+  promptContextHook: 'additional-context' | 'plain-text' | 'endpoint' | null
   /** Argv (after `command`) that re-attaches to `sessionId` on a terminal
    *  restore, or null when this CLI cannot resume by id. Every contract here is
    *  pinned live by agentHookContracts.itest.ts. */
   resumeArgs: ((sessionId: string, context?: { profile?: string }) => string[] | null) | null
+  /** Whether a session is already resumable when its session-start hook
+   *  arrives. False when the CLI announces an id before persisting anything, so
+   *  the session is only stamped from its first turn event. Pinned live in
+   *  agentHookContracts.itest.ts. */
+  resumableFromSessionStart: boolean
   /** Project-skills integration, or null when Cate installs no skills for this
    *  agent. Verified against each CLI's own docs — see the per-agent notes. */
   skills: AgentSkillTarget | null
@@ -130,9 +139,11 @@ export const AGENTS: readonly AgentDef[] = [
     command: 'claude',
     codingAgentArgs: (prompt) => [prompt],
     codingAgentFollowUp: true,
-    matchProcess: (n) => n === 'claude' || n === 'claude-code' || n.startsWith('claude'),
+    matchProcess: (n) => n === 'claude' || n === 'claude-code',
     promptContextHook: 'additional-context',
     resumeArgs: (sid) => ['--resume', sid],
+    // Claude announces an id before its transcript exists.
+    resumableFromSessionStart: false,
     // claude is the standard's origin: it REQUIRES frontmatter name === dir name.
     skills: folderSkills('claude-code', ['.claude', 'skills'], { nameMatchesDir: true }),
   },
@@ -146,6 +157,7 @@ export const AGENTS: readonly AgentDef[] = [
     matchProcess: (n) => n === 'codex',
     promptContextHook: 'additional-context',
     resumeArgs: (sid) => ['resume', sid],
+    resumableFromSessionStart: true,
     skills: folderSkills('codex', ['.codex', 'skills']),
   },
   // The install script links ~/.local/bin/cursor-agent; the CLI keeps the
@@ -163,6 +175,8 @@ export const AGENTS: readonly AgentDef[] = [
     // --resume ADOPTS an unknown id (fresh chat under that id, exit 0) rather
     // than failing — a stale stamp degrades to a fresh session, never a wrong one.
     resumeArgs: (sid) => ['--resume', sid],
+    // A never-used sessionStart id is resumable (--resume ADOPTS unknown ids).
+    resumableFromSessionStart: true,
     // Per cursor's own bundled create-skill skill: personal ~/.cursor/skills,
     // project .cursor/skills. (~/.cursor/skills-cursor is cursor's internal
     // built-ins dir and is explicitly off-limits — we never write there.)
@@ -183,6 +197,9 @@ export const AGENTS: readonly AgentDef[] = [
     // --resume ERRORS on an id with no session on disk (pinned live), so a stale
     // stamp falls back to a plain shell instead of silently opening a fresh chat.
     resumeArgs: (sid) => ['--resume', sid],
+    // SessionStart is deferred to the first prompt submit, so the session is
+    // already on disk when its id arrives.
+    resumableFromSessionStart: true,
     // grok reads .grok/skills, .agents/skills, .claude/skills AND .cursor/skills
     // (verified live via `grok inspect --json`). We install to its OWN dir: the
     // compat dirs belong to the agents that own them, and grok dedupes by name
@@ -199,8 +216,9 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentArgs: (prompt) => ['--prompt', prompt],
     codingAgentFollowUp: true,
     matchProcess: (n) => n === 'opencode',
-    promptContextHook: 'opencode',
+    promptContextHook: 'endpoint',
     resumeArgs: (sid) => ['--session', sid],
+    resumableFromSessionStart: true,
     skills: folderSkills('opencode', ['.opencode', 'skills']),
   },
   {
@@ -212,12 +230,15 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentFollowUp: true,
     matchProcess: (n) => n === 'hermes' || n === 'hermes.exe',
     hookProcess: 'self',
-    promptContextHook: 'hermes',
+    promptContextHook: 'plain-text',
     // Profiles have independent session stores, so an exact resume must carry
     // the profile that emitted the session lifecycle event.
-    resumeArgs: (sid, context) => context?.profile
+    // `custom` names a HERMES_HOME Cate cannot reproduce with --profile.
+    resumeArgs: (sid, context) => context?.profile && context.profile !== 'custom'
       ? ['--profile', context.profile, 'chat', '--resume', sid]
       : null,
+    // Hermes creates the record before its first persisted user turn.
+    resumableFromSessionStart: false,
     skills: folderSkills('hermes', ['.hermes', 'skills']),
   },
   // Kiro CLI with its v3 engine. Standalone workspace hooks require that engine, so select
@@ -229,8 +250,10 @@ export const AGENTS: readonly AgentDef[] = [
     codingAgentArgs: (prompt) => ['chat', '--v3', prompt],
     codingAgentFollowUp: true,
     matchProcess: (n) => n === 'kiro-cli',
-    promptContextHook: 'stdout',
+    promptContextHook: 'plain-text',
     resumeArgs: (sid) => ['chat', '--v3', '--resume-id', sid],
+    // Sessions are saved on each turn; agentSpawn precedes the first one.
+    resumableFromSessionStart: false,
     skills: folderSkills('kiro', ['.kiro', 'skills'], { nameMatchesDir: true }),
   },
 ]
@@ -303,9 +326,7 @@ export function resumeCommandForAgent(
 ): string | null {
   const def = AGENTS.find((a) => a.id === agentId)
   if (!def?.resumeArgs || !SAFE_SESSION_ID.test(sessionId)) return null
-  if (context?.profile !== undefined && (
-    !SAFE_PROFILE_NAME.test(context.profile) || (agentId === 'hermes' && context.profile === 'custom')
-  )) return null
+  if (context?.profile !== undefined && !SAFE_PROFILE_NAME.test(context.profile)) return null
   const args = def.resumeArgs(sessionId, context)
   return args ? [def.command, ...args].join(' ') : null
 }

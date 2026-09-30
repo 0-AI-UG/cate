@@ -122,12 +122,10 @@ vi.mock('./terminalFileLinkProvider', () => ({
   resolveLinkRoot: () => undefined,
 }))
 const noteAgentInputSubmitted = vi.fn()
-const noteAgentInterruptSubmitted = vi.fn()
 vi.mock('../agent/agentScreenDetector', () => ({
   noteAgentPresence: vi.fn(),
   forgetAgentTracker: vi.fn(),
   noteAgentInputSubmitted,
-  noteAgentInterruptSubmitted,
 }))
 vi.mock('../themeManager', () => ({
   getActiveTheme: () => ({ terminal: {} }),
@@ -227,7 +225,6 @@ beforeEach(() => {
   replayTerminalLog.mockClear()
   replayTerminalLog.mockImplementation(async () => {})
   noteAgentInputSubmitted.mockClear()
-  noteAgentInterruptSubmitted.mockClear()
 })
 
 // ===========================================================================
@@ -290,7 +287,6 @@ describe('spawn → wire → dispose happy path', () => {
 
     terminalInstances[0].emitData('\x03')
 
-    expect(noteAgentInterruptSubmitted).not.toHaveBeenCalled()
     expect(terminalWrite).toHaveBeenCalledWith('pty-interrupt', '\x03')
   })
 

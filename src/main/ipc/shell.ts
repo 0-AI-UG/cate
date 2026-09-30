@@ -22,11 +22,12 @@ import { sendToWindow, broadcastToAll, isAnyWindowFocused } from '../windowRegis
 import type { Runtime, PtyActivity } from '../runtime/types'
 import type { TerminalActivity } from '../../shared/types'
 import { clearAgentSessionStamp, dropAgentSessionStampState } from './agentSessionStamps'
+import type { AgentId } from '../../shared/agents'
 
 interface PreviousState {
   /** Last agent name seen — carried across transient scan misses so the tab
    *  name doesn't flicker when a single scan cycle fails to spot the agent. */
-  previousAgentName: string | null
+  previousAgentId: AgentId | null
   /** Whether the last scan saw an agent — the falling edge (agent exited while
    *  the terminal lives on) clears the persisted resume stamp. */
   previousAgentPresent?: boolean
@@ -161,10 +162,10 @@ async function runActivityScan(): Promise<void> {
           const ownerWindowId = getTerminalOwner(terminalId)
           if (ownerWindowId == null) continue
           const scanned = results[terminalId]
-          const prev = previousStates.get(terminalId) || { previousAgentName: null }
+          const prev = previousStates.get(terminalId) || { previousAgentId: null }
           const activity: TerminalActivity = scanned?.activity ?? { type: 'idle' }
-          // Carry the last-seen agent name across a transient miss (no flicker).
-          const agentName = scanned?.agentName ?? prev.previousAgentName
+          // Carry the last-seen agent across a transient miss (no flicker).
+          const agentId = scanned?.agentId ?? prev.previousAgentId
           // An entirely-missing entry means the scan had nothing to say about
           // this pty (SIGSTOP-suspended ptys are omitted from scanActivity
           // results, or the scan transiently missed it) — carry the previous
@@ -175,10 +176,10 @@ async function runActivityScan(): Promise<void> {
           // present with agentPresent:false is a real answer (agent exited).
           const agentPresent = scanned ? scanned.agentPresent : (prev.previousAgentPresent ?? false)
 
-          const next: PreviousState = { ...prev, previousAgentName: agentName, previousAgentPresent: agentPresent }
+          const next: PreviousState = { ...prev, previousAgentId: agentId, previousAgentPresent: agentPresent }
           previousStates.set(terminalId, next)
           lastActivity.set(terminalId, activity)
-          sendToWindow(ownerWindowId, SHELL_ACTIVITY_UPDATE, terminalId, activity, agentName, agentPresent)
+          sendToWindow(ownerWindowId, SHELL_ACTIVITY_UPDATE, terminalId, activity, agentId, agentPresent)
 
           // Agent-session stamps are hook-pushed ONLY (agentSessionStamps.ts);
           // this scan owns just the falling edge: the agent exited while the
@@ -292,7 +293,7 @@ export function registerHandlers(): void {
       }
     }
     for (const terminalId of activeIds) {
-      if (!previousStates.has(terminalId)) previousStates.set(terminalId, { previousAgentName: null })
+      if (!previousStates.has(terminalId)) previousStates.set(terminalId, { previousAgentId: null })
     }
     if (activeIds.size === 0) stopPolling()
     else applyPollCadence()

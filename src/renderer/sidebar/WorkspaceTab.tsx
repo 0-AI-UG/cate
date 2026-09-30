@@ -24,7 +24,7 @@ import { PANEL_REGISTRY } from '../panels/registry'
 import { panelRowLabel } from '../lib/panelTitle'
 import { Spinner } from '../ui/Spinner'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
-import { getAgentLogo } from '../lib/agent/agentLogos'
+import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { workspaceDisplayName } from '../lib/fs/displayPath'
 import { workspaceRuntime } from '../lib/workspace/workspaceRuntime'
 import { InlineEditInput } from './InlineEditInput'
@@ -593,7 +593,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
           panel={{ id: p.panelId, type: p.type, title: p.title }}
           indent={indent}
           agentState={p.agentState}
-          agentLogo={getAgentLogo(p.agentName ?? null)}
+          agentLogo={getAgentLogoById(p.agentId)}
           hasPorts={!!p.hasPorts}
           worktreeColor={detachedWorktree?.color ?? worktreeColorForId(p.worktreeId)}
           onClick={onClick}

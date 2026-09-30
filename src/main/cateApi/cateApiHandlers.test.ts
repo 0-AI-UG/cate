@@ -44,6 +44,7 @@ const { activeWindow, windowsById, windowPanelList, windowPanelListener, revealW
     agentName?: string
     codingAgentRunId?: string
     codingAgentOwnerPanelId?: string
+    agentSession?: import('../../shared/agentConversation').AgentSessionRef
     codingAgentStatus?: 'starting' | 'working' | 'waiting' | 'ready' | 'stopped' | 'failed'
   }> },
   windowPanelListener: { value: null as (() => void) | null },
@@ -78,6 +79,8 @@ vi.mock('../themeBootCache', () => ({
   resolveActiveTheme: () => ({ id: 'dark-cold', type: 'dark', app: { 'editor-bg': '#111' }, terminal: { black: '#000' } }),
 }))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
+const { readAgentConversation } = vi.hoisted(() => ({ readAgentConversation: vi.fn() }))
+vi.mock('../agentConversations', () => ({ readAgentConversation }))
 
 import {
   dispatchCateInvoke,
@@ -131,7 +134,7 @@ describe('dispatchCateInvoke — CLI host API', () => {
     expect(await dispatchCateInvoke(scope(), 'cate.version', undefined)).toBe(9)
   })
 
-  it('lists and inspects hook-backed terminal and T3 agents by panel', async () => {
+  it('lists hook-backed terminal and T3 agents by panel', async () => {
     windowPanelList.value = [
       { panelId: 'term-live', type: 'terminal', title: 'Codex', workspaceId: WS, ownerWindowId: 1, agentState: 'waitingForInput', agentCanReceivePrompt: true, agentName: 'Codex' },
       { panelId: 't3-live', type: 'agent', title: 'Frontend', workspaceId: WS, ownerWindowId: 1, agentState: 'running' },
@@ -140,12 +143,38 @@ describe('dispatchCateInvoke — CLI host API', () => {
     ]
 
     expect(await dispatchCateInvoke(scope(), 'cate.agent.list', {})).toEqual([
-      { panelId: 'term-live', surface: 'terminal', title: 'Codex', agentName: 'Codex', state: 'waitingForInput', canReceivePrompt: true },
-      { panelId: 't3-live', surface: 't3', title: 'Frontend', agentName: 'T3 Code', state: 'running', canReceivePrompt: false },
+      { panelId: 'term-live', surface: 'terminal', title: 'Codex', agentId: null, agentName: 'Codex', state: 'waitingForInput', canReceivePrompt: true },
+      { panelId: 't3-live', surface: 't3', title: 'Frontend', agentId: null, agentName: 'T3 Code', state: 'running', canReceivePrompt: false },
     ])
-    expect(await dispatchCateInvoke(scope(), 'cate.agent.inspect', { panelId: 't3-live' })).toEqual({
-      panelId: 't3-live', surface: 't3', title: 'Frontend', agentName: 'T3 Code', state: 'running', canReceivePrompt: false,
+  })
+
+  it('reads any agent panel conversation through its published session', async () => {
+    const messages = [{ role: 'user', text: 'Hi', createdAt: '2026-09-28T00:00:00Z' }]
+    readAgentConversation.mockResolvedValue(messages)
+    const t3Session = { host: 't3' as const, agentId: 'codex' as const, sessionId: 'thread-1', cwd: '/ws/root' }
+    const terminalSession = { host: 'terminal' as const, agentId: 'claude-code' as const, sessionId: 'sess-1', cwd: '/ws/root' }
+    windowPanelList.value = [
+      { panelId: 't3-live', type: 'agent', title: 'Frontend', workspaceId: WS, ownerWindowId: 7, agentState: 'running', agentName: 'Codex', agentSession: t3Session },
+      { panelId: 'term-live', type: 'terminal', title: 'Claude', workspaceId: WS, ownerWindowId: 7, agentState: 'waitingForInput', agentName: 'Claude Code', agentSession: terminalSession },
+      { panelId: 'term-quiet', type: 'terminal', title: 'Shell', workspaceId: WS, ownerWindowId: 7, agentState: 'running' },
+    ]
+
+    expect(await dispatchCateInvoke(scope(), 'cate.agent.read', { panelId: 't3-live' })).toEqual({
+      panelId: 't3-live', surface: 't3', title: 'Frontend', agentId: 'codex', agentName: 'Codex', state: 'running', canReceivePrompt: false,
+      session: t3Session, messages,
     })
+    expect(readAgentConversation).toHaveBeenLastCalledWith(t3Session, WS, 7)
+    expect(await dispatchCateInvoke(scope(), 'cate.agent.read', { panelId: 'term-live' })).toMatchObject({
+      surface: 'terminal', agentId: 'claude-code', session: terminalSession, messages,
+    })
+    expect(readAgentConversation).toHaveBeenLastCalledWith(terminalSession, WS, 7)
+    expect(await dispatchCateInvoke(scope(), 'cate.agent.read', { panelId: 'term-quiet' }))
+      .toEqual({ error: 'no-agent-session', method: 'cate.agent.read' })
+    readAgentConversation.mockResolvedValue(null)
+    expect(await dispatchCateInvoke(scope(), 'cate.agent.read', { panelId: 't3-live' }))
+      .toEqual({ error: 'agent-conversation-not-found', method: 'cate.agent.read' })
+    expect(await dispatchCateInvoke(scope(), 'cate.agent.read', { panelId: 'missing' }))
+      .toEqual({ error: 'agent-panel-not-found', method: 'cate.agent.read' })
   })
 
   it('waits on hook-backed panel state without reading terminal output', async () => {
@@ -154,7 +183,7 @@ describe('dispatchCateInvoke — CLI host API', () => {
       agentState: 'waitingForInput', agentCanReceivePrompt: true, agentName: 'Codex',
     }]
     expect(await dispatchCateInvoke(scope(), 'cate.agent.wait', { panelIds: ['term-live'] })).toEqual({
-      agents: [{ panelId: 'term-live', surface: 'terminal', agentName: 'Codex', state: 'waitingForInput', canReceivePrompt: true }],
+      agents: [{ panelId: 'term-live', surface: 'terminal', agentId: null, agentName: 'Codex', state: 'waitingForInput', canReceivePrompt: true }],
       timedOut: false,
     })
   })

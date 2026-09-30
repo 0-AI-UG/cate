@@ -476,6 +476,26 @@ export class T3HarnessManager {
     return snapshot.threads.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
   }
 
+  /** A thread's visible user/assistant messages, read from T3's own thread
+   *  snapshot API, so no panel or guest page needs to be mounted. */
+  async readConversation(request: AgentProviderStatusRequest & { threadId: string }, ownerWindowId: number): Promise<import('../../shared/agentConversation').AgentConversationMessage[] | null> {
+    const resolved = resolveLocator(request.cwd)
+    const cwd = await resolved.runtime.validatePathStrict(resolved.path, ownerWindowId, request.workspaceId)
+    const key = harnessKey(resolved.runtimeId, cwd)
+    const instance = await this.ensureInstance(key, resolved.runtimeId, resolved.runtime, cwd, request.workspaceId)
+    const url = `http://127.0.0.1:${instance.proxyPort}`
+    const cookies = await session.fromPartition(partitionFor(key)).cookies.get({ url })
+    const response = await fetch(`${url}/api/orchestration/threads/${encodeURIComponent(request.threadId)}`, {
+      headers: { Cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(`T3 conversation returned HTTP ${response.status}`)
+    const snapshot = await response.json() as { thread: { messages: Array<{ role: string; text: string; createdAt: string }> } }
+    return snapshot.thread.messages.flatMap(({ role, text, createdAt }) =>
+      (role === 'user' || role === 'assistant') && text ? [{ role: role as 'user' | 'assistant', text, createdAt }] : [])
+  }
+
   async getUsageTarget(panelId: string): Promise<AgentHarnessPanelTarget> {
     return this.acquirePanel({ panelId, route: 'usage' }, async () => {
       const runtime = runtimes.resolve('local')

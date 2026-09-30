@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { createAgentHooksCapability } from './agentHooks'
-import type { AgentTitleResolvers } from './agentTitles/types'
+import type { AgentSessionStores } from './agentSessions/types'
 import type { AgentHookEvent } from '../../shared/agentHooks'
 
 it('closing hooked terminals cancels their pending title lookups and late events', async () => {
@@ -12,7 +12,7 @@ it('closing hooked terminals cancels their pending title lookups and late events
   const hooks = createAgentHooksCapability({
     hooksDir: directory,
     titleRetryDelaysMs: [200],
-    titleResolvers: new Proxy({}, { get: () => resolveTitle }) as AgentTitleResolvers,
+    sessionStores: new Proxy({}, { get: () => ({ title: resolveTitle, conversation: async () => null }) }) as AgentSessionStores,
   })
   const events: AgentHookEvent[] = []
   hooks.subscribe(event => events.push(event))

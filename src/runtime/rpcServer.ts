@@ -24,6 +24,7 @@ import {
 import { RUNTIME_VERSION } from './version'
 import type { FileAccessContext, Runtime } from '../main/runtime/types'
 import type { SearchOptions } from '../shared/types'
+import { parseAgentSessionLocator } from '../shared/agentConversation'
 
 export interface RpcServerOptions {
   /** Override hello fields (tests / version-skew simulation). */
@@ -180,6 +181,7 @@ export class RpcServer {
       case Methods.agentHooksSubscribe: return this.startAgentHooks(s(0))
       case Methods.agentHooksUnsubscribe: return this.stopAgentHooks(s(0))
       case Methods.agentHooksInspect: return api.agentHooks.inspectWorkspace(s(0))
+      case Methods.agentConversationRead: return api.agentHooks.readConversation(parseAgentSessionLocator(p[0]))
       case Methods.agentHooksSetPromptContext:
         return api.agentHooks.setPromptContext(s(0), typeof p[1] === 'string' ? p[1] : null)
       case Methods.agentChangesList: return api.agentHooks.listChanges(s(0), a(1))

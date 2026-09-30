@@ -36,9 +36,9 @@ describe('agent registry coverage', () => {
       codex: 'additional-context',
       cursor: null,
       grok: null,
-      hermes: 'hermes',
-      kiro: 'stdout',
-      opencode: 'opencode',
+      hermes: 'plain-text',
+      kiro: 'plain-text',
+      opencode: 'endpoint',
     })
   })
 

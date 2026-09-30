@@ -49,7 +49,7 @@ describe('notePost → presenceFor', () => {
   test('resolves the agent through arbitrary ancestry — the pty tree plays no part', async () => {
     const { tracker } = makeTracker(TMUX_TREE)
     await tracker.notePost(T, 'claude-code', 41) // bridge's ppid: the sh layer
-    expect(tracker.presenceFor(T, TMUX_TREE)).toEqual({ agentName: 'Claude Code', agentPresent: true })
+    expect(tracker.presenceFor(T, TMUX_TREE)).toEqual({ agentId: 'claude-code', agentPresent: true })
   })
 
   test('no hook post → never present, whatever the process tree shows', () => {
@@ -57,7 +57,7 @@ describe('notePost → presenceFor', () => {
     // reads absent (the old child-scan behaviour is deliberately gone).
     const t = tree([[10, 1, 'zsh'], [60, 10, 'claude']])
     const { tracker } = makeTracker(t)
-    expect(tracker.presenceFor(T, t)).toEqual({ agentName: null, agentPresent: false })
+    expect(tracker.presenceFor(T, t)).toEqual({ agentId: null, agentPresent: false })
   })
 
   test('falling edge: registered pid gone from the snapshot → absent and deregistered', async () => {
@@ -115,7 +115,7 @@ describe('notePost → presenceFor', () => {
     const t2 = createAgentPresenceTracker({ snapshot: async () => relaunched, isAlive: () => false })
     await t2.notePost(T, 'claude-code', 71)
     await t2.notePost(T, 'claude-code', 71) // isAlive=false forces re-resolve; idempotent
-    expect(t2.presenceFor(T, relaunched)).toEqual({ agentName: 'Claude Code', agentPresent: true })
+    expect(t2.presenceFor(T, relaunched)).toEqual({ agentId: 'claude-code', agentPresent: true })
   })
 
   test('a different agent in the same terminal replaces the registration', async () => {
@@ -123,18 +123,18 @@ describe('notePost → presenceFor', () => {
     const { tracker } = makeTracker(both)
     await tracker.notePost(T, 'claude-code', 41)
     await tracker.notePost(T, 'codex', 81)
-    expect(tracker.presenceFor(T, both)).toEqual({ agentName: 'Codex', agentPresent: true })
+    expect(tracker.presenceFor(T, both)).toEqual({ agentId: 'codex', agentPresent: true })
   })
 
   test('Hermes uses its authenticated in-process pid and rejects an older generation', async () => {
     const processes = tree([[90, 10, 'python3'], [91, 10, 'python3']])
     const { tracker } = makeTracker(processes)
     await tracker.notePost(T, 'hermes', 90, '100')
-    expect(tracker.presenceFor(T, processes)).toEqual({ agentName: 'Hermes', agentPresent: true })
+    expect(tracker.presenceFor(T, processes)).toEqual({ agentId: 'hermes', agentPresent: true })
     await tracker.notePost(T, 'hermes', 91, '200')
     await tracker.notePost(T, 'hermes', 90, '100')
     const onlyNew = tree([[91, 10, 'python3']])
-    expect(tracker.presenceFor(T, onlyNew)).toEqual({ agentName: 'Hermes', agentPresent: true })
+    expect(tracker.presenceFor(T, onlyNew)).toEqual({ agentId: 'hermes', agentPresent: true })
   })
 
   test('a slower old Hermes lookup cannot overwrite a newer generation', async () => {
@@ -152,14 +152,14 @@ describe('notePost → presenceFor', () => {
     resolveOld(oldTree)
     await oldPost
 
-    expect(tracker.presenceFor(T, newTree)).toEqual({ agentName: 'Hermes', agentPresent: true })
+    expect(tracker.presenceFor(T, newTree)).toEqual({ agentId: 'hermes', agentPresent: true })
   })
 
   test('a process missing from a stale snapshot remains present when it is alive', async () => {
     const processes = tree([[90, 10, 'python3']])
     const { tracker } = makeTracker(processes, { alive: () => true })
     await tracker.notePost(T, 'hermes', 90, '100')
-    expect(tracker.presenceFor(T, tree([]))).toEqual({ agentName: 'Hermes', agentPresent: true })
+    expect(tracker.presenceFor(T, tree([]))).toEqual({ agentId: 'hermes', agentPresent: true })
   })
 
   test('a cyclic parent chain terminates', async () => {

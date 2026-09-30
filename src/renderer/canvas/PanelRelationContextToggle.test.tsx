@@ -52,8 +52,8 @@ function openCli(agentId: AgentId): void {
           'pty-source': {
             activity: { type: 'running', processName: names[agentId] },
             agentState: 'running',
-            agentName: null,
-            agentPresent: false,
+            agentId,
+            agentPresent: true,
             listeningPorts: [],
             cwd: '/repo',
           },
