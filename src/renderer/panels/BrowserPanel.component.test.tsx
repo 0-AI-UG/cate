@@ -51,7 +51,7 @@ beforeEach(() => {
   root = createRoot(host)
   useActivePanelStore.setState({ activePanelId: null })
   useAppStore.setState({
-    updatePanelTitle: vi.fn(), updateBrowserActiveTabUrl: vi.fn(), updatePanelTabs: vi.fn(),
+    updatePanelTitle: vi.fn(), updateBrowserActiveTabUrl: vi.fn(), updatePanelTabs: vi.fn(), updatePanelBrowserView: vi.fn(),
   })
   useBrowserStore.setState({ bookmarks: [], recordVisit: vi.fn(), toggleBookmark: vi.fn(), querySuggestions: vi.fn(() => []) })
   useSettingsStore.setState({
@@ -167,6 +167,57 @@ describe('BrowserPanel live webview', () => {
     expect(inputs()).toHaveLength(0)
     expect(webview.style.width).toContain('%')
     expect(webview.style.height).toContain('%')
+  })
+
+  it('restores and persists page zoom and viewport', () => {
+    act(() => root.render(
+      <BrowserPanel panelId="browser-1" workspaceId="workspace-1" tabs={[{ id: 'tab-1', url: 'https://example.test/', title: 'Example' }]} activeTabId="tab-1"
+        browserZoom={1.25} browserViewport={{ preset: 'desktop', width: 1280, height: 800 }} />,
+    ))
+    const webview = host.querySelector('webview') as HTMLElement
+    const methods = installWebviewMethods(webview)
+    expect(webview.style.width).toBe('1280px')
+    act(() => webview.dispatchEvent(new Event('dom-ready')))
+    expect(methods.setZoomFactor).toHaveBeenLastCalledWith(1.25)
+    act(() => (host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click())
+    act(() => (host.querySelector('button[aria-label="Zoom in"]') as HTMLButtonElement).click())
+    expect(useAppStore.getState().updatePanelBrowserView).toHaveBeenLastCalledWith('workspace-1', 'browser-1', { zoom: 1.5 })
+    const select = host.querySelector('select[aria-label="Viewport"]') as HTMLSelectElement
+    act(() => { select.value = 'compact'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(useAppStore.getState().updatePanelBrowserView).toHaveBeenLastCalledWith('workspace-1', 'browser-1', { viewport: { preset: 'compact' } })
+  })
+
+  it('re-applies zoom on every new document, since Chromium resets it per origin', () => {
+    mount()
+    const webview = host.querySelector('webview') as HTMLElement
+    const methods = installWebviewMethods(webview)
+    act(() => (host.querySelector('button[aria-label="Browser menu"]') as HTMLButtonElement).click())
+    act(() => (host.querySelector('button[aria-label="Zoom in"]') as HTMLButtonElement).click())
+    methods.setZoomFactor.mockClear()
+    act(() => webview.dispatchEvent(new Event('dom-ready')))
+    act(() => webview.dispatchEvent(new Event('dom-ready')))
+    expect(methods.setZoomFactor.mock.calls).toEqual([[1.1], [1.1]])
+  })
+
+  it('keeps a background tab\'s url, title and favicon current', () => {
+    mount([
+      { id: 'tab-1', url: 'https://one.test/', title: 'One' },
+      { id: 'tab-2', url: 'https://two.test/', title: 'Two' },
+    ])
+    const background = host.querySelectorAll('webview')[1] as HTMLElement
+    const methods = installWebviewMethods(background)
+    methods.getTitle.mockReturnValue('Two redirected')
+    act(() => {
+      background.dispatchEvent(Object.assign(new Event('did-navigate'), { url: 'https://two.test/landing' }))
+      background.dispatchEvent(Object.assign(new Event('page-title-updated'), { title: 'Two landed' }))
+      background.dispatchEvent(Object.assign(new Event('page-favicon-updated'), { favicons: ['https://two.test/icon.png'] }))
+    })
+    expect(useAppStore.getState().updatePanelTabs).toHaveBeenLastCalledWith('workspace-1', 'browser-1', [
+      { id: 'tab-1', url: 'https://one.test/', title: 'One' },
+      { id: 'tab-2', url: 'https://two.test/landing', title: 'Two landed', favicon: 'https://two.test/icon.png' },
+    ], 'tab-1')
+    expect(useAppStore.getState().updatePanelTitle).not.toHaveBeenCalled()
+    expect(useBrowserStore.getState().recordVisit).toHaveBeenCalledWith('https://two.test/landing', 'Two redirected')
   })
 
   it('backs transparent guest pages with white independently of the app theme', () => {

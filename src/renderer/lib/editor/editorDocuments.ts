@@ -5,6 +5,7 @@ import { editorDraftDirectory, editorDraftPath, isEditorDraft } from '../../../s
 // save/conflict owner; panel-specific presentation stays in EditorPanel.
 import { notifySessionMutation } from '../workspace/sessionMutations'
 import { capturePanelSearch } from '../../stores/panelSearchStores'
+import { capturePanelExplorer } from '../../stores/panelExplorerState'
 import type { PanelState, FileEntryMoved } from '../../../shared/types'
 import { useAppStore } from '../../stores/appStore'
 import { watchFsRoot } from '../fs/fsWatchManager'
@@ -82,8 +83,6 @@ export class EditorDocument {
     const app = useAppStore.getState()
     for (const owner of this.owners.values()) {
       app.setPanelDirty(owner.workspaceId, owner.panelId, dirty)
-      const path = this.filePathRef.current
-      if (path && !isEditorDraft(path)) app.updatePanelTitle(owner.workspaceId, owner.panelId, `${pathDisplayName(path) || 'Untitled'}${dirty ? ' •' : ''}`)
       // Clearing persisted recovery data is necessary after save/discard, so a
       // remount never revives an old snapshot over a clean live document.
       if (!dirty) app.setPanelUnsavedContent(owner.workspaceId, owner.panelId, undefined)
@@ -269,7 +268,7 @@ export class EditorDocument {
     const initial = !target || (!autosave && isEditorDraft(target))
     if (initial) {
       const panel = useAppStore.getState().workspaces.find(ws => ws.id === owner.workspaceId)?.panels[owner.panelId]
-      const name = panel?.title.replace(/\s•\s*$/, '').trim()
+      const name = panel?.title.trim()
       const defaultName = name && name !== 'Untitled' ? name : isEditorDraft(previousPath) ? 'Untitled.md' : 'Untitled.txt'
       const chosen = await window.electronAPI.saveFileDialog({ defaultName, defaultPath: owner.rootPath ? `${owner.rootPath}/${defaultName}` : defaultName })
       if (!chosen || revision !== this.identityRevision) return false
@@ -311,13 +310,13 @@ export class EditorDocument {
         for (const [id, own] of this.owners) { existing.addOwner(own); panelDocuments.set(id, existing) }
         this.owners.clear()
         existing.markDirty(latest !== content)
-        for (const own of existing.owners.values()) useAppStore.getState().updatePanelFilePath(own.workspaceId, own.panelId, target)
+        for (const own of existing.owners.values()) retarget(own, target)
         this.dispose()
         return !existing.isDirtyRef.current
       }
       documents.set(target, this)
       this.replace(latest ?? content)
-      for (const own of this.owners.values()) useAppStore.getState().updatePanelFilePath(own.workspaceId, own.panelId, target)
+      for (const own of this.owners.values()) retarget(own, target)
       this.watch()
     }
     this.markDirty(latest !== content)
@@ -326,6 +325,7 @@ export class EditorDocument {
     return !this.isDirtyRef.current
   }
   discard = async (): Promise<void> => {
+    const revision = this.identityRevision
     const owner = this.owner()
     const path = this.filePathRef.current
     let content = ''
@@ -333,6 +333,8 @@ export class EditorDocument {
       try { content = await window.electronAPI.fsReadFile(path, owner.workspaceId) }
       catch { /* A deleted file can still be discarded. */ }
     }
+    // The document moved or closed during the read: those bytes are not its file.
+    if (revision !== this.identityRevision) return
     this.replace(content); this.setBaseline(content); this.markDirty(false); this.publish({ conflict: null, showDiff: false })
   }
   reload = (): void => {
@@ -374,6 +376,12 @@ export class EditorDocument {
   dispose(): void { clearTimeout(this.autosaveTimer); this.state = { ...this.state, shared: false }; this.identityRevision++; this.watchEpoch++; this.stopWatching?.(); this.stopWatching = undefined; this.watchKey = undefined; this.listeners.clear() }
 }
 
+/** Points an owner panel at a new path; the tab shows dirty state separately. */
+function retarget(owner: Owner, target: string): void {
+  useAppStore.getState().updatePanelFilePath(owner.workspaceId, owner.panelId, target)
+  useAppStore.getState().updatePanelTitle(owner.workspaceId, owner.panelId, pathDisplayName(target))
+}
+
 export function editorDocument(workspaceId: string, panelId: string, filePath?: string | null, rootPath?: string): EditorDocument {
   const panel = useAppStore.getState().workspaces.find(ws => ws.id === workspaceId)?.panels[panelId]
   filePath = filePath === null ? undefined : filePath ?? panel?.filePath
@@ -409,7 +417,7 @@ export function editorPanelContent(panel: PanelState): string | undefined {
 }
 export function captureEditorPanel(panel: PanelState): PanelState {
   if (panel.type !== 'editor') return panel
-  panel = capturePanelSearch(panel)
+  panel = capturePanelExplorer(capturePanelSearch(panel))
   const document = panelDocuments.get(panel.id) ?? (panel.filePath ? documents.get(panel.filePath) : undefined)
   if (document) return document.snapshot(panel)
   const model = panel.filePath ? getCachedModel(panel.filePath) as BufferModel | undefined : undefined
@@ -481,6 +489,6 @@ export function applyFileEntryMove(event: FileEntryMoved): void {
   retireModelsMatching(path => movedPath(path) !== undefined)
   for (const { workspaceId, panel, path } of movedPanels) {
     app.updatePanelFilePath(workspaceId, panel.id, path)
-    app.updatePanelTitle(workspaceId, panel.id, `${pathDisplayName(path)}${panel.isDirty ? ' •' : ''}`)
+    app.updatePanelTitle(workspaceId, panel.id, pathDisplayName(path))
   }
 }

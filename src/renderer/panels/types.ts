@@ -2,7 +2,7 @@
 // Panel type definitions for the renderer
 // =============================================================================
 
-import type { BrowserTab } from '../../shared/types'
+import type { BrowserTab, BrowserViewport } from '../../shared/types'
 import type { CodingAgentLaunch } from '../../shared/codingAgentRuns'
 
 // -----------------------------------------------------------------------------
@@ -32,6 +32,9 @@ export interface BrowserPanelProps extends PanelProps {
   /** Per-panel proxy URL (issue #241). When set, the panel runs in its own
    *  proxy-derived session instead of the shared browser session. */
   proxyUrl?: string
+  /** Persisted page zoom and emulated viewport (see PanelState). */
+  browserZoom?: number
+  browserViewport?: BrowserViewport
   /** Canonical persisted navigation state. */
   tabs: BrowserTab[]
   activeTabId: string

@@ -249,19 +249,8 @@ export function createWorkspaceSlice(set: AppSet, get: AppGet): WorkspaceSliceAc
         .filter((p) => p.type === 'canvas' && !allDockPanelIds.has(p.id))
         .map((p) => p.id)
 
-      if (orphanedCanvasIds.length > 0) {
-        for (const id of orphanedCanvasIds) {
-          try { releaseCanvasStoreForPanel(id) } catch { /* ignore */ }
-        }
-        set((state) => ({
-          workspaces: state.workspaces.map((w) => {
-            if (w.id !== workspaceId) return w
-            const panels = { ...w.panels }
-            for (const id of orphanedCanvasIds) delete panels[id]
-            return { ...w, panels }
-          }),
-        }))
-      }
+      // A full close, so the canvas's child panels (and their PTYs) go with it.
+      for (const id of orphanedCanvasIds) get().closePanel(workspaceId, id)
 
       // Sweep orphaned dock tabs (in some dock zone but not in ws.panels). These
       // appear after a panel state was dropped without the dock layout being

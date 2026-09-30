@@ -102,7 +102,7 @@ describe('retargetReviewPanel', () => {
         repoPath: '/repo',
         spec: { kind: 'uncommitted' },
         display: { split: true, wordDiff: true, wrap: false, fullFile: false, advancedPreview: true },
-        collapsedFiles: ['src/a.ts', 'src/b.ts'],
+        collapsedFiles: ['src/a.ts', 'src/b.ts', 'record-1:src/a.ts'],
         notes: [{ id: 'note-1' }],
       },
     }

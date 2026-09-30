@@ -11,6 +11,8 @@
 // main-process runtime using the caller’s latest observation.
 // =============================================================================
 
+import type { BrowserViewport } from '../../shared/types'
+
 /** Minimal subset of the DOM <webview> surface that browser automation uses. */
 export type PortalInputModifier = 'shift' | 'control' | 'alt' | 'meta'
 
@@ -84,9 +86,6 @@ export interface BrowserPanelController {
   setViewport(viewport: BrowserViewport): Promise<void>
 }
 
-export type BrowserViewport =
-  | { preset: 'compact' }
-  | { preset: 'desktop' | 'mobile' | 'custom'; width: number; height: number }
 
 const controllerByPanelId = new Map<string, BrowserPanelController>()
 

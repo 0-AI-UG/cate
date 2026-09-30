@@ -148,7 +148,7 @@ function PdfViewer({ data }: { data: Uint8Array }) {
   useEffect(() => {
     let cancelled = false
     setError(null)
-    const loadingTask = pdfjsLib.getDocument({ data })
+    const loadingTask = pdfjsLib.getDocument({ data: data.slice() })
     loadingTask.promise.then((doc) => {
       if (cancelled) return
       setPdf(doc)

@@ -36,6 +36,7 @@ let host: HTMLDivElement
 let root: ReturnType<typeof createRoot>
 beforeEach(() => {
   vi.clearAllMocks()
+  h.setState.mockImplementation((_workspaceId: string, panelId: string, next: any) => { h.workspace.panels[panelId].reviewState = next })
   h.loading = false
   h.workspace.worktrees = []
   h.workspace.panels = {
@@ -74,6 +75,8 @@ it('shows only recorded edits whose files still have local Git changes, with his
   expect(host.textContent).not.toContain('a.ts')
   act(() => host.querySelector<HTMLButtonElement>('[aria-label="More review options"]')!.click())
   act(() => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === 'Show recorded history')!.click())
+  expect(h.workspace.panels.review.reviewState.showHistory).toBe(true)
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
   expect(host.textContent).toContain('a.ts')
 })
 
@@ -92,6 +95,7 @@ it('switches diff worktrees and restores each checkout comparison and notes', as
     { id: 'feature', path: '/feature', branch: 'feature' },
   ]
   const original = { ...h.workspace.panels.review.reviewState, agentChanges: undefined, spec: { kind: 'branch', base: 'main', target: 'main' }, notes: [{ id: 'note', path: 'a.ts', body: 'Keep this note' }] }
+  h.workspace.panels.review.reviewState = original
   act(() => root.render(<ReviewToolbar state={original} workspaceId="ws" panelId="review" />))
   const select = host.querySelector<HTMLButtonElement>('[aria-label="Diff panel worktree"]')!
   await act(async () => select.click())
@@ -99,6 +103,7 @@ it('switches diff worktrees and restores each checkout comparison and notes', as
   expect(next).toMatchObject({ repoPath: '/feature', spec: { kind: 'branch', base: 'main', target: 'feature' } })
   expect(next.notes).toBeUndefined()
   expect(h.setWorktree).toHaveBeenLastCalledWith('ws', 'review', 'feature')
+  h.workspace.panels.review.reviewState = next
   act(() => root.render(<ReviewToolbar state={next} workspaceId="ws" panelId="review" />))
   await act(async () => select.click())
   expect(h.setState.mock.calls.at(-1)![2]).toMatchObject({ repoPath: '/repo', notes: original.notes, spec: original.spec })
@@ -126,6 +131,7 @@ it('renders the agent logo and normal diff lines without patch metadata or sessi
   expect(host.textContent).not.toContain('@@')
   expect(host.querySelector('[aria-label^="Add review note"]')).not.toBeNull()
   act(() => host.querySelector<HTMLButtonElement>('section button')!.click())
+  act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
   expect(host.textContent).not.toContain('hello')
 })
 
@@ -265,13 +271,14 @@ it('waits for the panel and review state to restore in separate updates', () => 
   expect(h.setState).not.toHaveBeenCalled()
 })
 
-it('expands a collapsed recorded file when a deep link targets it again', () => {
+it('keeps a collapsed recorded file collapsed across remounts', () => {
   act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
   act(() => host.querySelector<HTMLButtonElement>('section button')!.click())
-  expect(host.querySelector('section button')?.getAttribute('aria-expanded')).toBe('false')
-  h.workspace.panels.review.reviewState = { ...h.workspace.panels.review.reviewState, focusedFile: 'a.ts', agentChanges: { panelId: 'a' } }
+  expect(h.workspace.panels.review.reviewState.collapsedFiles).toEqual(['a:a.ts'])
+  act(() => root.unmount())
+  root = createRoot(host)
   act(() => root.render(<AgentChangesView workspaceId="ws" panelId="review" />))
-  expect(host.querySelector('section button')?.getAttribute('aria-expanded')).toBe('true')
+  expect(host.querySelector('section button')?.getAttribute('aria-expanded')).toBe('false')
 })
 
 it('pages long histories while allowing a deep link beyond the first page', () => {

@@ -808,7 +808,6 @@ export interface ElectronAPI {
   panelTransferAck(ptyId?: string): Promise<void>
 
   /** Subscribe to incoming panel transfers (main -> renderer). */
-  onPanelReceive(callback: (snapshot: PanelTransferSnapshot) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Cross-window drag-and-drop
@@ -927,14 +926,14 @@ export interface ElectronAPI {
    *  Main is the arbiter: `accepted` is
    *  false when the drag already resolved unclaimed (the source has fallen back
    *  to a detach) — the caller must NOT materialize the panel in that case. */
-  crossWindowDragDrop(panelId: string): Promise<{ accepted: boolean; transferId?: string }>
+  crossWindowDragDrop(panelId: string): Promise<{ accepted: boolean; transferId?: string; snapshot?: PanelTransferSnapshot }>
 
   /** Cancel an active cross-window drag. */
   crossWindowDragCancel(): Promise<void>
 
   /** Resolve a cross-window drag on mouseup. Returns whether a target window claimed the drop.
    *  If not claimed, the caller should fall back to dragDetach(). */
-  crossWindowDragResolve(): Promise<{ claimed: boolean }>
+  crossWindowDragResolve(snapshot?: PanelTransferSnapshot | null): Promise<{ claimed: boolean }>
 
   // ---------------------------------------------------------------------------
   // Workspace management (main process is source of truth)

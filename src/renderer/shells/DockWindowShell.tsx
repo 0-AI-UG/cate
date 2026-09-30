@@ -9,7 +9,7 @@ import { subscribeSessionMutations } from '../lib/workspace/sessionMutations'
 
 import { captureEditorPanel } from '../lib/editor/editorDocuments'
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import type { CanvasLayoutSnapshot, DockWindowInitPayload, PanelState, PanelTransferSnapshot } from '../../shared/types'
+import type { CanvasLayoutSnapshot, DockWindowInitPayload, PanelState } from '../../shared/types'
 import { createDockStore } from '../stores/dockStore'
 import { DockStoreProvider } from '../stores/DockStoreContext'
 import { registerWorkspaceDockStore } from '../lib/workspace/dockRegistry'
@@ -100,12 +100,15 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // no-ops on '' and the window renders blank. The id is internal: it's
       // never sent back to main (dockWindowSyncState carries only zones/panels).
       const effectiveWs = payload.workspaceId || 'detached-dock-window'
-      // Update the ref SYNCHRONOUSLY: PANEL_RECEIVE arrives in the same IPC batch
-      // right after this handler (dragHandlers sends INIT then RECEIVE), before
-      // React re-renders with the new wsId state. Handlers read wsIdRef.current,
-      // so it must be correct before this handler returns.
+      // Update the ref SYNCHRONOUSLY: handlers read wsIdRef.current and may run
+      // before React re-renders with the new wsId state.
       wsIdRef.current = effectiveWs
+      // A live detach carries its transfer: deposit the PTY hand-off and canvas
+      // children BEFORE the record lands, so no view can mount and spawn a fresh
+      // shell first. (ACK of the terminal itself is deferred to reconnect.)
+      if (payload.transfer) hydrateReceivedPanel(effectiveWs, payload.transfer)
       ensurePanelsInAppStore(effectiveWs, payload.panels, payload.rootPath, payload.worktrees)
+      if (payload.transfer?.transferId) void window.electronAPI.panelTransferReady(payload.transfer.transferId, 'received')
 
       // Register THIS window's dock store under the effective workspace id so the
       // shared placement code (placePanel → getOrCreateWorkspaceDockStore) targets
@@ -120,7 +123,7 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
       // reads `<panelId>.scrollback`, so it never depends on a captured live-ptyId
       // map that an early sync or a flush-less reload could leave empty.
       // (A fresh live detach sets no `restore` flag — its terminal arrives live via
-      // PANEL_RECEIVE instead, so we must NOT arm replay for it here.)
+      // `transfer` instead, so we must NOT arm replay for it here.)
       if (payload.restore) {
         for (const panel of Object.values(payload.panels)) {
           if (panel.type !== 'terminal') continue
@@ -147,24 +150,6 @@ export default function DockWindowShell({ workspaceId: initialWorkspaceId }: Doc
 
     return cleanup
   }, [dockStore])
-
-  // Listen for incoming panel transfers (drag from other windows). The handlers
-  // read wsId via the ref, never a closed-over value: these effects register
-  // once, and the INIT handler bumps wsIdRef.current synchronously, so a
-  // transfer landing before React re-renders still targets the right workspace.
-  useEffect(() => {
-    const cleanup = window.electronAPI.onPanelReceive((snapshot: PanelTransferSnapshot) => {
-      // Deposit PTY hand-off + hydrate canvas children BEFORE the panel mounts —
-      // otherwise the window paints an empty canvas / a fresh shell and syncs
-      // that empty state back to persistence. (ACK is deferred to
-      // reconnectTerminal() after listeners are wired.)
-      hydrateReceivedPanel(wsIdRef.current, snapshot)
-      ensurePanelsInAppStore(wsIdRef.current, { [snapshot.panel.id]: snapshot.panel }, snapshot.rootPath, snapshot.worktrees)
-      if (snapshot.transferId) void window.electronAPI.panelTransferReady(snapshot.transferId, 'received')
-    })
-
-    return cleanup
-  }, [])
 
   // Set up cross-window drag listeners
   useEffect(() => {

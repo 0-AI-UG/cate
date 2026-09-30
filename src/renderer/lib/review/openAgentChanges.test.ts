@@ -2,13 +2,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
-  target: vi.fn(), retarget: vi.fn(async () => true), create: vi.fn(() => 'new'), setState: vi.fn(), title: vi.fn(),
-  workspace: { rootPath: '/repo', panels: {} as Record<string, any> },
+  target: vi.fn(), retarget: vi.fn(async () => true), create: vi.fn(() => 'new'), setState: vi.fn(), setWorktree: vi.fn(), title: vi.fn(),
+  workspace: { rootPath: '/repo', panels: {} as Record<string, any>, worktrees: [{ id: 'wt-feature', path: '/repo-feature' }] },
 }))
 vi.mock('../panelTargetPicker', () => ({ requestPanelTarget: h.target }))
 vi.mock('./openReviewPanel', () => ({ retargetReviewPanel: h.retarget }))
 vi.mock('../../stores/appStore', () => ({ useAppStore: { getState: () => ({
-  getWorkspace: () => h.workspace, createReview: h.create, setPanelReviewState: h.setState, updatePanelTitle: h.title,
+  getWorkspace: () => h.workspace, createReview: h.create, setPanelReviewState: h.setState, setPanelWorktreeId: h.setWorktree, updatePanelTitle: h.title,
 }) } }))
 import { openAgentChanges } from './openAgentChanges'
 
@@ -40,6 +40,19 @@ describe('agent changes placement handoff', () => {
     await openAgentChanges({ workspaceId: 'ws', panelId: 'source', cwd: '/repo', focusedFile: 'b.ts' })
     expect(h.create).not.toHaveBeenCalled()
     expect(h.retarget).toHaveBeenCalledWith('ws', 'review', expect.objectContaining({ agentChanges: expect.objectContaining({ panelId: 'source' }), focusedFile: 'b.ts' }))
+  })
+  it('switches an existing review to the agent checkout, keeping the old checkout\'s notes', async () => {
+    const notes = [{ id: 'n1' }]
+    h.workspace.panels.review.reviewState = { repoPath: '/repo', spec: { kind: 'branch', base: 'main', target: 'main' }, display: { split: true }, notes }
+    h.workspace.panels.source.cwd = '/repo-feature'
+    h.target.mockResolvedValue({ kind: 'existing', panelId: 'review' })
+    expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'source', cwd: '/repo-feature' })).toBe(true)
+    expect(h.setState).toHaveBeenCalledWith('ws', 'review', expect.objectContaining({
+      repoPath: '/repo-feature',
+      display: { split: true },
+      worktreeStates: { '/repo': expect.objectContaining({ repoPath: '/repo', notes }) },
+    }))
+    expect(h.setWorktree).toHaveBeenCalledWith('ws', 'review', 'wt-feature')
   })
   it('leaves everything untouched on cancel or conversation switch', async () => {
     h.target.mockResolvedValue(null)

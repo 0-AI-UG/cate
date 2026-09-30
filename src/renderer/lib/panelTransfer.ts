@@ -93,7 +93,7 @@ export function createTransferSnapshot(
  * TerminalPanel mounts, instead of spawning a bare fresh shell. Must run during
  * canvas hydration — before the canvas renders its child nodes — so the hint is
  * in place when getOrCreate() runs. Mirrors the top-level terminal's restore
- * wiring in the shells' PANEL_RECEIVE handlers.
+ * wiring in the dock window's INIT (live detach) and cross-window drop handlers.
  *
  * LIVE transfer only (`ptyId`): reconnect to the still-running PTY
  * (setPendingTransfer). Cold session restore does NOT flow through here — the
