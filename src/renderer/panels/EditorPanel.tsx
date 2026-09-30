@@ -44,6 +44,7 @@ import {
 import { useFileSync } from '../lib/editor/useFileSync'
 import EditorConflictBanner from './EditorConflictBanner'
 import { isRuntimeLocator } from '../../shared/runtimeLocator'
+import { openFileInBrowser } from '../lib/openInBrowser'
 import { LoadingState } from '../ui/Spinner'
 import { PanelCenteredState } from '../ui/PanelCenteredState'
 import { worktreeForPanel, worktreeForPath } from '../lib/worktreeContext'
@@ -823,6 +824,15 @@ export default function EditorPanel({
             title={markdownPreview ? 'Show source' : 'Preview markdown'}
           >
             {markdownPreview ? 'Source' : 'Preview'}
+          </button>
+        )}
+        {filePath && !isRuntimeLocator(filePath) && /\.html?$/i.test(filePath) && (
+          <button
+            onClick={() => void openFileInBrowser(workspaceId, filePath, panelId)}
+            className="shrink-0 px-2 py-1 rounded-md text-xs font-medium transition-colors bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary"
+            title="Open in browser"
+          >
+            Open in browser
           </button>
         )}
         <button
