@@ -5,6 +5,7 @@ import net, { type Server as NetServer, type Socket } from 'net'
 import os from 'os'
 import path from 'path'
 import log from '../logger'
+import type { AgentConversationMessage } from '../../shared/agentConversation'
 import { resolveLocator, runtimes } from '../runtime/runtimeManager'
 import {
   RUNTIME_INSTALL_ROOT_PLACEHOLDER,
@@ -12,7 +13,9 @@ import {
 } from '../runtime/types'
 import { openTunnelDuplex } from '../cateApi/serverTunnel'
 import { workspaceCateApi } from '../cateApi/workspaceCateApi'
-import { onWindowClosed } from '../windowRegistry'
+import { broadcastToAll, onWindowClosed } from '../windowRegistry'
+import { AGENT_HARNESS_THREAD_SHELLS_CHANGED } from '../../shared/ipc-channels'
+import { ThreadShellSubscription } from './threadShells'
 import {
   harnessKey,
   harnessNodeExecutable,
@@ -159,6 +162,7 @@ export class T3HarnessManager {
   private readonly locatorHarness = new Map<string, string>()
   private readonly providerAuth = new Map<string, ProviderAuthState>()
   private readonly remoteSessions = new Map<string, RemoteSessionState>()
+  private readonly shells = new Map<string, ThreadShellSubscription>()
 
   constructor() {
     const onDisconnected = runtimes.onDisconnected?.bind(runtimes)
@@ -444,33 +448,17 @@ export class T3HarnessManager {
   }
 
   private async mutateConversation(request: AgentProviderStatusRequest & { threadId: string }, ownerWindowId: number, command: Record<string, string>): Promise<string> {
-    const resolved = resolveLocator(request.cwd)
-    const cwd = await resolved.runtime.validatePathStrict(resolved.path, ownerWindowId, request.workspaceId)
-    const key = harnessKey(resolved.runtimeId, cwd)
-    const instance = await this.ensureInstance(key, resolved.runtimeId, resolved.runtime, cwd, request.workspaceId)
-    const url = `http://127.0.0.1:${instance.proxyPort}`
-    const cookies = await session.fromPartition(partitionFor(key)).cookies.get({ url })
-    const response = await fetch(`${url}/api/orchestration/dispatch`, {
+    const { response, partition } = await this.harnessFetch(request, ownerWindowId, '/api/orchestration/dispatch', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...command, commandId: randomUUID(), threadId: request.threadId }),
-      signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) throw new Error(`T3 conversation update returned HTTP ${response.status}`)
-    return partitionFor(key)
+    return partition
   }
 
   async listConversations(request: AgentProviderStatusRequest, ownerWindowId: number): Promise<import('../../shared/t3Agent').T3Conversation[]> {
-    const resolved = resolveLocator(request.cwd)
-    const cwd = await resolved.runtime.validatePathStrict(resolved.path, ownerWindowId, request.workspaceId)
-    const key = harnessKey(resolved.runtimeId, cwd)
-    const instance = await this.ensureInstance(key, resolved.runtimeId, resolved.runtime, cwd, request.workspaceId)
-    const url = `http://127.0.0.1:${instance.proxyPort}`
-    const cookies = await session.fromPartition(partitionFor(key)).cookies.get({ url })
-    const response = await fetch(`${url}/api/orchestration/shell`, {
-      headers: { Cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
-      signal: AbortSignal.timeout(10_000),
-    })
+    const { response } = await this.harnessFetch(request, ownerWindowId, '/api/orchestration/shell')
     if (!response.ok) throw new Error(`T3 conversations returned HTTP ${response.status}`)
     const snapshot = await response.json() as { threads: Array<{ id: string; title: string; updatedAt: string }> }
     return snapshot.threads.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
@@ -478,22 +466,55 @@ export class T3HarnessManager {
 
   /** A thread's visible user/assistant messages, read from T3's own thread
    *  snapshot API, so no panel or guest page needs to be mounted. */
-  async readConversation(request: AgentProviderStatusRequest & { threadId: string }, ownerWindowId: number): Promise<import('../../shared/agentConversation').AgentConversationMessage[] | null> {
+  async readConversation(request: AgentProviderStatusRequest & { threadId: string }, ownerWindowId: number): Promise<AgentConversationMessage[] | null> {
+    const { response } = await this.harnessFetch(request, ownerWindowId, `/api/orchestration/threads/${encodeURIComponent(request.threadId)}`)
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(`T3 conversation returned HTTP ${response.status}`)
+    const snapshot = await response.json() as { thread: { messages: Array<{ role: string; text: string; createdAt: string }> } }
+    return snapshot.thread.messages.flatMap(({ role, text, createdAt }) =>
+      (role === 'user' || role === 'assistant') && text ? [{ role, text, createdAt }] : [])
+  }
+
+  /** Submit a user turn to an existing thread through T3's orchestration API,
+   *  exactly as its composer would: the thread's own runtime mode and model,
+   *  default interaction mode. No panel or guest page needs to be mounted. */
+  async startTurn(request: AgentProviderStatusRequest & { threadId: string; text: string }, ownerWindowId: number): Promise<void> {
+    const threadPath = `/api/orchestration/threads/${encodeURIComponent(request.threadId)}?turnLimit=1`
+    const { response: detail } = await this.harnessFetch(request, ownerWindowId, threadPath)
+    if (!detail.ok) throw new Error(`T3 conversation returned HTTP ${detail.status}`)
+    const { thread } = await detail.json() as { thread: { runtimeMode: string } }
+    const createdAt = new Date().toISOString()
+    const { response } = await this.harnessFetch(request, ownerWindowId, '/api/orchestration/dispatch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'thread.turn.start',
+        commandId: randomUUID(),
+        threadId: request.threadId,
+        message: { messageId: randomUUID(), role: 'user', text: request.text, attachments: [] },
+        runtimeMode: thread.runtimeMode,
+        interactionMode: 'default',
+        createdAt,
+      }),
+    })
+    if (!response.ok) throw new Error(`T3 turn start returned HTTP ${response.status}`)
+  }
+
+  /** Authenticated request to the checkout's T3 server, using the browser
+   *  session cookie its panels share. */
+  private async harnessFetch(request: AgentProviderStatusRequest, ownerWindowId: number, path: string, init: RequestInit = {}): Promise<{ response: Response; partition: string }> {
     const resolved = resolveLocator(request.cwd)
     const cwd = await resolved.runtime.validatePathStrict(resolved.path, ownerWindowId, request.workspaceId)
     const key = harnessKey(resolved.runtimeId, cwd)
     const instance = await this.ensureInstance(key, resolved.runtimeId, resolved.runtime, cwd, request.workspaceId)
     const url = `http://127.0.0.1:${instance.proxyPort}`
     const cookies = await session.fromPartition(partitionFor(key)).cookies.get({ url })
-    const response = await fetch(`${url}/api/orchestration/threads/${encodeURIComponent(request.threadId)}`, {
-      headers: { Cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
+    const response = await fetch(`${url}${path}`, {
+      ...init,
+      headers: { ...init.headers as Record<string, string>, Cookie: cookies.map(({ name, value }) => `${name}=${value}`).join('; ') },
       signal: AbortSignal.timeout(10_000),
     })
-    if (response.status === 404) return null
-    if (!response.ok) throw new Error(`T3 conversation returned HTTP ${response.status}`)
-    const snapshot = await response.json() as { thread: { messages: Array<{ role: string; text: string; createdAt: string }> } }
-    return snapshot.thread.messages.flatMap(({ role, text, createdAt }) =>
-      (role === 'user' || role === 'assistant') && text ? [{ role: role as 'user' | 'assistant', text, createdAt }] : [])
+    return { response, partition: partitionFor(key) }
   }
 
   async getUsageTarget(panelId: string): Promise<AgentHarnessPanelTarget> {
@@ -676,6 +697,7 @@ export class T3HarnessManager {
         state.phase = 'running'
         state.instance = instance
         state.start = undefined
+        this.watchThreadShells(instance)
         return instance
       })
       .catch((error) => {
@@ -996,9 +1018,34 @@ export class T3HarnessManager {
     })
   }
 
+  /** Keep one live shell stream per running harness (see threadShells.ts). */
+  private watchThreadShells(instance: HarnessInstance): void {
+    const existing = this.shells.get(instance.key)
+    if (existing) { existing.resume(); return }
+    const url = `http://127.0.0.1:${instance.proxyPort}`
+    this.shells.set(instance.key, new ThreadShellSubscription({
+      partition: partitionFor(instance.key),
+      url,
+      cookie: async () => (await session.fromPartition(partitionFor(instance.key)).cookies.get({ url }))
+        .map(({ name, value }) => `${name}=${value}`).join('; '),
+      alive: () => this.states.get(instance.key)?.phase === 'running',
+    }, (snapshot) => broadcastToAll(AGENT_HARNESS_THREAD_SHELLS_CHANGED, snapshot)))
+  }
+
+  /** The current thread shells of a harness partition, for a window that
+   *  starts observing it after the stream is already live. */
+  threadShells(partition: string): import('../../shared/t3Agent').T3ShellSnapshot | null {
+    for (const [key, shells] of this.shells) {
+      if (partitionFor(key) === partition) return { ...shells.state }
+    }
+    return null
+  }
+
   private async stopHarness(key: string): Promise<void> {
     const state = this.states.get(key)
     this.states.delete(key)
+    this.shells.get(key)?.stop()
+    this.shells.delete(key)
     for (const [panelId, ownerKey] of this.panelHarness) {
       if (ownerKey === key) {
         this.panelHarness.delete(panelId)
