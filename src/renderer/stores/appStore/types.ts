@@ -9,6 +9,7 @@ import type {
   PanelState,
   TerminalAgentSession,
   BrowserTab,
+  BrowserViewport,
   Point,
   Size,
   DockZonePosition,
@@ -123,6 +124,8 @@ export interface AppStoreActions {
   /** Browser panels only: set/clear the per-panel proxy. Pass undefined to
    *  revert the panel to the shared (direct) browser session. */
   updatePanelProxy: (workspaceId: string, panelId: string, proxyUrl?: string) => void
+  /** Browser panels: persist page zoom / emulated viewport (defaults stored as unset). */
+  updatePanelBrowserView: (workspaceId: string, panelId: string, view: { zoom?: number; viewport?: BrowserViewport }) => void
   updatePanelFilePath: (workspaceId: string, panelId: string, filePath: string | undefined) => void
   setPanelNavigation: (workspaceId: string, panelId: string, view: 'explorer' | 'search', visible?: boolean) => void
   setPanelDirty: (workspaceId: string, panelId: string, dirty: boolean) => void

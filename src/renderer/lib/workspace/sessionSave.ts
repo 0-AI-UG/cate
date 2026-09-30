@@ -134,6 +134,9 @@ async function persistSession(): Promise<void> {
     if (panels) {
       const cwdPromises: { id: string; promise: Promise<string | null> }[] = []
       for (const panel of Object.values(panels)) {
+        // An Agent panel's explicit cwd (a subfolder or extra root) rides the
+        // same field so it reopens its thread against the same checkout.
+        if (panel.type === 'agent' && panel.cwd) terminalCwds[panel.id] = panel.cwd
         if (panel.type !== 'terminal') continue
         const entry = terminalRegistry.getEntry(panel.id)
         if (entry?.ptyId) {

@@ -180,7 +180,13 @@ export interface ReviewPanelState {
     fullFile: boolean
     advancedPreview: boolean
   }
+  /** Git paths, or `${recordId}:${path}` for recorded agent edits. */
   collapsedFiles?: string[]
+  /** Git comparisons: files shown in full, and per-file context line counts. */
+  expandedFiles?: string[]
+  contextLines?: Record<string, number>
+  /** Agent changes: show every recorded edit instead of only active ones. */
+  showHistory?: boolean
   notes?: GitReviewNote[]
   sourceAgent?: { runId: string; ownerPanelId: string; panelId: string }
   agentReview?: {
@@ -226,6 +232,10 @@ export interface PanelState {
    *  suffix, and `pac://` PAC scripts. See `configureBrowserProxy` in
    *  `src/main/browserProxy.ts`. */
   proxyUrl?: string
+  /** Browser panels only: page zoom factor applied to every tab (default 1). */
+  browserZoom?: number
+  /** Browser panels only: emulated page viewport (default compact). */
+  browserViewport?: BrowserViewport
   /** Review panels only: comparison query, view preferences, expansion, and notes. */
   reviewState?: ReviewPanelState
   /** Editor panels with a markdown file only: render the rendered preview
@@ -238,6 +248,7 @@ export interface PanelState {
   /** Legacy Source Control panel state, read only during session migration. */
   sourceControlState?: Record<string, SourceControlRepositoryState>
   searchState?: PanelSearchSnapshot
+  explorerState?: PanelExplorerSnapshot
   /** Disk baseline for a recoverable dirty editor document (machine-local). */
   editorBaseline?: string
   /** Terminal panels only: explicit working directory override. When unset
@@ -510,8 +521,12 @@ export interface DockWindowInitPayload {
   /** Session-restore marker. When true, the receiving shell arms scrollback
    *  replay for EVERY terminal panel (top-level + canvas children) by its stable
    *  panelId — identical to the main window's restore. Absent/false for a fresh
-   *  live detach, where the terminal arrives live via PANEL_RECEIVE instead. */
+   *  live detach, where the terminal arrives live via `transfer` instead. */
   restore?: boolean
+  /** Live detach only: the accepted snapshot. The shell arms its hand-off
+   *  (PTY, canvas children) BEFORE adopting the record, so no view can spawn a
+   *  fresh PTY first. */
+  transfer?: PanelTransferSnapshot
   /** Session-restore only: per terminal panelId → its last working directory, so
    *  a respawned terminal lands where it was. Keyed by the stable panelId (same
    *  as the main window's snapshot.terminalCwds). */
@@ -935,6 +950,10 @@ export interface BrowserCredentialProfilesResult {
 
 /** One open tab in a browser panel. Main owns its persistent page; this light
  *  record is the renderer-visible restore state. */
+export type BrowserViewport =
+  | { preset: 'compact' }
+  | { preset: 'desktop' | 'mobile' | 'custom'; width: number; height: number }
+
 export interface BrowserTab {
   id: string
   url: string
@@ -1260,6 +1279,8 @@ export interface ProjectPanelRef {
   activeTabId?: string
   /** Browser panels only: per-panel proxy URL (see PanelState.proxyUrl). */
   proxyUrl?: string
+  browserZoom?: number
+  browserViewport?: BrowserViewport
 }
 
 // -----------------------------------------------------------------------------
@@ -1308,6 +1329,7 @@ export interface ProjectSessionPanel {
   /** Legacy Source Control panel state, read only during session migration. */
   sourceControlState?: Record<string, SourceControlRepositoryState>
   searchState?: PanelSearchSnapshot
+  explorerState?: PanelExplorerSnapshot
   /** Disk baseline for a recoverable dirty editor document (machine-local). */
   editorBaseline?: string
   /** Worktree this panel is associated with. Machine-local (worktree ids are
@@ -1759,6 +1781,13 @@ export interface PerfSnapshot {
 }
 
 export interface FileEntryMoved { from: string; to: string }
+/** Files panel tree view, scoped to the root it was captured under. */
+export interface PanelExplorerSnapshot {
+  rootPath: string
+  expandedPaths: string[]
+  selectedPaths: string[]
+}
+
 export interface PanelSearchSnapshot {
   rootPath: string
   query: string

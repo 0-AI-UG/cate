@@ -26,6 +26,7 @@ import { isExternalFileDrag, importDroppedEntries } from '../lib/fs/importExtern
 import { SidebarSectionHeader, SidebarHeaderButton } from './SidebarSectionHeader'
 import { LoadingState } from '../ui/Spinner'
 import { worktreeForPath } from '../lib/worktreeContext'
+import { panelExplorerState, setPanelExplorerState } from '../stores/panelExplorerState'
 
 // Opening a workspace sets its root path optimistically in the renderer, but
 // main only registers that path as an allowed root once the async workspace
@@ -85,6 +86,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
   const [childrenCache, setChildrenCache] = useState<Map<string, FileTreeNodeType[]>>(new Map())
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set())
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
+  // The root the expansion/selection state above was seeded for.
+  const [viewRoot, setViewRoot] = useState<string | null>(null)
   const [rootCreating, setRootCreating] = useState<'file' | 'folder' | null>(null)
   const [rootCreateValue, setRootCreateValue] = useState('')
   const [createRequest, setCreateRequest] = useState<{ type: 'file' | 'folder'; targetDir: string; seq: number } | null>(null)
@@ -262,12 +265,14 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
     setLoadError(null)
     const cacheKey = `${selectedWorkspaceId}:${rootPath}`
     const cached = recentExplorerViews.get(cacheKey)
+    const saved = panelId ? panelExplorerState(panelId, rootPath) : undefined
     childRequests.current.clear()
     setNodes(cached?.nodes ?? [])
     setChildrenCache(cached?.children ?? new Map())
     childrenCacheRef.current = cached?.children ?? new Map()
-    setExpandedPaths(cached?.expanded ?? new Set())
-    setSelectedPaths(cached?.selected ?? new Set())
+    setExpandedPaths(saved ? new Set(saved.expandedPaths) : cached?.expanded ?? new Set())
+    setSelectedPaths(saved ? new Set(saved.selectedPaths) : cached?.selected ?? new Set())
+    setViewRoot(rootPath)
     setLoadingPaths(new Set())
     if (!rootPath || !window.electronAPI) return
     let disposed = false
@@ -322,6 +327,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
     refreshRef.current = refresh
     void refresh.request(rootPath)
     if (cached) refresh.refresh(cached.children.keys())
+    for (const path of saved?.expandedPaths ?? []) void ensureChildrenLoaded(path).catch(() => {})
     const releaseWatch = watchFsRoot(rootPath, refresh.event, selectedWorkspaceId)
     return () => {
       recentExplorerViews.delete(cacheKey)
@@ -332,10 +338,13 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ rootPath, workspaceI
       refreshRef.current = null
       releaseWatch()
     }
-  }, [rootPath, selectedWorkspaceId])
+  }, [rootPath, selectedWorkspaceId, panelId, ensureChildrenLoaded])
   useEffect(() => {
     viewRef.current = { nodes, children: childrenCache, expanded: expandedPaths, selected: selectedPaths }
   }, [nodes, childrenCache, expandedPaths, selectedPaths])
+  useEffect(() => {
+    if (panelId && rootPath && viewRoot === rootPath) setPanelExplorerState(panelId, { rootPath, expandedPaths: [...expandedPaths], selectedPaths: [...selectedPaths] })
+  }, [panelId, rootPath, viewRoot, expandedPaths, selectedPaths])
 
   const loadTree = useCallback((_dirPath: string) => {
     refreshRef.current?.refresh([rootPath, ...childrenCacheRef.current.keys()])

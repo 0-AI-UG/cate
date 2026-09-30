@@ -11,6 +11,8 @@ export async function captureTerminalScrollbacks(
   const savePromises: Array<Promise<void>> = []
   const cwdPromises: Array<Promise<void>> = []
   for (const panel of Object.values(panels)) {
+    // An Agent panel's explicit cwd is saved alongside, like the main window.
+    if (panel.type === 'agent' && panel.cwd) terminalCwds[panel.id] = panel.cwd
     if (panel.type !== 'terminal') continue
     const entry = terminalRegistry.getEntry(panel.id)
     if (!entry) continue

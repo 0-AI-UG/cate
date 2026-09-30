@@ -7,9 +7,11 @@ import type { FsWatchEvent } from '../lib/fs/fsWatchManager'
 const mocks = vi.hoisted(() => ({ watch: vi.fn(), read: vi.fn(), open: vi.fn() }))
 vi.mock('../lib/fs/fsWatchManager', () => ({ watchFsRoot: mocks.watch }))
 vi.mock('../stores/gitStatusStore', () => ({ useGitTreeFor: () => undefined }))
-vi.mock('../stores/appStore', () => ({ useAppStore: (selector: (state: unknown) => unknown) => selector({ selectedWorkspaceId: 'ws', createTerminal: vi.fn(), removeWorkspace: vi.fn() }) }))
+const appState = vi.hoisted(() => ({ selectedWorkspaceId: 'ws', createTerminal: () => {}, removeWorkspace: () => {}, workspaces: [] as unknown[] }))
+vi.mock('../stores/appStore', () => ({ useAppStore: Object.assign((selector: (state: unknown) => unknown) => selector(appState), { getState: () => appState }) }))
 vi.mock('../lib/fs/fileRouting', () => ({ openFileAsPanel: mocks.open }))
 import { FileExplorer } from './FileExplorer'
+import { capturePanelExplorer } from '../stores/panelExplorerState'
 
 afterEach(() => vi.useRealTimers())
 
@@ -97,4 +99,29 @@ it('shows read failures instead of an empty folder and recovers on retry', async
     expect(host.querySelector('[role="alert"]')).toBeNull()
     expect(host.querySelector('[data-filepath="/read-failure/file.ts"]')).not.toBeNull()
   } finally { await act(async () => root.unmount()); host.remove() }
+})
+
+it('restores and records a panel\'s expanded and selected paths', async () => {
+  const file = (path: string, isDirectory = false) => ({ path, name: path.split('/').pop(), isDirectory, fileExtension: 'ts' })
+  mocks.watch.mockReturnValue(vi.fn())
+  mocks.read.mockImplementation(async (path: string) => path === '/saved' ? [file('/saved/dir', true)] : [file('/saved/dir/leaf.ts')])
+  Object.assign(window, { electronAPI: { fsReadDir: mocks.read, runtimeRetryLocal: vi.fn().mockResolvedValue({ ok: true }), onSettingsChanged: () => vi.fn() } })
+  const explorerState = { rootPath: '/saved', expandedPaths: ['/saved/dir'], selectedPaths: ['/saved/dir/leaf.ts'] }
+  const record = { id: 'files', type: 'editor' as const, title: 'Files', isDirty: false, explorerState }
+  appState.workspaces = [{ id: 'ws', panels: { files: record } }]
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<FileExplorer rootPath="/saved" workspaceId="ws" panelId="files" />))
+    expect(host.querySelector('[data-filepath="/saved/dir/leaf.ts"]')).not.toBeNull()
+    expect(capturePanelExplorer(record).explorerState).toEqual(explorerState)
+    await act(async () => host.querySelector<HTMLElement>('[data-filepath="/saved/dir"]')!.click())
+    expect(host.querySelector('[data-filepath="/saved/dir/leaf.ts"]')).toBeNull()
+    expect(capturePanelExplorer(record).explorerState?.expandedPaths).toEqual([])
+  } finally {
+    await act(async () => root.unmount())
+    appState.workspaces = []
+    host.remove()
+  }
 })

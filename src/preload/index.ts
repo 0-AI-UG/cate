@@ -168,7 +168,6 @@ import {
   WINDOW_CLOSE,
   WINDOW_IS_MAXIMIZED,
   WINDOW_MAXIMIZE_STATE,
-  PANEL_RECEIVE,
   PANEL_TRANSFER_ACK,
   WINDOW_CLOSE_FOR_WORKSPACE,
   RUN_ACTION_IN_MAIN,
@@ -838,9 +837,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Panel transfer (cross-window)
   // ---------------------------------------------------------------------------
 
-  onPanelReceive(callback: (snapshot: unknown) => void): () => void {
-    return createIpcListener(PANEL_RECEIVE, callback)
-  },
 
   // ---------------------------------------------------------------------------
   // Cross-window drag-and-drop

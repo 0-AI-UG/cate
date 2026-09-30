@@ -297,7 +297,7 @@ export function DockTabBar(props: DockTabBarProps) {
                 className="min-w-0 flex-1 truncate"
                 running={agentInfoByPanel[panelId]?.state === 'running'}
                 worktreeColor={worktreeColorByPanel[panelId]}
-              >{getPanelTitle(panelId)}</AgentActivityTitle>
+              >{getPanelTitle(panelId)}{panel?.isDirty ? ' •' : ''}</AgentActivityTitle>
             )}
             <PanelInteractionDot panelId={panelId} />
             {agentInfoByPanel[panelId]?.state === 'waitingForInput' && (

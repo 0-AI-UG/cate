@@ -19,7 +19,7 @@ export async function confirmCloseDirtyPanels(
 
   const fileName =
     dirty.length === 1
-      ? dirty[0].title.replace(/\s•\s*$/, '').trim()
+      ? dirty[0].title.trim()
       : `${dirty.length} files`
 
   const filePath = dirty.length === 1 ? dirty[0].filePath : undefined
