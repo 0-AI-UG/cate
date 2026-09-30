@@ -167,7 +167,8 @@ describe('windowPanelSync — canvas child parentCanvasId', () => {
       selectedWorkspaceId: ws,
     } as any)
     const status = useStatusStore.getState()
-    status.setAgentState(ws, 'a1', 'running', 'Claude Code')
+    status.setAgentState(ws, 'a1', 'running')
+    status.setAgentId(ws, 'a1', 'claude-code')
     status.setAgentPresent(ws, 'a1', true)
 
     const stop = setupWindowPanelSync()
@@ -181,7 +182,7 @@ describe('windowPanelSync — canvas child parentCanvasId', () => {
     // A status-only change (agent goes from running → awaiting) must re-fire the
     // report even though ws.panels is untouched.
     reports.length = 0
-    useStatusStore.getState().setAgentState(ws, 'a1', 'waitingForInput', 'Claude Code')
+    useStatusStore.getState().setAgentState(ws, 'a1', 'waitingForInput')
     await new Promise((r) => setTimeout(r, 300)) // past the 200ms report debounce
     expect(reports.length).toBeGreaterThan(0)
     byId = Object.fromEntries(reports[reports.length - 1].filter((r) => r.workspaceId === ws).map((r) => [r.panelId, r]))

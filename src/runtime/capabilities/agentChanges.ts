@@ -4,8 +4,8 @@ import { realpathSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { AgentId } from '../../shared/agents'
-import { AGENTS } from '../../shared/agents'
-import type { AgentHookEvent } from '../../shared/agentHooks'
+import { agentIdForT3Provider } from '../../shared/agents'
+import { AGENT_HOOK_SPECS, type AgentHookEvent, type AgentToolCall } from '../../shared/agentHooks'
 import { summarizeAgentChanges, type AgentChangeRecord } from '../../shared/agentChanges'
 import { filesFromPatch, filesFromTool, object, string } from './agentChangeEdits'
 import { writeJsonExclusive } from '../../shared/atomicFile'
@@ -141,48 +141,31 @@ export function createAgentChangesStore(directory = path.join(
       if (!source || source.kind !== 't3') throw new Error('Unknown chat change source')
       return summarizeAgentChanges((await list(source.cwd)).filter((r) => r.source === 't3' && r.sourceId === threadId && r.turnId === turnId))
     },
-    async ingestHook(sourceId: string, agentId: AgentId, raw: Record<string, unknown>, event: AgentHookEvent | null) {
+    async ingestHook(sourceId: string, agentId: AgentId, event: AgentHookEvent | null, call: AgentToolCall | null) {
       const source = sources.get(sourceId)
       if (!source || source.kind !== 'terminal') return
-      const sessionId = event?.sessionId ?? string(raw.session_id ?? raw.sessionId ?? raw.sessionID ?? raw.conversation_id)
+      const sessionId = event?.sessionId ?? call?.sessionId
       if (!sessionId) return
       const sessionKey = JSON.stringify([agentId, sessionId])
-      const explicitTurn = event?.turnId ?? string(raw.turn_id ?? raw.turnId ?? raw.promptId)
+      const explicitTurn = event?.turnId ?? call?.turnId
       if (event?.kind === 'turn-start') {
-        // OpenCode repeats busy notifications during the same turn.
-        if (agentId !== 'opencode' || !turns.has(sessionKey)) turns.set(sessionKey, explicitTurn ?? randomUUID())
+        if (!AGENT_HOOK_SPECS[agentId].repeatsTurnStart || !turns.has(sessionKey)) turns.set(sessionKey, explicitTurn ?? randomUUID())
       }
       if (event?.kind === 'turn-end' || event?.kind === 'session-end') {
         if (!explicitTurn || !turns.has(sessionKey) || turns.get(sessionKey) === explicitTurn) turns.delete(sessionKey)
         return
       }
-      const name = string(raw.hook_event_name ?? raw.hookEventName ?? raw.event ?? raw.type) ?? ''
-      const cursorEdit = agentId === 'cursor' && name === 'afterFileEdit'
-      const part = object(raw.part)
-      const partState = object(part.state)
-      const completed = cursorEdit || /^(PostToolUse|postToolUse|post_tool_use|post_tool_call)$/.test(name)
-        || (name === 'message.part.updated' && part.type === 'tool' && partState.status === 'completed')
-      if (!completed) return
-      const output = raw.tool_response ?? raw.toolResponse ?? raw.tool_output ?? raw.result ?? partState.metadata
-      if (object(output).is_error === true || object(output).success === false || raw.success === false || raw.error_type
-        || ['error', 'failed', 'declined'].includes(String(object(output).status ?? raw.status))) return
-      const toolName = cursorEdit ? 'Edit' : string(raw.tool_name ?? raw.toolName ?? part.tool) ?? ''
-      // Cursor emits both afterFileEdit (the before/after fragments) and a
-      // generic Write completion (only new contents), without a shared ID.
-      // The dedicated hook is authoritative; storing both duplicates edits.
-      if (agentId === 'cursor' && !cursorEdit && toolName === 'Write') return
-      const input = cursorEdit ? raw : raw.tool_input ?? raw.toolInput ?? raw.args ?? raw.input ?? partState.input
-      const reportedCwd = event?.cwd ?? string(raw.cwd ?? raw.directory)
+      if (!call) return
+      const reportedCwd = event?.cwd || call.cwd
       if (reportedCwd && (!path.isAbsolute(reportedCwd) || reportedCwd.includes('\0'))) return
       const executionCwd = reportedCwd ? canonical(reportedCwd) : source.cwd
       const relativeCwd = path.relative(source.cwd, executionCwd)
       if (relativeCwd === '..' || relativeCwd.startsWith('..' + path.sep) || path.isAbsolute(relativeCwd)) return
-      const files = filesFromTool(source.cwd, toolName, input, output, executionCwd)
+      const files = filesFromTool(source.cwd, call.name, call.input, call.output, executionCwd)
       if (!files.length) return
       const turnId = explicitTurn ?? turns.get(sessionKey) ?? `unscoped:${sessionId}`
-      const eventId = string(raw.tool_use_id ?? raw.toolUseId ?? raw.tool_call_id ?? part.callID ?? raw.event_id) ?? randomUUID()
-      await save({ id: identity(agentId, sessionId, turnId, eventId), agentId, sessionId, turnId,
-        parentSessionId: string(raw.parent_session_id ?? raw.parentSessionId),
+      await save({ id: identity(agentId, sessionId, turnId, call.callId ?? randomUUID()), agentId, sessionId, turnId,
+        parentSessionId: call.parentSessionId,
         source: 'terminal', sourceId, panelId: source.panelId, cwd: source.cwd,
         createdAt: new Date().toISOString(), mode: 'operation', files })
     },
@@ -191,9 +174,8 @@ export function createAgentChangesStore(directory = path.join(
       if (!source || source.kind !== 't3') throw new Error('Unknown chat change source')
       const event = object(value)
       const payload = object(event.payload)
-      const provider = event.provider === 'claude' ? 'claude-code' : event.provider
-      if (!AGENTS.some((agent) => agent.id === provider)) return
-      const agentId = provider as AgentId
+      const agentId = typeof event.provider === 'string' ? agentIdForT3Provider(event.provider) : null
+      if (!agentId) return
       const threadId = string(event.threadId)
       const turnId = string(event.turnId)
       if (!threadId || !turnId) return

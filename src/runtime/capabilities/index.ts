@@ -16,7 +16,7 @@ import { createVcsCapability } from './vcs'
 import { createProcessCapability, snapshotProcessTree, type ProcessCapability } from './process'
 import { createAgentPresenceTracker } from './agentPresence'
 import { resolveShell } from './shellResolver'
-import { createAgentHooksCapability, type AgentHooksCapability } from './agentHooks'
+import { createAgentHooksCapability, withoutInheritedHookIdentity, type AgentHooksCapability } from './agentHooks'
 import { createServerCapability, type ServerCapability } from './server'
 import { createTunnelCapability, type TunnelCapability } from './tunnel'
 import {
@@ -171,8 +171,7 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
   }
 
   const env = config.env ?? (() => process.env)
-  const cleanEnv = () =>
-    Object.fromEntries(Object.entries(env()).filter(([, v]) => v !== undefined)) as Record<string, string>
+  const cleanEnv = () => withoutInheritedHookIdentity(env())
   // scopeId here is only the fallback for registering discovered worktree
   // roots; every vcs cwd is validated against the CALLER's access.scopeId.
   const vcs = createVcsCapability({ env, scopeId: config.id })
@@ -207,7 +206,14 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
         agentHooks.envForPty(ptyId, env, config, cwd, baseCwd, launchedAgentId),
       prepareWorkspace: (cwd, config, baseCwd, launchedAgentId) => agentHooks.prepareWorkspace(cwd, config, baseCwd, launchedAgentId),
     },
-    agentPresence,
+    agentPresence: {
+      presenceFor: (id, tree) => {
+        const presence = agentPresence.presenceFor(id, tree)
+        if (presence.endedAgentPid !== undefined) agentHooks.noteAgentExited(id)
+        return presence
+      },
+      drop: (id) => agentPresence.drop(id),
+    },
   })
 
   const validatePtyCwd = (cwd: string, scopeId?: string): void => {
@@ -253,6 +259,7 @@ export function buildDaemonRuntime(config: DaemonRuntimeConfig): DaemonRuntime {
       bindChanges: (cwd, threadId, panelId, access) => agentHooks.bindChanges(validateCwd(cwd, access?.ownerWindowId, access?.scopeId), threadId, panelId),
       subscribe: (onEvent) => agentHooks.subscribe(onEvent),
       inspectWorkspace: (cwd) => agentHooks.inspectWorkspace(cwd),
+      readConversation: (session) => agentHooks.readConversation(session),
       setPromptContext: async (terminalId, context) => { agentHooks.setPromptContext(terminalId, context) },
     },
     file,

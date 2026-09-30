@@ -387,7 +387,7 @@ export interface ElectronAPI {
     callback: (
       terminalId: string,
       activity: TerminalActivity,
-      agentName: string | null,
+      agentId: import('./agents').AgentId | null,
       agentPresent: boolean,
     ) => void,
   ): () => void

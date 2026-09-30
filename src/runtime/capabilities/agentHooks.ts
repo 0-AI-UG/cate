@@ -47,9 +47,10 @@ import path from 'path'
 import { chmod, mkdir, open, readFile, stat, unlink, writeFile } from 'fs/promises'
 import { AGENTS, type AgentId } from '../../shared/agents'
 import { createAgentChangesStore, type AgentChangeSource } from './agentChanges'
-import { AGENT_TITLE_RESOLVERS, createAgentTitleTracker } from './agentTitles'
-import type { AgentTitleResolvers } from './agentTitles/types'
-import { ensureHermesIntegration, inspectHermesIntegration } from './hermesIntegration'
+import type { AgentConversationMessage } from '../../shared/agentConversation'
+import { AGENT_SESSION_STORES, createAgentTitleTracker } from './agentSessions'
+import type { AgentSessionLocator, AgentSessionStores } from './agentSessions/types'
+import { HERMES_PLUGIN_ID, ensureHermesIntegration, inspectHermesIntegration } from './hermesIntegration'
 import { AGENT_APPROVAL_DETECTION, type AgentApprovalDetection } from '../../shared/agentApprovalModes'
 import { readCodexApprovalConfig } from './agentApprovalConfig'
 import {
@@ -59,6 +60,8 @@ import {
   CATE_HOOK_TOKEN_ENV,
   CATE_TERMINAL_ID_ENV,
   agentHookFolder,
+  agentHookInUse,
+  agentHooksEnabled,
   normalizeAgentHookPayload,
   normalizeAgentSourceStartedAt,
   resolveAgentHookMode,
@@ -67,6 +70,11 @@ import {
   type AgentHookEvent,
   type HookInjectionContext,
 } from '../../shared/agentHooks'
+
+/** Installers for AgentHookSpec.externalPlugin, keyed by plugin id. */
+const EXTERNAL_PLUGINS: Record<string, { ensure(): Promise<void>; inspect(): Promise<boolean> }> = {
+  [HERMES_PLUGIN_ID]: { ensure: () => ensureHermesIntegration(), inspect: () => inspectHermesIntegration() },
+}
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 
@@ -109,11 +117,17 @@ export interface AgentHooksCapability {
    *  folder is already in the repo (the 'auto' signal), and whether Cate has
    *  injected there. Read-only; runs on the host that owns the workspace. */
   inspectWorkspace(cwd: string): Promise<AgentHookAgentState[]>
+  /** Read one agent CLI session's visible conversation from that CLI's own
+   *  session store on this host. Null when the session cannot be found. */
+  readConversation(session: AgentSessionLocator): Promise<AgentConversationMessage[] | null>
   /** Report accepted PTY input on the same ordered stream as lifecycle hooks.
    *  Only terminals identified by a hook emit events; typed text is never sent. */
   noteInput(terminalId: string, data: string): void
   /** Release terminal-owned hook state when a PTY exits or is killed. */
   forgetTerminal(terminalId: string): void
+  /** The terminal's registered agent process exited (presence falling edge):
+   *  its in-flight turn died with it, so no later input may end it. */
+  noteAgentExited(terminalId: string): void
   /** Subscribe to normalized hook events. Returns an unsubscribe. */
   subscribe(onEvent: (event: AgentHookEvent) => void): () => void
   /** The ingestion endpoint (boots it if needed) — for tests/diagnostics.
@@ -143,8 +157,8 @@ export interface AgentHooksDeps {
    *  out: the presence tracker's ancestry walk needs the bridge's process
    *  chain alive, and the bridge holds it exactly until it hears back. */
   onPost?: (post: { terminalId: string; agentId: AgentId; pid?: number; sourceStartedAt?: string }) => void | Promise<void>
-  /** Tests may replace the filesystem-backed CLI resolvers. */
-  titleResolvers?: AgentTitleResolvers
+  /** Tests may replace the filesystem-backed CLI session stores. */
+  sessionStores?: AgentSessionStores
   /** Runtime-host home containing each CLI's session store. */
   homeDir?: string
   /** Tests shorten the bounded post-hook metadata retry window. */
@@ -185,6 +199,45 @@ async function dirExists(dir: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/** agentHooksEnabled for one agent in a checkout, gathering its in-use
+ *  signals: a launch as that agent, or its config folder in the checkout or
+ *  the base workspace checkout. */
+async function hooksEnabled(
+  agentId: AgentId,
+  config: AgentHookConfig | undefined,
+  cwd: string | undefined,
+  baseCwd: string | undefined,
+  launchedAgentId: AgentId | undefined,
+): Promise<boolean> {
+  const mode = resolveAgentHookMode(config, agentId)
+  if (mode !== 'auto') return agentHooksEnabled(mode, false)
+  const folder = agentHookFolder(agentId)
+  const folderPresent = launchedAgentId !== agentId && !!(folder && (
+    (cwd && await dirExists(path.join(cwd, folder))) ||
+    (baseCwd && await dirExists(path.join(baseCwd, folder)))
+  ))
+  return agentHooksEnabled(mode, agentHookInUse(agentId, { folderPresent, launchedAgentId }))
+}
+
+// A daemon launched from inside a Cate terminal inherits that terminal's
+// agent-hook identity. It is never valid for the daemon's own children: a
+// hooked PTY gets a fresh one from envForPty, and anything else (T3 servers
+// and the agent CLIs they run, hook-less shells) must not report as it.
+const INHERITED_HOOK_IDENTITY = new Set([
+  CATE_HOOK_ENDPOINT_ENV, CATE_HOOK_TOKEN_ENV, CATE_TERMINAL_ID_ENV,
+  'CATE_CHANGES_ENDPOINT', 'CATE_CHANGES_TOKEN', 'CATE_CHANGES_SOURCE',
+])
+/** Every key=value a spec's ptyEnv plants, hooks on or off. Matched by value so
+ *  a user's own setting of the same key (a real CODEX_EXEC_SERVER_URL) survives. */
+const PLANTED_PTY_ENV = new Set(Object.values(AGENT_HOOK_SPECS).flatMap((spec) =>
+  [true, false].flatMap((on) => Object.entries(spec.ptyEnv?.(on) ?? {}).map(([k, v]) => `${k}=${v}`))))
+
+/** The daemon's env for its children, minus what a parent Cate terminal planted. */
+export function withoutInheritedHookIdentity(env: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] =>
+    entry[1] !== undefined && !INHERITED_HOOK_IDENTITY.has(entry[0]) && !PLANTED_PTY_ENV.has(`${entry[0]}=${entry[1]}`)))
 }
 
 const shQuote = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
@@ -250,6 +303,8 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
   let ready: Promise<HookState> | null = null
   let disposed = false
   const inputSessions = new Map<string, Pick<AgentHookEvent, 'agentId' | 'sessionId'>>()
+  /** Terminals with a hook-proven turn in flight (and its id, when known). */
+  const activeTurns = new Map<string, string | undefined>()
   const promptContexts = new Map<string, string>()
   const approvalEnvs = new Map<string, NodeJS.ProcessEnv>()
   const approvalCache = new Map<string, { time: number; value: Promise<AgentApprovalDetection> }>()
@@ -281,23 +336,32 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
         hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context },
       })
     }
-    return hook === 'stdout' || hook === 'hermes' ? context : ''
+    return hook === 'plain-text' ? context : ''
   }
 
   let titleTracker: ReturnType<typeof createAgentTitleTracker> | null = null
   const emit = (event: AgentHookEvent): void => {
     if (event.kind === 'session-end') inputSessions.delete(event.terminalId)
-    else if (event.kind !== 'session-title' && event.kind !== 'input-submit' && event.kind !== 'input-interrupt') {
+    else if (event.kind !== 'session-title' && event.kind !== 'input-submit') {
       inputSessions.set(event.terminalId, { agentId: event.agentId, sessionId: event.sessionId })
+    }
+    if (event.kind === 'turn-start') activeTurns.set(event.terminalId, event.turnId)
+    else if (event.kind === 'session-end') activeTurns.delete(event.terminalId)
+    else if (event.kind === 'turn-end') {
+      // A late turn-end for a turn a follow-up already replaced leaves it running.
+      const active = activeTurns.get(event.terminalId)
+      if (!active || !event.turnId || active === event.turnId) activeTurns.delete(event.terminalId)
     }
     for (const cb of listeners) {
       try { cb(event) } catch { /* a subscriber must not break ingestion */ }
     }
     titleTracker?.note(event)
   }
+  const homeDir = deps.homeDir ?? os.homedir()
+  const sessionStores = deps.sessionStores ?? AGENT_SESSION_STORES
   titleTracker = createAgentTitleTracker({
-    homeDir: deps.homeDir ?? os.homedir(),
-    resolvers: deps.titleResolvers ?? AGENT_TITLE_RESOLVERS,
+    homeDir,
+    stores: sessionStores,
     retryDelaysMs: deps.titleRetryDelaysMs,
     emit,
   })
@@ -372,7 +436,8 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
         sessionId: w.sessionId,
         cwd: w.cwd,
         transcriptPath: w.transcriptPath,
-        raw: { __cateInterruptRecovery: true },
+        interrupted: true,
+        raw: {},
       })
     }
     stopInterruptTimerIfIdle()
@@ -385,14 +450,15 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
   }
 
   /** Arm/disarm the transcript watch off the normalized event stream. A
-   *  turn-start for a false-on-interrupt agent arms it (baselined at the
+   *  turn-start for an agent whose interrupt is recovered from its transcript
+   *  arms it (baselined at the
    *  current transcript size); a real turn-end/session-end disarms it (the
    *  turn ended through a hook — no recovery needed). turn-resume and
    *  permission-wait leave it armed: the turn is still in flight and still
    *  interruptible. */
   const updateInterruptWatch = async (event: AgentHookEvent): Promise<void> => {
-    const rec = AGENT_HOOK_SPECS[event.agentId]?.interruptRecovery
-    if (!rec) return
+    const rec = AGENT_HOOK_SPECS[event.agentId]?.interrupt
+    if (rec?.via !== 'transcript') return
     switch (event.kind) {
       case 'turn-start':
         if (!event.transcriptPath) return
@@ -447,7 +513,8 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
             turnId?: string
           }
           if (req.url === '/prompt-context') {
-            if (body.agentId !== 'opencode' || typeof body.terminalId !== 'string'
+            const hook = AGENTS.find((agent) => agent.id === body.agentId)?.promptContextHook
+            if (hook !== 'endpoint' || typeof body.terminalId !== 'string'
               || !tokenMatches(req.headers.authorization, secret, body.terminalId)) {
               res.statusCode = 401; res.end(); return
             }
@@ -509,12 +576,16 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
                   ? (await approvalConfig(event.cwd, approvalEnvs.get(event.terminalId))).mode : 'unknown'
               }
               if (disposed) return
-              if (event?.agentId === 'hermes' && typeof body.pid === 'number' && Number.isInteger(body.pid) && body.pid > 0) {
+              // An in-process hook posts from the agent itself, so its pid and
+              // start clock identify which agent process the event came from.
+              if (event && AGENTS.find((agent) => agent.id === event.agentId)?.hookProcess === 'self'
+                && typeof body.pid === 'number' && Number.isInteger(body.pid) && body.pid > 0) {
                 event.sourcePid = body.pid
                 event.sourceStartedAt = normalizeAgentSourceStartedAt(body.processStartedAt)
               }
-              if (agentId in AGENT_HOOK_SPECS) {
-                try { await changes.ingestHook(terminalId, agentId as AgentId, body.payload as Record<string, unknown>, event) }
+              const spec = AGENT_HOOK_SPECS[agentId as AgentId]
+              if (spec) {
+                try { await changes.ingestHook(terminalId, agentId as AgentId, event, spec.toolCall(body.payload as Record<string, unknown>)) }
                 catch (error) { console.warn('[agent changes] Could not save reported edit', error) }
               }
               if (event) {
@@ -622,7 +693,11 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
         const session = inputSessions.get(terminalId)
         if (!session || disposed) return
         if (submit) emit({ terminalId, ...session, kind: 'input-submit', raw: {} })
-        if (interrupt) emit({ terminalId, ...session, kind: 'input-interrupt', raw: {} })
+        // An agent that reports neither a hook nor a transcript marker on
+        // interrupt ends its hook-proven turn on this Ctrl-C edge instead.
+        if (interrupt && activeTurns.has(terminalId) && AGENT_HOOK_SPECS[session.agentId]?.interrupt.via === 'input') {
+          emit({ terminalId, ...session, kind: 'turn-end', turnId: activeTurns.get(terminalId), interrupted: true, raw: {} })
+        }
       }
       // Config inspection can be asynchronous; input must not overtake the
       // permission event that prompted the user's response.
@@ -632,8 +707,12 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
     forgetTerminal(terminalId) {
       titleTracker?.forget(terminalId)
       inputSessions.delete(terminalId)
+      activeTurns.delete(terminalId)
       promptContexts.delete(terminalId)
       approvalEnvs.delete(terminalId)
+    },
+    noteAgentExited(terminalId) {
+      activeTurns.delete(terminalId)
     },
     setPromptContext(terminalId, context) {
       if (context) promptContexts.set(terminalId, context)
@@ -659,40 +738,10 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       out[CATE_HOOK_ENDPOINT_ENV] = state.url
       out[CATE_HOOK_TOKEN_ENV] = hookTokenForTerminal(state.secret, ptyId)
       out[CATE_TERMINAL_ID_ENV] = ptyId
-      // Codex's shared app-server daemon launches hooks with the daemon's
-      // environment, so a hook cannot identify the terminal that submitted a
-      // prompt. An explicitly present (but empty) executor URL makes Codex
-      // use its local executor and embedded app-server, preserving this PTY's
-      // hook identity for a plain `codex` invocation. Respect a user-selected
-      // executor URL and leave workspaces without Codex hooks alone.
-      const codexMode = resolveAgentHookMode(config, 'codex')
-      const codexFolder = agentHookFolder('codex')
-      const codexConfigured = codexMode === 'on' || (
-        codexMode === 'auto' && (
-          launchedAgentId === 'codex' || !!(
-            cwd && codexFolder && (
-              await dirExists(path.join(cwd, codexFolder)) ||
-              (baseCwd ? await dirExists(path.join(baseCwd, codexFolder)) : false)
-            )
-          )
-        )
-      )
-      if (codexConfigured && out.CODEX_EXEC_SERVER_URL === undefined) {
-        out.CODEX_EXEC_SERVER_URL = ''
+      for (const agent of AGENTS) {
+        const extra = AGENT_HOOK_SPECS[agent.id].ptyEnv?.(await hooksEnabled(agent.id, config, cwd, baseCwd, launchedAgentId))
+        for (const [key, value] of Object.entries(extra ?? {})) out[key] ??= value
       }
-      const hermesMode = resolveAgentHookMode(config, 'hermes')
-      const hermesFolder = agentHookFolder('hermes')
-      const hermesConfigured = hermesMode === 'on' || (
-        hermesMode === 'auto' && (
-          launchedAgentId === 'hermes' || !!(
-            cwd && hermesFolder && (
-              await dirExists(path.join(cwd, hermesFolder)) ||
-              (baseCwd ? await dirExists(path.join(baseCwd, hermesFolder)) : false)
-            )
-          )
-        )
-      )
-      out.CATE_HERMES_HOOKS = hermesConfigured ? '1' : '0'
       return out
     },
 
@@ -714,18 +763,10 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       for (const agent of AGENTS) {
         const spec = AGENT_HOOK_SPECS[agent.id]
         const mode = resolveAgentHookMode(config, agent.id)
+        const enabled = await hooksEnabled(agent.id, config, cwd, autoBaseCwd, launchedAgentId)
         if (spec.externalPlugin) {
-          if (mode !== 'off') {
-            const folder = agentHookFolder(agent.id)
-            const configured = mode === 'on' || launchedAgentId === agent.id || !!(
-              folder && (
-                await dirExists(path.join(cwd, folder)) ||
-                (autoBaseCwd && await dirExists(path.join(autoBaseCwd, folder)))
-              )
-            )
-            if (configured && agent.id === 'hermes') {
-              try { await ensureHermesIntegration() } catch { /* hooks must not block a terminal */ }
-            }
+          if (enabled) {
+            try { await EXTERNAL_PLUGINS[spec.externalPlugin.id]?.ensure() } catch { /* hooks must not block a terminal */ }
           }
           continue
         }
@@ -746,19 +787,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
           }
           continue
         }
-        // 'auto': inject when the agent's config folder exists in this checkout
-        // or the base workspace checkout (a "used here" signal shared by linked
-        // worktrees). 'on': always inject.
-        if (mode === 'auto') {
-          const folder = agentHookFolder(agent.id)
-          if (folder) {
-            const presentHere = await dirExists(path.join(cwd, folder))
-            const presentAtBase = !presentHere && autoBaseCwd
-              ? await dirExists(path.join(autoBaseCwd, folder))
-              : false
-            if (!presentHere && !presentAtBase) continue
-          }
-        }
+        if (!enabled) continue
         const ctx = state.contexts.get(agent.id)!
         for (const pf of spec.projectFiles) {
           const filePath = path.join(cwd, pf.relPath)
@@ -783,6 +812,16 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       if (excludeRels.length > 0) await ensureGitExcluded(cwd, excludeRels)
     },
 
+    async readConversation(session) {
+      const store = sessionStores[session.agentId]
+      if (!store) return null
+      try {
+        return await store.conversation({ session, homeDir })
+      } catch {
+        return null
+      }
+    },
+
     async inspectWorkspace(cwd) {
       approvalCache.clear()
       const repoLocal = isRepoLocalCwd(cwd, os.homedir())
@@ -805,7 +844,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
               }
             } catch { /* absent — not injected via this path */ }
           }
-          if (agent.id === 'hermes') injected = await inspectHermesIntegration()
+          if (spec.externalPlugin) injected = await EXTERNAL_PLUGINS[spec.externalPlugin.id]?.inspect() ?? false
         }
         states.push({
           agentId: agent.id, displayName: agent.displayName, folderPresent, injected,
@@ -838,6 +877,7 @@ export function createAgentHooksCapability(deps: AgentHooksDeps = {}): AgentHook
       inputSessions.clear()
       approvalEnvs.clear()
       approvalCache.clear()
+      activeTurns.clear()
       interruptWatches.clear()
       if (interruptTimer) {
         clearInterval(interruptTimer)

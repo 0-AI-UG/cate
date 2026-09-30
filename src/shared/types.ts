@@ -481,9 +481,15 @@ export interface WindowPanelReport {
   /** True only when the surface is at its normal prompt, not an approval or
    * structured-input interruption that also appears as waitingForInput. */
   agentCanReceivePrompt?: boolean
-  /** Agent display name (gated on the agent still being present), so the owner's
-   *  agent logo can be resolved for the detached row's icon. */
+  /** The agent CLI open in this panel (gated on the agent still being
+   *  present), so other windows resolve its logo by id. */
+  agentId?: import('./agents').AgentId | null
+  /** Display label for the agent, derived from `agentId` by the owner. */
   agentName?: string | null
+  /** The agent session this terminal/agent panel hosts, the same shape for
+   *  terminal CLI agents and T3 threads, so main can address its conversation
+   *  without asking the owner window. */
+  agentSession?: import('./agentConversation').AgentSessionRef
   /** Whether the owner window's scan found listening ports for this panel, so a
    *  detached row shows the same port dot as a local one. */
   hasPorts?: boolean
@@ -1352,6 +1358,7 @@ export type CanvasGridStyle = 'dots' | 'lines' | 'none'
 
 export type NotificationAction =
   | { type: 'focusTerminal'; workspaceId: string; terminalId: string }
+  | { type: 'focusPanel'; workspaceId: string; panelId: string }
 
 // -----------------------------------------------------------------------------
 // App settings — mirrors AppSettings.swift with all defaults

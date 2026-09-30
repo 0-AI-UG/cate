@@ -28,6 +28,8 @@ import type {
   GitFileContent,
 } from '../../shared/types'
 import type { AgentHookAgentState, AgentHookConfig, AgentHookEvent } from '../../shared/agentHooks'
+import type { AgentConversationMessage, AgentSessionLocator } from '../../shared/agentConversation'
+import type { AgentId } from '../../shared/agents'
 import type { RuntimeId } from '../../shared/runtimeLocator'
 
 /** Trusted command sentinel resolved by the runtime host to its bundled Node. */
@@ -102,7 +104,7 @@ export interface PtyHandle {
  *  override stay in shell.ts (session-layer concerns). */
 export interface PtyActivity {
   activity: TerminalActivity
-  agentName: string | null
+  agentId: AgentId | null
   agentPresent: boolean
   /** Process identity for a confirmed falling edge. Used to avoid clearing a
    *  resume stamp belonging to a newer overlapping agent process. */
@@ -166,6 +168,9 @@ export interface AgentHookHost {
   /** Inspect a workspace's per-agent hook-file injection state (for the
    *  Settings UI) on this host — correct for remote workspaces too. */
   inspectWorkspace(cwd: string): Promise<AgentHookAgentState[]>
+  /** Read an agent CLI session's visible conversation from that CLI's own
+   *  session store on this host (null when it cannot be found). */
+  readConversation(session: AgentSessionLocator): Promise<AgentConversationMessage[] | null>
 }
 
 export interface ServerStartOptions {

@@ -387,7 +387,7 @@ export function createProcessCapability(deps: ProcessDeps): ProcessCapability {
         // this same snapshot — same 1 Hz authority for "agent gone" as
         // before, but anchored to a pid the agent itself proved, not to a
         // position in the pty's tree.
-        const presence = deps.agentPresence?.presenceFor(id, tree) ?? { agentName: null, agentPresent: false }
+        const presence = deps.agentPresence?.presenceFor(id, tree) ?? { agentId: null, agentPresent: false }
         out[id] = { activity: activityForPid(pid, tree), ...presence }
       }
       return out

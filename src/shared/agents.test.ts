@@ -27,6 +27,12 @@ describe('matchAgentDef', () => {
     expect(matchAgentDef('hermes')?.id).toBe('hermes')
     expect(matchAgentDef('node')).toBeNull()
   })
+
+  it('matches claude by exact command name, not prefix', () => {
+    expect(matchAgentDef('claude-code')?.id).toBe('claude-code')
+    expect(matchAgentDef('claude-foo')).toBeNull()
+    expect(matchAgentDef('claudette')).toBeNull()
+  })
 })
 
 describe('resumeCommandForAgent', () => {

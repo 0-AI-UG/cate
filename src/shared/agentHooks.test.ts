@@ -235,7 +235,7 @@ describe('codex spec', () => {
       kind: 'turn-end',
       turnId: 'turn-1',
     })
-    expect(spec.interruptRecovery).toBeUndefined()
+    expect(spec.interrupt).toEqual({ via: 'hook' })
   })
 })
 
@@ -581,28 +581,41 @@ describe('normalizeAgentHookPayload', () => {
 // live half is the "user interrupt pushes …" tests in agentHookContracts.
 // itest.ts. Kept here (a plain unit assertion) so a careless flip is caught in
 // the normal suite, not only in the opt-in live run.
-describe('reportsTurnEndOnInterrupt', () => {
+describe('permission detail', () => {
+  test('each CLI names what it asks permission for', () => {
+    expect(normalizeAgentHookPayload('claude-code', 't', { hook_event_name: 'Notification', notification_type: 'permission_prompt', session_id: 's', message: 'Claude needs your permission' })?.permission)
+      .toBe('Claude needs your permission')
+    expect(normalizeAgentHookPayload('codex', 't', { hook_event_name: 'PermissionRequest', session_id: 's', tool_name: 'Bash', tool_input: { command: ' touch x ' } })?.permission)
+      .toBe('touch x')
+    expect(normalizeAgentHookPayload('codex', 't', { hook_event_name: 'PermissionRequest', session_id: 's', tool_name: 'Bash' })?.permission).toBe('Bash')
+    expect(normalizeAgentHookPayload('opencode', 't', { type: 'permission.asked', sessionID: 's', metadata: { command: 'rm -rf ./dist' } })?.permission)
+      .toBe('rm -rf ./dist')
+    expect(normalizeAgentHookPayload('opencode', 't', { type: 'permission.asked', sessionID: 's' })).not.toHaveProperty('permission')
+  })
+})
+
+describe('interrupt', () => {
   test('every agent declares its verified interrupt behavior', () => {
     const table = Object.fromEntries(
       (Object.keys(AGENT_HOOK_SPECS) as Array<keyof typeof AGENT_HOOK_SPECS>).map((id) => [
         id,
-        AGENT_HOOK_SPECS[id].reportsTurnEndOnInterrupt,
+        AGENT_HOOK_SPECS[id].interrupt.via,
       ]),
     )
     expect(table).toEqual({
       // Claude pushes nothing on interrupt; its transcript marker recovers it.
-      'claude-code': false,
+      'claude-code': 'transcript',
       // Push a mapped native turn-end on interrupt.
-      codex: true,
-      cursor: true,
-      opencode: true,
+      codex: 'hook',
+      cursor: 'hook',
+      opencode: 'hook',
       // Expected self-heal via stop{cancelled}; streaming path not yet
       // observed live (test account quota) — see grokSpec.
-      grok: true,
-      hermes: true,
-      // Verified live: Ctrl-C returns to Kiro's prompt without a Stop hook;
-      // renderer terminal input supplies the scoped recovery edge.
-      kiro: false,
+      grok: 'hook',
+      hermes: 'hook',
+      // Verified live: Ctrl-C returns to Kiro's prompt without a Stop hook or
+      // transcript marker; the runtime recovers it from the Ctrl-C input edge.
+      kiro: 'input',
     })
   })
 })

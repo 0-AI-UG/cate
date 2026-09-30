@@ -4,7 +4,7 @@ import { inputCls } from '../ui/Modal'
 import { SettingRow, Toggle, TextInput, Select, SecondaryButton } from './SettingsComponents'
 import { useSettingsSearch } from './SettingsSearchContext'
 import { LoadingState } from '../ui/Spinner'
-import { getAgentLogo } from '../lib/agent/agentLogos'
+import { getAgentLogoById } from '../lib/agent/agentLogos'
 import { T3_AGENTS } from '../../shared/agents'
 import { agentProductCopy, providerUpdateFeedback } from './providerUpdateFeedback'
 import { errorMessage } from '../lib/errorMessage'
@@ -112,7 +112,7 @@ export function AgentProviderConfiguration({ workspaceId, cwd, onChanged, authen
         <div className="mt-3 flex flex-wrap gap-2">
           {Object.entries(instances).map(([id, instance]) => {
             const label = instance.displayName || (drivers.includes(id) ? names[instance.driver] : `${names[instance.driver] || instance.driver} · ${id}`)
-            const logo = getAgentLogo(names[instance.driver])
+            const logo = getAgentLogoById(T3_AGENTS.find((agent) => agent.t3.driverId === instance.driver)?.id)
             return <button
               key={id}
               type="button"
