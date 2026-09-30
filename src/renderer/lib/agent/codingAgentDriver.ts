@@ -124,7 +124,7 @@ function runStatus(workspaceId: string, panelId: string, run: CodingAgentRun): C
     terminalAlive: entry?.alive === true,
     terminalFailed: failure !== null,
     agentState: runtime?.agentState,
-    agentPresent: runtime?.agentPresent === true || Boolean(runtime?.agentName),
+    agentPresent: runtime?.agentPresent === true || Boolean(runtime?.agentId),
   })
 }
 

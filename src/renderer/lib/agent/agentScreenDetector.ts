@@ -30,8 +30,9 @@
 // =============================================================================
 
 import { useStatusStore, workspaceIdForTerminal } from '../../stores/statusStore'
-import { sendOsNotification } from '../notifications/osNotificationSend'
+import { notifyAgentNeedsAttention } from './agentNotifications'
 import type { AgentHookEvent } from '../../../shared/agentHooks'
+import { AGENTS } from '../../../shared/agents'
 import type { AgentState } from '../../../shared/types'
 import type { AgentApprovalMode } from '../../../shared/agentApprovalModes'
 
@@ -43,11 +44,15 @@ export interface DetectorSignals {
   /** A turn is in flight (hook turn-start seen more recently than a turn-end). */
   active: boolean
   permission?: 'checking' | 'waiting' | null
+  /** Present only by foreground process name; no hook has spoken for this
+   *  launch, so idle vs busy is unknown. */
+  processOnly?: boolean
 }
 
 export function resolveAgentState(s: DetectorSignals): AgentState {
   if (!s.present && s.wasPresent) return 'finished'
   if (!s.present) return 'notRunning'
+  if (s.processOnly) return 'notRunning'
   if (s.permission === 'waiting') return 'waitingForInput'
   if (s.active) return 'running'
   return 'waitingForInput'
@@ -62,6 +67,9 @@ export function resolveAgentState(s: DetectorSignals): AgentState {
 interface Tracker {
   present: boolean
   wasPresent: boolean
+  /** A hook (event or the scan's hook-registered pid) proved this launch.
+   *  Without it presence is process-name only: state unknown, never idle. */
+  hookProven: boolean
   /** Current CLI session identity. Used to make a deferred/replayed
    *  session-start idempotent instead of letting it overwrite a turn event
    *  from the same session that already arrived. */
@@ -89,6 +97,7 @@ function trackerFor(terminalId: string): Tracker {
     t = {
       present: false,
       wasPresent: false,
+      hookProven: false,
       sessionId: null,
       agentId: null,
       activeTurnId: null,
@@ -122,37 +131,23 @@ function commit(terminalId: string, state: AgentState, notify: boolean, permissi
 
   t.state = state
   const status = useStatusStore.getState()
-  const agentName = status.workspaces[workspaceId]?.terminals[terminalId]?.agentName ?? null
-  status.setAgentState(workspaceId, terminalId, state, agentName)
+  const agentId = status.workspaces[workspaceId]?.terminals[terminalId]?.agentId ?? null
+  status.setAgentState(workspaceId, terminalId, state)
   window.electronAPI?.shellReportAgentScreenState?.(terminalId, state)
 
   if (notify && state === 'waitingForInput') {
-    const displayName = agentName ?? 'Agent'
-    sendOsNotification({
-      title: permissionBody ? `${displayName} needs permission` : `${displayName} needs input`,
-      body: permissionBody ?? `${displayName} is waiting for your response.`,
+    notifyAgentNeedsAttention({
+      agentName: AGENTS.find((agent) => agent.id === agentId)?.displayName ?? null,
       action: { type: 'focusTerminal', workspaceId, terminalId },
+      permission: permissionBody,
     })
   }
 }
 
 /** Short human line for the permission notification: WHAT the agent wants,
- *  from the per-CLI raw payload (pinned live in agentHookContracts.itest.ts). */
+ *  as its hook spec extracted it (pinned live in agentHookContracts.itest.ts). */
 function permissionBodyFor(event: AgentHookEvent): string {
-  const raw = event.raw
-  let detail: unknown
-  switch (event.agentId) {
-    case 'claude-code':
-      detail = raw.message // "Claude needs your permission"
-      break
-    case 'codex':
-      detail = (raw.tool_input as { command?: unknown } | undefined)?.command ?? raw.tool_name
-      break
-    case 'opencode':
-      detail = (raw.metadata as { command?: unknown } | undefined)?.command
-      break
-  }
-  const text = typeof detail === 'string' && detail.trim() ? detail.trim() : 'Waiting for your approval.'
+  const text = event.permission ?? 'Waiting for your approval.'
   return text.length > 120 ? `${text.slice(0, 119)}…` : text
 }
 
@@ -170,6 +165,7 @@ function recompute(terminalId: string, notifyOnIdle = false, permissionBody?: st
     active: t.hookTurnActive,
     permission: t.permission === 'checking' && t.agentId === 'codex' && t.approvalMode === 'manual'
       ? 'waiting' : t.permission,
+    processOnly: !t.hookProven,
   })
   commit(terminalId, raw, notifyOnIdle, permissionBody)
 }
@@ -188,12 +184,10 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
   if (event.kind === 'session-title') return
   t.agentId = event.agentId
   t.sessionId ??= event.sessionId
+  t.hookProven = true
   switch (event.kind) {
     case 'input-submit':
       noteAgentInputSubmitted(event.terminalId)
-      break
-    case 'input-interrupt':
-      noteAgentInterruptSubmitted(event.terminalId)
       break
     case 'turn-start':
       t.sessionId = event.sessionId
@@ -218,7 +212,9 @@ export function noteAgentHookEvent(event: AgentHookEvent): void {
       t.activeTurnId = null
       t.hookTurnActive = false
       t.permission = null
-      recompute(event.terminalId, true)
+      // A turn-end the runtime recovered from a user interrupt is silent: the
+      // user is already at the terminal.
+      recompute(event.terminalId, !event.interrupted)
       break
     case 'session-end':
       // Like turn-end for state (the process may keep running after /clear),
@@ -284,30 +280,20 @@ export function noteAgentInputSubmitted(terminalId: string): void {
  * mid-turn permission prompt even though both states render as "needs input". */
 export function canAgentReceivePrompt(terminalId: string): boolean {
   const tracker = trackers.get(terminalId)
-  return Boolean(tracker?.present && !tracker.hookTurnActive && !tracker.permission)
+  return Boolean(tracker?.present && tracker.hookProven && !tracker.hookTurnActive && !tracker.permission)
 }
 
-/** Kiro 2.19's v3 TUI returns to its input prompt on Ctrl-C but emits no Stop
- * hook and exposes no transcript marker. Terminal input is therefore its only
- * deterministic interrupt boundary. Scope this recovery to a hook-proven,
- * active Kiro turn so Ctrl-C in the shell or another CLI cannot change state. */
-export function noteAgentInterruptSubmitted(terminalId: string): void {
-  const t = trackers.get(terminalId)
-  if (t?.agentId !== 'kiro' || !t.hookTurnActive) return
-  t.activeTurnId = null
-  t.hookTurnActive = false
-  t.permission = null
-  recompute(terminalId)
-}
-
-/** Main's scan reported whether the hook-registered agent pid is alive. The
+/** Main's scan reported whether the hook-registered agent pid is alive, or
+ *  (`processOnly`) that the agent was seen only as the foreground process. The
  *  agent name is written to statusStore by the caller (useProcessMonitor)
  *  BEFORE this runs, so commit reads a current name. */
-export function noteAgentPresence(terminalId: string, present: boolean): void {
+export function noteAgentPresence(terminalId: string, present: boolean, processOnly = false): void {
   const t = trackerFor(terminalId)
   t.wasPresent = t.present
   t.present = present
+  if (present && !processOnly) t.hookProven = true
   if (!present) {
+    t.hookProven = false
     // The process is gone; any in-flight turn died with it. The next launch
     // starts idle and re-proves itself through fresh hook events.
     t.activeTurnId = null
@@ -338,6 +324,5 @@ export function applyRemoteAgentScreenState(terminalId: string, state: AgentStat
   const status = useStatusStore.getState()
   const workspaceId = workspaceIdForTerminal(terminalId)
   if (!workspaceId) return
-  const agentName = status.workspaces[workspaceId]?.terminals[terminalId]?.agentName ?? null
-  status.setAgentState(workspaceId, terminalId, state, agentName)
+  status.setAgentState(workspaceId, terminalId, state)
 }

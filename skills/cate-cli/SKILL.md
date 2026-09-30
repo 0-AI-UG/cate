@@ -167,7 +167,7 @@ TUIs. Never send keys until the panel id and current screen are verified.
 
 ## Agent orchestration
 
-Use `cate agent` to inspect and steer the live agent surfaces already visible in
+Use `cate agent` to observe and steer the live agent surfaces already visible in
 the current workspace. This includes terminal CLI agents and T3 Code panels.
 Discover their panel ids before sending work or after context compaction:
 
@@ -175,19 +175,25 @@ Discover their panel ids before sending work or after context compaction:
 cate agent list
 ```
 
-Send a bounded prompt to a ready panel, inspect its state, or wait for one or
-more panels to become ready:
+Send a bounded prompt to a ready panel, wait for one or more panels to become
+ready, then read the conversation:
 
 ```bash
 cate agent send --panel <panel-id> "Please add the missing regression test"
-cate agent inspect <panel-id>
 cate agent wait <panel-id> [<panel-id>...] --wait-timeout 10000
+cate agent read <panel-id> [--json]
 ```
 
 Panel ids may be the unique short ids printed by `cate agent list`. `wait`
 accepts 5000–60000 milliseconds and may be called with no ids to monitor every
 live agent panel. A successful send delivers the prompt exactly once; the target
 must be at its normal prompt rather than busy or waiting on structured input.
+`read` prints the conversation's user and assistant messages the same way for
+every agent panel: terminal CLI agents are read from that CLI's own session
+store, T3 panels from their thread. `--json` gives `{ panelId, surface, agentId,
+agentName, title, state, session, messages: [{ role, text, createdAt }] }`. A
+terminal whose agent has not reported a session yet fails with `no-agent-session`;
+use `cate terminal read` to see its screen instead.
 
 ## Review panels
 

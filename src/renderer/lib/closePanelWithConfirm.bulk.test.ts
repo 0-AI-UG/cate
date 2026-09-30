@@ -93,7 +93,7 @@ function markRunning(wsId: string, panelId: string, processName: string): void {
           [ptyId]: {
             activity: { type: 'running', processName },
             agentState: 'notRunning',
-            agentName: null,
+            agentId: null,
             agentPresent: false,
             listeningPorts: [],
             cwd: '',

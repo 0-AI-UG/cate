@@ -265,8 +265,8 @@ describe('workspace context menu', () => {
       workspaces: {
         [WS]: {
           terminals: {
-            'pty-b': { activity: { type: 'idle' }, agentState: 'notRunning', agentName: null, agentPresent: false, listeningPorts: [], cwd: '/other' },
-            'pty-a': { activity: { type: 'idle' }, agentState: 'notRunning', agentName: null, agentPresent: false, listeningPorts: [], cwd: '/active' },
+            'pty-b': { activity: { type: 'idle' }, agentState: 'notRunning', agentId: null, agentPresent: false, listeningPorts: [], cwd: '/other' },
+            'pty-a': { activity: { type: 'idle' }, agentState: 'notRunning', agentId: null, agentPresent: false, listeningPorts: [], cwd: '/active' },
           },
         },
       },
@@ -374,7 +374,7 @@ describe('panel-row context menu', () => {
       workspaces: {
         [WS]: {
           terminals: {
-            'pty-1': { activity: { type: 'running', processName: 'vim' }, agentState: 'notRunning', agentName: null, agentPresent: false, listeningPorts: [], cwd: '' },
+            'pty-1': { activity: { type: 'running', processName: 'vim' }, agentState: 'notRunning', agentId: null, agentPresent: false, listeningPorts: [], cwd: '' },
           },
         },
       },

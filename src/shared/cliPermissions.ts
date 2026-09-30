@@ -144,7 +144,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       'cate.codingAgent.review',
       'cate.agent.list',
       'cate.agent.wait',
-      'cate.agent.inspect',
+      'cate.agent.read',
       'cate.review.inspect',
     ],
     read: {
@@ -152,7 +152,7 @@ export const CLI_PERMISSIONS: CliPermissionSurface[] = [
       access: 'Read',
       code: 'agent-read-disabled',
       detail:
-        '`cate agent list / wait / inspect / review` and `cate review inspect` — observe workers, terminal output, and review state.',
+        '`cate agent list / wait / read` and `cate review inspect` — observe workers, their conversations and terminal output, and review state.',
     },
     control: {
       key: 'cliAgentControlEnabled',

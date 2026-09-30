@@ -13,3 +13,22 @@ export function resolveAgentHookMode(
 ): AgentHookMode {
   return config?.[agentId] ?? 'auto'
 }
+
+/** THE rule for whether an agent's Cate hooks are enabled in a checkout.
+ *  'on' always, 'off' never; 'auto' when the agent is in use there: its own
+ *  config folder exists in the checkout or its base workspace checkout, or the
+ *  terminal was launched as that agent. Runtime injection and the renderer's
+ *  readiness checks both decide through this. */
+export function agentHooksEnabled(mode: AgentHookMode, inUse: boolean): boolean {
+  return mode === 'on' || (mode === 'auto' && inUse)
+}
+
+/** THE 'auto' in-use signal, shared by runtime injection and renderer
+ *  readiness: a launch as that agent, or its config folder in the checkout (or
+ *  the base checkout). A profile-wide install (Hermes' plugin) is not use. */
+export function agentHookInUse(
+  agentId: AgentId,
+  signals: { folderPresent: boolean; launchedAgentId?: AgentId },
+): boolean {
+  return signals.launchedAgentId === agentId || signals.folderPresent
+}

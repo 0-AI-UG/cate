@@ -11,6 +11,8 @@ import { TERMINAL_AGENTS, type AgentDef } from '../../../shared/agents'
 import type { AgentHookAgentState } from '../../../shared/agentHooks'
 import { AGENT_APPROVAL_DETECTION, type AgentApprovalDetection } from '../../../shared/agentApprovalModes'
 import {
+  agentHookInUse,
+  agentHooksEnabled,
   resolveAgentHookMode,
   type AgentHookConfig,
 } from '../../../shared/agentHookModes'
@@ -74,12 +76,12 @@ export function evaluateAgentCliHooks(
   fallback?: AgentCliHookState,
 ): AgentCliHookEvaluation {
   const mode = resolveAgentHookMode(hookConfig, state.agent.id)
-  const present = state.injected || state.folderPresent
-  const fallbackPresent = fallback?.injected === true || fallback?.folderPresent === true
+  // The runtime's own rule. No launch here: Auto's pick is by checkout use.
+  const inUse = agentHookInUse(state.agent.id, { folderPresent: state.folderPresent || fallback?.folderPresent === true })
   return {
     mode,
-    ready: mode === 'on' || (mode === 'auto' && (present || fallbackPresent)),
-    autoSkipped: mode === 'auto' && !present && !fallbackPresent,
+    ready: agentHooksEnabled(mode, inUse),
+    autoSkipped: mode === 'auto' && !inUse,
   }
 }
 

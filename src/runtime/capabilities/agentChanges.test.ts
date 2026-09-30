@@ -5,7 +5,7 @@ import os from 'node:os'
 import { createAgentChangesStore } from './agentChanges'
 import { filesFromPatch, filesFromTool } from './agentChangeEdits'
 import { filterAgentChanges, summarizeAgentChanges } from '../../shared/agentChanges'
-import { normalizeAgentHookPayload } from '../../shared/agentHooks'
+import { AGENT_HOOK_SPECS, normalizeAgentHookPayload } from '../../shared/agentHooks'
 import type { AgentId } from '../../shared/agents'
 import { createAgentHooksCapability } from './agentHooks'
 
@@ -23,7 +23,7 @@ describe('reported agent changes', () => {
       { ...base, hook_event_name: 'afterFileEdit', file_path: '/repo/target.txt', edits: [{ old_string: 'before', new_string: 'after' }] },
       { ...base, hook_event_name: 'postToolUse', tool_name: 'Write', tool_use_id: 'call', tool_input: { file_path: '/repo/target.txt', content: 'after\n' }, tool_output: '{"success":true}' },
     ]
-    for (const raw of reverse ? payloads.reverse() : payloads) await store.ingestHook('pty', 'cursor', raw, normalizeAgentHookPayload('cursor', 'pty', raw))
+    for (const raw of reverse ? payloads.reverse() : payloads) await store.ingestHook('pty', 'cursor', normalizeAgentHookPayload('cursor', 'pty', raw), AGENT_HOOK_SPECS['cursor'].toolCall(raw))
     const records = await createAgentChangesStore(directory).list('/repo')
     expect(records).toHaveLength(1)
     expect(records[0]).toMatchObject({ agentId: 'cursor', sessionId: 'cursor-session', panelId: 'panel', files: [{ path: 'target.txt', coverage: 'fragment', additions: 1, deletions: 1 }] })
@@ -34,16 +34,16 @@ describe('reported agent changes', () => {
     store.registerSource('pty', { cwd: '/repo', kind: 'terminal' })
     for (const [before, after] of [['before', 'middle'], ['middle', 'after'], ['before', 'middle']]) {
       const raw = { session_id: 'cursor-session', hook_event_name: 'afterFileEdit', file_path: '/repo/target.txt', edits: [{ old_string: before, new_string: after }] }
-      await store.ingestHook('pty', 'cursor', raw, normalizeAgentHookPayload('cursor', 'pty', raw))
+      await store.ingestHook('pty', 'cursor', normalizeAgentHookPayload('cursor', 'pty', raw), AGENT_HOOK_SPECS['cursor'].toolCall(raw))
     }
     expect(await createAgentChangesStore(directory).list('/repo')).toHaveLength(3)
   })
   it('uses the dedicated Cursor edit hook instead of generic Write, while retaining other tools', async () => {
     const store = createAgentChangesStore(directory)
     store.registerSource('pty', { cwd: '/repo', kind: 'terminal' })
-    await store.ingestHook('pty', 'cursor', { session_id: 'session', hook_event_name: 'postToolUse', tool_name: 'Write', tool_input: { file_path: 'target.txt', content: 'after' } }, null)
+    await store.ingestHook('pty', 'cursor', null, AGENT_HOOK_SPECS.cursor.toolCall({ session_id: 'session', hook_event_name: 'postToolUse', tool_name: 'Write', tool_input: { file_path: 'target.txt', content: 'after' } }))
     expect(await store.list('/repo')).toEqual([])
-    await store.ingestHook('pty', 'cursor', { session_id: 'session', hook_event_name: 'postToolUse', tool_name: 'apply_patch', tool_input: { patch: patch('target.txt') } }, null)
+    await store.ingestHook('pty', 'cursor', null, AGENT_HOOK_SPECS.cursor.toolCall({ session_id: 'session', hook_event_name: 'postToolUse', tool_name: 'apply_patch', tool_input: { patch: patch('target.txt') } }))
     expect(await store.list('/repo')).toHaveLength(1)
   })
   it('joins canonical and symlinked checkout paths into one history', async () => {
@@ -104,8 +104,8 @@ describe('reported agent changes', () => {
       : agentId === 'grok'
         ? { hookEventName: 'post_tool_use', sessionId: 'session', toolName: 'replace_file_content', toolInput: input, toolUseId: 'edit' }
         : { hook_event_name: agentId === 'cursor' ? 'postToolUse' : 'PostToolUse', session_id: 'session', tool_name: 'Edit', tool_input: input, tool_use_id: 'edit' }
-    await store.ingestHook('pty', agentId, raw, normalizeAgentHookPayload(agentId, 'pty', raw))
-    await store.ingestHook('pty', agentId, raw, normalizeAgentHookPayload(agentId, 'pty', raw))
+    await store.ingestHook('pty', agentId, normalizeAgentHookPayload(agentId, 'pty', raw), AGENT_HOOK_SPECS[agentId].toolCall(raw))
+    await store.ingestHook('pty', agentId, normalizeAgentHookPayload(agentId, 'pty', raw), AGENT_HOOK_SPECS[agentId].toolCall(raw))
     const records = await store.list('/repo')
     expect(records).toHaveLength(1)
     expect(records[0]).toMatchObject({ agentId, sessionId: 'session', panelId: 'panel', files: [{ path: 'a.ts' }] })

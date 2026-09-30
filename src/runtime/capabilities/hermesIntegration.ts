@@ -3,15 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { AGENT_HOOK_SPECS } from '../../shared/agentHooks'
 
 const execFileAsync = promisify(execFile)
-const PLUGIN_ID = 'cate-agent-state'
+/** The plugin id Hermes's hook spec declares (AgentHookSpec.externalPlugin). */
+export const HERMES_PLUGIN_ID = AGENT_HOOK_SPECS.hermes.externalPlugin!.id
 const OWNER_FILE = '.cate-managed.json'
-const OWNER_SENTINEL = '{"schema":1,"owner":"Cate","plugin":"cate-agent-state"}'
+const OWNER_SENTINEL = JSON.stringify({ schema: 1, owner: 'Cate', plugin: HERMES_PLUGIN_ID })
 const SAFE_PROFILE = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
-export const HERMES_PLUGIN_MANIFEST = `name: ${PLUGIN_ID}
-version: 2.0.0
+export const HERMES_PLUGIN_MANIFEST = `name: ${HERMES_PLUGIN_ID}
+version: 2.1.0
 description: "Connect Hermes terminal lifecycle, approvals, edits, and context to Cate."
 author: "Cate"
 provides_hooks:
@@ -122,6 +124,9 @@ def register(ctx):
         "post_approval_response", "post_tool_call",
     ):
         ctx.register_hook(name, _callback(name, profile))
+    # Hermes fires no lifecycle hook until the first prompt. Hermes loads this
+    # plugin at launch, so announce the open terminal agent now.
+    _report("cate_open", profile)
 `
 
 function profileArgs(profile?: string): string[] {
@@ -144,7 +149,7 @@ async function runHermes(profile: string | undefined, args: string[]): Promise<s
 async function targetFor(profile?: string): Promise<string> {
   const config = (await runHermes(profile, ['config', 'path'])).trim()
   if (!path.isAbsolute(config)) throw new Error('Hermes returned an invalid profile config path')
-  return path.join(path.dirname(config), 'plugins', PLUGIN_ID)
+  return path.join(path.dirname(config), 'plugins', HERMES_PLUGIN_ID)
 }
 
 async function ownership(target: string): Promise<'missing' | 'managed' | 'foreign'> {
@@ -163,7 +168,7 @@ async function ownership(target: string): Promise<'missing' | 'managed' | 'forei
 export async function inspectHermesIntegration(profile?: string): Promise<boolean> {
   try {
     const rows = JSON.parse(await runHermes(profile, ['plugins', 'list', '--enabled', '--json']))
-    return Array.isArray(rows) && rows.some((row) => row?.name === PLUGIN_ID && row?.status === 'enabled')
+    return Array.isArray(rows) && rows.some((row) => row?.name === HERMES_PLUGIN_ID && row?.status === 'enabled')
   } catch {
     return false
   }
@@ -176,8 +181,8 @@ export async function ensureHermesIntegration(profile?: string): Promise<void> {
   const wasEnabled = owner === 'managed' && await inspectHermesIntegration(profile)
   const pluginsDir = path.dirname(target)
   await mkdir(pluginsDir, { recursive: true })
-  const staging = await mkdtemp(path.join(pluginsDir, `.${PLUGIN_ID}-`))
-  const backup = path.join(pluginsDir, `.${PLUGIN_ID}-backup-${randomUUID()}`)
+  const staging = await mkdtemp(path.join(pluginsDir, `.${HERMES_PLUGIN_ID}-`))
+  const backup = path.join(pluginsDir, `.${HERMES_PLUGIN_ID}-backup-${randomUUID()}`)
   let backedUp = false
   try {
     await writeFile(path.join(staging, 'plugin.yaml'), HERMES_PLUGIN_MANIFEST)
@@ -188,7 +193,7 @@ export async function ensureHermesIntegration(profile?: string): Promise<void> {
       backedUp = true
     }
     await rename(staging, target)
-    await runHermes(profile, ['plugins', 'enable', PLUGIN_ID, '--no-allow-tool-override'])
+    await runHermes(profile, ['plugins', 'enable', HERMES_PLUGIN_ID, '--no-allow-tool-override'])
     if (!(await inspectHermesIntegration(profile))) throw new Error('Hermes did not enable the Cate plugin')
     if (backedUp) await rm(backup, { recursive: true, force: true })
   } catch (error) {
@@ -199,9 +204,9 @@ export async function ensureHermesIntegration(profile?: string): Promise<void> {
     // failed first install must not leave a dangling enabled entry; replacing
     // an existing working install restores its prior enabled state.
     if (backedUp && wasEnabled) {
-      await runHermes(profile, ['plugins', 'enable', PLUGIN_ID, '--no-allow-tool-override']).catch(() => {})
+      await runHermes(profile, ['plugins', 'enable', HERMES_PLUGIN_ID, '--no-allow-tool-override']).catch(() => {})
     } else if (!backedUp) {
-      await runHermes(profile, ['plugins', 'disable', PLUGIN_ID]).catch(() => {})
+      await runHermes(profile, ['plugins', 'disable', HERMES_PLUGIN_ID]).catch(() => {})
     }
     throw error
   }

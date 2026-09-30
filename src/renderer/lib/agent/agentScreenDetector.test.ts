@@ -6,20 +6,18 @@ import {
   stopAgentScreenDetector,
   noteAgentPresence,
   noteAgentHookEvent,
-  noteAgentInterruptSubmitted,
   noteAgentInputSubmitted,
   forgetAgentTracker,
   canAgentReceivePrompt,
 } from './agentScreenDetector'
 import { sendOsNotification } from '../notifications/osNotificationSend'
+vi.mock('../notifications/osNotificationSend', () => ({ sendOsNotification: vi.fn() }))
 import { useStatusStore, setTerminalWorkspaceResolver } from '../../stores/statusStore'
 import type { AgentHookEvent, AgentHookEventKind } from '../../../shared/agentHooks'
 import type { AgentId } from '../../../shared/agents'
 
-// Mock the notification sender so the coordinator's import graph stays light
-// (the real module pulls settingsStore → logger, which starts a flush interval
-// that keeps vitest from exiting). Tests assert calls on the mock.
-vi.mock('../notifications/osNotificationSend', () => ({ sendOsNotification: vi.fn() }))
+// Notifications reach the user through sendOsNotification; tests assert on its mock.
+let notify: ReturnType<typeof vi.mocked<typeof sendOsNotification>>
 
 describe('resolveAgentState', () => {
   it('not present, never was → notRunning', () => {
@@ -50,16 +48,16 @@ describe('resolveAgentState', () => {
 const WS = 'ws-1'
 const PTY = 'pty-1'
 
-function setUpCoordinator(agentName: string): void {
-  vi.mocked(sendOsNotification).mockClear()
+function setUpCoordinator(agentId: AgentId): void {
+  notify = vi.mocked(sendOsNotification); notify.mockClear()
   useStatusStore.setState({ workspaces: {} })
   // terminal->workspace identity is owned by terminalRegistry's bimap; stub
   // the resolver so the detector can map this pty to its workspace.
   setTerminalWorkspaceResolver((ptyId) => (ptyId === PTY ? WS : undefined))
   useStatusStore.getState().ensureWorkspace(WS)
   useStatusStore.getState().registerTerminal(PTY, WS)
-  // agentName is owned by statusStore; the coordinator reads it at commit time.
-  useStatusStore.getState().setAgentName(WS, PTY, agentName)
+  // agentId is owned by statusStore; the coordinator reads it at commit time.
+  useStatusStore.getState().setAgentId(WS, PTY, agentId)
   startAgentScreenDetector()
 }
 
@@ -76,7 +74,7 @@ function hookEvent(
 }
 
 describe('agent activity coordinator (hook FSM + presence edges)', () => {
-  beforeEach(() => setUpCoordinator('Claude Code'))
+  beforeEach(() => setUpCoordinator('claude-code'))
   afterEach(stopAgentScreenDetector)
 
   it.each([
@@ -84,7 +82,7 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     ['manual', 'waitingForInput'],
     ['unknown', 'running'],
   ] as const)('Codex config=%s gives %s', (approvalMode, expected) => {
-    setUpCoordinator('Codex')
+    setUpCoordinator('codex')
     noteAgentPresence(PTY, true)
     noteAgentHookEvent(hookEvent('turn-start', 'codex'))
     noteAgentHookEvent({ ...hookEvent('permission-check', 'codex'), approvalMode })
@@ -109,8 +107,8 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     noteAgentHookEvent(hookEvent('turn-end'))
     // Authoritative event: flips immediately, no settle window.
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).toHaveBeenCalledTimes(1)
-    expect(sendOsNotification).toHaveBeenCalledWith(
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Claude Code needs input' }),
     )
   })
@@ -122,11 +120,11 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
 
     noteAgentHookEvent({ ...hookEvent('turn-end', 'codex'), turnId: 'turn-a' })
     expect(state()).toBe('running')
-    expect(sendOsNotification).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
 
     noteAgentHookEvent({ ...hookEvent('turn-end', 'codex'), turnId: 'turn-b' })
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledTimes(1)
   })
 
   it('ignores approval and resume events arriving after their turn ended', () => {
@@ -168,11 +166,35 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     expect(state()).toBe('waitingForInput')
     noteAgentPresence(PTY, true) // more 1 Hz scan ticks
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
 
     // The scan's falling edge still resolves its end honestly.
     noteAgentPresence(PTY, false)
     expect(state()).toBe('finished')
+  })
+
+  it('process-only presence (hooks silent) is present but neither waiting nor prompt-ready', () => {
+    // codex/grok/opencode/kiro are opened from their foreground process. With
+    // their hooks off, no turn event ever arrives, so idle is unknowable.
+    noteAgentPresence(PTY, true, true)
+    expect(state()).toBe('notRunning')
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
+    noteAgentPresence(PTY, true, true) // more scan ticks
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
+
+    // Its first hook proves it: the normal hook FSM takes over.
+    noteAgentHookEvent(hookEvent('turn-start', 'codex'))
+    expect(state()).toBe('running')
+    noteAgentHookEvent(hookEvent('turn-end', 'codex'))
+    expect(state()).toBe('waitingForInput')
+    expect(canAgentReceivePrompt(PTY)).toBe(true)
+    noteAgentPresence(PTY, true, true) // a lagging process-only tick keeps the proof
+    expect(canAgentReceivePrompt(PTY)).toBe(true)
+
+    // A relaunch starts unproven again.
+    noteAgentPresence(PTY, false)
+    noteAgentPresence(PTY, true, true)
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
   })
 
   it('session-end acts like turn-end for state but stays silent', () => {
@@ -185,7 +207,7 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     noteAgentHookEvent(hookEvent('session-end')) // e.g. /clear mid-turn
     expect(state()).toBe('waitingForInput')
     expect(canAgentReceivePrompt(PTY)).toBe(true)
-    expect(sendOsNotification).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
   })
 
   it('a new session-start resets to idle silently', () => {
@@ -193,7 +215,7 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     noteAgentHookEvent(hookEvent('turn-start'))
     noteAgentHookEvent({ ...hookEvent('session-start'), sessionId: 'session-2' })
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
   })
 
   it('a deferred session-start for the active session cannot overwrite its running turn', () => {
@@ -208,11 +230,11 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     noteAgentHookEvent(hookEvent('turn-start'))
     expect(state()).toBe('running')
 
-    noteAgentHookEvent(hookEvent('permission-wait', 'claude-code', { message: 'Claude needs your permission' }))
+    noteAgentHookEvent({ ...hookEvent('permission-wait'), permission: 'Claude needs your permission' })
     expect(state()).toBe('waitingForInput')
     expect(canAgentReceivePrompt(PTY)).toBe(false)
-    expect(sendOsNotification).toHaveBeenCalledTimes(1)
-    expect(sendOsNotification).toHaveBeenCalledWith(
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Claude Code needs permission',
         body: 'Claude needs your permission',
@@ -220,22 +242,16 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     )
   })
 
-  it('permission notification body comes from the per-CLI payload', () => {
+  it('permission notification body comes from the event permission', () => {
     noteAgentPresence(PTY, true)
     noteAgentHookEvent(hookEvent('turn-start', 'codex'))
-    noteAgentHookEvent(
-      hookEvent('permission-wait', 'codex', { tool_name: 'Bash', tool_input: { command: 'touch x' } }),
-    )
-    expect(sendOsNotification).toHaveBeenCalledWith(expect.objectContaining({ body: 'touch x' }))
-
-    noteAgentHookEvent(hookEvent('turn-start', 'opencode'))
-    noteAgentHookEvent(hookEvent('permission-wait', 'opencode', { metadata: { command: 'rm -rf ./dist' } }))
-    expect(sendOsNotification).toHaveBeenLastCalledWith(expect.objectContaining({ body: 'rm -rf ./dist' }))
+    noteAgentHookEvent({ ...hookEvent('permission-wait', 'codex'), permission: 'touch x' })
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ body: 'touch x' }))
 
     // Missing detail falls back to a generic line rather than an empty body.
-    noteAgentHookEvent(hookEvent('turn-resume', 'opencode'))
+    noteAgentHookEvent(hookEvent('turn-start', 'opencode'))
     noteAgentHookEvent(hookEvent('permission-wait', 'opencode', {}))
-    expect(sendOsNotification).toHaveBeenLastCalledWith(
+    expect(notify).toHaveBeenLastCalledWith(
       expect.objectContaining({ body: 'Waiting for your approval.' }),
     )
   })
@@ -245,15 +261,15 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     noteAgentHookEvent(hookEvent('turn-start'))
     noteAgentHookEvent(hookEvent('permission-wait'))
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledTimes(1)
 
     noteAgentHookEvent(hookEvent('turn-resume'))
     expect(state()).toBe('running')
-    expect(sendOsNotification).toHaveBeenCalledTimes(1) // resume is silent
+    expect(notify).toHaveBeenCalledTimes(1) // resume is silent
 
     noteAgentHookEvent(hookEvent('permission-wait'))
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).toHaveBeenCalledTimes(2) // a NEW approval is due
+    expect(notify).toHaveBeenCalledTimes(2) // a NEW approval is due
   })
 
   it('submitting a permission answer resumes immediately, before PostToolUse', () => {
@@ -279,22 +295,14 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     expect(state()).toBe('running')
   })
 
-  it('a Kiro Ctrl-C ends only its known active turn and stays silent', () => {
+  it('a runtime-recovered interrupt ends the turn silently', () => {
     noteAgentPresence(PTY, true)
     noteAgentHookEvent(hookEvent('turn-start', 'kiro'))
     expect(state()).toBe('running')
 
-    noteAgentInterruptSubmitted(PTY)
+    noteAgentHookEvent({ ...hookEvent('turn-end', 'kiro'), interrupted: true })
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).not.toHaveBeenCalled()
-  })
-
-  it('does not guess an interrupt boundary for other agents', () => {
-    noteAgentPresence(PTY, true)
-    noteAgentHookEvent(hookEvent('turn-start', 'claude-code'))
-
-    noteAgentInterruptSubmitted(PTY)
-    expect(state()).toBe('running')
+    expect(notify).not.toHaveBeenCalled()
   })
 
   it('repeated permission-wait without a resume does not re-notify', () => {
@@ -302,20 +310,20 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     noteAgentHookEvent(hookEvent('turn-start'))
     noteAgentHookEvent(hookEvent('permission-wait'))
     noteAgentHookEvent(hookEvent('permission-wait'))
-    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledTimes(1)
   })
 
   it('turn-end after a denied permission does not double-notify', () => {
     noteAgentPresence(PTY, true)
     noteAgentHookEvent(hookEvent('turn-start'))
     noteAgentHookEvent(hookEvent('permission-wait'))
-    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledTimes(1)
 
     // Denial produces no turn-resume — the turn just ends. State is already
     // waitingForInput, so the transition gate swallows the second ping.
     noteAgentHookEvent(hookEvent('turn-end'))
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledTimes(1)
   })
 
   it('the 1 Hz presence tick cannot flip a blocked turn back to running', () => {
@@ -326,7 +334,7 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
 
     noteAgentPresence(PTY, true) // next scan tick while still blocked
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledTimes(1)
   })
 
   it('presence loss mid-turn → finished, and the turn state dies with the process', () => {
@@ -360,7 +368,7 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     // idle, and the fresh-launch flip stays silent.
     noteAgentPresence(PTY, true)
     expect(state()).toBe('waitingForInput')
-    expect(sendOsNotification).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
   })
 
   it('stopAgentScreenDetector halts state changes and clears trackers', () => {
@@ -371,6 +379,6 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     noteAgentHookEvent(hookEvent('turn-start'))
     noteAgentPresence(PTY, true)
     expect(state()).toBe('waitingForInput') // store untouched after stop
-    expect(sendOsNotification).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
   })
 })

@@ -153,9 +153,9 @@ function agentRequest(args: string[], flags: Flags): Request {
       resolvePanelArg: 'targetPanelId',
     }
   }
-  if (command === 'inspect') {
+  if (command === 'read') {
     const panelId = need(exact(rest, 1)[0], 'panelId')
-    return { method: 'cate.agent.inspect', args: { panelId }, resolvePanel: 'panel' }
+    return { method: 'cate.agent.read', args: { panelId }, resolvePanel: 'panel' }
   }
   throw new UsageError(`unknown agent command: ${command}`)
 }
@@ -433,6 +433,21 @@ function renderAgentRuns(value: unknown): string {
   }).join('\n') || '(no agent runs)'
 }
 
+function renderConversation(value: unknown): string {
+  const conversation = asObject(value)
+  if (!conversation) return renderGeneric(value)
+  if (!Array.isArray(conversation.messages)) return renderGeneric(value)
+  const label = [conversation.agentName, conversation.title].filter(Boolean).join(' · ')
+  const header = `${shortId(String(conversation.panelId ?? '?'))}\t${conversation.state ?? '?'}${label ? `\t${label}` : ''}`
+  const messages = conversation.messages.map((item) => {
+    const message = asObject(item)
+    if (!message) return String(item)
+    const meta = [message.role ?? '?', message.createdAt, message.streaming ? 'streaming' : undefined].filter(Boolean).join(' · ')
+    return `[${meta}]\n${message.text ?? ''}`
+  })
+  return [header, ...(messages.length > 0 ? messages : ['(no messages)'])].join('\n\n')
+}
+
 function renderGeneric(value: unknown): string {
   if (value === undefined || value === null) return 'ok'
   if (typeof value === 'string') return value
@@ -450,9 +465,9 @@ export function formatHuman(method: string, value: unknown): string {
   if (method === 'cate.agent.wait') {
     return renderAgentRuns(asObject(value)?.agents)
   }
+  if (method === 'cate.agent.read') return renderConversation(value)
   if (
-    method === 'cate.agent.inspect'
-    || method === 'cate.codingAgent.inspect'
+    method === 'cate.codingAgent.inspect'
     || method === 'cate.codingAgent.review'
     || method === 'cate.review.inspect'
   ) {
@@ -489,7 +504,7 @@ const USAGE = `Usage:
   cate panel list|create|set|current|clear|close [args]
   cate editor open <path[:line[:column]]>
   cate terminal read|type|press [args] [--panel <id>]
-  cate agent list|send|wait|inspect [args]
+  cate agent list|send|wait|read [args]
   cate review inspect|note|complete [--panel <id>] [args]
   cate version
 
@@ -507,9 +522,11 @@ const AGENT_USAGE = `Usage:
   cate agent send <panelId> <prompt...>
   cate agent send --panel <panelId> <prompt...>
   cate agent wait [panelId...] [--wait-timeout <ms>]
-  cate agent inspect <panelId>
+  cate agent read <panelId> [--json]
 
-List, send, wait, and inspect provide one hook-backed interface for terminal CLI agents and T3 panels.
+List, send, wait, and read provide one hook-backed interface for terminal CLI agents and T3 panels.
+Read prints the conversation's user and assistant messages, from the agent CLI's own session store
+(terminal agents) or the T3 thread (T3 panels).
 Send addresses a panel and delivers the prompt exactly as provided.
 Panel ids may be full ids or unique prefixes from \`cate agent list\`.`
 

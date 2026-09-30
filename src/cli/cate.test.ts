@@ -117,12 +117,30 @@ describe('agent control surface', () => {
       resolvePanel: 'panel',
       resolvePanelArg: 'targetPanelId',
     })
-    expect(buildRequest(['agent', 'inspect', 'abcd1234'], flags)).toEqual({
-      method: 'cate.agent.inspect',
+    expect(buildRequest(['agent', 'read', 'abcd1234'], flags)).toEqual({
+      method: 'cate.agent.read',
       args: { panelId: 'abcd1234' },
       resolvePanel: 'panel',
     })
+    expect(() => buildRequest(['agent', 'inspect', 'abcd1234'], flags)).toThrow(/unknown agent command/)
     expect(() => buildRequest(['agent', 'create', 'task'], flags)).toThrow(/unknown agent command/)
+  })
+
+  it('renders a read conversation for humans', () => {
+    expect(formatHuman('cate.agent.read', {
+      panelId: 'abcdefgh-full', state: 'waitingForInput', title: 'Frontend', agentName: 'Codex',
+      messages: [
+        { role: 'user', text: 'Add a test', createdAt: '2026-09-28T10:00:00Z', streaming: false },
+        { role: 'assistant', text: 'Working on it', createdAt: '2026-09-28T10:00:05Z', streaming: true },
+      ],
+    })).toBe([
+      'abcdefgh\twaitingForInput\tCodex · Frontend',
+      '[user · 2026-09-28T10:00:00Z]\nAdd a test',
+      '[assistant · 2026-09-28T10:00:05Z · streaming]\nWorking on it',
+    ].join('\n\n'))
+    expect(formatHuman('cate.agent.read', {
+      panelId: 'abcdefgh-full', state: 'running', messages: [],
+    })).toBe('abcdefgh\trunning\n\n(no messages)')
   })
 
   it('maps wait milliseconds to the bounded host timeout', () => {
@@ -343,7 +361,7 @@ describe('output and run loop', () => {
     expect(deps.fetch).not.toHaveBeenCalled()
   })
 
-  it('resolves a short agent panel id before inspecting it', async () => {
+  it('resolves a short agent panel id before reading it', async () => {
     const deps = runDeps()
     ;(deps.fetch as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
@@ -355,10 +373,11 @@ describe('output and run loop', () => {
         json: async () => ({ result: { panelId: 'abcdefgh-full', state: 'waitingForInput' } }),
       })
 
-    expect(await run(['agent', 'inspect', 'abcdefgh'], deps)).toBe(0)
+    expect(await run(['agent', 'read', 'abcdefgh', '--json'], deps)).toBe(0)
+    expect(deps.out.join('\n')).toBe(JSON.stringify({ panelId: 'abcdefgh-full', state: 'waitingForInput' }))
     const request = JSON.parse((deps.fetch as ReturnType<typeof vi.fn>).mock.calls[1][1].body)
     expect(request).toEqual({
-      method: 'cate.agent.inspect',
+      method: 'cate.agent.read',
       args: { panelId: 'abcdefgh-full' },
     })
   })

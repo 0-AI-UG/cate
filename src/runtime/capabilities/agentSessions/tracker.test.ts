@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentHookEvent } from '../../../shared/agentHooks'
 import { createAgentTitleTracker, normalizeAgentTitle } from './tracker'
-import type { AgentTitleResolvers } from './types'
+import type { AgentSessionStores } from './types'
 
 function event(overrides: Partial<AgentHookEvent> = {}): AgentHookEvent {
   return {
@@ -14,8 +14,8 @@ function event(overrides: Partial<AgentHookEvent> = {}): AgentHookEvent {
   }
 }
 
-function resolvers(resolve: () => Promise<string | null>): AgentTitleResolvers {
-  return new Proxy({}, { get: () => resolve }) as AgentTitleResolvers
+function stores(title: () => Promise<string | null>): AgentSessionStores {
+  return new Proxy({}, { get: () => ({ title, conversation: async () => null }) }) as AgentSessionStores
 }
 
 describe('agent title tracker', () => {
@@ -31,7 +31,7 @@ describe('agent title tracker', () => {
     const emit = vi.fn()
     const tracker = createAgentTitleTracker({
       homeDir: '/home/me',
-      resolvers: resolvers(async () => ++attempts < 3 ? null : 'Native title'),
+      stores: stores(async () => ++attempts < 3 ? null : 'Native title'),
       emit,
       retryDelaysMs: [0, 10, 20],
     })
@@ -54,7 +54,7 @@ describe('agent title tracker', () => {
     const emit = vi.fn()
     const tracker = createAgentTitleTracker({
       homeDir: '/home/me',
-      resolvers: resolvers(async () => null),
+      stores: stores(async () => null),
       emit,
       retryDelaysMs: [0, 10],
     })
@@ -72,7 +72,7 @@ describe('agent title tracker', () => {
     const emit = vi.fn()
     const tracker = createAgentTitleTracker({
       homeDir: '/home/me',
-      resolvers: resolvers(async () => 'Shared session'),
+      stores: stores(async () => 'Shared session'),
       emit,
       retryDelaysMs: [0],
     })
@@ -95,7 +95,7 @@ describe('agent title tracker', () => {
       .mockImplementationOnce(() => new Promise<string>(done => { finishOld = done }))
       .mockResolvedValue('New session title')
     const tracker = createAgentTitleTracker({
-      homeDir: '/home/me', resolvers: resolvers(resolve), emit, retryDelaysMs: [0],
+      homeDir: '/home/me', stores: stores(resolve), emit, retryDelaysMs: [0],
     })
     try {
       tracker.note(event())

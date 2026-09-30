@@ -35,7 +35,7 @@ import { normalizeAgentSourceStartedAt } from '../../shared/agentHooks'
 import type { ProcTree } from './procfs'
 
 export interface AgentPresence {
-  agentName: string | null
+  agentId: AgentId | null
   agentPresent: boolean
   /** Identity of the registration that just fell. The main process passes
    *  this through when clearing a resume stamp so a delayed scan cannot
@@ -99,7 +99,7 @@ function parentMap(tree: ProcTree): Map<number, number> {
 export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresenceTracker {
   const isAlive = deps.isAlive ?? defaultIsAlive
   const registrations = new Map<string, Registration>()
-  const hermesHighWater = new Map<string, bigint>()
+  const sourceStartedHighWater = new Map<string, bigint>()
 
   return {
     async notePost(terminalId, agentId, pid, sourceStartedAt) {
@@ -112,9 +112,9 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
       const canonicalStartedAt = normalizeAgentSourceStartedAt(sourceStartedAt)
       if (def.hookProcess === 'self' && canonicalStartedAt) {
         const incoming = BigInt(canonicalStartedAt)
-        const current = hermesHighWater.get(terminalId)
+        const current = sourceStartedHighWater.get(terminalId)
         if (current !== undefined && incoming < current) return
-        hermesHighWater.set(terminalId, incoming)
+        sourceStartedHighWater.set(terminalId, incoming)
       }
 
       // Fast path: this terminal's agent is already registered and alive —
@@ -128,7 +128,7 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
         // A slower lookup from an older Hermes process must not overwrite the
         // registration installed by a newer hook post while this awaited.
         if (canonicalStartedAt) {
-          const current = hermesHighWater.get(terminalId)
+          const current = sourceStartedHighWater.get(terminalId)
           if (current !== undefined && BigInt(canonicalStartedAt) < current) return
         }
         const comm = tree.nameByPid.get(pid)
@@ -154,24 +154,22 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
 
     presenceFor(terminalId, tree) {
       const reg = registrations.get(terminalId)
-      if (!reg) return { agentName: null, agentPresent: false }
+      if (!reg) return { agentId: null, agentPresent: false }
       if (tree.nameByPid.get(reg.pid) === reg.comm) {
-        const def = AGENTS.find((a) => a.id === reg.agentId)
-        return { agentName: def?.displayName ?? null, agentPresent: true }
+        return { agentId: reg.agentId, agentPresent: true }
       }
       // The process may have posted after this scan's snapshot was taken.
       // A direct liveness check avoids treating that stale snapshot as a
       // falling edge. A present pid with a different comm still falls below,
       // preserving the pid-reuse guard.
       if (!tree.nameByPid.has(reg.pid) && isAlive(reg.pid)) {
-        const def = AGENTS.find((a) => a.id === reg.agentId)
-        return { agentName: def?.displayName ?? null, agentPresent: true }
+        return { agentId: reg.agentId, agentPresent: true }
       }
       // Pid gone (or recycled under a different comm) — the falling edge.
       // The next agent run re-registers itself through fresh hook posts.
       registrations.delete(terminalId)
       return {
-        agentName: null,
+        agentId: null,
         agentPresent: false,
         endedAgentPid: reg.pid,
         ...(reg.sourceStartedAt ? { endedAgentStartedAt: reg.sourceStartedAt } : {}),
@@ -180,7 +178,7 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
 
     drop(terminalId) {
       registrations.delete(terminalId)
-      hermesHighWater.delete(terminalId)
+      sourceStartedHighWater.delete(terminalId)
     },
   }
 }

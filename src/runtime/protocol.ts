@@ -112,6 +112,8 @@ export const Methods = {
   // inspect a workspace's per-agent hook-file injection state (Settings UI).
   agentHooksInspect: 'agentHooks.inspect',
   agentHooksSetPromptContext: 'agentHooks.setPromptContext',
+  // read an agent CLI session's conversation from that CLI's own session store.
+  agentConversationRead: 'agentConversation.read',
   agentChangesList: 'agentChanges.list',
   agentChangesRead: 'agentChanges.read',
   agentChangesBind: 'agentChanges.bind',

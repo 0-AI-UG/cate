@@ -3,11 +3,13 @@ import { useStatusStore, workspaceIdForTerminal } from '../stores/statusStore'
 import { useAppStore } from '../stores/appStore'
 import { terminalRegistry } from '../lib/terminal/terminalRegistry'
 import { noteAgentPresence } from '../lib/agent/agentScreenDetector'
+import { openTerminalAgent } from '../lib/agent/terminalAgent'
 import { isWorkspaceMonitorReady } from './workspaceMonitorReady'
 import { syncWorktrees } from '../lib/worktreeSync'
 import log from '../lib/logger'
 import { isAgentFallbackTitle } from '../lib/panelTitle'
 import type { TerminalActivity } from '../../shared/types'
+import type { AgentId } from '../../shared/agents'
 
 /**
  * Owner-routed terminal telemetry: agent activity/presence/name, listening
@@ -32,14 +34,19 @@ export function useOwnedTerminalTelemetry(): void {
       (
         terminalId: string,
         activityRaw: unknown,
-        agentNameRaw: unknown,
+        agentIdRaw: unknown,
         agentPresentRaw: unknown,
       ) => {
         const terminalActivity = activityRaw as TerminalActivity
-        const agentName = (agentNameRaw as string | null) ?? null
-        const agentPresent = agentPresentRaw === true
+        const hookPresent = agentPresentRaw === true
+        // One rule for every agent CLI: open from launch, not from its first
+        // prompt's hook (see openTerminalAgent).
+        const hookAgentId = (agentIdRaw as AgentId | null) ?? null
+        const opened = openTerminalAgent(terminalActivity, hookAgentId, hookPresent)
+        const agentPresent = hookPresent || opened !== null
+        const agentId = opened?.id ?? hookAgentId
 
-        // terminal->workspace identity is owned by terminalRegistry's bimap. The
+        // terminal->workspace identity is owned by the terminal registry's bimap. The
         // terminal is registered in THIS window (it owns it), so the resolve
         // succeeds; fall back to the selected workspace only as a safety net.
         const actualWorkspaceId =
@@ -48,17 +55,16 @@ export function useOwnedTerminalTelemetry(): void {
 
         store().setTerminalActivity(actualWorkspaceId, terminalId, terminalActivity)
         store().setAgentPresent(actualWorkspaceId, terminalId, agentPresent)
-        store().setAgentName(actualWorkspaceId, terminalId, agentName)
+        store().setAgentId(actualWorkspaceId, terminalId, agentId)
         // Running-state comes from hook events; feed presence into the
-        // coordinator for the notRunning/finished edges. The name is already
-        // in statusStore (above, deliberately BEFORE this call) so the
+        // coordinator for the notRunning/finished edges. The agent id is
+        // already in statusStore (above, deliberately BEFORE this call) so the
         // coordinator can read it at commit.
-        noteAgentPresence(terminalId, agentPresent)
+        noteAgentPresence(terminalId, agentPresent, !hookPresent)
 
-        // Hooks are the sole source of agent identity. Use their clean name as
-        // a fallback until native session metadata provides a real title; the
-        // generic process scan must never classify a terminal as an agent.
-        if (agentName) {
+        // Use the agent's clean name as a fallback until native session
+        // metadata provides a real title.
+        if (opened) {
           const panelId = terminalRegistry.panelIdForPty(terminalId) ?? terminalId
           const panel = useAppStore.getState().workspaces
             .find((workspace) => workspace.id === actualWorkspaceId)?.panels[panelId]
@@ -66,7 +72,7 @@ export function useOwnedTerminalTelemetry(): void {
           // Cate's generic terminal/agent fallback labels here; later hook
           // telemetry must not overwrite the resolved title.
           if (isAgentFallbackTitle(panel?.title ?? '')) {
-            useAppStore.getState().updatePanelTitleFromAgent(actualWorkspaceId, panelId, agentName)
+            useAppStore.getState().updatePanelTitleFromAgent(actualWorkspaceId, panelId, opened.displayName)
           }
         }
       },

@@ -8,7 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createAgentChangesStore } from './agentChanges'
 import { filesFromPatch, filesFromTool } from './agentChangeEdits'
-import { normalizeAgentHookPayload } from '../../shared/agentHooks'
+import { AGENT_HOOK_SPECS, normalizeAgentHookPayload } from '../../shared/agentHooks'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
@@ -37,9 +37,13 @@ it('preserves concurrent writes and bindings from independent store instances', 
 
 it('preserves concurrently published records across independent Node processes', async () => {
   const bundled = await build({ entryPoints: ['src/runtime/capabilities/agentChanges.ts'], bundle: true, platform: 'node', format: 'cjs', packages: 'external', write: false })
+  // Loaded from a file: inlined into -e, the bundle exceeds Windows' command-line limit.
+  const bundleDir = await mkdtemp(path.join(os.tmpdir(), 'cate-agent-changes-bundle-'))
+  const bundleFile = path.join(bundleDir, 'agentChanges.cjs')
+  await writeFile(bundleFile, bundled.outputFiles[0].text)
   const children = Array.from({ length: 4 }, (_, index) => {
-    const script = bundled.outputFiles[0].text + `
-      const store = module.exports.createAgentChangesStore(${JSON.stringify(directory)});
+    const script = `
+      const store = require(${JSON.stringify(bundleFile)}).createAgentChangesStore(${JSON.stringify(directory)});
       store.registerSource('source', {cwd:'/repo', kind:'t3'});
       process.stdin.once('data', async () => {
         try {
@@ -50,7 +54,9 @@ it('preserves concurrently published records across independent Node processes',
       });
       process.stdout.write('ready');
     `
-    const child = spawn(process.execPath, ['-e', script], { stdio: 'pipe' })
+    const child = spawn(process.execPath, ['-e', script], {
+      stdio: 'pipe', env: { ...process.env, NODE_PATH: path.resolve('node_modules') },
+    })
     const ready = new Promise<void>((resolve, reject) => { child.stdout.once('data', () => resolve()); child.once('error', reject) })
     const done = new Promise<void>((resolve, reject) => {
       let stderr = ''
@@ -67,7 +73,10 @@ it('preserves concurrently published records across independent Node processes',
     const records = await createAgentChangesStore(directory).list('/repo')
     expect(records).toHaveLength(4)
     expect(records.every((record) => record.panelIds?.length === 1)).toBe(true)
-  } finally { children.forEach(({ child }) => child.kill()) }
+  } finally {
+    children.forEach(({ child }) => child.kill())
+    await rm(bundleDir, { recursive: true, force: true })
+  }
 })
 
 it('returns only a revision for unchanged history and observes other writers', async () => {
@@ -154,10 +163,10 @@ it('resolves reported relative paths from the agent cwd within the source worksp
   store.registerSource('pty', { cwd, kind: 'terminal' })
   const payload = { hook_event_name: 'PostToolUse', session_id: 'session', tool_use_id: 'edit', cwd: agentCwd,
     tool_name: 'Edit', tool_input: { file_path: 'src/a.ts', old_string: 'a', new_string: 'b' } }
-  await store.ingestHook('pty', 'claude-code', payload, normalizeAgentHookPayload('claude-code', 'pty', payload))
+  await store.ingestHook('pty', 'claude-code', normalizeAgentHookPayload('claude-code', 'pty', payload), AGENT_HOOK_SPECS['claude-code'].toolCall(payload))
   expect((await store.list(cwd))[0].files[0].path).toBe('packages/app/src/a.ts')
   const outside = { ...payload, tool_use_id: 'outside', cwd: directory }
-  await store.ingestHook('pty', 'claude-code', outside, normalizeAgentHookPayload('claude-code', 'pty', outside))
+  await store.ingestHook('pty', 'claude-code', normalizeAgentHookPayload('claude-code', 'pty', outside), AGENT_HOOK_SPECS['claude-code'].toolCall(outside))
   expect(await store.list(cwd)).toHaveLength(1)
 })
 
@@ -185,7 +194,7 @@ it('captures the command-wrapped apply_patch input emitted by real Codex CLI 0.1
     tool_response: 'Exit code: 0\nWall time: 0 seconds\nOutput:\nSuccess. Updated the following files:\nA target.txt\n',
     tool_use_id: 'live-call',
   }
-  await store.ingestHook('pty', 'codex', payload, normalizeAgentHookPayload('codex', 'pty', payload))
+  await store.ingestHook('pty', 'codex', normalizeAgentHookPayload('codex', 'pty', payload), AGENT_HOOK_SPECS['codex'].toolCall(payload))
   expect(await store.list('/repo')).toMatchObject([{ agentId: 'codex', sessionId: 'live-session', turnId: 'live-turn', panelId: 'panel',
     files: [{ path: 'target.txt', additions: 1, deletions: 0, coverage: 'fragment' }] }])
   expect(filesFromTool('/repo', 'Bash', payload.tool_input, payload.tool_response)).toEqual([])

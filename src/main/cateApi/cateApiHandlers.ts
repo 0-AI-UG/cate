@@ -14,6 +14,7 @@ import {
   CATE_HOST_FORWARD_REPLY,
 } from '../../shared/ipc-channels'
 import { codingAgentAdmission } from './codingAgentAdmission'
+import { readAgentConversation } from '../agentConversations'
 import { getActiveMainWindow, getWindow } from '../windowRegistry'
 import {
   getWindowPanels,
@@ -25,10 +26,11 @@ import { getSetting } from '../settingsFile'
 import { showOsNotification } from '../ipc/notifications'
 import type { PanelType, WindowPanelInfo } from '../../shared/types'
 import type { CodingAgentRunStatus } from '../../shared/codingAgentRuns'
+import { CATE_API_FORWARD_TIMEOUT_MS } from '../../shared/cateApiTimeouts'
 
 const CATE_API_VERSION = 9
 
-const FORWARD_TIMEOUT_MS = 10_000
+const FORWARD_TIMEOUT_MS = CATE_API_FORWARD_TIMEOUT_MS
 const CODING_AGENT_WAIT_FORWARD_TIMEOUT_MS = 65_000
 
 export function forwardTimeoutMs(method: string): number {
@@ -57,10 +59,13 @@ interface InvokePayload {
 
 type InvokeResult = unknown | { error: string; method?: string }
 
+/** Agent panels list/send/wait agree on: a terminal whose CLI agent is
+ *  observable, or a T3 panel whose harness is live — including a fresh chat
+ *  (no thread, so no state yet) that its first prompt will start. */
 function liveAgentPanels(workspaceId: string): WindowPanelInfo[] {
   return getWindowPanels().filter((panel) =>
     panel.workspaceId === workspaceId && (
-      (panel.type === 'agent' && panel.agentState !== undefined)
+      (panel.type === 'agent' && (panel.agentState !== undefined || panel.agentCanReceivePrompt === true))
       || (panel.type === 'terminal' && panel.agentState !== undefined && panel.agentState !== 'notRunning')
     ),
   )
@@ -71,6 +76,7 @@ function agentPanelSummary(panel: WindowPanelInfo) {
     panelId: panel.panelId,
     surface: panel.type === 'agent' ? 't3' : 'terminal',
     title: panel.title,
+    agentId: panel.agentSession?.agentId ?? null,
     agentName: panel.agentName ?? (panel.type === 'agent' ? 'T3 Code' : null),
     state: panel.agentState ?? 'notRunning',
     canReceivePrompt: panel.agentCanReceivePrompt === true,
@@ -409,12 +415,21 @@ export async function dispatchCateInvoke(
     return liveAgentPanels(workspaceId).map(agentPanelSummary)
   }
 
-  if (method === 'cate.agent.inspect') {
+  if (method === 'cate.agent.read') {
     const requestedId = typeof (args as Record<string, unknown> | null)?.panelId === 'string'
       ? (args as Record<string, string>).panelId
       : ''
-    const panel = liveAgentPanels(workspaceId).find((candidate) => candidate.panelId === requestedId)
-    return panel ? agentPanelSummary(panel) : { error: 'agent-panel-not-found', method }
+    const info = liveAgentPanels(workspaceId).find((candidate) => candidate.panelId === requestedId)
+    if (!info) return { error: 'agent-panel-not-found', method }
+    if (!info.agentSession) return { error: 'no-agent-session', method }
+    try {
+      const messages = await readAgentConversation(info.agentSession, workspaceId, info.ownerWindowId)
+      if (!messages) return { error: 'agent-conversation-not-found', method }
+      return { ...agentPanelSummary(info), session: info.agentSession, messages }
+    } catch (error) {
+      log.warn('[cate-api] agent conversation read failed: %O', error)
+      return { error: 'agent-conversation-unavailable', method }
+    }
   }
 
   if (method === 'cate.agent.wait') {
