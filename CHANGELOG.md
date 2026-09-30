@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-09-30
+
+This patch release adds `cate agent read` and an Open in browser button for HTML files, connects T3 panels before the first prompt, and fixes many panel, browser and agent issues.
+
+### Added
+
+- **Open in browser**: open local HTML files from the editor in a new or existing browser panel.
+- **`cate agent read`**: read an agent panel's conversation from the Cate CLI (replaces `cate agent inspect`).
+- **Per-panel state**: Files tree expansion and selection, Git review expansion, Agent changes history mode and browser zoom now persist per panel.
+
+### Changed
+
+- **T3 panels**: connected before the first prompt, with activity reaching every window without a mounted T3 page.
+- **Agent hooks**: hook specs own interrupt handling, edit capture and session stores; an agent counts as open from launch.
+
+### Fixed
+
+- **T3 Connect**: start correctly in packaged builds.
+- **T3 prompts**: a quick second send to a thread no longer starts a second turn, and a crashed harness is no longer restarted by its activity stream.
+- **Provider sign-in**: works for Claude, OpenCode and custom setups.
+- **Hermes**: read multimodal messages on Node 22.
+- **Editor**: the dirty dot shows in the tab and no longer sticks in titles saved by older builds; discard can't apply after a move or close.
+- **Browser**: zoom survives navigation and background tabs keep their url, title and favicon current.
+- **Terminals**: stale PTY spawns are killed, cross-window drops and live detaches keep the panel as it was at release, and closed terminals release their resources.
+- **Canvas**: a closed relation menu no longer blocks panning; blurry chat text in embedded T3 panels is fixed.
+- **Agent notifications**: no false agent-ready notifications during approval review.
+
 ## [2.0.4] - 2026-09-26
 
 This patch release adds T3 remote access setup, improves browser and agent controls, and fixes interrupted browser actions.
