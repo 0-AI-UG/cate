@@ -168,7 +168,8 @@ export function projectFilesToSnapshot(
       panels[id] = {
         id,
         type,
-        title: ref.title,
+        // Editors once wrote their dirty dot into the title; drop it from old saves.
+        title: type === 'editor' ? ref.title.replace(/\s•\s*$/, '') : ref.title,
         isDirty: sp?.unsavedContent !== undefined,
         filePath: ref.filePath ? toAbsolutePath(ref.filePath, pathRoot) : undefined,
         ...pickPassthroughPanelFields(ref),

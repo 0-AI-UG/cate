@@ -56,6 +56,27 @@ beforeEach(() => {
 })
 afterEach(async () => { await manager.disposeAll(); vi.restoreAllMocks() })
 
+describe('T3 turn start', () => {
+  it('refuses a second turn on a thread until the first has had time to show as running', async () => {
+    vi.useFakeTimers()
+    try {
+      const dispatch = vi.spyOn(manager as unknown as { dispatchTurn(): Promise<void> }, 'dispatchTurn').mockResolvedValue(undefined)
+      const turn = { ...request, threadId: 'th', text: 'hi' }
+      await manager.startTurn(turn, 1)
+      await expect(manager.startTurn(turn, 1)).rejects.toThrow('agent-busy')
+      await manager.startTurn({ ...turn, threadId: 'other' }, 1)
+      await vi.advanceTimersByTimeAsync(3_000)
+      await manager.startTurn(turn, 1)
+      expect(dispatch).toHaveBeenCalledTimes(3)
+      dispatch.mockRejectedValueOnce(new Error('HTTP 500'))
+      await expect(manager.startTurn({ ...turn, threadId: 'failing' }, 1)).rejects.toThrow('HTTP 500')
+      await manager.startTurn({ ...turn, threadId: 'failing' }, 1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('T3 harness lifecycle', () => {
   it('opens global usage without a workspace or a workspace path grant', async () => {
     const first = await manager.getUsageTarget('usage-one')

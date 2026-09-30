@@ -119,7 +119,9 @@ export class ThreadShellSubscription {
     if (this.stopped || !this.source.alive() || this.reconnect) return
     this.reconnect = setTimeout(() => {
       this.reconnect = undefined
-      void this.connect()
+      // Re-check: the socket can close before the server-exit callback marks
+      // the harness dead, and reconnecting through the proxy would restart it.
+      if (this.source.alive()) void this.connect()
     }, RECONNECT_MS)
   }
 

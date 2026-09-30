@@ -49,6 +49,10 @@ import type {
 const READY_PATH = '/.well-known/t3/environment'
 const START_TIMEOUT_MS = 30_000
 const SETTINGS_FLUSH_DELAY_MS = 200
+// How long a started turn blocks another send to its thread. The shell stream
+// reports the running turn only after T3 emits it (plus a 100ms coalesce), and
+// T3 does not reject a second thread.turn.start on a busy thread.
+const TURN_START_HOLD_MS = 3_000
 
 interface HarnessInstance {
   key: string
@@ -163,6 +167,7 @@ export class T3HarnessManager {
   private readonly providerAuth = new Map<string, ProviderAuthState>()
   private readonly remoteSessions = new Map<string, RemoteSessionState>()
   private readonly shells = new Map<string, ThreadShellSubscription>()
+  private readonly startingTurns = new Set<string>()
 
   constructor() {
     const onDisconnected = runtimes.onDisconnected?.bind(runtimes)
@@ -479,6 +484,18 @@ export class T3HarnessManager {
    *  exactly as its composer would: the thread's own runtime mode and model,
    *  default interaction mode. No panel or guest page needs to be mounted. */
   async startTurn(request: AgentProviderStatusRequest & { threadId: string; text: string }, ownerWindowId: number): Promise<void> {
+    if (this.startingTurns.has(request.threadId)) throw new Error('agent-busy')
+    this.startingTurns.add(request.threadId)
+    try {
+      await this.dispatchTurn(request, ownerWindowId)
+    } catch (error) {
+      this.startingTurns.delete(request.threadId)
+      throw error
+    }
+    setTimeout(() => this.startingTurns.delete(request.threadId), TURN_START_HOLD_MS)
+  }
+
+  private async dispatchTurn(request: AgentProviderStatusRequest & { threadId: string; text: string }, ownerWindowId: number): Promise<void> {
     const threadPath = `/api/orchestration/threads/${encodeURIComponent(request.threadId)}?turnLimit=1`
     const { response: detail } = await this.harnessFetch(request, ownerWindowId, threadPath)
     if (!detail.ok) throw new Error(`T3 conversation returned HTTP ${detail.status}`)
