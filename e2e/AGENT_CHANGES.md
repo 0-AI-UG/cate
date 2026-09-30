@@ -5,10 +5,9 @@ Run against the current build:
 ```sh
 npm run typecheck
 npm test
-npm run runtime:tarball
 npm run build
+npm run build:runtime
 npx playwright test e2e/agent-changes.spec.ts
-npx playwright test e2e/t3-agent.spec.ts -g 'real T3 lifecycle (uses recorded|delegates workspace)'
 ```
 
 The capture matrix covers Claude Code, Codex, Cursor, Grok, Kiro and OpenCode:
@@ -26,7 +25,7 @@ The capture matrix covers Claude Code, Codex, Cursor, Grok, Kiro and OpenCode:
 - T3 capture queue ordering, retry/exhaustion/overflow, unrelated-turn progress, guest request cancellation, and actual patched summary rendering.
 - Poll subscription lifecycle, joined refresh requests, unchanged-record identity, batched file rendering, and large-diff opt-in.
 
-These are deterministic adapter-contract tests, not live vendor CLI smoke tests. They require no provider credentials and do not claim that a future vendor release still emits the same payloads. The command-wrapper subprocess tests are POSIX-only; HTTP/store tests are platform-independent. The Electron tests use the runtime artifact selected by `fixtures/electron-app.ts`; rebuild that artifact when changing runtime capture code.
+These are deterministic adapter-contract tests, not live vendor CLI smoke tests. They require no provider credentials and do not claim that a future vendor release still emits the same payloads. The command-wrapper subprocess tests are POSIX-only; HTTP/store tests are platform-independent. The Electron tests run the runtime from `dist-runtime/runtime.cjs` (see `fixtures/electron-app.ts`); rebuild it with `npm run build:runtime` when changing runtime capture code.
 
 ## Actual installed CLI tests
 

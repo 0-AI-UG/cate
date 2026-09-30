@@ -1,0 +1,572 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:where(button, [role='button'], a[href], input[type='checkbox'], input[type='radio'], input[type='range'], input[type='color'], input[type='file']):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* Text fields use their rounded border, not an outline around the text inside.
+   Compound fields put the focus border on their shared frame. */
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea, select):focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+[data-input-frame]:has(input:focus, textarea:focus, select:focus) {
+  border-color: var(--border-focus);
+}
+[data-input-frame] :where(input, textarea, select):focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* =============================================================================
+   Theme tokens.
+   The active theme is applied at runtime by applyTheme() (kernel/ui), which
+   writes every --var as an inline style on <html>.
+   This :root block is only the cold-launch / un-themed fallback — it mirrors
+   the dark-warm palette and MUST stay in sync with BASE_DARK in
+   src/kernel/ui/contract/themes/base.ts.
+   ============================================================================= */
+
+:root {
+  /* UI chrome font — native system stack. */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+
+  --surface-0: #1d1c1a;
+  --surface-1: #232220;
+  --surface-2: #282724;
+  --surface-3: #2c2b28;
+  --surface-4: #322f2c;
+  --surface-5: #3a3733;
+  --surface-6: #423f3a;
+  --titlebar-bg: #232220;
+  --canvas-bg: #161513;
+  --canvas-bg-alt: #1c1b19;
+  --canvas-backdrop-scrim: rgba(0, 0, 0, 0.35);
+  --grid-dot: rgba(255, 255, 255, 0.077);
+  --grid-line: rgba(255, 255, 255, 0.03);
+  --border-subtle: rgba(255, 255, 255, 0.035);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  /* Hairline width for inline-styled borders (canvas nodes, overlays). 1px on
+     standard displays; overridden to 0.5px on hi-DPI (see the @media rule below)
+     so panels get the same true 1-device-pixel line as the utility borders. */
+  --hairline: 1px;
+  --border-focus: #4a9eff;
+  --text-primary: #e8e6e3;
+  --text-secondary: #a8a49e;
+  --text-muted: #78746e;
+  --text-inverse: #141311;
+  --focus-blue: #4a9eff;
+  --activity-green: #4dd964;
+  --activity-orange: #ff9f0a;
+  --shadow-node: rgba(0, 0, 0, 0.45);
+  --shadow-node-focused: rgba(74, 158, 255, 0.35);
+  --node-bg-active: #1a1917;
+  --node-dim-overlay: rgba(0, 0, 0, 0.18);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-hover-strong: rgba(255, 255, 255, 0.12);
+  --git-added: #4dd964;
+  --git-modified: #ff9f0a;
+  --git-deleted: #ff453a;
+  --git-untracked: #4a9eff;
+  --git-renamed: #bf5af2;
+  /* Minimap panel rects — muted variants tinted toward the active theme.
+     :root mirrors dark-warm for any un-themed render. */
+  --panel-terminal: #4a9960;
+  --panel-browser: #4a7ab0;
+  --panel-editor: #b07440;
+  --panel-canvas: #8857b0;
+  /* Agent accent — RGB channels for Tailwind alpha modifier support. */
+  --agent-rgb: 74 158 255;
+  --agent-light-rgb: 147 197 255;
+}
+
+/* Semantic utility classes. Declared directly (not via Tailwind colors) so
+   names like `text-primary` / `border-subtle` don't collide with Tailwind's
+   `text-<color>` / `border-<color>` scale naming. */
+@layer utilities {
+  .text-primary { color: var(--text-primary); }
+  .text-secondary { color: var(--text-secondary); }
+  .text-muted { color: var(--text-muted); }
+  .text-inverse { color: var(--text-inverse); }
+  .hover\:text-primary:hover { color: var(--text-primary); }
+  .hover\:text-secondary:hover { color: var(--text-secondary); }
+  .hover\:text-muted:hover { color: var(--text-muted); }
+  .hover\:text-inverse:hover { color: var(--text-inverse); }
+
+  .border-subtle { border-color: var(--border-subtle); }
+  .border-strong { border-color: var(--border-strong); }
+  .border-focus { border-color: var(--border-focus); }
+  .hover\:border-subtle:hover { border-color: var(--border-subtle); }
+  .hover\:border-strong:hover { border-color: var(--border-strong); }
+  .focus\:border-subtle:focus { border-color: var(--border-subtle); }
+  .focus\:border-strong:focus { border-color: var(--border-strong); }
+  .focus\:border-focus:focus { border-color: var(--border-focus); }
+
+  .placeholder\:text-muted::placeholder { color: var(--text-muted); }
+  .placeholder\:text-secondary::placeholder { color: var(--text-secondary); }
+
+  /* Opacity variants for the hand-written text-color utilities. Tailwind's
+     `/NN` alpha modifier only works on real palette colors, not these custom
+     classes — without these rules a class like `text-muted/70` matches NOTHING,
+     so the element sets no color and inherits its parent's (an SVG fill or icon
+     then renders white regardless of theme). color-mix toward transparent
+     reproduces the intended alpha while tracking the active theme. */
+  .text-primary\/50 { color: color-mix(in srgb, var(--text-primary) 50%, transparent); }
+  .text-primary\/70 { color: color-mix(in srgb, var(--text-primary) 70%, transparent); }
+  .text-primary\/75 { color: color-mix(in srgb, var(--text-primary) 75%, transparent); }
+  .text-primary\/80 { color: color-mix(in srgb, var(--text-primary) 80%, transparent); }
+  .text-primary\/85 { color: color-mix(in srgb, var(--text-primary) 85%, transparent); }
+  .text-primary\/90 { color: color-mix(in srgb, var(--text-primary) 90%, transparent); }
+  .hover\:text-primary\/70:hover { color: color-mix(in srgb, var(--text-primary) 70%, transparent); }
+  .text-secondary\/70 { color: color-mix(in srgb, var(--text-secondary) 70%, transparent); }
+  .text-muted\/30 { color: color-mix(in srgb, var(--text-muted) 30%, transparent); }
+  .text-muted\/40 { color: color-mix(in srgb, var(--text-muted) 40%, transparent); }
+  .text-muted\/50 { color: color-mix(in srgb, var(--text-muted) 50%, transparent); }
+  .text-muted\/60 { color: color-mix(in srgb, var(--text-muted) 60%, transparent); }
+  .text-muted\/70 { color: color-mix(in srgb, var(--text-muted) 70%, transparent); }
+  .text-muted\/80 { color: color-mix(in srgb, var(--text-muted) 80%, transparent); }
+
+  /* `bg-primary` = the primary text color as a fill (used by the blink cursor). */
+  .bg-primary { background-color: var(--text-primary); }
+  .bg-primary\/80 { background-color: color-mix(in srgb, var(--text-primary) 80%, transparent); }
+
+  .bg-hover { background-color: var(--surface-hover); }
+  .bg-hover-strong { background-color: var(--surface-hover-strong); }
+
+  /* Theme accent (per-theme --focus-blue) — used for active toggles etc. */
+  .bg-accent { background-color: var(--focus-blue); }
+  .text-accent { color: var(--focus-blue); }
+  .hover\:bg-hover:hover { background-color: var(--surface-hover); }
+  .hover\:bg-hover-strong:hover { background-color: var(--surface-hover-strong); }
+  .active\:bg-hover-strong:active { background-color: var(--surface-hover-strong); }
+  .group:hover .group-hover\:bg-hover { background-color: var(--surface-hover); }
+
+  /* Semantic status colors. Agent error/warning UI maps onto the theme's
+     palette (the canonical red/orange) instead of fixed Tailwind shades, so it
+     tracks the active theme — including light themes. */
+  .text-danger { color: var(--git-deleted); }
+  .text-warning { color: var(--activity-orange); }
+  .hover\:text-danger:hover { color: var(--git-deleted); }
+  .bg-danger { background-color: var(--git-deleted); }
+  .bg-warning { background-color: var(--activity-orange); }
+  .bg-danger-tint { background-color: color-mix(in srgb, var(--git-deleted) 14%, transparent); }
+  .bg-warning-tint { background-color: color-mix(in srgb, var(--activity-orange) 14%, transparent); }
+  .hover\:bg-danger-tint:hover { background-color: color-mix(in srgb, var(--git-deleted) 26%, transparent); }
+  .border-danger { border-color: color-mix(in srgb, var(--git-deleted) 36%, transparent); }
+  .border-warning { border-color: color-mix(in srgb, var(--activity-orange) 30%, transparent); }
+
+  @keyframes catePanelConnectionFlow {
+    to { stroke-dashoffset: -18; }
+  }
+
+  @keyframes catePanelConnectionFade {
+    from { opacity: 0.72; }
+    to { opacity: 0; }
+  }
+
+  @keyframes catePanelInteractionPulse {
+    0%, 100% { transform: scale(0.8); opacity: 0.55; }
+    50% { transform: scale(1.15); opacity: 1; }
+  }
+
+  .cate-panel-connection {
+    stroke-dasharray: 10 8;
+  }
+
+  .cate-panel-connection-active {
+    animation: catePanelConnectionFlow 700ms linear infinite;
+  }
+
+  .cate-panel-connection-finished {
+    animation: catePanelConnectionFade 10s ease-out 30s forwards;
+  }
+
+  .cate-panel-interaction-dot-active {
+    animation: catePanelInteractionPulse 900ms ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cate-panel-connection-active,
+    .cate-panel-connection-finished,
+    .cate-panel-interaction-dot-active {
+      animation: none;
+    }
+  }
+
+  /* Inline diff add/remove rows — themed via the git add/delete colors. */
+  .bg-diff-add { background-color: color-mix(in srgb, var(--git-added) 12%, transparent); }
+  .bg-diff-del { background-color: color-mix(in srgb, var(--git-deleted) 12%, transparent); }
+  .text-diff-add { color: var(--git-added); }
+  .text-diff-del { color: var(--git-deleted); }
+}
+
+@layer base {
+  html, body, #root {
+    @apply h-full w-full m-0 p-0 overflow-hidden;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom scrollbar — a thin, fully-rounded floating pill. The 2px transparent
+     border + padding-box clip insets the thumb from the track edge so it reads
+     as a pill rather than a full-width bar. :hover only swaps background-COLOR
+     (not the `background` shorthand) so the clip/inset survives. */
+  ::-webkit-scrollbar {
+    width: 13.52px;
+    height: 13.52px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 9999px;
+    /* Asymmetric inset: fat transparent border on the left, hairline on the
+       right, so the thin pill hugs the right edge (overlays content) instead of
+       floating in a reserved gutter. */
+    border-top: 2px solid transparent;
+    border-bottom: 2px solid transparent;
+    border-left: 3px solid transparent;
+    border-right: 1px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+}
+
+/* Sidebar scrollbars: the same thin rounded floating pill as the base, but only
+   visible while the pointer is over the sidebar. The thumb is transparent until
+   then (its track space stays reserved, so revealing it doesn't shift the
+   content). Unlayered so it overrides the @layer base defaults above. */
+[data-sidebar-scrollarea] ::-webkit-scrollbar {
+  width: 13.52px;
+  height: 13.52px;
+}
+[data-sidebar-scrollarea] ::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+  /* Same right-hugging asymmetric inset as the base scrollbar. */
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-left: 3px solid transparent;
+  border-right: 1px solid transparent;
+  background-clip: padding-box;
+  /* Fade the thumb in/out as the pointer enters/leaves the sidebar. */
+  transition: background-color 280ms ease;
+}
+[data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+[data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* Terminal scrollbar: the same thin rounded floating pill as the base, but only
+   visible while the pointer is over the terminal or the terminal is focused
+   (xterm toggles `.focus` on its root element). The thumb is transparent until
+   then — its track space stays reserved, so revealing it doesn't reflow the
+   terminal. Unlayered so it overrides the @layer base defaults above. */
+/* The scrollbar lives inside the render box, which is counter-scaled by
+   1/cellScale — so a fixed 8px track shrinks on screen as the terminal zooms in
+   (down to −36% at the top scale step, while every other scrollbar in the app
+   stays put). Scale the track and its insets with the cell so the pill keeps a
+   constant on-screen size and shape. `--cell-scale` is set on the render box;
+   the `1` fallback leaves docked and detached terminals untouched.
+   xterm caches this width at construction and never re-measures it, so
+   TerminalPanel writes the new value back — see syncScrollBarWidth(). */
+.xterm-viewport::-webkit-scrollbar {
+  width: calc(13.52px * var(--cell-scale, 1));
+}
+.xterm-viewport::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: transparent;
+  border-top: calc(2px * var(--cell-scale, 1)) solid transparent;
+  border-bottom: calc(2px * var(--cell-scale, 1)) solid transparent;
+  border-left: calc(3px * var(--cell-scale, 1)) solid transparent;
+  border-right: calc(1px * var(--cell-scale, 1)) solid transparent;
+  /* Fade the thumb in/out as the pointer enters/leaves or focus changes. */
+  transition: background-color 280ms ease;
+}
+.xterm:hover .xterm-viewport::-webkit-scrollbar-thumb,
+.xterm.focus .xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+.xterm:hover .xterm-viewport::-webkit-scrollbar-thumb:hover,
+.xterm.focus .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* Floating canvas header: the tab bar's background + bottom divider stay
+   transparent until the pointer is over the bar, so at rest only the tabs and
+   +/split buttons read against the canvas. Fades its chrome in on hover. */
+.files-content ::-webkit-scrollbar {
+  width: 8.45px;
+  height: 8.45px;
+}
+
+.monaco-editor:not(:hover) .core-guide,
+.file-explorer:not(:hover) .explorer-indent-guide {
+  opacity: 0;
+}
+
+.core-guide,
+.explorer-indent-guide {
+  transition: opacity 120ms ease;
+}
+
+.monaco-scrollable-element > .scrollbar > .slider {
+  border-radius: 9999px !important;
+}
+
+.files-content ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dock-tab-bar-floating {
+  background-color: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+/* Inactive tabs float over the canvas with no chrome behind them, so give them a
+   translucent glass fill + backdrop blur — enough to read against the canvas grid
+   and separate from the content behind, while staying recessed vs the opaque
+   active tab. Scoped to the floating canvas bar; docked/mini-dock tab bars have a
+   solid chrome background already and keep their transparent-at-rest inactive
+   tabs. */
+.dock-tab-bar-floating .dock-tab-inactive {
+  background-color: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.dock-tab-bar-floating .dock-tab-inactive:hover {
+  background-color: color-mix(in srgb, var(--surface-3) 72%, transparent);
+}
+
+/* Stays transparent at rest and on hover. Only lights up as a drop target while
+   something is being dragged onto it. */
+.dock-tab-bar-floating.drop-active {
+  background-color: color-mix(in srgb, var(--focus-blue, #4a9eff) 14%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--focus-blue, #4a9eff) 45%, transparent);
+}
+
+/* Hairline borders on hi-DPI: render the 1px border utilities as a true
+   1-device-pixel line (0.5px) so all chrome reads as crisp hairlines, leaning on
+   the higher border-token contrast for visibility. Unlayered so these win over
+   Tailwind's @layer utilities; directional utilities keep their side (border-b
+   stays bottom-only). Standard-DPI displays keep the 1px fallback. Thicker
+   borders (border-2 etc.) and inline-styled borders are untouched. */
+@media (min-resolution: 1.5dppx) {
+  :root { --hairline: 0.5px; }
+  .border { border-width: 0.5px; }
+  .border-t { border-top-width: 0.5px; }
+  .border-r { border-right-width: 0.5px; }
+  .border-b { border-bottom-width: 0.5px; }
+  .border-l { border-left-width: 0.5px; }
+  .border-x { border-left-width: 0.5px; border-right-width: 0.5px; }
+  .border-y { border-top-width: 0.5px; border-bottom-width: 0.5px; }
+  .dock-tab-bar-floating { border-bottom-width: 0.5px; }
+}
+
+/* Hide the scrollbar entirely while keeping the element scrollable (wheel/drag).
+   Unlayered so it overrides the @layer base scrollbar defaults above. */
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Electron window drag region */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+@keyframes screenshot-in {
+  from { opacity: 0; transform: scale(0.6) translateY(20px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Onboarding tour card entrance. */
+@keyframes onboarding-card-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes cate-notif-sweep {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+/* "Active/running" text shimmer — a slow gradient sweep that reads as "working".
+   Used by the agent chat (ChatThread) and by panel tab/row titles whose agent
+   is running. Callers gate it to running/streaming state only, so the per-frame
+   paint is transient, not perpetual (the concern #161 raised when it removed the
+   always-on variants). The two stops are themeable via --shimmer-dim/
+   --shimmer-bright, letting a parallel-work title shimmer in its worktree color;
+   unset, they fall back to muted->primary. */
+.cate-notif-pulse {
+  background: linear-gradient(
+    90deg,
+    var(--shimmer-dim, var(--text-muted, #6b6762)) 40%,
+    var(--shimmer-bright, var(--text-secondary, #a8a49e)) 50%,
+    var(--shimmer-dim, var(--text-muted, #6b6762)) 60%
+  );
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: cate-notif-sweep 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cate-notif-pulse,
+  .skill-fill {
+    animation: none;
+  }
+}
+
+@keyframes cate-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.cate-fade-in {
+  animation: cate-fade-in 0.35s ease-out both;
+}
+
+/* Sidebar empty-state pattern wipe — the diagonal hatch dissolves left-to-right
+   the moment a chat gets its first message. The layer carries a 300%-wide alpha
+   mask (transparent | ramp | opaque); sliding mask-position from 100% (fully
+   shown) to 0% (fully masked) sweeps the transparent edge across from the left.
+   Slow + eased so it reads as a calm fade-away, not a swipe. */
+@keyframes cate-pattern-wipe {
+  from { -webkit-mask-position: 100% 0; mask-position: 100% 0; opacity: 1; }
+  to   { -webkit-mask-position: 0% 0;   mask-position: 0% 0;   opacity: 0; }
+}
+
+
+/* Skill install progress — an indeterminate left-to-right fill on an agent pill
+   while a skill downloads/installs. The pill sets position:relative;overflow:hidden
+   and renders <span class="skill-fill"> behind its label. Fills, fades, repeats
+   (the fade avoids a hard snap back to empty on loop). */
+@keyframes skill-fill {
+  0%   { transform: scaleX(0);   opacity: .9; }
+  70%  { transform: scaleX(1);   opacity: .9; }
+  100% { transform: scaleX(1);   opacity: 0;  }
+}
+.skill-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: var(--accent, #5b8cff);
+  animation: skill-fill 1.15s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Shared modal entrance — a soft backdrop fade plus a card that rises and
+   settles. Used by the <Modal> primitive (ui/Modal.tsx) so every dialog opens
+   the same way. */
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes modal-card-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-backdrop-in { animation: modal-backdrop-in 130ms ease-out both; }
+.modal-card-in { animation: modal-card-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* Awaiting-input indicator — static dot. Used for terminals whose agent has
+   stopped and is waiting for the user. Intentionally not animated: a perpetual
+   transform/opacity animation here is composited every frame and (when layered
+   over a backdrop-filter) forces a per-frame blur recompute — a large, sustained
+   WindowServer/GPU cost for a tiny indicator. */
+.cate-await-indicator {
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+}
+.cate-await-dot {
+  position: absolute;
+  inset: 1px;
+  border-radius: 9999px;
+}
+.app-header-bar {
+  height: 44px;
+  min-height: 44px;
+  padding-inline: 12px;
+  display: flex;
+  align-items: center;
+}
+
+@keyframes dock-new-tab-menu-in {
+  from { opacity: 0; transform: translateY(-3px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.dock-new-tab-menu {
+  transform-origin: top left;
+  animation: dock-new-tab-menu-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.dock-new-tab-menu button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dock-new-tab-menu { animation: none; }
+}
+
+/* Adapt to the overlay's available width, including when the sidebar is open. */
+@container repository (min-width: 720px) {
+  .repository-changes-grid { grid-template-columns: minmax(0, 1fr) 300px; }
+}
+
+/* Review toolbars respond to panel width rather than the application window. */
+.review-toolbar .review-ref { flex: 1 1 120px; width: 120px; }
+.review-toolbar .review-comparison { max-width: 150px; }
+@container review-toolbar (max-width: 900px) {
+  .review-action-label, .review-run-prefix { display: none; }
+  .review-action { width: 28px; padding-inline: 0; gap: 0; }
+  .review-worktree { max-width: 110px; }
+}
+@container review-toolbar (max-width: 640px) {
+  .review-line-stats { display: none; }
+  .review-toolbar .review-comparison { max-width: 120px; }
+  .review-worktree { max-width: 90px; }
+}
+@container review-toolbar (max-width: 480px) {
+  .review-stats { display: none; }
+  .review-toolbar, .review-toolbar-actions { gap: 2px; }
+  .review-worktree { max-width: 70px; }
+  .review-run-status { width: 6px; height: 6px; overflow: hidden; font-size: 0; border-radius: 50%; background: currentColor; }
+}
+
+@keyframes screenshot-slide-from-right {
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes screenshot-slide-from-left {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.screenshot-viewer-image-in {
+  animation-duration: 180ms;
+  animation-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screenshot-viewer-image-in { animation: none !important; }
+}

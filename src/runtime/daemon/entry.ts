@@ -1,0 +1,295 @@
+// The daemon's composition root: the one file that imports every module's
+// runtime side, builds the services with their deps and registers their
+// capabilities on the rpc server (architecture 7.1, conventions "Runtime
+// module pattern").
+//
+// The workspace, service and panel modules are built in
+// `compose/workspace.ts`; this file owns the daemon around them.
+
+import { promises as fs } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { createLogger, type Logger } from '@kernel/log/contract'
+import { lifecycle as defaultLifecycle, type LifecycleBus } from '@kernel/lifecycle/runtime'
+import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
+import { settingsCapability } from '@kernel/settings/contract'
+import { createSettingsHandlers, createWorkspaceSettingsStore } from '@kernel/settings/runtime'
+import { runtimeIdFromCanonicalRoot } from '@runtime/data/contract'
+import { canonicalRoot, cateHome, ensureLocalEndpoint, workspaceDataDir } from '@runtime/data/node'
+import {
+  acquireRuntimeSocket,
+  ensureDataDir,
+  ensureRuntimeKeyPair,
+  openSecretsFile,
+  writeRuntimeInfo,
+  type DataPaths,
+} from '@runtime/data/runtime'
+import { DEFAULT_CATE_CONNECT_URL } from '@runtime/connect/contract'
+import { pairingCapability } from '@runtime/pairing/contract'
+import { openPairingsFile, PairingService, pairingCapabilityImpl } from '@runtime/pairing/runtime'
+import { powerCapability } from '@runtime/power/contract'
+import { createPowerService, powerCapabilityImpl } from '@runtime/power/runtime'
+import { createServerHost, reapOrphanServers, serverCapabilityImpl, type ServerHost } from '@runtime/server/runtime'
+import type { PeerConnectionFactory, WebSocketFactory } from '@runtime/transports/contract'
+import { loadNodePeerConnection, nodeWebSocketFactory } from '@runtime/transports/node'
+import { createNetworkPeers, serveLocal, type SameNetworkOptions } from '@runtime/transports/runtime'
+import { tunnelCapability } from '@runtime/tunnel/contract'
+import { tunnelCapabilityImpl } from '@runtime/tunnel/runtime'
+import { serverCapability } from '@runtime/server/contract'
+import type { PanelRuntime } from '@panels/runtime'
+import { applyLoginEnv, prependPath } from '@services/terminal/runtime'
+import { withoutInheritedHookIdentity } from '@services/agents/runtime'
+import { installDirFromExecPath, installLayout, RUNTIME_VERSION, runtimeCapability, type ServeArgs } from './contract'
+import { composeWorkspace, type Workspace } from './compose/workspace'
+import { ensureRuntimeInstalled } from './node'
+import {
+  createBusyRegistry,
+  createLifetime,
+  createNetworkAccess,
+  createPerfSampler,
+  runtimeCapabilityImpl,
+  type BusyRegistry,
+  type NetworkAccess,
+} from './runtime'
+
+type StopReason =
+  | { kind: 'signal' | 'stop' | 'idle' }
+  | { kind: 'update'; version: string; installDir: string }
+
+export interface ServeOptions {
+  root: string
+  network?: ServeArgs['network']
+  /** The user's home; `.cate/` lives under it. Default `os.homedir()`. */
+  home?: string
+  version?: string
+  /** The install this daemon runs from. Default: derived from its Node. */
+  installDir?: string
+  lifecycle?: LifecycleBus
+  log?: Logger
+  lifetime?: { graceMs?: number; pollMs?: number }
+  /** For `runtime.update` downloads. */
+  fetch?: typeof fetch
+  /** Same-network listener overrides (tests bind to loopback, skip mDNS). */
+  lan?: Pick<SameNetworkOptions, 'host' | 'port' | 'advertise' | 'addresses'>
+  /** Cate Connect; default `CATE_CONNECT_URL` or the public service. */
+  connect?: { url?: string; webSocket?: WebSocketFactory; peerConnection?: () => Promise<PeerConnectionFactory> }
+  /** Panel types; default every panel in `@panels/runtime`. */
+  panels?: readonly PanelRuntime[]
+}
+
+export interface Daemon {
+  readonly runtimeId: string
+  readonly root: string
+  readonly paths: DataPaths
+  readonly endpoint: string
+  readonly rpc: RpcServer
+  readonly busy: BusyRegistry
+  readonly servers: ServerHost
+  readonly pairing: PairingService
+  readonly network: NetworkAccess
+  readonly workspace: Workspace
+  stop(reason: StopReason): Promise<void>
+  /** Resolves once the runtime has stopped and released its socket. */
+  readonly stopped: Promise<StopReason>
+}
+
+export type ServeResult =
+  | { kind: 'serving'; daemon: Daemon }
+  /** Another daemon holds this workspace's socket. */
+  | { kind: 'running'; runtimeId: string; endpoint: string }
+
+/** Once per daemon process, before serving: PTYs and servers inherit the
+ *  login shell's environment. */
+export async function prepareDaemonProcess(): Promise<void> {
+  await applyLoginEnv()
+}
+
+export async function serveWorkspace(options: ServeOptions): Promise<ServeResult> {
+  const home = options.home ?? os.homedir()
+  const version = options.version ?? RUNTIME_VERSION
+  const lifecycle = options.lifecycle ?? defaultLifecycle
+  const log = options.log ?? createLogger('daemon')
+  const installDir = options.installDir ?? installDirFromExecPath(process.execPath, process.platform)
+
+  const root = await canonicalRoot(options.root)
+  const runtimeId = runtimeIdFromCanonicalRoot(root)
+  const paths = await ensureDataDir(workspaceDataDir(runtimeId, home))
+
+  const lock = await acquireRuntimeSocket(paths.dir, runtimeId)
+  if (lock.kind === 'running') return { kind: 'running', runtimeId, endpoint: lock.endpoint }
+  const endpoint = lock.endpoint
+  // A too-long data dir is reached through a /tmp symlink (data/node); keep it
+  // there for the CLI's CATE_SOCKET even if a tmp cleaner removes it.
+  const relink = setInterval(() => {
+    ensureLocalEndpoint(paths.dir, runtimeId).catch((err: Error) => log.warn('socket link: %s', err.message))
+  }, 60 * 60_000)
+  relink.unref()
+  let workspace: Workspace | undefined
+  const rpc = new RpcServer({ version, lifecycle, acceptHello: (hello) => workspace?.acceptHello(hello) })
+  const listener = serveLocal(lock.server, rpc)
+
+  const secrets = openSecretsFile(paths.dir)
+  const keys = await ensureRuntimeKeyPair(secrets)
+  const settings = createWorkspaceSettingsStore({ dataDir: paths.dir })
+  if (options.network) settings.set('runtimeNetwork', options.network)
+
+  const busy = createBusyRegistry()
+  const perf = createPerfSampler()
+
+  const serversPidFile = path.join(paths.dir, 'servers.json')
+  reapOrphanServers(serversPidFile)
+  const cateBin = installLayout(installDir, process.platform).cateBin
+  const servers = createServerHost({
+    pidFile: serversPidFile,
+    installDir,
+    baseEnv: () => withoutInheritedHookIdentity(process.env),
+    withCateCli: (env) => ({ ...env, ...prependPath(env, cateBin) }),
+  })
+
+  const pairingsFile = openPairingsFile(paths.dir)
+  const pairing = new PairingService({
+    runtimeId,
+    runtimePublicKey: keys.publicKey,
+    store: pairingsFile,
+    addresses: () => network.addresses(),
+  })
+
+  const ws = composeWorkspace({
+    root,
+    runtimeId,
+    paths,
+    endpoint,
+    installDir,
+    rpc,
+    lifecycle,
+    settings,
+    secrets,
+    servers,
+    busy,
+    log,
+    // `cate serve` (network on from the command line) trusts what it serves.
+    trustOnStart: options.network !== undefined,
+    countPerf: (name) => perf.count(name),
+    ...(options.panels ? { panels: options.panels } : {}),
+  })
+  workspace = ws
+
+  const power = createPowerService({ busy: busy.busy, onError: (err) => log.warn('keep-awake helper failed: %s', err.message) })
+
+  let resolveStopped!: (reason: StopReason) => void
+  const stopped = new Promise<StopReason>((resolve) => { resolveStopped = resolve })
+  let stopping: Promise<void> | null = null
+
+
+  const stop = (reason: StopReason): Promise<void> => {
+    stopping ??= (async () => {
+      log.info('stopping (%s)', reason.kind)
+      lifetime.dispose()
+      clearInterval(relink)
+      // Stop accepting, then sessions and modules, then state files.
+      await network.dispose()
+      rpc.close()
+      await listener.close()
+      await lifecycle.emitShutdown(reason.kind)
+      await ws.shutdown()
+      servers.killAll()
+      power.dispose()
+      await removeSocket(endpoint)
+      settings.dispose()
+      pairingsFile.dispose()
+      secrets.dispose()
+      resolveStopped(reason)
+    })()
+    return stopping
+  }
+
+  rpc.register(runtimeCapability, runtimeCapabilityImpl({
+    runtimeId,
+    root,
+    version,
+    rpc,
+    perf,
+    stop: () => void stop({ kind: 'stop' }),
+    async update(next) {
+      const dir = await ensureRuntimeInstalled({ version: next, cateHome: cateHome(home), fetch: options.fetch })
+      setTimeout(() => void stop({ kind: 'update', version: next, installDir: dir }), 20)
+    },
+  }))
+  rpc.register(settingsCapability, settingsCapabilityImpl(createSettingsHandlers(settings)))
+  rpc.register(pairingCapability, pairingCapabilityImpl(pairing))
+  rpc.register(tunnelCapability, tunnelCapabilityImpl())
+  rpc.register(powerCapability, powerCapabilityImpl(power))
+  rpc.register(serverCapability, serverCapabilityImpl({ host: servers, trust: ws.trust }))
+
+  const clients = () => rpc.connections().filter((c) => c.client !== null).length
+  const lifetime = createLifetime({
+    settings: {
+      runtimeLifetime: () => settings.get('runtimeLifetime'),
+      runtimeNetwork: () => settings.get('runtimeNetwork'),
+      subscribe: (cb) => settings.subscribe(() => cb()),
+    },
+    busy: busy.busy,
+    clients,
+    // The rpc server announces a gone client before dropping its connection,
+    // so count once it is gone.
+    onClientsChanged: (cb) => {
+      const later = () => { setTimeout(cb, 0) }
+      const offConnected = lifecycle.onClientConnected(later)
+      const offGone = lifecycle.onClientGone(later)
+      return () => { offConnected(); offGone() }
+    },
+    stop: () => void stop({ kind: 'idle' }),
+    ...options.lifetime,
+  })
+
+  const writeInfo = () => writeRuntimeInfo(paths.dir, {
+    runtimeId,
+    root,
+    pid: process.pid,
+    version,
+    protocol: [rpc.protocol[0], rpc.protocol[1]],
+    endpoints: { local: endpoint, ...network.endpoints() },
+  })
+  const network = createNetworkAccess({
+    runtimeId,
+    runtimeKeys: keys,
+    peers: createNetworkPeers({ rpc, runtimeKeys: keys, pairing, log: log.child('network') }),
+    mode: () => settings.get('runtimeNetwork'),
+    subscribe: (cb) => settings.subscribe(() => cb()),
+    sameNetwork: options.lan,
+    connect: {
+      url: options.connect?.url ?? process.env.CATE_CONNECT_URL ?? DEFAULT_CATE_CONNECT_URL,
+      webSocket: options.connect?.webSocket ?? nodeWebSocketFactory,
+      peerConnection: options.connect?.peerConnection ?? loadNodePeerConnection,
+    },
+    onEndpointsChanged: () => {
+      writeInfo().catch((err: Error) => log.warn('could not write runtime.json: %s', err.message))
+    },
+    log: log.child('network'),
+  })
+  await ws.start()
+  await network.settled()
+  await writeInfo()
+  listener.open()
+  log.info('serving %s as %s on %s', root, runtimeId, endpoint)
+
+  return {
+    kind: 'serving',
+    daemon: { runtimeId, root, paths, endpoint, rpc, busy, servers, pairing, network, workspace: ws, stop, stopped },
+  }
+}
+
+function settingsCapabilityImpl(handlers: ReturnType<typeof createSettingsHandlers>): CapabilityImpl<typeof settingsCapability> {
+  return {
+    getAll: () => handlers.getAll(),
+    set: (params) => handlers.set(params),
+    subscribe: (_params, sink) => handlers.subscribe((event) => sink.emit(event)),
+  }
+}
+
+async function removeSocket(endpoint: string): Promise<void> {
+  if (process.platform === 'win32') return
+  try {
+    if ((await fs.lstat(endpoint)).isSocket()) await fs.rm(endpoint, { force: true })
+  } catch { /* already gone */ }
+}

@@ -3,11 +3,11 @@ import { writeFile } from 'node:fs/promises'
 import { expect, test, type TestInfo } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import { closeApp, launchApp } from './fixtures/electron-app'
-import { act, activeAction, browserInvoke, fixtureEvaluate, observe, target } from './fixtures/browser-control'
+import { act, activeAction, browserInvoke, browserWebContentsId, createBrowser, fixtureEvaluate, observe, target, type BrowserFixture } from './fixtures/browser-control'
 
 let app: ElectronApplication
 let page: Page
-let browser: { workspaceId: string; panelId: string }
+let browser: BrowserFixture
 const evaluate = (expression: string) => fixtureEvaluate(app, page, browser, expression)
 
 async function saveCapture(testInfo: TestInfo, name: string, png: Buffer): Promise<void> {
@@ -40,8 +40,8 @@ test.beforeEach(async () => {
     <input id="cancelCheck" aria-label="Cancelled checkbox" type="checkbox" onclick="event.preventDefault()">
     <div id="swatch" role="img" aria-label="Swatch" style="position:absolute;top:250px;left:20px;width:180px;height:80px;background:rgb(20,180,70)"></div>
     <button id="offscreen" style="position:absolute;top:3000px;width:180px;height:80px;background:rgb(20,180,70);color:rgb(20,180,70);border:0;padding:0">Offscreen</button>`
-  browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 120, y: 120 }), `data:text/html,${encodeURIComponent(html)}`)
-  await expect.poll(() => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId), { timeout: 20_000 }).not.toBeNull()
+  browser = await createBrowser(page, `data:text/html,${encodeURIComponent(html)}`, { x: 120, y: 120 })
+  await expect.poll(() => browserWebContentsId(page, browser.panelId), { timeout: 20_000 }).not.toBeNull()
   await target(page, browser, 'Name')
 })
 test.afterEach(async () => { if (app) await closeApp(app) })
@@ -77,7 +77,7 @@ test('paired observations and native screenshots preserve scroll and renderer fo
   const testInfo = test.info()
   const rendererFocusTarget = page.getByRole('button', { name: /Select tool/ })
   await rendererFocusTarget.focus()
-  const guestId = await page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId)
+  const guestId = await browserWebContentsId(page, browser.panelId)
   await recordNativeCapture(guestId)
   for (const zoom of [1, 1.25]) {
     await app.evaluate(({ webContents }, { id, zoom }) => webContents.fromId(id!)!.setZoomFactor(zoom), { id: guestId, zoom })
@@ -121,7 +121,7 @@ test('paired screenshots stay fresh across alternating zoom and page generations
   const testInfo = test.info()
   const rendererFocusTarget = page.getByRole('button', { name: /Select tool/ })
   await rendererFocusTarget.focus()
-  const guestId = await page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId)
+  const guestId = await browserWebContentsId(page, browser.panelId)
   // Keep the original native image for failure diagnostics before runtime
   // resizing; encoding it only on failure avoids adding a paint-settle delay.
   await recordNativeCapture(guestId)

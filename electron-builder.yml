@@ -19,10 +19,8 @@ files:
   - "!node_modules/effect/**/*"
   - "!node_modules/ffi-rs/**/*"
   - "!node_modules/msgpackr-extract/**/*"
-# The cate-runtime daemon is NOT bundled in the app. One self-contained
-# tarball per target is built in CI and uploaded to the GitHub release
-# `v<version>`; on connect the remote pulls its own tarball (with a client-side
-# fallback). See runtimeArtifacts.ts + .github/workflows/release.yml.
+# The runtime daemon ships as one self-contained tarball per target, built in
+# CI and uploaded to the GitHub release `v<version>` (.github/workflows/release.yml).
 #
 # The T3 server and web client are staged inside each target-specific Cate
 # runtime tarball below. They run under that runtime's bundled Node, outside
@@ -32,18 +30,8 @@ asarUnpack:
   # app.asar. The pure-JS deps that used to be listed here (the AWS/Google/Mistral/
   # OpenAI SDK closure, zod, yaml, protobufjs, etc.) load fine straight out of the
   # asar, so packing them keeps ~10k loose sealed files out of the bundle.
-  - "node_modules/node-pty/**"
-  # @parcel/watcher (workspace-tree file watching, main process) + its per-platform
-  # prebuilt binary packages (@parcel/watcher-<platform>-<arch>[-glibc/musl], each
-  # shipping watcher.node). The .node binaries can't be dlopen'd from inside
-  # app.asar, so the whole family is unpacked. npm install on the build runner
-  # provides the host platform's package.
-  - "node_modules/@parcel/watcher/**"
-  - "node_modules/@parcel/watcher-*/**"
   - "node_modules/koffi/**"
   - "node_modules/fsevents/**"
-  - "node_modules/ssh2/**"
-  - "node_modules/cpu-features/**"
   - "node_modules/iconv-corefoundation/**"
   - "node_modules/@mariozechner/clipboard/**"
   - "node_modules/@mariozechner/clipboard-darwin-arm64/**"
@@ -54,19 +42,13 @@ asarUnpack:
   - "node_modules/sharp/**"
   - "node_modules/pdfjs-dist/**"
 extraResources:
-  # Ship the cate-theme authoring skill for managed installation into
-  # ~/.claude/skills/cate-theme/, preserving user edits during updates.
-  - from: skills
-    to: skills
-    filter:
-      - "**/*"
-  # Ship the runtime daemon tarball(s) so the packaged LOCAL workspace runs the
-  # same daemon as remote hosts. Linux/Windows stage one host-arch
+  # Ship the runtime daemon tarball(s) the app installs to start a workspace's
+  # runtime. Linux/Windows stage one host-arch
   # runtime-host.tgz; macOS stages per-arch runtime-host-<arch>.tgz — release CI
   # stages BOTH x64 (Intel) and arm64, local packaging just the host arch —
   # because one .app can run on either CPU and the daemon's bundled node +
   # node-pty are arch-specific (an arm64 daemon can't exec on Intel → terminal
-  # never opens). Resolved at runtime by shippedRuntimeTarball():
+  # never opens). Resolved by src/shells/desktop/main/updater/runtimeInstall.ts:
   # resources/runtime-host-<arch>.tgz on macOS, resources/runtime-host.tgz
   # elsewhere. The glob copies whatever this runner staged (scripts/package.mjs
   # locally, release.yml in CI) without erroring on arches it didn't build.

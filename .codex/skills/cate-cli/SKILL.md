@@ -6,8 +6,22 @@ user-invocable: true
 
 # Cate CLI
 
-`cate` is available inside Cate terminals and agent shells. It talks to the
-current workspace and requires the relevant Settings → CLI permission.
+`cate` is on PATH in every Cate terminal and in agent shells started from
+one. It talks to the workspace's runtime over the local socket named by
+`CATE_SOCKET`, authenticated by `CATE_TOKEN`, a per-terminal token that also
+names the calling panel. Terminals run in the workspace's runtime, so this
+works the same when the workspace lives on another machine. If either
+variable is missing, `cate` exits with code 3 and says so.
+
+Each area needs its permission in the workspace's Settings → CLI: the master
+switch "Command-line control (cate CLI)" plus a Read and a Control cell per
+area (Browser, Terminal, Panels, Files, Notifications, Agents & reviews).
+Sending keystrokes to terminals is off by default. A denied call fails with
+an error naming the setting to turn on.
+
+`cate --help` lists every command; `cate <command> --help` shows one.
+`--json` prints the raw result. Exit codes: 0 ok, 1 the call failed, 2 usage
+error, 3 no connection to Cate.
 
 Start by listing panels:
 
@@ -15,26 +29,28 @@ Start by listing panels:
 cate panel list
 ```
 
-When working repeatedly with one panel, select it for the current agent or
-terminal session:
+When working repeatedly with one panel, select it for the current terminal:
 
 ```bash
 cate panel set 1a2b3c4d
 cate panel current
 ```
 
-The selection is isolated by a per-terminal CLI session, so other agents and
-terminals keep their own targets. Short ids from `panel list`
-are accepted. Use `--panel <id>` only as a one-command override. Clear the
-selection to return to Cate's automatic focused/grouped resolution:
+The selection belongs to the calling terminal, so other agents and terminals
+keep their own targets. Short ids from `panel list` are accepted (any unique
+prefix). Use `--panel <id>` only as a one-command override. Clear the
+selection to return to Cate's automatic resolution (the calling panel's
+group, then the panel active in the most recently used window, then the only
+panel of that type):
 
 ```bash
 cate panel clear
 ```
 
-Selections can point to any native panel. Browser and terminal commands reject
-a selected panel of the wrong type instead of silently controlling another
-panel. If a selected panel was closed, select another panel before continuing.
+Selections can point to any panel. Commands reject a selected panel of the
+wrong type instead of silently controlling another panel. If a selected
+panel was closed, select another panel before continuing. `terminal type`
+and `terminal press` never guess: they need `--panel` or a selection.
 
 ## Browser workflow
 
@@ -48,9 +64,10 @@ cate panel create browser
 Use `cate browser run` to inspect and control a panel's live tab, or to open
 another tab within an existing browser panel.
 
-Browser control uses persistent JavaScript with the `cua` tab API. The old argv
-actions, selectors, page evaluation, and revisioned string refs have been removed.
-Start by binding a tab to get its accessibility state, then request a screenshot
+Browser control uses persistent JavaScript with the `cua` tab API; there are no
+argv page actions, selectors or page evaluation. Page operations run on the
+Cate window that most recently showed or used the panel, so a Cate window with
+the workspace open must be connected. Start by binding a tab to get its accessibility state, then request a screenshot
 when visual context is useful:
 
 ```bash
@@ -94,6 +111,8 @@ coordinates. A dispatched click is not proof that a business operation completed
 use `waitFor` or inspect the resulting state.
 
 ```javascript
+const src = await tab.getAttribute(42, "src"); // string or null; use a current AX element ID
+await tab.download(src);                       // relative URLs resolve against the current page
 await tab.click(42);                         // or [x,y]
 await tab.setValue(17, "replacement");
 await tab.typeText("insert at selection");
@@ -110,15 +129,20 @@ await tab.goto("https://example.com");
 await tab.back(); await tab.forward(); await tab.reload();
 await tab.setViewport({width:1280,height:800});
 await tab.resize({width:800,height:600});
-await tab.downloads(); await tab.close();
+await tab.download();                         // current tab URL; or pass an absolute/relative asset URL
+await tab.downloads();                        // inspect download progress/completion
+await tab.close();
 ```
 
 Keep deterministic batches short and inspect unexpected changes before continuing.
 Use `var` for reusable bindings; top-level `await` is supported. The session has
 no Node.js, filesystem, network, or DOM evaluation access. Await every action.
 `nodeRepl.write(value)` adds text output. `cate browser reset` clears JavaScript
-bindings without closing tabs. Sessions are isolated per terminal/agent through
-`CATE_CLI_SESSION_ID`; timed-out sessions reset.
+bindings without closing tabs. Reset and timeout cancel queued and pending browser
+actions; input already dispatched cannot be undone. Each terminal (each
+`CATE_TOKEN`) has its own code session; timed-out sessions reset.
+`typeText` resolves current focus before inserting at the current selection,
+including fields inside frames and shadow roots.
 
 `cate browser run 'await tab.getAXStateAndScreenshot();'` returns AX state and
 saves a screenshot to a temporary PNG file. Open the printed path with your image-viewing tool before visual
@@ -127,29 +151,36 @@ returns structured content with base64 image data; base64 text is not visual
 input. The same screenshot output works from `tab.getScreenshot()` in code.
 AX reads remain available in code for deterministic branches and extraction.
 
-Agent actions display a cursor/highlight in the browser panel. User input takes
-control back and cancels pending automation. Responsive viewport size and canvas
+Agent actions display a cursor and click ripples in the browser panel, without
+field bounding-box highlights. Filling and typing animate the cursor at the
+edited field. User input takes control back and cancels pending automation. Responsive viewport size and canvas
 panel size are independent; `resize` applies only to canvas panels with a 400×300
 minimum.
 
 ## Other surfaces
 
 ```bash
-cate editor open src/app.tsx:42
+cate editor open src/app.tsx:42          # or: cate editor open src/app.tsx --line 42
+cate editor active                       # which file the target editor shows
 cate panel create browser https://example.com
 cate panel create terminal
 cate panel create canvas
-cate panel set <id>
-cate panel current
-cate panel clear
-cate panel close <id>
+cate panel title "API tests"             # rename the calling panel (or --panel <id>)
+cate panel close <id>                    # fails with dirty on unsaved work
+cate panel close <id> --discard          # close and drop unsaved work
+cate notify "Build finished" --level info
 ```
 
-Read a terminal before sending input. `type` does not append Enter:
+There is no `panel focus`: which panel has focus belongs to each person's
+window, not to the workspace.
+
+Read a terminal before sending input. `type` does not append Enter; `press`
+takes key names (enter, tab, escape, backspace, space, arrows, pageup/pagedown,
+home, end, ctrl-<letter>):
 
 ```bash
 cate panel set 1a2b3c4d
-cate terminal read
+cate terminal read --lines 40
 cate terminal type npm test
 cate terminal press enter
 ```
@@ -159,27 +190,34 @@ TUIs. Never send keys until the panel id and current screen are verified.
 
 ## Agent orchestration
 
-Use `cate agent` to inspect and steer the live agent surfaces already visible in
-the current workspace. This includes terminal CLI agents and T3 Code panels.
+Use `cate agent` to observe and steer the live agent panels of the current
+workspace: terminal CLI agents and chat (T3 Code) panels.
 Discover their panel ids before sending work or after context compaction:
 
 ```bash
 cate agent list
 ```
 
-Send a bounded prompt to a ready panel, inspect its state, or wait for one or
-more panels to become ready:
+Send a bounded prompt to a ready panel, wait for one or more panels to become
+ready, then read the conversation:
 
 ```bash
-cate agent send --panel <panel-id> "Please add the missing regression test"
-cate agent inspect <panel-id>
+cate agent send <panel-id> "Please add the missing regression test"
 cate agent wait <panel-id> [<panel-id>...] --wait-timeout 10000
+cate agent read <panel-id> [--json]
 ```
 
 Panel ids may be the unique short ids printed by `cate agent list`. `wait`
-accepts 5000–60000 milliseconds and may be called with no ids to monitor every
+accepts 5000 to 60000 milliseconds and may be called with no ids to monitor every
 live agent panel. A successful send delivers the prompt exactly once; the target
 must be at its normal prompt rather than busy or waiting on structured input.
+`read` prints the conversation's user and assistant messages the same way for
+every agent panel: terminal CLI agents are read from that CLI's own session
+store, chat panels from their T3 thread. `--json` gives `{ panelId, runner,
+title, agentId, agentName, state, canReceivePrompt, session, messages: [{ role,
+text, createdAt }] }` (`runner` is `terminal` or `t3`). A
+terminal whose agent has not reported a session yet fails with `no-agent-session`;
+use `cate terminal read` to see its screen instead.
 
 ## Review panels
 
@@ -199,3 +237,21 @@ cate review complete
 Use `complete` only when running as the review agent assigned by that Review
 Panel. Review commands record findings; they do not modify files, stage,
 commit, or push changes.
+
+## Coding-agent workers
+
+`cate codingAgent` starts and manages background workers, each a CLI agent in
+its own terminal, optionally in an existing (`--worktree <id>`) or new
+(`--new-worktree <name>`, `--base-ref <ref>`) worktree. Workers belong to the
+terminal that created them:
+
+```bash
+cate codingAgent create "Fix the flaky login test" --agent codex --new-worktree fix-login
+cate codingAgent list
+cate codingAgent wait <run-id> --timeout 60   # seconds, 5 to 60
+cate codingAgent inspect <run-id>
+cate codingAgent review <run-id>
+cate codingAgent apply <run-id>      # or keep / discard
+cate codingAgent send <run-id> "Also cover the logout path"
+cate codingAgent stop <run-id>
+```

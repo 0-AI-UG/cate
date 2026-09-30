@@ -47,6 +47,8 @@ function processTable() {
   })
 }
 
+// Workspace runtimes are detached daemons (they outlive the app), so they are
+// not descendants and are not counted against the cap.
 async function descendantRssKB(rootPid) {
   const rows = await processTable()
   const descendants = new Set([rootPid])

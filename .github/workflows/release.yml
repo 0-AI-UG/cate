@@ -1,9 +1,13 @@
 name: Release
 
+# Run manually (Actions > Release > Run workflow) on the commit to ship. The tag
+# is derived from package.json and is NOT pushed up front: the release stays a
+# tag-less draft until every platform has uploaded, and publishing it (last
+# step) creates the tag. Pushing the tag first made the public releases.atom
+# feed advertise the version while its latest-*.yml files were still missing,
+# so running apps hit a 404 during the build window.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,10 +15,20 @@ permissions:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve tag from package.json
+        id: meta
+        run: |
+          echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release (skip if exists)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
           # A tag with a semver pre-release suffix (a hyphen, e.g. v1.2.0-beta.1)
           # is published as a GitHub pre-release. GitHub excludes pre-releases
@@ -24,13 +38,18 @@ jobs:
           # are offered it. The later "Publish release" step un-drafts without
           # touching the pre-release flag, so it stays a pre-release.
           PRERELEASE_FLAG=""
-          case "${{ github.ref_name }}" in
+          case "$TAG" in
             *-*) PRERELEASE_FLAG="--prerelease" ;;
           esac
-          if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
-            echo "Release ${{ github.ref_name }} already exists — skipping creation"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null 2>&1; then
+            echo "Tag $TAG already exists; bump the version in package.json" >&2
+            exit 1
+          fi
+          if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            echo "Draft release $TAG already exists, reusing it"
           else
-            gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --draft --generate-notes $PRERELEASE_FLAG
+            # --target pins the tag that publishing will create to this commit.
+            gh release create "$TAG" --repo "${{ github.repository }}" --title "$TAG" --target "${{ github.sha }}" --draft --generate-notes $PRERELEASE_FLAG
           fi
 
   release:
@@ -138,7 +157,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag }}
         run: |
           cp dist-runtime/runtime-host.tgz dist-runtime/runtime-host-arm64.tgz
           gh release download "$TAG_NAME" --repo "${{ github.repository }}" \
@@ -215,7 +234,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag }}
         run: |
           files=()
           while IFS= read -r -d '' file; do
@@ -237,8 +256,8 @@ jobs:
   # Per-target cate-runtime daemon tarballs. macOS/Windows build on matching
   # runners; both Linux targets use the pinned old-glibc container, with arm64
   # running under QEMU. Uploaded to the same release
-  # so a connecting host can pull its tarball straight from the release URL
-  # (see src/main/runtime/runtimeArtifacts.ts).
+  # so an install can pull its tarball straight from the release URL
+  # (see src/runtime/daemon/node/ and src/runtime/daemon/contract).
   runtime:
     needs: create-release
     strategy:
@@ -316,17 +335,30 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag }}
         run: |
           gh release upload "$TAG_NAME" dist-runtime/cate-runtime-*-${{ matrix.target }}.tgz \
             --repo "${{ github.repository }}" \
             --clobber
 
   publish-release:
-    needs: [release, runtime]
+    needs: [create-release, release, runtime]
     runs-on: ubuntu-latest
     steps:
-      - name: Publish release (remove draft)
+      - uses: actions/checkout@v4
+
+      # `curl -fsSL <release>/install.sh | sh` installs the runtime on a
+      # machine without the desktop app (cate serve).
+      - name: Upload runtime install script
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false
+        run: |
+          gh release upload "${{ needs.create-release.outputs.tag }}" scripts/install.sh \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+      # Un-drafting is what creates the tag (at the --target commit above).
+      - name: Publish release (remove draft, creates tag)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ needs.create-release.outputs.tag }}" --repo "${{ github.repository }}" --draft=false

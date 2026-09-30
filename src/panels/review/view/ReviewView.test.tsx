@@ -1,0 +1,132 @@
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createDocument, type WorkspaceDocument } from '@workspace/document/contract'
+import { installMockClientUi } from '@kernel/ui/testing'
+
+;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const h = vi.hoisted(() => ({ doc: null as unknown as WorkspaceDocument }))
+vi.mock('@client/document/ui', () => ({ useDocument: (_ws: string, select: (doc: WorkspaceDocument) => unknown) => select(h.doc) }))
+vi.mock('@client/document', () => ({ documentStoreFor: () => null, clientStateFor: () => null }))
+const pickPanelPlace = vi.hoisted(() => vi.fn(async () => ({ kind: 'existing', panelId: 't1' })))
+vi.mock('@client/host', async (importOriginal) => ({ ...(await importOriginal<typeof import('@client/host')>()), pickPanelPlace }))
+
+import { registerPanelDefinitions } from '@client/host'
+import { PANEL_DEFINITIONS } from '../../definitions'
+import ReviewView from './ReviewView'
+
+registerPanelDefinitions(PANEL_DEFINITIONS)
+import { DEFAULT_REVIEW_DISPLAY, type ReviewOp, type ReviewSnapshot } from '../contract'
+
+const file = { path: 'src/a.ts', status: 'modified' as const, additions: 1, deletions: 0, binary: false, staged: false, working: true }
+const untracked = { ...file, path: 'new.ts', status: 'added' as const, untracked: true }
+const diff = {
+  path: 'src/a.ts', binary: false, tooLarge: false, byteLength: 1,
+  hunks: [{ header: '@@', oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: [{ kind: 'add' as const, text: 'return safe()', oldLine: null, newLine: 1 }] }],
+}
+
+function gitSnapshot(patch: Partial<ReviewSnapshot> = {}): ReviewSnapshot {
+  return {
+    review: { repoPath: '/repo', spec: { kind: 'uncommitted' }, display: { ...DEFAULT_REVIEW_DISPLAY }, notes: [], collapsedFiles: [] },
+    comparison: { spec: { kind: 'uncommitted' }, resolvedBase: null, resolvedTarget: null, currentBranch: 'main', files: [file, untracked], additions: 1, deletions: 0 },
+    diffEpoch: 1,
+    recorded: { loading: false, error: null, files: [] },
+    loading: false, busy: false, agentBusy: false, error: null, branches: [], commits: [],
+    ...patch,
+  }
+}
+
+let host: HTMLDivElement
+let root: Root
+let send: ReturnType<typeof vi.fn<(op: ReviewOp) => Promise<unknown>>>
+
+function render(snapshot: ReviewSnapshot) {
+  act(() => root.render(<ReviewView workspaceId="ws" panelId="review" record={{ id: 'review', type: 'review', title: 'Review', fields: {} }} session={null as never} send={send} snapshot={snapshot} visible focused={false} />))
+}
+const flush = () => act(async () => { await Promise.resolve() })
+const button = (label: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
+
+beforeEach(() => {
+  h.doc = createDocument()
+  send = vi.fn(async (op: ReviewOp) => {
+    if (op.kind === 'diff') return diff
+    if (op.kind === 'recordedDiff') return { path: op.path, hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' }
+    if (op.kind === 'reviewAgents') return [{ agentId: 'codex', ready: true }]
+    if (op.kind === 'applyCommand') return 'git apply PATCH'
+    return undefined
+  })
+  host = document.createElement('div')
+  document.body.appendChild(host)
+  root = createRoot(host)
+})
+
+afterEach(() => {
+  act(() => root.unmount())
+  host.remove()
+})
+
+it('fetches diffs on demand and refetches them when the epoch moves', async () => {
+  installMockClientUi()
+  render(gitSnapshot({ comparison: { ...gitSnapshot().comparison!, files: [file] } }))
+  await flush()
+  expect(send).toHaveBeenCalledWith({ kind: 'diff', path: 'src/a.ts' })
+  expect(host.textContent).toContain('return safe()')
+  send.mockClear()
+  render(gitSnapshot({ comparison: { ...gitSnapshot().comparison!, files: [file] }, diffEpoch: 2 }))
+  await flush()
+  expect(send).toHaveBeenCalledWith({ kind: 'diff', path: 'src/a.ts' })
+})
+
+it('confirms before discarding and passes whether the file is untracked', async () => {
+  const ui = installMockClientUi({ confirm: vi.fn(async () => true) })
+  render(gitSnapshot())
+  await flush()
+  const discards = host.querySelectorAll<HTMLButtonElement>('button[aria-label="Discard working changes"]')
+  await act(async () => { discards[1].click() })
+  expect(ui.confirm).toHaveBeenCalledWith(expect.stringContaining('new.ts'))
+  expect(send).toHaveBeenCalledWith({ kind: 'discard', path: 'new.ts', untracked: true })
+
+  ui.confirm.mockResolvedValueOnce(false)
+  send.mockClear()
+  await act(async () => { discards[0].click() })
+  expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'discard' }))
+})
+
+it('copies the apply command and opens a created pull request through ClientUi', async () => {
+  const ui = installMockClientUi()
+  send.mockImplementation(async (op: ReviewOp) => (op.kind === 'createPullRequest' ? { url: 'https://example.test/pr/1' } : op.kind === 'applyCommand' ? 'git apply PATCH' : op.kind === 'diff' ? diff : undefined))
+  render(gitSnapshot({ review: { ...gitSnapshot().review, spec: { kind: 'branch', base: 'origin/main', target: 'main' } } }))
+  await act(async () => { button('Create pull request').click() })
+  expect(ui.openExternal).toHaveBeenCalledWith('https://example.test/pr/1')
+  act(() => button('More review options').click())
+  await act(async () => { [...host.querySelectorAll('button')].find((b) => b.textContent === 'Copy git apply command')!.click() })
+  expect(ui.writeClipboard).toHaveBeenCalledWith('git apply PATCH')
+})
+
+it('shows recorded agent edits and fetches their hunks from the session', async () => {
+  installMockClientUi()
+  h.doc = { ...createDocument(), panels: { term: { id: 'term', type: 'terminal', title: 'Terminal 1', fields: {} } } }
+  render(gitSnapshot({
+    review: { ...gitSnapshot().review, agentChanges: { panelId: 'term' } },
+    comparison: null,
+    recorded: { loading: false, error: null, files: [{ recordId: 'rec', agentId: 'codex', source: 'terminal', panelIds: ['term'], path: 'src/a.ts', additions: 1, deletions: 0, coverage: 'patch', lineCount: 1 }] },
+  }))
+  await flush()
+  expect(send).toHaveBeenCalledWith({ kind: 'recordedDiff', recordId: 'rec', path: 'src/a.ts' })
+  expect(host.textContent).toContain('return safe()')
+  expect(button('Go to Terminal 1')).not.toBeNull()
+  act(() => button('Remove Terminal 1 filter').click())
+  expect(send).toHaveBeenCalledWith({ kind: 'updateFilter', patch: { panelId: null, sessionId: null, turnId: null } })
+})
+
+it('starts a terminal review with the agent the person picks', async () => {
+  installMockClientUi()
+  send.mockImplementation(async (op: ReviewOp) => (op.kind === 'reviewAgents' ? [{ agentId: 'codex', ready: true }] : op.kind === 'reviewWithAgent' ? true : op.kind === 'diff' ? diff : undefined))
+  render(gitSnapshot())
+  await act(async () => { button('Review in terminal').click() })
+  expect(send).toHaveBeenCalledWith({ kind: 'reviewAgents' })
+  await act(async () => { [...host.querySelectorAll('button')].find((b) => b.textContent === 'Start review')!.click() })
+  expect(pickPanelPlace).toHaveBeenCalledWith({ workspaceId: 'ws', panelType: 'terminal', availability: 'both', sourcePanelId: 'review' })
+  expect(send).toHaveBeenCalledWith({ kind: 'reviewWithAgent', agentId: 'codex', terminalPanelId: 't1' })
+})

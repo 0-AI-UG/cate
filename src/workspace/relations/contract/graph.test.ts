@@ -1,0 +1,175 @@
+import { describe, expect, it } from 'vitest'
+import type { PanelType } from '@workspace/document/contract'
+import { panelDefinition } from '@panels/definitions'
+import {
+  compileRelationContext,
+  defaultPanelRelationKind,
+  isPanelRelationSourceAnchored,
+  panelRelationOptions,
+  relationPanelOf,
+  wouldCreatePanelRelationCycle,
+  type PanelRelation,
+  type RelationPanel,
+} from './graph'
+
+// The real panel types' relation roles.
+const panel = (id: string, type: string, title = id, fields: Record<string, string> = {}): RelationPanel =>
+  relationPanelOf({ id, type: type as PanelType, title, fields }, (t) => panelDefinition(t)?.relation)
+
+describe('panel relation prompt context', () => {
+  it('stops each context segment at the next agent regardless of relation kind', () => {
+    const panels = {
+      backend: panel('backend', 'terminal', 'Backend Agent'),
+      browser: panel('browser', 'browser', 'App Browser'),
+      frontend: panel('frontend', 'chat', 'Frontend Agent'),
+      editor: panel('editor', 'editor', 'Frontend', { filePath: '/repo/src/App.tsx' }),
+    }
+    const relations: PanelRelation[] = [
+      { id: 'one', fromPanelId: 'backend', toPanelId: 'browser', kind: 'use' },
+      // A terminal/T3 destination is the boundary; `trigger` is not required.
+      { id: 'two', fromPanelId: 'browser', toPanelId: 'frontend', kind: 'context' },
+      { id: 'three', fromPanelId: 'frontend', toPanelId: 'editor', kind: 'context' },
+    ]
+
+    const backend = compileRelationContext('backend', panels, relations)!
+    expect(backend.text).toContain('App Browser')
+    expect(backend.text).toContain('cate agent send --panel frontend')
+    expect(backend.text).not.toContain('App.tsx')
+    expect(backend.text).toContain('Frontend Agent')
+    expect(backend.targetExecutionPanelIds).toEqual(['frontend'])
+    expect(backend.relatedPanelIds).toEqual(['browser', 'frontend'])
+
+    const frontend = compileRelationContext('frontend', panels, relations)!
+    expect(frontend.text).toContain('/repo/src/App.tsx')
+    expect(frontend.text).not.toContain('App Browser')
+  })
+
+  it('only exposes the same eight-character panel references as the Cate CLI', () => {
+    const sourceId = '11111111-source-panel-full-id'
+    const browserId = '22222222-browser-panel-full-id'
+    const agentId = '33333333-agent-panel-full-id'
+    const panels = {
+      [sourceId]: panel(sourceId, 'terminal'),
+      [browserId]: panel(browserId, 'browser'),
+      [agentId]: panel(agentId, 'chat'),
+    }
+    const context = compileRelationContext(sourceId, panels, [
+      { id: 'browser-link', fromPanelId: sourceId, toPanelId: browserId, kind: 'use' },
+      { id: 'agent-link', fromPanelId: browserId, toPanelId: agentId, kind: 'trigger' },
+    ])!
+
+    expect(context.text).toContain('browser 22222222')
+    expect(context.text).toContain('cate agent send --panel 33333333')
+    expect(context.text).not.toContain(sourceId)
+    expect(context.text).not.toContain(browserId)
+    expect(context.text).not.toContain(agentId)
+    // Internal metadata retains exact identity; only model-visible text is shortened.
+    expect(context.targetExecutionPanelIds).toEqual([agentId])
+  })
+
+  it('does not attach context to panels that cannot receive prompts', () => {
+    const panels = { browser: panel('browser', 'browser'), editor: panel('editor', 'editor') }
+    expect(compileRelationContext('browser', panels, [
+      { id: 'link', fromPanelId: 'browser', toPanelId: 'editor', kind: 'context' },
+    ])).toBeNull()
+  })
+
+  it('includes custom connection wording in agent context', () => {
+    const panels = {
+      chat: panel('chat', 'chat', 'Agent'),
+      browser: panel('browser', 'browser', 'Browser'),
+    }
+    const context = compileRelationContext('chat', panels, [
+      { id: 'custom', fromPanelId: 'chat', toPanelId: 'browser', kind: 'use', label: 'summarizes findings from' },
+    ])!
+
+    expect(context.text).toContain('Browser browser — summarizes findings from. Use it through Cate browser automation')
+    expect(context.text).not.toContain('Agent agent')
+  })
+
+  it('keeps a direct browser instruction compact', () => {
+    const panels = {
+      source: panel('3d1f44ac-source', 'terminal', 'Open google.de'),
+      browser: panel('8ba53edf-browser', 'browser', 'Browser'),
+    }
+    const context = compileRelationContext('source', panels, [{
+      id: 'custom',
+      fromPanelId: 'source',
+      toPanelId: 'browser',
+      kind: 'use',
+      label: 'Write frontend summary in here',
+    }])!
+
+    expect(context.text).toBe([
+      '<cate-connected-panels>',
+      'Routing context:',
+      "1. Browser 8ba53edf — Write frontend summary in here. Use it through Cate browser automation; don't open another browser.",
+      '</cate-connected-panels>',
+    ].join('\n'))
+  })
+
+  it('detects a cycle before adding a relation', () => {
+    const relations: PanelRelation[] = [
+      { id: 'one', fromPanelId: 'a', toPanelId: 'b', kind: 'use' },
+      { id: 'two', fromPanelId: 'b', toPanelId: 'c', kind: 'context' },
+    ]
+    expect(wouldCreatePanelRelationCycle(relations, 'c', 'a')).toBe(true)
+    expect(wouldCreatePanelRelationCycle(relations, 'c', 'd')).toBe(false)
+  })
+
+  it('only enables downstream sources after an execution surface anchors the flow', () => {
+    const panels = {
+      chat: panel('chat', 'chat'),
+      browser: panel('browser', 'browser'),
+      editor: panel('editor', 'editor'),
+    }
+    expect(isPanelRelationSourceAnchored('chat', panels, [])).toBe(true)
+    expect(isPanelRelationSourceAnchored('browser', panels, [])).toBe(false)
+    expect(isPanelRelationSourceAnchored('browser', panels, [
+      { id: 'link', fromPanelId: 'chat', toPanelId: 'browser', kind: 'use' },
+    ])).toBe(true)
+    expect(isPanelRelationSourceAnchored('editor', panels, [])).toBe(false)
+  })
+
+  it('offers exactly three pair-aware intents with one recommendation', () => {
+    const types: string[] = ['terminal', 'browser', 'editor', 'canvas', 'chat', 'review', 'surface']
+    for (const sourceType of types) {
+      for (const targetType of types) {
+        const source = panel(`source-${sourceType}`, sourceType)
+        const target = panel(`target-${targetType}`, targetType)
+        const options = panelRelationOptions(source, target)
+        expect(options, `${sourceType} -> ${targetType}`).toHaveLength(3)
+        expect(new Set(options.map((option) => option.kind)).size, `${sourceType} -> ${targetType}`).toBe(3)
+        expect(defaultPanelRelationKind(source, target), `${sourceType} -> ${targetType}`).toBe(options[0].kind)
+      }
+    }
+  })
+
+  it('uses the source and target together for recommendations', () => {
+    expect(panelRelationOptions(panel('chat', 'chat'), panel('terminal', 'terminal'))[0])
+      .toMatchObject({ kind: 'trigger', label: 'Hand off' })
+    expect(panelRelationOptions(panel('browser', 'browser'), panel('terminal', 'terminal'))[0])
+      .toMatchObject({ kind: 'context', label: 'Send findings to' })
+    expect(panelRelationOptions(panel('editor', 'editor'), panel('browser', 'browser'))[0])
+      .toMatchObject({ kind: 'verify', label: 'Verify in' })
+    expect(panelRelationOptions(panel('review', 'review'), panel('editor', 'editor'))[0])
+      .toMatchObject({ kind: 'use', label: 'Address in' })
+    expect(panelRelationOptions(panel('terminal', 'terminal'), panel('editor', 'editor'))[0])
+      .toMatchObject({ kind: 'use', label: 'Work in' })
+  })
+
+  it('turns resource-to-execution context into a context send, not a handoff', () => {
+    const panels = {
+      chat: panel('chat', 'chat'),
+      browser: panel('browser', 'browser'),
+      terminal: panel('terminal', 'terminal'),
+    }
+    const context = compileRelationContext('chat', panels, [
+      { id: 'browse', fromPanelId: 'chat', toPanelId: 'browser', kind: 'use' },
+      { id: 'report', fromPanelId: 'browser', toPanelId: 'terminal', kind: 'context' },
+    ])!
+
+    expect(context.text).toContain('Send relevant context by running cate agent send --panel terminal')
+    expect(context.text).not.toContain('terminal When ready')
+  })
+})

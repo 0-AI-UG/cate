@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
   // perf-stress asserts FPS / spawn-rate thresholds that depend on the host's
   // raw speed, so it's a local regression tool, not a CI gate. CI sets
   // E2E_SKIP_PERF=1 to run only the functional (smoke/drag/dock) specs.

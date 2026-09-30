@@ -1,0 +1,5 @@
+export { createBrowserDataRuntime, browserDataCapabilityImpl, type BrowserDataDeps, type BrowserDataRuntime } from './browserData'
+export { createHistoryStore, type HistoryStore } from './historyStore'
+export { createPasswordStore, PASSWORDS_KEY, type PasswordStore } from './passwords'
+export { createDownloadsList, type DownloadsList } from './downloads'
+export { authorizeUpload, type UploadPathScope } from './upload'

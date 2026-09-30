@@ -1,0 +1,237 @@
+// One connection per open workspace runtime (12.1). It owns the rpc client,
+// the typed runtime proxy, reconnecting with backoff and the connection state
+// the UI shows. Only this object knows its transport: `dialLoopback` is where
+// local and network differ, and callers never ask which one it is.
+
+import {
+  type AnyCapability,
+  type ByteDuplex,
+  type CapabilityProxy,
+  type ClientFeature,
+  type RuntimeProxy,
+} from '@kernel/rpc/contract'
+import { RpcClient, createCapabilityProxy, createRuntimeProxy, type RpcClientState } from '@kernel/rpc/client'
+import { framePortOver } from '@kernel/rpc/contract'
+import { FRAME_MODE } from '@runtime/transports/contract'
+import { RUNTIME_CAPABILITIES } from './capabilities'
+import type { ClientIdentity } from './identity'
+import { SessionSubscriptions, type SessionHandle } from './session'
+import type { ConnectionKind, ConnectionTarget, ShellTransports } from './transports'
+import { tunnelDuplex } from './tunnel'
+
+export type ConnectionState =
+  | { kind: 'connecting' }
+  | { kind: 'connected' }
+  /** `lastSeen` is when the runtime was last connected (null: never). */
+  | { kind: 'offline'; lastSeen: number | null; retrying: boolean; error?: string }
+  /** A different protocol major. `runtime.update` still works (7.10). */
+  | { kind: 'incompatible'; runtimeVersion: string }
+  /** The runtime refused this client (unknown or revoked device). */
+  | { kind: 'refused'; message: string }
+  | { kind: 'closed' }
+
+export interface Backoff {
+  initialMs: number
+  maxMs: number
+  factor: number
+}
+
+export const DEFAULT_BACKOFF: Backoff = { initialMs: 250, maxMs: 30_000, factor: 2 }
+
+export interface WorkspaceConnectionOptions {
+  workspaceId: string
+  target: ConnectionTarget
+  transports: ShellTransports
+  identity: ClientIdentity
+  /** App version, sent in `hello`. */
+  version: string
+  backoff?: Partial<Backoff>
+  now?: () => number
+  /** Defaults to every declared capability. */
+  capabilities?: readonly AnyCapability[]
+}
+
+export class WorkspaceConnection {
+  readonly workspaceId: string
+  readonly kind: ConnectionKind
+  readonly target: ConnectionTarget
+  readonly rpc: RpcClient
+  /** Typed proxy over every declared capability. Calls queue while offline. */
+  readonly runtime: RuntimeProxy
+  private readonly transports: ShellTransports
+  private readonly identity: ClientIdentity
+  private readonly backoff: Backoff
+  private readonly now: () => number
+  private readonly proxies = new Map<string, unknown>()
+  private readonly sessions: SessionSubscriptions
+  private readonly listeners = new Set<() => void>()
+  private _state: ConnectionState = { kind: 'connecting' }
+  private started = false
+  private dialing = false
+  private attempt = 0
+  private lastSeen: number | null = null
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private closed = false
+
+  constructor(opts: WorkspaceConnectionOptions) {
+    this.workspaceId = opts.workspaceId
+    this.target = opts.target
+    this.kind = opts.target.kind
+    this.transports = opts.transports
+    this.identity = opts.identity
+    this.backoff = { ...DEFAULT_BACKOFF, ...opts.backoff }
+    this.now = opts.now ?? Date.now
+    this.rpc = new RpcClient({
+      version: opts.version,
+      identity: {
+        client: {
+          clientId: opts.identity.clientId,
+          device: opts.identity.device,
+          features: [...opts.identity.features],
+        },
+      },
+    })
+    this.runtime = createRuntimeProxy(this.rpc, opts.capabilities ?? RUNTIME_CAPABILITIES)
+    this.rpc.onStateChange((state) => this.onRpcState(state))
+    this.sessions = new SessionSubscriptions(this.runtime.session)
+  }
+
+  get clientId(): string { return this.identity.clientId }
+  get state(): ConnectionState { return this._state }
+
+  getState = (): ConnectionState => this._state
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  clientHas(feature: ClientFeature): boolean {
+    return this.identity.features.has(feature)
+  }
+
+  /** A typed proxy for a declaration outside the runtime proxy (tests, a
+   *  capability being added). */
+  proxy<C extends AnyCapability>(cap: C): CapabilityProxy<C> {
+    let proxy = this.proxies.get(cap.name) as CapabilityProxy<C> | undefined
+    if (!proxy) {
+      proxy = createCapabilityProxy(this.rpc, cap)
+      this.proxies.set(cap.name, proxy)
+    }
+    return proxy
+  }
+
+  /** Starts connecting. Calls made before this queue. */
+  start(): void {
+    if (this.started || this.closed) return
+    this.started = true
+    this.dial()
+  }
+
+  /** Skips the backoff wait, and retries after a refusal. */
+  retryNow(): void {
+    if (this.closed || !this.started) return
+    if (this.rpc.state === 'ready' || this.rpc.state === 'connecting') return
+    this.attempt = 0
+    this.dial()
+  }
+
+  /** A pipe to `port` on the runtime's machine (12.3). */
+  dialLoopback(port: number): Promise<ByteDuplex> {
+    if (this.kind === 'local') return this.transports.dialLoopbackTcp(port)
+    return tunnelDuplex(this.runtime.tunnel.connect({ port }))
+  }
+
+  /** The panel's session channel, shared by every subscriber of this
+   *  connection. Survives reconnects (it restarts with a snapshot). */
+  subscribeSession<S = unknown>(panelId: string): SessionHandle<S> {
+    return this.sessions.acquire<S>(panelId)
+  }
+
+  close(): void {
+    if (this.closed) return
+    this.closed = true
+    this.clearRetry()
+    this.sessions.dispose()
+    this.rpc.close('Workspace closed')
+    this.setState({ kind: 'closed' })
+    this.listeners.clear()
+  }
+
+  private dial(): void {
+    if (this.closed || this.dialing) return
+    this.clearRetry()
+    this.dialing = true
+    if (this._state.kind !== 'offline' && this._state.kind !== 'connecting') this.setState({ kind: 'connecting' })
+    this.openPipe().then(
+      (duplex) => {
+        this.dialing = false
+        if (this.closed) {
+          duplex.close('Workspace closed')
+          return
+        }
+        // The outcome arrives as rpc state changes.
+        this.rpc.attach(framePortOver(duplex, FRAME_MODE[this.kind])).catch(() => {})
+      },
+      (err: unknown) => {
+        this.dialing = false
+        if (this.closed) return
+        this.scheduleRetry(err instanceof Error ? err.message : String(err))
+      },
+    )
+  }
+
+  private openPipe(): Promise<ByteDuplex> {
+    const target = this.target
+    if (target.kind === 'local') return this.transports.dialLocal(target.root)
+    if (!this.transports.dialNetwork) return Promise.reject(new Error('This client cannot reach network runtimes'))
+    return this.transports.dialNetwork({ runtimeId: target.runtimeId, endpoints: target.endpoints })
+  }
+
+  private onRpcState(state: RpcClientState): void {
+    if (this.closed) return
+    switch (state) {
+      case 'ready':
+        this.attempt = 0
+        this.lastSeen = this.now()
+        this.setState({ kind: 'connected' })
+        return
+      case 'incompatible':
+        this.setState({ kind: 'incompatible', runtimeVersion: this.rpc.remote?.version ?? 'unknown' })
+        return
+      case 'refused':
+        this.setState({ kind: 'refused', message: this.rpc.remote?.error?.message ?? 'Runtime refused the connection' })
+        return
+      case 'disconnected':
+        if (this._state.kind === 'connected') this.lastSeen = this.now()
+        this.scheduleRetry()
+        return
+      default:
+        return
+    }
+  }
+
+  private scheduleRetry(error?: string): void {
+    if (this.closed || this.retryTimer) return
+    const { initialMs, maxMs, factor } = this.backoff
+    const delay = Math.min(maxMs, initialMs * factor ** this.attempt)
+    this.attempt++
+    this.setState({ kind: 'offline', lastSeen: this.lastSeen, retrying: true, ...(error ? { error } : {}) })
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      this.dial()
+    }, delay)
+  }
+
+  private clearRetry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    this.retryTimer = null
+  }
+
+  private setState(state: ConnectionState): void {
+    this._state = state
+    for (const listener of [...this.listeners]) {
+      try { listener() } catch { /* isolate listeners */ }
+    }
+  }
+}

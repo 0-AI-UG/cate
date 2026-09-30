@@ -7,11 +7,14 @@
 //                                          + spawn-helper)
 //     node_modules/@parcel/watcher/...     (+ @parcel/watcher-<target>/watcher.node
 //                                          — workspace-tree file watching)
+//     node_modules/node-datachannel/...    (+ @node-datachannel/<target>/node_datachannel.node
+//                                          — WebRTC for Cate Connect)
 //     runtime/bin/node[.exe]              (bundled Node runtime for the target)
 //     runtime/bin/rg[.exe]                 (bundled ripgrep for content search)
 //     t3/dist/bin.mjs                      (T3 server + web client)
 //     cate/dist/cli.cjs                    (bundled `cate` in-terminal CLI)
 //     cate/bin/cate[.cmd]                  (launcher shims → bundled node)
+//     skills/<name>/SKILL.md               (bundled agent skills)
 //
 // UNIFIED layout: every target keeps node + rg under runtime/bin/, just with a
 // `.exe` suffix on win32 (runtime/bin/node.exe, runtime/bin/rg.exe). The install
@@ -103,24 +106,28 @@ rmSync(outTar, { force: true })
 cpSync(path.join(dist, 'runtime.cjs'), path.join(stageDir, 'runtime.cjs'))
 await stageNodePty(stageDir)
 await stageParcelWatcher(stageDir)
+await stageNodeDatachannel(stageDir)
 await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime', 'bin', `node${exe}`))
 await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
 await stageT3(path.join(stageDir, 't3'))
 await stageCateCli(path.join(stageDir, 'cate'))
+cpSync(path.join(repoRoot, 'skills'), path.join(stageDir, 'skills'), { recursive: true })
 signMacNatives(stageDir)
 
 // Fail loudly if anything the daemon's install-probe requires is missing, rather
 // than shipping a tarball that extracts but never satisfies isInstalled (every
-// connect would then re-push it). These are the exact paths sshTransport's
-// dev-mode isInstalled checks.
+// start would then reinstall it).
 const required = [
   `runtime.cjs`,
   path.join('runtime', 'bin', `node${exe}`),
   path.join('runtime', 'bin', `rg${exe}`),
   path.join('t3', 'dist', 'bin.mjs'),
   path.join('cate', 'dist', 'cli.cjs'),
+  path.join('node_modules', 'node-datachannel', 'package.json'),
+  path.join('node_modules', '@node-datachannel', datachannelBinaryDir(targetPlatform, targetArch), 'node_datachannel.node'),
   path.join('cate', 'bin', 'cate'),
   path.join('cate', 'bin', 'cate.cmd'),
+  path.join('skills', 'cate-cli', 'SKILL.md'),
 ]
 const missing = required.filter((rel) => !existsSync(path.join(stageDir, rel)))
 if (missing.length) throw new Error(`[runtime] incomplete stage for ${targetArg}; missing: ${missing.join(', ')}`)
@@ -287,6 +294,54 @@ async function stageParcelWatcher(outRoot) {
   }
   chmodSync(watcherNode, 0o755)
   console.log(`[runtime] staged @parcel/watcher ${version} (${pkgName}) for ${targetArg}`)
+}
+
+/** The @node-datachannel prebuilt package for a target. The bundled node is an
+ *  official glibc build on linux, so the `-gnu` flavour. */
+function datachannelBinaryDir(platform, arch) {
+  if (platform === 'linux') return `linux-${arch}-gnu`
+  if (platform === 'win32') return `win32-${arch}-msvc`
+  return `${platform}-${arch}`
+}
+
+/**
+ * Stage node-datachannel (WebRTC for Cate Connect) like node-pty: its JS, its
+ * one dependency (detect-libc) and only the target's N-API prebuilt, which it
+ * loads with `require('@node-datachannel/<target>')`.
+ */
+async function stageNodeDatachannel(outRoot) {
+  const src = path.join(repoRoot, 'node_modules', 'node-datachannel')
+  if (!existsSync(src)) throw new Error('node-datachannel not found in node_modules — run `npm install` first')
+  const nm = path.join(outRoot, 'node_modules')
+  const dest = path.join(nm, 'node-datachannel')
+  mkdirSync(dest, { recursive: true })
+  cpSync(path.join(src, 'package.json'), path.join(dest, 'package.json'))
+  for (const dir of ['cjs', 'esm']) {
+    cpSync(path.join(src, 'dist', dir), path.join(dest, 'dist', dir), {
+      recursive: true,
+      dereference: true,
+      filter: (s) => !s.endsWith('.map'),
+    })
+  }
+  const detectLibc = path.dirname(createRequire(path.join(src, 'package.json')).resolve('detect-libc/package.json'))
+  cpSync(detectLibc, path.join(nm, 'detect-libc'), { recursive: true, dereference: true })
+
+  const { version } = JSON.parse(readFileSync(path.join(src, 'package.json'), 'utf8'))
+  const binDir = datachannelBinaryDir(targetPlatform, targetArch)
+  const pkgName = `@node-datachannel/${binDir}`
+  const outBinPkg = path.join(nm, '@node-datachannel', binDir)
+  const hostBin = path.join(repoRoot, 'node_modules', '@node-datachannel', binDir)
+  if (existsSync(path.join(hostBin, 'node_datachannel.node'))) {
+    cpSync(hostBin, outBinPkg, { recursive: true, dereference: true })
+  } else {
+    await npmPackInto(`${pkgName}@${version}`, outBinPkg)
+  }
+  const native = path.join(outBinPkg, 'node_datachannel.node')
+  if (!existsSync(native)) {
+    throw new Error(`staged node-datachannel is missing ${pkgName}/node_datachannel.node for ${targetArg} (expected at ${native})`)
+  }
+  chmodSync(native, 0o755)
+  console.log(`[runtime] staged node-datachannel ${version} (${pkgName}) for ${targetArg}`)
 }
 
 /** `npm pack <spec>` into a temp dir and extract the package's contents into
@@ -602,16 +657,15 @@ function targetT3NativePackages(target) {
 }
 
 /** Stage the `cate` in-terminal CLI into <outRoot> (cate/dist/cli.cjs + the two
- *  launcher shims under cate/bin/). The CLI lands on every local, remote and WSL
- *  host when the daemon is provisioned; the env-injection layer prepends
- *  cate/bin to a shell's PATH. Bundled to a single self-contained CJS file. */
+ *  launcher shims under cate/bin/). It ships with the daemon; the terminal
+ *  service prepends cate/bin to a shell's PATH. Bundled to a single self-contained CJS file. */
 async function stageCateCli(outRoot) {
   rmSync(outRoot, { recursive: true, force: true })
   mkdirSync(path.join(outRoot, 'dist'), { recursive: true })
   mkdirSync(path.join(outRoot, 'bin'), { recursive: true })
 
   await build({
-    entryPoints: [path.join(repoRoot, 'src', 'cli', 'cate.ts')],
+    entryPoints: [path.join(repoRoot, 'src', 'cli', 'main.ts')],
     outfile: path.join(outRoot, 'dist', 'cli.cjs'),
     platform: 'node',
     format: 'cjs',
@@ -650,6 +704,7 @@ function signMacNatives(stageDir) {
     path.join(pbDir, 'pty.node'),
     path.join(pbDir, 'spawn-helper'),
     path.join('node_modules', '@parcel', parcelBinaryDir(targetPlatform, targetArch), 'watcher.node'),
+    path.join('node_modules', '@node-datachannel', datachannelBinaryDir(targetPlatform, targetArch), 'node_datachannel.node'),
     ...findMachOBinaries(path.join(stageDir, 't3')).map((abs) => path.relative(stageDir, abs)),
   ]
   // The identity is found via the keychain search list (ci-mac-signing-keychain.sh

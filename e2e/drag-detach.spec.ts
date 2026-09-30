@@ -2,10 +2,11 @@ import { test, expect } from '@playwright/test'
 import {
   launchApp,
   closeApp,
-  seedTerminal,
+  seedOnCanvas,
   resetViewport,
   titleBarCentre,
 } from './fixtures/electron-app'
+import { whereIs } from './fixtures/canvas-helpers'
 import type { ElectronApplication, Page } from 'playwright'
 
 let app: ElectronApplication
@@ -18,13 +19,7 @@ test.beforeEach(async () => {
 test.afterEach(async () => closeApp(app))
 
 test('drag past the window edge detaches into a new panel window', async () => {
-  // Skip if main window is fullscreen — detach is intentionally refused there.
-  const fullscreen = await page.evaluate(() =>
-    window.electronAPI?.isMainWindowFullscreen?.() ?? false,
-  )
-  test.skip(fullscreen, 'detach is refused while the main window is fullscreen')
-
-  const nodeId = await seedTerminal(page, { x: 300, y: 200 })
+  const { nodeId, panelId } = await seedOnCanvas(page, 'terminal', { x: 300, y: 200 })
   await page.waitForSelector(`[data-node-id="${nodeId}"]`)
   const grab = await titleBarCentre(page, nodeId)
   expect(grab).not.toBeNull()
@@ -60,11 +55,26 @@ test('drag past the window edge detaches into a new panel window', async () => {
 
   // The source canvas-node should be removed on successful detach.
   await page.waitForSelector(`[data-node-id="${nodeId}"]`, { state: 'detached', timeout: 4000 })
+
+  // The document places the panel in a detached window, and that window shows it.
+  await expect.poll(async () => (await whereIs(page, panelId))?.kind).toBe('window')
+  const where = await whereIs(page, panelId)
+  expect(where!.windowId).not.toBe('main')
+  // The drag ghost is a window too and may still be closing: wait for the
+  // window that actually shows the panel.
+  const showsPanel = async () => {
+    for (const w of app.windows()) {
+      if (w === page) continue
+      if (await w.locator(`[data-tab-panel-id="${panelId}"]`).isVisible().catch(() => false)) return true
+    }
+    return false
+  }
+  await expect.poll(showsPanel, { timeout: 15_000 }).toBe(true)
 })
 
 test('release without leaving the window does not detach', async () => {
   const initialCount = app.windows().length
-  const nodeId = await seedTerminal(page, { x: 300, y: 200 })
+  const { nodeId } = await seedOnCanvas(page, 'terminal', { x: 300, y: 200 })
   const grab = await titleBarCentre(page, nodeId)
   // Stay safely inside the window during the whole drag.
   await page.mouse.move(grab!.x, grab!.y)

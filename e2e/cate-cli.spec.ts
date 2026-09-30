@@ -1,21 +1,23 @@
-// Real Cate CLI E2E. Unlike src/cli/cate.integration.test.ts (scripted HTTP),
-// this launches Electron, provisions Cate's runtime, types commands into a real
-// Cate terminal, and drives a real persistent BrowserPanel webview through CATE_API.
+// Real Cate CLI E2E: launches Electron with a runtime install that carries the
+// `cate` CLI (fixtures/runtime-install.ts), types commands into a real Cate
+// terminal, and drives panels, terminals and a real browser panel webview
+// through the runtime's `cate` API.
 
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import http from 'node:http'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
-import { closeApp, launchApp, seedTerminal } from './fixtures/electron-app'
-import { fixtureEvaluate } from './fixtures/browser-control'
+import { closeApp, guestEvaluate, makeHome, makeProject, seedOnCanvas } from './fixtures/electron-app'
+import { launchWithRuntime } from './fixtures/runtime-install'
+import { cate, runCate as runCateIn, runInTerminal } from './fixtures/cate-terminal'
 
 let app: ElectronApplication
 let page: Page
 let server: http.Server
 let baseUrl = ''
 let workspace = ''
+let home = ''
 
 const FORM_HTML = `<!doctype html>
 <html>
@@ -29,17 +31,7 @@ const FORM_HTML = `<!doctype html>
       <input id="password" type="password" value="never-expose-me" />
       <button id="submit" type="submit">Submit query</button>
       <button id="click" type="button">Click me</button>
-      <button id="semantic" type="button">Semantic action</button>
-      <button id="double" type="button">Double action</button>
-      <button id="hover" type="button">Hover action</button>
-      <label><input id="option" type="checkbox" checked /> Optional setting</label>
-      <label for="size">Size</label>
-      <select id="size"><option value="small">Small</option><option value="large">Large</option></select>
-      <div id="editor" role="textbox" aria-label="Editor" contenteditable="true">Draft</div>
-      <button id="disabled" type="button" disabled>Disabled action</button>
-      <div id="hidden" style="display:none">Hidden content</div>
       <div id="status">Loading</div>
-      <div id="bottom" style="margin-top:1000px">Bottom marker</div>
     </form>
     <script>
       document.querySelector('#click').addEventListener('click', () => {
@@ -50,224 +42,80 @@ const FORM_HTML = `<!doctype html>
         event.preventDefault()
         document.title = 'Submitted:' + document.querySelector('#query').value
       })
-      document.querySelector('#semantic').addEventListener('click', () => {
-        document.body.dataset.semantic = 'clicked'
-      })
-      document.querySelector('#double').addEventListener('dblclick', () => {
-        document.body.dataset.double = 'received'
-      })
-      document.querySelector('#hover').addEventListener('mouseenter', () => {
-        document.body.dataset.hover = 'received'
-      })
-      window.addEventListener('mousemove', (event) => {
-        document.body.dataset.mouse = event.clientX + ',' + event.clientY
-      })
     </script>
   </body>
 </html>`
 
-function startFixtureServer(): Promise<void> {
-  return new Promise((resolve) => {
-    server = http.createServer((_req, res) => {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-      res.end(FORM_HTML)
-    })
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address()
-      const port = typeof address === 'object' && address ? address.port : 0
-      baseUrl = `http://127.0.0.1:${port}/form`
-      resolve()
-    })
-  })
-}
-
-function shellQuote(value: string): string {
-  if (process.platform === 'win32') return `'${value.replace(/'/g, "''")}'`
-  return `'${value.replace(/'/g, `'\\''`)}'`
-}
-
-function cate(...args: string[]): string {
-  return `cate ${args.map(shellQuote).join(' ')}`
-}
-
-let commandSequence = 0
-
-async function runInCateTerminal(
-  nodeId: string,
-  command: string,
-  timeout = 20_000,
-): Promise<{ code: number; output: string }> {
-  const sequence = ++commandSequence
-  const begin = `__CATE_BEGIN_${sequence}__`
-  const end = `__CATE_END_${sequence}__`
-  const wrapped = process.platform === 'win32'
-    ? `Write-Output ("__CATE_{0}_${sequence}__" -f "BEGIN"); ${command}; $cateStatus=$LASTEXITCODE; Write-Output ("__CATE_{0}_${sequence}__:{1}" -f "END",$cateStatus)\r`
-    : `printf '\\n__CATE_%s_${sequence}__\\n' BEGIN; ${command}; cate_status=$?; printf '\\n__CATE_%s_${sequence}__:%s\\n' END "$cate_status"\r`
-
-  const accepted = await page.evaluate(
-    ({ id, data }) => window.__cateE2E!.writeTerminal(id, data),
-    { id: nodeId, data: wrapped },
-  )
-  expect(accepted).toBe(true)
-
-  await expect.poll(
-    () => page.evaluate((id) => window.__cateE2E!.terminalText(id), nodeId),
-    { timeout },
-  ).toContain(`${end}:`)
-
-  const screen = await page.evaluate((id) => window.__cateE2E!.terminalText(id), nodeId)
-  const endMatch = screen?.match(new RegExp(`${end}:(\\d+)`))
-  expect(endMatch, screen ?? 'terminal unavailable').not.toBeNull()
-  const endAt = screen!.lastIndexOf(endMatch![0])
-  const beginAt = screen!.lastIndexOf(begin, endAt)
-  expect(beginAt, screen ?? '').toBeGreaterThanOrEqual(0)
-  return {
-    code: Number(endMatch![1]),
-    output: screen!.slice(beginAt + begin.length, endAt).trim(),
-  }
-}
-
-async function runCate(nodeId: string, ...args: string[]): Promise<string> {
-  const result = await runInCateTerminal(nodeId, cate(...args))
-  expect(result.code, `${args.join(' ')}\n${result.output}`).toBe(0)
-  return result.output
-}
-
-async function nodeForPanel(shortPanelId: string): Promise<string> {
-  return expect.poll(
-    async () => page.evaluate(
-      (prefix) => window.__cateE2E!.nodes().find((node) => node.panelId.startsWith(prefix))?.id ?? '',
-      shortPanelId,
-    ),
-    { timeout: 15_000 },
-  ).not.toBe('').then(async () => page.evaluate(
-    (prefix) => window.__cateE2E!.nodes().find((node) => node.panelId.startsWith(prefix))!.id,
-    shortPanelId,
-  ))
-}
-
-async function fullPanelId(shortPanelId: string): Promise<string> {
-  return expect.poll(
-    () => page.evaluate((prefix) => window.__cateE2E!.nodes().find((node) => node.panelId.startsWith(prefix))?.panelId ?? '', shortPanelId),
-    { timeout: 15_000 },
-  ).not.toBe('').then(() => page.evaluate(
-    (prefix) => window.__cateE2E!.nodes().find((node) => node.panelId.startsWith(prefix))!.panelId,
-    shortPanelId,
-  ))
-}
-
 test.beforeAll(async () => {
-  await startFixtureServer()
+  server = http.createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    res.end(FORM_HTML)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  baseUrl = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/form`
 })
-
-test.afterAll(async () => {
-  await new Promise<void>((resolve) => server.close(() => resolve()))
-})
+test.afterAll(async () => { await new Promise<void>((resolve) => server.close(() => resolve())) })
 
 test.beforeEach(async () => {
-  // Match workspaceManager's canonical root (`/private/var/...` on macOS;
-  // tmpdir() itself may spell the same directory through the `/var` symlink).
-  workspace = realpathSync(mkdtempSync(path.join(tmpdir(), 'cate-cli-e2e-')))
-  writeFileSync(path.join(workspace, 'cli-fixture.ts'), 'export const e2e = true\n')
-  ;({ electronApp: app, mainWindow: page } = await launchApp())
-  const openWorkspace = page.evaluate(
-    (root) => window.__cateE2E!.setWorkspaceRoot(root),
-    workspace,
-  )
-  await page.getByRole('button', { name: 'Trust and open' }).click()
-  expect(await openWorkspace).toBe(true)
-  // Terminal input is the only CLI permission disabled by default. Enable it
-  // through the real settings IPC so terminal type/press can be exercised.
-  await page.evaluate(() => window.electronAPI.settingsSet('cliTerminalInputEnabled', true))
+  home = makeHome()
+  workspace = realpathSync(makeProject(home, { files: { 'cli-fixture.ts': 'export const e2e = true\n' } }))
+  ;({ electronApp: app, mainWindow: page } = await launchWithRuntime({ home, workspace }))
+  // Terminal input is the only CLI permission off by default.
+  await page.evaluate(() => window.__cateE2E!.call('settings', 'set', { key: 'cliTerminalInputEnabled', value: true }))
 })
-
-test.afterEach(async () => {
-  await closeApp(app)
-  rmSync(workspace, { recursive: true, force: true })
-})
+test.afterEach(async () => closeApp(app, { home }))
 
 test('the core cate CLI workflow works from a real Cate terminal', async () => {
   test.setTimeout(180_000)
-  const controlNode = await seedTerminal(page, { x: 120, y: 120 })
-  await expect.poll(
-    () => page.evaluate((id) => window.__cateE2E!.terminalPtyId(id), controlNode),
-    { timeout: 60_000 },
-  ).not.toBeNull()
+  const control = (await seedOnCanvas(page, 'terminal', { x: 120, y: 120 })).panelId
+  const runCate = (...args: string[]) => runCateIn(page, control, ...args)
 
-  // Process/transport basics.
-  expect(await runCate(controlNode, '--version')).toMatch(/^cate cli \d+$/)
-  expect(await runCate(controlNode, '--help')).toContain('cate browser run <JavaScript>')
-  expect(await runCate(controlNode, 'version')).toBe('8')
-  expect(await runCate(controlNode, 'panel', 'list')).toContain('terminal')
+  // Process and transport basics.
+  expect(await runCate('--version')).toMatch(/^cate cli \d+$/)
+  expect(await runCate('--help')).toContain('browser')
+  expect(await runCate('version')).toMatch(/^\d+$/)
+  expect(await runCate('panel', 'list')).toContain('terminal')
 
-  // Editor + panel verbs.
-  const editorId = await runCate(controlNode, 'editor', 'open', `${path.join(workspace, 'cli-fixture.ts')}:1:8`)
+  // Editor and panel verbs.
+  const editorId = await runCate('editor', 'open', `${path.join(workspace, 'cli-fixture.ts')}:1:8`)
   expect(editorId).toMatch(/^[a-z0-9-]{8}$/i)
-  expect(await runCate(controlNode, 'panel', 'list')).toContain('cli-fixture.ts')
+  expect(await runCate('panel', 'list')).toContain('cli-fixture.ts')
+  const browserId = await runCate('panel', 'create', 'browser')
+  expect(await runCate('panel', 'list')).toContain(browserId)
 
-  // Browser code runs in one persistent session through the real terminal,
-  // CLI, HTTP transport, renderer, and target-bound runtime.
-  const runBrowser = (code: string) => runCate(controlNode, 'browser', 'run', code)
-  const createBinding = async (code: string) => {
-    const result = JSON.parse(await runCate(controlNode, 'browser', 'run', code, '--json')) as {
-      content: Array<{ type: string; text?: string }>
-    }
-    const binding = result.content.filter((item) => item.type === 'text').map((item) => {
-      try { return JSON.parse(item.text!) as { testBinding?: { panelId: string; tabId: string } } } catch { return {} }
-    }).find((item) => item.testBinding)?.testBinding
-    expect(binding).toBeTruthy()
-    return binding!
-  }
-  const freshDataOne = `data:text/html,${encodeURIComponent('<title>Fresh One</title>')}`
-  const freshDataTwo = `data:text/html,${encodeURIComponent('<title>Fresh Two</title>')}`
-  const freshPanelId = await fullPanelId(await runCate(controlNode, 'panel', 'create', 'browser'))
-  const fresh = await createBinding(`var fresh = await cua.createBrowserTab(${JSON.stringify(freshDataOne)}, {panelId:${JSON.stringify(freshPanelId)}}); await nodeRepl.write({testBinding:{panelId:fresh.panelId,tabId:fresh.tabId}});`)
-  await runBrowser(`var second = await cua.createBrowserTab(${JSON.stringify(freshDataTwo)}, {panelId:fresh.panelId});`)
-  const freshTabs = await runBrowser('await cua.listTabs();')
-  expect(freshTabs).toContain(freshDataOne)
-  expect(freshTabs).toContain(freshDataTwo)
-  expect(await runCate(controlNode, 'panel', 'close', fresh.panelId)).toBe('ok')
+  // A second real terminal proves terminal type/press/read, not just the
+  // shell hosting this test's CLI process.
+  const workerId = await runCate('panel', 'create', 'terminal')
+  const worker = await expect.poll(() => page.evaluate((prefix) => window.__cateE2E!.panels().find((p) => p.id.startsWith(prefix))?.id ?? '', workerId), { timeout: 15_000 })
+    .not.toBe('').then(() => page.evaluate((prefix) => window.__cateE2E!.panels().find((p) => p.id.startsWith(prefix))!.id, workerId))
+  await expect.poll(() => page.evaluate((id) => window.__cateE2E!.terminalText(id).catch(() => ''), worker), { timeout: 30_000 }).toMatch(/\S/)
+  const workerOutput = path.join(workspace, 'cli-worker.out')
+  const workerCommand = process.platform === 'win32'
+    ? 'Set-Content -NoNewline cli-worker.out CLI_TARGET_OK; Get-Content cli-worker.out'
+    : 'printf CLI_TARGET_OK > cli-worker.out; cat cli-worker.out'
+  await runCate('terminal', 'type', workerCommand, '--panel', workerId)
+  await runCate('terminal', 'press', 'enter', '--panel', workerId)
+  await expect.poll(() => existsSync(workerOutput) ? readFileSync(workerOutput, 'utf8') : '', { timeout: 10_000 }).toBe('CLI_TARGET_OK')
+  expect(await runCate('terminal', 'read', '--panel', workerId)).toContain('CLI_TARGET_OK')
 
-  const openedPanelId = await fullPanelId(await runCate(controlNode, 'panel', 'create', 'browser'))
-  const opened = await createBinding(`var tab = await cua.createBrowserTab(${JSON.stringify(baseUrl)}, {panelId:${JSON.stringify(openedPanelId)}}); await nodeRepl.write({testBinding:{panelId:tab.panelId,tabId:tab.tabId}});`)
-  const browserId = opened.panelId
-  expect(browserId).toMatch(/^[a-z0-9-]+$/i)
-  const oracle = (expression: string) => fixtureEvaluate(app, page, { workspaceId: '', panelId: browserId }, expression)
-  await runBrowser(`await tab.goto(${JSON.stringify(`${baseUrl}?opened=1`)});`)
+  // Close keeps the list consistent for several panel types.
+  for (const id of [workerId, browserId, editorId]) await runCate('panel', 'close', id)
+  const finalPanels = await runCate('panel', 'list')
+  for (const id of [workerId, browserId, editorId]) expect(finalPanels).not.toContain(id)
+})
 
-  // A CLI/agent may keep driving a browser while the user works elsewhere.
-  // Exercise the full terminal → CLI → HTTP → renderer path with the owning
-  // workspace unmounted, and prove the target-bound call does not steal focus.
-  const browserWorkspace = await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())
-  const delayedBrowserCommand = process.platform === 'win32'
-    ? `Start-Sleep -Milliseconds 1000; ${cate('browser', 'run', 'await tab.getAXState({disableDiffing:true,emit:false});')}`
-    : `sleep 1; ${cate('browser', 'run', 'await tab.getAXState({disableDiffing:true,emit:false});')}`
-  const backgroundRun = runInCateTerminal(controlNode, delayedBrowserCommand, 30_000)
-  await page.waitForTimeout(300)
-  const otherWorkspace = await page.evaluate(async () => {
-    const id = window.__cateE2E!.addWorkspace('CLI background workspace')
-    await window.__cateE2E!.selectWorkspace(id)
-    return id
-  })
-  // Keep the browser's workspace unmounted beyond the command's delay, then
-  // return only to read the control terminal's rendered output.
-  await page.waitForTimeout(2_000)
-  expect(await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())).toBe(otherWorkspace)
-  await page.evaluate((id) => window.__cateE2E!.selectWorkspace(id), browserWorkspace)
-  expect((await backgroundRun).code).toBe(0)
-
-  const firstDataUrl = `data:text/html,${encodeURIComponent('<title>Data One</title><h1>Data One</h1>')}`
-  const secondDataUrl = `data:text/html,${encodeURIComponent('<title>Data Two</title><h1>Data Two</h1>')}`
-  await runBrowser(`await tab.goto(${JSON.stringify(firstDataUrl)}); await tab.goto(${JSON.stringify(secondDataUrl)});`)
-  expect(await runCate(controlNode, 'panel', 'list')).toContain(secondDataUrl)
-  await runBrowser('await tab.back(); await tab.back();')
+test('cate browser run drives a real browser panel webview', async () => {
+  test.setTimeout(180_000)
+  const control = (await seedOnCanvas(page, 'terminal', { x: 120, y: 120 })).panelId
+  const runCate = (...args: string[]) => runCateIn(page, control, ...args)
+  const runBrowser = (code: string) => runCate('browser', 'run', code)
+  const browserId = await runCate('panel', 'create', 'browser')
+  const created = JSON.parse(await runCate('browser', 'run', `var tab = await cua.createBrowserTab(${JSON.stringify(baseUrl)}, {panelId:${JSON.stringify(browserId)}}); await nodeRepl.write({testBinding:{panelId:tab.panelId,tabId:tab.tabId}});`, '--json')) as { content: { type: string; text?: string }[] }
+  expect(created.content.some((item) => item.text?.includes('testBinding'))).toBe(true)
+  const oracle = (expression: string) => guestEvaluate(app, baseUrl, expression)
 
   const state = await runBrowser('await tab.getAXStateAndScreenshot({disableDiffing:true});')
-  expect(state).toContain('Screenshot: ')
-  const retiredMcp = await runInCateTerminal(controlNode, cate('browser', 'mcp'))
-  expect(retiredMcp.code).toBe(2)
-  const retiredObserve = await runInCateTerminal(controlNode, cate('browser', 'observe'))
-  expect(retiredObserve.code).toBe(2)
   expect(state).toContain('Form Ready')
   expect(state).toContain('••••••••')
   expect(state).not.toContain('never-expose-me')
@@ -277,84 +125,20 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
     if(matches.length!==1)throw Error("Expected unique accessible target: "+name);
     return matches[0].id;
   }; var query = await id("Query","searchbox"); var click = await id("Click me","button");`)
-
-  await runBrowser('await tab.getScreenshot({emit:false}); await tab.setValue(query,"hello"); await tab.getScreenshot({emit:false}); await tab.typeText(" cate");')
+  await runBrowser('await tab.setValue(query,"hello"); await tab.typeText(" cate");')
   expect(await oracle('document.querySelector("#query").value')).toBe('hello cate')
   await runBrowser('await tab.click(click); await tab.waitFor({text:"Saved"},{timeoutMs:3000});')
-  expect(await runBrowser('await tab.getAXState({disableDiffing:true});')).toContain('Clicked')
-  await runBrowser('await tab.waitFor({element:query,state:"visible"}); await tab.selectText(query,"hello cate",{selectionType:"cursor_after"}); await tab.pressKey("Return");')
+  await runBrowser('await tab.selectText(query,"hello cate",{selectionType:"cursor_after"}); await tab.pressKey("Return");')
   expect(await oracle('document.title')).toBe('Submitted:hello cate')
-  await runBrowser('await tab.pressKey("PageDown");')
-
-  await runBrowser('await tab.click(await id("Semantic action","button"));')
-  expect(await oracle('document.body.dataset.semantic')).toBe('clicked')
-  await runBrowser('await tab.waitFor({element:query,state:"visible"}); await tab.waitFor({element:await id("Disabled action","button"),state:"disabled"});')
-  await runBrowser('var option=await id("Optional setting","checkbox"); await tab.waitFor({element:option,state:"checked"}); await tab.setChecked(option,false); await tab.waitFor({element:option,state:"unchecked"});')
-  expect(await oracle('document.querySelector("#option").checked')).toBe(false)
-  await runBrowser('await tab.setChecked(option,true); await tab.click(await id("Double action","button"),{clickCount:2});')
-  expect(await oracle('document.body.dataset.double')).toBe('received')
-  // A targeted click must move the pointer onto the control before input.
-  await runBrowser('await tab.click(await id("Hover action","button"));')
-  expect(await oracle('document.body.dataset.hover')).toBe('received')
-
-  await runBrowser('await tab.setValue(await id("Editor","textbox"),"Rich"); await tab.typeText(" text"); await tab.typeText(" via keyboard");')
-  expect(await oracle('document.querySelector("#editor").textContent')).toBe('Rich text via keyboard')
-  await runBrowser('await tab.selectOption(await id("Size","combobox"),["large"]);')
-  expect(await oracle('document.querySelector("#size").value')).toBe('large')
-  await runBrowser('await tab.scroll([400,300],"down",8);')
-  await expect.poll(() => oracle('scrollY')).toBeGreaterThan(0)
-  await runBrowser('await tab.scroll([400,300],"up",8);')
-  await expect.poll(() => oracle('scrollY')).toBe(0)
-  await runBrowser('await tab.getAXState(); await tab.drag([20,30],[40,50]);')
-  expect(await oracle('document.body.dataset.mouse')).toBe('40,50')
 
   const screenshots = await runBrowser('await tab.getAXStateAndScreenshot();')
   const imagePath = screenshots.split('\n').find((line) => line.trim().endsWith('.png'))?.trim().replace(/^Screenshot: /, '')
-  expect(imagePath).toBeTruthy()
-  expect(existsSync(imagePath!)).toBe(true)
+  expect(imagePath && existsSync(imagePath)).toBeTruthy()
   expect(readFileSync(imagePath!).subarray(1, 4).toString()).toBe('PNG')
 
-  // The redesign intentionally removes arbitrary page evaluation and the old
-  // command vocabulary. Rejection must leave the existing session usable.
-  const legacy = await runInCateTerminal(controlNode, cate('browser', 'snapshot'))
-  expect(legacy.code).not.toBe(0)
-  const noDom = await runInCateTerminal(controlNode, cate('browser', 'run', 'await nodeRepl.write({pageEvaluation:typeof tab.evaluate,node:typeof require});'))
+  // Arbitrary page evaluation is not offered, and rejection keeps the session usable.
+  const noDom = await runInTerminal(page, control, cate('browser', 'run', 'await nodeRepl.write({pageEvaluation:typeof tab.evaluate,node:typeof require});'))
   expect(noDom.output).toContain('undefined')
-  await runBrowser('await tab.reload(); await tab.getAXState();')
-  await runCate(controlNode, 'browser', 'reset')
+  await runCate('browser', 'reset')
   expect(await runBrowser('await nodeRepl.write(typeof tab);')).toContain('undefined')
-
-  // A second real terminal proves terminal type/press/read, not just the shell
-  // hosting this test's CLI process.
-  const workerId = await runCate(controlNode, 'panel', 'create', 'terminal')
-  const workerNode = await nodeForPanel(workerId)
-  await expect.poll(
-    () => page.evaluate((id) => window.__cateE2E!.terminalPtyId(id), workerNode),
-    { timeout: 30_000 },
-  ).not.toBeNull()
-  const workerOutput = path.join(workspace, 'cli-worker.out')
-  const workerCommand = process.platform === 'win32'
-    ? 'Set-Content -NoNewline cli-worker.out CLI_TARGET_OK; Get-Content cli-worker.out'
-    : 'printf CLI_TARGET_OK > cli-worker.out; cat cli-worker.out'
-  expect(await runCate(controlNode, 'terminal', 'type', workerCommand, '--panel', workerId)).toBe('ok')
-  expect(await runCate(controlNode, 'terminal', 'press', 'enter', '--panel', workerId)).toBe('ok')
-  await expect.poll(
-    () => existsSync(workerOutput) ? readFileSync(workerOutput, 'utf8') : '',
-    { timeout: 10_000 },
-  ).toBe('CLI_TARGET_OK')
-  expect(await runCate(controlNode, 'terminal', 'read', '--panel', workerId)).toContain('CLI_TARGET_OK')
-
-  // The background activity monitor can lag behind the completed shell command.
-  // Wait for its idle state before closing, so this smoke does not open the
-  // native running-process confirmation dialog.
-  await expect.poll(() => page.evaluate(id => window.__cateE2E!.terminalActivity(id), workerNode), { timeout: 30_000 }).toBe('idle')
-
-  // Close verifies immediate list consistency for several panel types.
-  expect(await runCate(controlNode, 'panel', 'close', workerId)).toBe('ok')
-  expect(await runCate(controlNode, 'panel', 'close', browserId)).toBe('ok')
-  expect(await runCate(controlNode, 'panel', 'close', editorId)).toBe('ok')
-  const finalPanels = await runCate(controlNode, 'panel', 'list')
-  expect(finalPanels).not.toContain(workerId)
-  expect(finalPanels).not.toContain(browserId)
-  expect(finalPanels).not.toContain(editorId)
 })

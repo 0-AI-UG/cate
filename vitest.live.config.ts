@@ -7,6 +7,13 @@ import path from 'node:path'
 export default defineConfig({
   resolve: {
     alias: {
+      '@kernel': path.resolve(__dirname, 'src/kernel'),
+      '@runtime': path.resolve(__dirname, 'src/runtime'),
+      '@workspace': path.resolve(__dirname, 'src/workspace'),
+      '@services': path.resolve(__dirname, 'src/services'),
+      '@client': path.resolve(__dirname, 'src/client'),
+      '@panels': path.resolve(__dirname, 'src/panels'),
+      '@shells': path.resolve(__dirname, 'src/shells'),
       'electron-log/renderer': path.resolve(__dirname, 'src/test/electronLogStub.ts'),
       'electron-log/main': path.resolve(__dirname, 'src/test/electronLogStub.ts'),
       'electron-log': path.resolve(__dirname, 'src/test/electronLogStub.ts'),

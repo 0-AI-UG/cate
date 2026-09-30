@@ -57,8 +57,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Layering rules
+        run: npm run lint:deps
+
       - name: Unit tests
         run: npm run test
 
       # E2E and Electron smoke tests run locally only. Keep the npm scripts
-      # available for browser, T3, SSH loopback, and full-app validation.
+      # available for browser, T3, and full-app validation.

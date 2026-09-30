@@ -3,7 +3,7 @@
 //
 // `npm run dev:update` starts a tiny static server hosting a fake "newer"
 // release (version 99.0.0) and launches the app with CATE_DEV_UPDATE=1, which
-// flips electron-updater's forceDevUpdateConfig on (see src/main/auto-updater.ts)
+// flips electron-updater's forceDevUpdateConfig on (see src/shells/desktop/main/updater/autoUpdater.ts)
 // and points it at dev-app-update.yml → this server.
 //
 // What you can watch in the main-process logs (filter for [auto-updater]):

@@ -9,6 +9,7 @@ on:
     paths:
       - 'registry/sources.json'
       - 'scripts/build-skills-index.mjs'
+      - 'scripts/skillFrontmatter.mjs'
 
 permissions:
   contents: write
