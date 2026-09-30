@@ -808,7 +808,6 @@ export interface ElectronAPI {
   panelTransferAck(ptyId?: string): Promise<void>
 
   /** Subscribe to incoming panel transfers (main -> renderer). */
-  onPanelReceive(callback: (snapshot: PanelTransferSnapshot) => void): () => void
 
   // ---------------------------------------------------------------------------
   // Cross-window drag-and-drop
@@ -927,14 +926,14 @@ export interface ElectronAPI {
    *  Main is the arbiter: `accepted` is
    *  false when the drag already resolved unclaimed (the source has fallen back
    *  to a detach) — the caller must NOT materialize the panel in that case. */
-  crossWindowDragDrop(panelId: string): Promise<{ accepted: boolean; transferId?: string }>
+  crossWindowDragDrop(panelId: string): Promise<{ accepted: boolean; transferId?: string; snapshot?: PanelTransferSnapshot }>
 
   /** Cancel an active cross-window drag. */
   crossWindowDragCancel(): Promise<void>
 
   /** Resolve a cross-window drag on mouseup. Returns whether a target window claimed the drop.
    *  If not claimed, the caller should fall back to dragDetach(). */
-  crossWindowDragResolve(): Promise<{ claimed: boolean }>
+  crossWindowDragResolve(snapshot?: PanelTransferSnapshot | null): Promise<{ claimed: boolean }>
 
   // ---------------------------------------------------------------------------
   // Workspace management (main process is source of truth)
@@ -1086,6 +1085,9 @@ export interface ElectronAPI {
   agentHarnessDeleteConversation(request: AgentProviderStatusRequest & { threadId: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessRenameConversation(request: AgentProviderStatusRequest & { threadId: string; title: string }): Promise<{ ok: true } | AgentHarnessError>
   agentHarnessListConversations(request: AgentProviderStatusRequest): Promise<import('./t3Agent').T3Conversation[] | AgentHarnessError>
+  agentHarnessThreadShells(request: { partition: string }): Promise<import('./t3Agent').T3ShellSnapshot | null>
+  onAgentHarnessThreadShells(callback: (snapshot: import('./t3Agent').T3ShellSnapshot) => void): () => void
+  agentHarnessStartTurn(request: AgentProviderStatusRequest & { threadId: string; text: string }): Promise<{ ok: true } | AgentHarnessError>
 
   githubConnection(): Promise<import('./pullRequests').GitHubConnection>
   githubPrContext(workspaceId: string, repository: string, number: number): Promise<import('./pullRequests').PullRequestContext | null>

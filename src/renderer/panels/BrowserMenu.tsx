@@ -8,7 +8,7 @@ import { useUIStore } from '../stores/uiStore'
 import { BrowserFavicon } from './BrowserFavicon'
 import { faviconForUrl } from './browserUrl'
 import { POPOVER_SURFACE, useDismissableLayer } from '../ui/Popover'
-import type { BrowserViewport } from '../lib/portalRegistry'
+import type { BrowserViewport } from '../../shared/types'
 
 interface Props {
   onNewTab: () => void

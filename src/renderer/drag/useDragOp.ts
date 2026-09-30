@@ -282,9 +282,9 @@ function runEffects(prevActive: ActiveDispatch, next: RuntimeState) {
         break
       case 'commit':
         commitDrop(eff.source, eff.target, eff.panel, {
-          crossWindowResolve: async () => {
+          crossWindowResolve: async (snapshot) => {
             if (!window.electronAPI?.crossWindowDragResolve) return { claimed: false }
-            return window.electronAPI.crossWindowDragResolve()
+            return window.electronAPI.crossWindowDragResolve(snapshot)
           },
           crossWindowCancel: () => {
             window.electronAPI?.crossWindowDragCancel()

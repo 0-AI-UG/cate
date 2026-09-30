@@ -1,6 +1,6 @@
 import { LoadingState } from '../ui/Spinner'
-import { subscribeT3Activity } from '../lib/t3ActivitySubscription'
-import { useT3ActivityStore } from '../stores/t3ActivityStore'
+import { observeT3Partition } from '../lib/t3ActivityFeed'
+import { t3PanelConnected, t3ThreadForPanel, useT3ActivityStore } from '../stores/t3ActivityStore'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle } from 'lucide-react'
 import type { AgentPanelProps } from './types'
@@ -139,7 +139,9 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     observedThreadId.current = threadId
     setRetryNonce((value) => value + 1)
   }, [threadId])
-  const t3Connection = useT3ActivityStore((s) => s.panels[panelId]?.connected)
+  // Main's shell stream for this harness; undefined until it has reported.
+  const t3Connection = useT3ActivityStore((s) => s.instances[s.panels[panelId]?.partition ?? '']?.connected)
+  const threadTitle = useT3ActivityStore((s) => t3PanelConnected(s, panelId) ? t3ThreadForPanel(s, panelId)?.title : undefined)
 
   useEffect(() => {
     if (!cwd) {
@@ -346,24 +348,18 @@ export default function AgentPanel({ panelId, workspaceId, nodeId }: AgentPanelP
     if (!threadId) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, 'T3 Code')
     const store = useT3ActivityStore.getState()
     store.bind(panelId, { workspaceId, partition: state.partition, threadId })
+    observeT3Partition(state.partition)
     return () => store.unbind(panelId)
   }, [state, panelId, workspaceId, threadId])
 
   useEffect(() => {
-    if (state.phase !== 'ready' || !guestReady) return
-    const guest = webviewRef.current
-    if (!guest) return
-    return subscribeT3Activity(state.partition, {
-      panelId, guest,
-      onSnapshot: (snapshot) => {
-        const thread = threadId ? snapshot.threads[threadId] : undefined
-        if (thread?.title) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, thread.title)
-      },
-    })
-  }, [state, guestReady, threadId, panelId, workspaceId])
+    if (threadTitle) useAppStore.getState().updatePanelTitleFromAgent(workspaceId, panelId, threadTitle)
+  }, [threadTitle, panelId, workspaceId])
 
+  // A fresh chat's first prompt goes through the page composer (it picks the
+  // provider/model and creates the thread); bound threads are sent via main.
   useEffect(() => {
-    if (state.phase !== 'ready' || !guestReady || !threadId) return
+    if (state.phase !== 'ready' || !guestReady || threadId) return
     const guest = webviewRef.current
     if (!guest) return
     return registerAgentPanelSender(panelId, async (prompt) => {

@@ -39,3 +39,24 @@ it.each(['a.png', 'a.pdf', 'a.docx'])('opens review file %s in Files', async (pa
     expect(h.createEditor).toHaveBeenCalledWith('ws', '/repo/' + path, undefined, { target: 'dock', zone: 'right', stackId: 'review-stack' })
   } finally { act(() => root.unmount()) }
 })
+
+it('loads diffs with the persisted expansion and clears it when the comparison changes', async () => {
+  h.workspace.panels.review.reviewState = {
+    repoPath: '/repo', spec: { kind: 'uncommitted' }, display: {}, notes: [],
+    expandedFiles: ['a.ts'], contextLines: { 'b.ts': 10 },
+  }
+  const files = ['a.ts', 'b.ts'].map((path) => ({ path, status: 'modified', additions: 1, deletions: 1 }))
+  const gitFileDiff = vi.fn(async (_repo: string, _spec: unknown, path: string) => ({ path, binary: false, tooLarge: false, byteLength: 1, hunks: [] }))
+  window.electronAPI = { gitCompare: async () => ({ files, additions: 2, deletions: 2 }), gitFileDiff, gitBranchList: async () => ({ branches: [] }), gitLog: async () => [] } as any
+  const root = createRoot(document.createElement('div'))
+  try {
+    await act(async () => root.render(<GitReviewPanel workspaceId="ws" panelId="review" />))
+    const options = Object.fromEntries(gitFileDiff.mock.calls.map((call) => [call[2], (call as unknown[])[3]]))
+    expect(options['a.ts']).toEqual({ contextLines: 999_999, allowLarge: true })
+    expect(options['b.ts']).toEqual({ contextLines: 10, allowLarge: false })
+
+    h.workspace.panels.review.reviewState = { ...h.workspace.panels.review.reviewState, spec: { kind: 'staged' } }
+    await act(async () => root.render(<GitReviewPanel workspaceId="ws" panelId="review" />))
+    expect(h.workspace.panels.review.reviewState).toMatchObject({ expandedFiles: [], contextLines: {} })
+  } finally { act(() => root.unmount()) }
+})

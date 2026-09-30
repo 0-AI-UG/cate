@@ -115,14 +115,15 @@ function runRemoteEffects(active: ActiveRemote, state: RuntimeState): void {
           // Claim FIRST — main is the arbiter. Only materialize the panel when
           // main accepts: a claim landing after the drag already resolved
           // unclaimed means the source has fallen back to a detach window, and
-          // materializing here too would duplicate the panel.
+          // materializing here too would duplicate the panel. Materialize the
+          // source's capture from release, never the drag-start preview.
           const { snapshot, onDrop } = active
           const claimedTarget = remoteTarget
           Promise.resolve(window.electronAPI.crossWindowDragDrop(snapshot.panel.id))
             .then(async (result) => {
               if (!result?.accepted) return
               let accepted = false
-              try { accepted = onDrop(snapshot, claimedTarget) !== false }
+              try { accepted = !!result.snapshot && onDrop(result.snapshot, claimedTarget) !== false }
               finally {
                 if (result.transferId) await window.electronAPI.panelTransferReady(result.transferId, accepted ? 'received' : 'rejected')
               }

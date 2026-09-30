@@ -168,7 +168,6 @@ import {
   WINDOW_CLOSE,
   WINDOW_IS_MAXIMIZED,
   WINDOW_MAXIMIZE_STATE,
-  PANEL_RECEIVE,
   PANEL_TRANSFER_ACK,
   WINDOW_CLOSE_FOR_WORKSPACE,
   RUN_ACTION_IN_MAIN,
@@ -238,6 +237,9 @@ import {
   AGENT_HARNESS_LIST_CONVERSATIONS,
   AGENT_HARNESS_DELETE_CONVERSATION,
   AGENT_CONVERSATION_DELETED,
+  AGENT_HARNESS_THREAD_SHELLS,
+  AGENT_HARNESS_THREAD_SHELLS_CHANGED,
+  AGENT_HARNESS_START_TURN,
   AGENT_HARNESS_PANEL_CLOSED,
   AGENT_HARNESS_RESTART,
   AGENT_HARNESS_GET_STATUS,
@@ -505,6 +507,8 @@ const invokeForwarders = {
   agentHarnessRenameConversation: makeInvoker<'agentHarnessRenameConversation'>(AGENT_HARNESS_RENAME_CONVERSATION),
   agentHarnessDeleteConversation: makeInvoker<'agentHarnessDeleteConversation'>(AGENT_HARNESS_DELETE_CONVERSATION),
   agentHarnessListConversations: makeInvoker<'agentHarnessListConversations'>(AGENT_HARNESS_LIST_CONVERSATIONS),
+  agentHarnessThreadShells: makeInvoker<'agentHarnessThreadShells'>(AGENT_HARNESS_THREAD_SHELLS),
+  agentHarnessStartTurn: makeInvoker<'agentHarnessStartTurn'>(AGENT_HARNESS_START_TURN),
   pullRequestsList: makeInvoker<'pullRequestsList'>(PULL_REQUESTS_LIST),
   githubLogin: makeInvoker<'githubLogin'>(GITHUB_LOGIN),
   githubConnection: makeInvoker<'githubConnection'>(GITHUB_CONNECTION),
@@ -833,9 +837,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Panel transfer (cross-window)
   // ---------------------------------------------------------------------------
 
-  onPanelReceive(callback: (snapshot: unknown) => void): () => void {
-    return createIpcListener(PANEL_RECEIVE, callback)
-  },
 
   // ---------------------------------------------------------------------------
   // Cross-window drag-and-drop
@@ -974,6 +975,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onAgentConversationDeleted(callback: (event: { workspaceId: string; partition: string; threadId: string }) => void): () => void {
     return createIpcListener(AGENT_CONVERSATION_DELETED, callback)
+  },
+
+  onAgentHarnessThreadShells(callback: (snapshot: import('../shared/t3Agent').T3ShellSnapshot) => void): () => void {
+    return createIpcListener(AGENT_HARNESS_THREAD_SHELLS_CHANGED, callback)
   },
 
   onBrowserShortcut(callback: (action: string) => void): () => void {

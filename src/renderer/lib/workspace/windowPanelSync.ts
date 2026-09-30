@@ -1,4 +1,4 @@
-import { useT3ActivityStore } from '../../stores/t3ActivityStore'
+import { t3ThreadForPanel, useT3ActivityStore } from '../../stores/t3ActivityStore'
 // =============================================================================
 // windowPanelSync — every window reports its own panels to the main process so
 // the cross-window panel union (windowPanelStore) stays current. This is the
@@ -28,7 +28,7 @@ import { browserPanelUrl, isStartPageUrl, type WindowPanelReport } from '../../.
 import { deriveCodingAgentRunStatus } from '../../../shared/codingAgentRuns'
 import { worktreeForPanel } from '../worktreeContext'
 import { canAgentReceivePrompt } from '../agent/agentScreenDetector'
-import { canT3ThreadReceivePrompt } from '../t3ThreadState'
+import { t3PromptBlocker } from '../agent/agentPanelControl'
 import { agentSessionForPanel } from '../agent/agentSessionRef'
 import { AGENTS } from '../../../shared/agents'
 
@@ -153,17 +153,11 @@ export function setupWindowPanelSync(): () => void {
             ? Boolean(terminalRegistry.getEntry(p.id)?.ptyId
               && canAgentReceivePrompt(terminalRegistry.getEntry(p.id)!.ptyId!))
             : p.type === 'agent'
-              ? (() => {
-                  const binding = t3Activity.panels[p.id]
-                  const thread = binding?.threadId
-                    ? t3Activity.instances[binding.partition]?.threads[binding.threadId]
-                    : undefined
-                  return Boolean(binding?.connected && thread && canT3ThreadReceivePrompt(thread))
-                })()
+              ? t3PromptBlocker(p.id, p.agentThreadId, t3Activity) === undefined
               : undefined,
           agentName: agentInfo[p.id]?.name ?? null,
           agentId: agentInfo[p.id]?.name ? AGENTS.find((a) => a.displayName === agentInfo[p.id]?.name)?.id ?? null : null,
-          agentSession: agentSessionForPanel(ws, p),
+          agentSession: agentSessionForPanel(ws, p, t3ThreadForPanel(t3Activity, p.id)?.session?.providerName),
           codingAgentRunId: p.codingAgentRun?.id,
           codingAgentOwnerPanelId: p.codingAgentRun?.ownerPanelId,
           codingAgentStatus: p.codingAgentRun

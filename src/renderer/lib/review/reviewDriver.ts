@@ -19,6 +19,10 @@ function contextHash(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
+function sameComparison(a: ReviewPanelState, b: ReviewPanelState): boolean {
+  return a.repoPath === b.repoPath && JSON.stringify(a.spec) === JSON.stringify(b.spec)
+}
+
 function persist(workspaceId: string, panelId: string, state: ReviewPanelState): void {
   useAppStore.getState().setPanelReviewState(workspaceId, panelId, state)
 }
@@ -96,7 +100,11 @@ export async function handleReviewMethod(
       agentRunId: callerRun?.id,
       createdAt: new Date().toISOString(),
     }
-    persist(workspaceId, panelId, { ...state, notes: [...(state.notes ?? []), note] })
+    // Append to the state as it is now: a parallel note or a user edit may have
+    // landed during the awaits, and a switched comparison makes this note stale.
+    const latest = reviewPanel(workspaceId, panelId)?.reviewState
+    if (!latest || !sameComparison(latest, state)) return { ok: false, error: 'review-changed' }
+    persist(workspaceId, panelId, { ...latest, notes: [...(latest.notes ?? []), note] })
     return { ok: true, result: note }
   }
 

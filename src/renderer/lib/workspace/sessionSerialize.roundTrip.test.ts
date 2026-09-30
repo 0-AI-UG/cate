@@ -78,6 +78,8 @@ function buildSnapshot(): { snapshot: SessionSnapshot; canvasSnapshot: CanvasSna
         ],
         activeTabId: 'tab-2',
         proxyUrl: 'http://user:pass@proxy:8080',
+        browserZoom: 1.25,
+        browserViewport: { preset: 'mobile', width: 390, height: 844 },
       }),
     },
     panelRelations: [{
@@ -139,6 +141,8 @@ describe('workspace.json + session.json round-trip', () => {
     expect(restored.panels!['web-1'].tabs).toEqual(snapshot.panels!['web-1'].tabs)
     expect(restored.panels!['web-1'].activeTabId).toBe('tab-2')
     expect(restored.panels!['web-1'].proxyUrl).toBe('http://user:pass@proxy:8080')
+    expect(restored.panels!['web-1'].browserZoom).toBe(1.25)
+    expect(restored.panels!['web-1'].browserViewport).toEqual({ preset: 'mobile', width: 390, height: 844 })
     expect(restored.terminalCwds).toEqual({ 'term-1': WORKTREE_PATH })
     expect(restored.panelRelations).toEqual(snapshot.panelRelations)
 
@@ -470,4 +474,14 @@ it('round-trips Search options through machine-local session state', () => {
   const session = throughDisk(buildSessionFile(snapshot))
   expect(workspace.panels!.editor).not.toHaveProperty('searchState')
   expect(projectFilesToSnapshot(workspace, session, ROOT).panels!.editor.searchState).toEqual(searchState)
+})
+
+it('round-trips Files explorer expansion and selection through machine-local session state', () => {
+  const { snapshot } = buildSnapshot()
+  const explorerState = { rootPath: ROOT, expandedPaths: [`${ROOT}/src`], selectedPaths: [`${ROOT}/src/a.ts`] }
+  snapshot.panels = { editor: panel({ id: 'editor', type: 'editor', explorerState }) }
+  const workspace = throughDisk(buildWorkspaceFile(snapshot, ROOT))
+  const session = throughDisk(buildSessionFile(snapshot))
+  expect(workspace.panels!.editor).not.toHaveProperty('explorerState')
+  expect(projectFilesToSnapshot(workspace, session, ROOT).panels!.editor.explorerState).toEqual(explorerState)
 })

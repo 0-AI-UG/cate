@@ -379,16 +379,14 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
   stateRef.current = reviewState
   const [comparison, setComparison] = useState<GitComparisonResult | null>(null)
   const [diffs, setDiffs] = useState<Record<string, GitFileDiff>>({})
-  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(() => new Set())
-  const [contextLinesByFile, setContextLinesByFile] = useState<Record<string, number>>({})
+  // Per-file "Full file" / "More context" expansion lives in reviewState so it
+  // survives remounts and reloads.
+  const expandedFiles = new Set(reviewState.expandedFiles ?? [])
+  const contextLinesByFile = reviewState.contextLines ?? {}
   const diffsRef = useRef(diffs)
-  const expandedFilesRef = useRef(expandedFiles)
-  const contextLinesByFileRef = useRef(contextLinesByFile)
   const comparisonKeyRef = useRef('')
   const requestDiffRef = useRef<(file: GitChangedFile, options?: DiffLoadOptions) => void>(() => {})
   diffsRef.current = diffs
-  expandedFilesRef.current = expandedFiles
-  contextLinesByFileRef.current = contextLinesByFile
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [branches, setBranches] = useState<BranchInfo[]>([])
@@ -470,18 +468,20 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
     const state = stateRef.current
     if (!state.repoPath) return
     const comparisonKey = JSON.stringify([state.repoPath, state.spec])
-    const comparisonChanged = comparisonKeyRef.current !== comparisonKey
+    const previousKey = comparisonKeyRef.current
+    const comparisonChanged = previousKey !== comparisonKey
     comparisonKeyRef.current = comparisonKey
     const cachedDiffs = comparisonChanged ? {} : diffsRef.current
     if (comparisonChanged) {
       setComparison(null)
       setNoteDraft(null)
       diffsRef.current = {}
-      expandedFilesRef.current = new Set()
-      contextLinesByFileRef.current = {}
       setDiffs({})
-      setExpandedFiles(new Set())
-      setContextLinesByFile({})
+      // A first load (mount or reload) keeps the persisted expansion; a real
+      // comparison change starts collapsed.
+      if (previousKey && (state.expandedFiles?.length || Object.keys(state.contextLines ?? {}).length)) {
+        persist({ ...stateRef.current, expandedFiles: [], contextLines: {} })
+      }
     }
     setLoading(true)
     setError(null)
@@ -493,11 +493,11 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
       setDiffs((loaded) => Object.fromEntries(Object.entries(loaded).filter(([filePath]) => paths.has(filePath))))
       for (const file of result.files) {
         if (!cachedDiffs[file.path]) continue
-        const fullFile = state.display.fullFile || expandedFilesRef.current.has(file.path)
+        const fullFile = state.display.fullFile || !!state.expandedFiles?.includes(file.path)
         requestDiffRef.current(file, {
           allowLarge: fullFile,
           fullFile,
-          contextLines: contextLinesByFileRef.current[file.path] ?? 3,
+          contextLines: state.contextLines?.[file.path] ?? 3,
         })
       }
       const latest = stateRef.current
@@ -578,13 +578,14 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
     if (!options.allowLarge && !options.fullFile && options.contextLines === undefined && diffs[file.path]) return
     const state = stateRef.current
     const requestGeneration = generation.current
+    const expanded = !!state.expandedFiles?.includes(file.path)
     void limited(() => window.electronAPI.gitFileDiff(
       state.repoPath,
       state.spec,
       file.path,
       {
-        contextLines: state.display.fullFile || options.fullFile ? 999_999 : options.contextLines ?? 3,
-        allowLarge: options.allowLarge,
+        contextLines: state.display.fullFile || options.fullFile || expanded ? 999_999 : options.contextLines ?? state.contextLines?.[file.path] ?? 3,
+        allowLarge: options.allowLarge || expanded,
       },
       workspaceId,
     )).then((diff) => {
@@ -957,11 +958,11 @@ export default function GitReviewPanel({ panelId, workspaceId }: PanelProps) {
                       fullFile={reviewState.display.fullFile || expandedFiles.has(file.path)}
                       expandContext={() => {
                         const nextContextLines = contextLines < 10 ? 10 : Math.min(contextLines * 2, 500)
-                        setContextLinesByFile((current) => ({ ...current, [file.path]: nextContextLines }))
+                        update({ contextLines: { ...stateRef.current.contextLines, [file.path]: nextContextLines } })
                         requestDiff(file, { allowLarge: true, contextLines: nextContextLines })
                       }}
                       expandFullFile={() => {
-                        setExpandedFiles((current) => new Set(current).add(file.path))
+                        update({ expandedFiles: [...new Set([...(stateRef.current.expandedFiles ?? []), file.path])] })
                         requestDiff(file, { allowLarge: true, fullFile: true })
                       }}
                     />

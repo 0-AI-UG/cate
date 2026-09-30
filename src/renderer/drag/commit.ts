@@ -15,7 +15,7 @@ import { getDefaultSession } from './session'
 export interface CommitContext {
   /** Cross-window resolve callback — ask the main process whether another
    *  window claimed the drop. */
-  crossWindowResolve(): Promise<{ claimed: boolean }>
+  crossWindowResolve(snapshot: PanelTransferSnapshot | null): Promise<{ claimed: boolean }>
   /** Cancel the active cross-window drag (no window claimed it). */
   crossWindowCancel(): void
   /** Detach the panel into a new dock window. Returns the new windowId, or
@@ -122,16 +122,17 @@ export async function commitDrop(
         source.origin.kind === 'canvas-node' ? source.origin.nodeId : null,
       )
       try {
-        // Ask the main process whether any other window claimed the
-        // cross-window drag. If so, just clean up the source.
-        const { claimed } = await ctx.crossWindowResolve()
+        // Capture at release, so a claiming window materializes the panel as it
+        // is now (e.g. terminal output printed during the drag), not as it was
+        // at drag start. Then ask main whether any other window claimed it.
+        const snapshot = ctx.buildSnapshot()
+        const { claimed } = await ctx.crossWindowResolve(snapshot)
         if (claimed) {
           removeFromSource(source)
           ctx.onRemovedFromCanvas?.(source.panelId, panel.type)
           return
         }
         // No window claimed: spawn a new dock window holding the panel.
-        const snapshot = ctx.buildSnapshot()
         if (!snapshot) {
           ctx.crossWindowCancel()
           return

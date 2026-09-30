@@ -8,7 +8,7 @@ vi.mock('../windows/reveal', () => ({ revealWindow: vi.fn() }))
 vi.mock('./terminal', () => ({ abortTerminalTransfer: h.abort, beginTerminalBuffering: h.buffer, setTerminalTransferTarget: h.target, handleCrossWindowDropTerminalTransfer: h.crossTransfer }))
 vi.mock('../windowRegistry', () => ({ sendToWindow: h.send, broadcastToAll: vi.fn(), broadcastToAllExcept: vi.fn(), windowFromEvent: (event: any) => event.window, listWindows: () => [], setDockWindowState: h.cache, retainDockWindowRecovery: h.retain, clearDockWindowRecovery: h.clear }))
 import { registerDragHandlers } from './dragHandlers'
-import { DRAG_DETACH, PANEL_TRANSFER_READY, PANEL_TRANSFER_COMMIT, PANEL_TRANSFER_FINISH, PANEL_RECEIVE, CROSS_WINDOW_DRAG_START, CROSS_WINDOW_DRAG_DROP, CROSS_WINDOW_DRAG_RESOLVE } from '../../shared/ipc-channels'
+import { DRAG_DETACH, PANEL_TRANSFER_READY, PANEL_TRANSFER_COMMIT, PANEL_TRANSFER_FINISH, DOCK_WINDOW_INIT, CROSS_WINDOW_DRAG_START, CROSS_WINDOW_DRAG_DROP, CROSS_WINDOW_DRAG_RESOLVE } from '../../shared/ipc-channels'
 beforeEach(() => { h.handlers.clear(); vi.clearAllMocks() })
 it('keeps the source handoff pending until the destination accepts hydration', async () => {
   const window = Object.assign(new EventEmitter(), { id: 2, webContents: new EventEmitter(), setBounds: vi.fn(), isDestroyed: () => false, close: vi.fn() })
@@ -44,11 +44,11 @@ it('caches COMMIT without adopting resources, then adopts once FINISH arrives an
   expect(h.cache).toHaveBeenCalledWith(2, expect.objectContaining({ panels: { editor: snapshot.panel } }))
   expect(h.retain).toHaveBeenCalledWith(2)
   expect(h.target).not.toHaveBeenCalled()
-  expect(h.send.mock.calls.some(call => call[1] === PANEL_RECEIVE)).toBe(false)
+  expect(h.send.mock.calls.some(call => call[1] === DOCK_WINDOW_INIT)).toBe(false)
   h.handlers.get(PANEL_TRANSFER_FINISH)!({ window: { id: 1 } }, 'transfer', { ...snapshot, terminalScrollback: 'latest replay' })
   h.handlers.get(PANEL_TRANSFER_FINISH)!({ window: { id: 1 } }, 'transfer')
   expect(h.target).toHaveBeenCalledTimes(1)
-  expect(h.send).toHaveBeenCalledWith(2, PANEL_RECEIVE, expect.objectContaining({ ...snapshot, terminalScrollback: 'latest replay' }))
+  expect(h.send).toHaveBeenCalledWith(2, DOCK_WINDOW_INIT, expect.objectContaining({ transfer: expect.objectContaining({ ...snapshot, terminalScrollback: 'latest replay' }) }))
   h.handlers.get(PANEL_TRANSFER_READY)!({ window: { id: 99 } }, 'transfer', 'received')
   expect(h.clear).not.toHaveBeenCalled()
   h.handlers.get(PANEL_TRANSFER_READY)!({ window: win }, 'transfer', 'received')
@@ -78,7 +78,7 @@ it('retains the replacement before releasing the closed receiver and awaits its 
   expect(h.retain.mock.invocationCallOrder[1]).toBeLessThan(h.clear.mock.invocationCallOrder[0])
   expect(h.target).not.toHaveBeenCalled()
   replacement.webContents.emit('did-finish-load')
-  expect(h.send).toHaveBeenCalledWith(3, PANEL_RECEIVE, expect.objectContaining({ transferId: 'transfer' }))
+  expect(h.send).toHaveBeenCalledWith(3, DOCK_WINDOW_INIT, expect.objectContaining({ transfer: expect.objectContaining({ transferId: 'transfer' }) }))
   h.handlers.get(PANEL_TRANSFER_READY)!({ window: replacement }, 'transfer', 'received')
   expect(h.clear).toHaveBeenLastCalledWith(3)
 })
@@ -108,4 +108,17 @@ it('keeps source ownership when an existing target closes before acknowledging h
   win.close()
   expect(await result).toEqual({ claimed: false })
   expect(h.abort).toHaveBeenCalledWith('pty')
+})
+
+it('hands the claiming window the snapshot the source captured at release', async () => {
+  const win = receiver(2)
+  registerDragHandlers({ createWindow: () => win as any })
+  const panel = { id: 'editor', type: 'editor', title: 'Editor' }
+  await h.handlers.get(CROSS_WINDOW_DRAG_START)!({ window: { id: 1 } }, { panel, geometry: { size: { width: 500, height: 400 } } })
+  const fresh = { panel: { ...panel, title: 'Edited during drag' }, geometry: { size: { width: 500, height: 400 } } }
+  const result = h.handlers.get(CROSS_WINDOW_DRAG_RESOLVE)!({ window: { id: 1 } }, fresh)
+  const reserved = await h.handlers.get(CROSS_WINDOW_DRAG_DROP)!({ window: win }, 'editor')
+  expect(reserved).toEqual(expect.objectContaining({ accepted: true, snapshot: fresh }))
+  await h.handlers.get(PANEL_TRANSFER_READY)!({ window: win }, reserved.transferId, 'received')
+  expect(await result).toEqual({ claimed: true })
 })

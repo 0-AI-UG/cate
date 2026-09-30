@@ -48,6 +48,8 @@ const PersistentBrowserSurface = memo(function PersistentBrowserSurface({
       tabs={panel.tabs!}
       activeTabId={panel.activeTabId!}
       proxyUrl={panel.proxyUrl}
+      browserZoom={panel.browserZoom}
+      browserViewport={panel.browserViewport}
     />}</WorkspaceRequired>,
     container,
   )

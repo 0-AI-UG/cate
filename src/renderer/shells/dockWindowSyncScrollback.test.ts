@@ -71,6 +71,7 @@ describe('captureTerminalScrollbacks', () => {
     const panels: Record<string, PanelState> = {
       'term-1': { id: 'term-1', type: 'terminal', title: 'T' } as PanelState,
       'ed-1': { id: 'ed-1', type: 'editor', title: 'E' } as PanelState,
+      'agent-1': { id: 'agent-1', type: 'agent', title: 'A', cwd: '/repo/packages/app' } as PanelState,
     }
 
     const capture = captureTerminalScrollbacks(panels)
@@ -79,7 +80,7 @@ describe('captureTerminalScrollbacks', () => {
 
     // Scrollback is keyed by the STABLE panelId — not the ptyId.
     expect(saveCalls).toEqual([['term-1', 'ls output']])
-    expect(terminalCwds).toEqual({ 'term-1': '/work/cwd' })
+    expect(terminalCwds).toEqual({ 'term-1': '/work/cwd', 'agent-1': '/repo/packages/app' })
   })
 
   it('skips terminals with no registry entry', async () => {

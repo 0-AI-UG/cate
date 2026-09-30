@@ -5,6 +5,8 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { getDocumentType } from '../fs/fileRouting'
 import { worktreeForPanel } from '../worktreeContext'
 import { editorDocument, type EditorDocument } from './editorDocuments'
+import { gitStatusStore } from '../../stores/gitStatusStore'
+import { joinWorktrees } from '../../stores/useWorktrees'
 
 export function connectedEditors(workspace: WorkspaceState, sourceId: string): PanelState[] {
   const context = compilePanelRelationContext(sourceId, workspace.panels, workspace.panelRelations ?? [])
@@ -13,7 +15,9 @@ export function connectedEditors(workspace: WorkspaceState, sourceId: string): P
 }
 
 function documentFor(workspace: WorkspaceState, panel: PanelState): EditorDocument {
-  const root = worktreeForPanel(panel, workspace.worktrees ?? [])?.path ?? workspace.rootPath
+  // Live git worktrees count too, not only the ones Cate created.
+  const worktrees = joinWorktrees(workspace.rootPath, workspace.worktrees, gitStatusStore.getSnapshot(workspace.rootPath).worktrees)
+  const root = worktreeForPanel(panel, worktrees)?.path ?? workspace.rootPath
   return editorDocument(workspace.id, panel.id, panel.filePath, root)
 }
 

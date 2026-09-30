@@ -308,7 +308,6 @@ export const WINDOW_CLOSE_FOR_WORKSPACE = 'window:closeForWorkspace' // renderer
 export const RUN_ACTION_IN_MAIN = 'window:runActionInMain' // renderer -> main
 
 // Panel transfer (cross-window)
-export const PANEL_RECEIVE = 'panel:receive'       // main -> renderer
 export const PANEL_TRANSFER_ACK = 'panel:transferAck'
 
 // Cross-window drag-and-drop
@@ -422,6 +421,13 @@ export const AGENT_HARNESS_LIST_CONVERSATIONS = 'agentHarness:listConversations'
 export const AGENT_HARNESS_DELETE_CONVERSATION = 'agentHarness:deleteConversation'
 
 export const AGENT_CONVERSATION_DELETED = 'agentHarness:conversationDeleted'
+
+// Live T3 thread shells: invoke returns a partition's current snapshot; the
+// event pushes every change (main -> all windows).
+export const AGENT_HARNESS_THREAD_SHELLS = 'agentHarness:threadShells'
+export const AGENT_HARNESS_THREAD_SHELLS_CHANGED = 'agentHarness:threadShellsChanged'
+// Submit a user turn to an existing T3 thread through T3's orchestration API.
+export const AGENT_HARNESS_START_TURN = 'agentHarness:startTurn'
 
 export const RECENT_SCREENSHOT_GET = 'recentScreenshot:get'
 export const RECENT_SCREENSHOT_CHANGED = 'recentScreenshot:changed'

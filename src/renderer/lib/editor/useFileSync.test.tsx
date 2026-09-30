@@ -163,6 +163,19 @@ describe('useFileSync — save guard', () => {
   })
 })
 
+describe('useFileSync — dirty state', () => {
+  it('never rewrites the dirty marker into the panel title', () => {
+    const model = makeModel('base')
+    mount(model)
+    act(() => { latest!.noteLoaded('base') })
+    h.store.updatePanelTitle.mockClear()
+    model.setValue('edited')
+    act(() => { latest!.noteUserEdit() })
+    expect(latest!.isDirtyRef.current).toBe(true)
+    expect(h.store.updatePanelTitle).not.toHaveBeenCalled()
+  })
+})
+
 describe('useFileSync — external changes', () => {
   it('raises a changed conflict when the file changes under a dirty buffer', async () => {
     const model = makeModel('mine')

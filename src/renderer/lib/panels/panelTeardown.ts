@@ -1,5 +1,6 @@
 import { releaseEditorPanel } from '../editor/editorDocuments'
 import { releasePanelSearchStore } from '../../stores/panelSearchStores'
+import { releasePanelExplorerState } from '../../stores/panelExplorerState'
 // =============================================================================
 // teardownPanelContent — THE single decision point for what happens to a
 // panel's window-local content (PTY, xterm) when the panel leaves
@@ -26,6 +27,7 @@ export function teardownPanelContent(
 ): void {
   releaseEditorPanel(panelId)
   releasePanelSearchStore(panelId)
+  releasePanelExplorerState(panelId)
   if (reason === 'close') {
     terminalRegistry.dispose(panelId)
   } else {
