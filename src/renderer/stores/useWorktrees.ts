@@ -63,12 +63,16 @@ export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorkt
   // The primary worktree is the one keyed by the workspace's own rootPath.
   const primaryPath = rootPath
 
-  return useMemo(() => {
+  return useMemo(() => joinWorktrees(primaryPath, meta, snapshot.worktrees), [snapshot.worktrees, meta, primaryPath])
+}
+
+/** The same checkout resolution is available to unmounted panel sessions. */
+export function joinWorktrees(primaryPath: string, meta: WorktreeMeta[] | undefined, live: GitWorktreeEntry[]): JoinedWorktree[] {
     const metaByPath = new Map<string, WorktreeMeta>()
     for (const m of meta ?? []) metaByPath.set(pathKey(m.path), m)
 
     const seen = new Set<string>()
-    const joined: JoinedWorktree[] = snapshot.worktrees.map((g: GitWorktreeEntry) => {
+    const joined: JoinedWorktree[] = live.map((g: GitWorktreeEntry) => {
       const key = pathKey(g.path)
       seen.add(key)
       const m = metaByPath.get(key)
@@ -104,7 +108,4 @@ export function useWorktrees(rootPath: string, workspaceId: string): JoinedWorkt
     }
 
     return joined
-    // snapshot.worktrees identity changes per applied snapshot (see
-    // gitStatusStore), so it captures every refresh without needing revision.
-  }, [snapshot.worktrees, meta, primaryPath])
 }

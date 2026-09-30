@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkspaceState } from '../../../shared/types'
 import { isEditorDraft } from '../../../shared/editorDraft'
 import { useAppStore } from '../../stores/appStore'
+import { gitStatusStore } from '../../stores/gitStatusStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { captureEditorPanel, editorDocument, releaseEditorPanel } from './editorDocuments'
 import { __resetModelCacheForTest } from './modelCache'
@@ -218,6 +219,18 @@ describe('connected editor working files', () => {
     expect(panel().filePath).toMatch(/^cate-runtime:\/\/server\/worktrees\/topic\/\.cate\/drafts\//)
     expect(context).toContain('"/worktrees/topic/.cate/drafts/')
     expect(context).not.toContain('cate-runtime:')
+  })
+
+  it('materializes drafts in the checkout the panel resolves, including live git worktrees', async () => {
+    gitStatusStore._seedWorktrees('/repo', [
+      { path: '/repo', branch: 'main', isPrimary: true, isCurrent: true },
+      { path: '/wt/topic', branch: 'topic', isPrimary: false, isCurrent: false },
+    ])
+    const ws = workspace()
+    ws.panels.editor.worktreeId = '/wt/topic'
+    useAppStore.setState({ workspaces: [ws] })
+    await flushConnectedEditors('ws', 'agent')
+    expect(panel().filePath).toMatch(/^\/wt\/topic\/\.cate\/drafts\//)
   })
 
   it('leaves previews and unconnected editors untouched', async () => {

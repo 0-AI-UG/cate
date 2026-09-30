@@ -6,12 +6,21 @@
 
 import type { AppSet, AppGet, AppStoreActions } from './types'
 import { isRemoteRuntimeConnection } from '../../../shared/runtimeConnection'
+import { teardownPanelFamily } from '../../lib/panels/panelLifecycle'
 
 type SyncSliceActions = Pick<AppStoreActions, 'mergeWorkspaceInfos'>
 
-export function createSyncSlice(set: AppSet, _get: AppGet): SyncSliceActions {
+export function createSyncSlice(set: AppSet, get: AppGet): SyncSliceActions {
   return {
     mergeWorkspaceInfos(infos) {
+      // Workspaces deleted in another window take their panels (and PTYs) with them.
+      const { workspaces: before, selectedWorkspaceId } = get()
+      for (const ws of before) {
+        if (ws.id === selectedWorkspaceId || infos.some((info) => info.id === ws.id)) continue
+        for (const panel of Object.values(ws.panels)) {
+          teardownPanelFamily(panel.id, panel.type, 'close', (id) => ws.panels[id]?.type)
+        }
+      }
       set((state) => {
         const existingMap = new Map(state.workspaces.map((ws) => [ws.id, ws]))
 
