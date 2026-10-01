@@ -478,18 +478,18 @@ describe('detached section', () => {
     expect(host.textContent).toContain('Other windows')
     expect(host.textContent).toContain('Canvas')
 
-    // Child of the detached canvas is nested (indent = pl-10).
+    // Child of the detached canvas is nested (indent = 40px).
     const child = byText('ct').closest('button')!
-    expect(child.className).toContain('pl-10')
+    expect(child.style.paddingLeft).toBe('40px')
 
     // Regression: a child whose parentCanvasId matches NO canvas in the union
-    // still renders — top-level (pl-7), not silently dropped.
+    // still renders — top-level (28px), not silently dropped.
     const orphan = byText('oc').closest('button')!
-    expect(orphan.className).toContain('pl-7')
+    expect(orphan.style.paddingLeft).toBe('28px')
 
     // Plain top-level detached panel renders too.
     const top = byText('dt').closest('button')!
-    expect(top.className).toContain('pl-7')
+    expect(top.style.paddingLeft).toBe('28px')
   })
 
   it('clicking a detached row focuses it in its owning window', async () => {

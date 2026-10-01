@@ -102,7 +102,8 @@ export { panelRowLabel }
 
 export interface WorkspacePanelRowProps {
   panel: Pick<PanelState, 'id' | 'type' | 'title' | 'filePath' | 'tabs' | 'activeTabId'>
-  indent: boolean
+  /** Nesting depth: `true` = 1 level, `false` = top level, or an explicit depth. */
+  indent: boolean | number
   agentState?: AgentState
   agentLogo?: string | null
   hasPorts?: boolean
@@ -131,8 +132,8 @@ export const WorkspacePanelRow: React.FC<WorkspacePanelRowProps> = ({ panel, ind
   return (
     <button
       className={`group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
-        indent ? 'pl-10' : 'pl-7'
-      } ${isAwaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
+        isAwaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
+      style={{ paddingLeft: 28 + 12 * (Number(indent)) }}
       onClick={onClick}
       onContextMenu={onContextMenu ?? rename?.onContextMenu}
       onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
@@ -657,7 +658,21 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
     )
   }
 
-  const renderPanelRow = (p: PanelState, indent = false) => {
+  // A canvas/container row followed by its children; children that are parents
+  // themselves (container on a canvas, canvas in a container) recurse.
+  const renderParentGroup = (cp: PanelState, depth = 0): React.ReactNode => {
+    const children = childrenByCanvas[cp.id] || []
+    const collapsed = isCanvasCollapsed(cp.id)
+    return (
+      <React.Fragment key={cp.id}>
+        {renderCanvasRow(cp, children.length > 0, collapsed, depth)}
+        {!collapsed && children.map((p) =>
+          (p.type === 'canvas' || p.type === 'container') ? renderParentGroup(p, depth + 1) : renderPanelRow(p, depth + 1))}
+      </React.Fragment>
+    )
+  }
+
+  const renderPanelRow = (p: PanelState, indent: boolean | number = false) => {
     const label = panelRowLabel(p)
     const isRenaming = renamingPanelId === p.id
     const rename: PanelRenameProps = {
@@ -690,7 +705,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   // its children. A leaf canvas (no children) keeps an empty caret-width gutter
   // so its icon stays aligned with sibling canvas rows. Rendered as a div (not a
   // button) so the caret can be a real nested button without illegal nesting.
-  const renderCanvasRow = (cp: PanelState, hasChildren: boolean, collapsed: boolean) => {
+  const renderCanvasRow = (cp: PanelState, hasChildren: boolean, collapsed: boolean, depth = 0) => {
     const label = panelRowLabel(cp)
     const isRenaming = renamingPanelId === cp.id
     const rename: PanelRenameProps = {
@@ -707,6 +722,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
         role="button"
         tabIndex={0}
         className="group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
+        style={{ paddingLeft: 12 + 12 * depth }}
         onClick={(e) => handlePanelClick(e, cp.id)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -845,16 +861,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
       {/* Tree of canvases + panels (when expanded) */}
       {isExpanded && treeCount > 0 && (
         <div className="flex flex-col">
-          {canvasPanels.map((cp) => {
-            const children = childrenByCanvas[cp.id] || []
-            const collapsed = isCanvasCollapsed(cp.id)
-            return (
-              <React.Fragment key={cp.id}>
-                {renderCanvasRow(cp, children.length > 0, collapsed)}
-                {!collapsed && children.map((p) => renderPanelRow(p, true))}
-              </React.Fragment>
-            )
-          })}
+          {canvasPanels.map((cp) => renderParentGroup(cp))}
           {orphanCanvasChildren.length > 0 && canvasPanels.length === 0 && (
             <>
               <div className="flex items-center gap-1.5 h-7 pl-6 pr-2 text-[13px] text-muted">

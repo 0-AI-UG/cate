@@ -21,6 +21,7 @@ import { getLiveNodeDockLayout } from '../../panels/nodeDockRegistry'
 import { buildColdStartCanvasChildOwners, partitionWorkspacePanels } from '../../sidebar/partitionWorkspacePanels'
 import { getWorkspaceDockSnapshot } from './canvasAccess'
 import { collectPanelIds } from '../../../shared/collectPanelIds'
+import type { DockLayoutNode } from '../../../shared/types'
 import { panelRowLabel } from '../panelTitle'
 import { useActivePanelStore } from '../activePanel'
 import { parseLocator } from '../../../shared/runtimeLocator'
@@ -89,7 +90,11 @@ function canvasChildMap(panels: Record<string, { id: string; type: string }>): M
       }),
     })
   }
-  return buildColdStartCanvasChildOwners(snapshots)
+  const owners = buildColdStartCanvasChildOwners(snapshots)
+  for (const p of Object.values(panels) as Array<{ id: string; type: string; containerLayout?: DockLayoutNode }>) {
+    if (p.type === 'container') for (const id of collectPanelIds(p.containerLayout)) owners.set(id, p.id)
+  }
+  return owners
 }
 
 export function setupWindowPanelSync(): () => void {

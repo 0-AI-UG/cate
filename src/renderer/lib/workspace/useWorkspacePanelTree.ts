@@ -32,7 +32,7 @@ export interface WorkspacePanelTree {
   panels: Record<string, PanelState>
   /** All panels, sorted by type then title. */
   panelList: PanelState[]
-  /** Canvas-type panels (parents), in order. */
+  /** Top-level parent panels (canvases and containers), in order. */
   canvasPanels: PanelState[]
   /** Children grouped by the canvas panel id that hosts them. */
   childrenByCanvas: Record<string, PanelState[]>
@@ -129,8 +129,12 @@ export function useWorkspacePanelTree(workspaceId: string): WorkspacePanelTree {
       })),
     )
     for (const [id, owner] of coldOwners) if (!owners.has(id)) owners.set(id, owner)
+    // Container children live in the container's mirrored layout (panel record).
+    for (const p of Object.values(panels)) {
+      if (p.type === 'container') for (const id of collectPanelIds(p.containerLayout)) owners.set(id, p.id)
+    }
     return owners
-  }, [liveCanvasChildOwners, workspaceId])
+  }, [liveCanvasChildOwners, workspaceId, panels])
 
   // The dock-placed id set lets partitioning drop ghosts — panels still in
   // ws.panels but referenced by no canvas or dock. Read live (snapshot
@@ -147,10 +151,11 @@ export function useWorkspacePanelTree(workspaceId: string): WorkspacePanelTree {
   // Flatten to the overview's render order: each canvas followed by its
   // children, then orphaned canvas children, then docked free panels.
   const orderedPanels: PanelState[] = []
-  for (const cp of canvasPanels) {
-    orderedPanels.push(cp)
-    for (const child of childrenByCanvas[cp.id] ?? []) orderedPanels.push(child)
+  const pushWithChildren = (parent: PanelState): void => {
+    orderedPanels.push(parent)
+    for (const child of childrenByCanvas[parent.id] ?? []) pushWithChildren(child)
   }
+  for (const cp of canvasPanels) pushWithChildren(cp)
   orderedPanels.push(...orphanCanvasChildren, ...freePanels)
 
   return { panels, panelList, canvasPanels, childrenByCanvas, orphanCanvasChildren, freePanels, orderedPanels }

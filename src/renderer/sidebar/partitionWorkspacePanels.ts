@@ -45,7 +45,7 @@ export function buildColdStartCanvasChildOwners(
 }
 
 export interface WorkspacePanelPartition<P extends PanelLike> {
-  /** Canvas-type panels, in input order. */
+  /** Top-level parent panels (canvases and containers), in input order. */
   canvasPanels: P[]
   /** Children grouped by the id of the canvas panel that hosts them. */
   childrenByCanvas: Record<string, P[]>
@@ -72,19 +72,24 @@ export function partitionWorkspacePanels<P extends PanelLike>(
   // dock-placed here — same rule as any other panel. A canvas detached into
   // another window is no longer placed here and drops out of the overview.
   // (dockPlacedIds null = placement unknown at cold start → don't filter.)
+  // Containers group children the same way canvases do, so they're "parents"
+  // too. A parent that has an owner (a container on a canvas, a canvas in a
+  // container) is itself a child row and nests under that owner.
+  const isParent = (p: P): boolean => p.type === 'canvas' || p.type === 'container'
+  const parentIds = new Set(panelList.filter(isParent).map((p) => p.id))
   const canvasPanels = panelList.filter(
-    (p) => p.type === 'canvas' && (!dockPlacedIds || dockPlacedIds.has(p.id)),
+    (p) => isParent(p) && !canvasChildOwners.has(p.id) && (!dockPlacedIds || dockPlacedIds.has(p.id)),
   )
   const childrenByCanvas: Record<string, P[]> = {}
   const orphanCanvasChildren: P[] = []
   const freePanels: P[] = []
   for (const p of panelList) {
-    if (p.type === 'canvas') continue
     const owner = canvasChildOwners.get(p.id)
+    if (isParent(p) && !owner) continue
     if (owner) {
       // Nest the child under the canvas that actually hosts it. Fall back to
       // the first canvas only if the owning panel has gone missing.
-      const target = canvasPanels.some((c) => c.id === owner) ? owner : canvasPanels[0]?.id
+      const target = parentIds.has(owner) ? owner : canvasPanels[0]?.id
       if (target) (childrenByCanvas[target] ||= []).push(p)
       else orphanCanvasChildren.push(p)
     } else if (!dockPlacedIds || dockPlacedIds.has(p.id)) {

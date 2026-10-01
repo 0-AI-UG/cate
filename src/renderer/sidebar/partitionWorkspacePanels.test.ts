@@ -182,3 +182,18 @@ describe('buildColdStartCanvasChildOwners (cold-start per-canvas attribution)', 
     expect(buildColdStartCanvasChildOwners([]).size).toBe(0)
   })
 })
+
+describe('containers as parents', () => {
+  it('nests container children, and a container on a canvas under that canvas', () => {
+    const panels = [
+      { id: 'cv', type: 'canvas' }, { id: 'ct', type: 'container' },
+      { id: 't1', type: 'terminal' }, { id: 't2', type: 'terminal' },
+    ]
+    const owners = new Map([['ct', 'cv'], ['t1', 'ct']])
+    const p = partitionWorkspacePanels(panels, owners, new Set(['cv', 't2']))
+    expect(p.canvasPanels.map((c) => c.id)).toEqual(['cv'])
+    expect(p.childrenByCanvas.cv.map((c) => c.id)).toEqual(['ct'])
+    expect(p.childrenByCanvas.ct.map((c) => c.id)).toEqual(['t1'])
+    expect(p.freePanels.map((c) => c.id)).toEqual(['t2'])
+  })
+})
