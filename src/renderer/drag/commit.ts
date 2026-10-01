@@ -8,9 +8,11 @@
 import type { PanelTransferSnapshot, PanelType, DockDropTarget, Point, Size } from '../../shared/types'
 import type { StoreApi } from 'zustand'
 import type { CanvasStore } from '../stores/canvasStore'
+import type { DockStore } from '../stores/dockStore'
 import type { DragSource, DropTarget } from './types'
 import { findZoneForStack, findTabStackAcrossZones } from '../stores/dockTreeUtils'
 import { getDefaultSession } from './session'
+import { canContain } from '../../shared/panels'
 
 export interface CommitContext {
   /** Cross-window resolve callback — ask the main process whether another
@@ -25,6 +27,15 @@ export interface CommitContext {
    *  actually required. */
   buildSnapshot(): PanelTransferSnapshot | null
   workspaceId: string
+  /** Window-level split drops wrap the panel under the cursor in a container.
+   *  Returns true when it applied the whole split (dragged panel included). */
+  splitWithContainerWrap?(args: {
+    dockStoreApi: StoreApi<DockStore>
+    stackId: string
+    edge: 'top' | 'bottom' | 'left' | 'right'
+    draggedPanelId: string
+    draggedPanelType: PanelType
+  }): boolean
   /** Notified after the panel is removed from the source canvas — used by the
    *  hook to release terminal PTYs / xterm instances. */
   onRemovedFromCanvas?: (panelId: string, panelType: PanelType) => void
@@ -65,9 +76,9 @@ export async function commitDrop(
     }
 
     case 'canvas-add': {
-      // Canvas-on-canvas is unsupported — refuse the drop instead of removing
-      // the panel from its source (which would silently delete a canvas tab).
-      if (panel.type === 'canvas') return
+      // Refuse the drop instead of removing the panel from its source (which
+      // would silently delete e.g. a canvas tab dropped on a canvas).
+      if (!canContain('canvas', panel.type)) return
       ctx.prepareLocalRemount?.(source.panelId, panel.type)
       // Remove the panel from its current location first so addNode doesn't
       // race with a stale duplicate (terminal PTY, xterm DOM, etc.).
@@ -109,6 +120,17 @@ export async function commitDrop(
           : { type: 'split', stackId: target.stackId, edge: target.edge }
       ctx.prepareLocalRemount?.(source.panelId, panel.type)
       removeFromSource(source)
+      // Splitting a window-level stack wraps the panel under it in a container.
+      if (
+        target.kind === 'dock-split' &&
+        ctx.splitWithContainerWrap?.({
+          dockStoreApi: target.dockStoreApi,
+          stackId: target.stackId,
+          edge: target.edge,
+          draggedPanelId: panel.id,
+          draggedPanelType: panel.type,
+        })
+      ) return
       targetState.dockPanel(panel.id, zone, dockTarget)
       return
     }

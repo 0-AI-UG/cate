@@ -14,7 +14,9 @@ import type { DragSource, DragOpSourceSpec, RuntimeState } from './types'
 import { applyBodyClassEffect } from './types'
 import { acquireBodyClass, releaseBodyClass } from '../lib/dom/bodyClassRefcount'
 import { reduce, initial as runtimeInitial } from './runtime'
-import { resolveDrop } from './resolve'
+import { resolveDrop, setContainerCanvasProbe } from './resolve'
+import { containerHoldsType } from '../lib/panels/containerQueries'
+import { splitByWrappingInContainer } from '../lib/panels/wrapInContainer'
 import { commitDrop } from './commit'
 import { viewToCanvas } from '../lib/canvas/coordinates'
 import { dockTabGrabOffset } from './grabOffset'
@@ -311,6 +313,11 @@ function runEffects(prevActive: ActiveDispatch, next: RuntimeState) {
           prepareLocalRemount: (panelId, panelType) => {
             prepareTerminalRemount(panelId, panelType, terminalRegistry)
           },
+          splitWithContainerWrap: (args) => splitByWrappingInContainer({
+            ...args,
+            workspaceId: resolveOwningWorkspaceId(prevActive.ownerWorkspaceId),
+            beforeMove: (panelId, panelType) => prepareTerminalRemount(panelId, panelType, terminalRegistry),
+          }),
           beginPendingDetach: (panelId, nodeId) => {
             useDragStore.getState().beginPendingDetach(panelId, nodeId)
           },
@@ -468,6 +475,8 @@ function onKeyDown(ev: KeyboardEvent) {
 // -----------------------------------------------------------------------------
 
 export type { DragOpSourceSpec } from './types'
+
+setContainerCanvasProbe((panelId) => containerHoldsType(panelId, 'canvas'))
 
 export function useDragOp(opts?: { workspaceId?: string }): {
   handleDragStart: (e: React.MouseEvent, spec: DragOpSourceSpec) => void

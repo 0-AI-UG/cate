@@ -23,6 +23,7 @@ import { remoteDragGrab } from './remoteGrab'
 import { placeNodeOnCanvas } from './commit'
 import type { DragEvent, DragSource, RuntimeState } from './types'
 import { applyBodyClassEffect } from './types'
+import { canContain } from '../../shared/panels'
 
 export type RemoteDropTarget =
   | { kind: 'dock'; target: DockDropTarget; dockStoreApi: StoreApi<DockStore> }
@@ -152,9 +153,9 @@ export function createRemoteDropHandler(opts: {
   addPanelStep: (snapshot: PanelTransferSnapshot) => void
 }): RemoteDropHandler {
   return (snapshot, target) => {
-    // Canvas-on-canvas is unsupported: refuse cross-window drops of a
-    // canvas panel onto a canvas target. The source window stays as-is.
-    if (snapshot.panel.type === 'canvas' && target.kind !== 'dock') return false
+    // Refuse cross-window drops a canvas can't host (e.g. canvas-on-canvas).
+    // The source window stays as-is.
+    if (target.kind !== 'dock' && !canContain('canvas', snapshot.panel.type)) return false
 
     // Deposit PTY hand-off + hydrate canvas children + register the panel
     // before it mounts (per-window: addPanel vs ensurePanelsInAppStore).

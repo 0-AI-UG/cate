@@ -23,6 +23,7 @@ import { getDefaultSession } from './session'
 import { cursorToCanvasOrigin } from './geometry'
 import { canvasToView } from '../lib/canvas/coordinates'
 import { findTabStackAcrossZones } from '../stores/dockTreeUtils'
+import { canContain } from '../../shared/panels'
 import { snapToGrid, CANVAS_GRID_SIZE } from '../canvas/layoutEngine'
 import type { WindowDockState } from '../../shared/types'
 
@@ -31,6 +32,13 @@ import type { WindowDockState } from '../../shared/types'
 // passes the real-DOM implementation via `defaultDropEnvironment`. Tests can
 // supply a fake.
 // -----------------------------------------------------------------------------
+
+// Whether a container panel hosts a canvas — needs app-store records, so the
+// host injects it (keeps this module free of the heavy store graph).
+let containerHoldsCanvas: (panelId: string) => boolean = () => false
+export function setContainerCanvasProbe(probe: (panelId: string) => boolean): void {
+  containerHoldsCanvas = probe
+}
 
 export interface DropEnvironment {
   /** Returns the canvas container under the cursor (or null). */
@@ -103,7 +111,7 @@ export function resolveDrop(
     // canvas resolveCanvasHit yields `canvas-add`, whose commit moves only the
     // anchor and strands the other members on the source canvas — so accept only
     // a same-canvas reposition; anything else is a no-op that keeps the group put.
-    const target = resolveCanvasHit(cursor, source, grab, ghostSize, env, snap)
+    const target = resolveCanvasHit(cursor, source, panelType, grab, ghostSize, env, snap)
     return target?.kind === 'canvas-reposition' ? target : null
   }
 
@@ -116,7 +124,7 @@ export function resolveDrop(
   if (dockTarget) return dockTarget
 
   // --- 2. Canvas surface under cursor ---
-  const canvasTarget = resolveCanvasHit(cursor, source, grab, ghostSize, env, snap)
+  const canvasTarget = resolveCanvasHit(cursor, source, panelType, grab, ghostSize, env, snap)
   if (canvasTarget) return canvasTarget
 
   return null
@@ -141,6 +149,8 @@ function resolveDockHit(
     source.origin.kind === 'canvas-node' ? source.origin.nodeId : null
   for (const entry of env.dropZones) {
     if (entry.acceptsPanelType && !entry.acceptsPanelType(panelType)) continue
+    if (panelType === 'container' && entry.dockStoreApi && containerHoldsCanvas(source.panelId)
+      && env.findOwningCanvasForDockStore(entry.dockStoreApi, undefined)) continue
     if (sourceOwnNodeId && entry.dockStoreApi) {
       const owning = env.findOwningCanvasForDockStore(entry.dockStoreApi, undefined)
       if (owning && owning.nodeId === sourceOwnNodeId) continue
@@ -208,6 +218,7 @@ function resolveDockHit(
 function resolveCanvasHit(
   cursor: { client: Point },
   source: DragSource,
+  panelType: PanelType,
   grab: Point,
   ghostSize: Size,
   env: DropEnvironment,
@@ -215,6 +226,8 @@ function resolveCanvasHit(
 ): DropTarget | null {
   const hit = env.canvasAtCursor(cursor.client)
   if (!hit) return null
+  // Canvas-on-canvas, and a container that holds a canvas (canvas → container → canvas).
+  if (!canContain('canvas', panelType) || (panelType === 'container' && containerHoldsCanvas(source.panelId))) return null
   const { canvasStoreApi, rect } = hit
   const state = canvasStoreApi.getState() as {
     zoomLevel: number
