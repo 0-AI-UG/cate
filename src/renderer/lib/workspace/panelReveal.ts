@@ -19,7 +19,9 @@ import {
 } from './canvasAccess'
 import { useAppStore } from '../../stores/appStore'
 import { setActivePanel } from '../activePanel'
-import { findTabStack } from '../../stores/dockTreeUtils'
+import { findTabStack, findStackContainingPanel } from '../../stores/dockTreeUtils'
+import { replaceInTree } from '../../stores/dockStore'
+import { getContainerDockStore } from '../../panels/containerDockRegistry'
 import type { DockZonePosition, PanelState } from '../../../shared/types'
 
 // The location facade now lives in canvasAccess (the lowest module owning dock +
@@ -62,25 +64,41 @@ function revealDockTab(
   return true
 }
 
-function revealOnce(workspaceId: string, panelId: string): boolean {
+/** Bring a panel's placement on screen (dock tab / canvas node / container tab),
+ *  recursing outward so a panel inside a container inside a canvas is reachable. */
+function revealPlacement(workspaceId: string, panelId: string, depth = 0): boolean {
   const location = resolvePanelLocation(workspaceId, panelId)
-  if (!location) return false
+  if (!location || depth > 4) return false
 
-  if (location.kind === 'dock') {
-    if (!revealDockTab(workspaceId, panelId, location.zone, location.stackId)) return false
-  } else {
-    // The hosting canvas is itself a (center-zone) dock tab. Focusing the node
-    // alone won't switch the on-screen canvas when a DIFFERENT canvas tab is
-    // active — so bring the canvas panel's own tab to the front first, then
-    // focus the node inside it. (Clicking the canvas row worked already because
-    // it took the dock branch above; a child one level down skipped this step.)
-    const canvasLoc = resolvePanelLocation(workspaceId, location.canvasPanelId)
-    if (canvasLoc?.kind === 'dock') {
-      revealDockTab(workspaceId, location.canvasPanelId, canvasLoc.zone, canvasLoc.stackId)
-    }
+  if (location.kind === 'dock') return revealDockTab(workspaceId, panelId, location.zone, location.stackId)
+
+  if (location.kind === 'canvas') {
+    // The hosting canvas is itself placed somewhere (dock tab, or a container
+    // tab). Focusing the node alone won't switch the on-screen canvas when a
+    // DIFFERENT canvas tab is active — so reveal the canvas first, then focus
+    // the node inside it.
+    revealPlacement(workspaceId, location.canvasPanelId, depth + 1)
     ensureCanvasOpsForPanel(location.canvasPanelId).focusPanelNode(panelId)
+    return true
   }
 
+  // Container: reveal the container, then select the child's tab inside it.
+  const { containerPanelId } = location
+  revealPlacement(workspaceId, containerPanelId, depth + 1)
+  const layout = useAppStore.getState().getWorkspace(workspaceId)?.panels[containerPanelId]?.containerLayout
+  const stack = layout && findStackContainingPanel(layout, panelId)
+  if (!stack) return true
+  const index = stack.panelIds.indexOf(panelId)
+  const live = getContainerDockStore(containerPanelId)
+  if (live) live.getState().setActiveTab(stack.id, index)
+  else useAppStore.getState().setPanelContainerLayout(
+    workspaceId, containerPanelId, replaceInTree(layout, stack.id, { ...stack, activeIndex: index }),
+  )
+  return true
+}
+
+function revealOnce(workspaceId: string, panelId: string): boolean {
+  if (!revealPlacement(workspaceId, panelId)) return false
   setActivePanel(panelId)
   return true
 }

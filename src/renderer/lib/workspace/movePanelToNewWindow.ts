@@ -35,7 +35,8 @@ export async function movePanelToNewWindow(
   if (!window.electronAPI?.dragDetach) return false
 
   const location = resolvePanelLocation(workspaceId, panelId)
-  if (!location) return false
+  // Panels hosted inside a container can't be detached on their own yet.
+  if (!location || location.kind === 'container') return false
 
   let sourceLocation: PanelLocation
   let nodeId: string | null = null

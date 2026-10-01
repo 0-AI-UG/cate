@@ -335,11 +335,13 @@ export function getWorkspaceDockSnapshot(
 export type ResolvedPanelLocation =
   | { kind: 'dock'; zone: DockZonePosition; stackId: string }
   | { kind: 'canvas'; canvasPanelId: string }
+  | { kind: 'container'; containerPanelId: string }
 
 /**
  * Locate a panel within a workspace. Fixed probe order:
  *   1. the workspace dock store (live tree, derived location)
  *   2. any canvas panel of the workspace (nodeForPanel)
+ *   3. any container panel of the workspace (its mirrored layout)
  * Returns null if the panel is not currently placed anywhere.
  */
 export function resolvePanelLocation(
@@ -370,6 +372,14 @@ export function resolvePanelLocation(
     )
     if (containsPanel) {
       return { kind: 'canvas', canvasPanelId }
+    }
+  }
+  // Containers host children in their own layout (mirrored on the panel record).
+  if (ws) {
+    for (const p of Object.values(ws.panels)) {
+      if (p.type === 'container' && collectPanelIds(p.containerLayout).includes(panelId)) {
+        return { kind: 'container', containerPanelId: p.id }
+      }
     }
   }
   return null

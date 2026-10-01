@@ -20,6 +20,8 @@ import {
 } from './helpers'
 import { releaseCanvasStoreForPanel } from '../canvasStore'
 import { teardownPanelContent } from '../../lib/panels/panelTeardown'
+import { getContainerDockStore, emptyContainerLayout } from '../../panels/containerDockRegistry'
+import { removePanelFromTree } from '../dockStore'
 import { teardownPanelFamily } from '../../lib/panels/panelLifecycle'
 import { collectPanelIds } from '../../../shared/collectPanelIds'
 import { getOrCreateWorkspaceDockStore } from '../../lib/workspace/dockRegistry'
@@ -261,6 +263,14 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
           dockStore.getState().undockPanel(panelId)
         } else if (location?.kind === 'canvas') {
           getCanvasOpsById(location.canvasPanelId)?.removeNodeForPanel(panelId)
+        } else if (location?.kind === 'container') {
+          const live = getContainerDockStore(location.containerPanelId)
+          if (live) live.getState().undockPanel(panelId)
+          else {
+            const layout = ws?.panels[location.containerPanelId]?.containerLayout
+            const next = layout && removePanelFromTree(layout, panelId)
+            get().setPanelContainerLayout(workspaceId, location.containerPanelId, next || emptyContainerLayout())
+          }
         }
       } catch (error) {
         log.error('Failed to remove panel from dock/canvas during close:', error)

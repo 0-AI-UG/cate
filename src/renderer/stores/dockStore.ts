@@ -98,7 +98,7 @@ export function removePanelFromTree(node: DockLayoutNode, panelId: string): Dock
 }
 
 /** Replace a tab stack in the layout tree with a new node */
-function replaceInTree(
+export function replaceInTree(
   node: DockLayoutNode,
   stackId: string,
   replacement: DockLayoutNode,
