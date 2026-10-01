@@ -41,6 +41,8 @@ type PanelSliceActions = Pick<
   | 'createEditor'
   | 'createReview'
   | 'createCanvas'
+  | 'createContainer'
+  | 'setPanelContainerLayout'
   | 'createAgent'
   | 'closePanel'
   | 'updatePanelTitle'
@@ -204,6 +206,21 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
       return addAndPlacePanel(set, get, workspaceId, panel, placement, position)
     },
 
+    createContainer(workspaceId, childPanelId, position?, placement?) {
+      const panel: PanelState = {
+        id: generateId(),
+        type: 'container',
+        title: 'Container',
+        isDirty: false,
+        containerLayout: { type: 'tabs', id: generateId(), panelIds: childPanelId ? [childPanelId] : [], activeIndex: 0 },
+      }
+      return addAndPlacePanel(set, get, workspaceId, panel, withDefaultSize('container', placement), position)
+    },
+
+    setPanelContainerLayout(workspaceId, panelId, layout) {
+      setPanelField(set, workspaceId, panelId, (panel) => ({ ...panel, containerLayout: layout }))
+    },
+
     createAgent(workspaceId, position?, placement?, cwd?, worktreeId?, threadId?) {
       // Auto-number agent panels (same scheme as terminals) so multiple agents are
       // addressable and distinct — unique across ALL windows, not just this one.
@@ -230,6 +247,7 @@ export function createPanelSlice(set: AppSet, get: AppGet): PanelSliceActions {
         panel?.type,
         'close',
         (id) => ws?.panels[id]?.type,
+        panel?.containerLayout,
       )
       for (const id of childIds) clearActivePanelIfMatches(id)
       // Remove from dock/canvas first (less critical — log errors but continue).

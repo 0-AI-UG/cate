@@ -38,7 +38,7 @@ export interface SharedPanelDefinition {
    *  process. Lives here so main and renderer agree on the same icon set. */
   ghostSvg: string
   /** Whether a panel of this type can be placed as a canvas node. Canvas
-   *  panels themselves live only in dock zones. */
+   *  panels themselves live only in dock zones. Prefer `canContain()`. */
   canLiveOnCanvas: boolean
   /** Whether this panel supports an explicit checkout switch/create action.
    *  File-backed panels can still derive passive checkout affinity by path. */
@@ -148,7 +148,7 @@ export const PANEL_DEFINITIONS = {
     canLiveOnCanvas: true,
     worktreeBinding: true,
     navigable: true,
-    splitMenuOrder: 4,
+    splitMenuOrder: 5,
     keepMountedOffscreen: true,
     keepMountedWhenTabHidden: true,
   },
@@ -184,7 +184,43 @@ export const PANEL_DEFINITIONS = {
     keepMountedOffscreen: false,
     keepMountedWhenTabHidden: false,
   },
+  container: {
+    type: 'container',
+    label: 'Container',
+    brandColor: '#FF6482',
+    mutedColor: '#a04a5a',
+    tintClass: 'text-rose-400',
+    defaultSize: { width: 800, height: 600 },
+    minimumSize: { width: 400, height: 300 },
+    ghostSvg: ghost('rgb(255,100,130)', '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="12" y1="12" x2="21" y2="12"/>'),
+    canLiveOnCanvas: true,
+    worktreeBinding: false,
+    navigable: false,
+    splitMenuOrder: 4,
+    keepMountedOffscreen: false,
+    keepMountedWhenTabHidden: false,
+  },
 } satisfies Record<PanelType, SharedPanelDefinition>
+
+// -----------------------------------------------------------------------------
+// Containment rules — the single source of truth for "can X host Y".
+//   dock      window dock zones: anything
+//   canvas    canvas nodes: anything that canLiveOnCanvas (no canvas-in-canvas)
+//   container container panels: anything but another container
+// -----------------------------------------------------------------------------
+
+export type PanelHostKind = 'dock' | 'canvas' | 'container'
+
+export function canContain(host: PanelHostKind, child: PanelType): boolean {
+  if (host === 'canvas') return PANEL_DEFINITIONS[child].canLiveOnCanvas
+  if (host === 'container') return child !== 'container'
+  return true
+}
+
+/** Panel types a host rejects — feeds DockTabStack's `excludePanelTypes`. */
+export function excludedChildTypes(host: PanelHostKind): PanelType[] {
+  return (Object.keys(PANEL_DEFINITIONS) as PanelType[]).filter((type) => !canContain(host, type))
+}
 
 /** Lookup helper. Falls back to the editor definition (matches the previous
  *  drag-ghost behaviour). */

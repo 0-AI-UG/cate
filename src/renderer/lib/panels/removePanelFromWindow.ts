@@ -30,7 +30,7 @@ export function removePanelFromWindow(
   const app = useAppStore.getState()
 
   const ws = app.workspaces?.find((w) => w.id === workspaceId)
-  const childIds = teardownPanelFamily(panelId, panelType, reason, (id) => ws?.panels[id]?.type)
+  const childIds = teardownPanelFamily(panelId, panelType, reason, (id) => ws?.panels[id]?.type, ws?.panels[panelId]?.containerLayout)
   for (const id of childIds) app.removePanelRecord(workspaceId, id)
   app.removePanelRecord(workspaceId, panelId)
 }

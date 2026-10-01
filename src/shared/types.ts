@@ -33,7 +33,7 @@ export interface Rect {
 // Panel types
 // -----------------------------------------------------------------------------
 
-export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'agent' | 'review' | 'surface'
+export type PanelType = 'terminal' | 'browser' | 'editor' | 'canvas' | 'container' | 'agent' | 'review' | 'surface'
 
 // -----------------------------------------------------------------------------
 // Canvas node
@@ -222,6 +222,10 @@ export interface PanelState {
    *  subsystem assigning the value owns its meaning. */
   placementGroupId?: string
   filePath?: string
+  /** Container panels only: the split/tab tree the container hosts. The
+   *  container's private DockStore is the runtime authority; it mirrors its
+   *  center layout here so the layout persists with the panel record. */
+  containerLayout?: DockLayoutNode
   /** Browser panels only: open tabs (light model). This is the sole persisted
    *  navigation state; the current URL is derived through browserPanelUrl. */
   tabs?: BrowserTab[]
@@ -1274,6 +1278,8 @@ export interface ProjectPanelRef {
   type: string
   title: string
   filePath?: string
+  /** Container panels only: see PanelState.containerLayout. */
+  containerLayout?: DockLayoutNode
   /** Browser panels only: canonical navigation state. */
   tabs?: BrowserTab[]
   activeTabId?: string
@@ -1726,6 +1732,7 @@ export const PANEL_CANVAS_DROP_SIZES: Record<PanelType, Size> = {
   browser: { width: 640, height: 440 },
   editor: { width: 540, height: 420 },
   canvas: { width: 640, height: 480 },
+  container: { width: 640, height: 480 },
   agent: { width: 520, height: 440 },
   review: { width: 820, height: 560 },
 }

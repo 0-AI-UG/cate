@@ -40,6 +40,7 @@ const PASSTHROUGH_PANEL_FIELDS = [
   'browserViewport',
   'sidebarView',
   'sidebarVisible',
+  'containerLayout',
 ] as const
 
 type PassthroughPanelFields = Pick<ProjectPanelRef, (typeof PASSTHROUGH_PANEL_FIELDS)[number]>

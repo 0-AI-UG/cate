@@ -18,6 +18,6 @@ it('closes an orphaned canvas together with its children', () => {
     } }] as never,
   })
   useAppStore.getState().reconcileWorkspaceDock('ws')
-  expect(teardown).toHaveBeenCalledWith('canvas', 'canvas', 'close', expect.any(Function))
+  expect(teardown).toHaveBeenCalledWith('canvas', 'canvas', 'close', expect.any(Function), undefined)
   expect(useAppStore.getState().workspaces[0].panels).toEqual({})
 })

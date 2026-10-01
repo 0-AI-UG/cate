@@ -1,6 +1,7 @@
 import { gitStatusStore } from '../../stores/gitStatusStore'
 import { notifySessionMutation } from './sessionMutations'
 import { KeyedLock } from '../../../shared/keyedLock'
+import { collectPanelIds } from '../../../shared/collectPanelIds'
 import { captureEditorPanel } from '../editor/editorDocuments'
 // =============================================================================
 // Session save — serialize every persistable workspace to .cate/workspace.json +
@@ -101,6 +102,11 @@ async function persistSession(): Promise<void> {
     // Dock-zone panels (each canvas panel itself + docked terminals/agents/etc.).
     if (dockSnapshot) {
       for (const id of collectPanelIdsFromDockState(dockSnapshot.zones)) placedPanelIds.add(id)
+    }
+
+    // A container's children live only in its layout; persist their records too.
+    for (const id of [...placedPanelIds]) {
+      collectPanelIds(workspace.panels[id]?.containerLayout, placedPanelIds)
     }
 
     // One record per placed panel + scrollback for every terminal, keyed by the

@@ -13,6 +13,7 @@ import type {
   Point,
   Size,
   DockZonePosition,
+  DockLayoutNode,
   WorktreeMeta,
   RemoteConnectSpec,
   RuntimeConnection,
@@ -97,6 +98,9 @@ export interface AppStoreActions {
   createEditor: (workspaceId: string, filePath?: string, position?: Point, placement?: PanelPlacement) => string
   createReview: (workspaceId: string, repoPath: string, initial?: Partial<ReviewPanelState>, position?: Point, placement?: PanelPlacement) => string
   createCanvas: (workspaceId: string, position?: Point, placement?: PanelPlacement) => string
+  /** Creates a container, empty or seeded with one existing panel (already placed 'none'). */
+  createContainer: (workspaceId: string, childPanelId?: string, position?: Point, placement?: PanelPlacement) => string
+  setPanelContainerLayout: (workspaceId: string, panelId: string, layout: DockLayoutNode) => void
   createAgent: (
     workspaceId: string,
     position?: Point,

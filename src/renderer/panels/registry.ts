@@ -15,7 +15,7 @@ import { T3Logo } from '../ui/T3Logo'
 
 import React, { type LazyExoticComponent, type ComponentType } from 'react'
 import { Terminal, Globe, Grid2X2 as SquaresFour, GitCompareArrows as GitDiff, type LucideIcon } from 'lucide-react'
-import { Folders, Plus } from 'lucide-react'
+import { Folders, Plus, PanelsTopLeft } from 'lucide-react'
 import type { PanelType, Point, PanelState } from '../../shared/types'
 import type { PanelPlacement } from '../stores/appStore'
 import { useAppStore } from '../stores/appStore'
@@ -34,6 +34,7 @@ const TerminalPanel = React.lazy(() => import('./TerminalPanel'))
 const EditorPanel = React.lazy(() => import('./EditorPanel'))
 const BrowserPanel = React.lazy(() => import('./BrowserPanel'))
 const CanvasPanel = React.lazy(() => import('./CanvasPanel'))
+const ContainerPanel = React.lazy(() => import('./ContainerPanel'))
 const AgentPanel = React.lazy(() => import('./AgentPanel'))
 const ReviewPanel = React.lazy(() => import('./ReviewPanel'))
 
@@ -150,6 +151,14 @@ export const PANEL_REGISTRY: Record<PanelType, RendererPanelDefinition> = {
     create: ({ workspaceId, canvasPoint, placement }) =>
       trackCreated('canvas', useAppStore.getState().createCanvas(workspaceId, canvasPoint, placement) || null),
     props: (panel, ctx) => ({ ...baseProps(panel, ctx), renderPanelContent: ctx.renderPanelContent }),
+  },
+  container: {
+    ...PANEL_DEFINITIONS.container,
+    icon: PanelsTopLeft,
+    Component: ContainerPanel,
+    create: ({ workspaceId, canvasPoint, placement }) =>
+      trackCreated('container', useAppStore.getState().createContainer(workspaceId, undefined, canvasPoint, placement) || null),
+    props: baseProps,
   },
   agent: {
     ...PANEL_DEFINITIONS.agent,

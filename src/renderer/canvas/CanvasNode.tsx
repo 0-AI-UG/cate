@@ -34,7 +34,7 @@ import DockLayoutRenderer from '../docking/DockLayoutRenderer'
 import { confirmClosePanels } from '../lib/confirmClosePanels'
 import { collectPanelIds } from '../../shared/collectPanelIds'
 import { X, Lock, LockOpen } from 'lucide-react'
-import { PANEL_DEFINITIONS } from '../../shared/panels'
+import { PANEL_DEFINITIONS, excludedChildTypes } from '../../shared/panels'
 import { captureRendererException } from '../lib/sentry'
 import { useCanvasTopOverlayTarget } from './CanvasTopOverlayContext'
 import { worktreeForPanel } from '../lib/worktreeContext'
@@ -80,9 +80,7 @@ export interface CanvasNodeProps {
 const GRAB_STRIP_HEIGHT = 22
 /** Canvas-inside-canvas isn't supported — tab + split menus and drag-and-drop
  *  for canvas-node mini-docks all reject this type. */
-const CANVAS_EXCLUDED_TYPES = (Object.values(PANEL_DEFINITIONS)
-  .filter((definition) => !definition.canLiveOnCanvas)
-  .map((definition) => definition.type)) satisfies PanelType[]
+const CANVAS_EXCLUDED_TYPES = excludedChildTypes('canvas')
 
 function sameDockTopology(a: DockLayoutNode | null, b: DockLayoutNode | null): boolean {
   if (!a || !b) return a === b
