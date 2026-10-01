@@ -16,6 +16,7 @@ export async function detachPanel(snapshot: PanelTransferSnapshot, workspaceId: 
     panel: value.panel, geometry: value.geometry, sourceLocation: value.sourceLocation,
     rootPath: value.rootPath, worktrees: value.worktrees,
     canvas: value.canvasState && { ...value.canvasState, childTerminals: Object.fromEntries(Object.entries(value.canvasState.childTerminals ?? {}).map(([id, terminal]) => [id, terminal.ptyId])) },
+    container: value.containerState && { ...value.containerState, childTerminals: Object.fromEntries(Object.entries(value.containerState.childTerminals ?? {}).map(([id, terminal]) => [id, terminal.ptyId])) },
     terminalPtyId: value.terminalPtyId,
   })
   const finalSnapshot = capture()

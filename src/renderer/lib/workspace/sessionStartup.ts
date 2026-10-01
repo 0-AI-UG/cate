@@ -7,6 +7,7 @@ import log from '../logger'
 import { useAppStore } from '../../stores/appStore'
 import { deferredSnapshots } from './deferredRestore'
 import { collectPanelIdsFromDockState } from './sessionSerialize'
+import { collectPanelIds } from '../../../shared/collectPanelIds'
 import { mark } from '../perfMarks'
 import { restoreWorkspaceLayout } from './sessionRestore'
 import type {
@@ -224,9 +225,14 @@ export function buildDockWindowRestoreInit(
   for (const panelId of topLevelIds) {
     const panel = dw.panels[panelId]
     if (!panel) continue
-    if (panel.type === 'canvas') {
-      const cs = buildRestoredCanvasState(dw, panel, topLevelSet)
-      if (cs) canvasStates[panelId] = cs
+    // A container's hosted canvases restore like top-level ones.
+    const hosted = panel.type === 'container'
+      ? collectPanelIds(panel.containerLayout).map((id) => dw.panels[id]).filter((p): p is PanelState => !!p)
+      : [panel]
+    for (const candidate of hosted) {
+      if (candidate.type !== 'canvas') continue
+      const cs = buildRestoredCanvasState(dw, candidate, topLevelSet)
+      if (cs) canvasStates[candidate.id] = cs
     }
   }
 

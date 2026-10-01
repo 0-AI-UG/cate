@@ -9,7 +9,8 @@ import type { PanelState, PanelTransferSnapshot, PanelLocation, Point, Size, Wor
 import { terminalRegistry } from './terminal/terminalRegistry'
 import { getOrCreateCanvasStoreForPanel } from '../stores/canvasStore'
 import { captureCanvasPanel } from './workspace/canvasAccess'
-import { applyCanvasChildPanels } from './canvas/applyCanvasChildPanels'
+import { applyCanvasChildPanels, ensurePanelsInAppStore } from './canvas/applyCanvasChildPanels'
+import { collectPanelIds } from '../../shared/collectPanelIds'
 
 /**
  * Create a PanelTransferSnapshot from a panel's current state.
@@ -85,6 +86,29 @@ export function createTransferSnapshot(
     }
   }
 
+  // Container-specific: the layout travels on the panel record; carry the
+  // records, live PTYs, and any hosted canvas's layout it references.
+  if (panel.type === 'container') {
+    const childPanels: Record<string, PanelState> = {}
+    const childTerminals: Record<string, { ptyId: string; scrollback?: string }> = {}
+    const canvasStates: Record<string, NonNullable<PanelTransferSnapshot['canvasState']>> = {}
+    for (const childId of collectPanelIds(panel.containerLayout)) {
+      const childPanel = options.resolveChildPanel?.(childId)
+      // A container never hosts a container; skip a malformed one.
+      if (!childPanel || childPanel.type === 'container') continue
+      childPanels[childId] = captureEditorPanel(childPanel)
+      const entry = terminalRegistry.getEntry(childId)
+      if (entry?.ptyId) {
+        childTerminals[childId] = { ptyId: entry.ptyId, scrollback: terminalRegistry.serializeTerminalState(entry) ?? '' }
+      }
+      if (childPanel.type === 'canvas') {
+        const canvasState = createTransferSnapshot(childPanel, sourceLocation, geometry, options).canvasState
+        if (canvasState) canvasStates[childId] = canvasState
+      }
+    }
+    snapshot.containerState = { childPanels, childTerminals, canvasStates }
+  }
+
   return snapshot
 }
 
@@ -151,6 +175,13 @@ export function hydrateCanvasState(
 export function hydrateReceivedPanel(wsId: string, snapshot: PanelTransferSnapshot): void {
   hydratePanelSearch(snapshot.panel)
   depositPanelTerminalTransfer(snapshot)
+  if (snapshot.containerState) {
+    const { childPanels, childTerminals, canvasStates } = snapshot.containerState
+    ensurePanelsInAppStore(wsId, childPanels)
+    for (const panel of Object.values(childPanels)) hydratePanelSearch(panel)
+    depositCanvasChildTransfers({ childTerminals } as PanelTransferSnapshot['canvasState'])
+    for (const [canvasId, canvasState] of Object.entries(canvasStates ?? {})) hydrateCanvasState(canvasId, wsId, canvasState)
+  }
   if (snapshot.panel.type === 'canvas' && snapshot.canvasState) {
     hydrateCanvasState(snapshot.panel.id, wsId, snapshot.canvasState)
   }

@@ -75,14 +75,22 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
     ready: boolean; committed: boolean; finished: boolean; recoveryIds: Set<number>;
     resolve: (id: number | null) => void; cleanup: () => void;
   }>()
-  const terminalIds = (snapshot: PanelTransferSnapshot) => [snapshot.terminalPtyId, ...Object.values(snapshot.canvasState?.childTerminals ?? {}).map(t => t.ptyId)].filter((id): id is string => !!id)
+  const terminalIds = (snapshot: PanelTransferSnapshot) => [snapshot.terminalPtyId, ...Object.values(snapshot.canvasState?.childTerminals ?? {}).map(t => t.ptyId), ...Object.values(snapshot.containerState?.childTerminals ?? {}).map(t => t.ptyId)].filter((id): id is string => !!id)
   const cacheTransfer = (transfer: NonNullable<ReturnType<typeof transfers.get>>) => {
     const { snapshot, win } = transfer
     setDockWindowState(win.id, {
       dockState: { zones: buildSinglePanelDockState(snapshot.panel.id) },
-      panels: { ...snapshot.canvasState?.childPanels, [snapshot.panel.id]: snapshot.panel },
+      panels: {
+        ...snapshot.canvasState?.childPanels,
+        ...snapshot.containerState?.childPanels,
+        ...Object.assign({}, ...Object.values(snapshot.containerState?.canvasStates ?? {}).map(c => c.childPanels)),
+        [snapshot.panel.id]: snapshot.panel,
+      },
       rootPath: snapshot.rootPath, worktrees: snapshot.worktrees,
-      canvasStates: snapshot.canvasState ? { [snapshot.panel.id]: snapshot.canvasState } : {},
+      canvasStates: {
+        ...(snapshot.canvasState ? { [snapshot.panel.id]: snapshot.canvasState } : {}),
+        ...snapshot.containerState?.canvasStates,
+      },
     })
     retainDockWindowRecovery(win.id)
     transfer.recoveryIds.add(win.id)
@@ -128,7 +136,9 @@ export function registerDragHandlers({ createWindow }: DragHandlerDeps): void {
     if (finalSnapshot?.panel.id === transfer.snapshot.panel.id) {
       transfer.snapshot = { ...transfer.snapshot, terminalScrollback: finalSnapshot.terminalScrollback,
         canvasState: transfer.snapshot.canvasState && { ...transfer.snapshot.canvasState,
-          childTerminals: Object.fromEntries(Object.entries(transfer.snapshot.canvasState.childTerminals ?? {}).map(([id, terminal]) => [id, { ...terminal, scrollback: finalSnapshot.canvasState?.childTerminals?.[id]?.scrollback ?? terminal.scrollback }])) } }
+          childTerminals: Object.fromEntries(Object.entries(transfer.snapshot.canvasState.childTerminals ?? {}).map(([id, terminal]) => [id, { ...terminal, scrollback: finalSnapshot.canvasState?.childTerminals?.[id]?.scrollback ?? terminal.scrollback }])) },
+        containerState: transfer.snapshot.containerState && { ...transfer.snapshot.containerState,
+          childTerminals: Object.fromEntries(Object.entries(transfer.snapshot.containerState.childTerminals ?? {}).map(([id, terminal]) => [id, { ...terminal, scrollback: finalSnapshot.containerState?.childTerminals?.[id]?.scrollback ?? terminal.scrollback }])) } }
     }
     transfer.finished = true
     transfer.cleanup()

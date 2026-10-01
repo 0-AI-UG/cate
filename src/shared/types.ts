@@ -608,6 +608,14 @@ export interface PanelTransferSnapshot {
     childPanels: Record<string, PanelState>
     childTerminals?: Record<string, { ptyId?: string; scrollback?: string }>
   }
+  // Container-specific — the layout itself rides on `panel.containerLayout`; this
+  // carries what that layout references: each hosted panel's record, each hosted
+  // terminal's live hand-off, and the layout of any canvas hosted inside it.
+  containerState?: {
+    childPanels: Record<string, PanelState>
+    childTerminals?: Record<string, { ptyId?: string; scrollback?: string }>
+    canvasStates?: Record<string, NonNullable<PanelTransferSnapshot['canvasState']>>
+  }
 }
 
 // -----------------------------------------------------------------------------

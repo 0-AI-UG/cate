@@ -19,6 +19,7 @@ import DockLayoutRenderer from '../docking/DockLayoutRenderer'
 import DockTabStack from '../docking/DockTabStack'
 import { closePanelsWithConfirm } from '../lib/closePanelWithConfirm'
 import { PanelHost } from './PanelHost'
+import { getPanelDef } from './registry'
 import { containerZones, emptyContainerLayout, registerContainerDockStore, unregisterContainerDockStore } from './containerDockRegistry'
 import type { PanelProps } from './types'
 
@@ -41,17 +42,23 @@ export default function ContainerPanel({ panelId, workspaceId, nodeId = '' }: Pa
 
   useEffect(() => () => unregisterContainerDockStore(panelId, dockStoreApi), [panelId, dockStoreApi])
 
-  useEffect(() => dockStoreApi.subscribe((state, prev) => {
-    const layout = state.zones.center.layout
-    if (layout === prev.zones.center.layout) return
-    // The last panel leaving does NOT close the container: keep an empty stack
-    // (its tab bar is how new panels are added). The set re-enters this callback.
-    if (!layout) {
-      dockStoreApi.setState((s) => ({ zones: { ...s.zones, center: { ...s.zones.center, layout: emptyContainerLayout() } } }))
-      return
-    }
-    useAppStore.getState().setPanelContainerLayout(workspaceId, panelId, layout)
-  }), [dockStoreApi, workspaceId, panelId])
+  // An empty container shows the same surface picker as a fresh split: a
+  // 'surface' placeholder tab that is replaced in place by whatever you choose.
+  const addPlaceholder = useCallback(() => {
+    const id = getPanelDef('surface').create({ workspaceId, placement: { target: 'none' } })
+    if (id) dockStoreApi.getState().dockPanel(id, 'center')
+  }, [dockStoreApi, workspaceId])
+
+  useEffect(() => {
+    if (collectPanelIds(dockStoreApi.getState().zones.center.layout).length === 0) addPlaceholder()
+    return dockStoreApi.subscribe((state, prev) => {
+      const layout = state.zones.center.layout
+      if (layout === prev.zones.center.layout) return
+      // The last panel leaving does NOT close the container: it falls back to the picker.
+      if (!layout) { addPlaceholder(); return }
+      useAppStore.getState().setPanelContainerLayout(workspaceId, panelId, layout)
+    })
+  }, [dockStoreApi, workspaceId, panelId, addPlaceholder])
 
   // Sweep child ids with no panel record (restore mismatch), like CanvasPanel does.
   const orphans = useAppStore(useShallow((s) => {
