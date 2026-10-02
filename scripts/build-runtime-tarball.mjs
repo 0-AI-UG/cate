@@ -15,6 +15,11 @@
 //     cate/dist/cli.cjs                    (bundled `cate` in-terminal CLI)
 //     cate/bin/cate[.cmd]                  (launcher shims → bundled node)
 //     skills/<name>/SKILL.md               (bundled agent skills)
+//     BUILD                                (the build id: the install dir's
+//                                          name, ~/.cate/runtime/<build>/)
+//
+// Beside the tarball: <tarball>.sha256 (`<hex>  <name>`), which installs
+// check a release download against.
 //
 // UNIFIED layout: every target keeps node + rg under runtime/bin/, just with a
 // `.exe` suffix on win32 (runtime/bin/node.exe, runtime/bin/rg.exe). The install
@@ -39,6 +44,7 @@
 
 import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync, readdirSync, openSync, readSync, closeSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -100,6 +106,7 @@ mkdirSync(stageDir, { recursive: true })
 const exe = targetPlatform === 'win32' ? '.exe' : ''
 const outTar = path.join(dist, `cate-runtime-${version}-${targetArg}.tgz`)
 rmSync(outTar, { force: true })
+rmSync(`${outTar}.sha256`, { force: true })
 
 // Unified runtime/bin/ layout; only the filename gains a `.exe` on win32 so the
 // install-dir depth (and thus the resolvers) stay identical across platforms.
@@ -112,6 +119,7 @@ await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
 await stageT3(path.join(stageDir, 't3'))
 await stageCateCli(path.join(stageDir, 'cate'))
 cpSync(path.join(repoRoot, 'skills'), path.join(stageDir, 'skills'), { recursive: true })
+await writeFile(path.join(stageDir, 'BUILD'), `${JSON.parse(runtimeBuildOptions.define.__CATE_BUILD__)}\n`)
 signMacNatives(stageDir)
 
 // Fail loudly if anything the daemon's install-probe requires is missing, rather
@@ -128,6 +136,7 @@ const required = [
   path.join('cate', 'bin', 'cate'),
   path.join('cate', 'bin', 'cate.cmd'),
   path.join('skills', 'cate-cli', 'SKILL.md'),
+  'BUILD',
 ]
 const missing = required.filter((rel) => !existsSync(path.join(stageDir, rel)))
 if (missing.length) throw new Error(`[runtime] incomplete stage for ${targetArg}; missing: ${missing.join(', ')}`)
@@ -145,7 +154,9 @@ if (missing.length) throw new Error(`[runtime] incomplete stage for ${targetArg}
 const tmpTar = `${path.basename(outTar)}.partial`
 execFileSync('tar', ['--no-xattrs', '-czf', tmpTar, '-C', fwd(dist, stageDir), '.'], { stdio: 'inherit', cwd: dist })
 renameSync(path.join(dist, tmpTar), outTar)
-console.log(`[runtime] wrote ${path.relative(repoRoot, outTar)}`)
+const sha256 = createHash('sha256').update(readFileSync(outTar)).digest('hex')
+await writeFile(`${outTar}.sha256`, `${sha256}  ${path.basename(outTar)}\n`)
+console.log(`[runtime] wrote ${path.relative(repoRoot, outTar)} (sha256 ${sha256})`)
 
 // --------------------------------------------------------------------------
 

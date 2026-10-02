@@ -6,7 +6,10 @@ import { setRuntimeResolver } from '@kernel/rpc/client'
 import { installMockClientUi } from '@kernel/ui/testing'
 import type { PanelViewProps } from '@client/host'
 import type { SessionHandle } from '@client/connections'
+import { FILE_REFS_MIME } from '@workspace/files/contract'
 import type { TerminalOp, TerminalSnapshot } from '../contract/types'
+
+const WS = 'ws'
 
 const xterms = vi.hoisted(() => [] as FakeTerminal[])
 
@@ -70,6 +73,11 @@ vi.mock('@xterm/addon-search', () => ({ SearchAddon: class { findNext = vi.fn();
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
 // The host's chrome context is the host's concern; the view only claims a corner.
 vi.mock('@client/host', () => ({ useClaimPanelCorner: () => {} }))
+const files = vi.hoisted(() => ({ localize: vi.fn(async (refs: Array<{ path: string }>) => refs.map((ref) => ref.path)) }))
+vi.mock('@workspace/files/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@workspace/files/client')>()),
+  fileRefs: { localize: files.localize, upload: vi.fn(), transfer: vi.fn(), readBytes: vi.fn() },
+}))
 vi.mock('@xterm/addon-webgl', () => { throw new Error('no WebGL in jsdom') })
 
 import TerminalView from './TerminalView'
@@ -179,14 +187,26 @@ describe('TerminalView', () => {
     expect(q('input[placeholder="Search terminal..."]')).toBeNull()
   })
 
-  it('pastes dragged files as shell-escaped paths', () => {
-    render(<TerminalView {...props(snapshotOf())} />)
-    const target = q('[data-filedrop="terminal"]')!
-    const data: Record<string, string> = { 'application/cate-files': JSON.stringify(['/repo/a b.ts']) }
+  const dropRefs = (refs: Array<{ workspaceId: string; path: string }>) => {
+    const data: Record<string, string> = { [FILE_REFS_MIME]: JSON.stringify({ refs }) }
     const drop = new Event('drop', { bubbles: true, cancelable: true })
     Object.defineProperty(drop, 'dataTransfer', { value: { types: Object.keys(data), getData: (f: string) => data[f] ?? '' } })
-    dispatch(target, drop)
+    dispatch(q('[data-filedrop="terminal"]')!, drop)
+  }
+
+  it('pastes files of its own workspace as shell-escaped paths', async () => {
+    render(<TerminalView {...props(snapshotOf())} />)
+    await act(async () => dropRefs([{ workspaceId: WS, path: '/repo/a b.ts' }]))
     expect(xterms[0].pasted).toEqual(["'/repo/a b.ts'"])
+    expect(files.localize).toHaveBeenCalledWith([{ workspaceId: WS, path: '/repo/a b.ts' }], { workspaceId: WS, near: '/repo' })
+  })
+
+  it('pastes the copy of a file from another workspace, made next to its cwd', async () => {
+    files.localize.mockResolvedValueOnce(['/repo/.cate/tmp/b.ts'])
+    render(<TerminalView {...props(snapshotOf({ cwd: '/repo/src' }))} />)
+    await act(async () => dropRefs([{ workspaceId: 'other', path: '/elsewhere/b.ts' }]))
+    expect(files.localize).toHaveBeenCalledWith([{ workspaceId: 'other', path: '/elsewhere/b.ts' }], { workspaceId: WS, near: '/repo/src' })
+    expect(xterms[0].pasted).toEqual(['/repo/.cate/tmp/b.ts'])
   })
 })
 

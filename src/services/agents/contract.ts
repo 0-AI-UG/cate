@@ -4,6 +4,7 @@
 export * from './contract/registry'
 export * from './contract/hooks'
 export * from './contract/hookModes'
+export * from './contract/approvalModes'
 export * from './contract/session'
 export * from './contract/conversation'
 export * from './contract/changes'

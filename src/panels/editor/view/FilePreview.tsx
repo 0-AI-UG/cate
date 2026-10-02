@@ -5,8 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { ArrowLeft, ArrowRight, Minus, Plus } from 'lucide-react'
-import { Button, LoadingState, PanelCenteredState, clientUi, errorMessage } from '@kernel/ui'
-import { clientHas } from '@client/connections'
+import { LoadingState, PanelCenteredState, errorMessage } from '@kernel/ui'
 import { fsClient, watchFsRoot } from '@workspace/files/client'
 import { getDocumentType, pathDisplayName, pathKey } from '@workspace/files/contract'
 import { bytesToBase64, detectTypeFromBytes, viewedArrayBuffer } from '../parts/fileBytes'
@@ -88,7 +87,7 @@ function PdfViewer({ data }: { data: Uint8Array }) {
   if (error) {
     return <DocumentErrorState message={error} onRetry={() => { setPdf(null); setNumPages(0); setReloadKey((k) => k + 1) }} />
   }
-  if (!pdf) return <LoadingState label="Opening PDF…" className="flex-1 text-sm" />
+  if (!pdf) return <LoadingState label="Opening PDF" className="flex-1 text-sm" />
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800/60 border-b border-subtle text-xs text-neutral-400">
@@ -122,7 +121,7 @@ function DocxViewer({ data }: { data: Uint8Array }) {
     return () => { cancelled = true }
   }, [data, reloadKey])
   if (error) return <DocumentErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
-  if (!html) return <LoadingState label="Converting document…" className="flex-1 text-sm" />
+  if (!html) return <LoadingState label="Converting document" className="flex-1 text-sm" />
   return (
     <div className="flex-1 overflow-auto p-6 bg-neutral-900/50">
       <div className="prose prose-invert prose-sm max-w-3xl mx-auto" dangerouslySetInnerHTML={{ __html: html }} />
@@ -155,14 +154,12 @@ export default function FilePreview({ workspaceId, filePath }: { workspaceId: st
   const documentType = detected?.documentType ?? getDocumentType(filePath)
   const mimeType = detected?.mimeType ?? 'application/octet-stream'
 
-  if (!state) return <LoadingState label={`Loading ${fileName}…`} className="w-full h-full bg-surface-4 text-sm" />
+  if (!state) return <LoadingState label={`Loading ${fileName}`} className="w-full h-full bg-surface-4 text-sm" />
   if (state.error || !state.data) {
-    const reveal = clientHas('osFiles') ? clientUi().revealFile : undefined
     return (
       <PanelCenteredState
         title="Couldn’t open this document"
         description={<span className="text-danger">{state.error ?? 'Failed to load file'}</span>}
-        actions={reveal ? <Button size="sm" variant="ghost" onClick={() => void reveal(filePath, workspaceId)}>Show in Finder</Button> : undefined}
       />
     )
   }

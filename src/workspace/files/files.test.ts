@@ -129,6 +129,65 @@ describe('file capability', () => {
     expect([...(await fs.readFile(stored))]).toEqual([4, 5])
   })
 
+  it('brings files only into a checkout: uploads, copies and moves into the workspace data are refused', async () => {
+    const { fs: client } = await ws.connect()
+    const source = path.join(ws.root, 'a.txt')
+    await fs.writeFile(source, 'a')
+    await fs.mkdir(path.join(ws.data, 'screenshots'), { recursive: true })
+    const refused = async (call: Promise<unknown>) => {
+      const error = await call.catch((err: unknown) => err)
+      expect(isRpcError(error) && error.code).toBe('rejected')
+    }
+    await refused(client.importEntries(ws.data, [{ path: 'x.txt', kind: 'file', size: 1, bytes: new Uint8Array([1]) }]))
+    await refused(client.copy(source, path.join(ws.data, 'screenshots')))
+    await refused(client.rename(source, path.join(ws.data, 'a.txt')))
+    expect(await fs.readdir(path.join(ws.data, 'screenshots'))).toEqual([])
+    expect(await fs.readFile(source, 'utf8')).toBe('a')
+  })
+
+  it('reads only screenshots and downloads of the workspace data, and never writes it', async () => {
+    const { fs: client } = await ws.connect()
+    const secrets = path.join(ws.data, 'secrets.json')
+    await fs.writeFile(secrets, '{"token":"x"}')
+    const { path: shot } = await client.storeScreenshot('shot.png', new Uint8Array([1]))
+    const { path: download } = await client.storeDownload('report.pdf', new Uint8Array([2]))
+    const refused = async (call: Promise<unknown>) => {
+      const error = await call.catch((err: unknown) => err)
+      expect(isRpcError(error) && error.code).toBe('rejected')
+    }
+    // Readable: what clients and agents are handed.
+    expect([...await client.readBinary(shot)]).toEqual([1])
+    expect([...await client.readBinary(download)]).toEqual([2])
+    // The rest of the workspace data is outside the scope.
+    await refused(client.read(secrets))
+    await refused(client.readBinary(path.join(ws.data, 'pairings.json')))
+    await refused(client.readDir(ws.data))
+    // And nothing in it is written, created, removed or moved.
+    for (const p of [secrets, shot]) {
+      await refused(client.write(p, '{}'))
+      await refused(client.writeBinary(p, new Uint8Array([9])))
+      await refused(client.remove(p))
+      await refused(client.trash(p))
+      await refused(client.rename(p, path.join(ws.root, 'moved')))
+    }
+    await refused(client.mkdir(path.join(ws.data, 'screenshots', 'new')))
+    expect(await fs.readFile(secrets, 'utf8')).toBe('{"token":"x"}')
+    expect([...await fs.readFile(shot)]).toEqual([1])
+  })
+
+  it('gives the temporary folder of the checkout holding near, and refuses a near no checkout holds', async () => {
+    const { fs: client } = await ws.connect()
+    await fs.mkdir(path.join(ws.root, 'src'))
+    const tmp = path.join(ws.root, '.cate', 'tmp')
+    expect(await client.tempDir()).toBe(tmp)
+    expect(await client.tempDir(path.join(ws.root, 'src'))).toBe(tmp)
+    // Outside the workspace, and the workspace data: never redirected to the root.
+    for (const near of [ws.base, ws.data]) {
+      const error = await client.tempDir(near).catch((err: unknown) => err)
+      expect(isRpcError(error) && error.code).toBe('rejected')
+    }
+  })
+
   it('streams batched watch events and a refcounted client watch shares one stream', async () => {
     const { file } = await ws.connect()
     const manager = createWatchManager(() => file)

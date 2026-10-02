@@ -75,6 +75,8 @@ export type CapabilityImpl<C extends AnyCapability> = {
 export interface RpcServerOptions {
   /** Daemon release version, sent in `hello`. */
   version: string
+  /** Daemon build, sent in `hello`. */
+  build?: string
   protocol?: ProtocolVersion
   lifecycle?: LifecycleBus
   /** Throw (ideally an RpcError) to refuse a connection: bad token, device
@@ -232,7 +234,7 @@ class Connection {
     this.helloPending = true
     this.held = []
     const refuse = (err: unknown) => {
-      this.send({ t: 'hello', protocol: this.server.protocol, version: this.server.opts.version, error: toWireError(err) })
+      this.send({ t: 'hello', protocol: this.server.protocol, version: this.server.opts.version, build: this.server.opts.build, error: toWireError(err) })
       this.port.close('hello refused')
     }
     const client = hello.client
@@ -267,7 +269,7 @@ class Connection {
       caller: !clientValid && hello.caller ? { token: hello.caller.token } : null,
       has: (f) => featureSet.has(f),
     }
-    this.send({ t: 'hello', protocol: this.server.protocol, version: this.server.opts.version })
+    this.send({ t: 'hello', protocol: this.server.protocol, version: this.server.opts.version, build: this.server.opts.build })
     if (clientConn && this.info.compatible) this.server.lifecycle.emitClientConnected(clientConn)
     for (const frame of held ?? []) this.onFrame(frame)
   }

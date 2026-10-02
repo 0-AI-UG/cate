@@ -209,7 +209,7 @@ function SearchContent({ workspaceId, rootPath, scopeControl, onOpenMatch, focus
           {error ? (
             <span className="text-red-400 truncate" title={error}>{error}</span>
           ) : status === 'searching' && matchCount === 0 ? (
-            <span className="flex items-center gap-1.5"><Spinner size={11} />Searching…</span>
+            <span className="flex items-center gap-1.5"><Spinner size={11} />Searching</span>
           ) : matchCount === 0 ? (
             <span>No results</span>
           ) : (

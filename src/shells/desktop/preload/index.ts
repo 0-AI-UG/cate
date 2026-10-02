@@ -6,7 +6,7 @@
 // cannot require a shared chunk (`preload.test.ts` checks it). Import only
 // pure contract files and this module's own code.
 
-import { contextBridge, ipcRenderer, webFrame, webUtils, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'electron'
 import { createBrowserPageBridge } from '@services/browser/desktop/preload'
 import type { DesktopApi, LoopbackRequest } from '../contract/api'
 import { DESKTOP_CHANNELS as C } from '../contract/channels'
@@ -156,28 +156,23 @@ const api: DesktopApi = {
     barItems: () => invoke(C.menuBarItems),
     popupBarItem: (index, x, y) => invoke(C.menuPopupBarItem, index, x, y),
     runNativeAction: (action) => invoke(C.menuNativeAction, action),
+    setModel: (model) => invoke(C.menuSetModel, model),
     onAction: (listener) => listen(C.menuAction, listener),
   },
   dialogs: {
     messageBox: (request) => invoke(C.dialogMessageBox, request),
     open: (request) => invoke(C.dialogOpen, request),
-    save: (request) => invoke(C.dialogSave, request),
     pickCanvasBackground: () => invoke(C.canvasBackgroundPick),
     readCanvasBackground: (path) => invoke(C.canvasBackgroundRead, path),
     pruneCanvasBackgrounds: (keepPath) => invoke(C.canvasBackgroundPrune, keepPath),
   },
   os: {
     openExternal: (url) => invoke(C.osOpenExternal, url),
-    openFile: (path, appId) => invoke(C.osOpenFile, path, appId),
-    revealFile: (path) => invoke(C.osRevealFile, path),
-    openFileOnGitHub: (path) => invoke(C.osOpenFileOnGitHub, path),
-    fileApps: () => invoke(C.osFileApps),
-    startFileDrag: (path) => invoke(C.osStartFileDrag, path),
+    openSettingsFile: () => invoke(C.osOpenSettingsFile),
     writeClipboard: (text) => invoke(C.clipboardWrite, text),
     readClipboard: () => invoke(C.clipboardRead),
     notify: (notification) => invoke(C.notify, notification),
     onNotificationAction: (listener) => listen(C.notificationAction, listener),
-    pathForFile: (file) => webUtils.getPathForFile(file),
   },
   updates: {
     status: () => invoke(C.updateGetStatus),
@@ -198,6 +193,7 @@ const api: DesktopApi = {
     onRecentScreenshots: (listener) => listen(C.recentScreenshotsChanged, listener),
     readRecentScreenshot: (id) => invoke(C.recentScreenshotRead, id),
     dragRecentScreenshot: (id) => invoke(C.recentScreenshotDrag, id),
+    addAnnotatedScreenshot: (ref, png) => invoke(C.recentScreenshotAddAnnotated, ref, png),
   },
   drag: {
     start: (payload) => invoke(C.dragStart, payload),
@@ -216,6 +212,12 @@ const api: DesktopApi = {
       loopbackListeners.add(listener)
       return () => { loopbackListeners.delete(listener) }
     },
+  },
+  ssh: {
+    ensureRuntime: (target) => invoke(C.sshEnsureRuntime, target),
+    listDir: (target, path) => invoke(C.sshListDir, target, path),
+    mkdir: (target, path) => invoke(C.sshMkdir, target, path),
+    serve: (target, path) => invoke(C.sshServe, target, path),
   },
   pipes: {
     onMessage(pipe, listener) {

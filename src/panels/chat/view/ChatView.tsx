@@ -6,8 +6,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle } from 'lucide-react'
 import { useRuntime } from '@kernel/rpc/ui'
-import { LoadingState, clientUi, errorMessage, getActiveTheme, subscribeTheme } from '@kernel/ui'
-import { pickPanelPlace, type PanelViewProps } from '@client/host'
+import { LoadingState, Spinner, clientUi, errorMessage, getActiveTheme, subscribeTheme } from '@kernel/ui'
+import { clientHas } from '@client/connections'
+import { openUrlFor, pickPanelPlace, type PanelViewProps } from '@client/host'
 import {
   CANCEL_PENDING_SCRIPT,
   T3_CHAT_ONLY_CSS,
@@ -31,7 +32,8 @@ import {
 import { T3ConversationPill } from '@services/t3/ui'
 import type { PlaceTarget } from '@workspace/document/contract'
 import type { ChatHarness, ChatOp, ChatSnapshot } from '../contract'
-import { droppedImages, useFileDragActive } from '../parts/view/fileDrop'
+import { readFileRefDrag, type FileRef } from '@workspace/files/contract'
+import { droppedImages, droppedRefImages, useFileDragActive } from '../parts/view/fileDrop'
 import { registerChatSurface } from '../parts/view/surfaces'
 
 type Send = (op: ChatOp) => Promise<unknown>
@@ -67,7 +69,7 @@ export default function ChatView({ workspaceId, panelId, record, snapshot, send,
           />
         </div>
         {!snapshot || phase === 'loading' ? (
-          <LoadingState size={24} label="Starting T3 Code…" className="h-full flex-col text-xs" />
+          <LoadingState size={24} label="Starting T3 Code" className="h-full flex-col text-xs" />
         ) : phase === 'error' || !snapshot.harness ? (
           <div className="flex h-full flex-col items-center justify-center p-6 text-center">
             <ChatsCircle size={28} className="mb-2 text-muted" />
@@ -186,7 +188,7 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
         },
         openFile: (filePath, at) => send({ kind: 'openFile', path: filePath, at, threadId: bound }),
         openChat: (thread, title, at) => send({ kind: 'openChat', at, threadId: thread, title }),
-        openExternal: (url) => clientUi().openExternal(url),
+        openLink: (url) => openUrlFor(workspaceId, url, panelId),
         relationContext: async (provider) => (await send({ kind: 'relationContext', provider })) as string | null,
       })
     }
@@ -264,6 +266,16 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
     return () => { stopTheme(); stopSurface() }
   }, [guest, guestReady, panelId, workspaceId])
 
+  // A thread another client's page moved the panel to (`adoptThread` is not
+  // a new load): this page follows. The page that adopted it is already there.
+  useEffect(() => {
+    if (!guest || !guestReady) return
+    let url = ''
+    try { url = guest.getURL() } catch { return }
+    if (t3ThreadIdFromUrl(url, harness.environmentId) === threadId) return
+    void guest.loadURL(chatPageUrl(harness, threadId))
+  }, [guest, guestReady, harness, threadId])
+
   // Change summaries for the bound thread, for the page's turn chips.
   useEffect(() => {
     const { changes } = snapshot
@@ -282,8 +294,8 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
     return () => cancelAnimationFrame(frame)
   }, [focused, guestReady, guest])
 
-  const drop = async (files: File[]) => {
-    const images = await droppedImages(files)
+  const drop = async (files: File[] | { refs: FileRef[] }) => {
+    const images = Array.isArray(files) ? await droppedImages(files) : await droppedRefImages(files.refs)
     if (images.length && guest) await guest.executeJavaScript(t3FileDropScript(images)).catch(() => undefined)
   }
 
@@ -296,13 +308,14 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
         </div>
       )}
       {guestReady && snapshot.connected === false && (
-        <div role="status" className="absolute bottom-1 left-2 z-20 rounded bg-surface-2 px-2 py-1 text-xs text-muted">
-          T3 Code activity disconnected. Reconnecting…
+        <div role="status" className="absolute bottom-1 left-2 z-20 flex items-center gap-1.5 rounded bg-surface-2 px-2 py-1 text-xs text-muted">
+          <Spinner size={11} />
+          T3 Code activity disconnected. Reconnecting
           <button type="button" onClick={() => { void send({ kind: 'retry' }) }} className="ml-2 text-secondary hover:text-primary">Retry</button>
         </div>
       )}
       {!guestReady && (
-        <LoadingState size={24} label="Loading conversation…" className="pointer-events-none absolute inset-0 z-10 flex-col bg-surface-4 text-xs" />
+        <LoadingState size={24} label="Loading conversation" className="pointer-events-none absolute inset-0 z-10 flex-col bg-surface-4 text-xs" />
       )}
       {partition && (
         <webview
@@ -327,7 +340,9 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
         onDrop={(event) => {
           event.preventDefault()
           event.stopPropagation()
-          void drop(Array.from(event.dataTransfer.files))
+          const refs = readFileRefDrag(event.dataTransfer)
+          if (refs) void drop(refs)
+          else if (clientHas('fileDrop')) void drop(Array.from(event.dataTransfer.files))
         }}
         className="absolute inset-0 z-30"
         style={{ pointerEvents: fileDragActive ? 'auto' : 'none' }}

@@ -2,7 +2,7 @@
 // checkout. Both are client concerns: the tree model and the search store
 // live with the view, over the files client, not in the session.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FileExplorer, FileTreeModel, SearchView, panelSearchStore, releasePanelSearchStore, type FileTreeSavedState } from '@workspace/files/ui'
 
 const MIN_WIDTH = 180
@@ -95,14 +95,22 @@ export function NavigationSidebar({ workspaceId, panelId, root, view, visible, f
   onHide: () => void
   onOpenFiles: (paths: string[], mode?: 'dock' | 'canvas', reveal?: { line: number; column?: number }) => void
 }) {
-  const tree = useMemo(() => new FileTreeModel(root, workspaceId, { saved: savedTrees.get(panelId) }), [root, workspaceId, panelId])
+  // The effect that disposes the model also creates it: a model made during
+  // render would stay disposed after a remount (StrictMode, Offscreen) and
+  // never load.
+  const [owned, setOwned] = useState<FileTreeModel | null>(null)
+  useLayoutEffect(() => {
+    const next = new FileTreeModel(root, workspaceId, { saved: savedTrees.get(panelId) })
+    setOwned(next)
+    return () => {
+      savedTrees.set(panelId, next.capture())
+      next.dispose()
+    }
+  }, [root, workspaceId, panelId])
+  const tree = owned && owned.rootPath === root && owned.workspaceId === workspaceId ? owned : null
   useEffect(() => {
-    if (visible) tree.activate()
+    if (visible) tree?.activate()
   }, [tree, visible])
-  useEffect(() => () => {
-    savedTrees.set(panelId, tree.capture())
-    tree.dispose()
-  }, [tree, panelId])
   const search = useMemo(() => (view === 'search' ? panelSearchStore(panelId, workspaceId, root) : null), [view, panelId, workspaceId, root])
   useEffect(() => () => releasePanelSearchStore(panelId), [panelId])
 
@@ -110,7 +118,7 @@ export function NavigationSidebar({ workspaceId, panelId, root, view, visible, f
     <SidebarFrame visible={visible} fill={fill} onHide={onHide}>
       {search
         ? <SearchView store={search} workspaceId={workspaceId} rootPath={root} focusToken={focusToken} focusInput={focusInput} onOpenMatch={(file, line, column) => onOpenFiles([file], 'dock', { line, column })} />
-        : <FileExplorer resource={tree} workspaceId={workspaceId} panelId={panelId} rootPath={root} onOpenFiles={onOpenFiles} compact />}
+        : tree && <FileExplorer resource={tree} workspaceId={workspaceId} panelId={panelId} rootPath={root} onOpenFiles={onOpenFiles} compact />}
     </SidebarFrame>
   )
 }

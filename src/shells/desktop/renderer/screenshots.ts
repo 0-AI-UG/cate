@@ -1,11 +1,14 @@
 // The canvas screenshot port (`screenCapture`) over the desktop capture IPC:
-// main watches the OS screenshot folder; annotated copies saved in this window
-// join the stack here.
+// main keeps the one recent list, OS captures from the screenshot folder and
+// annotated copies stored in a workspace, and sends it to every window.
+// Annotated copies are read through their workspace's runtime.
 
 import type { RecentScreenshot, ScreenshotPort } from '@client/layout/canvas'
+import { fileRefs } from '@workspace/files/client'
+import { base64ToBytes } from '@workspace/files/contract'
 import type { DesktopApi, RecentScreenshot as ShellScreenshot } from '../contract'
 
-/** Main's ids are `<path>:<mtime>`. */
+/** Main's ids for OS captures are `<path>:<mtime>`. */
 const pathOf = (id: string) => id.slice(0, id.lastIndexOf(':')) || id
 
 function bytesToDataUrl(bytes: Uint8Array): string {
@@ -14,44 +17,38 @@ function bytesToDataUrl(bytes: Uint8Array): string {
   return `data:image/png;base64,${btoa(binary)}`
 }
 
+const fromShell = (shot: ShellScreenshot): RecentScreenshot => shot.ref
+  ? { id: shot.id, filePath: shot.ref.path, ref: shot.ref, annotated: true, dataUrl: shot.thumbnail }
+  : { id: shot.id, filePath: pathOf(shot.id), dataUrl: shot.thumbnail }
+
 export function createScreenshotPort(api: DesktopApi): ScreenshotPort {
-  let annotated: RecentScreenshot[] = []
-  let shell: RecentScreenshot[] = []
+  let shots: RecentScreenshot[] = []
   const listeners = new Set<(recent: RecentScreenshot[]) => void>()
-  const recent = () => [...annotated, ...shell]
-  const emit = () => { for (const listener of [...listeners]) listener(recent()) }
-  const fromShell = (shots: ShellScreenshot[]) => {
-    shell = shots.map((shot) => ({ id: shot.id, filePath: pathOf(shot.id), dataUrl: shot.thumbnail }))
-  }
-  api.capture.onRecentScreenshots((shots) => {
-    fromShell(shots)
-    emit()
+  api.capture.onRecentScreenshots((next) => {
+    shots = next.map(fromShell)
+    for (const listener of [...listeners]) listener(shots)
   })
 
   return {
     async recent() {
-      fromShell(await api.capture.recentScreenshots())
-      return recent()
+      shots = (await api.capture.recentScreenshots()).map(fromShell)
+      return shots
     },
     onChanged(listener) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
     async read(id) {
-      const own = annotated.find((shot) => shot.id === id)
-      if (own) return own.dataUrl
-      return bytesToDataUrl(await api.capture.readRecentScreenshot(id))
+      const ref = shots.find((shot) => shot.id === id)?.ref
+      return bytesToDataUrl(ref ? await fileRefs.readBytes(ref) : await api.capture.readRecentScreenshot(id))
     },
     async drag(id) {
-      // Annotated copies live in the workspace, not in main's watched folder.
-      if (annotated.some((shot) => shot.id === id)) return
+      // Annotated copies live in a workspace and drag as FileRefs.
+      if (shots.some((shot) => shot.id === id && shot.ref)) return
       await api.capture.dragRecentScreenshot(id)
     },
-    async addAnnotated(filePath, dataUrl) {
-      const shot: RecentScreenshot = { id: `annotated:${globalThis.crypto.randomUUID()}`, filePath, dataUrl, annotated: true }
-      annotated = [shot, ...annotated].slice(0, 10)
-      emit()
-      return shot
+    async addAnnotated(ref, dataUrl) {
+      return fromShell(await api.capture.addAnnotatedScreenshot(ref, base64ToBytes(dataUrl.slice(dataUrl.indexOf(',') + 1))))
     },
   }
 }

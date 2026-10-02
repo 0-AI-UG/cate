@@ -35,9 +35,13 @@ export const runtimeCapability = defineCapability('runtime', {
     info: method<void, RuntimeStatus>({ crossMajor: true }),
     /** Stops the runtime and everything it runs. */
     stop: method<void, void>({ mutates: true }),
-    /** Installs release `version` and restarts into it. Crosses majors so an
-     *  incompatible runtime can still be brought in line. */
-    update: method<{ version: string }, void>({ mutates: true, crossMajor: true, timeoutMs: 0 }),
+    /** Restarts into the install of `build` (the client's), or of release
+     *  `version` downloaded from GitHub Releases when that build is not on
+     *  this machine; a release of another build is refused. Also for its own
+     *  version (a stale build). With `ifIdle`, fails `dirty` while other
+     *  clients are connected or work runs. Crosses majors so an incompatible
+     *  runtime can still be brought in line. */
+    update: method<{ version: string; build?: string; ifIdle?: boolean }, void>({ mutates: true, crossMajor: true, timeoutMs: 0 }),
     /** The first call starts sampling and returns an empty window. */
     perf: method<void, RuntimePerfSample>(),
   },

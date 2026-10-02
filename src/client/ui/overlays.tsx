@@ -3,8 +3,8 @@
 // their own views here, and `openOverlay({ view })` shows one.
 //
 // `ClientOverlays` is what a window mounts once: the overlay on screen, the
-// command palette, the join dialog, the trust question, the welcome notice,
-// the tour and the update dialogs.
+// command palette, the join dialog, the trust question, the runtime mismatch
+// question, the welcome notice, the tour and the update dialogs.
 
 import { useSyncExternalStore, type ComponentType } from 'react'
 import { WorkspaceTrustDialog } from '@workspace/lifecycle/ui'
@@ -14,6 +14,7 @@ import { SettingsWindow } from './settings/SettingsWindow'
 import { WelcomeDialog } from './dialogs/WelcomeDialog'
 import { UpdateReadyDialog } from './dialogs/UpdateReadyDialog'
 import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
+import { RuntimeMismatchDialog } from './dialogs/RuntimeMismatchDialog'
 import { OnboardingTour } from './onboarding/OnboardingTour'
 import { NotificationToasts } from './notifications'
 import { useUIStore } from './state/uiStore'
@@ -75,6 +76,7 @@ export function ClientOverlays({ firstRun = true }: ClientOverlaysProps): JSX.El
       <CommandPalette />
       <JoinWorkspaceDialog />
       <WorkspaceTrustDialog />
+      <RuntimeMismatchDialog />
       {firstRun && (
         <>
           <WelcomeDialog />

@@ -12,7 +12,7 @@ export const terminalApi = defineCateApi(
       handler: 'session',
       summary: 'Print the rendered screen and scrollback',
       args: {
-        lines: opt(num.int().min(1)).help('Only the last <n> lines'),
+        lines: opt(num.int().min(1)).help('Print only the last <lines> lines'),
       },
       format: 'terminalText',
     },
@@ -21,18 +21,15 @@ export const terminalApi = defineCateApi(
       handler: 'session',
       target: 'sticky',
       summary: 'Type text into the terminal (no Enter is appended)',
-      args: { text: str.rest('text') },
+      args: { text: str.rest('text').help('Text to type (no Enter)') },
     },
     press: {
       access: 'control',
       handler: 'session',
       target: 'sticky',
       summary: 'Press keys: enter, tab, escape, backspace, space, arrows, pageup/pagedown, home, end, ctrl-<letter>',
-      args: { keys: str.nonEmpty().rest('key') },
+      args: { keys: str.nonEmpty().rest('key').help('Key names, pressed in order') },
     },
   },
-  {
-    area: 'terminal',
-    help: 'Read a terminal before sending input. Input goes to whatever runs in the terminal, including foreground TUIs.',
-  },
+  { area: 'terminal', summary: 'Read terminal panels and send them text and keys' },
 )

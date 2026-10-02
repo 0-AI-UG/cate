@@ -28,8 +28,6 @@ export interface ShellTransportDeps {
   deviceName(): string
   /** known-runtimes.json, through main's device files. */
   pins: KnownRuntimes
-  /** A root dialed locally this session (its files are on this machine). */
-  onLocalRoot?(root: string): void
   connectUrl?: string
   /** Seams for tests. */
   sameNetwork?: typeof dialSameNetwork
@@ -92,7 +90,6 @@ export function createShellTransportHost(deps: ShellTransportDeps): ShellTranspo
   return {
     async dialLocal(root) {
       const local = await deps.startLocal(root)
-      deps.onLocalRoot?.(local.root)
       if (local.started) log.info('started runtime %s for %s', local.runtimeId, local.root)
       return local.duplex
     },

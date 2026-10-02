@@ -1,22 +1,18 @@
-// The application menu and native context menus. Menu items that are app
-// actions send the action to the focused window, which runs it like the
-// keyboard shortcut; accelerators follow the user's shortcut settings.
+// The application menu and native context menus. The renderer sends the
+// menu bar as a model built from its declared actions; this module only
+// renders it. A picked item sends its action to the focused window, which
+// runs it like the key.
 
 import { app, Menu, shell, type BrowserWindow, type MenuItemConstructorOptions } from 'electron'
-import { resolveShortcuts, SHORTCUT_ACTIONS, SHORTCUT_DISPLAY_NAMES, type ContextMenuItem, type ShortcutAction, type StoredShortcut } from '@kernel/ui/contract'
-import type { BrowserShortcutAction } from '@services/browser/contract'
-import { sendBrowserShortcut } from '@services/browser/desktop'
-import { DESKTOP_CHANNELS as C, type NativeAction } from '../contract'
+import { MENU_BAR, type ContextMenuItem, type StoredShortcut } from '@kernel/ui/contract'
+import { DESKTOP_CHANNELS as C, MENU_SKELETON, type MenuModel, type MenuModelItem, type NativeAction } from '../contract'
 import type { WindowRegistry } from './windowRegistry'
 
 const DOCUMENTATION_URL = 'https://github.com/0-AI-UG/cate'
 const ISSUES_URL = 'https://github.com/0-AI-UG/cate/issues'
 
-/** Keys the renderer keeps for the focused surface's own editing. */
-const RENDERER_ONLY: readonly ShortcutAction[] = ['tidyGrid', 'renamePanel', 'undo', 'redo', 'deleteNode', 'panUp', 'panDown', 'panLeft', 'panRight']
-
-function shortcutAccelerator(shortcut: StoredShortcut): string | undefined {
-  if (!shortcut.key) return undefined
+export function shortcutAccelerator(shortcut: StoredShortcut | undefined): string | undefined {
+  if (!shortcut?.key) return undefined
   const parts: string[] = []
   if (shortcut.command) parts.push('CmdOrCtrl')
   if (shortcut.control) parts.push('Ctrl')
@@ -26,15 +22,30 @@ function shortcutAccelerator(shortcut: StoredShortcut): string | undefined {
   return [...parts, names[shortcut.key] ?? shortcut.key].join('+')
 }
 
+/** The bar before any window sent its model: the skeleton's roles only. */
+const BARE_MODEL: MenuModel = {
+  bar: MENU_BAR.map((id) => ({
+    id,
+    label: MENU_SKELETON[id].label,
+    items: MENU_SKELETON[id].blocks.flatMap((block, i): MenuModelItem[] => {
+      const roles = block.flatMap((entry): MenuModelItem[] => ('role' in entry ? [{ type: 'role', role: entry.role }] : []))
+      return roles.length && i > 0 ? [{ type: 'separator' }, ...roles] : roles
+    }),
+  })),
+  hidden: [],
+  guestKeys: [],
+}
+
 export interface AppMenuDeps {
   registry: WindowRegistry<BrowserWindow>
-  customShortcuts(): unknown
   newMainWindow(): void
-  checkForUpdates(): void
 }
 
 export interface AppMenu {
-  rebuild(): void
+  /** Renders a window's model (every window sends the same one). */
+  setModel(model: MenuModel): void
+  /** The keys a web page never gets (`MenuModel.guestKeys`). */
+  guestKeys(): MenuModel['guestKeys']
   barLabels(): string[]
   popupBarItem(index: number, win: BrowserWindow, x: number, y: number): void
   runNativeAction(win: BrowserWindow, action: NativeAction): void
@@ -42,201 +53,85 @@ export interface AppMenu {
 
 export function createAppMenu(deps: AppMenuDeps): AppMenu {
   let current: Menu | null = null
+  let model = BARE_MODEL
 
-  const focused = () => deps.registry.focused()?.win
-  const dispatch = (action: ShortcutAction) => () => {
-    const win = focused()
+  const dispatch = (action: string) => () => {
+    const win = deps.registry.focused()?.win
     if (win) win.webContents.send(C.menuAction, action)
-  }
-  const browser = (action: BrowserShortcutAction) => () => {
-    const win = focused()
-    if (win) sendBrowserShortcut(win.webContents, action)
   }
 
   const runNativeAction = (win: BrowserWindow, action: NativeAction) => {
     switch (action) {
       case 'newWindow': deps.newMainWindow(); break
       case 'closeWindow': win.close(); break
+      case 'showMainWindow': {
+        const main = deps.registry.activeMain()?.win
+        if (main) { main.show(); main.focus() }
+        break
+      }
       case 'toggleFullscreen': win.setFullScreen(!win.isFullScreen()); break
       case 'reloadWindow': win.webContents.reloadIgnoringCache(); break
       case 'toggleDevTools': win.webContents.toggleDevTools(); break
-      case 'checkForUpdates': deps.checkForUpdates(); break
       case 'documentation': void shell.openExternal(DOCUMENTATION_URL); break
       case 'reportIssue': void shell.openExternal(ISSUES_URL); break
     }
   }
-  const native = (action: NativeAction) => () => {
-    const win = focused()
-    if (win) runNativeAction(win, action)
+
+  const item = (entry: MenuModelItem): MenuItemConstructorOptions => {
+    switch (entry.type) {
+      case 'separator': return { type: 'separator' }
+      case 'role': return { role: entry.role }
+      case 'submenu': return { label: entry.label, submenu: entry.items.map(item) }
+      case 'action': {
+        const accelerator = shortcutAccelerator(entry.shortcut)
+        return {
+          label: entry.label,
+          click: dispatch(entry.action),
+          ...(accelerator ? { accelerator, registerAccelerator: entry.registerShortcut } : {}),
+        }
+      }
+    }
   }
 
-  const rebuild = () => {
-    const shortcuts = resolveShortcuts(deps.customShortcuts())
-    const meta = (action: ShortcutAction) => ({ label: SHORTCUT_DISPLAY_NAMES[action], accelerator: shortcutAccelerator(shortcuts[action]) })
-    const hidden = (label: string, accelerator: string, click: () => void): MenuItemConstructorOptions =>
-      ({ label, accelerator, click, visible: false, acceleratorWorksWhenHidden: true })
-
-    const template: MenuItemConstructorOptions[] = [
-      {
-        label: app.name,
-        submenu: [
-          { role: 'about' },
-          { ...meta('checkForUpdates'), click: () => deps.checkForUpdates() },
-          { type: 'separator' },
-          { ...meta('openSettings'), click: dispatch('openSettings') },
-          { type: 'separator' },
-          { role: 'services' },
-          { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          { role: 'quit' },
-        ],
-      },
-      {
-        label: 'File',
-        submenu: [
-          { ...meta('newWindow'), click: () => deps.newMainWindow() },
-          { type: 'separator' },
-          { ...meta('newFile'), click: dispatch('newFile') },
-          { ...meta('newEditor'), click: dispatch('newEditor') },
-          { ...meta('newTerminal'), click: dispatch('newTerminal') },
-          { ...meta('newBrowser'), click: dispatch('newBrowser') },
-          { ...meta('newAgent'), click: dispatch('newAgent') },
-          { ...meta('newCanvas'), click: dispatch('newCanvas') },
-          { type: 'separator' },
-          { ...meta('openFolder'), click: dispatch('openFolder') },
-          { type: 'separator' },
-          { ...meta('saveFile'), label: 'Save', click: dispatch('saveFile') },
-          { type: 'separator' },
-          // No accelerator: Cmd+R must still reach a focused browser.
-          { label: SHORTCUT_DISPLAY_NAMES.renamePanel, click: dispatch('renamePanel') },
-          { ...meta('closePanel'), click: dispatch('closePanel') },
-          { ...meta('closeWindow'), click: native('closeWindow') },
-        ],
-      },
-      {
-        label: 'Edit',
-        submenu: [
-          { ...meta('undo'), click: dispatch('undo') },
-          { ...meta('redo'), click: dispatch('redo') },
-          { type: 'separator' },
-          { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
-          { role: 'pasteAndMatchStyle' },
-          { role: 'delete' },
-          { role: 'selectAll' },
-          { type: 'separator' },
-          { ...meta('toggleSearch'), label: 'Find in Files...', click: dispatch('toggleSearch') },
-        ],
-      },
-      {
-        label: 'View',
-        submenu: [
-          { ...meta('commandPalette'), label: 'Command Palette...', click: dispatch('commandPalette') },
-          hidden('Go to File...', 'CmdOrCtrl+P', dispatch('commandPalette')),
-          hidden('Show All Commands', 'CmdOrCtrl+Shift+P', dispatch('commandPalette')),
-          { type: 'separator' },
-          { ...meta('toggleSidebar'), click: dispatch('toggleSidebar') },
-          { ...meta('toggleFileExplorer'), click: dispatch('toggleFileExplorer') },
-          { ...meta('toggleMinimap'), click: dispatch('toggleMinimap') },
-          { type: 'separator' },
-          { ...meta('zoomIn'), click: dispatch('zoomIn') },
-          hidden('Zoom In', 'CmdOrCtrl+Shift+=', dispatch('zoomIn')),
-          hidden('Zoom In', 'CmdOrCtrl+Plus', dispatch('zoomIn')),
-          { ...meta('zoomOut'), click: dispatch('zoomOut') },
-          { ...meta('zoomReset'), click: dispatch('zoomReset') },
-          { ...meta('zoomToFit'), click: dispatch('zoomToFit') },
-          { type: 'separator' },
-          { ...meta('toggleFullscreen'), click: native('toggleFullscreen') },
-          { type: 'separator' },
-          { ...meta('reloadWindow'), click: native('reloadWindow') },
-          { ...meta('toggleDevTools'), click: native('toggleDevTools') },
-        ],
-      },
-      {
-        label: 'Go',
-        submenu: [
-          { ...meta('focusNext'), label: 'Next Panel', click: dispatch('focusNext') },
-          { ...meta('focusPrevious'), label: 'Previous Panel', click: dispatch('focusPrevious') },
-          { type: 'separator' },
-          { ...meta('previousWorkspace'), click: dispatch('previousWorkspace') },
-          { ...meta('nextWorkspace'), click: dispatch('nextWorkspace') },
-        ],
-      },
-      {
-        // No accelerators: these keys are panel-local so Monaco keeps Cmd+[ ] L.
-        label: 'Browser',
-        submenu: [
-          { label: 'Reload (⌘R)', click: browser('reload') },
-          { label: 'Force Reload (⌘⇧R)', click: browser('reloadHard') },
-          { type: 'separator' },
-          { label: 'Back (⌘[)', click: browser('back') },
-          { label: 'Forward (⌘])', click: browser('forward') },
-          { type: 'separator' },
-          { label: 'Focus Address Bar (⌘L)', click: browser('focusUrl') },
-        ],
-      },
-      {
-        label: 'Window',
-        submenu: [
-          { label: 'New Window', click: () => deps.newMainWindow() },
-          { type: 'separator' },
-          { role: 'minimize' },
-          { role: 'zoom' },
-          { type: 'separator' },
-          {
-            label: 'Main Window',
-            click: () => {
-              const main = deps.registry.activeMain()?.win
-              if (main) { main.show(); main.focus() }
-            },
-          },
-        ],
-      },
-      {
-        label: 'Help',
-        role: 'help',
-        submenu: [
-          { ...meta('documentation'), click: native('documentation') },
-          { ...meta('reportIssue'), click: native('reportIssue') },
-          { type: 'separator' },
-          { ...meta('checkForUpdates'), click: () => deps.checkForUpdates() },
-          { ...meta('toggleDevTools'), click: native('toggleDevTools') },
-        ],
-      },
-    ]
-
-    // Every other bound action gets a hidden item so its key works even while
-    // a guest page has focus (native accelerators reach guests).
+  const render = () => {
+    const template: MenuItemConstructorOptions[] = model.bar.map((menu) => ({
+      label: menu.id === 'app' ? app.name : menu.label,
+      ...(menu.id === 'help' ? { role: 'help' as const } : {}),
+      submenu: menu.items.map(item),
+    }))
+    // Keys without a visible item get a hidden one, so they work while a
+    // web page has focus.
     const registered = new Set<string>()
     const collect = (items: MenuItemConstructorOptions[]) => {
-      for (const item of items) {
-        if (typeof item.accelerator === 'string') registered.add(item.accelerator)
-        if (Array.isArray(item.submenu)) collect(item.submenu)
+      for (const option of items) {
+        if (typeof option.accelerator === 'string' && option.registerAccelerator !== false) registered.add(option.accelerator)
+        if (Array.isArray(option.submenu)) collect(option.submenu)
       }
     }
     collect(template)
-    const extras = SHORTCUT_ACTIONS.filter((action) => !RENDERER_ONLY.includes(action)).flatMap((action) => {
-      const { label, accelerator } = meta(action)
+    const hidden = model.hidden.flatMap(({ action, label, shortcut }): MenuItemConstructorOptions[] => {
+      const accelerator = shortcutAccelerator(shortcut)
       if (!accelerator || registered.has(accelerator)) return []
       registered.add(accelerator)
-      return [hidden(label, accelerator, dispatch(action))]
+      return [{ label, accelerator, click: dispatch(action), visible: false, acceleratorWorksWhenHidden: true }]
     })
-    const view = template.find((item) => item.label === 'View')
-    if (view && Array.isArray(view.submenu)) view.submenu.push(...extras)
+    const view = template.find((_, i) => model.bar[i].id === 'view') ?? template[template.length - 1]
+    if (view && Array.isArray(view.submenu)) view.submenu.push(...hidden)
     current = Menu.buildFromTemplate(template)
     Menu.setApplicationMenu(current)
   }
+  render()
 
   return {
-    rebuild,
-    barLabels: () => current?.items.map((item) => item.label) ?? [],
+    setModel(next) {
+      model = next
+      render()
+    },
+    guestKeys: () => model.guestKeys,
+    barLabels: () => current?.items.map((entry) => entry.label) ?? [],
     popupBarItem(index, win, x, y) {
-      const item = current?.items[index]
-      if (item?.submenu) item.submenu.popup({ window: win, x, y })
+      const entry = current?.items[index]
+      if (entry?.submenu) entry.submenu.popup({ window: win, x, y })
     },
     runNativeAction,
   }

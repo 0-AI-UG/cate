@@ -121,7 +121,7 @@ export function T3ProviderConfiguration({ t3, checkout, onChanged, authenticatio
     </SettingRow>
     {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
     {message && <p role="status" className="text-xs text-secondary">{message}</p>}
-    {busy && <LoadingState label="Updating T3 Code providers…" size={14} />}
+    {busy && <LoadingState label="Updating T3 Code providers" size={14} />}
     {settings && draft && <>
       <fieldset disabled={busy || dirty}>
         <legend className="text-sm font-medium text-primary">Provider to configure</legend>

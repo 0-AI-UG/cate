@@ -11,8 +11,9 @@ import { terminalClientSettings, terminalSettings } from '@services/terminal/con
 import { browserClientSettings, browserSettings } from '@services/browser/contract/settings'
 import { agentSettings } from '@services/agents/contract/settings'
 import { canvasSettings } from '@client/layout/contract/settings'
-import { notificationSettings, sidebarSettings } from '@client/ui/contract/settings'
+import { notificationSettings, remoteMachineSettings, sidebarSettings } from '@client/ui/contract/settings'
 import { editorSettings } from '@panels/editor/contract/settings'
+import { reviewSettings } from '@panels/review/contract/settings'
 import { desktopSettings } from '@shells/desktop/contract/settings'
 
 export const SETTINGS_SLICES = [
@@ -31,7 +32,9 @@ export const SETTINGS_SLICES = [
   canvasSettings,
   sidebarSettings,
   notificationSettings,
+  remoteMachineSettings,
   editorSettings,
+  reviewSettings,
   desktopSettings,
 ] as const
 

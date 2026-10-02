@@ -31,8 +31,6 @@ export interface CateApiCliSpec<S extends ArgShape> {
    *  on dots (`review.note.add` is `cate review note add`). `false` keeps the
    *  method off the CLI (called by code cells or clients only). */
   command?: readonly string[] | false
-  /** Longer help shown by `cate <command> --help`. */
-  help?: string
   /** Pure adjustment after parsing, before validation (for example splitting
    *  `path:line:column`). */
   transform?: (args: Partial<InArgs<S>> & Record<string, unknown>) => Record<string, unknown>
@@ -62,8 +60,8 @@ export interface CateApiNamespaceOptions {
   area?: CliArea
   /** Panel type a `session` method targets. Defaults to the namespace. */
   panelType?: string
-  /** Shown in `cate <namespace> --help`. */
-  help?: string
+  /** One line describing the command group in `cate --help`. */
+  summary?: string
 }
 
 export interface CateApiMethod<S extends ArgShape = ArgShape> extends CateApiMethodSpec<S> {
@@ -83,7 +81,7 @@ export type CateApiMethods = Record<string, CateApiMethodSpec<any>>
 export interface CateApiNamespace<M extends CateApiMethods = CateApiMethods> {
   namespace: string
   area?: CliArea
-  help?: string
+  summary?: string
   methods: { [K in keyof M & string]: CateApiMethod<NonNullable<M[K]['args']>> }
 }
 
@@ -132,7 +130,7 @@ export function defineCateApi<const M extends CateApiMethods>(
   return {
     namespace,
     area: options.area,
-    help: options.help,
+    summary: options.summary,
     methods: out as CateApiNamespace<M>['methods'],
   }
 }

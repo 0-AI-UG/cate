@@ -49,7 +49,7 @@ export function PanelSessionBoundary({
     handle ? handle.subscribe : noSubscribe,
     handle ? () => handle.getSnapshot()?.snapshot ?? null : noSnapshot,
   )
-  if (!handle) return <LoadingState label="Connecting…" className="h-full w-full bg-surface-4 text-sm" />
+  if (!handle) return <LoadingState label="Connecting" className="h-full w-full bg-surface-4 text-sm" />
   return <>{children({
     workspaceId,
     panelId: record.id,

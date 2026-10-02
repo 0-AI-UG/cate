@@ -10,6 +10,8 @@ export interface WorkspaceConnectionsOptions {
   identity: ClientIdentity
   transports: ShellTransports
   version: string
+  /** App build: a runtime of another build is incompatible. */
+  build?: string
   backoff?: Partial<Backoff>
   now?: () => number
 }

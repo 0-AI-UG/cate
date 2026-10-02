@@ -23,7 +23,7 @@ import { useDragStore } from '../drag/store'
 import { useDragOp } from '../drag/useDragOp'
 import { panelChromeOverlays } from './decorations'
 import { DockTabBar } from './DockTabBar'
-import { NewTabButton, splitMenuItems } from './NewTabMenu'
+import { NewTabButton, newTabItems } from './NewTabMenu'
 import { presentationsFor, type DockPresentation } from './presentation'
 import { canSplitLayout, canSplitPane, layoutMinimum } from './sizing'
 import { useDockTabActions } from './useDockTabActions'
@@ -128,11 +128,8 @@ export function DockTabStack({
 
   const actions = useDockTabActions({ workspaceId, dock, stack, activePanelId, canSplit })
   const { handleDragStart } = useDragOp()
-  const menuItems = useMemo(() => {
-    const items = splitMenuItems()
-    return onCanvas ? items.filter((item) => panelDefinition(item.type)?.canLiveOnCanvas) : items
-  }, [onCanvas])
-  const onEmptyContextMenu = useCallback((e: React.MouseEvent) => { void actions.handleTabBarContextMenu(e, menuItems) }, [actions, menuItems])
+  const menuItems = useMemo(() => newTabItems({ onCanvas }), [onCanvas])
+  const onEmptyContextMenu = useCallback((e: React.MouseEvent) => { void actions.handleTabBarContextMenu(e) }, [actions])
 
   const springLoadTimer = useRef<number | null>(null)
   useEffect(() => () => {

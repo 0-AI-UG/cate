@@ -53,6 +53,7 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
           runtimeKeys: options.runtimeKeys,
           policy: options.pairing,
           handshakeTimeoutMs: options.handshakeTimeoutMs,
+          refuse: (unpaired) => refuse(unpaired, options.rpc),
         })
       } catch (error) {
         options.log?.info('refused a network connection: %s', (error as Error).message)
@@ -61,6 +62,7 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
       const key = bytesToHex(channel.remoteStatic)
       // A revoke can land while the handshake runs.
       if (!(await options.pairing.isPaired(channel.remoteStatic))) {
+        refuse(channel, options.rpc)
         channel.close(new Error('device removed'))
         return
       }
@@ -78,6 +80,22 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
       this.closeAll()
     },
   }
+}
+
+/**
+ * Answers an unpaired (never paired or removed) device's hello with a
+ * refusal, so its client stops retrying and says why.
+ */
+function refuse(channel: SecureChannel, rpc: RpcServer): void {
+  secureFramePort(channel).send({
+    kind: 'msg',
+    msg: {
+      t: 'hello',
+      protocol: rpc.protocol,
+      version: rpc.opts.version,
+      error: toWireError(new RpcError('rejected', 'This device is not paired with this workspace')),
+    },
+  })
 }
 
 /**

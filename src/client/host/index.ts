@@ -13,7 +13,7 @@ export {
   panelDropSize,
   canLiveOnCanvas,
   keepsMounted,
-  splitMenuTypes,
+  creatableDefinitions,
   panelTypeOpening,
   missingFeatures,
   MIN_PANE_SIZE,
@@ -47,22 +47,27 @@ export { demandSurface, useDemandedSurfaces, isSurfaceDemanded } from './surface
 export { useKeepMountedPanelIds, keepMountedPanelIds, setEqual } from './keepMounted'
 export { PanelChromeContext, PanelChromeProvider, useClaimPanelCorner, type PanelChromeApi } from './panelChrome'
 export { createPanel, clientPanelKit, newId } from './createPanel'
+export { openUrlFor, openUrlInPanel } from './openUrl'
 export { closePanel, closePanels, confirmClose, registerPanelCloseGuard, type CloseGuard, type CloseGuardContext, type CloseOptions } from './close'
 export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab } from './focus'
 export { revealPanel, installRevealHooks, CANVAS_REVEAL_INTENT, type RevealHooks } from './reveal'
 export {
-  registerAction,
+  registerActions,
+  actionSupported,
+  canRunAction,
   runAction,
-  hasAction,
-  newPanelAction,
-  registerHostActions,
+  availableActions,
+  subscribeActions,
+  useActionsVersion,
   requestPanelRename,
   onPanelRenameRequest,
   requestPanelShortcut,
   onPanelShortcut,
+  type ActionBinding,
   type ActionContext,
-  type ActionHandler,
 } from './actions'
+export { registerPanelActions, newPanelActionId, panelCommandActionId } from './panelActions'
+export { worktreeChoices, creationMenuItems, creationPick, type WorktreeChoice, type CreationPick } from './creation'
 export {
   requestPanelTarget,
   pickPanelPlace,

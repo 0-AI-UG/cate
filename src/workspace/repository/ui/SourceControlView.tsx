@@ -757,7 +757,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
             onClick={commit}
           >
             {committing && <Spinner size={12} />}
-            {committing ? 'Committing…' : 'Commit'}
+            {committing ? 'Committing' : 'Commit'}
           </button>
           <Tooltip label="Stash changes" placement="top">
             <button

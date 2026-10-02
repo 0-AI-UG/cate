@@ -14,13 +14,30 @@ import { createAgentChangesStore } from './store'
 export const LIVE_AGENT_CHANGES = process.env.CATE_LIVE_AGENT_CLIS === '1'
 export const LIVE_EDIT_PROMPT = 'Read target.txt, then use your native file editing tool (not a shell command) to replace its entire contents with exactly after followed by one newline. Change no other file. Do the edit now, then reply only done.'
 
-function terminateLiveProcessTree(pid: number | undefined): Promise<void> {
-  if (!pid) return Promise.resolve()
+async function terminateLiveProcessTree(pid: number | undefined): Promise<void> {
+  if (!pid) return
   if (process.platform === 'win32') {
     return new Promise((resolve) => execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 }, () => resolve()))
   }
+  // Some CLIs (notably Kiro's V3 engine) start children in their own groups.
+  // Snapshot ownership before killing the PTY, while parent links still exist.
+  const descendants = await new Promise<number[]>((resolve) => {
+    execFile('ps', ['-A', '-o', 'pid=,ppid='], { timeout: 5000 }, (error, stdout) => {
+      if (error) { resolve([]); return }
+      const processes = stdout.trim().split('\n').map((line) => line.trim().split(/\s+/).map(Number))
+      const owned = new Set([pid])
+      let previousSize = 0
+      while (owned.size !== previousSize) {
+        previousSize = owned.size
+        for (const [child, parent] of processes) if (owned.has(parent)) owned.add(child)
+      }
+      resolve([...owned].filter((child) => child !== pid))
+    })
+  })
   try { process.kill(-pid, 'SIGKILL') } catch { /* Owned group already exited. */ }
-  return Promise.resolve()
+  for (const child of descendants.reverse()) {
+    try { process.kill(child, 'SIGKILL') } catch { /* Owned child already exited. */ }
+  }
 }
 
 /** Real installed CLI, closed stdin, finite output and process lifetime. Never
@@ -71,35 +88,45 @@ export async function runLiveTui(binary: string, args: string[], options: {
   cwd: string
   env: Record<string, string>
   timeout?: number
-  complete: () => boolean | Promise<boolean>
+  /** Decode cursor movement/redraws when asserting on a real TUI response. */
+  renderScreen?: boolean
+  complete: (screen: string) => boolean | Promise<boolean>
   respond?: (screen: string) => string | undefined
 }): Promise<void> {
   const { spawn } = await import('node-pty')
+  const rendered = options.renderScreen
+    ? new (await import('@xterm/headless')).Terminal({ cols: 120, rows: 40, scrollback: 200, allowProposedApi: true })
+    : undefined
+  const screenText = () => rendered
+    ? Array.from({ length: rendered.buffer.active.length }, (_, index) => rendered.buffer.active.getLine(index)?.translateToString(true) ?? '').join('\n')
+    : stripVTControlCharacters(screen)
   // POSIX forkpty creates a session/process group owned by the returned pid.
   const terminal = spawn(binary, args, { cwd: options.cwd, env: { ...options.env, PWD: options.cwd }, name: 'xterm-256color', cols: 120, rows: 40 })
   let screen = '', bytes = 0, exited = false
   const data = terminal.onData((chunk) => {
     bytes += Buffer.byteLength(chunk)
     screen = (screen + chunk).slice(-64 * 1024)
+    rendered?.write(chunk)
   })
   const exit = terminal.onExit(() => { exited = true })
   try {
     const deadline = Date.now() + (options.timeout ?? 120_000)
     while (true) {
       if (bytes > 4 * 1024 * 1024) throw new Error('output exceeded 4 MiB')
-      if (await options.complete()) return
+      if (await options.complete(screenText())) return
       if (exited) throw new Error('exited before the expected completion event')
       if (Date.now() >= deadline) throw new Error('timeout')
-      const response = options.respond?.(stripVTControlCharacters(screen))
+      const response = options.respond?.(screenText())
       if (response) terminal.write(response)
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
   } catch (error) {
-    throw new Error(`${binary} failed (${String(error)}): ${stripVTControlCharacters(screen).slice(-2000)}`)
+    throw new Error(`${binary} failed (${String(error)}): ${screenText().slice(-2000)}`)
   } finally {
     await terminateLiveProcessTree(terminal.pid)
     try { terminal.kill() } catch { /* Terminal already exited. */ }
     data.dispose(); exit.dispose()
+    rendered?.dispose()
   }
 }
 

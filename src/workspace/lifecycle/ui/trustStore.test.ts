@@ -57,6 +57,16 @@ describe('ensureTrusted', () => {
     expect(setTrust).not.toHaveBeenCalled()
   })
 
+  it('keeps the question open when the runtime does not store the trust', async () => {
+    setTrust.mockRejectedValueOnce(new Error('Incompatible protocol version'))
+    const gate = store.ensureTrusted('ws', '/repo')
+    await tick()
+    await expect(store.answer(true)).rejects.toThrow('Incompatible protocol version')
+    expect(store.current()).toMatchObject({ workspaceId: 'ws' })
+    await store.answer(false)
+    await expect(gate).resolves.toBe(false)
+  })
+
   it('fails closed: asks when the trust state cannot be read', async () => {
     getTrust.mockRejectedValue(new Error('nope'))
     const gate = store.ensureTrusted('ws', '/repo')

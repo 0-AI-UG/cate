@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { CaretLeft, CaretRight, DownloadSimple, Minus, PencilSimple, Plus, X } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
-import { Tooltip } from '@kernel/ui'
+import { LoadingState, Tooltip } from '@kernel/ui'
+import { runtimesVersion, subscribeRuntimes, tryRuntimeFor } from '@kernel/rpc/client'
 import { clientHas } from '@client/connections'
+import { writeFileRefDrag } from '@workspace/files/contract'
 import {
   saveAnnotatedScreenshot,
   screenshotPort,
@@ -134,7 +136,7 @@ function ScreenshotViewer({ port, workspaceId, screenshots, initialIndex, onClos
                 toolbarHost={drawingToolbarHost} onClose={onClose} onSave={dataUrl => saveAnnotatedScreenshot(workspaceId, screenshot, dataUrl)}
                 onSaved={saved => onSaved(saved)} />
               </div>
-            ) : <p role="status" className="p-4 text-center text-white/70">Loading screenshot...</p>}
+            ) : <LoadingState label="Loading screenshot" className="p-4 text-white/70" />}
           </div>
         </div>
         </div>
@@ -177,6 +179,8 @@ export function RecentScreenshotButton({ workspaceId, expandDown = false }: { wo
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [viewer, setViewer] = useState<{ screenshots: RecentScreenshot[]; initialIndex: number } | null>(null)
   const dragged = useRef(false)
+  // An annotated copy is readable only while its workspace is open.
+  useSyncExternalStore(subscribeRuntimes, runtimesVersion)
 
   useEffect(() => {
     if (!port) {
@@ -200,7 +204,8 @@ export function RecentScreenshotButton({ workspaceId, expandDown = false }: { wo
   }, [port])
 
   if (!port) return null
-  const visible = screenshots.filter(screenshot => !dismissed.includes(screenshot.id))
+  const visible = screenshots.filter(screenshot => !dismissed.includes(screenshot.id)
+    && (!screenshot.ref || tryRuntimeFor(screenshot.ref.workspaceId)))
   if (!visible.length && !viewer) return null
   return (
     <>
@@ -238,6 +243,13 @@ export function RecentScreenshotButton({ workspaceId, expandDown = false }: { wo
               }}
               onDragStart={event => {
                 dragged.current = true
+                // A workspace screenshot is a FileRef drag; a device capture
+                // is a native drag of its file.
+                if (screenshot.ref) {
+                  event.dataTransfer.effectAllowed = 'copy'
+                  writeFileRefDrag(event.dataTransfer, { refs: [screenshot.ref] })
+                  return
+                }
                 event.preventDefault()
                 void port.drag(screenshot.id).catch(() => {
                   // Keep the shortcut available if the native drag could not start.

@@ -10,11 +10,14 @@ import type { CapabilityImpl, StreamSink } from '@kernel/rpc/runtime'
 import { KeyedLock } from '@kernel/state/contract'
 import type { Logger } from '@kernel/log/contract'
 import type { DataPaths } from '@runtime/data/runtime'
+import { ensureCateGitignore } from '@workspace/lifecycle/runtime'
 import {
   FILE_EXCLUSIONS,
   base64ToBytes,
   bytesToBase64,
+  cateTempDir,
   contentHash,
+  pathHasPrefix,
   pathKey,
   type FileEntry,
   type FileSearchResult,
@@ -35,6 +38,7 @@ import { createPathScope, type PathScope } from './pathScope'
 import { createWatchPool, type WatchPool, type WatchPoolDeps } from './watchPool'
 import { createBufferService, type BufferService } from './buffers'
 import { ByteInput } from './byteInput'
+import { createFileServer } from './fileServer'
 import { copyInto, moveToTrash, nextAvailableName, readBytesOrNull, readDir, removeEntry, searchFileNames, statEntry, writeAtomic } from './fileOps'
 import { runRipgrepSearch, type SearchCallbacks, type SearchHandle } from './search/engine'
 
@@ -71,6 +75,13 @@ export interface FilesRuntime {
   onMoved(listener: (from: string, to: string) => void): () => void
   mkdir(p: string): Promise<void>
   copy(p: string, destDir: string): Promise<{ path: string }>
+  /** The `.cate/tmp` of the checkout holding `near` (the root by default),
+   *  created (with `.cate/.gitignore`) if missing. Rejects a `near` that no
+   *  checkout holds (`paths.destination`). */
+  tempDir(near?: string): Promise<string>
+  /** A loopback URL of the runtime's machine serving the file (`fileServer`),
+   *  so a browser panel loads it through loopback routing. */
+  serveUrl(p: string): Promise<string>
   /** Watches under `p`; `onChange` gets absolute paths. */
   watch(p: string, onChange: (changedPath: string, type: FsChangeType) => void): () => void
   searchFiles(query: string, opts?: { root?: string; maxResults?: number }): Promise<FileSearchResult[]>
@@ -112,6 +123,15 @@ export function createFilesRuntime(deps: FilesRuntimeDeps): FilesRuntime {
   const rgPath = deps.rgPath ?? daemonRgPath()
   const locked = <T>(p: string, fn: () => Promise<T>) => lock.run(pathKey(p), fn)
   const moveListeners = new Set<(from: string, to: string) => void>()
+  // Pages may fetch anything the server serves, so it never serves the
+  // workspace data (secrets, pairings): only the root, checkouts and grants.
+  const server = createFileServer({
+    strict: async (p) => {
+      const safe = await paths.strict(p)
+      if (pathHasPrefix(safe, paths.dataDir)) throw new RpcError('rejected', 'Not a workspace file')
+      return safe
+    },
+  })
 
   const write: FilesRuntime['write'] = async (p, content, baseHash) => {
     const safe = await paths.forCreation(p)
@@ -160,6 +180,7 @@ export function createFilesRuntime(deps: FilesRuntimeDeps): FilesRuntime {
     },
     async rename(from, to) {
       const src = await paths.entry(from)
+      await paths.destination(path.dirname(to))
       const dest = await paths.forCreation(to)
       await locked(src, () => fs.rename(src, dest))
       for (const listener of [...moveListeners]) {
@@ -175,8 +196,16 @@ export function createFilesRuntime(deps: FilesRuntimeDeps): FilesRuntime {
       await fs.mkdir(await paths.forCreation(p), { recursive: true })
     },
     async copy(p, destDir) {
-      return { path: await copyInto(await paths.strict(p), await paths.strict(destDir)) }
+      return { path: await copyInto(await paths.strict(p), await paths.destination(destDir)) }
     },
+    async tempDir(near = paths.root) {
+      const checkout = paths.checkoutOf(await paths.destination(near))!
+      await ensureCateGitignore(checkout)
+      const dir = await paths.forCreation(cateTempDir(checkout))
+      await fs.mkdir(dir, { recursive: true })
+      return dir
+    },
+    serveUrl: (p) => server.urlFor(p),
     watch(p, onChange) {
       return pool.subscribe(paths.resolve(p), onChange)
     },
@@ -187,7 +216,7 @@ export function createFilesRuntime(deps: FilesRuntimeDeps): FilesRuntime {
     searchContent(options, callbacks, root) {
       return runRipgrepSearch(rgPath, options, paths.resolve(root ?? paths.root), [...exclusions], callbacks)
     },
-    downloadsDir: () => path.join(deps.dataPaths.browser, 'downloads'),
+    downloadsDir: () => deps.dataPaths.downloads,
     screenshotsDir: () => deps.dataPaths.screenshots,
     async setExclusions(names) {
       exclusions.clear()
@@ -195,6 +224,7 @@ export function createFilesRuntime(deps: FilesRuntimeDeps): FilesRuntime {
       await pool.refresh()
     },
     async dispose() {
+      await server.close()
       await buffers.dispose()
       await pool.closeAll()
       paths.dispose()
@@ -253,7 +283,7 @@ async function importEntries(files: FilesRuntime, destDir: string, entries: Impo
       throw new RpcError('rejected', 'Invalid entry size')
     }
   }
-  const safeDest = await files.paths.strict(destDir)
+  const safeDest = await files.paths.destination(destDir)
   // Each dropped item gets one free top-level name on its first entry; null
   // marks an item that failed (its later entries are skipped).
   const tops = new Map<string, string | null>()
@@ -311,6 +341,8 @@ export function fileCapabilityImpl(files: FilesRuntime): CapabilityImpl<typeof f
     rename: ({ from, to }) => files.rename(from, to),
     mkdir: ({ path: p }) => files.mkdir(p),
     copy: ({ path: p, destDir }) => files.copy(p, destDir),
+    tempDir: async ({ near }) => ({ path: await files.tempDir(near) }),
+    serveUrl: async ({ path: p }) => ({ url: await files.serveUrl(p) }),
     grant: async ({ path: p }) => ({ path: await files.paths.grant(p) }),
     saveBuffer: ({ path: p }) => files.buffers.save(p),
     resolveBuffer: ({ path: p, resolution }) => files.buffers.resolveConflict(p, resolution),

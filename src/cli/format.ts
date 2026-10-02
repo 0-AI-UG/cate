@@ -11,33 +11,60 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
 }
 
+const isScalar = (value: unknown): boolean => value === null || ['string', 'number', 'boolean'].includes(typeof value)
+
+/** Scalars as text; a flat object as aligned `key  value` lines; anything
+ *  nested as indented JSON. */
 function generic(value: unknown): string {
   if (value === undefined || value === null) return 'ok'
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (isScalar(value)) return String(value)
   const object = asObject(value)
-  if (object && typeof object.path === 'string') return object.path
-  return JSON.stringify(value)
+  if (!object || Array.isArray(object)) return JSON.stringify(value, null, 2)
+  if (typeof object.path === 'string') return object.path
+  const entries = Object.entries(object)
+  if (entries.length === 0 || (entries.length === 1 && object.ok === true)) return 'ok'
+  const flat = entries.every(([, v]) => isScalar(v) || (Array.isArray(v) && v.every(isScalar)))
+  if (!flat) return JSON.stringify(value, null, 2)
+  const width = Math.max(...entries.map(([key]) => key.length)) + 2
+  return entries
+    .map(([key, v]) => `${key.padEnd(width)}${Array.isArray(v) ? v.join(', ') : String(v)}`)
+    .join('\n')
 }
+
+/** Rows under a header, each column padded to its widest cell. */
+function table(header: readonly string[], rows: readonly string[][]): string {
+  const widths = header.map((title, i) => Math.max(title.length, ...rows.map((row) => row[i].length)))
+  const line = (cells: readonly string[]) => cells.map((cell, i) => cell.padEnd(widths[i])).join('  ').trimEnd()
+  return [line(header), ...rows.map(line)].join('\n')
+}
+
+const text = (value: unknown): string => (value === undefined || value === null ? '' : String(value))
 
 function panelList(value: unknown): string {
   if (!Array.isArray(value)) return generic(value)
-  return value.map((item) => {
-    const panel = asObject(item)
-    if (!panel) return String(item)
-    const label = panel.filePath ?? panel.url ?? panel.title ?? ''
-    return `${panel.focused ? '*' : ' '} ${shortId(String(panel.panelId ?? '?'))}\t${panel.type ?? '?'}${label ? `\t${label}` : ''}`
-  }).join('\n') || '(no panels)'
+  if (value.length === 0) return '(no panels)'
+  return table(['', 'ID', 'TYPE', 'TITLE'], value.map((item) => {
+    const panel = asObject(item) ?? {}
+    return [panel.focused ? '*' : '', shortId(text(panel.panelId) || '?'), text(panel.type), text(panel.filePath ?? panel.url ?? panel.title)]
+  }))
 }
 
 function agentRuns(value: unknown): string {
   if (!Array.isArray(value)) return generic(value)
-  return value.map((item) => {
-    const run = asObject(item)
-    if (!run) return String(item)
-    const title = run.title ?? run.agentName ?? run.agentId ?? ''
-    return `${shortId(String(run.panelId ?? run.id ?? '?'))}\t${run.state ?? run.status ?? '?'}${title ? `\t${title}` : ''}`
-  }).join('\n') || '(no agent runs)'
+  if (value.length === 0) return '(no agent runs)'
+  return table(['ID', 'STATE', 'TITLE'], value.map((item) => {
+    const run = asObject(item) ?? {}
+    return [shortId(text(run.panelId ?? run.id) || '?'), text(run.state ?? run.status) || '?', text(run.title ?? run.agentName ?? run.agentId)]
+  }))
+}
+
+function workers(value: unknown): string {
+  if (!Array.isArray(value)) return generic(value)
+  if (value.length === 0) return '(no workers)'
+  return table(['ID', 'STATUS', 'AGENT', 'TITLE'], value.map((item) => {
+    const run = asObject(item) ?? {}
+    return [text(run.id) || '?', text(run.status) || '?', text(run.agentName ?? run.agentId), text(run.title)]
+  }))
 }
 
 function conversation(value: unknown): string {
@@ -70,8 +97,13 @@ function browserContent(value: unknown): string {
 const FORMATTERS: Record<string, (value: unknown) => string> = {
   panelList,
   agentRuns,
-  agentWait: (value) => agentRuns(asObject(value)?.agents),
-  agentRun: (value) => (asObject(value) ? agentRuns([value]) : generic(value)),
+  agentWait: (value) => {
+    const result = asObject(value)
+    const runs = agentRuns(result?.agents)
+    return result?.timedOut === true ? `${runs}\n(timed out before every agent was ready)` : runs
+  },
+  workers,
+  worker: (value) => (asObject(value) ? workers([value]) : generic(value)),
   conversation,
   browserContent,
   prettyJson: (value) => JSON.stringify(value, null, 2),

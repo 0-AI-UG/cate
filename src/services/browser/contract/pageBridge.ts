@@ -58,8 +58,9 @@ export interface BrowserPageBridge {
   fillCredential(webContentsId: number, targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }>
   /** Writes bytes for a file input to a private temp file; returns its path. */
   stageUpload(name: string, bytes: Uint8Array): Promise<string>
-  /** Captures the guest's page as a PNG. */
-  screenshot(webContentsId: number): Promise<{ dataUrl: string; filePath: string } | null>
+  /** Captures the guest's page as a PNG data URL (the view stores it in the
+   *  workspace with `file.storeScreenshot`). */
+  screenshot(webContentsId: number): Promise<{ dataUrl: string } | null>
 
   /** Runs a cell in this client's isolated code session for `key`. */
   runCode(request: { key: string; cellId: string; code: string; deadlineMs: number }): Promise<BrowserCodeResult>

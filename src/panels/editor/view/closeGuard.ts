@@ -5,10 +5,10 @@
 
 import { isRpcError } from '@kernel/rpc/contract'
 import type { CloseGuard } from '@client/host'
-import type { EditorOp } from '../contract'
+import type { EditorOp, EditorSnapshot } from '../contract'
 import { confirmUnsaved } from './editorActions'
 
-export const editorCloseGuard: CloseGuard = async ({ record, session }) => {
+export const editorCloseGuard: CloseGuard = async ({ workspaceId, record, session }) => {
   if (!session) return true
   const send = (op: EditorOp) => session.send(op)
   try {
@@ -17,8 +17,12 @@ export const editorCloseGuard: CloseGuard = async ({ record, session }) => {
   } catch (err) {
     if (!isRpcError(err, 'dirty')) throw err
   }
+  // The session's snapshot says whether the file is a draft; before it
+  // arrives, the record's path is saved in place.
   const filePath = typeof record.fields.filePath === 'string' ? record.fields.filePath : ''
-  const answer = await confirmUnsaved(send, { filePath, dirty: true }, record.title)
+  const snapshot = (session.getSnapshot() as { snapshot: EditorSnapshot } | null)?.snapshot
+  const file = snapshot ?? { filePath, draft: false, checkout: null }
+  const answer = await confirmUnsaved(send, workspaceId, { ...file, dirty: true }, record.title)
   if (!answer) return false
   if (answer === 'discard') await send({ kind: 'prepareClose', discard: true })
   return true

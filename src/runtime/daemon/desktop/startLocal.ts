@@ -6,23 +6,17 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import { runtimeIdFromCanonicalRoot } from '@runtime/data/contract'
-import { canonicalRoot, cateHome, ensureLocalEndpointFor } from '@runtime/data/node'
+import { canonicalRoot, ensureLocalEndpointFor } from '@runtime/data/node'
 import { dialLocal, dialLocalRetrying } from '@runtime/transports/node'
-import {
-  installLayout,
-  RUNTIME_VERSION,
-  runtimeInstallDir,
-  serveArgv,
-  START_LOCAL_BUDGET_MS,
-} from '../contract'
+import { installLayout, serveArgv, START_LOCAL_BUDGET_MS } from '../contract'
 
 export interface StartLocalOptions {
   root: string
   /** The user's home; default `os.homedir()`. */
   home?: string
-  /** Which installed release to start; default this build's. */
-  version?: string
-  /** Run this Node and bundle instead of the install (dev builds). */
+  /** The install to start (`~/.cate/runtime/<build>/`). */
+  installDir?: string
+  /** Run this Node and bundle instead of an install (dev builds). */
   launch?: { node: string; bundle: string }
   env?: NodeJS.ProcessEnv
   budgetMs?: number
@@ -38,14 +32,10 @@ export interface LocalRuntime {
 }
 
 /** The argv that starts a workspace's runtime: `<node> <bundle> serve <root> --detach`. */
-export function startCommand(root: string, options: Pick<StartLocalOptions, 'home' | 'version' | 'launch'> = {}): { node: string; args: string[] } {
-  const layout = installLayout(
-    runtimeInstallDir(cateHome(options.home), options.version ?? RUNTIME_VERSION, process.platform),
-    process.platform,
-  )
-  const node = options.launch?.node ?? layout.node
-  const bundle = options.launch?.bundle ?? layout.bundle
-  return { node, args: [bundle, ...serveArgv({ root, detach: true })] }
+export function startCommand(root: string, options: Pick<StartLocalOptions, 'installDir' | 'launch'>): { node: string; args: string[] } {
+  const program = options.launch ?? (options.installDir ? installLayout(options.installDir, process.platform) : null)
+  if (!program) throw new Error('no Cate runtime to start')
+  return { node: program.node, args: [program.bundle, ...serveArgv({ root, detach: true })] }
 }
 
 /** Connects to the workspace's runtime, starting it first if nothing answers. */

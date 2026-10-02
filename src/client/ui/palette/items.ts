@@ -1,13 +1,11 @@
 // What the command palette lists, built from the document, the workspace list,
-// the action registry and panel definitions. Pure apart from the registries it
-// is handed, so the listing rules are testable.
+// the available actions and the panel definitions. Pure apart from what it is
+// handed, so the listing rules are testable.
 
-import type { ClientFeature } from '@kernel/rpc/contract'
-import { SHORTCUT_DISPLAY_NAMES, displayString, isIconName, type IconName, type ShortcutAction, type StoredShortcut } from '@kernel/ui/contract'
-import { documentOrder, windowOf, type PanelRecord, type WindowId, type WorkspaceDocument } from '@workspace/document/contract'
+import { displayString, isIconName, type ActionId, type ActionSpec, type IconName, type StoredShortcut } from '@kernel/ui/contract'
+import { documentOrder, windowOf, type WindowId, type WorkspaceDocument } from '@workspace/document/contract'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import type { WorkspaceEntry } from '@client/workspaces'
-import type { PaletteCommand } from '../actions/registry'
 
 interface CommandItem {
   kind: 'command'
@@ -46,14 +44,16 @@ export interface FileItem {
 export type PaletteItem = CommandItem | WorkspaceItem | PanelItem | FileItem
 
 export interface CommandSources {
-  actions: readonly ShortcutAction[]
-  shortcuts: Record<ShortcutAction, StoredShortcut>
-  runAction(action: ShortcutAction): void
-  commands: readonly PaletteCommand[]
-  /** The focused panel and its definition, for its own commands. */
-  focused: { record: PanelRecord; definition: AnyPanelDefinition } | null
-  sendOp(panelId: string, op: unknown): void
-  clientHas(feature: ClientFeature): boolean
+  /** The actions that can run now, in declaration order. */
+  actions: readonly { id: ActionId; spec: ActionSpec }[]
+  shortcuts: Readonly<Record<ActionId, StoredShortcut>>
+  runAction(action: ActionId): void
+  /** Types created in a checkout (`creation.inWorktree`) this client can
+   *  create, and the workspace's ready checkouts: with several, each pair is
+   *  a "New <type> in <worktree>" command. */
+  inWorktree: readonly AnyPanelDefinition[]
+  worktrees: readonly { id: string; path: string; label: string }[]
+  create(type: string, options: { worktreeId: string; cwd: string }): void
 }
 
 const matches = (query: string, ...texts: (string | undefined)[]): boolean =>
@@ -61,33 +61,30 @@ const matches = (query: string, ...texts: (string | undefined)[]): boolean =>
 
 export function commandItems(src: CommandSources, query: string): CommandItem[] {
   const out: CommandItem[] = []
-  for (const action of src.actions) {
-    const binding = src.shortcuts[action]
+  for (const { id, spec } of src.actions) {
+    if (spec.palette === false) continue
+    const binding = src.shortcuts[id]
     out.push({
       kind: 'command',
-      id: action,
-      title: SHORTCUT_DISPLAY_NAMES[action],
-      icon: null,
-      shortcut: binding.key ? displayString(binding) : undefined,
-      run: () => src.runAction(action),
+      id,
+      title: spec.title,
+      icon: spec.icon ?? null,
+      shortcut: binding?.key ? displayString(binding) : spec.keyHint,
+      run: () => src.runAction(id),
     })
   }
-  if (src.focused) {
-    const { record, definition } = src.focused
-    for (const command of definition.commands ?? []) {
-      if (!(command.requires ?? []).every(src.clientHas)) continue
-      out.push({
-        kind: 'command',
-        id: `${record.type}:${command.id}`,
-        title: command.title,
-        icon: isIconName(definition.icon) ? definition.icon : null,
-        shortcut: command.shortcut,
-        run: () => src.sendOp(record.id, command.op),
-      })
+  if (src.worktrees.length > 1) {
+    for (const definition of src.inWorktree) {
+      for (const worktree of src.worktrees) {
+        out.push({
+          kind: 'command',
+          id: `new:${definition.type}:${worktree.id}`,
+          title: `${definition.creation?.title ?? `New ${definition.label}`} in ${worktree.label}`,
+          icon: isIconName(definition.icon) ? definition.icon : null,
+          run: () => src.create(definition.type, { worktreeId: worktree.id, cwd: worktree.path }),
+        })
+      }
     }
-  }
-  for (const command of src.commands) {
-    out.push({ kind: 'command', id: command.id, title: command.title, icon: command.icon ?? null, run: () => { void command.run() } })
   }
   return out.filter((item) => matches(query, item.title))
 }

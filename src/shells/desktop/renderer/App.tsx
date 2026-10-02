@@ -2,17 +2,16 @@
 // canvases), the persistent native surfaces, the application overlays and
 // the window chrome. A detached window shows one document window.
 
-import { useEffect, useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo } from 'react'
 import { MAIN_WINDOW } from '@workspace/document/contract'
 import { clientHas } from '@client/connections'
 import { PersistentPanelHost } from '@client/host'
 import { FileDropOverlay, useFileDropTracker } from '@client/layout/drag'
 import { MainWindowView, WindowView } from '@client/layout/windows'
-import { ClientOverlays, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, useLeftChromeInset, useShortcuts, useUIStore, useWindowControlsInset } from '@client/ui'
+import { ClientOverlays, ConnectionBlocker, FileViewsHost, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, WorkspaceScope, useLeftChromeInset, useShortcuts, useUIStore, useWindowControlsInset, useWorkspaceBlock } from '@client/ui'
 import { useWorkspaceList } from '@client/workspaces/ui'
 import type { DesktopClient } from './boot'
 import { PerfHud } from './perf/PerfHud'
-import { FileViewsHost, RepositoryHost } from './WorkspaceHosts'
 import { MacTrafficLightStrip, TitleBar } from './WindowChrome'
 import { useWebviewReadyWorkspaces } from './webviews'
 
@@ -32,14 +31,11 @@ function Surfaces({ client, windowId, activeWorkspaceId, hidden }: { client: Des
   return <PersistentPanelHost workspaceIds={workspaceIds} activeWorkspaceId={activeWorkspaceId} windowId={windowId} hidden={hidden} />
 }
 
-function WorkspaceScope({ workspaceId, children }: { workspaceId: string | null; children: ReactNode }) {
-  const content = <FileViewsHost>{children}</FileViewsHost>
-  return workspaceId ? <RepositoryHost key={workspaceId} workspaceId={workspaceId}>{content}</RepositoryHost> : content
-}
-
 function MainApp({ client }: { client: DesktopClient }) {
   const workspaceId = useUIStore((s) => s.selectedWorkspaceId)
   const overlay = useUIStore((s) => s.overlay)
+  // Native surfaces would paint over the connection cover.
+  const { blocked } = useWorkspaceBlock(workspaceId)
   const platform = client.info.platform
   useShortcuts()
   useFileDropTracker()
@@ -69,7 +65,9 @@ function MainApp({ client }: { client: DesktopClient }) {
               <div data-app-sidebar="left" className="flex-shrink-0 h-full"><Sidebar /></div>
               <div className="relative flex-1 min-h-0 min-w-0 bg-canvas-bg" data-app-content>
                 <div className="h-full" hidden={!!overlay}>
-                  {workspaceId ? <MainWindowView key={workspaceId} workspaceId={workspaceId} leadingInset={leftInset} /> : <WelcomePage />}
+                  {workspaceId
+                    ? <ConnectionBlocker key={workspaceId} workspaceId={workspaceId}><MainWindowView workspaceId={workspaceId} leadingInset={leftInset} /></ConnectionBlocker>
+                    : <WelcomePage />}
                 </div>
                 <div id="settings-content-slot" className="absolute inset-0 z-[100001] pointer-events-none empty:hidden" />
                 {!overlay && <LeftSidebarReopen />}
@@ -86,7 +84,7 @@ function MainApp({ client }: { client: DesktopClient }) {
           client={client}
           windowId={clientHas('windows') ? MAIN_WINDOW : null}
           activeWorkspaceId={workspaceId}
-          hidden={!!overlay}
+          hidden={!!overlay || blocked}
         />
       </FileViewsHost>
     </>
@@ -96,6 +94,7 @@ function MainApp({ client }: { client: DesktopClient }) {
 function DetachedApp({ client, workspaceId, windowId }: { client: DesktopClient; workspaceId: string; windowId: string }) {
   // The macOS traffic lights sit over the top-left tab bar.
   const controlsInset = useWindowControlsInset()
+  const { blocked } = useWorkspaceBlock(workspaceId)
   useShortcuts()
   useFileDropTracker()
   useWindowTitle(client, workspaceId)
@@ -105,12 +104,12 @@ function DetachedApp({ client, workspaceId, windowId }: { client: DesktopClient;
         <div className="h-screen w-screen flex flex-col bg-canvas-bg">
           <TitleBar api={client.api} platform={client.info.platform} />
           <div className="relative flex-1 min-h-0 min-w-0" data-app-content>
-            <WindowView workspaceId={workspaceId} windowId={windowId} leadingInset={controlsInset} />
+            <ConnectionBlocker workspaceId={workspaceId}><WindowView workspaceId={workspaceId} windowId={windowId} leadingInset={controlsInset} /></ConnectionBlocker>
             <div id="settings-content-slot" className="absolute inset-0 z-[100001] pointer-events-none empty:hidden" />
             <FileDropOverlay />
             <ClientOverlays firstRun={false} />
           </div>
-          <Surfaces client={client} windowId={windowId} activeWorkspaceId={workspaceId} hidden={false} />
+          <Surfaces client={client} windowId={windowId} activeWorkspaceId={workspaceId} hidden={blocked} />
         </div>
       </WorkspaceScope>
     </WindowIdContext.Provider>

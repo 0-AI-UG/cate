@@ -3,12 +3,12 @@ import { parseServeArgs, serveCommand, SERVE_USAGE } from './serve'
 
 describe('parseServeArgs', () => {
   it('serves the current directory on the same network by default', () => {
-    expect(parseServeArgs([], '/work/app')).toEqual({ kind: 'serve', root: '/work/app', network: 'sameNetwork' })
+    expect(parseServeArgs([], '/work/app')).toEqual({ kind: 'serve', root: '/work/app', network: 'sameNetwork', json: false })
   })
 
   it('resolves a relative path and takes --connect in any position', () => {
-    expect(parseServeArgs(['--connect', '../other'], '/work/app')).toEqual({ kind: 'serve', root: '/work/other', network: 'cateConnect' })
-    expect(parseServeArgs(['/abs', '--connect'], '/work/app')).toEqual({ kind: 'serve', root: '/abs', network: 'cateConnect' })
+    expect(parseServeArgs(['--connect', '../other'], '/work/app')).toEqual({ kind: 'serve', root: '/work/other', network: 'cateConnect', json: false })
+    expect(parseServeArgs(['/abs', '--connect', '--json'], '/work/app')).toEqual({ kind: 'serve', root: '/abs', network: 'cateConnect', json: true })
   })
 
   it('refuses unknown options and a second path; -h asks for help', () => {
@@ -47,7 +47,11 @@ describe('serveCommand', () => {
     const { command, run, err } = setup()
     expect(await command(['--bogus'])).toBe(2)
     expect(run).not.toHaveBeenCalled()
-    expect(err).toEqual(['cate serve: unknown option --bogus', SERVE_USAGE])
+    expect(err).toEqual([
+      'cate: unknown option --bogus',
+      'Usage: cate serve [<path>] [--connect] [--json]',
+      "Run 'cate serve --help' for usage.",
+    ])
   })
 
   it('help prints usage', async () => {

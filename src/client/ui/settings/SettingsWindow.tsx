@@ -22,7 +22,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import { SettingsSearchContext, clientUi } from '@kernel/ui'
+import { SettingsSearchContext } from '@kernel/ui'
 import { clientSettingsTable } from '@kernel/settings/contract'
 import { clientSettings } from '@kernel/settings/ui'
 import { clientHas } from '@client/connections'
@@ -132,10 +132,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
 
   const openSettingsFile = async (): Promise<void> => {
     try {
-      const path = await desktop!.clientSettingsFile()
-      const ui = clientUi()
-      if (ui.openFile) await ui.openFile(path)
-      else if (ui.revealFile) await ui.revealFile(path)
+      await desktop!.openClientSettingsFile()
     } catch (err) {
       log.warn('could not open settings.json: %s', err)
     }

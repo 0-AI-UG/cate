@@ -8,12 +8,15 @@ import type { IconName } from '@kernel/ui/contract'
 import type { PanelRecord, WorktreeMeta } from '@workspace/document/contract'
 import type { GitComparisonSpec, JoinedWorktree } from '../contract'
 
-/** A panel type that runs in a checkout (its definition binds a worktree):
- *  the worktree menu offers one launch button each. */
+/** A panel type created in a checkout (its definition's
+ *  `creation.inWorktree`): the worktree menu offers one launch button each. */
 export interface WorktreeLaunchType {
   type: string
   label: string
   icon: IconName
+  /** Runs live in the checkout (`switchesWorktree`): a checked-out pull
+   *  request opens one of each. */
+  switches: boolean
 }
 
 export interface ReviewRequest {
@@ -46,9 +49,9 @@ export interface RepositoryUiHost {
   /** Asks about unsaved work in the worktree's panels before removal. False
    *  cancels. */
   prepareWorktreeClose(worktreeId: string): Promise<boolean>
-  /** Whether the panel's type can switch checkouts (its definition's
-   *  `worktreeBinding`): only those show the worktree chip. */
-  bindsWorktree(panel: PanelRecord): boolean
+  /** Whether the panel's type switches checkouts live (its definition's
+   *  `switchesWorktree`): only those show the worktree switcher. */
+  switchesWorktree(panel: PanelRecord): boolean
   /** Rebinds a panel to another checkout (asks about a running process first). */
   switchPanelWorktree(panelId: string, worktreeId: string): Promise<void>
   openReview(request: ReviewRequest): Promise<void>

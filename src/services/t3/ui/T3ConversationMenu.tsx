@@ -1,8 +1,9 @@
 // The conversations menu (canvas toolbar): search a checkout's saved T3
 // conversations, open one or a new one in a new chat panel, rename or delete.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import type { ActionId } from '@kernel/ui/contract'
 import { Plus, Search as MagnifyingGlass, Trash, Pencil as PencilSimple } from 'lucide-react'
 import { Spinner, T3Logo, Tooltip, errorMessage, useDismissableLayer } from '@kernel/ui'
 import type { T3Conversation } from '../contract'
@@ -16,13 +17,23 @@ export interface T3ConversationMenuTarget {
   open(thread: T3Conversation | undefined): void
 }
 
-export function T3ConversationMenu({ target, tooltipPlacement = 'top', menuSide, onOpenChange, triggerClassName }: {
+export interface T3ConversationMenuTriggerProps {
+  ref: RefObject<HTMLButtonElement>
+  onClick: () => void
+  active: boolean
+  icon: ReactNode
+}
+
+export function T3ConversationMenu({ target, menuSide, onOpenChange, renderTrigger, newAction }: {
   /** Called when the menu opens; null disables it. */
   target: () => T3ConversationMenuTarget | null
-  tooltipPlacement?: 'top' | 'right'
+  /** The action that opens a new conversation, whose key the "New
+   *  conversation" tooltip shows. */
+  newAction?: ActionId
   menuSide: 'up' | 'right'
   onOpenChange?: (open: boolean) => void
-  triggerClassName?: string
+  /** Draws the toolbar button (client layout owns the toolbar chrome). */
+  renderTrigger: (props: T3ConversationMenuTriggerProps) => ReactNode
 }) {
   const trigger = useRef<HTMLButtonElement>(null)
   const content = useRef<HTMLDivElement>(null)
@@ -95,11 +106,7 @@ export function T3ConversationMenu({ target, tooltipPlacement = 'top', menuSide,
   const filtered = threads.filter((thread) => thread.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))
 
   return <>
-    <Tooltip action="openConversationMenu" label="T3 Code conversations" placement={tooltipPlacement}>
-      <button ref={trigger} type="button" aria-label="T3 Code conversations" aria-pressed={!!position} onClick={toggle} className={triggerClassName}>
-        <T3Logo size={18} />
-      </button>
-    </Tooltip>
+    {renderTrigger({ ref: trigger, onClick: toggle, active: !!position, icon: <T3Logo size={18} /> })}
     {position && createPortal(<div ref={content} role="dialog" aria-label="T3 Code conversations"
       className="fixed z-[1000] flex w-[220px] max-w-[calc(100vw-16px)] flex-col rounded-2xl border border-subtle shadow-xl py-1.5 text-xs"
       style={{ ...position, maxHeight: `calc(100vh - ${position.bottom + 8}px)`, background: 'color-mix(in srgb, var(--surface-0) 80%, transparent)', backdropFilter: 'blur(24px) saturate(1.5)', WebkitBackdropFilter: 'blur(24px) saturate(1.5)' }}
@@ -114,7 +121,7 @@ export function T3ConversationMenu({ target, tooltipPlacement = 'top', menuSide,
         {loading ? <div className="flex justify-center px-2.5 py-3"><Spinner size={16} label="Loading conversations" className="text-muted" /></div> : filtered.length === 0 ? <p className="px-2.5 py-3 text-[11px] text-muted">{search ? 'No matching conversations.' : 'No saved conversations.'}</p> : filtered.map((thread) => <div key={thread.id} className="group mx-1 rounded-lg hover:bg-surface-4">
           {renaming === thread.id ? <form className="px-1.5 py-1" onSubmit={(event) => { event.preventDefault(); void rename(thread) }}>
             <input autoFocus aria-label="Conversation name" value={title} disabled={saving} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setRenaming(null) } }} className="w-full rounded bg-surface-3 px-1 py-1 text-primary" />
-            <div className="flex gap-3 py-1"><button disabled={saving || !title.trim()} className="text-secondary disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button><button type="button" disabled={saving} onClick={() => setRenaming(null)} className="text-muted">Cancel</button></div>
+            <div className="flex gap-3 py-1"><button disabled={saving || !title.trim()} className="inline-flex items-center gap-1 text-secondary disabled:opacity-50">{saving && <Spinner size={11} />}{saving ? 'Saving' : 'Save'}</button><button type="button" disabled={saving} onClick={() => setRenaming(null)} className="text-muted">Cancel</button></div>
           </form> : confirmDelete === thread.id ? <div className="px-1.5 py-1 text-[11px]">
             <p className="text-secondary">Delete “{thread.title}”?</p>
             <div className="flex gap-3 py-1"><button disabled={!!deleting} onClick={() => void remove(thread)} className="text-red-400 disabled:opacity-50">{deleting === thread.id ? <Spinner size={12} label="Deleting conversation" /> : 'Delete'}</button><button disabled={!!deleting} onClick={() => setConfirmDelete(null)} className="text-muted">Cancel</button></div>
@@ -126,7 +133,7 @@ export function T3ConversationMenu({ target, tooltipPlacement = 'top', menuSide,
         </div>)}
       </div>
       <div className="my-1 h-px bg-surface-5 mx-2.5 shrink-0" />
-      <Tooltip action="newAgent" label="New conversation"><button onClick={() => create()} className="mx-1 w-[calc(100%-0.5rem)] flex shrink-0 items-center gap-2 h-[26px] px-1.5 rounded-lg text-[12px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors"><Plus size={13} className="shrink-0" />New conversation</button></Tooltip>
+      <Tooltip action={newAction} label="New conversation"><button onClick={() => create()} className="mx-1 w-[calc(100%-0.5rem)] flex shrink-0 items-center gap-2 h-[26px] px-1.5 rounded-lg text-[12px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors"><Plus size={13} className="shrink-0" />New conversation</button></Tooltip>
     </div>, document.body)}
   </>
 }

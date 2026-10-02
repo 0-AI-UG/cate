@@ -50,6 +50,19 @@ describe('WorkspaceTrustDialog', () => {
     expect(document.body.textContent).not.toContain('Do you trust this project?')
   })
 
+  it('shows why trusting failed and lets the person retry', async () => {
+    const { store, setTrust } = setup()
+    setTrust.mockRejectedValueOnce(new Error('The runtime did not answer'))
+    let gate!: Promise<boolean>
+    await act(async () => { gate = store.ensureTrusted('ws', '/repo') })
+    await act(async () => { button('Trust and open').click() })
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe('The runtime did not answer')
+    expect(document.body.textContent).toContain('Do you trust this project?')
+    await act(async () => { button('Trust and open').click() })
+    await expect(gate).resolves.toBe(true)
+    expect(setTrust).toHaveBeenCalledTimes(2)
+  })
+
   it('declines on the secondary button', async () => {
     const { store, setTrust } = setup()
     let gate!: Promise<boolean>

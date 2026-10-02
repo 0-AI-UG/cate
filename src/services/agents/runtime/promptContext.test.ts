@@ -75,13 +75,13 @@ describe('one-shot panel relation context', () => {
     const order: string[] = []
     const fake = fakeDocument([
       { id: 'source', type: 'terminal', title: 'T', fields: {} },
-      { id: 'editor', type: 'editor', title: 'Notes', fields: { filePath: '/repo/.cate/drafts/a.md' } },
+      { id: 'editor', type: 'editor', title: 'Notes', fields: { filePath: '/repo/.cate/tmp/a.md' } },
     ], [{ id: 'r', fromPanelId: 'source', toPanelId: 'editor', kind: 'context' }])
     const flushConnected = vi.fn(async () => { order.push('flush') })
     const withFlush = createPromptContext({ document: fake.document, relationsEnabled: () => true, relationRole, flushConnected })
     const text = await withFlush.prepareForSend('source', null)
     order.push('consumed')
-    expect(text).toContain('"/repo/.cate/drafts/a.md"')
+    expect(text).toContain('"/repo/.cate/tmp/a.md"')
     expect(order).toEqual(['flush', 'consumed'])
     expect(flushConnected).toHaveBeenCalledWith('source')
   })

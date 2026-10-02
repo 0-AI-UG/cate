@@ -1,5 +1,5 @@
 // kernel/ui public entry (client side): the ClientUi slot, theme manager,
-// shortcut registry, icons and shared React primitives.
+// action catalog, shortcut registry, icons and shared React primitives.
 
 export { installClientUi, clientUi } from './clientUi'
 export {
@@ -15,13 +15,23 @@ export {
   createMemoryShortcutRegistry,
   installShortcutRegistry,
   shortcutRegistry,
+  subscribeShortcuts,
   useResolvedShortcuts,
   useShortcutLabel,
+  shortcutDisplay,
   type ShortcutRegistry,
   type ShortcutSettings,
   type ShortcutOverrides,
   type ResolvedShortcuts,
 } from './shortcuts/registry'
+export {
+  declareActions,
+  actionSpec,
+  declaredActions,
+  subscribeDeclaredActions,
+  useDeclaredActions,
+  type DeclaredAction,
+} from './actions/catalog'
 export { Icon, type IconProps } from './icons/Icon'
 export { T3Logo } from './icons/T3Logo'
 export { Button, IconButton, buttonClassName, type ButtonVariant, type ButtonSize } from './components/Button'

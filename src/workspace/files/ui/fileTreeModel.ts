@@ -5,8 +5,8 @@
 
 import { createLogger } from '@kernel/log/contract'
 import { clientUi, errorMessage } from '@kernel/ui'
-import { fsClient, watchFsRoot, type FsClient, type FsWatchListener } from '../client'
-import type { FileEntry } from '../contract'
+import { fileRefs, fsClient, watchFsRoot, type FileRefs, type FsClient, type FsWatchListener } from '../client'
+import { pathDisplayName, type FileEntry, type FileRef } from '../contract'
 import { createExplorerRefresh } from './explorerRefresh'
 import { readDroppedEntries, type DroppedItems } from './droppedEntries'
 import './clientUi'
@@ -30,7 +30,7 @@ export interface FileTreeSavedState {
   selectedPaths: string[]
 }
 
-export type FileTreeFs = Pick<FsClient, 'readDir' | 'mkdir' | 'write' | 'rename' | 'copy' | 'remove' | 'importEntries'>
+export type FileTreeFs = Pick<FsClient, 'readDir' | 'mkdir' | 'write' | 'rename' | 'copy' | 'remove'>
 
 export interface FileTreeModelOptions {
   /** Paints a warm tree (from an earlier model) while it revalidates. */
@@ -38,6 +38,8 @@ export interface FileTreeModelOptions {
   saved?: FileTreeSavedState
   /** Defaults to the workspace's fs client. */
   fs?: () => FileTreeFs
+  /** Defaults to the shared file-ref resolver. */
+  refs?: FileRefs
   /** Defaults to the shared watch manager. */
   watch?: (workspaceId: string, root: string, listener: FsWatchListener) => () => void
   /** Called when expansion or selection changes, so the owner can persist. */
@@ -54,11 +56,13 @@ export class FileTreeModel {
   private unwatch: (() => void) | undefined
   private disposed = false
   private readonly fs: () => FileTreeFs
+  private readonly refs: FileRefs
   private readonly watch: NonNullable<FileTreeModelOptions['watch']>
 
   constructor(readonly rootPath: string, readonly workspaceId: string, private readonly options: FileTreeModelOptions = {}) {
     const { seed, saved } = options
     this.fs = options.fs ?? (() => fsClient(workspaceId))
+    this.refs = options.refs ?? fileRefs
     this.watch = options.watch ?? watchFsRoot
     this.state = seed ? { ...seed, loadingPaths: new Set(), isLoading: false, loadError: null } : {
       nodes: [], childrenCache: new Map(), loadingPaths: new Set(), expandedPaths: new Set(), selectedPaths: new Set(), isLoading: !!rootPath, loadError: null,
@@ -88,16 +92,26 @@ export class FileTreeModel {
     try {
       const ask = clientUi().confirmImportEntries
       if (ask) {
-        const choice = await ask({ count: dropped.length, destName: destName ?? destDir.split('/').filter(Boolean).pop() ?? destDir })
+        const choice = await ask({ count: dropped.length, destName: destName ?? pathDisplayName(destDir) })
         if (choice === 'cancel' || this.disposed) return false
       }
       const sources = await readDroppedEntries(dropped)
-      if (sources.length === 0 || this.disposed) return false
-      const result = await this.fs().importEntries(destDir, sources)
-      if (result.failed > 0) log.warn(`${result.failed} of ${dropped.length} item(s) failed to import`)
-      return result.created.length > 0
+      if (this.disposed) return false
+      return (await this.refs.upload(sources, { workspaceId: this.workspaceId, destDir })).length > 0
     } catch (error) {
       log.error('import failed:', error)
+      return false
+    }
+  }
+
+  /** Moves or copies files (of this or any other workspace) into destDir;
+   *  see `FileRefs.transfer`. True when anything changed. */
+  transfer = async (refs: readonly FileRef[], destDir: string, mode: 'move' | 'copy'): Promise<boolean> => {
+    if (this.disposed || !destDir || refs.length === 0) return false
+    try {
+      return (await this.refs.transfer(refs, { workspaceId: this.workspaceId, destDir }, mode)).length > 0
+    } catch (error) {
+      log.error(`${mode} failed:`, error)
       return false
     }
   }

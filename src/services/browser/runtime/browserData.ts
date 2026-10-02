@@ -1,5 +1,4 @@
 import { promises as fs } from 'node:fs'
-import path from 'node:path'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import type { JsonStateFile } from '@kernel/state/node'
 import type { DataPaths, SecretsFile } from '@runtime/data/runtime'
@@ -10,7 +9,7 @@ import { createPasswordStore, type PasswordStore } from './passwords'
 import { authorizeUpload, openUploadStream, uploadName, type UploadPathScope } from './upload'
 
 export interface BrowserDataDeps {
-  dataPaths: Pick<DataPaths, 'browser'>
+  dataPaths: Pick<DataPaths, 'browser' | 'downloads'>
   /** The workspace's secrets.json, shared with the runtime key's owner. */
   secrets: JsonStateFile<SecretsFile>
   paths: UploadPathScope
@@ -38,9 +37,8 @@ export function createBrowserDataRuntime(deps: BrowserDataDeps): BrowserDataRunt
     downloads: createDownloadsList(),
     paths: deps.paths,
     async downloadsDir() {
-      const dir = path.join(browserDir, 'downloads')
-      await fs.mkdir(dir, { recursive: true })
-      return dir
+      await fs.mkdir(deps.dataPaths.downloads, { recursive: true })
+      return deps.dataPaths.downloads
     },
     dispose() {
       history.dispose()

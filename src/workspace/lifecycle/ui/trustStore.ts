@@ -26,7 +26,8 @@ export interface TrustStore {
   /** Resolves true when the workspace may stay open: already trusted, or the
    *  person just trusted it. Resolves false when they declined. */
   ensureTrusted(workspaceId: string, label: string): Promise<boolean>
-  /** The dialog's answer to the question at the head of the queue. */
+  /** The dialog's answer to the question at the head of the queue. Rejects,
+   *  leaving the question open, when the runtime did not store the trust. */
   answer(trusted: boolean): Promise<void>
   /** The question on screen, or null. */
   current(): TrustPrompt | null
@@ -65,10 +66,15 @@ export function createTrustStore(api: (workspaceId: string) => TrustApi | null):
       const head = queue[0]
       if (!head) return
       if (trusted) {
+        // Opening on a trust the runtime does not hold would leave every
+        // terminal and git call failing with `untrusted`.
+        const trust = api(head.workspaceId)
+        if (!trust) throw new Error('The workspace runtime is not connected.')
         try {
-          await api(head.workspaceId)?.setTrust({ trusted: true })
+          if (!(await trust.setTrust({ trusted: true })).trusted) throw new Error('The workspace runtime did not store the trust.')
         } catch (err) {
           log.warn('could not store trust for %s: %s', head.label, err)
+          throw err
         }
       }
       const answered = queue.filter((p) => p.workspaceId === head.workspaceId)

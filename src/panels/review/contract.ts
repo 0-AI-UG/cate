@@ -4,3 +4,4 @@
 export * from './contract/types'
 export * from './contract/notes'
 export { reviewApi } from './contract/api'
+export { reviewSettings } from './contract/settings'

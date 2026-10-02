@@ -27,7 +27,7 @@ export function WorktreePill({ panel }: { panel: PanelRecord }) {
     await switchPanelWorktree(panel.id, id)
   }, [worktrees, panel.id, switchPanelWorktree])
 
-  if (!host.bindsWorktree(panel) || live.length < 2 || !current) return null
+  if (!host.switchesWorktree(panel) || live.length < 2 || !current) return null
 
   const isFocused = focusedWorktreeId === currentId
 

@@ -31,7 +31,7 @@ import { pickReviewTerminal } from '../parts/view/pickTerminal'
 import { ReviewToolbar } from './ReviewToolbar'
 import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewMenuButton, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
 import { HunkView, collapsedHunkGaps, type NoteDraft } from './ReviewDiff'
-import { sendOrShow, useAgentPicker, useReviewDiffs, type ReviewSend } from './useReview'
+import { sendOrShow, useAgentPicker, useReviewDiffs, useReviewView, type ReviewSend } from './useReview'
 
 function statusLabel(file: GitChangedFile): string {
   switch (file.status) {
@@ -138,7 +138,7 @@ function LazyDiffBody({ diff, error, load, allowLarge, split, wordDiff, wrap, no
   }, [diff, error, load])
 
   if (!diff && error) return <div ref={ref} className="px-4 py-5 text-center text-[11px] text-red-400">{error}</div>
-  if (!diff) return <div ref={ref}><LoadingState label="Loading diff…" className="h-20 text-[11px]" /></div>
+  if (!diff) return <div ref={ref}><LoadingState label="Loading diff" className="h-20 text-[11px]" /></div>
   if (diff.binary) return <div ref={ref} className="px-4 py-6 text-center text-[11px] text-muted">Binary file changed</div>
   if (diff.tooLarge) {
     return (
@@ -235,7 +235,9 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const { review, comparison, loading, busy, agentBusy, error, branches, commits } = snapshot
-  const { diffs, errors, load, reload } = useReviewDiffs(send, snapshot)
+  const view = useReviewView(workspaceId, panelId, review.focusedFile)
+  const { display, collapsed } = view
+  const { diffs, errors, load, reload } = useReviewDiffs(send, snapshot, display.fullFile)
   const picker = useAgentPicker(send)
   const [noteDraft, setNoteDraft] = useState<NoteDraft | null>(null)
   const [agentAction, setAgentAction] = useState<AgentAction | null>(null)
@@ -308,7 +310,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
     if (typeof command === 'string') await ui.writeClipboard?.(command)
   }
   const saveNotes = async () => {
-    const target = await ui.saveFileDialog?.({ defaultName: 'review-notes.md' })
+    const target = await ui.pickSavePath({ workspaceId, defaultPath: joinPath(review.repoPath, 'review-notes.md'), title: 'Save Review Notes' })
     if (target) await sendOrShow(send, { kind: 'saveNotes', path: target }, 'Could not save review notes')
   }
   const createPullRequest = async () => {
@@ -320,7 +322,6 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
     const query = (review.fileFilter ?? '').trim().toLowerCase()
     return comparison?.files.filter((file) => !query || file.path.toLowerCase().includes(query) || file.oldPath?.toLowerCase().includes(query)) ?? []
   }, [comparison, review.fileFilter])
-  const collapsed = new Set(review.collapsedFiles ?? [])
   const allCollapsed = filteredFiles.length > 0 && filteredFiles.every((file) => collapsed.has(file.path))
   const workingMode = review.spec.kind === 'uncommitted' || review.spec.kind === 'unstaged'
   const stagedMode = review.spec.kind === 'staged'
@@ -402,8 +403,8 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
               />
             )}
           </div>
-          <ToolbarButton label={review.display.split ? 'Switch to unified diff' : 'Switch to split diff'} onClick={() => void send({ kind: 'updateDisplay', patch: { split: !review.display.split } })}>
-            {review.display.split ? <Rows size={14} /> : <SplitHorizontal size={14} />}
+          <ToolbarButton label={display.split ? 'Switch to unified diff' : 'Switch to split diff'} onClick={() => view.updateDisplay({ split: !display.split })}>
+            {display.split ? <Rows size={14} /> : <SplitHorizontal size={14} />}
           </ToolbarButton>
           {currentBranchMode && (
             <ToolbarButton label="Create pull request" disabled={busy} onClick={() => void createPullRequest()}>
@@ -414,14 +415,14 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
             <ToolbarButton label="More review options" active={moreOpen} onClick={() => setMoreOpen((open) => !open)}><DotsThree size={16} /></ToolbarButton>
             {moreOpen && (
               <div role="menu" className={`absolute right-0 top-8 z-50 w-56 ${POPOVER_SURFACE} p-1.5`}>
-                <ReviewDisplayOptions display={review.display} update={(patch) => void send({ kind: 'updateDisplay', patch })} />
-                <ReviewMenuButton label="Load full files" active={review.display.fullFile} onClick={() => void send({ kind: 'updateDisplay', patch: { fullFile: !review.display.fullFile } })}><File size={14} /></ReviewMenuButton>
-                <ReviewMenuButton label="Image previews" active={review.display.advancedPreview} onClick={() => void send({ kind: 'updateDisplay', patch: { advancedPreview: !review.display.advancedPreview } })}><ImageSquare size={14} /></ReviewMenuButton>
+                <ReviewDisplayOptions display={display} update={view.updateDisplay} />
+                <ReviewMenuButton label="Load full files" active={display.fullFile} onClick={() => view.updateDisplay({ fullFile: !display.fullFile })}><File size={14} /></ReviewMenuButton>
+                <ReviewMenuButton label="Image previews" active={display.advancedPreview} onClick={() => view.updateDisplay({ advancedPreview: !display.advancedPreview })}><ImageSquare size={14} /></ReviewMenuButton>
                 <ReviewMenuButton label="Ignore whitespace" active={!!spec.ignoreWhitespace} onClick={() => void send({ kind: 'setSpec', spec: { ...spec, ignoreWhitespace: !spec.ignoreWhitespace } })}><Check size={14} /></ReviewMenuButton>
                 <div className="my-1 border-t border-subtle" />
                 {ui.writeClipboard && <ReviewMenuButton label="Copy git apply command" onClick={() => { setMoreOpen(false); void copyApplyCommand() }} disabled={!comparison || busy}><Code size={14} /></ReviewMenuButton>}
                 {ui.writeClipboard && <ReviewMenuButton label="Copy review notes" onClick={() => { setMoreOpen(false); void ui.writeClipboard?.(notesMarkdown(review.notes ?? [])) }} disabled={!hasNotes}><ClipboardText size={14} /></ReviewMenuButton>}
-                {ui.saveFileDialog && <ReviewMenuButton label="Save review notes" onClick={() => { setMoreOpen(false); void saveNotes() }} disabled={!hasNotes}><NotePencil size={14} /></ReviewMenuButton>}
+                <ReviewMenuButton label="Save review notes" onClick={() => { setMoreOpen(false); void saveNotes() }} disabled={!hasNotes}><NotePencil size={14} /></ReviewMenuButton>
               </div>
             )}
           </div>
@@ -433,7 +434,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
         onChange={(fileFilter) => void send({ kind: 'update', patch: { fileFilter } })}
         allCollapsed={allCollapsed}
         disabled={filteredFiles.length === 0}
-        onToggleCollapsed={() => void send({ kind: 'setCollapsed', keys: allCollapsed ? [] : filteredFiles.map((file) => file.path) })}
+        onToggleCollapsed={() => view.setCollapsed(allCollapsed ? [] : filteredFiles.map((file) => file.path))}
       />
 
       {error && <div className="px-3 py-2 bg-red-500/10 text-red-400 text-[11px] border-b border-red-500/15">{error}</div>}
@@ -446,11 +447,11 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
           const isCollapsed = collapsed.has(file.path)
           const fileNotes = (review.notes ?? []).filter((note) => note.path === file.path && note.side !== 'file')
           const fileDraft = noteDraft?.filePath === file.path ? noteDraft : null
-          const fullFile = review.display.fullFile || !!review.expandedFiles?.includes(file.path)
+          const fullFile = display.fullFile || !!review.expandedFiles?.includes(file.path)
           return (
             <section key={file.path} data-review-file={encodeURIComponent(file.path)} className="min-w-0 border-b border-subtle scroll-mt-2">
               <div className="sticky top-0 z-10 flex items-center gap-2 px-2 py-1.5 bg-surface-2/95 backdrop-blur border-b border-subtle group">
-                <button aria-label={isCollapsed ? 'Expand file' : 'Collapse file'} onClick={() => void send({ kind: 'toggleCollapsed', key: file.path })} className="text-muted hover:text-primary">{isCollapsed ? <CaretRight size={13} /> : <CaretDown size={13} />}</button>
+                <button aria-label={isCollapsed ? 'Expand file' : 'Collapse file'} onClick={() => view.toggleCollapsed(file.path)} className="text-muted hover:text-primary">{isCollapsed ? <CaretRight size={13} /> : <CaretDown size={13} />}</button>
                 <span className={`w-4 text-center font-mono text-[11px] ${statusClass(file)}`}>{statusLabel(file)}</span>
                 <span className="font-mono text-[11px] truncate flex-1" title={file.path}>{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
                 <span className="text-[10px] tabular-nums"><span className="text-diff-add">+{file.additions ?? '–'}</span> <span className="text-diff-del">-{file.deletions ?? '–'}</span></span>
@@ -460,7 +461,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
                 {(stagedMode || (spec.kind === 'uncommitted' && file.staged)) && <ToolbarButton label="Unstage file" disabled={busy} onClick={() => void send({ kind: 'unstage', path: file.path })}><Minus size={13} /></ToolbarButton>}
                 {workingMode && file.working && <ToolbarButton label="Discard working changes" disabled={busy} onClick={() => discardFile(file)}><Trash size={13} /></ToolbarButton>}
               </div>
-              {!isCollapsed && review.display.advancedPreview && imageMime(file.path)
+              {!isCollapsed && display.advancedPreview && imageMime(file.path)
                 ? <ImageComparisonPreview send={send} file={file} comparisonKey={`${comparisonKey}:${snapshot.diffEpoch}`} />
                 : !isCollapsed && (
                   <div className="max-w-full overflow-x-auto overscroll-x-contain [container-type:inline-size]">
@@ -469,9 +470,9 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
                       error={errors[file.path]}
                       load={() => load(file.path)}
                       allowLarge={() => reload(file.path, { kind: 'diff', path: file.path, options: { allowLarge: true } })}
-                      split={review.display.split}
-                      wordDiff={review.display.wordDiff}
-                      wrap={review.display.wrap}
+                      split={display.split}
+                      wordDiff={display.wordDiff}
+                      wrap={display.wrap}
                       notes={fileNotes}
                       addNote={(side, line, context) => setNoteDraft({ filePath: file.path, side, line, context })}
                       toggleNote={(noteId) => void send({ kind: 'toggleNote', noteId })}

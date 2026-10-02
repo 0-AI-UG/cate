@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { droppedRefs, formatTerminalPaste } from './drop'
+import { formatTerminalPaste } from './drop'
 
 describe('formatTerminalPaste', () => {
   it('pastes a plain path unquoted', () => {
@@ -20,18 +20,5 @@ describe('formatTerminalPaste', () => {
 
   it("escapes embedded single quotes", () => {
     expect(formatTerminalPaste([{ path: "/repo/it's.ts" }])).toBe("'/repo/it'\\''s.ts'")
-  })
-})
-
-describe('droppedRefs', () => {
-  const data = (entries: Record<string, string>) => ({ getData: (format: string) => entries[format] ?? '' })
-
-  it('reads every dragged file and the line of a search-line drag', () => {
-    expect(droppedRefs(data({
-      'application/cate-files': JSON.stringify(['/repo/a.ts', '/repo/b.ts']),
-      'application/cate-file-line': JSON.stringify({ path: '/repo/a.ts', line: 4, column: 1 }),
-    }))).toEqual([{ path: '/repo/a.ts', line: 4 }, { path: '/repo/b.ts' }])
-    expect(droppedRefs(data({ 'application/cate-file': '/repo/c.ts' }))).toEqual([{ path: '/repo/c.ts' }])
-    expect(droppedRefs(data({ 'application/cate-files': '{' }))).toEqual([])
   })
 })

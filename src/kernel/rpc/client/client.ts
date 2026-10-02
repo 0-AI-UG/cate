@@ -6,6 +6,7 @@
 import {
   CancelledError,
   ConnectionClosedError,
+  IncompatibleBuildError,
   IncompatibleProtocolError,
   PROTOCOL,
   RpcError,
@@ -32,6 +33,8 @@ export type RpcClientState = 'disconnected' | 'connecting' | 'ready' | 'incompat
 export interface RpcClientOptions {
   /** App version, sent in `hello`. */
   version: string
+  /** This app's build: a runtime that reports another one is incompatible. */
+  build?: string
   /** Who this side is: a client (keeps `clientId` across reconnects) or a caller. */
   identity: { client: ClientHello } | { caller: CallerHello }
   protocol?: ProtocolVersion
@@ -281,7 +284,7 @@ export class RpcClient {
       this.failAll(() => err)
       return
     }
-    const compatible = isCompatible(hello.protocol, this.protocol)
+    const compatible = isCompatible(hello.protocol, this.protocol) && this.sameBuild(hello)
     this.setState(compatible ? 'ready' : 'incompatible')
     const waiter = this.attachWaiter
     this.clearHello(null)
@@ -330,8 +333,13 @@ export class RpcClient {
     this.streams.clear()
   }
 
+  private sameBuild(hello: HelloMessage): boolean {
+    return this.opts.build === undefined || hello.build === this.opts.build
+  }
+
   private incompatibleError(): Error {
     const remote = this._remote
+    if (remote && this.opts.build !== undefined && !this.sameBuild(remote)) return new IncompatibleBuildError(this.opts.build, remote.build)
     return new IncompatibleProtocolError(this.protocol, remote?.protocol ?? [0, 0], remote?.version ?? 'unknown')
   }
 

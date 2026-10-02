@@ -46,7 +46,7 @@ export function createDesktopPort(api: DesktopApi, info: DesktopAppInfo): Deskto
       return () => { insetListeners.delete(listener) }
     },
     focusWindow: (workspaceId, windowId) => { void api.windows.focus({ workspaceId, windowId }) },
-    clientSettingsFile: async () => info.settingsFile,
+    openClientSettingsFile: () => api.os.openSettingsFile(),
     async pickFolder() {
       const picked = await api.dialogs.open({ title: 'Open Folder', directory: true })
       return picked?.[0] ?? null

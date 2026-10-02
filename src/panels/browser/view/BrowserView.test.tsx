@@ -9,13 +9,22 @@ import type { PanelRecord } from '@workspace/document/contract'
 import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/client'
 import type { BrowserOp, BrowserSnapshot, BrowserTab } from '../contract'
 import BrowserView from './BrowserView'
+
+// No open workspace in these tests: which tab a client shows lives in React state.
+vi.mock('@client/document/ui', async (importOriginal) => {
+  const { useState } = await import('react')
+  return {
+    ...(await importOriginal<typeof import('@client/document/ui')>()),
+    usePanelView: (_ws: string, _panel: string, _key: string, fallback: unknown) => useState(fallback),
+  }
+})
 import { pageHostFor } from './surfaces'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'cate://newtab', title: '', favicon: null, pinned: false, nav: 0, navSource: null, ...patch })
 const snapshotOf = (tabs: BrowserTab[], patch: Partial<BrowserSnapshot> = {}): BrowserSnapshot => ({
-  tabs, activeTabId: tabs[0].id, viewport: { preset: 'compact' }, zoom: 1,
+  tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' }, zoom: 1,
   canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null,
   ...patch,
 })
@@ -26,6 +35,9 @@ let restoreRuntime: () => void
 const send = vi.fn(async (_op: BrowserOp) => undefined)
 const record: PanelRecord = { id: 'p1', type: 'browser', title: 'Browser', fields: {} }
 const session = {} as SessionHandle<BrowserSnapshot>
+/** Workspaces whose partition the shell is still preparing. */
+let preparing = new Set<string>()
+const partitionListeners = new Set<() => void>()
 
 function render(snapshot: BrowserSnapshot | null, props: { focused?: boolean } = {}) {
   act(() => root.render(
@@ -38,7 +50,15 @@ beforeEach(() => {
   send.mockClear()
   installMockClientUi()
   installClientIdentity(createClientIdentity({ device: { name: 'test', keyFingerprint: 'f' }, features: ['webview', 'pageDriver'] }))
-  installBrowserPartitions((workspaceId) => `persist:ws-${workspaceId}-runtime`)
+  preparing = new Set()
+  partitionListeners.clear()
+  installBrowserPartitions({
+    partition: (workspaceId) => (preparing.has(workspaceId) ? null : `persist:ws-${workspaceId}-runtime`),
+    subscribe(listener) {
+      partitionListeners.add(listener)
+      return () => { partitionListeners.delete(listener) }
+    },
+  })
   installBrowserPageBridge({
     attach: vi.fn(async () => {}),
     onOpenTab: () => () => {},
@@ -75,6 +95,17 @@ describe('BrowserView', () => {
     expect(host.textContent).toContain('Loading')
   })
 
+  it('waits for the workspace partition, then renders once it is prepared', () => {
+    preparing.add('ws')
+    render(snapshotOf([tab()]))
+    expect(host.textContent).toContain('Loading')
+    expect(host.querySelector('[data-browser-webview-slot]')).toBeNull()
+
+    preparing.delete('ws')
+    act(() => { for (const listener of [...partitionListeners]) listener() })
+    expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('persist:ws-ws-runtime')
+  })
+
   it('renders the start page over a blank guest in the workspace partition', () => {
     render(snapshotOf([tab()]))
     expect(host.textContent).toContain('Enter a URL to open a page')
@@ -92,13 +123,27 @@ describe('BrowserView', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
-    expect(send).toHaveBeenCalledWith({ kind: 'navigate', input: 'example.com' })
+    expect(send).toHaveBeenCalledWith({ kind: 'navigate', input: 'example.com', tabId: 't1' })
   })
 
   it('sends tab ops from the tab strip', () => {
     render(snapshotOf([tab(), tab({ id: 't2', url: 'https://b.test/', title: 'B' })]))
     const second = host.querySelector<HTMLElement>('[title^="B ·"]')
     act(() => second?.click())
+    expect(send).toHaveBeenCalledWith({ kind: 'selectTab', tabId: 't2' })
+  })
+
+  it('shows its own tab: another client\'s selection does not move it, a caller\'s does', () => {
+    const tabs = [tab({ url: 'https://a.test/' }), tab({ id: 't2', url: 'https://b.test/', title: 'B' }), tab({ id: 't3', url: 'https://c.test/' })]
+    const shown = () => host.querySelector('[data-browser-webview-slot]:not(.invisible)')?.getAttribute('data-browser-src')
+    render(snapshotOf(tabs))
+    expect(shown()).toBe('https://a.test/')
+    render(snapshotOf(tabs, { activeTabId: 't2', activeSource: 'someone-else' }))
+    expect(shown()).toBe('https://a.test/')
+    render(snapshotOf(tabs, { activeTabId: 't3', activeSource: null }))
+    expect(shown()).toBe('https://c.test/')
+    act(() => host.querySelector<HTMLElement>('[title^="B ·"]')?.click())
+    expect(shown()).toBe('https://b.test/')
     expect(send).toHaveBeenCalledWith({ kind: 'selectTab', tabId: 't2' })
   })
 

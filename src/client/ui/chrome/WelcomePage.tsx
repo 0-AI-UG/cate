@@ -4,24 +4,15 @@
 
 import type { ReactNode } from 'react'
 import { Folder, FolderOpen, Link2 } from 'lucide-react'
-import { useResolvedShortcuts } from '@kernel/ui'
-import { displayString, type ShortcutAction } from '@kernel/ui/contract'
+import { useDeclaredActions, useResolvedShortcuts } from '@kernel/ui'
+import { canRunAction, useActionsVersion } from '@client/host'
+import { displayString } from '@kernel/ui/contract'
 import { useWorkspaceList } from '@client/workspaces/ui'
 import { clientApp } from '../app'
 import { useDesktopPort } from '../desktop'
 import { pickAndOpenFolder, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
 import { CateLogo } from './CateLogo'
-
-const SHORTCUTS: readonly { action: ShortcutAction; label: string }[] = [
-  { action: 'newAgent', label: 'New T3 Panel' },
-  { action: 'newTerminal', label: 'New Terminal' },
-  { action: 'newBrowser', label: 'New Browser' },
-  { action: 'newEditor', label: 'New Files Panel' },
-  { action: 'commandPalette', label: 'Command Palette' },
-  { action: 'toggleSidebar', label: 'Toggle Sidebar' },
-  { action: 'zoomReset', label: 'Reset Zoom' },
-]
 
 function parentOf(root: string): string {
   const parts = root.split(/[\\/]/)
@@ -30,6 +21,8 @@ function parentOf(root: string): string {
 
 export function WelcomePage(): JSX.Element {
   const shortcuts = useResolvedShortcuts()
+  useActionsVersion()
+  const welcome = useDeclaredActions().filter(({ id, spec }) => spec.welcome && canRunAction(id, { workspaceId: null }))
   const desktop = useDesktopPort()
   const { entries } = useWorkspaceList(clientApp().workspaces)
   const recent = entries.slice(0, 8)
@@ -50,7 +43,7 @@ export function WelcomePage(): JSX.Element {
                 <ActionItem
                   icon={<FolderOpen size={16} />}
                   label="Open Folder..."
-                  shortcut={shortcuts.openFolder.key ? displayString(shortcuts.openFolder) : undefined}
+                  shortcut={shortcuts.openFolder?.key ? displayString(shortcuts.openFolder) : undefined}
                   onClick={() => void pickAndOpenFolder()}
                 />
               )}
@@ -87,10 +80,10 @@ export function WelcomePage(): JSX.Element {
         <div className="mt-10 pt-6">
           <h2 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-3">Keyboard Shortcuts</h2>
           <div className="grid grid-cols-2 gap-x-8 gap-y-1">
-            {SHORTCUTS.filter(({ action }) => shortcuts[action].key).map(({ action, label }) => (
-              <div key={action} className="flex items-center gap-2">
-                <span className="text-xs text-secondary font-mono w-10 text-right">{displayString(shortcuts[action])}</span>
-                <span className="text-xs text-muted">{label}</span>
+            {welcome.filter(({ id }) => shortcuts[id]?.key).map(({ id, spec }) => (
+              <div key={id} className="flex items-center gap-2">
+                <span className="text-xs text-secondary font-mono w-10 text-right">{displayString(shortcuts[id])}</span>
+                <span className="text-xs text-muted">{spec.title}</span>
               </div>
             ))}
           </div>

@@ -18,7 +18,7 @@ export const panelApi = defineCateApi(
       handler: 'service',
       summary: 'Close a panel',
       args: {
-        panelId: panel().pos(),
+        panelId: panel().pos().help('Panel id or unique prefix, from cate panel list'),
         discard: opt(bool, false).help('Discard unsaved changes instead of failing with dirty'),
       },
     },
@@ -27,8 +27,8 @@ export const panelApi = defineCateApi(
       handler: 'service',
       summary: 'Rename a panel (defaults to the calling panel)',
       args: {
-        title: str.nonEmpty().rest('title'),
-        panelId: opt(panel()).flag('panel', 'id'),
+        title: str.nonEmpty().rest('title').help('The new title'),
+        panelId: opt(panel()).flag('panel', 'id').help('Panel to rename (default: the calling panel)'),
       },
       cli: { command: ['panel', 'title'] },
     },
@@ -36,7 +36,7 @@ export const panelApi = defineCateApi(
       access: 'read',
       handler: 'service',
       summary: 'Select the panel later commands target',
-      args: { panelId: panel().pos() },
+      args: { panelId: panel().pos().help('Panel id or unique prefix, from cate panel list') },
       format: 'panelTarget',
       cli: { command: ['panel', 'set'] },
     },
@@ -54,10 +54,7 @@ export const panelApi = defineCateApi(
       cli: { command: ['panel', 'clear'] },
     },
   },
-  {
-    area: 'panel',
-    help: 'Without --panel, commands use the panel selected by `cate panel set <id>`.',
-  },
+  { area: 'panel', summary: 'List, create, select, rename and close panels' },
 )
 
 export const canvasApi = defineCateApi(
@@ -68,7 +65,7 @@ export const canvasApi = defineCateApi(
       handler: 'service',
       summary: 'Create a panel next to the calling panel',
       args: {
-        type: str.nonEmpty().pos('browser|terminal|canvas'),
+        type: str.nonEmpty().pos('browser|terminal|canvas').help('The panel type'),
         url: opt(str).pos('url').help('Browser panels: the page to open'),
         filePath: opt(path).flag('file', 'path').help('Editor panels: the file to open'),
         position: opt(obj({ x: num, y: num })).hidden(),

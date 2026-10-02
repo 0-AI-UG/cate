@@ -29,6 +29,9 @@ export interface ClientState {
   viewing: readonly PanelId[]
   selection: Readonly<Record<CanvasId, readonly NodeId[]>>
   viewports: Readonly<Record<CanvasId, Viewport>>
+  /** What this client shows of each panel (the browser tab it shows, the
+   *  review files it collapsed), by panel and name. */
+  panelViews: Readonly<Record<PanelId, Readonly<Record<string, unknown>>>>
   intents: readonly Intent[]
 }
 
@@ -40,6 +43,7 @@ export interface ClientStateStore {
   setViewing(panelIds: readonly PanelId[]): void
   setSelection(canvasId: CanvasId, nodeIds: readonly NodeId[]): void
   setViewport(canvasId: CanvasId, viewport: Viewport): void
+  setPanelView(panelId: PanelId, key: string, value: unknown): void
   /** Queues an intent; returns its id. */
   pushIntent(intent: Omit<Intent, 'id'>): number
   /** Removes and returns the panel's queued intents. */
@@ -54,6 +58,7 @@ export function createClientStateStore(): ClientStateStore {
     viewing: [],
     selection: {},
     viewports: {},
+    panelViews: {},
     intents: [],
   }
   let nextIntent = 1
@@ -88,6 +93,11 @@ export function createClientStateStore(): ClientStateStore {
     },
     setViewport(canvasId, viewport) {
       update({ viewports: { ...state.viewports, [canvasId]: { ...viewport } } })
+    },
+    setPanelView(panelId, key, value) {
+      const view = state.panelViews[panelId]
+      if (view && Object.is(view[key], value)) return
+      update({ panelViews: { ...state.panelViews, [panelId]: { ...view, [key]: value } } })
     },
     pushIntent(intent) {
       const id = nextIntent++

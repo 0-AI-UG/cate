@@ -232,7 +232,7 @@ describe('terminal runner input and hook ordering', () => {
     { agentId: 'codex', start: { hook_event_name: 'UserPromptSubmit' }, wait: { hook_event_name: 'PermissionRequest' } },
     { agentId: 'claude-code', start: { hook_event_name: 'UserPromptSubmit' }, wait: { hook_event_name: 'PermissionRequest' } },
     { agentId: 'grok', start: { hookEventName: 'user_prompt_submit' }, wait: { hookEventName: 'notification', notificationType: 'permission_prompt' } },
-    { agentId: 'hermes', start: { hook_event_name: 'pre_llm_call', platform: 'cli' }, wait: { hook_event_name: 'pre_approval_request', platform: 'cli' } },
+    { agentId: 'hermes', start: { hook_event_name: 'pre_llm_call', platform: 'cli' }, wait: { hook_event_name: 'pre_approval_request', platform: 'cli', surface: 'cli' } },
     { agentId: 'opencode', start: { type: 'session.status', status: { type: 'busy' } }, wait: { type: 'permission.asked' } },
     // These CLIs have no permission-wait hook. Input must preserve their running state.
     { agentId: 'cursor', start: { hook_event_name: 'beforeSubmitPrompt' }, wait: null },
@@ -264,7 +264,9 @@ describe('terminal runner input and hook ordering', () => {
     expect(status()).toBe('running')
     if (wait) {
       await send(agentId, wait)
-      expect(status()).toBe('waitingForInput')
+      // Codex and Claude PermissionRequest is a check (an automatic reviewer
+      // may answer it), so the turn keeps running.
+      expect(status()).toBe(agentId === 'codex' || agentId === 'claude-code' ? 'running' : 'waitingForInput')
     }
     terminal.service.write('pty-1', '\r')
     expect(status()).toBe('running')
@@ -278,7 +280,7 @@ describe('terminal runner input and hook ordering', () => {
     await send('codex', { hook_event_name: 'PermissionRequest' })
     terminal.service.write('pty-1', 'some text')
     terminal.service.write('pty-1', '\x1b[B')
-    expect(status()).toBe('waitingForInput')
+    expect(status()).toBe('running')
   })
 
   it('an Enter in an idle agent stays idle', async () => {

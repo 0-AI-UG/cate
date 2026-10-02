@@ -315,7 +315,7 @@ export function SkillsDialog({ workspaceId, onClose, container, renderHeader }: 
             </div>
           )}
           {loading && browseRows.length === 0 ? (
-            <LoadingState label="Loading skills…" size={15} className="px-4 py-6 text-[13px]" />
+            <LoadingState label="Loading skills" size={15} className="px-4 py-6 text-[13px]" />
           ) : browseMode === 'repositories' && selectedRepo !== null && visibleBrowseRows.length === 0 ? (
             <div className="px-4 py-6 text-center text-[13px] text-muted">No available skills match in this repository.</div>
           ) : browseRows.length === 0 ? (

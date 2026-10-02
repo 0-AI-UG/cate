@@ -5,7 +5,7 @@
 // this client run on its mounted pages.
 
 import { useSyncExternalStore } from 'react'
-import type { WorkspaceConnection, WorkspaceConnections } from '@client/connections'
+import { eachConnection, type WorkspaceConnection, type WorkspaceConnections } from '@client/connections'
 import { serveSurfaceRequests } from '@panels/framework/client'
 import { demandSurface } from '@client/host'
 import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/client'
@@ -15,7 +15,6 @@ import { onSurfaceDemand, runBrowserSurfaceRequest } from '@panels/browser/view'
 import { runChatSurfaceOp } from '@panels/chat/view'
 import { createLogger } from '@kernel/log/contract'
 import type { DesktopApi } from '../contract'
-import { eachConnection } from './connectionsEach'
 
 const log = createLogger('webviews')
 
@@ -101,7 +100,9 @@ export function installWebviewHosts(api: DesktopApi, partitions: WebviewPartitio
     if (!partition) throw new Error(`The browser partition of ${workspaceId} is not ready`)
     return partition
   }
-  installBrowserPartitions(partitionOf)
+  // Browser views wait for their partition (a reconnect or a re-run boot
+  // can briefly leave a mounted view without one).
+  installBrowserPartitions({ partition: (workspaceId) => partitions.partition(workspaceId), subscribe: partitions.subscribe })
   installBrowserPageBridge(bridge ?? null)
   const stopT3 = installT3WebviewHost({
     partition: partitionOf,

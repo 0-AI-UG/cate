@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { registerPanelDefinitions } from '@client/host'
+import { declareActions } from '@kernel/ui'
+import { storedShortcut } from '@kernel/ui/contract'
+import { canRunAction, registerActions, registerPanelDefinitions } from '@client/host'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import { shouldRunShortcut, handleShortcutKey, registerKeyHandler, type KeyContext } from './useShortcuts'
-import { bindAction, canRunAction, runAction } from './registry'
+import { BUILTIN_ACTIONS } from './builtin'
+import { CANVAS_ACTIONS } from './canvas'
+import { runWindowAction } from './run'
 import { createUiStateStore, normalizeUiState, UI_STATE_DOCUMENT } from '../state/uiState'
 
+declareActions(BUILTIN_ACTIONS)
+declareActions(CANVAS_ACTIONS)
 registerPanelDefinitions([
   { type: 'terminal', label: 'Terminal', icon: 'terminal', requires: [], ownsKeyboard: true } as unknown as AnyPanelDefinition,
   { type: 'browser', label: 'Browser', icon: 'globe', requires: [], claimsShortcuts: ['zoomIn'] } as unknown as AnyPanelDefinition,
@@ -49,8 +55,8 @@ describe('shouldRunShortcut', () => {
 describe('keyboard dispatch', () => {
   it('runs the bound action and stops the event', () => {
     const run = vi.fn()
-    stops.push(bindAction('openSettings', { run }))
-    const event = new KeyboardEvent('keydown', { key: ',', metaKey: true, cancelable: true })
+    stops.push(registerActions({ 'test.run': { title: 'Run', key: storedShortcut('j', { command: true }) } }, { 'test.run': { run } }))
+    const event = new KeyboardEvent('keydown', { key: 'j', metaKey: true, cancelable: true })
     handleShortcutKey(event)
     expect(run).toHaveBeenCalledTimes(1)
     expect(event.defaultPrevented).toBe(true)
@@ -67,9 +73,9 @@ describe('keyboard dispatch', () => {
 
   it('does not run an action whose features the client lacks', () => {
     const run = vi.fn()
-    stops.push(bindAction('toggleMinimap', { run, requires: ['canvas'] }))
-    expect(canRunAction('toggleMinimap')).toBe(false)
-    expect(runAction('toggleMinimap')).toBe(false)
+    stops.push(registerActions({ 'test.canvas': { title: 'Canvas' } }, { 'test.canvas': { run, requires: ['canvas'] } }))
+    expect(canRunAction('test.canvas', { workspaceId: null })).toBe(false)
+    expect(runWindowAction('test.canvas')).toBe(false)
     expect(run).not.toHaveBeenCalled()
   })
 })

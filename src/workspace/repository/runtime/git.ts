@@ -15,7 +15,7 @@ import type {
   GitWorktree,
   VcsCapability,
 } from '../contract'
-import { parseReviewPatch } from '../contract'
+import { githubRepositoryUrl, parseReviewPatch } from '../contract'
 
 const execFileP = promisify(execFile)
 
@@ -49,6 +49,7 @@ export interface GitHost {
   lsFiles: Op<'lsFiles'>
   readStatus: Op<'readStatus'>
   remotes: Op<'remotes'>
+  fileWebUrl: Op<'fileWebUrl'>
   compare: Op<'compare'>
   fileDiff: Op<'fileDiff'>
   fileContent: Op<'fileContent'>
@@ -229,8 +230,20 @@ const SCAN_SKIP_DIRS = new Set([
   '.git', '.cache', '.next', '.turbo', '.venv', 'venv', '__pycache__',
 ])
 
+// The env is the user's own, never caller input, so it may carry the editor,
+// pager, askpass, ssh and config-path variables simple-git refuses in an
+// explicit env (a user's EDITOR would otherwise fail every call).
+const USER_ENV_UNSAFE = {
+  allowUnsafeEditor: true, allowUnsafePager: true, allowUnsafeAskPass: true,
+  allowUnsafeSshCommand: true, allowUnsafeConfigPaths: true, allowUnsafeConfigEnvCount: true,
+  allowUnsafeDiffExternal: true, allowUnsafeGitProxy: true, allowUnsafeTemplateDir: true,
+}
+
 export function createGitHost(deps: GitHostDeps): GitHost {
-  const env = () => deps.env()
+  // No optional locks: a background `git status` otherwise takes index.lock
+  // for a moment, and a concurrent `git add` or commit then fails on it.
+  const env = () => ({ ...deps.env(), GIT_OPTIONAL_LOCKS: '0' })
+  const gitAt = (baseDir: string) => simpleGit({ baseDir, unsafe: USER_ENV_UNSAFE }).env(env())
   const dir = async (cwd: string | undefined) => deps.resolveDir(cwd)
 
   function validateFilePath(cwd: string, filePath: string): string {
@@ -244,8 +257,8 @@ export function createGitHost(deps: GitHostDeps): GitHost {
 
   async function repositoryContext(cwd: string | undefined) {
     const validCwd = await dir(cwd)
-    const repoRoot = path.resolve((await simpleGit(validCwd).revparse(['--show-toplevel'])).trim())
-    return { repoRoot, git: simpleGit(repoRoot) }
+    const repoRoot = path.resolve((await gitAt(validCwd).revparse(['--show-toplevel'])).trim())
+    return { repoRoot, git: gitAt(repoRoot) }
   }
 
   async function resolveCommit(git: SimpleGit, ref: string): Promise<string> {
@@ -412,7 +425,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
 
   async function listWorktrees({ cwd }: { cwd?: string }): Promise<ListedWorktree[]> {
     const validCwd = await dir(cwd)
-    const listed = parseWorktreeList(await simpleGit(validCwd).raw(['worktree', 'list', '--porcelain']))
+    const listed = parseWorktreeList(await gitAt(validCwd).raw(['worktree', 'list', '--porcelain']))
     for (const wt of listed) if (!wt.isBare) deps.addCheckout(wt.path)
     return listed
   }
@@ -427,22 +440,39 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       return out
     },
     async init({ cwd }) {
-      await simpleGit(await dir(cwd)).init()
+      await gitAt(await dir(cwd)).init()
     },
     async lsFiles({ cwd }) {
       try {
-        const result = await simpleGit(await dir(cwd)).raw(['ls-files', '--cached', '--others', '--exclude-standard'])
+        const result = await gitAt(await dir(cwd)).raw(['ls-files', '--cached', '--others', '--exclude-standard'])
         return result.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
       } catch {
         return []
       }
     },
     async remotes({ cwd }) {
-      const remotes = await simpleGit(await dir(cwd)).getRemotes(true)
+      const remotes = await gitAt(await dir(cwd)).getRemotes(true)
       return remotes.map((remote) => ({ name: remote.name, fetchUrl: remote.refs.fetch, pushUrl: remote.refs.push }))
     },
+    async fileWebUrl({ path: file }) {
+      const git = gitAt(await dir(path.dirname(file)))
+      let prefix: string, remote: string, branch: string
+      try {
+        ;[prefix, remote, branch] = await Promise.all([
+          git.raw(['rev-parse', '--show-prefix']),
+          git.raw(['remote', 'get-url', 'origin']),
+          git.raw(['branch', '--show-current']),
+        ])
+      } catch {
+        return null
+      }
+      const repository = githubRepositoryUrl(remote)
+      if (!repository) return null
+      const relative = `${prefix.trim()}${path.basename(file)}`.split('/').map(encodeURIComponent).join('/')
+      return { url: `${repository}/blob/${encodeURIComponent(branch.trim() || 'HEAD')}/${relative}` }
+    },
     async readStatus({ cwd }) {
-      const status = await simpleGit(await dir(cwd)).status()
+      const status = await gitAt(await dir(cwd)).status()
       return {
         files: status.files.map((f) => ({ path: f.path, index: f.index, working_dir: f.working_dir })),
         current: status.detached ? null : status.current,
@@ -588,7 +618,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       await git.add(validateFilePath(repoRoot, filePath))
     },
     async stageAll({ cwd }) {
-      await simpleGit(await dir(cwd)).add(['-A'])
+      await gitAt(await dir(cwd)).add(['-A'])
     },
     async unstage({ cwd, path: filePath }) {
       const { repoRoot, git } = await repositoryContext(cwd)
@@ -599,28 +629,28 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       await git.checkout(['--', validateFilePath(repoRoot, filePath)])
     },
     async commit({ cwd, message }) {
-      await simpleGit(await dir(cwd)).commit(message)
+      await gitAt(await dir(cwd)).commit(message)
     },
     async log({ cwd, maxCount }) {
-      const logResult = await simpleGit(await dir(cwd)).log({ maxCount: maxCount || 50 })
+      const logResult = await gitAt(await dir(cwd)).log({ maxCount: maxCount || 50 })
       return logResult.all.map((e) => ({
         hash: e.hash, message: e.message, author_name: e.author_name, author_email: e.author_email, date: e.date,
       }))
     },
     async push({ cwd, remote, branch }) {
-      await simpleGit(await dir(cwd)).push(remote || 'origin', branch)
+      await gitAt(await dir(cwd)).push(remote || 'origin', branch)
     },
     async pull({ cwd, remote, branch }) {
-      const result = await simpleGit(await dir(cwd)).pull(remote || 'origin', branch)
+      const result = await gitAt(await dir(cwd)).pull(remote || 'origin', branch)
       return {
         summary: { changes: result.summary.changes, insertions: result.summary.insertions, deletions: result.summary.deletions },
       }
     },
     async fetch({ cwd, remote }) {
-      await simpleGit(await dir(cwd)).fetch(remote || 'origin', ['--prune'])
+      await gitAt(await dir(cwd)).fetch(remote || 'origin', ['--prune'])
     },
     async branchList({ cwd }) {
-      const result = await simpleGit(await dir(cwd)).branch(['-a', '--sort=-committerdate'])
+      const result = await gitAt(await dir(cwd)).branch(['-a', '--sort=-committerdate'])
       return {
         current: result.current,
         branches: Object.entries(result.branches).map(([name, info]) => ({
@@ -629,23 +659,23 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       }
     },
     async branchCreate({ cwd, name, startPoint }) {
-      const git = simpleGit(await dir(cwd))
+      const git = gitAt(await dir(cwd))
       if (startPoint) await git.checkoutBranch(name, startPoint)
       else await git.checkoutLocalBranch(name)
     },
     async branchDelete({ cwd, name, force }) {
-      await simpleGit(await dir(cwd)).branch([force ? '-D' : '-d', name])
+      await gitAt(await dir(cwd)).branch([force ? '-D' : '-d', name])
     },
     async checkout({ cwd, branch }) {
-      await simpleGit(await dir(cwd)).checkout(branch)
+      await gitAt(await dir(cwd)).checkout(branch)
     },
     async stash({ cwd, message }) {
-      const git = simpleGit(await dir(cwd))
+      const git = gitAt(await dir(cwd))
       if (message) await git.stash(['push', '-m', message])
       else await git.stash()
     },
     async stashPop({ cwd }) {
-      await simpleGit(await dir(cwd)).stash(['pop'])
+      await gitAt(await dir(cwd)).stash(['pop'])
     },
     async worktreeList({ cwd }) {
       try {
@@ -669,7 +699,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       } catch {
         return null
       }
-      const git = simpleGit(validPath)
+      const git = gitAt(validPath)
       if (!(await git.checkIsRepo())) return null
       const status = await git.status()
       let ahead = 0, behind = 0
@@ -692,7 +722,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       }
     },
     async worktreeReview({ path: worktreePath, baseBranch }) {
-      const git = simpleGit(await dir(worktreePath))
+      const git = gitAt(await dir(worktreePath))
       const status = await git.status()
       const branch = status.current === 'HEAD' ? '' : status.current ?? ''
       const dirty = status.files.length > 0
@@ -736,7 +766,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       }
     },
     async worktreeMergeTo({ cwd, from, to }) {
-      const git = simpleGit(await dir(cwd))
+      const git = gitAt(await dir(cwd))
       try {
         if ((await git.status()).files.length > 0) {
           return { ok: false, conflict: false, message: `Commit or stash changes in ${to} before merging into it.` }
@@ -761,7 +791,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       }
     },
     async worktreeUpdateFrom({ path: worktreePath, from }) {
-      const git = simpleGit(await dir(worktreePath))
+      const git = gitAt(await dir(worktreePath))
       try {
         if ((await git.status()).files.length > 0) {
           return { ok: false, conflict: false, message: `Commit or stash changes before updating from ${from}.` }
@@ -781,7 +811,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
     },
     async createPr({ path: worktreePath, branch }) {
       const cwd = await dir(worktreePath)
-      const git = simpleGit(cwd)
+      const git = gitAt(cwd)
       try {
         await git.push(['-u', 'origin', branch])
       } catch (error) {
@@ -844,7 +874,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
     },
     listWorktrees,
     async addWorktree({ cwd, branch, targetPath, createBranch, baseRef }) {
-      const git = simpleGit(await dir(cwd))
+      const git = gitAt(await dir(cwd))
       await ensureContainingDir(targetPath)
       const args = ['worktree', 'add']
       if (createBranch) args.push('-b', branch, targetPath, baseRef ?? 'HEAD')
@@ -855,7 +885,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
     },
     async addWorktreeFromPr({ cwd, prNumber, targetPath }) {
       const validRepo = await dir(cwd)
-      const git = simpleGit(validRepo)
+      const git = gitAt(validRepo)
       if (!(await ghAvailable(validRepo))) throw new Error('GitHub CLI (gh) is required to check out pull requests.')
       await ensureContainingDir(targetPath)
       const branch = await availablePrBranch(git, prNumber)
@@ -883,7 +913,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       return { path: targetPath, branch }
     },
     async removeWorktree({ cwd, targetPath, force }) {
-      const git = simpleGit(await dir(cwd))
+      const git = gitAt(await dir(cwd))
       const args = ['worktree', 'remove']
       if (force) args.push('--force')
       args.push(targetPath)
@@ -892,7 +922,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       deps.removeCheckout(targetPath)
     },
     async pruneWorktrees({ cwd }) {
-      const output = await simpleGit(await dir(cwd)).raw(['worktree', 'prune', '-v'])
+      const output = await gitAt(await dir(cwd)).raw(['worktree', 'prune', '-v'])
       return { output }
     },
   }

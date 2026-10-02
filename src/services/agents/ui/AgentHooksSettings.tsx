@@ -2,7 +2,10 @@
 // injection in this workspace (the `agentHookInjection` workspace setting).
 // Auto enables an agent's hooks when its own config folder is in the repo;
 // On and Off force it. The runtime applies a change on the next terminal
-// spawn. The readout is inspected from the workspace's files on open.
+// spawn. The readout is inspected from the workspace's files on open (and on
+// Refresh detection). For a CLI whose approvals are told apart by config
+// (Codex) it also shows a read-only Approvals label; Cate never changes the
+// CLI's permission policy (docs/agent-activity.md).
 
 import { useEffect, useRef, useState } from 'react'
 import { useRuntime } from '@kernel/rpc/ui'
@@ -10,9 +13,11 @@ import { createWorkspaceSettingsMirror, type WorkspaceSettingsMirror } from '@ke
 import { LoadingState, SearchableBlock } from '@kernel/ui'
 import {
   AGENTS,
+  AGENT_APPROVAL_DETECTION,
   agentHookInUse,
   agentHooksEnabled,
   resolveAgentHookMode,
+  type AgentApprovalDetection,
   type AgentDef,
   type AgentHookAgentState,
   type AgentHookConfig,
@@ -31,7 +36,10 @@ interface AgentHookRow {
   agent: AgentDef
   folderPresent: boolean
   injected: boolean
+  approvalDetection: AgentApprovalDetection
 }
+
+const APPROVAL_LABELS = { automatic: 'Automatic', manual: 'Manual', unknown: 'Unknown' } as const
 
 /** Inspection results in registry order, one row per agent. */
 function agentHookRows(live: readonly AgentHookAgentState[]): AgentHookRow[] {
@@ -40,6 +48,7 @@ function agentHookRows(live: readonly AgentHookAgentState[]): AgentHookRow[] {
     agent,
     folderPresent: byId.get(agent.id)?.folderPresent ?? false,
     injected: byId.get(agent.id)?.injected ?? false,
+    approvalDetection: byId.get(agent.id)?.approvalDetection ?? AGENT_APPROVAL_DETECTION[agent.id],
   }))
 }
 
@@ -64,6 +73,7 @@ export function AgentHooksSettings({ workspaceId }: { workspaceId: string | null
   const [rows, setRows] = useState<AgentHookRow[] | null>(null)
   const [error, setError] = useState(false)
   const [config, setConfig] = useState<AgentHookConfig>({})
+  const [refresh, setRefresh] = useState(0)
   const mirror = useRef<WorkspaceSettingsMirror | null>(null)
 
   useEffect(() => {
@@ -76,7 +86,7 @@ export function AgentHooksSettings({ workspaceId }: { workspaceId: string | null
       () => { if (live) { setRows([]); setError(true) } },
     )
     return () => { live = false }
-  }, [runtime])
+  }, [runtime, refresh])
 
   useEffect(() => {
     if (!runtime) return
@@ -100,9 +110,10 @@ export function AgentHooksSettings({ workspaceId }: { workspaceId: string | null
   }
 
   return (
-    <SearchableBlock keywords="agent hooks injection claude codex cursor grok hermes kiro opencode status presence auto on off">
-      {rows === null && <LoadingState label="Loading agent hooks…" size={14} className="justify-start py-3 text-xs" />}
-      {error && <p role="alert" className="py-3 text-xs text-muted">Could not check agent hooks. Reopen settings to try again.</p>}
+    <SearchableBlock keywords="agent hooks injection claude codex cursor grok hermes kiro opencode status presence auto on off approval automatic manual permissions">
+      <button type="button" className="text-xs text-muted hover:text-primary" onClick={() => setRefresh((value) => value + 1)}>Refresh detection</button>
+      {rows === null && <LoadingState label="Loading agent hooks" size={14} className="justify-start py-3 text-xs" />}
+      {error && <p role="alert" className="py-3 text-xs text-muted">Could not check agent hooks. Refresh detection to try again.</p>}
       {!!rows?.length && !error && <div>
         {rows.map((row) => {
           const { mode, label } = agentHookStatus(row, config)
@@ -129,6 +140,11 @@ export function AgentHooksSettings({ workspaceId }: { workspaceId: string | null
                 options={MODE_OPTIONS}
                 onChange={(value) => setMode(row.agent.id, value as AgentHookMode)}
               />
+              {row.approvalDetection.source === 'config' && (
+                <span className="w-full pl-8 text-[11px] text-muted" title={row.approvalDetection.detail}>
+                  Approvals: {APPROVAL_LABELS[row.approvalDetection.mode]}
+                </span>
+              )}
             </div>
           )
         })}

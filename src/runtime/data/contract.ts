@@ -33,6 +33,9 @@ export interface RuntimeInfo {
   root: string
   pid: number
   version: string
+  /** The daemon's build (`scripts/build-id.mjs`), when bundled: its install
+   *  `~/.cate/runtime/<build>/` is kept while it runs. */
+  build?: string
   protocol: [number, number]
   endpoints: RuntimeEndpoints
 }

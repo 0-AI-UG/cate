@@ -6,7 +6,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { viewToCanvas, type Point } from '@workspace/canvas/contract'
+import { declaredActions } from '@kernel/ui'
 import { useDocument } from '@client/document/ui'
+import { canRunAction, creationMenuItems, creationPick, runAction, worktreeChoices } from '@client/host'
 import { RelationCanvasProvider } from '@workspace/relations/ui'
 import { registerCanvasDropSurface, useDockFileDrop } from '@client/layout/drag'
 import { canvasHost } from '../ports'
@@ -127,26 +129,6 @@ function Marquee(): React.ReactElement | null {
   )
 }
 
-/** The "New ..." entries: definitions offered in the split menu, in its order.
- *  A checkout-bound type gets a submenu of worktrees when there are several. */
-function creationMenu(worktrees: { id: string; path: string; label?: string }[]): ContextMenuItem[] {
-  const definitions = canvasHost().definitions()
-    .filter((d) => d.splitMenuOrder !== undefined)
-    .sort((a, b) => (a.splitMenuOrder ?? 0) - (b.splitMenuOrder ?? 0))
-  return definitions.map((d) => {
-    if (d.worktreeBinding && worktrees.length > 1) {
-      return {
-        label: `New ${d.label}`,
-        submenu: worktrees.map((w, i) => ({
-          id: `new:${d.type}:${w.id}`,
-          label: (w.label || w.path.split('/').pop() || w.path) + (i === 0 ? ' (primary)' : ''),
-        })),
-      }
-    }
-    return { id: `new:${d.type}`, label: `New ${d.label}` }
-  })
-}
-
 export default function Canvas({ workspaceId, canvasId, canvasPanelId, children, overlayChildren }: CanvasProps): React.ReactElement {
   const canvasRef = useRef<HTMLDivElement>(null)
   const worldRef = useRef<HTMLDivElement>(null)
@@ -171,7 +153,7 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
   const handToolActive = useCanvasUi((s) => s.activeTool === 'hand')
   const showWorktreeTerritory = useCanvasSetting('showWorktreeTerritory')
   const worktrees = useDocument(workspaceId, (d) => d.worktrees)
-  const readyWorktrees = useMemo(() => Object.values(worktrees).filter((w) => w.status === 'ready'), [worktrees])
+  const worktreeList = useMemo(() => worktreeChoices(worktrees), [worktrees])
 
   // Under the hand tool, a left press anywhere pans (see .canvas-tool-hand).
   useEffect(() => {
@@ -382,14 +364,15 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
     const point = canvasPointOf(e.clientX, e.clientY)
     if (!point) return
     // A spawn button dragged out of the worktree menu opens its panel type
-    // bound to that worktree, at the drop point.
+    // bound to that worktree, at the drop point. A worktree of another
+    // workspace does not exist here: that drop is refused.
     const spawn = e.dataTransfer.getData('application/cate-spawn')
     if (spawn) {
+      let spec: { workspaceId?: unknown; panelType?: unknown; cwd?: unknown; worktreeId?: unknown } = {}
+      try { spec = JSON.parse(spawn) } catch { return }
+      if (typeof spec.panelType !== 'string' || spec.workspaceId !== workspaceId) return
       e.preventDefault()
       e.stopPropagation()
-      let spec: { panelType?: unknown; cwd?: unknown; worktreeId?: unknown } = {}
-      try { spec = JSON.parse(spawn) } catch { return }
-      if (typeof spec.panelType !== 'string') return
       createPanelOnCanvas(workspaceId, canvasId, spec.panelType, {
         position: point,
         ...(typeof spec.worktreeId === 'string' ? { worktreeId: spec.worktreeId } : {}),
@@ -402,34 +385,31 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
     dropPointRef.current = null
   }, [workspaceId, canvasId, canvasPointOf, fileDrop])
 
-  // A right click on empty canvas opens the native menu.
+  // A right click on empty canvas opens the native menu: the creation
+  // entries, then the actions offered in the canvas menu, run on this canvas.
   useEffect(() => {
     if (!canvasContextMenu) return
     let cancelled = false
     const point = canvasContextMenu.canvasPoint
+    const context = { workspaceId, canvasId }
+    const actions = declaredActions().filter(({ id, spec }) => spec.contextMenus?.includes('canvas') && canRunAction(id, context))
     const items: ContextMenuItem[] = [
-      ...creationMenu(readyWorktrees),
-      { type: 'separator' },
-      { id: 'auto-layout', label: 'Auto Layout' },
-      { id: 'zoom-to-fit', label: 'Zoom to Fit' },
+      ...creationMenuItems(canvasHost().creatable(), worktreeList),
+      ...(actions.length > 0 ? [{ type: 'separator' as const }] : []),
+      ...actions.map(({ id, spec }) => ({ id: `action:${id}`, label: spec.title })),
     ]
     void showContextMenu(items).then((id) => {
       if (cancelled) return
       closeCanvasContextMenu()
-      if (!id) return
-      if (id === 'auto-layout') store.getState().autoLayout()
-      else if (id === 'zoom-to-fit') store.getState().zoomToFit()
-      else if (id.startsWith('new:')) {
-        const [, type, worktreeId] = id.split(':')
-        const worktree = worktreeId ? readyWorktrees.find((w) => w.id === worktreeId) : undefined
-        createPanelOnCanvas(workspaceId, canvasId, type, {
-          position: point,
-          ...(worktree ? { worktreeId: worktree.id, cwd: worktree.path } : {}),
-        })
+      if (id?.startsWith('action:')) {
+        void runAction(id.slice('action:'.length), context)
+        return
       }
+      const pick = creationPick(id, worktreeList)
+      if (pick) createPanelOnCanvas(workspaceId, canvasId, pick.type, { position: point, ...pick.options })
     })
     return () => { cancelled = true }
-  }, [canvasContextMenu, closeCanvasContextMenu, store, workspaceId, canvasId, readyWorktrees])
+  }, [canvasContextMenu, closeCanvasContextMenu, workspaceId, canvasId, worktreeList])
 
   return (
     <CanvasTopOverlayContext.Provider value={topOverlayWorld}>

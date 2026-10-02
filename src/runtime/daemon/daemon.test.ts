@@ -5,6 +5,7 @@ import { framePortOver } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink, nullSink } from '@kernel/log/contract'
+import { runtimeIdFor } from '@runtime/data/node'
 import { dialLocal } from '@runtime/transports/node'
 import { runtimeCapability } from './contract'
 import { serveWorkspace, type Daemon } from './entry'
@@ -96,5 +97,31 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     expect((await runtime.info()).clients).toHaveLength(1)
     client.close()
     await expect(result.daemon.stopped).resolves.toEqual({ kind: 'idle' })
+  })
+
+  it('refuses a workspace inside or around a live one, and tells the client why', async () => {
+    expect((await start()).kind).toBe('serving')
+    const inner = path.join(root, 'sub')
+    fs.mkdirSync(inner)
+    for (const at of [inner, tmp]) {
+      const result = await serveWorkspace({ root: at, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
+      if (result.kind !== 'nested') throw new Error(`expected ${at} to be refused`)
+      expect(result.message).toContain(fs.realpathSync(root))
+      const endpoint = path.join(home, '.cate', 'workspaces', (await runtimeIdFor(at)), 'runtime.sock')
+      await expect(connect(endpoint)).rejects.toThrow('Workspaces cannot be nested')
+    }
+  })
+
+  it('refuses a nested workspace while the outer one is still starting', async () => {
+    let started = false
+    const outer = start().then((result) => { started = true; return result })
+    const info = path.join(home, '.cate', 'workspaces', await runtimeIdFor(root), 'runtime.json')
+    while (!fs.existsSync(info)) await new Promise((r) => setTimeout(r, 1))
+    expect(started).toBe(false)
+    const inner = path.join(root, 'sub')
+    fs.mkdirSync(inner)
+    const result = await serveWorkspace({ root: inner, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
+    expect(result.kind).toBe('nested')
+    expect((await outer).kind).toBe('serving')
   })
 })

@@ -52,12 +52,15 @@ export function keepsMounted(type: string | undefined): boolean {
   return !!panelDefinition(type)?.surface
 }
 
-/** The types the dock's new-tab and split menus offer, in display order. */
-export function splitMenuTypes(): string[] {
+/** The types people can create here, in creation order: those with
+ *  `creation` whose view this client can show (and, on a canvas, that can
+ *  live there). Every creation menu lists these. */
+export function creatableDefinitions(where: { onCanvas?: boolean } = {}): AnyPanelDefinition[] {
   return panelDefinitions()
-    .filter((definition) => definition.splitMenuOrder != null)
-    .sort((a, b) => a.splitMenuOrder! - b.splitMenuOrder!)
-    .map((definition) => definition.type)
+    .filter((definition) => definition.creation
+      && missingFeatures(definition).length === 0
+      && (!where.onCanvas || definition.canLiveOnCanvas))
+    .sort((a, b) => a.creation!.order - b.creation!.order)
 }
 
 /** The type generic "open" actions create for `kind` (definition `opens`). */

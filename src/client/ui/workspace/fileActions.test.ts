@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const op = vi.fn(async () => undefined)
 vi.mock('@kernel/rpc/client', () => ({ tryRuntimeFor: () => ({ session: { op } }) }))
+vi.mock('@client/connections', () => ({ clientHas: (feature: string) => feature === 'fileDrop' }))
 vi.mock('@client/document', () => ({ documentStoreFor: () => ({ getSnapshot: () => ({ panels: {} }) }) }))
 vi.mock('@client/layout/canvas', () => ({ activeCanvasId: () => null, createPanelOnCanvas: vi.fn() }))
 vi.mock('@client/host', () => ({
@@ -12,7 +13,7 @@ vi.mock('@client/host', () => ({
   revealPanel: vi.fn(),
 }))
 
-const { openDroppedFiles } = await import('./fileActions')
+const { fileViewsHost, openDroppedFiles } = await import('./fileActions')
 
 describe('openDroppedFiles', () => {
   beforeEach(() => op.mockClear())
@@ -25,5 +26,11 @@ describe('openDroppedFiles', () => {
   it('opens plain dropped files without moving them', () => {
     openDroppedFiles('ws', ['/r/a.ts', '/r/b.ts'], {}, null)
     expect(op).not.toHaveBeenCalled()
+  })
+})
+
+describe('fileViewsHost', () => {
+  it('takes OS files with the fileDrop feature', () => {
+    expect(fileViewsHost.takesOsFiles()).toBe(true)
   })
 })

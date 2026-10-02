@@ -8,7 +8,6 @@ export const CLIENT_FEATURES = [
   'windows',
   'canvas',
   'fileDrop',
-  'osFiles',
   'osNotifications',
   'screenCapture',
   'clipboard',

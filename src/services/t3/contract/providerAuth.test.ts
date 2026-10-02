@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanProviderAuthOutput, providerAuthCode, providerAuthCommand, providerAuthLaunch, providerAuthUrl } from '../contract'
+import { cleanProviderAuthOutput, providerAuthCode, providerAuthCommand, providerAuthLaunch, providerAuthUrl, providerAuthUsesLoopback } from '../contract'
 
 describe('providerAuthCommand', () => {
   it('uses device authentication where the provider supports it', () => {
@@ -66,5 +66,19 @@ describe('provider auth output', () => {
 
   it('extracts the one-time device code from provider output', () => {
     expect(providerAuthCode('Enter this one-time code\r\n  UYVW-8U3MS')).toBe('UYVW-8U3MS')
+  })
+})
+
+describe('providerAuthUsesLoopback', () => {
+  it('is true for a loopback page or a loopback redirect_uri / redirect', () => {
+    expect(providerAuthUsesLoopback('https://auth.openai.com/oauth/authorize?client_id=x&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback')).toBe(true)
+    expect(providerAuthUsesLoopback('https://example.test/login?redirect=http%3A%2F%2F127.0.0.1%3A8123%2Fcb')).toBe(true)
+    expect(providerAuthUsesLoopback('https://localhost:8443/login')).toBe(true)
+  })
+
+  it('is false for device flows and remote callbacks', () => {
+    expect(providerAuthUsesLoopback('https://auth.openai.com/codex/device')).toBe(false)
+    expect(providerAuthUsesLoopback('https://claude.ai/oauth/authorize?code=true&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback')).toBe(false)
+    expect(providerAuthUsesLoopback('not a url')).toBe(false)
   })
 })

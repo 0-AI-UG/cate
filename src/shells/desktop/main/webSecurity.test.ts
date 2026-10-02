@@ -28,7 +28,7 @@ describe('web security', () => {
     installWebSecurity({
       guestPreload: '/app/preload/shellGuest.js',
       hardeningDisabled: () => false,
-      customShortcuts: () => ({}),
+      guestKeys: () => [],
       isPreparedPartition: (partition) => partition === 'persist:ws-abcdefghijklmnop',
       platform: 'darwin',
     })
@@ -70,8 +70,9 @@ describe('web security', () => {
   })
 
   it('allows only web, file and data pages in guests', () => {
-    for (const url of ['about:blank', 'https://a.test', 'http://localhost:3000', 'file:///x.html', 'data:text/html,hi']) expect(isAllowedGuestUrl(url)).toBe(true)
-    for (const url of ['javascript:alert(1)', 'chrome://settings', 'not a url']) expect(isAllowedGuestUrl(url)).toBe(false)
+    for (const url of ['about:blank', 'https://a.test', 'http://localhost:3000', 'data:text/html,hi']) expect(isAllowedGuestUrl(url)).toBe(true)
+    // A client's disk is never a page: workspace files come from the runtime's file server.
+    for (const url of ['javascript:alert(1)', 'chrome://settings', 'file:///x.html', 'not a url']) expect(isAllowedGuestUrl(url)).toBe(false)
   })
 
   it('maps guest keys to browser actions and forwarded canvas shortcuts', () => {
@@ -79,7 +80,8 @@ describe('web security', () => {
     expect(browserActionForInput({ ...key, code: 'KeyR' }, 'darwin')).toBe('reload')
     expect(browserActionForInput({ ...key, shift: true, code: 'KeyR' }, 'darwin')).toBe('reloadHard')
     expect(browserActionForInput({ ...key, code: 'KeyR' }, 'win32')).toBeNull()
-    expect(forwardedActionForInput({ ...key, key: 'k' }, {}, 'darwin')).toBe('commandPalette')
-    expect(forwardedActionForInput({ ...key, key: 't' }, {}, 'darwin')).toBeNull()
+    const guestKeys = [{ action: 'commandPalette', shortcut: { key: 'k', command: true, shift: false, option: false, control: false } }]
+    expect(forwardedActionForInput({ ...key, key: 'k' }, guestKeys, 'darwin')).toBe('commandPalette')
+    expect(forwardedActionForInput({ ...key, key: 't' }, guestKeys, 'darwin')).toBeNull()
   })
 })

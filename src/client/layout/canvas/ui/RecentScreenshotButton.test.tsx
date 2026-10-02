@@ -2,7 +2,10 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createClientIdentity, installClientIdentity } from '@client/connections'
+import type { RuntimeProxy } from '@kernel/rpc/contract'
+import { notifyRuntimesChanged, setRuntimeResolver } from '@kernel/rpc/client'
 import { installScreenshotPort, type RecentScreenshot, type ScreenshotPort } from '../screenshots'
+import { readFileRefDrag } from '@workspace/files/contract'
 import { RecentScreenshotButton } from './RecentScreenshotButton'
 
 function fakePort(over: Partial<ScreenshotPort>): ScreenshotPort {
@@ -196,6 +199,37 @@ it('opens clicked screenshots, navigates with overlay controls and keys, and clo
   } finally {
     act(() => root.unmount())
     host.remove()
+    vi.unstubAllGlobals()
+  }
+})
+
+it('drags a workspace screenshot as a FileRef, not a native drag, while its workspace is open', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  const open = new Set(['ws-a'])
+  setRuntimeResolver((id) => (open.has(id) ? ({} as RuntimeProxy) : null))
+  const drag = vi.fn().mockResolvedValue(undefined)
+  const ref = { workspaceId: 'ws-a', path: '/data/screenshots/1-shot-annotated.png' }
+  const shot: RecentScreenshot = { id: 'annotated:1', filePath: ref.path, ref, annotated: true, dataUrl: 'data:image/png;base64,test' }
+  installScreenshotPort(fakePort({ recent: async () => [shot], drag }))
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<RecentScreenshotButton workspaceId="ws-b" />))
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (type: string, value: string) => { data.set(type, value) }, effectAllowed: 'all' }
+    const event = Object.assign(new Event('dragstart', { bubbles: true, cancelable: true }), { dataTransfer })
+    await act(async () => { host.querySelector('button')!.dispatchEvent(event) })
+    expect(event.defaultPrevented).toBe(false)
+    expect(drag).not.toHaveBeenCalled()
+    expect(readFileRefDrag({ getData: (type) => data.get(type) ?? '' })).toEqual({ refs: [ref] })
+    // Its workspace closes: the copy cannot be read any more.
+    act(() => { open.clear(); notifyRuntimesChanged() })
+    expect(host.querySelector('button')).toBeNull()
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    setRuntimeResolver(null)
     vi.unstubAllGlobals()
   }
 })

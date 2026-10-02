@@ -102,14 +102,14 @@ export function PullRequestsOverview({ workspaceId, initialRepository = '', onOp
         </div>
         {openError && <p role="alert" className="mb-3 text-sm text-danger">{openError}</p>}
         {login.status === 'pending' && <div role="status" className="mb-4 rounded-lg border border-subtle p-4 text-sm">
-          <Spinner size={14} className="mr-2 align-middle" />{login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in…'}
+          <Spinner size={14} className="mr-2 align-middle" />{login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in'}
           <div className="mt-3 flex gap-4">
             <button onClick={() => clientUi().openExternal('https://github.com/login/device')} className="text-accent">Open GitHub</button>
             <button onClick={() => void runtime?.vcs.githubLogin({ operation: 'cancel' }).then(setLogin)} className="text-muted">Cancel</button>
           </div>
         </div>}
         {login.status === 'error' && <p role="alert" className="mb-3 text-sm text-muted">{login.message}</p>}
-        {!result && loading ? <LoadingState label="Loading pull requests…" className="py-12 text-sm" /> : result && result.status !== 'ready' ? (
+        {!result && loading ? <LoadingState label="Loading pull requests" className="py-12 text-sm" /> : result && result.status !== 'ready' ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
             <Github size={28} className="text-muted" /><p className="max-w-md text-sm text-muted">{result.message}</p>
             {result.status === 'missing-cli' ? <button onClick={() => clientUi().openExternal('https://cli.github.com/')} className="rounded-lg bg-surface-2 px-4 py-2 text-sm">Get GitHub CLI</button> :
@@ -129,7 +129,7 @@ export function PullRequestsOverview({ workspaceId, initialRepository = '', onOp
                   <span className="text-diff-add">+{pr.additions.toLocaleString()}</span><span className="text-danger">−{pr.deletions.toLocaleString()}</span>
                   <time dateTime={pr.updatedAt} title={new Date(pr.updatedAt).toLocaleString()} className="ml-1 min-w-[54px] text-right text-muted">{relativeDate(pr.updatedAt)}</time>
                 </span>
-                  <Button size="sm" loading={opening === pr.id} disabled={opening !== null} onClick={() => void openInCate(pr)}>{opening === pr.id ? 'Opening…' : 'Open in Cate'}</Button>
+                  <Button size="sm" loading={opening === pr.id} disabled={opening !== null} onClick={() => void openInCate(pr)}>{opening === pr.id ? 'Opening' : 'Open in Cate'}</Button>
                   <IconButton label={`Open pull request #${pr.number} on GitHub`} title="Open pull request on GitHub" onClick={() => clientUi().openExternal(pr.url)}><ExternalLink size={14} /></IconButton>
               </div>)}
             </section>

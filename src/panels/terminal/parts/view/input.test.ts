@@ -37,6 +37,20 @@ describe('link handler', () => {
     expect(p.openInCate).not.toHaveBeenCalled()
   })
 
+  it('opens loopback links inside Cate without asking, even with Shift or an external setting', () => {
+    for (const target of ['ask', 'external'] as const) {
+      const p = ports(target, 'external')
+      const handler = createTerminalLinkHandler(p, true)
+      handler(click(), 'http://localhost:3000/')
+      handler(click(true), 'http://127.0.0.1:5173')
+      handler({ metaKey: false, ctrlKey: false, shiftKey: false } as MouseEvent, 'http://localhost:4000')
+      expect(p.openInCate.mock.calls).toEqual([['http://localhost:3000/'], ['http://127.0.0.1:5173']])
+      expect(p.ask).not.toHaveBeenCalled()
+      expect(p.remember).not.toHaveBeenCalled()
+      expect(p.openExternal).not.toHaveBeenCalled()
+    }
+  })
+
   it('does nothing when the person cancels or clicks without the modifier', async () => {
     const p = ports('ask', 'cancel')
     const handler = createTerminalLinkHandler(p, true)

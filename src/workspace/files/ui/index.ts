@@ -14,9 +14,10 @@ export {
 } from './fileTreeModel'
 export { VirtualFileRows, type VirtualFileRowsHandle } from './VirtualFileRows'
 export { CreateFileForm, type CreateFileFormProps } from './CreateFileForm'
+export { SavePathDialog, showSavePathDialog, type SavePathRequest } from './SavePathDialog'
 export { InlineEditInput, type InlineEditInputProps } from './InlineEditInput'
 export { createExplorerRefresh } from './explorerRefresh'
-export { setClipboard, getClipboard, hasClipboard } from './fileClipboard'
+export { canCopyFiles, copyFileRefs, clipboardFileRefs } from './fileClipboard'
 export { isNavKey, resolveTreeNavAction, type NavRow, type NavAction, type NavKey } from './treeKeyboardNav'
 export {
   useTreeCollapseStore,
@@ -41,17 +42,12 @@ export {
 } from './gitStatusDecoration'
 export { useGitTree } from './gitTree'
 export {
-  CATE_FILE_MIME,
-  CATE_FILES_MIME,
-  CATE_FILE_LINE_MIME,
-  hasCateFileDrag,
-  writeCateFileDrag,
-  readCateFilePaths,
-  readCateFileLocation,
-  type FileLineLocation,
-} from './fileDragPayload'
-export {
   isExternalFileDrag,
+  isAnyFileDrag,
+  takeFileDrop,
+  resolveFileDrop,
+  type FileDrop,
+  refDropMode,
   takeDroppedItems,
   readDroppedEntries,
   type DroppedItem,

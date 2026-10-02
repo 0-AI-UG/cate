@@ -21,7 +21,6 @@ export interface RelationPanelKind {
   icon: string
   defaultSize: Size
   canLiveOnCanvas: boolean
-  splitMenuOrder?: number
   relation?: RelationRole
 }
 
@@ -39,6 +38,9 @@ export interface RelationUiHost {
   /** Workspace setting `panelRelationsEnabled`; null while not open. */
   relationsEnabled(workspaceId: string): { get(): boolean; subscribe(listener: () => void): () => void } | null
   definitions(): readonly RelationPanelKind[]
+  /** The kinds people can create on a canvas on this client, in creation
+   *  order: what a relation drag into empty space offers. */
+  creatable(): readonly RelationPanelKind[]
   /** Creates a panel of `type` placed at `at`; returns its id or null. */
   createPanel(workspaceId: string, type: string, options: { at: PlaceTarget; worktreeId?: string }): string | null
 }
@@ -51,6 +53,7 @@ const NO_HOST: RelationUiHost = {
   savedLabels: { get: () => [], set: () => {}, subscribe: noSubscribe },
   relationsEnabled: () => null,
   definitions: () => [],
+  creatable: () => [],
   createPanel: () => null,
 }
 

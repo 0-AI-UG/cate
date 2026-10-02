@@ -7,7 +7,13 @@ import { installMockClientUi } from '@kernel/ui/testing'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const h = vi.hoisted(() => ({ doc: null as unknown as WorkspaceDocument }))
-vi.mock('@client/document/ui', () => ({ useDocument: (_ws: string, select: (doc: WorkspaceDocument) => unknown) => select(h.doc) }))
+vi.mock('@client/document/ui', async () => {
+  const { useState } = await import('react')
+  return {
+    useDocument: (_ws: string, select: (doc: WorkspaceDocument) => unknown) => select(h.doc),
+    usePanelView: (_ws: string, _panel: string, _key: string, fallback: unknown) => useState(fallback),
+  }
+})
 vi.mock('@client/document', () => ({ documentStoreFor: () => null, clientStateFor: () => null }))
 const pickPanelPlace = vi.hoisted(() => vi.fn(async () => ({ kind: 'existing', panelId: 't1' })))
 vi.mock('@client/host', async (importOriginal) => ({ ...(await importOriginal<typeof import('@client/host')>()), pickPanelPlace }))
@@ -17,7 +23,7 @@ import { PANEL_DEFINITIONS } from '../../definitions'
 import ReviewView from './ReviewView'
 
 registerPanelDefinitions(PANEL_DEFINITIONS)
-import { DEFAULT_REVIEW_DISPLAY, type ReviewOp, type ReviewSnapshot } from '../contract'
+import { type ReviewOp, type ReviewSnapshot } from '../contract'
 
 const file = { path: 'src/a.ts', status: 'modified' as const, additions: 1, deletions: 0, binary: false, staged: false, working: true }
 const untracked = { ...file, path: 'new.ts', status: 'added' as const, untracked: true }
@@ -28,7 +34,7 @@ const diff = {
 
 function gitSnapshot(patch: Partial<ReviewSnapshot> = {}): ReviewSnapshot {
   return {
-    review: { repoPath: '/repo', spec: { kind: 'uncommitted' }, display: { ...DEFAULT_REVIEW_DISPLAY }, notes: [], collapsedFiles: [] },
+    review: { repoPath: '/repo', spec: { kind: 'uncommitted' }, notes: [] },
     comparison: { spec: { kind: 'uncommitted' }, resolvedBase: null, resolvedTarget: null, currentBranch: 'main', files: [file, untracked], additions: 1, deletions: 0 },
     diffEpoch: 1,
     recorded: { loading: false, error: null, files: [] },
@@ -76,6 +82,17 @@ it('fetches diffs on demand and refetches them when the epoch moves', async () =
   render(gitSnapshot({ comparison: { ...gitSnapshot().comparison!, files: [file] }, diffEpoch: 2 }))
   await flush()
   expect(send).toHaveBeenCalledWith({ kind: 'diff', path: 'src/a.ts' })
+})
+
+it('collapses a file on this client only, without an op', async () => {
+  installMockClientUi()
+  render(gitSnapshot({ comparison: { ...gitSnapshot().comparison!, files: [file] } }))
+  await flush()
+  send.mockClear()
+  act(() => (host.querySelector('[aria-label="Collapse file"]') as HTMLButtonElement).click())
+  expect(host.querySelector('[aria-label="Expand file"]')).not.toBeNull()
+  expect(host.textContent).not.toContain('return safe()')
+  expect(send).not.toHaveBeenCalled()
 })
 
 it('confirms before discarding and passes whether the file is untracked', async () => {

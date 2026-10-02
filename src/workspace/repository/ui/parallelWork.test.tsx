@@ -152,6 +152,6 @@ describe('other actions', () => {
     expect(onError).toHaveBeenCalledWith('Couldn’t open worktree actions: boom')
     const items = menu.mock.calls[0][0]
     expect(items.map((i) => i.id)).not.toContain('merge')
-    expect(items.map((i) => i.id)).toContain('reveal')
+    expect(items.map((i) => i.id)).toContain('delete')
   })
 })

@@ -150,7 +150,22 @@ export function createTerminalXterm(config: TerminalXtermOptions): TerminalXterm
         try { cleanup() } catch { /* terminal already torn down */ }
       }
       releaseWebgl()
-      terminal.dispose()
+      disposeXtermTerminal(terminal)
     },
+  }
+}
+
+function disposeXtermTerminal(terminal: Terminal): void {
+  // xterm 5.5's CoreBrowserService creates ScreenDprMonitor without registering
+  // it for disposal. Its window resize and MediaQueryList listeners otherwise
+  // retain a monitor for every closed terminal. Remove this workaround when
+  // upgrading to an xterm version that owns the monitor's lifetime.
+  const core = (terminal as unknown as {
+    _core?: { _coreBrowserService?: { _screenDprMonitor?: { dispose(): void } } }
+  })._core
+  try {
+    core?._coreBrowserService?._screenDprMonitor?.dispose()
+  } finally {
+    terminal.dispose()
   }
 }

@@ -113,10 +113,10 @@ describe('client settings hooks and pages', () => {
     installClientSettings(store)
     act(() => root.render(<SidebarPage />))
     const toggles = [...host.querySelectorAll('[role="switch"]')] as HTMLButtonElement[]
-    expect(toggles[1].getAttribute('aria-checked')).toBe('true')
-    act(() => { toggles[1].click() })
+    expect(toggles[0].getAttribute('aria-checked')).toBe('true')
+    act(() => { toggles[0].click() })
     expect(store.get('showSkillsInWorkspaceOverview')).toBe(false)
-    expect(host.querySelectorAll('[role="switch"]')[1].getAttribute('aria-checked')).toBe('false')
+    expect(host.querySelectorAll('[role="switch"]')[0].getAttribute('aria-checked')).toBe('false')
   })
 
   it('re-renders on outside edits', async () => {

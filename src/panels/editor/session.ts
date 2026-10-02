@@ -78,6 +78,7 @@ const initialSnapshot = (record: PanelRecord): EditorSnapshot => {
   return {
     filePath: file,
     checkout: null,
+    draft: !!file && isEditorDraft(file),
     documentType: file ? getDocumentType(file) : null,
     dirty: false,
     conflict: null,
@@ -211,10 +212,10 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
   }
 
   /** The snapshot fields that follow the bound file. */
-  private located(file: string): Pick<EditorSnapshot, 'filePath' | 'checkout' | 'documentType'> {
+  private located(file: string): Pick<EditorSnapshot, 'filePath' | 'checkout' | 'draft' | 'documentType'> {
     const worktreeId = this.worktreeIdFor(file)
     const checkout = worktreeId ? this.kit.document.get().worktrees[worktreeId].path : this.deps.root
-    return { filePath: file, checkout, documentType: getDocumentType(file) }
+    return { filePath: file, checkout, draft: isEditorDraft(file), documentType: getDocumentType(file) }
   }
 
   private worktreeIdFor(file: string): string | null {

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Spinner } from '@kernel/ui'
 import { ArrowCounterClockwise, ChatCircleText, DotsSix, DownloadSimple, PencilSimple, Trash } from '@phosphor-icons/react'
 import type { RecentScreenshot } from '../screenshots'
 
@@ -306,7 +307,7 @@ export function ScreenshotDrawing({ url, width, height, toolbarHost, onClose, on
       <span className="h-5 w-px bg-white/10" />
       <button type="button" className={buttonClass} disabled={saving} onClick={onClose}>Cancel</button>
       <button type="button" className="flex h-8 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-semibold text-neutral-900 transition-colors hover:bg-white/90 disabled:opacity-35"
-        disabled={(!strokes.length && !callouts.some(callout => callout.text.trim())) || saving} onClick={() => { void save() }}><DownloadSimple size={15} />{saving ? 'Saving...' : 'Save'}</button>
+        disabled={(!strokes.length && !callouts.some(callout => callout.text.trim())) || saving} onClick={() => { void save() }}>{saving ? <Spinner size={15} /> : <DownloadSimple size={15} />}{saving ? 'Saving' : 'Save'}</button>
       {message && <span role="status" className="absolute left-1/2 top-full mt-2 w-max max-w-[80vw] -translate-x-1/2 rounded-lg bg-neutral-800 px-3 py-2 text-sm text-white">{message}</span>}
     </div>, toolbarHost)}
   </>

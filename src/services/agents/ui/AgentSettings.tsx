@@ -1,20 +1,15 @@
-// The Agents settings page of a workspace. Provider accounts and
+// The T3 Code settings page of a workspace. Provider accounts and
 // configuration belong to T3 (services/t3/ui); the page shows them through
-// `providers` and adds the agent hooks section.
+// `providers`. Agent hooks have their own page (AgentHooksSettings).
 
 import type { ReactNode } from 'react'
 import { SearchableBlock } from '@kernel/ui'
-import { AgentHooksSettings } from './AgentHooksSettings'
 
-export function AgentSettings({ workspaceId, providers }: { workspaceId: string | null | undefined; providers?: ReactNode }) {
+export function AgentSettings({ providers }: { providers?: ReactNode }) {
   return (
-    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok hermes opencode kiro hooks activity status">
+    <SearchableBlock keywords="t3 code agent providers models sign in authentication codex claude cursor grok hermes opencode kiro status">
       <div className="flex flex-col gap-4">
         {providers}
-        <div>
-          <h3 className="mb-2 text-sm font-medium text-primary">Agent hooks</h3>
-          <AgentHooksSettings workspaceId={workspaceId} />
-        </div>
       </div>
     </SearchableBlock>
   )

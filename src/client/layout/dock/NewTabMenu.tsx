@@ -1,5 +1,5 @@
-// The new-tab button and its menu of panel types (the definitions offered by
-// `splitMenuOrder`). On a canvas node the menu portals into the canvas's top
+// The new-tab button and its menu of panel types (the creatable
+// definitions). On a canvas node the menu portals into the canvas's top
 // overlay (DockMenuPortalContext) so it pans and zooms with the node.
 
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -7,26 +7,27 @@ import { createPortal } from 'react-dom'
 import { Plus } from 'lucide-react'
 import { Icon, POPOVER_SURFACE, Tooltip } from '@kernel/ui'
 import { isIconName, type IconName } from '@kernel/ui/contract'
-import { panelDefinition, splitMenuTypes } from '@client/host'
+import { creatableDefinitions } from '@client/host'
 
 /** Where a node dock's menus portal to: the canvas view's top overlay layer
  *  (in canvas space). Null outside a canvas. */
 export const DockMenuPortalContext = createContext<HTMLElement | null>(null)
 
-export type SplitMenuItem = { type: string; label: string; icon: IconName }
+export type NewTabItem = { type: string; label: string; icon: IconName }
 
-/** The types the new-tab and split menus offer, in display order. */
-export function splitMenuItems(): SplitMenuItem[] {
-  return splitMenuTypes().map((type) => {
-    const definition = panelDefinition(type)!
-    return { type, label: definition.label, icon: isIconName(definition.icon) ? definition.icon : 'plus' }
-  })
+/** The types a dock's new-tab menu offers, in creation order. */
+export function newTabItems(where: { onCanvas?: boolean } = {}): NewTabItem[] {
+  return creatableDefinitions(where).map((definition) => ({
+    type: definition.type,
+    label: definition.label,
+    icon: isIconName(definition.icon) ? definition.icon : 'plus',
+  }))
 }
 
 export interface DockTabContextMenuProps {
   open: boolean
   position: { top: number; right: number } | null
-  items: SplitMenuItem[]
+  items: NewTabItem[]
   onPick: (type: string) => void
   onClose: () => void
   portalTarget?: HTMLElement | null
@@ -111,7 +112,7 @@ export function DockTabContextMenu({ open, position, items, onPick, onClose, anc
 export function NewTabButton({ compact, canvasAttached, items, onPick }: {
   compact?: boolean
   canvasAttached?: boolean
-  items: SplitMenuItem[]
+  items: NewTabItem[]
   onPick: (type: string) => void
 }) {
   const canvasOverlay = useContext(DockMenuPortalContext)

@@ -75,7 +75,7 @@ function UpdateButtonWith({ port, className }: { port: DesktopPort; className: s
   const statusMessage = status.state === 'error' || status.state === 'disabled'
     ? errorMessage(status.message, status.state === 'error' ? 'Update failed' : 'Updates unavailable in this build')
     : ''
-  const label = checking ? 'Checking for updates…'
+  const label = checking ? 'Checking for updates'
     : downloading ? `Downloading update (${status.percent ?? 0}%)`
       : ready ? `Restart to update${status.version ? ` to v${status.version}` : ''}`
         : failed ? `${statusMessage}. Click to retry.`

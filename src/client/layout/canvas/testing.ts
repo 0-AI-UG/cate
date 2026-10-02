@@ -47,6 +47,8 @@ export function openTestDocument(workspaceId: string, doc: WorkspaceDocument): (
  *  settings, for tests. */
 export function testRelationHost(options: {
   definitions?: RelationPanelKind[]
+  /** Defaults to the definitions that can live on a canvas. */
+  creatable?: RelationPanelKind[]
   createPanel?: RelationUiHost['createPanel']
   labels?: string[]
   enabled?: boolean
@@ -62,6 +64,7 @@ export function testRelationHost(options: {
     savedLabels: { get: () => labels, set: (next) => { labels = next; emit() }, subscribe },
     relationsEnabled: () => ({ get: () => enabled, subscribe }),
     definitions: () => options.definitions ?? [],
+    creatable: () => options.creatable ?? (options.definitions ?? []).filter((d) => d.canLiveOnCanvas),
     createPanel: options.createPanel ?? (() => null),
   }
   installRelationUiHost(host)

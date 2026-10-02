@@ -32,7 +32,6 @@ export interface WindowFactoryOptions {
   quitCommitted(): boolean
   requestQuit(): void
   report(message: string, extra: Record<string, unknown>): void
-  onDetachedChanged(): void
 }
 
 export interface WindowFactory {
@@ -166,8 +165,6 @@ export function createWindowFactory(options: WindowFactoryOptions): WindowFactor
         if (!requestedAt) requestedAt = now
         win.webContents.send(C.windowCloseRequested)
       })
-      win.webContents.once('did-finish-load', options.onDetachedChanged)
-      win.on('closed', options.onDetachedChanged)
     }
 
     const query = new URLSearchParams({ window: kind })

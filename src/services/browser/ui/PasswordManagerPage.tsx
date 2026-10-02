@@ -230,7 +230,7 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
                   </SecondaryButton>
                   <SecondaryButton type="submit" disabled={busy || !manualOrigin || !manualPassword}>
                     {busy && <Spinner size={13} />}
-                    {busy ? 'Saving…' : 'Save'}
+                    {busy ? 'Saving' : 'Save'}
                   </SecondaryButton>
                 </div>
               </form>
@@ -274,7 +274,7 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
                 Passwords are saved with the workspace, for every device connected to it.
               </p>
               {!credentialState ? (
-                <LoadingState label="Looking for Chrome…" size={13} className="justify-start text-xs" />
+                <LoadingState label="Looking for Chrome" size={13} className="justify-start text-xs" />
               ) : !bridge ? (
                 <span className="text-xs text-muted">Importing from Chrome is not available on this device</span>
               ) : (
@@ -296,7 +296,7 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
                   )}
                   <SecondaryButton onClick={() => void importFile()} disabled={busy}>
                     {busy && <Spinner size={13} />}
-                    {busy ? 'Importing…' : 'Choose Chrome export…'}
+                    {busy ? 'Importing' : 'Choose Chrome export…'}
                   </SecondaryButton>
                 </div>
               )}

@@ -76,7 +76,7 @@ function OpenJoinDialog(): JSX.Element {
             <button type="button" onClick={close} disabled={busy} className={btn.ghost}>Cancel</button>
             <button type="submit" disabled={busy || !code.trim()} className={`${btn.primary} inline-flex items-center gap-1.5`}>
               {busy && <Spinner size={12} />}
-              {busy ? 'Joining…' : 'Join'}
+              {busy ? 'Joining' : 'Join'}
             </button>
           </div>
         </form>

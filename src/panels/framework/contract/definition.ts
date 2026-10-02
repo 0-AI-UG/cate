@@ -3,6 +3,7 @@
 // so they hold no components and no function that touches a session.
 
 import type { CateApiNamespace } from '@kernel/api/contract'
+import type { StoredShortcut } from '@kernel/ui/contract'
 import { isClientFeature, type ChannelSchema, type ClientFeature } from '@kernel/rpc/contract'
 import type { Point, Size } from '@workspace/canvas/contract'
 import type { RelationRole } from '@workspace/relations/contract'
@@ -56,14 +57,35 @@ export interface PanelKit {
   worktreeIdForPath(path: string | undefined): string | undefined
 }
 
-/** A command palette entry: a session op to send while the panel is focused. */
+/** An action of the focused panel (`panel.<type>.<id>`): a session op to
+ *  send to it. Listed in the palette while a panel of the type is focused. */
 export interface PanelCommand<Op = unknown> {
   id: string
   title: string
-  shortcut?: string
+  /** A key the view handles itself, shown next to the title. */
+  keyHint?: string
   op: Op
+  /** Also listed in the menu bar's Panel menu, under the type's label. */
+  menu?: boolean
   /** Hidden on clients without these features. */
   requires?: readonly ClientFeature[]
+}
+
+/** How people create a panel of the type: one `panel.new.<type>` action
+ *  ("New <label>") and an entry in every creation menu (the canvas menu, the
+ *  dock's new-tab menu, the empty dock, a surface's picker, the relation
+ *  handle, the palette, File > New). */
+export interface PanelCreation {
+  /** Position in every creation menu. */
+  order: number
+  /** The action's and menus' title; defaults to "New <label>". */
+  title?: string
+  /** Default key of the `panel.new.<type>` action. */
+  key?: StoredShortcut
+  /** A new-panel button on the canvas toolbar. */
+  toolbar?: boolean
+  /** Created in a checkout: menus offer each ready worktree. */
+  inWorktree?: boolean
 }
 
 /** A generic "open" action a panel type serves (`opens`). */
@@ -90,16 +112,18 @@ export interface PanelDefinition<
   // --- Flags -----------------------------------------------------------------
   /** False for containers that only live in docks (a canvas). */
   canLiveOnCanvas: boolean
-  /** Supports an explicit checkout switch. */
-  worktreeBinding?: boolean
+  /** A live panel switches checkout through its session (`switchWorktree`
+   *  op); other types just rebind the record. */
+  switchesWorktree?: boolean
   /** Offered as a destination in the command palette. */
   navigable?: boolean
-  /** Position in the "Split with..." menu; omitted when not offered. */
-  splitMenuOrder?: number
+  /** People create it from menus; omitted for types only code creates. */
+  creation?: PanelCreation
   /** What generic "open" actions create this type for, with the create
    *  option each passes: `file` (`filePath`; the session takes
-   *  `openFile {path, line?, column?}`), `directory` (`cwd`), `url` (`url`),
-   *  `conversation` (`threadId`). The first registered type wins. */
+   *  `openFile {path, line?, column?}`), `directory` (`cwd`), `url` (`url`;
+   *  the session takes `newTab {url}`), `conversation` (`threadId`). The
+   *  first registered type wins. */
   opens?: readonly PanelOpenKind[]
   /** A picker that becomes the type the user chooses (`replacePanel`): what
    *  "Split Right" creates. At most one type sets it. */
@@ -163,6 +187,7 @@ export function definitionProblems(definition: AnyPanelDefinition): string[] {
   unknownFeatures(definition.requires, definition.type)
   for (const command of definition.commands ?? []) unknownFeatures(command.requires, `command ${command.id}`)
   if (typeof definition.icon !== 'string' || !definition.icon) problems.push('icon must be a name')
+  if (definition.creation && !Number.isFinite(definition.creation.order)) problems.push('creation order must be a number')
   if (definition.channel?.kind !== 'channel') problems.push('channel schema is missing')
   return problems
 }

@@ -1,6 +1,7 @@
 import { defineSettings, everyItem, everyValue, numberIn, setting } from '@kernel/settings/contract/define'
 import { validateTheme, type Theme, type ThemeSelection } from './theme'
-import { SHORTCUT_ACTIONS, type ShortcutAction, type StoredShortcut } from './shortcuts'
+import type { ActionId } from './actions'
+import type { StoredShortcut } from './shortcuts'
 
 export const appearanceSettings = defineSettings({
   scope: 'client',
@@ -15,8 +16,6 @@ export const appearanceSettings = defineSettings({
   },
 })
 
-const shortcutActions = new Set<string>(SHORTCUT_ACTIONS)
-
 function isStoredShortcut(value: unknown): value is StoredShortcut {
   const s = value as Record<string, unknown> | null
   return !!s && typeof s === 'object'
@@ -30,10 +29,9 @@ function isStoredShortcut(value: unknown): value is StoredShortcut {
 export const shortcutSettings = defineSettings({
   scope: 'client',
   keys: {
-    /** Overrides of the default bindings only; an empty key disables one. */
-    customShortcuts: setting<Partial<Record<ShortcutAction, StoredShortcut>>>(
-      {},
-      everyValue((shortcut, action) => shortcutActions.has(action) && isStoredShortcut(shortcut)),
-    ),
+    /** Overrides of the default bindings by action id; an empty key
+     *  disables one. Actions are declared at run time, so an id no module
+     *  declares is kept and ignored. */
+    customShortcuts: setting<Record<ActionId, StoredShortcut>>({}, everyValue((shortcut) => isStoredShortcut(shortcut))),
   },
 })

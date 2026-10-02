@@ -12,7 +12,7 @@
 // failed; after MAX_INSTALL_ATTEMPTS failures we stop trusting the auto path and
 // route the user to the manual-reinstall fallback (see autoUpdater.ts).
 
-import { compareSemver } from './semver'
+import { compareSemver } from '@runtime/daemon/contract'
 
 export interface UpdateRecord {
   /** Version we last downloaded and staged to install on quit, or null. */

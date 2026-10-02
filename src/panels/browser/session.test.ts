@@ -72,6 +72,7 @@ function world(surface?: Surface): World {
       },
     },
     settings: { get: (key) => settings[key] },
+    files: { serveUrl: async (p) => `http://127.0.0.1:4000/token/${p.replace(/^\//, '')}` },
     newId: () => `n${++ids}`,
   }
   const entry = browserPanel(deps)
@@ -131,6 +132,28 @@ describe('browser session', () => {
     w.dispose()
   })
 
+  it('loads a typed path or file:// URL from the workspace runtime file server, never the client disk', async () => {
+    const w = world()
+    const id = w.create({ url: 'https://example.com/' })
+    await w.host.restore()
+    await w.op(id, { kind: 'navigate', input: '/work/site/index.html' })
+    expect(w.snapshot(id).tabs[0].url).toBe('http://127.0.0.1:4000/token/work/site/index.html')
+    await w.op(id, { kind: 'navigate', input: 'file:///work/a%20b.html' })
+    expect(w.snapshot(id).tabs[0].url).toBe('http://127.0.0.1:4000/token/work/a b.html')
+    w.dispose()
+  })
+
+  it('serves a file URL a panel is created on or a new tab opens', async () => {
+    const w = world()
+    const id = w.create({ url: 'file:///work/site/index.html' })
+    await w.host.restore()
+    await w.host.started(id)
+    expect(w.snapshot(id).tabs[0].url).toBe('http://127.0.0.1:4000/token/work/site/index.html')
+    const tabId = await w.op(id, { kind: 'newTab', url: 'file:///work/b.html' }) as string
+    expect(w.snapshot(id).tabs.find((tab) => tab.id === tabId)?.url).toBe('http://127.0.0.1:4000/token/work/b.html')
+    w.dispose()
+  })
+
   it('follows client reports: a new url moves nav and names its source, the same url does not', async () => {
     const w = world()
     const id = w.create({ url: 'https://a.test/' })
@@ -172,6 +195,21 @@ describe('browser session', () => {
     await again.host.restore()
     expect(again.snapshot(id)).toMatchObject({ zoom: 1.1, tabs: [expect.objectContaining({ url: 'cate://newtab' })] })
     again.dispose()
+  })
+
+  it('names the client behind each selection, and none for a caller\'s', async () => {
+    const w = world()
+    const id = w.create()
+    await w.host.restore()
+    const first = w.snapshot(id).activeTabId
+    const second = await w.op(id, { kind: 'newTab', url: 'https://b.test/' }, 'client-b') as string
+    expect(w.snapshot(id)).toMatchObject({ activeTabId: second, activeSource: 'client-b' })
+    await w.op(id, { kind: 'selectTab', tabId: first }, 'client-a')
+    expect(w.snapshot(id)).toMatchObject({ activeTabId: first, activeSource: 'client-a' })
+    await expect(w.api(id, 'createTab', { url: 'https://c.test/' })).rejects.toMatchObject({ code: 'no-renderer' })
+    expect(w.snapshot(id).activeSource).toBeNull()
+    expect(w.snapshot(id).tabs.find((tab) => tab.id === w.snapshot(id).activeTabId)?.url).toBe('https://c.test/')
+    w.dispose()
   })
 
   it('publishes the panel downloads newest first', async () => {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { AGENTS, normalizeAgentHookPayload, type AgentId } from '../contract'
-import { createAgentStatusMachine, type AgentStatusMachine } from './status'
+import { createAgentStatusMachine, type AgentStatusChange, type AgentStatusMachine } from './status'
 
 const PTY = 'pty-agent-status'
 const SESSION = 'session-agent-status'
@@ -95,7 +95,7 @@ const permissionFixtures: PermissionFixture[] = [
     agentId: 'hermes',
     turnStart: { hook_event_name: 'pre_llm_call', session_id: SESSION, profile: 'default', platform: 'cli' },
     permissionWait: {
-      hook_event_name: 'pre_approval_request', session_id: SESSION, profile: 'default', platform: 'cli',
+      hook_event_name: 'pre_approval_request', session_id: SESSION, profile: 'default', platform: 'cli', surface: 'cli',
     },
   },
   {
@@ -106,6 +106,8 @@ const permissionFixtures: PermissionFixture[] = [
 ]
 
 let machine: AgentStatusMachine
+/** Changes that reach the user (a notification). */
+let attention: AgentStatusChange[]
 
 function state(): string {
   return machine.status(PTY)
@@ -119,7 +121,8 @@ function emit(agentId: AgentId, raw: Record<string, unknown>): void {
 
 describe('coding-agent hook status integration', () => {
   beforeEach(() => {
-    machine = createAgentStatusMachine(() => {})
+    attention = []
+    machine = createAgentStatusMachine((change) => { if (change.attention) attention.push(change) })
     machine.notePresence(PTY, true, false, null)
   })
 
@@ -164,7 +167,7 @@ describe('coding-agent hook status integration', () => {
     emit('codex', {
       hook_event_name: 'PermissionRequest', session_id: SESSION, turn_id: 'turn-1', tool_name: 'Bash',
     })
-    expect(state()).toBe('waitingForInput')
+    expect(state()).toBe('running')
 
     emit('codex', {
       hook_event_name: 'PreToolUse', session_id: SESSION, turn_id: 'turn-1', tool_name: 'Bash',
@@ -177,7 +180,7 @@ describe('coding-agent hook status integration', () => {
     emit('claude-code', {
       hook_event_name: 'PermissionRequest', session_id: SESSION, tool_name: 'Bash',
     })
-    expect(state()).toBe('waitingForInput')
+    expect(state()).toBe('running')
 
     emit('claude-code', {
       hook_event_name: 'PreToolUse', session_id: SESSION, tool_name: 'Bash',
@@ -190,10 +193,90 @@ describe('coding-agent hook status integration', () => {
     ({ agentId, turnStart, permissionWait }) => {
       emit(agentId, turnStart)
       emit(agentId, permissionWait)
-      expect(state()).toBe('waitingForInput')
+      expect(state()).toBe(agentId === 'codex' || agentId === 'claude-code' ? 'running' : 'waitingForInput')
 
       machine.noteHookEvent({ terminalId: PTY, agentId, kind: 'input-submit', sessionId: SESSION, raw: {} })
       expect(state()).toBe('running')
     },
   )
+
+  it.each([
+    { agentId: 'codex', hook_event_name: 'PermissionRequest' },
+    { agentId: 'claude-code', hook_event_name: 'PermissionRequest' },
+    { agentId: 'hermes', hook_event_name: 'pre_approval_request', surface: 'smart' },
+    { agentId: 'hermes', hook_event_name: 'pre_approval_request', surface: 'transport:reviewer' },
+    { agentId: 'hermes', hook_event_name: 'pre_approval_request' },
+  ] as const)('$agentId ambiguous/automatic approvals never announce readiness ($surface)', (raw) => {
+    const fixture = fixtures.find((f) => f.agentId === raw.agentId)!
+    emit(raw.agentId, fixture.turnStart)
+    for (let i = 0; i < 3; i++) {
+      emit(raw.agentId, { ...raw, session_id: SESSION, profile: 'default', platform: 'cli' })
+      machine.notePresence(PTY, true, false, null)
+      expect(state()).toBe('running')
+      expect(machine.canReceivePrompt(PTY)).toBe(false)
+      expect(attention).toEqual([])
+    }
+    // Even a denial without a tool execution ends via the normal turn boundary.
+    emit(raw.agentId, fixture.turnEnd)
+    expect(state()).toBe('waitingForInput')
+    expect(machine.canReceivePrompt(PTY)).toBe(true)
+    expect(attention).toHaveLength(1)
+  })
+
+  it.each(['claude-code', 'hermes'] as const)('%s notifies only when a check escalates to a human', (agentId) => {
+    const extra = { session_id: SESSION, profile: 'default', platform: 'cli' }
+    emit(agentId, fixtures.find((f) => f.agentId === agentId)!.turnStart)
+    const check = agentId === 'claude-code'
+      ? { hook_event_name: 'PermissionRequest' }
+      : { hook_event_name: 'pre_approval_request', surface: 'smart' }
+    emit(agentId, { ...check, ...extra })
+    expect(attention).toEqual([])
+    const human = agentId === 'claude-code'
+      ? { hook_event_name: 'Notification', notification_type: 'permission_prompt' }
+      : { hook_event_name: 'pre_approval_request', surface: 'cli' }
+    emit(agentId, { ...human, ...extra })
+    expect(state()).toBe('waitingForInput')
+    expect(machine.canReceivePrompt(PTY)).toBe(false)
+    expect(attention).toHaveLength(1)
+    expect(attention[0].attention?.permission).toBeDefined()
+  })
+
+  it.each(['PostToolUseFailure', 'PermissionDenied'])('Claude %s resumes silently after a permission check', (hook_event_name) => {
+    emit('claude-code', { hook_event_name: 'PermissionRequest', session_id: SESSION })
+    emit('claude-code', { hook_event_name, session_id: SESSION })
+    expect(state()).toBe('running')
+    expect(attention).toEqual([])
+  })
+
+  it.each(['codex', 'claude-code'] as const)('%s child hooks cannot mark the parent as ready', (agentId) => {
+    emit(agentId, fixtures.find((f) => f.agentId === agentId)!.turnStart)
+    for (const hook_event_name of ['SessionStart', 'PermissionRequest', 'Stop', 'SessionEnd']) {
+      expect(normalizeAgentHookPayload(agentId, PTY, {
+        hook_event_name, session_id: 'child-session', agent_id: 'child-agent',
+      })).toBeNull()
+    }
+    expect(state()).toBe('running')
+    expect(attention).toEqual([])
+  })
+
+  it.each(fixtures)('$agentId ignores a different session ending mid-turn', (fixture) => {
+    emit(fixture.agentId, fixture.turnStart)
+    emit(fixture.agentId, {
+      ...fixture.turnEnd, session_id: 'previous', sessionId: 'previous', sessionID: 'previous',
+    })
+    expect(state()).toBe('running')
+    expect(attention).toEqual([])
+  })
+
+  it.each([
+    ['cursor', { hook_event_name: 'beforeShellExecution', command: 'echo ok' }],
+    ['kiro', { hook_event_name: 'PreToolUse', tool_name: 'execute_bash' }],
+    ['grok', { hookEventName: 'pre_tool_use', toolName: 'run_terminal_command' }],
+    ['opencode', { type: 'tool.execute.before' }],
+  ] as const)('%s ordinary tool checks never imply a human wait', (agentId, raw) => {
+    emit(agentId, fixtures.find((f) => f.agentId === agentId)!.turnStart)
+    expect(normalizeAgentHookPayload(agentId, PTY, raw)).toBeNull()
+    expect(state()).toBe('running')
+    expect(attention).toEqual([])
+  })
 })

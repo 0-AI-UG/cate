@@ -81,7 +81,7 @@ export function SkillsSettings({ workspaceId }: { workspaceId: string }) {
             placeholder="owner/repo"
             className="font-mono"
           />
-          <SecondaryButton onClick={() => void add()} disabled={!repo.trim() || !runtime} loading={adding} loadingLabel="Adding…">
+          <SecondaryButton onClick={() => void add()} disabled={!repo.trim() || !runtime} loading={adding} loadingLabel="Adding">
             <Plus size={11} />
             Add
           </SecondaryButton>

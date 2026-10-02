@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SHORTCUTS } from '@kernel/ui/contract'
+import { storedShortcut } from '@kernel/ui/contract'
 import { createDocument, applyOp, MAIN_WINDOW, type DocChange, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import type { WorkspaceEntry } from '@client/workspaces'
@@ -22,54 +22,51 @@ function build(changes: DocChange[]): WorkspaceDocument {
 
 const sources = (over: Partial<CommandSources> = {}): CommandSources => ({
   actions: [],
-  shortcuts: DEFAULT_SHORTCUTS,
+  shortcuts: {},
   runAction: vi.fn(),
-  commands: [],
-  focused: null,
-  sendOp: vi.fn(),
-  clientHas: () => true,
+  inWorktree: [],
+  worktrees: [],
+  create: vi.fn(),
   ...over,
 })
 
+const terminalAction = { id: 'panel.new.terminal', spec: { title: 'New Terminal', icon: 'terminal' as const } }
+const settingsAction = { id: 'openSettings', spec: { title: 'Settings…' } }
+
 describe('commandItems', () => {
-  it('lists bound actions with their shortcut and runs them', () => {
-    const src = sources({ actions: ['newTerminal', 'openSettings'] })
+  it('lists the available actions with their key and runs them', () => {
+    const src = sources({
+      actions: [terminalAction, settingsAction],
+      shortcuts: { 'panel.new.terminal': storedShortcut('t', { command: true }), openSettings: storedShortcut('') },
+    })
     const items = commandItems(src, '')
-    expect(items.map((i) => i.title)).toEqual(['New Terminal', 'Settings / Preferences…'])
-    expect(items[0].shortcut).toBe('⌘T')
+    expect(items.map((i) => [i.title, i.shortcut, i.icon])).toEqual([['New Terminal', '⌘T', 'terminal'], ['Settings…', undefined, null]])
     items[0].run()
-    expect(src.runAction).toHaveBeenCalledWith('newTerminal')
+    expect(src.runAction).toHaveBeenCalledWith('panel.new.terminal')
+  })
+
+  it('leaves out actions kept from the palette, and shows a key the panel handles itself', () => {
+    const items = commandItems(sources({
+      actions: [
+        { id: 'navigateUp', spec: { title: 'Navigate Up', palette: false } },
+        { id: 'panel.browser.reload', spec: { title: 'Browser: Reload', keyHint: '⌘R' } },
+      ],
+    }), '')
+    expect(items.map((i) => [i.id, i.shortcut])).toEqual([['panel.browser.reload', '⌘R']])
   })
 
   it('filters by title', () => {
-    expect(commandItems(sources({ actions: ['newTerminal', 'openSettings'] }), 'settings').map((i) => i.id)).toEqual(['openSettings'])
+    expect(commandItems(sources({ actions: [terminalAction, settingsAction] }), 'settings').map((i) => i.id)).toEqual(['openSettings'])
   })
 
-  it("adds the focused panel's commands as session ops, hiding those needing a missing feature", () => {
-    const src = sources({
-      focused: {
-        record: record('p1', 'browser'),
-        definition: def('browser', {
-          commands: [
-            { id: 'reload', title: 'Browser: Reload', op: { kind: 'reload' } },
-            { id: 'shot', title: 'Browser: Screenshot', op: { kind: 'shot' }, requires: ['screenCapture'] },
-          ],
-        }),
-      },
-      clientHas: (feature) => feature !== 'screenCapture',
-    })
-    const items = commandItems(src, '')
-    expect(items.map((i) => i.id)).toEqual(['browser:reload'])
+  it('offers each worktree for a type created in a checkout, when there are several', () => {
+    const worktrees = [{ id: 'a', path: '/repo', label: 'repo (primary)' }, { id: 'b', path: '/wt/feat', label: 'feat' }]
+    const src = sources({ inWorktree: [def('terminal')], worktrees })
+    const items = commandItems(src, 'feat')
+    expect(items.map((i) => i.title)).toEqual(['New Terminal in feat'])
     items[0].run()
-    expect(src.sendOp).toHaveBeenCalledWith('p1', { kind: 'reload' })
-  })
-
-  it('includes registered palette commands', () => {
-    const run = vi.fn()
-    const items = commandItems(sources({ commands: [{ id: 'connect', title: 'Panels: Connect focused panel…', run }] }), 'connect')
-    expect(items).toHaveLength(1)
-    items[0].run()
-    expect(run).toHaveBeenCalled()
+    expect(src.create).toHaveBeenCalledWith('terminal', { worktreeId: 'b', cwd: '/wt/feat' })
+    expect(commandItems(sources({ inWorktree: [def('terminal')], worktrees: worktrees.slice(0, 1) }), '')).toEqual([])
   })
 })
 

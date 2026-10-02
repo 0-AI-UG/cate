@@ -120,7 +120,10 @@ export class PairingService implements PeerPolicy {
     const frame = await firstFrame(channel, this.options.pairTimeoutMs ?? 30_000)
     if (!frame) return false
     const request = decodePairMessage(frame)
-    if (!request || request.type !== 'pair') return this.answer(channel, { type: 'pair-rejected', reason: 'malformed' })
+    // Not the pairing protocol at all: a client whose key is not (or no
+    // longer) paired saying hello. The transport tells it it was refused.
+    if (!request) return false
+    if (request.type !== 'pair') return this.answer(channel, { type: 'pair-rejected', reason: 'malformed' })
 
     const live = this.liveSecrets()
     if (live.length === 0) return this.answer(channel, { type: 'pair-rejected', reason: 'no-secret' })

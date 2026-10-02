@@ -1,12 +1,16 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { MAIN_WINDOW, placementOf } from '@workspace/document/contract'
 import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../layout/testing'
-import { registerAction, registerHostActions, runAction, onPanelRenameRequest } from './actions'
+import { actionSpec, declaredActions } from '@kernel/ui'
+import { storedShortcut } from '@kernel/ui/contract'
+import { canRunAction, registerActions, requestPanelRename, runAction, onPanelRenameRequest } from './actions'
+import { creationMenuItems, creationPick, worktreeChoices } from './creation'
+import { registerPanelActions } from './panelActions'
 import { closePanel, closePanels, registerPanelCloseGuard } from './close'
 import { placeTargetFor } from '@panels/framework/contract'
 import { documentStoreFor } from '@client/document'
 import { createPanel, newId } from './createPanel'
-import { registerPanelDefinitions } from './definitions'
+import { creatableDefinitions, panelDefinition, registerPanelDefinitions } from './definitions'
 import { focusedLeafPanelId } from './focus'
 import { CANVAS_REVEAL_INTENT, revealPanel } from './reveal'
 
@@ -136,27 +140,88 @@ describe('focus and reveal', () => {
 })
 
 describe('actions', () => {
-  it('runs registered handlers by id and says when none handles it', async () => {
+  it('declares and binds in one call, runs by id, and withdraws both', async () => {
     const handler = vi.fn()
-    const stop = registerAction('test.action', handler)
+    const stop = registerActions({ 'test.action': { title: 'Test', key: storedShortcut('j', { command: true }) } }, { 'test.action': { run: handler } })
+    expect(actionSpec('test.action')?.title).toBe('Test')
     expect(await runAction('test.action', { workspaceId: 'w' })).toBe(true)
     expect(handler).toHaveBeenCalledWith({ workspaceId: 'w' })
-    expect(await runAction('missing', { workspaceId: 'w' })).toBe(false)
+    stop()
+    expect(actionSpec('test.action')).toBeUndefined()
+    expect(await runAction('test.action', { workspaceId: 'w' })).toBe(false)
+  })
+
+  it('does not run an action that is disabled for the context', async () => {
+    const run = vi.fn()
+    const stop = registerActions({ 'test.gated': { title: 'Gated' } }, { 'test.gated': { run, enabled: ({ workspaceId }) => workspaceId === 'ok' } })
+    expect(canRunAction('test.gated', { workspaceId: 'no' })).toBe(false)
+    expect(await runAction('test.gated', { workspaceId: 'no' })).toBe(false)
+    expect(await runAction('test.gated', { workspaceId: 'ok' })).toBe(true)
+    expect(run).toHaveBeenCalledTimes(1)
     stop()
   })
 
-  it('host actions: new panel beside the focused one, rename request', async () => {
+  it('derives a new-panel action per creatable type, in creation order', async () => {
     ws = attachTestWorkspace('w', fixture())
-    const stop = registerHostActions()
-    ws.state.focus('t1')
-    await runAction('new:editor', { workspaceId: 'w' })
+    const created: string[] = []
+    const stop = registerPanelActions((type, { workspaceId }) => { created.push(type); createPanel(workspaceId!, type) })
+    const ids = declaredActions().map((a) => a.id).filter((id) => id.startsWith('panel.new.'))
+    expect(ids).toEqual(creatableDefinitions().map((d) => `panel.new.${d.type}`))
+    expect(actionSpec('panel.new.terminal')).toMatchObject({ title: 'New Terminal', menu: { bar: 'file', group: 'new' } })
+    expect(actionSpec('panel.new.canvas')).toBeUndefined()
+    await runAction('panel.new.editor', { workspaceId: 'w' })
+    expect(created).toEqual(['editor'])
     expect(Object.values(ws.confirmed().panels).filter((p) => p.type === 'editor')).toHaveLength(1)
+    stop()
+    expect(actionSpec('panel.new.editor')).toBeUndefined()
+  })
+
+  it('panel commands run only while a panel of the type is focused', async () => {
+    const terminal = panelDefinition('terminal')!
+    registerPanelDefinitions([{ ...terminal, commands: [{ id: 'restart', title: 'Restart', op: { kind: 'restart' }, menu: true }] }])
+    ws = attachTestWorkspace('w', fixture())
+    const stop = registerPanelActions(() => {})
+    expect(actionSpec('panel.terminal.restart')?.menu).toEqual({ bar: 'panel', group: 'terminal', submenu: terminal.label })
+    ws.state.focus('t1')
+    expect(canRunAction('panel.terminal.restart', { workspaceId: 'w' })).toBe(true)
+    ws.state.focus('cv')
+    expect(canRunAction('panel.terminal.restart', { workspaceId: 'w' })).toBe(false)
+    stop()
+    registerPanelDefinitions([terminal])
+  })
+
+  it('hands a rename request to the docks', () => {
     const renames: string[] = []
     const off = onPanelRenameRequest((_, id) => renames.push(id))
-    ws.state.focus('t1')
-    await runAction('renamePanel', { workspaceId: 'w' })
+    requestPanelRename('w', 't1')
     expect(renames).toEqual(['t1'])
     off()
-    stop()
+  })
+})
+
+describe('creation menus', () => {
+  const worktrees = worktreeChoices({
+    a: { id: 'a', path: '/repo', color: '#fff', status: 'ready' },
+    b: { id: 'b', path: '/repo/.cate/worktrees/feat', color: '#000', label: 'feat', status: 'ready' },
+    c: { id: 'c', path: '/repo/.cate/worktrees/new', color: '#000', status: 'creating' },
+  })
+
+  it('offers each ready worktree for a type created in a checkout', () => {
+    expect(worktrees.map((w) => w.label)).toEqual(['repo (primary)', 'feat'])
+    const terminal = { ...panelDefinition('terminal')!, creation: { order: 1, inWorktree: true } }
+    const editor = panelDefinition('editor')!
+    const items = creationMenuItems([terminal, editor], worktrees)
+    expect(items).toEqual([
+      { label: 'New Terminal', submenu: [{ id: 'new:terminal:a', label: 'repo (primary)' }, { id: 'new:terminal:b', label: 'feat' }] },
+      { id: 'new:editor', label: 'New Editor' },
+    ])
+    expect(creationMenuItems([terminal], worktrees.slice(0, 1))).toEqual([{ id: 'new:terminal', label: 'New Terminal' }])
+  })
+
+  it('turns a pick into the type and its checkout', () => {
+    expect(creationPick('new:terminal:b', worktrees)).toEqual({ type: 'terminal', options: { worktreeId: 'b', cwd: '/repo/.cate/worktrees/feat' } })
+    expect(creationPick('new:editor', worktrees)).toEqual({ type: 'editor', options: {} })
+    expect(creationPick('close', worktrees)).toBeNull()
+    expect(creationPick(null, worktrees)).toBeNull()
   })
 })

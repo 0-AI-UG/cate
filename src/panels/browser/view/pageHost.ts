@@ -8,6 +8,9 @@
 // same URL differently (logged in on one, not the other) cannot ping-pong.
 // Only navigation that starts on this client's page (a link, a form, the
 // user's back button) moves the session URL.
+//
+// The tab this client shows is client state (`show`); page operations act on
+// the session's active tab, and the driving client shows it while they run.
 
 import { RpcError } from '@kernel/rpc/contract'
 import type { BrowserDriverResult, BrowserPageBridge } from '@services/browser/contract'
@@ -35,7 +38,7 @@ export interface BrowserGuest extends HTMLElement {
   focus(): void
 }
 
-/** What this client's page of the active tab shows, for the toolbar. */
+/** What this client's page of the shown tab shows, for the toolbar. */
 interface LocalPageState {
   url: string
   canGoBack: boolean
@@ -45,7 +48,7 @@ interface LocalPageState {
   crashed: boolean
 }
 
-/** Saved-password suggestions for the focused field of the active page. */
+/** Saved-password suggestions for the focused field of the shown page. */
 interface BrowserAutofill {
   targetId: string
   rect: { left: number; bottom: number; width: number; height: number }
@@ -68,6 +71,8 @@ interface PageHostDeps {
   panelId: string
   clientId: string
   send(op: BrowserOp): Promise<unknown>
+  /** Shows a tab on this client (a page operation runs on it). */
+  reveal?(tabId: string): void
   bridge: BrowserPageBridge | null
   /** Saved passwords and file uploads come from the runtime. */
   passwords?: {
@@ -102,6 +107,8 @@ export class BrowserPageHost {
   private readonly listeners = new Set<() => void>()
   private readonly waiters = new Set<() => void>()
   private snapshot: BrowserSnapshot | null = null
+  /** The tab this client shows. */
+  private shown: string | undefined
   private disposed = false
   private revision = 0
   private autofillRequest = 0
@@ -129,8 +136,17 @@ export class BrowserPageHost {
     for (const check of [...this.waiters]) check()
   }
 
-  private get activeTabId(): string | undefined {
-    return this.snapshot?.activeTabId
+  /** The tab this client shows. */
+  private get shownTabId(): string | undefined {
+    return this.shown ?? this.snapshot?.activeTabId
+  }
+
+  /** The view tells which tab this client shows. */
+  show(tabId: string): void {
+    if (tabId === this.shown) return
+    this.shown = tabId
+    this.dismissAutofill()
+    this.refreshLocal()
   }
 
   private tab(tabId: string): BrowserTab | undefined {
@@ -145,7 +161,6 @@ export class BrowserPageHost {
   }
 
   update(snapshot: BrowserSnapshot): void {
-    const previousActive = this.snapshot?.activeTabId
     this.snapshot = snapshot
     for (const tab of snapshot.tabs) {
       const page = this.pages.get(tab.id)
@@ -156,10 +171,6 @@ export class BrowserPageHost {
       try { current = page.ready ? page.webview.getURL() : '' } catch { /* detached */ }
       if (current === tab.url) continue
       this.follow(page, tab.url)
-    }
-    if (snapshot.activeTabId !== previousActive) {
-      this.dismissAutofill()
-      this.refreshLocal()
     }
     for (const check of [...this.waiters]) check()
   }
@@ -198,7 +209,7 @@ export class BrowserPageHost {
 
   private listen(tabId: string, page: Page): () => void {
     const { webview } = page
-    const active = () => tabId === this.activeTabId
+    const active = () => tabId === this.shownTabId
     const report = (op: BrowserOp) => { void this.deps.send(op).catch(() => { /* the panel went away */ }) }
     const reportLoad = (patch: { loading?: boolean; loadError?: string | null; crashed?: boolean }) => {
       if (active() && this.visible) report({ kind: 'reportLoad', tabId, ...patch })
@@ -277,12 +288,15 @@ export class BrowserPageHost {
       canGoForward = page.webview.canGoForward()
       title = page.webview.getTitle()
     } catch { /* detached */ }
-    if (tabId === this.activeTabId) {
+    if (tabId === this.shownTabId) {
       this.setLocal({ url, canGoBack, canGoForward, ...(inPage ? {} : { isLoading: false, loadError: null }) })
     }
-    if (page.following) return
-    void this.deps.send({ kind: 'reportNavigation', tabId, url, ...(inPage ? { inPage } : title ? { title } : {}), canGoBack, canGoForward })
-      .catch(() => { /* the panel went away */ })
+    // A followed navigation reports no URL (clients' redirects could
+    // ping-pong), only its history state.
+    const op: BrowserOp = page.following
+      ? { kind: 'reportLoad', tabId, canGoBack, canGoForward }
+      : { kind: 'reportNavigation', tabId, url, ...(inPage ? { inPage } : title ? { title } : {}), canGoBack, canGoForward }
+    void this.deps.send(op).catch(() => { /* the panel went away */ })
   }
 
   private setLocal(patch: Partial<LocalPageState>): void {
@@ -290,9 +304,9 @@ export class BrowserPageHost {
     this.changed()
   }
 
-  /** Re-reads the active page's state (after a tab switch). */
+  /** Re-reads the shown page's state (after a tab switch). */
   refreshLocal(): void {
-    const tabId = this.activeTabId
+    const tabId = this.shownTabId
     const tab = tabId ? this.tab(tabId) : undefined
     const page = tabId ? this.pages.get(tabId) : undefined
     let state: LocalPageState = { url: tab?.url ?? '', canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false }
@@ -311,9 +325,9 @@ export class BrowserPageHost {
     this.changed()
   }
 
-  /** The active tab's page URL on this client, else the session's. */
+  /** The shown tab's page URL on this client, else the session's. */
   displayUrl(): string {
-    const tab = this.activeTabId ? this.tab(this.activeTabId) : undefined
+    const tab = this.shownTabId ? this.tab(this.shownTabId) : undefined
     if (!tab) return ''
     if (!loadable(tab.url)) return tab.url
     return this.local.url || tab.url
@@ -325,14 +339,14 @@ export class BrowserPageHost {
     }
   }
 
-  webview(tabId = this.activeTabId): BrowserGuest | null {
+  webview(tabId = this.shownTabId): BrowserGuest | null {
     return (tabId && this.pages.get(tabId)?.webview) || null
   }
 
   // ---- This client's own page actions (toolbar) ---------------------------
 
   /** Back, forward or reload on this client's page. False without history. */
-  historyAction(action: 'back' | 'forward' | 'reload' | 'reloadHard', tabId = this.activeTabId): boolean {
+  historyAction(action: 'back' | 'forward' | 'reload' | 'reloadHard', tabId = this.shownTabId): boolean {
     const page = tabId ? this.pages.get(tabId) : undefined
     if (!page?.ready) return false
     const { webview } = page
@@ -356,11 +370,26 @@ export class BrowserPageHost {
 
   // ---- Page operations (surface requests) ---------------------------------
 
+  /** The page of `tabId`, still the session's active tab and shown here. */
   private requireActive(tabId: string): Page {
-    if (tabId !== this.activeTabId) throw new Error('browser-tab-changed')
+    if (tabId !== this.snapshot?.activeTabId || tabId !== this.shownTabId) throw new Error('browser-tab-changed')
     const page = this.pages.get(tabId)
     if (!page) throw new Error('webview-not-ready')
     return page
+  }
+
+  /** Shows the session's active tab `tabId` on this client for a page
+   *  operation, then returns its page. */
+  private async drive(tabId: string): Promise<Page> {
+    if (tabId !== this.snapshot?.activeTabId) throw new Error('browser-tab-changed')
+    if (this.shownTabId !== tabId) {
+      this.deps.reveal?.(tabId)
+      await this.waitFor(() => (this.shownTabId === tabId ? true : undefined), 2_000)
+      const frame = this.deps.nextFrame ?? defaultFrame
+      await frame()
+      await frame()
+    }
+    return this.requireActive(tabId)
   }
 
   /** Resolves when `check` returns non-undefined, rechecked on every page change. */
@@ -402,14 +431,14 @@ export class BrowserPageHost {
   }
 
   async history(args: BrowserSurfaceArgs<'page.history'>): Promise<BrowserSurfaceResult<'page.history'>> {
-    this.requireActive(args.tabId)
+    await this.drive(args.tabId)
     return { ok: this.historyAction(args.action, args.tabId) }
   }
 
   async execute(args: BrowserSurfaceArgs<'page.execute'>): Promise<BrowserDriverResult> {
     const { bridge } = this.deps
     if (!bridge) throw new RpcError('no-renderer', 'this client has no page driver')
-    const page = this.requireActive(args.tabId)
+    const page = await this.drive(args.tabId)
     if (args.settle) {
       const frame = this.deps.nextFrame ?? defaultFrame
       await frame()
@@ -433,7 +462,7 @@ export class BrowserPageHost {
   async download(args: BrowserSurfaceArgs<'page.download'>): Promise<BrowserSurfaceResult<'page.download'>> {
     const { bridge } = this.deps
     if (!bridge) throw new RpcError('no-renderer', 'this client has no page driver')
-    const page = this.requireActive(args.tabId)
+    const page = await this.drive(args.tabId)
     if (!page.ready) throw new Error('webview-not-ready')
     await bridge.download(this.guestRef(args.tabId, page), args.url)
     return { url: args.url }
@@ -467,7 +496,7 @@ export class BrowserPageHost {
     try {
       const suggestions = await this.deps.passwords.suggestions(url)
       if (request !== this.autofillRequest || this.filling) return
-      const current = this.activeTabId ? this.pages.get(this.activeTabId) === page : false
+      const current = this.shownTabId ? this.pages.get(this.shownTabId) === page : false
       this.autofill = current && suggestions.length ? { targetId: focus.targetId, rect, suggestions } : null
     } catch {
       if (request === this.autofillRequest) this.autofill = null
@@ -485,7 +514,7 @@ export class BrowserPageHost {
   /** The password comes from the runtime and goes straight to the page. */
   async fillCredential(credentialId: string): Promise<void> {
     const popup = this.autofill
-    const page = this.activeTabId ? this.pages.get(this.activeTabId) : undefined
+    const page = this.shownTabId ? this.pages.get(this.shownTabId) : undefined
     this.autofill = null
     this.changed()
     if (!popup || !page || !this.deps.passwords || !this.deps.bridge) return

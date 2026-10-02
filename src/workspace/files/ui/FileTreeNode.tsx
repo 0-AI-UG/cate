@@ -18,15 +18,15 @@ import {
   Image as ImageIcon,
 } from 'lucide-react'
 import { clientUi, Spinner } from '@kernel/ui'
-import { relativeDisplayPath, type FileEntry } from '../contract'
-import { isExternalFileDrag, takeDroppedItems } from './droppedEntries'
+import { hasFileRefDrag, readFileRefDrag, relativeDisplayPath, writeFileRefDrag, type FileEntry } from '../contract'
+import { isExternalFileDrag, refDropMode, takeDroppedItems } from './droppedEntries'
 import type { FileTreeModel } from './fileTreeModel'
 import type { ContextMenuItem } from '@kernel/ui/contract'
 import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
-import { getClipboard, hasClipboard, setClipboard } from './fileClipboard'
+import { canCopyFiles, clipboardFileRefs, copyFileRefs } from './fileClipboard'
 import { InlineEditInput } from './InlineEditInput'
 import { CreateFileForm } from './CreateFileForm'
-import { CATE_FILE_MIME, readCateFilePaths, writeCateFileDrag } from './fileDragPayload'
+import { useFileViewsHost } from './FileViewsContext'
 
 // -----------------------------------------------------------------------------
 // Icon mapping — extension to inline SVG icons with colors
@@ -237,6 +237,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       : [node.path]
 
     const relPath = relativeDisplayPath(node.path, rootPath)
+    const clipboard = canCopyFiles()
+    const pasteable = clipboard && (await clipboardFileRefs()).length > 0
 
     const items: ContextMenuItem[] = []
     if (!node.isDirectory) {
@@ -254,17 +256,13 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       { id: 'new-file', label: 'New File…' },
       { id: 'new-folder', label: 'New Folder…' },
       { type: 'separator' },
-      // Only a client with OS file actions can reveal; otherwise the item is
-      // omitted instead of silently no-oping.
-      ...(ui.revealFile
+      ...(clipboard
         ? ([
-            { id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' },
+            { id: 'copy', label: pathsToOpen.length > 1 ? `Copy ${pathsToOpen.length} Items` : 'Copy', accelerator: 'Cmd+C' },
+            { id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: pasteable },
             { type: 'separator' },
           ] as ContextMenuItem[])
         : []),
-      { id: 'copy', label: pathsToOpen.length > 1 ? `Copy ${pathsToOpen.length} Items` : 'Copy', accelerator: 'Cmd+C' },
-      { id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: hasClipboard() },
-      { type: 'separator' },
       { id: 'rename', label: 'Rename…', accelerator: 'Return' },
       { id: 'copy-path', label: 'Copy Path', accelerator: 'Alt+Cmd+C' },
       { id: 'copy-rel-path', label: 'Copy Relative Path', accelerator: 'Alt+Shift+Cmd+C' },
@@ -279,8 +277,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       case 'open-on-canvas': onFileOpen(pathsToOpen, 'canvas'); break
       case 'new-file': startCreate('file'); break
       case 'new-folder': startCreate('folder'); break
-      case 'reveal': void ui.revealFile?.(node.path, workspaceId); break
-      case 'copy': setClipboard(pathsToOpen); break
+      case 'copy': void copyFileRefs(pathsToOpen.map((path) => ({ workspaceId: resource.workspaceId, path }))); break
       case 'paste': await handlePaste(); break
       case 'rename': startRename(); break
       case 'copy-path': void ui.writeClipboard?.(node.path); break
@@ -368,18 +365,11 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 
   // --- Paste (copy from clipboard) ---
   const handlePaste = useCallback(async () => {
-    const sources = getClipboard()
-    if (sources.length === 0) return
+    const refs = await clipboardFileRefs()
+    if (refs.length === 0) return
     const destDir = node.isDirectory ? node.path : parentDir
     if (node.isDirectory) void onExpand(node.path)
-    for (const src of sources) {
-      try {
-        await resource.copy(src, destDir)
-      } catch (err) {
-        console.error('[file-tree] Paste failed:', err)
-      }
-    }
-    onTreeChanged?.()
+    if (await resource.transfer(refs, destDir, 'copy')) onTreeChanged?.()
   }, [node.isDirectory, node.path, parentDir, onExpand, onTreeChanged, resource])
 
   // --- Delete ---
@@ -396,9 +386,10 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
 
   // --- Drag-and-drop move ---
   const dropTargetDir = node.isDirectory ? node.path : parentDir
+  const takesOsFiles = useFileViewsHost().takesOsFiles()
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (isExternalFileDrag(e)) {
+    if (takesOsFiles && isExternalFileDrag(e)) {
       e.preventDefault()
       // Stop the bubble to the app-root handler (which forces dropEffect='none')
       // so the browser keeps our 'copy' and allows the drop.
@@ -406,17 +397,19 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       e.dataTransfer.dropEffect = 'copy'
       return
     }
-    if (!e.dataTransfer.types.includes(CATE_FILE_MIME)) return
+    if (!hasFileRefDrag(e.dataTransfer)) return
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }, [])
+    // Ahead of the dock or canvas host, whose drop would open the files.
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = refDropMode(e)
+  }, [takesOsFiles])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!isExternalFileDrag(e) && !e.dataTransfer.types.includes(CATE_FILE_MIME)) return
+    if (!(takesOsFiles && isExternalFileDrag(e)) && !hasFileRefDrag(e.dataTransfer)) return
     e.preventDefault()
     dragCounterRef.current++
     setIsDragOver(true)
-  }, [])
+  }, [takesOsFiles])
 
   const handleDragLeave = useCallback(() => {
     dragCounterRef.current--
@@ -429,7 +422,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     // External (OS) file/folder drop onto a folder → import into that folder.
     // stopPropagation keeps it from also triggering the panel-root import.
-    if (isExternalFileDrag(e)) {
+    if (takesOsFiles && isExternalFileDrag(e)) {
       e.preventDefault()
       e.stopPropagation()
       dragCounterRef.current = 0
@@ -440,29 +433,14 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       return
     }
 
-    e.preventDefault()
-    e.stopPropagation()
     dragCounterRef.current = 0
     setIsDragOver(false)
-
-    const sourcePaths = readCateFilePaths(e.dataTransfer)
-    if (sourcePaths.length === 0) return
-
-    for (const srcPath of sourcePaths) {
-      const fileName = srcPath.substring(srcPath.lastIndexOf('/') + 1)
-      const destPath = dropTargetDir + '/' + fileName
-      // Don't move onto itself or into the same directory
-      if (srcPath === destPath) continue
-      // Don't move a directory into itself
-      if (node.isDirectory && destPath.startsWith(srcPath + '/')) continue
-      try {
-        await resource.rename(srcPath, destPath)
-      } catch (err) {
-        console.error('[file-tree] Failed to move file:', err)
-      }
-    }
-    onTreeChanged?.()
-  }, [dropTargetDir, node.isDirectory, node.name, onTreeChanged, resource])
+    const drag = readFileRefDrag(e.dataTransfer)
+    if (!drag) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (await resource.transfer(drag.refs, dropTargetDir, refDropMode(e))) onTreeChanged?.()
+  }, [dropTargetDir, node.name, onTreeChanged, resource, takesOsFiles])
 
   // ---------------------------------------------------------------------------
   // Render
@@ -494,7 +472,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
           const dragPaths = isSelected && selectedPaths.size > 1
             ? [...selectedPaths]
             : [node.path]
-          writeCateFileDrag(e.dataTransfer, dragPaths)
+          writeFileRefDrag(e.dataTransfer, { refs: dragPaths.map((path) => ({ workspaceId: resource.workspaceId, path })) })
           e.dataTransfer.effectAllowed = 'copyMove'
         }}
         onDragOver={node.isDirectory ? handleDragOver : undefined}

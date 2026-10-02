@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import type { WorkspaceList, WorkspaceListSnapshot } from '@client/workspaces'
 import { installClientApp, type ClientApp } from '../app'
-import { bindAction, registerCommand } from '../actions/registry'
+import { registerActions } from '@client/host'
 import { INITIAL_UI_STATE, useUIStore } from '../state/uiStore'
 import { CommandPalette } from './CommandPalette'
 
@@ -57,24 +57,27 @@ describe('CommandPalette', () => {
   })
 
   it('lists bound actions and workspaces, but not unbound or unavailable actions', () => {
-    stops.push(bindAction('openSettings', { run: vi.fn() }))
-    stops.push(bindAction('toggleMinimap', { run: vi.fn(), requires: ['canvas'] }))
+    stops.push(registerActions(
+      { openSettings: { title: 'Settings…' }, toggleMinimap: { title: 'Toggle Minimap' } },
+      { openSettings: { run: vi.fn() }, toggleMinimap: { run: vi.fn(), requires: ['canvas'] } },
+    ))
     act(() => root.render(<CommandPalette />))
     const text = document.body.textContent ?? ''
-    expect(text).toContain('Settings / Preferences…')
+    expect(text).toContain('Settings…')
     expect(text).toContain('cate')
     expect(text).not.toContain('Toggle Minimap')
-    expect(text).not.toContain('New Terminal')
   })
 
   it('filters by the query and runs the selected command on Enter, closing first', () => {
     const run = vi.fn(() => { expect(useUIStore.getState().commandPaletteOpen).toBe(false) })
-    stops.push(bindAction('openSettings', { run: vi.fn() }))
-    stops.push(registerCommand({ id: 'connect', title: 'Panels: Connect focused panel…', run }))
+    stops.push(registerActions(
+      { openSettings: { title: 'Settings…' }, connect: { title: 'Panels: Connect focused panel…' } },
+      { openSettings: { run: vi.fn() }, connect: { run } },
+    ))
     act(() => root.render(<CommandPalette />))
     const input = document.body.querySelector('input') as HTMLInputElement
     type(input, 'connect')
-    expect(document.body.textContent).not.toContain('Settings / Preferences…')
+    expect(document.body.textContent).not.toContain('Settings…')
     key(input, 'Enter')
     expect(run).toHaveBeenCalledTimes(1)
   })

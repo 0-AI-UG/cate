@@ -1,7 +1,6 @@
 // Components and hooks the canvas uses but does not own. The node mini dock
 // is client/layout/dock's DockView over the node's dock, surfaces and panels
-// come from client/host; status tracking installs node activity. Tests swap
-// them. Install once at startup: a hook slot must not change while mounted.
+// come from client/host. Tests swap them. Install once at startup: a hook slot must not change while mounted.
 
 import React from 'react'
 import type { DockNode, NodeId } from '@workspace/document/contract'
@@ -23,15 +22,8 @@ export interface NodeDockProps {
   dropDisabled?: boolean
 }
 
-/** What a node's outline shows: a command finished, or an agent waits for
- *  input (pulses). */
-export type NodeActivity = 'finished' | 'waiting'
-
 export interface CanvasSlots {
   NodeDock: React.ComponentType<NodeDockProps>
-  /** A hook: the activity of a node's active panel. Installed by the module
-   *  that tracks terminal and agent status. */
-  useNodeActivity: (workspaceId: string, panelId: string | null) => NodeActivity | undefined
   /** Realigns native surfaces (webviews in a fixed host outside the
    *  transformed canvas) in the same task as a viewport change, so they never
    *  trail their nodes by a frame. Installed by client/host. */
@@ -54,9 +46,7 @@ function ClientNodeDock({ workspaceId, canvasId, nodeId, onTabBarMouseDown, trai
   )
 }
 
-const noActivity = (): NodeActivity | undefined => undefined
-
-let slots: CanvasSlots = { NodeDock: ClientNodeDock, useNodeActivity: noActivity, syncSurfaces: syncPanelSurfaces, PanelHost }
+let slots: CanvasSlots = { NodeDock: ClientNodeDock, syncSurfaces: syncPanelSurfaces, PanelHost }
 
 export function installCanvasSlots(next: Partial<CanvasSlots>): void {
   slots = { ...slots, ...next }

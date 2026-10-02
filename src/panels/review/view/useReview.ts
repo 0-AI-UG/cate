@@ -1,12 +1,16 @@
-// View-side state of a review: diffs fetched on demand from the session, and
-// the agent picker. Diffs never ride in the snapshot; a new `diffEpoch`
+// View-side state of a review: diffs fetched on demand from the session, the
+// agent picker, and how this client shows the review. Diffs never ride in the
+// snapshot; a new `diffEpoch` or a change of this client's full-files display
 // refetches the ones this view loaded, a new comparison drops them.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { clientUi } from '@kernel/ui'
+import { setClientSetting, useClientSetting } from '@kernel/settings/ui'
+import { clientStateFor } from '@client/document'
+import { usePanelView } from '@client/document/ui'
 import type { AgentId } from '@services/agents/contract'
 import type { GitFileDiff } from '@workspace/repository/contract'
-import type { ReviewAgentChoice, ReviewOp, ReviewSnapshot } from '../contract'
+import type { DiffOptions, ReviewAgentChoice, ReviewDisplay, ReviewOp, ReviewSnapshot } from '../contract'
 
 export type ReviewSend = (op: ReviewOp) => Promise<unknown>
 
@@ -21,7 +25,8 @@ export interface ReviewDiffs {
   reload(path: string, op: ReviewOp): void
 }
 
-export function useReviewDiffs(send: ReviewSend, snapshot: ReviewSnapshot | null): ReviewDiffs {
+/** `allLines`: this client shows whole files. */
+export function useReviewDiffs(send: ReviewSend, snapshot: ReviewSnapshot | null, allLines: boolean): ReviewDiffs {
   const [diffs, setDiffs] = useState<Record<string, GitFileDiff>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const key = snapshot ? JSON.stringify([snapshot.review.repoPath, snapshot.review.spec]) : ''
@@ -29,12 +34,15 @@ export function useReviewDiffs(send: ReviewSend, snapshot: ReviewSnapshot | null
   const keyRef = useRef(key)
   const loaded = useRef(new Map<string, ReviewOp>())
   const inFlight = useRef(new Set<string>())
+  const allLinesRef = useRef(allLines)
+  allLinesRef.current = allLines
 
   const fetchDiff = useCallback((path: string, op: ReviewOp) => {
     const forKey = keyRef.current
     loaded.current.set(path, op)
     inFlight.current.add(path)
-    send(op).then((diff) => {
+    const options: DiffOptions | undefined = op.kind === 'diff' && allLinesRef.current ? { ...op.options, allLines: true } : undefined
+    send(options ? { ...op, options } as ReviewOp : op).then((diff) => {
       if (keyRef.current !== forKey) return
       setDiffs((prev) => ({ ...prev, [path]: diff as GitFileDiff }))
       setErrors((prev) => {
@@ -58,12 +66,12 @@ export function useReviewDiffs(send: ReviewSend, snapshot: ReviewSnapshot | null
 
   // Refetch what this view shows; the options that loaded it stay in force
   // through the session's persisted expansion and context.
-  const lastEpoch = useRef(epoch)
+  const last = useRef({ epoch, allLines })
   useEffect(() => {
-    if (lastEpoch.current === epoch) return
-    lastEpoch.current = epoch
+    if (last.current.epoch === epoch && last.current.allLines === allLines) return
+    last.current = { epoch, allLines }
     for (const path of loaded.current.keys()) fetchDiff(path, { kind: 'diff', path })
-  }, [epoch, fetchDiff])
+  }, [epoch, allLines, fetchDiff])
 
   const load = useCallback((path: string) => {
     if (loaded.current.has(path) || inFlight.current.has(path)) return
@@ -109,5 +117,55 @@ export async function sendOrShow(send: ReviewSend, op: ReviewOp, fallback: strin
   } catch (cause) {
     clientUi().showError(errorText(cause, fallback))
     return undefined
+  }
+}
+
+export interface ReviewView {
+  display: ReviewDisplay
+  updateDisplay(patch: Partial<ReviewDisplay>): void
+  /** Git paths, or `${recordId}:${path}` for recorded agent edits. */
+  collapsed: ReadonlySet<string>
+  setCollapsed(keys: string[]): void
+  toggleCollapsed(key: string): void
+}
+
+const DISPLAY_SETTINGS = {
+  split: 'reviewSplitDiff',
+  wordDiff: 'reviewWordDiff',
+  wrap: 'reviewWrapLines',
+  fullFile: 'reviewFullFiles',
+  advancedPreview: 'reviewImagePreviews',
+} as const satisfies Record<keyof ReviewDisplay, string>
+
+const NO_KEYS: string[] = []
+
+/** How this client shows the review: display from its client settings, the
+ *  collapsed files from its client state. A newly focused file is expanded. */
+export function useReviewView(workspaceId: string, panelId: string, focusedFile: string | undefined): ReviewView {
+  const display: ReviewDisplay = {
+    split: useClientSetting('reviewSplitDiff'),
+    wordDiff: useClientSetting('reviewWordDiff'),
+    wrap: useClientSetting('reviewWrapLines'),
+    fullFile: useClientSetting('reviewFullFiles'),
+    advancedPreview: useClientSetting('reviewImagePreviews'),
+  }
+  const [keys, setKeys] = usePanelView(workspaceId, panelId, 'collapsedFiles', NO_KEYS)
+  const collapsed = useMemo(() => new Set(keys), [keys])
+
+  useEffect(() => {
+    if (!focusedFile) return
+    const current = clientStateFor(workspaceId)?.getSnapshot().panelViews[panelId]?.collapsedFiles as string[] | undefined
+    const next = current?.filter((key) => key !== focusedFile && !key.endsWith(`:${focusedFile}`))
+    if (current && next && next.length !== current.length) setKeys(next)
+  }, [workspaceId, panelId, focusedFile, setKeys])
+
+  return {
+    display,
+    updateDisplay: (patch) => {
+      for (const name of Object.keys(patch) as Array<keyof ReviewDisplay>) setClientSetting(DISPLAY_SETTINGS[name], patch[name]!)
+    },
+    collapsed,
+    setCollapsed: setKeys,
+    toggleCollapsed: (key) => setKeys(collapsed.has(key) ? keys.filter((item) => item !== key) : [...keys, key]),
   }
 }

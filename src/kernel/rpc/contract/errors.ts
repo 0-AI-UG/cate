@@ -55,6 +55,14 @@ export class IncompatibleProtocolError extends Error {
   }
 }
 
+/** The runtime runs another build than this client (a stale daemon). */
+export class IncompatibleBuildError extends Error {
+  constructor(readonly local: string, readonly remote: string | undefined) {
+    super(`The runtime runs build ${remote ?? 'unknown'}, this app is build ${local}`)
+    this.name = 'IncompatibleBuildError'
+  }
+}
+
 /** The connection closed or the client was closed while the call was in flight. */
 export class ConnectionClosedError extends Error {
   constructor(message = 'Runtime connection closed') {

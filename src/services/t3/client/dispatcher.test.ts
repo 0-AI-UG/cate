@@ -7,7 +7,7 @@ const target: PanelTarget = { at: 'canvas' }
 function host() {
   const actions = {
     pick: vi.fn(async (): Promise<PanelTarget | null> => target), openDiff: vi.fn(async () => true),
-    openFile: vi.fn(), openChat: vi.fn(), openExternal: vi.fn(), relationContext: vi.fn(() => 'context'),
+    openFile: vi.fn(), openChat: vi.fn(), openLink: vi.fn(), relationContext: vi.fn(() => 'context'),
   }
   return { ...actions, dispatcher: createT3HostDispatcher('thread', actions) }
 }
@@ -25,7 +25,14 @@ describe('chat host dispatcher', () => {
     await expect(h.dispatcher.handle('diff', { threadId: 'other' })).rejects.toThrow('Conversation changed')
     await expect(h.dispatcher.handle('external', { url: 'file:///etc/passwd' })).rejects.toThrow('Unsupported')
     expect(h.openDiff).not.toHaveBeenCalled()
-    expect(h.openExternal).not.toHaveBeenCalled()
+    expect(h.openLink).not.toHaveBeenCalled()
+  })
+
+  it('hands web links, loopback ones included, to openLink', async () => {
+    const h = host()
+    expect(await h.dispatcher.handle('external', { url: 'http://localhost:3000/app' })).toBe(true)
+    expect(await h.dispatcher.handle('external', { url: 'https://example.com/pr/1' })).toBe(true)
+    expect(h.openLink.mock.calls).toEqual([['http://localhost:3000/app'], ['https://example.com/pr/1']])
   })
 
   it('passes the selected T3 provider to relation context generation', async () => {

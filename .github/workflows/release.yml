@@ -53,10 +53,9 @@ jobs:
           fi
 
   release:
-    # Depends on `runtime` too: the macOS app embeds BOTH the arm64 and the
-    # Intel (darwin-x64) runtime daemon, and the x64 one can only be built on
-    # an Intel runner (the `runtime` job's macos-13 target). The mac app job
-    # pulls that published tarball below before packaging.
+    # The installers ship the runtime tarballs the `runtime` job published to
+    # this release (the same bytes a remote install downloads), so the app
+    # waits for them. linux-arm64 has no installer and builds on its own.
     needs: [create-release, runtime]
     strategy:
       fail-fast: false
@@ -66,7 +65,6 @@ jobs:
             platform: mac
           - os: ubuntu-latest
             platform: linux
-            docker: true
           - os: windows-latest
             platform: win
 
@@ -96,12 +94,9 @@ jobs:
         run: npm run icons
 
       # Regenerate the embedded runtime version string from package.json before
-      # building the app. The daemon resolves its tarball by that version
-      # (cate-runtime-<RUNTIME_VERSION>-<target>.tgz). A release whose version
-      # bump only touched package.json (e.g. a beta tag) otherwise leaves the
-      # committed version.ts stale, so the app looks for the wrong tarball name —
-      # in dev/e2e that means no ripgrep and 0-result content search (which gates
-      # the macOS release), and in the shipped app a missing runtime pull.
+      # building the app. A release whose version bump only touched
+      # package.json (e.g. a beta tag) otherwise leaves the committed
+      # version.ts stale, and the app looks for the wrong tarball name.
       - name: Sync runtime version to package.json
         run: npm run build:runtime
 
@@ -110,68 +105,42 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
-      # The runtime tarball stages node-pty's native binary from build/Release.
-      # On macOS/Windows `npm install` satisfies node-pty from a shipped prebuild
-      # and never populates build/Release, so compile from source here. Linux is
-      # rebuilt later in the pinned old-glibc container instead of using the
-      # ubuntu-latest output.
-      # (node-pty is N-API: the node-20 binary runs under the bundled node-22.)
-      - name: Compile node-pty from source (mac/win; Linux builds it at install)
-        if: runner.os != 'Linux'
-        run: npm rebuild node-pty --build-from-source
-
-      # Import the Developer ID cert into a scoped keychain and export the signing
-      # identity, so the next step can codesign the runtime's bundled native
-      # binaries. Without this, notarytool rejects the unsigned node-pty/rg Mach-O
-      # inside runtime-host.tgz and the macOS release fails to notarize.
-      - name: Set up macOS signing for runtime natives
+      # Import the Developer ID cert into a scoped keychain and export
+      # CSC_KEYCHAIN, which the macOS packaging step signs with.
+      - name: Set up macOS signing
         if: matrix.platform == 'mac'
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
         run: bash scripts/ci-mac-signing-keychain.sh
 
-      # The local workspace runs the runtime daemon tarball, shipped inside the
-      # installer (electron-builder.yml extraResources → runtime-host.tgz). Build
-      # this runner's host-target tarball and stage it under the fixed name so the
-      # extraResource exists. Each runner builds only its own host target. On macOS
-      # the build script signs the bundled natives via CATE_MAC_SIGN_IDENTITY
-      # (exported above) before packing, so the tarball notarizes inside the app.
-      - name: Build + stage host runtime tarball
-        shell: bash
-        run: |
-          node scripts/build-runtime-tarball.mjs ${{ matrix.docker && '--docker' || '' }}
-          cp dist-runtime/cate-runtime-*.tgz dist-runtime/runtime-host.tgz
-
-      # A single macOS .app can run on either CPU (x64 natively on Intel, arm64
-      # on Apple Silicon, x64 under Rosetta), and the LOCAL workspace runs the
-      # runtime daemon whose bundled node + node-pty are arch-specific — an
-      # arm64 daemon simply cannot exec on an Intel Mac, so the terminal panel
-      # never opens (#384). The app therefore ships BOTH arches and picks one at
-      # runtime (shippedRuntimeTarball() → runtime-host-<arch>.tgz). The host
-      # tarball staged above is darwin-arm64 (macos-latest is Apple Silicon); the
-      # Intel one can only be built on an Intel runner, so pull the darwin-x64
-      # tarball the `runtime` job published to this release.
-      - name: Stage both macOS runtime arches (Intel + Apple Silicon)
-        if: matrix.platform == 'mac'
+      # The local workspace runs the runtime daemon tarball shipped inside the
+      # installer (electron-builder.yml extraResources). Linux and Windows ship
+      # one, runtime-host.tgz. A single macOS .app runs on either CPU and the
+      # daemon's bundled node + node-pty are arch-specific (an arm64 daemon
+      # cannot exec on an Intel Mac, #384), so it ships both,
+      # runtime-host-<arch>.tgz, and picks one at runtime
+      # (src/shells/desktop/main/updater/runtimeInstall.ts).
+      - name: Stage runtime tarballs from the release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.create-release.outputs.tag }}
         run: |
-          cp dist-runtime/runtime-host.tgz dist-runtime/runtime-host-arm64.tgz
-          gh release download "$TAG_NAME" --repo "${{ github.repository }}" \
-            --pattern 'cate-runtime-*-darwin-x64.tgz' --dir dist-runtime --clobber
-          cp dist-runtime/cate-runtime-*-darwin-x64.tgz dist-runtime/runtime-host-x64.tgz
+          mkdir -p dist-runtime
+          stage() {
+            gh release download "$TAG_NAME" --repo "${{ github.repository }}" \
+              --pattern "cate-runtime-*-$1.tgz" --dir dist-runtime --clobber
+            cp dist-runtime/cate-runtime-*-"$1".tgz "dist-runtime/$2"
+          }
+          case "${{ matrix.platform }}" in
+            mac)
+              stage darwin-arm64 runtime-host-arm64.tgz
+              stage darwin-x64 runtime-host-x64.tgz ;;
+            linux) stage linux-x64 runtime-host.tgz ;;
+            win) stage win32-x64 runtime-host.tgz ;;
+          esac
 
-      # The packaged macOS app's MAIN process loads @parcel/watcher (local file
-      # watching) at startup, and one .app runs on either CPU (arm64 native, x64
-      # under Rosetta). `npm install` on the arm64 runner only fetched the arm64
-      # prebuilt, so an Intel launch would crash on a missing darwin-x64
-      # watcher.node. Pull BOTH arch prebuilts into node_modules (`npm pack`
-      # skips the os/cpu gate that blocks a plain off-arch install) so asarUnpack
-      # (@parcel/watcher-*) ships both; @parcel/watcher's loader picks the right
-      # one via process.arch at runtime.
       - name: Stage both macOS @parcel/watcher arches
         if: matrix.platform == 'mac'
         shell: bash
@@ -196,7 +165,7 @@ jobs:
         # under app.asar.unpacked, and the macOS runner's default soft limit
         # (256) is exhausted now that the full node_modules tree is unpacked,
         # surfacing as `EMFILE: too many open files` during signing.
-        # Reuse CSC_KEYCHAIN from the successful runtime-signing setup. Passing
+        # Reuse CSC_KEYCHAIN from the signing setup above. Passing
         # CSC_LINK here makes electron-builder create a second keychain and use
         # the certificate password where macOS expects the keychain password.
         run: ulimit -n 65536 && npx electron-builder --mac --publish never
@@ -253,11 +222,11 @@ jobs:
             --repo "${{ github.repository }}" \
             --clobber
 
-  # Per-target cate-runtime daemon tarballs. macOS/Windows build on matching
-  # runners; both Linux targets use the pinned old-glibc container, with arm64
-  # running under QEMU. Uploaded to the same release
-  # so an install can pull its tarball straight from the release URL
-  # (see src/runtime/daemon/node/ and src/runtime/daemon/contract).
+  # Per-target cate-runtime daemon tarballs, each with its .sha256. macOS and
+  # Windows build on matching runners; Linux uses the pinned old-glibc
+  # container. Uploaded to the same release so an install can pull its tarball
+  # straight from the release URL (src/runtime/daemon/node/install.ts,
+  # scripts/install.sh), and the installers ship the same bytes.
   runtime:
     needs: create-release
     strategy:
@@ -267,17 +236,13 @@ jobs:
           - os: ubuntu-latest
             target: linux-x64
             docker: true
-          - os: ubuntu-latest
-            target: linux-arm64
-            docker: true
           - os: macos-latest
             target: darwin-arm64
           # Intel macOS. node-pty's native binary can't be cross-built for x64
           # from an Apple Silicon host (build-runtime-tarball.mjs refuses), so
-          # this must run on an Intel runner. macos-13 was retired on 2025-12-04;
-          # macos-15-intel is GitHub's last hosted Intel image, available until
-          # Aug 2027 — after that this needs a self-hosted Intel runner or Intel
-          # support has to be dropped.
+          # this must run on an Intel runner. macos-15-intel is GitHub's last
+          # hosted Intel image, available until Aug 2027; after that this needs
+          # a self-hosted Intel runner or Intel support has to be dropped.
           - os: macos-15-intel
             target: darwin-x64
           - os: windows-latest
@@ -299,28 +264,24 @@ jobs:
       - name: Install setuptools (needed by node-gyp)
         run: pip install setuptools
 
-      - name: Set up QEMU (linux-arm64 cross-build)
-        if: matrix.target == 'linux-arm64'
-        uses: docker/setup-qemu-action@v4
-
       - name: Install dependencies
         run: npm ci
 
       # Stage node-pty from build/Release. macOS/Windows installs use a shipped
-      # prebuild (build/Release empty) so compile from source. Both Linux targets
-      # are compiled later in the pinned old-glibc container; the host build
-      # produced by npm ci is deliberately ignored.
+      # prebuild (build/Release empty) so compile from source. Linux is
+      # compiled in the pinned old-glibc container; the host build produced by
+      # npm ci is deliberately ignored.
       # The windows runner image ships Visual Studio 2026 (18.x), which node-gyp
-      # only learned to detect in 12.1.0 — hence the node-gyp override in
+      # only learned to detect in 12.1.0, hence the node-gyp override in
       # package.json. Without it this step fails with "could not find any Visual
       # Studio installation to use".
-      - name: Compile node-pty from source (mac/win; Linux builds it at install)
+      - name: Compile node-pty from source (mac/win; Linux builds it in Docker)
         if: runner.os != 'Linux'
         run: npm rebuild node-pty --build-from-source
 
-      # Sign the bundled darwin natives so a mac host that pulls this per-target
-      # tarball from the release runs Developer ID-signed binaries (no Gatekeeper
-      # quarantine block), mirroring the host tarball staged in the app.
+      # Sign the bundled darwin natives so the tarball notarizes inside the app
+      # and a mac host that pulls it from the release runs Developer
+      # ID-signed binaries (no Gatekeeper quarantine block).
       - name: Set up macOS signing for runtime natives
         if: startsWith(matrix.target, 'darwin-')
         env:
@@ -338,14 +299,53 @@ jobs:
           TAG_NAME: ${{ needs.create-release.outputs.tag }}
         run: |
           gh release upload "$TAG_NAME" dist-runtime/cate-runtime-*-${{ matrix.target }}.tgz \
+            dist-runtime/cate-runtime-*-${{ matrix.target }}.tgz.sha256 \
+            --repo "${{ github.repository }}" \
+            --clobber
+
+  # Linux arm64 runs under QEMU and is slow; no installer needs it, so it
+  # builds beside the app jobs instead of before them.
+  runtime-linux-arm64:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install setuptools (needed by node-gyp)
+        run: pip install setuptools
+
+      - uses: docker/setup-qemu-action@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build runtime tarball (linux-arm64)
+        run: node scripts/build-runtime-tarball.mjs --target linux-arm64 --docker
+
+      - name: Upload runtime tarball
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag }}
+        run: |
+          gh release upload "$TAG_NAME" dist-runtime/cate-runtime-*-linux-arm64.tgz \
+            dist-runtime/cate-runtime-*-linux-arm64.tgz.sha256 \
             --repo "${{ github.repository }}" \
             --clobber
 
   publish-release:
-    needs: [create-release, release, runtime]
+    needs: [create-release, release, runtime, runtime-linux-arm64]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # `curl -fsSL <release>/install.sh | sh` installs the runtime on a
       # machine without the desktop app (cate serve).

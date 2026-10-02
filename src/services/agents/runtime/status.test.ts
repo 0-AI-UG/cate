@@ -28,6 +28,11 @@ describe('resolveAgentState', () => {
   it('activity is ignored when the agent is gone', () => {
     expect(resolveAgentStatus({ present: false, wasPresent: false, active: true })).toBe('notRunning')
   })
+
+  it('a confirmed human permission wait waits; a check keeps running', () => {
+    expect(resolveAgentStatus({ present: true, wasPresent: true, active: true, permission: 'waiting' })).toBe('waitingForInput')
+    expect(resolveAgentStatus({ present: true, wasPresent: true, active: true, permission: 'checking' })).toBe('running')
+  })
 })
 
 const PTY = 'pty-1'
@@ -53,7 +58,7 @@ const noteAgentPresence = (terminalId: string, present: boolean, processOnly = f
   machine.notePresence(terminalId, present, processOnly, null)
 const noteAgentHookEvent = (event: AgentHookEvent): void => machine.noteHookEvent(event)
 const noteAgentInputSubmitted = (terminalId: string): void =>
-  machine.noteHookEvent({ terminalId, agentId: 'codex', kind: 'input-submit', sessionId: 'session-1', raw: {} })
+  machine.noteHookEvent({ terminalId, agentId: machine.agentId(terminalId) ?? 'codex', kind: 'input-submit', sessionId: 'session-1', raw: {} })
 const canAgentReceivePrompt = (terminalId: string): boolean => machine.canReceivePrompt(terminalId)
 const forgetAgentTracker = (terminalId: string): void => machine.forget(terminalId)
 
@@ -82,6 +87,64 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
     expect(notify).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Claude Code needs input' }),
     )
+  })
+
+  it.each([
+    ['automatic', 'running'],
+    ['manual', 'waitingForInput'],
+    ['unknown', 'running'],
+  ] as const)('Codex config=%s gives %s', (approvalMode, expected) => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start', 'codex'))
+    noteAgentHookEvent({ ...hookEvent('permission-check', 'codex'), approvalMode })
+    expect(state()).toBe(expected)
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
+    expect(notify).toHaveBeenCalledTimes(expected === 'waitingForInput' ? 1 : 0)
+    if (expected === 'waitingForInput') {
+      expect(notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'Codex needs permission' }))
+    }
+    noteAgentHookEvent(hookEvent('turn-end', 'codex'))
+    expect(state()).toBe('waitingForInput')
+    expect(canAgentReceivePrompt(PTY)).toBe(true)
+  })
+
+  it('a manual approval config only applies to the CLI it was read for', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start'))
+    noteAgentHookEvent({ ...hookEvent('permission-check'), approvalMode: 'manual' })
+    expect(state()).toBe('running')
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('ignores approval and resume events arriving after their turn ended', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent({ ...hookEvent('turn-start', 'codex'), turnId: 'turn-a' })
+    noteAgentHookEvent({ ...hookEvent('turn-end', 'codex'), turnId: 'turn-a' })
+    for (const kind of ['permission-check', 'permission-wait', 'turn-resume'] as const) {
+      noteAgentHookEvent({ ...hookEvent(kind, 'codex'), turnId: 'turn-a' })
+      expect(state()).toBe('waitingForInput')
+      expect(canAgentReceivePrompt(PTY)).toBe(true)
+    }
+    expect(notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('a permission check cannot overwrite a confirmed human wait', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('turn-start'))
+    noteAgentHookEvent(hookEvent('permission-wait'))
+    noteAgentHookEvent(hookEvent('permission-check'))
+    expect(state()).toBe('waitingForInput')
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
+    expect(notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('a deferred session-start cannot idle a permission check that arrived first', () => {
+    noteAgentPresence(PTY, true)
+    noteAgentHookEvent(hookEvent('permission-check', 'codex'))
+    noteAgentHookEvent(hookEvent('session-start', 'codex'))
+    expect(state()).toBe('running')
+    expect(canAgentReceivePrompt(PTY)).toBe(false)
+    expect(notify).not.toHaveBeenCalled()
   })
 
   it('ignores a late turn-end from the turn replaced by an in-flight follow-up', () => {
@@ -184,12 +247,12 @@ describe('agent activity coordinator (hook FSM + presence edges)', () => {
 
   it('permission notification body comes from the event permission', () => {
     noteAgentPresence(PTY, true)
-    noteAgentHookEvent(hookEvent('turn-start'))
+    noteAgentHookEvent(hookEvent('turn-start', 'codex'))
     noteAgentHookEvent({ ...hookEvent('permission-wait', 'codex'), permission: 'touch x' })
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ body: 'touch x' }))
 
     // Missing detail falls back to a generic line rather than an empty body.
-    noteAgentHookEvent(hookEvent('turn-resume', 'opencode'))
+    noteAgentHookEvent(hookEvent('turn-start', 'opencode'))
     noteAgentHookEvent(hookEvent('permission-wait', 'opencode', {}))
     expect(notify).toHaveBeenLastCalledWith(
       expect.objectContaining({ body: 'Waiting for your approval.' }),

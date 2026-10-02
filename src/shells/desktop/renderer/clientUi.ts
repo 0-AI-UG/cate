@@ -1,10 +1,12 @@
 // The desktop ClientUi: native message boxes and OS actions over the desktop
-// IPC and settings through this window's overlay. Methods tied to a feature are installed only when the
+// IPC, settings through this window's overlay, and the portable in-app save
+// dialog. Methods tied to a feature are installed only when the
 // window declares it (12.2 rule 5).
 
 import type { ClientFeature } from '@kernel/rpc/contract'
 import type { ClientUi } from '@kernel/ui/contract'
 import { useUIStore } from '@client/ui'
+import { showSavePathDialog } from '@workspace/files/ui'
 import type { DesktopApi, MessageBoxRequest } from '../contract'
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
@@ -91,6 +93,7 @@ export function createDesktopClientUi(api: DesktopApi, features: readonly Client
       })
       return response === 0 ? 'move' : response === 1 ? 'delete' : 'cancel'
     },
+    pickSavePath: showSavePathDialog,
     async confirmImportEntries({ count, destName }) {
       const response = await ask({
         type: 'question',
@@ -104,14 +107,10 @@ export function createDesktopClientUi(api: DesktopApi, features: readonly Client
     },
   }
 
-  if (has('osFiles')) {
-    ui.saveFileDialog = (options) => api.dialogs.save(options)
-    ui.fileApps = () => api.os.fileApps()
-    ui.openFile = (path, _workspaceId, appId) => api.os.openFile(path, appId)
-    ui.revealFile = (path) => api.os.revealFile(path)
-    ui.openFileOnGitHub = (path) => api.os.openFileOnGitHub(path)
+  if (has('clipboard')) {
+    ui.writeClipboard = (text) => api.os.writeClipboard(text)
+    ui.readClipboard = () => api.os.readClipboard()
   }
-  if (has('clipboard')) ui.writeClipboard = (text) => api.os.writeClipboard(text)
   if (has('osNotifications')) {
     ui.notify = ({ title, body, action }) => { void api.os.notify({ title, body, action }) }
   }

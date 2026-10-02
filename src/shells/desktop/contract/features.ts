@@ -12,7 +12,6 @@ export function desktopClientFeatures(platform: string, options: { passkeysAvail
     'windows',
     'canvas',
     'fileDrop',
-    'osFiles',
     'osNotifications',
     'screenCapture',
     'clipboard',

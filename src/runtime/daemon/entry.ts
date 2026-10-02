@@ -11,15 +11,17 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLogger, type Logger } from '@kernel/log/contract'
 import { lifecycle as defaultLifecycle, type LifecycleBus } from '@kernel/lifecycle/runtime'
+import { RpcError } from '@kernel/rpc/contract'
 import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
 import { settingsCapability } from '@kernel/settings/contract'
 import { createSettingsHandlers, createWorkspaceSettingsStore } from '@kernel/settings/runtime'
-import { runtimeIdFromCanonicalRoot } from '@runtime/data/contract'
+import { runtimeIdFromCanonicalRoot, type RuntimeEndpoints } from '@runtime/data/contract'
 import { canonicalRoot, cateHome, ensureLocalEndpoint, workspaceDataDir } from '@runtime/data/node'
 import {
   acquireRuntimeSocket,
   ensureDataDir,
   ensureRuntimeKeyPair,
+  nestedRuntimeRoot,
   openSecretsFile,
   writeRuntimeInfo,
   type DataPaths,
@@ -39,7 +41,7 @@ import { serverCapability } from '@runtime/server/contract'
 import type { PanelRuntime } from '@panels/runtime'
 import { applyLoginEnv, prependPath } from '@services/terminal/runtime'
 import { withoutInheritedHookIdentity } from '@services/agents/runtime'
-import { installDirFromExecPath, installLayout, RUNTIME_VERSION, runtimeCapability, type ServeArgs } from './contract'
+import { installDirFromExecPath, installLayout, RUNTIME_BUILD, RUNTIME_VERSION, runtimeCapability, type ServeArgs } from './contract'
 import { composeWorkspace, type Workspace } from './compose/workspace'
 import { ensureRuntimeInstalled } from './node'
 import {
@@ -97,6 +99,12 @@ export type ServeResult =
   | { kind: 'serving'; daemon: Daemon }
   /** Another daemon holds this workspace's socket. */
   | { kind: 'running'; runtimeId: string; endpoint: string }
+  /** A live runtime's root contains this one or lies inside it. The socket
+   *  refuses every client with `message` until `closed` resolves. */
+  | { kind: 'nested'; message: string; closed: Promise<void> }
+
+/** How long a nested runtime stays up to tell clients why it refuses them. */
+const NESTED_REFUSAL_MS = 10_000
 
 /** Once per daemon process, before serving: PTYs and servers inherit the
  *  login shell's environment. */
@@ -118,6 +126,20 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   const lock = await acquireRuntimeSocket(paths.dir, runtimeId)
   if (lock.kind === 'running') return { kind: 'running', runtimeId, endpoint: lock.endpoint }
   const endpoint = lock.endpoint
+  // The one place nesting is blocked: every client starts a workspace here.
+  const overlapping = await nestedRuntimeRoot(root, home)
+  if (overlapping) {
+    const message = `Workspaces cannot be nested: ${root} overlaps the open workspace ${overlapping}`
+    const refusing = serveLocal(lock.server, new RpcServer({
+      version,
+      build: RUNTIME_BUILD,
+      lifecycle,
+      acceptHello: () => { throw new RpcError('rejected', message) },
+    }))
+    refusing.open()
+    const closed = new Promise<void>((resolve) => setTimeout(() => void refusing.close().then(resolve), NESTED_REFUSAL_MS))
+    return { kind: 'nested', message, closed }
+  }
   // A too-long data dir is reached through a /tmp symlink (data/node); keep it
   // there for the CLI's CATE_SOCKET even if a tmp cleaner removes it.
   const relink = setInterval(() => {
@@ -125,8 +147,20 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   }, 60 * 60_000)
   relink.unref()
   let workspace: Workspace | undefined
-  const rpc = new RpcServer({ version, lifecycle, acceptHello: (hello) => workspace?.acceptHello(hello) })
+  const rpc = new RpcServer({ version, build: RUNTIME_BUILD, lifecycle, acceptHello: (hello) => workspace?.acceptHello(hello) })
   const listener = serveLocal(lock.server, rpc)
+  const writeInfo = (remote: Omit<RuntimeEndpoints, 'local'> = {}) => writeRuntimeInfo(paths.dir, {
+    runtimeId,
+    root,
+    pid: process.pid,
+    version,
+    ...(RUNTIME_BUILD ? { build: RUNTIME_BUILD } : {}),
+    protocol: [rpc.protocol[0], rpc.protocol[1]],
+    endpoints: { local: endpoint, ...remote },
+  })
+  // Written now, not once the workspace has restored: nesting checks and
+  // install pruning read it to see this runtime while it starts.
+  await writeInfo()
 
   const secrets = openSecretsFile(paths.dir)
   const keys = await ensureRuntimeKeyPair(secrets)
@@ -209,10 +243,11 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     version,
     rpc,
     perf,
+    busy: busy.busy,
     stop: () => void stop({ kind: 'stop' }),
     async update(next) {
-      const dir = await ensureRuntimeInstalled({ version: next, cateHome: cateHome(home), fetch: options.fetch })
-      setTimeout(() => void stop({ kind: 'update', version: next, installDir: dir }), 20)
+      const dir = await ensureRuntimeInstalled({ ...next, cateHome: cateHome(home), fetch: options.fetch })
+      setTimeout(() => void stop({ kind: 'update', version: next.build ?? next.version, installDir: dir }), 20)
     },
   }))
   rpc.register(settingsCapability, settingsCapabilityImpl(createSettingsHandlers(settings)))
@@ -242,14 +277,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     ...options.lifetime,
   })
 
-  const writeInfo = () => writeRuntimeInfo(paths.dir, {
-    runtimeId,
-    root,
-    pid: process.pid,
-    version,
-    protocol: [rpc.protocol[0], rpc.protocol[1]],
-    endpoints: { local: endpoint, ...network.endpoints() },
-  })
   const network = createNetworkAccess({
     runtimeId,
     runtimeKeys: keys,
@@ -263,13 +290,13 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
       peerConnection: options.connect?.peerConnection ?? loadNodePeerConnection,
     },
     onEndpointsChanged: () => {
-      writeInfo().catch((err: Error) => log.warn('could not write runtime.json: %s', err.message))
+      writeInfo(network.endpoints()).catch((err: Error) => log.warn('could not write runtime.json: %s', err.message))
     },
     log: log.child('network'),
   })
   await ws.start()
   await network.settled()
-  await writeInfo()
+  await writeInfo(network.endpoints())
   listener.open()
   log.info('serving %s as %s on %s', root, runtimeId, endpoint)
 

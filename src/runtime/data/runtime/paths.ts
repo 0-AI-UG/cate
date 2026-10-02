@@ -22,6 +22,7 @@ export function dataPaths(dataDir: string) {
     skills: at(DATA_FILES.skills),
     skillSources: at(DATA_FILES.skillSources),
     browser: at(DATA_FILES.browser),
+    downloads: path.join(dataDir, DATA_FILES.browser, 'downloads'),
     t3: at(DATA_FILES.t3),
     agents: at(DATA_FILES.agents),
     terminalLogs: at(DATA_FILES.terminalLogs),

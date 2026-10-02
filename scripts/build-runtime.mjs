@@ -6,6 +6,7 @@ import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { computeBuildId } from './build-id.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '..')
@@ -42,6 +43,8 @@ export const runtimeBuildOptions = {
   target: 'node20',
   outfile: path.join(repoRoot, 'dist-runtime/runtime.cjs'),
   external: ['fsevents', 'node-pty', '@parcel/watcher', 'electron', 'node-datachannel'],
+  // Sent in `hello`; the desktop client refuses a runtime of another build.
+  define: { __CATE_BUILD__: JSON.stringify(computeBuildId(repoRoot)) },
   logLevel: 'info',
 }
 

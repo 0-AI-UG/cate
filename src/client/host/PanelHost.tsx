@@ -20,7 +20,7 @@ export const PanelPlacementContext = createContext<{ onCanvas?: boolean } | null
 
 export function PanelSuspense({ children }: { children: ReactNode }) {
   return (
-    <Suspense fallback={<LoadingState label="Loading panel…" className="w-full h-full bg-surface-4 text-sm" />}>
+    <Suspense fallback={<LoadingState label="Loading panel" className="w-full h-full bg-surface-4 text-sm" />}>
       {children}
     </Suspense>
   )
@@ -36,7 +36,7 @@ export function WorkspaceReady({ workspaceId, children }: { workspaceId: string;
   if (synced) return <>{children}</>
   return (
     <div data-workspace-required className="flex h-full min-h-0 items-center justify-center overflow-auto p-6">
-      <LoadingState label="Opening workspace…" />
+      <LoadingState label="Opening workspace" />
     </div>
   )
 }

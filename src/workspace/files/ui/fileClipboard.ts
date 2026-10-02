@@ -1,16 +1,21 @@
-// Shared file-explorer clipboard (Copy / Paste).
-// Module-level singleton — only one clipboard across all FileTreeNode instances.
+// Copy / Paste of files: refs on the system clipboard as `cate-file://` text,
+// so a copy in one window or workspace pastes in any other. Needs the
+// `clipboard` feature; without it the actions are not offered.
 
-let clipboardPaths: string[] = []
+import { clientUi } from '@kernel/ui'
+import { fileRefsFromText, fileRefsToText, type FileRef } from '../contract'
 
-export function setClipboard(paths: string[]): void {
-  clipboardPaths = [...paths]
+export function canCopyFiles(): boolean {
+  const ui = clientUi()
+  return !!ui.writeClipboard && !!ui.readClipboard
 }
 
-export function getClipboard(): string[] {
-  return clipboardPaths
+export async function copyFileRefs(refs: readonly FileRef[]): Promise<void> {
+  if (refs.length > 0) await clientUi().writeClipboard?.(fileRefsToText(refs))
 }
 
-export function hasClipboard(): boolean {
-  return clipboardPaths.length > 0
+/** The file refs on the clipboard; empty when it holds anything else. */
+export async function clipboardFileRefs(): Promise<FileRef[]> {
+  const text = await clientUi().readClipboard?.().catch(() => '')
+  return fileRefsFromText(text ?? '')
 }

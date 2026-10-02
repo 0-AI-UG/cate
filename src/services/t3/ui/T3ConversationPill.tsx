@@ -20,7 +20,7 @@ export function T3ConversationPill({ title, threadId, conversations, onSelect }:
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [renameTitle, setRenameTitle] = useState<string | null>(null)
-  const label = loading ? 'Loading chats…' : error || title || 'Select chat'
+  const label = loading ? 'Loading chats' : error || title || 'Select chat'
 
   const select = async () => {
     if (!conversations) return
@@ -78,7 +78,7 @@ export function T3ConversationPill({ title, threadId, conversations, onSelect }:
     }}>
       <label className="text-sm text-primary">Conversation name<input autoFocus value={renameTitle} disabled={loading} onChange={(event) => setRenameTitle(event.target.value)} className="mt-2 w-full rounded bg-surface-3 px-2 py-1 text-sm" /></label>
       {error && <p role="alert" className="mt-2 text-xs text-red-400">{error}</p>}
-      <div className="mt-3 flex justify-end gap-3 text-xs"><button type="button" disabled={loading} onClick={() => setRenameTitle(null)} className="text-muted">Cancel</button><button disabled={loading || !renameTitle.trim()} className="text-primary disabled:opacity-50">{loading ? 'Saving…' : 'Save'}</button></div>
+      <div className="mt-3 flex justify-end gap-3 text-xs"><button type="button" disabled={loading} onClick={() => setRenameTitle(null)} className="text-muted">Cancel</button><button disabled={loading || !renameTitle.trim()} className="inline-flex items-center gap-1 text-primary disabled:opacity-50">{loading && <Spinner size={11} />}{loading ? 'Saving' : 'Save'}</button></div>
     </form>
   </Modal>}</>
 }

@@ -1,9 +1,9 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react'
 import { Tooltip } from '@kernel/ui'
-import type { ShortcutAction } from '@kernel/ui/contract'
+import type { ActionId } from '@kernel/ui/contract'
 
 interface CanvasToolbarButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  action?: ShortcutAction
+  action?: ActionId
   label: string
   active?: boolean
   size?: 'panel' | 'zoom'

@@ -32,7 +32,7 @@ import {
   type BrowserViewport,
 } from './contract'
 import definition from './definition'
-import { resolveAddress } from './parts/browserUrl'
+import { filePathOfUrl, resolveAddress } from './parts/browserUrl'
 import { browserInternalPageTitle, isBrowserInternalPage } from './parts/internalPages'
 
 /** What the session takes from the runtime (the composition root passes them). */
@@ -47,6 +47,9 @@ export interface BrowserSessionDeps {
   }
   /** Workspace settings: `browserSearchEngine`, `browserNewTabBehavior`, `browserHomepage`. */
   settings: { get(key: string): unknown }
+  /** The workspace's files: a typed path or `file://` URL loads the
+   *  workspace's file through `serveUrl`, never the client's disk. */
+  files: { serveUrl(path: string): Promise<string> }
   newId?: () => string
 }
 
@@ -87,6 +90,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     super(kit, record, {
       tabs: [{ id, url, title: browserInternalPageTitle(url), favicon: null, pinned: false, nav: 0, navSource: null }],
       activeTabId: id,
+      activeSource: null,
       viewport: COMPACT_VIEWPORT,
       zoom: 1,
       canGoBack: false,
@@ -100,7 +104,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     this.newId = deps.newId ?? (() => globalThis.crypto.randomUUID())
   }
 
-  override start(): void {
+  override async start(): Promise<void> {
     const saved = this.persisted<Persisted>()
     if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
       const tabs = saved.tabs.map((tab): BrowserTab => ({
@@ -125,6 +129,15 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     const panelId = this.panelId
     this.publishDownloads(this.deps.browserData.downloads.list(panelId))
     this.stopDownloads = this.deps.browserData.downloads.subscribe(panelId, (entries) => this.publishDownloads(entries))
+    // A panel created on a file URL loads it from the workspace's file server.
+    const first = this.activeTab
+    if (!saved && filePathOfUrl(first.url)) {
+      try {
+        await this.navigateTab(first.id, first.url)
+      } catch (err) {
+        this.kit.log.warn('browser %s: could not serve %s: %O', panelId, first.url, err)
+      }
+    }
   }
 
   protected override release(): void {
@@ -169,10 +182,12 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     }
   }
 
-  private setTabs(tabs: BrowserTab[], activeTabId = this.state.activeTabId): void {
+  /** `source`: the client whose selection this is (null: a caller's, which
+   *  every client shows). */
+  private setTabs(tabs: BrowserTab[], activeTabId = this.state.activeTabId, source: string | null = null): void {
     const previous = this.state.activeTabId
     const next = tabs.some((tab) => tab.id === activeTabId) ? activeTabId : tabs[0].id
-    this.publish({ tabs, activeTabId: next })
+    this.publish({ tabs, activeTabId: next, ...(next !== previous ? { activeSource: source } : {}) })
     // A newly shown tab's navigation state comes from the next client report.
     if (next !== previous) this.publish({ canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false })
     this.save()
@@ -214,11 +229,13 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   // ---- Tabs and navigation (the same for views and the cate API) ----------
 
   /** Sets a tab's URL for every client to load. Returns the tab's new `nav`. */
-  navigateTab(tabId: string, input: string): number {
+  async navigateTab(tabId: string, input: string): Promise<number> {
     const engine = (this.deps.settings.get('browserSearchEngine') as BrowserSearchEngine | undefined) ?? 'google'
     const trimmed = input.trim()
     if (!trimmed) throw new RpcError('rejected', 'url-required')
-    const url = isStartPage(trimmed) ? trimmed : resolveAddress(trimmed, engine, isBrowserInternalPage)
+    const address = isStartPage(trimmed) ? trimmed : resolveAddress(trimmed, engine, isBrowserInternalPage)
+    const file = filePathOfUrl(address)
+    const url = file ? await this.deps.files.serveUrl(file) : address
     const tab = this.tab(tabId)
     const next = this.patchTab(tabId, {
       url,
@@ -230,10 +247,14 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     return next.nav
   }
 
-  newTab(url?: string): string {
+  /** Opens a tab on `url` (a `file://` URL through the workspace's file
+   *  server, like `navigate`). Returns the new tab's id. */
+  async newTab(url?: string, source: string | null = null): Promise<string> {
     const homepage = this.deps.settings.get('browserHomepage')
     const behavior = this.deps.settings.get('browserNewTabBehavior') as BrowserNewTabBehavior | undefined
-    const target = url || (behavior === 'homepage' && typeof homepage === 'string' && homepage) || BROWSER_NEW_TAB_URL
+    const file = url ? filePathOfUrl(url) : null
+    const page = file ? await this.deps.files.serveUrl(file) : url
+    const target = page || (behavior === 'homepage' && typeof homepage === 'string' && homepage) || BROWSER_NEW_TAB_URL
     const tab: BrowserTab = {
       id: `tab-${this.newId()}`,
       url: target,
@@ -243,12 +264,12 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       nav: 1,
       navSource: null,
     }
-    this.setTabs([...this.state.tabs, tab], tab.id)
+    this.setTabs([...this.state.tabs, tab], tab.id, source)
     this.publish({ isLoading: hasPage(target) })
     return tab.id
   }
 
-  closeTab(tabId: string): void {
+  closeTab(tabId: string, source: string | null = null): void {
     const index = this.state.tabs.findIndex((tab) => tab.id === tabId)
     if (index < 0) throw new RpcError('gone', 'no-such-tab')
     const tabs = this.state.tabs.filter((tab) => tab.id !== tabId)
@@ -256,12 +277,12 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       tabs.push({ id: `tab-${this.newId()}`, url: BROWSER_NEW_TAB_URL, title: '', favicon: null, pinned: false, nav: 0, navSource: null })
     }
     const activeTabId = tabId === this.state.activeTabId ? tabs[Math.min(index, tabs.length - 1)].id : this.state.activeTabId
-    this.setTabs(tabs, activeTabId)
+    this.setTabs(tabs, activeTabId, source)
   }
 
-  selectTab(tabId: string): void {
+  selectTab(tabId: string, source: string | null = null): void {
     this.tab(tabId)
-    if (tabId !== this.state.activeTabId) this.setTabs(this.state.tabs, tabId)
+    if (tabId !== this.state.activeTabId) this.setTabs(this.state.tabs, tabId, source)
   }
 
   private setZoom(zoom: number): void {
@@ -281,10 +302,10 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   // ---- Ops ----------------------------------------------------------------
 
   protected override readonly ops: OpHandlers<BrowserOp> = {
-    navigate: ({ input, tabId }) => { this.navigateTab(tabId ?? this.state.activeTabId, input) },
-    newTab: ({ url }) => this.newTab(url),
-    closeTab: ({ tabId }) => { this.closeTab(tabId) },
-    selectTab: ({ tabId }) => { this.selectTab(tabId) },
+    navigate: async ({ input, tabId }) => { await this.navigateTab(tabId ?? this.state.activeTabId, input) },
+    newTab: ({ url }, ctx) => this.newTab(url, ctx.clientId),
+    closeTab: ({ tabId }, ctx) => { this.closeTab(tabId, ctx.clientId) },
+    selectTab: ({ tabId }, ctx) => { this.selectTab(tabId, ctx.clientId) },
     pin: ({ tabId, pinned }) => { this.patchTab(tabId, { pinned: pinned ?? !this.tab(tabId).pinned }) },
     reportNavigation: (op, ctx) => this.reportNavigation(op, ctx),
     reportTitle: ({ tabId, title }) => {
@@ -296,10 +317,12 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     reportFavicon: ({ tabId, favicon }) => {
       if (typeof favicon === 'string' && favicon !== this.tab(tabId).favicon) this.patchTab(tabId, { favicon })
     },
-    reportLoad: ({ tabId, loading, loadError, crashed }) => {
+    reportLoad: ({ tabId, loading, loadError, crashed, canGoBack, canGoForward }) => {
       this.tab(tabId)
       if (tabId !== this.state.activeTabId) return
       const patch: Partial<BrowserSnapshot> = {}
+      if (canGoBack !== undefined) patch.canGoBack = canGoBack
+      if (canGoForward !== undefined) patch.canGoForward = canGoForward
       if (loading !== undefined) patch.isLoading = loading
       if (loadError !== undefined) patch.loadError = loadError
       if (crashed !== undefined) patch.crashed = crashed
@@ -400,7 +423,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       if (tabId && tabId !== this.state.activeTabId) this.selectTab(tabId)
       return this.pageInfo(tabId ?? this.state.activeTabId)
     },
-    createTab: async ({ url }) => this.pageInfo(this.newTab(url)),
+    createTab: async ({ url }) => this.pageInfo(await this.newTab(url)),
 
     getAXState: (args) => this.pageMethod('getAXState', args),
     getScreenshot: (args) => this.pageMethod('getScreenshot', args),
@@ -430,7 +453,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       const tabId = this.boundTab(args.tabId).id
       await this.checkUserInput(tabId, args)
       this.still(tabId)
-      this.navigateTab(tabId, args.url)
+      await this.navigateTab(tabId, args.url)
       return this.observeAfterNavigation(tabId, args)
     },
     back: (args) => this.historyMethod('back', args),

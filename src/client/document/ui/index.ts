@@ -1,4 +1,4 @@
-import { useRef, useSyncExternalStore } from 'react'
+import { useCallback, useRef, useSyncExternalStore } from 'react'
 import { createDocument, type WorkspaceDocument } from '@workspace/document/contract'
 import type { ClientState } from '../clientState'
 import { clientStateFor, documentStoreFor, documentStoresVersion, subscribeDocumentStores } from '../registry'
@@ -49,6 +49,7 @@ const EMPTY_CLIENT_STATE: ClientState = {
   viewing: [],
   selection: {},
   viewports: {},
+  panelViews: {},
   intents: [],
 }
 
@@ -60,4 +61,17 @@ export function useClientState<T>(
   useStores()
   const store = workspaceId ? clientStateFor(workspaceId) : null
   return useSelected(store, EMPTY_CLIENT_STATE, selector, isEqual)
+}
+
+/** One named piece of what this client shows of a panel (client state, never
+ *  sent): `fallback` until the view sets it. */
+export function usePanelView<T>(
+  workspaceId: string,
+  panelId: string,
+  key: string,
+  fallback: T,
+): [T, (value: T) => void] {
+  const stored = useClientState(workspaceId, (state) => state.panelViews[panelId]?.[key])
+  const set = useCallback((value: T) => clientStateFor(workspaceId)?.setPanelView(panelId, key, value), [workspaceId, panelId, key])
+  return [stored === undefined ? fallback : stored as T, set]
 }

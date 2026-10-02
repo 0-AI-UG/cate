@@ -1,5 +1,5 @@
 // E2E: drag & drop from Search results. Uses synthetic HTML5 DragEvents with a
-// shared DataTransfer (the only way to carry the application/cate-file MIME
+// shared DataTransfer (the only way to carry the application/cate-file-refs MIME
 // payload; Playwright's mouse drag produces an empty dataTransfer). Dispatches
 // dragstart on the real Search row (so SearchResultsTree fills the payload)
 // then drop on the target, exercising the full source -> target chain.

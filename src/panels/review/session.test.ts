@@ -133,10 +133,10 @@ it('stages, unstages and discards through the repository and refreshes the compa
   expect(snap()).toMatchObject({ busy: false, error: null })
 })
 
-it('reports file operation failures in the snapshot', async () => {
+it('reports file operation failures in the snapshot and fails the op', async () => {
   repo.stage.mockRejectedValueOnce(new Error('index locked'))
-  await op({ kind: 'stage', path: 'src/a.ts' })
-  expect(snap().error).toBe('index locked')
+  await expect(op({ kind: 'stage', path: 'src/a.ts' })).rejects.toSatisfy((e) => isRpcError(e, 'rejected') && (e as Error).message === 'index locked')
+  expect(snap()).toMatchObject({ busy: false, error: 'index locked' })
 })
 
 it('adds, toggles and resolves notes, persisting them in the session file', async () => {
@@ -166,15 +166,12 @@ it('inspects the comparison for cate.review.inspect', async () => {
   expect(result).toMatchObject({ panelId: 'review', repoPath: '/repo', resolvedBase: 'base', files: [file], notes: [] })
 })
 
-it('persists collapse, expansion, context and history state', async () => {
-  await op({ kind: 'toggleCollapsed', key: 'src/a.ts' })
+it('persists expansion, context and history state', async () => {
   await op({ kind: 'expandFullFile', path: 'src/a.ts' })
   await op({ kind: 'expandContext', path: 'src/a.ts' })
   await op({ kind: 'expandContext', path: 'src/a.ts' })
   await op({ kind: 'update', patch: { showHistory: true } })
-  expect(saved()).toMatchObject({ collapsedFiles: ['src/a.ts'], expandedFiles: ['src/a.ts'], contextLines: { 'src/a.ts': 20 }, showHistory: true })
-  await op({ kind: 'setCollapsed', keys: [] })
-  expect(saved().collapsedFiles).toEqual([])
+  expect(saved()).toMatchObject({ expandedFiles: ['src/a.ts'], contextLines: { 'src/a.ts': 20 }, showHistory: true })
 })
 
 it('fetches diffs on demand and relocates line notes to them', async () => {
@@ -185,14 +182,15 @@ it('fetches diffs on demand and relocates line notes to them', async () => {
   expect(saved().notes![0]).toMatchObject({ line: 4, outdated: false })
 })
 
-it('bumps the diff epoch when a refresh or the full-file display invalidates diffs', async () => {
+it('bumps the diff epoch when a refresh invalidates diffs', async () => {
   const epoch = snap().diffEpoch
   await op({ kind: 'refresh' })
   expect(snap().diffEpoch).toBe(epoch + 1)
-  await op({ kind: 'updateDisplay', patch: { fullFile: true } })
-  expect(snap().diffEpoch).toBe(epoch + 2)
-  await op({ kind: 'updateDisplay', patch: { wrap: true } })
-  expect(snap().diffEpoch).toBe(epoch + 2)
+})
+
+it('loads every line as context for a client showing whole files', async () => {
+  await op({ kind: 'diff', path: 'src/a.ts', options: { allLines: true } })
+  expect(repo.fileDiff).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'uncommitted' }, path: 'src/a.ts', contextLines: 999_999, allowLarge: false })
 })
 
 it('returns the git apply command and the created pull request instead of touching the client', async () => {
@@ -204,10 +202,10 @@ it('returns the git apply command and the created pull request instead of touchi
   expect(deps.files.writeText).toHaveBeenCalledWith('/out/notes.md', expect.stringContaining('Check'))
 })
 
-it('merges an open request, keeping local state and expanding the focused file', async () => {
-  await op({ kind: 'setCollapsed', keys: ['src/a.ts', 'record:src/a.ts', 'src/b.ts'] })
+it('merges an open request, keeping local state', async () => {
+  await op({ kind: 'update', patch: { showHistory: true } })
   await op({ kind: 'retarget', request: { spec: { kind: 'staged' }, focusedFile: 'src/a.ts' } })
-  expect(saved()).toMatchObject({ spec: { kind: 'staged' }, focusedFile: 'src/a.ts', collapsedFiles: ['src/b.ts'], display: { split: false } })
+  expect(saved()).toMatchObject({ spec: { kind: 'staged' }, focusedFile: 'src/a.ts', showHistory: true })
   await vi.waitFor(() => expect(repo.compare).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'staged' } }))
 })
 

@@ -85,6 +85,21 @@ export function normalizeUrl(input: string): string {
   return `${isLocal ? 'http' : 'https'}://${trimmed}`
 }
 
+/** The absolute path a `file://` URL names, or null for any other URL (or a
+ *  file URL on another host). The session serves such a path from the
+ *  workspace's runtime (`file.serveUrl`): the page never reads a client's disk. */
+export function filePathOfUrl(url: string): string | null {
+  if (!url.startsWith('file://')) return null
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname && parsed.hostname !== 'localhost') return null
+    const pathname = decodeURIComponent(parsed.pathname)
+    return /^\/[A-Za-z]:\//.test(pathname) ? pathname.slice(1) : pathname
+  } catch {
+    return null
+  }
+}
+
 /** What the address bar's input navigates to: a URL, an internal page, or a
  *  search with the workspace's engine. */
 export function resolveAddress(input: string, engine: BrowserSearchEngine, isInternal: (url: string) => boolean): string {

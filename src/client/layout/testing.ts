@@ -111,8 +111,8 @@ const base = (type: string, extra: Partial<AnyPanelDefinition> = {}): AnyPanelDe
 /** Terminal, editor, browser (a surface with `webview`), canvas and surface. */
 export function testPanelDefinitions(): AnyPanelDefinition[] {
   return [
-    base('terminal', { splitMenuOrder: 1, opens: ['directory'], chrome: { worktreeChip: true } }),
-    base('editor', { icon: 'folders', splitMenuOrder: 2, opens: ['file'] }),
+    base('terminal', { creation: { order: 1 }, opens: ['directory'], chrome: { worktreeChip: true } }),
+    base('editor', { icon: 'folders', creation: { order: 2 }, opens: ['file'] }),
     base('browser', { icon: 'globe', requires: ['webview'], opens: ['url'], surface: { retention: 'workspace' } }),
     base('canvas', { icon: 'grid', canLiveOnCanvas: false, chrome: { floatingTabBar: true } }),
     base('surface', { icon: 'plus', placeholder: true }),

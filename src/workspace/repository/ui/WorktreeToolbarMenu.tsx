@@ -245,6 +245,7 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
           </div>
           {live.map((wt) => (
             <WorktreeRow
+                workspaceId={workspaceId}
               key={wt.id}
               wt={wt}
               primaryLabel={primaryLabel}
@@ -342,11 +343,12 @@ const PrPill: React.FC<{ pr: PrStatus; onClick: () => void }> = ({ pr, onClick }
 const SpawnButton: React.FC<{
   icon: React.ReactNode
   title: string
+  workspaceId: string
   panelType: string
   cwd: string
   worktreeId: string
   onClick: () => void
-}> = ({ icon, title, panelType, cwd, worktreeId, onClick }) => (
+}> = ({ icon, title, workspaceId, panelType, cwd, worktreeId, onClick }) => (
   <Tooltip label={title}>
     <div
       role="button"
@@ -354,7 +356,7 @@ const SpawnButton: React.FC<{
       draggable
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'copy'
-        e.dataTransfer.setData('application/cate-spawn', JSON.stringify({ panelType, cwd, worktreeId }))
+        e.dataTransfer.setData('application/cate-spawn', JSON.stringify({ workspaceId, panelType, cwd, worktreeId }))
       }}
       onClick={(e) => { e.stopPropagation(); onClick() }}
       className="w-5 h-5 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-surface-5 cursor-grab active:cursor-grabbing transition-colors"
@@ -370,6 +372,7 @@ const SpawnButton: React.FC<{
 // ---------------------------------------------------------------------------
 
 const WorktreeRow: React.FC<{
+  workspaceId: string
   wt: JoinedWorktree
   primaryLabel: string
   focused: boolean
@@ -383,7 +386,7 @@ const WorktreeRow: React.FC<{
   onHover: (on: boolean) => void
   launchTypes: readonly WorktreeLaunchType[]
   onLaunch: (type: string) => void
-}> = ({ wt, primaryLabel, focused, status, pr, panels, busy, cb, launchTypes, onFocus, onHover, onLaunch }) => {
+}> = ({ workspaceId, wt, primaryLabel, focused, status, pr, panels, busy, cb, launchTypes, onFocus, onHover, onLaunch }) => {
   const isPrimary = !!wt.isPrimary
   const label = wt.label || wt.branch || (isPrimary ? 'main' : '(detached)')
   const theme = useTheme()
@@ -423,7 +426,7 @@ const WorktreeRow: React.FC<{
         onFocus()
       }}
       onContextMenu={(e) => { e.preventDefault(); if (!busy) void openMenu() }}
-      title={busy ? 'Discarding…' : wt.path}
+      title={busy ? 'Discarding' : wt.path}
       aria-busy={busy || undefined}
       className={`mx-1 px-1.5 py-1 rounded-lg transition-colors ${
         busy ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-surface-4'
@@ -481,6 +484,7 @@ const WorktreeRow: React.FC<{
                 key={type}
                 icon={<Icon name={icon} size={12} />}
                 title={title}
+                workspaceId={workspaceId}
                 panelType={type}
                 cwd={wt.path}
                 worktreeId={wt.id}

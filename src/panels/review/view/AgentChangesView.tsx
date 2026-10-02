@@ -11,7 +11,7 @@ import { pickReviewTerminal } from '../parts/view/pickTerminal'
 import { ReviewToolbar } from './ReviewToolbar'
 import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
 import { RecordedDiffHunk, type NoteDraft } from './ReviewDiff'
-import { useAgentPicker, type ReviewSend } from './useReview'
+import { useAgentPicker, useReviewView, type ReviewSend } from './useReview'
 
 type RecordedDraft = NoteDraft & { agentChangeId: string }
 
@@ -67,9 +67,9 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
   useEffect(() => { if (open && positioned) popover.current?.querySelector('select')?.focus() }, [open, positioned])
 
   const update = (patch: AgentChangesFilterPatch) => void send({ kind: 'updateFilter', patch })
-  const updateDisplay = (patch: Partial<ReviewDisplay>) => void send({ kind: 'updateDisplay', patch })
+  const view = useReviewView(workspaceId, panelId, review.focusedFile)
+  const { display, collapsed, updateDisplay } = view
   const files = recorded.files
-  const collapsed = new Set(review.collapsedFiles ?? [])
   const panelChoices = new Map(panels.map((panel) => [panel.id, panel.title]))
   for (const file of files) for (const id of file.panelIds) if (!panelChoices.has(id)) panelChoices.set(id, `Closed panel ${panelChoices.size + 1}`)
   if (filter.panelId && !panelChoices.has(filter.panelId)) panelChoices.set(filter.panelId, 'Source panel (closed)')
@@ -102,13 +102,13 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
         <ReviewStats files={new Set(files.map((file) => file.path)).size} additions={totals.additions} deletions={totals.deletions} />
         <ToolbarButton label="Refresh" disabled={loading} onClick={() => void send({ kind: 'refresh' })}>{loading ? <Spinner size={14} label="Refreshing changes" /> : <ArrowClockwise size={14} />}</ToolbarButton>
         <RecordedReviewButton workspaceId={workspaceId} panelId={panelId} send={send} busy={agentBusy} disabled={!files.length || review.agentReview?.status === 'working'} />
-        <ToolbarButton label={review.display.split ? 'Switch to unified diff' : 'Switch to split diff'} onClick={() => updateDisplay({ split: !review.display.split })}>{review.display.split ? <Rows size={14} /> : <SplitHorizontal size={14} />}</ToolbarButton>
+        <ToolbarButton label={display.split ? 'Switch to unified diff' : 'Switch to split diff'} onClick={() => updateDisplay({ split: !display.split })}>{display.split ? <Rows size={14} /> : <SplitHorizontal size={14} />}</ToolbarButton>
         <div ref={morePopover} className="relative">
           <ToolbarButton label="More review options" active={moreOpen} onClick={() => setMoreOpen(!moreOpen)}><DotsThree size={16} /></ToolbarButton>
           {moreOpen && <div role="menu" className={`absolute right-0 top-8 z-50 w-56 ${POPOVER_SURFACE} p-1.5`}>
             <button role="menuitem" aria-pressed={showHistory} onClick={() => void send({ kind: 'update', patch: { showHistory: !showHistory } })} className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs hover:bg-hover">{showHistory ? 'Show active changes' : 'Show recorded history'}</button>
             <div className="my-1 border-t border-subtle" />
-            <ReviewDisplayOptions display={review.display} update={updateDisplay} />
+            <ReviewDisplayOptions display={display} update={updateDisplay} />
           </div>}
         </div>
         <span className="text-muted" title={showHistory ? 'Historical recorded agent edits. Shell-generated or unreported edits may be missing.' : 'Recorded agent edits limited to files with current staged or unstaged Git changes. Shell-generated or unreported edits may be missing.'}><Info size={14} aria-label="About recorded edits" /></span>
@@ -132,10 +132,10 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
         <div className="flex justify-between text-xs"><button onClick={() => update({ agentId: null, panelId: null, sessionId: null, turnId: null })}>Clear filters</button><button onClick={() => { setOpen(false); trigger.current?.focus() }}>Done</button></div>
       </div>
     </PopoverSurface>}
-    <ReviewFileFilter value={review.fileFilter ?? ''} onChange={(fileFilter) => void send({ kind: 'update', patch: { fileFilter } })} allCollapsed={allCollapsed} disabled={!files.length} onToggleCollapsed={() => void send({ kind: 'setCollapsed', keys: allCollapsed ? [] : files.map(keyOf) })} />
+    <ReviewFileFilter value={review.fileFilter ?? ''} onChange={(fileFilter) => void send({ kind: 'update', patch: { fileFilter } })} allCollapsed={allCollapsed} disabled={!files.length} onToggleCollapsed={() => view.setCollapsed(allCollapsed ? [] : files.map(keyOf))} />
     {error && <p role="alert" className="px-3 py-2 text-xs text-red-400">{error}</p>}
     <div ref={root} className="min-h-0 flex-1 overflow-auto">
-      {loading && <LoadingState label="Loading recorded changes…" className="h-full p-4 text-xs" />}
+      {loading && <LoadingState label="Loading recorded changes" className="h-full p-4 text-xs" />}
       {!loading && !files.length && <p className="p-4 text-xs text-muted">{showHistory ? 'No recorded edits match these filters. This does not mean the agent made no changes.' : 'No active agent edits match these filters. Recorded history is still available from the review options.'}</p>}
       {files.slice(0, shownCount).map((file) => {
         const key = keyOf(file)
@@ -143,7 +143,7 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
         const sourcePanels = file.panelIds.map((id) => byId.get(id)).filter((panel): panel is PanelRecord => !!panel)
         return <section key={key} data-review-file={encodeURIComponent(file.path)} className="min-w-0 border-b border-subtle scroll-mt-2">
           <div className="sticky top-0 z-10 flex w-full items-center gap-2 border-b border-subtle bg-surface-2/95 px-2 py-1.5 backdrop-blur">
-            <button aria-expanded={!collapsed.has(key)} onClick={() => void send({ kind: 'toggleCollapsed', key })} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+            <button aria-expanded={!collapsed.has(key)} onClick={() => view.toggleCollapsed(key)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
               {collapsed.has(key) ? <CaretRight size={12} /> : <CaretDown size={12} />}
               <span title={agent} className="w-4 h-4 shrink-0 rounded bg-surface-4 flex items-center justify-center text-[9px]">{agent[0]}</span>
               <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{file.oldPath ? `${file.oldPath} → ` : ''}{file.path}</span>
@@ -156,7 +156,7 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
           {!collapsed.has(key) && <RecordedFileBody
             send={send}
             file={file}
-            display={review.display}
+            display={display}
             notes={(review.notes ?? []).filter((note) => note.path === file.path && note.agentChangeId === file.recordId)}
             noteDraft={noteDraft?.filePath === file.path && noteDraft.agentChangeId === file.recordId ? noteDraft : null}
             setNoteDraft={setNoteDraft}
@@ -207,7 +207,7 @@ function RecordedFileBody({ send, file, display, notes, noteDraft, setNoteDraft,
   return <div ref={root} className={`font-mono text-[11px] leading-[1.45] ${display.wrap ? 'w-full min-w-0 whitespace-pre-wrap break-all' : 'w-max min-w-full whitespace-pre'}`}>
     {large && !allowLarge ? <button className="m-3 rounded bg-surface-2 px-3 py-2" onClick={() => setAllowLarge(true)}>Load large recorded diff</button>
       : failed ? <p className="px-3 py-2 text-red-400">Could not load this recorded edit.</p>
-      : !body ? <LoadingState label="Loading recorded diff…" className="h-20" />
+      : !body ? <LoadingState label="Loading recorded diff" className="h-20" />
       : <>
         {file.coverage === 'unavailable' && <p className="px-3 py-2 text-muted">No patch was reported for this file.</p>}
         {body.hunks.map((hunk, index) => <RecordedDiffHunk

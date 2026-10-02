@@ -82,7 +82,7 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
 
   return (
     <div
-      className={`flex h-11 shrink-0 touch-pan-y items-center gap-1 overflow-x-auto bg-surface-1 px-3 no-scrollbar ${
+      className={`flex h-8 shrink-0 touch-pan-y items-center gap-1 overflow-x-auto bg-surface-1 px-3 no-scrollbar ${
         isDragging ? 'cursor-grabbing select-none' : ''
       }`}
       aria-label="Browser tabs"

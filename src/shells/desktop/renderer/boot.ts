@@ -19,9 +19,10 @@ import {
   installShortcutRegistry,
 } from '@kernel/ui'
 import type { NotificationAction } from '@kernel/ui/contract'
-import { createClientIdentity, installClientIdentity, WorkspaceConnections } from '@client/connections'
+import { createClientIdentity, eachConnection, installClientIdentity, WorkspaceConnections } from '@client/connections'
 import { attachDocuments, documentStoreFor, setClientAttentive } from '@client/document'
-import { createPanel, installSessionSource, panelTypeOpening, sessionSourceFrom } from '@client/host'
+import { PANEL_DEFINITIONS } from '@panels/definitions'
+import { installSessionSource, registerPanelDefinitions, sessionSourceFrom } from '@client/host'
 import {
   BUILTIN_WALLPAPERS,
   createCanvasE2E,
@@ -43,6 +44,7 @@ import {
   installTrustCheck,
   installUiState,
   openLocalFolder,
+  openUrl,
   runNotificationAction,
   selectWorkspace,
   startClientUi,
@@ -53,10 +55,10 @@ import { WorkspaceList } from '@client/workspaces'
 import { trustStore } from '@workspace/lifecycle/ui'
 import { installEditorSettings } from '@panels/editor/view'
 import { installTerminalViewSettings } from '@panels/terminal/view'
+import { RUNTIME_BUILD } from '@runtime/daemon/contract'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import type { BootSnapshot, DesktopApi, DesktopAppInfo } from '../contract'
 import { createDesktopClientUi } from './clientUi'
-import { eachConnection } from './connectionsEach'
 import { createDesktopPort } from './desktopPort'
 import { createDragShell } from './drag'
 import { quitBlockers } from './quitBlockers'
@@ -138,7 +140,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   const identity = createClientIdentity({ device: info.device, features: info.features })
   installClientIdentity(identity)
   const transports = createDesktopShellTransports(api)
-  const connections = new WorkspaceConnections({ identity, transports, version: info.version })
+  const connections = new WorkspaceConnections({ identity, transports, version: info.version, build: RUNTIME_BUILD })
   stops.push(attachDocuments(connections))
   stops.push(api.app.onAttention(setClientAttentive))
   const partitions = prepareWebviewPartitions(api, connections)
@@ -150,7 +152,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
 
   const workspaces = new WorkspaceList({ store: device, connections })
   await workspaces.load()
-  installClientApp({ workspaces, connections, version: info.version, pair: transports.pair })
+  installClientApp({ workspaces, connections, version: info.version, pair: transports.pair, ssh: api.ssh })
   installDesktopPort(createDesktopPort(api, info))
   const uiState = createUiStateStore(device)
   await uiState.load()
@@ -165,6 +167,8 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   installUiState(uiState)
   installTrustCheck((workspaceId, label) => trustStore.ensureTrusted(workspaceId, label))
   installClientUi(createDesktopClientUi(api, info.features))
+  // Before the client's actions: each panel type brings its own.
+  registerPanelDefinitions(PANEL_DEFINITIONS)
   stops.push(startClientUi())
 
   // Notifications: OS notifications with `osNotifications`, else toasts.
@@ -229,7 +233,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
     stops.push(rememberSelectedWorkspace(api))
     // Paths opened with the app (Finder, dock, argv) open as local workspaces.
     stops.push(api.app.onOpenPath((path) => { void openLocalFolder(path) }))
-    stops.push(api.app.onOpenUrl((url) => openUrl(api, url)))
+    stops.push(api.app.onOpenUrl(openUrl))
     api.app.openRequestsReady()
   }
 
@@ -270,14 +274,6 @@ function rememberSelectedWorkspace(api: DesktopApi): () => void {
       await api.device.set('boot', { ...boot, lastWorkspace: last })
     })().catch(() => {})
   })
-}
-
-/** A `cate://` or web URL opened with the app: in a panel of the shown
- *  workspace that opens URLs, else in the system browser. */
-function openUrl(api: DesktopApi, url: string): void {
-  const workspaceId = useUIStore.getState().selectedWorkspaceId
-  const type = panelTypeOpening('url')
-  if (!/^https?:/i.test(url) || !workspaceId || !type || !createPanel(workspaceId, type, { url })) void api.os.openExternal(url)
 }
 
 declare const __SENTRY_DSN__: string

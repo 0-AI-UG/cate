@@ -22,6 +22,7 @@ export function installCanvasRelationHost(): () => void {
       return source ? { get: () => source.get('panelRelationsEnabled'), subscribe: (listener) => source.subscribe(listener) } : null
     },
     definitions: () => canvasHost().definitions(),
+    creatable: () => canvasHost().creatable({ onCanvas: true }),
     createPanel: (workspaceId, type, options) => canvasHost().createPanel(workspaceId, type, options),
   })
   return registerTabMenuItems({

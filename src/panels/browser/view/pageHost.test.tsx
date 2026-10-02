@@ -26,7 +26,7 @@ function guest(id = 7): BrowserGuest & { url: string; loading: boolean; fire(typ
 
 const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'https://a.test/', title: '', favicon: null, pinned: false, nav: 0, navSource: null, ...patch })
 const snapshot = (tabs: BrowserTab[]): BrowserSnapshot => ({
-  tabs, activeTabId: tabs[0].id, viewport: { preset: 'compact' }, zoom: 1,
+  tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' }, zoom: 1,
   canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null,
 })
 
@@ -56,6 +56,8 @@ describe('BrowserPageHost', () => {
     expect(webview.loadURL).toHaveBeenCalledWith('https://b.test/')
     webview.fire('did-navigate', { url: 'https://b.test/login' })
     expect(sent.filter((op) => op.kind === 'reportNavigation')).toEqual([])
+    // Only its history state, so every client's Back reflects the page.
+    expect(sent.at(-1)).toEqual({ kind: 'reportLoad', tabId: 't1', canGoBack: true, canGoForward: false })
     webview.fire('did-stop-loading')
 
     // A navigation of this client's own page is reported.
@@ -113,6 +115,26 @@ describe('BrowserPageHost', () => {
     await host.execute({ tabId: 't1', method: 'upload', args: { target: 3, filePath: '/remote/file.txt' } })
     expect(bridge.execute).toHaveBeenLastCalledWith(expect.anything(), 'upload', { target: 3, filePath: '/tmp/staged/file.txt' })
     await expect(host.execute({ tabId: 'other', method: 'click', args: {} })).rejects.toThrow('browser-tab-changed')
+  })
+
+  it('shows the session\'s active tab before a page operation runs on it', async () => {
+    const bridge = { attach: vi.fn(async () => {}), execute: vi.fn(async () => ({ result: 'ok' })) }
+    const revealed: string[] = []
+    const host = new BrowserPageHost({
+      panelId: 'p1', clientId: 'me', send: async () => {}, bridge: bridge as never, nextFrame: async () => {},
+      reveal: (tabId) => { revealed.push(tabId); host.show(tabId) },
+    })
+    host.update({ ...snapshot([tab(), tab({ id: 't2', url: 'https://b.test/' })]), activeTabId: 't2' })
+    host.show('t1')
+    for (const [id, webContentsId] of [['t1', 1], ['t2', 2]] as const) {
+      const webview = guest(webContentsId)
+      host.attachGuest(id, webview)
+      webview.fire('dom-ready')
+    }
+    await expect(host.execute({ tabId: 't2', method: 'click', args: {} })).resolves.toEqual({ result: 'ok' })
+    expect(revealed).toEqual(['t2'])
+    expect(bridge.execute).toHaveBeenCalledWith({ webContentsId: 2, panelId: 'p1', tabId: 't2' }, 'click', {})
+    await expect(host.execute({ tabId: 't1', method: 'click', args: {} })).rejects.toThrow('browser-tab-changed')
   })
 
   it('offers to save a submitted password through the runtime', async () => {

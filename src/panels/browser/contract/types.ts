@@ -1,6 +1,8 @@
 // The browser panel's session channel: snapshot and ops (architecture 10.2,
 // 11.3). The session holds tabs, URLs, titles and navigation state; each
 // client loads the page itself and every client follows the session URL.
+// Which tab a client shows is that client's own; `activeTabId` is the tab the
+// last selection named, the one `cate.browser.*` acts on.
 
 import type { BrowserDownloadState, BrowserViewport } from '@services/browser/contract'
 import type { AgentCursorKind } from './agentCursor'
@@ -52,7 +54,14 @@ export type BrowserAgentCursor = {
 
 export type BrowserSnapshot = {
   tabs: BrowserTab[]
+  /** The tab the last selection named (a person's, a caller's, a new tab):
+   *  the one `cate.browser.*` acts on. A person picking another tab cancels
+   *  page work bound to this one. */
   activeTabId: string
+  /** The client whose selection made `activeTabId` active; null for a
+   *  selection every client shows (a `cate.browser.*` caller's). A client
+   *  follows only its own and null ones. */
+  activeSource: string | null
   viewport: BrowserViewport
   /** Page zoom factor. */
   zoom: number
@@ -81,7 +90,9 @@ export type BrowserOp =
   | { kind: 'reportTitle'; tabId: string; title: string }
   | { kind: 'reportFavicon'; tabId: string; favicon: string }
   /** Loading, a main-frame load error, or a crashed guest. */
-  | { kind: 'reportLoad'; tabId: string; loading?: boolean; loadError?: string | null; crashed?: boolean }
+  /** Load and history state of the reporting client's page (history also
+   *  from clients following a navigation, which report no URL). */
+  | { kind: 'reportLoad'; tabId: string; loading?: boolean; loadError?: string | null; crashed?: boolean; canGoBack?: boolean; canGoForward?: boolean }
   /** Back, forward or reload on the driving client's page (palette commands). */
   | { kind: 'history'; action: BrowserHistoryAction; tabId?: string }
   | { kind: 'setZoom'; zoom: number }

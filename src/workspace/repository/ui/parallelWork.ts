@@ -1,6 +1,6 @@
 // The shared "do something with a worktree" layer: create, launch a panel in,
 // publish, open or create a PR, update from the base, merge, rename, recolor,
-// reveal, discard and clean up. The canvas worktree menu and any other
+// discard and clean up. The canvas worktree menu and any other
 // worktree surface bind their buttons to these.
 
 import { useCallback } from 'react'
@@ -22,9 +22,6 @@ export interface CardCallbacks {
   onUpdateFromMain: () => void
   onMerge: () => void
   onDelete: () => void
-  /** False on a client that cannot reveal files; menus omit the action. */
-  canReveal: boolean
-  onReveal: () => void
   onRename: (label: string | undefined) => void
   onRecolor: (color: string) => void
   onOpenPr: (url?: string) => void
@@ -53,7 +50,6 @@ export async function runWorktreeContextMenu(opts: {
   items.push({ type: 'separator' })
   if (opts.beginRename) items.push({ id: 'rename', label: 'Rename…' })
   if (opts.beginRecolor) items.push({ id: 'color', label: 'Change color…' })
-  if (opts.cb.canReveal) items.push({ id: 'reveal', label: 'Reveal in Finder' })
   if (!opts.isPrimary) {
     items.push({ type: 'separator' })
     items.push({ id: 'delete', label: 'Discard this work…' })
@@ -72,7 +68,6 @@ export async function runWorktreeContextMenu(opts: {
     case 'pr': if (opts.hasPr) opts.cb.onOpenPr(opts.prUrl); else opts.cb.onCreatePR(); break
     case 'update': opts.cb.onUpdateFromMain(); break
     case 'merge': opts.cb.onMerge(); break
-    case 'reveal': opts.cb.onReveal(); break
     case 'rename': opts.beginRename?.(); break
     case 'color': opts.beginRecolor?.(); break
     case 'delete': opts.cb.onDelete(); break
@@ -112,7 +107,7 @@ export function useParallelWork(
   const host = useRepositoryUi()
   const runtime = useRuntime(host.workspaceId)
   const { setError, onPrCreated, setBusy } = opts
-  const { workspaceId, root } = host
+  const { root } = host
 
   const createWorktree = useCallback(async (rawName: string, baseRef?: string) => {
     if (!runtime) return null
@@ -328,12 +323,6 @@ export function useParallelWork(
       onUpdateFromMain: () => void handleUpdateFromMain(wt),
       onMerge: () => void handleMerge(wt),
       onDelete: () => void handleDelete(wt),
-      canReveal: !!ui.revealFile,
-      onReveal: () => {
-        void ui.revealFile?.(wt.path, workspaceId).catch((err: unknown) => {
-          setError(`Couldn’t reveal this worktree: ${errorMessage(err, 'The folder is unavailable.')}`)
-        })
-      },
       onRename: (label) => updateMeta(wt, { label: label?.trim() || undefined }),
       onRecolor: (color) => updateMeta(wt, { color }),
       onOpenPr: (url) => {
@@ -345,7 +334,7 @@ export function useParallelWork(
       },
       onError: setError,
     }
-  }, [launchInWorktree, handlePublish, handleCreatePR, handleUpdateFromMain, handleMerge, handleDelete, updateMeta, workspaceId, setError])
+  }, [launchInWorktree, handlePublish, handleCreatePR, handleUpdateFromMain, handleMerge, handleDelete, updateMeta, setError])
 
   return {
     createWorktree,

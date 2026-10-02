@@ -12,6 +12,7 @@ import {
   type DesktopAppInfo,
   type DetachedWindowRef,
   type DragPayload,
+  type MenuModel,
   type NativeAction,
 } from '../contract'
 import type { Analytics } from './analytics/analytics'
@@ -120,6 +121,9 @@ export function registerAppIpc(deps: AppIpcDeps): { blockers(): string[] } {
   handle(C.menuNativeAction, (event, action: NativeAction) => {
     const win = windowOf(event)
     if (win) deps.menu.runNativeAction(win, action)
+  })
+  handle(C.menuSetModel, (event, model: MenuModel) => {
+    if (windowOf(event) && model && Array.isArray(model.bar)) deps.menu.setModel(model)
   })
 
   handle(C.updateGetStatus, () => deps.updater.status())

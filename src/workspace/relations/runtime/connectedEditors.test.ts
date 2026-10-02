@@ -92,14 +92,14 @@ describe('connected editors', () => {
     service.dispose()
   })
 
-  it('prepares drafts under .cate/drafts with the gitignore', async () => {
+  it('prepares drafts under .cate/tmp with the gitignore', async () => {
     const service = createConnectedEditors({ document, enabled: () => true, editor: () => undefined, relationRole })
     const draft = await service.prepareDraft(dir)
     expect(isEditorDraft(draft)).toBe(true)
-    expect(editorDraftDirectory(draft)).toBe(`${dir}/.cate/drafts`)
+    expect(editorDraftDirectory(draft)).toBe(`${dir}/.cate/tmp`)
     expect((await fs.stat(editorDraftDirectory(draft))).isDirectory()).toBe(true)
     expect(await fs.readFile(path.join(dir, '.cate', '.gitignore'), 'utf8')).toContain('!skills.json')
-    expect(editorDraftPath('/repo/', 'x')).toBe('/repo/.cate/drafts/x.md')
+    expect(editorDraftPath('/repo/', 'x')).toBe('/repo/.cate/tmp/x.md')
     service.dispose()
   })
 })

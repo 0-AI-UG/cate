@@ -105,8 +105,8 @@ export function CliSettingsPage({ workspaceId }: { workspaceId: string | null })
         hint={status && <span className={`text-xs ${status.ok ? 'text-success' : 'text-danger'}`}>{status.message}</span>}
       >
         <div className="flex items-center gap-2">
-          <SecondaryButton onClick={() => void reinstallSkill()} disabled={!runtime || reinstalling} title="Replace installed copies with the bundled skill">
-            {reinstalling ? 'Reinstalling…' : 'Reinstall skill'}
+          <SecondaryButton onClick={() => void reinstallSkill()} disabled={!runtime} loading={reinstalling} title="Replace installed copies with the bundled skill">
+            {reinstalling ? 'Reinstalling' : 'Reinstall skill'}
           </SecondaryButton>
           <Toggle checked={settings.cliSkillInstallEnabled} onChange={(v) => set('cliSkillInstallEnabled', v)} />
         </div>

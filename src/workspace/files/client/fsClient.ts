@@ -50,6 +50,10 @@ export interface FsClient {
   mkdir(path: string): Promise<void>
   copy(path: string, destDir: string): Promise<{ path: string }>
   grant(path: string): Promise<{ path: string }>
+  /** The temporary folder of the checkout holding `near`; the root's by default. */
+  tempDir(near?: string): Promise<string>
+  /** A loopback URL of the runtime's machine serving the file (`file.serveUrl`). */
+  serveUrl(path: string): Promise<string>
   importEntries(destDir: string, sources: ImportSource[]): Promise<ImportResult>
   storeDownload(filename: string, bytes: Uint8Array): Promise<{ path: string }>
   storeScreenshot(name: string, bytes: Uint8Array): Promise<{ path: string }>
@@ -104,6 +108,8 @@ export function createFsClient(file: FileApi, search: SearchApi): FsClient {
     mkdir: (path) => file.mkdir({ path }),
     copy: (path, destDir) => file.copy({ path, destDir }),
     grant: (path) => file.grant({ path }),
+    tempDir: async (near) => (await file.tempDir(near === undefined ? {} : { near })).path,
+    serveUrl: async (path) => (await file.serveUrl({ path })).url,
     async importEntries(destDir, sources) {
       const entries: ImportEntry[] = sources.map((s) => (s.kind === 'dir' ? { path: s.path, kind: 'dir' } : { path: s.path, kind: 'file', size: s.size }))
       const sub = file.importEntries({ destDir, entries })

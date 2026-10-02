@@ -5,7 +5,7 @@
 import type { Point } from '@workspace/canvas/contract'
 import type { AnyPanelDefinition, PanelCreateOptions } from '@panels/framework/contract'
 import type { NodeId, PanelId } from '@workspace/document/contract'
-import { closePanels, createPanel, panelDefinitions } from '@client/host'
+import { closePanels, createPanel, creatableDefinitions, panelDefinitions } from '@client/host'
 import { beginDrag, useDragStore } from '@client/layout/drag'
 
 // --- Panels ---------------------------------------------------------------------
@@ -15,6 +15,9 @@ import { beginDrag, useDragStore } from '@client/layout/drag'
 export interface CanvasHost {
   /** The panel index: sizes, labels, icons and `canLiveOnCanvas`. */
   definitions(): readonly AnyPanelDefinition[]
+  /** The types people can create on this client, in creation order; with
+   *  `onCanvas`, only those that can live on a canvas. */
+  creatable(where?: { onCanvas?: boolean }): readonly AnyPanelDefinition[]
   /** Creates a panel through its definition. The canvas passes `at` (a
    *  canvas target it chose). Returns the new id, or null. */
   createPanel(workspaceId: string, type: string, options: PanelCreateOptions & Record<string, unknown>): PanelId | null
@@ -25,6 +28,7 @@ export interface CanvasHost {
 
 const CLIENT_HOST: CanvasHost = {
   definitions: () => panelDefinitions(),
+  creatable: (where) => creatableDefinitions(where),
   createPanel: (workspaceId, type, options) => createPanel(workspaceId, type, options),
   closePanels: (workspaceId, panelIds) => closePanels(workspaceId, panelIds),
 }

@@ -4,10 +4,12 @@
 
 import type { PanelPlacementOptions } from '@panels/framework/contract'
 import { tryRuntimeFor } from '@kernel/rpc/client'
+import { clientHas } from '@client/connections'
 import { documentStoreFor } from '@client/document'
 import { createPanel, focusedPanelId, panelDefinition, panelTypeOpening, revealPanel } from '@client/host'
 import { activeCanvasId, createPanelOnCanvas } from '@client/layout/canvas'
-import type { FileLineLocation, FileViewsHost } from '@workspace/files/ui'
+import type { FileLineLocation } from '@workspace/files/contract'
+import type { FileViewsHost } from '@workspace/files/ui'
 
 /** Files open in the type that `opens` files; one already working on `path`
  *  is reused. */
@@ -66,4 +68,5 @@ export const fileViewsHost: FileViewsHost = {
     if (panelId) revealLine(workspaceId, panelId, path, line, column)
   },
   openTerminal,
+  takesOsFiles: () => clientHas('fileDrop'),
 }

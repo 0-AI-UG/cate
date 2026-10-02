@@ -44,7 +44,7 @@ for (const untitled of [true, false]) {
     await expect.poll(async () => (await snapshot(editor.panelId))?.filePath).toBeTruthy()
     const workingPath = (await snapshot(editor.panelId))!.filePath!
     await expect.poll(() => readFileSync(workingPath, 'utf8')).toBe('User draft')
-    if (untitled) expect(workingPath).toContain(`${path.sep}.cate${path.sep}drafts${path.sep}`)
+    if (untitled) expect(workingPath).toContain(`${path.sep}.cate${path.sep}tmp${path.sep}`)
     else expect(workingPath).toBe(existing)
 
     // The same plain filesystem write an agent performs must update Monaco.
@@ -57,11 +57,11 @@ for (const untitled of [true, false]) {
 
     if (untitled) {
       const promoted = path.join(project, 'saved.md')
-      await app.evaluate(({ dialog }, filePath) => {
-        dialog.showSaveDialog = (async () => ({ canceled: false, filePath })) as typeof dialog.showSaveDialog
-      }, promoted)
       // The toolbar can run past the window edge on the canvas.
       await page.locator(`[data-node-id="${editor.nodeId}"]`).getByRole('button', { name: 'Save As…', exact: true }).dispatchEvent('click')
+      // The in-app save dialog opens in the draft's checkout.
+      await page.getByRole('textbox', { name: 'File name' }).fill('saved.md')
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
       await expect.poll(async () => (await snapshot(editor.panelId))?.filePath).toBe(promoted)
       expect(readFileSync(promoted, 'utf8')).toBe('User updated this')
       writeFileSync(promoted, 'Agent updated saved file')

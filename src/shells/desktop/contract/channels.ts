@@ -29,21 +29,17 @@ export const DESKTOP_CHANNELS = {
   menuPopupBarItem: 'cate-desktop:menu:popup-bar-item',
   menuNativeAction: 'cate-desktop:menu:native-action',
   menuAction: 'cate-desktop:menu:action',
+  menuSetModel: 'cate-desktop:menu:set-model',
   browserShortcut: 'cate-desktop:menu:browser-shortcut',
 
   dialogMessageBox: 'cate-desktop:dialog:message-box',
   dialogOpen: 'cate-desktop:dialog:open',
-  dialogSave: 'cate-desktop:dialog:save',
   canvasBackgroundPick: 'cate-desktop:canvas-background:pick',
   canvasBackgroundRead: 'cate-desktop:canvas-background:read',
   canvasBackgroundPrune: 'cate-desktop:canvas-background:prune',
 
   osOpenExternal: 'cate-desktop:os:open-external',
-  osOpenFile: 'cate-desktop:os:open-file',
-  osRevealFile: 'cate-desktop:os:reveal-file',
-  osOpenFileOnGitHub: 'cate-desktop:os:open-file-on-github',
-  osFileApps: 'cate-desktop:os:file-apps',
-  osStartFileDrag: 'cate-desktop:os:start-file-drag',
+  osOpenSettingsFile: 'cate-desktop:os:open-settings-file',
   clipboardWrite: 'cate-desktop:clipboard:write',
   clipboardRead: 'cate-desktop:clipboard:read',
   notify: 'cate-desktop:notify',
@@ -65,6 +61,7 @@ export const DESKTOP_CHANNELS = {
   recentScreenshotsChanged: 'cate-desktop:capture:recent-changed',
   recentScreenshotRead: 'cate-desktop:capture:recent-read',
   recentScreenshotDrag: 'cate-desktop:capture:recent-drag',
+  recentScreenshotAddAnnotated: 'cate-desktop:capture:recent-add-annotated',
 
   dragStart: 'cate-desktop:drag:start',
   dragClaim: 'cate-desktop:drag:claim',
@@ -79,6 +76,11 @@ export const DESKTOP_CHANNELS = {
   pipePort: 'cate-desktop:transport:port',
   loopbackRequest: 'cate-desktop:transport:loopback-request',
   pair: 'cate-desktop:transport:pair',
+
+  sshEnsureRuntime: 'cate-desktop:ssh:ensure-runtime',
+  sshListDir: 'cate-desktop:ssh:list-dir',
+  sshMkdir: 'cate-desktop:ssh:mkdir',
+  sshServe: 'cate-desktop:ssh:serve',
 
   webPartition: 'cate-desktop:web:partition',
   webRelease: 'cate-desktop:web:release',

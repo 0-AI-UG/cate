@@ -21,7 +21,12 @@ import {
   closePanel,
   closePanels,
   createPanel,
+  creatableDefinitions,
+  creationMenuItems,
+  creationPick,
   newId,
+  worktreeChoices,
+  type CreationPick,
   onPanelRenameRequest,
   panelDefaultSize,
   panelDefinitions,
@@ -104,7 +109,9 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
   }), [workspaceId, stack.panels, beginRename])
 
   // --- Create -----------------------------------------------------------------
-  const createPanelOfType = useCallback((type: string, at: 'tab' | 'split') => {
+  /** A new panel of `type` as a tab or split of this stack, in the active
+   *  tab's checkout unless `options` name one. */
+  const createPanelOfType = useCallback((type: string, at: 'tab' | 'split', options: CreationPick['options'] = {}) => {
     const doc = documentStoreFor(workspaceId)?.getSnapshot()
     if (!doc) return
     materializeWindow(workspaceId, dock)
@@ -112,7 +119,7 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
       ? { to: 'stack', dock, stackId: stack.id }
       : { to: 'split', dock, beside: stack.id, side: 'right', stackId: newId(), splitId: newId() }
     const origin = activePanelId ? doc.panels[activePanelId] : undefined
-    createPanel(workspaceId, type, { at: target, worktreeId: origin?.worktreeId })
+    createPanel(workspaceId, type, { at: target, worktreeId: origin?.worktreeId, ...options })
   }, [workspaceId, dock, stack.id, activePanelId])
 
   const addTabOfType = useCallback((type: string) => createPanelOfType(type, 'tab'), [createPanelOfType])
@@ -197,12 +204,14 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
     }
   }, [showMultiSelectionMenu, workspaceId, stack.panels, showCloseAll, canSplit, beginRename, closeOne, closeMany, splitPanel, moveTabToNewWindow])
 
-  const handleTabBarContextMenu = useCallback(async (e: React.MouseEvent, items: { type: string; label: string }[]) => {
+  const handleTabBarContextMenu = useCallback(async (e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return
     e.preventDefault()
     if (await showMultiSelectionMenu()) return
+    const worktrees = worktreeChoices(doc(workspaceId)?.worktrees)
+    const creatable = creatableDefinitions({ onCanvas: isCanvasDock(dock) })
     const groups: ContextMenuItem[][] = [
-      [{ label: 'New Tab', submenu: items.map((m) => ({ id: `new:${m.type}`, label: m.label })) }],
+      [{ label: 'New Tab', submenu: creationMenuItems(creatable, worktrees, (definition) => definition.label) }],
       [{ id: 'split', label: 'Split Right', enabled: canSplit?.() ?? true }],
     ]
     if (showCloseAll) groups.push([{ id: 'close-all', label: 'Close All', enabled: stack.panels.length > 0 }])
@@ -211,8 +220,9 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
     if (!id) return
     if (id === 'split') { splitPanel(); return }
     if (id === 'close-all') { await closeMany([...stack.panels]); return }
-    if (id.startsWith('new:')) addTabOfType(id.slice(4))
-  }, [showMultiSelectionMenu, canSplit, showCloseAll, stack.panels, splitPanel, closeMany, addTabOfType])
+    const pick = creationPick(id, worktrees)
+    if (pick) createPanelOfType(pick.type, 'tab', pick.options)
+  }, [showMultiSelectionMenu, workspaceId, dock, canSplit, showCloseAll, stack.panels, splitPanel, closeMany, createPanelOfType])
 
   return {
     renameId,

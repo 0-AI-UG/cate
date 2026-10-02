@@ -1,5 +1,5 @@
-// A floating node on the canvas: its frame (border, focus glow, activity,
-// resize band, lock and close) around the node's mini dock, which the dock
+// A floating node on the canvas: its frame (border, focus glow, resize
+// band, lock and close) around the node's mini dock, which the dock
 // layer renders. Moving the whole node or detaching a tab goes through the
 // drag layer.
 
@@ -19,6 +19,7 @@ import { isGroupDragMember, isSelected as isNodeSelected } from '../selection'
 import { checkoutHooks } from '../actions'
 import { useCanvasTopOverlayTarget, useCanvasView, useCanvasViewStore } from './context'
 import { useIsDragging, useIsDragSource } from './dragState'
+import { isFileDrag } from '@client/layout/drag'
 import { useCanvasNodeStyle } from './useCanvasNodeStyle'
 import { useNodeResize } from './useNodeResize'
 import { NodeResizeOverlay } from './NodeResizeOverlay'
@@ -31,11 +32,8 @@ import type { ResizeEdge } from '../parts/resizeEdge'
 const GRAB_STRIP_HEIGHT = 22
 const TAB_ICON_SIZE = 12
 
-const NODE_STYLES = `
-@keyframes pulseActivity {
-  0% { outline-color: color-mix(in srgb, var(--activity-orange) 40%, transparent); }
-  100% { outline-color: var(--activity-orange); }
-}
+const NODE_STYLES_MARKER = '/* cate-canvas-node */'
+const NODE_STYLES = `${NODE_STYLES_MARKER}
 /* The tab bar's bottom border matches the active tab so it reads as one surface. */
 [data-node-id] .dock-tab-bar { border-bottom-color: var(--surface-3) !important; }
 /* Tab bar actions are noise on an unfocused node. */
@@ -51,7 +49,7 @@ function ensureStyles(): void {
   if (stylesInjected || typeof document === 'undefined') return
   // Replace an earlier module's copy on hot reload instead of stacking them.
   for (const previous of document.head.querySelectorAll('style')) {
-    if (previous.textContent?.includes('@keyframes pulseActivity')) previous.remove()
+    if (previous.textContent?.includes(NODE_STYLES_MARKER)) previous.remove()
   }
   const style = document.createElement('style')
   style.textContent = NODE_STYLES
@@ -112,7 +110,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const isSelected = useCanvasView((s) => isNodeSelected(s, nodeId))
   const isDragging = useIsDragging()
   const isWholeNodeDragSource = useIsDragSource(nodeId)
-  const { NodeDock, useNodeActivity } = canvasSlots()
+  const { NodeDock } = canvasSlots()
 
   // A file or panel drag over an unfocused node: the dim overlay lets it
   // through to the panel content that owns the drop.
@@ -143,7 +141,6 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   // Only this node's active tab: a tab switch elsewhere does not re-render it.
   const activePanelId = useClientState(workspaceId, (s) => (dock ? activeNodePanelId(dock, s.activeTabs) : null))
   const activePanel = useDocument(workspaceId, (d) => (activePanelId ? d.panels[activePanelId] : undefined))
-  const activity = useNodeActivity(workspaceId, activePanelId)
   const relationsEnabled = useWorkspaceSetting(workspaceId, 'panelRelationsEnabled')
   const canConnect = Boolean(relationsEnabled && activePanel)
 
@@ -375,7 +372,6 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
     node,
     isFocused,
     isSelected,
-    activity,
     isHovered,
     isWholeNodeDragSource,
     worktreeColor: worktreeTint,
@@ -495,7 +491,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
               focusThisNode()
             }}
             onDragEnter={(e) => {
-              if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/cate-file')) setFileDragOver(true)
+              if (isFileDrag(e.nativeEvent)) setFileDragOver(true)
             }}
             style={{
               position: 'absolute',

@@ -26,7 +26,7 @@ export const editorApi = defineCateApi(
       handler: 'service',
       summary: 'Open a file in the workspace, optionally at a line',
       args: {
-        path: path.pos('path[:line[:column]]'),
+        path: path.pos('path[:line[:column]]').help('File to open, relative to this directory'),
         line: opt(num.int().min(1)).help('Reveal this line'),
         column: opt(num.int().min(1)).help('Reveal this column'),
       },
@@ -39,5 +39,5 @@ export const editorApi = defineCateApi(
       summary: 'Print which file the target editor shows',
     },
   },
-  { area: 'editor' },
+  { area: 'editor', summary: 'Open files in editor panels' },
 )

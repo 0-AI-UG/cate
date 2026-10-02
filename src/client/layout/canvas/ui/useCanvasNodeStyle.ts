@@ -5,7 +5,6 @@ import type React from 'react'
 import { useMemo } from 'react'
 import { NODE_CORNER_RADIUS } from '../constants'
 import type { ViewNode } from '../store'
-import type { NodeActivity } from './slots'
 
 // Above any realistic node z band (1000 + zOrder), so a selected node's ring
 // is never painted under an overlapping neighbour.
@@ -17,17 +16,10 @@ const FOCUS_GLOW = '0 0 20px 1px rgba(255,255,255,0.025), 0 0 8px rgba(255,255,2
 // Selected but not active (marquee, Cmd+Arrow): a crisp accent ring.
 const SELECTION_RING = '0 0 0 2px var(--focus-blue), 0 0 14px -2px var(--focus-blue)'
 
-function activityOutline(activity: NodeActivity | undefined): string {
-  if (activity === 'finished') return '2px solid var(--activity-green)'
-  if (activity === 'waiting') return '2px solid var(--activity-orange)'
-  return 'none'
-}
-
 interface StyleArgs {
   node: ViewNode | undefined
   isFocused: boolean
   isSelected: boolean
-  activity: NodeActivity | undefined
   isHovered: boolean
   isWholeNodeDragSource: boolean
   /** The active tab's worktree colour; null when untagged or with one worktree. */
@@ -39,7 +31,7 @@ interface StyleArgs {
 }
 
 export function useCanvasNodeStyle(args: StyleArgs) {
-  const { node, isFocused, isSelected, activity, isHovered, isWholeNodeDragSource, worktreeColor, worktreeHighlight, worktreeDim } = args
+  const { node, isFocused, isSelected, isHovered, isWholeNodeDragSource, worktreeColor, worktreeHighlight, worktreeDim } = args
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
     if (!node) return { display: 'none' }
@@ -59,14 +51,11 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       overflow: 'hidden',
       border: 'var(--hairline) solid var(--border-subtle)',
       boxShadow: isHovered ? SHADOW_HOVERED : SHADOW_UNFOCUSED,
-      outline: activityOutline(activity),
-      outlineOffset: -1,
-      animation: activity === 'waiting' ? 'pulseActivity 1s ease-in-out infinite alternate' : undefined,
       backgroundColor: 'var(--node-bg-active)',
       ['--node-chrome-bg' as string]: 'var(--surface-1)',
       ['--node-chrome-active-bg' as string]: 'var(--surface-3)',
       ['--node-chrome-accent' as string]: 'var(--focus-blue)',
-      transition: 'border-color 150ms ease, box-shadow 200ms ease, outline-color 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out, filter 200ms ease',
+      transition: 'border-color 150ms ease, box-shadow 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out, filter 200ms ease',
       filter: worktreeDim ? 'saturate(0.4)' : undefined,
       transform: entering ? 'scale(0.85)' : exiting ? 'scale(0.9)' : 'scale(1)',
       opacity: worktreeDim ? baseOpacity * 0.5 : baseOpacity,
@@ -76,7 +65,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       pointerEvents: exiting || isWholeNodeDragSource ? 'none' : undefined,
       userSelect: 'none',
     }
-  }, [node, activity, isHovered, isWholeNodeDragSource, worktreeDim])
+  }, [node, isHovered, isWholeNodeDragSource, worktreeDim])
 
   const glowStyle = useMemo<React.CSSProperties | null>(() => {
     if (!node) return null

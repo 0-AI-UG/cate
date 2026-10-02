@@ -1,5 +1,6 @@
-// What the file views ask of the layers above them: opening panels. The client
-// provides it; views fall back to doing nothing without a provider.
+// What the file views ask of the layers above them: opening panels and what
+// the client can do. The client provides it; without a provider views do
+// nothing and take no OS files.
 
 import { createContext, useContext } from 'react'
 
@@ -10,12 +11,16 @@ export interface FileViewsHost {
   openMatch(workspaceId: string, path: string, line: number, column: number): void
   /** Opens a terminal in `cwd`, placed next to `panelId` when given. */
   openTerminal(workspaceId: string, cwd: string, panelId?: string): void
+  /** True when this client can take files dropped from the OS (the
+   *  `fileDrop` feature). */
+  takesOsFiles(): boolean
 }
 
 const NO_HOST: FileViewsHost = {
   openFiles: () => {},
   openMatch: () => {},
   openTerminal: () => {},
+  takesOsFiles: () => false,
 }
 
 export const FileViewsContext = createContext<FileViewsHost>(NO_HOST)

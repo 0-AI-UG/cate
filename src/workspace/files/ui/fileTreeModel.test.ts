@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { installMockClientUi } from '@kernel/ui/testing'
+import { createFileRefs, type RefFs } from '../client'
 import { FileTreeModel, type FileTreeFs } from './fileTreeModel'
 import type { DroppedItems } from './droppedEntries'
 
@@ -11,8 +12,8 @@ const dropped = [
 
 function model() {
   const importEntries = vi.fn(async () => ({ created: ['/repo/dest/a.txt'], failed: 0 }))
-  const fs = { importEntries } as unknown as FileTreeFs
-  return { importEntries, tree: new FileTreeModel('/repo', 'ws', { fs: () => fs, watch: () => () => {} }) }
+  const refs = createFileRefs(() => ({ importEntries }) as unknown as RefFs)
+  return { importEntries, tree: new FileTreeModel('/repo', 'ws', { fs: () => ({}) as FileTreeFs, refs, watch: () => () => {} }) }
 }
 
 afterEach(() => { vi.restoreAllMocks() })

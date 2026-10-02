@@ -30,7 +30,7 @@ export interface BrowserIpcDeps {
   drivers: PageDriverRegistry
   codeSessions: BrowserCodeSessions
   downloads: GuestDownloads
-  /** A private directory for staged uploads and screenshots. */
+  /** A private directory for staged uploads. */
   tempDir(): string
 }
 
@@ -129,12 +129,8 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     if (!contents) return null
     const image = await contents.capturePage()
     if (image.isEmpty()) return null
-    const dir = path.join(deps.tempDir(), 'screenshots')
-    await fs.promises.mkdir(dir, { recursive: true })
-    const filePath = path.join(dir, `screenshot-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`)
     const png = flattenScreenshotPng(image.toPNG())
-    await fs.promises.writeFile(filePath, png)
-    return { filePath, dataUrl: `data:image/png;base64,${png.toString('base64')}` }
+    return { dataUrl: `data:image/png;base64,${png.toString('base64')}` }
   })
 
   handle(BROWSER_PAGE_CHANNELS.runCode, (event, request: { key: string; cellId: string; code: string; deadlineMs: number }) => {

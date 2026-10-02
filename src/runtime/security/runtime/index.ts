@@ -22,6 +22,9 @@ export interface AcceptOptions {
   runtimeKeys: KeyPair
   policy: PeerPolicy
   handshakeTimeoutMs?: number
+  /** Last word to an unpaired key before its channel closes (the transport
+   *  answers a client's hello with a refusal). */
+  refuse?(channel: SecureChannel): void
 }
 
 export class UnpairedPeerError extends SecureChannelError {}
@@ -41,6 +44,7 @@ export async function acceptPeer(port: MessagePortLike, options: AcceptOptions):
     paired = false
   }
   if (paired && !channel.closed) return channel
+  if (!channel.closed) options.refuse?.(channel)
   const error = new UnpairedPeerError('unknown device key')
   channel.close(error)
   throw error

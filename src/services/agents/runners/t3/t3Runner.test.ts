@@ -30,6 +30,7 @@ function fakeDocument(panels: PanelRecord[], relations: PanelRelation[]) {
 let shellListener: (event: T3ShellEvent) => void
 let sequence = 0
 let turns: Array<{ checkout?: string; threadId: string; text: string }>
+let startTurn: ReturnType<typeof vi.fn<RunnerT3Service['startTurn']>>
 let binding: { checkout: string; threadId?: string } | undefined
 let doc: ReturnType<typeof fakeDocument>
 let agents: AgentsRuntime
@@ -46,13 +47,14 @@ const running = (): T3Thread => ({ ...idle(), latestTurn: { state: 'running' }, 
 
 beforeEach(() => {
   turns = []
+  startTurn = vi.fn<RunnerT3Service['startTurn']>(async (params) => { turns.push(params) })
   binding = { checkout: CHECKOUT, threadId: 'thread-1' }
   const t3: RunnerT3Service = {
     watchThreadShells: (listener) => { shellListener = listener; return () => {} },
     readConversation: async ({ threadId }) => threadId === 'thread-1'
       ? [{ role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z' }]
       : null,
-    startTurn: async (params) => { turns.push(params) },
+    startTurn,
   }
   const bindings: T3PanelBindings = {
     binding: (panelId) => (panelId === 'chat' ? binding : undefined),
@@ -129,6 +131,14 @@ describe('t3 runner', () => {
     publish({ 'thread-1': idle() }, false)
     await expect(agents.send('chat', 'x')).resolves.toEqual({ ok: false, error: 'agent-not-running' })
     expect(turns).toEqual([])
+  })
+
+  it('reports a turn the harness refused as busy', async () => {
+    publish({ 'thread-1': idle() })
+    startTurn.mockRejectedValueOnce(new Error('agent-busy'))
+    await expect(agents.send('chat', 'hi')).resolves.toEqual({ ok: false, error: 'agent-busy' })
+    startTurn.mockRejectedValueOnce(new Error('T3 conversation update returned HTTP 500'))
+    await expect(agents.send('chat', 'hi')).resolves.toEqual({ ok: false, error: 'agent-panel-unavailable' })
   })
 
   it('sends a fresh chat\'s first prompt through its page composer', async () => {

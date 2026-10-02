@@ -7,6 +7,7 @@ export {
   type WorkspaceConnectionOptions,
 } from './connection'
 export { WorkspaceConnections, type WorkspaceConnectionsOptions } from './registry'
+export { eachConnection } from './eachConnection'
 export {
   createClientIdentity,
   installClientIdentity,

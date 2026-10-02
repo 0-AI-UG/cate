@@ -59,8 +59,8 @@ export interface DesktopPort {
    *  from a detached window, which has no room for it. Returns false when this
    *  is the main window. */
   showOverlayInMainWindow?(request: { view: string; section?: string }): boolean
-  /** The device's client settings file, to open in an editor or reveal. */
-  clientSettingsFile(): Promise<string>
+  /** Opens the device's client settings file in the OS. */
+  openClientSettingsFile(): Promise<void>
   /** Asks for a folder to open as a workspace. */
   pickFolder(): Promise<string | null>
   /** Asks for an image file; returns its path. */

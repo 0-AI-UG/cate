@@ -133,6 +133,15 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     expect(record.lastSeen).toBeGreaterThanOrEqual(record.pairedAt)
     await pairingApi.revoke({ deviceKey: record.publicKey })
     await dropped
+
+    // Coming back with the removed key, the client is told it was refused.
+    const removed = await openSecureConnection(
+      await dialSameNetwork({ runtimeId: typed.runtimeId, discover, webSocket: nodeWebSocketFactory }),
+      { kind: 'connect', deviceKeys: laptop.keys, runtimeId: typed.runtimeId, pins: laptop.pins },
+    )
+    const refused = laptop.rpc()
+    await expect(refused.attach(removed.frames)).rejects.toThrow(/not paired/)
+    expect(refused.state).toBe('refused')
   })
 
   it('follows the runtimeNetwork setting', async () => {

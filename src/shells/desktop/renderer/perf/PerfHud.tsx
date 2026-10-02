@@ -4,6 +4,7 @@
 // Cmd/Ctrl+Alt+P hides it.
 
 import { useEffect, useRef, useState } from 'react'
+import { Spinner } from '@kernel/ui'
 import type { RuntimePerfSample } from '@runtime/daemon/contract'
 import type { WorkspaceConnections } from '@client/connections'
 import type { AppPerfSnapshot, DesktopApi } from '../../contract'
@@ -141,7 +142,7 @@ export function PerfHud({ api, connections }: { api: DesktopApi; connections: Wo
           ))}
         </>
       ) : (
-        <div className="text-zinc-500 mt-1">sampling main process…</div>
+        <div className="text-zinc-500 mt-1 flex items-center gap-1"><Spinner size={10} />sampling main process</div>
       )}
       {runtimes.map(({ id, sample, error }) => (
         <div key={id} className="text-zinc-400 mt-1">

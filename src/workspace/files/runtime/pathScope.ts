@@ -1,7 +1,12 @@
 // The path scope of one workspace runtime (architecture 7.1): every path a
 // capability touches must lie in the workspace root, one of its worktree
-// checkouts, the workspace data directory or a granted path. There are no scope
-// ids: the connection is the scope, and the daemon serves one workspace.
+// checkouts, a granted path, or the two folders of the workspace data clients
+// read (`screenshots/`, `browser/downloads/`). Those are read-only through the
+// scope: the runtime writes its own files there directly, and the rest of the
+// workspace data (secrets, pairings, ...) is outside it. Files brought in
+// (drops, uploads, copies, moves) land only in a checkout (`destination`).
+// There are no scope ids: the connection is the scope, and the daemon serves
+// one workspace.
 
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
@@ -21,11 +26,19 @@ export interface PathScope {
    *  For reads and anything that follows the path. */
   strict(p: string): Promise<string>
   /** For creating or writing `p`: the parent chain is resolved, the final
-   *  segment must not be an existing symlink. Returns realParent + basename. */
+   *  segment must not be an existing symlink. Returns realParent + basename.
+   *  Never in the workspace data. */
   forCreation(p: string): Promise<string>
   /** For operating on the entry itself (remove, rename source) without
-   *  following a final symlink. */
+   *  following a final symlink. Never in the workspace data. */
   entry(p: string): Promise<string>
+  /** For a folder files are brought into (drops, uploads, copies, moves):
+   *  `strict`, and inside a checkout. The workspace data and granted paths
+   *  outside the checkouts never receive files. */
+  destination(p: string): Promise<string>
+  /** The innermost checkout (the root or a worktree checkout) holding `p`
+   *  (already resolved), or null. */
+  checkoutOf(p: string): string | null
   /** True when `p` (already resolved) is inside the scope. */
   contains(p: string): boolean
   /** Hook for the repository module: a worktree checkout outside the root. */
@@ -150,14 +163,18 @@ export function createPathScope(options: PathScopeOptions): PathScope {
   const platform = options.platform ?? process.platform
   const root = path.resolve(options.root)
   const dataDir = path.resolve(options.dataDir)
+  const dataForms = canonicalForms(dataDir, platform)
+  const rootForms = canonicalForms(root, platform)
+  const data = dataPaths(dataDir)
   const fixedForms = [
-    ...canonicalForms(root, platform),
+    ...rootForms,
     ...canonicalForms(worktreesDir(root), platform),
-    ...canonicalForms(dataDir, platform),
+    ...canonicalForms(data.screenshots, platform),
+    ...canonicalForms(data.downloads, platform),
   ]
   const checkoutForms = new Map<string, string[]>()
   const grantsFile: JsonStateFile<string[]> = createJsonStateFile<string[]>({
-    file: dataPaths(dataDir).grants,
+    file: data.grants,
     defaults: [],
     normalize: (parsed) => Array.isArray(parsed)
       ? [...new Set(parsed.filter((v): v is string => typeof v === 'string' && path.isAbsolute(v)))]
@@ -190,6 +207,34 @@ export function createPathScope(options: PathScopeOptions): PathScope {
     return normalized
   }
 
+  /** Refuses a resolved path in the workspace data: the runtime's own files. */
+  const outsideData = (resolved: string, p: string): string => {
+    const keys = [pathCompareKey(resolved, platform), pathCompareKey(normalizeForComparison(resolved, platform), platform)]
+    if (keys.some((key) => dataForms.some((f) => keyUnder(key, f, platform)))) throw denied(`"${p}" is in the workspace data, which is read-only`)
+    return resolved
+  }
+
+  const strict = async (p: string): Promise<string> => {
+    resolve(p)
+    let real: string
+    try {
+      real = await realpathAllowingMissing(p)
+    } catch (err) {
+      throw denied(`cannot resolve real path for "${p}": ${err}`)
+    }
+    if (!within(real)) throw denied(`resolved path "${real}" is outside the workspace`)
+    return real
+  }
+
+  const checkoutOf = (p: string): string | null => {
+    const keys = [pathCompareKey(p, platform), pathCompareKey(normalizeForComparison(p, platform), platform)]
+    const holds = (forms: string[]) => keys.some((key) => forms.some((f) => keyUnder(key, f, platform)))
+    const holding = [...checkoutForms].filter(([, forms]) => holds(forms)).map(([checkout]) => checkout)
+    if (holds(rootForms)) holding.push(root)
+    // Worktree checkouts may live inside the root: the longest is the innermost.
+    return holding.sort((a, b) => b.length - a.length)[0] ?? null
+  }
+
   return {
     root,
     dataDir,
@@ -197,17 +242,14 @@ export function createPathScope(options: PathScopeOptions): PathScope {
     cwd: resolve,
     contains: within,
 
-    async strict(p) {
-      resolve(p)
-      let real: string
-      try {
-        real = await realpathAllowingMissing(p)
-      } catch (err) {
-        throw denied(`cannot resolve real path for "${p}": ${err}`)
-      }
-      if (!within(real)) throw denied(`resolved path "${real}" is outside the workspace`)
+    strict,
+
+    async destination(p) {
+      const real = await strict(p)
+      if (!checkoutOf(real)) throw denied(`"${p}" is not inside a checkout of the workspace`)
       return real
     },
+    checkoutOf,
 
     async forCreation(p) {
       const target = await creationTarget(p)
@@ -221,12 +263,12 @@ export function createPathScope(options: PathScopeOptions): PathScope {
       // Only the resolved form counts: accepting the lexical one would undo the
       // parent resolution for a symlinked directory inside the root.
       if (!within(target)) throw denied(`resolved parent "${path.dirname(target)}" is outside the workspace`)
-      return target
+      return outsideData(target, p)
     },
 
     async entry(p) {
       resolve(p)
-      return resolve(await creationTarget(p))
+      return outsideData(resolve(await creationTarget(p)), p)
     },
 
     addCheckout(p) {

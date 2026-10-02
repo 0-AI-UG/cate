@@ -15,7 +15,7 @@ it('opens a search match in the containing Files panel at its line and column', 
   document.body.appendChild(host)
   const root = createRoot(host)
   const onOpenMatch = vi.fn()
-  const host$ = { openFiles: vi.fn(), openMatch: vi.fn(), openTerminal: vi.fn() } satisfies FileViewsHost
+  const host$ = { openFiles: vi.fn(), openMatch: vi.fn(), openTerminal: vi.fn(), takesOsFiles: () => false } satisfies FileViewsHost
   try {
     act(() => root.render(<FileViewsContext.Provider value={host$}><SearchStoreContext.Provider value={createSearchStore()}><SearchResultsTree workspaceId="ws" onOpenMatch={onOpenMatch} files={[{
       path: '/project/index.ts', relativePath: 'index.ts', matchCount: 1,
@@ -39,7 +39,7 @@ it('opens a match through the host when no handler is given', () => {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
-  const views = { openFiles: vi.fn(), openMatch: vi.fn(), openTerminal: vi.fn() } satisfies FileViewsHost
+  const views = { openFiles: vi.fn(), openMatch: vi.fn(), openTerminal: vi.fn(), takesOsFiles: () => false } satisfies FileViewsHost
   try {
     act(() => root.render(<FileViewsContext.Provider value={views}><SearchStoreContext.Provider value={createSearchStore()}><SearchResultsTree workspaceId="ws" files={[{
       path: '/project/index.ts', relativePath: 'index.ts', matchCount: 1,

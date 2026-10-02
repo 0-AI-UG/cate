@@ -18,7 +18,7 @@ import { clientStateFor } from '@client/document'
 /** Checkout hooks from the panel definitions, so no code branches on type. */
 export const checkoutHooks: PanelCheckoutHooks = {
   checkoutPath: (record) => panelDefinition(record.type)?.checkoutPath?.(record),
-  bound: (type) => !!panelDefinition(type)?.worktreeBinding,
+  bound: (type) => !!panelDefinition(type)?.switchesWorktree,
   workingDir: (record) => panelDefinition(record.type)?.checkoutPath?.(record),
 }
 

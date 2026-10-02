@@ -21,14 +21,10 @@ function setWs<K extends WorkspaceSettingKey>(workspaceId: string, key: K, value
 }
 
 export function SidebarPage(): JSX.Element {
-  const onLaunch = useClientSetting('showFileExplorerOnLaunch')
   const skills = useClientSetting('showSkillsInWorkspaceOverview')
   const tint = useClientSetting('sidebarTintOpacity')
   return (
     <div className="flex flex-col gap-1">
-      <SettingRow label="Show file explorer on launch">
-        <Toggle checked={onLaunch} onChange={(v) => setClientSetting('showFileExplorerOnLaunch', v)} />
-      </SettingRow>
       <SettingRow label="Show skills in workspace overview" description="List installed agent skills beneath expanded workspaces.">
         <Toggle checked={skills} onChange={(v) => setClientSetting('showSkillsInWorkspaceOverview', v)} />
       </SettingRow>

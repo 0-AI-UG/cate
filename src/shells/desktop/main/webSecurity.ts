@@ -5,10 +5,10 @@
 
 import { app, session as electronSession, type Session, type WebContents } from 'electron'
 import { createLogger } from '@kernel/log/contract'
-import { matchShortcut, resolveShortcuts, type ShortcutAction } from '@kernel/ui/contract'
+import { shortcutMatches, type ActionId } from '@kernel/ui/contract'
 import type { BrowserShortcutAction } from '@services/browser/contract'
 import { sendBrowserShortcut, sendOpenTabRequest } from '@services/browser/desktop'
-import { DESKTOP_CHANNELS as C } from '../contract'
+import { DESKTOP_CHANNELS as C, type MenuModel } from '../contract'
 
 const log = createLogger('security')
 
@@ -17,21 +17,18 @@ interface WebSecurityOptions {
   /** The dev server origin, when running under electron-vite dev. */
   rendererUrl?: string
   hardeningDisabled(): boolean
-  /** The client's `customShortcuts` setting. */
-  customShortcuts(): unknown
+  /** The keys a web page never gets, from the menu model. */
+  guestKeys(): MenuModel['guestKeys']
   /** True once the workspace partition's loopback proxy is in place. */
   isPreparedPartition(partition: string): boolean
   platform?: NodeJS.Platform
 }
 
-/** Keys a guest page never sees because the canvas owns them. */
-const FORWARDED_ACTIONS: readonly ShortcutAction[] = ['commandPalette', 'navigateUp', 'navigateDown', 'navigateLeft', 'navigateRight']
-
 export function isAllowedGuestUrl(url: string): boolean {
   if (url === 'about:blank') return true
   try {
     const protocol = new URL(url).protocol
-    return protocol === 'http:' || protocol === 'https:' || protocol === 'file:' || protocol === 'data:'
+    return protocol === 'http:' || protocol === 'https:' || protocol === 'data:'
   } catch {
     return false
   }
@@ -56,19 +53,19 @@ export function browserActionForInput(input: Pick<Electron.Input, 'type' | 'meta
   }
 }
 
-/** A canvas shortcut pressed inside a guest, which never bubbles to the host. */
-export function forwardedActionForInput(input: Pick<Electron.Input, 'type' | 'key' | 'meta' | 'control' | 'alt' | 'shift'>, customShortcuts: unknown, platform: NodeJS.Platform): ShortcutAction | null {
+/** A key pressed inside a guest that the window runs instead (an action
+ *  declared `fromGuests`); it never bubbles to the host otherwise. */
+export function forwardedActionForInput(input: Pick<Electron.Input, 'type' | 'key' | 'meta' | 'control' | 'alt' | 'shift'>, guestKeys: MenuModel['guestKeys'], platform: NodeJS.Platform): ActionId | null {
   if (input.type !== 'keyDown') return null
-  const shortcuts = resolveShortcuts(customShortcuts)
-  const action = matchShortcut({
+  const event = {
     key: input.key,
     // Stored shortcuts say "command" for the platform's primary modifier.
     metaKey: platform === 'darwin' ? input.meta : input.control,
     ctrlKey: platform === 'darwin' ? input.control : false,
     altKey: input.alt,
     shiftKey: input.shift,
-  }, shortcuts)
-  return action && FORWARDED_ACTIONS.includes(action) ? action : null
+  }
+  return guestKeys.find(({ shortcut }) => shortcutMatches(event, shortcut))?.action ?? null
 }
 
 const guestSessions = new WeakSet<Session>()
@@ -126,7 +123,7 @@ function hardenGuest(contents: WebContents, options: WebSecurityOptions, platfor
   contents.on('before-input-event', (event, input) => {
     const host = contents.hostWebContents
     if (!host) return
-    const forwarded = forwardedActionForInput(input, options.customShortcuts(), platform)
+    const forwarded = forwardedActionForInput(input, options.guestKeys(), platform)
     if (forwarded) {
       event.preventDefault()
       host.send(C.menuAction, forwarded)
@@ -199,7 +196,7 @@ export function installAppCsp(rendererUrl: string | undefined): void {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          `default-src 'self'; script-src 'self'${dev}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: file:; connect-src 'self' https: ws: wss: sentry-ipc:; font-src 'self' data:; base-uri 'self'`,
+          `default-src 'self'; script-src 'self'${dev}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https: ws: wss: sentry-ipc:; font-src 'self' data:; base-uri 'self'`,
         ],
       },
     })

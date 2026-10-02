@@ -1,12 +1,13 @@
 // client/ui public entry: the sidebar frame, the command palette, the
 // settings window and its page registry, the pairing screens, the welcome
-// screen, first-run and update dialogs, the tour, the window's keyboard, and
-// the e2e harness.
+// screen, first-run and update dialogs, the tour, the window's keyboard,
+// opening workspace files and URLs, the workspace contexts and views, and the
+// e2e harness.
 //
 // A window mounts <Sidebar/>, <ClientOverlays/> and (with no workspace)
-// <WelcomePage/>, calls useShortcuts() and startClientUi() once. The shell
-// installs the client app, the UI state store and, on desktop, the desktop
-// port first.
+// <WelcomePage/> inside <WorkspaceScope/>, calls useShortcuts(),
+// registerWorkspaceViews() and startClientUi() once. The shell installs the
+// client app, the UI state store and, on desktop, the desktop port first.
 
 export { startClientUi } from './start'
 export { installClientApp, clientApp, tryClientApp, type ClientApp } from './app'
@@ -56,24 +57,11 @@ export {
   detachPanel,
   canDetachPanels,
   installTrustCheck,
-  installFileOpener,
+  openUrl,
   installNavigationHooks,
   type TrustCheck,
-  type FileOpener,
 } from './navigation'
-export {
-  bindAction,
-  bindActions,
-  describeAction,
-  registerCommand,
-  runAction,
-  canRunAction,
-  paletteActions,
-  paletteCommands,
-  type ActionBinding,
-  type ActionMeta,
-  type PaletteCommand,
-} from './actions/registry'
+export { runWindowAction, windowActionContext } from './actions/run'
 export { useShortcuts, registerKeyHandler, shouldRunShortcut, keyContext, isTextSurfaceFocused, type KeyHandler, type KeyContext } from './actions/useShortcuts'
 
 // Views.
@@ -83,7 +71,7 @@ export { Sidebar, type SidebarProps, type SidebarOverlayButton } from './sidebar
 export { WorkspaceList } from './sidebar/WorkspaceList'
 export { WorkspaceRow, WorkspacePanelRow } from './sidebar/WorkspaceRow'
 export { workspacePanelTree, sortByWorktree, type WorkspacePanelTree, type WindowTree, type CanvasGroup } from './sidebar/panelTree'
-export { ConnectionDot, ConnectionNotice, connectionLabel } from './sidebar/connectionStatus'
+export { ConnectionNotice, WorkspaceToggle, connectionLabel } from './sidebar/connectionStatus'
 export { WelcomePage } from './chrome/WelcomePage'
 export { OverlayHeader, LeftSidebarReopen, useLeftChromeInset, useWindowControlsInset } from './chrome/chrome'
 export { CateLogo } from './chrome/CateLogo'
@@ -94,6 +82,13 @@ export { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
 export { AnimatedDotGrid } from './dialogs/AnimatedDotGrid'
 export { OnboardingTour } from './onboarding/OnboardingTour'
 export { ONBOARDING_STEPS, type OnboardingStep } from './onboarding/steps'
+
+// Workspace: opening files, the contexts workspace UI reads, and the
+// workspace views registered into other modules' slots.
+export { openFile, openDroppedFiles } from './workspace/fileActions'
+export { FileViewsHost, WorkspaceScope, installReviewOpener, type ReviewOpener } from './workspace/hosts'
+export { ConnectionBlocker, useWorkspaceBlock } from './workspace/ConnectionBlocker'
+export { registerWorkspaceViews } from './workspace/views'
 
 // Settings.
 export { SettingsWindow, type SettingsWindowProps } from './settings/SettingsWindow'

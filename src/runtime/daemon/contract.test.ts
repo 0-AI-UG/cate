@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { installDirFromExecPath, installLayout, parseDaemonArgv, releaseUrl, runtimeInstallDir, runtimeTarget, serveArgv } from './contract'
+import { buildVersion, checksumUrl, installDirFromExecPath, installLayout, isBuildId, parseDaemonArgv, releaseUrl, runtimeInstallDir, runtimeTarget, serveArgv } from './contract'
 
 it('round-trips the serve command line', () => {
   const args = { root: '/w', detach: true, network: 'cateConnect' as const }
@@ -29,4 +29,14 @@ it('names release tarballs per target', () => {
   expect(releaseUrl('2.1.0', 'linux-x64')).toBe(
     'https://github.com/0-AI-UG/cate/releases/download/v2.1.0/cate-runtime-2.1.0-linux-x64.tgz',
   )
+  expect(checksumUrl('2.1.0', 'linux-x64')).toBe(`${releaseUrl('2.1.0', 'linux-x64')}.sha256`)
+})
+
+it('reads build ids', () => {
+  expect(isBuildId('2.1.0+0123456789ab')).toBe(true)
+  expect(isBuildId('2.1.0-beta.1+0123456789ab')).toBe(true)
+  expect(isBuildId('2.1.0')).toBe(false)
+  expect(isBuildId('2.1.0+xyz')).toBe(false)
+  expect(isBuildId('../x+0123456789ab')).toBe(false)
+  expect(buildVersion('2.1.0-beta.1+0123456789ab')).toBe('2.1.0-beta.1')
 })

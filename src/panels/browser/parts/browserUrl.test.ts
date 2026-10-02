@@ -7,7 +7,7 @@
 // =============================================================================
 
 import { describe, it, expect } from 'vitest'
-import { isUrl, normalizeUrl, resolveAddress } from './browserUrl'
+import { filePathOfUrl, isUrl, normalizeUrl, resolveAddress } from './browserUrl'
 import { pageLoadErrorFrom } from './browserLoadError'
 
 describe('isUrl', () => {
@@ -129,5 +129,22 @@ describe('resolveAddress', () => {
     expect(resolveAddress(' chrome://history/ ', 'google', internal)).toBe('chrome://history/')
     expect(resolveAddress('example.com', 'google', internal)).toBe('https://example.com')
     expect(resolveAddress('cats and dogs', 'duckDuckGo', internal)).toBe('https://duckduckgo.com/?q=cats%20and%20dogs')
+  })
+})
+
+describe('filePathOfUrl', () => {
+  it('returns the absolute path of a file URL, decoded', () => {
+    expect(filePathOfUrl(normalizeUrl('/tmp/a#b c.html'))).toBe('/tmp/a#b c.html')
+    expect(filePathOfUrl('file:///Users/foo/index.html')).toBe('/Users/foo/index.html')
+    expect(filePathOfUrl('file://localhost/Users/foo/index.html')).toBe('/Users/foo/index.html')
+  })
+
+  it('keeps a Windows drive', () => {
+    expect(filePathOfUrl(normalizeUrl('C:\\Users\\foo\\index.html'))).toBe('C:/Users/foo/index.html')
+  })
+
+  it('is null for other URLs and for file URLs on another host', () => {
+    expect(filePathOfUrl('https://example.com/a.html')).toBeNull()
+    expect(filePathOfUrl('file://server/share/a.html')).toBeNull()
   })
 })

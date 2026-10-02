@@ -26,10 +26,10 @@ export const reviewApi = defineCateApi(
       summary: 'Record a finding on a diff line',
       args: {
         file: str.nonEmpty().flag('file', 'path').help('Path as listed by review inspect'),
-        line: num.int().min(1).flag('line', 'number'),
-        side: opt(oneOf('old', 'new'), 'new'),
-        body: str.nonEmpty().flag('body', 'text'),
-        severity: opt(oneOf('info', 'warning', 'error'), 'warning'),
+        line: num.int().min(1).flag('line', 'number').help('Line number on the chosen side of the diff'),
+        side: opt(oneOf('old', 'new'), 'new').help('Which side of the diff the line is on'),
+        body: str.nonEmpty().flag('body', 'text').help('The finding'),
+        severity: opt(oneOf('info', 'warning', 'error'), 'warning').help('How serious the finding is'),
       },
     },
     'note.resolve': {
@@ -37,11 +37,8 @@ export const reviewApi = defineCateApi(
       handler: 'session',
       target: 'sticky',
       summary: 'Resolve a note by id or unique prefix',
-      args: { noteId: str.nonEmpty().pos('note-id') },
+      args: { noteId: str.nonEmpty().pos('note-id').help('Note id or unique prefix, from cate review inspect') },
     },
   },
-  {
-    area: 'agent',
-    help: 'Without --panel, the target selected by `cate panel set <id>` is used.',
-  },
+  { area: 'agent', summary: 'Inspect review panels and record findings' },
 )

@@ -1,7 +1,6 @@
-// Minimal semver comparison: pure, dependency-free so it stays unit-testable
-// in isolation (the auto-updater that consumes it pulls in electron + native
-// modules). Handles only what the updater needs: x.y.z cores plus an optional
-// pre-release suffix used for the beta channel (e.g. 1.2.0-beta.1).
+// Minimal semver comparison for the app updater and the runtime update
+// dialog: x.y.z cores plus an optional pre-release suffix used for the beta
+// channel (e.g. 1.2.0-beta.1).
 
 
 /** A semver string with a pre-release suffix (e.g. 1.2.0-beta.1) identifies a

@@ -20,11 +20,11 @@ export function panelDefinition(type: PanelType | string): AnyPanelDefinition | 
   return byType.get(type)
 }
 
-/** Types offered in "Split with..." and the surface picker, in menu order. */
-export function splitMenuDefinitions(): AnyPanelDefinition[] {
+/** Types people create from menus, in creation order. */
+export function creatableDefinitions(): AnyPanelDefinition[] {
   return PANEL_DEFINITIONS
-    .filter((definition) => definition.splitMenuOrder !== undefined)
-    .sort((a, b) => a.splitMenuOrder! - b.splitMenuOrder!)
+    .filter((definition) => definition.creation)
+    .sort((a, b) => a.creation!.order - b.creation!.order)
 }
 
 export interface FreshRecordOptions {

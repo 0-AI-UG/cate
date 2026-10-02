@@ -22,8 +22,8 @@ export const uiApi = defineCateApi(
       handler: 'service',
       summary: 'Post a notification to the workspace',
       args: {
-        message: str.nonEmpty().rest('message'),
-        level: opt(oneOf('info', 'warning', 'error'), 'info').help('Notification level'),
+        message: str.nonEmpty().rest('message').help('The notification text'),
+        level: opt(oneOf('info', 'warning', 'error'), 'info').help('How the notification is shown'),
       },
       cli: { command: ['notify'] },
     },

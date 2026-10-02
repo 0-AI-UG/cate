@@ -125,7 +125,14 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchResult>
   // Playwright forces colored output while some hosts export NO_COLOR; both in
   // a real terminal make every Node CLI print a warning.
   delete env.NO_COLOR
-  const electronApp = await electron.launch({ args: ['.'], cwd: REPO_ROOT, env })
+  const electronApp = await electron.launch({
+    // Reproduce packaged-only failures with the released app and engine while
+    // retaining this fixture's isolated profile and runtime.
+    executablePath: process.env.CATE_E2E_EXECUTABLE,
+    args: [process.env.CATE_E2E_APP_PATH ?? '.'],
+    cwd: REPO_ROOT,
+    env,
+  })
   if (!opts.home) homes.set(electronApp, home)
   const mainWindow = await electronApp.firstWindow()
   await mainWindow.waitForLoadState('domcontentloaded')

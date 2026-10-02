@@ -18,7 +18,7 @@ import {
   type AgentHooks,
   type AgentHooksDeps,
 } from './agentHooks'
-import { CATE_HOOK_MARKER, agentHookFolder, type AgentHookEvent } from '../../contract'
+import { CATE_HOOK_MARKER, agentHookFolder, type AgentApprovalDetection, type AgentHookEvent } from '../../contract'
 
 const posix = process.platform !== 'win32'
 
@@ -41,7 +41,12 @@ function tmpDir(sub: string): string {
 function makeCap(
   deps: Partial<AgentHooksDeps> = {},
 ): AgentHooks {
-  const cap = createAgentHooks({ hooksDir: tmpDir('stable'), changesDir: tmpDir('changes'), ...deps })
+  const cap = createAgentHooks({
+    hooksDir: tmpDir('stable'),
+    changesDir: tmpDir('changes'),
+    approvalConfigReaders: { codex: { envKeys: [], read: async () => ({ source: 'config', mode: 'unknown', detail: 'Test configuration' }) } },
+    ...deps,
+  })
   cleanups.push(() => cap.dispose())
   return cap
 }
@@ -71,6 +76,39 @@ const post = (url: string, token: string | null, body: unknown): Promise<Respons
   })
 
 describe('agentHooks capability', () => {
+  test('config inspection preserves permission, input, and completion ordering', async () => {
+    let release!: (value: AgentApprovalDetection) => void
+    const reader = vi.fn(() => new Promise<AgentApprovalDetection>((resolve) => { release = resolve }))
+    const cap = makeCap({ approvalConfigReaders: { codex: { envKeys: [], read: reader } } })
+    const events = collect(cap)
+    const { url, tokenFor } = await cap.endpoint()
+    const send = (hook: string) => post(url, tokenFor('t'), {
+      agentId: 'codex', terminalId: 't',
+      payload: { hook_event_name: hook, session_id: 's', turn_id: 'turn', cwd: '/workspace' },
+    })
+    await send('UserPromptSubmit')
+    const pending = send('PermissionRequest')
+    await waitFor(() => reader.mock.calls.length === 1)
+    cap.noteInput('t', '\r')
+    release({ source: 'config', mode: 'manual', detail: 'Test config' })
+    await pending
+    await send('Stop')
+    expect(events.map((event) => event.kind)).toEqual(['turn-start', 'permission-check', 'input-submit', 'turn-end'])
+    expect(events[1].approvalMode).toBe('manual')
+  })
+
+  test('Settings inspection exposes config metadata and explicit signal availability for every CLI', async () => {
+    const detection = { source: 'config' as const, mode: 'automatic' as const, detail: '/home/test/.codex/config.toml: approvals_reviewer = auto_review' }
+    const reader = vi.fn(async () => detection)
+    const cap = makeCap({ approvalConfigReaders: { codex: { envKeys: [], read: reader } } })
+    const cwd = tmpDir('approval-inspection')
+    const states = await cap.inspectWorkspace(cwd)
+    expect(reader).toHaveBeenCalledWith(cwd, { env: undefined })
+    expect(states.find((state) => state.agentId === 'codex')?.approvalDetection).toEqual(detection)
+    expect(states.filter((state) => state.approvalDetection?.source === 'signal').map((state) => state.agentId).sort()).toEqual(['claude-code', 'grok', 'hermes', 'opencode'])
+    expect(states.filter((state) => state.approvalDetection?.source === 'unavailable').map((state) => state.agentId).sort()).toEqual(['cursor', 'kiro'])
+  })
+
   test('Windows hook commands use a quoted forward-slash wrapper path', () => {
     const wrapper = 'C:\\Users\\N3231\\.cate\\agent-hooks\\cate-hook-bridge-claude-code.cmd'
 
@@ -391,7 +429,7 @@ describe('agentHooks capability', () => {
     expect(events[0]).toMatchObject({
       terminalId: 'rpty-bridge',
       agentId: 'codex',
-      kind: 'permission-wait',
+      kind: 'permission-check',
       sessionId: payload.session_id,
     })
     expect(events[0].raw.turn_id).toBe('turn-1')
@@ -511,7 +549,7 @@ describe('agentHooks capability', () => {
     expect(Object.keys(claudeSettings.hooks)).toContain('StopFailure')
     expect(Object.keys(claudeSettings.hooks)).toContain('PermissionRequest')
     expect(Object.keys(claudeSettings.hooks)).toContain('PreToolUse')
-    expect(Object.keys(claudeSettings.hooks)).not.toContain('Notification')
+    expect(Object.keys(claudeSettings.hooks)).toContain('Notification')
 
     // codex discovers <project>/.codex/hooks.json itself (repo scope) — the
     // command must be the stable bridge path, with codex's timeout field.

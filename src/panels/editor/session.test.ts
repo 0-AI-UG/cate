@@ -194,7 +194,8 @@ describe('EditorSession', () => {
   it('gives an untitled editor a draft that is written once shared', async () => {
     const session = await addEditor('u')
     const draft = session.snapshot().filePath!
-    expect(draft).toBe(path.join(ws.root, '.cate', 'drafts', '00000000-0000-4000-8000-000000000001.md'))
+    expect(draft).toBe(path.join(ws.root, '.cate', 'tmp', '00000000-0000-4000-8000-000000000001.md'))
+    expect(session.snapshot()).toMatchObject({ draft: true, checkout: ws.root })
     expect(document.get().panels.u).toMatchObject({ title: 'u', fields: { filePath: draft } })
     expect(session.snapshot().mode).toBe('code')
     await expect(fs.stat(draft)).rejects.toThrow()
@@ -217,6 +218,11 @@ describe('EditorSession', () => {
 
     session.setShared(false)
     expect(session.snapshot().connectedDraft).toBeNull()
+
+    // Saved to a real path, it is a draft no more.
+    const saved = path.join(ws.root, 'notes.md')
+    await op('u', { kind: 'saveAs', path: saved })
+    expect(session.snapshot()).toMatchObject({ filePath: saved, draft: false })
   })
 
   it('flushShared reports a conflict as false', async () => {

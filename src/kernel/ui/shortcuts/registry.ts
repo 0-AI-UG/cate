@@ -1,22 +1,24 @@
-// The shortcut registry: resolved bindings (defaults plus the `customShortcuts`
-// client setting), matching and editing. What each action does is bound by
-// client/ui.
+// The shortcut registry: each declared action's binding (its default key
+// under the `customShortcuts` client setting), matching and editing.
 
 import { useCallback, useSyncExternalStore } from 'react'
 import {
-  DEFAULT_SHORTCUTS,
   displayString,
-  matchShortcut,
-  resolveShortcuts,
-  shortcutOverrides,
+  parseStoredShortcut,
+  sameShortcut,
+  shortcutMatches,
   storedShortcut,
-  type ShortcutAction,
+  type ActionId,
   type ShortcutKeyEvent,
   type StoredShortcut,
 } from '../contract'
+import { declaredActions, subscribeDeclaredActions } from '../actions/catalog'
 
-export type ShortcutOverrides = Partial<Record<ShortcutAction, StoredShortcut>>
-export type ResolvedShortcuts = Record<ShortcutAction, StoredShortcut>
+export type ShortcutOverrides = Record<ActionId, StoredShortcut>
+/** The binding of every declared action; an empty key is unbound. */
+export type ResolvedShortcuts = Readonly<Record<ActionId, StoredShortcut>>
+
+const UNBOUND = storedShortcut('')
 
 /** The slice of the client settings store the registry uses
  *  (`ClientSettingsStore` from kernel/settings satisfies it). */
@@ -28,40 +30,57 @@ export interface ShortcutSettings {
 
 export interface ShortcutRegistry {
   resolved(): ResolvedShortcuts
-  match(event: ShortcutKeyEvent): ShortcutAction | null
-  set(action: ShortcutAction, shortcut: StoredShortcut): void
+  /** The first declared action bound to this key press. */
+  match(event: ShortcutKeyEvent): ActionId | null
+  set(action: ActionId, shortcut: StoredShortcut): void
   /** Disables the binding (an empty key never matches). */
-  clear(action: ShortcutAction): void
-  reset(action: ShortcutAction): void
+  clear(action: ActionId): void
+  reset(action: ActionId): void
   resetAll(): void
   subscribe(cb: () => void): () => void
 }
 
+const defaultOf = (action: ActionId): StoredShortcut =>
+  declaredActions().find((a) => a.id === action)?.spec.key ?? UNBOUND
+
 export function createShortcutRegistry(settings: ShortcutSettings): ShortcutRegistry {
-  let raw: unknown
-  let cached: ResolvedShortcuts | undefined
+  let cached: { raw: unknown; declared: unknown; resolved: ResolvedShortcuts } | undefined
   const resolved = (): ResolvedShortcuts => {
-    const next = settings.get('customShortcuts')
-    if (!cached || next !== raw) {
-      raw = next
-      cached = resolveShortcuts(next)
+    const raw = settings.get('customShortcuts')
+    const declared = declaredActions()
+    if (cached && cached.raw === raw && cached.declared === declared) return cached.resolved
+    const table: Record<ActionId, StoredShortcut> = {}
+    for (const { id, spec } of declared) {
+      table[id] = (raw && typeof raw === 'object' ? parseStoredShortcut((raw as Record<string, unknown>)[id]) : null) ?? spec.key ?? UNBOUND
     }
-    return cached
+    cached = { raw, declared, resolved: table }
+    return table
   }
-  // Only diffs from the defaults are stored.
-  const persist = (shortcuts: ResolvedShortcuts): void => {
-    settings.set('customShortcuts', shortcutOverrides(shortcuts))
+  // Only diffs from the defaults are stored; overrides of actions not
+  // declared now are kept for when their module declares them again.
+  const persist = (action: ActionId, shortcut: StoredShortcut | null): void => {
+    const next = { ...settings.get('customShortcuts') }
+    if (!shortcut || sameShortcut(shortcut, defaultOf(action))) delete next[action]
+    else next[action] = shortcut
+    settings.set('customShortcuts', next)
   }
   return {
     resolved,
-    match: event => matchShortcut(event, resolved()),
-    set: (action, shortcut) => persist({ ...resolved(), [action]: shortcut }),
-    clear: action => persist({ ...resolved(), [action]: storedShortcut('') }),
-    reset: action => persist({ ...resolved(), [action]: DEFAULT_SHORTCUTS[action] }),
+    match(event) {
+      const table = resolved()
+      return declaredActions().find(({ id }) => table[id] && shortcutMatches(event, table[id]))?.id ?? null
+    },
+    set: (action, shortcut) => persist(action, shortcut),
+    clear: (action) => persist(action, UNBOUND),
+    reset: (action) => persist(action, null),
     resetAll: () => { settings.set('customShortcuts', {}) },
-    subscribe: cb => settings.subscribe((_values, patch) => {
-      if ('customShortcuts' in patch) cb()
-    }),
+    subscribe(cb) {
+      const offSettings = settings.subscribe((_values, patch) => {
+        if ('customShortcuts' in patch) cb()
+      })
+      const offDeclared = subscribeDeclaredActions(cb)
+      return () => { offSettings(); offDeclared() }
+    },
   }
 }
 
@@ -94,7 +113,7 @@ export function shortcutRegistry(): ShortcutRegistry {
   return installed
 }
 
-function subscribeInstalled(cb: () => void): () => void {
+export function subscribeShortcuts(cb: () => void): () => void {
   let unsubscribe = installed.subscribe(cb)
   const onInstall = (): void => {
     unsubscribe()
@@ -110,14 +129,23 @@ function subscribeInstalled(cb: () => void): () => void {
 
 /** Resolved bindings of the installed registry; re-renders on edits. */
 export function useResolvedShortcuts(): ResolvedShortcuts {
-  return useSyncExternalStore(subscribeInstalled, () => installed.resolved())
+  return useSyncExternalStore(subscribeShortcuts, () => installed.resolved())
+}
+
+/** The display string of an action's binding, or null when unbound. */
+export function shortcutDisplay(shortcuts: ResolvedShortcuts, action: ActionId | undefined): string | null {
+  const binding = action ? shortcuts[action] : undefined
+  return binding?.key ? displayString(binding) : null
 }
 
 /** Labels follow edits in Settings; cleared bindings don't advertise a key. */
-export function useShortcutLabel(): (action: ShortcutAction, label: string) => string {
+export function useShortcutLabel(): (action: ActionId, label: string) => string {
   const shortcuts = useResolvedShortcuts()
   return useCallback(
-    (action, label) => shortcuts[action].key ? `${label} (${displayString(shortcuts[action])})` : label,
+    (action, label) => {
+      const key = shortcutDisplay(shortcuts, action)
+      return key ? `${label} (${key})` : label
+    },
     [shortcuts],
   )
 }

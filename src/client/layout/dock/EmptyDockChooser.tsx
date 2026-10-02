@@ -5,12 +5,10 @@
 import React from 'react'
 import { Icon } from '@kernel/ui'
 import { isIconName } from '@kernel/ui/contract'
-import { createPanel, missingFeatures, panelDefinition, splitMenuTypes } from '@client/host'
+import { createPanel, creatableDefinitions } from '@client/host'
 
 export function EmptyDockChooser({ workspaceId }: { workspaceId: string }): JSX.Element {
-  const choices = splitMenuTypes()
-    .map((type) => panelDefinition(type))
-    .filter((definition) => !!definition && definition.type !== 'surface' && missingFeatures(definition).length === 0)
+  const choices = creatableDefinitions()
   return (
     <div data-empty-workspace-dock className="relative h-full min-h-0 w-full isolate">
       <div
@@ -27,13 +25,13 @@ export function EmptyDockChooser({ workspaceId }: { workspaceId: string }): JSX.
             {choices.map((definition) => (
               <button
                 type="button"
-                key={definition!.type}
-                onClick={() => { createPanel(workspaceId, definition!.type) }}
+                key={definition.type}
+                onClick={() => { createPanel(workspaceId, definition.type) }}
                 className="flex min-h-10 items-center rounded-lg bg-surface-1 px-3 py-2 text-left text-primary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
               >
                 <span className="flex items-center gap-3 text-[13px]">
-                  {isIconName(definition!.icon) && <Icon name={definition!.icon} size={16} className="shrink-0 text-muted" />}
-                  {definition!.label}
+                  {isIconName(definition.icon) && <Icon name={definition.icon} size={16} className="shrink-0 text-muted" />}
+                  {definition.label}
                 </span>
               </button>
             ))}

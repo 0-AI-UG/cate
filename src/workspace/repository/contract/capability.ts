@@ -48,6 +48,10 @@ export const vcsCapability = defineCapability('vcs', {
     lsFiles: method<AtCwd, string[]>(),
     readStatus: method<AtCwd, GitStatusResult>(),
     remotes: method<AtCwd, GitRemote[]>(),
+    /** The file's page on GitHub at the current branch, from its checkout's
+     *  `origin`; null when the file is not in a git repository whose origin
+     *  is on github.com. `path` is absolute. */
+    fileWebUrl: method<{ path: string }, { url: string } | null>(),
 
     // Diffs
     compare: method<AtCwd & { spec: GitComparisonSpec }, GitComparisonResult>(),

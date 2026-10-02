@@ -31,7 +31,7 @@ interface LoadingStateProps {
 }
 
 /** Centered, labelled loading feedback for panels and other content surfaces. */
-export function LoadingState({ label = 'Loading…', size = 18, className = '' }: LoadingStateProps) {
+export function LoadingState({ label = 'Loading', size = 18, className = '' }: LoadingStateProps) {
   return (
     <div
       className={`flex items-center justify-center gap-2 text-muted ${className}`}

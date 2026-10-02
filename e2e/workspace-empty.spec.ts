@@ -35,7 +35,7 @@ test('the shell owns project selection and an empty project has no implicit pane
     await addCanvas(page)
     await seedOnCanvas(page, 'terminal', { x: 80, y: 80 })
     // The non-empty document reaches disk before it is emptied, so the empty
-    // save must replace a saved layout, not just initialize one.
+    // save must replace saved workspace state, not just initialize it.
     const panelsOnDisk = () => {
       try { return Object.keys((JSON.parse(readFileSync(documentFile(home), 'utf8')) as { document?: { panels?: object }; panels?: object }).document?.panels ?? (JSON.parse(readFileSync(documentFile(home), 'utf8')) as { panels?: object }).panels ?? {}).length }
       catch { return -1 }

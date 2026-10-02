@@ -19,15 +19,45 @@ area (Browser, Terminal, Panels, Files, Notifications, Agents & reviews).
 Sending keystrokes to terminals is off by default. A denied call fails with
 an error naming the setting to turn on.
 
-`cate --help` lists every command; `cate <command> --help` shows one.
-`--json` prints the raw result. Exit codes: 0 ok, 1 the call failed, 2 usage
-error, 3 no connection to Cate.
+## Finding your way
+
+This skill explains how to use the CLI. The CLI's own help is the short
+reference for exact syntax. Check it before guessing a flag:
+
+```bash
+cate --help                  # command groups and global flags
+cate panel --help            # the commands of one group (or just: cate panel)
+cate review note add --help  # one command: arguments, flags and defaults
+cate help terminal press     # same as --help
+```
+
+A mistyped command suggests the closest one. A usage error prints the
+command's usage line and exits 2 without contacting Cate.
+
+Output is formatted for reading: lists are aligned tables with a header row,
+other results are `key  value` lines, and structured reports (`review
+inspect`, `codingAgent inspect`) are indented JSON. Add `--json` to any
+command for the raw result when you need to parse it or need full ids.
+
+Exit codes: 0 ok, 1 the call failed (the error says why), 2 usage error,
+3 not connected to Cate.
+
+## Panels and targets
 
 Start by listing panels:
 
 ```bash
 cate panel list
 ```
+
+```
+   ID        TYPE      TITLE
+*  1a2b3c4d  terminal  zsh
+   5e6f7a8b  browser   https://example.com
+```
+
+`*` marks the focused panel. The ID column shows short ids; `cate panel list
+--json` gives full ids (needed inside browser JavaScript).
 
 When working repeatedly with one panel, select it for the current terminal:
 
@@ -75,8 +105,9 @@ cate browser run 'var tab = await cua.getTab({panelId:"<full-panel-id>"});'
 cate browser run 'await tab.getAXStateAndScreenshot();'
 ```
 
-Use full panel IDs inside JavaScript. `--panel <id>` supports short IDs as an
-override for CLI panel resolution. Discover tabs with `await cua.listTabs()`.
+Use full panel IDs inside JavaScript (from `cate panel list --json`).
+`--panel <id>` supports short IDs as an override for CLI panel resolution.
+`cate browser run --help` prints the complete `cua` API reference. Discover tabs with `await cua.listTabs()`.
 Create a tab with `await cua.createBrowserTab("https://example.com")`, or pass
 `{panelId:tab.panelId}` as the second argument to choose its panel. Use the full
 panel ID inside JavaScript. If no browser panel exists, create one with
@@ -102,7 +133,9 @@ the last AX observation for numeric targets and the latest visual observation
 for coordinates. `{emit:false}` suppresses automatic output. `{profile:true}`
 adds phase timings, image bytes and estimated retained-cache usage. Each code
 cell retains at most 16 million serialized observation characters, including
-`emit:false`; split long screenshot loops across cells.
+`emit:false`; split long screenshot loops across cells. The SDK caches up to
+32 compact observations within an estimated 8 MiB; when a baseline has been
+evicted, observe again.
 
 The SDK carries the latest observation through each action and emits fresh state.
 Numeric IDs persist within one document; navigation requires fresh IDs. Coordinate
@@ -171,6 +204,11 @@ cate panel close <id> --discard          # close and drop unsaved work
 cate notify "Build finished" --level info
 ```
 
+`panel create` and `editor open` print the new panel's short id. New panels
+open next to the calling terminal, and `editor open` reuses an editor that
+already shows the file. `cate version` prints the API version the workspace's
+runtime speaks; `cate --version` prints the CLI's own.
+
 There is no `panel focus`: which panel has focus belongs to each person's
 window, not to the workspace.
 
@@ -222,8 +260,8 @@ use `cate terminal read` to see its screen instead.
 ## Review panels
 
 Select a Review Panel once, inspect its comparison, and record structured
-findings. `--panel <id>` is an optional one-command override for every review
-command.
+findings. A review panel is never picked automatically: use the selected
+panel or `--panel <id>`, a one-command override for every review command.
 
 ```bash
 cate panel set <review-panel-id>
@@ -243,7 +281,11 @@ commit, or push changes.
 `cate codingAgent` starts and manages background workers, each a CLI agent in
 its own terminal, optionally in an existing (`--worktree <id>`) or new
 (`--new-worktree <name>`, `--base-ref <ref>`) worktree. Workers belong to the
-terminal that created them:
+terminal that created them. Pass `--worktree` or `--new-worktree`, not both.
+`create` and `list` print each worker's full run id; the other commands need
+that exact id (no prefixes). When a worker is ready, check its changes with
+`review`, then `apply` them to its base branch, `keep` the worktree, or
+`discard` it:
 
 ```bash
 cate codingAgent create "Fix the flaky login test" --agent codex --new-worktree fix-login
@@ -255,3 +297,11 @@ cate codingAgent apply <run-id>      # or keep / discard
 cate codingAgent send <run-id> "Also cover the logout path"
 cate codingAgent stop <run-id>
 ```
+
+## Serving a workspace
+
+`cate serve [<path>] [--connect] [--json]` starts the workspace at `<path>`
+(default: the current directory) from this install with network access on,
+and prints a pairing QR code and code. Pair a device with them to open the
+workspace there. `--connect` serves through Cate Connect instead of only the
+same network; `--json` prints the pairing details as one JSON line.

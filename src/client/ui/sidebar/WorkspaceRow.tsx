@@ -22,7 +22,7 @@ import { panelIcon } from '../panels'
 import { panelsWithPorts, terminalCwd, useTerminalStatuses } from '../state/statusStore'
 import { useUIStore } from '../state/uiStore'
 import { useWindowId } from '../state/windowContext'
-import { ConnectionDot, ConnectionNotice } from './connectionStatus'
+import { WorkspaceToggle } from './connectionStatus'
 import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type WindowTree } from './panelTree'
 
@@ -218,15 +218,7 @@ export function WorkspaceRow({
         role="treeitem"
         aria-expanded={canExpand ? isExpanded : undefined}
       >
-        <button
-          className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-muted hover:text-primary focus:outline-none"
-          onClick={(e) => { e.stopPropagation(); if (canExpand) onToggleExpand() }}
-          title={canExpand ? (isExpanded ? 'Collapse' : 'Expand') : undefined}
-          aria-label={canExpand ? (isExpanded ? 'Collapse workspace' : 'Expand workspace') : undefined}
-          disabled={!canExpand}
-        >
-          {canExpand && <CaretRight size={10} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />}
-        </button>
+        <WorkspaceToggle connection={isOpen ? connection : undefined} canExpand={canExpand} expanded={isExpanded} onToggle={onToggleExpand} />
         {entry.kind === 'paired'
           ? <Link2 size={14} className="flex-shrink-0 opacity-90" />
           : <FolderIcon size={14} className="flex-shrink-0 opacity-90" />}
@@ -253,7 +245,6 @@ export function WorkspaceRow({
             {displayTitle}
           </span>
         )}
-        {isOpen && <ConnectionDot connection={connection} />}
         {canExpand && !isExpanded && (
           <span className="flex-shrink-0 text-[10px] text-secondary font-semibold opacity-80 group-hover:opacity-100 transition-opacity">
             {tree.count}
@@ -269,7 +260,6 @@ export function WorkspaceRow({
           </button>
         </Tooltip>
       </div>
-      {isOpen && <ConnectionNotice workspaceId={workspaceId} connection={connection} />}
       {isExpanded && canExpand && (
         <div className="flex flex-col" role="group">
           {renderWindow(tree.primary)}

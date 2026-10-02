@@ -2,7 +2,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { T3ConversationMenu } from './T3ConversationMenu'
+import { T3ConversationMenu, type T3ConversationMenuTriggerProps } from './T3ConversationMenu'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -19,8 +19,10 @@ beforeEach(() => {
 })
 afterEach(async () => { await act(async () => root.unmount()); host.remove() })
 
+const trigger = ({ ref, onClick, icon }: T3ConversationMenuTriggerProps) => <button ref={ref} type="button" onClick={onClick}>{icon}</button>
+
 async function open() {
-  await act(async () => root.render(<T3ConversationMenu target={target} menuSide="up" />))
+  await act(async () => root.render(<T3ConversationMenu target={target} menuSide="up" renderTrigger={trigger} />))
   expect(conversations.list).not.toHaveBeenCalled()
   await act(async () => host.querySelector('button')!.click())
 }
@@ -49,7 +51,7 @@ it('opens a new unbound conversation', async () => {
 
 it('stays closed without a target', async () => {
   target.mockReturnValue(null as never)
-  await act(async () => root.render(<T3ConversationMenu target={target} menuSide="up" />))
+  await act(async () => root.render(<T3ConversationMenu target={target} menuSide="up" renderTrigger={trigger} />))
   await act(async () => host.querySelector('button')!.click())
   expect(document.querySelector('[role="dialog"]')).toBeNull()
 })

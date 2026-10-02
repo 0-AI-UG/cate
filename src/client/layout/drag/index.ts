@@ -31,8 +31,7 @@ export {
   isFileDrag,
   useDockFileDrop,
   installFileDropHandler,
-  importDroppedFiles,
-  droppedPaths,
+  dropFilesInto,
   type FileDropHandler,
   type FileDropKind,
 } from './fileDrop'

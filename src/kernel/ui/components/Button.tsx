@@ -1,4 +1,4 @@
-import type { ShortcutAction } from '../contract'
+import type { ActionId } from '../contract'
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { Tooltip } from './Tooltip'
 import { Spinner } from './Spinner'
@@ -56,7 +56,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 })
 
 interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  action?: ShortcutAction
+  action?: ActionId
   label: string
   tooltipPlacement?: 'top' | 'bottom' | 'left' | 'right'
   size?: number

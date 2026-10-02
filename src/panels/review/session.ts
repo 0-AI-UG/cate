@@ -46,7 +46,6 @@ import {
   type ReviewAgentChoice,
   type ReviewCheckoutState,
   type ReviewComparisonKind,
-  type ReviewDisplay,
   type ReviewNote,
   type ReviewNoteInput,
   type ReviewOp,
@@ -351,7 +350,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     const state = this.review
     const generation = this.generation
     const expanded = options.fullFile || !!state.expandedFiles?.includes(filePath)
-    const contextLines = state.display.fullFile || expanded ? 999_999 : options.contextLines ?? state.contextLines?.[filePath] ?? 3
+    const contextLines = options.allLines || expanded ? 999_999 : options.contextLines ?? state.contextLines?.[filePath] ?? 3
     const diff = await this.limited(() => this.deps.repository.fileDiff({
       cwd: this.cwd,
       spec: state.spec,
@@ -419,21 +418,23 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     })
   }
 
-  private updateDisplay(patch: Partial<ReviewDisplay>): void {
-    const display = this.review.display
-    const reload = patch.fullFile !== undefined && patch.fullFile !== display.fullFile
-    this.update({ display: { ...display, ...patch } })
-    if (reload) this.set({ diffEpoch: this.s.diffEpoch + 1 })
-  }
-
   // ---- File actions ----------------------------------------------------------
 
-  private mutate(fallback: string, action: () => Promise<unknown>): Promise<unknown> {
-    return this.run('busy', fallback, async () => {
-      await action()
+  /** A git change; a failure shows in the snapshot and also fails the op, so
+   *  a caller never takes an unstaged file for staged. */
+  private async mutate(fallback: string, action: () => Promise<unknown>): Promise<void> {
+    let failure: unknown
+    await this.run('busy', fallback, async () => {
+      try {
+        await action()
+      } catch (cause) {
+        failure = cause
+        throw cause
+      }
       this.deps.repository.refreshStatus(this.cwd)
       await this.refresh()
     })
+    if (failure !== undefined) throw new RpcError('rejected', errorText(failure, fallback))
   }
 
   private absolute(relativePath: string): string {
@@ -513,8 +514,8 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     return Object.values(this.kit.document.get().worktrees)
   }
 
-  /** Each checkout keeps its own comparison and notes; display preferences
-   *  follow the panel. False while a file operation runs. */
+  /** Each checkout keeps its own comparison and notes. False while a file
+   *  operation runs. */
   switchCheckout(target: { path: string; worktreeId?: string; branch?: string }): boolean {
     const state = this.review
     if (samePath(target.path, state.repoPath)) return true
@@ -526,7 +527,6 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     this.write({
       ...defaultReviewState(target.path),
       ...saved,
-      display: state.display,
       worktreeStates: { ...worktreeStates, [state.repoPath]: current },
     })
     try {
@@ -545,8 +545,8 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     return reject('worktree-not-found')
   }
 
-  /** Merges an open request: a new source agent restarts its review and a
-   *  focused file is expanded. */
+  /** Merges an open request: a new source agent restarts its review. Views
+   *  expand a newly focused file. */
   retarget(request: ReviewOpenRequest): void {
     const current = this.review
     this.write({
@@ -556,9 +556,6 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       sourceAgent: request.sourceAgent,
       agentChanges: request.agentChanges,
       agentReview: request.sourceAgent?.runId !== current.sourceAgent?.runId ? undefined : current.agentReview,
-      collapsedFiles: request.focusedFile
-        ? (current.collapsedFiles ?? []).filter((key) => key !== request.focusedFile && !key.endsWith(`:${request.focusedFile}`))
-        : current.collapsedFiles,
     })
   }
 
@@ -746,13 +743,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       if (patch.focusedFile !== undefined) next.focusedFile = patch.focusedFile ?? undefined
       this.update(next)
     },
-    updateDisplay: ({ patch }) => this.updateDisplay(patch),
     updateFilter: ({ patch }) => this.updateFilter(patch),
-    setCollapsed: ({ keys }) => { this.update({ collapsedFiles: keys }) },
-    toggleCollapsed: ({ key }) => {
-      const collapsed = this.review.collapsedFiles ?? []
-      this.update({ collapsedFiles: collapsed.includes(key) ? collapsed.filter((item) => item !== key) : [...collapsed, key] })
-    },
     diff: ({ path: filePath, options }) => this.diff(filePath, options),
     expandContext: ({ path: filePath }) => this.expandContext(filePath),
     expandFullFile: ({ path: filePath }) => this.expandFullFile(filePath),

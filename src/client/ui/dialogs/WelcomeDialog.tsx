@@ -148,7 +148,7 @@ export function WelcomeDialog(): JSX.Element | null {
             className="mt-1 h-10 inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-500 text-white text-[13.5px] font-semibold hover:bg-blue-400 transition-colors disabled:opacity-50"
           >
             {saving && <Spinner size={14} />}
-            {saving ? 'Saving…' : 'Continue'}
+            {saving ? 'Saving' : 'Continue'}
           </button>
         </div>
       </div>

@@ -64,4 +64,23 @@ describe('ThreadShellSubscription', () => {
     subscription.stop()
     expect(published.at(-1)?.connected).toBe(false)
   }, 10_000)
+
+  it('does not reconnect when the harness dies after the stream dropped', async () => {
+    const { url, next } = await harness()
+    const published: T3ShellSnapshot[] = []
+    let alive = true
+    let connections = 0
+    server!.on('connection', () => { connections++ })
+    const first = next()
+    subscription = new ThreadShellSubscription({ instanceId: 'p', checkout: '/repo', url, cookie: '', alive: () => alive }, (s) => published.push(s))
+    const { socket, request } = await first
+    socket.send(JSON.stringify({ _tag: 'Chunk', requestId: request.id, values: [{ kind: 'snapshot', snapshot: { snapshotSequence: 1, threads: [] } }] }))
+    await vi.waitFor(() => expect(published.at(-1)?.connected).toBe(true))
+    socket.close()
+    await vi.waitFor(() => expect(published.at(-1)?.connected).toBe(false))
+    // The server-exit callback lands after the socket close.
+    alive = false
+    await new Promise((resolve) => setTimeout(resolve, 2_500))
+    expect(connections).toBe(1)
+  }, 10_000)
 })

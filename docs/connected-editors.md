@@ -12,7 +12,7 @@ editors are shared (from the document's relations and each panel type's
 (`src/panels/editor/session.ts`) does the saving. It applies to every client
 of the workspace at once.
 
-- An untitled editor gets a persistent `.cate/drafts/<document-id>.md` file in
+- An untitled editor gets a persistent `.cate/tmp/<document-id>.md` file in
   its checkout. Its title stays unchanged and the editor stays in source mode.
 - An opened text file keeps its existing path.
 - The "Shared with agent" indicator means edits autosave after 300 ms.

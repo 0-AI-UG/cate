@@ -48,6 +48,10 @@ import { ThreadShellSubscription } from './threadShells'
 const READY_PATH = '/.well-known/t3/environment'
 const START_TIMEOUT_MS = 30_000
 const FETCH_TIMEOUT_MS = 10_000
+// How long a started turn blocks another send to its thread. The shell stream
+// reports the running turn only after T3 emits it (plus a 100ms coalesce), and
+// T3 does not reject a second thread.turn.start on a busy thread.
+const TURN_START_HOLD_MS = 3_000
 const DEFAULT_HARNESS = {
   node: RUNTIME_NODE_EXECUTABLE,
   entry: `${RUNTIME_INSTALL_ROOT_PLACEHOLDER}/t3/dist/bin.mjs`,
@@ -140,6 +144,8 @@ export class T3Runtime {
   private readonly providerAuth = new Map<string, ProviderAuthState>()
   private readonly snapshots = new Map<string, T3ShellSnapshot>()
   private readonly listeners = new Set<(event: T3ShellEvent) => void>()
+  /** Threads whose turn was just started, until the shell stream shows it. */
+  private readonly startingTurns = new Set<string>()
   private readonly fetch: typeof fetch
   private readonly log: Logger
   private disposed = false
@@ -535,6 +541,18 @@ export class T3Runtime {
    *  thread's own runtime mode and model, default interaction mode. */
   async startTurn(params: T3CheckoutParams & { threadId: string; text: string }): Promise<void> {
     if (!params.text.trim()) throw new RpcError('rejected', 'text is required')
+    if (this.startingTurns.has(params.threadId)) throw new RpcError('rejected', 'agent-busy')
+    this.startingTurns.add(params.threadId)
+    try {
+      await this.dispatchTurn(params)
+    } catch (error) {
+      this.startingTurns.delete(params.threadId)
+      throw error
+    }
+    setTimeout(() => this.startingTurns.delete(params.threadId), TURN_START_HOLD_MS).unref?.()
+  }
+
+  private async dispatchTurn(params: T3CheckoutParams & { threadId: string; text: string }): Promise<void> {
     const detail = await this.harnessFetch(params, `/api/orchestration/threads/${encodeURIComponent(params.threadId)}?turnLimit=1`)
     if (!detail.ok) throw new Error(`T3 conversation returned HTTP ${detail.status}`)
     const { thread } = await detail.json() as { thread: { runtimeMode: string } }

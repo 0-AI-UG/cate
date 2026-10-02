@@ -19,10 +19,12 @@ import {
 import { Button, clientUi, PanelCenteredState, POPOVER_SURFACE, Spinner, Tooltip } from '@kernel/ui'
 import { useRuntime } from '@kernel/rpc/ui'
 import { clientHas, clientIdentity } from '@client/connections'
+import { usePanelView } from '@client/document/ui'
 import type { PanelViewProps } from '@client/host'
 import { BROWSER_NEW_TAB_URL, queryBrowserHistoryEntries, type BrowserShortcutAction } from '@services/browser/contract'
-import { browserPageBridge, browserPartition } from '@services/browser/client'
+import { browserPageBridge, browserPartition, subscribeBrowserPartitions } from '@services/browser/client'
 import { fsClient } from '@workspace/files/client'
+import { base64ToBytes, writeFileRefDrag, type FileRef } from '@workspace/files/contract'
 import { BrowserPasswordManagerPage, useBrowserData } from '@services/browser/ui'
 import type { BrowserOp, BrowserSnapshot, BrowserViewport } from '../contract'
 import { BROWSER_HISTORY_URL, BROWSER_PASSWORD_MANAGER_URL, isBrowserInternalPage } from '../parts/internalPages'
@@ -125,13 +127,15 @@ function ErrorOverlay({ title, description, buttonLabel, onRetry }: { title: str
 }
 
 export default function BrowserView({ workspaceId, panelId, snapshot, send, visible, focused }: PanelViewProps<BrowserSnapshot, BrowserOp>) {
-  if (!snapshot) return <PanelCenteredState icon={<Spinner size={18} />} title="Loading" />
-  return <BrowserContent workspaceId={workspaceId} panelId={panelId} snapshot={snapshot} send={send} visible={visible} focused={focused} />
+  const partition = useSyncExternalStore(subscribeBrowserPartitions, () => browserPartition(workspaceId))
+  if (!snapshot || !partition) return <PanelCenteredState icon={<Spinner size={18} />} title="Loading" />
+  return <BrowserContent workspaceId={workspaceId} panelId={panelId} partition={partition} snapshot={snapshot} send={send} visible={visible} focused={focused} />
 }
 
-function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused }: {
+function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visible, focused }: {
   workspaceId: string
   panelId: string
+  partition: string
   snapshot: BrowserSnapshot
   send: (op: BrowserOp) => Promise<unknown>
   visible: boolean
@@ -140,17 +144,31 @@ function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused
   const runtime = useRuntime(workspaceId)
   const bridge = browserPageBridge()
   const { store: browserData, state: { bookmarks, history } } = useBrowserData(workspaceId)
-  const partition = browserPartition(workspaceId)
   const quietly = useCallback((op: BrowserOp) => { void send(op).catch(() => { /* shown by the next snapshot */ }) }, [send])
+
+  // Which tab this client shows is client state. It follows this client's own
+  // selections and callers' (`activeSource` null), never another client's.
+  const [storedTab, setShown] = usePanelView<string | null>(workspaceId, panelId, 'tab', null)
+  const shownTabId = storedTab && snapshot.tabs.some((tab) => tab.id === storedTab) ? storedTab : snapshot.activeTabId
+  // Keep the tab shown so far (the session's until this client picks one).
+  useEffect(() => { if (storedTab !== shownTabId) setShown(shownTabId) }, [storedTab, shownTabId, setShown])
+  const followed = useRef({ tabId: snapshot.activeTabId, source: snapshot.activeSource })
+  useEffect(() => {
+    const { activeTabId: tabId, activeSource: source } = snapshot
+    if (followed.current.tabId === tabId && followed.current.source === source) return
+    followed.current = { tabId, source }
+    if (source === null || source === clientIdentity().clientId) setShown(tabId)
+  }, [snapshot, setShown])
 
   // The host outlives re-renders: it owns the mounted pages. Changing inputs
   // are read through refs.
-  const live = useRef({ send, runtime })
-  live.current = { send, runtime }
+  const live = useRef({ send, runtime, setShown })
+  live.current = { send, runtime, setShown }
   const host = useMemo(() => new BrowserPageHost({
     panelId,
     clientId: clientIdentity().clientId,
     send: (op) => live.current.send(op),
+    reveal: (tabId) => live.current.setShown(tabId),
     bridge,
     guestCss: guestScrollbarCss,
     confirmSave: (message) => clientUi().confirm(message),
@@ -183,11 +201,14 @@ function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused
   useSyncExternalStore(host.subscribe, host.getVersion)
 
   useLayoutEffect(() => { host.update(snapshot) }, [host, snapshot])
+  useLayoutEffect(() => { host.show(shownTabId) }, [host, shownTabId])
   useEffect(() => { host.visible = visible }, [host, visible])
   useEffect(() => { host.applyZoom(snapshot.zoom) }, [host, snapshot.zoom])
 
-  const { tabs, activeTabId, viewport, zoom, agentCursor } = snapshot
-  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0]
+  const { tabs, viewport, zoom } = snapshot
+  const activeTab = tabs.find((tab) => tab.id === shownTabId) ?? tabs[0]
+  // The agent acts on the session's active tab; its cursor shows only there.
+  const agentCursor = shownTabId === snapshot.activeTabId ? snapshot.agentCursor : null
   const currentUrl = host.displayUrl()
   const { canGoBack, canGoForward, isLoading, loadError, crashed } = host.local
   const autofill = host.autofill
@@ -226,7 +247,7 @@ function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused
 
   const urlInputRef = useRef<HTMLInputElement | null>(null)
   const [inputUrl, setInputUrl] = useState(isStartPage(currentUrl) ? '' : currentUrl)
-  useEffect(() => { setInputUrl(isStartPage(currentUrl) ? '' : currentUrl) }, [currentUrl, activeTabId])
+  useEffect(() => { setInputUrl(isStartPage(currentUrl) ? '' : currentUrl) }, [currentUrl, shownTabId])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [activeSuggestion, setActiveSuggestion] = useState(-1)
   const suggestions = useMemo(
@@ -234,8 +255,8 @@ function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused
     [showSuggestions, inputUrl, history],
   )
   const navigate = useCallback((input: string) => {
-    if (input.trim()) quietly({ kind: 'navigate', input })
-  }, [quietly])
+    if (input.trim()) quietly({ kind: 'navigate', input, tabId: shownTabId })
+  }, [quietly, shownTabId])
 
   const onUrlKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'ArrowDown') {
@@ -288,7 +309,7 @@ function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused
       webview.focus()
     })
     return () => cancelAnimationFrame(frame)
-  }, [focused, host, activeTabId, activeTab.url])
+  }, [focused, host, shownTabId, activeTab.url])
 
   // ---- Menus, downloads, screenshot ---------------------------------------------
 
@@ -307,17 +328,23 @@ function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused
     setDownloadsOpen(true)
   }, [snapshot.downloads])
 
-  const [screenshot, setScreenshot] = useState<{ dataUrl: string; filePath: string } | null>(null)
+  // The capture is stored in the workspace data (`file.storeScreenshot`) as
+  // soon as it is taken, so its drag carries a FileRef any panel can use.
+  const [screenshot, setScreenshot] = useState<{ dataUrl: string; ref: FileRef | null } | null>(null)
   const screenshotTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (screenshotTimer.current) clearTimeout(screenshotTimer.current) }, [])
   const takeScreenshot = async () => {
     const webview = host.webview()
     if (!webview || !bridge) return
-    let result: { dataUrl: string; filePath: string } | null = null
+    let result: { dataUrl: string } | null = null
     try { result = await bridge.screenshot(webview.getWebContentsId()) } catch { return }
     if (!result) return
+    const { dataUrl } = result
+    const name = `browser-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.png`
+    const ref = await fsClient(workspaceId).storeScreenshot(name, base64ToBytes(dataUrl.slice(dataUrl.indexOf(',') + 1)))
+      .then(({ path }): FileRef => ({ workspaceId, path }), () => null)
     if (screenshotTimer.current) clearTimeout(screenshotTimer.current)
-    setScreenshot(result)
+    setScreenshot({ dataUrl, ref })
     screenshotTimer.current = setTimeout(() => { setScreenshot(null); screenshotTimer.current = null }, 5000)
   }
 
@@ -377,9 +404,17 @@ function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused
       <div className="flex flex-col flex-1 min-w-0 h-full">
         <BrowserTabStrip
           tabs={tabs}
-          activeTabId={activeTabId}
-          onSelect={(tabId) => quietly({ kind: 'selectTab', tabId })}
-          onClose={(tabId) => quietly({ kind: 'closeTab', tabId })}
+          activeTabId={shownTabId}
+          onSelect={(tabId) => {
+            setShown(tabId)
+            quietly({ kind: 'selectTab', tabId })
+          }}
+          onClose={(tabId) => {
+            const index = tabs.findIndex((tab) => tab.id === tabId)
+            const rest = tabs.filter((tab) => tab.id !== tabId)
+            if (tabId === shownTabId && rest.length) setShown(rest[Math.min(index, rest.length - 1)].id)
+            quietly({ kind: 'closeTab', tabId })
+          }}
           onNewTab={() => quietly({ kind: 'newTab' })}
           onTogglePin={(tabId) => quietly({ kind: 'pin', tabId })}
         />
@@ -550,7 +585,7 @@ function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused
               tabId={tab.id}
               src={srcFor(tab.id)}
               partition={partition}
-              active={tab.id === activeTabId}
+              active={tab.id === shownTabId}
               hidden={Boolean(loadError || crashed || isStartPage(tab.url))}
               viewport={viewport}
               displayScale={displayScale}
@@ -608,12 +643,12 @@ function BrowserContent({ workspaceId, panelId, snapshot, send, visible, focused
             <div className="absolute bottom-3 right-3 z-20 group cursor-grab active:cursor-grabbing" style={{ animation: 'screenshot-in 0.3s ease-out' }}>
               <div
                 className="relative w-44 rounded-lg overflow-hidden shadow-2xl border border-subtle hover:border-strong transition-all"
-                draggable
+                draggable={!!screenshot.ref}
                 onMouseDown={(event) => event.stopPropagation()}
                 onDragStart={(event) => {
+                  if (!screenshot.ref) return event.preventDefault()
                   event.dataTransfer.effectAllowed = 'copy'
-                  event.dataTransfer.setData('text/uri-list', `file://${screenshot.filePath}`)
-                  event.dataTransfer.setData('text/plain', screenshot.filePath)
+                  writeFileRefDrag(event.dataTransfer, { refs: [screenshot.ref] })
                   const image = new Image()
                   image.src = screenshot.dataUrl
                   event.dataTransfer.setDragImage(image, 20, 20)

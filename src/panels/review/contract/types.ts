@@ -1,6 +1,8 @@
 // Review panel state, snapshot and ops. Pure. The persisted review state
-// (comparison, notes, display, filters, collapsed files) lives in the session
-// file; the record carries only the checkout and the request it opened with.
+// (comparison, notes, filters) lives in the session file; the record carries
+// only the checkout and the request it opened with. How a client shows diffs
+// (split, wrap, collapsed files) is that client's own (client settings and
+// client state).
 
 import type { AgentChangedFile, AgentChangesFilter, AgentId } from '@services/agents/contract'
 import type { PlaceTarget } from '@workspace/document/contract'
@@ -36,6 +38,7 @@ export type ReviewNoteSeverity = NonNullable<ReviewNote['severity']>
 export type ReviewNoteInput = Pick<ReviewNote, 'path' | 'side' | 'line' | 'body' | 'context' | 'severity'>
   & Partial<Pick<ReviewNote, 'agentChangeId' | 'author' | 'agentRunId' | 'resolvedBase' | 'resolvedTarget'>>
 
+/** How a client shows diffs: its `reviewSettings`. */
 export interface ReviewDisplay {
   split: boolean
   wordDiff: boolean
@@ -62,9 +65,6 @@ export interface ReviewCheckoutState {
   spec: GitComparisonSpec
   focusedFile?: string
   fileFilter?: string
-  display: ReviewDisplay
-  /** Git paths, or `${recordId}:${path}` for recorded agent edits. */
-  collapsedFiles?: string[]
   /** Git comparisons: files shown in full, and per-file context line counts. */
   expandedFiles?: string[]
   contextLines?: Record<string, number>
@@ -137,7 +137,14 @@ export interface ReviewSnapshot {
   commits: Array<{ hash: string; message: string; author_name: string; date: string }>
 }
 
-export interface DiffOptions { allowLarge?: boolean; fullFile?: boolean; contextLines?: number }
+export interface DiffOptions {
+  allowLarge?: boolean
+  /** This file expanded to the full file (kept for the panel). */
+  fullFile?: boolean
+  /** The client shows whole files (its full-files display): every line as context. */
+  allLines?: boolean
+  contextLines?: number
+}
 
 export interface ReviewAgentChoice { agentId: AgentId; ready: boolean }
 
@@ -151,10 +158,7 @@ export type ReviewOp =
   | { kind: 'selectComparison'; comparison: ReviewComparisonKind }
   | { kind: 'setSpec'; spec: GitComparisonSpec }
   | { kind: 'update'; patch: { fileFilter?: string; showHistory?: boolean; focusedFile?: string | null } }
-  | { kind: 'updateDisplay'; patch: Partial<ReviewDisplay> }
   | { kind: 'updateFilter'; patch: AgentChangesFilterPatch }
-  | { kind: 'setCollapsed'; keys: string[] }
-  | { kind: 'toggleCollapsed'; key: string }
   /** Returns the file's `GitFileDiff`. */
   | { kind: 'diff'; path: string; options?: DiffOptions }
   | { kind: 'expandContext'; path: string }
@@ -193,14 +197,6 @@ export type ReviewOp =
 
 export type ReviewDiffResult = GitFileDiff
 
-export const DEFAULT_REVIEW_DISPLAY: ReviewDisplay = {
-  split: false,
-  wordDiff: true,
-  wrap: false,
-  fullFile: false,
-  advancedPreview: true,
-}
-
 export function defaultReviewState(repoPath: string, request?: Partial<ReviewOpenRequest>): ReviewState {
   return {
     repoPath,
@@ -208,8 +204,6 @@ export function defaultReviewState(repoPath: string, request?: Partial<ReviewOpe
     ...(request?.agentChanges ? { agentChanges: request.agentChanges } : {}),
     ...(request?.focusedFile ? { focusedFile: request.focusedFile } : {}),
     ...(request?.sourceAgent ? { sourceAgent: request.sourceAgent } : {}),
-    display: { ...DEFAULT_REVIEW_DISPLAY },
-    collapsedFiles: [],
     notes: [],
   }
 }

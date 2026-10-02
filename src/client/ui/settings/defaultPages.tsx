@@ -12,13 +12,15 @@ import { GitHubSettings, WorktreeSettings } from '@workspace/repository/ui'
 import { SkillsSettings } from '@workspace/skills/ui'
 import { useRuntime } from '@kernel/rpc/ui'
 import { T3_AGENTS } from '@services/agents/contract'
-import { AgentSettings, agentLogo } from '@services/agents/ui'
+import { AgentHooksSettings, AgentSettings, agentLogo } from '@services/agents/ui'
 import type { T3ProviderId } from '@services/t3/contract'
 import { T3Providers } from '@services/t3/ui'
 import { documentStoreFor } from '@client/document'
+import { openUrlInPanel } from '@client/host'
 import { useUIStore } from '../state/uiStore'
 import { tryClientApp } from '../app'
 import { DevicesPage } from '../pairing/DevicesPage'
+import { RemoteMachinesPage } from '../remote/RemoteMachinesPage'
 import { ConnectionNotice } from '../sidebar/connectionStatus'
 import { AppearancePage } from './pages/AppearancePage'
 import { CanvasPage } from './pages/CanvasPage'
@@ -34,7 +36,7 @@ function RuntimePage({ workspaceId }: SettingsPageProps): JSX.Element | null {
       workspaceId={workspaceId}
       panelTitle={(panelId) => documentStoreFor(workspaceId)?.getSnapshot().panels[panelId]?.title}
     >
-      <ConnectionNotice workspaceId={workspaceId} connection={connection} />
+      <ConnectionNotice connection={connection} />
     </RuntimeSettingsPage>
   )
 }
@@ -58,12 +60,17 @@ const t3ProviderLogo = (providerId: T3ProviderId): string | undefined =>
 
 function AgentsPage({ workspaceId }: SettingsPageProps): JSX.Element {
   const runtime = useRuntime(workspaceId)
-  return <AgentSettings workspaceId={workspaceId} providers={<T3Providers t3={runtime?.t3 ?? null} providerLogo={t3ProviderLogo} />} />
+  return <AgentSettings providers={<T3Providers t3={runtime?.t3 ?? null} providerLogo={t3ProviderLogo} openInWorkspace={(url) => openUrlInPanel(workspaceId, url)} />} />
+}
+
+function HooksPage({ workspaceId }: SettingsPageProps): JSX.Element {
+  return <AgentHooksSettings workspaceId={workspaceId} />
 }
 
 export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'appearance', title: 'Appearance', group: 'general', scope: 'client', order: 10, component: AppearancePage },
   { id: 'notifications', title: 'Notifications', group: 'general', scope: 'client', order: 20, component: NotificationsPage },
+  { id: 'remote-machines', title: 'Remote machines', group: 'general', scope: 'client', order: 30, component: RemoteMachinesPage },
   { id: 'canvas', title: 'Canvas', group: 'workspace', scope: 'client', order: 10, requires: ['canvas'], component: CanvasPage },
   { id: 'sidebar', title: 'Sidebar', group: 'workspace', scope: 'client', order: 20, component: SidebarPage },
   { id: 'runtime', title: 'Runtime', group: 'workspace', scope: 'workspace', order: 30, component: RuntimePage },
@@ -76,6 +83,7 @@ export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'github', title: 'GitHub', group: 'tools', scope: 'workspace', order: 50, component: GitHubPage },
   { id: 'shortcuts', title: 'Shortcuts', group: 'tools', scope: 'client', order: 90, component: ShortcutsPage },
   { id: 't3-code', title: 'T3 Code', group: 'agents', scope: 'workspace', order: 10, component: AgentsPage },
+  { id: 'hooks', title: 'Hooks', group: 'agents', scope: 'workspace', order: 20, component: HooksPage },
   { id: 'skills', title: 'Skills', group: 'agents', scope: 'workspace', order: 30, component: SkillsPage },
 ]
 

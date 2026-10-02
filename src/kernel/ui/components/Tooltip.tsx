@@ -6,11 +6,11 @@
 
 import React, { cloneElement, isValidElement, useEffect, useLayoutEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { displayString, type ShortcutAction } from '../contract'
-import { useResolvedShortcuts } from '../shortcuts/registry'
+import type { ActionId } from '../contract'
+import { shortcutDisplay, useResolvedShortcuts } from '../shortcuts/registry'
 
 interface TooltipProps {
-  action?: ShortcutAction
+  action?: ActionId
   label: string
   placement?: 'top' | 'bottom' | 'right' | 'left'
   children: React.ReactElement<React.HTMLAttributes<HTMLElement>>
@@ -18,8 +18,8 @@ interface TooltipProps {
 
 export const Tooltip: React.FC<TooltipProps> = ({ label, action, placement = 'bottom', children }) => {
   const shortcuts = useResolvedShortcuts()
-  const binding = action ? shortcuts[action] : undefined
-  const text = binding?.key ? `${label} (${displayString(binding)})` : label
+  const key = shortcutDisplay(shortcuts, action)
+  const text = key ? `${label} (${key})` : label
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)

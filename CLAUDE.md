@@ -48,12 +48,14 @@ working repo and may fail when the dev tree has a branch named `main` or local
 modifications: those failures are environmental, not regressions.
 
 The daemon is a detached process that outlives the app. The app installs the
-runtime tarball of its version into `~/.cate/runtime/<version>/` once (in a
+runtime tarball of its build into `~/.cate/runtime/<build>/` once (in a
 checkout, the one `npm run runtime:tarball` left in `dist-runtime/`) and
 starts workspaces from there. To iterate on runtime-side code, run the app
 with `CATE_RUNTIME_BUNDLE=dist-runtime/runtime.cjs` (it then starts the daemon
 from that bundle with your `node`), rebuild with `npm run build:runtime`, and
 stop the running workspace runtime so the next open starts the new build.
+Without `CATE_RUNTIME_BUNDLE`, the checkout's tarball must be the app's build
+(a hash of `src/`): after changing sources, `npm run runtime:tarball` again.
 
 ## Dependencies
 
@@ -77,7 +79,7 @@ Managed via npm (`package.json`):
 
 - **Runtime daemon** (`src/runtime/daemon/`), one per workspace, on the
   machine that holds the workspace. The same program (`runtime.cjs`, installed
-  under `~/.cate/runtime/<version>/`) runs on every machine. It serves the
+  under `~/.cate/runtime/<build>/`) runs on every machine. It serves the
   workspace over a local socket (`~/.cate/workspaces/<runtimeId>/runtime.sock`,
   which is also the one-daemon-per-workspace lock) and, with network access
   on, over the same network or Cate Connect, always inside a Noise handshake
@@ -150,7 +152,7 @@ Path aliases: `@kernel/*`, `@runtime/*`, `@workspace/*`, `@services/*`,
 Never branch on local versus remote, on desktop versus another client, or on
 a panel type in generic code. Clients differ only by declared **client
 features** (`webview`, `pageDriver`, `passkeys`, `windows`, `canvas`,
-`fileDrop`, `osFiles`, `osNotifications`, `screenCapture`, `clipboard`,
+`fileDrop`, `osNotifications`, `screenCapture`, `clipboard`,
 `camera`); code asks `clientHas(feature)`.
 
 ### Panels
@@ -158,9 +160,12 @@ features** (`webview`, `pageDriver`, `passkeys`, `windows`, `canvas`,
 Each panel type is one folder, `src/panels/<type>/`:
 - `definition.ts`: pure `definePanel({...})`: label, icon name, sizes,
   flags, the client features its view `requires`, record fields, the session
-  channel schema, its API spec, `create(options, kit)`, and the hooks generic
-  code asks instead of branching on the type (`checkoutPath`, `ownsKeyboard`,
-  `claimsShortcuts`, `commands`, `describe`, `chrome`, `relation`).
+  channel schema, its API spec, `create(options, kit)`, `creation` (its
+  place in every creation menu, the default key of `panel.new.<type>`, a
+  toolbar button, whether it is created in a worktree), and the hooks
+  generic code asks instead of branching on the type (`checkoutPath`,
+  `ownsKeyboard`, `claimsShortcuts`, `commands`, `describe`, `chrome`,
+  `relation`).
 - `contract.ts` / `contract/`: snapshot and op types, `contract/api.ts`.
 - `session.ts`: the runtime session (`PanelSession` subclass): all
   behaviour, snapshot, typed op handlers, its `cate` API handlers; persists
@@ -245,9 +250,14 @@ or the caller's sticky target (`cate panel set`).
   through `ClientUi`; the answer travels in the op (`close {discard: true}`).
 - **Records are state, never commands**: a record change never kills or
   restarts a resource; resource work is an explicit op or capability call.
-- **Declare once**: capabilities, API methods, settings and panel types are
-  declared in contracts and consumed generically.
+- **Declare once**: capabilities, API methods, settings, actions and panel
+  types are declared once and consumed generically.
 - **Clean cuts**: no migration code, no shims or re-exports from old paths.
-- Keyboard shortcuts come from the shortcut registry (`kernel/ui`) and
-  `client/ui` bindings.
+- Actions (keys, menus, palette, toolbar tooltips) are declared with
+  `defineActions` by the module that runs them and registered with
+  `registerActions` (`client/host`); panel types get `panel.new.<type>` and
+  `panel.<type>.<command>` from their definitions. Menus, the palette, the
+  shortcuts settings and the native menu bar are generated from them; never
+  list actions or panel types in a menu by hand (`docs/architecture.md`
+  12.4).
 - **Tailwind CSS** for styling.

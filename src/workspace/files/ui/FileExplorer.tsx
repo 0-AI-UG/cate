@@ -6,7 +6,7 @@
 import React, { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { RotateCw as ArrowClockwise, FilePlus, FolderPlus, Search as MagnifyingGlass, X } from 'lucide-react'
 import { clientUi, LoadingState, SidebarSectionHeader, SidebarHeaderButton } from '@kernel/ui'
-import { pathDisplayName, type FileEntry as FileTreeNodeType } from '../contract'
+import { hasFileRefDrag, pathDisplayName, readFileRefDrag, type FileEntry as FileTreeNodeType } from '../contract'
 import { VirtualFileRows, type VirtualFileRowsHandle } from './VirtualFileRows'
 import type { FileTreeModel } from './fileTreeModel'
 import type { ContextMenuItem } from '@kernel/ui/contract'
@@ -15,8 +15,8 @@ import { FileTreeNode } from './FileTreeNode'
 import { CreateFileForm } from './CreateFileForm'
 import { isNavKey, resolveTreeNavAction } from './treeKeyboardNav'
 import { useGitTree } from './gitTree'
-import { getClipboard, hasClipboard } from './fileClipboard'
-import { isExternalFileDrag, takeDroppedItems } from './droppedEntries'
+import { canCopyFiles, clipboardFileRefs, copyFileRefs } from './fileClipboard'
+import { isExternalFileDrag, refDropMode, takeDroppedItems } from './droppedEntries'
 
 // -----------------------------------------------------------------------------
 // Component
@@ -72,6 +72,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
 
   const selectedWorkspaceId = workspaceId
   const host = useFileViewsHost()
+  const takesOsFiles = host.takesOsFiles()
 
   // Git decorations come from the workspace's shared git status store (one
   // status stream per checkout, shared with the Search view and Source
@@ -295,9 +296,35 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
     handleReload()
   }, [handleReload, resource, setSelectedPaths])
 
+  // Resolve the target directory for new file/folder creation based on selection
+  const getSelectedDir = useCallback((): string | null => {
+    if (selectedPaths.size !== 1) return null
+    const selectedPath = [...selectedPaths][0]
+    const row = flatRows[flatIndexByPath.get(selectedPath) ?? -1]
+    if (row) {
+      return row.isDirectory ? row.path : row.path.substring(0, row.path.lastIndexOf('/'))
+    }
+    // Selected row isn't currently visible — fall back to its parent dir.
+    const slash = selectedPath.lastIndexOf('/')
+    return slash > 0 ? selectedPath.substring(0, slash) : rootPath
+  }, [selectedPaths, flatRows, flatIndexByPath, rootPath])
+
+  // Paste the file refs on the clipboard (from any workspace) into a folder.
+  const pasteInto = useCallback(async (destDir: string) => {
+    const refs = await clipboardFileRefs()
+    if (await resource.transfer(refs, destDir, 'copy')) handleReload()
+  }, [resource, handleReload])
+
   const handleTreeKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Inline rename/create inputs handle their own keys.
     if (e.target instanceof HTMLInputElement) return
+
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'c' || e.key === 'v') && canCopyFiles()) {
+      e.preventDefault()
+      if (e.key === 'c') void copyFileRefs([...selectedPaths].map((path) => ({ workspaceId, path })))
+      else void pasteInto(getSelectedDir() ?? rootPath)
+      return
+    }
 
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPaths.size > 0) {
       e.preventDefault()
@@ -329,22 +356,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
       case 'open': handleFileOpen([action.path], 'dock'); break
     }
   }, [
-    selectedPaths, deletePaths, flatRows,
+    selectedPaths, deletePaths, flatRows, workspaceId, pasteInto, rootPath, getSelectedDir,
     effectiveExpanded, expand, collapse, toggleExpand, handleFileOpen, moveCursorTo,
   ])
-
-  // Resolve the target directory for new file/folder creation based on selection
-  const getSelectedDir = useCallback((): string | null => {
-    if (selectedPaths.size !== 1) return null
-    const selectedPath = [...selectedPaths][0]
-    const row = flatRows[flatIndexByPath.get(selectedPath) ?? -1]
-    if (row) {
-      return row.isDirectory ? row.path : row.path.substring(0, row.path.lastIndexOf('/'))
-    }
-    // Selected row isn't currently visible — fall back to its parent dir.
-    const slash = selectedPath.lastIndexOf('/')
-    return slash > 0 ? selectedPath.substring(0, slash) : rootPath
-  }, [selectedPaths, flatRows, flatIndexByPath, rootPath])
 
   const startRootCreate = useCallback((type: 'file' | 'folder') => {
     const targetDir = getSelectedDir()
@@ -382,19 +396,17 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
     e.preventDefault()
     const ui = clientUi()
     if (!ui.showContextMenu) return
+    const clipboard = canCopyFiles()
+    const pasteable = clipboard && (await clipboardFileRefs()).length > 0
     const items: ContextMenuItem[] = [
       { id: 'new-file', label: 'New File…' },
       { id: 'new-folder', label: 'New Folder…' },
       { type: 'separator' },
-      // Only a client with OS file actions can reveal; otherwise the item is
-      // omitted instead of silently no-oping.
-      ...(ui.revealFile
-        ? [{ id: 'reveal', label: 'Reveal in Finder', accelerator: 'Alt+Cmd+R' }]
-        : []),
       { id: 'open-terminal', label: 'Open in Integrated Terminal' },
       { type: 'separator' },
-      { id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: hasClipboard() },
-      { type: 'separator' },
+      ...(clipboard
+        ? ([{ id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: pasteable }, { type: 'separator' }] as ContextMenuItem[])
+        : []),
       { id: 'find-in-folder', label: 'Find in Folder…', accelerator: 'Alt+Shift+F' },
       { type: 'separator' },
       { id: 'copy-path', label: 'Copy Path', accelerator: 'Alt+Cmd+C' },
@@ -404,27 +416,15 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
     switch (id) {
       case 'new-file': startRootCreate('file'); break
       case 'new-folder': startRootCreate('folder'); break
-      case 'reveal': void ui.revealFile?.(rootPath, selectedWorkspaceId); break
       // The terminal binds the worktree containing rootPath.
       case 'open-terminal': host.openTerminal(selectedWorkspaceId, rootPath, panelId); break
-      case 'paste': {
-        const sources = getClipboard()
-        for (const src of sources) {
-          try {
-            await resource.copy(src, rootPath)
-          } catch (err) {
-            console.error('[file-explorer] Paste failed:', err)
-          }
-        }
-        handleReload()
-        break
-      }
+      case 'paste': void pasteInto(rootPath); break
       case 'find-in-folder': openSearch(); break
       case 'copy-path': void ui.writeClipboard?.(rootPath); break
       case 'copy-rel-path': void ui.writeClipboard?.(folderName); break
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rootPath, startRootCreate, selectedWorkspaceId, panelId, openSearch, host])
+  }, [rootPath, startRootCreate, selectedWorkspaceId, panelId, openSearch, host, pasteInto])
 
   // ---------------------------------------------------------------------------
   // Render
@@ -433,24 +433,33 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
   return (
     <div
       className="file-explorer flex flex-col h-full min-h-0 overflow-hidden"
-      // External (OS) file/folder drops anywhere in the panel import into the
-      // workspace root. stopPropagation keeps the drop from bubbling to the
-      // app-root handler (which would otherwise re-root the workspace).
+      // File drops anywhere in the panel outside a folder row land in the
+      // root: OS files are uploaded, workspace files (this workspace's or
+      // another's) moved or copied. stopPropagation keeps the drop from the
+      // dock or canvas host (which would open the files) and from the
+      // app-root handler (which forces dropEffect='none').
       onDragOver={(e) => {
-        if (!isExternalFileDrag(e)) return
+        const external = takesOsFiles && isExternalFileDrag(e)
+        if (!external && !hasFileRefDrag(e.dataTransfer)) return
         e.preventDefault()
-        // Stop the bubble to the app-root dragover handler, which forces
-        // dropEffect='none' (to swallow stray canvas drops) and would otherwise
-        // override our 'copy' and make the browser reject the drop.
         e.stopPropagation()
-        e.dataTransfer.dropEffect = 'copy'
+        e.dataTransfer.dropEffect = external ? 'copy' : refDropMode(e)
       }}
       onDrop={(e) => {
-        if (!isExternalFileDrag(e)) return
+        if (takesOsFiles && isExternalFileDrag(e)) {
+          e.preventDefault()
+          e.stopPropagation()
+          const dropped = takeDroppedItems(e.dataTransfer)
+          void resource.importDropped(dropped, rootPath, folderName).then((ok) => {
+            if (ok) handleReload()
+          })
+          return
+        }
+        const drag = readFileRefDrag(e.dataTransfer)
+        if (!drag) return
         e.preventDefault()
         e.stopPropagation()
-        const dropped = takeDroppedItems(e.dataTransfer)
-        void resource.importDropped(dropped, rootPath, folderName).then((ok) => {
+        void resource.transfer(drag.refs, rootPath, refDropMode(e)).then((ok) => {
           if (ok) handleReload()
         })
       }}
@@ -541,7 +550,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
       )}
       {/* Tree content */}
       {isLoading && nodes.length === 0 ? (
-        <LoadingState label="Loading files…" size={14} className="flex-1 text-xs" />
+        <LoadingState label="Loading files" size={14} className="flex-1 text-xs" />
       ) : nodes.length === 0 && loadError && !rootCreating ? null : nodes.length === 0 && !rootCreating ? (
         <div
           className="flex flex-col items-center justify-center flex-1 text-muted text-xs gap-2 p-4"
@@ -566,29 +575,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
             if (e.target === e.currentTarget) setSelectedPaths(new Set())
           }}
           onContextMenu={handleRootContextMenu}
-          onDragOver={(e) => {
-            if (e.dataTransfer.types.includes('application/cate-file')) {
-              e.preventDefault()
-              e.dataTransfer.dropEffect = 'move'
-            }
-          }}
-          onDrop={async (e) => {
-            e.preventDefault()
-            const raw = e.dataTransfer.getData('application/cate-files')
-            if (!raw) return
-            const sourcePaths: string[] = JSON.parse(raw)
-            for (const srcPath of sourcePaths) {
-              const fileName = srcPath.substring(srcPath.lastIndexOf('/') + 1)
-              const destPath = rootPath + '/' + fileName
-              if (srcPath === destPath) continue
-              try {
-                await resource.rename(srcPath, destPath)
-              } catch (err) {
-                console.error('[file-explorer] Failed to move file:', err)
-              }
-            }
-            handleReload()
-          }}
         >
           {isFiltering && flatRows.length === 0 ? (
             <div className="flex items-center justify-center py-4 text-xs text-muted">No matches</div>

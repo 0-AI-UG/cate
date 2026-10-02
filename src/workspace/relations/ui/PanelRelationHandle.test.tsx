@@ -15,14 +15,14 @@ import { panelDefinition } from '@panels/definitions'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const definition = (type: PanelType, label: string, width: number, height: number, splitMenuOrder: number, canLiveOnCanvas = true) =>
-  ({ type, label, icon: 'grid', defaultSize: { width, height }, canLiveOnCanvas, splitMenuOrder, relation: panelDefinition(type)?.relation }) satisfies RelationPanelKind
+const definition = (type: PanelType, label: string, width: number, height: number, canLiveOnCanvas = true) =>
+  ({ type, label, icon: 'grid', defaultSize: { width, height }, canLiveOnCanvas, relation: panelDefinition(type)?.relation }) satisfies RelationPanelKind
 
 const DEFINITIONS = [
-  definition('editor', 'Files', 600, 500, 0),
-  definition('terminal', 'Terminal', 640, 400, 1),
-  definition('browser', 'Browser', 800, 600, 2),
-  definition('canvas', 'Canvas', 800, 600, 3, false),
+  definition('editor', 'Files', 600, 500),
+  definition('terminal', 'Terminal', 640, 400),
+  definition('browser', 'Browser', 800, 600),
+  definition('canvas', 'Canvas', 800, 600, false),
 ]
 
 let container: HTMLDivElement

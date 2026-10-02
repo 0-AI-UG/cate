@@ -52,7 +52,7 @@ export function GitHubSettings({ workspaceId, onShowPullRequests }: GitHubSettin
             <span className="text-sm font-medium text-primary">GitHub</span>
             {connection?.version && <span className="font-mono text-xs text-muted">{connection.version}</span>}
           </div>
-          {!connection ? <LoadingState label="Checking GitHub…" size={13} className="mt-2 justify-start text-xs" /> : <p role="status" className="mt-2 text-xs text-muted">{connected ? `Authenticated as ${connection.account}` : connection.message}</p>}
+          {!connection ? <LoadingState label="Checking GitHub" size={13} className="mt-2 justify-start text-xs" /> : <p role="status" className="mt-2 text-xs text-muted">{connected ? `Authenticated as ${connection.account}` : connection.message}</p>}
         </div>
         <div className="flex items-center gap-2">
           {connected ? <SecondaryButton onClick={onShowPullRequests}>Pull requests</SecondaryButton> : connection?.status === 'missing-cli' ?
@@ -64,7 +64,7 @@ export function GitHubSettings({ workspaceId, onShowPullRequests }: GitHubSettin
       <div className="py-2 text-xs text-muted">Uses the GitHub CLI account on the computer this workspace runs on.</div>
     </div>
     {login.status === 'pending' && <div role="status" className="mt-3 text-sm text-secondary">
-      <Spinner size={14} className="mr-2 align-middle" />{login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in…'}
+      <Spinner size={14} className="mr-2 align-middle" />{login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in'}
       <div className="mt-2 flex gap-2"><SecondaryButton onClick={() => clientUi().openExternal('https://github.com/login/device')}>Open GitHub</SecondaryButton><SecondaryButton onClick={() => void changeLogin('cancel')}>Cancel</SecondaryButton></div>
     </div>}
     {login.status === 'error' && <p role="alert" className="mt-3 text-xs text-danger">{login.message}</p>}

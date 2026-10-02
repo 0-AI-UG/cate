@@ -1,14 +1,9 @@
-// The desktop `ClientUi` natives (kernel/ui): message boxes, file pickers and
-// the save dialog, OS file actions, the clipboard and OS notifications. Feature
-// dialogs (confirm close terminal, ...) are message boxes the renderer words.
+// The desktop `ClientUi` natives (kernel/ui): message boxes, file pickers,
+// opening links and the device settings file, the clipboard and OS
+// notifications. Feature dialogs (confirm close terminal, ...) are message
+// boxes the renderer words.
 
-import { execFile } from 'node:child_process'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
-import { promisify } from 'node:util'
-import { app, BrowserWindow, clipboard, dialog, nativeImage, Notification, shell, type IpcMainInvokeEvent } from 'electron'
-import type { FileApp } from '@kernel/ui/contract'
+import { app, BrowserWindow, clipboard, dialog, Notification, shell, type IpcMainInvokeEvent } from 'electron'
 import {
   CANVAS_WALLPAPER_PICKER_EXTENSIONS,
   DESKTOP_CHANNELS as C,
@@ -16,50 +11,14 @@ import {
   type NotificationRequest,
   type OpenDialogRequest,
 } from '../contract'
-import { appBundleIcon } from './appBundleIcon'
 import type { CanvasBackgrounds } from './canvasBackgrounds'
 import { handle } from './ipc'
 import type { WindowRegistry } from './windowRegistry'
 
-const execFileAsync = promisify(execFile)
-
-/** Paths the OS file actions may touch: files of workspaces whose runtime
- *  runs on this machine (their roots, dialed this session) and `~/.cate`. */
-export class LocalFileScope {
-  private readonly roots = new Set<string>()
-
-  constructor(extra: string[] = []) {
-    for (const root of extra) this.add(root)
-  }
-
-  add(root: string): void {
-    this.roots.add(path.resolve(root))
-  }
-
-  /** The resolved path, or throws when it is not a local workspace file. */
-  check(filePath: unknown): string {
-    if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) throw new Error('Not a file on this device.')
-    const resolved = path.resolve(filePath)
-    for (const root of this.roots) {
-      if (resolved === root || resolved.startsWith(root.endsWith(path.sep) ? root : root + path.sep)) return resolved
-    }
-    throw new Error('This file is not on this device.')
-  }
-}
-
-export function githubRepositoryUrl(remote: string): string | null {
-  const value = remote.trim().replace(/\.git$/, '')
-  const ssh = /^git@github\.com:(.+)$/.exec(value)
-  if (ssh) return `https://github.com/${ssh[1]}`
-  const https = /^https?:\/\/github\.com\/(.+)$/.exec(value)
-  return https ? `https://github.com/${https[1]}` : null
-}
-
-const FILE_APP_CANDIDATES = ['Cursor', 'Visual Studio Code', 'Xcode', 'Zed', 'Sublime Text', 'Terminal', 'iTerm']
-
 export interface NativesDeps {
   registry: WindowRegistry<BrowserWindow>
-  scope: LocalFileScope
+  /** The device `settings.json`, opened by "Open settings file". */
+  settingsFile: string
   backgrounds: CanvasBackgrounds
   focusWindow(win: BrowserWindow): void
 }
@@ -82,7 +41,6 @@ function showOsNotification(options: { title: string; body: string; onClick?: ()
 }
 
 export function registerNatives(deps: NativesDeps): void {
-  const detectedApps = new Map<string, string>()
   const windowOf = (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     return win && !win.isDestroyed() ? win : undefined
@@ -122,13 +80,6 @@ export function registerNatives(deps: NativesDeps): void {
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths
   })
 
-  handle(C.dialogSave, async (event, request: { defaultName?: string; defaultPath?: string; title?: string } = {}) => {
-    const win = windowOf(event)
-    const options = { title: request.title ?? 'Save File', defaultPath: request.defaultPath || request.defaultName || 'Untitled.txt' }
-    const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options)
-    return result.canceled || !result.filePath ? null : result.filePath
-  })
-
   handle(C.canvasBackgroundPick, async (event) => {
     const win = windowOf(event)
     const options: Electron.OpenDialogOptions = {
@@ -148,60 +99,9 @@ export function registerNatives(deps: NativesDeps): void {
     await shell.openExternal(url)
   })
 
-  handle(C.osFileApps, async (): Promise<FileApp[]> => {
-    if (process.platform !== 'darwin') return []
-    const found = await Promise.all(FILE_APP_CANDIDATES.map(async (name) => {
-      for (const root of ['/Applications', path.join(os.homedir(), 'Applications'), '/System/Applications/Utilities']) {
-        const appPath = path.join(root, `${name}.app`)
-        if (!fs.existsSync(appPath)) continue
-        detectedApps.set(name, appPath)
-        return { id: name, name, icon: await appBundleIcon(appPath) }
-      }
-      return null
-    }))
-    return found.filter((entry): entry is FileApp => entry !== null)
-  })
-
-  handle(C.osOpenFile, async (_event, filePath: unknown, appId?: unknown) => {
-    const safe = deps.scope.check(filePath)
-    if (typeof appId === 'string' && appId) {
-      const appPath = detectedApps.get(appId)
-      if (!appPath || process.platform !== 'darwin') throw new Error('That application is unavailable.')
-      const target = appId === 'Terminal' || appId === 'iTerm' ? path.dirname(safe) : safe
-      await execFileAsync('/usr/bin/open', ['-a', appPath, '--', target])
-      return
-    }
-    const error = await shell.openPath(safe)
+  handle(C.osOpenSettingsFile, async () => {
+    const error = await shell.openPath(deps.settingsFile)
     if (error) throw new Error(error)
-  })
-
-  handle(C.osRevealFile, (_event, filePath: unknown) => {
-    shell.showItemInFolder(deps.scope.check(filePath))
-  })
-
-  handle(C.osOpenFileOnGitHub, async (_event, filePath: unknown) => {
-    const safe = deps.scope.check(filePath)
-    const cwd = path.dirname(safe)
-    let root: string, remote: string, revision: string
-    try {
-      ;[{ stdout: root }, { stdout: remote }, { stdout: revision }] = await Promise.all([
-        execFileAsync('git', ['-C', cwd, 'rev-parse', '--show-toplevel']),
-        execFileAsync('git', ['-C', cwd, 'remote', 'get-url', 'origin']),
-        execFileAsync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD']),
-      ])
-    } catch {
-      throw new Error('This file is not in a git repository with an origin remote.')
-    }
-    const repository = githubRepositoryUrl(remote)
-    if (!repository) throw new Error('The origin remote is not on GitHub.')
-    const relative = path.relative(root.trim(), safe).split(path.sep).map(encodeURIComponent).join('/')
-    await shell.openExternal(`${repository}/blob/${encodeURIComponent(revision.trim() || 'HEAD')}/${relative}`)
-  })
-
-  handle(C.osStartFileDrag, (event, filePath: unknown) => {
-    const safe = deps.scope.check(filePath)
-    const image = nativeImage.createFromPath(safe)
-    event.sender.startDrag({ file: safe, icon: image.isEmpty() ? nativeImage.createEmpty() : image.resize({ width: 64 }) })
   })
 
   handle(C.clipboardWrite, (_event, text: unknown) => { clipboard.writeText(typeof text === 'string' ? text : '') })

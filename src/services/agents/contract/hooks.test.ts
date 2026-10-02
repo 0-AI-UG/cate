@@ -39,13 +39,13 @@ describe('claude spec', () => {
 
   const file = spec.projectFiles![0]
 
-  test('creates .claude/settings.local.json with the bridge on all eight hook events', () => {
+  test('creates .claude/settings.local.json with the bridge on the lifecycle and approval hooks', () => {
     expect(file.relPath).toBe('.claude/settings.local.json')
     const out = file.build(null, ctx)!
     const parsed = JSON.parse(out) as { hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string }> }>> }
     expect(Object.keys(parsed.hooks).sort()).toEqual(
       [
-        'PermissionRequest', 'PostToolUse', 'PreToolUse', 'SessionEnd',
+        'PermissionRequest', 'Notification', 'PermissionDenied', 'PostToolUseFailure', 'PostToolUse', 'PreToolUse', 'SessionEnd',
         'SessionStart', 'Stop', 'StopFailure', 'UserPromptSubmit',
       ].sort(),
     )
@@ -101,7 +101,7 @@ describe('claude spec', () => {
     expect(norm('claude-code', { hook_event_name: 'SessionEnd', reason: 'clear', ...base })?.kind).toBe('session-end')
   })
 
-  test('PermissionRequest maps immediately to permission-wait; Notification is not a fallback', () => {
+  test('only a human-prompt notification maps to permission-wait', () => {
     expect(
       norm('claude-code', {
         hook_event_name: 'PermissionRequest',
@@ -109,10 +109,17 @@ describe('claude spec', () => {
         tool_input: { command: 'touch needs-approval.txt' },
         ...base,
       })?.kind,
-    ).toBe('permission-wait')
+    ).toBe('permission-check')
     expect(
-      norm('claude-code', { hook_event_name: 'Notification', notification_type: 'permission_prompt', ...base }),
-    ).toBeNull()
+      norm('claude-code', { hook_event_name: 'Notification', notification_type: 'permission_prompt', ...base })?.kind,
+    ).toBe('permission-wait')
+    expect(norm('claude-code', { hook_event_name: 'Notification', notification_type: 'idle_prompt', ...base })).toBeNull()
+  })
+
+  test('a subagent hook (agent_id set) never drives the parent terminal', () => {
+    for (const agentId of ['claude-code', 'codex'] as const) {
+      expect(norm(agentId, { hook_event_name: 'Stop', agent_id: 'child-agent', ...base })).toBeNull()
+    }
   })
 
   test('PreToolUse and PostToolUse map to turn-resume', () => {
@@ -217,7 +224,7 @@ describe('codex spec', () => {
       tool_name: 'Bash',
       tool_input: { command: 'touch needs-approval.txt' },
     })
-    expect(perm?.kind).toBe('permission-wait')
+    expect(perm?.kind).toBe('permission-check')
     expect(perm?.turnId).toBe('turn-1')
     expect(perm?.raw.turn_id).toBe('turn-1')
     expect(
@@ -556,7 +563,9 @@ describe('hermes spec', () => {
     })
     expect(norm('hermes', { hook_event_name: 'pre_llm_call', ...base })?.kind).toBe('turn-start')
     expect(norm('hermes', { hook_event_name: 'on_session_end', ...base })?.kind).toBe('turn-end')
-    expect(norm('hermes', { hook_event_name: 'pre_approval_request', ...base })?.kind).toBe('permission-wait')
+    expect(norm('hermes', { hook_event_name: 'pre_approval_request', surface: 'cli', ...base })?.kind).toBe('permission-wait')
+    expect(norm('hermes', { hook_event_name: 'pre_approval_request', surface: 'smart', ...base })?.kind).toBe('permission-check')
+    expect(norm('hermes', { hook_event_name: 'pre_approval_request', ...base })?.kind).toBe('permission-check')
     expect(norm('hermes', { hook_event_name: 'post_approval_response', ...base })?.kind).toBe('turn-resume')
     expect(norm('hermes', { hook_event_name: 'post_tool_call', ...base })?.kind).toBe('turn-resume')
     expect(norm('hermes', { hook_event_name: 'on_session_finalize', ...base })?.kind).toBe('session-end')

@@ -21,7 +21,7 @@ export async function openPullRequest(
       fromPr: pr.number,
       label: `#${pr.number} ${context.headRefName}`,
     })
-  for (const { type } of host.launchTypes) {
+  for (const { type } of host.launchTypes.filter((launch) => launch.switches)) {
     if (host.panels.some((panel) => panel.type === type && panel.worktreeId === worktree.id)) continue
     if (!(await host.launchInWorktree(worktree, type))) return true
   }

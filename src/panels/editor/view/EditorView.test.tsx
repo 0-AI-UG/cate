@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as Y from 'yjs'
 import { RpcError } from '@kernel/rpc/contract'
 import { installMockClientUi } from '@kernel/ui/testing'
-import { createClientIdentity, installClientIdentity, type SessionHandle } from '@client/connections'
+import { declareActions } from '@kernel/ui'
+import { storedShortcut } from '@kernel/ui/contract'
+import { installClientIdentity, type SessionHandle } from '@client/connections'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { EditorOp, EditorSnapshot } from '../contract'
 import { closeEditor } from './editorActions'
@@ -16,6 +18,7 @@ const h = vi.hoisted(() => ({
   diffs: [] as any[],
   explorerOpen: null as null | ((paths: string[], mode?: 'dock' | 'canvas', reveal?: { line: number; column?: number }) => void),
   openFiles: null as any,
+  fileWebUrl: vi.fn(),
 }))
 
 vi.mock('monaco-editor', () => {
@@ -55,7 +58,7 @@ vi.mock('y-monaco', () => ({
     destroy() {}
   },
 }))
-vi.mock('@kernel/rpc/client', () => ({ runtimeFor: () => ({ file: {} }) }))
+vi.mock('@kernel/rpc/client', () => ({ runtimeFor: () => ({ file: {}, vcs: { fileWebUrl: h.fileWebUrl } }) }))
 vi.mock('@workspace/files/client', () => ({
   attachBuffer: (_file: unknown, path: string, doc: Y.Doc) => {
     doc.getText('content').insert(0, h.contents[path] ?? '')
@@ -68,7 +71,7 @@ vi.mock('@workspace/files/client', () => ({
 vi.mock('@workspace/files/ui', () => ({
   FileExplorer: (props: any) => { h.explorerOpen = props.onOpenFiles; return <div>Explorer</div> },
   SearchView: () => <div>Search</div>,
-  FileTreeModel: class { activate() {} capture() { return { rootPath: '', expandedPaths: [], selectedPaths: [] } } dispose() {} },
+  FileTreeModel: class { constructor(readonly rootPath: string, readonly workspaceId: string) {} activate() {} capture() { return { rootPath: '', expandedPaths: [], selectedPaths: [] } } dispose() {} },
   panelSearchStore: () => ({}),
   releasePanelSearchStore: () => {},
   useFileViewsHost: () => ({ openFiles: h.openFiles, openMatch: () => {}, openTerminal: () => {} }),
@@ -76,6 +79,9 @@ vi.mock('@workspace/files/ui', () => ({
 vi.mock('./FilePreview', () => ({ default: () => <div data-testid="file-preview" /> }))
 
 import EditorView from './EditorView'
+
+// client/ui declares the save key; the view runs the actions its definition claims.
+declareActions({ saveFile: { title: 'Save', key: storedShortcut('s', { command: true }) } })
 
 const ROOT = '/work'
 let host: HTMLDivElement
@@ -86,6 +92,7 @@ let sendImpl: (op: EditorOp) => Promise<unknown>
 const snapshotOf = (patch: Partial<EditorSnapshot> = {}): EditorSnapshot => ({
   filePath: `${ROOT}/a.ts`,
   checkout: ROOT,
+  draft: false,
   documentType: null,
   dirty: false,
   conflict: null,
@@ -194,30 +201,55 @@ describe('EditorView', () => {
     expect(sent).toEqual([{ kind: 'save' }])
   })
 
-  it('asks for a Save As path in the app without osFiles', async () => {
-    const draft = `${ROOT}/.cate/drafts/00000000-0000-4000-8000-000000000001.md`
+  it('asks for the Save As path in the workspace through ClientUi', async () => {
+    const ui = installMockClientUi({ pickSavePath: vi.fn(async () => `${ROOT}/docs/notes.md`) })
+    const draft = `${ROOT}/.cate/tmp/00000000-0000-4000-8000-000000000001.md`
     h.contents[draft] = 'draft'
-    await show(snapshotOf({ filePath: draft }), { title: 'Notes' })
+    await show(snapshotOf({ filePath: draft, draft: true }), { title: 'Notes' })
     await act(async () => button('Save As…').click())
-    const input = host.ownerDocument.querySelector<HTMLInputElement>('input[aria-label="File path"]')!
-    expect(input.value).toBe(`${ROOT}/Notes`)
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
-      setter.call(input, 'docs/notes.md')
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    await act(async () => input.form!.requestSubmit())
+    expect(ui.pickSavePath).toHaveBeenCalledWith({ workspaceId: 'ws', defaultPath: `${ROOT}/Notes` })
     expect(sent).toEqual([{ kind: 'saveAs', path: `${ROOT}/docs/notes.md` }])
   })
 
-  it('uses the native save dialog with osFiles', async () => {
-    installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'f' } as never, features: ['osFiles'] }))
-    const ui = installMockClientUi({ saveFileDialog: vi.fn(async () => '/elsewhere/out.md') })
-    const draft = `${ROOT}/.cate/drafts/00000000-0000-4000-8000-000000000002.md`
-    await show(snapshotOf({ filePath: draft }), { title: 'Untitled' })
+  it('sends nothing when Save As is cancelled', async () => {
+    installMockClientUi({ pickSavePath: vi.fn(async () => null) })
+    const draft = `${ROOT}/.cate/tmp/00000000-0000-4000-8000-000000000002.md`
+    await show(snapshotOf({ filePath: draft, draft: true }), { title: 'Untitled' })
     await act(async () => button('Save As…').click())
-    expect(ui.saveFileDialog).toHaveBeenCalledWith({ defaultName: 'Untitled.md', defaultPath: `${ROOT}/Untitled.md` })
-    expect(sent).toEqual([{ kind: 'saveAs', path: '/elsewhere/out.md' }])
+    expect(sent).toEqual([])
+  })
+
+  it('saves a draft as a Save As because the session says it is one, whatever its path', async () => {
+    // A path the client cannot place (another runtime version's draft
+    // folder): the session's flag decides, and the checkout is the default.
+    const ui = installMockClientUi({ pickSavePath: vi.fn(async () => `${ROOT}/wt/notes.md`) })
+    const draft = `${ROOT}/wt/.cate/drafts/00000000-0000-4000-8000-000000000003.md`
+    await show(snapshotOf({ filePath: draft, draft: true, checkout: `${ROOT}/wt`, dirty: true }), { title: 'Untitled' })
+    await act(async () => {
+      host.firstElementChild!.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }))
+    })
+    expect(ui.pickSavePath).toHaveBeenCalledWith({ workspaceId: 'ws', defaultPath: `${ROOT}/wt/Untitled.md` })
+    expect(sent).toEqual([{ kind: 'saveAs', path: `${ROOT}/wt/notes.md` }])
+  })
+
+  it('saves a file in place even when it sits in a temporary folder', async () => {
+    await show(snapshotOf({ filePath: `${ROOT}/.cate/tmp/dropped.ts`, draft: false, dirty: true }))
+    await act(async () => {
+      host.firstElementChild!.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }))
+    })
+    expect(sent).toEqual([{ kind: 'save' }])
+  })
+
+  it('opens the file on GitHub with the URL the runtime computes', async () => {
+    const ui = installMockClientUi()
+    h.fileWebUrl.mockResolvedValue({ url: 'https://github.com/o/r/blob/main/a.ts' })
+    await show(snapshotOf())
+    await act(async () => button('Open on GitHub').click())
+    expect(h.fileWebUrl).toHaveBeenCalledWith({ path: `${ROOT}/a.ts` })
+    expect(ui.openExternal).toHaveBeenCalledWith('https://github.com/o/r/blob/main/a.ts')
+    h.fileWebUrl.mockResolvedValue(null)
+    await act(async () => button('Open on GitHub').click())
+    expect(ui.showError).toHaveBeenCalledWith('This file is not in a git repository with a GitHub origin.')
   })
 
   it('confirms unsaved edits before opening another file from the explorer', async () => {
@@ -245,9 +277,9 @@ describe('EditorView', () => {
     expect(editor.revealLineInCenter).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the shared indicator and a retry for a failed autosave', async () => {
+  it('shows a retry for a failed autosave of a shared draft', async () => {
     await show(snapshotOf({ connectedDraft: { syncError: 'disk full' } }))
-    expect(host.textContent).toContain('Shared with agent')
+    expect(host.textContent).not.toContain('Shared with agent')
     await act(async () => button('Save failed · Retry').click())
     expect(sent).toEqual([{ kind: 'save' }])
   })
@@ -272,7 +304,7 @@ describe('closeEditor', () => {
       ops.push(op)
       if (op.kind === 'close' && !op.discard) throw new RpcError('dirty', 'unsaved')
     }
-    expect(await closeEditor(send, { filePath: '/w/a.ts', dirty: true }, 'a.ts')).toBe(true)
+    expect(await closeEditor(send, 'ws', { filePath: '/w/a.ts', draft: false, checkout: '/w', dirty: true }, 'a.ts')).toBe(true)
     expect(ui.confirmUnsavedChanges).toHaveBeenCalled()
     expect(ops).toEqual([{ kind: 'close' }, { kind: 'close', discard: true }])
   })
@@ -280,6 +312,6 @@ describe('closeEditor', () => {
   it('keeps the panel when cancelled', async () => {
     installMockClientUi({ confirmUnsavedChanges: vi.fn(async () => 'cancel' as const) })
     const send = async (op: EditorOp) => { if (op.kind === 'close') throw new RpcError('dirty', 'unsaved') }
-    expect(await closeEditor(send, { filePath: '/w/a.ts', dirty: true }, 'a.ts')).toBe(false)
+    expect(await closeEditor(send, 'ws', { filePath: '/w/a.ts', draft: false, checkout: '/w', dirty: true }, 'a.ts')).toBe(false)
   })
 })

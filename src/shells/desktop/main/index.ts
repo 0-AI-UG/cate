@@ -13,8 +13,9 @@ import { createLogger, installLogSink } from '@kernel/log/contract'
 import { createJsonStateFile } from '@kernel/state/node'
 import { createElectronMainSink } from '@kernel/log/desktop/main'
 import { clientSettingsTable, type ClientSettings } from '@kernel/settings/contract'
-import { startLocalRuntime } from '@runtime/daemon/desktop'
-import { cateHome } from '@runtime/data/node'
+import { RUNTIME_BUILD, RUNTIME_VERSION } from '@runtime/daemon/contract'
+import { createSshProvisioner, startLocalRuntime } from '@runtime/daemon/desktop'
+import { isRuntimeInstalled } from '@runtime/daemon/node'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { createBrowserDesktop, flushPersistentSessions, installPersistentSessionTracking } from '@services/browser/desktop'
 import { CANVAS_BACKGROUNDS_DIR, DESKTOP_CHANNELS as C, desktopClientFeatures, PRIVATE_DEVICE_FILES, type UpdateStatus } from '../contract'
@@ -27,7 +28,7 @@ import { deviceStoreOf, registerDeviceIpc } from './deviceIpc'
 import { configureUserData, featureFlags, IS_E2E, revealWindow } from './env'
 import { createQuitController } from './lifecycle'
 import { createAppMenu } from './menu'
-import { LocalFileScope, registerNatives } from './natives'
+import { registerNatives } from './natives'
 import { createOpenRequests } from './openRequests'
 import { startPerfMonitor } from './perf'
 import { captureException, captureMessage, flushSentry, initSentry } from './sentry'
@@ -36,6 +37,7 @@ import { registerTransportIpc } from './transportIpc'
 import { createShellTransportHost } from './transports'
 import { canSelfUpdate, createAutoUpdater } from './updater/autoUpdater'
 import { installBundledRuntime } from './updater/runtimeInstall'
+import { registerSshIpc } from './sshIpc'
 import { DEFAULT_UPDATE_RECORD, normalizeUpdateRecord } from './updater/updateState'
 import { createWebPartitions } from './webPartitions'
 import { installAppCsp, installWebSecurity } from './webSecurity'
@@ -185,7 +187,6 @@ void ensureRuntime().catch(() => {})
 // only once something was set, so give it one to open.
 const settingsFile = path.join(userData, 'settings.json')
 try { fs.writeFileSync(settingsFile, '{}\n', { flag: 'wx' }) } catch { /* exists */ }
-const localFiles = new LocalFileScope([cateHome(), settingsFile])
 const backgrounds = createCanvasBackgrounds(path.join(userData, CANVAS_BACKGROUNDS_DIR))
 const partitions = createWebPartitions({
   session: (partition) => session.fromPartition(partition),
@@ -234,7 +235,7 @@ app.whenReady().then(() => {
     guestPreload,
     rendererUrl,
     hardeningDisabled: featureFlags.disableWebviewHardening,
-    customShortcuts: () => settings().customShortcuts,
+    guestKeys: () => menu.guestKeys(),
     isPreparedPartition: (partition) => partitions.isPrepared(partition),
   })
 
@@ -248,7 +249,6 @@ app.whenReady().then(() => {
     quitCommitted: () => quit.committed(),
     requestQuit: () => app.quit(),
     report: captureMessage,
-    onDetachedChanged: () => menu.rebuild(),
   })
   createMainWindow = () => factory.createMainWindow()
 
@@ -271,35 +271,38 @@ app.whenReady().then(() => {
 
   const menu = createAppMenu({
     registry,
-    customShortcuts: () => settings().customShortcuts,
     newMainWindow: () => { revealWindow(factory.createMainWindow()) },
-    checkForUpdates: () => updater.checkManually(),
   })
-  menu.rebuild()
 
   const pins = new KnownRuntimes(deviceStoreOf(device))
   const e2ePath = IS_E2E ? process.env.CATE_E2E_PATH_PREPEND : undefined
   const runtimeEnv = e2ePath ? { ...process.env, PATH: `${e2ePath}${path.delimiter}${process.env.PATH ?? ''}` } : process.env
   const host = createShellTransportHost({
     startLocal: async (root) => {
-      await ensureRuntime()
+      let installDir = await ensureRuntime()
+      // Another app's pruning may have removed it since (a checkout and the
+      // packaged app on one machine): install again.
+      if (installDir && !isRuntimeInstalled(installDir)) {
+        runtimeInstall = null
+        installDir = await ensureRuntime()
+      }
       const bundle = process.env.CATE_RUNTIME_BUNDLE
       return startLocalRuntime({
         root,
         env: runtimeEnv,
-        ...(bundle ? { launch: { node: process.env.CATE_RUNTIME_NODE || 'node', bundle } } : {}),
+        ...(bundle ? { launch: { node: process.env.CATE_RUNTIME_NODE || 'node', bundle } } : { installDir }),
       })
     },
     deviceKeys: () => device.deviceKeys(),
     deviceName: () => os.hostname().replace(/\.local$/, ''),
     pins,
-    onLocalRoot: (root) => localFiles.add(root),
   })
 
   registerDeviceIpc(device, registry)
-  registerNatives({ registry, scope: localFiles, backgrounds, focusWindow })
+  registerNatives({ registry, settingsFile, backgrounds, focusWindow })
   registerCapture(registry)
   registerTransportIpc({ host, partitions })
+  registerSshIpc(createSshProvisioner({ build: RUNTIME_BUILD, version: RUNTIME_VERSION }))
   const perf = startPerfMonitor(featureFlags.perf())
   appIpc = registerAppIpc({
     registry,
@@ -316,8 +319,6 @@ app.whenReady().then(() => {
       arch: process.arch,
       isPackaged: app.isPackaged,
       e2e: IS_E2E,
-      homeDir: app.getPath('home'),
-      settingsFile,
       features,
       device: { name: os.hostname().replace(/\.local$/, ''), keyFingerprint: device.deviceFingerprint() },
     }),
@@ -329,7 +330,6 @@ app.whenReady().then(() => {
   device.subscribe((name) => {
     if (name !== 'settings') return
     const next = settings()
-    if (JSON.stringify(next.customShortcuts) !== JSON.stringify(previous.customShortcuts)) menu.rebuild()
     if (next.betaUpdatesEnabled !== previous.betaUpdatesEnabled) updater.setBetaUpdates(next.betaUpdatesEnabled)
     if (next.canvasBackgroundImagePath !== previous.canvasBackgroundImagePath) backgrounds.prune(next.canvasBackgroundImagePath)
     previous = next

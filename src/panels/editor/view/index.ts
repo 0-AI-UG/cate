@@ -12,5 +12,5 @@ registerPanelCloseGuard('editor', editorCloseGuard)
 registerTabMenuItems(editorTabMenu)
 
 export { installEditorSettings, type EditorSettingsSource } from './editorSettings'
-export { closeEditor, confirmUnsaved, type PathPrompt } from './editorActions'
+export { closeEditor, confirmUnsaved } from './editorActions'
 export { editorCloseGuard } from './closeGuard'

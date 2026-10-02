@@ -33,10 +33,10 @@ describe('Spinner', () => {
   })
 
   it('renders an accessible labelled loading state', () => {
-    const view = render(<LoadingState label="Loading canvas…" />)
+    const view = render(<LoadingState label="Loading canvas" />)
     const status = view.querySelector('[role="status"]')
     expect(status?.getAttribute('aria-live')).toBe('polite')
     expect(status?.getAttribute('aria-busy')).toBe('true')
-    expect(status?.textContent).toContain('Loading canvas…')
+    expect(status?.textContent).toContain('Loading canvas')
   })
 })

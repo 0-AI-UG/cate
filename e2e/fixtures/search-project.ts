@@ -106,7 +106,7 @@ export function searchSnapshot(page: Page, nodeId: string): Promise<SearchSnapsh
     const root = document.querySelector(`[data-node-id="${id}"]`)!
     const pressed = (label: string) => root.querySelector(`button[aria-label="${label}"]`)?.getAttribute('aria-pressed') === 'true'
     const input = root.querySelector<HTMLInputElement>('input[aria-label="Search"]')
-    const statusEl = root.querySelector('.text-red-400') ?? [...root.querySelectorAll('span')].find((s) => /^(No results|Searching…|\d+ results? in \d+ files?)/.test(s.textContent ?? ''))
+    const statusEl = root.querySelector('.text-red-400') ?? [...root.querySelectorAll('span')].find((s) => /^(No results|Searching|\d+ results? in \d+ files?)/.test(s.textContent ?? ''))
     const text = statusEl?.textContent ?? ''
     const error = root.querySelector('.text-red-400')?.textContent ?? null
     const counts = /^(\d+) results? in (\d+) files?/.exec(text)

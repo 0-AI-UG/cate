@@ -331,6 +331,7 @@ export function vcsCapabilityImpl(repo: RepositoryRuntime): CapabilityImpl<VcsCa
     lsFiles: read(git.lsFiles),
     readStatus: read(git.readStatus),
     remotes: read(git.remotes),
+    fileWebUrl: read(git.fileWebUrl),
     compare: read(git.compare),
     fileDiff: read(git.fileDiff),
     fileContent: read(git.fileContent),

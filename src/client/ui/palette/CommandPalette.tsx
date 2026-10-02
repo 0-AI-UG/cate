@@ -7,21 +7,18 @@ import { flushSync } from 'react-dom'
 import { FileText, Search as MagnifyingGlass } from 'lucide-react'
 import { Icon, LoadingState, PaletteDialogShell, PaletteTextInput, useResolvedShortcuts } from '@kernel/ui'
 import { tryRuntimeFor } from '@kernel/rpc/client'
-import { clientHas } from '@client/connections'
-import { useClientState, useDocument } from '@client/document/ui'
+import { useDocument } from '@client/document/ui'
 import { useWorkspaceList } from '@client/workspaces/ui'
-import { focusedLeafIn, panelDefinition } from '@client/host'
+import { availableActions, createPanel, creatableDefinitions, focusedPanelId, panelDefinition, useActionsVersion, worktreeChoices } from '@client/host'
 import { getRecentFiles } from '@workspace/files/client'
 import { pathDisplayName } from '@workspace/files/contract'
-import { createLogger } from '@kernel/log/contract'
 import { clientApp } from '../app'
-import { paletteActions, paletteCommands, runAction, useActionsVersion } from '../actions/registry'
+import { runWindowAction } from '../actions/run'
 import { canOpenFiles, openWorkspaceFile, revealPanel, selectWorkspace } from '../navigation'
 import { useWindowId } from '../state/windowContext'
 import { useUIStore } from '../state/uiStore'
 import { commandItems, panelItems, workspaceItems, type FileItem, type PaletteItem } from './items'
 
-const log = createLogger('palette')
 const ICON_SIZE = 16
 
 export function CommandPalette(): JSX.Element | null {
@@ -38,8 +35,6 @@ function OpenPalette(): JSX.Element {
   useActionsVersion()
   const list = useWorkspaceList(clientApp().workspaces)
   const doc = useDocument(workspaceId, (d) => d)
-  const clientState = useClientState(workspaceId, (s) => s)
-  const focusedId = focusedLeafIn(doc, clientState)
 
   const [searchText, setSearchText] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -50,20 +45,15 @@ function OpenPalette(): JSX.Element {
 
   const close = useCallback(() => setOpen(false), [setOpen])
 
-  const focusedRecord = focusedId ? doc.panels[focusedId] : undefined
-  const focusedDefinition = focusedRecord ? panelDefinition(focusedRecord.type) : undefined
-
   const commands = commandItems({
-    actions: paletteActions(),
+    actions: availableActions({ workspaceId }),
     shortcuts,
-    runAction: (action) => { runAction(action) },
-    commands: paletteCommands(),
-    focused: focusedRecord && focusedDefinition ? { record: focusedRecord, definition: focusedDefinition } : null,
-    sendOp: (panelId, op) => {
-      if (!workspaceId) return
-      tryRuntimeFor(workspaceId)?.session.op({ panelId, op }).catch((err) => log.warn('panel command failed: %s', err))
+    runAction: (action) => { runWindowAction(action) },
+    inWorktree: workspaceId ? creatableDefinitions().filter((definition) => definition.creation?.inWorktree) : [],
+    worktrees: worktreeChoices(doc.worktrees),
+    create: (type, options) => {
+      if (workspaceId) createPanel(workspaceId, type, { ...options, near: focusedPanelId(workspaceId) ?? undefined })
     },
-    clientHas,
   }, query)
   const workspaces = workspaceItems(list.entries, workspaceId, query)
   const panels = useMemo(() => panelItems(doc, windowId, panelDefinition, query), [doc, windowId, query])
@@ -163,7 +153,7 @@ function OpenPalette(): JSX.Element {
       <div className="flex-1 overflow-y-auto pb-1.5">
         {total === 0 ? (
           <div className="text-muted text-[13px] text-center py-5">
-            {searching ? <LoadingState label="Searching…" size={14} /> : 'No results'}
+            {searching ? <LoadingState label="Searching" size={14} /> : 'No results'}
           </div>
         ) : sections.map((section, sectionIndex) => {
           if (section.items.length === 0) return null

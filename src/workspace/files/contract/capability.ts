@@ -13,8 +13,12 @@ import type {
   SearchOptions,
 } from './types'
 
-/** Files of the workspace: the root, its worktree checkouts, the workspace
- *  data directory and granted paths. Anything else fails with `rejected`.
+/** Files of the workspace: the root, its worktree checkouts, granted paths
+ *  and, read-only, the workspace data's `screenshots/` and
+ *  `browser/downloads/` (filled by `storeScreenshot` and `storeDownload`).
+ *  Anything else, the rest of the workspace data included, fails with
+ *  `rejected`. Files brought in (`rename`, `copy`, `importEntries`, `tempDir`) land only
+ *  inside a checkout; another destination fails with `rejected`.
  *  Served while the workspace is untrusted (9.2). */
 export const fileCapability = defineCapability('file', {
   methods: {
@@ -35,6 +39,14 @@ export const fileCapability = defineCapability('file', {
     /** Grants access to a path outside the workspace the user picked in a
      *  dialog. Persisted in the workspace data. */
     grant: method<{ path: string }, { path: string }>({ mutates: true }),
+    /** The temporary folder (`.cate/tmp`, see `cateTempDir`) of the checkout
+     *  holding `near` (the workspace root or a worktree checkout; the root
+     *  when omitted), created with the `.cate/.gitignore` if missing. */
+    tempDir: method<{ near?: string }, { path: string }>({ mutates: true }),
+    /** A URL serving the file over HTTP on a loopback port of the runtime's
+     *  machine (`http://127.0.0.1:<port>/<token>/<path>`), reached through
+     *  loopback routing (12.3); relative links resolve against it. */
+    serveUrl: method<{ path: string }, { url: string }>(),
     saveBuffer: method<{ path: string }, BufferState>({ mutates: true }),
     resolveBuffer: method<{ path: string; resolution: BufferResolution }, BufferState>({ mutates: true }),
   },

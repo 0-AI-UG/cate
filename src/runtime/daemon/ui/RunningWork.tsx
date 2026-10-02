@@ -105,9 +105,10 @@ export function RunningWorkConfirm({ runtime, actionLabel, consequence, title, o
           type="button"
           onClick={() => void confirm()}
           disabled={busy || !work}
-          className="h-7 px-3 rounded-md text-[12px] font-medium bg-red-500/90 text-white hover:bg-red-500 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-[12px] font-medium bg-red-500/90 text-white hover:bg-red-500 disabled:opacity-50"
         >
-          {busy ? 'Working…' : actionLabel}
+          {busy && <Spinner size={12} />}
+          {busy ? 'Working' : actionLabel}
         </button>
       </div>
     </div>

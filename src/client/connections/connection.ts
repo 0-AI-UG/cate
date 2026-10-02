@@ -24,8 +24,9 @@ export type ConnectionState =
   | { kind: 'connected' }
   /** `lastSeen` is when the runtime was last connected (null: never). */
   | { kind: 'offline'; lastSeen: number | null; retrying: boolean; error?: string }
-  /** A different protocol major. `runtime.update` still works (7.10). */
-  | { kind: 'incompatible'; runtimeVersion: string }
+  /** A different protocol major, or another build than this app (a stale
+   *  runtime, `build`). `runtime.update` still works (7.10). */
+  | { kind: 'incompatible'; runtimeVersion: string; build?: { runtime: string | null; app: string } }
   /** The runtime refused this client (unknown or revoked device). */
   | { kind: 'refused'; message: string }
   | { kind: 'closed' }
@@ -45,6 +46,8 @@ export interface WorkspaceConnectionOptions {
   identity: ClientIdentity
   /** App version, sent in `hello`. */
   version: string
+  /** App build: a runtime of another build is incompatible. */
+  build?: string
   backoff?: Partial<Backoff>
   now?: () => number
   /** Defaults to every declared capability. */
@@ -53,6 +56,8 @@ export interface WorkspaceConnectionOptions {
 
 export class WorkspaceConnection {
   readonly workspaceId: string
+  /** How it dials, for diagnostics (presence, e2e). Nothing outside this
+   *  module branches on it: every workspace works the same over either. */
   readonly kind: ConnectionKind
   readonly target: ConnectionTarget
   readonly rpc: RpcClient
@@ -60,6 +65,7 @@ export class WorkspaceConnection {
   readonly runtime: RuntimeProxy
   private readonly transports: ShellTransports
   private readonly identity: ClientIdentity
+  private readonly build: string | undefined
   private readonly backoff: Backoff
   private readonly now: () => number
   private readonly proxies = new Map<string, unknown>()
@@ -79,10 +85,12 @@ export class WorkspaceConnection {
     this.kind = opts.target.kind
     this.transports = opts.transports
     this.identity = opts.identity
+    this.build = opts.build
     this.backoff = { ...DEFAULT_BACKOFF, ...opts.backoff }
     this.now = opts.now ?? Date.now
     this.rpc = new RpcClient({
       version: opts.version,
+      build: opts.build,
       identity: {
         client: {
           clientId: opts.identity.clientId,
@@ -196,9 +204,12 @@ export class WorkspaceConnection {
         this.lastSeen = this.now()
         this.setState({ kind: 'connected' })
         return
-      case 'incompatible':
-        this.setState({ kind: 'incompatible', runtimeVersion: this.rpc.remote?.version ?? 'unknown' })
+      case 'incompatible': {
+        const remote = this.rpc.remote
+        const build = this.build !== undefined && remote?.build !== this.build ? { runtime: remote?.build ?? null, app: this.build } : undefined
+        this.setState({ kind: 'incompatible', runtimeVersion: remote?.version ?? 'unknown', ...(build ? { build } : {}) })
         return
+      }
       case 'refused':
         this.setState({ kind: 'refused', message: this.rpc.remote?.error?.message ?? 'Runtime refused the connection' })
         return

@@ -1,38 +1,31 @@
-// HTML5 file drags: files from the file tree or search (workspace paths) and
-// from the OS (the `fileDrop` feature). One window-level tracker finds the
-// nearest `[data-filedrop]` host under the cursor and one overlay marks it;
-// drop handling stays in the hosts. OS files reach the runtime through the
-// `file.importEntries` stream (workspace/files), so a drop works the same on
-// a local and a remote workspace.
+// HTML5 file drags: file refs from the file tree, search and screenshots,
+// and files from the OS (the `fileDrop` feature). One window-level tracker
+// finds the nearest `[data-filedrop]` host under the cursor and one overlay
+// marks it; drop handling stays in the hosts, which all resolve a drop the
+// same way (`dropFilesInto`): a workspace's own files as they are, anything
+// else copied into its checkout's `.cate/tmp` through the runtimes.
 
 import React, { useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { create } from 'zustand'
+import { createLogger } from '@kernel/log/contract'
 import type { PanelPlacementOptions } from '@panels/framework/contract'
 import { clientHas } from '@client/connections'
-import { fsClient } from '@workspace/files/client'
-import {
-  CATE_FILE_MIME,
-  CATE_FILES_MIME,
-  isExternalFileDrag,
-  readCateFileLocation,
-  readCateFilePaths,
-  readDroppedEntries,
-  takeDroppedItems,
-  type FileLineLocation,
-} from '@workspace/files/ui'
+import type { RefTarget } from '@workspace/files/client'
+import type { FileLineLocation } from '@workspace/files/contract'
+import { isAnyFileDrag, resolveFileDrop, takeFileDrop } from '@workspace/files/ui'
 
-export type FileDropKind = 'canvas' | 'dock' | 'terminal' | 'agent'
+export type FileDropKind = 'canvas' | 'dock' | 'terminal' | 'agent' | 'chat'
 
-// --- Opening dropped files ------------------------------------------------------
+const log = createLogger('file-drop')
+
+// --- Resolving drops ------------------------------------------------------------
 
 export interface FileDropHandler {
   /** Opens workspace files where they were dropped (the editor's module
    *  installs this). `location` reveals a line in the file it names. */
   openFiles(workspaceId: string, paths: string[], placement: PanelPlacementOptions, location?: FileLineLocation | null): void
-  /** The folder OS files are imported into before they open; null skips. */
-  importDestination?(workspaceId: string): Promise<string | null>
-  /** An import started; `done` settles when `file.importEntries` finished
+  /** A copy into the workspace started; `done` settles when it finished
    *  (the shell blocks quitting until then). */
   importing?(workspaceId: string, done: Promise<unknown>): void
 }
@@ -43,51 +36,35 @@ export function installFileDropHandler(next: FileDropHandler | null): void {
   handler = next
 }
 
-/** Workspace paths an in-app file drag carries. */
-export function droppedPaths(dataTransfer: Pick<DataTransfer, 'getData'>): string[] {
-  return readCateFilePaths(dataTransfer)
+/** The files a drop brings into `target`, as paths it can use, or null when
+ *  the drop carries none (or only OS files this client cannot take). Call it
+ *  in the drop handler: it takes the drop synchronously. */
+export function dropFilesInto(target: RefTarget, dataTransfer: DataTransfer): Promise<{ paths: string[]; location: FileLineLocation | null }> | null {
+  const drop = takeFileDrop(dataTransfer)
+  if (!drop || (drop.os.length > 0 && !clientHas('fileDrop'))) return null
+  const done = resolveFileDrop(drop, target)
+  handler?.importing?.(target.workspaceId, done.catch(() => {}))
+  return done
 }
 
-/** Imports OS files into the workspace and resolves with their new paths. */
-export async function importDroppedFiles(workspaceId: string, dataTransfer: DataTransfer): Promise<string[]> {
-  if (!clientHas('fileDrop') || !handler?.importDestination) return []
-  // Items must be taken inside the drop handler; contents are read later.
-  const items = takeDroppedItems(dataTransfer)
-  const destination = await handler.importDestination(workspaceId)
-  const fs = fsClient(workspaceId)
-  if (!destination || !fs || items.length === 0) return []
-  const run = (async () => {
-    const sources = await readDroppedEntries(items)
-    return (await fs.importEntries(destination, sources)).created
-  })()
-  handler.importing?.(workspaceId, run)
-  return run
-}
-
-/** Drop handling for a dock: opens the dropped files as tabs there. */
+/** Drop handling for a dock or canvas: opens the dropped files there. */
 export function useDockFileDrop(workspaceId: string, placement: () => PanelPlacementOptions) {
   const onDragOver = useCallback((e: React.DragEvent<HTMLElement>) => {
-    if (e.dataTransfer.types.includes(CATE_FILE_MIME) || e.dataTransfer.types.includes(CATE_FILES_MIME) || e.dataTransfer.types.includes('Files')) {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
-    }
+    if (!isAnyFileDrag(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
   }, [])
   const onDrop = useCallback((e: React.DragEvent<HTMLElement>) => {
     if (!handler) return
-    const paths = droppedPaths(e.dataTransfer)
-    const location = readCateFileLocation(e.dataTransfer)
-    const external = paths.length === 0 && isExternalFileDrag(e)
-    if (paths.length === 0 && !external) return
+    const at = placement()
+    const dropped = dropFilesInto({ workspaceId }, e.dataTransfer)
+    if (!dropped) return
     e.preventDefault()
     e.stopPropagation()
-    const at = placement()
-    if (!external) {
-      handler.openFiles(workspaceId, paths, at, location)
-      return
-    }
-    void importDroppedFiles(workspaceId, e.dataTransfer).then((created) => {
-      if (created.length > 0) handler?.openFiles(workspaceId, created, at, null)
-    })
+    void dropped.then(
+      ({ paths, location }) => { if (paths.length > 0) handler?.openFiles(workspaceId, paths, at, location) },
+      (error) => { log.error('drop failed:', error) },
+    )
   }, [workspaceId, placement])
   return { onDragOver, onDrop }
 }
@@ -119,9 +96,7 @@ export function useFileDragActive(): boolean {
 }
 
 export function isFileDrag(e: DragEvent): boolean {
-  const types = e.dataTransfer?.types
-  if (!types) return false
-  return types.includes(CATE_FILE_MIME) || types.includes(CATE_FILES_MIME) || types.includes('Files')
+  return isAnyFileDrag(e)
 }
 
 /** Tracks the file-drop host under the cursor. Once per window. */
@@ -167,6 +142,7 @@ const LABEL: Record<FileDropKind, string> = {
   dock: 'Drop to open here',
   terminal: 'Drop to paste path',
   agent: 'Drop to attach',
+  chat: 'Drop to attach',
 }
 
 /** The one indicator, drawn inside its host so it inherits the host's

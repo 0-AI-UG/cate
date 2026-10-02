@@ -1,8 +1,6 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { installMockClientUi } from '@kernel/ui/testing'
-import { createClientIdentity, installClientIdentity } from '@client/connections'
 
 vi.hoisted(() => {
   Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, value: vi.fn(() => null) })
@@ -23,7 +21,6 @@ import FilePreview from './FilePreview'
 
 let host: HTMLDivElement
 let root: Root
-let revealFile: ReturnType<typeof vi.fn<(path: string, workspaceId?: string) => Promise<void>>>
 
 const flush = () => act(async () => { await Promise.resolve() })
 const show = (filePath: string) => act(async () => root.render(<FilePreview workspaceId="ws-1" filePath={filePath} />))
@@ -34,15 +31,11 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
-  revealFile = vi.fn(async () => {})
-  installMockClientUi({ revealFile })
-  installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'f' } as never, features: ['osFiles'] }))
 })
 
 afterEach(() => {
   act(() => root.unmount())
   host.remove()
-  installClientIdentity(null)
 })
 
 describe('FilePreview', () => {
@@ -74,23 +67,11 @@ describe('FilePreview', () => {
     expect(host.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,iVBORwE=')
   })
 
-  it('offers reveal for a failed read on clients with osFiles', async () => {
-    m.readBinary.mockRejectedValue(new Error('Permission denied'))
-    await show('/workspace/missing.pdf')
-    await flush()
-    expect(host.textContent).toContain('Permission denied')
-    const button = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Show in Finder')!
-    act(() => button.click())
-    expect(revealFile).toHaveBeenCalledWith('/workspace/missing.pdf', 'ws-1')
-  })
-
-  it('has no reveal action without osFiles', async () => {
-    installClientIdentity(null)
+  it('shows a failed read', async () => {
     m.readBinary.mockRejectedValue(new Error('Remote unavailable'))
     await show('/workspace/missing.pdf')
     await flush()
     expect(host.textContent).toContain('Remote unavailable')
-    expect(host.textContent).not.toContain('Show in Finder')
   })
 
   it('ignores an obsolete read when the file changes before it resolves', async () => {

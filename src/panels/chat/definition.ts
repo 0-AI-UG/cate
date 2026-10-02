@@ -2,6 +2,7 @@
 // the T3 client in a webview. Pure.
 
 import { channel } from '@kernel/rpc/contract'
+import { storedShortcut } from '@kernel/ui/contract'
 import { definePanel } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import { CHAT_DEFAULT_TITLE, type ChatCreateOptions, type ChatOp, type ChatSnapshot } from './contract'
@@ -19,9 +20,9 @@ export const chatDefinition = definePanel({
   minimumSize: { width: 360, height: 320 },
   dropSize: { width: 520, height: 440 },
   canLiveOnCanvas: true,
-  worktreeBinding: true,
+  switchesWorktree: true,
   navigable: true,
-  splitMenuOrder: 4,
+  creation: { order: 4, title: 'New T3 Code Conversation', key: storedShortcut('a', { command: true, shift: true }), inWorktree: true },
   // Fixed, like the browser: moving a <webview> to another parent (even with
   // moveBefore) reloads its page, so an inline surface cannot survive a tab or
   // workspace switch.

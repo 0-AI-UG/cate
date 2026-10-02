@@ -6,7 +6,8 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { Hand, Map as MapTrifold, Minus, MousePointer2 as Cursor, Plus, X } from 'lucide-react'
 import { Icon, Tooltip } from '@kernel/ui'
-import { isIconName, SHORTCUT_DEFINITIONS, type ShortcutAction } from '@kernel/ui/contract'
+import { isIconName } from '@kernel/ui/contract'
+import { newPanelActionId } from '@client/host'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import { canvasHost } from '../ports'
 import { createPanelOnCanvas } from '../actions'
@@ -26,12 +27,6 @@ interface CanvasToolbarProps {
   workspaceId: string
   canvasId: string
   canvasPanelId: string
-}
-
-/** The shortcut that creates this type, when there is one (`newTerminal`). */
-function createAction(type: string): ShortcutAction | undefined {
-  const action = `new${type.charAt(0).toUpperCase()}${type.slice(1)}`
-  return action in SHORTCUT_DEFINITIONS ? (action as ShortcutAction) : undefined
 }
 
 function useToolbarItems(): CanvasToolbarItem[] {
@@ -96,7 +91,7 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
           createPanelOnCanvas(workspaceId, canvasId, definition.type)
         }}
         onMouseDown={definition.canLiveOnCanvas ? handleMouseDown : undefined}
-        action={createAction(definition.type)}
+        action={newPanelActionId(definition.type)}
         label={`New ${definition.label.toLowerCase()}`}
         size="panel"
         tooltipPlacement={placement}
@@ -144,10 +139,8 @@ function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarPr
   const extraItems = useToolbarItems()
   const zoomText = `${Math.round(zoom * 100)}%`
 
-  // The creatable types: offered in the split menu and able to sit on a canvas.
-  const spawnable = canvasHost().definitions()
-    .filter((d) => d.canLiveOnCanvas && d.splitMenuOrder !== undefined)
-    .sort((a, b) => (a.splitMenuOrder ?? 0) - (b.splitMenuOrder ?? 0))
+  // The creatable types the toolbar offers.
+  const spawnable = canvasHost().creatable({ onCanvas: true }).filter((d) => d.creation?.toolbar)
 
   // Collapse before the centred bar would be clipped or overlap a
   // bottom-corner minimap.

@@ -1,6 +1,7 @@
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { computeBuildId } from './scripts/build-id.mjs'
 
 // Bake the Sentry DSN at build time from the SENTRY_DSN env var. End users
 // of a packaged build don't have that env var, so the value must be inlined.
@@ -15,10 +16,14 @@ const sentryDefine = {
   __SENTRY_DSN__: JSON.stringify(process.env.SENTRY_DSN ?? ''),
 }
 
+// The build the app installs its runtime as and refuses others of
+// (scripts/build-id.mjs).
+const buildDefine = { __CATE_BUILD__: JSON.stringify(computeBuildId(__dirname)) }
+
 export default defineConfig({
   main: {
     resolve: { alias },
-    define: sentryDefine,
+    define: { ...sentryDefine, ...buildDefine },
     plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'dist/main',
@@ -50,7 +55,7 @@ export default defineConfig({
   renderer: {
     root: '.',
     resolve: { alias },
-    define: sentryDefine,
+    define: { ...sentryDefine, ...buildDefine },
     // Don't let the dev server watch .cate/ — it holds Cate's own project state
     // and, now, git worktrees (full repo checkouts under .cate/worktrees). When
     // developing Cate-on-Cate, creating a worktree there would otherwise drop a

@@ -7,14 +7,13 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight as CaretRight, ChevronDown as CaretDown, X } from 'lucide-react'
 import { Tooltip } from '@kernel/ui'
-import type { SearchFileResult, SearchMatchRange } from '../contract'
+import { writeFileRefDrag, type SearchFileResult, type SearchMatchRange } from '../contract'
 import { getFileIcon } from './FileTreeNode'
 import { trimLeading } from './searchDisplay'
 import { lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
 import { lineKey } from './searchStore'
 import { useSearchStoreContext as useSearchStore } from './SearchStoreContext'
 import { useFileViewsHost } from './FileViewsContext'
-import { writeCateFileDrag } from './fileDragPayload'
 
 // Uniform row height (px). Both the file-header and code-line rows are forced to
 // this height so the windowed (virtualized) list can map scrollTop <-> row index
@@ -55,12 +54,12 @@ const extOf = (name: string): string => {
   return i === -1 ? '' : name.slice(i + 1)
 }
 
-/** Populate a drag with the same MIME types the Explorer uses, so canvas / dock
- *  / terminal / agent drop targets all accept it. For a line drag, also carry
- *  the line + column so canvas/dock drops can open at the match. */
-function setFileDrag(e: React.DragEvent, path: string, line?: number, column?: number): void {
-  writeCateFileDrag(e.dataTransfer, [path], line == null ? undefined : { path, line, column: column ?? 1 })
-  e.dataTransfer.setData('text/plain', path)
+/** A file-ref drag, like the Explorer's, so every drop target accepts it. A
+ *  line drag also carries the line and column so a dock or canvas drop opens
+ *  at the match. */
+function setFileDrag(e: React.DragEvent, workspaceId: string | undefined, path: string, line?: number, column?: number): void {
+  if (!workspaceId) return
+  writeFileRefDrag(e.dataTransfer, { refs: [{ workspaceId, path }], location: line == null ? undefined : { path, line, column: column ?? 1 } })
   e.dataTransfer.effectAllowed = 'copy'
 }
 
@@ -278,7 +277,7 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git, workspaceId, on
                   }}
                   title={file.relativePath}
                   draggable
-                  onDragStart={(e) => setFileDrag(e, file.path)}
+                  onDragStart={(e) => setFileDrag(e, workspaceId, file.path)}
                 >
                   <span className="flex-shrink-0 text-muted">
                     {isCollapsed ? <CaretRight size={12} /> : <CaretDown size={12} />}
@@ -338,7 +337,7 @@ export const SearchResultsTree: React.FC<Props> = ({ files, git, workspaceId, on
                   if (!isContext) openLine(file, lineIdx)
                 }}
                 draggable
-                onDragStart={(e) => setFileDrag(e, file.path, ln.line, (ln.ranges[0]?.start ?? 0) + 1)}
+                onDragStart={(e) => setFileDrag(e, workspaceId, file.path, ln.line, (ln.ranges[0]?.start ?? 0) + 1)}
               >
                 <span className="flex-shrink-0 text-muted text-[10px] tabular-nums text-left select-none min-w-[1.6rem]">
                   :{ln.line}

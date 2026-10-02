@@ -1,9 +1,10 @@
-// Files and folders dragged in from the OS, read with the web File APIs so any
-// client with the `fileDrop` feature can upload them through `importEntries`.
-// Entries must be taken from the DataTransfer inside the drop handler; their
-// contents can be read afterwards.
+// Dropped files: refs dragged from Cate's own views, and files and folders
+// dragged in from the OS (read with the web File APIs, so any client with the
+// `fileDrop` feature can upload them). Everything must be taken from the
+// DataTransfer inside the drop handler; contents are read afterwards.
 
-import type { ImportSource } from '../client'
+import { fileRefs, type FileRefs, type ImportSource, type RefTarget } from '../client'
+import { hasFileRefDrag, readFileRefDrag, type FileLineLocation, type FileRef } from '../contract'
 
 /** True when the drag carries OS files (an external drop), not an internal
  *  Cate panel or file drag. */
@@ -62,4 +63,45 @@ export async function readDroppedEntries(items: DroppedItems): Promise<ImportSou
     else await walk(item.entry, item.entry.name)
   }
   return out
+}
+
+/** What dropping a file-ref drag into the explorer does: a copy when
+ *  Option/Alt is held or the source only allows copying (search results),
+ *  else a move. Refs of another workspace are always copied. */
+export function refDropMode(e: { altKey: boolean; dataTransfer: Pick<DataTransfer, 'effectAllowed'> }): 'move' | 'copy' {
+  return e.altKey || e.dataTransfer.effectAllowed === 'copy' ? 'copy' : 'move'
+}
+
+// ---- any file drop, for every drop target -----------------------------------
+
+/** A drop of files, taken inside the drop handler: refs from Cate's own
+ *  views, or items from the OS. */
+export interface FileDrop {
+  refs: FileRef[]
+  location: FileLineLocation | null
+  os: DroppedItems
+}
+
+/** True when the drag carries files of either kind. */
+export function isAnyFileDrag(e: { dataTransfer: Pick<DataTransfer, 'types'> | null }): boolean {
+  return !!e.dataTransfer && (hasFileRefDrag(e.dataTransfer) || Array.from(e.dataTransfer.types).includes('Files'))
+}
+
+/** Takes a drop's files; null when it carries none. Synchronous: call it in
+ *  the drop handler. */
+export function takeFileDrop(dataTransfer: DataTransfer): FileDrop | null {
+  const drag = readFileRefDrag(dataTransfer)
+  if (drag) return { refs: drag.refs, location: drag.location ?? null, os: [] }
+  const os = Array.from(dataTransfer.types).includes('Files') ? takeDroppedItems(dataTransfer) : []
+  return os.length > 0 ? { refs: [], location: null, os } : null
+}
+
+/** The paths the target workspace uses for a drop: its own files as they
+ *  are; other workspaces' and OS files copied into the target checkout's
+ *  temporary folder. A dropped line follows its file. */
+export async function resolveFileDrop(drop: FileDrop, target: RefTarget, refs: FileRefs = fileRefs): Promise<{ paths: string[]; location: FileLineLocation | null }> {
+  if (drop.os.length > 0) return { paths: await refs.upload(await readDroppedEntries(drop.os), target), location: null }
+  const paths = await refs.localize(drop.refs, target)
+  const at = drop.location ? drop.refs.findIndex((ref) => ref.path === drop.location!.path) : -1
+  return { paths, location: drop.location && paths[at] ? { ...drop.location, path: paths[at] } : null }
 }

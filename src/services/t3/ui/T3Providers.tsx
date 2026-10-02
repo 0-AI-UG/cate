@@ -5,19 +5,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CornerDownLeft as ArrowBendDownLeft, SquareArrowOutUpRight as ArrowSquareOut, ChevronDown as CaretDown, ChevronUp as CaretUp, Check, CircleCheck as CheckCircle, Copy, LogIn as SignIn } from 'lucide-react'
 import type { CapabilityProxy } from '@kernel/rpc/contract'
+import { isLoopbackUrl } from '@runtime/tunnel/contract'
 import { LoadingState, Modal, SecondaryButton, Spinner, btn, clientUi, errorMessage, inputCls } from '@kernel/ui'
-import type { T3ProviderAuthSession, T3ProviderId, T3ProviderStatus, t3Capability } from '../contract'
+import { providerAuthUsesLoopback, type T3ProviderAuthSession, type T3ProviderId, type T3ProviderStatus, type t3Capability } from '../contract'
 import { T3ProviderConfiguration } from './T3ProviderConfiguration'
 import { T3_PROVIDER_LOGINS, type T3ProviderLogin } from './providers'
 
 export type T3ProvidersProxy = Pick<CapabilityProxy<typeof t3Capability>,
   'providerSettings' | 'providerStatuses' | 'providerAuthStart' | 'providerAuthGet' | 'providerAuthWrite' | 'providerAuthCancel'>
 
-export function T3Providers({ t3, checkout, providerLogo }: {
+export function T3Providers({ t3, checkout, providerLogo, openInWorkspace }: {
   /** Null while no workspace is open. */
   t3: T3ProvidersProxy | null
   checkout?: string
   providerLogo?: (providerId: T3ProviderId) => string | undefined
+  /** Opens a URL in a browser panel of the workspace `t3` serves; false when
+   *  it could not. A sign-in that calls back to loopback goes there, since
+   *  the CLI waits on the runtime's machine (architecture D10). */
+  openInWorkspace?: (url: string) => boolean
 }) {
   const [authProvider, setAuthProvider] = useState<T3ProviderLogin | null>(null)
   const [authSession, setAuthSession] = useState<T3ProviderAuthSession | null>(null)
@@ -117,11 +122,20 @@ export function T3Providers({ t3, checkout, providerLogo }: {
     }
   }, [t3, authSession?.id, authSession?.phase])
 
+  // A loopback page itself never goes to the system browser; a page that only
+  // calls back to loopback does when no workspace panel can take it.
+  const openAuthUrl = (url: string): void => {
+    if (providerAuthUsesLoopback(url) && openInWorkspace?.(url)) return
+    if (!isLoopbackUrl(url)) clientUi().openExternal(url)
+  }
+  const openAuthUrlRef = useRef(openAuthUrl)
+  openAuthUrlRef.current = openAuthUrl
+
   useEffect(() => {
     const url = authSession?.url
     if (!url || openedAuthUrlRef.current === url) return
     openedAuthUrlRef.current = url
-    clientUi().openExternal(url)
+    openAuthUrlRef.current(url)
   }, [authSession?.url])
 
 
@@ -230,7 +244,7 @@ export function T3Providers({ t3, checkout, providerLogo }: {
             )}
 
             {authStarting && (
-              <LoadingState label="Starting official sign-in…" className="py-8 text-sm" />
+              <LoadingState label="Starting official sign-in" className="py-8 text-sm" />
             )}
 
             {authError && (
@@ -243,7 +257,7 @@ export function T3Providers({ t3, checkout, providerLogo }: {
               <>
                 <div className="flex items-center gap-2 text-sm text-primary">
                   {authSession.phase === 'running' && <Spinner size={16} label="Waiting for sign-in" />}
-                  <span>{authSession.message ?? (authSession.phase === 'running' ? 'Waiting for sign-in…' : 'Sign-in finished.')}</span>
+                  <span>{authSession.message ?? (authSession.phase === 'running' ? 'Waiting for sign-in' : 'Sign-in finished.')}</span>
                 </div>
                 {authSession.code && (
                   <div className="rounded-lg border-2 border-focus-blue bg-focus-blue/10 px-5 py-5 text-center shadow-[0_0_24px_rgba(59,130,246,0.12)]">
@@ -267,7 +281,7 @@ export function T3Providers({ t3, checkout, providerLogo }: {
                   </div>
                 )}
                 <pre className="max-h-64 min-h-28 overflow-auto whitespace-pre-wrap break-words rounded-md border border-subtle bg-surface-0 p-3 font-mono text-xs leading-5 text-secondary select-text">
-                  {authSession.output.trim() || 'Waiting for the provider to begin the login flow…'}
+                  {authSession.output.trim() || 'Waiting for the provider to begin the login flow'}
                 </pre>
                 {authSession.phase === 'running' && (
                   <form
@@ -314,7 +328,7 @@ export function T3Providers({ t3, checkout, providerLogo }: {
                 )}
                 <div className="flex justify-end gap-2">
                   {authSession.url && (
-                    <button type="button" className={btn.secondary} onClick={() => clientUi().openExternal(authSession.url!)}>
+                    <button type="button" className={btn.secondary} onClick={() => openAuthUrl(authSession.url!)}>
                       <ArrowSquareOut size={13} />
                       Open sign-in page
                     </button>

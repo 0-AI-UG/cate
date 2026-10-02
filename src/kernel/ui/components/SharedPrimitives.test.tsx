@@ -7,6 +7,7 @@ import { POPOVER_SURFACE, useDismissableLayer } from './Popover'
 import { Tooltip } from './Tooltip'
 import { storedShortcut } from '../contract'
 import { createMemoryShortcutRegistry, installShortcutRegistry } from '../shortcuts/registry'
+import { declareActions } from '../actions/catalog'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -53,11 +54,11 @@ describe('shared UI primitives', () => {
   })
 
   it('renders loading buttons as disabled and busy', () => {
-    render(<Button loading loadingLabel="Saving…">Save</Button>)
+    render(<Button loading loadingLabel="Saving">Save</Button>)
     const button = host.querySelector('button')!
     expect(button.disabled).toBe(true)
     expect(button.getAttribute('aria-busy')).toBe('true')
-    expect(button.textContent).toContain('Saving…')
+    expect(button.textContent).toContain('Saving')
     expect(button.querySelector('.animate-spin')).not.toBeNull()
   })
 
@@ -82,6 +83,7 @@ describe('shared UI primitives', () => {
 })
 
 it('keeps tooltip bindings current and omits cleared shortcuts', () => {
+  const undeclare = declareActions({ newTerminal: { title: 'New Terminal', key: storedShortcut('t', { command: true }) } })
   const registry = createMemoryShortcutRegistry()
   installShortcutRegistry(registry)
   vi.useFakeTimers()
@@ -93,6 +95,7 @@ it('keeps tooltip bindings current and omits cleared shortcuts', () => {
   act(() => registry.clear('newTerminal'))
   expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Terminal')
   act(() => registry.resetAll())
+  undeclare()
 })
 
 it.each(['left', 'right', 'top', 'bottom'] as const)('keeps a tooltip inside the %s window edge', (edge) => {

@@ -1,3 +1,4 @@
+import { isLoopbackUrl } from '@runtime/tunnel/contract'
 import { t3Provider, type T3ProviderId } from './providers'
 
 export interface ProviderAuthCommand {
@@ -77,6 +78,20 @@ export function cleanProviderAuthOutput(value: string): string {
 export function providerAuthUrl(output: string): string | undefined {
   const match = cleanProviderAuthOutput(output).match(/https:\/\/[^\s<>"']+/i)
   return match?.[0].replace(/[),.;]+$/, '')
+}
+
+/** True when the sign-in page at `url` is on, or sends the browser back to
+ *  (its `redirect_uri` or `redirect` parameter), a loopback address: the
+ *  provider CLI listens there on the runtime's machine, which only a Cate
+ *  browser panel of the workspace reaches (architecture D10). */
+export function providerAuthUsesLoopback(url: string): boolean {
+  if (isLoopbackUrl(url)) return true
+  try {
+    const params = new URL(url).searchParams
+    return ['redirect_uri', 'redirect'].some((key) => isLoopbackUrl(params.get(key) ?? ''))
+  } catch {
+    return false
+  }
 }
 
 export function providerAuthCode(output: string): string | undefined {

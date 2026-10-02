@@ -34,6 +34,8 @@ export interface HelloMessage {
   protocol: ProtocolVersion
   /** App or daemon release version. */
   version: string
+  /** Runtime only: the build it runs (version plus a source hash). */
+  build?: string
   client?: ClientHello
   caller?: CallerHello
   /** Runtime only: the connection was refused (bad token, device mismatch). */

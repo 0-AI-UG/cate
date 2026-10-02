@@ -54,13 +54,9 @@ interface CreateMenuItem {
   icon: string
 }
 
-/** Types offered for a new linked panel: the split menu's, minus those that
- *  cannot sit on a canvas. */
+/** Types offered for a new linked panel: those people create on a canvas. */
 function createMenuItems(): CreateMenuItem[] {
-  return relationUiHost().definitions()
-    .filter((d) => d.canLiveOnCanvas && d.splitMenuOrder !== undefined)
-    .sort((a, b) => (a.splitMenuOrder ?? 0) - (b.splitMenuOrder ?? 0))
-    .map((d) => ({ type: d.type, label: d.label, icon: d.icon }))
+  return relationUiHost().creatable().map((d) => ({ type: d.type, label: d.label, icon: d.icon }))
 }
 
 function portsForRect(rect: DOMRect): Port[] {

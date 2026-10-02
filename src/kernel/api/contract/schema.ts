@@ -28,6 +28,9 @@ export interface CliArgMeta {
   help?: string
   /** Placeholder shown in usage (`<name>`). */
   valueName?: string
+  /** The default as help shows it, when the stored default reads differently
+   *  on the command line (seconds stored, milliseconds typed). */
+  defaultText?: string
   /** Not settable from the command line. */
   hidden?: boolean
   /** Converts the raw word before validation. Throw to report a usage error. */
@@ -103,6 +106,11 @@ export class ArgSchema<Out, In = Out> {
 
   help(text: string): this {
     return this.withCli({ help: text })
+  }
+
+  /** CLI: the default as help shows it. */
+  helpDefault(text: string): this {
+    return this.withCli({ defaultText: text })
   }
 
   /** CLI: not settable from the command line. */

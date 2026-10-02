@@ -2,7 +2,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionHandle } from '@client/connections'
+import { createClientIdentity, installClientIdentity, type SessionHandle } from '@client/connections'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
 import { installMockClientUi } from '@kernel/ui/testing'
@@ -13,7 +13,18 @@ import { runChatSurfaceOp } from '../parts/view/surfaces'
 import ChatView from './ChatView'
 
 const pickPanelPlace = vi.hoisted(() => vi.fn())
-vi.mock('@client/host', async (importOriginal) => ({ ...(await importOriginal<typeof import('@client/host')>()), pickPanelPlace }))
+const openUrlInPanel = vi.hoisted(() => vi.fn((_workspaceId: string, _url: string, _near?: string) => true))
+vi.mock('@client/host', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@client/host')>()
+  const { isLoopbackUrl } = await import('@runtime/tunnel/contract')
+  const { clientUi } = await import('@kernel/ui')
+  // The real routing, with the panel creation observed.
+  const openUrlFor = (workspaceId: string, url: string, near?: string) => {
+    if (isLoopbackUrl(url)) openUrlInPanel(workspaceId, url, near)
+    else clientUi().openExternal(url)
+  }
+  return { ...actual, pickPanelPlace, openUrlFor }
+})
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -51,6 +62,7 @@ beforeEach(() => {
   setCookie = vi.fn(async () => {})
   ui = installMockClientUi({ showContextMenu: vi.fn(async () => null) })
   pickPanelPlace.mockReset().mockResolvedValue({ kind: 'new', at })
+  openUrlInPanel.mockClear()
   stops = [
     installT3WebviewHost({ partition: (id) => `persist:ws-${id}`, setCookie }),
     setRuntimeResolver(() => runtime),
@@ -208,6 +220,14 @@ describe('ChatView bridge', () => {
     expect(guest.executeJavaScript).toHaveBeenLastCalledWith('window.__cateHost?.reply("r1", true, null)')
   })
 
+  it('opens loopback links in a browser panel next to the chat, never in the system browser', async () => {
+    await render(ready())
+    const { guest, token } = await readyGuest()
+    await fire(guest, 'console-message', { message: request(token, 'r1', 'external', { url: 'http://localhost:3000/' }) })
+    expect(openUrlInPanel).toHaveBeenCalledWith('ws', 'http://localhost:3000/', 'chat')
+    expect(ui.openExternal).not.toHaveBeenCalled()
+  })
+
   it('ignores requests without the binding token', async () => {
     await render(ready())
     const { guest } = await readyGuest()
@@ -241,5 +261,35 @@ describe('ChatView bridge', () => {
     expect(guest.executeJavaScript).toHaveBeenLastCalledWith('window.__cateHost?.reply("r5", null, "File is outside this project.")')
     await act(async () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Dismiss')!.click())
     expect(host.querySelector('[role="alert"]')).toBeNull()
+  })
+})
+
+describe('ChatView file drops', () => {
+  const dropOsImage = async () => {
+    const overlay = host.querySelector<HTMLElement>('[data-filedrop="chat"]')!
+    const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' })
+    const dataTransfer = { types: ['Files'], files: [file], getData: () => '' }
+    await act(async () => { overlay.dispatchEvent(Object.assign(new Event('drop', { bubbles: true, cancelable: true }), { dataTransfer })) })
+  }
+  const dropScripts = (guest: ReturnType<typeof mockGuest>) =>
+    guest.executeJavaScript.mock.calls.map(([script]) => String(script)).filter((script) => script.includes('new DataTransfer()'))
+
+  afterEach(() => installClientIdentity(null))
+
+  it('takes OS image files on a client with fileDrop', async () => {
+    installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: ['fileDrop'] }))
+    await render(ready())
+    const { guest } = await readyGuest()
+    await dropOsImage()
+    await vi.waitFor(() => expect(dropScripts(guest)).toHaveLength(1))
+  })
+
+  it('ignores OS files on a client without fileDrop', async () => {
+    installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: [] }))
+    await render(ready())
+    const { guest } = await readyGuest()
+    await dropOsImage()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(dropScripts(guest)).toEqual([])
   })
 })

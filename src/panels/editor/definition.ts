@@ -2,6 +2,7 @@
 // its shared buffer or as a preview. Pure: the daemon imports it.
 
 import { channel } from '@kernel/rpc/contract'
+import { storedShortcut } from '@kernel/ui/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import { pathDisplayName } from '@workspace/files/contract'
@@ -23,10 +24,9 @@ export const editorDefinition = definePanel({
   minimumSize: { width: 300, height: 250 },
   dropSize: { width: 540, height: 420 },
   canLiveOnCanvas: true,
-  worktreeBinding: false,
   navigable: true,
   opens: ['file'],
-  splitMenuOrder: 0,
+  creation: { order: 0, title: 'New Files Panel', key: storedShortcut('n', { command: true }), toolbar: true, inWorktree: true },
   requires: [],
   defaultTitle: 'Untitled',
   channel: channel<EditorSnapshot, Partial<EditorSnapshot>, EditorOp>(),

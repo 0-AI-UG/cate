@@ -1,12 +1,12 @@
 // The canvas actions: zoom, navigation, panning, arrangement, tools, the
-// minimap and the canvas toolbar's menus, on the canvas the window's focus
-// is on (activeCanvasId). Also the raw canvas keys that are not shortcut
+// minimap and the canvas toolbar's menus, on the canvas a request names (its
+// context menu) or else the one the window's focus is on (activeCanvasId). Also the raw canvas keys that are not shortcut
 // actions: Space for the hand tool, Cmd+A, Escape, Delete and Enter.
 
-import type { ShortcutAction } from '@kernel/ui/contract'
+import { defineActions, storedShortcut } from '@kernel/ui/contract'
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import { clientStateFor, documentStoreFor } from '@client/document'
-import { closePanel, focusPanel } from '@client/host'
+import { closePanel, focusPanel, registerActions, type ActionBinding, type ActionContext } from '@client/host'
 import {
   activeCanvasId,
   activeNodePanelId,
@@ -19,10 +19,42 @@ import {
 } from '@client/layout/canvas'
 import { canvasPanelOf } from '@workspace/document/contract'
 import { useUIStore } from '../state/uiStore'
-import { bindActions, type ActionBinding } from './registry'
 import { registerKeyHandler, type KeyContext } from './useShortcuts'
 
 const ZOOM_STEP = 0.1
+const key = storedShortcut
+const arrows = { yieldToOverlay: true } as const
+const pans = { yieldToOverlay: true, yieldToText: true, windowOnly: true } as const
+
+export const CANVAS_ACTIONS = defineActions({
+  zoomIn: { title: 'Zoom In', key: key('=', { command: true }), aliasKeys: [key('=', { command: true, shift: true }), key('+', { command: true })], menu: { bar: 'view', group: 'zoom', order: 0 } },
+  zoomOut: { title: 'Zoom Out', key: key('-', { command: true }), menu: { bar: 'view', group: 'zoom', order: 1 } },
+  zoomReset: { title: 'Reset Zoom', key: key('0', { command: true }), welcome: true, menu: { bar: 'view', group: 'zoom', order: 2 } },
+  zoomToFit: { title: 'Zoom to Fit', key: key('1', { command: true }), menu: { bar: 'view', group: 'zoom', order: 3 }, contextMenus: ['canvas'] },
+  zoomToSelection: { title: 'Zoom to Selection', key: key('2', { command: true }) },
+  focusNext: { title: 'Next Panel', key: key('\t', { control: true }), menu: { bar: 'go', group: 'panels', order: 0 } },
+  focusPrevious: { title: 'Previous Panel', key: key('\t', { shift: true, control: true }), menu: { bar: 'go', group: 'panels', order: 1 } },
+  autoLayout: { title: 'Auto Layout Canvas', key: key('l', { command: true, shift: true }), contextMenus: ['canvas'] },
+  tidyGrid: { title: 'Tidy Selected Panels into Grid', key: key('g', { command: true }), keys: { yieldToText: true, yieldToKeyboardOwner: true, yieldToOverlay: true, windowOnly: true } },
+  navigateUp: { title: 'Navigate to Panel Above', key: key('↑', { command: true }), palette: false, keys: { ...arrows, fromGuests: true } },
+  navigateDown: { title: 'Navigate to Panel Below', key: key('↓', { command: true }), palette: false, keys: { ...arrows, fromGuests: true } },
+  navigateLeft: { title: 'Navigate to Panel Left', key: key('←', { command: true }), palette: false, keys: { ...arrows, fromGuests: true } },
+  navigateRight: { title: 'Navigate to Panel Right', key: key('→', { command: true }), palette: false, keys: { ...arrows, fromGuests: true } },
+  panUp: { title: 'Pan Canvas Up', key: key('↑', { shift: true }), palette: false, keys: pans },
+  panDown: { title: 'Pan Canvas Down', key: key('↓', { shift: true }), palette: false, keys: pans },
+  panLeft: { title: 'Pan Canvas Left', key: key('←', { shift: true }), palette: false, keys: pans },
+  panRight: { title: 'Pan Canvas Right', key: key('→', { shift: true }), palette: false, keys: pans },
+  deleteNode: { title: 'Delete Focused Panel', key: key('Backspace', { command: true }), keys: { yieldToText: true, yieldToKeyboardOwner: true, yieldToList: true, windowOnly: true } },
+  toggleMinimap: { title: 'Toggle Minimap', key: key('m', { command: true, shift: true }), menu: { bar: 'view', group: 'panes' } },
+  // Control+Space is safe while typing; Shift+Space used to swallow ordinary spaces.
+  toggleTool: { title: 'Toggle Select / Hand Tool', key: key(' ', { control: true }), keys: { noRepeat: true } },
+  selectTool: { title: 'Select Tool', key: key('1', { command: true, option: true }) },
+  handTool: { title: 'Hand Tool', key: key('2', { command: true, option: true }) },
+  openWorktreeMenu: { title: 'Parallel Worktrees', key: key('w', { command: true, option: true }), keys: { noRepeat: true } },
+  openConversationMenu: { title: 'T3 Code Conversations', key: key('a', { command: true, option: true }), keys: { noRepeat: true } },
+  toggleCanvasToolbar: { title: 'Expand / Collapse Canvas Toolbar', key: key('b', { command: true, option: true }), keys: { noRepeat: true } },
+  toggleKeepAwake: { title: 'Toggle Keep Awake', key: key('k', { command: true, option: true }), keys: { noRepeat: true } },
+})
 
 interface ActiveCanvas {
   workspaceId: string
@@ -30,9 +62,12 @@ interface ActiveCanvas {
   store: CanvasViewStore
 }
 
-function activeCanvas(workspaceId: string | null = useUIStore.getState().selectedWorkspaceId): ActiveCanvas | null {
+/** The canvas a request names (its context menu), else the window's active
+ *  one. */
+function activeCanvas(context: ActionContext = { workspaceId: useUIStore.getState().selectedWorkspaceId }): ActiveCanvas | null {
+  const { workspaceId } = context
   if (!workspaceId) return null
-  const canvasId = activeCanvasId(workspaceId)
+  const canvasId = context.canvasId ?? activeCanvasId(workspaceId)
   const store = canvasId ? canvasViewFor(workspaceId, canvasId) : null
   return canvasId && store ? { workspaceId, canvasId, store } : null
 }
@@ -43,14 +78,13 @@ const canvasPanelIdOf = (canvas: ActiveCanvas): string | null => {
 }
 
 /** An action on the active canvas's view store; hidden without a canvas. */
-function onCanvas(run: (canvas: ActiveCanvas) => void | Promise<void>, inPalette = true): ActionBinding {
+function onCanvas(run: (canvas: ActiveCanvas) => void | Promise<void>): ActionBinding {
   return {
-    run: ({ workspaceId }) => {
-      const canvas = activeCanvas(workspaceId)
+    run: (context) => {
+      const canvas = activeCanvas(context)
       if (canvas) return run(canvas)
     },
-    enabled: () => !!activeCanvas(),
-    inPalette,
+    enabled: (context) => !!activeCanvas(context),
   }
 }
 
@@ -67,10 +101,10 @@ const navigate = (dir: 'up' | 'down' | 'left' | 'right'): ActionBinding => onCan
   const panelId = canvasPanelIdOf(canvas)
   if (panelId) focusPanel(canvas.workspaceId, panelId)
   canvas.store.getState().navigateSelect(dir)
-}, false)
+})
 
 const pan = (dir: 'up' | 'down' | 'left' | 'right'): ActionBinding =>
-  onCanvas((canvas) => canvas.store.getState().panViewport(dir), false)
+  onCanvas((canvas) => canvas.store.getState().panViewport(dir))
 
 /** The shown panel of the canvas's focused node. */
 function focusedNodePanel(canvas: ActiveCanvas): string | null {
@@ -90,7 +124,7 @@ async function toggleKeepAwake(workspaceId: string | null): Promise<void> {
 
 const setTool = (tool: 'select' | 'hand') => () => useCanvasUi.getState().setActiveTool(tool)
 
-export function canvasActionBindings(): Partial<Record<ShortcutAction, ActionBinding>> {
+export function canvasActionBindings(): { [K in keyof typeof CANVAS_ACTIONS]: ActionBinding } {
   return {
     zoomIn: onCanvas(({ store }) => { const s = store.getState(); s.animateZoomTo(s.zoomLevel + ZOOM_STEP) }),
     zoomOut: onCanvas(({ store }) => { const s = store.getState(); s.animateZoomTo(s.zoomLevel - ZOOM_STEP) }),
@@ -122,7 +156,7 @@ export function canvasActionBindings(): Partial<Record<ShortcutAction, ActionBin
     toggleCanvasToolbar: toolbar('toggleCanvasToolbar'),
     toggleKeepAwake: {
       run: ({ workspaceId }) => toggleKeepAwake(workspaceId),
-      enabled: () => { const ws = useUIStore.getState().selectedWorkspaceId; return !!ws && !!tryRuntimeFor(ws)?.power },
+      enabled: ({ workspaceId }) => !!workspaceId && !!tryRuntimeFor(workspaceId)?.power,
     },
   }
 }
@@ -169,7 +203,7 @@ export function handleCanvasKey(e: KeyboardEvent, ctx: KeyContext): boolean {
 }
 
 export function registerCanvasActions(): () => void {
-  const offActions = bindActions(canvasActionBindings())
+  const offActions = registerActions(CANVAS_ACTIONS, canvasActionBindings())
   const offKeys = registerKeyHandler(handleCanvasKey)
   return () => { offActions(); offKeys() }
 }

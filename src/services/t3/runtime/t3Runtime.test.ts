@@ -256,6 +256,25 @@ describe('T3 conversations and thread shells', () => {
     expect(new Set(t3.cookies)).toEqual(new Set(['t3session=abc']))
   })
 
+  it('refuses a second turn on a thread until the first has had time to show as running', async () => {
+    vi.useFakeTimers()
+    try {
+      const dispatch = vi.spyOn(runtime as unknown as { dispatchTurn(): Promise<void> }, 'dispatchTurn').mockResolvedValue(undefined)
+      const turn = { threadId: 'th', text: 'hi' }
+      await runtime.startTurn(turn)
+      await expect(runtime.startTurn(turn)).rejects.toThrow('agent-busy')
+      await runtime.startTurn({ ...turn, threadId: 'other' })
+      await vi.advanceTimersByTimeAsync(3_000)
+      await runtime.startTurn(turn)
+      expect(dispatch).toHaveBeenCalledTimes(3)
+      dispatch.mockRejectedValueOnce(new Error('HTTP 500'))
+      await expect(runtime.startTurn({ ...turn, threadId: 'failing' })).rejects.toThrow('HTTP 500')
+      await runtime.startTurn({ ...turn, threadId: 'failing' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('streams thread shells and is busy while a turn runs', async () => {
     t3.threads = [{ id: 't1', title: 'One', latestTurn: { state: 'running' } }]
     const events: T3ShellEvent[] = []

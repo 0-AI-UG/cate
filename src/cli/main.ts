@@ -3,8 +3,8 @@
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CLI_VERSION, EXIT_ENV, runCli, type CliDeps } from './engine'
-import { serveCommand } from './serve'
+import { CLI_VERSION, EXIT_ENV, runCli, type CliDeps, type HelpStyle } from './engine'
+import { serveCommand, SERVE_SUMMARY } from './serve'
 import { connectSocket } from './socketPort'
 import { CATE_API } from '@panels/api'
 
@@ -19,7 +19,19 @@ const stderr = (text: string) => { process.stderr.write(`${text}\n`) }
 
 /** Commands that are not API methods. */
 const EXTRA_COMMANDS: CliDeps['extraCommands'] = {
-  serve: serveCommand({ cwd: process.cwd(), execPath: process.execPath, platform: process.platform, stdout, stderr }),
+  serve: {
+    summary: SERVE_SUMMARY,
+    run: serveCommand({ cwd: process.cwd(), execPath: process.execPath, platform: process.platform, stdout, stderr }),
+  },
+}
+
+/** Help fits the terminal (60 to 100 columns) and is bold only on a TTY without NO_COLOR. */
+function helpStyle(): HelpStyle {
+  const columns = process.stdout.columns ?? 80
+  return {
+    width: Math.min(Math.max(columns, 60), 100),
+    color: process.stdout.isTTY === true && !process.env.NO_COLOR,
+  }
 }
 
 /** Runs the CLI. */
@@ -32,6 +44,7 @@ export function main(argv: string[], extraCommands: CliDeps['extraCommands'] = E
     connect: (socketPath, token) => connectSocket(socketPath, token, CLI_VERSION),
     writeImage,
     extraCommands,
+    style: helpStyle(),
   })
 }
 

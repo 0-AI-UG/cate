@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, GitPullRequest, ChartNoAxesCombined, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple, type LucideIcon } from 'lucide-react'
 import { Tooltip, useShortcutLabel } from '@kernel/ui'
 import { useClientSetting } from '@kernel/settings/ui'
-import type { ShortcutAction } from '@kernel/ui/contract'
+import type { ActionId } from '@kernel/ui/contract'
 import { CateLogo } from '../chrome/CateLogo'
 import { UpdateButton } from '../chrome/UpdateButton'
 import { useWindowControlsInset } from '../chrome/chrome'
@@ -27,7 +27,7 @@ export interface SidebarProps {
 export interface SidebarOverlayButton {
   view: string
   label: string
-  action?: ShortcutAction
+  action?: ActionId
   icon: LucideIcon
 }
 

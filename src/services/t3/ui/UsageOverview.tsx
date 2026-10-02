@@ -121,7 +121,7 @@ function UsagePage({ workspaceId }: { workspaceId: string }) {
         </div>
       ) : (
         <>
-          {!ready && <LoadingState label="Loading usage…" className="pointer-events-none absolute inset-0 text-sm" />}
+          {!ready && <LoadingState label="Loading usage" className="pointer-events-none absolute inset-0 text-sm" />}
           {state.phase === 'ready' && (
             <webview ref={guestRef as any} src={state.target.url} partition={state.partition}
               data-usage-webview="" data-usage-ready={ready ? 'true' : 'false'}

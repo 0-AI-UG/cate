@@ -1,38 +1,32 @@
-// Shortcuts page (kernel/ui's shortcut slice): record, disable or reset each
-// action's binding. Edits go through the installed shortcut registry, which
+// Shortcuts page (kernel/ui's shortcut slice): record, disable or reset the
+// binding of every declared action. Edits go through the installed shortcut registry, which
 // stores only the overrides in `customShortcuts`.
 
 import { useCallback, useEffect, useState } from 'react'
 import { RotateCcw as ArrowCounterClockwise, X } from 'lucide-react'
-import { Tooltip, matchesQuery, shortcutRegistry, useResolvedShortcuts, useSettingsSearch } from '@kernel/ui'
-import {
-  SHORTCUT_ACTIONS,
-  SHORTCUT_DISPLAY_NAMES,
-  displayString,
-  normaliseShortcutKey,
-  type StoredShortcut,
-} from '@kernel/ui/contract'
+import { Tooltip, matchesQuery, shortcutRegistry, useDeclaredActions, useResolvedShortcuts, useSettingsSearch } from '@kernel/ui'
+import { displayString, normaliseShortcutKey, storedShortcut, type StoredShortcut } from '@kernel/ui/contract'
 
 export function ShortcutsPage(): JSX.Element {
   const shortcuts = useResolvedShortcuts()
   const { query, sectionMatched } = useSettingsSearch()
-  const visibleActions = SHORTCUT_ACTIONS.filter(
-    (action) => sectionMatched || matchesQuery(SHORTCUT_DISPLAY_NAMES[action], query),
+  const visibleActions = useDeclaredActions().filter(
+    ({ spec }) => !spec.keyHint && (sectionMatched || matchesQuery(spec.title, query)),
   )
   return (
     <div className="flex flex-col gap-0">
-      {visibleActions.map((action) => (
+      {visibleActions.map(({ id: action, spec }) => (
         <div key={action} data-srow className="flex items-center justify-between py-2 border-b border-subtle">
-          <span className="text-sm text-primary">{SHORTCUT_DISPLAY_NAMES[action]}</span>
+          <span className="text-sm text-primary">{spec.title}</span>
           <div className="flex items-center gap-2">
             <ShortcutRecorder
-              currentShortcut={shortcuts[action]}
+              currentShortcut={shortcuts[action] ?? storedShortcut('')}
               onRecord={(shortcut) => shortcutRegistry().set(action, shortcut)}
             />
             <Tooltip label="Disable shortcut">
               <button
                 onClick={() => shortcutRegistry().clear(action)}
-                disabled={!shortcuts[action].key}
+                disabled={!shortcuts[action]?.key}
                 className="w-6 h-6 flex items-center justify-center rounded-[10px] hover:bg-hover text-muted hover:text-secondary disabled:opacity-30 disabled:hover:bg-transparent"
                 aria-label="Disable shortcut"
               >

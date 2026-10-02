@@ -13,7 +13,6 @@ export const surfaceDefinition = definePanel({
   minimumSize: { width: 220, height: 200 },
   dropSize: { width: 540, height: 500 },
   canLiveOnCanvas: true,
-  worktreeBinding: false,
   navigable: false,
   placeholder: true,
   requires: [],

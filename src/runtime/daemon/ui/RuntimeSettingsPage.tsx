@@ -5,7 +5,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { useRuntime } from '@kernel/rpc/ui'
-import { SecondaryButton, Select, SettingRow } from '@kernel/ui'
+import { SecondaryButton, Select, SettingRow, Spinner } from '@kernel/ui'
 import { setWorkspaceSetting, useWorkspaceSettings } from '@kernel/settings/ui'
 import type { RuntimeLifetime, RuntimeNetwork, RuntimeStatus } from '../contract'
 import { RunningWorkConfirm } from './RunningWork'
@@ -14,7 +14,7 @@ export interface RuntimeSettingsPageProps {
   workspaceId: string | null
   /** Panel titles for the running-work list. */
   panelTitle?: (panelId: string) => string | undefined
-  /** Extra rows the client adds (its update action when incompatible). */
+  /** Extra rows the client adds (its connection notice). */
   children?: ReactNode
 }
 
@@ -70,9 +70,9 @@ export function RuntimeSettingsPage({ workspaceId, panelTitle, children }: Runti
       <SettingRow
         label="Runtime version"
         keywords="version update pid"
-        description={info ? `${info.version} (protocol ${info.protocol.join('.')}), ${info.clients.length} connected client${info.clients.length === 1 ? '' : 's'}` : 'Asking the runtime…'}
+        description={info ? `${info.version} (protocol ${info.protocol.join('.')}), ${info.clients.length} connected client${info.clients.length === 1 ? '' : 's'}` : undefined}
       >
-        <span />
+        {info ? <span /> : <Spinner size={14} label="Asking the runtime" className="text-muted" />}
       </SettingRow>
       {children}
       <SettingRow

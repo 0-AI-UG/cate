@@ -16,6 +16,9 @@ export type EditorSnapshot = {
   /** The checkout the file is in (its worktree, else the workspace root):
    *  the explorer root and where Save As starts. */
   checkout: string | null
+  /** An untitled editor's working file (connected editors): it has no real
+   *  destination yet, so Save is a Save As into `checkout`. */
+  draft: boolean
   /** Set for files shown as a preview (image, PDF, DOCX); null for text. */
   documentType: DocumentType | null
   dirty: boolean

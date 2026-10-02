@@ -1,7 +1,8 @@
 // Runs `attach` once for each open connection and its detach when the
 // connection goes (closed, or the registry disposed).
 
-import type { WorkspaceConnection, WorkspaceConnections } from '@client/connections'
+import type { WorkspaceConnection } from './connection'
+import type { WorkspaceConnections } from './registry'
 
 export function eachConnection(
   connections: Pick<WorkspaceConnections, 'getSnapshot' | 'subscribe'>,

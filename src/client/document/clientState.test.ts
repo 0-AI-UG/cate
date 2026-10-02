@@ -31,6 +31,18 @@ describe('client state', () => {
     expect(state.getSnapshot().intents).toHaveLength(1)
     expect(seen).toHaveBeenCalledTimes(8)
   })
+
+  it('keeps named view state per panel and skips unchanged values', () => {
+    const state = createClientStateStore()
+    const seen = vi.fn()
+    state.subscribe(seen)
+    state.setPanelView('p1', 'tab', 't2')
+    state.setPanelView('p1', 'tab', 't2')
+    state.setPanelView('p1', 'collapsed', ['a'])
+    state.setPanelView('p2', 'tab', 't9')
+    expect(state.getSnapshot().panelViews).toEqual({ p1: { tab: 't2', collapsed: ['a'] }, p2: { tab: 't9' } })
+    expect(seen).toHaveBeenCalledTimes(3)
+  })
 })
 
 describe('presence reporting', () => {

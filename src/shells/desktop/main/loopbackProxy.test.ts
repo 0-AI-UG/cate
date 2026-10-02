@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import WebSocket, { WebSocketServer } from 'ws'
 import { socketDuplex } from '@runtime/transports/node'
-import { createProxyCredentials, isLoopbackHost, parseAuthority, startLoopbackProxy, type LoopbackProxy } from './loopbackProxy'
+import { createProxyCredentials, parseAuthority, startLoopbackProxy, type LoopbackProxy } from './loopbackProxy'
 
 // The target stands in for a dev server on the runtime's machine. The fake
 // dialLoopback reaches it with a plain TCP connect, as a local connection does.
@@ -90,9 +90,7 @@ describe('loopback web proxy', () => {
     expect(directDials).toEqual([])
   })
 
-  it('treats *.localhost, 127.0.0.1 and [::1] as loopback', () => {
-    for (const host of ['localhost', 'app.localhost', '127.0.0.1', '[::1]', '::1', 'LOCALHOST.']) expect(isLoopbackHost(host)).toBe(true)
-    for (const host of ['example.com', '127.0.0.2', 'localhost.example.com', '10.0.0.1']) expect(isLoopbackHost(host)).toBe(false)
+  it('parses CONNECT authorities', () => {
     expect(parseAuthority('[::1]:3000')).toEqual({ host: '::1', port: 3000 })
     expect(parseAuthority('localhost:0')).toBeNull()
   })

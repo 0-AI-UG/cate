@@ -11,6 +11,7 @@ import net from 'node:net'
 import { Duplex } from 'node:stream'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
+import { isLoopbackHostname } from '@runtime/tunnel/contract'
 
 const log = createLogger('loopback-proxy')
 
@@ -34,12 +35,6 @@ export interface LoopbackProxy {
 
 export function createProxyCredentials(): ProxyCredentials {
   return { username: 'cate', password: crypto.randomBytes(24).toString('base64url') }
-}
-
-/** `localhost`, `*.localhost`, `127.0.0.1` and `[::1]`, any port. */
-export function isLoopbackHost(host: string): boolean {
-  const name = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
-  return name === 'localhost' || name.endsWith('.localhost') || name === '127.0.0.1' || name === '::1'
 }
 
 /** `host:port` of a CONNECT target (IPv6 in brackets). */
@@ -174,7 +169,7 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
 
   /** A raw byte stream to host:port, wherever it lives. */
   const openRaw = async (host: string, port: number): Promise<Duplex> => {
-    if (isLoopbackHost(host)) return byteDuplexStream(await options.dialLoopback(port))
+    if (isLoopbackHostname(host)) return byteDuplexStream(await options.dialLoopback(port))
     const up = upstream()
     return up ? upstreamConnect(up, host, port, dialDirect) : dialDirect(host, port)
   }
@@ -220,7 +215,7 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
       upstreamRes.pipe(res)
     }
     try {
-      const loopback = isLoopbackHost(url.hostname)
+      const loopback = isLoopbackHostname(url.hostname)
       const up = loopback ? null : upstream()
       let request: http.ClientRequest
       if (up) {

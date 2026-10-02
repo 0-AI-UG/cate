@@ -2,6 +2,7 @@
 // line-editing chords, CSI u for modified special keys, and where a clicked
 // URL opens.
 
+import { isLoopbackUrl } from '@runtime/tunnel/contract'
 import type { TerminalLinkOpenTarget } from '@services/terminal/contract'
 import { resolveTerminalKeySequence } from '../keymap'
 import { resolveTerminalLinkTarget } from '../links'
@@ -79,7 +80,9 @@ export interface LinkOpenPorts {
 }
 
 /** Cmd/Ctrl+click opens a URL where the setting says (asking the first time
- *  and remembering the answer); adding Shift always opens it outside. */
+ *  and remembering the answer); adding Shift always opens it outside. A
+ *  loopback URL names the runtime's machine (architecture D10), so it always
+ *  opens inside Cate, with or without Shift, and is never asked about. */
 export function createTerminalLinkHandler(ports: LinkOpenPorts, isMac: boolean): (event: MouseEvent, url: string) => void {
   const openPrimary = async (url: string) => {
     let target = ports.target()
@@ -93,7 +96,12 @@ export function createTerminalLinkHandler(ports: LinkOpenPorts, isMac: boolean):
     else ports.openExternal(url)
   }
   return (event, url) => {
-    switch (resolveTerminalLinkTarget(event, isMac)) {
+    const target = resolveTerminalLinkTarget(event, isMac)
+    if (target !== 'ignore' && isLoopbackUrl(url)) {
+      ports.openInCate(url)
+      return
+    }
+    switch (target) {
       case 'panel':
         void openPrimary(url).catch(() => {})
         break

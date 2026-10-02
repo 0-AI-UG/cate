@@ -1,6 +1,6 @@
 // The contexts workspace UI reads from the client (it may not import the
 // client layer): the repository host for the shown workspace and the file
-// views host.
+// views host. Opening a review is the review panel's: the shell installs it.
 
 import { useMemo, type ReactNode } from 'react'
 import { isRpcError } from '@kernel/rpc/contract'
@@ -9,35 +9,41 @@ import { clientUi } from '@kernel/ui'
 import { isIconName } from '@kernel/ui/contract'
 import { documentStoreFor } from '@client/document'
 import { useDocument } from '@client/document/ui'
-import { confirmClose, createPanel, focusedPanelId, panelDefinition, panelDefinitions } from '@client/host'
+import { confirmClose, createPanel, creatableDefinitions, focusedPanelId, panelDefinition } from '@client/host'
 import { activeCanvasId, createPanelOnCanvas, useCanvasUi } from '@client/layout/canvas'
 import { useWorkspaceRoot } from '@client/connections/ui'
 import { panelsBoundTo } from '@workspace/repository/contract'
-import { RepositoryUiProvider, type RepositoryUiHost, type WorktreeLaunchType } from '@workspace/repository/ui'
+import { RepositoryUiProvider, type RepositoryUiHost, type ReviewRequest, type WorktreeLaunchType } from '@workspace/repository/ui'
 import { FileViewsContext } from '@workspace/files/ui'
 import type { PanelRecord, WorktreeMeta } from '@workspace/document/contract'
-import { openReviewPanel } from '@panels/review/view'
 import { fileViewsHost } from './fileActions'
+
+/** Opens (or reuses) a review panel for a comparison. */
+export type ReviewOpener = (request: ReviewRequest & { workspaceId: string }) => Promise<unknown>
+let reviewOpener: ReviewOpener | null = null
+
+export function installReviewOpener(opener: ReviewOpener | null): void {
+  reviewOpener = opener
+}
 
 const sameList = <T,>(a: readonly T[], b: readonly T[]) => a.length === b.length && a.every((x, i) => x === b[i])
 const selectWorktrees = (doc: { worktrees: Record<string, WorktreeMeta> }) => Object.values(doc.worktrees)
 const selectPanels = (doc: { panels: Record<string, PanelRecord> }) => Object.values(doc.panels)
 
-/** Types bound to a worktree, in split-menu order. */
+/** Types created in a checkout, in creation order. */
 function worktreeLaunchTypes(): WorktreeLaunchType[] {
-  return panelDefinitions()
-    .filter((d) => d.worktreeBinding)
-    .sort((a, b) => (a.splitMenuOrder ?? Infinity) - (b.splitMenuOrder ?? Infinity))
-    .map((d) => ({ type: d.type, label: d.label, icon: isIconName(d.icon) ? d.icon : 'grid' }))
+  return creatableDefinitions()
+    .filter((d) => d.creation?.inWorktree)
+    .map((d) => ({ type: d.type, label: d.label, icon: isIconName(d.icon) ? d.icon : 'grid', switches: !!d.switchesWorktree }))
 }
 
-/** A type with `worktreeBinding` switches through its session (which may
+/** A type that `switchesWorktree` switches through its session (which may
  *  refuse with `dirty` while something runs); others just rebind the record. */
 async function switchPanelWorktree(workspaceId: string, panelId: string, worktreeId: string): Promise<void> {
   const record = documentStoreFor(workspaceId)?.getSnapshot().panels[panelId]
   const runtime = tryRuntimeFor(workspaceId)
   if (!record || !runtime) return
-  if (!panelDefinition(record.type)?.worktreeBinding) {
+  if (!panelDefinition(record.type)?.switchesWorktree) {
     documentStoreFor(workspaceId)?.propose({ kind: 'updatePanel', id: panelId, patch: { worktreeId } })
     return
   }
@@ -82,10 +88,10 @@ export function RepositoryHost({ workspaceId, children }: { workspaceId: string;
       if (!doc) return false
       return confirmClose(workspaceId, panelsBoundTo(doc, worktreeId).map((p) => p.id))
     },
-    bindsWorktree: (panel) => panelDefinition(panel.type)?.worktreeBinding === true,
+    switchesWorktree: (panel) => panelDefinition(panel.type)?.switchesWorktree === true,
     switchPanelWorktree: (panelId, worktreeId) => switchPanelWorktree(workspaceId, panelId, worktreeId),
     async openReview(request) {
-      await openReviewPanel({ workspaceId, ...request })
+      await reviewOpener?.({ workspaceId, ...request })
     },
     focusWorktree: (worktreeId) => useCanvasUi.getState().setFocusedWorktree(worktreeId),
     setHoveredWorktree: (worktreeId) => useCanvasUi.getState().setHoveredWorktree(worktreeId),
@@ -96,4 +102,11 @@ export function RepositoryHost({ workspaceId, children }: { workspaceId: string;
 
 export function FileViewsHost({ children }: { children: ReactNode }) {
   return <FileViewsContext.Provider value={fileViewsHost}>{children}</FileViewsContext.Provider>
+}
+
+/** The workspace contexts around a window's content: the repository host
+ *  (with a shown workspace) and the file views host. */
+export function WorkspaceScope({ workspaceId, children }: { workspaceId: string | null; children: ReactNode }) {
+  const content = <FileViewsHost>{children}</FileViewsHost>
+  return workspaceId ? <RepositoryHost key={workspaceId} workspaceId={workspaceId}>{content}</RepositoryHost> : content
 }

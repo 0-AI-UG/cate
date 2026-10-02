@@ -10,7 +10,9 @@ export interface T3HostActions<Target> {
   openDiff(filePath: string | undefined, turnId: string | undefined, isActive: () => boolean): Promise<boolean>
   openFile(filePath: string, target: Target): unknown
   openChat(threadId: string, title: string | undefined, target: Target): unknown
-  openExternal(url: string): void
+  /** Opens a web link from the page (`external`): a loopback URL in a Cate
+   *  browser panel of the workspace, any other in the system browser. */
+  openLink(url: string): void
   relationContext?(provider: string | null): string | null | Promise<string | null>
 }
 
@@ -32,7 +34,7 @@ export function createT3HostDispatcher<Target>(threadId: string | undefined, act
       if (action === 'external' && typeof payload.url === 'string') {
         const url = new URL(payload.url)
         if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Unsupported link.')
-        actions.openExternal(url.href)
+        actions.openLink(url.href)
         return true
       }
       if (action === 'relation-context') {

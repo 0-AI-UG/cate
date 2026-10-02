@@ -62,9 +62,11 @@ test('Windows cleanup addresses only the spawned PID and its tree', async () => 
   }
 })
 
-test.skipIf(process.platform === 'win32').each(['timeout', 'complete', 'assertion'])('TUI %s cleanup kills its owned grandchild', async (reason) => {
+test.skipIf(process.platform === 'win32').each(
+  ['timeout', 'complete', 'assertion'].flatMap((reason) => [false, true].map((detached) => ({ reason, detached }))),
+)('TUI $reason cleanup kills its owned grandchild (detached=$detached)', async ({ reason, detached }) => {
   let grandchild: number | undefined
-  const script = `const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:['ignore','inherit','inherit']}); console.log('GRANDCHILD:'+child.pid); setInterval(()=>{},1000)`
+  const script = `const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:${detached},stdio:['ignore','inherit','inherit']}); console.log('GRANDCHILD:'+child.pid); setInterval(()=>{},1000)`
   try {
     const run = runLiveTui(process.execPath, ['-e', script], {
       cwd: process.cwd(), env: {}, timeout: 1500,
@@ -90,6 +92,14 @@ test.skipIf(process.platform === 'win32')('TUI fails promptly when the CLI exits
   await expect(runLiveTui(process.execPath, ['-e', 'process.exit(0)'], {
     cwd: process.cwd(), env: {}, complete: () => false, timeout: 5000,
   })).rejects.toThrow('exited before the expected completion event')
+}, 10000)
+
+test.skipIf(process.platform === 'win32')('TUI renders cursor-addressed answer fragments before checking completion', async () => {
+  const script = `process.stdout.write('418\\x1b[2;1Htimestamp\\x1b[1;4H73');setInterval(()=>{},1000)`
+  await runLiveTui(process.execPath, ['-e', script], {
+    cwd: process.cwd(), env: {}, renderScreen: true, timeout: 3000,
+    complete: (screen) => screen.includes('41873') && screen.includes('timestamp'),
+  })
 }, 10000)
 
 test.skipIf(process.platform === 'win32')('TUI rejects oversized output', async () => {

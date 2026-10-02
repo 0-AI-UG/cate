@@ -3,14 +3,16 @@
 // panels are client/host's; this module plugs workspace selection and window
 // raising into its reveal hooks.
 
-import { clientHas } from '@client/connections'
+import { clientHas, type WorkspaceConnection } from '@client/connections'
 import { documentStoreFor } from '@client/document'
-import { installRevealHooks, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
+import { createPanel, installRevealHooks, panelTypeOpening, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
 import { MAIN_WINDOW, type PanelId } from '@workspace/document/contract'
+import { isLoopbackUrl } from '@runtime/tunnel/contract'
 import { clientUi, errorMessage } from '@kernel/ui'
 import { clientApp } from './app'
 import { desktopPort } from './desktop'
 import { useUIStore } from './state/uiStore'
+import { openFile } from './workspace/fileActions'
 
 /** A workspace whose trust question the person declined stays closed. */
 export type TrustCheck = (workspaceId: string, label: string) => Promise<boolean>
@@ -19,6 +21,23 @@ let trustCheck: TrustCheck | null = null
 /** Installed by the shell with `trustStore.ensureTrusted` from workspace/lifecycle. */
 export function installTrustCheck(check: TrustCheck | null): void {
   trustCheck = check
+}
+
+/** Resolves true once the connection is connected, false when it closes.
+ *  Trust is asked only of a runtime that answers: an incompatible one
+ *  answers nothing but its update, so the mismatch is resolved first. */
+function whenConnected(connection: WorkspaceConnection | undefined): Promise<boolean> {
+  if (!connection) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const check = () => {
+      const { kind } = connection.state
+      if (kind !== 'connected' && kind !== 'closed') return
+      off()
+      resolve(kind === 'connected')
+    }
+    const off = connection.subscribe(check)
+    check()
+  })
 }
 
 /** Opens (when needed) and shows a workspace in this window. */
@@ -36,6 +55,7 @@ export async function selectWorkspace(workspaceId: string): Promise<boolean> {
   useUIStore.getState().setSelectedWorkspace(workspaceId)
   if (!wasOpen && trustCheck) {
     const label = entry.kind === 'local' ? entry.root : entry.name
+    if (!(await whenConnected(clientApp().connections.get(workspaceId)))) return false
     if (!(await trustCheck(workspaceId, label))) {
       closeWorkspace(workspaceId)
       return false
@@ -120,19 +140,24 @@ export function canDetachPanels(): boolean {
   return clientHas('windows')
 }
 
-/** Opens a workspace file in a panel (reusing one that shows it). Installed
- *  by the module that owns file routing; without it the palette lists no files. */
-export type FileOpener = (workspaceId: string, path: string) => Promise<void> | void
-let fileOpener: FileOpener | null = null
-
-export function installFileOpener(opener: FileOpener | null): void {
-  fileOpener = opener
-}
-
+/** Files open where a panel type opens them; without one the palette lists
+ *  no files. */
 export function canOpenFiles(): boolean {
-  return fileOpener !== null
+  return panelTypeOpening('file') !== null
 }
 
+/** Opens a workspace file in a panel (reusing one that shows it). */
 export async function openWorkspaceFile(workspaceId: string, path: string): Promise<void> {
-  await fileOpener?.(workspaceId, path)
+  openFile(workspaceId, path)
+}
+
+/** A `cate://` or web URL opened with the app: in a panel of the shown
+ *  workspace that opens URLs, else outside the app. */
+export function openUrl(url: string): void {
+  const workspaceId = useUIStore.getState().selectedWorkspaceId
+  const type = panelTypeOpening('url')
+  if (/^https?:/i.test(url) && workspaceId && type && createPanel(workspaceId, type, { url })) return
+  // A loopback URL means a runtime's machine: without a workspace to open it
+  // in, it goes nowhere rather than to this device's browser (D10).
+  if (!isLoopbackUrl(url)) clientUi().openExternal(url)
 }

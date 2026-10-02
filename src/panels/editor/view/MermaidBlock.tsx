@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { getActiveTheme, subscribeTheme } from '@kernel/ui'
+import { Spinner, getActiveTheme, subscribeTheme } from '@kernel/ui'
 
 // Mermaid configuration is global. Serialize initialization and rendering so
 // multiple blocks (or a theme change) cannot change an in-flight render's theme.
@@ -46,8 +46,9 @@ export function MermaidBlock({ source, fallback }: { source: string; fallback: R
         </>
       ) : (
         <>
-          <p role="status" className="text-xs text-muted">
-            {current?.error ? 'Unable to render Mermaid diagram. Check the source below.' : 'Rendering diagram…'}
+          <p role="status" className="flex items-center gap-1.5 text-xs text-muted">
+            {!current?.error && <Spinner size={12} />}
+            {current?.error ? 'Unable to render Mermaid diagram. Check the source below.' : 'Rendering diagram'}
           </p>
           {fallback}
         </>

@@ -55,43 +55,6 @@ const observe = {
   profile: opt(bool),
 }
 
-export const BROWSER_CODE_HELP = `Cate browser control runs JavaScript in a persistent, isolated session. No Node.js, filesystem, network, DOM evaluation, or browser engine access is exposed. Use only cua and output helpers.
-
-Start with: var tab = await cua.getTab({panelId: "..."});
-Or, in an existing browser panel: var tab = await cua.createBrowserTab("https://example.com");
-Create a browser panel first with cate panel create browser [url] when needed.
-await cua.listTabs(); // discover panelId and tabId
-Tab bindings pin panel and tab; they never follow a user's tab switch.
-
-Observation methods return structured observations and emit their state/images automatically:
-await tab.getAXState({disableDiffing: false});
-await tab.getScreenshot();
-await tab.getAXStateAndScreenshot();
-await tab.getAttribute(42, "src"); // string or null; target must be in the latest AX observation
-Options: emit:false suppresses output. disableDiffing:true requests a full tree.
-Each cell has a 16-million-character retained-observation budget, including emit:false; split long screenshot loops across cells.
-Observations contain kind, observationId, documentId, url, title and viewport. AX observations (kind:"ax") contain elements with numeric id, role, name, value and states. getScreenshot returns kind:"image": only viewport pixels/identity, empty state/elements, no AX scan. It does not refresh numeric IDs; the SDK retains the last AX observation separately and uses the latest visual observation for coordinates. getAXStateAndScreenshot refreshes both together. CLI output saves image artifacts; open them with an image-viewing tool.
-Optional profile:true reports observation phase timings, encoded image bytes and estimated retained-cache bytes. The cache retains up to 32 compact observations within an 8 MiB estimated allocation budget; an evicted baseline requires observing again.
-
-Act using IDs from the latest AX observation:
-await tab.click(42, {mouseButton:"left", clickCount:1});
-await tab.setValue(17, "replacement text");
-await tab.typeText("insert at current selection");
-await tab.pressKey("Return");
-await tab.selectText(17, "text", {selectionType:"text"}); // cursor_before or cursor_after also supported
-await tab.scroll(42, "down", 1); // or [x,y], direction up/down/left/right; pages default 1
-await tab.drag([100,100], [300,200]);
-await tab.setChecked(42, true);
-await tab.selectOption(42, ["value"]);
-await tab.upload(42, "/authorized/file");
-await tab.waitFor({text:"Saved"}); // or url glob, element:number + state: visible/hidden/checked/unchecked/enabled/disabled
-
-Actions return and emit fresh state; input dispatch is not proof of business completion. Use waitFor or inspect resulting state to verify. Numeric IDs survive observations within a document; navigation requires fresh IDs. Coordinates use the latest screenshot/observation and are rejected after viewport changes. Do not guess IDs or coordinates.
-
-Lifecycle: tab.goto(url), tab.back(), tab.forward(), tab.reload(), tab.close(), tab.setViewport({width:1280,height:800}), tab.resize({width:800,height:600}), tab.download(url?), tab.downloads().
-tab.download() downloads the current tab URL; pass an absolute or page-relative URL to download a known asset without navigating. Use tab.downloads() to inspect progress and completion.
-Use var for reusable bindings; top-level await is supported. Batch only deterministic actions, then inspect state before deciding again. Each code call has a deadline; await every action. A timed-out session resets. Use nodeRepl.write(value) for additional text. CLI prints labeled image artifact paths; --json includes base64 data for structured consumers.`
-
 export const browserApi = defineCateApi(
   'browser',
   {
@@ -100,12 +63,11 @@ export const browserApi = defineCateApi(
       handler: 'service',
       summary: 'Run JavaScript in your persistent browser code session',
       args: {
-        code: str.nonEmpty().pos('JavaScript'),
+        code: str.nonEmpty().pos('JavaScript').help('JavaScript to run, quoted as one argument'),
         panelId: opt(panel('browser')).flag('panel', 'id').help('Default browser panel for the cell'),
       },
       timeoutMs: BROWSER_CODE_TIMEOUT_MS,
       format: 'browserContent',
-      cli: { help: BROWSER_CODE_HELP },
     },
     reset: {
       access: 'control',
@@ -178,8 +140,5 @@ export const browserApi = defineCateApi(
     resize: page('control', { width: num.min(1), height: num.min(1) }),
     download: page('control', { url: opt(str) }),
   },
-  {
-    area: 'browser',
-    help: 'Browser code runs in a persistent isolated session against Cate\'s live tabs.',
-  },
+  { area: 'browser', summary: 'Control browser panels with JavaScript' },
 )

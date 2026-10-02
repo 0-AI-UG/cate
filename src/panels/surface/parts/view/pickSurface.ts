@@ -5,22 +5,21 @@
 import type { DocumentStore } from '@client/document'
 import type { ClientFeature } from '@kernel/rpc/contract'
 import { isCanvasDock, placementOf, type PanelRecord, type PanelType, type WorkspaceDocument } from '@workspace/document/contract'
-import { freshRecord, panelDefinition, splitMenuDefinitions } from '../../../definitions'
+import { freshRecord, panelDefinition, creatableDefinitions } from '../../../definitions'
 import type { AnyPanelDefinition } from '../../../framework/contract'
 
 /** The types a surface can become where it sits, for a client with `has`. */
 export function surfaceChoices(doc: WorkspaceDocument, surfaceId: string, has: (feature: ClientFeature) => boolean): AnyPanelDefinition[] {
   const placement = placementOf(doc, surfaceId)
   const onCanvas = !!placement && isCanvasDock(placement.dock)
-  return splitMenuDefinitions().filter((definition) =>
-    definition.type !== 'surface'
-    && (!onCanvas || definition.canLiveOnCanvas)
+  return creatableDefinitions().filter((definition) =>
+    (!onCanvas || definition.canLiveOnCanvas)
     && definition.requires.every((feature) => has(feature)))
 }
 
 export function pickSurface(store: DocumentStore, surface: PanelRecord, type: PanelType): boolean {
   const definition = panelDefinition(type)
-  if (!definition || type === 'surface') return false
+  if (!definition?.creation) return false
   const doc = store.getSnapshot()
   if (!doc.panels[surface.id]) return false
   const placement = placementOf(doc, surface.id)

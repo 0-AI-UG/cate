@@ -238,7 +238,7 @@ function FeedbackDialogWith({ port }: { port: DesktopPort }): JSX.Element | null
                     className="inline-flex items-center justify-center gap-1.5 text-[12px] font-semibold px-5 py-1.5 rounded-full bg-blue-500 text-white hover:bg-blue-400 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
                   >
                     {sending && <Spinner size={13} />}
-                    {sending ? 'Sending…' : 'Send'}
+                    {sending ? 'Sending' : 'Send'}
                   </button>
                 )}
               </div>

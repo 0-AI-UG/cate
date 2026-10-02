@@ -3,6 +3,7 @@
 // has no session state. Pure.
 
 import { channel } from '@kernel/rpc/contract'
+import { storedShortcut } from '@kernel/ui/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 
@@ -15,9 +16,8 @@ export const canvasDefinition = definePanel({
   dropSize: { width: 640, height: 480 },
   // A canvas lives only in docks; the reducer refuses canvas-on-canvas too.
   canLiveOnCanvas: false,
-  worktreeBinding: false,
   navigable: false,
-  splitMenuOrder: 3,
+  creation: { order: 3, key: storedShortcut('c', { command: true, shift: true }) },
   requires: ['canvas'],
   defaultTitle: 'Canvas',
   channel: channel<JsonObject, Partial<JsonObject>, never>(),

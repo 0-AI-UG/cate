@@ -30,11 +30,26 @@ describe('path scope', () => {
     await fs.rm(base, { recursive: true, force: true })
   })
 
-  test('accepts the root, its worktree checkouts dir and the data dir', async () => {
+  test('accepts the root, its worktree checkouts dir and the readable data folders', async () => {
     expect(scope.resolve(path.join(rootDir, 'a.txt'))).toBe(path.join(rootDir, 'a.txt'))
     expect(scope.resolve(rootDir)).toBe(rootDir)
     await expect(scope.strict(path.join(worktreesDir(rootDir), 'feat', 'x.ts'))).resolves.toContain('feat')
-    await expect(scope.forCreation(path.join(dataDir, 'buffers', 'a.bin'))).resolves.toBe(path.join(dataDir, 'buffers', 'a.bin'))
+    await expect(scope.strict(path.join(dataDir, 'screenshots', 'a.png'))).resolves.toBe(path.join(dataDir, 'screenshots', 'a.png'))
+    await expect(scope.strict(path.join(dataDir, 'browser', 'downloads', 'r.pdf'))).resolves.toContain('r.pdf')
+    // The rest of the workspace data is outside the scope.
+    for (const name of ['secrets.json', 'pairings.json', 'browser/history.json', '']) {
+      await expect(scope.strict(path.join(dataDir, name))).rejects.toThrow(/outside the workspace/)
+    }
+  })
+
+  test('the workspace data is never written, created, removed or moved', async () => {
+    await fs.writeFile(path.join(dataDir, 'secrets.json'), '{}')
+    for (const p of [path.join(dataDir, 'secrets.json'), path.join(dataDir, 'screenshots', 'a.png'), dataDir]) {
+      const created = await scope.forCreation(p).catch((e: unknown) => e)
+      const entry = await scope.entry(p).catch((e: unknown) => e)
+      expect(isRpcError(created, 'rejected')).toBe(true)
+      expect(isRpcError(entry, 'rejected')).toBe(true)
+    }
   })
 
   test('refuses a path outside the workspace with rejected', async () => {
@@ -66,6 +81,33 @@ describe('path scope', () => {
       await expect(scope.strict(probe)).resolves.toBe(probe)
       scope.removeCheckout(checkout)
       expect(() => scope.resolve(probe)).toThrow(/outside the workspace/)
+    })
+  })
+
+  describe('destinations', () => {
+    test('files are brought only into a checkout, the innermost one named', async () => {
+      const nested = path.join(worktreesDir(rootDir), 'feat')
+      const outside = path.join(outsideDir, 'wt')
+      await fs.mkdir(nested, { recursive: true })
+      await fs.mkdir(outside)
+      scope.addCheckout(nested)
+      scope.addCheckout(outside)
+      await expect(scope.destination(path.join(rootDir, 'src'))).resolves.toBe(path.join(rootDir, 'src'))
+      expect(scope.checkoutOf(path.join(rootDir, 'src'))).toBe(rootDir)
+      expect(scope.checkoutOf(path.join(nested, 'src'))).toBe(nested)
+      expect(scope.checkoutOf(outside)).toBe(outside)
+      await expect(scope.destination(outside)).resolves.toBe(outside)
+    })
+
+    test('the workspace data, a grant and anywhere outside never receive files', async () => {
+      await scope.grant(outsideDir)
+      for (const dir of [dataDir, path.join(dataDir, 'screenshots'), outsideDir, base]) {
+        const error = await scope.destination(dir).catch((e: unknown) => e)
+        expect(isRpcError(error, 'rejected')).toBe(true)
+        expect(scope.checkoutOf(dir)).toBeNull()
+      }
+      // Still readable: only bringing files in is refused.
+      await expect(scope.strict(outsideDir)).resolves.toBe(outsideDir)
     })
   })
 

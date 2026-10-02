@@ -114,7 +114,7 @@ export function AgentPickerPopover({
           : 'Choose a terminal CLI to address the open review notes.'}
       </p>
       {choices === null ? (
-        <LoadingState label="Checking terminal CLIs…" size={14} className="py-4 text-[10px]" />
+        <LoadingState label="Checking terminal CLIs" size={14} className="py-4 text-[10px]" />
       ) : (
         <div role="radiogroup" aria-label="Terminal CLI" className="grid grid-cols-3 gap-1">
           {choices.map(({ agentId, ready }) => {

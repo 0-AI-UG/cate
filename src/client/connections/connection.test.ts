@@ -50,10 +50,11 @@ interface FakeRuntime {
   dropAll(): void
 }
 
-function fakeRuntime(opts: { protocol?: ProtocolVersion; refuse?: boolean } = {}): FakeRuntime {
+function fakeRuntime(opts: { protocol?: ProtocolVersion; build?: string; refuse?: boolean } = {}): FakeRuntime {
   const rt: FakeRuntime = {
     server: new RpcServer({
       version: '9.0.0',
+      build: opts.build,
       protocol: opts.protocol,
       acceptHello: (hello) => {
         if (hello.client) rt.helloClientIds.push(hello.client.clientId)
@@ -104,8 +105,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backoff = { initialMs: 10, maxMs: 1000, factor: 2 }) {
-  registry = new WorkspaceConnections({ identity, transports: transportsFor(rt, extra), version: '9.0.0', backoff })
+function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backoff = { initialMs: 10, maxMs: 1000, factor: 2 }, build?: string) {
+  registry = new WorkspaceConnections({ identity, transports: transportsFor(rt, extra), version: '9.0.0', build, backoff })
   return registry.open('ws1', { kind: 'local', root: '/w' })
 }
 
@@ -167,6 +168,20 @@ describe('WorkspaceConnection', () => {
     const rt = fakeRuntime({ protocol: [99, 0] })
     const connection = openLocal(rt)
     await vi.waitFor(() => expect(connection.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.0' }))
+  })
+
+  it('reports a runtime of another build as incompatible and fails its calls', async () => {
+    const stale = openLocal(fakeRuntime({ build: '9.0.0+old' }), {}, undefined, '9.0.0+new')
+    await vi.waitFor(() => expect(stale.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.0', build: { runtime: '9.0.0+old', app: '9.0.0+new' } }))
+    await expect(stale.runtime.workspace.info()).rejects.toThrow('The runtime runs build 9.0.0+old, this app is build 9.0.0+new')
+    registry!.close('ws1')
+
+    const unbuilt = openLocal(fakeRuntime(), {}, undefined, '9.0.0+new')
+    await vi.waitFor(() => expect(unbuilt.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.0', build: { runtime: null, app: '9.0.0+new' } }))
+    registry!.close('ws1')
+
+    const same = openLocal(fakeRuntime({ build: '9.0.0+new' }), {}, undefined, '9.0.0+new')
+    await expect(same.runtime.workspace.info()).resolves.toEqual({ runtimeId: 'r1', root: '/w', name: 'w' })
   })
 
   it('stops retrying when the runtime refuses the client', async () => {

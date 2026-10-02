@@ -135,7 +135,7 @@ const editor: PanelRuntime = (services) => ({
 })
 
 const review: PanelRuntime = (services) => {
-  const { git, monitors } = services.repository
+  const { git, monitors, write } = services.repository
   const { agents, missions } = services
   return reviewPanel({
     root: services.root,
@@ -143,10 +143,11 @@ const review: PanelRuntime = (services) => {
       compare: (params) => git.compare(params),
       fileDiff: (params) => git.fileDiff(params),
       fileContent: (params) => git.fileContent(params),
-      stage: (params) => git.stage(params),
-      unstage: (params) => git.unstage(params),
-      discardFile: (params) => git.discardFile(params),
-      commit: (params) => git.commit(params),
+      // Writes run in the repository's queue, like every other git write.
+      stage: (params) => write(() => git.stage(params)),
+      unstage: (params) => write(() => git.unstage(params)),
+      discardFile: (params) => write(() => git.discardFile(params)),
+      commit: (params) => write(() => git.commit(params)),
       log: (params) => git.log(params),
       branchList: (params) => git.branchList(params),
       readStatus: (params) => git.readStatus(params),
@@ -188,6 +189,7 @@ const browser: PanelRuntime = (services) => ({
   ...browserPanel({
     browserData: services.browserData,
     settings: { get: (key) => services.settings.get(key as never) },
+    files: { serveUrl: (p) => services.files.serveUrl(p) },
   }),
   attach: ({ host, router, surfaces, rpc }) => {
     const cells = new BrowserCodeCells()

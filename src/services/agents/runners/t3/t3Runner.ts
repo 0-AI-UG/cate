@@ -168,8 +168,8 @@ export function createT3Runner(agents: AgentsRuntime, t3: RunnerT3Service, bindi
       try {
         await t3.startTurn({ checkout: bound.checkout, threadId: bound.threadId, text: context ? `${prompt}\n\n${context}` : prompt })
         return { ok: true }
-      } catch {
-        return { ok: false, error: 'agent-panel-unavailable' }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error && err.message === 'agent-busy' ? 'agent-busy' : 'agent-panel-unavailable' }
       }
     },
     async conversation(panelId) {

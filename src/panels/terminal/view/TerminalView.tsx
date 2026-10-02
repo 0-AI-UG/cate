@@ -12,11 +12,12 @@ import { clientHas } from '@client/connections'
 import { clientStateFor } from '@client/document'
 import { useClientState, useDocument } from '@client/document/ui'
 import { useClaimPanelCorner, type PanelViewProps } from '@client/host'
+import { dropFilesInto, isFileDrag } from '@client/layout/drag'
 import { isCanvasDock, placementOf } from '@workspace/document/contract'
 import { fsClient } from '@workspace/files/client'
 import type { TerminalOp, TerminalSnapshot } from '../contract/types'
 import { shouldAdjustTerminalCoords } from '../parts/coordAdjust'
-import { droppedRefs, formatTerminalPaste, isFileDrag } from '../parts/drop'
+import { formatTerminalPaste } from '../parts/drop'
 import { snapRenderScale } from '../parts/renderScale'
 import { createTerminalLinkHandler } from '../parts/view/input'
 import { holdFocus } from '../parts/view/holdFocus'
@@ -310,20 +311,25 @@ export default function TerminalView({
   // ---- Drop ---------------------------------------------------------------------
 
   const onDragOver = useCallback((event: React.DragEvent) => {
-    if (!isFileDrag([...event.dataTransfer.types])) return
+    if (!isFileDrag(event.nativeEvent)) return
     // Keep the app's background handler from refusing the drop.
     event.stopPropagation()
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
   }, [])
 
+  // Pastes the dropped files' paths; files of another workspace or the OS
+  // are copied into this checkout's `.cate/tmp` first.
   const onDrop = useCallback((event: React.DragEvent) => {
-    const refs = droppedRefs(event.dataTransfer)
-    if (refs.length === 0) return
+    const dropped = dropFilesInto({ workspaceId, near: snapshotRef.current?.cwd ?? undefined }, event.dataTransfer)
+    if (!dropped) return
     event.preventDefault()
     event.stopPropagation()
-    xtermRef.current?.terminal.paste(formatTerminalPaste(refs))
-  }, [])
+    void dropped.then(({ paths, location }) => {
+      if (paths.length === 0) return
+      xtermRef.current?.terminal.paste(formatTerminalPaste(paths.map((path) => (location?.path === path ? { path, line: location.line } : { path }))))
+    }, (error) => clientUi().showError(`Could not drop the files: ${error instanceof Error ? error.message : String(error)}`))
+  }, [workspaceId])
 
   // ---- Failure ------------------------------------------------------------------
 
@@ -394,7 +400,7 @@ export default function TerminalView({
                 className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--focus-blue,#3b82f6)] text-white text-[12px] font-medium hover:brightness-110 disabled:opacity-60"
               >
                 {retrying && <Spinner size={13} />}
-                {retrying ? 'Restarting…' : 'Retry'}
+                {retrying ? 'Restarting' : 'Retry'}
               </button>
             </div>
           </div>

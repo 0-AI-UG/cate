@@ -8,10 +8,10 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { MAIN_WINDOW, PANEL_TYPES } from '@workspace/document/contract'
-import { freshRecord } from '@panels/definitions'
+import { PANEL_DEFINITIONS, freshRecord } from '@panels/definitions'
 import { documentStoreFor } from '@client/document'
-import { PanelHost, hasAction } from '@client/host'
-import { SHORTCUT_ACTIONS } from '@kernel/ui/contract'
+import { PanelHost } from '@client/host'
+import { declaredActions } from '@kernel/ui'
 import { selectWorkspace } from '@client/ui'
 import { localWorkspaceId } from '@client/workspaces'
 import { App } from './App'
@@ -25,6 +25,7 @@ import { workspaceCapability } from '@workspace/lifecycle/contract/capability'
 import { documentCapability, presenceCapability } from '@workspace/document/contract/capability'
 import { createDocumentService, createPresence, documentCapabilityImpl, presenceCapabilityImpl, type DocumentService } from '@workspace/document/runtime'
 import { createFakeDesktop } from './testing'
+import { buildMenuModel } from './menuModel'
 
 // Native editors and terminals do not run in jsdom.
 vi.mock('monaco-editor', () => {
@@ -156,8 +157,20 @@ describe('desktop renderer', () => {
     expect(client.window).toEqual({ kind: 'main' })
   })
 
-  it('binds every shortcut action (keys, menus and the palette run them)', () => {
-    expect(SHORTCUT_ACTIONS.filter((action) => !hasAction(action))).toEqual([])
+  it('declares a new-panel action per creatable type and builds the menu bar from the actions', () => {
+    const declared = declaredActions().map((a) => a.id)
+    for (const definition of PANEL_DEFINITIONS.filter((d) => d.creation)) expect(declared).toContain(`panel.new.${definition.type}`)
+    const file = buildMenuModel().bar.find((menu) => menu.id === 'file')!
+    const actions = file.items.flatMap((item) => (item.type === 'action' ? [item.action] : []))
+    // A client with no features cannot show the webview panels.
+    expect(actions).toEqual(expect.arrayContaining(['panel.new.terminal', 'panel.new.editor', 'openFolder', 'closePanel']))
+    expect(actions).not.toContain('panel.new.browser')
+  })
+
+  it('gives no two declared actions the same default key', () => {
+    const keyed = declaredActions().filter(({ spec }) => spec.key?.key)
+    const bindings = keyed.map(({ spec }) => JSON.stringify([spec.key!.key, spec.key!.command, spec.key!.shift, spec.key!.option, spec.key!.control]))
+    expect(keyed.filter((_, i) => bindings.indexOf(bindings[i]) !== i).map((a) => a.id)).toEqual([])
   })
 
   it('connects a client with no features to the runtime and receives the document', async () => {

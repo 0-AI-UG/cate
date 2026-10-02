@@ -3,41 +3,37 @@
 // closing unsaved edits, where to Save As).
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
-import { ChevronDown, ChevronRight, Copy, ExternalLink, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import { ChevronRight, Copy, Folders, Github, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import { runtimeFor } from '@kernel/rpc/client'
 import { isRpcError } from '@kernel/rpc/contract'
 import {
   LoadingState,
-  Modal,
-  NodePopover,
   PanelCenteredState,
-  btn,
   clientUi,
   errorMessage,
   getActiveTheme,
-  inputCls,
   shortcutRegistry,
   subscribeTheme,
-  useNodePopover,
   useShortcutLabel,
 } from '@kernel/ui'
-import type { FileApp } from '@kernel/ui/contract'
-import { clientHas } from '@client/connections'
 import { clientStateFor } from '@client/document'
 import { useClientState } from '@client/document/ui'
-import { onPanelShortcut, type PanelViewProps } from '@client/host'
+import { onPanelShortcut, panelTypeOpening, type PanelViewProps } from '@client/host'
 import { pathDisplayName, toRelativePath } from '@workspace/files/contract'
 import { recordRecentFile } from '@workspace/files/client'
 import { useFileViewsHost } from '@workspace/files/ui'
-import { isEditorDraft } from '@workspace/relations/contract'
+// Brings the `vcs` capability into the runtime proxy's type.
+import type {} from '@workspace/repository/contract'
 import type { EditorOp, EditorSnapshot } from '../contract'
 import { useBufferText, useTextContent } from './bufferText'
 import { CodeEditor, revealLine } from './CodeEditor'
 import { ConflictBanner, type ConflictAction } from './ConflictBanner'
-import { confirmUnsaved, save, saveAs, type PathPrompt } from './editorActions'
+import { confirmUnsaved, save, saveAs } from './editorActions'
 import { useEditorFont } from './editorSettings'
 import { MarkdownPreview } from './MarkdownPreview'
 import { MergeView } from './MergeView'
 import { NavigationSidebar } from './NavigationSidebar'
+import { isHtmlFile, openFileInBrowser } from './openInBrowser'
 import type { monaco } from './monacoSetup'
 
 const FilePreview = lazy(() => import('./FilePreview'))
@@ -49,54 +45,24 @@ const appliedReveals = new Map<string, number>()
 /** Sidebar presentation per panel on this client. */
 const sidebars = new Map<string, { visible: boolean; view: 'explorer' | 'search' }>()
 
-function usePathPrompt(): [PathPrompt, JSX.Element | null] {
-  const [request, setRequest] = useState<{ title: string; value: string; resolve: (value: string | null) => void } | null>(null)
-  const prompt = useCallback<PathPrompt>(({ title, initial }) => new Promise((resolve) => setRequest({ title, value: initial, resolve })), [])
-  const finish = (value: string | null) => {
-    request?.resolve(value)
-    setRequest(null)
-  }
-  const element = request && (
-    <Modal title={request.title} onClose={() => finish(null)} width={420}>
-      <form className="flex flex-col gap-3 p-4" onSubmit={(event) => { event.preventDefault(); finish(request.value) }}>
-        <input
-          autoFocus
-          aria-label="File path"
-          className={inputCls}
-          value={request.value}
-          onChange={(event) => setRequest({ ...request, value: event.target.value })}
-        />
-        <div className="flex justify-end gap-2">
-          <button type="button" className={btn.secondary} onClick={() => finish(null)}>Cancel</button>
-          <button type="submit" className={btn.primary}>Save</button>
-        </div>
-      </form>
-    </Modal>
-  )
-  return [prompt, element]
-}
-
 export default function EditorView({ workspaceId, panelId, record, send: sendOp, snapshot, visible, focused }: PanelViewProps<EditorSnapshot, EditorOp>) {
   const send = sendOp as (op: EditorOp) => Promise<unknown>
   const font = useEditorFont()
   const shortcutLabel = useShortcutLabel()
   const fileViews = useFileViewsHost()
-  const [prompt, promptElement] = usePathPrompt()
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const pendingReveal = useRef<Reveal | null>(null)
   const [sidebar, setSidebarState] = useState(() => sidebars.get(panelId) ?? { visible: true, view: 'explorer' as const })
   const [editorCollapsed, setEditorCollapsed] = useState(false)
   const [focusSearch, setFocusSearch] = useState(0)
-  const [openApps, setOpenApps] = useState<FileApp[] | null>(null)
   const [background, setBackground] = useState(() => getActiveTheme().editor.colors?.['editor.background'] ?? 'var(--surface-1)')
-  const openButtonRef = useRef<HTMLButtonElement>(null)
-  const openMenu = useNodePopover(openButtonRef, (rect) => ({ left: Math.max(8, Math.min(rect.right - 224, window.innerWidth - 232)), gap: 6, height: 150 }))
 
   const filePath = snapshot?.filePath ?? null
+  const isDraft = snapshot?.draft
   // The palette lists files this client opened, newest first.
   useEffect(() => {
-    if (filePath && !isEditorDraft(filePath)) recordRecentFile(workspaceId, filePath)
-  }, [workspaceId, filePath])
+    if (filePath && isDraft === false) recordRecentFile(workspaceId, filePath)
+  }, [workspaceId, filePath, isDraft])
   const textual = !!filePath && !snapshot?.documentType
   const bufferPath = textual && !snapshot?.loading && !snapshot?.error ? filePath : null
   const { text, error: attachError } = useBufferText(workspaceId, bufferPath)
@@ -163,9 +129,9 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
 
   const title = record.title
   const doSave = useCallback(() => {
-    if (!filePath) return
-    void run(() => save(send, filePath, title, prompt), 'Could not save the file.')
-  }, [filePath, title, prompt, run, send])
+    if (!snapshot?.filePath) return
+    void run(() => save(send, workspaceId, snapshot, title), 'Could not save the file.')
+  }, [workspaceId, snapshot, title, run, send])
 
   const openFiles = useCallback(async (paths: string[], openMode?: 'dock' | 'canvas', reveal?: Reveal) => {
     if (openMode === 'canvas') {
@@ -177,7 +143,7 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
     if (!next || !snapshot) return
     let discard = false
     if (next !== filePath) {
-      const answer = await confirmUnsaved(send, snapshot, title, prompt)
+      const answer = await confirmUnsaved(send, workspaceId, snapshot, title)
       if (!answer) return
       discard = answer === 'discard'
     }
@@ -187,7 +153,7 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
       ...(reveal ? { line: reveal.line, ...(reveal.column ? { column: reveal.column } : {}) } : {}),
       ...(discard ? { discard: true } : {}),
     }), 'Could not switch files.')
-  }, [fileViews, workspaceId, snapshot, filePath, send, title, prompt, run])
+  }, [fileViews, workspaceId, snapshot, filePath, send, title, run])
 
   const onConflict = (action: ConflictAction) => {
     const resolve = (resolution: 'reload' | 'keep' | 'merge') => send({ kind: 'resolveConflict', resolution })
@@ -201,20 +167,19 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
         case 'dismiss': return resolve('keep')
         case 'saveToRestore':
           await resolve('keep')
-          if (filePath) await save(send, filePath, title, prompt)
+          if (snapshot?.filePath) await save(send, workspaceId, snapshot, title)
       }
     }, 'Could not resolve the conflict.')
   }
 
-  const osFiles = clientHas('osFiles')
   const ui = clientUi()
-  const openOutside = (target: 'default' | 'folder' | 'github' | { appId: string }) => {
+  const openOnGitHub = () => {
     if (!filePath) return
     void run(async () => {
-      if (target === 'folder') await ui.revealFile?.(filePath, workspaceId)
-      else if (target === 'github') await ui.openFileOnGitHub?.(filePath, workspaceId)
-      else await ui.openFile?.(filePath, workspaceId, target === 'default' ? undefined : target.appId)
-    }, 'Could not open this file.')
+      const page = await runtimeFor(workspaceId).vcs.fileWebUrl({ path: filePath })
+      if (page) ui.openExternal(page.url)
+      else ui.showError('This file is not in a git repository with a GitHub origin.')
+    }, 'Could not open this file on GitHub.')
   }
   const copyPath = () => {
     if (filePath && ui.writeClipboard) void run(() => ui.writeClipboard!(filePath), 'Could not copy the path.')
@@ -246,11 +211,10 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
 
   // ---- render --------------------------------------------------------------
 
-  if (!snapshot) return <LoadingState label="Loading file…" className="w-full h-full bg-surface-1 text-sm" />
+  if (!snapshot) return <LoadingState label="Loading file" className="w-full h-full bg-surface-1 text-sm" />
 
-  const { documentType, conflict, loading, dirty, connectedDraft, checkout } = snapshot
+  const { documentType, conflict, loading, dirty, connectedDraft, checkout, draft } = snapshot
   const error = snapshot.error ?? attachError
-  const draft = isEditorDraft(filePath ?? undefined)
   const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
   const root = checkout ?? ''
   const sidebarVisible = sidebar.visible && !!root
@@ -273,8 +237,7 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
             {filePath && <><ChevronRight size={12} className="shrink-0 text-muted" /><span className="truncate text-primary">{draft ? title : toRelativePath(filePath, root)}</span></>}
             {ui.writeClipboard && <Copy size={12} className="shrink-0" />}
           </button>
-          {connectedDraft && <span className="shrink-0 text-muted" title="Edits autosave to the file shared with your agent.">Shared with agent</span>}
-          {draft && <button className="shrink-0 rounded px-2 py-1 text-primary hover:bg-hover" onClick={() => filePath && void run(() => saveAs(send, filePath, title, prompt), 'Could not save the file.')}>Save As…</button>}
+          {draft && <button className="shrink-0 rounded px-2 py-1 text-primary hover:bg-hover" onClick={() => void run(() => saveAs(send, workspaceId, snapshot, title), 'Could not save the file.')}>Save As…</button>}
           {connectedDraft?.syncError && <button className="shrink-0 text-error" title={connectedDraft.syncError} onClick={doSave}>Save failed · Retry</button>}
           {isMarkdown && !draft && (
             <button
@@ -283,22 +246,14 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
               title={mode === 'preview' ? 'Show source' : 'Preview markdown'}
             >{mode === 'preview' ? 'Source' : 'Preview'}</button>
           )}
-          {osFiles && (
-            <>
-              <button onClick={() => openOutside('github')} disabled={!filePath} className="shrink-0 p-1.5 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40" title="Open on GitHub"><Github size={14} /></button>
-              <button
-                ref={openButtonRef}
-                onClick={() => {
-                  if (!openMenu.open && openApps === null) void ui.fileApps?.().then(setOpenApps, () => setOpenApps([]))
-                  openMenu.setOpen(!openMenu.open)
-                }}
-                aria-expanded={openMenu.open}
-                disabled={!filePath}
-                className="shrink-0 flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-strong text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
-                title="Open in another app"
-              ><ExternalLink size={13} /><span>Open</span><ChevronDown size={11} /></button>
-            </>
+          {filePath && !draft && isHtmlFile(filePath) && panelTypeOpening('url') && (
+            <button
+              onClick={() => void run(() => openFileInBrowser(workspaceId, filePath, panelId), 'Could not open the file in a browser.')}
+              className="shrink-0 px-2 py-1 rounded-md text-xs font-medium transition-colors bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary"
+              title="Open in browser"
+            >Open in browser</button>
           )}
+          <button onClick={openOnGitHub} disabled={!filePath || draft} className="shrink-0 p-1.5 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40" title="Open on GitHub" aria-label="Open on GitHub"><Github size={14} /></button>
           <button
             onClick={() => {
               if (editorVisible) setSidebar({ ...sidebar, visible: true })
@@ -330,38 +285,17 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
           ><Search size={15} /></button>
         </div>
       </div>
-      {openMenu.open && (
-        <NodePopover popoverRef={openMenu.popoverRef} pos={openMenu.pos} portalTarget={openMenu.portalTarget} width={224} bodyClassName="p-1.5 !rounded-2xl !border-subtle !bg-surface-3 !shadow-lg">
-          <div onKeyDown={(event) => event.stopPropagation()} className="flex flex-col gap-0.5">
-            {(openApps ?? []).map((app) => (
-              <button key={app.id} onClick={() => { openMenu.setOpen(false); openOutside({ appId: app.id }) }} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-primary hover:bg-hover">
-                {app.icon ? <img src={app.icon} alt="" className="w-4 h-4 object-contain" /> : <ExternalLink size={16} />}{app.name}
-              </button>
-            ))}
-            {!!openApps?.length && <div className="my-1 border-t border-subtle" />}
-            {([
-              ['default', 'Open in Default App', ExternalLink],
-              ['folder', 'Show in File Explorer', Folders],
-              ['github', 'Open on GitHub', Github],
-            ] as const).map(([id, label, Icon]) => (
-              <button key={id} onClick={() => { openMenu.setOpen(false); openOutside(id) }} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-primary hover:bg-hover focus-visible:bg-hover">
-                <Icon size={16} className="text-muted" />{label}
-              </button>
-            ))}
-          </div>
-        </NodePopover>
-      )}
       <div className="flex-1 min-h-0 flex" style={{ backgroundColor: background, '--file-explorer-bg': background } as CSSProperties}>
         <div className={`${editorVisible ? 'flex-1' : 'hidden'} min-w-0 relative`}>
           {documentType && filePath && (
-            <Suspense fallback={<LoadingState label="Loading preview…" className="h-full" />}>
+            <Suspense fallback={<LoadingState label="Loading preview" className="h-full" />}>
               <FilePreview workspaceId={workspaceId} filePath={filePath} />
             </Suspense>
           )}
           {textual && mode === 'merge' && conflict === 'changed' && filePath && (
             <MergeView workspaceId={workspaceId} filePath={filePath} text={text} font={font} />
           )}
-          {textual && mode === 'preview' && <MarkdownPreview content={markdown} />}
+          {textual && mode === 'preview' && filePath && <MarkdownPreview content={markdown} workspaceId={workspaceId} filePath={filePath} />}
           {textual && error && (
             <PanelCenteredState
               className="absolute inset-0 z-20 bg-surface-1 px-6"
@@ -371,7 +305,7 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
                 : error}</span>}
             />
           )}
-          {textual && !error && (loading || !text) && <LoadingState label="Loading file…" className="absolute inset-0 z-20 bg-surface-1 text-sm" />}
+          {textual && !error && (loading || !text) && <LoadingState label="Loading file" className="absolute inset-0 z-20 bg-surface-1 text-sm" />}
           {textual && filePath && (
             <CodeEditor panelId={panelId} filePath={filePath} text={text} font={font} hidden={mode !== 'code' || !!error} onEditor={onEditor} />
           )}
@@ -391,7 +325,6 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
           />
         )}
       </div>
-      {promptElement}
     </div>
   )
 }

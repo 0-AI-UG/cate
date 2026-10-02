@@ -27,7 +27,7 @@ export interface BrowserDesktopOptions {
   codeCellPreload: string
   /** Where guest downloads are saved on this machine. */
   downloadDir(): string
-  /** A private directory for staged uploads and screenshots. */
+  /** A private directory for staged uploads. */
   tempDir(): string
   /** Loads the native passkeys addon (macOS only; the shell decides). */
   passkeys: boolean
