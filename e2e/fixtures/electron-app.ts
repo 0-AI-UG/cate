@@ -17,7 +17,7 @@
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright'
 import { expect } from '@playwright/test'
 // Types `window.__cateE2E` (the harness declares it globally).
-import type {} from '../../src/client/ui/e2e/e2eHarness'
+import type {} from '../../src/shells/desktop/ui/app/e2e/e2eHarness'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -340,4 +340,12 @@ export async function guestEvaluate(app: ElectronApplication, urlPrefix: string,
 
 export async function guestUrls(app: ElectronApplication): Promise<string[]> {
   return app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((wc) => wc.getType() === 'webview').map((wc) => wc.getURL()))
+}
+
+/** Answers every native message box of `app` (confirmations) with button
+ *  `response` (0: the first, "OK"), so flows that confirm can run headless. */
+export async function answerDialogs(app: ElectronApplication, response = 0): Promise<void> {
+  await app.evaluate(({ dialog }, response) => {
+    dialog.showMessageBox = (async () => ({ response, checkboxChecked: false })) as typeof dialog.showMessageBox
+  }, response)
 }

@@ -133,6 +133,8 @@ export interface ReviewSnapshot {
   busy: boolean
   agentBusy: boolean
   error: string | null
+  /** The checkout is not inside a Git repository: nothing to compare. */
+  notRepository: boolean
   branches: Array<{ name: string; current: boolean; isRemote: boolean }>
   commits: Array<{ hash: string; message: string; author_name: string; date: string }>
 }

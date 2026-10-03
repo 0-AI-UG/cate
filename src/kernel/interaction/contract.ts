@@ -1,0 +1,72 @@
+// kernel/interaction contract: theme schema and data, key bindings, action specs, icon names and
+// the ClientUi port type. Pure; the settings slice and the desktop shell's
+// theme boot cache import it.
+
+export * from './contract/theme'
+export * from './contract/themes'
+export * from './contract/themeResolution'
+export * from './contract/uiScale'
+export * from './contract/colors'
+export * from './contract/shortcuts'
+export * from './contract/actions'
+export * from './contract/icons'
+
+export type NotificationAction =
+  | { type: 'focusTerminal'; workspaceId: string; terminalId: string }
+  | { type: 'focusPanel'; workspaceId: string; panelId: string }
+
+export interface ClientNotification {
+  title: string
+  body: string
+  action?: NotificationAction
+}
+
+/** One entry of a context menu; a separator has only `type`. */
+export interface ContextMenuItem {
+  id?: string
+  label?: string
+  accelerator?: string
+  enabled?: boolean
+  type?: 'normal' | 'separator'
+  submenu?: ContextMenuItem[]
+}
+
+/** Installed by a shell that declares `clipboard`. */
+export interface ClientUiClipboard {
+  writeClipboard(text: string): Promise<void>
+  readClipboard(): Promise<string>
+}
+
+/** Installed by a shell that declares `osNotifications`. Settings- and
+ *  focus-gated by the client. Without it the client shows an in-app toast. */
+export interface ClientUiOsNotifications {
+  notify(notification: ClientNotification): void
+}
+
+/**
+ * Everything a view may ask of the person using this client. Each shell
+ * installs its own implementation (`installClientUi`); sessions and runtime
+ * code never call it. Methods tied to a client feature are optional: a shell
+ * installs only what it declares, and callers handle their absence.
+ *
+ * Feature modules add their own dialogs by augmenting this interface:
+ *
+ *   declare module '@kernel/interaction/contract' {
+ *     interface ClientUi {
+ *       confirmCloseTerminal(request: {...}): Promise<'close' | 'cancel'>
+ *     }
+ *   }
+ */
+export interface ClientUi extends Partial<ClientUiClipboard>, Partial<ClientUiOsNotifications> {
+  openExternal(url: string): void
+  openSettings(section: string): void
+  /** A yes/no question before a destructive action. */
+  confirm(message: string): Promise<boolean>
+  /** A failed user action the person should see. */
+  showError(message: string): void
+  /** A context menu at the pointer. Resolves with the picked id, or null when
+   *  dismissed. Optional: without it views offer their toolbar and keyboard
+   *  actions only. */
+  showContextMenu?(items: ContextMenuItem[]): Promise<string | null>
+  confirmUnsavedChanges(request: { fileName?: string; multiple?: boolean; filePath?: string }): Promise<'save' | 'discard' | 'cancel'>
+}

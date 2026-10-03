@@ -1,43 +1,47 @@
 import { describe, expect, test } from 'vitest'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { assertCapturedEdit, createLiveChangeFixture, LIVE_AGENT_CHANGES, LIVE_EDIT_PROMPT, runLiveCli } from './liveHarness'
+import { assertCapturedEdit, LIVE_AGENT_CHANGES } from './liveHarness'
+import { createMockChangeFixture, MOCK_EDIT_PROMPT } from './liveMock'
 import { createAgentChangesStore } from './store'
 
-const codexArgs = (cwd: string, prompt: string) => ['exec', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--sandbox', 'workspace-write',
-  '--dangerously-bypass-hook-trust', '-c', `projects={${JSON.stringify(cwd)}={trust_level="trusted"}}`,
-  '-c', 'approval_policy="never"', '-c', 'model_reasoning_effort="low"', '-m', process.env.CATE_LIVE_CODEX_MODEL ?? 'gpt-5.4-mini', prompt]
+// Provider config (including project trust) is in the fixture's CODEX_HOME.
+const codexArgs = ['exec', '--ephemeral', '--ignore-rules', '--sandbox', 'workspace-write',
+  '--dangerously-bypass-hook-trust', '-c', 'approval_policy="never"', MOCK_EDIT_PROMPT]
 
 describe.skipIf(!LIVE_AGENT_CHANGES)('real CLI recorded changes', () => {
   test('Claude native Edit reaches shipped authenticated ingestion and durable history', { timeout: 150_000 }, async () => {
-    const fixture = await createLiveChangeFixture('claude-code')
+    const fixture = await createMockChangeFixture('claude-code', (cwd) => [
+      { name: 'Read', arguments: { file_path: path.join(cwd, 'target.txt') } },
+      { name: 'Edit', arguments: { file_path: path.join(cwd, 'target.txt'), old_string: 'before', new_string: 'after' } },
+    ])
     try {
-      await runLiveCli('claude', ['-p', LIVE_EDIT_PROMPT, '--model', process.env.CATE_LIVE_CLAUDE_MODEL ?? 'haiku',
-        '--tools', 'Read,Edit', '--allowedTools', 'Read,Edit', '--permission-mode', 'acceptEdits', '--no-session-persistence',
-        '--setting-sources', 'project,local'], fixture)
+      await fixture.run('claude', ['-p', MOCK_EDIT_PROMPT, '--tools', 'Read,Edit', '--allowedTools', 'Read,Edit',
+        '--permission-mode', 'acceptEdits', '--no-session-persistence', ...fixture.args.slice(0, -1)])
       await assertCapturedEdit(fixture, 'claude-code')
     } finally { await fixture.close() }
   })
 
   test('Codex apply_patch reaches shipped authenticated ingestion and durable history', { timeout: 150_000 }, async () => {
-    const fixture = await createLiveChangeFixture('codex')
+    const fixture = await createMockChangeFixture('codex', () => [
+      { name: 'apply_patch', arguments: '*** Begin Patch\n*** Update File: target.txt\n@@\n-before\n+after\n*** End Patch' },
+    ])
     try {
-      const output = await runLiveCli('codex', codexArgs(fixture.cwd, LIVE_EDIT_PROMPT + ' Use a single apply_patch with *** Update File: target.txt and replace -before with +after. Do not delete and recreate the file.'), fixture)
+      const output = await fixture.run('codex', codexArgs)
       if (process.env.CATE_LIVE_KEEP_FIXTURES === '1') await writeFile(path.join(fixture.cwd, '..', 'cli-output.json'), JSON.stringify(output), { mode: 0o600 })
       await assertCapturedEdit(fixture, 'codex')
     } finally { await fixture.close() }
   })
 
   test('Codex real multi-file patch preserves Unicode edits, creation, deletion coverage and rename attribution', { timeout: 150_000 }, async () => {
-    const fixture = await createLiveChangeFixture('codex')
+    const patch = '*** Begin Patch\n*** Update File: nested/é.txt\n@@\n first\n-before\n+after\n last\n*** Add File: created.txt\n+created\n*** Delete File: obsolete.txt\n*** Update File: rename-before.txt\n*** Move to: rename-after.txt\n@@\n-old-name\n+new-name\n*** End Patch'
+    const fixture = await createMockChangeFixture('codex', () => [{ name: 'apply_patch', arguments: patch }])
     try {
       await mkdir(path.join(fixture.cwd, 'nested'))
       await writeFile(path.join(fixture.cwd, 'nested', 'é.txt'), 'first\nbefore\nlast\n')
       await writeFile(path.join(fixture.cwd, 'obsolete.txt'), 'deleted-before-image\n')
       await writeFile(path.join(fixture.cwd, 'rename-before.txt'), 'old-name\n')
-      const patch = '*** Begin Patch\n*** Update File: nested/é.txt\n@@\n first\n-before\n+after\n last\n*** Add File: created.txt\n+created\n*** Delete File: obsolete.txt\n*** Update File: rename-before.txt\n*** Move to: rename-after.txt\n@@\n-old-name\n+new-name\n*** End Patch'
-      const prompt = `Use your native apply_patch tool exactly once to apply the following patch. Do not use shell commands to edit files and do not change target.txt. Then reply only done.\n${patch}`
-      const output = await runLiveCli('codex', codexArgs(fixture.cwd, prompt), fixture)
+      const output = await fixture.run('codex', codexArgs)
       if (process.env.CATE_LIVE_KEEP_FIXTURES === '1') await writeFile(path.join(fixture.cwd, '..', 'cli-output.json'), JSON.stringify(output), { mode: 0o600 })
       expect(await readFile(path.join(fixture.cwd, 'nested', 'é.txt'), 'utf8')).toBe('first\nafter\nlast\n')
       expect(await readFile(path.join(fixture.cwd, 'created.txt'), 'utf8')).toBe('created\n')

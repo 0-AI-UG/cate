@@ -253,6 +253,38 @@ describe('EditorSession', () => {
     again.dispose()
   })
 
+  it('switches worktree to the same file, or a draft with its text where it is missing', async () => {
+    const other = path.join(ws.root, '.cate', 'worktrees', 'two')
+    await fs.mkdir(other, { recursive: true })
+    document.apply({ kind: 'setWorktree', worktree: { id: 'w2', path: other, color: 'blue', status: 'ready' } })
+    const shared = path.join(ws.root, 'shared.ts')
+    const only = path.join(ws.root, 'only.ts')
+    await fs.writeFile(shared, 'main')
+    await fs.writeFile(path.join(other, 'shared.ts'), 'two')
+    await fs.writeFile(only, 'only here')
+    const session = await addEditor('w', shared)
+
+    await op('w', { kind: 'switchWorktree', worktreeId: 'w2' })
+    expect(session.snapshot()).toMatchObject({ filePath: path.join(other, 'shared.ts'), checkout: other, draft: false })
+    expect(document.get().panels.w).toMatchObject({ worktreeId: 'w2', fields: { filePath: path.join(other, 'shared.ts') } })
+
+    await op('w', { kind: 'switchWorktree', worktreeId: null })
+    expect(session.snapshot()).toMatchObject({ filePath: shared, checkout: ws.root })
+    await op('w', { kind: 'openFile', path: only })
+    await edit(only, 'edited')
+    await expect(op('w', { kind: 'switchWorktree', worktreeId: 'w2' })).rejects.toSatisfy((e) => isRpcError(e, 'dirty'))
+
+    await op('w', { kind: 'switchWorktree', worktreeId: 'w2', discard: true })
+    const draft = session.snapshot().filePath!
+    expect(session.snapshot()).toMatchObject({ draft: true, checkout: other, mode: 'code' })
+    expect(draft.startsWith(other)).toBe(true)
+    expect((await bufferOf(draft)).text.toString()).toBe('edited')
+    expect(document.get().panels.w).toMatchObject({ worktreeId: 'w2', title: 'only.ts' })
+    // The source file keeps what is on disk.
+    await until(() => ws.files.buffers.openPaths().length === 1)
+    expect(await read(only)).toBe('only here')
+  })
+
   it('answers cate.editor.active', async () => {
     const file = path.join(ws.root, 'z.txt')
     await fs.writeFile(file, 'z')

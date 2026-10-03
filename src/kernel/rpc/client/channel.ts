@@ -1,5 +1,9 @@
 // Mirrors a session channel on the client: keeps the latest snapshot, folds
-// changes into it and reopens the subscription after a revision gap.
+// changes into it and reopens the subscription after a revision gap. When the
+// runtime ends a channel that was live (a panel replaced under the same id
+// ends its old session's channel), the stale snapshot is dropped and the
+// channel reopened once: a replaced panel's new session answers with its
+// snapshot, a removed panel's refusal ends it for good.
 
 import {
   applyShallowPatch,
@@ -28,8 +32,16 @@ export function mirrorChannel<S, C = Partial<S>>(
 
   function attach(): Subscription<ChannelEvent<S, C>, unknown> {
     const next = open()
+    let live = false
+    const ended = () => {
+      if (disposed || sub !== next || !live) return
+      state = null
+      sub = attach()
+    }
+    next.done.then(ended, ended)
     next.onEvent((event) => {
       if (disposed || sub !== next) return
+      live = true
       const reduced = reduceChannel(state, event, apply)
       if (!reduced) {
         state = null

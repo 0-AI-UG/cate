@@ -1,10 +1,10 @@
 // The native menu bar as data. The renderer builds it from the declared
-// actions (kernel/ui) and sends it to main, which only renders it: main knows
+// actions (kernel/interaction) and sends it to main, which only renders it: main knows
 // no action. The skeleton (which roles and action groups each menu holds, in
 // which order) is shared, so main can show a bare bar before a window sends
 // its model. Pure.
 
-import type { ActionId, MenuBarId, StoredShortcut } from '@kernel/ui/contract'
+import type { ActionId, MenuBarId, StoredShortcut } from '@kernel/interaction/contract'
 
 /** Electron menu roles the bar uses. */
 export type MenuRole =

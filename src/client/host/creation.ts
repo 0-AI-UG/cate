@@ -2,7 +2,7 @@
 // generated from the definitions, with a worktree submenu for types created
 // in a checkout (`creation.inWorktree`) when the workspace has several.
 
-import type { ContextMenuItem } from '@kernel/ui/contract'
+import type { ContextMenuItem } from '@kernel/interaction/contract'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import type { WorktreeId, WorktreeMeta } from '@workspace/document/contract'
 

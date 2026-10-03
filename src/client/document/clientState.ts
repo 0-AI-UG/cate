@@ -19,6 +19,13 @@ export interface Intent {
   data?: unknown
 }
 
+/** A canvas's node selection. `active` is the node that holds attention
+ *  (the focused node); null while the selection is only rings. */
+export interface CanvasSelection {
+  nodes: readonly NodeId[]
+  active: NodeId | null
+}
+
 export interface ClientState {
   /** Which tab each stack shows. A stack without an entry shows its first. */
   activeTabs: Readonly<Record<StackId, PanelId>>
@@ -27,7 +34,7 @@ export interface ClientState {
   focusEpoch: number
   /** The panels this client shows (presence). */
   viewing: readonly PanelId[]
-  selection: Readonly<Record<CanvasId, readonly NodeId[]>>
+  selection: Readonly<Record<CanvasId, CanvasSelection>>
   viewports: Readonly<Record<CanvasId, Viewport>>
   /** What this client shows of each panel (the browser tab it shows, the
    *  review files it collapsed), by panel and name. */
@@ -41,7 +48,7 @@ export interface ClientStateStore {
   setActiveTab(stackId: StackId, panelId: PanelId): void
   focus(panelId: PanelId | null): void
   setViewing(panelIds: readonly PanelId[]): void
-  setSelection(canvasId: CanvasId, nodeIds: readonly NodeId[]): void
+  setSelection(canvasId: CanvasId, selection: CanvasSelection): void
   setViewport(canvasId: CanvasId, viewport: Viewport): void
   setPanelView(panelId: PanelId, key: string, value: unknown): void
   /** Queues an intent; returns its id. */
@@ -88,8 +95,8 @@ export function createClientStateStore(): ClientStateStore {
       if (panelIds.length === state.viewing.length && panelIds.every((id, i) => id === state.viewing[i])) return
       update({ viewing: [...panelIds] })
     },
-    setSelection(canvasId, nodeIds) {
-      update({ selection: { ...state.selection, [canvasId]: [...nodeIds] } })
+    setSelection(canvasId, selection) {
+      update({ selection: { ...state.selection, [canvasId]: { nodes: [...selection.nodes], active: selection.active } } })
     },
     setViewport(canvasId, viewport) {
       update({ viewports: { ...state.viewports, [canvasId]: { ...viewport } } })

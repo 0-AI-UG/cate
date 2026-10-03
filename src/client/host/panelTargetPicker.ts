@@ -6,7 +6,7 @@
 import { canvasOf, canvasPanelOf, documentOrder, placementOf, isCanvasDock, type PanelId, type PlaceTarget } from '@workspace/document/contract'
 import type { Point, Size } from '@workspace/canvas/contract'
 import { placeTargetFor, type PanelPlacementOptions } from '@panels/framework/contract'
-import { clientUi } from '@kernel/ui'
+import { clientUi } from '@kernel/interaction'
 import { documentStoreFor } from '@client/document'
 import { newId } from './createPanel'
 import { panelDefinition, panelLabel } from './definitions'

@@ -95,6 +95,26 @@ describeShared('layout', (pair) => {
     await expect.poll(async () => stacksOf(await mainDock(a)).length).toBe(1)
   })
 
+  test('after many panels and splits, the canvas tab bar still floats over the canvas in both clients', async () => {
+    const { a, b } = pair()
+    const added: string[] = []
+    for (const side of ['right', 'bottom', 'right', 'bottom'] as const) {
+      const root = await mainDock(a)
+      const id = await a.page.evaluate(({ beside, side }) => window.__cateE2E!.createPanel('terminal', {
+        at: { to: 'split', dock: { windowId: 'main' }, beside, side, stackId: crypto.randomUUID(), splitId: crypto.randomUUID() },
+      }), { beside: root.id, side })
+      added.push(id!)
+    }
+    await expect.poll(async () => stacksOf(await mainDock(b)).length).toBe(5)
+    for (const c of [a, b]) {
+      const canvas = await c.page.evaluate(() => window.__cateE2E!.activeCanvasPanelId())
+      const bar = c.page.locator(`[data-dock-stack-id]:has(> .dock-tab-bar [data-tab-panel-id="${canvas}"]) > .dock-tab-bar`)
+      await expect(bar).toHaveClass(/dock-tab-bar-floating/, { timeout: 15_000 })
+    }
+    await propose(a, { kind: 'removePanels', ids: added })
+    await expect.poll(async () => stacksOf(await mainDock(b)).length).toBe(1)
+  })
+
   test('a second canvas made in A appears in B\'s dock; removing it in B removes it in A', async () => {
     const { a, b } = pair()
     const before = Object.keys((await doc(a))!.canvases).length

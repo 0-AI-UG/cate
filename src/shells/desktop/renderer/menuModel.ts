@@ -3,8 +3,8 @@
 // groups and roles), with its current key. Rebuilt and sent to main whenever
 // actions or bindings change.
 
-import { declaredActions, shortcutRegistry, subscribeShortcuts, type DeclaredAction } from '@kernel/ui'
-import { MENU_BAR, type ActionId, type StoredShortcut } from '@kernel/ui/contract'
+import { declaredActions, shortcutRegistry, subscribeShortcuts, type DeclaredAction } from '@kernel/interaction'
+import { MENU_BAR, type ActionId, type StoredShortcut } from '@kernel/interaction/contract'
 import { actionSupported, subscribeActions } from '@client/host'
 import { MENU_SKELETON, type DesktopApi, type MenuModel, type MenuModelItem, type MenuModelMenu } from '../contract'
 

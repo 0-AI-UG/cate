@@ -10,6 +10,7 @@ export {
 } from './store'
 export {
   createClientStateStore,
+  type CanvasSelection,
   type ClientState,
   type ClientStateStore,
   type Intent,
@@ -20,6 +21,7 @@ export {
   attachDocument,
   attachDocuments,
   documentStoreFor,
+  documentWorkspaceIds,
   clientStateFor,
   subscribeDocumentStores,
   documentStoresVersion,

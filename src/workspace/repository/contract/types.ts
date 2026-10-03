@@ -201,3 +201,11 @@ export interface WorktreePruneResult {
   /** Metadata dropped because git no longer lists the checkout. */
   removed: string[]
 }
+
+/** A Git operation ran in a folder that is not inside a Git working tree. */
+export class NotARepositoryError extends Error {
+  constructor(readonly dir: string) {
+    super(`${dir} is not inside a Git repository`)
+    this.name = 'NotARepositoryError'
+  }
+}

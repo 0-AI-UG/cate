@@ -152,6 +152,20 @@ describe('pairing flow', () => {
     expect(client.closed || runtime.closed).toBe(false)
   })
 
+  it('tells watchers about every change of the device list', async () => {
+    const ctx = setup()
+    const seen: string[][] = []
+    const stop = ctx.service.watch((devices) => seen.push(devices.map((d) => d.fingerprint)))
+    const { deviceKeys } = await attempt(ctx, secretOf(ctx.service.createSecret('sameNetwork').uri))
+    const fp = fingerprint(deviceKeys.publicKey)
+    expect(seen.at(-1)).toEqual([fp])
+    ctx.service.revoke(ctx.service.list()[0]!.publicKey)
+    expect(seen.at(-1)).toEqual([])
+    stop()
+    await attempt(ctx, secretOf(ctx.service.createSecret('sameNetwork').uri))
+    expect(seen.at(-1)).toEqual([])
+  })
+
   it('a wrong proof burns the secret', async () => {
     const ctx = setup()
     const created = ctx.service.createSecret('sameNetwork')

@@ -21,7 +21,7 @@ import { canonicalRoot, cateHome, ensureLocalEndpoint, workspaceDataDir } from '
 import { ensureDataDir } from '@runtime/data/runtime'
 import { pairingCapability, PAIRING_SECRET_TTL_MS, type CreatedSecret, type PairingMode } from '@runtime/pairing/contract'
 import { dialLocal, dialLocalRetrying } from '@runtime/transports/node'
-import { installDirFromExecPath, installLayout, parseDaemonArgv, RUNTIME_BUILD, RUNTIME_VERSION, START_LOCAL_BUDGET_MS, type ServeArgs } from './contract'
+import { installDirFromExecPath, installLayout, parseDaemonArgv, RUNTIME_BUILD, RUNTIME_RELEASE, RUNTIME_VERSION, START_LOCAL_BUDGET_MS, type ServeArgs } from './contract'
 import { prepareDaemonProcess, serveWorkspace } from './entry'
 import { pruneRuntimeInstalls, spawnDetachedDaemon } from './node'
 
@@ -86,8 +86,8 @@ async function serve(args: ServeArgs): Promise<number> {
   const { daemon } = result
   if (args.network) await printPairing(root, daemon.pairing.createSecret(args.network), args.json)
   // Installs nothing uses go (an update leaves the previous one behind).
-  // Only from an install of this build: a dev bundle leaves them alone.
-  if (RUNTIME_BUILD && path.basename(installDirFromExecPath(process.execPath, process.platform)) === RUNTIME_BUILD) {
+  // Only a release build from its own install: a checkout's leaves them alone.
+  if (RUNTIME_RELEASE && RUNTIME_BUILD && path.basename(installDirFromExecPath(process.execPath, process.platform)) === RUNTIME_BUILD) {
     pruneRuntimeInstalls({ cateHome: cateHome(), keep: [RUNTIME_BUILD] })
       .then((removed) => { if (removed.length) log.info('removed unused runtime installs: %s', removed.join(', ')) })
       .catch((err: Error) => log.warn('pruning runtime installs: %s', err.message))

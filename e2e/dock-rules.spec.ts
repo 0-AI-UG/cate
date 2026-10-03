@@ -33,8 +33,7 @@ function stackFor(panelId: string): Locator {
   })
 }
 
-/** What this client draws: presentations (merge, promote) are client state,
- *  so they show in the DOM, not the document. */
+/** What the main window draws, and whether a restore is offered. */
 async function drawn() {
   return page.evaluate(() => {
     const win = document.querySelector('[data-dock-window="main"]')
@@ -114,15 +113,15 @@ test('main-dock split can be maximized, restored, and permanently invalidated by
   await expect.poll(async () => (await drawn()).mainLeaves).toBe(2)
   expect(await mainWindowStacks(page)).toHaveLength(2)
 
-  // Merge is drawn only: the document keeps the split.
+  // Maximize is a document op: the window's tree becomes one stack.
   await page.getByRole('button', { name: 'Merge splits into tabs' }).first().click()
   await expect.poll(async () => { const d = await drawn(); return { leaves: d.mainLeaves, canRestore: d.canRestore } }).toEqual({ leaves: 1, canRestore: true })
-  expect(await mainWindowStacks(page)).toHaveLength(2)
+  expect(await mainWindowStacks(page)).toHaveLength(1)
 
   await page.getByRole('button', { name: 'Restore previous layout' }).click()
   await expect.poll(async () => { const d = await drawn(); return { leaves: d.mainLeaves, canRestore: d.canRestore } }).toEqual({ leaves: 2, canRestore: false })
 
-  // A split made while merged materializes the merged stack, then splits it.
+  // A split made while merged keeps the merged stack and clears the restore point.
   await page.getByRole('button', { name: 'Merge splits into tabs' }).first().click()
   await page.getByRole('button', { name: 'Split Right', exact: true }).click()
   await expect.poll(async () => { const d = await drawn(); return { leaves: d.mainLeaves, canRestore: d.canRestore } }).toEqual({ leaves: 2, canRestore: false })
@@ -159,12 +158,11 @@ test('a split canvas node promotes one pane and restores the exact mini-dock', a
   // The promoted tab is active; show the canvas again to see the node.
   await page.locator(`[data-tab-panel-id="${canvasId}"]`).click()
   await expect.poll(async () => (await drawnNode(fixture.nodeId))?.leafCount).toBe(1)
-  // Promotion is drawn only: the document still has both panes in the node.
-  expect((await nodePanels(page, fixture.nodeId)).sort()).toEqual([...fixture.panelIds].sort())
-  expect(promotedId).toBeTruthy()
+  // Maximize is a document op: the pane left the node.
+  expect(await nodePanels(page, fixture.nodeId)).toEqual(fixture.panelIds.filter((id) => id !== promotedId))
+  expect(await whereIs(page, promotedId)).toMatchObject({ kind: 'window', windowId: 'main' })
 
-  // Restore sits on the promoted tab's stack while that tab is active.
-  await page.locator(`[data-tab-panel-id="${promotedId}"]`).click()
+  // Restore sits on the stack the pane went to.
   await page.getByRole('button', { name: 'Restore previous layout' }).click()
   await page.locator(`[data-tab-panel-id="${canvasId}"]`).click()
   await expect.poll(async () => {

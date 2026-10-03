@@ -1,7 +1,7 @@
-// client/ui's DesktopPort over the desktop IPC: the updater, the post-update
+// ui/app's DesktopPort over the desktop IPC: the updater, the post-update
 // feedback prompt, native menus, the window-controls inset and analytics.
 
-import type { DesktopPort, UpdateStatus } from '@client/ui'
+import type { DesktopPort, UpdateStatus } from '../ui/app'
 import type { DesktopApi, DesktopAppInfo, UpdateStatus as ShellUpdateStatus, WindowState } from '../contract'
 
 /** Horizontal space the macOS traffic lights take at the top left. */
@@ -9,7 +9,7 @@ export const TRAFFIC_LIGHTS_WIDTH = 78
 
 const toUpdateStatus = (status: ShellUpdateStatus): UpdateStatus => ({
   ...status,
-  // client/ui has no separate "available": the download starts at once.
+  // ui/app has no separate "available": the download starts at once.
   state: status.state === 'available' ? 'downloading' : status.state,
 })
 

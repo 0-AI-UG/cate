@@ -23,7 +23,7 @@ import {
   type PairingMode,
   type pairingCapability,
 } from '../contract'
-import type { PairingsStore } from './pairingsFile'
+import type { PairingsFile, PairingsStore } from './pairingsFile'
 
 export interface PairingServiceOptions {
   runtimeId: string
@@ -45,6 +45,7 @@ interface LiveSecret {
 export class PairingService implements PeerPolicy {
   private secrets: LiveSecret[] = []
   private readonly revokeListeners = new Set<(publicKey: string) => void>()
+  private readonly listListeners = new Set<(devices: PairedDevice[]) => void>()
   private readonly now: () => number
   private readonly random: (length: number) => Uint8Array
 
@@ -86,7 +87,7 @@ export class PairingService implements PeerPolicy {
   markSeen(publicKey: Uint8Array): void {
     const hex = bytesToHex(publicKey)
     const now = this.now()
-    this.options.store.update((file) => ({
+    this.update((file) => ({
       devices: file.devices.map((device) => (device.publicKey === hex ? { ...device, lastSeen: now } : device)),
     }))
   }
@@ -95,13 +96,25 @@ export class PairingService implements PeerPolicy {
   revoke(deviceKey: string): { removed: boolean } {
     const hex = deviceKey.toLowerCase()
     let removed = false
-    this.options.store.update((file) => {
+    this.update((file) => {
       const devices = file.devices.filter((device) => device.publicKey !== hex)
       removed = devices.length !== file.devices.length
       return { devices }
     })
     if (removed) for (const listener of this.revokeListeners) listener(hex)
     return { removed }
+  }
+
+  /** Every change of the device list (a device paired, seen or removed). */
+  watch(listener: (devices: PairedDevice[]) => void): () => void {
+    this.listListeners.add(listener)
+    return () => this.listListeners.delete(listener)
+  }
+
+  private update(fn: (file: PairingsFile) => PairingsFile): void {
+    this.options.store.update(fn)
+    const devices = this.list()
+    for (const listener of [...this.listListeners]) listener(devices)
   }
 
   /** The daemon closes connections of a revoked key here. */
@@ -138,7 +151,7 @@ export class PairingService implements PeerPolicy {
     const hex = bytesToHex(channel.remoteStatic)
     const now = this.now()
     const name = cleanDeviceName(request.deviceName)
-    this.options.store.update((file) => ({
+    this.update((file) => ({
       devices: [...file.devices.filter((device) => device.publicKey !== hex), { publicKey: hex, name, pairedAt: now, lastSeen: now }],
     }))
     return this.answer(channel, { type: 'paired', proof: proofToWire(runtimeProof(match.secret, channel.handshakeHash)) })
@@ -160,6 +173,10 @@ export function pairingCapabilityImpl(service: PairingService): CapabilityImpl<t
   return {
     createSecret: ({ mode }) => service.createSecret(mode),
     list: () => service.list(),
+    watch: (_params, sink) => {
+      sink.emit(service.list())
+      return service.watch((devices) => sink.emit(devices))
+    },
     revoke: ({ deviceKey }) => service.revoke(deviceKey),
   }
 }

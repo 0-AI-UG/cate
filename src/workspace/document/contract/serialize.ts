@@ -1,8 +1,8 @@
 // document.json: the persisted document. Parsing is strict: a malformed file
 // or any other format is rejected, never repaired or migrated.
 
-import { dockPanels, visitDock, type DockNode } from './dock'
-import { MAIN_WINDOW, type WorkspaceDocument } from './schema'
+import { dockPanels, findStack, visitDock, type DockNode } from './dock'
+import { MAIN_WINDOW, type MaximizedLayout, type WorkspaceDocument } from './schema'
 import { checkDock, checkRecord, checkRelation, checkWorktree, isId, isObject, isRect } from './validate'
 
 export const DOCUMENT_FILE_VERSION = 1
@@ -30,6 +30,28 @@ export function parseDocument(text: string): ParseResult {
   if (!isObject(value) || value.version !== DOCUMENT_FILE_VERSION) return { ok: false, error: 'not a version 1 document file' }
   const error = validateDocument(value.document)
   return error ? { ok: false, error } : { ok: true, doc: value.document as WorkspaceDocument }
+}
+
+/** A restore point: its trees are well formed, name existing panels, and
+ *  its stack is in the window. */
+function checkMaximized(value: unknown, dock: DockNode | null, doc: WorkspaceDocument): string | null {
+  if (!isObject(value) || !isId(value.stackId)) return 'no stack'
+  const maximized = value as unknown as MaximizedLayout
+  if (!dock || !findStack(dock, maximized.stackId)) return `stack ${maximized.stackId} is not in the window`
+  const trees = [maximized.layout]
+  if (maximized.node !== undefined) {
+    const { node } = maximized
+    if (!isObject(node) || !isId(node.canvasId) || !isId(node.id) || !isRect(node.rect)) return 'malformed node'
+    if (!doc.canvases[node.canvasId]) return `canvas ${node.canvasId} does not exist`
+    trees.push(node.dock)
+  }
+  for (const tree of trees) {
+    const problem = checkDock(tree)
+    if (problem) return problem
+    const missing = dockPanels(tree).find((panelId) => !doc.panels[panelId])
+    if (missing) return `panel ${missing} does not exist`
+  }
+  return null
 }
 
 /** Every invariant applyOp keeps. Null when `value` is a valid document. */
@@ -79,9 +101,13 @@ export function validateDocument(value: unknown): string | null {
     } else if (window.kind !== 'detached' || window.dock === null || !isRect(window.bounds)) {
       return `detached window ${id} needs a dock and bounds`
     }
-    if (Object.keys(window).some((key) => !['id', 'kind', 'dock', 'bounds'].includes(key))) return `window ${id} has unknown keys`
+    if (Object.keys(window).some((key) => !['id', 'kind', 'dock', 'bounds', 'maximized'].includes(key))) return `window ${id} has unknown keys`
     const problem = place(window.dock, `window ${id}`, false)
     if (problem) return problem
+    if (window.maximized !== undefined) {
+      const maximizedProblem = checkMaximized(window.maximized, window.dock, doc)
+      if (maximizedProblem) return `window ${id}'s restore point: ${maximizedProblem}`
+    }
   }
 
   const canvasPanels = new Map<string, string>()

@@ -128,3 +128,23 @@ describeShared('review', (pair) => {
     await expect(b.page.locator(`[data-node-id="${nodeId}"] [data-review-file="beta.ts"]`)).toBeVisible({ timeout: 20_000 })
   })
 })
+
+describeShared('review in a folder that is not a Git repository', (pair) => {
+  test('B picks Diff Review on a surface: both clients say so instead of showing a git error', async () => {
+    const { a, b } = pair()
+    const { panelId, nodeId } = await seedShared(pair(), a, 'surface', { x: 80, y: 80 })
+    const picker = b.page.locator(`[data-node-id="${nodeId}"] [role="group"][aria-label="Open a surface"]`)
+    await expect(picker).toBeVisible({ timeout: 15_000 })
+    const overlay = b.page.locator(`[data-node-id="${nodeId}"] [data-unfocused-overlay]`)
+    if (await overlay.count()) await overlay.click()
+    await picker.getByRole('button', { name: /Diff Review/ }).click()
+    for (const c of [a, b]) {
+      await expect.poll(async () => {
+        const s = await snapshot<ReviewSnapshot & { notRepository: boolean }>(c, panelId)
+        return s && { notRepository: s.notRepository, error: s.error }
+      }, { timeout: 20_000 }).toEqual({ notRepository: true, error: null })
+      await expect(c.page.locator(`[data-node-id="${nodeId}"] [data-review-not-repository]`)).toBeVisible({ timeout: 15_000 })
+      await expect(c.page.locator(`[data-node-id="${nodeId}"]`)).not.toContainText('fatal:')
+    }
+  })
+}, { git: false })

@@ -5,7 +5,7 @@
 // buffer's Yjs document; views attach to it through `file.buffer`.
 
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { access, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { sessionApi } from '@kernel/api/contract'
 import { RpcError, isRpcError } from '@kernel/rpc/contract'
@@ -142,6 +142,7 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
       return { dirty: state.dirty }
     },
     openFile: ({ path: file, line, column, discard }) => this.exclusive(() => this.openFile(file, { line, column, discard })),
+    switchWorktree: ({ worktreeId, discard }) => this.exclusive(() => this.switchWorktree(worktreeId, discard === true)),
     close: async ({ discard }) => {
       await this.prepareClose({ discard: discard === true })
       this.kit.document.apply({ kind: 'removePanels', ids: [this.panelId] })
@@ -383,6 +384,34 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
     }
     if (options.line !== undefined) this.reveal(options.line, options.column)
     return { filePath: file }
+  }
+
+  private async switchWorktree(worktreeId: string | null, discard: boolean): Promise<{ filePath: string }> {
+    const target = worktreeId ? this.kit.document.get().worktrees[worktreeId] : { path: this.deps.root }
+    if (!target) throw new RpcError('gone', `no worktree ${String(worktreeId)}`)
+    const current = this.boundPath
+    const from = this.state.checkout ?? this.deps.root
+    if (current && pathKey(target.path) === pathKey(from)) return { filePath: current }
+    if (this.state.dirty && !discard && !this.state.draft && !this.othersShow(current)) {
+      throw new RpcError('dirty', `${this.record.title} has unsaved changes`, { panelId: this.panelId })
+    }
+    const relative = current && !this.state.draft ? path.relative(from, current) : null
+    const counterpart = relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? path.join(target.path, relative) : null
+    if (counterpart && (this.state.documentType || await access(counterpart).then(() => true, () => false))) {
+      return this.openFile(counterpart, { discard: true })
+    }
+    // Missing there: a draft in that checkout carries the text across.
+    const text = this.handle?.text.toString() ?? ''
+    const previous = this.unhook()
+    if (previous) {
+      await this.revertIfUnshown(previous)
+      previous.close()
+    }
+    const draft = editorDraftPath(target.path, this.deps.newId?.() ?? randomUUID())
+    await this.bind(draft, 'code')
+    if (this.handle) replaceText(this.handle, text)
+    this.kit.document.apply({ kind: 'updatePanel', id: this.panelId, patch: { worktreeId: this.worktreeIdFor(draft), fields: { filePath: draft } } })
+    return { filePath: draft }
   }
 
   private async saveAs(target: string): Promise<{ path: string; dirty: boolean }> {

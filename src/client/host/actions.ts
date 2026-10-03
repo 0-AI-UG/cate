@@ -1,14 +1,13 @@
 // The one action registry: every key, menu item, palette entry and toolbar
-// button runs an action by id. A module declares its actions (kernel/ui's
+// button runs an action by id. A module declares its actions (kernel/interaction's
 // catalog: title, default key, menu placement) and binds what they do in one
 // `registerActions` call; panel types get theirs from their definitions
 // (panelActions.ts). The host also owns the panel rename and claimed-key
 // requests.
 
-import { useSyncExternalStore } from 'react'
 import type { ClientFeature } from '@kernel/rpc/contract'
-import { clientUi, declareActions, declaredActions, errorMessage, subscribeDeclaredActions, type DeclaredAction } from '@kernel/ui'
-import type { ActionId, ActionSpecs } from '@kernel/ui/contract'
+import { clientUi, declareActions, declaredActions, errorMessage, subscribeDeclaredActions, type DeclaredAction } from '@kernel/interaction'
+import type { ActionId, ActionSpecs } from '@kernel/interaction/contract'
 import type { PanelId } from '@workspace/document/contract'
 import { clientHas } from '@client/connections'
 
@@ -85,9 +84,9 @@ export function subscribeActions(listener: () => void): () => void {
   return () => { listeners.delete(listener); offDeclared() }
 }
 
-/** Re-renders when actions are declared or bound. */
-export function useActionsVersion(): number {
-  return useSyncExternalStore(subscribeActions, () => version)
+/** Changes whenever actions are declared or bound. */
+export function actionsVersion(): number {
+  return version
 }
 
 type RenameListener = (workspaceId: string, panelId: PanelId) => void

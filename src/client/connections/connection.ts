@@ -12,6 +12,7 @@ import {
 } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy, createRuntimeProxy, type RpcClientState } from '@kernel/rpc/client'
 import { framePortOver } from '@kernel/rpc/contract'
+import { nestedRefusalRoot } from '@runtime/daemon/contract'
 import { FRAME_MODE } from '@runtime/transports/contract'
 import { RUNTIME_CAPABILITIES } from './capabilities'
 import type { ClientIdentity } from './identity'
@@ -27,8 +28,12 @@ export type ConnectionState =
   /** A different protocol major, or another build than this app (a stale
    *  runtime, `build`). `runtime.update` still works (7.10). */
   | { kind: 'incompatible'; runtimeVersion: string; build?: { runtime: string | null; app: string } }
-  /** The runtime refused this client (unknown or revoked device). */
-  | { kind: 'refused'; message: string }
+  /** Someone stopped the runtime on purpose: no reconnecting until
+   *  `retryNow` (which starts a local runtime again). */
+  | { kind: 'stopped' }
+  /** The runtime refused this client (unknown or revoked device, or its
+   *  folder overlaps the open workspace `nestedIn`). */
+  | { kind: 'refused'; message: string; nestedIn?: string }
   | { kind: 'closed' }
 
 export interface Backoff {
@@ -78,6 +83,8 @@ export class WorkspaceConnection {
   private lastSeen: number | null = null
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private closed = false
+  /** The runtime said it is stopping on purpose. */
+  private stopAnnounced = false
 
   constructor(opts: WorkspaceConnectionOptions) {
     this.workspaceId = opts.workspaceId
@@ -101,6 +108,7 @@ export class WorkspaceConnection {
     })
     this.runtime = createRuntimeProxy(this.rpc, opts.capabilities ?? RUNTIME_CAPABILITIES)
     this.rpc.onStateChange((state) => this.onRpcState(state))
+    this.rpc.onReady(() => this.watchLifecycle())
     this.sessions = new SessionSubscriptions(this.runtime.session)
   }
 
@@ -140,6 +148,7 @@ export class WorkspaceConnection {
   retryNow(): void {
     if (this.closed || !this.started) return
     if (this.rpc.state === 'ready' || this.rpc.state === 'connecting') return
+    this.stopAnnounced = false
     this.attempt = 0
     this.dial()
   }
@@ -210,16 +219,34 @@ export class WorkspaceConnection {
         this.setState({ kind: 'incompatible', runtimeVersion: remote?.version ?? 'unknown', ...(build ? { build } : {}) })
         return
       }
-      case 'refused':
-        this.setState({ kind: 'refused', message: this.rpc.remote?.error?.message ?? 'Runtime refused the connection' })
+      case 'refused': {
+        const error = this.rpc.remote?.error
+        const nestedIn = nestedRefusalRoot(error?.data)
+        this.setState({ kind: 'refused', message: error?.message ?? 'Runtime refused the connection', ...(nestedIn ? { nestedIn } : {}) })
         return
+      }
       case 'disconnected':
         if (this._state.kind === 'connected') this.lastSeen = this.now()
+        if (this.stopAnnounced) {
+          this.setState({ kind: 'stopped' })
+          return
+        }
         this.scheduleRetry()
         return
       default:
         return
     }
+  }
+
+  /** Learns whether the runtime goes away on purpose; resubscribed on every
+   *  hello (a runtime without the stream just never says). */
+  private watchLifecycle(): void {
+    this.stopAnnounced = false
+    const lifecycle = this.runtime.runtime?.lifecycle
+    if (!lifecycle) return
+    const sub = lifecycle()
+    sub.onEvent((event) => { if (event.kind === 'stopping' && event.reason === 'stop') this.stopAnnounced = true })
+    sub.done.catch(() => {})
   }
 
   private scheduleRetry(error?: string): void {

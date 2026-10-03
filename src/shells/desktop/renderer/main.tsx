@@ -3,7 +3,7 @@
 import './splash'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ErrorBoundary } from '@kernel/ui'
+import { ErrorBoundary } from '../ui/kernel/interaction'
 import { createLogger } from '@kernel/log/contract'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import { App } from './App'

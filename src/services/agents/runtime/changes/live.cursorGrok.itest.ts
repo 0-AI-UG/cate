@@ -1,24 +1,26 @@
+import path from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { createLiveChangeFixture, runLiveCli, assertCapturedEdit } from './liveHarness'
+import { assertCapturedEdit, LIVE_AGENT_CHANGES } from './liveHarness'
+import { createMockChangeFixture, MOCK_EDIT_PROMPT } from './liveMock'
 
-const prompt = 'Use your native file editing tool (not a shell command) to change target.txt from exactly before followed by a newline to exactly after followed by a newline. Read the file first. Do not modify any other file. Then stop.'
-
-describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('real CLI recorded changes', () => {
+describe.skipIf(!LIVE_AGENT_CHANGES)('real CLI recorded changes', () => {
   test('Cursor native edit reaches durable attributed history', { timeout: 180_000 }, async () => {
-    const fixture = await createLiveChangeFixture('cursor')
+    // Cursor's fake transport carries one whole-file write.
+    const fixture = await createMockChangeFixture('cursor', (cwd) => [{ name: 'Write', arguments: { path: path.join(cwd, 'target.txt'), text: 'after\n' } }])
     try {
-      const result = await runLiveCli('cursor-agent', ['--print', '--force', '--trust', '--model', process.env.CATE_LIVE_CURSOR_MODEL ?? 'auto', '--output-format', 'json', prompt], fixture)
+      const result = await fixture.run('cursor-agent', ['--print', '--force', '--output-format', 'json', ...fixture.args])
       expect(result.stdout).toBeTruthy()
       await assertCapturedEdit(fixture, 'cursor')
     } finally { await fixture.close() }
   })
 
   test('Grok native edit reaches durable attributed history', { timeout: 180_000 }, async () => {
-    const fixture = await createLiveChangeFixture('grok')
+    const fixture = await createMockChangeFixture('grok', (cwd) => [
+      { name: 'read_file', arguments: { target_file: path.join(cwd, 'target.txt') } },
+      { name: 'search_replace', arguments: { file_path: path.join(cwd, 'target.txt'), old_string: 'before', new_string: 'after' } },
+    ])
     try {
-      const result = await runLiveCli('grok', ['--no-auto-update', '--no-subagents', '--disable-web-search', '--permission-mode', 'acceptEdits', '-p', prompt], {
-        ...fixture, env: { ...fixture.env, GROK_FOLDER_TRUST: '0' },
-      })
+      const result = await fixture.run('grok', ['--no-auto-update', '--permission-mode', 'acceptEdits', ...fixture.args.slice(0, -1), '-p', MOCK_EDIT_PROMPT])
       expect(result.stdout).toBeTruthy()
       await assertCapturedEdit(fixture, 'grok')
     } finally { await fixture.close() }

@@ -31,13 +31,14 @@ export function selectTab(workspaceId: string, panelId: PanelId): boolean {
 }
 
 /** The leaf that owns attention. Focus on a canvas panel descends into its
- *  selected node's shown tab; any other focused panel is the leaf. */
+ *  active node's shown tab (a selection without one leaves the canvas the
+ *  leaf); any other focused panel is the leaf. */
 export function focusedLeafIn(doc: WorkspaceDocument, state: ClientState): PanelId | null {
   const focused = state.focusedPanelId
   if (!focused) return null
   const canvasId = doc.panels[focused]?.canvasId
   if (!canvasId) return doc.panels[focused] ? focused : null
-  const nodeId = state.selection[canvasId]?.[0]
+  const nodeId = state.selection[canvasId]?.active
   if (!nodeId) return focused
   const stacks = dockStacks(dockOf(doc, { canvasId, nodeId }))
   return stacks[0] ? activeTabOf(state.activeTabs, stacks[0]) : focused

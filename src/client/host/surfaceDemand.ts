@@ -1,5 +1,3 @@
-import { useSyncExternalStore } from 'react'
-
 /** Panels whose surface a session operation is waiting for. The persistent
  * host mounts these regardless of its retention policy. */
 let demanded = new Map<string, number>()
@@ -22,12 +20,13 @@ export function demandSurface(workspaceId: string, panelId: string): () => void 
   }
 }
 
-export function useDemandedSurfaces(): ReadonlyMap<string, number> {
-  return useSyncExternalStore(
-    listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
-    () => demanded,
-    () => demanded,
-  )
+export function demandedSurfaces(): ReadonlyMap<string, number> {
+  return demanded
+}
+
+export function subscribeDemandedSurfaces(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
 }
 
 export const isSurfaceDemanded = (surfaces: ReadonlyMap<string, number>, workspaceId: string, panelId: string): boolean =>

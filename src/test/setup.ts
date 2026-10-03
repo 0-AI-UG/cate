@@ -2,7 +2,7 @@
 // clientUi(); default to an inert mock. jsdom lacks layout, so give elements
 // a zeroed rect and the document an elementFromPoint.
 
-import { installMockClientUi } from '@kernel/ui/testing'
+import { installMockClientUi } from '@kernel/interaction/testing'
 
 installMockClientUi()
 

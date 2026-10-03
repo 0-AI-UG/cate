@@ -2,6 +2,8 @@
 // `__CATE_BUILD__`: the package version plus a hash of the source tree. Both
 // sides compute it from the same files, so a client refuses a runtime built
 // from other sources (a stale daemon) even when the versions are equal.
+// Shell code (src/shells, apart from settings slices) is not in the runtime
+// and is left out.
 
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -9,6 +11,10 @@ import path from 'node:path'
 
 /** Tests and the generated version file do not change what ships. */
 const SKIP = /\.(test|itest)\.tsx?$|\.test-helpers\.ts$|[/\\]runtime[/\\]daemon[/\\]contract[/\\]version\.ts$/
+/** Shells are not in the runtime, so a shell-only change keeps the build.
+ *  Their settings slices are: kernel/settings composes them. */
+const SHELL = /^shells[/\\]/
+const SETTINGS_SLICE = /[/\\]contract[/\\]settings\.ts$/
 
 function sourceFiles(dir) {
   return readdirSync(dir, { withFileTypes: true })
@@ -25,7 +31,9 @@ export function computeBuildId(repoRoot) {
   const src = path.join(repoRoot, 'src')
   const hash = createHash('sha256')
   for (const file of sourceFiles(src)) {
-    hash.update(path.relative(src, file).split(path.sep).join('/'))
+    const rel = path.relative(src, file)
+    if (SHELL.test(rel) && !SETTINGS_SLICE.test(rel)) continue
+    hash.update(rel.split(path.sep).join('/'))
     hash.update('\0')
     // CRLF checkouts (Windows CI) must hash like LF ones.
     hash.update(readFileSync(file, 'utf-8').replace(/\r\n/g, '\n'))

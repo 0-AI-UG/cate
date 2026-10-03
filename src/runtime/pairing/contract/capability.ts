@@ -1,4 +1,4 @@
-import { defineCapability, method } from '@kernel/rpc/contract'
+import { defineCapability, method, stream } from '@kernel/rpc/contract'
 import type { PairingMode } from './payload'
 
 export interface PairedDevice {
@@ -23,6 +23,10 @@ export const pairingCapability = defineCapability('pairing', {
     createSecret: method<{ mode: PairingMode }, CreatedSecret>({ mutates: true }),
     list: method<void, PairedDevice[]>(),
     revoke: method<{ deviceKey: string }, { removed: boolean }>({ mutates: true }),
+  },
+  streams: {
+    /** The device list now and after every change (paired, seen, removed). */
+    watch: stream<void, PairedDevice[]>(),
   },
 })
 

@@ -4,7 +4,7 @@
 // or the OS appearance change, including hand edits of settings.json.
 
 import { clientSettingsTable } from '@kernel/settings/contract'
-import { resolveTheme, themeBootSnapshot, type ThemeBootSnapshot } from '@kernel/ui/contract'
+import { resolveTheme, themeBootSnapshot, type ThemeBootSnapshot } from '@kernel/interaction/contract'
 import type { DeviceFiles } from './deviceFiles'
 
 export function themeBootFields(settings: unknown, prefersDark: boolean): ThemeBootSnapshot {

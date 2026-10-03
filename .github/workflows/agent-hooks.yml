@@ -49,14 +49,13 @@ jobs:
           src/services/agents/runtime/status.test.ts
           src/services/agents/runtime/status.integration.test.ts
           src/services/agents/runners/terminal/terminalRunner.test.ts
-          src/services/agents/ui/AgentHooksSettings.test.tsx
+          src/shells/desktop/ui/services/agents/AgentHooksSettings.test.tsx
       - name: Install current agent CLI
         run: bash scripts/install-agent-cli.sh "${{ matrix.agent }}"
       - name: Verify installed terminal hooks against fake providers
         run: npm run test:agent-hooks:ci -- --reporter=default --reporter=junit --outputFile.junit=reports/agent-hooks.xml
         env:
           CATE_HOOK_SMOKE_AGENTS: ${{ matrix.agent }}
-          CATE_HOOK_SMOKE_PROVIDER: mock
       - uses: actions/upload-artifact@v7
         if: always()
         with:

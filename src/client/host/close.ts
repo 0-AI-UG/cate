@@ -4,7 +4,7 @@
 // a session handle whether or not the view is mounted. Then one
 // `removePanels` op goes to the runtime.
 
-import { removalSet, type DocChange, type PanelId, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
+import { removalSet, type PanelId, type PanelRecord } from '@workspace/document/contract'
 import type { SessionHandle } from '@client/connections'
 import { documentStoreFor } from '@client/document'
 import { acquireSession } from './sessions'
@@ -56,25 +56,17 @@ export async function confirmClose(workspaceId: string, ids: readonly PanelId[])
   return true
 }
 
-export interface CloseOptions {
-  /** Changes to apply first in the same op (a dock making its presented
-   *  layout real), computed once the guards agreed. */
-  before?: (doc: WorkspaceDocument) => DocChange[]
-}
-
 /** Closes panels after their guards agree. Resolves true once the op went. */
-export async function closePanels(workspaceId: string, ids: readonly PanelId[], options: CloseOptions = {}): Promise<boolean> {
+export async function closePanels(workspaceId: string, ids: readonly PanelId[]): Promise<boolean> {
   if (ids.length === 0) return false
   if (!(await confirmClose(workspaceId, ids))) return false
   const store = documentStoreFor(workspaceId)
   const doc = store?.getSnapshot()
   const remaining = ids.filter((id) => doc?.panels[id])
   if (!store || !doc || remaining.length === 0) return false
-  const before = options.before?.(doc) ?? []
-  const remove: DocChange = { kind: 'removePanels', ids: remaining }
-  return store.propose(before.length > 0 ? { kind: 'batch', changes: [...before, remove] } : remove).ok
+  return store.propose({ kind: 'removePanels', ids: remaining }).ok
 }
 
-export function closePanel(workspaceId: string, panelId: PanelId, options?: CloseOptions): Promise<boolean> {
-  return closePanels(workspaceId, [panelId], options)
+export function closePanel(workspaceId: string, panelId: PanelId): Promise<boolean> {
+  return closePanels(workspaceId, [panelId])
 }

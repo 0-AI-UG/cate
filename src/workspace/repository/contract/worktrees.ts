@@ -99,6 +99,12 @@ export function mainWorktree<W extends WorktreeLike>(worktrees: readonly W[], ro
   return worktrees.find((w) => samePath(w.path, root))
 }
 
+/** The record's `worktreeId` for a picked checkout id: null for the
+ *  workspace root, whose joined id is its path while it has no metadata. */
+export function boundWorktreeId(id: string, root: string): string | null {
+  return samePath(id, root) ? null : id
+}
+
 export interface PanelCheckoutHooks {
   /** The path a file-backed panel works on (its definition's `checkoutPath`). */
   checkoutPath?: (record: PanelRecord) => string | undefined

@@ -8,17 +8,10 @@ import * as Sentry from '@sentry/electron/renderer'
 import { createLogger, installLogSink, type LogSink } from '@kernel/log/contract'
 import { createElectronRendererSink } from '@kernel/log/desktop/renderer'
 import { createClientSettingsStore, type ClientSettingsStore } from '@kernel/settings/client'
-import { installClientSettings, workspaceSettingsFor } from '@kernel/settings/ui'
-import {
-  applyTheme,
-  applyUiScale,
-  createShortcutRegistry,
-  installAppearanceHost,
-  installClientUi,
-  installErrorReporter,
-  installShortcutRegistry,
-} from '@kernel/ui'
-import type { NotificationAction } from '@kernel/ui/contract'
+import { installClientSettings, workspaceSettingsFor } from '../ui/kernel/settings'
+import { applyTheme, applyUiScale, installAppearanceHost, installErrorReporter } from '../ui/kernel/interaction'
+import { createShortcutRegistry, installClientUi, installShortcutRegistry } from '@kernel/interaction'
+import type { NotificationAction } from '@kernel/interaction/contract'
 import { createClientIdentity, eachConnection, installClientIdentity, WorkspaceConnections } from '@client/connections'
 import { attachDocuments, documentStoreFor, setClientAttentive } from '@client/document'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
@@ -30,9 +23,9 @@ import {
   installCanvasRelationHost,
   installCanvasSettings,
   installScreenshotPort,
-} from '@client/layout/canvas'
-import { canDetach, domDropEnvironment, installDragShell, installGestureLockWatchdog, setupCrossWindowDrops } from '@client/layout/drag'
-import { installWindowReveal, installWindowsPort, syncDetachedWindows } from '@client/layout/windows'
+} from '../ui/client/layout/canvas'
+import { canDetach, domDropEnvironment, installDragShell, installGestureLockWatchdog, setupCrossWindowDrops } from '../ui/client/layout/drag'
+import { installWindowReveal, installWindowsPort, syncDetachedWindows } from '../ui/client/layout/windows'
 import {
   attachNotifications,
   createNotificationDisplay,
@@ -50,11 +43,11 @@ import {
   startClientUi,
   TELEMETRY_NOTICE_VERSION,
   useUIStore,
-} from '@client/ui'
-import { WorkspaceList } from '@client/workspaces'
-import { trustStore } from '@workspace/lifecycle/ui'
-import { installEditorSettings } from '@panels/editor/view'
-import { installTerminalViewSettings } from '@panels/terminal/view'
+} from '../ui/app'
+import { WorkspaceList, nameJoinedWorkspaces } from '@client/workspaces'
+import { trustStore } from '../ui/workspace/lifecycle'
+import { installEditorSettings, startFilesTreeOnOpen } from '../ui/panels/editor'
+import { installTerminalViewSettings } from '../ui/panels/terminal'
 import { RUNTIME_BUILD } from '@runtime/daemon/contract'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import type { BootSnapshot, DesktopApi, DesktopAppInfo } from '../contract'
@@ -152,6 +145,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
 
   const workspaces = new WorkspaceList({ store: device, connections })
   await workspaces.load()
+  stops.push(nameJoinedWorkspaces(workspaces, connections))
   installClientApp({ workspaces, connections, version: info.version, pair: transports.pair, ssh: api.ssh })
   installDesktopPort(createDesktopPort(api, info))
   const uiState = createUiStateStore(device)
@@ -188,6 +182,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   installSessionSource(sessionSourceFrom(connections))
   installTerminalViewSettings(settings)
   installEditorSettings(settings)
+  stops.push(startFilesTreeOnOpen())
 
   // Canvas.
   installCanvasSettings({ client: settings, workspace: workspaceSettingsFor })

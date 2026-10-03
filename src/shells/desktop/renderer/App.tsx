@@ -4,12 +4,11 @@
 
 import { useEffect, useMemo } from 'react'
 import { MAIN_WINDOW } from '@workspace/document/contract'
-import { clientHas } from '@client/connections'
-import { PersistentPanelHost } from '@client/host'
-import { FileDropOverlay, useFileDropTracker } from '@client/layout/drag'
-import { MainWindowView, WindowView } from '@client/layout/windows'
-import { ClientOverlays, ConnectionBlocker, FileViewsHost, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, WorkspaceScope, useLeftChromeInset, useShortcuts, useUIStore, useWindowControlsInset, useWorkspaceBlock } from '@client/ui'
-import { useWorkspaceList } from '@client/workspaces/ui'
+import { PersistentPanelHost } from '../ui/client/host/PersistentPanelHost'
+import { FileDropOverlay, useFileDropTracker } from '../ui/client/layout/drag'
+import { MainWindowView, WindowView } from '../ui/client/layout/windows'
+import { ClientOverlays, ConnectionBlocker, FileViewsHost, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, WorkspaceScope, useLeftChromeInset, useShortcuts, useUIStore, useWindowControlsInset, useWorkspaceBlock } from '../ui/app'
+import { useWorkspaceList } from '../ui/client/workspaces'
 import type { DesktopClient } from './boot'
 import { PerfHud } from './perf/PerfHud'
 import { MacTrafficLightStrip, TitleBar } from './WindowChrome'
@@ -28,7 +27,7 @@ function Surfaces({ client, windowId, activeWorkspaceId, hidden }: { client: Des
   const ready = useWebviewReadyWorkspaces(client.partitions)
   const { open } = useWorkspaceList(client.workspaces)
   const workspaceIds = useMemo(() => open.filter((id) => ready.includes(id)), [open, ready])
-  return <PersistentPanelHost workspaceIds={workspaceIds} activeWorkspaceId={activeWorkspaceId} windowId={windowId} hidden={hidden} />
+  return <PersistentPanelHost workspaceIds={workspaceIds} activeWorkspaceId={activeWorkspaceId} windowId={windowId} hidden={hidden} Scope={WorkspaceScope} />
 }
 
 function MainApp({ client }: { client: DesktopClient }) {
@@ -52,8 +51,9 @@ function MainApp({ client }: { client: DesktopClient }) {
     return () => { document.body.style.background = previous }
   }, [platform])
 
-  // The surfaces sit outside the workspace scope: it remounts on a workspace
-  // switch, and surfaces (webviews) must outlive that.
+  // The surfaces sit outside the shown workspace's scope: it remounts on a
+  // workspace switch, and surfaces (webviews) must outlive that. Each
+  // workspace's surfaces get their own scope instead.
   return (
     <>
       <WorkspaceScope workspaceId={workspaceId}>
@@ -82,7 +82,7 @@ function MainApp({ client }: { client: DesktopClient }) {
       <FileViewsHost>
         <Surfaces
           client={client}
-          windowId={clientHas('windows') ? MAIN_WINDOW : null}
+          windowId={MAIN_WINDOW}
           activeWorkspaceId={workspaceId}
           hidden={!!overlay || blocked}
         />

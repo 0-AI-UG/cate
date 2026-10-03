@@ -2,7 +2,7 @@
 // in place (same id, same node). A pick in one client turns it for both.
 
 import { test, expect } from '@playwright/test'
-import { describeShared, doc, nodeOf, propose, seedShared, type SharedClient } from '../fixtures/shared-workspace'
+import { describeShared, doc, nodeOf, propose, seedShared, snapshot, type SharedClient } from '../fixtures/shared-workspace'
 
 const typeOf = async (c: SharedClient, id: string) => (await doc(c))?.panels[id]?.type
 
@@ -20,6 +20,14 @@ describeShared('surface', (pair) => {
     // Same node, now rendering the review.
     await expect.poll(async () => (await nodeOf(a, nodeId))?.panelId).toBe(panelId)
     await expect(a.page.locator(`[data-node-id="${nodeId}"] [role="group"][aria-label="Open a surface"]`)).toHaveCount(0)
+    // And it works: the comparison loads, without an error, for both.
+    for (const c of [a, b]) {
+      await expect.poll(async () => {
+        const s = await snapshot<{ comparison: unknown; error: string | null }>(c, panelId)
+        return s && { loaded: s.comparison !== null, error: s.error }
+      }, { timeout: 20_000 }).toEqual({ loaded: true, error: null })
+      await expect(c.page.locator(`[data-node-id="${nodeId}"]`)).toContainText('No changes in this comparison', { timeout: 15_000 })
+    }
   })
 
   test('a surface replaced by a terminal in B runs a shell A renders', async () => {

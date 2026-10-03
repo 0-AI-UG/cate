@@ -1,4 +1,4 @@
-// What a shell provides so the portable client can reach runtimes: raw byte
+// What a shell provides so the client core can reach runtimes: raw byte
 // pipes. Framing, the protocol and (for the network) the security layer are
 // the client's.
 

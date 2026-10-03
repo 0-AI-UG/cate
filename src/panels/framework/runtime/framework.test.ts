@@ -109,7 +109,6 @@ const terminalDef = definePanel({
   defaultSize: size,
   minimumSize: size,
   canLiveOnCanvas: true,
-  requires: [],
   defaultTitle: 'Terminal',
   channel: channel<CounterSnapshot, Partial<CounterSnapshot>, CounterOp>({ bytes: 'raw' }),
   api: fakeTerminalApi,
@@ -124,7 +123,6 @@ const browserDef = definePanel({
   defaultSize: size,
   minimumSize: size,
   canLiveOnCanvas: true,
-  requires: ['webview'],
   defaultTitle: 'Browser',
   channel: channel<JsonObject, Partial<JsonObject>, { kind: 'shot' }>(),
   fields: (options: { url?: string }) => ({ url: options.url ?? 'about:blank' }),
@@ -136,7 +134,6 @@ const canvasDef = definePanel({
   defaultSize: size,
   minimumSize: size,
   canLiveOnCanvas: false,
-  requires: ['canvas'],
   defaultTitle: 'Canvas',
   channel: channel<JsonObject>(),
   create: (options: object, kit) => kit.add(kit.record('canvas', { id: kit.newId(), canvasId: kit.newId() }), options),
@@ -148,7 +145,6 @@ const surfaceDef = definePanel({
   defaultSize: size,
   minimumSize: size,
   canLiveOnCanvas: true,
-  requires: [],
   defaultTitle: 'New panel',
   channel: channel<JsonObject>(),
 })
@@ -233,12 +229,10 @@ describe('panel definitions', () => {
     for (const definition of DEFINITIONS) expect(definitionProblems(definition), definition.type).toEqual([])
   })
 
-  it('reports unknown features and refuses to register them', () => {
-    const bad = { ...surfaceDef, requires: ['hologram'] } as unknown as AnyPanelDefinition
-    expect(definitionProblems(bad)).toEqual(['surface requires unknown feature "hologram"'])
+  it('reports a command needing an unknown feature and refuses to register it', () => {
     const badCommand = { ...terminalDef, commands: [{ id: 'x', title: 'X', op: {}, requires: ['telepathy'] }] } as unknown as AnyPanelDefinition
     expect(definitionProblems(badCommand)).toEqual(['command x requires unknown feature "telepathy"'])
-    expect(() => createPanelRegistry([{ definition: bad }])).toThrow(/hologram/)
+    expect(() => createPanelRegistry([{ definition: badCommand }])).toThrow(/telepathy/)
   })
 })
 

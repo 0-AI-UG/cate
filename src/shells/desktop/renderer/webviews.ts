@@ -11,8 +11,8 @@ import { demandSurface } from '@client/host'
 import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/client'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import { installT3WebviewHost } from '@services/t3/client'
-import { onSurfaceDemand, runBrowserSurfaceRequest } from '@panels/browser/view'
-import { runChatSurfaceOp } from '@panels/chat/view'
+import { onSurfaceDemand, runBrowserSurfaceRequest } from '../ui/panels/browser'
+import { runChatSurfaceOp } from '../ui/panels/chat'
 import { createLogger } from '@kernel/log/contract'
 import type { DesktopApi } from '../contract'
 
@@ -41,7 +41,6 @@ export function prepareWebviewPartitions(api: DesktopApi, connections: Workspace
   }
 
   const stop = eachConnection(connections, (connection) => {
-    if (!connection.clientHas('webview')) return () => {}
     let runtimeId: string | null = null
     let closed = false
     let preparing = false
@@ -130,7 +129,6 @@ export function serveSurfaces(connections: WorkspaceConnections, bridge: Browser
     else releases.delete(key)
   })
   const stopServing = eachConnection(connections, (connection: WorkspaceConnection) => {
-    if (!connection.clientHas('pageDriver')) return () => {}
     const { workspaceId } = connection
     return serveSurfaceRequests(connection.runtime.surface, (request) => request.op.startsWith('chat.')
       ? runChatSurfaceOp(workspaceId, request)

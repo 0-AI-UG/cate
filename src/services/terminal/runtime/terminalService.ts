@@ -1,9 +1,10 @@
 // The terminal service: PTYs in the runtime, each with a headless screen that
 // any number of viewers attach to. Output fans out to every viewer as a flow
 // controlled byte stream; input from any viewer goes to the same PTY; the PTY
-// size follows the most recently active viewer. Activity, ports and cwd are
-// scanned here and published as statuses. Everything that runs a process asks
-// `trust.requireTrusted()` first (9.2).
+// fits the viewer that last asked (`view` with `fit`; the first viewer until
+// then), and every viewer is told its size and whether it fits. Activity,
+// ports and cwd are scanned here and published as statuses. Everything that
+// runs a process asks `trust.requireTrusted()` first (9.2).
 
 import { randomUUID } from 'node:crypto'
 import { RpcError } from '@kernel/rpc/contract'
@@ -11,6 +12,7 @@ import type { Logger } from '@kernel/log/contract'
 import type { SliceValues } from '@kernel/settings/contract'
 import type {
   AttachEnd,
+  AttachParams,
   AttachEvent,
   LaunchIntent,
   ReadResult,
@@ -43,6 +45,9 @@ import { TerminalLog, isSafeLogKey, readSavedScreen, removeLogFiles } from './te
 // ---- Ports ------------------------------------------------------------------
 
 /** The part of node-pty's IPty the service uses. */
+
+/** How long shells get to end their jobs on shutdown before SIGKILL. */
+const SHUTDOWN_GRACE_MS = 1_000
 export interface PtyProcess {
   readonly pid: number
   onData(listener: (data: string) => void): unknown
@@ -115,7 +120,7 @@ export interface TerminalService {
   write(id: string, data: string): void
   view(params: ViewParams): void
   /** Returns the detach function. */
-  attach(params: { id: string; cols?: number; rows?: number; visible?: boolean }, sink: ViewerSink): () => void
+  attach(params: AttachParams, sink: ViewerSink): () => void
   kill(id: string): void
   close(id: string): void
   cwd(id: string): Promise<string | null>
@@ -136,8 +141,9 @@ export interface TerminalService {
   onExit(observer: ExitObserver): () => void
   onActivity(observer: ActivityObserver): () => void
 
-  /** Daemon shutdown: saves every screen, kills every process group. */
-  shutdown(): void
+  /** Daemon shutdown: saves every screen, hangs up every shell (its jobs
+   *  too), then kills what is left. */
+  shutdown(): Promise<void>
 }
 
 // ---- Implementation -----------------------------------------------------------
@@ -156,7 +162,9 @@ interface Viewer {
   cols?: number
   rows?: number
   visible: boolean
-  lastActive: number
+  lastFit: number
+  /** The last `size` event sent, so each change is sent once. */
+  told: string
   decoder: TextDecoder
   lagTimer: ReturnType<typeof setTimeout> | null
 }
@@ -172,7 +180,7 @@ interface Term {
   screen: HeadlessScreen
   log: TerminalLog | null
   viewers: Map<string, Viewer>
-  activeViewer: string | null
+  fittedViewer: string | null
   activity: TerminalActivity
   ports: number[]
   cwd: string | null
@@ -304,7 +312,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
   }
 
   const applySize = (term: Term): void => {
-    const viewer = term.activeViewer ? term.viewers.get(term.activeViewer) : undefined
+    const viewer = term.fittedViewer ? term.viewers.get(term.fittedViewer) : undefined
     if (!viewer || !validSize(viewer.cols) || !validSize(viewer.rows)) return
     const { cols, rows } = viewer
     if (cols === term.screen.cols && rows === term.screen.rows) return
@@ -314,11 +322,23 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     }
   }
 
-  const activate = (term: Term, viewer: Viewer): void => {
-    viewer.lastActive = Date.now()
-    if (term.activeViewer === viewer.id) return
-    term.activeViewer = viewer.id
+  /** Tells every viewer the PTY's size and whether the PTY fits it. */
+  const tellSize = (term: Term): void => {
+    const { cols, rows } = term.screen
+    for (const v of term.viewers.values()) {
+      const fitted = term.fittedViewer === v.id
+      const told = `${cols}x${rows}:${fitted}`
+      if (v.told === told) continue
+      v.told = told
+      v.sink.emit({ kind: 'size', cols, rows, fitted })
+    }
+  }
+
+  const fitTo = (term: Term, viewer: Viewer): void => {
+    viewer.lastFit = Date.now()
+    term.fittedViewer = viewer.id
     applySize(term)
+    tellSize(term)
   }
 
   const dropViewer = (term: Term, viewer: Viewer): void => {
@@ -326,11 +346,12 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     term.viewers.delete(viewer.id)
     if (viewer.lagTimer) clearTimeout(viewer.lagTimer)
     setPaused(term, `viewer:${viewer.id}`, false)
-    if (term.activeViewer === viewer.id) {
+    if (term.fittedViewer === viewer.id) {
       let next: Viewer | undefined
-      for (const v of term.viewers.values()) if (!next || v.lastActive > next.lastActive) next = v
-      term.activeViewer = next?.id ?? null
+      for (const v of term.viewers.values()) if (!next || v.lastFit > next.lastFit) next = v
+      term.fittedViewer = next?.id ?? null
       applySize(term)
+      tellSize(term)
     }
     syncTimers()
     touch(term)
@@ -497,7 +518,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       viewer.sink.end({ reason: 'exit', exitCode })
     }
     term.viewers.clear()
-    term.activeViewer = null
+    term.fittedViewer = null
     saveScreen(term)
     term.log?.dispose()
     term.log = null
@@ -568,7 +589,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         screen: new HeadlessScreen(params.cols, params.rows, settings.terminalScrollback),
         log: null,
         viewers: new Map(),
-        activeViewer: null,
+        fittedViewer: null,
         activity: { type: 'idle' },
         ports: [],
         cwd,
@@ -622,8 +643,11 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         viewer.visible = params.visible
         if (viewer.visible) resume(term)
       }
-      if (params.active) activate(term, viewer)
-      else if (term.activeViewer === viewer.id) applySize(term)
+      if (params.fit) fitTo(term, viewer)
+      else if (term.fittedViewer === viewer.id) {
+        applySize(term)
+        tellSize(term)
+      }
     },
 
     attach(params, sink) {
@@ -633,9 +657,17 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         sink,
         ...(validSize(params.cols) && validSize(params.rows) ? { cols: params.cols, rows: params.rows } : {}),
         visible: params.visible !== false,
-        lastActive: 0,
+        lastFit: 0,
+        told: '',
         decoder: new TextDecoder(),
         lagTimer: null,
+      }
+      // A live PTY: the viewer joins (the first one has the PTY fit it) and
+      // is told the grid and whether it fits before the screen comes.
+      if (term.alive) {
+        term.viewers.set(viewer.id, viewer)
+        if (!term.fittedViewer) fitTo(term, viewer)
+        tellSize(term)
       }
       // Screen, then what is written but not yet in it, then live output:
       // all synchronous, so nothing falls between.
@@ -647,14 +679,11 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         sink.end({ reason: 'exit', ...(term.exitCode !== null ? { exitCode: term.exitCode } : {}) })
         return () => {}
       }
-      term.viewers.set(viewer.id, viewer)
-      if (!term.activeViewer) activate(term, viewer)
       if (viewer.visible) resume(term)
       sink.onInput((bytes) => {
         if (!term.alive || !deps.trust.isTrusted()) return
         const data = viewer.decoder.decode(bytes, { stream: true })
         if (!data) return
-        activate(term, viewer)
         resume(term)
         try { term.pty.write(data) } catch { return }
         notify(inputObservers, term.id, data)
@@ -755,20 +784,28 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       return () => activityObservers.delete(observer)
     },
 
-    shutdown() {
+    async shutdown() {
       stopSettings()
       if (scanTimer) clearInterval(scanTimer)
       if (idleTimer) clearInterval(idleTimer)
       scanTimer = idleTimer = null
+      const live = [...terms.values()].filter((term) => term.alive)
+      // Hang up like a closing window: the shell passes SIGHUP to its jobs,
+      // background ones included (they have process groups of their own).
+      // SIGCONT first: a stopped group acts only once resumed.
+      for (const term of live) {
+        saveScreen(term)
+        signalGroup(term.pid, 'SIGCONT')
+        try { term.pty.kill() } catch { /* already dead */ }
+      }
+      const deadline = Date.now() + SHUTDOWN_GRACE_MS
+      while (live.some((term) => term.alive) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25))
+      // Whatever ignored the hangup.
+      for (const term of live) {
+        if (term.alive) signalGroup(term.pid, 'SIGKILL')
+        term.alive = false
+      }
       for (const term of terms.values()) {
-        if (term.alive) {
-          saveScreen(term)
-          // SIGCONT first: a stopped group acts on SIGKILL only once resumed.
-          signalGroup(term.pid, 'SIGCONT')
-          signalGroup(term.pid, 'SIGKILL')
-          try { term.pty.kill() } catch { /* already dead */ }
-          term.alive = false
-        }
         term.log?.dispose()
         term.log = null
       }

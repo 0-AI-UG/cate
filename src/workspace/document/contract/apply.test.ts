@@ -370,6 +370,65 @@ describe('worktrees', () => {
   })
 })
 
+describe('maximize', () => {
+  /** main: split [s1: cv (canvas-cv), a | s2: b]; canvas nodes n1 [x, y] and n2 [z] */
+  function fixture(): Doc {
+    return ok(
+      createDocument(),
+      add('cv', tab('s1'), 'canvas'),
+      add('a', tab('s1')),
+      add('b', split('s1', 'right', 's2', 'sp')),
+      add('x', node('canvas-cv', 'n1')),
+      add('y', tab('stack-n1', undefined, { canvasId: 'canvas-cv', nodeId: 'n1' })),
+      add('z', node('canvas-cv', 'n2')),
+    )
+  }
+  const maximizeStack: DocChange = { kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 's1' }
+  const restore: DocChange = { kind: 'restoreLayout', windowId: MAIN_WINDOW }
+
+  it('maximizeStack gathers every tab into the stack; restoreLayout puts the split back', () => {
+    const doc = fixture()
+    const maximized = ok(doc, maximizeStack)
+    expect(mainDock(maximized)).toEqual(stack('s1', 'cv', 'a', 'b'))
+    expect(maximized.windows[MAIN_WINDOW].maximized).toEqual({ stackId: 's1', layout: mainDock(doc) })
+    expect(ok(maximized, restore)).toEqual(doc)
+  })
+
+  it('maximizePanel moves a pane after its canvas tab; restore puts the node back, a singleton one too', () => {
+    const doc = fixture()
+    const fromSplit = ok(doc, { kind: 'maximizePanel', id: 'x' })
+    expect(placementOf(fromSplit, 'x')).toEqual({ dock: MAIN, stackId: 's1', index: 1 })
+    expect(fromSplit.canvases['canvas-cv'].nodes.n1.dock).toEqual(stack('stack-n1', 'y'))
+    expect(ok(fromSplit, restore)).toEqual(doc)
+
+    const fromSingleton = ok(doc, { kind: 'maximizePanel', id: 'z' })
+    expect(fromSingleton.canvases['canvas-cv'].nodes.n2).toBeUndefined()
+    expect(ok(fromSingleton, restore).canvases['canvas-cv'].nodes.n2).toEqual(doc.canvases['canvas-cv'].nodes.n2)
+  })
+
+  it('one maximize per window, and only what can be maximized', () => {
+    const doc = fixture()
+    fails(ok(doc, maximizeStack), { kind: 'maximizePanel', id: 'x' }, 'rejected')
+    fails(threeTabs(), { kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 's1' }, 'rejected')
+    fails(doc, { kind: 'maximizePanel', id: 'a' }, 'rejected')
+    fails(doc, { kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 'nope' }, 'gone')
+    fails(doc, restore, 'gone')
+  })
+
+  it('a change to the window or the source node commits the layout; ratios do not', () => {
+    const merged = ok(fixture(), maximizeStack)
+    expect(ok(merged, place('a', tab('s1', null))).windows[MAIN_WINDOW].maximized).toBeUndefined()
+    expect(ok(merged, { kind: 'removePanels', ids: ['b'] }).windows[MAIN_WINDOW].maximized).toBeUndefined()
+
+    const promoted = ok(fixture(), { kind: 'maximizePanel', id: 'x' })
+    expect(ok(promoted, { kind: 'setSplitRatio', splitId: 'sp', ratios: [1, 3] }).windows[MAIN_WINDOW].maximized).toBeDefined()
+    expect(ok(promoted, { kind: 'setNodeRects', canvasId: 'canvas-cv', rects: [{ nodeId: 'n1', rect: rect(9, 9, 400, 300) }] })
+      .windows[MAIN_WINDOW].maximized).toBeDefined()
+    expect(ok(promoted, add('w', tab('stack-n1', undefined, { canvasId: 'canvas-cv', nodeId: 'n1' }))).windows[MAIN_WINDOW].maximized).toBeUndefined()
+    expect(ok(promoted, place('z', tab('s2'))).windows[MAIN_WINDOW].maximized).toBeUndefined()
+  })
+})
+
 describe('batch', () => {
   it('applies every change or none', () => {
     const doc = threeTabs()

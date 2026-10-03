@@ -3,7 +3,7 @@
 // annotated copies stored in a workspace, and sends it to every window.
 // Annotated copies are read through their workspace's runtime.
 
-import type { RecentScreenshot, ScreenshotPort } from '@client/layout/canvas'
+import type { RecentScreenshot, ScreenshotPort } from '../ui/client/layout/canvas'
 import { fileRefs } from '@workspace/files/client'
 import { base64ToBytes } from '@workspace/files/contract'
 import type { DesktopApi, RecentScreenshot as ShellScreenshot } from '../contract'

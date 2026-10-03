@@ -84,6 +84,10 @@ const fwd = (from, to) => path.relative(from, to).split(path.sep).join('/') || '
 
 const args = process.argv.slice(2)
 const useDocker = args.includes('--docker')
+// --install (dev): skip the tarball and install the stage straight into
+// ~/.cate/runtime/<build>/, where the app looks first. No-op when that build
+// is already installed.
+const installOnly = args.includes('--install')
 const targetArg = valueOf('--target') ?? `${plat(process.platform)}-${process.arch}`
 const SUPPORTED = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'win32-x64']
 if (!SUPPORTED.includes(targetArg)) {
@@ -91,6 +95,18 @@ if (!SUPPORTED.includes(targetArg)) {
   process.exit(1)
 }
 const [targetPlatform, targetArch] = targetArg.split('-')
+if (installOnly && targetArg !== `${plat(process.platform)}-${process.arch}`) {
+  console.error('[runtime] --install builds for this machine only; drop --target')
+  process.exit(1)
+}
+
+const buildId = JSON.parse(runtimeBuildOptions.define.__CATE_BUILD__)
+const runtimeDir = path.join(os.homedir(), '.cate', 'runtime')
+const installDir = path.join(runtimeDir, buildId)
+if (installOnly && existsSync(path.join(installDir, '.ok'))) {
+  console.log(`[runtime] ${buildId} already installed at ${installDir}`)
+  process.exit(0)
+}
 
 const version = await buildBundle()
 const stageDir = path.join(dist, 'stage', targetArg)
@@ -119,7 +135,7 @@ await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
 await stageT3(path.join(stageDir, 't3'))
 await stageCateCli(path.join(stageDir, 'cate'))
 cpSync(path.join(repoRoot, 'skills'), path.join(stageDir, 'skills'), { recursive: true })
-await writeFile(path.join(stageDir, 'BUILD'), `${JSON.parse(runtimeBuildOptions.define.__CATE_BUILD__)}\n`)
+await writeFile(path.join(stageDir, 'BUILD'), `${buildId}\n`)
 signMacNatives(stageDir)
 
 // Fail loudly if anything the daemon's install-probe requires is missing, rather
@@ -140,6 +156,24 @@ const required = [
 ]
 const missing = required.filter((rel) => !existsSync(path.join(stageDir, rel)))
 if (missing.length) throw new Error(`[runtime] incomplete stage for ${targetArg}; missing: ${missing.join(', ')}`)
+
+if (installOnly) {
+  // Same steps as installRuntimeTarball (src/runtime/daemon/node/install.ts):
+  // copy beside the install, mark it, rename into place. The `.staging-<pid>-`
+  // name lets the runtime prune a leftover once this process is gone.
+  const staging = path.join(runtimeDir, `.staging-${process.pid}-dev`)
+  rmSync(staging, { recursive: true, force: true })
+  mkdirSync(runtimeDir, { recursive: true })
+  // APFS clones make the copy near free on macOS.
+  if (process.platform === 'darwin') execFileSync('cp', ['-Rc', stageDir, staging])
+  else cpSync(stageDir, staging, { recursive: true })
+  await writeFile(path.join(staging, '.ok'), buildId)
+  rmSync(installDir, { recursive: true, force: true })
+  renameSync(staging, installDir)
+  console.log(`[runtime] installed ${buildId} at ${installDir}`)
+  pruneDevInstalls()
+  process.exit(0)
+}
 
 // --no-xattrs: don't archive extended attributes (macOS keeps re-stamping a
 // com.apple.provenance xattr that otherwise makes GNU tar warn on extraction
@@ -485,9 +519,7 @@ async function stageNodeRuntime(platform, arch, outBin) {
   if (platform === 'win32') {
     const name = `node-v${NODE_VERSION}-win-${arch}`
     const url = `https://nodejs.org/dist/v${NODE_VERSION}/${name}.zip`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`node runtime download failed: ${res.status} ${url}`)
-    const buf = Buffer.from(await res.arrayBuffer())
+    const buf = await fetchCached(url)
     const tmp = path.join(os.tmpdir(), `cate-node-${platform}-${arch}-${NODE_VERSION}`)
     rmSync(tmp, { recursive: true, force: true })
     mkdirSync(tmp, { recursive: true })
@@ -503,9 +535,7 @@ async function stageNodeRuntime(platform, arch, outBin) {
 
   const name = `node-v${NODE_VERSION}-${platform}-${arch}`
   const url = `https://nodejs.org/dist/v${NODE_VERSION}/${name}.tar.gz`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`node runtime download failed: ${res.status} ${url}`)
-  const buf = Buffer.from(await res.arrayBuffer())
+  const buf = await fetchCached(url)
   const tmp = path.join(os.tmpdir(), `cate-node-${platform}-${arch}-${NODE_VERSION}`)
   rmSync(tmp, { recursive: true, force: true })
   mkdirSync(tmp, { recursive: true })
@@ -529,9 +559,7 @@ async function stageRipgrep(target, outBin) {
   const isWin = target.startsWith('win32-')
   const ext = isWin ? 'zip' : 'tar.gz'
   const url = `https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/${name}.${ext}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`ripgrep download failed: ${res.status} ${url}`)
-  const buf = Buffer.from(await res.arrayBuffer())
+  const buf = await fetchCached(url)
   const tmp = path.join(os.tmpdir(), `cate-rg-${target}-${RIPGREP_VERSION}`)
   rmSync(tmp, { recursive: true, force: true })
   mkdirSync(tmp, { recursive: true })
@@ -786,6 +814,40 @@ function unzipInto(zipPath, destDir) {
   }
   // Basename archive + relative -C (cwd = the zip's dir) — see `fwd`.
   execFileSync('tar', ['-xf', path.basename(zipPath), '-C', fwd(path.dirname(zipPath), destDir)], { stdio: 'ignore', cwd: path.dirname(zipPath) })
+}
+/** Only release runtimes prune installs, so each source change would leave a
+ *  dev install behind: remove the other installs of this version that no live
+ *  daemon runs. */
+function pruneDevInstalls() {
+  const live = new Set()
+  const workspaces = path.join(os.homedir(), '.cate', 'workspaces')
+  for (const id of existsSync(workspaces) ? readdirSync(workspaces) : []) {
+    try {
+      const info = JSON.parse(readFileSync(path.join(workspaces, id, 'runtime.json'), 'utf-8'))
+      process.kill(info.pid, 0)
+      live.add(info.build)
+    } catch { /* no runtime, or not running */ }
+  }
+  const version = buildId.split('+')[0]
+  for (const name of readdirSync(runtimeDir)) {
+    if (name === buildId || live.has(name) || !name.startsWith(`${version}+`)) continue
+    rmSync(path.join(runtimeDir, name), { recursive: true, force: true })
+    console.log(`[runtime] removed unused dev install ${name}`)
+  }
+}
+
+/** GET `url`, cached under dist-runtime/cache/ by file name (the names carry
+ *  the version), so rebuilds skip the network. */
+async function fetchCached(url) {
+  const cached = path.join(dist, 'cache', path.basename(new URL(url).pathname))
+  if (existsSync(cached)) return readFileSync(cached)
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`download failed: ${res.status} ${url}`)
+  const buf = Buffer.from(await res.arrayBuffer())
+  mkdirSync(path.dirname(cached), { recursive: true })
+  await writeFile(`${cached}.part`, buf)
+  renameSync(`${cached}.part`, cached)
+  return buf
 }
 function valueOf(flag) {
   const i = args.indexOf(flag)

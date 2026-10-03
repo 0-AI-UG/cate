@@ -3,7 +3,7 @@
 // so they hold no components and no function that touches a session.
 
 import type { CateApiNamespace } from '@kernel/api/contract'
-import type { StoredShortcut } from '@kernel/ui/contract'
+import type { StoredShortcut } from '@kernel/interaction/contract'
 import { isClientFeature, type ChannelSchema, type ClientFeature } from '@kernel/rpc/contract'
 import type { Point, Size } from '@workspace/canvas/contract'
 import type { RelationRole } from '@workspace/relations/contract'
@@ -132,8 +132,6 @@ export interface PanelDefinition<
   surface?: { retention: 'workspace' | 'recent' }
   /** False when the panel works without a project folder (a browser). */
   requiresFolder?: boolean
-  /** Client features the view needs; other clients show a placeholder. */
-  requires: readonly ClientFeature[]
   // --- Record, schemas, API --------------------------------------------------
   /** Title of a fresh record when the creator gives none. */
   defaultTitle: string
@@ -183,8 +181,6 @@ export function definitionProblems(definition: AnyPanelDefinition): string[] {
   const unknownFeatures = (list: readonly unknown[] | undefined, where: string) => {
     for (const feature of list ?? []) if (!isClientFeature(feature)) problems.push(`${where} requires unknown feature "${String(feature)}"`)
   }
-  if (!Array.isArray(definition.requires)) problems.push('requires is missing')
-  unknownFeatures(definition.requires, definition.type)
   for (const command of definition.commands ?? []) unknownFeatures(command.requires, `command ${command.id}`)
   if (typeof definition.icon !== 'string' || !definition.icon) problems.push('icon must be a name')
   if (definition.creation && !Number.isFinite(definition.creation.order)) problems.push('creation order must be a number')

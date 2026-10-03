@@ -78,7 +78,6 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
       presence.notePost(terminalId, agentId, pid, sourceStartedAt),
     onChangeError: (error) => deps.log?.warn('could not save a reported agent edit', error),
   })
-  const registry = createRunnerRegistry()
   const notifications = createAgentNotifications()
   const promptContext = createPromptContext({
     document: deps.document,
@@ -86,6 +85,8 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     relationRole: deps.relationRole,
     flushConnected: deps.flushConnected,
   })
+  const registry = createRunnerRegistry({ contextSentAt: (panelId) => promptContext.sentAt(panelId) })
+  promptContext.onSent((panelId) => registry.refresh(panelId))
 
   return {
     root: deps.root,
@@ -101,7 +102,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     async inspectHooks(cwd) {
       // Inspection runs the Hermes CLI for its plugin state.
       deps.trust.requireTrusted()
-      return hooks.inspectWorkspace(await deps.resolveCheckout(cwd))
+      return hooks.inspectWorkspace(await deps.resolveCheckout(cwd), { approvals: true })
     },
     panel: (panelId) => registry.sessionFor(panelId),
     async send(panelId, prompt) {

@@ -3,7 +3,7 @@
 // reaches, so it opens in the workspace's panel type that opens URLs and never
 // in the client's system browser, for every workspace alike.
 
-import { clientUi } from '@kernel/ui'
+import { clientUi } from '@kernel/interaction'
 import { isLoopbackUrl } from '@runtime/tunnel/contract'
 import type { PanelId } from '@workspace/document/contract'
 import { createPanel } from './createPanel'

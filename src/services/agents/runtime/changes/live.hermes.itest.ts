@@ -1,31 +1,28 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { createLiveChangeFixture, runLiveCli, runLiveTui } from './liveHarness'
+import { LIVE_AGENT_CHANGES, runLiveTui } from './liveHarness'
+import { createMockChangeFixture, MOCK_EDIT_PROMPT } from './liveMock'
 
-const LIVE_HERMES = process.env.CATE_LIVE_HERMES === '1'
-
-// Opt-in paid-provider contract test. The caller owns authentication and the
-// disposable Hermes profile; this test exercises Cate's production endpoint,
-// managed plugin, context response, lifecycle normalization, and edit capture.
-describe.skipIf(!LIVE_HERMES)('real Hermes integration', () => {
+// Cate's production endpoint, managed plugin, context response, lifecycle
+// normalization, and edit capture, in a disposable Hermes profile.
+describe.skipIf(!LIVE_AGENT_CHANGES)('real Hermes integration', () => {
   test('managed plugin delivers context, lifecycle, and a native file edit', { timeout: 180_000 }, async () => {
-    const profile = process.env.CATE_LIVE_HERMES_PROFILE
-    if (!profile) throw new Error('CATE_LIVE_HERMES_PROFILE is required')
-    if (!process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is required')
-
-    const fixture = await createLiveChangeFixture('hermes')
+    const fixture = await createMockChangeFixture('hermes', (cwd) => [
+      { name: 'patch', arguments: { mode: 'replace', path: path.join(cwd, 'target.txt'), old_string: 'before', new_string: 'after' } },
+    ])
+    const profile = fixture.args[1]
     const contextValue = `cate-live-${randomUUID()}`
     fixture.hooks.setPromptContext(fixture.terminalId, `CATE_LIVE_CONTEXT=${contextValue}`)
     try {
-      const prompt = 'Read target.txt, then use the native patch tool in replace mode with old_string="before" and new_string="after". Do not use write_file or a shell command. Change no other file. Integration-provided context contains CATE_LIVE_CONTEXT; after editing, reply only with its value.'
-      const result = await runLiveCli('hermes', [
-        '--profile', profile, 'chat', '--oneshot', '--quiet', '--provider', 'openrouter',
-        '--model', process.env.CATE_LIVE_HERMES_MODEL ?? 'deepseek/deepseek-v4.1-flash-20260910',
-        '--reasoning', 'none', '--toolsets', 'file', '--yolo', '--query', prompt,
-      ], { cwd: fixture.cwd, env: fixture.env, timeout: 150_000 })
+      const result = await fixture.run('hermes', [
+        '--profile', profile, 'chat', '--oneshot', '--quiet', '--provider', 'custom', '--model', 'cate-mock',
+        '--reasoning', 'none', '--toolsets', 'file', '--yolo', '--query', MOCK_EDIT_PROMPT,
+      ])
 
-      expect(result.stdout).toContain(contextValue)
+      expect(fixture.provider.inputText.some((text) => text.includes(contextValue)), 'integration context reached the model').toBe(true)
+      expect(result.stdout).toContain(fixture.provider.answer)
       expect(await readFile(`${fixture.cwd}/target.txt`, 'utf8')).toBe('after\n')
       await expect.poll(async () => (await fixture.records()).length, { timeout: 5000 }).toBe(1)
       const [record] = await fixture.records()
@@ -60,18 +57,10 @@ describe.skipIf(!LIVE_HERMES)('real Hermes integration', () => {
   })
 
   test('Cate launch form seeds a turn and remains interactive on a PTY', { timeout: 180_000 }, async () => {
-    const profile = process.env.CATE_LIVE_HERMES_PROFILE
-    if (!profile) throw new Error('CATE_LIVE_HERMES_PROFILE is required')
-    if (!process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is required')
-
-    const fixture = await createLiveChangeFixture('hermes')
+    const fixture = await createMockChangeFixture('hermes', () => [], 'Reply only OK. Do not call tools.')
     let turnEndedAt = 0
     try {
-      await runLiveTui('hermes', [
-        '--profile', profile, 'chat', '--cli', '--provider', 'openrouter',
-        '--model', process.env.CATE_LIVE_HERMES_MODEL ?? 'deepseek/deepseek-v4.1-flash-20260910',
-        '--reasoning', 'none', '--toolsets', 'file', '--query', 'Reply only OK. Do not call tools.',
-      ], {
+      await runLiveTui('hermes', [...fixture.args.slice(0, -2), '--reasoning', 'none', '--toolsets', 'file', ...fixture.args.slice(-2)], {
         cwd: fixture.cwd,
         env: fixture.env,
         timeout: 150_000,

@@ -1,5 +1,5 @@
 // A WebSocket as a message port. The browser `WebSocket` and Node's `ws` both
-// fit `WebSocketLike`; the portable client gets its constructor from the shell.
+// fit `WebSocketLike`; the client core gets its constructor from the shell.
 
 import type { MessagePortLike } from '../../security/contract'
 import { createPortCore } from './portCore'

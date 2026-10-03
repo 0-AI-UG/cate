@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { BrowserWindow, ipcMain, screen, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import type { ContextMenuItem } from '@kernel/ui/contract'
+import type { ContextMenuItem } from '@kernel/interaction/contract'
 import {
   DESKTOP_CHANNELS as C,
   type AppPerfSnapshot,

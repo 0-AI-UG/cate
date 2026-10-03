@@ -87,6 +87,20 @@ function invertChange(before: Doc, after: Doc, change: DocChange, newId: () => s
     }
     case 'setWindowBounds':
       return [{ kind: 'setWindowBounds', windowId: change.windowId, bounds: before.windows[change.windowId].bounds! }]
+    case 'maximizeStack':
+      return [{ kind: 'restoreLayout', windowId: change.windowId }]
+    case 'maximizePanel': {
+      const placement = placementOf(after, change.id)!
+      return isCanvasDock(placement.dock) ? [] : [{ kind: 'restoreLayout', windowId: placement.dock.windowId }]
+    }
+    case 'restoreLayout': {
+      const { stackId, node } = before.windows[change.windowId].maximized!
+      if (!node) return [{ kind: 'maximizeStack', windowId: change.windowId, stackId }]
+      // The pane is the one the node had that the window holds now.
+      const window = new Set(dockPanels(before.windows[change.windowId].dock))
+      const id = dockPanels(node.dock).find((panelId) => window.has(panelId))!
+      return [{ kind: 'maximizePanel', id }]
+    }
     case 'addRelation':
       return [{ kind: 'removeRelation', id: change.relation.id }]
     case 'updateRelation': {

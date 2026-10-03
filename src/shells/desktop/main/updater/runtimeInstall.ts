@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createLogger } from '@kernel/log/contract'
 import { RUNTIME_BUILD, RUNTIME_VERSION, runtimeTarget, tarballName } from '@runtime/daemon/contract'
-import { ensureRuntimeInstalled, pruneRuntimeInstalls } from '@runtime/daemon/node'
+import { ensureRuntimeInstalled } from '@runtime/daemon/node'
 import { cateHome } from '@runtime/data/node'
 
 const log = createLogger('runtime-install')
@@ -40,8 +40,8 @@ function bundledRuntimeTarball(options: BundledTarballOptions): string | null {
   return exists(file) ? file : null
 }
 
-/** Resolves once this build's runtime is installed, then removes installs
- *  nothing uses; rejects with a message the local dial can show. */
+/** Resolves once this build's runtime is installed (the runtime prunes
+ *  unused installs when it starts); rejects with a message the local dial can show. */
 export async function installBundledRuntime(options: BundledTarballOptions & { home?: string; build?: string }): Promise<string> {
   const version = options.version ?? RUNTIME_VERSION
   const build = options.build ?? RUNTIME_BUILD
@@ -63,8 +63,5 @@ export async function installBundledRuntime(options: BundledTarballOptions & { h
     throw new Error(`${(err as Error).message}. Rebuild it with \`npm run runtime:tarball\`, or run with CATE_RUNTIME_BUNDLE`)
   }
   log.info('runtime %s ready at %s (%d ms, from %s)', build ?? version, dir, Date.now() - started, tarball ?? 'release download')
-  pruneRuntimeInstalls({ cateHome: home, keep: [path.basename(dir)], platform: options.platform })
-    .then((removed) => { if (removed.length) log.info('removed unused runtime installs: %s', removed.join(', ')) })
-    .catch((err: Error) => log.warn('pruning runtime installs: %s', err.message))
   return dir
 }

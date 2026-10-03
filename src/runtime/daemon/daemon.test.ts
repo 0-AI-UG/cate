@@ -108,8 +108,46 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
       if (result.kind !== 'nested') throw new Error(`expected ${at} to be refused`)
       expect(result.message).toContain(fs.realpathSync(root))
       const endpoint = path.join(home, '.cate', 'workspaces', (await runtimeIdFor(at)), 'runtime.sock')
-      await expect(connect(endpoint)).rejects.toThrow('Workspaces cannot be nested')
+      await expect(connect(endpoint)).rejects.toThrow('which is already open in Cate')
     }
+  })
+
+  it('names the open workspace it is inside, in the message and as data', async () => {
+    expect((await start()).kind).toBe('serving')
+    const inner = path.join(root, 'sub')
+    fs.mkdirSync(inner)
+    const result = await serveWorkspace({ root: inner, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
+    if (result.kind !== 'nested') throw new Error('expected a refusal')
+    expect(result.message).toBe(`${fs.realpathSync(inner)} is inside the workspace ${fs.realpathSync(root)}, which is already open in Cate. Open that workspace instead, or close it first.`)
+    const endpoint = path.join(home, '.cate', 'workspaces', await runtimeIdFor(inner), 'runtime.sock')
+    const refused = await connect(endpoint).then(() => null, (err: { data?: unknown }) => err)
+    expect(refused?.data).toEqual({ nested: { root: fs.realpathSync(root) } })
+  })
+
+  it('a stale runtime.json of a runtime that no longer answers does not block', async () => {
+    // A killed runtime leaves runtime.json behind; its pid may be reused by
+    // any live process (here: this one).
+    const outerId = await runtimeIdFor(root)
+    const dir = path.join(home, '.cate', 'workspaces', outerId)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'runtime.json'), JSON.stringify({
+      runtimeId: outerId, root: fs.realpathSync(root), pid: process.pid, version: '0', protocol: [1, 0],
+      endpoints: { local: path.join(dir, 'runtime.sock') },
+    }))
+    const inner = path.join(root, 'sub')
+    fs.mkdirSync(inner)
+    const result = await serveWorkspace({ root: inner, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
+    if (result.kind === 'serving') daemons.push(result.daemon)
+    expect(result.kind).toBe('serving')
+  })
+
+  it('a sibling folder sharing a name prefix is a different workspace', async () => {
+    expect((await start()).kind).toBe('serving')
+    const sibling = `${root}-2`
+    fs.mkdirSync(sibling)
+    const result = await serveWorkspace({ root: sibling, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
+    if (result.kind === 'serving') daemons.push(result.daemon)
+    expect(result.kind).toBe('serving')
   })
 
   it('refuses a nested workspace while the outer one is still starting', async () => {

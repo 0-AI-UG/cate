@@ -13,7 +13,7 @@ import {
   type WebSocketLike,
 } from '../contract'
 
-/** Node's `ws` as the portable client's WebSocket. */
+/** Node's `ws` as the client core's WebSocket. */
 export const nodeWebSocketFactory: WebSocketFactory = (url) =>
   new WebSocket(url, { maxPayload: NETWORK_MAX_MESSAGE }) as unknown as WebSocketLike
 

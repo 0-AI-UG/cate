@@ -10,3 +10,5 @@ export {
   type WorkspaceListOptions,
   type WorkspaceListSnapshot,
 } from './workspaceList'
+export { joinWorkspace, joinErrorMessage, parsePairingInput, type JoinDeps, type PairingTarget } from './join'
+export { nameJoinedWorkspaces, placeholderName } from './naming'

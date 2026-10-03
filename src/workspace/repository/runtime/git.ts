@@ -15,7 +15,7 @@ import type {
   GitWorktree,
   VcsCapability,
 } from '../contract'
-import { githubRepositoryUrl, parseReviewPatch } from '../contract'
+import { NotARepositoryError, githubRepositoryUrl, parseReviewPatch } from '../contract'
 
 const execFileP = promisify(execFile)
 
@@ -257,8 +257,23 @@ export function createGitHost(deps: GitHostDeps): GitHost {
 
   async function repositoryContext(cwd: string | undefined) {
     const validCwd = await dir(cwd)
-    const repoRoot = path.resolve((await gitAt(validCwd).revparse(['--show-toplevel'])).trim())
+    let top: string
+    try {
+      top = await gitAt(validCwd).revparse(['--show-toplevel'])
+    } catch (err) {
+      if (!looksLikeMissingGit(err) && !(await insideRepo(validCwd))) throw new NotARepositoryError(validCwd)
+      throw err
+    }
+    const repoRoot = path.resolve(top.trim())
     return { repoRoot, git: gitAt(repoRoot) }
+  }
+
+  /** Whether `dirPath` or a folder above it has a `.git`. */
+  async function insideRepo(dirPath: string): Promise<boolean> {
+    for (let current = dirPath; ; current = path.dirname(current)) {
+      if (await isGitRepo(current)) return true
+      if (path.dirname(current) === current) return false
+    }
   }
 
   async function resolveCommit(git: SimpleGit, ref: string): Promise<string> {

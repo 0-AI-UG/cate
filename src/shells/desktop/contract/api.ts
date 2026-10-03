@@ -5,7 +5,7 @@
 
 import type { ClientFeature, DeviceInfo } from '@kernel/rpc/contract'
 import type { DeviceStore } from '@kernel/state/contract'
-import type { ActionId, ContextMenuItem } from '@kernel/ui/contract'
+import type { ActionId, ContextMenuItem } from '@kernel/interaction/contract'
 import type { MenuModel } from './menu'
 import type { FileRef } from '@workspace/files/contract'
 import type { SshSetup } from '@runtime/daemon/contract'

@@ -1,7 +1,7 @@
 // Cate's theme inside the harness page: T3's semantic tokens mapped to the
 // same resolved palette as Cate's chrome.
 
-import { mergeThemeApp, type AppColorKey, type Theme } from '@kernel/ui/contract'
+import { mergeThemeApp, type AppColorKey, type Theme } from '@kernel/interaction/contract'
 
 const APP_TOKENS: Record<string, AppColorKey> = {
   background: 'surface-4', foreground: 'text-primary',

@@ -107,8 +107,10 @@ export interface AgentHooks {
   /** Inspect a workspace's per-agent hook-file injection state (for the
    *  Settings UI): which agents write repo files, whether each one's config
    *  folder is already in the repo (the 'auto' signal), and whether Cate has
-   *  injected there. Read-only; runs on the host that owns the workspace. */
-  inspectWorkspace(cwd: string): Promise<AgentHookAgentState[]>
+   *  injected there. Read-only; runs on the host that owns the workspace.
+   *  `approvals` also resolves config-based approval detection, which runs
+   *  the CLI (Codex's app-server): only the Settings UI asks for it. */
+  inspectWorkspace(cwd: string, options?: { approvals?: boolean }): Promise<AgentHookAgentState[]>
   /** Read one agent CLI session's visible conversation from that CLI's own
    *  session store on this host. Null when the session cannot be found. */
   readConversation(session: AgentSessionLocator): Promise<AgentConversationMessage[] | null>
@@ -838,8 +840,8 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
       }
     },
 
-    async inspectWorkspace(cwd) {
-      approvalCache.clear()
+    async inspectWorkspace(cwd, options = {}) {
+      if (options.approvals) approvalCache.clear()
       const repoLocal = isRepoLocalCwd(cwd, homeDir)
       const states: AgentHookAgentState[] = []
       for (const agent of AGENTS) {
@@ -865,7 +867,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         const approval = AGENT_APPROVAL_DETECTION[agent.id]
         states.push({
           agentId: agent.id, displayName: agent.displayName, folderPresent, injected,
-          approvalDetection: approval.source === 'config' && repoLocal ? await approvalConfig(agent.id, cwd, undefined, true) : approval,
+          approvalDetection: approval.source === 'config' && repoLocal && options.approvals ? await approvalConfig(agent.id, cwd, undefined, true) : approval,
         })
       }
       return states

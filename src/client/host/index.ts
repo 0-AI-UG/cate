@@ -1,8 +1,8 @@
-// client/host public entry: the panel renderer, the view and definition
-// slots, session attachment, persistent native surfaces, creating, closing,
-// focusing and revealing panels, and the action registry.
+// client/host public entry: the panel side of the client core: definitions,
+// session handles, creating, closing, focusing and revealing panels, panel
+// targeting, creation menus and the action registry. No UI: the desktop's
+// panel hosting is shells/desktop/ui/client/host.
 
-export { registerPanelView, panelView, type PanelViewProps } from './views'
 export {
   registerPanelDefinitions,
   panelDefinition,
@@ -15,40 +15,22 @@ export {
   keepsMounted,
   creatableDefinitions,
   panelTypeOpening,
-  missingFeatures,
   MIN_PANE_SIZE,
 } from './definitions'
 export {
   installSessionSource,
   sessionSourceFrom,
   acquireSession,
+  sessionOwner,
+  subscribeSessionSource,
   type SessionSource,
   type ConnectionLookup,
 } from './sessions'
-export {
-  PanelHost,
-  PanelView,
-  PanelSuspense,
-  PanelUnavailable,
-  WorkspaceReady,
-  PanelPlacementContext,
-} from './PanelHost'
-export { PanelSessionBoundary, PanelVisibilityContext, usePanelSession } from './PanelSessionBoundary'
-export { PersistentPanelHost } from './PersistentPanelHost'
-export {
-  PanelSurfaceSlot,
-  registerPanelSurface,
-  syncPanelSurfaces,
-  setSurfacePerfCounter,
-  isSurfaceVisible,
-  subscribeSurfaceVisibility,
-} from './surfaceRegistry'
-export { demandSurface, useDemandedSurfaces, isSurfaceDemanded } from './surfaceDemand'
-export { useKeepMountedPanelIds, keepMountedPanelIds, setEqual } from './keepMounted'
-export { PanelChromeContext, PanelChromeProvider, useClaimPanelCorner, type PanelChromeApi } from './panelChrome'
+export { demandSurface, isSurfaceDemanded, demandedSurfaces, subscribeDemandedSurfaces } from './surfaceDemand'
+export { keepMountedPanelIds, setEqual } from './keepMounted'
 export { createPanel, clientPanelKit, newId } from './createPanel'
 export { openUrlFor, openUrlInPanel } from './openUrl'
-export { closePanel, closePanels, confirmClose, registerPanelCloseGuard, type CloseGuard, type CloseGuardContext, type CloseOptions } from './close'
+export { closePanel, closePanels, confirmClose, registerPanelCloseGuard, type CloseGuard, type CloseGuardContext } from './close'
 export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab } from './focus'
 export { revealPanel, installRevealHooks, CANVAS_REVEAL_INTENT, type RevealHooks } from './reveal'
 export {
@@ -58,7 +40,7 @@ export {
   runAction,
   availableActions,
   subscribeActions,
-  useActionsVersion,
+  actionsVersion,
   requestPanelRename,
   onPanelRenameRequest,
   requestPanelShortcut,

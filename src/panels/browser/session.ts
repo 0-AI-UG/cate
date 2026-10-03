@@ -32,8 +32,8 @@ import {
   type BrowserViewport,
 } from './contract'
 import definition from './definition'
-import { filePathOfUrl, resolveAddress } from './parts/browserUrl'
-import { browserInternalPageTitle, isBrowserInternalPage } from './parts/internalPages'
+import { filePathOfUrl, resolveAddress } from './contract/browserUrl'
+import { browserInternalPageTitle, isBrowserInternalPage } from './contract/internalPages'
 
 /** What the session takes from the runtime (the composition root passes them). */
 export interface BrowserSessionDeps {

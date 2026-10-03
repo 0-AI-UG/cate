@@ -4,7 +4,6 @@
 // so the set keeps its identity while its membership is unchanged.
 
 import type { WorkspaceDocument } from '@workspace/document/contract'
-import { useDocument } from '@client/document/ui'
 import { keepsMounted } from './definitions'
 
 export function keepMountedPanelIds(doc: WorkspaceDocument): Set<string> {
@@ -20,6 +19,3 @@ export function setEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolea
   return true
 }
 
-export function useKeepMountedPanelIds(workspaceId: string): ReadonlySet<string> {
-  return useDocument(workspaceId, keepMountedPanelIds, setEqual)
-}

@@ -2,7 +2,7 @@
 // its shared buffer or as a preview. Pure: the daemon imports it.
 
 import { channel } from '@kernel/rpc/contract'
-import { storedShortcut } from '@kernel/ui/contract'
+import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import { pathDisplayName } from '@workspace/files/contract'
@@ -11,10 +11,17 @@ import { editorApi, type EditorOp, type EditorSnapshot } from './contract'
 
 interface EditorCreateOptions extends PanelCreateOptions {
   filePath?: string
+  /** Shows only the file tree (the `treeOnly` field). */
+  treeOnly?: boolean
 }
 
 const filePathOf = (fields: Record<string, unknown>): string | undefined =>
   typeof fields.filePath === 'string' && fields.filePath ? fields.filePath : undefined
+
+const editorFields = ({ filePath, treeOnly }: EditorCreateOptions): JsonObject => ({
+  ...(filePath ? { filePath } : {}),
+  ...(treeOnly ? { treeOnly: true } : {}),
+})
 
 export const editorDefinition = definePanel({
   type: 'editor',
@@ -27,11 +34,10 @@ export const editorDefinition = definePanel({
   navigable: true,
   opens: ['file'],
   creation: { order: 0, title: 'New Files Panel', key: storedShortcut('n', { command: true }), toolbar: true, inWorktree: true },
-  requires: [],
   defaultTitle: 'Untitled',
   channel: channel<EditorSnapshot, Partial<EditorSnapshot>, EditorOp>(),
   api: editorApi,
-  fields: (options: EditorCreateOptions): JsonObject => (options.filePath ? { filePath: options.filePath } : {}),
+  fields: (options: EditorCreateOptions) => editorFields(options),
   create: (options: EditorCreateOptions, kit) => {
     const { filePath } = options
     const record = kit.record('editor', {
@@ -39,7 +45,7 @@ export const editorDefinition = definePanel({
       // A file decides its own checkout; an explicit worktree scopes an untitled editor.
       worktreeId: filePath ? kit.worktreeIdForPath(filePath) : options.worktreeId,
       title: options.title ?? ((filePath && pathDisplayName(filePath)) || 'Untitled'),
-      fields: filePath ? { filePath } : {},
+      fields: editorFields(options),
     })
     return kit.add(record, options)
   },

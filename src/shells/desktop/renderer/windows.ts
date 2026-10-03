@@ -5,7 +5,7 @@
 
 import type { Rect } from '@workspace/canvas/contract'
 import { documentStoreFor } from '@client/document'
-import { clampToScreens, closeDetachedWindow, type WindowsPort } from '@client/layout/windows'
+import { clampToScreens, closeDetachedWindow, type WindowsPort } from '../ui/client/layout/windows'
 import type { Bounds, DesktopApi } from '../contract'
 
 const toBounds = (rect: Rect): Bounds => ({ x: rect.origin.x, y: rect.origin.y, width: rect.size.width, height: rect.size.height })

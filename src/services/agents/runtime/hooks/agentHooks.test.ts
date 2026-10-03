@@ -102,11 +102,18 @@ describe('agentHooks capability', () => {
     const reader = vi.fn(async () => detection)
     const cap = makeCap({ approvalConfigReaders: { codex: { envKeys: [], read: reader } } })
     const cwd = tmpDir('approval-inspection')
-    const states = await cap.inspectWorkspace(cwd)
+    const states = await cap.inspectWorkspace(cwd, { approvals: true })
     expect(reader).toHaveBeenCalledWith(cwd, { env: undefined })
     expect(states.find((state) => state.agentId === 'codex')?.approvalDetection).toEqual(detection)
     expect(states.filter((state) => state.approvalDetection?.source === 'signal').map((state) => state.agentId).sort()).toEqual(['claude-code', 'grok', 'hermes', 'opencode'])
     expect(states.filter((state) => state.approvalDetection?.source === 'unavailable').map((state) => state.agentId).sort()).toEqual(['cursor', 'kiro'])
+  })
+
+  test('inspection without approvals never runs a CLI to read its config', async () => {
+    const reader = vi.fn(async () => ({ source: 'config' as const, mode: 'manual' as const, detail: 'Test config' }))
+    const cap = makeCap({ approvalConfigReaders: { codex: { envKeys: [], read: reader } } })
+    await cap.inspectWorkspace(tmpDir('approval-free-inspection'))
+    expect(reader).not.toHaveBeenCalled()
   })
 
   test('Windows hook commands use a quoted forward-slash wrapper path', () => {

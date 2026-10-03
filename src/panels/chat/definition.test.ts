@@ -2,9 +2,8 @@ import { expect, it, vi } from 'vitest'
 import { definitionProblems, type PanelKit } from '@panels/framework/contract'
 import { chatDefinition } from './definition'
 
-it('is a valid panel definition needing a webview', () => {
+it('is a valid panel definition', () => {
   expect(definitionProblems(chatDefinition)).toEqual([])
-  expect(chatDefinition.requires).toEqual(['webview'])
   expect(chatDefinition.icon).toBe('t3')
 })
 

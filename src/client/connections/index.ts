@@ -25,3 +25,10 @@ export type {
   NetworkEndpoint,
   PairedRuntime,
 } from './transports'
+export {
+  connectionLabel,
+  connectionTitle,
+  connectionRemedy,
+  relativeTime,
+  type ConnectionRemedy,
+} from './status'

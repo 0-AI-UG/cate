@@ -3,7 +3,7 @@
 // (`sessionFor(panel)`), not a definition hook.
 
 import { channel } from '@kernel/rpc/contract'
-import { storedShortcut } from '@kernel/ui/contract'
+import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import { terminalApi } from './contract/api'
@@ -23,7 +23,6 @@ export const terminalDefinition = definePanel({
   switchesWorktree: true,
   navigable: true,
   creation: { order: 1, key: storedShortcut('t', { command: true }), toolbar: true, inWorktree: true },
-  requires: [],
   opens: ['directory'],
   defaultTitle: 'Terminal',
   channel: channel<TerminalSnapshot, Partial<TerminalSnapshot>, TerminalOp>(),

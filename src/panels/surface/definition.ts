@@ -15,7 +15,6 @@ export const surfaceDefinition = definePanel({
   canLiveOnCanvas: true,
   navigable: false,
   placeholder: true,
-  requires: [],
   defaultTitle: 'Open a surface',
   channel: channel<JsonObject, Partial<JsonObject>, never>(),
 })

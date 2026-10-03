@@ -15,8 +15,8 @@ Electron + React + TypeScript, styled with Tailwind CSS.
 
 Each open workspace is served by its own **runtime daemon**, which holds the
 workspace's state and does all its work (files, git, terminals, agents, T3,
-the `cate` API). The desktop app is a client of those runtimes; other devices
-(and later a phone) connect to the same runtime after pairing, and every
+the `cate` API). The desktop app and the iOS app are clients of those
+runtimes; other devices connect to the same runtime after pairing, and every
 client sees one live workspace.
 
 `docs/architecture.md` is the model: what every module is, where it lives,
@@ -34,7 +34,9 @@ npm install              # install dependencies (patches T3)
 npm run dev              # bundle the daemon, then start the app with hot reload
 npm run build            # production build of the desktop shell
 npm run build:runtime    # bundle the daemon to dist-runtime/runtime.cjs
+npm run build:mobile     # bundle the iOS app's client core to ios/Cate/Core/Web/core.js
 npm run runtime:tarball  # build the runtime tarball (daemon, Node, cate CLI, T3, skills)
+npm run runtime:dev      # install this checkout's runtime into ~/.cate/runtime/<build>/ (no tarball; run by predev)
 npm run typecheck        # tsc --noEmit
 npm run lint             # eslint
 npm run lint:deps        # dependency-cruiser: layer, side and entry rules
@@ -54,8 +56,9 @@ starts workspaces from there. To iterate on runtime-side code, run the app
 with `CATE_RUNTIME_BUNDLE=dist-runtime/runtime.cjs` (it then starts the daemon
 from that bundle with your `node`), rebuild with `npm run build:runtime`, and
 stop the running workspace runtime so the next open starts the new build.
-Without `CATE_RUNTIME_BUNDLE`, the checkout's tarball must be the app's build
-(a hash of `src/`): after changing sources, `npm run runtime:tarball` again.
+Without `CATE_RUNTIME_BUNDLE`, the app needs a runtime of its build (a hash of
+`src/`): `npm run dev` installs one with `runtime:dev` (instant when the build
+is already installed, a few seconds otherwise), so no tarball is needed.
 
 ## Dependencies
 
@@ -93,8 +96,14 @@ Managed via npm (`package.json`):
   - `preload/`: `window.cateDesktop` (typed by `DesktopApi` in
     `shells/desktop/contract`). Desktop IPC only; no workspace work crosses
     it. Each preload entry must bundle self-contained (a test enforces it).
-  - `renderer/`: mounts the portable client, installs the desktop
-    `ClientUi` and ports, imports every panel's `view/` entry.
+  - `renderer/`: boots the client core, installs the desktop `ClientUi` and
+    ports, maps each panel type to its view, mounts the desktop UI.
+  - `ui/`: the whole desktop UI in React (see "Shared core, one UI per
+    shell" below).
+- **iOS app** (`ios/`, SwiftUI) with its TypeScript side in
+  `src/shells/mobile/`: the client core runs headless in a hidden web view
+  (`core/`, bundled by `npm run build:mobile`); `contract.ts` is the bridge
+  and the core API between them.
 - **CLI** (`src/cli/`): the `cate` command in terminals the runtime spawns.
 
 The client talks to a runtime only through the runtime protocol
@@ -105,13 +114,13 @@ session channels for panels. There is no per-feature IPC.
 
 `src/` is organised by **layer**, lowest first:
 
-- `kernel/`: rpc, api, settings, lifecycle, state, log, ui (generic machinery)
+- `kernel/`: rpc, api, settings, lifecycle, state, log, interaction (generic machinery)
 - `runtime/`: daemon, data, transports, security, pairing, connect, server, tunnel, power
 - `workspace/`: document, lifecycle (trust), canvas, files, repository, skills, relations
 - `services/`: terminal, browser, t3, agents
-- `client/`: connections, workspaces, document mirror, host, layout (dock, canvas, drag, windows), ui
+- `client/`: connections, workspaces, document mirror, host
 - `panels/`: framework + terminal, editor, browser, chat, review, canvas, surface
-- `shells/`: desktop
+- `shells/`: desktop (including all desktop UI), mobile (the iOS app's core)
 - plus `cli/`, `shared/` (generic pure utilities) and `test/` (test support)
 
 and by **side** inside each module:
@@ -123,21 +132,22 @@ and by **side** inside each module:
                 settings.ts (settings slice), other pure files
   runtime/      daemon side
   node/         Node code shared by the daemon and the desktop shell
-  client/       portable client: no React, no DOM, no Node, no Electron
-  ui/           React pieces that are not a panel view
-  desktop/      desktop-shell-only pieces
+  client/       client core: logic, no React, no DOM, no Node, no Electron
+  desktop/      desktop-only code that is not UI (webview host, preloads)
 ```
 
 Rules (enforced by `npm run lint:deps`, `.dependency-cruiser.cjs`):
 - Contracts are pure (no Electron, Node built-ins, React, DOM or I/O) and
   import only contracts.
-- `runtime/` imports contracts, `runtime/` and `node/`; `client/` and `ui/`
-  import contracts, `client/` and `ui/`; `desktop/` and the desktop shell
-  never import a `runtime/` side.
+- `runtime/` imports contracts, `runtime/` and `node/`; `client/` imports
+  contracts and `client/`; `desktop/` and the desktop shell never import a
+  `runtime/` side.
+- React, the DOM, xterm, Monaco and the icon sets are imported only in
+  `src/shells/desktop/`.
 - A module imports only its own layer or lower. A lower layer that needs a
   higher one owns a slot the higher one fills (`runtimeFor` in `kernel/rpc`
-  filled by `client/connections`; `registerPanelView` and
-  `registerPanelCloseGuard` in `client/host` filled by each panel's view).
+  filled by `client/connections`; `registerPanelCloseGuard` in `client/host`
+  filled by a shell's panel views).
 - Across modules, import a contract or a side's `index.ts`, never internals.
   `src/panels/{definitions,runtime,api}.ts` are public entries too.
 - The daemon's composition root (`src/runtime/daemon/entry.ts`, `main.ts`,
@@ -149,17 +159,30 @@ Rules (enforced by `npm run lint:deps`, `.dependency-cruiser.cjs`):
 Path aliases: `@kernel/*`, `@runtime/*`, `@workspace/*`, `@services/*`,
 `@client/*`, `@panels/*`, `@shells/*`.
 
+### Shared core, one UI per shell
+
+Every client runs the same **client core**: everything outside
+`src/shells/` (contracts, `client/` sides, the `client/` layer). It holds no
+UI. Each shell draws it with its own UI: the desktop shell in React
+(`src/shells/desktop/ui/`, mirroring where things belong: `ui/app/` (sidebar,
+palette, settings, dialogs), `ui/kernel/interaction/`, `ui/client/{host,layout}/`
+(panel hosting, dock, canvas, drag, windows), `ui/<layer>/<module>/`,
+`ui/panels/<type>/`), the
+iOS app in SwiftUI (`ios/`). UI is never shared and never adapts itself to
+another platform. Logic a second shell would need goes into the core, not
+into a view.
+
 Never branch on local versus remote, on desktop versus another client, or on
-a panel type in generic code. Clients differ only by declared **client
-features** (`webview`, `pageDriver`, `passkeys`, `windows`, `canvas`,
-`fileDrop`, `osNotifications`, `screenCapture`, `clipboard`,
-`camera`); code asks `clientHas(feature)`.
+a panel type in shared code. Where the runtime or the core must know what a
+client can do, it asks for a declared **client feature** (`webview`,
+`pageDriver`, `passkeys`, `windows`, `canvas`, `fileDrop`, `osNotifications`,
+`screenCapture`, `clipboard`, `camera`) with `clientHas(feature)`.
 
 ### Panels
 
 Each panel type is one folder, `src/panels/<type>/`:
 - `definition.ts`: pure `definePanel({...})`: label, icon name, sizes,
-  flags, the client features its view `requires`, record fields, the session
+  flags, record fields, the session
   channel schema, its API spec, `create(options, kit)`, `creation` (its
   place in every creation menu, the default key of `panel.new.<type>`, a
   toolbar button, whether it is created in a worktree), and the hooks
@@ -172,19 +195,20 @@ Each panel type is one folder, `src/panels/<type>/`:
   to `sessions/<panelId>.json`. Never asks the user: an op that would lose
   work without an explicit choice fails with `dirty`.
 - `runtime.ts`: what the daemon needs to register the type.
-- `view/`: the React view. `view/index.ts` calls `registerPanelView` (and
-  `registerPanelCloseGuard` where closing can lose work). Views render the
-  snapshot, send ops, and ask the user through `ClientUi` before destructive
-  ops. The terminal view reads bytes from `process.attach` and the editor view
-  its Yjs buffer from `file.buffer`; session channels carry JSON only.
-- `parts/`: supporting modules, split by side.
+- `parts/`: supporting modules, split by side. No UI.
+
+Its desktop view is `src/shells/desktop/ui/panels/<type>/` (React; registers
+`registerPanelCloseGuard` where closing can lose work). Views render the
+snapshot, send ops, and ask the user through `ClientUi` before destructive
+ops. The terminal view reads bytes from `process.attach` and the editor view
+its Yjs buffer from `file.buffer`; session channels carry JSON only.
 
 The panel index files: `src/panels/definitions.ts` (`PANEL_DEFINITIONS`),
 `src/panels/runtime.ts` (`PANEL_RUNTIMES`, read by the composition root) and
 `src/panels/api.ts` (`CATE_API`). Adding a type = its folder, its name in
 `PANEL_TYPES` (`workspace/document/contract`), an entry in each index file
-that applies, and its `view/` import in the shell
-(`shells/desktop/renderer/registrations.tsx`). Create panels with
+that applies, and its view in each shell (desktop: the view folder plus its
+entry in `shells/desktop/renderer/registrations.tsx`). Create panels with
 `createPanel(workspaceId, type, options)` from `@client/host`; close them with
 `closePanels`, which runs the close guards and sends one `removePanels` op.
 
@@ -194,7 +218,8 @@ Every piece of state is in exactly one class (`docs/architecture.md` section 5):
 - **Document** (runtime, shared): panel records, windows and dock trees,
   canvases and nodes, relations, worktree metadata. Changed only by document
   ops (`workspace/document/contract`); clients hold an optimistic mirror
-  (`client/document`: `documentStoreFor(workspaceId)`, `useDocument`).
+  (`client/document`: `documentStoreFor(workspaceId)`; the desktop UI's
+  `useDocument`).
 - **Session** (runtime, per panel): terminal screen, editor buffer, browser
   tabs, chat binding, review state.
 - **Workspace data** (runtime): workspace settings, secrets, trust, grants,
@@ -202,7 +227,7 @@ Every piece of state is in exactly one class (`docs/architecture.md` section 5):
 - **Device** (one client device): client settings, workspace list, known
   runtimes, device key, main window bounds, through the `DeviceStore` port.
 - **Client** (in memory): viewport, zoom, active tab, focus, selection, undo
-  (`createClientStateStore`, `useClientState`).
+  (`createClientStateStore`; the desktop UI's `useClientState`).
 
 Settings: each module declares a slice with `defineSettings` in
 `contract/settings.ts`, scope `client` (device `settings.json`) or `workspace`
@@ -241,8 +266,8 @@ or the caller's sticky target (`cate panel set`).
 
 ### Key Patterns
 
-- **Functional React** with hooks for views and UI; no React in contracts,
-  `runtime/` or `client/`.
+- **Functional React** with hooks for the desktop UI, and only there
+  (`src/shells/desktop/`).
 - **The runtime is the application**: anything that is not rendering, input
   or a native OS primitive goes into a module's `runtime/` side, never into
   the desktop shell.

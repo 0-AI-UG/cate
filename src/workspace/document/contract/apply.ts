@@ -13,6 +13,7 @@ import {
   setSplitRatios,
   splitBeside,
   splitNeedsNode,
+  visitDock,
   type DockNode,
   type DockNodeId,
   type DockStack,
@@ -20,7 +21,17 @@ import {
 import type { DocBatch, DocChange, DockRef, DocOp, OpErrorCode, OpResult, PlaceTarget } from './ops'
 import { opChanges } from './ops'
 import { docIndex, dockOf, isCanvasDock, placementOf, sameDockRef } from './placement'
-import { MAIN_WINDOW, type PanelId, type PanelRecord, type SplitId, type WorkspaceDocument } from './schema'
+import { canvasPanelOf } from './selectors'
+import {
+  MAIN_WINDOW,
+  type DocWindow,
+  type MaximizedLayout,
+  type PanelId,
+  type PanelRecord,
+  type SplitId,
+  type WindowId,
+  type WorkspaceDocument,
+} from './schema'
 import { checkChange } from './validate'
 
 type Doc = WorkspaceDocument
@@ -62,6 +73,9 @@ function applyOne(doc: Doc, change: DocChange): Doc {
     case 'setNodeRects': return setNodeRects(doc, change)
     case 'setWindowBounds': return setWindowBounds(doc, change)
     case 'closeWindow': return closeWindow(doc, change.windowId)
+    case 'maximizeStack': return maximizeStack(doc, change.windowId, change.stackId)
+    case 'maximizePanel': return maximizePanel(doc, change.id)
+    case 'restoreLayout': return restoreLayout(doc, change.windowId)
     case 'addRelation': return addRelation(doc, change)
     case 'updateRelation': return updateRelation(doc, change)
     case 'removeRelation': return removeRelation(doc, change.id)
@@ -77,8 +91,10 @@ function applyOne(doc: Doc, change: DocChange): Doc {
 
 // --- Docks ---------------------------------------------------------------------
 
-/** Write a dock tree back. An emptied node or detached window goes with it. */
-function setDock(doc: Doc, ref: DockRef, dock: DockNode | null): Doc {
+/** Write a dock tree back. An emptied node or detached window goes with it.
+ *  A changed tree clears the restore point it belongs to, unless only its
+ *  ratios changed (`keepMaximized`). */
+function setDock(doc: Doc, ref: DockRef, dock: DockNode | null, keepMaximized = false): Doc {
   if (isCanvasDock(ref)) {
     const canvas = doc.canvases[ref.canvasId]
     const node = canvas.nodes[ref.nodeId]
@@ -89,7 +105,10 @@ function setDock(doc: Doc, ref: DockRef, dock: DockNode | null): Doc {
       const { [ref.nodeId]: _removed, ...rest } = canvas.nodes
       nodes = rest
     }
-    return { ...doc, canvases: { ...doc.canvases, [canvas.id]: { ...canvas, nodes } } }
+    const next = { ...doc, canvases: { ...doc.canvases, [canvas.id]: { ...canvas, nodes } } }
+    if (keepMaximized) return next
+    const source = Object.values(doc.windows).find((w) => w.maximized?.node?.id === ref.nodeId)
+    return source ? setWindow(next, withoutMaximized(source)) : next
   }
   const window = doc.windows[ref.windowId]
   if (window.dock === dock) return doc
@@ -97,7 +116,16 @@ function setDock(doc: Doc, ref: DockRef, dock: DockNode | null): Doc {
     const { [window.id]: _removed, ...windows } = doc.windows
     return { ...doc, windows }
   }
-  return { ...doc, windows: { ...doc.windows, [window.id]: { ...window, dock } } }
+  return setWindow(doc, { ...(keepMaximized ? window : withoutMaximized(window)), dock })
+}
+
+function setWindow(doc: Doc, window: DocWindow): Doc {
+  return { ...doc, windows: { ...doc.windows, [window.id]: window } }
+}
+
+function withoutMaximized(window: DocWindow): DocWindow {
+  const { maximized: _cleared, ...rest } = window
+  return rest
 }
 
 /** Take a placed panel out of its dock, removing whatever that empties. */
@@ -318,7 +346,7 @@ function setSplitRatio(doc: Doc, splitId: SplitId, ratios: number[]): Doc {
   if (split?.kind !== 'split' || split.children.length !== ratios.length) {
     rejected(`split ${splitId} has ${split?.kind === 'split' ? split.children.length : 0} children`)
   }
-  return setDock(doc, ref, setSplitRatios(tree, splitId, normalizeRatios(ratios)))
+  return setDock(doc, ref, setSplitRatios(tree, splitId, normalizeRatios(ratios)), true)
 }
 
 function setNodeRects(doc: Doc, change: Extract<DocChange, { kind: 'setNodeRects' }>): Doc {
@@ -344,6 +372,73 @@ function closeWindow(doc: Doc, windowId: string): Doc {
   if (!window) gone(`window ${windowId}`)
   if (windowId === MAIN_WINDOW) rejected('the main window cannot be closed')
   return removePanels(doc, dockPanels(window.dock))
+}
+
+// --- Maximize --------------------------------------------------------------------
+
+/** A window that can take a maximize: it exists and holds none yet. */
+function maximizable(doc: Doc, windowId: WindowId): DocWindow {
+  const window = doc.windows[windowId]
+  if (!window) gone(`window ${windowId}`)
+  if (window.maximized) rejected(`window ${windowId} is already maximized`)
+  return window
+}
+
+function maximizeStack(doc: Doc, windowId: WindowId, stackId: string): Doc {
+  const window = maximizable(doc, windowId)
+  const layout = window.dock
+  if (layout?.kind !== 'split') rejected(`window ${windowId} has no split to maximize`)
+  if (!findStack(layout, stackId)) gone(`stack ${stackId}`)
+  const maximized: MaximizedLayout = { stackId, layout }
+  return setWindow(doc, { ...window, dock: { kind: 'stack', id: stackId, panels: dockPanels(layout) }, maximized })
+}
+
+function maximizePanel(doc: Doc, panelId: PanelId): Doc {
+  const placement = placementOf(doc, panelId)
+  if (!placement) gone(`panel ${panelId}`)
+  if (!isCanvasDock(placement.dock)) rejected(`panel ${panelId} is not on a canvas`)
+  const { canvasId, nodeId } = placement.dock
+  const host = canvasPanelOf(doc, canvasId)
+  const hostPlacement = host && placementOf(doc, host.id)
+  if (!host || !hostPlacement || isCanvasDock(hostPlacement.dock)) rejected(`canvas ${canvasId} is not in a window`)
+  const window = maximizable(doc, hostPlacement.dock.windowId)
+  const node = doc.canvases[canvasId].nodes[nodeId]
+  const maximized: MaximizedLayout = {
+    stackId: hostPlacement.stackId,
+    layout: window.dock!,
+    node: { canvasId, id: nodeId, rect: node.rect, dock: node.dock },
+  }
+  const next = unplace(doc, panelId).doc
+  const dock = insertTab(next.windows[window.id].dock!, hostPlacement.stackId, panelId, host.id)
+  return setWindow(next, { ...next.windows[window.id], dock, maximized })
+}
+
+function restoreLayout(doc: Doc, windowId: WindowId): Doc {
+  const window = doc.windows[windowId]
+  if (!window) gone(`window ${windowId}`)
+  const { maximized } = window
+  if (!maximized) gone(`window ${windowId}'s restore point`)
+  // The trees come back under their old ids, which nothing else took since.
+  const live = new Set<string>()
+  visitDock(window.dock, (n) => { live.add(n.id) })
+  const node = maximized.node
+  const current = node && doc.canvases[node.canvasId]?.nodes[node.id]
+  visitDock(current?.dock ?? null, (n) => { live.add(n.id) })
+  const reused = (tree: DockNode) => {
+    let taken = false
+    visitDock(tree, (n) => { taken ||= !live.has(n.id) && idInUse(doc, n.id) })
+    return taken
+  }
+  if (reused(maximized.layout) || (node && reused(node.dock))) rejected('a restored id is in use')
+  if (node && !current && docIndex(doc).nodes.has(node.id)) rejected(`node id ${node.id} is in use`)
+
+  let next = setWindow(doc, { ...withoutMaximized(window), dock: maximized.layout })
+  if (node) {
+    const canvas = next.canvases[node.canvasId]
+    const restored = { id: node.id, rect: current?.rect ?? node.rect, dock: node.dock }
+    next = { ...next, canvases: { ...next.canvases, [canvas.id]: { ...canvas, nodes: { ...canvas.nodes, [node.id]: restored } } } }
+  }
+  return next
 }
 
 // --- Relations -------------------------------------------------------------------

@@ -6,12 +6,11 @@ mini dock of the same shape. Placement is shared: a drop is one document op
 (`placePanel`, `setNodeRects`, or a batch), and every client of the workspace
 sees it. Which tab of a stack is active is client state.
 
-"Maximize" and "minimize" are client state too (`src/client/layout/dock/presentation.ts`):
-they change how this client draws a dock, never the document. Maximize a pane
-of a main-dock split to **merge** the window's tree into one stack of all its
-tabs; maximize a pane of a canvas node to **promote** it as a tab beside its
-canvas. Minimize drops the presentation, which shows the document's own
-layout again.
+Maximize and restore are document ops too, so every client sees them.
+`maximizeStack` gathers every tab of a split window into one stack;
+`maximizePanel` moves a canvas pane into the window showing its canvas, after
+the canvas tab. Either saves the window's previous layout as its restore point
+(`DocWindow.maximized`), and `restoreLayout` puts that layout back.
 
 ## Drag and placement rules
 
@@ -43,25 +42,20 @@ sibling instead of creating an unnecessary nested split. Stacks, splits, nodes
 and detached windows emptied by an op are removed by the runtime as part of
 that op.
 
-## Maximize, minimize, and invalidation rules
+## Maximize, restore, and invalidation rules
 
-Coverage for this table is `src/client/layout/dock/presentation.test.ts`.
+Coverage for this table is `src/workspace/document/contract/apply.test.ts`
+(the reducer) and `src/client/layout/dock/DockView.test.tsx` (the button).
 
-| Starting state | Action | Defined result | Restore status |
+| Starting state | Action | Defined result | Restore point |
 |---|---|---|---|
-| Window dock with a split tree | Maximize a stack | Draw the whole tree as that stack's tabs, in tree order; the document is untouched | Valid |
-| Window dock with a single stack | Maximize | Nothing to merge; ignored | Not applicable |
-| Merged window dock | Select a tab, or change a split ratio elsewhere (another client) | Only presentation details change | Remains valid |
-| Merged window dock | A structural change to the window's tree (from any client) | Show the document's new tree | Consumed for good |
-| Merged window dock | Drag, close or split through the merged stack | The merge is first made real (one stack in the drawn order), then the edit applies, so the user keeps the topology they saw | Consumed |
-| Merged window dock, unchanged | Minimize | Show the exact pre-merge tree | Consumed |
-| Merged window dock | Maximize another stack or pane | Ignored: merges never nest | Existing presentation remains valid |
-| Canvas node pane | Maximize | Draw the pane as a tab after its canvas panel and leave it out of the node; a singleton node disappears from the canvas while promoted | Valid |
-| Promoted pane | A structural change to its source node or to the destination dock | Show the document's layout | Consumed for good |
-| Promoted pane | An edit through the promoted tab | Made real first: the pane becomes a real tab after the canvas | Consumed |
-| Promoted pane, both sides unchanged | Minimize | Show the exact node again | Consumed |
-| One or more promoted panes | Maximize another canvas pane | Promote it too, with its own restore target | Every unchanged promotion remains independently restorable |
+| Window dock with a split tree | Maximize a stack (`maximizeStack`) | The whole tree becomes that stack's tabs, in tree order | Saved: the previous tree |
+| Window dock with a single stack | Maximize | Nothing to merge; no button, and the op is rejected | None |
+| Canvas node pane | Maximize (`maximizePanel`) | The pane moves to a tab after its canvas panel; a singleton node is removed | Saved: the window's tree and the node as it was |
+| Maximized window | Restore (`restoreLayout`) | The saved tree comes back, and the node with it, at its current rect if it still exists | Cleared |
+| Maximized window | Any other change to the window's tree, or to the source node's tree (from any client) | The change applies to the maximized layout, which stays | Cleared for good |
+| Maximized window | A split ratio change, a node move or resize, a tab selection | Applies | Kept |
+| Maximized window | Maximize again | No button; the op is rejected (one maximize per window) | Kept |
 
-The invalidation rule is structural. Tab selection and split ratios are
-presentation details and are safe; panel identity, order, tree shape and
-source-node existence are topology, and a later restore never overwrites them.
+Undo of a maximize is a restore, and undo of a restore maximizes again. Undo
+of a later edit brings the layout back but not the restore point.

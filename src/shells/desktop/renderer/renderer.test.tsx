@@ -1,8 +1,8 @@
 // The desktop renderer booted in jsdom over a fake `window.cateDesktop`: every
-// install runs, the window renders, and a client that declares no client
-// features (12.2 rule 8) connects to a real RpcServer with the document
-// service, receives the document, and renders each panel type as its view or
-// the "not available" placeholder without throwing.
+// install runs, the window renders, and the client connects to a real
+// RpcServer with the document service, receives the document, and renders
+// each panel type without throwing, native surfaces through the persistent
+// host in their workspace's scope (the canvas view has its own tests).
 
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -10,9 +10,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { MAIN_WINDOW, PANEL_TYPES } from '@workspace/document/contract'
 import { PANEL_DEFINITIONS, freshRecord } from '@panels/definitions'
 import { documentStoreFor } from '@client/document'
-import { PanelHost } from '@client/host'
-import { declaredActions } from '@kernel/ui'
-import { selectWorkspace } from '@client/ui'
+import { PanelHost } from '../ui/client/host/PanelHost'
+import { declaredActions } from '@kernel/interaction'
+import { WorkspaceScope, selectWorkspace } from '../ui/app'
 import { localWorkspaceId } from '@client/workspaces'
 import { App } from './App'
 import { bootDesktopClient, type DesktopClient } from './boot'
@@ -67,7 +67,6 @@ vi.mock('@xterm/xterm', () => ({
     dispose() {}
   },
 }))
-vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { proposeDimensions() { return undefined } fit() {} } }))
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: class { findNext() {} findPrevious() {} clearDecorations() {} } }))
 vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
 
@@ -162,9 +161,7 @@ describe('desktop renderer', () => {
     for (const definition of PANEL_DEFINITIONS.filter((d) => d.creation)) expect(declared).toContain(`panel.new.${definition.type}`)
     const file = buildMenuModel().bar.find((menu) => menu.id === 'file')!
     const actions = file.items.flatMap((item) => (item.type === 'action' ? [item.action] : []))
-    // A client with no features cannot show the webview panels.
-    expect(actions).toEqual(expect.arrayContaining(['panel.new.terminal', 'panel.new.editor', 'openFolder', 'closePanel']))
-    expect(actions).not.toContain('panel.new.browser')
+    expect(actions).toEqual(expect.arrayContaining(['panel.new.terminal', 'panel.new.editor', 'panel.new.browser', 'openFolder', 'closePanel']))
   })
 
   it('gives no two declared actions the same default key', () => {
@@ -182,20 +179,21 @@ describe('desktop renderer', () => {
     await until(() => host.textContent!.includes('A terminal'))
   })
 
-  it('renders every panel type as its view or the placeholder, and nothing throws', async () => {
+  it('renders every panel type but the canvas, and nothing throws', async () => {
+    const types = PANEL_TYPES.filter((type) => type !== 'canvas')
     const panels = document.createElement('div')
     document.body.appendChild(panels)
     const panelsRoot = createRoot(panels)
     await act(async () => panelsRoot.render(
-      <>{PANEL_TYPES.map((type) => <div key={type} data-type={type} style={{ width: 400, height: 300 }}><PanelHost workspaceId={workspaceId} panelId={`p-${type}`} /></div>)}</>,
+      // As in a window: panel views run inside the workspace's scope.
+      <WorkspaceScope workspaceId={workspaceId}>{types.map((type) => <div key={type} data-type={type} style={{ width: 400, height: 300 }}><PanelHost workspaceId={workspaceId} panelId={`p-${type}`} /></div>)}</WorkspaceScope>,
     ))
     await act(async () => { await new Promise((r) => setTimeout(r, 300)) })
-    for (const type of PANEL_TYPES) {
+    for (const type of types) {
       const cell = panels.querySelector<HTMLElement>(`[data-type="${type}"]`)!
       const text = cell.textContent ?? ''
       expect(text, type).not.toContain('hit an error')
-      if (type === 'browser' || type === 'chat' || type === 'canvas') expect(text, type).toContain('Not available on this device')
-      else expect(text, type).not.toContain('Not available on this device')
+      expect(text, type).not.toContain('Unknown panel type')
     }
     expect(errors).toEqual([])
     act(() => panelsRoot.unmount())

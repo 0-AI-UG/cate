@@ -76,6 +76,13 @@ export type DocChange =
   | { kind: 'setNodeRects'; canvasId: CanvasId; rects: { nodeId: NodeId; rect: Rect }[] }
   | { kind: 'setWindowBounds'; windowId: WindowId; bounds: Rect }
   | { kind: 'closeWindow'; windowId: WindowId }
+  /** Gathers every tab of a split window into `stackId`. */
+  | { kind: 'maximizeStack'; windowId: WindowId; stackId: StackId }
+  /** Moves a canvas pane into the window showing its canvas, after the
+   *  canvas tab. */
+  | { kind: 'maximizePanel'; id: PanelId }
+  /** Puts back what the window's maximize changed. */
+  | { kind: 'restoreLayout'; windowId: WindowId }
   | { kind: 'addRelation'; relation: PanelRelation }
   | { kind: 'updateRelation'; id: RelationId; patch: RelationPatch }
   | { kind: 'removeRelation'; id: RelationId }

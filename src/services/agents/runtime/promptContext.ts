@@ -43,6 +43,9 @@ export interface PromptContext {
   consume(panelId: string, agentId: AgentId | null): string | null
   /** Flush connected editors, then consume. */
   prepareForSend(panelId: string, agentId: AgentId | null): Promise<string | null>
+  /** When context last went with the panel's prompt (epoch ms). */
+  sentAt(panelId: string): number | undefined
+  onSent(listener: (panelId: string) => void): () => void
 }
 
 export function addAgentPromptGuidance(context: string, agentId: AgentId | null): string {
@@ -58,16 +61,26 @@ export function createPromptContext(deps: PromptContextDeps): PromptContext {
     const context = compileRelationContext(panelId, panels, [...deps.document.relations()])?.text
     return context ? addAgentPromptGuidance(context, agentId) : null
   }
+  const sent = new Map<string, number>()
+  const sentListeners = new Set<(panelId: string) => void>()
   const consume = (panelId: string, agentId: AgentId | null): string | null => {
     const context = peek(panelId, agentId)
-    if (context && deps.document.relationContextMode(panelId) === 'once') {
+    if (!context) return null
+    if (deps.document.relationContextMode(panelId) === 'once') {
       deps.document.setRelationContextMode(panelId, 'off')
     }
+    sent.set(panelId, Date.now())
+    for (const listener of [...sentListeners]) listener(panelId)
     return context
   }
   return {
     peek,
     consume,
+    sentAt: (panelId) => sent.get(panelId),
+    onSent(listener) {
+      sentListeners.add(listener)
+      return () => { sentListeners.delete(listener) }
+    },
     async prepareForSend(panelId, agentId) {
       await deps.flushConnected?.(panelId)
       return consume(panelId, agentId)

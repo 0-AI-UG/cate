@@ -52,12 +52,19 @@ export type ChatSnapshot = {
   /** The agent running the thread ("T3 Code" until its provider is known). */
   agentName: string | null
   canReceivePrompt: boolean
+  /** Whether the harness's thread shells include the bound thread: false for
+   *  a thread another client just started, which T3 pages still treat as
+   *  missing (they go home). Null with no bound thread or no shell stream. */
+  threadKnown: boolean | null
   changes: ChatChanges | null
 }
 
 export type ChatOp =
   /** Restarts the checkout's harness and loads again. */
   | { kind: 'retry' }
+  /** Moves the panel to another checkout (null: the workspace root); its
+   *  conversation stays behind with the old one. */
+  | { kind: 'switchWorktree'; worktreeId: string | null; discard?: boolean }
   /** Shows another conversation (null: a fresh chat); the page reloads.
    *  Ignored when `checkout` no longer is the panel's checkout. */
   | { kind: 'selectThread'; threadId: string | null; title?: string; checkout?: string }

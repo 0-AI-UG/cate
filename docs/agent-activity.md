@@ -52,5 +52,6 @@ Regression coverage (`src/services/agents/`): `runtime/status.integration.test.t
 covers all registered CLIs and notification behavior;
 `runners/terminal/terminalRunner.test.ts` exercises ordered hook/PTY delivery;
 `runtime/hooks/hermes.test.ts` executes the generated Python bridge when Python
-is installed; the live Claude contract (`runtime/agentHookContracts.itest.ts`)
-verifies the human permission notification against the installed CLI.
+is installed; the fake-provider lifecycle suite
+(`runtime/live/hookLifecycle.itest.ts`) verifies the human permission
+notification against each installed CLI.

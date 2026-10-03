@@ -114,22 +114,9 @@ CATE_HOOK_SMOKE_AGENTS=codex npm run test:agent-hooks:ci
 CATE_HOOK_SMOKE_AGENTS=cursor,kiro npm run test:agent-hooks:ci
 ```
 
-An optional real-provider smoke run is available separately:
-
-```sh
-CATE_LIVE_AGENT_CLIS=1 CATE_HOOK_SMOKE_PROVIDER=live npx vitest run --config vitest.live.config.ts hookSmoke.itest.ts
-```
-
-The lifecycle scenarios always use deterministic fake-provider replies. It requires `OPENROUTER_API_KEY` for Claude,
-Codex, OpenCode, and Hermes. Cursor, Grok, and Kiro use their existing local login
-or `CURSOR_API_KEY`, `XAI_API_KEY`, and `KIRO_API_KEY`, respectively; live runs in
-CI require explicit keys. This mode makes two small paid requests per CLI.
-The normal CI workflow does not read any of these secrets.
-
-`CATE_LIVE_CLAUDE_MODEL`, `CATE_LIVE_CODEX_MODEL`, `CATE_LIVE_CURSOR_MODEL`,
-`CATE_LIVE_GROK_MODEL`, `CATE_LIVE_HERMES_MODEL`, `CATE_LIVE_KIRO_MODEL`, and
-`CATE_LIVE_OPENCODE_MODEL` override real-provider models. OpenCode expects a
-provider-prefixed model ID, such as `openrouter/openai/gpt-5.4-mini`.
+Every installed-CLI test runs against the fake provider, including the
+CLIs' sign-in (fake API keys, and the fake auth endpoints Cursor and Kiro
+call). No test uses a real account, key or model.
 
 For focused lifecycle debugging, select cases without running the smoke file:
 
@@ -137,5 +124,11 @@ For focused lifecycle debugging, select cases without running the smoke file:
 CATE_LIVE_AGENT_CLIS=1 CATE_HOOK_SMOKE_AGENTS=codex CATE_HOOK_LIFECYCLE_CASES=automatic-approval npx vitest run --config vitest.live.config.ts hookLifecycle.itest.ts
 ```
 
-The older `npm run test:agent-contracts` suite remains available for detailed
-vendor-payload investigations with real accounts.
+The recorded-change tests (`src/services/agents/runtime/changes/live.*.itest.ts`)
+use the same fake provider. It scripts each CLI's native read and edit tool
+calls; the tests assert the real edit reaches Cate's change store with the
+expected diff:
+
+```sh
+npm run test:agent-changes
+```

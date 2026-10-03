@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+# Release runtime bundles prune unused installs (scripts/build-runtime.mjs).
+env:
+  CATE_RELEASE: '1'
+
 jobs:
   create-release:
     runs-on: ubuntu-latest

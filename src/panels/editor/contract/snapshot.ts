@@ -42,6 +42,11 @@ export type EditorOp =
   /** Shows another file in this panel. Fails `dirty` with unsaved edits
    *  unless `discard`. */
   | { kind: 'openFile'; path: string; line?: number; column?: number; discard?: boolean }
+  /** Shows the same file in another worktree's checkout; where it is missing
+   *  (or the panel shows a draft), a draft there with the current text.
+   *  Null is the workspace root. Fails `dirty` with unsaved edits unless
+   *  `discard`. */
+  | { kind: 'switchWorktree'; worktreeId: string | null; discard?: boolean }
   /** Removes the panel. Fails `dirty` with unsaved edits unless `discard`. */
   | { kind: 'close'; discard?: boolean }
   /** Readies the panel for a removal the client sends next (its close

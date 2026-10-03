@@ -2,10 +2,8 @@
 // entry registers the list once at boot; generic code asks the definition
 // instead of branching on the panel type.
 
-import type { ClientFeature } from '@kernel/rpc/contract'
 import type { Size } from '@workspace/canvas/contract'
 import type { AnyPanelDefinition, PanelOpenKind } from '@panels/framework/contract'
-import { clientHas } from '@client/connections'
 
 /** Floor for a dock pane, whatever its panels ask for. */
 export const MIN_PANE_SIZE: Size = { width: 320, height: 220 }
@@ -52,14 +50,11 @@ export function keepsMounted(type: string | undefined): boolean {
   return !!panelDefinition(type)?.surface
 }
 
-/** The types people can create here, in creation order: those with
- *  `creation` whose view this client can show (and, on a canvas, that can
- *  live there). Every creation menu lists these. */
+/** The types people can create, in creation order: those with `creation`
+ *  (and, on a canvas, that can live there). Every creation menu lists these. */
 export function creatableDefinitions(where: { onCanvas?: boolean } = {}): AnyPanelDefinition[] {
   return panelDefinitions()
-    .filter((definition) => definition.creation
-      && missingFeatures(definition).length === 0
-      && (!where.onCanvas || definition.canLiveOnCanvas))
+    .filter((definition) => definition.creation && (!where.onCanvas || definition.canLiveOnCanvas))
     .sort((a, b) => a.creation!.order - b.creation!.order)
 }
 
@@ -68,7 +63,3 @@ export function panelTypeOpening(kind: PanelOpenKind): string | undefined {
   return panelDefinitions().find((definition) => definition.opens?.includes(kind))?.type
 }
 
-/** The features a definition needs that this client lacks. */
-export function missingFeatures(definition: AnyPanelDefinition): ClientFeature[] {
-  return definition.requires.filter((feature) => !clientHas(feature))
-}

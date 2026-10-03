@@ -32,6 +32,11 @@ export function clientStateFor(workspaceId: string): ClientStateStore | null {
   return open.get(workspaceId)?.state ?? null
 }
 
+/** The workspaces with a document store, in attach order. */
+export function documentWorkspaceIds(): string[] {
+  return [...open.keys()]
+}
+
 export function subscribeDocumentStores(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }

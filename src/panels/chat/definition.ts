@@ -2,7 +2,7 @@
 // the T3 client in a webview. Pure.
 
 import { channel } from '@kernel/rpc/contract'
-import { storedShortcut } from '@kernel/ui/contract'
+import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import { CHAT_DEFAULT_TITLE, type ChatCreateOptions, type ChatOp, type ChatSnapshot } from './contract'
@@ -27,7 +27,6 @@ export const chatDefinition = definePanel({
   // moveBefore) reloads its page, so an inline surface cannot survive a tab or
   // workspace switch.
   surface: { retention: 'recent' },
-  requires: ['webview'],
   opens: ['conversation'],
   defaultTitle: CHAT_DEFAULT_TITLE,
   fields: chatFields,

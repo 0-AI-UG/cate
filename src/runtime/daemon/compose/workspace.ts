@@ -438,7 +438,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       terminalRunner.dispose()
       await t3.dispose()
       agents.dispose()
-      terminal.shutdown()
+      await terminal.shutdown()
       repository.dispose()
       presence.dispose()
       await skills.dispose()

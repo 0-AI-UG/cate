@@ -21,7 +21,7 @@ import {
   acquireRuntimeSocket,
   ensureDataDir,
   ensureRuntimeKeyPair,
-  nestedRuntimeRoot,
+  overlappingRuntime,
   openSecretsFile,
   writeRuntimeInfo,
   type DataPaths,
@@ -41,7 +41,7 @@ import { serverCapability } from '@runtime/server/contract'
 import type { PanelRuntime } from '@panels/runtime'
 import { applyLoginEnv, prependPath } from '@services/terminal/runtime'
 import { withoutInheritedHookIdentity } from '@services/agents/runtime'
-import { installDirFromExecPath, installLayout, RUNTIME_BUILD, RUNTIME_VERSION, runtimeCapability, type ServeArgs } from './contract'
+import { installDirFromExecPath, installLayout, RUNTIME_BUILD, RUNTIME_VERSION, runtimeCapability, type NestedRefusal, type ServeArgs } from './contract'
 import { composeWorkspace, type Workspace } from './compose/workspace'
 import { ensureRuntimeInstalled } from './node'
 import {
@@ -127,14 +127,17 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   if (lock.kind === 'running') return { kind: 'running', runtimeId, endpoint: lock.endpoint }
   const endpoint = lock.endpoint
   // The one place nesting is blocked: every client starts a workspace here.
-  const overlapping = await nestedRuntimeRoot(root, home)
+  const overlapping = await overlappingRuntime(root, home)
   if (overlapping) {
-    const message = `Workspaces cannot be nested: ${root} overlaps the open workspace ${overlapping}`
+    const message = overlapping.root.length < root.length
+      ? `${root} is inside the workspace ${overlapping.root}, which is already open in Cate. Open that workspace instead, or close it first.`
+      : `${root} contains the workspace ${overlapping.root}, which is already open in Cate. Close that workspace first.`
+    const data: NestedRefusal = { nested: { root: overlapping.root } }
     const refusing = serveLocal(lock.server, new RpcServer({
       version,
       build: RUNTIME_BUILD,
       lifecycle,
-      acceptHello: () => { throw new RpcError('rejected', message) },
+      acceptHello: () => { throw new RpcError('rejected', message, data) },
     }))
     refusing.open()
     const closed = new Promise<void>((resolve) => setTimeout(() => void refusing.close().then(resolve), NESTED_REFUSAL_MS))
@@ -215,9 +218,13 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   let stopping: Promise<void> | null = null
 
 
+  const stoppingListeners = new Set<(reason: StopReason['kind']) => void>()
   const stop = (reason: StopReason): Promise<void> => {
     stopping ??= (async () => {
       log.info('stopping (%s)', reason.kind)
+      // Clients learn why before their connections close.
+      for (const listener of [...stoppingListeners]) listener(reason.kind)
+      if (stoppingListeners.size > 0) await new Promise((resolve) => setTimeout(resolve, 50))
       lifetime.dispose()
       clearInterval(relink)
       // Stop accepting, then sessions and modules, then state files.
@@ -245,8 +252,12 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     perf,
     busy: busy.busy,
     stop: () => void stop({ kind: 'stop' }),
-    async update(next) {
-      const dir = await ensureRuntimeInstalled({ ...next, cateHome: cateHome(home), fetch: options.fetch })
+    onStopping(listener) {
+      stoppingListeners.add(listener)
+      return () => { stoppingListeners.delete(listener) }
+    },
+    async update(next, onProgress) {
+      const dir = await ensureRuntimeInstalled({ ...next, cateHome: cateHome(home), fetch: options.fetch, onProgress })
       setTimeout(() => void stop({ kind: 'update', version: next.build ?? next.version, installDir: dir }), 20)
     },
   }))

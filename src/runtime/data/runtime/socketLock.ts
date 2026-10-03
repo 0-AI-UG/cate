@@ -24,7 +24,7 @@ export async function acquireRuntimeSocket(
   const endpoint = await ensureLocalEndpoint(dataDir, runtimeId, platform)
   const running = { kind: 'running', endpoint } as const
 
-  if (await answers(endpoint, options.probeTimeoutMs ?? 1000)) return running
+  if (await socketAnswers(endpoint, options.probeTimeoutMs ?? 1000)) return running
   if (platform !== 'win32') await removeStaleSocket(endpoint)
 
   const server = net.createServer()
@@ -42,7 +42,8 @@ export async function acquireRuntimeSocket(
   return { kind: 'acquired', server, endpoint }
 }
 
-function answers(endpoint: string, timeoutMs: number): Promise<boolean> {
+/** Whether something accepts a connection on `endpoint`. */
+export function socketAnswers(endpoint: string, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = net.connect(endpoint)
     const done = (alive: boolean) => {

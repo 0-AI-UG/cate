@@ -5,7 +5,8 @@
 // entry; tests import it directly.
 
 import { rect, type Rect } from '@workspace/canvas/contract'
-import { visitDock, type SplitSide } from './dock'
+import { dockStacks, visitDock, type SplitSide } from './dock'
+import { placementOf } from './placement'
 import type { DocChange, PlaceTarget } from './ops'
 import { MAIN_WINDOW, PANEL_TYPES, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
 import { allStacks } from './selectors'
@@ -134,6 +135,14 @@ export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => stri
   }
   if (roll < 83 && detached.length) {
     return { kind: 'closeWindow', windowId: rng.pick(detached).id }
+  }
+  if (roll < 86) {
+    const window = rng.pick(Object.values(doc.windows))
+    if (window.maximized && rng.chance(0.6)) return { kind: 'restoreLayout', windowId: window.id }
+    const onCanvas = panels.filter((p) => 'canvasId' in (placementOf(doc, p.id)?.dock ?? {}))
+    if (onCanvas.length && rng.chance(0.5)) return { kind: 'maximizePanel', id: rng.pick(onCanvas).id }
+    const stacks = window.dock ? dockStacks(window.dock) : []
+    return { kind: 'maximizeStack', windowId: window.id, stackId: stacks.length ? rng.pick(stacks).id : 'no-such-stack' }
   }
   if (roll < 88) {
     return {

@@ -36,7 +36,7 @@ function revealOnce(workspaceId: string, panelId: PanelId): boolean {
     const host = canvasPanelOf(doc, canvasId)
     const hostPlacement = host ? placementOf(doc, host.id) : null
     if (host && hostPlacement) state.setActiveTab(hostPlacement.stackId, host.id)
-    state.setSelection(canvasId, [nodeId])
+    state.setSelection(canvasId, { nodes: [nodeId], active: nodeId })
     if (host) state.pushIntent({ panelId: host.id, kind: CANVAS_REVEAL_INTENT, data: { nodeId, panelId } })
   }
   const windowId = windowOf(doc, panelId)

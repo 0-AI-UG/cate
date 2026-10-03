@@ -4,7 +4,7 @@
 // Cmd/Ctrl+Alt+P hides it.
 
 import { useEffect, useRef, useState } from 'react'
-import { Spinner } from '@kernel/ui'
+import { Spinner } from '../../ui/kernel/interaction'
 import type { RuntimePerfSample } from '@runtime/daemon/contract'
 import type { WorkspaceConnections } from '@client/connections'
 import type { AppPerfSnapshot, DesktopApi } from '../../contract'

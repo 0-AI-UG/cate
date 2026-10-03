@@ -1,9 +1,8 @@
 // The raw sockets behind the renderer's `ShellTransports` (architecture 7.5,
 // 15). Local runtimes: find or start the workspace's daemon and connect to its
-// socket. Network runtimes: same network (WebSocket + mDNS) or Cate Connect
-// (WebRTC), then the security layer with this device's key and the pinned
-// runtime key, so the renderer only ever sees a message pipe that is already
-// encrypted. The device key never leaves main.
+// socket. Network runtimes: the portable network dialer (runtime/transports)
+// over Node's WebSocket, mDNS and WebRTC, so the renderer only ever sees a
+// message pipe that is already encrypted. The device key never leaves main.
 
 import net from 'node:net'
 import type { ByteDuplex } from '@kernel/rpc/contract'
@@ -11,11 +10,9 @@ import { createLogger } from '@kernel/log/contract'
 import { dialCateConnect } from '@runtime/connect/client'
 import { DEFAULT_CATE_CONNECT_URL } from '@runtime/connect/contract'
 import type { LocalRuntime } from '@runtime/daemon/desktop'
-import { KnownRuntimes } from '@runtime/pairing/client'
-import { decodePairingUri, parsePairingCode, type PairingMode } from '@runtime/pairing/contract'
-import { secureChannelDuplex, type KeyPair, type MessagePortLike } from '@runtime/security/contract'
-import { dialSameNetwork, openSecureConnection } from '@runtime/transports/client'
-import { formatAddress } from '@runtime/transports/contract'
+import type { KnownRuntimes } from '@runtime/pairing/client'
+import type { KeyPair, MessagePortLike } from '@runtime/security/contract'
+import { createNetworkDialer, type dialSameNetwork } from '@runtime/transports/client'
 import { discoverRuntime, loadNodePeerConnection, nodeWebSocketFactory, socketDuplex } from '@runtime/transports/node'
 import type { DesktopNetworkTarget, PairResult } from '../contract'
 
@@ -55,37 +52,20 @@ export function dialLoopbackTcp(port: number, host = '127.0.0.1'): Promise<ByteD
 
 export function createShellTransportHost(deps: ShellTransportDeps): ShellTransportHost {
   const connectUrl = deps.connectUrl ?? process.env.CATE_CONNECT_URL ?? DEFAULT_CATE_CONNECT_URL
-  const sameNetwork = deps.sameNetwork ?? dialSameNetwork
-  const cateConnect = deps.cateConnect ?? (async (runtimeId: string) => dialCateConnect({
-    url: connectUrl,
-    runtimeId,
+  const network = createNetworkDialer({
+    deviceKeys: deps.deviceKeys,
+    deviceName: deps.deviceName,
+    pins: deps.pins,
     webSocket: nodeWebSocketFactory,
-    createPeer: await loadNodePeerConnection(),
-  }))
-
-  /** The first raw message port that reaches the runtime. */
-  const reach = async (runtimeId: string, addresses: string[], viaConnect: boolean): Promise<{ port: MessagePortLike; via: PairingMode }> => {
-    const errors: string[] = []
-    try {
-      const port = await sameNetwork({
-        runtimeId,
-        addresses,
-        discover: (id, signal) => discoverRuntime(id, { signal }),
-        webSocket: nodeWebSocketFactory,
-      })
-      return { port, via: 'sameNetwork' }
-    } catch (error) {
-      errors.push((error as Error).message)
-    }
-    if (viaConnect) {
-      try {
-        return { port: await cateConnect(runtimeId), via: 'cateConnect' }
-      } catch (error) {
-        errors.push((error as Error).message)
-      }
-    }
-    throw new Error(errors.join('; '))
-  }
+    discover: (id, signal) => discoverRuntime(id, { signal }),
+    cateConnect: deps.cateConnect ?? (async (runtimeId) => dialCateConnect({
+      url: connectUrl,
+      runtimeId,
+      webSocket: nodeWebSocketFactory,
+      createPeer: await loadNodePeerConnection(),
+    })),
+    ...(deps.sameNetwork ? { sameNetwork: deps.sameNetwork } : {}),
+  })
 
   return {
     async dialLocal(root) {
@@ -94,42 +74,7 @@ export function createShellTransportHost(deps: ShellTransportDeps): ShellTranspo
       return local.duplex
     },
     dialLoopbackTcp: (port) => dialLoopbackTcp(port),
-    async dialNetwork(target) {
-      const addresses = target.endpoints.flatMap((e) => (e.kind === 'lan' ? [formatAddress(e.address, e.port)] : []))
-      const viaConnect = target.endpoints.some((e) => e.kind === 'connect')
-      const { port } = await reach(target.runtimeId, addresses, viaConnect)
-      const { channel } = await openSecureConnection(port, {
-        kind: 'connect',
-        deviceKeys: deps.deviceKeys(),
-        runtimeId: target.runtimeId,
-        pins: deps.pins,
-      })
-      return secureChannelDuplex(channel)
-    },
-    async pair(request) {
-      const link = request.link.trim()
-      let runtimeId: string
-      let secret: Uint8Array
-      let fingerprint: string | undefined
-      let addresses: string[] = []
-      let mode: PairingMode | undefined
-      if (link.startsWith('cate://')) {
-        const payload = decodePairingUri(link)
-        ;({ runtimeId, secret, fingerprint, addresses, mode } = payload)
-      } else {
-        ;({ runtimeId, secret } = parsePairingCode(link))
-      }
-      const { port, via } = await reach(runtimeId, addresses, mode !== 'sameNetwork')
-      const { channel } = await openSecureConnection(port, {
-        kind: 'pair',
-        deviceKeys: deps.deviceKeys(),
-        deviceName: request.deviceName?.trim() || deps.deviceName(),
-        target: { runtimeId, secret, ...(fingerprint ? { fingerprint } : {}) },
-        pins: deps.pins,
-      })
-      // Pinned now; the workspace connection dials again by key.
-      channel.close()
-      return { runtimeId, addresses, mode: mode ?? via, publicKey: channel.remoteStatic }
-    },
+    dialNetwork: (target) => network.dialNetwork(target),
+    pair: (request) => network.pair(request),
   }
 }

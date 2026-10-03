@@ -5,7 +5,7 @@
 
 import { app, session as electronSession, type Session, type WebContents } from 'electron'
 import { createLogger } from '@kernel/log/contract'
-import { shortcutMatches, type ActionId } from '@kernel/ui/contract'
+import { shortcutMatches, type ActionId } from '@kernel/interaction/contract'
 import type { BrowserShortcutAction } from '@services/browser/contract'
 import { sendBrowserShortcut, sendOpenTabRequest } from '@services/browser/desktop'
 import { DESKTOP_CHANNELS as C, type MenuModel } from '../contract'

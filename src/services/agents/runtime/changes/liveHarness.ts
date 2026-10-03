@@ -12,7 +12,6 @@ import { createAgentHooks } from '../hooks/agentHooks'
 import { createAgentChangesStore } from './store'
 
 export const LIVE_AGENT_CHANGES = process.env.CATE_LIVE_AGENT_CLIS === '1'
-export const LIVE_EDIT_PROMPT = 'Read target.txt, then use your native file editing tool (not a shell command) to replace its entire contents with exactly after followed by one newline. Change no other file. Do the edit now, then reply only done.'
 
 async function terminateLiveProcessTree(pid: number | undefined): Promise<void> {
   if (!pid) return
@@ -131,16 +130,14 @@ export async function runLiveTui(binary: string, args: string[], options: {
 }
 
 /** Isolated repository and the actual production hook receiver/config/bridge.
- * Account authentication stays with the installed CLI; this fixture never
- * modifies its global configuration or supplies synthetic tool events. */
-export async function createLiveChangeFixture(agentId: AgentId) {
-  const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), `cate-live-changes-${agentId}-`)))
+ * This fixture never modifies a CLI's global configuration or supplies
+ * synthetic tool events. */
+export async function createLiveChangeFixture(agentId: AgentId, baseEnv: Record<string, string>) {
+  // macOS's default TMPDIR can exhaust a daemon's Unix socket path limit.
+  const directory = await realpath(await mkdtemp(path.join(process.platform === 'darwin' ? '/tmp' : os.tmpdir(), `cate-live-changes-${agentId}-`)))
   const cwd = path.join(directory, 'repo')
   const historyDir = path.join(directory, 'history')
   await mkdir(cwd)
-  const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([key, value]) => value !== undefined
-    && !['CLAUDECODE', 'CODEX_THREAD_ID', 'CODEX_SANDBOX', 'CODEX_SANDBOX_NETWORK_DISABLED'].includes(key)
-    && !key.startsWith('CATE_HOOK_') && key !== 'CATE_TERMINAL_ID')) as Record<string, string>
   const hooks = createAgentHooks({ hooksDir: path.join(directory, 'hooks'), changesDir: historyDir })
   const terminalId = `live-${agentId}-${randomUUID()}`
   const panelId = `panel-${terminalId}`
@@ -175,7 +172,7 @@ export async function createLiveChangeFixture(agentId: AgentId) {
     await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
     env.CATE_HOOK_ENDPOINT = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`
     return {
-      cwd, env, hooks, historyDir, terminalId, panelId, posts,
+      directory, cwd, env, hooks, historyDir, terminalId, panelId, posts,
       records: () => hooks.listChanges(cwd),
       run: (binary: string, args: string[], extraEnv: Record<string, string> = {}) => runLiveCli(binary, args, { cwd, env: { ...env, ...extraEnv } }),
       close: async () => {

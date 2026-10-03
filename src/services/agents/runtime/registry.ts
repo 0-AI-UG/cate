@@ -33,12 +33,19 @@ export interface RunnerRegistry {
   runnerFor(panelId: string): AgentRunnerImpl | null
   all(): AgentPanelStates
   subscribe(listener: (change: AgentPanelStatesChange) => void): () => void
+  /** Re-reads a panel's state, e.g. after its context was sent. */
+  refresh(panelId: string): void
+}
+
+export interface RunnerRegistryOptions {
+  /** When relation context last went with the panel's prompt. */
+  contextSentAt?(panelId: string): number | undefined
 }
 
 const same = (a: PanelAgentState | null | undefined, b: PanelAgentState | null | undefined): boolean =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
-export function createRunnerRegistry(): RunnerRegistry {
+export function createRunnerRegistry(options: RunnerRegistryOptions = {}): RunnerRegistry {
   const runners = new Map<AgentRunnerImpl, () => void>()
   const listeners = new Set<(change: AgentPanelStatesChange) => void>()
   const last = new Map<string, PanelAgentState>()
@@ -47,10 +54,14 @@ export function createRunnerRegistry(): RunnerRegistry {
     for (const runner of runners.keys()) if (runner.state(panelId)) return runner
     return null
   }
+  const withSent = (state: PanelAgentState): PanelAgentState => {
+    const sentAt = options.contextSentAt?.(state.panelId)
+    return sentAt === undefined ? state : { ...state, contextSentAt: sentAt }
+  }
   const sessionFor = (panelId: string): PanelAgentState | null => {
     for (const runner of runners.keys()) {
       const state = runner.state(panelId)
-      if (state) return state
+      if (state) return withSent(state)
     }
     return null
   }
@@ -84,7 +95,7 @@ export function createRunnerRegistry(): RunnerRegistry {
       for (const runner of runners.keys()) {
         for (const panelId of runner.panelIds()) {
           const state = out[panelId] ? null : runner.state(panelId)
-          if (state) out[panelId] = state
+          if (state) out[panelId] = withSent(state)
         }
       }
       return out
@@ -93,5 +104,6 @@ export function createRunnerRegistry(): RunnerRegistry {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
+    refresh,
   }
 }

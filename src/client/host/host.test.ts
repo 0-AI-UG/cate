@@ -1,8 +1,8 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { MAIN_WINDOW, placementOf } from '@workspace/document/contract'
-import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../layout/testing'
-import { actionSpec, declaredActions } from '@kernel/ui'
-import { storedShortcut } from '@kernel/ui/contract'
+import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../test/clientWorkspace'
+import { actionSpec, declaredActions } from '@kernel/interaction'
+import { storedShortcut } from '@kernel/interaction/contract'
 import { canRunAction, registerActions, requestPanelRename, runAction, onPanelRenameRequest } from './actions'
 import { creationMenuItems, creationPick, worktreeChoices } from './creation'
 import { registerPanelActions } from './panelActions'
@@ -119,11 +119,13 @@ describe('closing', () => {
 })
 
 describe('focus and reveal', () => {
-  it('a focused canvas descends into its selected node', () => {
+  it('a focused canvas descends into its active node', () => {
     ws = attachTestWorkspace('w', fixture())
     ws.state.focus('cv')
     expect(focusedLeafPanelId('w')).toBe('cv')
-    ws.state.setSelection('C', ['N1'])
+    ws.state.setSelection('C', { nodes: ['N1'], active: null })
+    expect(focusedLeafPanelId('w')).toBe('cv')
+    ws.state.setSelection('C', { nodes: ['N1'], active: 'N1' })
     expect(focusedLeafPanelId('w')).toBe('a')
   })
 
@@ -133,7 +135,7 @@ describe('focus and reveal', () => {
     expect(await revealPanel('w', 'a')).toBe(true)
     const state = ws.state.getSnapshot()
     expect(state.activeTabs).toMatchObject({ s1: 'cv', ns1: 'a' })
-    expect(state.selection.C).toEqual(['N1'])
+    expect(state.selection.C).toEqual({ nodes: ['N1'], active: 'N1' })
     expect(state.focusedPanelId).toBe('a')
     expect(ws.state.takeIntents('cv')).toEqual([expect.objectContaining({ kind: CANVAS_REVEAL_INTENT, data: { nodeId: 'N1', panelId: 'a' } })])
   })

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from 'vitest'
 import { t3ThemeScript } from './theme'
-import { BUILT_IN_BY_ID } from '@kernel/ui/contract'
+import { BUILT_IN_BY_ID } from '@kernel/interaction/contract'
 
 const guestWindow = window as typeof window & { __cateThemeObserver?: MutationObserver }
 afterEach(() => {

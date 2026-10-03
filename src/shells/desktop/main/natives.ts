@@ -1,4 +1,4 @@
-// The desktop `ClientUi` natives (kernel/ui): message boxes, file pickers,
+// The desktop `ClientUi` natives (kernel/interaction): message boxes, file pickers,
 // opening links and the device settings file, the clipboard and OS
 // notifications. Feature dialogs (confirm close terminal, ...) are message
 // boxes the renderer words.

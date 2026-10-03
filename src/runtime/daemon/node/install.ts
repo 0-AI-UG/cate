@@ -21,6 +21,7 @@ import {
   runtimeRoot,
   runtimeTarget,
   serveArgv,
+  type RuntimeUpdateProgress,
   type ServeArgs,
 } from '../contract'
 
@@ -99,10 +100,11 @@ export async function downloadRuntimeRelease(opts: {
   platform?: NodeJS.Platform
   arch?: string
   fetch?: typeof fetch
+  onProgress?: (received: number, total: number | null) => void
 }): Promise<string> {
   const target = runtimeTarget(opts.platform ?? process.platform, opts.arch ?? process.arch)
   if (!target) throw new Error(`no runtime release for ${opts.platform ?? process.platform}-${opts.arch ?? process.arch}`)
-  const get = async (url: string): Promise<Buffer> => {
+  const get = async (url: string, onProgress?: (received: number, total: number | null) => void): Promise<Buffer> => {
     let res: Response
     try {
       res = await (opts.fetch ?? fetch)(url)
@@ -110,11 +112,25 @@ export async function downloadRuntimeRelease(opts: {
       throw new Error(`could not reach the runtime release (${url}): ${err instanceof Error ? err.message : String(err)}`)
     }
     if (!res.ok) throw new Error(`runtime release not found for ${target} at ${url} (HTTP ${res.status})`)
-    return Buffer.from(await res.arrayBuffer())
+    if (!onProgress || !res.body) return Buffer.from(await res.arrayBuffer())
+    const length = Number(res.headers.get('content-length'))
+    const total = Number.isFinite(length) && length > 0 ? length : null
+    const chunks: Uint8Array[] = []
+    let received = 0
+    onProgress(0, total)
+    const reader = res.body.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      received += value.length
+      onProgress(received, total)
+    }
+    return Buffer.concat(chunks)
   }
   const url = releaseUrl(opts.version, target)
   const expected = (await get(checksumUrl(opts.version, target))).toString('utf-8').trim().split(/\s+/)[0]?.toLowerCase()
-  const bytes = await get(url)
+  const bytes = await get(url, opts.onProgress)
   if (bytes.length === 0) throw new Error(`runtime release at ${url} is empty`)
   const actual = createHash('sha256').update(bytes).digest('hex')
   if (!expected || actual !== expected) throw new Error(`runtime release at ${url} does not match its checksum`)
@@ -148,17 +164,25 @@ export async function ensureRuntimeInstalled(opts: {
   platform?: NodeJS.Platform
   arch?: string
   fetch?: typeof fetch
+  /** Told each step of a download and install (not called when the build is
+   *  already installed). */
+  onProgress?: (progress: RuntimeUpdateProgress) => void
 }): Promise<string> {
   const platform = opts.platform ?? process.platform
-  const { cateHome } = opts
+  const { cateHome, onProgress } = opts
   let installDir = opts.build !== undefined ? runtimeInstallDir(cateHome, opts.build, platform) : undefined
   if (!installDir || !isRuntimeInstalled(installDir, platform)) {
     if (opts.tarball) {
+      onProgress?.({ phase: 'install' })
       installDir = await installRuntimeTarball({ tarball: opts.tarball, cateHome, expectBuild: opts.build, platform })
     } else {
       const download = `${tempPath(cateHome, platform, 'download')}.tgz`
       try {
-        await downloadRuntimeRelease({ version: opts.version, dest: download, platform, arch: opts.arch, fetch: opts.fetch })
+        await downloadRuntimeRelease({
+          version: opts.version, dest: download, platform, arch: opts.arch, fetch: opts.fetch,
+          ...(onProgress ? { onProgress: (received: number, total: number | null) => onProgress({ phase: 'download', received, total }) } : {}),
+        })
+        onProgress?.({ phase: 'install' })
         installDir = await installRuntimeTarball({ tarball: download, cateHome, expectBuild: opts.build, platform })
       } finally {
         await rm(download, { force: true })

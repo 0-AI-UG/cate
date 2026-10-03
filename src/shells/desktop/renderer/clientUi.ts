@@ -4,9 +4,9 @@
 // window declares it (12.2 rule 5).
 
 import type { ClientFeature } from '@kernel/rpc/contract'
-import type { ClientUi } from '@kernel/ui/contract'
-import { useUIStore } from '@client/ui'
-import { showSavePathDialog } from '@workspace/files/ui'
+import type { ClientUi } from '@kernel/interaction/contract'
+import { useUIStore } from '../ui/app'
+import { showSavePathDialog } from '../ui/workspace/files'
 import type { DesktopApi, MessageBoxRequest } from '../contract'
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`

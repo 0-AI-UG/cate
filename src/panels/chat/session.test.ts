@@ -135,6 +135,19 @@ describe('ChatSession binding', () => {
     expect(t3.panelUrl).toHaveBeenLastCalledWith({ checkout: '/repo-wt', route: 'thread' })
     expect(snapshot()).toMatchObject({ checkout: '/repo-wt', threadId: null })
   })
+
+  it('switches worktree through its op, back to the root with null', async () => {
+    document.apply({ kind: 'setWorktree', worktree: { id: 'wt', path: '/repo-wt', color: 'green', status: 'ready' } })
+    await addChat({ threadId: 'one' })
+    await op({ kind: 'switchWorktree', worktreeId: 'wt' })
+    await settle()
+    expect(document.get().panels.chat).toMatchObject({ worktreeId: 'wt', fields: {} })
+    expect(snapshot()).toMatchObject({ checkout: '/repo-wt', threadId: null })
+    await op({ kind: 'switchWorktree', worktreeId: null })
+    await settle()
+    expect(snapshot().checkout).toBe(ROOT)
+    await expect(op({ kind: 'switchWorktree', worktreeId: 'nope' })).rejects.toSatisfy((e) => isRpcError(e, 'gone'))
+  })
 })
 
 describe('ChatSession and the harness', () => {
@@ -176,6 +189,15 @@ describe('ChatSession and the harness', () => {
     expect(snapshot()).toMatchObject({ connected: true, activity: 'running', agentName: 'Codex', canReceivePrompt: false })
     t3.emit({ kind: 'snapshot', snapshot: shell({ one: { ...running, latestTurn: { state: 'completed' }, session: { status: 'ready', activeTurnId: null, providerName: 'codex' } } }, true, 2) })
     expect(snapshot()).toMatchObject({ activity: 'waitingForInput', canReceivePrompt: true })
+  })
+
+  it('says whether the harness knows the bound thread yet, without a new load', async () => {
+    await addChat({ threadId: 'fresh' })
+    expect(snapshot().threadKnown).toBeNull()
+    t3.emit({ kind: 'snapshot', snapshot: shell({}) })
+    expect(snapshot().threadKnown).toBe(false)
+    t3.emit({ kind: 'snapshot', snapshot: shell({ fresh: { id: 'fresh', title: 'Fresh' } }, true, 2) })
+    expect(snapshot()).toMatchObject({ threadKnown: true, loadId: 1 })
   })
 
   it('restarts the harness on retry and reports failures', async () => {

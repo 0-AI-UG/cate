@@ -178,6 +178,9 @@ export function checkChange(v: unknown): Problem {
         && c.rects.every((r) => isObject(r) && isId(r.nodeId) && isRect(r.rect)) ? null : 'bad node rects'
     case 'setWindowBounds': return isId(c.windowId) && isRect(c.bounds) ? null : 'bad window bounds'
     case 'closeWindow': return isId(c.windowId) ? null : 'no window id'
+    case 'maximizeStack': return isId(c.windowId) && isId(c.stackId) ? null : 'bad maximize'
+    case 'maximizePanel': return isId(c.id) ? null : 'no panel id'
+    case 'restoreLayout': return isId(c.windowId) ? null : 'no window id'
     case 'addRelation': return checkRelation(c.relation)
     case 'updateRelation': return isId(c.id) ? checkRelationPatch(c.patch) : 'no relation id'
     case 'removeRelation': return isId(c.id) ? null : 'no relation id'

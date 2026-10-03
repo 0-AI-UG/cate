@@ -4,7 +4,7 @@
 // runs it like the key.
 
 import { app, Menu, shell, type BrowserWindow, type MenuItemConstructorOptions } from 'electron'
-import { MENU_BAR, type ContextMenuItem, type StoredShortcut } from '@kernel/ui/contract'
+import { MENU_BAR, type ContextMenuItem, type StoredShortcut } from '@kernel/interaction/contract'
 import { DESKTOP_CHANNELS as C, MENU_SKELETON, type MenuModel, type MenuModelItem, type NativeAction } from '../contract'
 import type { WindowRegistry } from './windowRegistry'
 

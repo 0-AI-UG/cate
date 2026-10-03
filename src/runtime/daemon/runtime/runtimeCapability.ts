@@ -1,6 +1,6 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { CapabilityImpl, RpcServer } from '@kernel/rpc/runtime'
-import { buildVersion, isBuildId, type RuntimeStatus, type runtimeCapability } from '../contract'
+import { buildVersion, isBuildId, type RuntimeStatus, type RuntimeStopReason, type RuntimeUpdateProgress, type runtimeCapability } from '../contract'
 import type { PerfSampler } from './perf'
 
 export interface RuntimeCapabilityDeps {
@@ -13,15 +13,23 @@ export interface RuntimeCapabilityDeps {
   busy: () => boolean
   /** Stops the runtime after the reply is sent. */
   stop: () => void
-  /** Installs `build` (or release `version`) when missing; the runtime then
-   *  restarts into it. */
-  update: (target: { version: string; build?: string }) => Promise<void>
+  /** Runs `listener` when the runtime starts stopping, before connections close. */
+  onStopping: (listener: (reason: RuntimeStopReason) => void) => () => void
+  /** Installs `build` (or release `version`) when missing, telling
+   *  `onProgress` how far it is; the runtime then restarts into it. */
+  update: (target: { version: string; build?: string }, onProgress: (progress: RuntimeUpdateProgress) => void) => Promise<void>
+}
+
+interface Updating {
+  key: string
+  done: Promise<void>
+  progress: RuntimeUpdateProgress | null
 }
 
 export function runtimeCapabilityImpl(deps: RuntimeCapabilityDeps): CapabilityImpl<typeof runtimeCapability> {
   // Let the reply leave before the socket closes.
   const later = (fn: () => void) => { setTimeout(fn, 20) }
-  let updating: { key: string; done: Promise<void> } | null = null
+  let updating: Updating | null = null
   return {
     info: (): RuntimeStatus => ({
       runtimeId: deps.runtimeId,
@@ -48,14 +56,17 @@ export function runtimeCapabilityImpl(deps: RuntimeCapabilityDeps): CapabilityIm
       const key = build ?? version
       if (updating && updating.key !== key) throw new RpcError('conflict', `already updating to ${updating.key}`)
       if (!updating) {
-        const current = { key, done: deps.update({ version, ...(build ? { build } : {}) }) }
+        const current: Updating = { key, done: Promise.resolve(), progress: null }
         updating = current
+        current.done = deps.update({ version, ...(build ? { build } : {}) }, (progress) => { current.progress = progress })
         current.done.catch(() => { if (updating === current) updating = null })
       }
       // The same version restarts too: a stale build of it is replaced by the
       // install of the client's build.
       await updating.done
     },
+    updateProgress: () => updating?.progress ?? null,
     perf: () => deps.perf.sample(),
+    lifecycle: (_params, sink) => deps.onStopping((reason) => sink.emit({ kind: 'stopping', reason })),
   }
 }

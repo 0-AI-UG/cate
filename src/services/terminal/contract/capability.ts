@@ -61,10 +61,13 @@ export interface AttachParams {
   visible?: boolean
 }
 
-/** The first event of an attach carries the serialized screen; live output
- *  follows as binary chunks (UTF-8) with nothing lost or repeated between. */
+/** An attach starts with `size` (a live PTY only) and the serialized screen;
+ *  live output follows as binary chunks (UTF-8) with nothing lost or repeated
+ *  between. `size` comes again on every change: the PTY's grid (the output
+ *  after it is at that grid) and whether the PTY fits this viewer. */
 export type AttachEvent =
   | { kind: 'screen'; viewer: string; data: string; cols: number; rows: number }
+  | { kind: 'size'; cols: number; rows: number; fitted: boolean }
   | { kind: 'exit'; code: number }
 
 /** Why an attach ended. `lagged`: the viewer fell too far behind and was
@@ -80,8 +83,9 @@ export interface ViewParams {
   cols?: number
   rows?: number
   visible?: boolean
-  /** The person is using this viewer (focus, click): the PTY takes its size. */
-  active?: boolean
+  /** Fit the PTY to this viewer (the person's fit action): the PTY takes its
+   *  size, and follows its resizes, until another viewer asks to fit. */
+  fit?: boolean
 }
 
 export interface ReadResult {

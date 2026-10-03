@@ -29,7 +29,6 @@ export default definePanel({
   canLiveOnCanvas: true,
   navigable: true,
   creation: { order: 8, inWorktree: true },
-  requires: [],
   defaultTitle: 'Diff Review',
   channel: channel<ReviewSnapshot, Partial<ReviewSnapshot>, ReviewOp>(),
   api: reviewApi,

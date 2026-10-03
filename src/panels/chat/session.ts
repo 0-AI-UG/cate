@@ -72,6 +72,7 @@ const initial = (checkout: string, threadId: string | null): ChatSnapshot => ({
   activity: null,
   agentName: null,
   canReceivePrompt: false,
+  threadKnown: null,
   changes: null,
 })
 
@@ -128,6 +129,12 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
 
   protected override readonly ops: OpHandlers<ChatOp> = {
     retry: () => this.retry(),
+    switchWorktree: ({ worktreeId }) => {
+      if (worktreeId && !this.kit.document.get().worktrees[worktreeId]) throw new RpcError('gone', `no worktree ${String(worktreeId)}`)
+      if ((worktreeId ?? undefined) === (this.record.worktreeId ?? undefined)) return
+      // recordChanged drops the thread and loads the new checkout's chat.
+      this.applyDoc({ kind: 'updatePanel', id: this.panelId, patch: { worktreeId } })
+    },
     selectThread: ({ threadId, title, checkout }) => {
       if (checkout !== undefined && checkout !== this.checkout()) return false
       if ((threadId ?? undefined) === chatThreadId(this.record)) return true
@@ -283,6 +290,7 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
       agentName: agentId ? AGENT_DEFS[agentId].displayName : CHAT_DEFAULT_TITLE,
       // A fresh chat's first prompt creates its thread; a bound thread must be known.
       canReceivePrompt: shell?.connected === true && (threadId ? !!thread && canT3ThreadReceivePrompt(thread) : true),
+      threadKnown: threadId && shell?.connected ? !!thread : null,
     })
   }
 

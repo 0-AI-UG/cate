@@ -1,7 +1,7 @@
 // The browser panel type (architecture 10.2, 11.3). Pure: the daemon imports it.
 
 import { channel } from '@kernel/rpc/contract'
-import { storedShortcut } from '@kernel/ui/contract'
+import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import { browserApi, type BrowserOp, type BrowserSnapshot } from './contract'
@@ -25,7 +25,6 @@ export default definePanel({
   // its dock tab is hidden, so page state stays the same for user and agent.
   surface: { retention: 'workspace' },
   requiresFolder: false,
-  requires: ['webview'],
   opens: ['url'],
   defaultTitle: 'Browser',
   fields: (options: BrowserCreateOptions): JsonObject => (options.url ? { url: options.url } : {}),

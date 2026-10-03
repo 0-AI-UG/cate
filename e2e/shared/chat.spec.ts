@@ -108,3 +108,35 @@ describeShared('chat', (pair) => {
     expect(await sessionOpError(b, panelId, { kind: 'renameConversation', title: 'x' })).toBe('rejected')
   })
 })
+
+/** Distinct page loads of `c`'s chat page while `during` runs. */
+async function countLoads(c: SharedClient, panelId: string, ms: number): Promise<number> {
+  const origins = new Set<number>()
+  const until = Date.now() + ms
+  while (Date.now() < until) {
+    const origin = await guestEval<number>(c, panelId, 'performance.timeOrigin').catch(() => null)
+    if (origin !== null) origins.add(origin)
+    await c.page.waitForTimeout(100)
+  }
+  return origins.size
+}
+
+describeShared('chat: watching a running conversation', (pair) => {
+  test('the client that did not send the prompt follows the new thread without reloading over and over', async () => {
+    const { a, b } = pair()
+    const { panelId } = await seedShared(pair(), a, 'chat', { x: 40, y: 40 })
+    for (const c of [a, b]) await expect(guest(c, panelId)).toHaveAttribute('data-chat-guest-ready', 'true', { timeout: 45_000 })
+
+    // A prompts; the thread reaches other T3 clients 2.5 s later and its turn runs 3 s.
+    await guestEval(a, panelId, `(() => {
+      document.querySelector('textarea[aria-label="Message"]').value = 'slow: long task'
+      document.querySelector('#composer').requestSubmit()
+      return true
+    })()`)
+    const [loadsA, loadsB] = await Promise.all([countLoads(a, panelId, 5_000), countLoads(b, panelId, 5_000)])
+    expect(loadsA).toBe(1)
+    // At most: the page it had, the thread once bound, the thread once it exists.
+    expect(loadsB).toBeLessThanOrEqual(3)
+    for (const c of [a, b]) await expect.poll(() => guestPath(c, panelId), { timeout: 20_000 }).toBe('/e2e-env/thread-slow')
+  })
+})

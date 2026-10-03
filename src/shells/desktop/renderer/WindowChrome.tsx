@@ -5,7 +5,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Copy, Minus, Square, X } from 'lucide-react'
-import { useShortcutLabel } from '@kernel/ui'
+import { useShortcutLabel } from '../ui/kernel/interaction'
 import type { DesktopApi, WindowState } from '../contract'
 import { TRAFFIC_LIGHTS_WIDTH } from './desktopPort'
 

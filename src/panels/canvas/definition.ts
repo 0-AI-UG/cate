@@ -3,7 +3,7 @@
 // has no session state. Pure.
 
 import { channel } from '@kernel/rpc/contract'
-import { storedShortcut } from '@kernel/ui/contract'
+import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 
@@ -18,7 +18,8 @@ export const canvasDefinition = definePanel({
   canLiveOnCanvas: false,
   navigable: false,
   creation: { order: 3, key: storedShortcut('c', { command: true, shift: true }) },
-  requires: ['canvas'],
+  // The canvas shows behind its dock tab bar.
+  chrome: { floatingTabBar: true },
   defaultTitle: 'Canvas',
   channel: channel<JsonObject, Partial<JsonObject>, never>(),
   relation: {

@@ -3,7 +3,7 @@
 
 import type { Point } from '@workspace/canvas/contract'
 import { documentStoreFor } from '@client/document'
-import type { CrossWindowDrag, CrossWindowPort, DragGhostPort, DragShell } from '@client/layout/drag'
+import type { CrossWindowDrag, CrossWindowPort, DragGhostPort, DragShell } from '../ui/client/layout/drag'
 import type { DesktopApi, DragPointer } from '../contract'
 
 const DEFAULT_SIZE = { width: 480, height: 320 }

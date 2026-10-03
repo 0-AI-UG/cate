@@ -61,7 +61,11 @@ it.skipIf(process.platform === 'win32')('uses the install of a build, else downl
   const fetch = vi.fn(async (url: string) =>
     new Response(url.endsWith('.sha256') ? `${sha}  cate-runtime-2.1.0-darwin-arm64.tgz\n` : tarball))
   const opts = { version: '2.1.0', build: A, cateHome, fetch: fetch as unknown as typeof globalThis.fetch, platform: 'darwin' as const, arch: 'arm64' }
-  const installDir = await ensureRuntimeInstalled(opts)
+  const progress: unknown[] = []
+  const installDir = await ensureRuntimeInstalled({ ...opts, onProgress: (p) => progress.push(p) })
+  expect(progress[0]).toEqual({ phase: 'download', received: 0, total: null })
+  expect(progress.at(-2)).toEqual({ phase: 'download', received: tarball.length, total: null })
+  expect(progress.at(-1)).toEqual({ phase: 'install' })
   expect(fetch).toHaveBeenCalledWith('https://github.com/0-AI-UG/cate/releases/download/v2.1.0/cate-runtime-2.1.0-darwin-arm64.tgz')
   expect(fetch).toHaveBeenCalledWith('https://github.com/0-AI-UG/cate/releases/download/v2.1.0/cate-runtime-2.1.0-darwin-arm64.tgz.sha256')
   expect(isRuntimeInstalled(installDir, 'darwin')).toBe(true)

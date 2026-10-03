@@ -2,7 +2,7 @@
 // tables. A new slice is one line here.
 
 import { composeSettings, type ComposedSettings, type SettingsTable } from './define'
-import { appearanceSettings, shortcutSettings } from '@kernel/ui/contract/settings'
+import { appearanceSettings, shortcutSettings } from '@kernel/interaction/contract/settings'
 import { cateApiSettings } from '@kernel/api/contract/settings'
 import { runtimeSettings } from '@runtime/daemon/contract/settings'
 import { relationLabelSettings, relationSettings } from '@workspace/relations/contract/settings'
@@ -10,11 +10,15 @@ import { repositorySettings } from '@workspace/repository/contract/settings'
 import { terminalClientSettings, terminalSettings } from '@services/terminal/contract/settings'
 import { browserClientSettings, browserSettings } from '@services/browser/contract/settings'
 import { agentSettings } from '@services/agents/contract/settings'
-import { canvasSettings } from '@client/layout/contract/settings'
-import { notificationSettings, remoteMachineSettings, sidebarSettings } from '@client/ui/contract/settings'
 import { editorSettings } from '@panels/editor/contract/settings'
 import { reviewSettings } from '@panels/review/contract/settings'
-import { desktopSettings } from '@shells/desktop/contract/settings'
+import {
+  canvasSettings,
+  desktopSettings,
+  notificationSettings,
+  remoteMachineSettings,
+  sidebarSettings,
+} from '@shells/desktop/contract/settings'
 
 export const SETTINGS_SLICES = [
   appearanceSettings,

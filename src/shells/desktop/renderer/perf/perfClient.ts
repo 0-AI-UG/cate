@@ -3,8 +3,8 @@
 // counters, a long-task observer and a rAF frame meter. Everything is a cheap
 // no-op until `enablePerf()` runs.
 
-import { setSurfacePerfCounter } from '@client/host'
-import { setCanvasPerfCounter, setTerritoryPerfCounter } from '@client/layout/canvas'
+import { setSurfacePerfCounter } from '../../ui/client/host/surfaceRegistry'
+import { setCanvasPerfCounter, setTerritoryPerfCounter } from '../../ui/client/layout/canvas'
 import { createMeasurementWindow } from './measurementWindow'
 
 let enabled = false

@@ -44,7 +44,11 @@ export const runtimeBuildOptions = {
   outfile: path.join(repoRoot, 'dist-runtime/runtime.cjs'),
   external: ['fsevents', 'node-pty', '@parcel/watcher', 'electron', 'node-datachannel'],
   // Sent in `hello`; the desktop client refuses a runtime of another build.
-  define: { __CATE_BUILD__: JSON.stringify(computeBuildId(repoRoot)) },
+  // A release bundle prunes unused installs; a checkout's leaves them alone.
+  define: {
+    __CATE_BUILD__: JSON.stringify(computeBuildId(repoRoot)),
+    __CATE_RELEASE__: JSON.stringify(process.env.CATE_RELEASE === '1'),
+  },
   logLevel: 'info',
 }
 

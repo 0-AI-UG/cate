@@ -17,6 +17,7 @@ import {
 } from '@services/agents/contract'
 import type { Json, JsonObject, PanelRecord, PlaceTarget } from '@workspace/document/contract'
 import {
+  NotARepositoryError,
   mainWorktree,
   samePath,
   worktreeForPath,
@@ -144,6 +145,7 @@ function initialSnapshot(review: ReviewState): ReviewSnapshot {
     busy: false,
     agentBusy: false,
     error: null,
+    notRepository: false,
     branches: [],
     commits: [],
   }
@@ -286,11 +288,13 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       const result = await this.deps.repository.compare({ cwd: this.cwd, spec: state.spec })
       if (this.disposed || generation !== this.generation) return
       const paths = new Set(result.files.map((file) => file.path))
-      this.set({ comparison: result, diffEpoch: this.s.diffEpoch + 1 })
+      this.set({ comparison: result, diffEpoch: this.s.diffEpoch + 1, notRepository: false })
       const notes = (this.review.notes ?? []).map((note) => ({ ...note, outdated: !paths.has(note.path) }))
       if (notes.some((note, index) => note.outdated !== this.review.notes?.[index]?.outdated)) this.update({ notes })
     } catch (cause) {
-      if (generation === this.generation) this.set({ error: errorText(cause, 'Could not load comparison') })
+      if (generation !== this.generation) return
+      if (cause instanceof NotARepositoryError) this.set({ notRepository: true })
+      else this.set({ error: errorText(cause, 'Could not load comparison') })
     } finally {
       if (generation === this.generation) this.set({ loading: false })
     }

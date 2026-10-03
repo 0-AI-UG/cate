@@ -1,6 +1,6 @@
 // A client on the runtime's machine finds its workspace's runtime by the
 // socket, and starts it when nothing answers (architecture 7.3). Desktop only:
-// the portable client receives the connected byte pipe from the shell.
+// the client core receives the connected byte pipe from the shell.
 
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'

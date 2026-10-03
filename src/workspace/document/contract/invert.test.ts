@@ -99,6 +99,15 @@ describe('invertOp', () => {
     roundTrip(doc, { kind: 'removeWorktree', id: 'wt' })
   })
 
+  it('undoes maximizing with a restore, and a restore with the same maximize', () => {
+    const doc = sample()
+    expect(roundTrip(doc, { kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 's2' })).toEqual([{ kind: 'restoreLayout', windowId: MAIN_WINDOW }])
+    for (const id of ['x', 'z']) {
+      const maximized = applyOp(doc, { kind: 'maximizePanel', id }).doc
+      expect(roundTrip(maximized, { kind: 'restoreLayout', windowId: MAIN_WINDOW })).toEqual([{ kind: 'maximizePanel', id }])
+    }
+  })
+
   it('undoes a batch in reverse order', () => {
     roundTrip(sample(), {
       kind: 'batch',

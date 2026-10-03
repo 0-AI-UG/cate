@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { storedShortcut } from '@kernel/ui/contract'
+import { storedShortcut } from '@kernel/interaction/contract'
 import { registerActions } from '@client/host'
 import { buildMenuModel } from './menuModel'
 

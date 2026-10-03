@@ -14,7 +14,7 @@ import type { Page } from 'playwright'
 import { networkInterfaces } from 'node:os'
 import { closeApp, launchApp, makeHome, makeProject, type LaunchResult } from './electron-app'
 import { fullRuntimeInstall } from './runtime-install'
-import type { CanvasE2EHooks } from '../../src/client/ui/e2e/e2eHarness'
+import type { CanvasE2EHooks } from '../../src/shells/desktop/ui/app/e2e/e2eHarness'
 
 export type Transport = 'local' | 'network'
 
@@ -69,6 +69,7 @@ export async function launchSharedPair(transport: Transport, opts: SharedPairOpt
     await b.mainWindow.waitForFunction((ws) => !!window.__cateE2E!.document(ws), bWorkspace, { timeout: 30_000 })
   }
   const bClient: SharedClient = { app: b, page: b.mainWindow, workspaceId: bWorkspace }
+  const homeOfB = homeB
   // B shows the canvas A made.
   await b.mainWindow.waitForSelector('[data-canvas-container]', { timeout: 30_000 })
   // Zoom is client state. Zoomed out, the nodes the specs spread over the
@@ -81,17 +82,31 @@ export async function launchSharedPair(transport: Transport, opts: SharedPairOpt
     })
   }
 
-  return {
+  const pair: SharedPair = {
     transport,
     a: aClient,
     b: bClient,
     project,
     homeA,
     async close() {
-      await closeApp(b.electronApp, homeB ? { home: homeB } : {})
+      await closeApp(pair.b.app.electronApp, homeOfB ? { home: homeOfB } : {})
       await closeApp(a.electronApp, { home: homeA })
     },
   }
+  return pair
+}
+
+/**
+ * Quits B's app and starts it again on the same device (its userData and
+ * HOME), as a person restarting Cate: B restores its workspace list and the
+ * last selected workspace on its own. `before` runs while B is down.
+ */
+export async function relaunchB(pair: SharedPair, before?: () => Promise<void>): Promise<void> {
+  const { home, userDataDir } = pair.b.app
+  await closeApp(pair.b.app.electronApp)
+  await before?.()
+  const app = await launchApp({ home, userDataDir, workspace: false, domTerminals: true })
+  pair.b = { app, page: app.mainWindow, workspaceId: pair.b.workspaceId }
 }
 
 /**

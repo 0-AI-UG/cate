@@ -38,6 +38,8 @@ export interface PanelAgentState {
   /** At its normal prompt: not busy, not parked on an approval or question. */
   canReceivePrompt: boolean
   session: AgentSession | null
+  /** When relation context last went with one of its prompts (epoch ms). */
+  contextSentAt?: number
 }
 
 export type AgentSendResult = { ok: true } | { ok: false; error: string }

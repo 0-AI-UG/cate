@@ -14,7 +14,7 @@ describe('client state', () => {
     state.setActiveTab('s1', 'p1')
     state.focus('p1')
     state.focus('p1')
-    state.setSelection('c1', ['n1'])
+    state.setSelection('c1', { nodes: ['n1'], active: 'n1' })
     state.setViewport('c1', { x: 1, y: 2, zoom: 1.5 })
     const id = state.pushIntent({ panelId: 'p1', kind: 'reveal', data: { line: 4 } })
     state.pushIntent({ panelId: 'p2', kind: 'reveal' })
@@ -23,7 +23,7 @@ describe('client state', () => {
       activeTabs: { s1: 'p1' },
       focusedPanelId: 'p1',
       focusEpoch: 2,
-      selection: { c1: ['n1'] },
+      selection: { c1: { nodes: ['n1'], active: 'n1' } },
       viewports: { c1: { x: 1, y: 2, zoom: 1.5 } },
     })
     expect(state.takeIntents('p1')).toEqual([{ id, panelId: 'p1', kind: 'reveal', data: { line: 4 } }])

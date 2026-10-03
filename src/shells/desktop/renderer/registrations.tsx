@@ -3,26 +3,27 @@
 // workspace views, the review and agent changes openers, file drops, native
 // window actions, the menu bar sync and the desktop settings pages.
 
-import { SettingRow, Toggle, clientUi } from '@kernel/ui'
-import { setClientSetting, useClientSetting } from '@kernel/settings/ui'
-import { defineActions, storedShortcut } from '@kernel/ui/contract'
+import { SettingRow, Toggle } from '../ui/kernel/interaction'
+import { clientUi } from '@kernel/interaction'
+import { setClientSetting, useClientSetting } from '../ui/kernel/settings'
+import { defineActions, storedShortcut } from '@kernel/interaction/contract'
 import { registerActions } from '@client/host'
-import { installFileDropHandler } from '@client/layout/drag'
-import { installReviewOpener, openDroppedFiles, registerSettingsPage, registerWorkspaceViews } from '@client/ui'
-import { setAgentChangesOpener } from '@services/agents/ui'
-import { openAgentChanges, openReviewPanel } from '@panels/review/view'
+import { installFileDropHandler } from '../ui/client/layout/drag'
+import { installReviewOpener, openDroppedFiles, registerSettingsPage, registerWorkspaceViews } from '../ui/app'
+import { setAgentChangesOpener } from '../ui/services/agents'
+import { openAgentChanges, openReviewPanel } from '../ui/panels/review'
 import type { DesktopApi, NativeAction } from '../contract'
 import { quitBlockers } from './quitBlockers'
 import { syncMenuModel } from './menuModel'
 
 // Every panel view registers itself on import.
-import '@panels/terminal/view'
-import '@panels/editor/view'
-import '@panels/browser/view'
-import '@panels/chat/view'
-import '@panels/review/view'
-import '@panels/canvas/view'
-import '@panels/surface/view'
+import '../ui/panels/terminal'
+import '../ui/panels/editor'
+import '../ui/panels/browser'
+import '../ui/panels/chat'
+import '../ui/panels/review'
+import '../ui/panels/canvas'
+import '../ui/panels/surface'
 
 // --- Desktop settings pages -------------------------------------------------------
 

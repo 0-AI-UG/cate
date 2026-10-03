@@ -5,7 +5,7 @@
 // the menu bar's Panel menu when the command asks).
 
 import { tryRuntimeFor } from '@kernel/rpc/client'
-import { isIconName, type ActionId, type ActionSpecs } from '@kernel/ui/contract'
+import { isIconName, type ActionId, type ActionSpecs } from '@kernel/interaction/contract'
 import { documentStoreFor } from '@client/document'
 import { registerActions, type ActionBinding, type ActionContext } from './actions'
 import { panelDefinitions } from './definitions'
@@ -39,7 +39,7 @@ export function registerPanelActions(create: (type: string, context: ActionConte
         welcome: true,
         menu: { bar: 'file', group: 'new', order: creation.order },
       }
-      bound[id] = { run: (context) => create(type, context), requires: definition.requires }
+      bound[id] = { run: (context) => create(type, context) }
     }
     for (const command of definition.commands ?? []) {
       const id = panelCommandActionId(type, command.id)
@@ -50,7 +50,7 @@ export function registerPanelActions(create: (type: string, context: ActionConte
         ...(command.menu ? { menu: { bar: 'panel', group: type, submenu: definition.label } } : {}),
       }
       bound[id] = {
-        requires: [...definition.requires, ...(command.requires ?? [])],
+        requires: command.requires,
         enabled: (context) => !!focusedOfType(context, type),
         async run(context) {
           const panelId = focusedOfType(context, type)

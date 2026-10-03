@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BUILT_IN_BY_ID } from '@kernel/ui/contract'
+import { BUILT_IN_BY_ID } from '@kernel/interaction/contract'
 import { createDeviceFiles } from './deviceFiles'
 import { installThemeBootCache, themeBootFields } from './themeBoot'
 

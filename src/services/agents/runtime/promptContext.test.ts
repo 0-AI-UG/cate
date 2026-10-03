@@ -41,6 +41,17 @@ describe('one-shot panel relation context', () => {
     expect(context.peek('source', null)).toBeNull()
   })
 
+  it('stamps and announces each send that carried context', () => {
+    const sent = vi.fn()
+    context.onSent(sent)
+    expect(context.sentAt('source')).toBeUndefined()
+    context.consume('source', null)
+    expect(context.sentAt('source')).toEqual(expect.any(Number))
+    expect(sent).toHaveBeenCalledWith('source')
+    context.consume('source', null)
+    expect(sent).toHaveBeenCalledTimes(1)
+  })
+
   it('does not change the toggle when there is no context to consume', () => {
     expect(context.consume('browser', null)).toBeNull()
     expect(modes.get('browser')).toBeUndefined()

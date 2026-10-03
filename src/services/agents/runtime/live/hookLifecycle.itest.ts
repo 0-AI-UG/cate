@@ -13,14 +13,12 @@ import { createAgentHooks } from '../hooks/agentHooks'
 import { createAgentChangesStore } from '../changes/store'
 import { createAgentStatusMachine } from '../status'
 import { runLiveCli, runLiveTui } from '../changes/liveHarness'
-import { cleanHookEnv, configureHookCli, HOOK_PROVIDER_IS_MOCK } from './hookCliFixture'
+import { cleanHookEnv, configureHookCli } from './hookCliFixture'
 import { createHookMockProvider } from './hookMockProvider'
 import { HOOK_LIFECYCLE_CASES, NATIVE_HOOK_KINDS, selectHookLifecycleCases } from './hookLifecycle.config'
 import { redactHookSmokeOutput, selectHookSmokeAgents } from './hookSmoke.config'
 
 const selected = selectHookSmokeAgents(process.env.CATE_HOOK_SMOKE_AGENTS)
-if (process.env.CATE_LIVE_AGENT_CLIS === '1' && !HOOK_PROVIDER_IS_MOCK) throw new Error('Lifecycle tests require fake providers; use the smoke file for live-provider tests.')
-
 
 describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full hook lifecycle', () => {
   for (const agentId of selected) {
