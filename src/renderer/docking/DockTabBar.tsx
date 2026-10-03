@@ -14,7 +14,7 @@ import { useDragStore, useTabSourceVisibility } from '../drag'
 import { PANEL_REGISTRY, getPanelDef } from '../panels/registry'
 import { useAppStore } from '../stores/appStore'
 import { useAgentInfoByPanel } from '../hooks/useAgentPanelInfo'
-import { AgentActivityTitle, AwaitingIndicator } from '../ui/AgentActivityTitle'
+import { AgentActivityTitle, AwaitingIndicator, RunningIndicator } from '../ui/AgentActivityTitle'
 import { isMiddleClick } from '../lib/mouse'
 import { usePanelInteractionStore } from '../lib/panelInteractions'
 import { worktreeForPanel } from '../lib/worktreeContext'
@@ -295,11 +295,13 @@ export function DockTabBar(props: DockTabBarProps) {
             ) : (
               <AgentActivityTitle
                 className="min-w-0 flex-1 truncate"
-                running={agentInfoByPanel[panelId]?.state === 'running'}
                 worktreeColor={worktreeColorByPanel[panelId]}
               >{getPanelTitle(panelId)}{panel?.isDirty ? ' •' : ''}</AgentActivityTitle>
             )}
             <PanelInteractionDot panelId={panelId} />
+            {agentInfoByPanel[panelId]?.state === 'running' && (
+              <RunningIndicator />
+            )}
             {agentInfoByPanel[panelId]?.state === 'waitingForInput' && (
               <AwaitingIndicator />
             )}

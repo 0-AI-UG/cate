@@ -18,7 +18,7 @@ import type { AgentId } from '../../shared/agents'
  * EVERY window — not just main — or a detached panel/dock window never learns
  * its own terminals' agent presence. Crucially, the agent coordinator gates
  * `running` on presence (resolveAgentState returns notRunning when !present), so
- * without this a detached terminal's agent never shows the running shimmer even
+ * without this a detached terminal's agent never shows the running indicator even
  * though its hook events arrive locally. Wired once per window from
  * useWindowRuntime; only terminals this window owns are ever delivered here, so
  * there is no cross-window contamination.
