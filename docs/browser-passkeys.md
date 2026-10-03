@@ -5,6 +5,17 @@ with the actual requesting origin. It does not use Electron's associated-domain
 passkey API or pretend arbitrary websites have associated themselves with Cate.
 Private keys stay with the operating system/provider or security key.
 
+Passkeys are a native OS primitive, so they live in the desktop shell, never in
+the workspace runtime (architecture 10.2): the bridge is
+`src/services/browser/desktop/passkeys.ts` (with `passkeyPolicy.ts` and
+`passkeyAttestation.ts`), the page side is
+`src/services/browser/desktop/preload/passkeyPageBridge.ts`, and the native
+addon is `native/passkeys/`. The desktop shell declares the `passkeys` client
+feature only on macOS and only when the addon loaded
+(`desktopClientFeatures` in `src/shells/desktop/contract/features.ts`). On a
+client without the feature, the browser panel keeps Chromium's original
+WebAuthn behavior. Cate never stores a passkey.
+
 ## Enable a signed macOS build after Apple approval
 
 1. The organization Account Holder requests Apple's
@@ -102,7 +113,7 @@ Reference: [Apple's modal and nearby-device passkey flow](https://developer.appl
 ```sh
 npm run build:passkeys
 npm run typecheck
-npx vitest run src/main/browser/passkeyPolicy.test.ts src/main/browser/browserPasskeys.test.ts src/main/browser/passkeyAttestation.test.ts src/preload/passkeyPageBridge.test.ts
+npx vitest run src/services/browser/desktop/passkeyPolicy.test.ts src/services/browser/desktop/passkeys.test.ts src/services/browser/desktop/passkeyAttestation.test.ts src/services/browser/desktop/preload/passkeyPageBridge.test.ts src/shells/desktop/contract/features.test.ts
 npm run build
 npx playwright test e2e/browser-session-persistence.spec.ts -g 'lists a saved password'
 ```

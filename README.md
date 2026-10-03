@@ -62,7 +62,7 @@ brew install --cask cate
 - **Panels on a canvas or in a dock.** Terminals, Monaco editors, browsers, PDF/image/DOCX viewers, nested canvases. Float, dock into tabs and splits, or detach into their own window. Layout persists per project.
 - **Git and search.** Multi-repo source control, git badges in the file tree, side-by-side diffs, ripgrep search, and `Cmd+K` for commands, panels, and files.
 - **A CLI agents can call.** In a Cate terminal, `cate` drives a browser panel, reads another terminal, opens files, manages panels.
-- **Local and remote are the same path.** Point Cate at a host over SSH or WSL and terminals, git, search, and agents run there; editors, browser, and canvas stay local.
+- **Local and remote are the same path.** Every workspace runs in its own runtime, on your machine or another one: terminals, git, search, and agents run there, and work keeps running when you close the window. Pair another device with a QR code or pairing code, on the same network or through Cate Connect, and it joins the same live workspace over an end-to-end encrypted connection.
 
 Press `Cmd+K` for everything else. Shortcuts are rebindable in Settings.
 

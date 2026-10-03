@@ -7,11 +7,19 @@
 //                                          + spawn-helper)
 //     node_modules/@parcel/watcher/...     (+ @parcel/watcher-<target>/watcher.node
 //                                          — workspace-tree file watching)
+//     node_modules/node-datachannel/...    (+ @node-datachannel/<target>/node_datachannel.node
+//                                          — WebRTC for Cate Connect)
 //     runtime/bin/node[.exe]              (bundled Node runtime for the target)
 //     runtime/bin/rg[.exe]                 (bundled ripgrep for content search)
 //     t3/dist/bin.mjs                      (T3 server + web client)
 //     cate/dist/cli.cjs                    (bundled `cate` in-terminal CLI)
 //     cate/bin/cate[.cmd]                  (launcher shims → bundled node)
+//     skills/<name>/SKILL.md               (bundled agent skills)
+//     BUILD                                (the build id: the install dir's
+//                                          name, ~/.cate/runtime/<build>/)
+//
+// Beside the tarball: <tarball>.sha256 (`<hex>  <name>`), which installs
+// check a release download against.
 //
 // UNIFIED layout: every target keeps node + rg under runtime/bin/, just with a
 // `.exe` suffix on win32 (runtime/bin/node.exe, runtime/bin/rg.exe). The install
@@ -36,6 +44,7 @@
 
 import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync, readdirSync, openSync, readSync, closeSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -75,6 +84,10 @@ const fwd = (from, to) => path.relative(from, to).split(path.sep).join('/') || '
 
 const args = process.argv.slice(2)
 const useDocker = args.includes('--docker')
+// --install (dev): skip the tarball and install the stage straight into
+// ~/.cate/runtime/<build>/, where the app looks first. No-op when that build
+// is already installed.
+const installOnly = args.includes('--install')
 const targetArg = valueOf('--target') ?? `${plat(process.platform)}-${process.arch}`
 const SUPPORTED = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'win32-x64']
 if (!SUPPORTED.includes(targetArg)) {
@@ -82,6 +95,18 @@ if (!SUPPORTED.includes(targetArg)) {
   process.exit(1)
 }
 const [targetPlatform, targetArch] = targetArg.split('-')
+if (installOnly && targetArg !== `${plat(process.platform)}-${process.arch}`) {
+  console.error('[runtime] --install builds for this machine only; drop --target')
+  process.exit(1)
+}
+
+const buildId = JSON.parse(runtimeBuildOptions.define.__CATE_BUILD__)
+const runtimeDir = path.join(os.homedir(), '.cate', 'runtime')
+const installDir = path.join(runtimeDir, buildId)
+if (installOnly && existsSync(path.join(installDir, '.ok'))) {
+  console.log(`[runtime] ${buildId} already installed at ${installDir}`)
+  process.exit(0)
+}
 
 const version = await buildBundle()
 const stageDir = path.join(dist, 'stage', targetArg)
@@ -97,33 +122,58 @@ mkdirSync(stageDir, { recursive: true })
 const exe = targetPlatform === 'win32' ? '.exe' : ''
 const outTar = path.join(dist, `cate-runtime-${version}-${targetArg}.tgz`)
 rmSync(outTar, { force: true })
+rmSync(`${outTar}.sha256`, { force: true })
 
 // Unified runtime/bin/ layout; only the filename gains a `.exe` on win32 so the
 // install-dir depth (and thus the resolvers) stay identical across platforms.
 cpSync(path.join(dist, 'runtime.cjs'), path.join(stageDir, 'runtime.cjs'))
 await stageNodePty(stageDir)
 await stageParcelWatcher(stageDir)
+await stageNodeDatachannel(stageDir)
 await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime', 'bin', `node${exe}`))
 await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
 await stageT3(path.join(stageDir, 't3'))
 await stageCateCli(path.join(stageDir, 'cate'))
+cpSync(path.join(repoRoot, 'skills'), path.join(stageDir, 'skills'), { recursive: true })
+await writeFile(path.join(stageDir, 'BUILD'), `${buildId}\n`)
 signMacNatives(stageDir)
 
 // Fail loudly if anything the daemon's install-probe requires is missing, rather
 // than shipping a tarball that extracts but never satisfies isInstalled (every
-// connect would then re-push it). These are the exact paths sshTransport's
-// dev-mode isInstalled checks.
+// start would then reinstall it).
 const required = [
   `runtime.cjs`,
   path.join('runtime', 'bin', `node${exe}`),
   path.join('runtime', 'bin', `rg${exe}`),
   path.join('t3', 'dist', 'bin.mjs'),
   path.join('cate', 'dist', 'cli.cjs'),
+  path.join('node_modules', 'node-datachannel', 'package.json'),
+  path.join('node_modules', '@node-datachannel', datachannelBinaryDir(targetPlatform, targetArch), 'node_datachannel.node'),
   path.join('cate', 'bin', 'cate'),
   path.join('cate', 'bin', 'cate.cmd'),
+  path.join('skills', 'cate-cli', 'SKILL.md'),
+  'BUILD',
 ]
 const missing = required.filter((rel) => !existsSync(path.join(stageDir, rel)))
 if (missing.length) throw new Error(`[runtime] incomplete stage for ${targetArg}; missing: ${missing.join(', ')}`)
+
+if (installOnly) {
+  // Same steps as installRuntimeTarball (src/runtime/daemon/node/install.ts):
+  // copy beside the install, mark it, rename into place. The `.staging-<pid>-`
+  // name lets the runtime prune a leftover once this process is gone.
+  const staging = path.join(runtimeDir, `.staging-${process.pid}-dev`)
+  rmSync(staging, { recursive: true, force: true })
+  mkdirSync(runtimeDir, { recursive: true })
+  // APFS clones make the copy near free on macOS.
+  if (process.platform === 'darwin') execFileSync('cp', ['-Rc', stageDir, staging])
+  else cpSync(stageDir, staging, { recursive: true })
+  await writeFile(path.join(staging, '.ok'), buildId)
+  rmSync(installDir, { recursive: true, force: true })
+  renameSync(staging, installDir)
+  console.log(`[runtime] installed ${buildId} at ${installDir}`)
+  pruneDevInstalls()
+  process.exit(0)
+}
 
 // --no-xattrs: don't archive extended attributes (macOS keeps re-stamping a
 // com.apple.provenance xattr that otherwise makes GNU tar warn on extraction
@@ -138,7 +188,9 @@ if (missing.length) throw new Error(`[runtime] incomplete stage for ${targetArg}
 const tmpTar = `${path.basename(outTar)}.partial`
 execFileSync('tar', ['--no-xattrs', '-czf', tmpTar, '-C', fwd(dist, stageDir), '.'], { stdio: 'inherit', cwd: dist })
 renameSync(path.join(dist, tmpTar), outTar)
-console.log(`[runtime] wrote ${path.relative(repoRoot, outTar)}`)
+const sha256 = createHash('sha256').update(readFileSync(outTar)).digest('hex')
+await writeFile(`${outTar}.sha256`, `${sha256}  ${path.basename(outTar)}\n`)
+console.log(`[runtime] wrote ${path.relative(repoRoot, outTar)} (sha256 ${sha256})`)
 
 // --------------------------------------------------------------------------
 
@@ -289,6 +341,54 @@ async function stageParcelWatcher(outRoot) {
   console.log(`[runtime] staged @parcel/watcher ${version} (${pkgName}) for ${targetArg}`)
 }
 
+/** The @node-datachannel prebuilt package for a target. The bundled node is an
+ *  official glibc build on linux, so the `-gnu` flavour. */
+function datachannelBinaryDir(platform, arch) {
+  if (platform === 'linux') return `linux-${arch}-gnu`
+  if (platform === 'win32') return `win32-${arch}-msvc`
+  return `${platform}-${arch}`
+}
+
+/**
+ * Stage node-datachannel (WebRTC for Cate Connect) like node-pty: its JS, its
+ * one dependency (detect-libc) and only the target's N-API prebuilt, which it
+ * loads with `require('@node-datachannel/<target>')`.
+ */
+async function stageNodeDatachannel(outRoot) {
+  const src = path.join(repoRoot, 'node_modules', 'node-datachannel')
+  if (!existsSync(src)) throw new Error('node-datachannel not found in node_modules — run `npm install` first')
+  const nm = path.join(outRoot, 'node_modules')
+  const dest = path.join(nm, 'node-datachannel')
+  mkdirSync(dest, { recursive: true })
+  cpSync(path.join(src, 'package.json'), path.join(dest, 'package.json'))
+  for (const dir of ['cjs', 'esm']) {
+    cpSync(path.join(src, 'dist', dir), path.join(dest, 'dist', dir), {
+      recursive: true,
+      dereference: true,
+      filter: (s) => !s.endsWith('.map'),
+    })
+  }
+  const detectLibc = path.dirname(createRequire(path.join(src, 'package.json')).resolve('detect-libc/package.json'))
+  cpSync(detectLibc, path.join(nm, 'detect-libc'), { recursive: true, dereference: true })
+
+  const { version } = JSON.parse(readFileSync(path.join(src, 'package.json'), 'utf8'))
+  const binDir = datachannelBinaryDir(targetPlatform, targetArch)
+  const pkgName = `@node-datachannel/${binDir}`
+  const outBinPkg = path.join(nm, '@node-datachannel', binDir)
+  const hostBin = path.join(repoRoot, 'node_modules', '@node-datachannel', binDir)
+  if (existsSync(path.join(hostBin, 'node_datachannel.node'))) {
+    cpSync(hostBin, outBinPkg, { recursive: true, dereference: true })
+  } else {
+    await npmPackInto(`${pkgName}@${version}`, outBinPkg)
+  }
+  const native = path.join(outBinPkg, 'node_datachannel.node')
+  if (!existsSync(native)) {
+    throw new Error(`staged node-datachannel is missing ${pkgName}/node_datachannel.node for ${targetArg} (expected at ${native})`)
+  }
+  chmodSync(native, 0o755)
+  console.log(`[runtime] staged node-datachannel ${version} (${pkgName}) for ${targetArg}`)
+}
+
 /** `npm pack <spec>` into a temp dir and extract the package's contents into
  *  `destDir` (npm tarballs nest everything under `package/`). */
 async function npmPackInto(spec, destDir) {
@@ -419,9 +519,7 @@ async function stageNodeRuntime(platform, arch, outBin) {
   if (platform === 'win32') {
     const name = `node-v${NODE_VERSION}-win-${arch}`
     const url = `https://nodejs.org/dist/v${NODE_VERSION}/${name}.zip`
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`node runtime download failed: ${res.status} ${url}`)
-    const buf = Buffer.from(await res.arrayBuffer())
+    const buf = await fetchCached(url)
     const tmp = path.join(os.tmpdir(), `cate-node-${platform}-${arch}-${NODE_VERSION}`)
     rmSync(tmp, { recursive: true, force: true })
     mkdirSync(tmp, { recursive: true })
@@ -437,9 +535,7 @@ async function stageNodeRuntime(platform, arch, outBin) {
 
   const name = `node-v${NODE_VERSION}-${platform}-${arch}`
   const url = `https://nodejs.org/dist/v${NODE_VERSION}/${name}.tar.gz`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`node runtime download failed: ${res.status} ${url}`)
-  const buf = Buffer.from(await res.arrayBuffer())
+  const buf = await fetchCached(url)
   const tmp = path.join(os.tmpdir(), `cate-node-${platform}-${arch}-${NODE_VERSION}`)
   rmSync(tmp, { recursive: true, force: true })
   mkdirSync(tmp, { recursive: true })
@@ -463,9 +559,7 @@ async function stageRipgrep(target, outBin) {
   const isWin = target.startsWith('win32-')
   const ext = isWin ? 'zip' : 'tar.gz'
   const url = `https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/${name}.${ext}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`ripgrep download failed: ${res.status} ${url}`)
-  const buf = Buffer.from(await res.arrayBuffer())
+  const buf = await fetchCached(url)
   const tmp = path.join(os.tmpdir(), `cate-rg-${target}-${RIPGREP_VERSION}`)
   rmSync(tmp, { recursive: true, force: true })
   mkdirSync(tmp, { recursive: true })
@@ -602,16 +696,15 @@ function targetT3NativePackages(target) {
 }
 
 /** Stage the `cate` in-terminal CLI into <outRoot> (cate/dist/cli.cjs + the two
- *  launcher shims under cate/bin/). The CLI lands on every local, remote and WSL
- *  host when the daemon is provisioned; the env-injection layer prepends
- *  cate/bin to a shell's PATH. Bundled to a single self-contained CJS file. */
+ *  launcher shims under cate/bin/). It ships with the daemon; the terminal
+ *  service prepends cate/bin to a shell's PATH. Bundled to a single self-contained CJS file. */
 async function stageCateCli(outRoot) {
   rmSync(outRoot, { recursive: true, force: true })
   mkdirSync(path.join(outRoot, 'dist'), { recursive: true })
   mkdirSync(path.join(outRoot, 'bin'), { recursive: true })
 
   await build({
-    entryPoints: [path.join(repoRoot, 'src', 'cli', 'cate.ts')],
+    entryPoints: [path.join(repoRoot, 'src', 'cli', 'main.ts')],
     outfile: path.join(outRoot, 'dist', 'cli.cjs'),
     platform: 'node',
     format: 'cjs',
@@ -650,6 +743,7 @@ function signMacNatives(stageDir) {
     path.join(pbDir, 'pty.node'),
     path.join(pbDir, 'spawn-helper'),
     path.join('node_modules', '@parcel', parcelBinaryDir(targetPlatform, targetArch), 'watcher.node'),
+    path.join('node_modules', '@node-datachannel', datachannelBinaryDir(targetPlatform, targetArch), 'node_datachannel.node'),
     ...findMachOBinaries(path.join(stageDir, 't3')).map((abs) => path.relative(stageDir, abs)),
   ]
   // The identity is found via the keychain search list (ci-mac-signing-keychain.sh
@@ -720,6 +814,40 @@ function unzipInto(zipPath, destDir) {
   }
   // Basename archive + relative -C (cwd = the zip's dir) — see `fwd`.
   execFileSync('tar', ['-xf', path.basename(zipPath), '-C', fwd(path.dirname(zipPath), destDir)], { stdio: 'ignore', cwd: path.dirname(zipPath) })
+}
+/** Only release runtimes prune installs, so each source change would leave a
+ *  dev install behind: remove the other installs of this version that no live
+ *  daemon runs. */
+function pruneDevInstalls() {
+  const live = new Set()
+  const workspaces = path.join(os.homedir(), '.cate', 'workspaces')
+  for (const id of existsSync(workspaces) ? readdirSync(workspaces) : []) {
+    try {
+      const info = JSON.parse(readFileSync(path.join(workspaces, id, 'runtime.json'), 'utf-8'))
+      process.kill(info.pid, 0)
+      live.add(info.build)
+    } catch { /* no runtime, or not running */ }
+  }
+  const version = buildId.split('+')[0]
+  for (const name of readdirSync(runtimeDir)) {
+    if (name === buildId || live.has(name) || !name.startsWith(`${version}+`)) continue
+    rmSync(path.join(runtimeDir, name), { recursive: true, force: true })
+    console.log(`[runtime] removed unused dev install ${name}`)
+  }
+}
+
+/** GET `url`, cached under dist-runtime/cache/ by file name (the names carry
+ *  the version), so rebuilds skip the network. */
+async function fetchCached(url) {
+  const cached = path.join(dist, 'cache', path.basename(new URL(url).pathname))
+  if (existsSync(cached)) return readFileSync(cached)
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`download failed: ${res.status} ${url}`)
+  const buf = Buffer.from(await res.arrayBuffer())
+  mkdirSync(path.dirname(cached), { recursive: true })
+  await writeFile(`${cached}.part`, buf)
+  renameSync(`${cached}.part`, cached)
+  return buf
 }
 function valueOf(flag) {
   const i = args.indexOf(flag)

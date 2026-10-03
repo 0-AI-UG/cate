@@ -27,10 +27,11 @@ modifies the CLI's permission policy.
 For Codex, `approvals_reviewer = auto_review` (or `guardian_subagent`) and
 `approval_policy = never` mean automatic. The default `user` reviewer means
 manual. Unknown/read failures stay Running without an attention notification.
-Inspection uses the workspace directory and terminal host/environment, caches
-results for 30 seconds, and can be refreshed from Settings. Only approval
-metadata is returned to the renderer. Input and hooks retain their delivery
-order while config inspection is pending.
+Inspection runs in the workspace's runtime (`services/agents/runtime/hooks/
+approvalConfig.ts`) with the workspace directory and the terminal's
+environment, caches results for 30 seconds, and can be refreshed from
+Settings. Only approval metadata leaves the runtime. Input and hooks retain
+their delivery order while config inspection is pending.
 
 Launch flags, selected profiles, and in-session changes can differ from the
 inspected configuration.
@@ -44,10 +45,13 @@ by approval configuration, and permission checks cannot accept addressed prompts
 Child-agent lifecycle hooks must not announce the parent terminal as ready.
 Claude/Codex payloads marked with `agent_id` are excluded from activity
 normalization, while raw change ingestion remains available. Session and turn
-identity guards reject stale completion/approval events in the renderer.
+identity guards in the runtime's status machine reject stale completion and
+approval events.
 
-Regression coverage: `agentStatus.integration.test.ts` covers all registered
-CLIs and notification behavior; `process.agentStatus.test.ts` exercises ordered
-hook/PTY delivery; `hermesIntegration.test.ts` executes the generated Python
-bridge when Python is installed; the live Claude contract verifies the human
-permission notification against the installed CLI.
+Regression coverage (`src/services/agents/`): `runtime/status.integration.test.ts`
+covers all registered CLIs and notification behavior;
+`runners/terminal/terminalRunner.test.ts` exercises ordered hook/PTY delivery;
+`runtime/hooks/hermes.test.ts` executes the generated Python bridge when Python
+is installed; the fake-provider lifecycle suite
+(`runtime/live/hookLifecycle.itest.ts`) verifies the human permission
+notification against each installed CLI.

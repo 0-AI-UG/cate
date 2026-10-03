@@ -3,8 +3,12 @@ import type { Config } from 'tailwindcss'
 export default {
   content: [
     './index.html',
-    './src/renderer/**/*.{ts,tsx}',
-    './src/skills/renderer/**/*.{ts,tsx}',
+    './src/kernel/**/*.{ts,tsx}',
+    './src/workspace/**/*.{ts,tsx}',
+    './src/services/**/*.{ts,tsx}',
+    './src/client/**/*.{ts,tsx}',
+    './src/panels/**/*.{ts,tsx}',
+    './src/shells/**/*.{ts,tsx}',
   ],
   darkMode: 'class',
   theme: {

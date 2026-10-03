@@ -1,13 +1,11 @@
-import { browserInvoke, target, act, inspectFixture } from './fixtures/browser-control'
+import { browserInvoke, browserWebContentsId, createBrowser, act, inspectFixture } from './fixtures/browser-control'
 import { once } from 'node:events'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
-import { closeApp, launchApp } from './fixtures/electron-app'
+import { closeApp, launchApp, makeHome, makeProject, seedOnCanvas } from './fixtures/electron-app'
 
 let server: Server
 let origin: string
@@ -44,13 +42,17 @@ test.afterAll(async () => {
 
 test('shares cookies across panels and preserves the authenticated session across app restarts', async () => {
   test.setTimeout(90_000)
-  const userDataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'cate-browser-session-')))
+  // Cookies live in the workspace partition of this device's userData; the
+  // relaunch reuses the device, HOME and workspace.
+  const home = makeHome()
+  const project = makeProject(home)
+  const userDataDir = path.join(home, 'device')
   let app: ElectronApplication | undefined
   try {
-    let launched = await launchApp({ userDataDir })
+    let launched = await launchApp({ home, userDataDir, workspace: project })
     app = launched.electronApp
     let page = launched.mainWindow
-    const login = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${origin}/login`)
+    const login = await createBrowser(page, `${origin}/login`, { x: 100, y: 100 })
     await expect.poll(() => browserInvoke(page, login, 'getTab'), { timeout: 20_000 })
       .toMatchObject({ ok: true, result: { url: `${origin}/login` } })
     await expect(inspectFixture(app!, page, login, "document.querySelector(\"#email\")?.getAttribute(\"id\")")).resolves
@@ -61,71 +63,50 @@ test('shares cookies across panels and preserves the authenticated session acros
     await expect.poll(() => inspectFixture(app!, page, login, "document.querySelector(\"h1\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
       .toMatchObject({ ok: true, result: { text: 'Persistent session' } })
 
-    const secondPanel = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 760, y: 100 }), `${origin}/account`)
+    const secondPanel = await createBrowser(page, `${origin}/account`, { x: 760, y: 100 })
     await expect.poll(() => inspectFixture(app!, page, secondPanel, "document.querySelector(\"h1\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
       .toMatchObject({ ok: true, result: { text: 'Persistent session' } })
 
     await closeApp(app)
     app = undefined
 
-    launched = await launchApp({ userDataDir })
+    launched = await launchApp({ home, userDataDir, workspace: project })
     app = launched.electronApp
     page = launched.mainWindow
-    const afterRestart = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${origin}/account`)
+    const afterRestart = await createBrowser(page, `${origin}/account`, { x: 100, y: 100 })
     await expect.poll(() => inspectFixture(app!, page, afterRestart, "document.querySelector(\"h1\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
       .toMatchObject({ ok: true, result: { text: 'Persistent session' } })
   } finally {
-    if (app) await closeApp(app)
-    rmSync(userDataDir, { recursive: true, force: true })
+    await closeApp(app, { home })
   }
 })
 
 test('lists a saved password and autofills username and password without exposing the secret to the host UI', async () => {
-  const userDataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'cate-browser-password-')))
-  let app: ElectronApplication | undefined
+  const launched = await launchApp()
+  const app: ElectronApplication = launched.electronApp
+  const page: Page = launched.mainWindow
   try {
-    const launched = await launchApp({ userDataDir })
-    app = launched.electronApp
-    const page = launched.mainWindow
-    const credentialStorageAvailable = await app.evaluate(({ safeStorage }) =>
-      safeStorage.isEncryptionAvailable()
-      && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'))
-    test.skip(!credentialStorageAvailable, 'Secure credential storage is unavailable in this environment')
-    const encryptedPassword = await app.evaluate(({ safeStorage }, password) =>
-      safeStorage.encryptString(password).toString('base64'), 'autofill secret')
-    const credentialId = '11111111-1111-4111-8111-111111111111'
-    writeFileSync(path.join(userDataDir, 'browser-credentials.json'), JSON.stringify({
-      version: 1,
-      credentials: [{
-        id: credentialId,
-        origin,
-        signonRealm: origin,
-        username: 'saved@example.test',
-        usernameElement: 'email',
-        passwordElement: 'password',
-        encryptedPassword,
-        importedAt: Date.now(),
-      }],
-    }), { mode: 0o600 })
+    // Saved passwords are workspace data in the runtime (secrets.json).
+    const saved = await page.evaluate((origin) => window.__cateE2E!.call('browserData', 'savePassword', { input: {
+      origin, username: 'saved@example.test', password: 'autofill secret', usernameElement: 'email', passwordElement: 'password',
+    } }), origin) as { id?: string; credential?: { id: string } }
+    const credentialId = saved.id ?? saved.credential?.id
 
-    const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${origin}/login`)
-    const webContentsId = await expect.poll(
-      () => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId),
-      { timeout: 20_000 },
-    ).not.toBeNull().then(() => page.evaluate(
-      (panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId,
-    ))
+    const browser = await createBrowser(page, `${origin}/login`, { x: 100, y: 100 })
+    const webContentsId = await browserWebContentsId(page, browser.panelId)
     const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
     const popup = surface.locator('[data-browser-autofill]')
     // Exercise both canvas transforms and page zoom. Compare the displayed
     // popup against the independently measured field and webview rectangles.
     for (const zoom of [1, 0.75]) {
       await page.evaluate((zoom) => window.__cateE2E!.setZoom(zoom), zoom)
-      await app.evaluate(({ webContents }, id) => webContents.fromId(id!)!.setZoomFactor(1.2), webContentsId)
+      // Page zoom goes through the panel (the view positions the popup from it).
+      await page.evaluate((panelId) => window.__cateE2E!.sessionOp(panelId, { kind: 'setZoom', zoom: 1.2 }), browser.panelId)
+      await expect.poll(() => app.evaluate(({ webContents }, id) => webContents.fromId(id!)!.getZoomFactor(), webContentsId)).toBeCloseTo(1.2)
       await expect(act(page, browser, 'click', 'Email', {}, 'textbox')).resolves.toMatchObject({ ok: true })
       await expect(act(page, browser, 'click', 'Password', {}, 'textbox')).resolves.toMatchObject({ ok: true })
       await expect(popup).toBeVisible()
-      const field = await inspectFixture(app!, page, browser, 'JSON.parse(JSON.stringify(document.querySelector("#password").getBoundingClientRect()))')
+      const field = await inspectFixture(app, page, browser, 'JSON.parse(JSON.stringify(document.querySelector("#password").getBoundingClientRect()))')
       const rect = field.result.value as { left: number; bottom: number }
       const guest = surface.locator('webview').first()
       const guestBox = (await guest.boundingBox())!
@@ -139,32 +120,26 @@ test('lists a saved password and autofills username and password without exposin
       expect(box.x).toBeGreaterThanOrEqual(guestBox.x - 1)
       expect(box.x + box.width).toBeLessThanOrEqual(guestBox.x + guestBox.width + 1)
     }
-    const target = await inspectFixture(app!, page, browser, "document.querySelector(\"#password\")?.getAttribute(\"data-cate-autofill-target\")") as {
+    const target = await inspectFixture(app, page, browser, "document.querySelector(\"#password\")?.getAttribute(\"data-cate-autofill-target\")") as {
       ok: boolean
       result: { value: string }
     }
     expect(target.result.value).toMatch(/^[0-9a-f-]{36}$/i)
 
-    const suggestions = await page.evaluate((id) => window.electronAPI.browserCredentialSuggestions(id!), webContentsId)
-    expect(suggestions.suggestions).toEqual([{
-      id: credentialId,
-      origin,
-      username: 'saved@example.test',
-    }])
+    const suggestions = await page.evaluate((url) => window.__cateE2E!.call('browserData', 'passwordSuggestions', { url }), `${origin}/login`)
+    expect(suggestions).toEqual([expect.objectContaining({ ...(credentialId ? { id: credentialId } : {}), origin, username: 'saved@example.test' })])
+    expect(JSON.stringify(suggestions)).not.toContain('autofill secret')
     await popup.getByRole('button', { name: /saved@example.test/ }).click()
     await expect(popup).toBeHidden()
-    await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#email\")?.value")).resolves
+    await expect.poll(() => inspectFixture(app, page, browser, "document.querySelector(\"#email\")?.value"))
       .toMatchObject({ ok: true, result: { value: 'saved@example.test' } })
-    await expect(inspectFixture(app!, page, browser, 'document.querySelector("#password").value')).resolves.toMatchObject({ ok: true, result: { value: 'autofill secret' } })
+    await expect.poll(() => inspectFixture(app, page, browser, 'document.querySelector("#password").value')).toMatchObject({ ok: true, result: { value: 'autofill secret' } })
 
-    const manager = await page.evaluate(() => window.__cateE2E!.createBrowser(
-      'chrome://password-manager/passwords', { x: 760, y: 100 },
-    ))
+    const manager = await seedOnCanvas(page, 'browser', { x: 760, y: 100 }, { url: 'chrome://password-manager/passwords' })
     const managerPage = page.locator(`[data-browser-surface="${manager.panelId}"] [data-browser-password-manager]`)
     await expect(managerPage).toContainText('saved@example.test')
     await expect(managerPage).not.toContainText('autofill secret')
   } finally {
-    if (app) await closeApp(app)
-    rmSync(userDataDir, { recursive: true, force: true })
+    await closeApp(app)
   }
 })

@@ -1,27 +1,21 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication } from 'playwright'
 import { launchApp, closeApp } from './fixtures/electron-app'
-import { act, inspectFixture } from './fixtures/browser-control'
+import { act, createBrowser, inspectFixture } from './fixtures/browser-control'
 
 // Opt-in real-site test. Credentials are synthetic and confined to an isolated
-// Cate profile; the login form is never submitted.
+// Cate workspace; the login form is never submitted.
 test('positions and selects autofill on Open CLI Deployment', async () => {
   test.skip(!process.env.E2E_PUBLIC, 'Requires access to the public login page')
-  const userDataDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'cate-ocd-autofill-')))
   let app: ElectronApplication | undefined
   try {
-    const launched = await launchApp({ userDataDir })
+    const launched = await launchApp()
     app = launched.electronApp
     const page = launched.mainWindow
-    const browser = await page.evaluate(async () => {
-      await window.electronAPI.browserCredentialSave({
-        origin: 'https://ocd.cero-ai.com', username: 'cate-autofill-e2e', password: 'synthetic-autofill-test',
-      })
-      return window.__cateE2E!.createBrowser('https://ocd.cero-ai.com/#/login', { x: 180, y: 120 })
-    })
+    await page.evaluate(() => window.__cateE2E!.call('browserData', 'savePassword', { input: {
+      origin: 'https://ocd.cero-ai.com', username: 'cate-autofill-e2e', password: 'synthetic-autofill-test',
+    } }))
+    const browser = await createBrowser(page, 'https://ocd.cero-ai.com/#/login', { x: 180, y: 120 })
     await expect.poll(async () => {
       const result = await act(page, browser, 'click', 'PASSWORD', {}, 'textbox')
       return result.ok ? 'clicked' : result.error
@@ -44,7 +38,6 @@ test('positions and selects autofill on Open CLI Deployment', async () => {
       .toMatchObject({ result: { value: true } })
     await expect(page.locator('[data-browser-autofill]')).toBeHidden()
   } finally {
-    if (app) await closeApp(app)
-    rmSync(userDataDir, { recursive: true, force: true })
+    await closeApp(app)
   }
 })

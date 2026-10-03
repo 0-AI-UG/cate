@@ -1,4 +1,4 @@
-import { browserInvoke, popupBinding, target, act, activeAction, waitForText, fixtureEvaluate, inspectFixture } from './fixtures/browser-control'
+import { browserInvoke, browserWebContentsId, createBrowser as createBrowserPanel, popupBinding, target, act, activeAction, waitForText, fixtureEvaluate, inspectFixture } from './fixtures/browser-control'
 // Deterministic browser-control conformance for the workflows most likely to
 // expose a difference between a toy DOM driver and a production browser agent.
 // Public-network compatibility and long-running repetition live in their own
@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
-import { closeApp, dragMouse, launchApp, titleBarCentre } from './fixtures/electron-app'
+import { closeApp, launchApp } from './fixtures/electron-app'
 
 let app: ElectronApplication
 let page: Page
@@ -37,10 +37,7 @@ async function listen(server: Server): Promise<string> {
 
 
 async function createBrowser(pathname: string, x = 100) {
-  return page.evaluate(({ url, x }) => window.__cateE2E!.createBrowser(url, { x, y: 100 }), {
-    url: `${appOrigin}${pathname}`,
-    x,
-  })
+  return createBrowserPanel(page, `${appOrigin}${pathname}`, { x, y: 100 })
 }
 
 test.beforeAll(async () => {
@@ -197,7 +194,8 @@ test('controls a nested cross-origin iframe after its parent frame is replaced',
 })
 
 test('handles modal UI, denied permissions, and popup ownership across panels', async () => {
-  const [first, second] = await Promise.all([createBrowser('/policy', 80), createBrowser('/policy', 760)])
+  const first = await createBrowser('/policy', 80)
+  const second = await createBrowser('/policy', 760)
   await expect.poll(() => target(page, first, "Open modal").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 
   await act(page, first, 'click', "Open modal")
@@ -277,7 +275,7 @@ test('shows recovery UI and reloads after the browser guest renderer crashes', a
   test.skip(process.platform === 'linux', 'Electron does not reliably surface webview renderer crashes under Xvfb')
   const browser = await createBrowser('/crash')
   await expect.poll(() => target(page, browser, "Browser is alive").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
-  const webContentsId = await page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId)
+  const webContentsId = await browserWebContentsId(page, browser.panelId)
   expect(webContentsId).toBeTruthy()
   const crashed = await app.evaluate(({ webContents }, id) => {
     const guest = webContents.fromId(id)
@@ -293,6 +291,8 @@ test('shows recovery UI and reloads after the browser guest renderer crashes', a
   await expect.poll(() => target(page, browser, "Browser is alive").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 })
 
+// Not an app bug: `upload` takes one `filePath`; several files per action is
+// a feature the browser API does not offer.
 test.fixme('selects multiple user-granted files with one browser-control action', async () => {
   const uploadDir = mkdtempSync(path.join(tmpdir(), 'cate-browser-multi-upload-'))
   const firstPath = path.join(uploadDir, 'first.txt')
@@ -310,6 +310,7 @@ test.fixme('selects multiple user-granted files with one browser-control action'
   }
 })
 
+// Not an app bug: file-backed drag/drop is not in the browser API.
 test.fixme('drops user-granted files onto a page drop target', async () => {
   const uploadDir = mkdtempSync(path.join(tmpdir(), 'cate-browser-file-drop-'))
   const filePath = path.join(uploadDir, 'dropped.txt')
@@ -326,10 +327,13 @@ test.fixme('drops user-granted files onto a page drop target', async () => {
   }
 })
 
+// Not an app bug: the frame server is same-site with the page (both
+// 127.0.0.1), so the iframe is not out of process and has no target to crash;
+// `waitFor({text})` also reads only the top document.
 test.fixme('recovers an individual out-of-process iframe after its renderer crashes', async () => {
   const browser = await createBrowser('/frames')
   await expect.poll(() => waitForText(page, browser, 'Nested action 1'), { timeout: 20_000 }).toMatchObject({ ok: true })
-  const webContentsId = await page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId)
+  const webContentsId = await browserWebContentsId(page, browser.panelId)
   const crashed = await app.evaluate(async ({ webContents }, { id, targetUrl }) => {
     const guest = webContents.fromId(id)
     if (!guest?.debugger.isAttached()) return false
@@ -350,7 +354,7 @@ test.fixme('recovers an individual out-of-process iframe after its renderer cras
   await expect.poll(() => waitForText(page, browser, 'Nested action 2'), { timeout: 20_000 }).toMatchObject({ ok: true })
 })
 
-test.fixme('recovers requests after Chromium restarts its network service', async () => {
+test('recovers requests after Chromium restarts its network service', async () => {
   const browser = await createBrowser('/crash')
   await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${appOrigin}/crash` } })
@@ -368,6 +372,7 @@ test.fixme('recovers requests after Chromium restarts its network service', asyn
   await expect.poll(() => target(page, browser, "Next step").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 })
 
+// Not an app bug: there is no `dialog` method in the browser API.
 test.fixme('applies an explicit policy to JavaScript alert, confirm, and prompt dialogs', async () => {
   const browser = await createBrowser('/js-dialogs')
   const confirmClick = act(page, browser, 'click', "Confirm")
@@ -384,19 +389,23 @@ test.fixme('applies an explicit policy to JavaScript alert, confirm, and prompt 
     .toMatchObject({ ok: true, result: { text: 'release-ready' } })
 })
 
-test.fixme('keeps browser control bound after a panel detaches into another Electron window', async () => {
+test('keeps browser control bound after the panel moves into a detached window', async () => {
   const browser = await createBrowser('/navigation-result')
-  const nodeId = await expect.poll(() => page.evaluate(
-    (panelId) => window.__cateE2E!.nodeForPanel(panelId), browser.panelId,
-  )).not.toBeNull().then(() => page.evaluate(
-    (panelId) => window.__cateE2E!.nodeForPanel(panelId), browser.panelId,
-  ))
-  const grab = await titleBarCentre(page, nodeId!)
-  expect(grab).toBeTruthy()
-  await dragMouse(page, grab!, { x: -80, y: grab!.y }, { steps: 24 })
-  await page.waitForSelector(`[data-node-id="${nodeId}"]`, { state: 'detached' })
-  const detached = app.windows().find((candidate) => candidate.url().includes('type=dock'))
-  expect(detached).toBeTruthy()
-  await detached!.waitForFunction(() => window.__cateE2E?.ready === true)
-  await expect(act(detached!, browser, 'setValue', 'Next step', { value: 'detached control' })).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => target(page, browser, 'Next step').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+  // Detaching is one document op: the panel is placed in a new window.
+  const placed = await page.evaluate((panelId) => window.__cateE2E!.propose({
+    kind: 'placePanel',
+    id: panelId,
+    at: { to: 'window', windowId: crypto.randomUUID(), stackId: crypto.randomUUID(), bounds: { origin: { x: 80, y: 80 }, size: { width: 900, height: 700 } } },
+  } as never), browser.panelId)
+  expect(placed.ok).toBe(true)
+  await page.waitForSelector(`[data-node-id="${browser.nodeId}"]`, { state: 'detached' })
+  await expect.poll(() => app.windows().length, { timeout: 20_000 }).toBe(2)
+  const detached = app.windows().find((candidate) => candidate !== page)!
+  await detached.waitForFunction(() => window.__cateE2E?.ready === true, null, { timeout: 20_000 })
+  await expect.poll(() => browserWebContentsId(detached, browser.panelId), { timeout: 20_000 }).not.toBeNull()
+  // The tool call is the same; the runtime drives the page in the window that shows it.
+  await expect.poll(() => act(page, { ...browser, tabId: undefined }, 'setValue', 'Next step', { value: 'detached control' }), { timeout: 20_000 }).toMatchObject({ ok: true })
+  const guest = await browserWebContentsId(detached, browser.panelId)
+  expect(await app.evaluate(({ webContents }, id) => webContents.fromId(id!)!.executeJavaScript("document.querySelector(\"#next-step\").value"), guest)).toBe('detached control')
 })

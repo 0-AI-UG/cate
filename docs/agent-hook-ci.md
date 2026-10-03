@@ -8,8 +8,8 @@ the installed version and uploads a JUnit report.
 
 No API keys or paid model calls are required. Model services are local fixtures:
 the installed CLI, PTY, Cate hook files/plugins, environment injection,
-authenticated HTTP receiver, change storage, event normalization, and renderer
-state handling are real. Electron reporting and OS notification delivery are stubbed.
+authenticated HTTP receiver, change storage, event normalization, and the
+runtime status machine are real. Notification delivery is counted, not sent.
 The fixture never
 sends a hook itself. Two fresh sessions run in the same workspace with different
 terminal IDs. The first terminal stays open while the second connects, so a
@@ -23,7 +23,8 @@ shared daemon cannot be reset by test cleanup between connections. Each must pro
 Missing binaries, startup/authentication errors, timeouts, wrong attribution,
 and missing hooks fail the job. Selected agents are never silently skipped.
 The coverage tests require the matrix and installer to cover every agent in
-Cate's production registry. `agentHookLifecycle.config.ts` assigns every injected
+Cate's production registry. The suite lives in `src/services/agents/runtime/live/`;
+`hookLifecycle.config.ts` assigns every injected
 hook to a real CLI scenario. CI fails if Cate adds an event without a scenario,
 or if a scenario no longer observes that native event.
 
@@ -49,13 +50,12 @@ that does not return a usable verdict, a documented [PermissionDenied path](http
 fixture repository and asserts that the file survives. This is distinct from
 manually rejecting a permission dialog, which interrupts Claude instead.
 
-The renderer must be Running during execution, waiting but unavailable for a new
+The terminal status must be Running during execution, waiting but unavailable for a new
 prompt during human approval, and ready after completion. Actual Codex automatic
 review and Hermes smart review must stay Running without a permission notification.
 Codex's installed app-server also resolves manual, auto-review, guardian-review,
 and never-ask configurations, including their source files. Unit tests cover stale
-turn events, settings display, and ignoring obsolete persisted approval overrides.
-The approval PR's final implementation has no user-set approval overrides.
+turn events and the settings display. There are no user-set approval overrides.
 
 CLI limitations are asserted rather than hidden: Claude cancellation is recovered
 from its real transcript; Kiro V3 has no native interrupt hook and uses Cate's PTY
@@ -114,28 +114,21 @@ CATE_HOOK_SMOKE_AGENTS=codex npm run test:agent-hooks:ci
 CATE_HOOK_SMOKE_AGENTS=cursor,kiro npm run test:agent-hooks:ci
 ```
 
-An optional real-provider smoke run is available separately:
-
-```sh
-CATE_LIVE_AGENT_CLIS=1 CATE_HOOK_SMOKE_PROVIDER=live npx vitest run --config vitest.live.config.ts agentHookSmoke.itest.ts
-```
-
-The lifecycle scenarios always use deterministic fake-provider replies. It requires `OPENROUTER_API_KEY` for Claude,
-Codex, OpenCode, and Hermes. Cursor, Grok, and Kiro use their existing local login
-or `CURSOR_API_KEY`, `XAI_API_KEY`, and `KIRO_API_KEY`, respectively; live runs in
-CI require explicit keys. This mode makes two small paid requests per CLI.
-The normal CI workflow does not read any of these secrets.
-
-`CATE_LIVE_CLAUDE_MODEL`, `CATE_LIVE_CODEX_MODEL`, `CATE_LIVE_CURSOR_MODEL`,
-`CATE_LIVE_GROK_MODEL`, `CATE_LIVE_HERMES_MODEL`, `CATE_LIVE_KIRO_MODEL`, and
-`CATE_LIVE_OPENCODE_MODEL` override real-provider models. OpenCode expects a
-provider-prefixed model ID, such as `openrouter/openai/gpt-5.4-mini`.
+Every installed-CLI test runs against the fake provider, including the
+CLIs' sign-in (fake API keys, and the fake auth endpoints Cursor and Kiro
+call). No test uses a real account, key or model.
 
 For focused lifecycle debugging, select cases without running the smoke file:
 
 ```sh
-CATE_LIVE_AGENT_CLIS=1 CATE_HOOK_SMOKE_AGENTS=codex CATE_HOOK_LIFECYCLE_CASES=automatic-approval npx vitest run --config vitest.live.config.ts agentHookLifecycle.itest.ts
+CATE_LIVE_AGENT_CLIS=1 CATE_HOOK_SMOKE_AGENTS=codex CATE_HOOK_LIFECYCLE_CASES=automatic-approval npx vitest run --config vitest.live.config.ts hookLifecycle.itest.ts
 ```
 
-The older `npm run test:agent-contracts` suite remains available for detailed
-vendor-payload investigations with real accounts.
+The recorded-change tests (`src/services/agents/runtime/changes/live.*.itest.ts`)
+use the same fake provider. It scripts each CLI's native read and edit tool
+calls; the tests assert the real edit reaches Cate's change store with the
+expected diff:
+
+```sh
+npm run test:agent-changes
+```

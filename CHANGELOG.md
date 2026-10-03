@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- **Menus from the panel types**: the canvas menu, the new-tab menus, the empty window, the canvas toolbar, the command palette, the menu bar and the shortcuts settings are now built from the panel types and actions, so they always agree.
+- **Worktrees for more panels**: Files and Diff Review panels can now be created in a worktree from every creation menu, like terminals and T3 Code, and the command palette offers "New <panel> in <worktree>".
+- **New Files Panel** is now ⌘N (it replaces the separate New File command). Browser commands moved to the new Panel menu. Custom shortcuts for creating panels are reset.
+
 ## [2.0.5] - 2026-09-30
 
 This patch release adds `cate agent read` and an Open in browser button for HTML files, connects T3 panels before the first prompt, and fixes many panel, browser and agent issues.

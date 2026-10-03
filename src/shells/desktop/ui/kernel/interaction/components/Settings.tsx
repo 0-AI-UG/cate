@@ -1,0 +1,317 @@
+// Settings form primitives shared by every slice owner's settings page
+// (section 8). The settings window provides SettingsSearchContext; outside it
+// every row shows.
+
+import { createContext, useContext, useEffect, useId, useState } from 'react'
+import type { ButtonHTMLAttributes, KeyboardEvent, ReactNode } from 'react'
+import { Button } from './Button'
+
+export interface SettingsSearchState {
+  /** Lowercased, trimmed search query. Empty string = no active search. */
+  query: string
+  /** True when the active query matches the enclosing section's title. */
+  sectionMatched: boolean
+}
+
+export const SettingsSearchContext = createContext<SettingsSearchState>({
+  query: '',
+  sectionMatched: false,
+})
+
+export function useSettingsSearch(): SettingsSearchState {
+  return useContext(SettingsSearchContext)
+}
+
+/** True when `query` is empty or `text` contains it (case-insensitive). */
+export function matchesQuery(text: string | undefined, query: string): boolean {
+  if (query === '') return true
+  return (text ?? '').toLowerCase().includes(query)
+}
+
+const SettingLabelContext = createContext<string | undefined>(undefined)
+
+// -----------------------------------------------------------------------------
+// SettingRow — label + control layout
+// -----------------------------------------------------------------------------
+
+interface SettingRowProps {
+  label: string
+  description?: string
+  /** Additional searchable values, such as select option labels. */
+  keywords?: string
+  /** Optional node rendered below the description, still above the row border. */
+  hint?: ReactNode
+  children: ReactNode
+}
+
+export function SettingRow({ label, description, keywords, hint, children }: SettingRowProps) {
+  const { query, sectionMatched } = useSettingsSearch()
+  const labelId = useId()
+  // Hide when there's an active query the section title didn't match and
+  // neither the label nor description contains it.
+  if (query !== '' && !sectionMatched && !matchesQuery(label, query) && !matchesQuery(description, query) && !matchesQuery(keywords, query)) {
+    return null
+  }
+  return (
+    <SettingLabelContext.Provider value={labelId}>
+    <div data-srow className="-mx-3 flex min-h-14 items-center justify-between border-b border-subtle px-3 py-2 last:border-b-0">
+      <div className="flex flex-col min-w-0">
+        <span id={labelId} className="text-[13px] font-medium text-primary">{label}</span>
+        {description && <span className="text-xs text-muted mt-0.5">{description}</span>}
+        {hint && <div className="mt-1">{hint}</div>}
+      </div>
+      <div className="flex-shrink-0 ml-4">{children}</div>
+    </div>
+    </SettingLabelContext.Provider>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// SearchableBlock — wraps custom (non-SettingRow) content so it participates
+// in settings search. Hidden when an active query matches neither the section
+// title nor the block's keywords.
+// -----------------------------------------------------------------------------
+
+interface SearchableBlockProps {
+  /** Space-separated terms describing this block, matched against the query. */
+  keywords?: string
+  children: ReactNode
+}
+
+export function SearchableBlock({ keywords, children }: SearchableBlockProps) {
+  const { query, sectionMatched } = useSettingsSearch()
+  if (query !== '' && !sectionMatched && !matchesQuery(keywords, query)) {
+    return null
+  }
+  return <div data-srow>{children}</div>
+}
+
+// -----------------------------------------------------------------------------
+// SecondaryButton — small bordered surface button used across settings sections
+// (Add / Save / Import / Restore defaults). Disabled state dims and freezes the
+// hover styles so it reads as inert.
+// -----------------------------------------------------------------------------
+
+interface SecondaryButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  loading?: boolean
+  loadingLabel?: string
+}
+
+export function SecondaryButton({ className = '', children, ...props }: SecondaryButtonProps) {
+  return (
+    <Button size="sm" variant="secondary" className={`bg-surface-2 ${className}`} {...props}>
+      {children}
+    </Button>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Toggle switch
+// -----------------------------------------------------------------------------
+
+interface ToggleProps {
+  checked: boolean
+  onChange: (value: boolean) => void
+  disabled?: boolean
+  label?: string
+}
+
+export function Toggle({ checked, onChange, disabled, label }: ToggleProps) {
+  const labelledBy = useContext(SettingLabelContext)
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      aria-labelledby={label ? undefined : labelledBy}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative w-9 h-5 rounded-full transition-colors disabled:opacity-40 disabled:cursor-default ${
+        checked ? 'bg-focus-blue' : 'bg-surface-6'
+      }`}
+    >
+      <div
+        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+          checked ? 'translate-x-[18px]' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Text input
+// -----------------------------------------------------------------------------
+
+// Shared appearance for settings text inputs. Width (`w-48`) and horizontal
+// padding (`px-2`) are split out so callers can override just those via
+// `layoutClassName` while keeping the surface/border/focus styling identical.
+const TEXT_INPUT_LAYOUT = 'w-48 px-2'
+const TEXT_INPUT_BASE =
+  'bg-surface-5 border border-subtle rounded-md py-1 text-sm text-primary placeholder:text-muted focus:border-focus-blue focus:outline-none'
+
+interface TextInputProps {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  /** Defaults to 'text'. Use 'password' for secrets. */
+  type?: 'text' | 'password'
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
+  onBlur?: () => void
+  disabled?: boolean
+  /**
+   * Replaces the default width + horizontal padding (`w-48 px-2`). Use to widen
+   * the field (`flex-1`, `w-full`) or shift padding (`pl-7 pr-2`) while keeping
+   * the rest of the styling.
+   */
+  layoutClassName?: string
+  /** Extra classes appended after the base (e.g. `font-mono`). */
+  className?: string
+}
+
+export function TextInput({
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+  onKeyDown,
+  onBlur,
+  disabled,
+  layoutClassName = TEXT_INPUT_LAYOUT,
+  className,
+}: TextInputProps) {
+  const labelledBy = useContext(SettingLabelContext)
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
+      onBlur={onBlur}
+      placeholder={placeholder}
+      disabled={disabled}
+      aria-labelledby={labelledBy}
+      className={`${layoutClassName} ${TEXT_INPUT_BASE}${className ? ` ${className}` : ''}`}
+    />
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Number input with stepper
+// -----------------------------------------------------------------------------
+
+interface NumberInputProps {
+  value: number
+  onChange: (value: number) => void
+  min?: number
+  max?: number
+  step?: number
+}
+
+export function NumberInput({ value, onChange, min, max, step = 1 }: NumberInputProps) {
+  const labelledBy = useContext(SettingLabelContext)
+  // Keep a local draft string so the user can freely clear the field and type
+  // intermediate values. We only parse + clamp on commit (blur / Enter), never
+  // on every keystroke — otherwise empty input snaps to 0 and partial values
+  // get clamped mid-type. Sync the draft from the prop whenever it changes
+  // externally (and while not actively editing).
+  const [draft, setDraft] = useState(String(value))
+  const [editing, setEditing] = useState(false)
+
+  useEffect(() => {
+    if (!editing) setDraft(String(value))
+  }, [value, editing])
+
+  const commit = () => {
+    setEditing(false)
+    const v = Number(draft)
+    if (draft.trim() === '' || isNaN(v)) {
+      // Revert to the last valid value.
+      setDraft(String(value))
+      return
+    }
+    const clamped = Math.min(Math.max(v, min ?? -Infinity), max ?? Infinity)
+    setDraft(String(clamped))
+    if (clamped !== value) onChange(clamped)
+  }
+
+  return (
+    <input
+      type="number"
+      value={draft}
+      onFocus={() => setEditing(true)}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+      }}
+      min={min}
+      max={max}
+      step={step}
+      aria-labelledby={labelledBy}
+      className="w-20 bg-surface-5 border border-subtle rounded-md px-2 py-1 text-sm text-primary text-center focus:border-focus-blue focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+    />
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Select dropdown
+// -----------------------------------------------------------------------------
+
+interface SelectOption {
+  value: string
+  label: string
+}
+
+interface SelectProps {
+  value: string
+  onChange: (value: string) => void
+  options: SelectOption[]
+}
+
+export function Select({ value, onChange, options }: SelectProps) {
+  const labelledBy = useContext(SettingLabelContext)
+  return (
+    <select
+      value={value}
+      aria-labelledby={labelledBy}
+      onChange={(e) => onChange(e.target.value)}
+      className="bg-surface-5 border border-subtle rounded-md px-2 py-1 text-sm text-primary focus:border-focus-blue focus:outline-none cursor-pointer"
+    >
+      {options.map((opt) => (
+        <option key={opt.value} value={opt.value} className="bg-surface-5 text-primary">
+          {opt.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Slider
+// -----------------------------------------------------------------------------
+
+interface SliderProps {
+  value: number
+  onChange: (value: number) => void
+  min: number
+  max: number
+  step: number
+}
+
+export function Slider({ value, onChange, min, max, step }: SliderProps) {
+  const labelledBy = useContext(SettingLabelContext)
+  return (
+    <input
+      type="range"
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      min={min}
+      max={max}
+      step={step}
+      aria-labelledby={labelledBy}
+      className="w-32 h-1.5 bg-surface-6 rounded-full appearance-none cursor-pointer accent-focus-blue [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-focus-blue"
+    />
+  )
+}

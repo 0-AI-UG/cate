@@ -68,15 +68,14 @@ test('zoom-aware: canvas-space delta == screen-delta ÷ zoom (zoom 2)', async ()
   await page.waitForTimeout(400)
   const grab = await titleBarCentre(page, nodeId)
   const before = await getNodeOrigin(page, nodeId)
-  await dragMouse(page, grab!, { x: grab!.x + 200, y: grab!.y + 100 })
+  // At zoom 2 the node sits near the bottom-right edge; drag up-left so the
+  // pointer stays inside the window (leaving it detaches the panel).
+  await dragMouse(page, grab!, { x: grab!.x - 200, y: grab!.y - 100 })
   await page.waitForTimeout(150)
   const after = await getNodeOrigin(page, nodeId)
-  test.skip(
-    after!.x === before!.x && after!.y === before!.y,
-    'drag did not engage at zoom 2',
-  )
-  expect(after!.x - before!.x).toBeCloseTo(100, -1)
-  expect(after!.y - before!.y).toBeCloseTo(50, -1)
+  expect(after).not.toBeNull()
+  expect(after!.x - before!.x).toBeCloseTo(-100, -1)
+  expect(after!.y - before!.y).toBeCloseTo(-50, -1)
 })
 
 test('ghost follows cursor with the grab offset (zoom 1)', async () => {
