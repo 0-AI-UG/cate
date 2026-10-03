@@ -475,7 +475,7 @@ export interface WindowPanelReport {
   worktreeId?: string
   /** Live agent state for a terminal/agent panel, stamped by the OWNER window
    *  (the only window that receives this panel's activity scans). Carried so the
-   *  overview can render a detached row's running shimmer / awaiting indicator
+   *  overview can render a detached row's running / awaiting indicator
    *  exactly like a local row. */
   agentState?: AgentState
   /** True only when the surface is at its normal prompt, not an approval or

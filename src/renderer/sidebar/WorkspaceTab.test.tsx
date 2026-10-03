@@ -1,8 +1,10 @@
 // =============================================================================
 // E2E rendering tests for terminal panel agent state indicators.
 //
-// These test what the user actually SEES: the shimmer CSS class
-// (cate-notif-pulse) and the await indicator element (cate-await-indicator).
+// These test what the user actually SEES: the static running ring
+// (cate-running-indicator) and the await indicator element (cate-await-indicator).
+// Neither may animate: the old infinite title shimmer (cate-notif-pulse) kept
+// the window repainting at refresh rate while an agent ran.
 // =============================================================================
 
 import React from 'react'
@@ -48,8 +50,8 @@ function renderRow(agentState: AgentState | undefined) {
   return host
 }
 
-function hasShimmer(el: HTMLElement): boolean {
-  return el.querySelector('.cate-notif-pulse') !== null
+function hasRunningIndicator(el: HTMLElement): boolean {
+  return el.querySelector('.cate-running-indicator') !== null
 }
 
 function hasAwaitIndicator(el: HTMLElement): boolean {
@@ -57,33 +59,39 @@ function hasAwaitIndicator(el: HTMLElement): boolean {
 }
 
 describe('TerminalPanelRow rendered indicators', () => {
-  it('no agent state → no shimmer, no await', () => {
+  it('no agent state → no running ring, no await', () => {
     const el = renderRow(undefined)
-    expect(hasShimmer(el)).toBe(false)
+    expect(hasRunningIndicator(el)).toBe(false)
     expect(hasAwaitIndicator(el)).toBe(false)
   })
 
-  it('notRunning → no shimmer, no await', () => {
+  it('notRunning → no running ring, no await', () => {
     const el = renderRow('notRunning')
-    expect(hasShimmer(el)).toBe(false)
+    expect(hasRunningIndicator(el)).toBe(false)
     expect(hasAwaitIndicator(el)).toBe(false)
   })
 
-  it('running → shimmer visible, no await', () => {
+  it('running → running ring visible, no await', () => {
     const el = renderRow('running')
-    expect(hasShimmer(el)).toBe(true)
+    expect(hasRunningIndicator(el)).toBe(true)
     expect(hasAwaitIndicator(el)).toBe(false)
   })
 
-  it('waitingForInput → await visible, no shimmer', () => {
+  it('waitingForInput → await visible, no running ring', () => {
     const el = renderRow('waitingForInput')
-    expect(hasShimmer(el)).toBe(false)
+    expect(hasRunningIndicator(el)).toBe(false)
     expect(hasAwaitIndicator(el)).toBe(true)
   })
 
-  it('finished → no shimmer, no await', () => {
+  it('running → title is static (no shimmer class), ring is labelled', () => {
+    const el = renderRow('running')
+    expect(el.querySelector('.cate-notif-pulse')).toBeNull()
+    expect(el.querySelector('.cate-running-indicator')?.getAttribute('aria-label')).toBe('agent running')
+  })
+
+  it('finished → no running ring, no await', () => {
     const el = renderRow('finished')
-    expect(hasShimmer(el)).toBe(false)
+    expect(hasRunningIndicator(el)).toBe(false)
     expect(hasAwaitIndicator(el)).toBe(false)
   })
 })
@@ -222,7 +230,7 @@ describe('state transitions render correctly', () => {
 
     for (const { state, expectShimmer, expectAwait } of sequence) {
       const el = renderRow(state)
-      expect(hasShimmer(el)).toBe(expectShimmer)
+      expect(hasRunningIndicator(el)).toBe(expectShimmer)
       expect(hasAwaitIndicator(el)).toBe(expectAwait)
     }
   })

@@ -105,7 +105,7 @@ export function setupWindowPanelSync(): () => void {
       // Agent state/name + ports are stamped HERE (by the owner window) because
       // the activity scan is only delivered to a panel's owner — other windows
       // never see it. Riding it on the union is the only way the overview's
-      // "Other windows" rows can show the same shimmer/await/port dot as local
+      // "Other windows" rows can show the same running/await/port dot as local
       // rows.
       const t3Activity = useT3ActivityStore.getState()
       const agentInfo = { ...selectAgentInfoByPanel(status, ws.id), ...selectT3InfoByPanel(t3Activity, ws.id) }

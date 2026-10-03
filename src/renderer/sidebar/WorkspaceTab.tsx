@@ -18,7 +18,7 @@ import {
 } from '../lib/closePanelWithConfirm'
 import { movePanelToNewWindow } from '../lib/workspace/movePanelToNewWindow'
 import { getActivePanelId } from '../lib/activePanel'
-import { AgentActivityTitle, AwaitingIndicator } from '../ui/AgentActivityTitle'
+import { AgentActivityTitle, AwaitingIndicator, RunningIndicator } from '../ui/AgentActivityTitle'
 import { isMiddleClick } from '../lib/mouse'
 import { PANEL_REGISTRY } from '../panels/registry'
 import { panelRowLabel } from '../lib/panelTitle'
@@ -167,7 +167,6 @@ export const WorkspacePanelRow: React.FC<WorkspacePanelRowProps> = ({ panel, ind
       ) : (
         <AgentActivityTitle
           className="min-w-0 flex-1 truncate"
-          running={isRunning}
           worktreeColor={worktreeColor}
           onDoubleClick={(e) => { e.stopPropagation(); rename?.onBeginRename() }}
         >
@@ -176,7 +175,9 @@ export const WorkspacePanelRow: React.FC<WorkspacePanelRowProps> = ({ panel, ind
       )}
       {isAwaiting ? (
         <AwaitingIndicator />
-      ) : !isRunning && hasPorts ? (
+      ) : isRunning ? (
+        <RunningIndicator />
+      ) : hasPorts ? (
         <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" />
       ) : null}
     </button>
@@ -577,7 +578,7 @@ export const WorkspaceTab: React.FC<WorkspaceTabProps> = ({
   // rendered with the SAME data as a local row: agent state, agent logo, ports,
   // and worktree accent all ride along on the cross-window union (stamped by the
   // owner window, the only one that sees this panel's activity scan), so the
-  // running shimmer / awaiting indicator / port dot match the local rows exactly.
+  // running ring / awaiting dot / port dot match the local rows exactly.
   const renderDetachedRow = (p: WindowPanelInfo, indent: boolean) => {
     const onClick = (e: React.MouseEvent): void => {
       e.stopPropagation()
