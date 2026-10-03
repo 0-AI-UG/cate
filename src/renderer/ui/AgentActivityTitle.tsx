@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from 'react'
 import { worktreeTitleStyle } from '../lib/worktreeTitleStyle'
 
-const AWAIT_COLOR = '#c08a5a'
+const AWAIT_COLOR = 'color-mix(in srgb, var(--activity-orange) 70%, var(--text-primary))'
 
 interface AgentActivityTitleProps extends HTMLAttributes<HTMLSpanElement> {
   children: ReactNode
