@@ -21,6 +21,7 @@ import { clientUi } from '@kernel/interaction'
 import { Spinner } from '../../kernel/interaction'
 import { hasFileRefDrag, readFileRefDrag, relativeDisplayPath, writeFileRefDrag, type FileEntry } from '@workspace/files/contract'
 import { isExternalFileDrag, refDropMode, takeDroppedItems } from './droppedEntries'
+import { setTreeDropDir, useTreeDropDir } from './treeDropDir'
 import type { FileTreeModel } from './fileTreeModel'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
 import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
@@ -175,10 +176,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   }, [node.path, isRenaming, isCreating, onEditingChange])
   const [renameValue, setRenameValue] = useState(node.name)
   const [createValue, setCreateValue] = useState('')
-  const [isDragOver, setIsDragOver] = useState(false)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const createInputRef = useRef<HTMLInputElement>(null)
-  const dragCounterRef = useRef(0)
 
   // Git decorations (VS Code-style). Files get a colored name + status badge;
   // folders that contain changes get a name tint; git-ignored files are dimmed.
@@ -191,6 +190,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       : ''
 
   const isSelected = selectedPaths.has(node.path)
+  const isDropTarget = useTreeDropDir((state) => state.dir === node.path) && node.isDirectory
   const iconDef = getFileIcon(node.extension, node.isDirectory, isExpanded)
 
   // ---------------------------------------------------------------------------
@@ -387,6 +387,9 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   // --- Drag-and-drop move ---
   const dropTargetDir = node.isDirectory ? node.path : parentDir
 
+  // Every row takes the drag: a folder row drops into the folder, a file row
+  // into the file's folder. A drop that missed every row used to fall through
+  // to the explorer, which moved it to the root (#748).
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (isExternalFileDrag(e)) {
       e.preventDefault()
@@ -394,6 +397,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       // so the browser keeps our 'copy' and allows the drop.
       e.stopPropagation()
       e.dataTransfer.dropEffect = 'copy'
+      setTreeDropDir(dropTargetDir)
       return
     }
     if (!hasFileRefDrag(e.dataTransfer)) return
@@ -401,22 +405,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     // Ahead of the dock or canvas host, whose drop would open the files.
     e.stopPropagation()
     e.dataTransfer.dropEffect = refDropMode(e)
-  }, [])
-
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!isExternalFileDrag(e) && !hasFileRefDrag(e.dataTransfer)) return
-    e.preventDefault()
-    dragCounterRef.current++
-    setIsDragOver(true)
-  }, [])
-
-  const handleDragLeave = useCallback(() => {
-    dragCounterRef.current--
-    if (dragCounterRef.current <= 0) {
-      dragCounterRef.current = 0
-      setIsDragOver(false)
-    }
-  }, [])
+    setTreeDropDir(dropTargetDir)
+  }, [dropTargetDir])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     // External (OS) file/folder drop onto a folder → import into that folder.
@@ -424,16 +414,14 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     if (isExternalFileDrag(e)) {
       e.preventDefault()
       e.stopPropagation()
-      dragCounterRef.current = 0
-      setIsDragOver(false)
+      setTreeDropDir(null)
       const dropped = takeDroppedItems(e.dataTransfer)
       const ok = await resource.importDropped(dropped, dropTargetDir, node.name)
       if (ok) onTreeChanged?.()
       return
     }
 
-    dragCounterRef.current = 0
-    setIsDragOver(false)
+    setTreeDropDir(null)
     const drag = readFileRefDrag(e.dataTransfer)
     if (!drag) return
     e.preventDefault()
@@ -460,7 +448,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
         data-filepath={node.path}
         className={`h-7 flex items-center gap-1.5 px-2 text-sm text-primary cursor-pointer mx-1.5 my-0.5 rounded-lg ${
           isSelected ? 'bg-surface-6 text-primary' : 'hover:bg-hover'
-        } ${isIgnored ? 'opacity-40' : ''} ${isDragOver && node.isDirectory ? 'ring-1 ring-blue-500/60 bg-blue-500/10' : ''}`}
+        } ${isIgnored ? 'opacity-40' : ''} ${isDropTarget ? 'ring-1 ring-blue-500/60 bg-blue-500/10' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
@@ -474,10 +462,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
           writeFileRefDrag(e.dataTransfer, { refs: dragPaths.map((path) => ({ workspaceId: resource.workspaceId, path })) })
           e.dataTransfer.effectAllowed = 'copyMove'
         }}
-        onDragOver={node.isDirectory ? handleDragOver : undefined}
-        onDragEnter={node.isDirectory ? handleDragEnter : undefined}
-        onDragLeave={node.isDirectory ? handleDragLeave : undefined}
-        onDrop={node.isDirectory ? handleDrop : undefined}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
       >
         {/* Chevron for directories */}
         {node.isDirectory ? (

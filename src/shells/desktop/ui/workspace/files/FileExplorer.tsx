@@ -3,7 +3,7 @@
 // Ported from FileExplorerView.swift + FileTreeModel.swift
 // =============================================================================
 
-import React, { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { RotateCw as ArrowClockwise, FilePlus, FolderPlus, Search as MagnifyingGlass, X } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
 import { LoadingState, SidebarSectionHeader, SidebarHeaderButton } from '../../kernel/interaction'
@@ -18,6 +18,7 @@ import { isNavKey, resolveTreeNavAction } from './treeKeyboardNav'
 import { useGitTree } from './gitTree'
 import { canCopyFiles, clipboardFileRefs, copyFileRefs } from './fileClipboard'
 import { isExternalFileDrag, refDropMode, takeDroppedItems } from './droppedEntries'
+import { setTreeDropDir, useTreeDropDir } from './treeDropDir'
 
 // -----------------------------------------------------------------------------
 // Component
@@ -426,6 +427,19 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootPath, startRootCreate, selectedWorkspaceId, panelId, openSearch, host, pasteInto])
 
+  // A drag that ends without a drop here (Escape, a drop elsewhere) leaves no
+  // folder highlighted.
+  const rootIsDropTarget = useTreeDropDir((state) => state.dir === rootPath)
+  useEffect(() => {
+    const clear = (): void => setTreeDropDir(null)
+    window.addEventListener('dragend', clear, true)
+    window.addEventListener('drop', clear, true)
+    return () => {
+      window.removeEventListener('dragend', clear, true)
+      window.removeEventListener('drop', clear, true)
+    }
+  }, [])
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -433,22 +447,38 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
   return (
     <div
       className="file-explorer flex flex-col h-full min-h-0 overflow-hidden"
-      // File drops anywhere in the panel outside a folder row land in the
-      // root: OS files are uploaded, workspace files (this workspace's or
-      // another's) moved or copied. stopPropagation keeps the drop from the
-      // dock or canvas host (which would open the files) and from the
-      // app-root handler (which forces dropEffect='none').
+      // The panel takes every file drag, so the dock or canvas host around it
+      // neither opens the files nor draws its drop overlay (`data-filedrop`).
+      // Rows drop into their folder; the tree's empty space into the root:
+      // OS files are uploaded, workspace files (this workspace's or another's)
+      // moved or copied. Anywhere else in the panel (header, search, footer)
+      // nothing drops. stopPropagation also keeps the drop from the app-root
+      // handler (which forces dropEffect='none').
+      data-filedrop="files"
       onDragOver={(e) => {
         const external = isExternalFileDrag(e)
         if (!external && !hasFileRefDrag(e.dataTransfer)) return
         e.preventDefault()
         e.stopPropagation()
+        if (!inRootDropArea(e)) {
+          e.dataTransfer.dropEffect = 'none'
+          setTreeDropDir(null)
+          return
+        }
         e.dataTransfer.dropEffect = external ? 'copy' : refDropMode(e)
+        setTreeDropDir(rootPath)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setTreeDropDir(null)
       }}
       onDrop={(e) => {
-        if (isExternalFileDrag(e)) {
-          e.preventDefault()
-          e.stopPropagation()
+        setTreeDropDir(null)
+        const external = isExternalFileDrag(e)
+        if (!external && !hasFileRefDrag(e.dataTransfer)) return
+        e.preventDefault()
+        e.stopPropagation()
+        if (!inRootDropArea(e)) return
+        if (external) {
           const dropped = takeDroppedItems(e.dataTransfer)
           void resource.importDropped(dropped, rootPath, folderName).then((ok) => {
             if (ok) handleReload()
@@ -457,8 +487,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
         }
         const drag = readFileRefDrag(e.dataTransfer)
         if (!drag) return
-        e.preventDefault()
-        e.stopPropagation()
         void resource.transfer(drag.refs, rootPath, refDropMode(e)).then((ok) => {
           if (ok) handleReload()
         })
@@ -553,7 +581,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
         <LoadingState label="Loading files" size={14} className="flex-1 text-xs" />
       ) : nodes.length === 0 && loadError && !rootCreating ? null : nodes.length === 0 && !rootCreating ? (
         <div
-          className="flex flex-col items-center justify-center flex-1 text-muted text-xs gap-2 p-4"
+          className={`flex flex-col items-center justify-center flex-1 text-muted text-xs gap-2 p-4 ${rootIsDropTarget ? 'ring-1 ring-inset ring-blue-500/60 bg-blue-500/5' : ''}`}
+          data-tree-drop
           onContextMenu={handleRootContextMenu}
         >
           <span className="text-2xl pointer-events-none">&#128193;</span>
@@ -562,7 +591,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
       ) : (
         <div
           ref={treeContainerRef}
-          className="relative flex-1 min-h-0 overflow-y-auto overscroll-none pt-1 pb-4 outline-none"
+          className={`relative flex-1 min-h-0 overflow-y-auto overscroll-none pt-1 pb-4 outline-none ${rootIsDropTarget ? 'ring-1 ring-inset ring-blue-500/60 bg-blue-500/5' : ''}`}
+          data-tree-drop
           // Focusable + tagged so Delete/Backspace (incl. Cmd+Backspace) deletes
           // the selection here instead of being swallowed by the canvas-level
           // shortcut handler. Focused explicitly from onSelect (draggable rows
@@ -634,4 +664,9 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
       </div>
     </div>
   )
+}
+
+/** The tree's empty space (or the empty state): a drop there lands in the root. */
+function inRootDropArea(e: React.DragEvent): boolean {
+  return e.target instanceof Element && e.target.closest('[data-tree-drop]') !== null
 }

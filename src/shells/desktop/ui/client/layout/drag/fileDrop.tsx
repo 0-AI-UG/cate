@@ -14,7 +14,8 @@ import type { RefTarget } from '@workspace/files/client'
 import type { FileLineLocation } from '@workspace/files/contract'
 import { isAnyFileDrag, resolveFileDrop, takeFileDrop } from '../../../workspace/files'
 
-export type FileDropKind = 'canvas' | 'dock' | 'terminal' | 'agent' | 'chat'
+// `files`: a file tree, which marks its own drop folder and shows no overlay.
+export type FileDropKind = 'canvas' | 'dock' | 'terminal' | 'agent' | 'chat' | 'files'
 
 const log = createLogger('file-drop')
 
@@ -136,19 +137,20 @@ export function useFileDropTracker(): void {
   }, [])
 }
 
-const LABEL: Record<FileDropKind, string> = {
+const LABEL: Record<FileDropKind, string | null> = {
   canvas: 'Drop to open on canvas',
   dock: 'Drop to open here',
   terminal: 'Drop to paste path',
   agent: 'Drop to attach',
   chat: 'Drop to attach',
+  files: null,
 }
 
 /** The one indicator, drawn inside its host so it inherits the host's
  *  clipping, transform and stacking. */
 export const FileDropOverlay: React.FC = () => {
   const target = useFileDropStore((s) => s.target)
-  if (!target) return null
+  if (!target || !LABEL[target.kind]) return null
   return createPortal(
     <div
       data-file-drop-indicator={target.kind}

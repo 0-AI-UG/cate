@@ -39,7 +39,7 @@ let clipboard = ''
 beforeEach(async () => {
   clipboard = ''
   installMockClientUi({ writeClipboard: vi.fn(async (text: string) => { clipboard = text }), readClipboard: vi.fn(async () => clipboard) })
-  here = fakeFs({ '/repo': [entry('/repo/dir', true), entry('/repo/a.ts')] })
+  here = fakeFs({ '/repo': [entry('/repo/dir', true), entry('/repo/a.ts')], '/repo/dir': [entry('/repo/dir/c.ts')] })
   other = fakeFs({}, { '/elsewhere/b.ts': 'bb' })
   const byId: Record<string, ReturnType<typeof fakeFs>> = { ws: here, other }
   tree = new FileTreeModel('/repo', 'ws', { fs: () => here as unknown as FileTreeFs, refs: createFileRefs((id) => byId[id] as unknown as RefFs), watch: () => () => {} })
@@ -103,6 +103,49 @@ it('copies files dragged from another workspace into the root through its runtim
   expect(destDir).toBe('/repo')
   expect(sources.map(({ path, kind, size }) => ({ path, kind, size }))).toEqual([{ path: 'b.ts', kind: 'file', size: 2 }])
   expect(new TextDecoder().decode(await sources[0].bytes())).toBe('bb')
+  expect(parentDrop).not.toHaveBeenCalled()
+})
+
+async function expandDir() {
+  await act(async () => { row('/repo/dir').dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+  await act(async () => {})
+}
+
+it('drops on a file row into that file\'s folder and highlights the folder (#748)', async () => {
+  await expandDir()
+  let result!: ReturnType<typeof drop>
+  await act(async () => { result = drop(row('/repo/dir/c.ts'), ['/repo/a.ts']) })
+  expect(result.accepted).toBe(true)
+  expect(here.rename).toHaveBeenCalledWith('/repo/a.ts', '/repo/dir/a.ts')
+  expect(parentDrop).not.toHaveBeenCalled()
+})
+
+it('leaves a file dropped back on its own folder where it is (#748)', async () => {
+  await expandDir()
+  await act(async () => { drop(row('/repo/dir/c.ts'), ['/repo/dir/c.ts']) })
+  await act(async () => { drop(row('/repo/dir'), ['/repo/dir/c.ts']) })
+  expect(here.rename).not.toHaveBeenCalled()
+})
+
+it('highlights the folder of the file row under a drag', async () => {
+  await expandDir()
+  const dataTransfer = { types: [FILE_REFS_MIME], getData: () => '', effectAllowed: 'copyMove', dropEffect: 'none', items: [], files: [] }
+  const event = new Event('dragover', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+  await act(async () => { row('/repo/dir/c.ts').dispatchEvent(event) })
+  expect(row('/repo/dir').className).toContain('ring-1')
+  expect(row('/repo/a.ts').className).not.toContain('ring-1')
+  await act(async () => { window.dispatchEvent(new Event('dragend')) })
+  expect(row('/repo/dir').className).not.toContain('ring-1')
+})
+
+it('does not move files dropped on the panel outside the tree (#748)', async () => {
+  const header = host.querySelector('.file-explorer')!.firstElementChild!
+  let result!: ReturnType<typeof drop>
+  await act(async () => { result = drop(header, ['/repo/dir/c.ts']) })
+  expect(result.accepted).toBe(true)
+  expect(result.dataTransfer.dropEffect).toBe('none')
+  expect(here.rename).not.toHaveBeenCalled()
   expect(parentDrop).not.toHaveBeenCalled()
 })
 
