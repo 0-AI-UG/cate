@@ -272,7 +272,6 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
               />
             </div>
           )}
-          {editorVisible && connectedDraft && !connectedDraft.syncError && <span className="shrink-0 text-muted" title="Edits autosave to the file shared with your agent.">Shared with agent</span>}
           {editorVisible && connectedDraft?.syncError &&<button className="shrink-0 text-error" title={connectedDraft.syncError} onClick={doSave}>Save failed · Retry</button>}
           {editorVisible && isMarkdown && !draft && (
             <button

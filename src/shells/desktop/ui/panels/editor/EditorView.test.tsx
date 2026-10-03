@@ -347,14 +347,8 @@ describe('EditorView', () => {
     expect(editor.revealLineInCenter).toHaveBeenCalledTimes(1)
   })
 
-  it('says when edits autosave to a file shared with an agent', async () => {
-    await show(snapshotOf({ connectedDraft: { syncError: null } }))
-    expect(host.textContent).toContain('Shared with agent')
-  })
-
   it('shows a retry for a failed autosave of a shared draft', async () => {
     await show(snapshotOf({ connectedDraft: { syncError: 'disk full' } }))
-    expect(host.textContent).not.toContain('Shared with agent')
     await act(async () => button('Save failed · Retry').click())
     expect(sent).toEqual([{ kind: 'save' }])
   })
