@@ -8,13 +8,13 @@ import { Icon, Tooltip } from '../../../kernel/interaction'
 import { isIconName } from '@kernel/interaction/contract'
 import { useDocument } from '../../document'
 import { panelDefinition } from '@client/host'
-import { AgentActivityTitle, AwaitingIndicator } from '../../../services/agents'
+import { AgentActivityTitle, AwaitingIndicator, RunningIndicator } from '../../../services/agents'
 import { usePanelInteractionStore } from '../../../workspace/relations'
 import { useWorktreeColor } from '../../../workspace/repository'
 import { isMiddleClick } from '../drag/dom'
 import { useDragStore } from '../drag/store'
 import { useTabSourceVisibility } from '../drag/selectors'
-import { useTabDecorations, type TabDecoration } from './decorations'
+import { useTabDecorations } from './decorations'
 
 function PanelInteractionDot({ panelId }: { panelId: string }) {
   const signal = usePanelInteractionStore((state) => {
@@ -89,15 +89,14 @@ export const TabPill = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTM
 
 /** The title, tinted with its worktree's color when the workspace has
  *  several worktrees. */
-function TabTitle({ record, worktree, decoration, children }: {
+function TabTitle({ record, worktree, children }: {
   record: PanelRecord | undefined
   worktree: WorktreeMeta | undefined
-  decoration: TabDecoration | undefined
   children: React.ReactNode
 }) {
   const color = useWorktreeColor(worktree?.color)
   return (
-    <AgentActivityTitle className="min-w-0 flex-1 truncate" running={!!decoration?.running} worktreeColor={record ? color : undefined}>
+    <AgentActivityTitle className="min-w-0 flex-1 truncate" worktreeColor={record ? color : undefined}>
       {children}
     </AgentActivityTitle>
   )
@@ -254,11 +253,12 @@ export function DockTabBar(props: DockTabBarProps) {
                 style={{ font: 'inherit' }}
               />
             ) : (
-              <TabTitle record={record} worktree={tintWorktrees && record?.worktreeId ? worktrees[record.worktreeId] : undefined} decoration={decoration}>
+              <TabTitle record={record} worktree={tintWorktrees && record?.worktreeId ? worktrees[record.worktreeId] : undefined}>
                 {title}{decoration?.dirty ? ' •' : ''}
               </TabTitle>
             )}
             <PanelInteractionDot panelId={panelId} />
+            {decoration?.running && <RunningIndicator />}
             {decoration?.awaiting && <AwaitingIndicator />}
             {onClosePanel && (
               <Tooltip label="Close panel" action={isActive ? 'closePanel' : undefined}>

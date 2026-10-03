@@ -1,38 +1,54 @@
-import type { CSSProperties, HTMLAttributes, ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
+import { worktreeTitleStyle } from '../../workspace/repository'
 
-const AWAIT_COLOR = '#c08a5a'
+const AWAIT_COLOR = 'color-mix(in srgb, var(--activity-orange) 70%, var(--text-primary))'
 
 interface AgentActivityTitleProps extends HTMLAttributes<HTMLSpanElement> {
   children: ReactNode
-  running: boolean
   worktreeColor?: string
 }
 
 // A worktree tints the title, not the icon (the icon may be an agent logo
-// <img>, which ignores `color`). While running the title shimmers: the
-// `cate-notif-pulse` class sweeps a white highlight over the worktree color;
-// without a worktree color the class's default muted to primary sweep applies.
-function titleStyle(color: string | undefined, running: boolean): CSSProperties | undefined {
-  if (!color) return undefined
-  if (!running) return { color }
-  return { '--shimmer-bright': '#ffffff', '--shimmer-dim': color } as CSSProperties
-}
-
+// <img>, which ignores `color`). Static on purpose: an infinite title shimmer
+// kept the window repainting at display refresh rate while any agent ran (#746).
+// Running state is shown by RunningIndicator next to the title instead.
 export function AgentActivityTitle({
   children,
-  running,
   worktreeColor,
   className = '',
   ...props
 }: AgentActivityTitleProps) {
   return (
-    <span
-      {...props}
-      className={`${running ? 'cate-notif-pulse' : ''} ${className}`}
-      style={titleStyle(worktreeColor, running)}
-    >
+    <span {...props} className={className} style={worktreeTitleStyle(worktreeColor)}>
       {children}
     </span>
+  )
+}
+
+/** Running agent: a static dashed ring. Waiting is the filled dot below; idle
+ *  shows neither. No animation, so it costs no frames. */
+export function RunningIndicator({ className = '' }: { className?: string }) {
+  return (
+    <svg
+      className={`cate-running-indicator shrink-0 ${className}`}
+      width={11}
+      height={11}
+      viewBox="0 0 24 24"
+      role="img"
+      aria-label="agent running"
+      style={{ color: 'var(--text-secondary)' }}
+    >
+      <circle
+        cx={12}
+        cy={12}
+        r={9}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.6}
+        strokeDasharray="4.2 3.2"
+        strokeLinecap="round"
+      />
+    </svg>
   )
 }
 

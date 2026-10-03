@@ -13,7 +13,7 @@ export interface TabDecoration {
   /** Replaces the type icon (a detected agent's logo). */
   logo?: string | null
   logoAlt?: string | null
-  /** The title shimmers (an agent is working). */
+  /** An agent is working: the running ring. */
   running?: boolean
   /** The awaiting-input dot. */
   awaiting?: boolean
@@ -45,7 +45,7 @@ export function useTabDecorations(workspaceId: string): Record<string, TabDecora
   return out
 }
 
-/** Agent status on tabs: logo, working shimmer, awaiting-input dot. */
+/** Agent status on tabs: logo, running ring, awaiting-input dot. */
 export const useAgentTabDecorations: TabDecorationHook = (workspaceId) => {
   const info = useAgentInfoByPanel(workspaceId)
   const out: Record<string, TabDecoration> = {}

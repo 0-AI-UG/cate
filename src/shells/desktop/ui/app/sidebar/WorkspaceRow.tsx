@@ -15,7 +15,7 @@ import type { PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
 import { useWorktreeColor } from '../../workspace/repository'
 import { WorkspaceSkillsTree } from '../../workspace/skills'
-import { AgentActivityTitle, AwaitingIndicator, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
+import { AgentActivityTitle, AwaitingIndicator, RunningIndicator, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
 import { clientApp } from '../app'
 import { closePanels, closeWorkspace, detachPanel, renamePanel, revealPanel, selectWorkspace } from '../navigation'
 import { panelIcon } from '../panels'
@@ -367,7 +367,6 @@ export function WorkspacePanelRow({
       ) : (
         <AgentActivityTitle
           className="min-w-0 flex-1 truncate"
-          running={running}
           worktreeColor={worktreeColor}
           onDoubleClick={(e) => { e.stopPropagation(); onBeginRename?.() }}
         >
@@ -376,7 +375,9 @@ export function WorkspacePanelRow({
       )}
       {awaiting ? (
         <AwaitingIndicator />
-      ) : !running && hasPorts ? (
+      ) : running ? (
+        <RunningIndicator />
+      ) : hasPorts ? (
         <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" aria-label="listening on a port" />
       ) : null}
     </button>

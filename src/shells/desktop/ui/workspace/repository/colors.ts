@@ -42,16 +42,7 @@ export function useWorktreeColor(key: string | undefined): string | undefined {
 
 // Title-text styling for a panel that belongs to a worktree. The title is
 // tinted rather than the icon: the icon may be an agent logo (an <img>, which
-// ignores `color`). While the agent runs the title shimmers: the caller adds
-// the `cate-notif-pulse` class and this returns the gradient stops, with a
-// white highlight sweeping over the worktree color (a same-hue sweep is too
-// subtle on saturated colors). Without a color it returns undefined, so the
-// class's default sweep applies.
-export function worktreeTitleStyle(color: string | undefined, isRunning: boolean): CSSProperties | undefined {
-  if (!color) return undefined
-  if (!isRunning) return { color }
-  return {
-    '--shimmer-bright': '#ffffff',
-    '--shimmer-dim': color,
-  } as CSSProperties
+// ignores `color`). Without a color it returns undefined (the default color).
+export function worktreeTitleStyle(color: string | undefined): CSSProperties | undefined {
+  return color ? { color } : undefined
 }

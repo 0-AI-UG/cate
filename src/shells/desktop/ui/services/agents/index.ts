@@ -17,7 +17,7 @@ export {
   useAgentPanelTitle,
   useAgentInfoByPanel,
 } from './useAgentPanels'
-export { AgentActivityTitle, AwaitingIndicator } from './AgentActivityTitle'
+export { AgentActivityTitle, AwaitingIndicator, RunningIndicator } from './AgentActivityTitle'
 export { AgentChangesPill } from './AgentChangesPill'
 export { useAgentContextTransport } from './contextTransport'
 export { setAgentChangesOpener, type AgentChangesOpener, type AgentChangesRequest } from './changesOpener'

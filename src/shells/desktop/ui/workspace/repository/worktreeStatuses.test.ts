@@ -25,7 +25,6 @@ it('maps palette keys through the theme', () => {
 })
 
 it('styles worktree titles', () => {
-  expect(worktreeTitleStyle(undefined, true)).toBeUndefined()
-  expect(worktreeTitleStyle('#f00', false)).toEqual({ color: '#f00' })
-  expect(worktreeTitleStyle('#f00', true)).toEqual({ '--shimmer-bright': '#ffffff', '--shimmer-dim': '#f00' })
+  expect(worktreeTitleStyle(undefined)).toBeUndefined()
+  expect(worktreeTitleStyle('#f00')).toEqual({ color: '#f00' })
 })
