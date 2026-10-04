@@ -63,8 +63,6 @@ export type BrowserSnapshot = {
    *  follows only its own and null ones. */
   activeSource: string | null
   viewport: BrowserViewport
-  /** Page zoom factor. */
-  zoom: number
   /** Navigation state of the active tab, as the last reporting client saw it. */
   canGoBack: boolean
   canGoForward: boolean
@@ -95,14 +93,21 @@ export type BrowserOp =
   | { kind: 'reportLoad'; tabId: string; loading?: boolean; loadError?: string | null; crashed?: boolean; canGoBack?: boolean; canGoForward?: boolean }
   /** Back, forward or reload on the driving client's page (palette commands). */
   | { kind: 'history'; action: BrowserHistoryAction; tabId?: string }
-  | { kind: 'setZoom'; zoom: number }
-  | { kind: 'stepZoom'; direction: 1 | -1 }
   | { kind: 'setViewport'; viewport: BrowserViewport }
   /** User input takes the page back from the agent. */
   | { kind: 'releaseAgentCursor' }
 
-/** Page zoom steps, as in Chrome. */
+/** Page zoom steps, as in Chrome. Page zoom is client state: each client
+ *  zooms the pages it shows. */
 export const BROWSER_ZOOM_FACTORS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5] as const
+
+/** The next zoom step from `current`; `current` itself at either end. */
+export function stepBrowserZoom(current: number, direction: 1 | -1): number {
+  const next = direction > 0
+    ? BROWSER_ZOOM_FACTORS.find((factor) => factor > current)
+    : [...BROWSER_ZOOM_FACTORS].reverse().find((factor) => factor < current)
+  return next ?? current
+}
 
 export const COMPACT_VIEWPORT: BrowserViewport = { preset: 'compact' }
 

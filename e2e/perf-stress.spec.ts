@@ -541,10 +541,20 @@ test('background monitor cadence backs off on simulated focus events', async () 
   await page.waitForTimeout(800)
   const mounted = await mountedNodeCount()
 
+  // Quiet terminals scan only on the 5 s safety cadence either way, so keep
+  // one terminal doing I/O: a space and a backspace, a few times a second.
+  const terminalId = await page.evaluate(() => window.__cateE2E!.panels().find((p) => p.type === 'terminal')!.id)
+  const typing = (ms: number) => async () => {
+    for (const end = Date.now() + ms; Date.now() < end;) {
+      await page.evaluate((id) => window.__cateE2E!.writeTerminal(id, ' \x7f'), terminalId)
+      await page.waitForTimeout(250)
+    }
+  }
+
   // Exercise the focused cadence through the production application event.
   await setMonitorFocus(true)
   await page.waitForTimeout(2200)
-  const focused = await measurePeak(4000)
+  const focused = await measurePeak(4000, typing(4000))
 
   // The windowless harness cannot change native OS focus; use its application
   // event boundary and measure actual daemon scan work at the resulting cadence.
@@ -552,7 +562,7 @@ test('background monitor cadence backs off on simulated focus events', async () 
   // Let the focused-cadence timer that was already armed drain, then sample the
   // backed-off cadence (activity 1s→5s, lsof 5s→15s).
   await page.waitForTimeout(2500)
-  const unfocused = await measurePeak(6000)
+  const unfocused = await measurePeak(6000, typing(6000))
 
   // Restore the focused monitor cadence for later scenarios.
   await setMonitorFocus(true)

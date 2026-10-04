@@ -125,7 +125,7 @@ test('a live worker keeps running when its panel moves to a detached window', as
   await page.evaluate((id) => window.__cateE2E!.propose({
     kind: 'placePanel',
     id,
-    at: { to: 'window', windowId: crypto.randomUUID(), stackId: crypto.randomUUID(), bounds: { origin: { x: 80, y: 80 }, size: { width: 700, height: 500 } } },
+    at: { to: 'window', windowId: crypto.randomUUID(), stackId: crypto.randomUUID() },
   }), worker.panelId)
   await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBeGreaterThan(windows)
   await page.evaluate((id) => window.__cateE2E!.writeTerminal(id, 'still-here\r'), worker.panelId)

@@ -23,7 +23,7 @@ describe('workspacePanelTree', () => {
     { kind: 'addPanel', record: rec('t1', 'terminal'), at: { to: 'canvas', canvasId: 'cv1', nodeId: 'n1', stackId: 'ns1', rect } },
     { kind: 'addPanel', record: rec('e1', 'editor'), at: { to: 'canvas', canvasId: 'cv1', nodeId: 'n2', stackId: 'ns2', rect } },
     { kind: 'addPanel', record: rec('b1', 'browser'), at: { to: 'stack', dock: main, stackId: 's1' } },
-    { kind: 'addPanel', record: rec('c2', 'canvas', { canvasId: 'cv2' }), at: { to: 'window', windowId: 'w2', stackId: 's2', bounds: rect } },
+    { kind: 'addPanel', record: rec('c2', 'canvas', { canvasId: 'cv2' }), at: { to: 'window', windowId: 'w2', stackId: 's2' } },
     { kind: 'addPanel', record: rec('t2', 'terminal'), at: { to: 'canvas', canvasId: 'cv2', nodeId: 'n3', stackId: 'ns3', rect } },
   ])
 

@@ -1,5 +1,7 @@
 import {
   createMissions,
+  evaluateAgentCliHooks,
+  inspectAgentCliHooks,
   resolveDriverAgent,
   type AgentsRuntime,
   type Missions,
@@ -31,6 +33,12 @@ export function createTerminalMissions(
         hookConfig: agents.settings.agentHookInjection(),
       })
       return agent.id
+    },
+    async readyAgents(cwd) {
+      agents.trust.requireTrusted()
+      const states = await inspectAgentCliHooks((dir) => agents.hooks.inspectWorkspace(dir), cwd)
+      const config = agents.settings.agentHookInjection()
+      return states.filter((state) => evaluateAgentCliHooks(state, config).ready).map((state) => state.agent.id)
     },
   })
   const offExit = runner.onExit((panelId, exitCode) => missions.noteExit(panelId, exitCode))

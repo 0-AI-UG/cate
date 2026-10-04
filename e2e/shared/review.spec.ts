@@ -10,8 +10,9 @@ import { call, describeShared, sessionOp, seedShared, snapshot, type SharedClien
 
 type Note = { id: string; path: string; body: string; status?: string; severity?: string }
 type ReviewSnapshot = {
-  review: { spec: { kind: string }; notes?: Note[]; fileFilter?: string; focusedFile?: string }
+  review: { spec: { kind: string }; notes?: Note[] }
   comparison: { files: { path: string }[] } | null
+  reveal: { seq: number; path: string } | null
   busy: boolean
   error: string | null
 }
@@ -66,14 +67,12 @@ describeShared('review', (pair) => {
     expect(inspected.notes).toHaveLength(2)
   })
 
-  test('filter and focus are session state both clients share', async () => {
+  test('an open request reveals its file to both clients; the reader\'s focus stays theirs', async () => {
     const { a, b } = pair()
-    await sessionOp(a, panelId, { kind: 'update', patch: { fileFilter: 'al', focusedFile: 'alpha.ts' } })
-    await expect.poll(async () => {
-      const s = await rv(b, panelId)
-      return { filter: s?.review.fileFilter, focused: s?.review.focusedFile }
-    }).toEqual({ filter: 'al', focused: 'alpha.ts' })
-    await sessionOp(b, panelId, { kind: 'update', patch: { fileFilter: '', focusedFile: null } })
+    const spec = (await rv(a, panelId))!.review.spec
+    await sessionOp(a, panelId, { kind: 'retarget', request: { spec, focusedFile: 'alpha.ts' } })
+    await expect.poll(async () => (await rv(b, panelId))?.reveal?.path).toBe('alpha.ts')
+    expect(Object.keys((await rv(b, panelId))!.review)).not.toContain('focusedFile')
   })
 
   test('diffs load for either client', async () => {

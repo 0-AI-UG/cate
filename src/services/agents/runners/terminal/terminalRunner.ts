@@ -75,6 +75,11 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
   const exitListeners = new Set<(panelId: string, exitCode: number) => void>()
   /** Contexts last published per terminal, to skip identical updates. */
   const sentContext = new Map<string, string | null>()
+  /** The agent a hook came from in each terminal since its agent started. */
+  const hookAgent = new Map<string, AgentId>()
+  /** Whether each terminal's agent has Cate's hook files where it runs,
+   *  inspected once per agent run (absent while unknown). */
+  const hookFiles = new Map<string, { agentId: AgentId; installed: boolean | null }>()
 
   const panelOf = (terminalId: string): string | null => terminals.get(terminalId)?.panelId ?? null
   const changed = (terminalId: string): void => {
@@ -126,6 +131,8 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
     status.forget(terminalId)
     stamps.drop(terminalId)
     sentContext.delete(terminalId)
+    hookAgent.delete(terminalId)
+    hookFiles.delete(terminalId)
     terminals.delete(terminalId)
     if (info?.panelId && panelTerminal.get(info.panelId) === terminalId) {
       // The panel keeps its stamp for restore; only the live link goes.
@@ -178,6 +185,8 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
   offs.push(terminal.onActivity((scan) => {
     const hook = presence.presenceFor(scan.terminalId, scan.tree)
     if (hook.endedAgentPid !== undefined) {
+      hookAgent.delete(scan.terminalId)
+      hookFiles.delete(scan.terminalId)
       hooks.noteAgentExited(scan.terminalId)
       stamps.clear(scan.terminalId, hook.endedAgentPid, hook.endedAgentStartedAt)
     }
@@ -196,6 +205,10 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
     if (event.kind === 'session-title') {
       if (event.title && event.sessionId) document.setTitleFromAgent(panelId, event.title)
       return
+    }
+    if (hookAgent.get(event.terminalId) !== event.agentId) {
+      hookAgent.set(event.terminalId, event.agentId)
+      changed(event.terminalId)
     }
     if (event.kind === 'turn-start' && AGENT_DEFS[event.agentId].promptContextHook != null) {
       promptContext.consume(panelId, event.agentId)
@@ -241,6 +254,24 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
       : null
   }
 
+  /** An agent no hook came from, whose hook files are not installed in the
+   *  terminal's checkout. Unknown until inspected (not missing). */
+  const hooksMissing = (terminalId: string, agentId: AgentId): boolean => {
+    if (hookAgent.get(terminalId) === agentId) return false
+    const files = hookFiles.get(terminalId)
+    if (files?.agentId === agentId) return files.installed === false
+    const cwd = terminals.get(terminalId)?.cwd
+    if (!cwd) return false
+    const entry = { agentId, installed: null as boolean | null }
+    hookFiles.set(terminalId, entry)
+    void hooks.hooksInstalled(cwd, agentId).then((installed) => {
+      if (hookFiles.get(terminalId) !== entry) return
+      entry.installed = installed
+      if (!installed) changed(terminalId)
+    }, () => {})
+    return false
+  }
+
   const state = (panelId: string): PanelAgentState | null => {
     const terminalId = liveTerminal(panelId)
     if (!terminalId) return null
@@ -257,6 +288,7 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
       present,
       canReceivePrompt: status.canReceivePrompt(terminalId),
       session: sessionOf(panelId, terminalId),
+      ...(present && agentId && hooksMissing(terminalId, agentId) ? { hooksMissing: true as const } : {}),
     }
   }
 
@@ -286,7 +318,9 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
       const terminalId = liveTerminal(panelId)
       if (!terminalId || !status.present(terminalId)) return { ok: false, error: 'agent-not-running' }
       if (!status.canReceivePrompt(terminalId)) return { ok: false, error: 'agent-busy' }
-      await agents.promptContext.prepareForSend(panelId, status.agentId(terminalId)).catch(() => null)
+      // The agent's submit hook takes the context and its turn-start
+      // consumes it; consuming here would clear it before the hook reads it.
+      await agents.promptContext.flush(panelId).catch(() => {})
       return await submit(panelId, prompt) ? { ok: true } : { ok: false, error: 'agent-panel-unavailable' }
     },
     async conversation(panelId): Promise<{ session: AgentSession; messages: AgentConversationMessage[] } | null> {

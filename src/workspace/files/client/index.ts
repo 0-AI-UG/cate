@@ -3,3 +3,4 @@ export { createWatchManager, watchManager, watchFsRoot, type WatchManager, type 
 export { attachBuffer, type AttachedBuffer } from './bufferClient'
 export { recordRecentFile, getRecentFiles } from './recentFiles'
 export { createFileRefs, fileRefs, type FileRefs, type RefFs, type RefTarget } from './fileRefs'
+export { acquireBufferText, type SharedBufferText } from './bufferText'

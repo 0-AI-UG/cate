@@ -43,7 +43,7 @@ function gitSnapshot(patch: Partial<ReviewSnapshot> = {}): ReviewSnapshot {
     comparison: { spec: { kind: 'uncommitted' }, resolvedBase: null, resolvedTarget: null, currentBranch: 'main', files: [file, untracked], additions: 1, deletions: 0 },
     diffEpoch: 1,
     recorded: { loading: false, error: null, files: [] },
-    loading: false, busy: false, agentBusy: false, error: null, notRepository: false, branches: [], commits: [],
+    loading: false, busy: false, agentBusy: false, error: null, notRepository: false, branches: [], commits: [], reveal: null,
     ...patch,
   }
 }
@@ -81,12 +81,12 @@ it('fetches diffs on demand and refetches them when the epoch moves', async () =
   installMockClientUi()
   render(gitSnapshot({ comparison: { ...gitSnapshot().comparison!, files: [file] } }))
   await flush()
-  expect(send).toHaveBeenCalledWith({ kind: 'diff', path: 'src/a.ts' })
+  expect(send).toHaveBeenCalledWith({ kind: 'diff', path: 'src/a.ts', options: {} })
   expect(host.textContent).toContain('return safe()')
   send.mockClear()
   render(gitSnapshot({ comparison: { ...gitSnapshot().comparison!, files: [file] }, diffEpoch: 2 }))
   await flush()
-  expect(send).toHaveBeenCalledWith({ kind: 'diff', path: 'src/a.ts' })
+  expect(send).toHaveBeenCalledWith({ kind: 'diff', path: 'src/a.ts', options: {} })
 })
 
 it('says the folder is not a Git repository instead of showing an error', async () => {
@@ -106,6 +106,40 @@ it('collapses a file on this client only, without an op', async () => {
   expect(host.querySelector('[aria-label="Expand file"]')).not.toBeNull()
   expect(host.textContent).not.toContain('return safe()')
   expect(send).not.toHaveBeenCalled()
+})
+
+it('filters files on this client only, without an op', async () => {
+  installMockClientUi()
+  render(gitSnapshot())
+  await flush()
+  send.mockClear()
+  const input = host.querySelector<HTMLInputElement>('input[aria-label="Filter changed files"]')!
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'new')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(host.querySelector(`[data-review-file="${encodeURIComponent('src/a.ts')}"]`)).toBeNull()
+  expect(host.querySelector(`[data-review-file="${encodeURIComponent('new.ts')}"]`)).not.toBeNull()
+  expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'update' }))
+})
+
+it('reveals a requested file once: expands it and scrolls to it', async () => {
+  installMockClientUi()
+  const scroll = vi.fn()
+  Element.prototype.scrollIntoView = scroll
+  const snapshot = gitSnapshot({ comparison: { ...gitSnapshot().comparison!, files: [file] } })
+  render(snapshot)
+  await flush()
+  act(() => (host.querySelector('[aria-label="Collapse file"]') as HTMLButtonElement).click())
+  render({ ...snapshot, reveal: { seq: 1, path: 'src/a.ts' } })
+  await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => resolve(null))) })
+  expect(host.querySelector('[aria-label="Collapse file"]')).not.toBeNull()
+  expect(scroll).toHaveBeenCalled()
+  // The same reveal again changes nothing.
+  act(() => (host.querySelector('[aria-label="Collapse file"]') as HTMLButtonElement).click())
+  render({ ...snapshot, reveal: { seq: 1, path: 'src/a.ts' }, diffEpoch: 1 })
+  await flush()
+  expect(host.querySelector('[aria-label="Expand file"]')).not.toBeNull()
 })
 
 it('confirms before discarding and passes whether the file is untracked', async () => {

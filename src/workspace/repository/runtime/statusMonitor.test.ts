@@ -61,7 +61,7 @@ it('does not resurrect a stopped monitor when its in-flight poll completes', asy
 
 it('reads a fresh snapshot on file changes and kicks, and replays the last one to late subscribers', async () => {
   vi.useFakeTimers()
-  let onChange!: () => void
+  let onChange!: (changedPath: string) => void
   const unwatch = vi.fn()
   const probe = vi.fn().mockResolvedValue({ branch: 'main', dirty: false, branches: ['main'] })
   const snapshot = vi.fn().mockResolvedValue(status('main'))
@@ -70,8 +70,8 @@ it('reads a fresh snapshot on file changes and kicks, and replays the last one t
   await vi.advanceTimersByTimeAsync(0)
 
   snapshot.mockResolvedValue(status('main', true))
-  onChange()
-  onChange()
+  onChange('/repo/a.ts')
+  onChange('/repo/a.ts')
   await vi.advanceTimersByTimeAsync(200)
   expect(snapshot).toHaveBeenCalledTimes(2)
   expect(monitors.current('/repo')?.dirty).toBe(true)
@@ -86,4 +86,30 @@ it('reads a fresh snapshot on file changes and kicks, and replays the last one t
   offLate()
   off()
   expect(unwatch).toHaveBeenCalledOnce()
+})
+
+it('reads no snapshot for file changes git ignores', async () => {
+  vi.useFakeTimers()
+  const probe = vi.fn().mockResolvedValue({ branch: 'main', dirty: false, branches: ['main'] })
+  const snapshot = vi.fn().mockResolvedValue(status('main'))
+  let emit!: (changedPath: string) => void
+  const allIgnored = vi.fn(async (_cwd: string, paths: string[]) => paths.every((p) => p.startsWith('/repo/dist/')))
+  const monitors = createStatusMonitors({ probe, snapshot, allIgnored, watch: (_dir, onChange) => { emit = onChange; return () => {} } })
+  const off = monitors.subscribe('/repo', vi.fn())
+  await vi.advanceTimersByTimeAsync(0)
+  expect(snapshot).toHaveBeenCalledTimes(1)
+
+  emit('/repo/dist/a.js')
+  emit('/repo/dist/b.js')
+  await vi.advanceTimersByTimeAsync(200)
+  expect(allIgnored).toHaveBeenLastCalledWith('/repo', ['/repo/dist/a.js', '/repo/dist/b.js'])
+  expect(snapshot).toHaveBeenCalledTimes(1)
+
+  emit('/repo/dist/c.js')
+  emit('/repo/src/main.ts')
+  await vi.advanceTimersByTimeAsync(200)
+  expect(snapshot).toHaveBeenCalledTimes(2)
+
+  off()
+  monitors.dispose()
 })

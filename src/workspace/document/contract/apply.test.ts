@@ -20,7 +20,7 @@ const tab = (stackId: string, after?: string | null, dock: DockRef = MAIN): Plac
 const split = (beside: string, side: 'left' | 'right' | 'top' | 'bottom', stackId: string, splitId = `split-${stackId}`, dock: DockRef = MAIN): PlaceTarget =>
   ({ to: 'split', dock, beside, side, stackId, splitId })
 const node = (canvasId: string, nodeId: string, stackId = `stack-${nodeId}`, r = R): PlaceTarget => ({ to: 'canvas', canvasId, nodeId, stackId, rect: r })
-const win = (windowId: string, stackId = `stack-${windowId}`, bounds = R): PlaceTarget => ({ to: 'window', windowId, stackId, bounds })
+const win = (windowId: string, stackId = `stack-${windowId}`): PlaceTarget => ({ to: 'window', windowId, stackId })
 
 function ok(doc: Doc, ...changes: DocChange[]): Doc {
   for (const change of changes) {
@@ -113,11 +113,11 @@ describe('addPanel', () => {
     fails(doc, add('cv2', split('stack-n1', 'left', 'sx', 'px', { canvasId: 'canvas-cv', nodeId: 'n1' }), 'canvas'), 'rejected')
   })
 
-  it('adds canvas nodes with their rect and detached windows with their bounds', () => {
-    const doc = ok(withCanvas(), add('w', win('w1', 'ws', rect(10, 10, 800, 600))))
+  it('adds canvas nodes with their rect and detached windows without a position', () => {
+    const doc = ok(withCanvas(), add('w', win('w1', 'ws')))
     expect(doc.canvases['canvas-cv'].nodes.n1).toEqual({ id: 'n1', rect: R, dock: stack('stack-n1', 'x') })
     expect(Object.keys(doc.canvases['canvas-cv'].nodes)).toEqual(['n1', 'n2'])
-    expect(doc.windows.w1).toEqual({ id: 'w1', kind: 'detached', dock: stack('ws', 'w'), bounds: rect(10, 10, 800, 600) })
+    expect(doc.windows.w1).toEqual({ id: 'w1', kind: 'detached', dock: stack('ws', 'w') })
   })
 })
 
@@ -312,12 +312,6 @@ describe('containers', () => {
     fails(doc, { kind: 'setNodeRects', canvasId: 'canvas-cv', rects: [{ nodeId: 'n1', rect: rect(0, 0, -1, 1) }] }, 'rejected')
   })
 
-  it('setWindowBounds sets detached bounds; the main window has none', () => {
-    const doc = ok(threeTabs(), add('w', win('w1')), { kind: 'setWindowBounds', windowId: 'w1', bounds: rect(1, 1, 500, 500) })
-    expect(doc.windows.w1.bounds).toEqual(rect(1, 1, 500, 500))
-    fails(doc, { kind: 'setWindowBounds', windowId: 'main', bounds: R }, 'rejected')
-    fails(doc, { kind: 'setWindowBounds', windowId: 'nope', bounds: R }, 'gone')
-  })
 
   it('closeWindow removes the window and its panels, canvases included', () => {
     let doc = ok(withCanvas(), add('w', win('w1')), place('cv', tab('stack-w1', undefined, { windowId: 'w1' })))
@@ -367,65 +361,6 @@ describe('worktrees', () => {
     expect(doc.panels.a.worktreeId).toBe('w1')
     fails(doc, { kind: 'removeWorktree', id: 'w1' }, 'gone')
     fails(doc, { kind: 'setWorktree', worktree: { ...wt, status: 'gone' as never } }, 'rejected')
-  })
-})
-
-describe('maximize', () => {
-  /** main: split [s1: cv (canvas-cv), a | s2: b]; canvas nodes n1 [x, y] and n2 [z] */
-  function fixture(): Doc {
-    return ok(
-      createDocument(),
-      add('cv', tab('s1'), 'canvas'),
-      add('a', tab('s1')),
-      add('b', split('s1', 'right', 's2', 'sp')),
-      add('x', node('canvas-cv', 'n1')),
-      add('y', tab('stack-n1', undefined, { canvasId: 'canvas-cv', nodeId: 'n1' })),
-      add('z', node('canvas-cv', 'n2')),
-    )
-  }
-  const maximizeStack: DocChange = { kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 's1' }
-  const restore: DocChange = { kind: 'restoreLayout', windowId: MAIN_WINDOW }
-
-  it('maximizeStack gathers every tab into the stack; restoreLayout puts the split back', () => {
-    const doc = fixture()
-    const maximized = ok(doc, maximizeStack)
-    expect(mainDock(maximized)).toEqual(stack('s1', 'cv', 'a', 'b'))
-    expect(maximized.windows[MAIN_WINDOW].maximized).toEqual({ stackId: 's1', layout: mainDock(doc) })
-    expect(ok(maximized, restore)).toEqual(doc)
-  })
-
-  it('maximizePanel moves a pane after its canvas tab; restore puts the node back, a singleton one too', () => {
-    const doc = fixture()
-    const fromSplit = ok(doc, { kind: 'maximizePanel', id: 'x' })
-    expect(placementOf(fromSplit, 'x')).toEqual({ dock: MAIN, stackId: 's1', index: 1 })
-    expect(fromSplit.canvases['canvas-cv'].nodes.n1.dock).toEqual(stack('stack-n1', 'y'))
-    expect(ok(fromSplit, restore)).toEqual(doc)
-
-    const fromSingleton = ok(doc, { kind: 'maximizePanel', id: 'z' })
-    expect(fromSingleton.canvases['canvas-cv'].nodes.n2).toBeUndefined()
-    expect(ok(fromSingleton, restore).canvases['canvas-cv'].nodes.n2).toEqual(doc.canvases['canvas-cv'].nodes.n2)
-  })
-
-  it('one maximize per window, and only what can be maximized', () => {
-    const doc = fixture()
-    fails(ok(doc, maximizeStack), { kind: 'maximizePanel', id: 'x' }, 'rejected')
-    fails(threeTabs(), { kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 's1' }, 'rejected')
-    fails(doc, { kind: 'maximizePanel', id: 'a' }, 'rejected')
-    fails(doc, { kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 'nope' }, 'gone')
-    fails(doc, restore, 'gone')
-  })
-
-  it('a change to the window or the source node commits the layout; ratios do not', () => {
-    const merged = ok(fixture(), maximizeStack)
-    expect(ok(merged, place('a', tab('s1', null))).windows[MAIN_WINDOW].maximized).toBeUndefined()
-    expect(ok(merged, { kind: 'removePanels', ids: ['b'] }).windows[MAIN_WINDOW].maximized).toBeUndefined()
-
-    const promoted = ok(fixture(), { kind: 'maximizePanel', id: 'x' })
-    expect(ok(promoted, { kind: 'setSplitRatio', splitId: 'sp', ratios: [1, 3] }).windows[MAIN_WINDOW].maximized).toBeDefined()
-    expect(ok(promoted, { kind: 'setNodeRects', canvasId: 'canvas-cv', rects: [{ nodeId: 'n1', rect: rect(9, 9, 400, 300) }] })
-      .windows[MAIN_WINDOW].maximized).toBeDefined()
-    expect(ok(promoted, add('w', tab('stack-n1', undefined, { canvasId: 'canvas-cv', nodeId: 'n1' }))).windows[MAIN_WINDOW].maximized).toBeUndefined()
-    expect(ok(promoted, place('z', tab('s2'))).windows[MAIN_WINDOW].maximized).toBeUndefined()
   })
 })
 

@@ -40,7 +40,7 @@ async function drawn() {
     const outsideNodes = (el: Element) => !el.closest('[data-node-id]')
     const stacks = win ? [...win.querySelectorAll('[data-dock-stack-id]')].filter(outsideNodes) : []
     const tabs = stacks.flatMap((stack) => [...stack.querySelectorAll('[data-tab-panel-id]')].filter(outsideNodes).map((t) => t.getAttribute('data-tab-panel-id')!))
-    return { mainLeaves: stacks.length, mainTabs: [...new Set(tabs)], canRestore: !!document.querySelector('[aria-label="Restore previous layout"]') }
+    return { mainLeaves: stacks.length, mainTabs: [...new Set(tabs)], canRestore: !!document.querySelector('[aria-label="Restore"]') }
   })
 }
 
@@ -88,24 +88,7 @@ async function splitCanvasNode(): Promise<{
   return { nodeId: target, panelIds }
 }
 
-/** The node pane drawn as a tab in the main window after a promote. */
-async function promotedPane(nodePanelIds: string[]): Promise<string> {
-  let promoted = ''
-  await expect.poll(async () => {
-    promoted = (await drawn()).mainTabs.find((id) => nodePanelIds.includes(id)) ?? ''
-    return promoted
-  }).not.toBe('')
-  return promoted
-}
-
-async function promoteFirstPane(nodeId: string): Promise<void> {
-  const node = page.locator(`[data-node-id="${nodeId}"]`)
-  const overlay = node.locator('[data-unfocused-overlay]')
-  if (await overlay.count()) await overlay.click({ position: { x: 5, y: 5 } })
-  await node.getByRole('button', { name: 'Move panel into dock' }).first().click()
-}
-
-test('main-dock split can be maximized, restored, and permanently invalidated by a new split', async () => {
+test('a main-dock stack can be maximized and restored, for this client only', async () => {
   // Empty the main window: remove the canvas panel.
   await page.evaluate((id) => window.__cateE2E!.propose({ kind: 'removePanels', ids: [id] } as never), canvasId)
   const first = await page.evaluate(() => window.__cateE2E!.createPanel('surface'))
@@ -113,19 +96,13 @@ test('main-dock split can be maximized, restored, and permanently invalidated by
   await expect.poll(async () => (await drawn()).mainLeaves).toBe(2)
   expect(await mainWindowStacks(page)).toHaveLength(2)
 
-  // Maximize is a document op: the window's tree becomes one stack.
-  await page.getByRole('button', { name: 'Merge splits into tabs' }).first().click()
+  // Maximize is client state: one stack drawn, the document's tree unchanged.
+  await page.getByRole('button', { name: 'Maximize', exact: true }).first().click()
   await expect.poll(async () => { const d = await drawn(); return { leaves: d.mainLeaves, canRestore: d.canRestore } }).toEqual({ leaves: 1, canRestore: true })
-  expect(await mainWindowStacks(page)).toHaveLength(1)
+  expect(await mainWindowStacks(page)).toHaveLength(2)
 
-  await page.getByRole('button', { name: 'Restore previous layout' }).click()
+  await page.getByRole('button', { name: 'Restore', exact: true }).click()
   await expect.poll(async () => { const d = await drawn(); return { leaves: d.mainLeaves, canRestore: d.canRestore } }).toEqual({ leaves: 2, canRestore: false })
-
-  // A split made while merged keeps the merged stack and clears the restore point.
-  await page.getByRole('button', { name: 'Merge splits into tabs' }).first().click()
-  await page.getByRole('button', { name: 'Split Right', exact: true }).click()
-  await expect.poll(async () => { const d = await drawn(); return { leaves: d.mainLeaves, canRestore: d.canRestore } }).toEqual({ leaves: 2, canRestore: false })
-  await expect(page.getByRole('button', { name: 'Restore previous layout' })).toHaveCount(0)
 })
 
 test('a panel can move from the dock into the canvas and back into the dock', async () => {
@@ -150,52 +127,21 @@ test('a panel can move from the dock into the canvas and back into the dock', as
   await expect.poll(async () => (await whereIs(page, panelId!))).toMatchObject({ kind: 'window', windowId: 'main' })
 })
 
-test('a split canvas node promotes one pane and restores the exact mini-dock', async () => {
+test('a canvas node can be maximized over its canvas and restored, for this client only', async () => {
   const fixture = await splitCanvasNode()
-  await promoteFirstPane(fixture.nodeId)
-
-  const promotedId = await promotedPane(fixture.panelIds)
-  // The promoted tab is active; show the canvas again to see the node.
-  await page.locator(`[data-tab-panel-id="${canvasId}"]`).click()
-  await expect.poll(async () => (await drawnNode(fixture.nodeId))?.leafCount).toBe(1)
-  // Maximize is a document op: the pane left the node.
-  expect(await nodePanels(page, fixture.nodeId)).toEqual(fixture.panelIds.filter((id) => id !== promotedId))
-  expect(await whereIs(page, promotedId)).toMatchObject({ kind: 'window', windowId: 'main' })
-
-  // Restore sits on the stack the pane went to.
-  await page.getByRole('button', { name: 'Restore previous layout' }).click()
-  await page.locator(`[data-tab-panel-id="${canvasId}"]`).click()
-  await expect.poll(async () => {
-    const node = await drawnNode(fixture.nodeId)
-    return node && { leafCount: node.leafCount, panelIds: [...node.panelIds].sort() }
-  }).toEqual({ leafCount: 2, panelIds: [...fixture.panelIds].sort() })
-  await expect.poll(async () => (await drawn()).canRestore).toBe(false)
-})
-
-test('editing the source canvas after promotion invalidates restore', async () => {
-  const fixture = await splitCanvasNode()
-  await promoteFirstPane(fixture.nodeId)
-  await promotedPane(fixture.panelIds)
-  await expect.poll(async () => (await drawn()).canRestore).toBe(true)
-
-  await page.locator(`[data-tab-panel-id="${canvasId}"]`).click()
   const node = page.locator(`[data-node-id="${fixture.nodeId}"]`)
-  await node.getByRole('button', { name: 'New Tab' }).click()
-  await page.getByRole('menu', { name: 'New Tab' }).getByRole('menuitem', { name: 'Files' }).click()
+  const overlay = node.locator('[data-unfocused-overlay]')
+  if (await overlay.count()) await overlay.click({ position: { x: 5, y: 5 } })
+  await node.getByRole('button', { name: 'Maximize', exact: true }).first().click()
 
-  await expect(page.getByRole('button', { name: 'Restore previous layout' })).toHaveCount(0)
-})
+  const maximized = page.locator(`[data-maximized-node="${fixture.nodeId}"]`)
+  await expect(maximized).toBeVisible()
+  await expect(maximized.locator('[data-dock-stack-id]')).toHaveCount(2)
+  await expect(page.locator(`[data-node-id="${fixture.nodeId}"]`)).toHaveCount(0)
+  // The document still has the node as it was.
+  expect([...await nodePanels(page, fixture.nodeId)].sort()).toEqual([...fixture.panelIds].sort())
 
-test('dragging a promoted pane back into the canvas invalidates restore', async () => {
-  const fixture = await splitCanvasNode()
-  await promoteFirstPane(fixture.nodeId)
-  const promotedId = await promotedPane(fixture.panelIds)
-
-  await page.locator(`[data-tab-panel-id="${canvasId}"]`).click()
-  const canvas = await page.locator(`[data-canvas-panel-id="${canvasId}"]`).boundingBox()
-  if (!canvas) throw new Error('Canvas is not visible')
-  await dragTabTo(promotedId, { x: canvas.x + canvas.width * 0.78, y: canvas.y + canvas.height * 0.72 })
-
-  await expect.poll(async () => (await whereIs(page, promotedId))?.kind).toBe('canvas')
-  await expect(page.getByRole('button', { name: 'Restore previous layout' })).toHaveCount(0)
+  await maximized.getByRole('button', { name: 'Restore', exact: true }).first().click()
+  await expect(maximized).toHaveCount(0)
+  await expect.poll(async () => (await drawnNode(fixture.nodeId))?.leafCount).toBe(2)
 })

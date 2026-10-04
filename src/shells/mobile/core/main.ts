@@ -9,6 +9,12 @@ import { bootMobileClient } from './boot'
 import { nativeBridge } from './bridge'
 import { snapshotOf, watchState } from './state'
 import { createMobileTerminals } from './terminals'
+import { createMobileViews } from './views'
+import { createMobileBrowsers } from './browser'
+import { createMobileChats } from './chat'
+import { createMobileBuffers } from './buffers'
+import { createMobileStreams } from './streams'
+import { createMobileAgents } from './agents'
 
 declare global {
   interface Window {
@@ -19,7 +25,17 @@ declare global {
 async function start(): Promise<void> {
   const bridge = nativeBridge()
   const client = await bootMobileClient(bridge)
-  const api = createCoreApi(client, createMobileTerminals(client, bridge))
+  const views = createMobileViews(client, bridge)
+  const agents = createMobileAgents(client, bridge)
+  const api = createCoreApi(client, {
+    terminals: createMobileTerminals(client, bridge),
+    views,
+    browsers: createMobileBrowsers(views),
+    chats: createMobileChats(views, bridge),
+    buffers: createMobileBuffers(bridge),
+    streams: createMobileStreams(client, bridge),
+    agents,
+  })
   window.cateCore = {
     async call(method, paramsJson) {
       const handler = api[method as MobileCoreMethod] as ((params: unknown) => Promise<unknown>) | undefined
@@ -27,8 +43,8 @@ async function start(): Promise<void> {
       return JSON.stringify(await handler(JSON.parse(paramsJson)))
     },
   }
-  const push = () => { void bridge('core.state', { json: JSON.stringify(snapshotOf(client)) }) }
-  watchState(client, push)
+  const push = () => { void bridge('core.state', { json: JSON.stringify(snapshotOf(client, agents)) }) }
+  watchState(client, agents, push)
   nameJoinedWorkspaces(client.workspaces, client.connections)
   push()
   await bridge('core.ready', {})

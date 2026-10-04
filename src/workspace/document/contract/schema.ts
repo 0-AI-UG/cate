@@ -47,21 +47,6 @@ export interface DocWindow {
   /** Null only for an empty main window; a detached window is removed when
    *  its last panel leaves. */
   dock: DockNode | null
-  /** Detached windows only. The main window's bounds are device state. */
-  bounds?: Rect
-  /** Set by a maximize, what restoring puts back. Any other change to this
-   *  window's tree, or to the node a pane came from, clears it; split
-   *  ratios do not. */
-  maximized?: MaximizedLayout
-}
-
-export interface MaximizedLayout {
-  /** The stack holding what the maximize gathered. */
-  stackId: StackId
-  /** The window's tree before. */
-  layout: DockNode
-  /** The canvas node a maximized pane came from, as it was. */
-  node?: { canvasId: CanvasId; id: NodeId; rect: Rect; dock: DockNode }
 }
 
 export type RelationKind = 'use' | 'context' | 'verify' | 'trigger'

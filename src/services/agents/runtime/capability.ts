@@ -13,10 +13,6 @@ export function agentsCapabilityImpl(agents: AgentsRuntime, missions?: Missions)
       await agents.hooks.bindChanges(await agents.resolveCheckout(cwd), threadId, panelId)
     },
     panel: ({ panelId }) => agents.panel(panelId),
-    async conversation({ panelId }) {
-      return (await agents.registry.runnerFor(panelId)?.conversation(panelId)) ?? null
-    },
-    send: ({ panelId, prompt }) => agents.send(panelId, prompt),
     busy: () => ({ panelIds: agents.busy() }),
     stopMission: ({ ownerPanelId }) => missions?.stopAll(ownerPanelId) ?? { stopped: 0 },
     panels(_params, sink) {

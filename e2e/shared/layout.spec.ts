@@ -140,7 +140,7 @@ describeShared('layout', (pair) => {
     const windowId = crypto.randomUUID()
     const beforeA = a.app.electronApp.windows().length
     const beforeB = b.app.electronApp.windows().length
-    await propose(a, { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, stackId: crypto.randomUUID(), bounds: { origin: { x: 80, y: 80 }, size: { width: 700, height: 500 } } } })
+    await propose(a, { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, stackId: crypto.randomUUID() } })
     for (const c of [a, b]) await expect.poll(async () => (await doc(c))?.windows[windowId]?.kind).toBe('detached')
     await expect.poll(() => a.app.electronApp.windows().length, { timeout: 15_000 }).toBe(beforeA + 1)
     await expect.poll(() => b.app.electronApp.windows().length, { timeout: 15_000 }).toBe(beforeB + 1)

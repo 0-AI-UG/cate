@@ -1,7 +1,8 @@
 // Creates the app's BrowserWindows: main windows and the native windows of
 // detached document windows (opened on request of the renderer's windows
 // port). Main window bounds and the theme boot cache come from `boot.json` so
-// the first frame matches the final UI.
+// the first frame matches the final UI. A detached window's bounds are this
+// device's too (`detachedGeometry`), never the document's.
 
 import path from 'node:path'
 import { BrowserWindow, dialog, nativeImage, nativeTheme } from 'electron'
@@ -16,6 +17,8 @@ const log = createLogger('windows')
 
 const DEFAULT_BACKGROUND = '#1f1e1c'
 const BOUNDS_DEBOUNCE_MS = 300
+/** Detached window bounds kept in `boot.json`, most recently moved first out. */
+const MAX_DETACHED_GEOMETRY = 50
 /** A detached window whose renderer does not act on a close request closes
  *  on the next attempt after this long. */
 const CLOSE_REQUEST_GRACE_MS = 3_000
@@ -45,8 +48,16 @@ function windowState(win: BrowserWindow): WindowState {
   return { fullscreen: win.isFullScreen(), maximized: win.isMaximized(), focused: win.isFocused() }
 }
 
+const detachedKey = (ref: DetachedWindowRef) => `${ref.workspaceId}/${ref.windowId}`
+
 export function createWindowFactory(options: WindowFactoryOptions): WindowFactory {
   const { registry, device } = options
+  const saveDetachedGeometry = (ref: DetachedWindowRef, bounds: Bounds) => {
+    const key = detachedKey(ref)
+    const entries = Object.entries(device.boot().detachedGeometry ?? {}).filter(([k]) => k !== key)
+    entries.push([key, bounds])
+    device.updateBoot({ detachedGeometry: Object.fromEntries(entries.slice(-MAX_DETACHED_GEOMETRY)) })
+  }
   const allowClose = new WeakSet<BrowserWindow>()
 
   // CATE_FAKE_PLATFORM previews another platform's window chrome from a Mac.
@@ -56,7 +67,7 @@ export function createWindowFactory(options: WindowFactoryOptions): WindowFactor
 
   const build = (kind: 'main' | 'detached', ref?: DetachedWindowRef, bounds?: Bounds): BrowserWindow => {
     const boot = kind === 'main' ? device.boot() : null
-    const geometry = kind === 'main' ? boot?.geometry : bounds
+    const geometry = kind === 'main' ? boot?.geometry : (ref && device.boot().detachedGeometry?.[detachedKey(ref)]) ?? bounds
     const background = boot?.backgroundColor ?? DEFAULT_BACKGROUND
     if (boot?.appearance) {
       try { nativeTheme.themeSource = boot.appearance } catch { /* noop */ }
@@ -129,7 +140,7 @@ export function createWindowFactory(options: WindowFactoryOptions): WindowFactor
         if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return
         const next = win.getBounds()
         if (kind === 'main') device.updateBoot({ geometry: next })
-        else win.webContents.send(C.windowBounds, next)
+        else if (ref) saveDetachedGeometry(ref, next)
       }, BOUNDS_DEBOUNCE_MS)
     }
     win.on('move', onBounds)

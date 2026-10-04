@@ -297,6 +297,13 @@ function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
   const node = slot.closest<HTMLElement>('[data-node-id]')
   const nodeZIndex = node ? geometry.style(node).zIndex : 'auto'
   const borderRadius = surfaceBorderRadius(slot, rect, rect.width / logicalWidth, geometry)
+  // The surface sits above the canvas, so it takes input only where its slot
+  // would: not while the slot is inert (hand tool) or an unfocused node's
+  // overlay covers it. There the press, wheel or drag reaches the canvas, as
+  // it does over every other panel.
+  const cover = node?.querySelector<HTMLElement>('[data-unfocused-overlay]')
+  const inert = geometry.style(slot).pointerEvents === 'none'
+    || (!!cover && geometry.style(cover).pointerEvents !== 'none')
   return () => writeSurface(surface, true, {
     visibility: 'visible',
     position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
@@ -304,7 +311,7 @@ function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
     transform: `scale(${rect.width / logicalWidth}, ${rect.height / logicalHeight})`,
     borderRadius, overflow: 'hidden',
     clipPath, zIndex: nodeZIndex === 'auto' ? '1' : nodeZIndex,
-    opacity: '1', pointerEvents: 'auto',
+    opacity: '1', pointerEvents: inert ? 'none' : 'auto',
   })
 }
 

@@ -26,7 +26,7 @@ function guest(id = 7): BrowserGuest & { url: string; loading: boolean; fire(typ
 
 const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'https://a.test/', title: '', favicon: null, pinned: false, nav: 0, navSource: null, ...patch })
 const snapshot = (tabs: BrowserTab[]): BrowserSnapshot => ({
-  tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' }, zoom: 1,
+  tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' },
   canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null,
 })
 
@@ -93,6 +93,25 @@ describe('BrowserPageHost', () => {
     webview.loading = false
     webview.fire('did-stop-loading')
     await expect(ready).resolves.toEqual({ url: 'https://d.test/', title: 'Title' })
+  })
+
+  it('shows the active tab for page.ready when its page is not mounted yet', async () => {
+    const revealed: string[] = []
+    const host = new BrowserPageHost({
+      panelId: 'p1', clientId: 'me', send: async () => {}, bridge: null, nextFrame: async () => {},
+      reveal: (tabId) => {
+        revealed.push(tabId)
+        host.show(tabId)
+        const webview = guest()
+        webview.url = 'https://b.test/'
+        host.attachGuest(tabId, webview)
+        webview.fire('dom-ready')
+      },
+    })
+    host.update({ ...snapshot([tab(), tab({ id: 't2', url: 'https://b.test/' })]), activeTabId: 't2' })
+    host.show('t1')
+    await expect(host.ready({ tabId: 't2', nav: 0 })).resolves.toEqual({ url: 'https://b.test/', title: 'Title' })
+    expect(revealed).toEqual(['t2'])
   })
 
   it('runs page-driver methods on the exact guest and stages uploads', async () => {

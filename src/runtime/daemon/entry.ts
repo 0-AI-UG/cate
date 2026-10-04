@@ -31,6 +31,9 @@ import { pairingCapability } from '@runtime/pairing/contract'
 import { openPairingsFile, PairingService, pairingCapabilityImpl } from '@runtime/pairing/runtime'
 import { powerCapability } from '@runtime/power/contract'
 import { createPowerService, powerCapabilityImpl } from '@runtime/power/runtime'
+import { pushCapability } from '@runtime/push/contract'
+import { createPushService, openPushFile, pushCapabilityImpl } from '@runtime/push/runtime'
+import { fingerprint, hexToBytes } from '@runtime/security/contract'
 import { createServerHost, reapOrphanServers, serverCapabilityImpl, type ServerHost } from '@runtime/server/runtime'
 import type { PeerConnectionFactory, WebSocketFactory } from '@runtime/transports/contract'
 import { loadNodePeerConnection, nodeWebSocketFactory } from '@runtime/transports/node'
@@ -213,6 +216,21 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
 
   const power = createPowerService({ busy: busy.busy, onError: (err) => log.warn('keep-awake helper failed: %s', err.message) })
 
+  // Agent notifications reach paired devices through Cate Connect while
+  // they are away; an unpaired device stops getting them.
+  const pushFile = openPushFile(paths.dir)
+  const push = createPushService({
+    runtimeId,
+    workspace: path.basename(root),
+    store: pushFile,
+    sender: () => network.registration(),
+    log: log.child('push'),
+  })
+  const offPushEvents = ws.agents.notifications.subscribe((event) => {
+    push.notify(event).catch((err: Error) => log.warn('push failed: %s', err.message))
+  })
+  const offPushRevoked = pairing.onRevoked((publicKey) => push.forgetDevice(fingerprint(hexToBytes(publicKey))))
+
   let resolveStopped!: (reason: StopReason) => void
   const stopped = new Promise<StopReason>((resolve) => { resolveStopped = resolve })
   let stopping: Promise<void> | null = null
@@ -235,9 +253,12 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
       await ws.shutdown()
       servers.killAll()
       power.dispose()
+      offPushEvents()
+      offPushRevoked()
       await removeSocket(endpoint)
       settings.dispose()
       pairingsFile.dispose()
+      pushFile.dispose()
       secrets.dispose()
       resolveStopped(reason)
     })()
@@ -265,6 +286,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   rpc.register(pairingCapability, pairingCapabilityImpl(pairing))
   rpc.register(tunnelCapability, tunnelCapabilityImpl())
   rpc.register(powerCapability, powerCapabilityImpl(power))
+  rpc.register(pushCapability, pushCapabilityImpl(push))
   rpc.register(serverCapability, serverCapabilityImpl({ host: servers, trust: ws.trust }))
 
   const clients = () => rpc.connections().filter((c) => c.client !== null).length

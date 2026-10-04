@@ -72,7 +72,6 @@ const initial = (checkout: string, threadId: string | null): ChatSnapshot => ({
   activity: null,
   agentName: null,
   canReceivePrompt: false,
-  threadKnown: null,
   changes: null,
 })
 
@@ -290,7 +289,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
       agentName: agentId ? AGENT_DEFS[agentId].displayName : CHAT_DEFAULT_TITLE,
       // A fresh chat's first prompt creates its thread; a bound thread must be known.
       canReceivePrompt: shell?.connected === true && (threadId ? !!thread && canT3ThreadReceivePrompt(thread) : true),
-      threadKnown: threadId && shell?.connected ? !!thread : null,
     })
   }
 

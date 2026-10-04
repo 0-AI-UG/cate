@@ -94,6 +94,8 @@ test('lists a saved password and autofills username and password without exposin
 
     const browser = await createBrowser(page, `${origin}/login`, { x: 100, y: 100 })
     const webContentsId = await browserWebContentsId(page, browser.panelId)
+    // Focus the node: an unfocused node's overlay takes the user's clicks.
+    await page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`).click()
     const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
     const popup = surface.locator('[data-browser-autofill]')
     // Exercise both canvas transforms and page zoom. Compare the displayed

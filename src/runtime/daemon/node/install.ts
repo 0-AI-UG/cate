@@ -7,6 +7,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -247,7 +248,9 @@ export async function pruneRuntimeInstalls(opts: {
 
 /**
  * Starts `node bundle serve <root>` as a detached process that outlives its
- * parent, with stdout and stderr appended to `logFile`. Does not wait.
+ * parent, with stdout and stderr appended to `logFile`. Does not wait. Node's
+ * compile cache is on for it (the bundle's compile is most of a start); the
+ * daemon drops the variable so its children never see it.
  */
 export function spawnDetachedDaemon(opts: {
   node: string
@@ -265,7 +268,7 @@ export function spawnDetachedDaemon(opts: {
     const child = spawn(opts.node, [opts.bundle, ...serveArgv({ ...opts.args, detach: false })], {
       detached: true,
       stdio: ['ignore', out, out],
-      env: opts.env ?? process.env,
+      env: { NODE_COMPILE_CACHE: path.join(os.tmpdir(), 'cate-compile-cache'), ...(opts.env ?? process.env) },
       windowsHide: true,
     })
     child.on('error', () => { /* the caller notices when the socket never answers */ })

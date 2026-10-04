@@ -1,5 +1,5 @@
 // Builds the real daemon bundle and starts it the way the desktop shell does:
-// `node runtime.cjs serve <root> --detach`, then dial until it answers.
+// one detached `node runtime.cjs serve <root>`, then dial until it answers.
 
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import fs from 'node:fs'

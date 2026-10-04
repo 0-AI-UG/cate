@@ -4,6 +4,8 @@
 
 import { createClientIdentity, installClientIdentity, WorkspaceConnections, type ShellTransports } from '@client/connections'
 import { attachDocuments } from '@client/document'
+import { registerPanelDefinitions } from '@client/host'
+import { PANEL_DEFINITIONS } from '@panels/definitions'
 import { WorkspaceList } from '@client/workspaces'
 import { knownFeatures } from '@kernel/rpc/contract'
 import { RUNTIME_BUILD, RUNTIME_VERSION } from '@runtime/daemon/contract'
@@ -20,6 +22,7 @@ export interface MobileClient {
 }
 
 export async function bootMobileClient(bridge: MobileBridge): Promise<MobileClient> {
+  registerPanelDefinitions(PANEL_DEFINITIONS)
   const info = await bridge('app.info', {})
   const device = createDeviceStore(bridge)
   const deviceKeys = await loadDeviceKeys(bridge)

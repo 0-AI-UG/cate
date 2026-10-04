@@ -51,6 +51,7 @@ import {
   type ReviewNoteInput,
   type ReviewOp,
   type ReviewOpenRequest,
+  type ReviewRevealRequest,
   type ReviewSnapshot,
   type ReviewState,
 } from './contract'
@@ -135,7 +136,7 @@ function freshReview(record: PanelRecord, root: string): ReviewState {
   return defaultReviewState(reviewRepoPath(record.fields) || root, request)
 }
 
-function initialSnapshot(review: ReviewState): ReviewSnapshot {
+function initialSnapshot(review: ReviewState, reveal: ReviewRevealRequest | null): ReviewSnapshot {
   return {
     review: checkoutView(review),
     comparison: null,
@@ -148,7 +149,14 @@ function initialSnapshot(review: ReviewState): ReviewSnapshot {
     notRepository: false,
     branches: [],
     commits: [],
+    reveal,
   }
+}
+
+/** A new panel's open request reveals its file once. */
+function requestReveal(record: PanelRecord): ReviewRevealRequest | null {
+  const request = record.fields.request as unknown as ReviewOpenRequest | undefined
+  return request?.focusedFile ? { seq: 1, path: request.focusedFile } : null
 }
 
 export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
@@ -166,9 +174,10 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   private generation = 0
   private activeLoads = 0
   private queue: Array<{ run(): void; reject(error: Error): void }> = []
+  private revealSeq = 1
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: ReviewSessionDeps) {
-    super(kit, record, initialSnapshot(freshReview(record, deps.root)) as unknown as JsonObject)
+    super(kit, record, initialSnapshot(freshReview(record, deps.root), requestReveal(record)) as unknown as JsonObject)
     this.review = freshReview(record, deps.root)
   }
 
@@ -180,7 +189,8 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     const saved = this.persisted<ReviewState & Json>()
     if (saved && typeof saved === 'object' && typeof saved.repoPath === 'string') {
       this.review = { ...defaultReviewState(saved.repoPath), ...saved }
-      this.set({ review: checkoutView(this.review) })
+      // A restored panel was revealed when it opened.
+      this.set({ review: checkoutView(this.review), reveal: null })
     }
     this.stopRuns = this.deps.agents.onRunsChanged(() => void this.checkAgentReview())
     void this.checkAgentReview()
@@ -280,9 +290,6 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     this.comparisonKey = key
     const changed = key !== previousKey
     if (changed) this.set({ comparison: null })
-    if (changed && previousKey && (state.expandedFiles?.length || Object.keys(state.contextLines ?? {}).length)) {
-      this.update({ expandedFiles: [], contextLines: {} })
-    }
     this.set({ loading: true, error: null })
     try {
       const result = await this.deps.repository.compare({ cwd: this.cwd, spec: state.spec })
@@ -348,39 +355,24 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     }
   }
 
-  /** Loads a file's diff. Persisted per-file expansion and context apply
-   *  unless `options` say otherwise; line notes of the file follow it. */
+  /** Loads a file's diff as the asking client shows it (`options`); line
+   *  notes of the file follow it. */
   async diff(filePath: string, options: DiffOptions = {}): Promise<GitFileDiff> {
     const state = this.review
     const generation = this.generation
-    const expanded = options.fullFile || !!state.expandedFiles?.includes(filePath)
-    const contextLines = options.allLines || expanded ? 999_999 : options.contextLines ?? state.contextLines?.[filePath] ?? 3
+    const contextLines = options.allLines || options.fullFile ? 999_999 : options.contextLines ?? 3
     const diff = await this.limited(() => this.deps.repository.fileDiff({
       cwd: this.cwd,
       spec: state.spec,
       path: filePath,
       contextLines,
-      allowLarge: options.allowLarge || expanded,
+      allowLarge: options.allowLarge || !!options.fullFile,
     }))
     if (!this.disposed && generation === this.generation) {
       const notes = relocateNotes(this.review.notes ?? [], filePath, diff.hunks)
       if (notes) this.update({ notes })
     }
     return diff
-  }
-
-  private expandContext(filePath: string): Promise<GitFileDiff> {
-    const contextLines = this.review.contextLines ?? {}
-    const current = contextLines[filePath] ?? 3
-    const next = current < 10 ? 10 : Math.min(current * 2, 500)
-    this.update({ contextLines: { ...contextLines, [filePath]: next } })
-    return this.diff(filePath, { allowLarge: true, contextLines: next })
-  }
-
-  private expandFullFile(filePath: string): Promise<GitFileDiff> {
-    const expanded = this.review.expandedFiles ?? []
-    if (!expanded.includes(filePath)) this.update({ expandedFiles: [...expanded, filePath] })
-    return this.diff(filePath, { allowLarge: true, fullFile: true })
   }
 
   private async images(filePath: string, oldPath?: string): Promise<{ old: string | null; new: string | null }> {
@@ -550,13 +542,13 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   }
 
   /** Merges an open request: a new source agent restarts its review. Views
-   *  expand a newly focused file. */
+   *  reveal its focused file once. */
   retarget(request: ReviewOpenRequest): void {
     const current = this.review
+    if (request.focusedFile) this.set({ reveal: { seq: ++this.revealSeq, path: request.focusedFile } })
     this.write({
       ...current,
       spec: request.spec,
-      focusedFile: request.focusedFile,
       sourceAgent: request.sourceAgent,
       agentChanges: request.agentChanges,
       agentReview: request.sourceAgent?.runId !== current.sourceAgent?.runId ? undefined : current.agentReview,
@@ -589,18 +581,16 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   }
 
   /** Recorded edits matching the panel's filters: active ones (still changed
-   *  in Git) unless history is shown. */
+   *  in Git) unless history is shown. A reader's file filter is the view's. */
   recordedSelection(): AgentChangeRecord[] {
     const state = this.review
     const filter = state.agentChanges ?? {}
     const thread = filter.panelId ? this.deps.agents.threadIdOf(filter.panelId) : undefined
-    const query = (state.fileFilter ?? '').toLowerCase()
     const status = this.status
     const pool = state.showHistory
       ? this.records
       : status ? activeAgentChanges(this.records, { isRepo: status.isRepo, statusFiles: status.files }) : []
     return filterAgentChanges(pool, filter, thread)
-      .map((record) => ({ ...record, files: record.files.filter((file) => !query || file.path.toLowerCase().includes(query)) }))
   }
 
   private publishRecorded(): void {
@@ -741,16 +731,10 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     selectComparison: ({ comparison }) => this.selectComparison(comparison),
     setSpec: ({ spec }) => { this.update({ spec }) },
     update: ({ patch }) => {
-      const next: Partial<ReviewState> = {}
-      if (patch.fileFilter !== undefined) next.fileFilter = patch.fileFilter
-      if (patch.showHistory !== undefined) next.showHistory = patch.showHistory
-      if (patch.focusedFile !== undefined) next.focusedFile = patch.focusedFile ?? undefined
-      this.update(next)
+      if (patch.showHistory !== undefined) this.update({ showHistory: patch.showHistory })
     },
     updateFilter: ({ patch }) => this.updateFilter(patch),
     diff: ({ path: filePath, options }) => this.diff(filePath, options),
-    expandContext: ({ path: filePath }) => this.expandContext(filePath),
-    expandFullFile: ({ path: filePath }) => this.expandFullFile(filePath),
     images: ({ path: filePath, oldPath }) => this.images(filePath, oldPath),
     recordedDiff: ({ recordId, path: filePath }) => this.recordedDiff(recordId, filePath),
     addNote: ({ note }) => this.addNote(note),

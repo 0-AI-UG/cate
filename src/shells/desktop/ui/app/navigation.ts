@@ -9,6 +9,7 @@ import { createPanel, installRevealHooks, panelTypeOpening, closePanels as close
 import { MAIN_WINDOW, type PanelId } from '@workspace/document/contract'
 import { isLoopbackUrl } from '@runtime/tunnel/contract'
 import { clientUi, errorMessage } from '@kernel/interaction'
+import { openWindowAt } from '../client/layout/windows'
 import { clientApp } from './app'
 import { desktopPort } from './desktop'
 import { useUIStore } from './state/uiStore'
@@ -123,16 +124,15 @@ export function renamePanel(workspaceId: string, panelId: PanelId, title: string
 }
 
 /** Moves a panel into a new detached window (a placement op every client
- *  sees; a client without `windows` shows it as a stack). */
+ *  sees; a client without `windows` shows it as a stack). Its position is
+ *  this device's. */
 export function detachPanel(workspaceId: string, panelId: PanelId): boolean {
   const store = documentStoreFor(workspaceId)
   if (!store) return false
   const id = () => globalThis.crypto.randomUUID()
-  return store.propose({
-    kind: 'placePanel',
-    id: panelId,
-    at: { to: 'window', windowId: id(), stackId: id(), bounds: { origin: { x: 120, y: 120 }, size: { width: 900, height: 640 } } },
-  }).ok
+  const windowId = id()
+  openWindowAt(workspaceId, windowId, { origin: { x: 120, y: 120 }, size: { width: 900, height: 640 } })
+  return store.propose({ kind: 'placePanel', id: panelId, at: { to: 'window', windowId, stackId: id() } }).ok
 }
 
 /** Files open where a panel type opens them; without one the palette lists

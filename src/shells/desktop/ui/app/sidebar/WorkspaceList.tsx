@@ -1,10 +1,10 @@
 // The sidebar's workspace list from client/workspaces: local recents and
 // paired workspaces in sidebar order. Click selects (and opens), Cmd/Ctrl and
 // Shift build a multi-selection that Delete closes, rows drag to reorder, and
-// the header expands every tree, opens a folder or joins a workspace.
+// the header opens a folder or joins a workspace.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronsDown as CaretDoubleDown, ChevronsUp as CaretDoubleUp, FolderPlus, Link2 } from 'lucide-react'
+import { FolderPlus, Link2 } from 'lucide-react'
 import { SidebarHeaderButton, SidebarSectionHeader, btn } from '../../kernel/interaction'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
@@ -96,7 +96,6 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
     return true
   }
 
-  const allExpanded = entries.length > 0 && entries.every((w) => expanded.has(w.id))
   const toggleExpanded = (id: string) => setExpanded((prev) => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id)
@@ -117,13 +116,6 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
         leadingAction={headerLeadingAction}
         actions={
           <>
-            <SidebarHeaderButton
-              onClick={() => setExpanded(allExpanded ? new Set() : new Set(entries.map((w) => w.id)))}
-              title={allExpanded ? 'Collapse All' : 'Expand All'}
-              disabled={entries.length === 0}
-            >
-              {allExpanded ? <CaretDoubleUp size={14} /> : <CaretDoubleDown size={14} />}
-            </SidebarHeaderButton>
             <SidebarHeaderButton onClick={() => useUIStore.getState().setJoinDialogOpen(true)} title="Join a Workspace">
               <Link2 size={14} />
             </SidebarHeaderButton>

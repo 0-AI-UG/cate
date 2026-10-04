@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import type { ConnectionState } from '@client/connections'
 import type { WorkspaceList } from '@client/workspaces'
 import { installClientApp, type ClientApp } from '../app'
@@ -38,18 +38,19 @@ function fakeConnection(state: ConnectionState) {
 }
 
 /** The workspace inside its blocker, next to a sidebar the blocker must not cover. */
-const render = (connection: ReturnType<typeof fakeConnection>) => {
+const render = (connection: ReturnType<typeof fakeConnection>, strict = false) => {
   installClientApp({
     workspaces: { get: () => ({ name: 'cate' }) } as unknown as WorkspaceList,
     connections: { get: () => connection, subscribe: () => () => {} } as unknown as ClientApp['connections'],
     version: '2.0.4',
   })
-  return act(async () => root.render(
+  const tree = (
     <>
       <nav data-sidebar><button>other workspace</button></nav>
       <ConnectionBlocker workspaceId={connection.workspaceId}><button>panel</button></ConnectionBlocker>
-    </>,
-  ))
+    </>
+  )
+  return act(async () => root.render(strict ? <StrictMode>{tree}</StrictMode> : tree))
 }
 
 const card = () => host.querySelector('[data-connection-blocker]')
@@ -122,6 +123,11 @@ describe('RuntimeMismatchCard', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('asks once the idle update is refused under StrictMode', async () => {
+    await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.4', build: { runtime: '2.0.4+old', app: '2.0.4+new' } }), true)
+    expect(button('Restart runtime')).toBeTruthy()
   })
 
   it('says so when the runtime does not restart', async () => {

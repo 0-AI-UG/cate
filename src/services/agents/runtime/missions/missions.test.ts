@@ -66,6 +66,7 @@ function build(store?: CodingAgentRun[]): Missions {
     agentState: (panelId) => terminals.get(panelId)?.agent ?? null,
     submit: async (panelId, prompt) => { submitted.push({ panelId, prompt }); return submitOk },
     resolveAgent: resolveAgent as never,
+    readyAgents: async () => ['claude-code'],
     store: { load: () => store ?? [], save: (runs) => { saved = runs } },
     now: () => 1_000,
   })
@@ -319,5 +320,13 @@ describe('missions', () => {
     const run = await missions.create('supervisor-1', { prompt: 'x' })
     missions.noteExit(run.panelId, 0)
     await expect(missions.wait('supervisor-1', { timeoutSeconds: 5 })).resolves.toEqual({ timedOut: false, changedRunIds: [], runs: [] })
+  })
+
+  it('lists every mission\'s workers and knows whose each is', async () => {
+    const mine = await missions.create('supervisor-1', { prompt: 'one' })
+    const theirs = await missions.create('person', { prompt: 'two' })
+    expect((await missions.all()).map((run) => run.id)).toEqual([mine.id, theirs.id])
+    expect(missions.ownerOf(theirs.id)).toBe('person')
+    expect(missions.ownerOf('nope')).toBeNull()
   })
 })

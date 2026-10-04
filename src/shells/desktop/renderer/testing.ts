@@ -77,7 +77,6 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
       setTitle: vi.fn(async () => {}),
       state: async () => ({ fullscreen: false, maximized: false, focused: true }),
       onState: off,
-      onBounds: off,
       onCloseRequested: off,
       anyFullscreen: () => false,
       setZoomFactor: vi.fn(),

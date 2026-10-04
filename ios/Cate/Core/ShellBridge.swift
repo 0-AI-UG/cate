@@ -12,7 +12,7 @@ final class ShellBridge: NSObject, WKScriptMessageHandlerWithReply {
 
     private weak var host: CoreHost?
     private let files = DeviceFiles()
-    private let keychain = Keychain(service: "com.cate.ios")
+    private let keychain = Keychain(service: "com.0ai.cate.ios")
 
     init(host: CoreHost) {
         self.host = host
@@ -45,7 +45,8 @@ final class ShellBridge: NSObject, WKScriptMessageHandlerWithReply {
         switch method {
         case "app.info":
             // The client features this device has (12.2).
-            return ["device": UIDevice.current.name, "features": QRScanner.isAvailable ? ["camera"] : []]
+            // Web views route loopback through the workspace (LoopbackProxy).
+            return ["device": UIDevice.current.name, "features": ["webview"] + (QRScanner.isAvailable ? ["camera"] : [])]
         case "device.get":
             return try files.get(try string("name")) ?? NSNull()
         case "device.set":
@@ -87,6 +88,35 @@ final class ShellBridge: NSObject, WKScriptMessageHandlerWithReply {
             case let kind:
                 throw BridgeError(description: "terminal.event: unknown kind \(kind)")
             }
+            return NSNull()
+        case "view.event":
+            host?.viewEvent(try string("viewId"), json: try string("json"))
+            return NSNull()
+        case "stream.event":
+            // Answered once the proxy took the bytes: the core's flow control.
+            let streamId = try string("streamId")
+            switch try string("kind") {
+            case "data":
+                guard let data = Data(base64Encoded: try string("data")) else { throw BridgeError(description: "stream.event: bad data") }
+                host?.streamEvent(streamId, .data(data))
+            case "end":
+                host?.streamEvent(streamId, .end)
+            case let kind:
+                throw BridgeError(description: "stream.event: unknown kind \(kind)")
+            }
+            return NSNull()
+        case "notification.show":
+            let data = try JSONSerialization.data(withJSONObject: params)
+            host?.notification(json: String(decoding: data, as: UTF8.self))
+            return NSNull()
+        case "notification.withdraw":
+            host?.withdrawNotification?(try string("id"))
+            return NSNull()
+        case "app.openUrl":
+            guard let url = URL(string: try string("url")), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+                throw BridgeError(description: "app.openUrl: not a web URL")
+            }
+            await UIApplication.shared.open(url)
             return NSNull()
         default:
             throw BridgeError(description: "unsupported: \(method)")

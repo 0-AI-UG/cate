@@ -85,22 +85,6 @@ function invertChange(before: Doc, after: Doc, change: DocChange, newId: () => s
       const nodes = before.canvases[change.canvasId].nodes
       return [{ kind: 'setNodeRects', canvasId: change.canvasId, rects: change.rects.map(({ nodeId }) => ({ nodeId, rect: nodes[nodeId].rect })) }]
     }
-    case 'setWindowBounds':
-      return [{ kind: 'setWindowBounds', windowId: change.windowId, bounds: before.windows[change.windowId].bounds! }]
-    case 'maximizeStack':
-      return [{ kind: 'restoreLayout', windowId: change.windowId }]
-    case 'maximizePanel': {
-      const placement = placementOf(after, change.id)!
-      return isCanvasDock(placement.dock) ? [] : [{ kind: 'restoreLayout', windowId: placement.dock.windowId }]
-    }
-    case 'restoreLayout': {
-      const { stackId, node } = before.windows[change.windowId].maximized!
-      if (!node) return [{ kind: 'maximizeStack', windowId: change.windowId, stackId }]
-      // The pane is the one the node had that the window holds now.
-      const window = new Set(dockPanels(before.windows[change.windowId].dock))
-      const id = dockPanels(node.dock).find((panelId) => window.has(panelId))!
-      return [{ kind: 'maximizePanel', id }]
-    }
     case 'addRelation':
       return [{ kind: 'removeRelation', id: change.relation.id }]
     case 'updateRelation': {
@@ -188,7 +172,7 @@ function targetLike(before: Doc, sim: Doc, panelId: PanelId, newId: () => string
       return { to: 'canvas', canvasId: dock.canvasId, nodeId, stackId: free(stack.id), rect: node.rect }
     }
     const window = before.windows[dock.windowId]
-    return { to: 'window', windowId: window.id, stackId: free(stack.id), bounds: window.bounds! }
+    return { to: 'window', windowId: window.id, stackId: free(stack.id) }
   }
   if (simTree === null) return { to: 'stack', dock, stackId: free(stack.id) }
 

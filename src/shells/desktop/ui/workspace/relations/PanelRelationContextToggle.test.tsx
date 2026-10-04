@@ -23,6 +23,7 @@ describe('PanelRelationContextToggle', () => {
   let detach: () => void
   let supported: boolean
   let sentAt: number | undefined
+  let blocked: { label: string; reason: string; fix?: { label: string; run(): void } } | undefined
   let settings: ReturnType<typeof testRelationHost>
   const showMenu = vi.fn<(items: RelationMenuItem[]) => Promise<string | null>>(async () => null)
   const openTextPreview = vi.fn(async () => 'preview-panel')
@@ -30,13 +31,14 @@ describe('PanelRelationContextToggle', () => {
   beforeEach(() => {
     supported = true
     sentAt = undefined
+    blocked = undefined
     settings = testRelationHost({ definitions: [...PANEL_DEFINITIONS] })
     showMenu.mockReset().mockResolvedValue(null)
     openTextPreview.mockClear()
     installRelationUiPort({
       showMenu,
       openTextPreview,
-      useContextTransport: () => (supported ? { decorate: (text) => `${text}\nguidance`, sentAt } : null),
+      useContextTransport: () => (supported ? { decorate: (text) => `${text}\nguidance`, sentAt, blocked } : null),
     })
     detach = openTestDocument('ws', {
       ...createDocument(),
@@ -133,5 +135,33 @@ describe('PanelRelationContextToggle', () => {
     expect(openTextPreview.mock.calls[0]).toBeDefined()
     const menu = showMenu.mock.calls[0][0]
     expect(menu.some((item) => 'label' in item && item.label?.includes('must use'))).toBe(false)
+  })
+
+  it('warns while the agent cannot take context and offers the fix', async () => {
+    const fix = vi.fn()
+    blocked = { label: 'Hooks off', reason: 'Claude Code runs without Cate hooks.', fix: { label: 'Agent hooks settings…', run: fix } }
+    showMenu.mockResolvedValueOnce('fix')
+    await act(async () => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
+    const button = host.querySelector('button')!
+    expect(button.querySelector('span')!.textContent).toBe('1 panel · Hooks off')
+    expect(button.title).toBe('Claude Code runs without Cate hooks.')
+    await act(async () => { button.click() })
+    expect(showMenu.mock.calls[0][0].slice(0, 2)).toEqual([
+      { label: 'Claude Code runs without Cate hooks.', enabled: false },
+      { id: 'fix', label: 'Agent hooks settings…' },
+    ])
+    expect(fix).toHaveBeenCalled()
+  })
+
+  it('warns without a fix when the agent cannot take context at all', async () => {
+    blocked = { label: 'Not supported', reason: 'Cursor cannot take context from Cate.' }
+    await act(async () => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
+    const button = host.querySelector('button')!
+    expect(button.getAttribute('aria-label')).toBe('1 connected panels, not sent: Not supported')
+    expect(button.querySelector('span')!.textContent).toBe('1 panel · Not supported')
+    await act(async () => { button.click() })
+    const menu = showMenu.mock.calls[0][0]
+    expect(menu[0]).toEqual({ label: 'Cursor cannot take context from Cate.', enabled: false })
+    expect(menu.some((item) => 'id' in item && item.id === 'fix')).toBe(false)
   })
 })

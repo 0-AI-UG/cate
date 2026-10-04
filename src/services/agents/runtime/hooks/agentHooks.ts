@@ -111,6 +111,9 @@ export interface AgentHooks {
    *  `approvals` also resolves config-based approval detection, which runs
    *  the CLI (Codex's app-server): only the Settings UI asks for it. */
   inspectWorkspace(cwd: string, options?: { approvals?: boolean }): Promise<AgentHookAgentState[]>
+  /** Whether Cate's hooks for one agent are installed for a checkout (its
+   *  `injected` in inspectWorkspace), without inspecting the others. */
+  hooksInstalled(cwd: string, agentId: AgentId): Promise<boolean>
   /** Read one agent CLI session's visible conversation from that CLI's own
    *  session store on this host. Null when the session cannot be found. */
   readConversation(session: AgentSessionLocator): Promise<AgentConversationMessage[] | null>
@@ -698,6 +701,18 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
     return { dir, url: `http://127.0.0.1:${port}`, secret, server, contexts }
   }
 
+  /** A repo hook file carrying Cate's marker, or the agent's external
+   *  plugin enabled. */
+  const injectedIn = async (agentId: AgentId, cwd: string): Promise<boolean> => {
+    const spec = AGENT_HOOK_SPECS[agentId]
+    for (const pf of spec.projectFiles ?? []) {
+      try {
+        if ((await readFile(path.join(cwd, pf.relPath), 'utf-8')).includes(CATE_HOOK_MARKER)) return true
+      } catch { /* absent — not injected via this path */ }
+    }
+    return spec.externalPlugin ? await externalPlugins[spec.externalPlugin.id]?.inspect() ?? false : false
+  }
+
   return {
     noteInput(terminalId, data) {
       if (disposed) return
@@ -845,7 +860,6 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
       const repoLocal = isRepoLocalCwd(cwd, homeDir)
       const states: AgentHookAgentState[] = []
       for (const agent of AGENTS) {
-        const spec = AGENT_HOOK_SPECS[agent.id]
         let folderPresent = false
         let injected = false
         // Only touch the filesystem for a real repo cwd (never ~ or a relative
@@ -853,16 +867,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         if (repoLocal) {
           const folder = agentHookFolder(agent.id)
           folderPresent = folder ? await dirExists(path.join(cwd, folder)) : false
-          for (const pf of spec.projectFiles ?? []) {
-            try {
-              const content = await readFile(path.join(cwd, pf.relPath), 'utf-8')
-              if (content.includes(CATE_HOOK_MARKER)) {
-                injected = true
-                break
-              }
-            } catch { /* absent — not injected via this path */ }
-          }
-          if (spec.externalPlugin) injected = await externalPlugins[spec.externalPlugin.id]?.inspect() ?? false
+          injected = await injectedIn(agent.id, cwd)
         }
         const approval = AGENT_APPROVAL_DETECTION[agent.id]
         states.push({
@@ -871,6 +876,10 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         })
       }
       return states
+    },
+
+    async hooksInstalled(cwd, agentId) {
+      return isRepoLocalCwd(cwd, homeDir) && await injectedIn(agentId, cwd)
     },
 
     subscribe(onEvent) {

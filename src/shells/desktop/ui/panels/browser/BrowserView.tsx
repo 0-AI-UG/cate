@@ -28,7 +28,7 @@ import { fsClient } from '@workspace/files/client'
 import { base64ToBytes, writeFileRefDrag, type FileRef } from '@workspace/files/contract'
 import { BrowserPasswordManagerPage, useBrowserData } from '../../services/browser'
 import type { BrowserOp, BrowserSnapshot, BrowserViewport } from '@panels/browser/contract'
-import { BROWSER_HISTORY_URL, BROWSER_PASSWORD_MANAGER_URL, isBrowserInternalPage } from '@panels/browser/contract'
+import { BROWSER_HISTORY_URL, BROWSER_PASSWORD_MANAGER_URL, isBrowserInternalPage, stepBrowserZoom } from '@panels/browser/contract'
 import { BrowserPageHost, type BrowserGuest } from './pageHost'
 import { registerPageHost } from './surfaces'
 import { actOnLocalDownload, isLocalDownload, localDownloadsVersion, ownGuest, relayDownloads, subscribeLocalDownloads } from './localDownloads'
@@ -104,7 +104,6 @@ function WebviewSlot({ tabId, src, partition, active, hidden, viewport, displayS
           ...webviewStyle,
           // Transparent pages need a browser canvas, not Cate's themed surface.
           backgroundColor: '#fff',
-          display: active ? 'flex' : 'none',
           transform: `scale(${displayScale})`,
           transformOrigin: 'top left',
         }}
@@ -146,6 +145,9 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   const bridge = browserPageBridge()
   const { store: browserData, state: { bookmarks, history } } = useBrowserData(workspaceId)
   const quietly = useCallback((op: BrowserOp) => { void send(op).catch(() => { /* shown by the next snapshot */ }) }, [send])
+
+  // Page zoom is client state: each client zooms the pages it shows.
+  const [zoom, setZoom] = usePanelView<number>(workspaceId, panelId, 'zoom', 1)
 
   // Which tab this client shows is client state. It follows this client's own
   // selections and callers' (`activeSource` null), never another client's.
@@ -204,9 +206,9 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   useLayoutEffect(() => { host.update(snapshot) }, [host, snapshot])
   useLayoutEffect(() => { host.show(shownTabId) }, [host, shownTabId])
   useEffect(() => { host.visible = visible }, [host, visible])
-  useEffect(() => { host.applyZoom(snapshot.zoom) }, [host, snapshot.zoom])
+  useEffect(() => { host.applyZoom(zoom) }, [host, zoom])
 
-  const { tabs, viewport, zoom } = snapshot
+  const { tabs, viewport } = snapshot
   const activeTab = tabs.find((tab) => tab.id === shownTabId) ?? tabs[0]
   // The agent acts on the session's active tab; its cursor shows only there.
   const agentCursor = shownTabId === snapshot.activeTabId ? snapshot.agentCursor : null
@@ -214,6 +216,11 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   const { canGoBack, canGoForward, isLoading, loadError, crashed } = host.local
   const autofill = host.autofill
 
+  // A tab's page mounts the first time this client shows it, then stays
+  // mounted (hidden by its slot) so switching back keeps its state. A guest
+  // attached while hidden can stay blank, and other clients' tabs need no page.
+  const shownTabs = useRef(new Set<string>())
+  shownTabs.current.add(shownTabId)
   // Seeds stay fixed per mounted webview, so a re-render never reloads a page.
   const seeds = useRef(new Map<string, string>())
   const srcFor = (tabId: string): string => {
@@ -547,9 +554,9 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
             onOpenHistory={() => quietly({ kind: 'newTab', url: BROWSER_HISTORY_URL })}
             onOpenPasswordManager={() => quietly({ kind: 'newTab', url: BROWSER_PASSWORD_MANAGER_URL })}
             zoomPercent={Math.round(zoom * 100)}
-            onZoomOut={() => quietly({ kind: 'stepZoom', direction: -1 })}
-            onZoomIn={() => quietly({ kind: 'stepZoom', direction: 1 })}
-            onZoomReset={() => quietly({ kind: 'setZoom', zoom: 1 })}
+            onZoomOut={() => setZoom(stepBrowserZoom(zoom, -1))}
+            onZoomIn={() => setZoom(stepBrowserZoom(zoom, 1))}
+            onZoomReset={() => setZoom(1)}
             viewport={viewport}
             onViewportChange={(next) => quietly({ kind: 'setViewport', viewport: next })}
             onClose={() => setMenuOpen(false)}
@@ -580,7 +587,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
 
           {/* Guests share the view's transform, so the page and the agent
               overlay always use the same coordinates. */}
-          {tabs.map((tab) => (isBrowserInternalPage(tab.url) ? null : (
+          {tabs.map((tab) => (isBrowserInternalPage(tab.url) || !shownTabs.current.has(tab.id) ? null : (
             <WebviewSlot
               key={`${panelId}:${partition}:${tab.id}`}
               tabId={tab.id}

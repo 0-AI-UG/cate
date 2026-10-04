@@ -91,25 +91,28 @@ describe('DockView', () => {
     expect(dockPanels(detached?.dock)).toEqual(['p2'])
   })
 
-  it('maximize merges the split into tabs as an op, and restore puts the split back', async () => {
+  it('maximize shows the stack alone for this client only; restore brings the split back', () => {
     renderDock()
-    click(stack('s1').querySelector('[aria-label="Merge splits into tabs"]')!)
+    const before = ws.confirmed()
+    click(stack('s1').querySelector('[aria-label="Maximize"]')!)
+    expect(ws.state.getSnapshot().maximizedStacks[MAIN_WINDOW]).toBe('s1')
     expect(container.querySelectorAll('[data-dock-stack-id]')).toHaveLength(1)
-    expect(stack('s1').querySelectorAll('[data-tab-panel-id]')).toHaveLength(3)
-    await vi.waitFor(() => expect(ws.confirmed().windows[MAIN_WINDOW].maximized?.stackId).toBe('s1'))
-    click(stack('s1').querySelector('[aria-label="Restore previous layout"]')!)
+    expect(container.querySelectorAll('[data-dock-pane]')).toHaveLength(0)
+    expect(ws.confirmed()).toBe(before)
+    click(stack('s1').querySelector('[aria-label="Restore"]')!)
     expect(container.querySelectorAll('[data-dock-stack-id]')).toHaveLength(2)
-    await vi.waitFor(() => expect(ws.confirmed().windows[MAIN_WINDOW].maximized).toBeUndefined())
+    expect(ws.state.getSnapshot().maximizedStacks[MAIN_WINDOW]).toBeUndefined()
+    expect(ws.confirmed()).toBe(before)
   })
 
-  it('another client sees the maximize, and its edit there commits the merged layout', () => {
+  it('a maximized stack that another client removes shows the layout as it is', () => {
     renderDock()
-    act(() => ws.remote({ kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 's1' }))
-    expect(container.querySelectorAll('[aria-label="Restore previous layout"]')).toHaveLength(1)
-    act(() => ws.remote({ kind: 'removePanels', ids: ['p3'] }))
-    expect(container.querySelectorAll('[aria-label="Restore previous layout"]')).toHaveLength(0)
+    act(() => ws.state.setMaximizedStack(MAIN_WINDOW, 's1'))
     expect(container.querySelectorAll('[data-dock-stack-id]')).toHaveLength(1)
-    expect(stack('s1').querySelectorAll('[data-tab-panel-id]')).toHaveLength(2)
+    act(() => ws.remote({ kind: 'removePanels', ids: ['p1', 'p2'] }))
+    expect(container.querySelectorAll('[data-dock-stack-id]')).toHaveLength(1)
+    expect(stack('s2')).not.toBeNull()
+    expect(container.querySelectorAll('[aria-label="Restore"]')).toHaveLength(0)
   })
 
   it('a divider drag redraws locally and commits one setSplitRatio at the end', () => {

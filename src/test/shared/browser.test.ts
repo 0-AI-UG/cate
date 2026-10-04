@@ -39,13 +39,14 @@ describe.skipIf(process.platform === 'win32')('shared workspace: browser', () =>
     }, 30_000)
   }
 
-  it('zoom is shared and an invalid one is refused for either client', async () => {
+  it('the viewport is shared and an invalid one is refused for either client', async () => {
     const id = ws.a.createPanel('browser', { url: 'https://example.com/' })
     const a = ws.a.session<BrowserSnapshot>(id)
-    await ws.b.session(id).send({ kind: 'setZoom', zoom: 1.5 })
-    await a.until((s) => s.zoom === 1.5)
-    expect(await code(a.send({ kind: 'setZoom', zoom: -2 }))).toBe('rejected')
+    const mobile = { preset: 'mobile', width: 390, height: 844 } as const
+    await ws.b.session(id).send({ kind: 'setViewport', viewport: mobile })
+    await a.until((s) => s.viewport.preset === 'mobile')
+    expect(await code(a.send({ kind: 'setViewport', viewport: { preset: 'custom', width: -2, height: 10 } }))).toBe('rejected')
     expect(await code(ws.b.session(id).send({ kind: 'navigate', input: '   ' }))).toBe('rejected')
-    expect((await ws.b.session<BrowserSnapshot>(id).until(() => true)).zoom).toBe(1.5)
+    expect((await ws.b.session<BrowserSnapshot>(id).until(() => true)).viewport).toEqual(mobile)
   })
 })

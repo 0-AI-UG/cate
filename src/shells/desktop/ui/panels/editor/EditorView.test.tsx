@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   fileWebUrl: vi.fn(),
   propose: vi.fn(),
   openDropped: vi.fn(),
+  resetClientState: () => {},
 }))
 
 vi.mock('monaco-editor', () => {
@@ -63,20 +64,30 @@ vi.mock('y-monaco', () => ({
   },
 }))
 vi.mock('@kernel/rpc/client', () => ({ runtimeFor: () => ({ file: {}, vcs: { fileWebUrl: h.fileWebUrl } }), subscribeRuntimes: () => () => {} }))
-vi.mock('@client/document', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@client/document')>(),
-  documentStoreFor: () => ({ propose: h.propose, getSnapshot: () => createDocument() }),
-}))
+vi.mock('@client/document', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@client/document')>()
+  let clientState = actual.createClientStateStore()
+  h.resetClientState = () => { clientState = actual.createClientStateStore() }
+  return {
+    ...actual,
+    documentStoreFor: () => ({ propose: h.propose, getSnapshot: () => createDocument() }),
+    clientStateFor: () => clientState,
+  }
+})
 vi.mock('../../app', () => ({ openDroppedFiles: h.openDropped }))
-vi.mock('@workspace/files/client', () => ({
-  attachBuffer: (_file: unknown, path: string, doc: Y.Doc) => {
-    doc.getText('content').insert(0, h.contents[path] ?? '')
-    return { ready: Promise.resolve(), state: () => null, onState: () => () => {}, save: vi.fn(), close: vi.fn() }
-  },
-  fsClient: () => ({ read: async () => ({ content: 'on disk', hash: 'h' }), readBinary: async () => new Uint8Array() }),
-  watchFsRoot: () => () => {},
-  recordRecentFile: vi.fn(),
-}))
+vi.mock('@workspace/files/client', async () => {
+  const { Doc } = await import('yjs')
+  return {
+    acquireBufferText: (_workspaceId: string, path: string) => {
+      const text = new Doc().getText('content')
+      text.insert(0, h.contents[path] ?? '')
+      return { text, ready: Promise.resolve(), release: vi.fn() }
+    },
+    fsClient: () => ({ read: async () => ({ content: 'on disk', hash: 'h' }), readBinary: async () => new Uint8Array() }),
+    watchFsRoot: () => () => {},
+    recordRecentFile: vi.fn(),
+  }
+})
 vi.mock('../../workspace/files', () => ({
   FileExplorer: (props: any) => { h.explorerOpen = props.onOpenFiles; return <div>Explorer</div> },
   SearchView: () => <div>Search</div>,
@@ -110,7 +121,7 @@ const snapshotOf = (patch: Partial<EditorSnapshot> = {}): EditorSnapshot => ({
   documentType: null,
   dirty: false,
   conflict: null,
-  mode: 'code',
+  merging: false,
   connectedDraft: null,
   loading: false,
   error: null,
@@ -148,6 +159,7 @@ beforeEach(() => {
   h.diffs = []
   h.openFiles = vi.fn()
   h.propose.mockReset()
+  h.resetClientState()
   h.openDropped.mockReset()
   installClientSettings(null)
   sent = []
@@ -179,15 +191,22 @@ describe('EditorView', () => {
     expect(host.querySelector('[data-testid="code-editor"]')!.classList.contains('hidden')).toBe(false)
   })
 
-  it('renders markdown preview from the buffer and toggles the mode', async () => {
-    await show(snapshotOf({ filePath: `${ROOT}/README.md`, mode: 'preview' }))
+  it('previews markdown from the buffer and toggles the source for this client only', async () => {
+    await show(snapshotOf({ filePath: `${ROOT}/README.md` }))
     expect(host.querySelector('[data-testid="markdown-preview"] h1')?.textContent).toBe('Title')
     await act(async () => button('Source').click())
-    expect(sent).toEqual([{ kind: 'setMode', mode: 'code' }])
+    expect(sent).toEqual([])
+    expect(host.querySelector('[data-testid="markdown-preview"]')).toBeNull()
+    expect(host.querySelector('[data-testid="code-editor"]')!.classList.contains('hidden')).toBe(false)
+  })
+
+  it('shows the source when the runtime reveals a line', async () => {
+    await show(snapshotOf({ filePath: `${ROOT}/README.md`, reveal: { seq: 7, line: 3, column: null } }))
+    expect(host.querySelector('[data-testid="markdown-preview"]')).toBeNull()
   })
 
   it('shows previews for binary documents without a buffer', async () => {
-    await show(snapshotOf({ filePath: `${ROOT}/logo.png`, documentType: 'image', mode: 'preview' }))
+    await show(snapshotOf({ filePath: `${ROOT}/logo.png`, documentType: 'image' }))
     expect(host.querySelector('[data-testid="file-preview"]')).not.toBeNull()
     expect(h.bindings).toHaveLength(0)
   })
@@ -197,8 +216,8 @@ describe('EditorView', () => {
     expect(host.textContent).toContain('Changed on disk')
     await act(async () => button('Keep both').click())
     await act(async () => button('View diff').click())
-    expect(sent).toEqual([{ kind: 'resolveConflict', resolution: 'merge' }, { kind: 'setMode', mode: 'merge' }])
-    await show(snapshotOf({ dirty: true, conflict: 'changed', mode: 'merge' }))
+    expect(sent).toEqual([{ kind: 'resolveConflict', resolution: 'merge' }, { kind: 'showMerge', show: true }])
+    await show(snapshotOf({ dirty: true, conflict: 'changed', merging: true }))
     expect(host.querySelector('[data-testid="merge-view"]')).not.toBeNull()
     expect(h.diffs).toHaveLength(1)
     expect(host.textContent).toContain('On disk vs your unsaved changes')
@@ -280,12 +299,12 @@ describe('EditorView', () => {
 
   it('hides the file actions while only the sidebar shows', async () => {
     await show(snapshotOf({ filePath: `${ROOT}/notes.md` }))
-    expect(button('Preview')).toBeTruthy()
+    expect(button('Source')).toBeTruthy()
     expect(button('Open on GitHub')).toBeTruthy()
     await show(snapshotOf({ filePath: `${ROOT}/notes.md` }), { fields: { treeOnly: true } })
     expect(button('Open on GitHub')).toBeUndefined()
     expect(button('Open in browser')).toBeUndefined()
-    expect(button('Preview')).toBeUndefined()
+    expect(button('Source')).toBeUndefined()
     expect(button('Copy path').textContent).not.toContain('notes.md')
   })
 

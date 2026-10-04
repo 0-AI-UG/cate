@@ -133,7 +133,7 @@ export function checkTarget(v: unknown): Problem {
     case 'canvas':
       return isId(t.canvasId) && isId(t.nodeId) && isId(t.stackId) && isRect(t.rect) ? null : 'bad canvas target'
     case 'window':
-      return isId(t.windowId) && isId(t.stackId) && isRect(t.bounds) ? null : 'bad window target'
+      return isId(t.windowId) && isId(t.stackId) ? null : 'bad window target'
     default:
       return 'unknown target'
   }
@@ -176,11 +176,7 @@ export function checkChange(v: unknown): Problem {
     case 'setNodeRects':
       return isId(c.canvasId) && Array.isArray(c.rects)
         && c.rects.every((r) => isObject(r) && isId(r.nodeId) && isRect(r.rect)) ? null : 'bad node rects'
-    case 'setWindowBounds': return isId(c.windowId) && isRect(c.bounds) ? null : 'bad window bounds'
     case 'closeWindow': return isId(c.windowId) ? null : 'no window id'
-    case 'maximizeStack': return isId(c.windowId) && isId(c.stackId) ? null : 'bad maximize'
-    case 'maximizePanel': return isId(c.id) ? null : 'no panel id'
-    case 'restoreLayout': return isId(c.windowId) ? null : 'no window id'
     case 'addRelation': return checkRelation(c.relation)
     case 'updateRelation': return isId(c.id) ? checkRelationPatch(c.patch) : 'no relation id'
     case 'removeRelation': return isId(c.id) ? null : 'no relation id'

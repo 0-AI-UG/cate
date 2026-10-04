@@ -9,7 +9,7 @@ import { isRpcError } from '@kernel/rpc/contract'
 import { LoadingState, PanelCenteredState, getActiveTheme, subscribeTheme, useShortcutLabel } from '../../kernel/interaction'
 import { clientUi, errorMessage, shortcutRegistry } from '@kernel/interaction'
 import { clientStateFor, documentStoreFor } from '@client/document'
-import { useClientState } from '../../client/document'
+import { useClientState, usePanelView } from '../../client/document'
 import { getClientSetting } from '../../kernel/settings'
 import { onPanelShortcut, panelTypeOpening } from '@client/host'
 import { type PanelViewProps } from '../../client/host/views'
@@ -20,7 +20,7 @@ import { useFileViewsHost } from '../../workspace/files'
 // Also brings the `vcs` capability into the runtime proxy's type.
 import { boundWorktreeId } from '@workspace/repository/contract'
 import { WorktreeSelector, useRepositoryUi, useWorktrees } from '../../workspace/repository'
-import type { EditorOp, EditorSnapshot } from '@panels/editor/contract'
+import { canPreview, editorModeOf, type EditorMode, type EditorModeChoice, type EditorOp, type EditorSnapshot } from '@panels/editor/contract'
 import { useBufferText, useTextContent } from './bufferText'
 import { CodeEditor, revealLine } from './CodeEditor'
 import { ConflictBanner, type ConflictAction } from './ConflictBanner'
@@ -62,7 +62,15 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
   const textual = !!filePath && !snapshot?.documentType
   const bufferPath = textual && !snapshot?.loading && !snapshot?.error ? filePath : null
   const { text, error: attachError } = useBufferText(workspaceId, bufferPath)
-  const mode = snapshot?.mode ?? 'code'
+  // Source or preview is this client's pick; a conflict's diff is shared.
+  const [choice, setChoice] = usePanelView<EditorModeChoice | null>(workspaceId, panelId, 'mode', null)
+  const mode: EditorMode | 'merge' = snapshot?.merging && snapshot.conflict === 'changed'
+    ? 'merge'
+    : snapshot ? editorModeOf(snapshot, choice) : 'code'
+  const pickMode = useCallback((next: EditorMode) => {
+    if (filePath) setChoice({ filePath, mode: next })
+  }, [filePath, setChoice])
+  const previewable = !!snapshot && canPreview(snapshot)
   const markdown = useTextContent(mode === 'preview' && textual ? text : null)
 
   useEffect(() => subscribeTheme((theme) => setBackground(theme.editor.colors?.['editor.background'] ?? 'var(--surface-1)')), [])
@@ -99,8 +107,9 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
   useEffect(() => {
     if (!runtimeReveal || appliedReveals.get(panelId) === runtimeReveal.seq) return
     appliedReveals.set(panelId, runtimeReveal.seq)
+    if (previewable) pickMode('code')
     applyReveal(runtimeReveal)
-  }, [runtimeReveal, panelId, applyReveal])
+  }, [runtimeReveal, panelId, applyReveal, previewable, pickMode])
   const hasRevealIntent = useClientState(workspaceId, (state) => state.intents.some((intent) => intent.panelId === panelId && intent.kind === 'reveal'))
   useEffect(() => {
     if (!hasRevealIntent) return
@@ -112,10 +121,10 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
       else store.pushIntent({ panelId: intent.panelId, kind: intent.kind, data: intent.data })
     }
     if (last) {
-      if (mode === 'preview' && !snapshot?.documentType) void send({ kind: 'setMode', mode: 'code' })
+      if (previewable) pickMode('code')
       applyReveal(last)
     }
-  }, [hasRevealIntent, workspaceId, panelId, applyReveal, mode, send, snapshot?.documentType])
+  }, [hasRevealIntent, workspaceId, panelId, applyReveal, previewable, pickMode])
 
   useEffect(() => {
     if (focused && mode === 'code') editorRef.current?.focus()
@@ -182,8 +191,8 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
         case 'reload': return resolve('reload')
         case 'keepMine': return resolve('keep')
         case 'keepBoth': return resolve('merge')
-        case 'viewDiff': return send({ kind: 'setMode', mode: 'merge' })
-        case 'closeDiff': return send({ kind: 'setMode', mode: 'code' })
+        case 'viewDiff': return send({ kind: 'showMerge', show: true })
+        case 'closeDiff': return send({ kind: 'showMerge', show: false })
         case 'dismiss': return resolve('keep')
         case 'saveToRestore':
           await resolve('keep')
@@ -238,7 +247,6 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
 
   const { documentType, conflict, loading, dirty, connectedDraft, checkout, draft } = snapshot
   const error = snapshot.error ?? attachError
-  const isMarkdown = !!filePath && /\.mdx?$/i.test(filePath)
   const root = checkout ?? ''
   const sidebarVisible = sidebar.visible && !!root
   // Sidebar only: the file's own path and actions are hidden.
@@ -273,9 +281,9 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
             </div>
           )}
           {editorVisible && connectedDraft?.syncError &&<button className="shrink-0 text-error" title={connectedDraft.syncError} onClick={doSave}>Save failed · Retry</button>}
-          {editorVisible && isMarkdown && !draft && (
+          {editorVisible && previewable && !draft && (
             <button
-              onClick={() => void run(() => send({ kind: 'setMode', mode: mode === 'preview' ? 'code' : 'preview' }), 'Could not switch the view.')}
+              onClick={() => pickMode(mode === 'preview' ? 'code' : 'preview')}
               className={`shrink-0 px-2 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'preview' ? 'bg-agent/15 text-agent hover:bg-agent/25' : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'}`}
               title={mode === 'preview' ? 'Show source' : 'Preview markdown'}
             >{mode === 'preview' ? 'Source' : 'Preview'}</button>

@@ -191,15 +191,6 @@ describe('ChatSession and the harness', () => {
     expect(snapshot()).toMatchObject({ activity: 'waitingForInput', canReceivePrompt: true })
   })
 
-  it('says whether the harness knows the bound thread yet, without a new load', async () => {
-    await addChat({ threadId: 'fresh' })
-    expect(snapshot().threadKnown).toBeNull()
-    t3.emit({ kind: 'snapshot', snapshot: shell({}) })
-    expect(snapshot().threadKnown).toBe(false)
-    t3.emit({ kind: 'snapshot', snapshot: shell({ fresh: { id: 'fresh', title: 'Fresh' } }, true, 2) })
-    expect(snapshot()).toMatchObject({ threadKnown: true, loadId: 1 })
-  })
-
   it('restarts the harness on retry and reports failures', async () => {
     await addChat()
     await op({ kind: 'retry' })

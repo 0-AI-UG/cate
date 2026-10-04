@@ -2,10 +2,12 @@
 // Stacks render into stable detached hosts portalled into their slots, so a
 // stack keeps its instance (and its panels' state) when splits appear or
 // collapse around it. The same renderer draws window docks and node docks.
+// A maximized stack (`soloStackId`) is drawn alone; the others stay mounted
+// in their detached hosts, so restoring loses nothing.
 
 import React, { useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { dockStacks, type DockNode, type DockSplit, type DockStack } from '@workspace/document/contract'
+import { dockStacks, type DockNode, type DockSplit, type DockStack, type StackId } from '@workspace/document/contract'
 import { DockSplitContainer } from './DockSplitContainer'
 import { layoutMinimum, type PanelTypeOf } from './sizing'
 
@@ -14,6 +16,8 @@ interface DockLayoutProps {
   renderStack: (stack: DockStack, isRoot: boolean) => React.ReactNode
   typeOf?: PanelTypeOf
   onRatios?: (splitId: string, ratios: number[]) => void
+  /** The stack this client shows alone (maximize); ignored when not in the tree. */
+  soloStackId?: StackId | null
 }
 
 function DockStackSlot({ host }: { host: HTMLDivElement }) {
@@ -29,10 +33,11 @@ function DockStackSlot({ host }: { host: HTMLDivElement }) {
   return <div ref={slotRef} className="h-full w-full min-h-0 min-w-0" />
 }
 
-export function DockLayout({ layout, renderStack, typeOf, onRatios }: DockLayoutProps) {
-  const minimum = layoutMinimum(layout, typeOf)
+export function DockLayout({ layout, renderStack, typeOf, onRatios, soloStackId }: DockLayoutProps) {
   const hostsRef = useRef(new Map<string, HTMLDivElement>())
   const stacks = dockStacks(layout)
+  const solo = stacks.find((stack) => stack.id === soloStackId)
+  const minimum = layoutMinimum(solo ?? layout, typeOf)
   const stackIds = new Set(stacks.map((stack) => stack.id))
   for (const id of hostsRef.current.keys()) {
     if (!stackIds.has(id)) hostsRef.current.delete(id)
@@ -59,7 +64,9 @@ export function DockLayout({ layout, renderStack, typeOf, onRatios }: DockLayout
   return <>
     <div data-dock-viewport className="h-full w-full min-h-0 min-w-0 overflow-auto">
       <div style={{ width: '100%', height: '100%', minWidth: minimum.width, minHeight: minimum.height }}>
-        <DockSplitContainer node={root} renderNode={renderNode} typeOf={typeOf} onRatios={onRatios} />
+        {solo
+          ? <DockStackSlot host={hostsRef.current.get(solo.id)!} />
+          : <DockSplitContainer node={root} renderNode={renderNode} typeOf={typeOf} onRatios={onRatios} />}
       </div>
     </div>
     {stacks.map((stack) => createPortal(

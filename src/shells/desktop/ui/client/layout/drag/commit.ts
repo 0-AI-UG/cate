@@ -9,7 +9,7 @@ import {
   type DocChange,
   type WorkspaceDocument,
 } from '@workspace/document/contract'
-import type { Point, Size } from '@workspace/canvas/contract'
+import type { Point, Rect, Size } from '@workspace/canvas/contract'
 import { canLiveOnCanvas } from '@client/host'
 import type { DragPanel, DragSource, DropTarget } from './types'
 
@@ -95,17 +95,12 @@ export function dropChanges(
   }
 }
 
-/** The op that detaches a panel into a new window at the drop point. The
- *  bounds are shared; each client clamps them to its screens. */
-export function detachChange(panel: DragPanel, screen: Point, grab: Point, size: Size, newId: () => string): DocChange {
-  return {
-    kind: 'placePanel',
-    id: panel.id,
-    at: {
-      to: 'window',
-      windowId: newId(),
-      stackId: newId(),
-      bounds: { origin: { x: Math.round(screen.x - grab.x), y: Math.round(screen.y - grab.y) }, size: { width: Math.round(size.width), height: Math.round(size.height) } },
-    },
-  }
+/** The op that detaches a panel into the new window `windowId`. */
+export function detachChange(panel: DragPanel, windowId: string, newId: () => string): DocChange {
+  return { kind: 'placePanel', id: panel.id, at: { to: 'window', windowId, stackId: newId() } }
+}
+
+/** Where the detached window opens on this device: at the drop point. */
+export function detachBounds(screen: Point, grab: Point, size: Size): Rect {
+  return { origin: { x: Math.round(screen.x - grab.x), y: Math.round(screen.y - grab.y) }, size: { width: Math.round(size.width), height: Math.round(size.height) } }
 }

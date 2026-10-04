@@ -4,7 +4,7 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { ApiHandlerContext, CateServiceHandlers } from '@kernel/api/contract'
 import type { agentApi, codingAgentApi } from '../contract/api'
-import type { PanelAgentState } from '../contract'
+import { AGENT_DEFS, PERSON_MISSION_OWNER, type PanelAgentState } from '../contract'
 import type { AgentsRuntime } from './agentsRuntime'
 import type { Missions } from './missions/missions'
 
@@ -101,24 +101,33 @@ function waitForAgents(agents: AgentsRuntime, panelIds: string[], timeoutSeconds
   })
 }
 
-function owner(ctx: ApiHandlerContext): string {
-  const panelId = ctx.caller.panelId
-  if (!panelId) throw new RpcError('rejected', 'mission-owner-required')
-  return panelId
+/** The mission a call acts for. A panel (an agent's CLI or harness) owns its
+ *  own workers. A client is the person: it owns the workers it starts and
+ *  decides about any worker with that worker's mission's authority. */
+function owner(ctx: ApiHandlerContext, missions: Missions, runId?: string): string {
+  if (ctx.caller.panelId) return ctx.caller.panelId
+  if (ctx.caller.kind !== 'client') throw new RpcError('rejected', 'mission-owner-required')
+  return (runId ? missions.ownerOf(runId) : null) ?? PERSON_MISSION_OWNER
 }
 
 export function createCodingAgentApiHandlers(missions: Missions): CateServiceHandlers<typeof codingAgentApi> {
+  const run = (ctx: ApiHandlerContext, runId: string) => owner(ctx, missions, runId)
   return {
-    create: async (args, ctx) => missions.create(owner(ctx), args),
-    send: async ({ runId, prompt }, ctx) => missions.send(owner(ctx), runId, prompt),
-    list: async (_args, ctx) => missions.list(owner(ctx)),
+    create: async (args, ctx) => missions.create(owner(ctx, missions), args),
+    send: async ({ runId, prompt }, ctx) => missions.send(run(ctx, runId), runId, prompt),
+    async list(_args, ctx) {
+      if (ctx.caller.panelId) return missions.list(ctx.caller.panelId)
+      owner(ctx, missions) // refuses a caller that is neither a panel nor a client
+      return missions.all()
+    },
+    agents: async () => (await missions.readyAgents()).map((agentId) => ({ agentId, displayName: AGENT_DEFS[agentId].displayName })),
     wait: async ({ runIds, timeoutSeconds, baselineStatuses }, ctx) =>
-      missions.wait(owner(ctx), { runIds, timeoutSeconds, baselineStatuses, signal: ctx.signal }),
-    inspect: async ({ runId }, ctx) => missions.inspect(owner(ctx), runId),
-    review: async ({ runId }, ctx) => missions.review(owner(ctx), runId),
-    apply: async ({ runId }, ctx) => missions.apply(owner(ctx), runId),
-    keep: async ({ runId }, ctx) => missions.keep(owner(ctx), runId),
-    discard: async ({ runId }, ctx) => missions.discard(owner(ctx), runId),
-    stop: async ({ runId }, ctx) => missions.stop(owner(ctx), runId),
+      missions.wait(owner(ctx, missions), { runIds, timeoutSeconds, baselineStatuses, signal: ctx.signal }),
+    inspect: async ({ runId }, ctx) => missions.inspect(run(ctx, runId), runId),
+    review: async ({ runId }, ctx) => missions.review(run(ctx, runId), runId),
+    apply: async ({ runId }, ctx) => missions.apply(run(ctx, runId), runId),
+    keep: async ({ runId }, ctx) => missions.keep(run(ctx, runId), runId),
+    discard: async ({ runId }, ctx) => missions.discard(run(ctx, runId), runId),
+    stop: async ({ runId }, ctx) => missions.stop(run(ctx, runId), runId),
   }
 }

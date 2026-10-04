@@ -50,6 +50,7 @@ export const DATA_FILES = {
   settings: 'settings.json',
   secrets: 'secrets.json',
   pairings: 'pairings.json',
+  push: 'push.json',
   trust: 'trust.json',
   grants: 'grants.json',
   skills: 'skills',

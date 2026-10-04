@@ -6,18 +6,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Columns2 as Columns, Maximize2, Minimize2 } from 'lucide-react'
 import {
-  canvasPanelOf,
   isCanvasDock,
-  placementOf,
-  type DocWindow,
   type DockNode,
   type DockRef,
   type DockStack,
   type PanelRecord,
-  type WorkspaceDocument,
 } from '@workspace/document/contract'
 import { Tooltip } from '../../../kernel/interaction'
-import { clientStateFor, documentStoreFor } from '@client/document'
+import { clientStateFor } from '@client/document'
 import { useClientState, useDocument } from '../../document'
 import { PanelChromeProvider, type PanelChromeApi } from '../../host/panelChrome'
 import { PanelPlacementContext } from '../../host/PanelHost'
@@ -60,15 +56,6 @@ function useStackRecords(workspaceId: string, stack: DockStack): (PanelRecord | 
   return useDocument(workspaceId, selector, (a, b) => a.length === b.length && a.every((r, i) => r === b[i]))
 }
 
-/** The window a maximize from this dock changes: its own, or for a canvas
- *  node the one showing the canvas. */
-function maximizeWindowOf(doc: WorkspaceDocument, dock: DockRef): DocWindow | undefined {
-  if (!isCanvasDock(dock)) return doc.windows[dock.windowId]
-  const host = canvasPanelOf(doc, dock.canvasId)
-  const placement = host && placementOf(doc, host.id)
-  return placement && !isCanvasDock(placement.dock) ? doc.windows[placement.dock.windowId] : undefined
-}
-
 export function DockTabStack({
   workspaceId, dock, stack, layout, renderPanel, trailingControls, newTabControl,
   onTabBarMouseDown, compact, dropDisabled, leadingInset,
@@ -80,23 +67,19 @@ export function DockTabStack({
   const stackRef = useRef<HTMLDivElement>(null)
   const onCanvas = isCanvasDock(dock)
 
-  // --- Maximize / minimize --------------------------------------------------------
-  const maximizeWindow = useDocument(workspaceId, (doc) => maximizeWindowOf(doc, dock))
-  const restorable = !onCanvas && maximizeWindow?.maximized?.stackId === stack.id
-  const maximizable = !!maximizeWindow && !maximizeWindow.maximized && (onCanvas || layout.kind === 'split')
+  // --- Maximize / restore -----------------------------------------------------------
+  // Client state: a window stack shows alone in its window, a canvas node
+  // fills its canvas. Nobody else's layout changes.
+  const restorable = useClientState(workspaceId, (s) => (isCanvasDock(dock)
+    ? s.maximizedNodes[dock.canvasId] === dock.nodeId
+    : s.maximizedStacks[dock.windowId] === stack.id))
+  const maximizable = !restorable && (onCanvas || layout.kind === 'split')
   const toggleMaximized = useCallback(() => {
-    const store = documentStoreFor(workspaceId)
-    if (!store || !maximizeWindow) return
-    if (restorable) {
-      store.propose({ kind: 'restoreLayout', windowId: maximizeWindow.id })
-    } else if (onCanvas) {
-      if (!activePanelId || !store.propose({ kind: 'maximizePanel', id: activePanelId }).ok) return
-      const placement = placementOf(store.getSnapshot(), activePanelId)
-      if (placement) clientStateFor(workspaceId)?.setActiveTab(placement.stackId, activePanelId)
-    } else {
-      store.propose({ kind: 'maximizeStack', windowId: maximizeWindow.id, stackId: stack.id })
-    }
-  }, [workspaceId, maximizeWindow, restorable, onCanvas, activePanelId, stack.id])
+    const state = clientStateFor(workspaceId)
+    if (!state) return
+    if (isCanvasDock(dock)) state.setMaximizedNode(dock.canvasId, restorable ? null : dock.nodeId)
+    else state.setMaximizedStack(dock.windowId, restorable ? null : stack.id)
+  }, [workspaceId, dock, restorable, stack.id])
 
   // --- Drop target -------------------------------------------------------------------
   const dropDisabledRef = useRef(false)
@@ -243,10 +226,10 @@ export function DockTabStack({
         )}
 
         {(restorable || maximizable) && (
-          <Tooltip label={restorable ? 'Restore previous layout' : onCanvas ? 'Move panel into dock' : 'Merge splits into tabs'}>
+          <Tooltip label={restorable ? 'Restore' : 'Maximize'}>
             <button
               type="button"
-              aria-label={restorable ? 'Restore previous layout' : onCanvas ? 'Move panel into dock' : 'Merge splits into tabs'}
+              aria-label={restorable ? 'Restore' : 'Maximize'}
               aria-pressed={restorable}
               className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${buttonSize}`}
               onMouseDown={(event) => event.stopPropagation()}

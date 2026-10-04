@@ -5,14 +5,15 @@ import { useDocument } from '../../client/document'
 import { Icon } from '../../kernel/interaction'
 import { isIconName } from '@kernel/interaction/contract'
 import type { PanelType } from '@workspace/document/contract'
-import { pickSurface, surfaceChoices } from './parts/pickSurface'
+import { surfaceChoices, surfaceReplacement } from '@panels/definitions'
 
 export default function SurfaceView({ workspaceId, panelId, record }: PanelViewProps) {
   const choices = useDocument(workspaceId, (doc) => surfaceChoices(doc, panelId),
     (a, b) => a.length === b.length && a.every((item, index) => item === b[index]))
   const choose = (type: PanelType) => {
     const store = documentStoreFor(workspaceId)
-    if (store) pickSurface(store, record, type)
+    const replacement = store && surfaceReplacement(store.getSnapshot(), record.id, type)
+    if (replacement) store.propose({ kind: 'replacePanel', record: replacement })
   }
   return <div className="flex h-full min-h-0 flex-col overflow-y-auto p-4">
     <div className="m-auto w-full max-w-lg py-4">

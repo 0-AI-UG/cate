@@ -1,10 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ChannelEvent } from '@kernel/rpc/contract'
 import { setRuntimeResolver } from '@kernel/rpc/client'
-import type { AgentPanelStates, AgentPanelStatesChange, PanelAgentState } from '@services/agents/contract'
-import { fakeStream } from '@services/agents/client/testing'
-import { attachNotifications, type NotificationConnection } from './attach'
-import type { NotificationDisplay, RuntimeNotification } from './display'
+import type { AgentNotificationEvent, AgentPanelStates, AgentPanelStatesChange, PanelAgentState } from '../contract'
+import { attachAgentNotifications, type NotificationConnection, type NotificationDisplay } from './notifications'
+import { fakeStream } from './testing'
 
 const panel = (status: PanelAgentState['status']): PanelAgentState => ({
   panelId: 'p1', runner: 'terminal', agentId: 'codex', agentName: 'Codex', status,
@@ -15,7 +14,7 @@ let stopResolver = () => {}
 afterEach(() => stopResolver())
 
 it('shows each workspace event, drops a pending one when its agent runs, and detaches', () => {
-  const events = fakeStream<RuntimeNotification>()
+  const events = fakeStream<AgentNotificationEvent>()
   const panels = fakeStream<ChannelEvent<AgentPanelStates, AgentPanelStatesChange>>()
   const runtime = {
     agents: {
@@ -27,12 +26,12 @@ it('shows each workspace event, drops a pending one when its agent runs, and det
   const connection: NotificationConnection = { workspaceId: 'ws', runtime }
   let list: NotificationConnection[] = [connection]
   const listeners = new Set<() => void>()
-  const display: NotificationDisplay = { show: vi.fn(), cancel: vi.fn(), dispose: vi.fn() }
+  const display: NotificationDisplay = { show: vi.fn(), cancel: vi.fn() }
 
-  const stop = attachNotifications({ getSnapshot: () => list, subscribe: (l) => { listeners.add(l); return () => listeners.delete(l) } }, display)
+  const stop = attachAgentNotifications({ getSnapshot: () => list, subscribe: (l) => { listeners.add(l); return () => listeners.delete(l) } }, display)
   expect(runtime.agents.notifications).toHaveBeenCalledWith(undefined, { resume: true })
 
-  const event = { kind: 'agent.needsInput', panelId: 'p1', title: 't', body: 'b' }
+  const event: AgentNotificationEvent = { kind: 'agent.needsInput', panelId: 'p1', title: 't', body: 'b' }
   events.emit(event)
   expect(display.show).toHaveBeenCalledWith('ws', event)
 

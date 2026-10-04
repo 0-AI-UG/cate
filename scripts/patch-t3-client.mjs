@@ -118,11 +118,38 @@ function patchT3CoverageLabel(source) {
   return source.replace(before, after) + '\n' + marker
 }
 
-export function patchT3Client(directory) {
-  const entries = readdirSync(directory).filter((name) => /^ChatView-.*\.js$/.test(name))
-  if (entries.length !== 1) throw new Error('T3 client entry changed')
+// Cate moves every client's page to the panel's thread in place (no reload),
+// through T3's own router.
+export function patchT3Router(source) {
+  const marker = 'return window.__cateRouter='
+  if (source.includes(marker)) return source
+  const seam = /return (\w+)\(\{routeTree:(\w+),history:(\w+),context:\{\},defaultPreload:`intent`\}\)/g
+  if ((source.match(seam) ?? []).length !== 1) throw new Error('T3 router creation changed')
+  return source.replace(seam, (call) => call.replace('return ', marker))
+}
+
+// A thread another client just started reaches this page through T3's own
+// stream a moment later. Without this, the thread route sends the page home
+// meanwhile. Cate closes panels of deleted threads itself.
+export function patchT3ThreadRoute(source) {
+  const marker = '/* cate: thread route waits */'
+  if (source.includes(marker)) return source
+  const seam = /(\w+)===`missing`&&(\w+)&&(\w+)\(\{to:`\/`,replace:!0\}\)/g
+  if ((source.match(seam) ?? []).length !== 1) throw new Error('T3 thread route changed')
+  return source.replace(seam, `void 0${marker}`)
+}
+
+function patchFile(directory, pattern, patch) {
+  const entries = readdirSync(directory).filter((name) => pattern.test(name))
+  if (entries.length !== 1) throw new Error(`T3 client file changed: ${pattern}`)
   const file = path.join(directory, entries[0])
   const source = readFileSync(file, 'utf8')
-  const patched = patchT3ClientSource(source)
+  const patched = patch(source)
   if (patched !== source) writeFileSync(file, patched)
+}
+
+export function patchT3Client(directory) {
+  patchFile(directory, /^ChatView-.*\.js$/, patchT3ClientSource)
+  patchFile(directory, /^main-.*\.js$/, patchT3Router)
+  patchFile(directory, /^_chat\._environmentId\._threadId-.*\.js$/, patchT3ThreadRoute)
 }

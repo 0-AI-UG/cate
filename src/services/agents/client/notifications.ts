@@ -1,16 +1,25 @@
-// Subscribes to the notification events of every open workspace and hands
-// them to the display. A pending agent notification is dropped when that
-// agent goes back to work.
+// How every client consumes notification events (architecture 10.5): one
+// subscription to the `agents.notifications` stream per open workspace, each
+// event handed to the shell's display, and a pending agent notification
+// withdrawn when that agent goes back to work. The display decides how (and
+// whether) to show one.
 
 import type { Subscription, SubscribeOptions } from '@kernel/rpc/contract'
-import { acquireAgentPanels } from '@services/agents/client'
-import type { NotificationDisplay, RuntimeNotification } from './display'
+import type { AgentNotificationEvent } from '../contract'
+import { acquireAgentPanels } from './panelStates'
+
+/** Where a client shows notification events. */
+export interface NotificationDisplay {
+  show(workspaceId: string, event: AgentNotificationEvent): void
+  /** The panel's agent works again: what it asked for is answered. */
+  cancel(workspaceId: string, panelId: string): void
+}
 
 /** The part of a workspace connection this needs. */
 export interface NotificationConnection {
   readonly workspaceId: string
   readonly runtime: {
-    agents: { notifications(params?: undefined, opts?: SubscribeOptions): Subscription<RuntimeNotification, unknown> }
+    agents: { notifications(params?: undefined, opts?: SubscribeOptions): Subscription<AgentNotificationEvent, unknown> }
   }
 }
 
@@ -39,7 +48,7 @@ function attachOne(connection: NotificationConnection, display: NotificationDisp
 }
 
 /** Keeps one notification subscription per open connection. */
-export function attachNotifications(connections: NotificationConnections, display: NotificationDisplay): () => void {
+export function attachAgentNotifications(connections: NotificationConnections, display: NotificationDisplay): () => void {
   const attached = new Map<NotificationConnection, () => void>()
   const sync = () => {
     const current = new Set(connections.getSnapshot())

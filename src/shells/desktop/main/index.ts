@@ -9,6 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow, dialog, nativeTheme, net, session, shell } from 'electron'
 import { autoUpdater as electronUpdater } from 'electron-updater'
+import { localRootOf } from '@client/workspaces'
 import { createLogger, installLogSink } from '@kernel/log/contract'
 import { createJsonStateFile } from '@kernel/state/node'
 import { createElectronMainSink } from '@kernel/log/desktop/main'
@@ -297,6 +298,9 @@ app.whenReady().then(() => {
     deviceName: () => os.hostname().replace(/\.local$/, ''),
     pins,
   })
+  // The last workspace's runtime starts while the window loads.
+  const lastRoot = localRootOf(device.boot().lastWorkspace ?? '')
+  if (lastRoot) host.prestartLocal(lastRoot)
 
   registerDeviceIpc(device, registry)
   registerNatives({ registry, settingsFile, backgrounds, focusWindow })

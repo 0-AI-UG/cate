@@ -45,7 +45,7 @@ export type PlaceTarget =
   /** A new canvas node. */
   | { to: 'canvas'; canvasId: CanvasId; nodeId: NodeId; stackId: StackId; rect: Rect }
   /** A new detached window. */
-  | { to: 'window'; windowId: WindowId; stackId: StackId; bounds: Rect }
+  | { to: 'window'; windowId: WindowId; stackId: StackId }
 
 export interface PanelPatch {
   title?: string
@@ -74,15 +74,7 @@ export type DocChange =
   | { kind: 'placePanel'; id: PanelId; at: PlaceTarget }
   | { kind: 'setSplitRatio'; splitId: SplitId; ratios: number[] }
   | { kind: 'setNodeRects'; canvasId: CanvasId; rects: { nodeId: NodeId; rect: Rect }[] }
-  | { kind: 'setWindowBounds'; windowId: WindowId; bounds: Rect }
   | { kind: 'closeWindow'; windowId: WindowId }
-  /** Gathers every tab of a split window into `stackId`. */
-  | { kind: 'maximizeStack'; windowId: WindowId; stackId: StackId }
-  /** Moves a canvas pane into the window showing its canvas, after the
-   *  canvas tab. */
-  | { kind: 'maximizePanel'; id: PanelId }
-  /** Puts back what the window's maximize changed. */
-  | { kind: 'restoreLayout'; windowId: WindowId }
   | { kind: 'addRelation'; relation: PanelRelation }
   | { kind: 'updateRelation'; id: RelationId; patch: RelationPatch }
   | { kind: 'removeRelation'; id: RelationId }

@@ -1,5 +1,5 @@
-// Detached window bounds are shared; each client clamps them to its own
-// screens before it opens the window. Pure, for the desktop shell.
+// Where a new detached window opens on this device, clamped to its screens
+// before the window opens. Pure, for the desktop shell.
 
 import type { Rect } from '@workspace/canvas/contract'
 

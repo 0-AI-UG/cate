@@ -57,17 +57,14 @@ export interface ReviewAgentRun {
   completedAt?: number
 }
 
-/** One checkout's review: comparison, filters and notes. */
+/** One checkout's review: comparison, filters and notes. How a reader shows
+ *  it (file filter, focused file, files in full, context lines) is client
+ *  state, not here. */
 export interface ReviewCheckoutState {
   /** Present only for recorded agent edits; absent means a Git comparison. */
   agentChanges?: AgentChangesFilter
   repoPath: string
   spec: GitComparisonSpec
-  focusedFile?: string
-  fileFilter?: string
-  /** Git comparisons: files shown in full, and per-file context line counts. */
-  expandedFiles?: string[]
-  contextLines?: Record<string, number>
   /** Agent changes: every recorded edit instead of only active ones. */
   showHistory?: boolean
   notes?: ReviewNote[]
@@ -86,9 +83,14 @@ export interface ReviewState extends ReviewCheckoutState {
 export interface ReviewOpenRequest {
   agentChanges?: AgentChangesFilter
   spec: GitComparisonSpec
+  /** Reveals this file once in every view (`ReviewSnapshot.reveal`). */
   focusedFile?: string
   sourceAgent?: ReviewSourceAgent
 }
+
+/** A file the runtime asked views to reveal (an open request's
+ *  `focusedFile`). Views apply each `seq` once. */
+export interface ReviewRevealRequest { seq: number; path: string }
 
 /** The review's record fields. `repoPath` follows the checkout the session
  *  reviews; `request` seeds a fresh session and is ignored once it has state. */
@@ -137,14 +139,17 @@ export interface ReviewSnapshot {
   notRepository: boolean
   branches: Array<{ name: string; current: boolean; isRemote: boolean }>
   commits: Array<{ hash: string; message: string; author_name: string; date: string }>
+  reveal: ReviewRevealRequest | null
 }
 
+/** How the asking client shows the file; the session keeps none of it. */
 export interface DiffOptions {
   allowLarge?: boolean
-  /** This file expanded to the full file (kept for the panel). */
+  /** The client expanded this file to the full file (also allows large). */
   fullFile?: boolean
   /** The client shows whole files (its full-files display): every line as context. */
   allLines?: boolean
+  /** Context lines around each hunk (default 3). */
   contextLines?: number
 }
 
@@ -159,12 +164,10 @@ export type ReviewOp =
   | { kind: 'refresh' }
   | { kind: 'selectComparison'; comparison: ReviewComparisonKind }
   | { kind: 'setSpec'; spec: GitComparisonSpec }
-  | { kind: 'update'; patch: { fileFilter?: string; showHistory?: boolean; focusedFile?: string | null } }
+  | { kind: 'update'; patch: { showHistory?: boolean } }
   | { kind: 'updateFilter'; patch: AgentChangesFilterPatch }
   /** Returns the file's `GitFileDiff`. */
   | { kind: 'diff'; path: string; options?: DiffOptions }
-  | { kind: 'expandContext'; path: string }
-  | { kind: 'expandFullFile'; path: string }
   /** Returns base64 `{old, new}` bytes of an image file. */
   | { kind: 'images'; path: string; oldPath?: string }
   /** Returns the recorded `AgentChangedFile`. */
@@ -204,7 +207,6 @@ export function defaultReviewState(repoPath: string, request?: Partial<ReviewOpe
     repoPath,
     spec: request?.spec ?? { kind: 'uncommitted' },
     ...(request?.agentChanges ? { agentChanges: request.agentChanges } : {}),
-    ...(request?.focusedFile ? { focusedFile: request.focusedFile } : {}),
     ...(request?.sourceAgent ? { sourceAgent: request.sourceAgent } : {}),
     notes: [],
   }

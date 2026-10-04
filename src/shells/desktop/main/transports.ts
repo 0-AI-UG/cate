@@ -33,6 +33,8 @@ export interface ShellTransportDeps {
 
 export interface ShellTransportHost {
   dialLocal(root: string): Promise<ByteDuplex>
+  /** Starts the workspace's runtime ahead of the first dial (app launch). */
+  prestartLocal(root: string): void
   dialLoopbackTcp(port: number): Promise<ByteDuplex>
   dialNetwork(target: DesktopNetworkTarget): Promise<ByteDuplex>
   pair(request: { link: string; deviceName?: string }): Promise<PairResult>
@@ -67,11 +69,32 @@ export function createShellTransportHost(deps: ShellTransportDeps): ShellTranspo
     ...(deps.sameNetwork ? { sameNetwork: deps.sameNetwork } : {}),
   })
 
+  // One start per root at a time: a dial that finds one in flight waits for
+  // it, then connects to the runtime it started instead of spawning another.
+  const starting = new Map<string, Promise<LocalRuntime>>()
+  async function startLocal(root: string): Promise<LocalRuntime> {
+    const pending = starting.get(root)
+    if (pending) await pending.catch(() => {})
+    const start = deps.startLocal(root)
+    starting.set(root, start)
+    try {
+      const local = await start
+      if (local.started) log.info('started runtime %s for %s', local.runtimeId, local.root)
+      return local
+    } finally {
+      if (starting.get(root) === start) starting.delete(root)
+    }
+  }
+
   return {
     async dialLocal(root) {
-      const local = await deps.startLocal(root)
-      if (local.started) log.info('started runtime %s for %s', local.runtimeId, local.root)
-      return local.duplex
+      return (await startLocal(root)).duplex
+    },
+    prestartLocal(root) {
+      startLocal(root).then(
+        (local) => local.duplex.close(),
+        (err: Error) => log.warn('could not start the runtime for %s: %s', root, err.message),
+      )
     },
     dialLoopbackTcp: (port) => dialLoopbackTcp(port),
     dialNetwork: (target) => network.dialNetwork(target),

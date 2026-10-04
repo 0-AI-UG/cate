@@ -1,6 +1,7 @@
 export {
   WorkspaceList,
   WORKSPACES_DOCUMENT,
+  localRootOf,
   localWorkspaceId,
   pairedWorkspaceId,
   targetOf,

@@ -1,12 +1,13 @@
 // View-side state of a review: diffs fetched on demand from the session, the
-// agent picker, and how this client shows the review. Diffs never ride in the
-// snapshot; a new `diffEpoch` or a change of this client's full-files display
-// refetches the ones this view loaded, a new comparison drops them.
+// agent picker, and how this client shows the review (file filter, focused
+// file, collapsed files, files in full, context lines: client state, never
+// the session's). Diffs never ride in the snapshot; a new `diffEpoch` or a
+// change of this client's full-files display refetches the ones this view
+// loaded, a new comparison drops them.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { clientUi } from '@kernel/interaction'
 import { setClientSetting, useClientSetting } from '../../kernel/settings'
-import { clientStateFor } from '@client/document'
 import { usePanelView } from '../../client/document'
 import type { AgentId } from '@services/agents/contract'
 import type { GitFileDiff } from '@workspace/repository/contract'
@@ -25,8 +26,14 @@ export interface ReviewDiffs {
   reload(path: string, op: ReviewOp): void
 }
 
-/** `allLines`: this client shows whole files. */
-export function useReviewDiffs(send: ReviewSend, snapshot: ReviewSnapshot | null, allLines: boolean): ReviewDiffs {
+/** `allLines`: this client shows whole files. `optionsFor`: how this client
+ *  shows a file (its full-file expansion and context lines). */
+export function useReviewDiffs(
+  send: ReviewSend,
+  snapshot: ReviewSnapshot | null,
+  allLines: boolean,
+  optionsFor: (path: string) => DiffOptions = () => ({}),
+): ReviewDiffs {
   const [diffs, setDiffs] = useState<Record<string, GitFileDiff>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const key = snapshot ? JSON.stringify([snapshot.review.repoPath, snapshot.review.spec]) : ''
@@ -36,6 +43,8 @@ export function useReviewDiffs(send: ReviewSend, snapshot: ReviewSnapshot | null
   const inFlight = useRef(new Set<string>())
   const allLinesRef = useRef(allLines)
   allLinesRef.current = allLines
+  const optionsForRef = useRef(optionsFor)
+  optionsForRef.current = optionsFor
 
   const fetchDiff = useCallback((path: string, op: ReviewOp) => {
     const forKey = keyRef.current
@@ -64,18 +73,17 @@ export function useReviewDiffs(send: ReviewSend, snapshot: ReviewSnapshot | null
     setErrors({})
   }, [key])
 
-  // Refetch what this view shows; the options that loaded it stay in force
-  // through the session's persisted expansion and context.
+  // Refetch what this view shows, as this client shows each file.
   const last = useRef({ epoch, allLines })
   useEffect(() => {
     if (last.current.epoch === epoch && last.current.allLines === allLines) return
     last.current = { epoch, allLines }
-    for (const path of loaded.current.keys()) fetchDiff(path, { kind: 'diff', path })
+    for (const path of loaded.current.keys()) fetchDiff(path, { kind: 'diff', path, options: optionsForRef.current(path) })
   }, [epoch, allLines, fetchDiff])
 
   const load = useCallback((path: string) => {
     if (loaded.current.has(path) || inFlight.current.has(path)) return
-    fetchDiff(path, { kind: 'diff', path })
+    fetchDiff(path, { kind: 'diff', path, options: optionsForRef.current(path) })
   }, [fetchDiff])
 
   const reload = useCallback((path: string, op: ReviewOp) => fetchDiff(path, op), [fetchDiff])
@@ -127,6 +135,25 @@ export interface ReviewView {
   collapsed: ReadonlySet<string>
   setCollapsed(keys: string[]): void
   toggleCollapsed(key: string): void
+  fileFilter: string
+  setFileFilter(value: string): void
+  /** The file the last reveal named (an open request's focused file). */
+  focusedFile: string | undefined
+  /** Git comparisons: whether this client expanded the file to the full file. */
+  isExpanded(path: string): boolean
+  /** How to fetch the file's diff as this client shows it. */
+  diffOptions(path: string): DiffOptions
+  /** Expands the file to the full file; returns the options to refetch with. */
+  expandFullFile(path: string): DiffOptions
+  /** Shows more context around the file's hunks; returns the options to refetch with. */
+  expandContext(path: string): DiffOptions
+}
+
+/** Files in full and context lines, for the comparison they were set on. */
+interface FileExpansion {
+  comparison: string
+  full: string[]
+  context: Record<string, number>
 }
 
 const DISPLAY_SETTINGS = {
@@ -138,10 +165,12 @@ const DISPLAY_SETTINGS = {
 } as const satisfies Record<keyof ReviewDisplay, string>
 
 const NO_KEYS: string[] = []
+const NO_EXPANSION: FileExpansion = { comparison: '', full: [], context: {} }
 
 /** How this client shows the review: display from its client settings, the
- *  collapsed files from its client state. A newly focused file is expanded. */
-export function useReviewView(workspaceId: string, panelId: string, focusedFile: string | undefined): ReviewView {
+ *  rest from its client state. A revealed file becomes the focused one and is
+ *  expanded; a new comparison drops the expansions. */
+export function useReviewView(workspaceId: string, panelId: string, snapshot: ReviewSnapshot): ReviewView {
   const display: ReviewDisplay = {
     split: useClientSetting('reviewSplitDiff'),
     wordDiff: useClientSetting('reviewWordDiff'),
@@ -151,13 +180,26 @@ export function useReviewView(workspaceId: string, panelId: string, focusedFile:
   }
   const [keys, setKeys] = usePanelView(workspaceId, panelId, 'collapsedFiles', NO_KEYS)
   const collapsed = useMemo(() => new Set(keys), [keys])
+  const [fileFilter, setFileFilter] = usePanelView(workspaceId, panelId, 'fileFilter', '')
+  const [focusedFile, setFocusedFile] = usePanelView<string | undefined>(workspaceId, panelId, 'focusedFile', undefined)
+  const [revealSeq, setRevealSeq] = usePanelView(workspaceId, panelId, 'revealSeq', 0)
+  const [stored, setExpansion] = usePanelView(workspaceId, panelId, 'fileExpansion', NO_EXPANSION)
+  const comparison = JSON.stringify([snapshot.review.repoPath, snapshot.review.spec])
+  const expansion = stored.comparison === comparison ? stored : { ...NO_EXPANSION, comparison }
 
+  // Apply each reveal once per client.
+  const reveal = snapshot.reveal
   useEffect(() => {
-    if (!focusedFile) return
-    const current = clientStateFor(workspaceId)?.getSnapshot().panelViews[panelId]?.collapsedFiles as string[] | undefined
-    const next = current?.filter((key) => key !== focusedFile && !key.endsWith(`:${focusedFile}`))
-    if (current && next && next.length !== current.length) setKeys(next)
-  }, [workspaceId, panelId, focusedFile, setKeys])
+    if (!reveal || reveal.seq === revealSeq) return
+    setRevealSeq(reveal.seq)
+    setFocusedFile(reveal.path)
+    const next = keys.filter((key) => key !== reveal.path && !key.endsWith(`:${reveal.path}`))
+    if (next.length !== keys.length) setKeys(next)
+  }, [reveal, revealSeq, keys, setRevealSeq, setFocusedFile, setKeys])
+
+  const diffOptions = (path: string): DiffOptions => expansion.full.includes(path)
+    ? { fullFile: true }
+    : expansion.context[path] !== undefined ? { allowLarge: true, contextLines: expansion.context[path] } : {}
 
   return {
     display,
@@ -167,5 +209,20 @@ export function useReviewView(workspaceId: string, panelId: string, focusedFile:
     collapsed,
     setCollapsed: setKeys,
     toggleCollapsed: (key) => setKeys(collapsed.has(key) ? keys.filter((item) => item !== key) : [...keys, key]),
+    fileFilter,
+    setFileFilter,
+    focusedFile,
+    isExpanded: (path) => expansion.full.includes(path),
+    diffOptions,
+    expandFullFile: (path) => {
+      if (!expansion.full.includes(path)) setExpansion({ ...expansion, full: [...expansion.full, path] })
+      return { fullFile: true }
+    },
+    expandContext: (path) => {
+      const current = expansion.context[path] ?? 3
+      const next = current < 10 ? 10 : Math.min(current * 2, 500)
+      setExpansion({ ...expansion, context: { ...expansion.context, [path]: next } })
+      return { allowLarge: true, contextLines: next }
+    },
   }
 }

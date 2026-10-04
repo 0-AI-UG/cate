@@ -41,6 +41,8 @@ export interface PromptContext {
   /** The armed context, disarming a `once` context. Called at a real prompt
    *  submit boundary so short follow-ups do not pay for it again. */
   consume(panelId: string, agentId: AgentId | null): string | null
+  /** Flush connected editors so the agent reads what is on screen. */
+  flush(panelId: string): Promise<void>
   /** Flush connected editors, then consume. */
   prepareForSend(panelId: string, agentId: AgentId | null): Promise<string | null>
   /** When context last went with the panel's prompt (epoch ms). */
@@ -80,6 +82,9 @@ export function createPromptContext(deps: PromptContextDeps): PromptContext {
     onSent(listener) {
       sentListeners.add(listener)
       return () => { sentListeners.delete(listener) }
+    },
+    async flush(panelId) {
+      await deps.flushConnected?.(panelId)
     },
     async prepareForSend(panelId, agentId) {
       await deps.flushConnected?.(panelId)

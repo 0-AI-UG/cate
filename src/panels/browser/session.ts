@@ -1,5 +1,5 @@
 // The browser panel session (architecture 10.2, 11.2). Holds tabs, URLs,
-// titles, navigation state, viewport, zoom and the downloads list; every
+// titles, navigation state, viewport and the downloads list; every
 // client loads the page itself and follows the session URL. Page operations
 // (`cate.browser.*` page methods, palette history commands) run on the
 // driving client through `withSurface`.
@@ -17,7 +17,6 @@ import type { BrowserNewTabBehavior, BrowserSearchEngine } from '@services/brows
 import { isCanvasDock, placementOf, type Json, type PanelRecord } from '@workspace/document/contract'
 import { PanelSession, type OpContext, type OpHandlers, type PanelSessionClass, type SessionKit } from '@panels/framework/runtime'
 import {
-  BROWSER_ZOOM_FACTORS,
   COMPACT_VIEWPORT,
   browserApi,
   type AgentCursorEvent,
@@ -57,7 +56,6 @@ type Persisted = {
   tabs: Array<{ id: string; url: string; title: string; favicon: string | null; pinned: boolean }>
   activeTabId: string
   viewport: BrowserViewport
-  zoom: number
 }
 
 const isStartPage = (url: string) => url === BROWSER_NEW_TAB_URL
@@ -92,7 +90,6 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       activeTabId: id,
       activeSource: null,
       viewport: COMPACT_VIEWPORT,
-      zoom: 1,
       canGoBack: false,
       canGoForward: false,
       isLoading: hasPage(url),
@@ -122,7 +119,6 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
         tabs,
         activeTabId,
         viewport: validViewport(saved.viewport) ? saved.viewport : COMPACT_VIEWPORT,
-        zoom: typeof saved.zoom === 'number' && saved.zoom > 0 ? saved.zoom : 1,
         isLoading: hasPage(active.url),
       })
     }
@@ -158,12 +154,11 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   }
 
   private save(): void {
-    const { tabs, activeTabId, viewport, zoom } = this.state
+    const { tabs, activeTabId, viewport } = this.state
     this.persist({
       tabs: tabs.map(({ id, url, title, favicon, pinned }) => ({ id, url, title, favicon, pinned })),
       activeTabId,
       viewport,
-      zoom,
     } as unknown as Json)
   }
 
@@ -285,14 +280,6 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     if (tabId !== this.state.activeTabId) this.setTabs(this.state.tabs, tabId, source)
   }
 
-  private setZoom(zoom: number): void {
-    if (!Number.isFinite(zoom) || zoom < BROWSER_ZOOM_FACTORS[0] || zoom > BROWSER_ZOOM_FACTORS[BROWSER_ZOOM_FACTORS.length - 1]) {
-      throw new RpcError('rejected', 'invalid-zoom')
-    }
-    this.publish({ zoom })
-    this.save()
-  }
-
   private setViewport(viewport: BrowserViewport): void {
     if (!validViewport(viewport)) throw new RpcError('rejected', 'invalid-browser-viewport')
     this.publish({ viewport: viewport.preset === 'compact' ? COMPACT_VIEWPORT : { ...viewport } })
@@ -334,14 +321,6 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       const target = tabId ?? this.state.activeTabId
       const { ok } = await this.page('page.history', { tabId: target, action })
       return ok
-    },
-    setZoom: ({ zoom }) => { this.setZoom(zoom) },
-    stepZoom: ({ direction }) => {
-      const current = this.state.zoom
-      const next = direction > 0
-        ? BROWSER_ZOOM_FACTORS.find((factor) => factor > current)
-        : [...BROWSER_ZOOM_FACTORS].reverse().find((factor) => factor < current)
-      if (next !== undefined) this.setZoom(next)
     },
     setViewport: ({ viewport }) => { this.setViewport(viewport) },
     releaseAgentCursor: () => {

@@ -15,7 +15,7 @@ import type { PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
 import { useWorktreeColor } from '../../workspace/repository'
 import { WorkspaceSkillsTree } from '../../workspace/skills'
-import { AgentActivityTitle, AwaitingIndicator, RunningIndicator, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
+import { AgentActivityTitle, AwaitingIndicator, RunningIndicator, agentInfoTitle, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
 import { clientApp } from '../app'
 import { closePanels, closeWorkspace, detachPanel, renamePanel, revealPanel, selectWorkspace } from '../navigation'
 import { panelIcon } from '../panels'
@@ -322,7 +322,7 @@ export function WorkspacePanelRow({
   rename,
   onBeginRename,
 }: WorkspacePanelRowProps): JSX.Element {
-  const label = panelRowLabel(record)
+  const label = agentInfoTitle(panelRowLabel(record), agent)
   const worktreeColor = useWorktreeColor(worktreeKey)
   const running = agent?.status === 'running'
   const awaiting = agent?.status === 'waitingForInput'

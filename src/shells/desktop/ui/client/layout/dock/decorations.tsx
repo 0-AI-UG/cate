@@ -7,7 +7,7 @@
 import type { ComponentType } from 'react'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
-import { AgentChangesPill, useAgentInfoByPanel } from '../../../services/agents'
+import { AgentChangesPill, agentInfoTitle, useAgentInfoByPanel } from '../../../services/agents'
 
 export interface TabDecoration {
   /** Replaces the type icon (a detected agent's logo). */
@@ -19,6 +19,9 @@ export interface TabDecoration {
   awaiting?: boolean
   /** The title ends with a dot (unsaved changes). */
   dirty?: boolean
+  /** The title to show for the record's title (an open agent's name in place
+   *  of a fallback title). */
+  retitle?: (title: string) => string
 }
 
 /** A React hook: decorations for the workspace's panels, keyed by id. */
@@ -55,6 +58,7 @@ export const useAgentTabDecorations: TabDecorationHook = (workspaceId) => {
       logoAlt: agent.name,
       running: agent.status === 'running',
       awaiting: agent.status === 'waitingForInput',
+      retitle: (title) => agentInfoTitle(title, agent),
     }
   }
   return out

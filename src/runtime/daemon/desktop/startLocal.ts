@@ -2,13 +2,14 @@
 // socket, and starts it when nothing answers (architecture 7.3). Desktop only:
 // the client core receives the connected byte pipe from the shell.
 
-import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import path from 'node:path'
 import type { ByteDuplex } from '@kernel/rpc/contract'
-import { runtimeIdFromCanonicalRoot } from '@runtime/data/contract'
-import { canonicalRoot, ensureLocalEndpointFor } from '@runtime/data/node'
+import { DATA_FILES, runtimeIdFromCanonicalRoot } from '@runtime/data/contract'
+import { canonicalRoot, ensureLocalEndpointFor, workspaceDataDir } from '@runtime/data/node'
 import { dialLocal, dialLocalRetrying } from '@runtime/transports/node'
-import { installLayout, serveArgv, START_LOCAL_BUDGET_MS } from '../contract'
+import { installLayout, START_LOCAL_BUDGET_MS } from '../contract'
+import { spawnDetachedDaemon } from '../node'
 
 export interface StartLocalOptions {
   root: string
@@ -31,11 +32,11 @@ export interface LocalRuntime {
   started: boolean
 }
 
-/** The argv that starts a workspace's runtime: `<node> <bundle> serve <root> --detach`. */
-export function startCommand(root: string, options: Pick<StartLocalOptions, 'installDir' | 'launch'>): { node: string; args: string[] } {
+/** The program that serves a workspace: an install's Node and bundle, or `launch`. */
+function runtimeProgram(options: Pick<StartLocalOptions, 'installDir' | 'launch'>): { node: string; bundle: string } {
   const program = options.launch ?? (options.installDir ? installLayout(options.installDir, process.platform) : null)
   if (!program) throw new Error('no Cate runtime to start')
-  return { node: program.node, args: [program.bundle, ...serveArgv({ root, detach: true })] }
+  return program
 }
 
 /** Connects to the workspace's runtime, starting it first if nothing answers. */
@@ -47,16 +48,17 @@ export async function startLocalRuntime(options: StartLocalOptions): Promise<Loc
     return { runtimeId, root, endpoint, duplex: await dialLocal(endpoint), started: false }
   } catch { /* not running */ }
 
-  const { node, args } = startCommand(root, options)
+  const { node, bundle } = runtimeProgram(options)
   if (!fs.existsSync(node)) throw new Error(`the Cate runtime is not installed (${node} is missing)`)
-  const child = spawn(node, args, {
-    detached: true,
-    stdio: 'ignore',
+  // The serving process itself, detached: `serve --detach` would spawn a
+  // second copy and cost another Node start and bundle load.
+  spawnDetachedDaemon({
+    node,
+    bundle,
+    args: { root },
+    logFile: path.join(workspaceDataDir(runtimeId, options.home), DATA_FILES.logs, 'daemon.out.log'),
     env: options.env ?? process.env,
-    windowsHide: true,
   })
-  child.on('error', () => { /* reported as the dial timing out */ })
-  child.unref()
   const duplex = await dialLocalRetrying(endpoint, { budgetMs: options.budgetMs ?? START_LOCAL_BUDGET_MS })
   return { runtimeId, root, endpoint, duplex, started: true }
 }

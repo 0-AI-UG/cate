@@ -140,8 +140,16 @@ const publicEntries = forbid('public-entries', "across modules, import a module'
   { path: `^src/(${any(LAYERS.map(layerName))})/([^/]+)/`, pathNot: COMPOSITION_ROOT },
   { path: NEW, pathNot: ['^src/$1/$2/', ...PUBLIC_ENTRY] })
 
+// Dependencies between services point one way (architecture 10.4): agents
+// plugs into terminal's extension points, terminal never knows agents.
+const serviceRules = [
+  forbid('terminal-no-agents', 'the terminal service never imports agents; agents plugs into its extension points',
+    { path: ['^src/services/terminal/', '^src/shells/desktop/ui/services/terminal/'] },
+    { path: ['^src/services/agents/', '^src/shells/desktop/ui/services/agents/'] }),
+]
+
 module.exports = {
-  forbidden: [...contractRules, ...sideRules, ...layerRules, publicEntries],
+  forbidden: [...contractRules, ...sideRules, ...layerRules, publicEntries, ...serviceRules],
   options: {
     doNotFollow: { path: ['node_modules'] },
     exclude: { path: ['\\.test\\.tsx?$', '^src/test/'] },

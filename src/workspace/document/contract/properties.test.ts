@@ -37,12 +37,10 @@ function placements(doc: WorkspaceDocument) {
   return Object.fromEntries(Object.keys(doc.panels).map((id) => [id, placementOf(doc, id)]))
 }
 
-// A restore point goes with the next change to its window and is not
-// something undoing that change brings back.
 function withoutTrees(doc: WorkspaceDocument) {
   return {
     ...doc,
-    windows: Object.fromEntries(Object.entries(doc.windows).map(([id, w]) => [id, { ...w, dock: null, maximized: undefined }])),
+    windows: Object.fromEntries(Object.entries(doc.windows).map(([id, w]) => [id, { ...w, dock: null }])),
     canvases: Object.fromEntries(Object.entries(doc.canvases).map(([id, c]) => [id, {
       ...c,
       nodes: Object.fromEntries(Object.entries(c.nodes).map(([nodeId, n]) => [nodeId, { ...n, dock: null }])),
@@ -101,6 +99,6 @@ describe('random changes', () => {
       })
     }
     expect(checked).toBeGreaterThan(2000)
-    expect(exact / checked).toBeGreaterThan(0.98)
+    expect(exact / checked).toBeGreaterThan(0.995)
   })
 })

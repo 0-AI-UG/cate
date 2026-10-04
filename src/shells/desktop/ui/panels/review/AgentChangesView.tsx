@@ -67,22 +67,23 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
   useEffect(() => { if (open && positioned) popover.current?.querySelector('select')?.focus() }, [open, positioned])
 
   const update = (patch: AgentChangesFilterPatch) => void send({ kind: 'updateFilter', patch })
-  const view = useReviewView(workspaceId, panelId, review.focusedFile)
-  const { display, collapsed, updateDisplay } = view
-  const files = recorded.files
+  const view = useReviewView(workspaceId, panelId, snapshot)
+  const { display, collapsed, updateDisplay, focusedFile, fileFilter } = view
+  const query = fileFilter.trim().toLowerCase()
+  const files = query ? recorded.files.filter((file) => file.path.toLowerCase().includes(query)) : recorded.files
   const panelChoices = new Map(panels.map((panel) => [panel.id, panel.title]))
   for (const file of files) for (const id of file.panelIds) if (!panelChoices.has(id)) panelChoices.set(id, `Closed panel ${panelChoices.size + 1}`)
   if (filter.panelId && !panelChoices.has(filter.panelId)) panelChoices.set(filter.panelId, 'Source panel (closed)')
-  const focusedIndex = review.focusedFile ? files.findIndex((file) => file.path === review.focusedFile) : -1
+  const focusedIndex = focusedFile ? files.findIndex((file) => file.path === focusedFile) : -1
   const shownCount = Math.max(visibleCount, focusedIndex + 1)
   const totals = files.reduce((sum, file) => ({ additions: sum.additions + file.additions, deletions: sum.deletions + file.deletions }), { additions: 0, deletions: 0 })
   const keyOf = (file: RecordedFileSummary) => `${file.recordId}:${file.path}`
   const allCollapsed = files.length > 0 && files.every((file) => collapsed.has(keyOf(file)))
   const byId = new Map(panels.map((panel) => [panel.id, panel]))
   useEffect(() => {
-    if (!review.focusedFile) return
-    root.current?.querySelector(`[data-review-file="${encodeURIComponent(review.focusedFile)}"]`)?.scrollIntoView?.({ block: 'start' })
-  }, [review.focusedFile, files, shownCount])
+    if (!focusedFile) return
+    root.current?.querySelector(`[data-review-file="${encodeURIComponent(focusedFile)}"]`)?.scrollIntoView?.({ block: 'start' })
+  }, [focusedFile, files, shownCount])
   const chips = [
     filter.agentId && { label: agentDisplayName(filter.agentId), patch: { agentId: null } },
     filter.panelId && { label: panelChoices.get(filter.panelId)!, patch: { panelId: null, sessionId: null, turnId: null } },
@@ -101,7 +102,7 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
         <ReviewRunStatus review={review.agentReview} />
         <ReviewStats files={new Set(files.map((file) => file.path)).size} additions={totals.additions} deletions={totals.deletions} />
         <ToolbarButton label="Refresh" disabled={loading} onClick={() => void send({ kind: 'refresh' })}>{loading ? <Spinner size={14} label="Refreshing changes" /> : <ArrowClockwise size={14} />}</ToolbarButton>
-        <RecordedReviewButton workspaceId={workspaceId} panelId={panelId} send={send} busy={agentBusy} disabled={!files.length || review.agentReview?.status === 'working'} />
+        <RecordedReviewButton workspaceId={workspaceId} panelId={panelId} send={send} busy={agentBusy} disabled={!recorded.files.length || review.agentReview?.status === 'working'} />
         <ToolbarButton label={display.split ? 'Switch to unified diff' : 'Switch to split diff'} onClick={() => updateDisplay({ split: !display.split })}>{display.split ? <Rows size={14} /> : <SplitHorizontal size={14} />}</ToolbarButton>
         <div ref={morePopover} className="relative">
           <ToolbarButton label="More review options" active={moreOpen} onClick={() => setMoreOpen(!moreOpen)}><DotsThree size={16} /></ToolbarButton>
@@ -132,7 +133,7 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
         <div className="flex justify-between text-xs"><button onClick={() => update({ agentId: null, panelId: null, sessionId: null, turnId: null })}>Clear filters</button><button onClick={() => { setOpen(false); trigger.current?.focus() }}>Done</button></div>
       </div>
     </PopoverSurface>}
-    <ReviewFileFilter value={review.fileFilter ?? ''} onChange={(fileFilter) => void send({ kind: 'update', patch: { fileFilter } })} allCollapsed={allCollapsed} disabled={!files.length} onToggleCollapsed={() => view.setCollapsed(allCollapsed ? [] : files.map(keyOf))} />
+    <ReviewFileFilter value={fileFilter} onChange={view.setFileFilter} allCollapsed={allCollapsed} disabled={!files.length} onToggleCollapsed={() => view.setCollapsed(allCollapsed ? [] : files.map(keyOf))} />
     {error && <p role="alert" className="px-3 py-2 text-xs text-red-400">{error}</p>}
     <div ref={root} className="min-h-0 flex-1 overflow-auto">
       {loading && <LoadingState label="Loading recorded changes" className="h-full p-4 text-xs" />}

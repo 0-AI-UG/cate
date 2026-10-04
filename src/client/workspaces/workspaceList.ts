@@ -45,6 +45,8 @@ export interface WorkspaceListSnapshot {
 }
 
 export const localWorkspaceId = (root: string) => `local:${root}`
+/** The root of a local workspace id, or null for another kind. */
+export const localRootOf = (id: string): string | null => id.startsWith('local:') ? id.slice('local:'.length) : null
 export const pairedWorkspaceId = (runtimeId: string) => `paired:${runtimeId}`
 
 export function targetOf(entry: WorkspaceEntry): ConnectionTarget {

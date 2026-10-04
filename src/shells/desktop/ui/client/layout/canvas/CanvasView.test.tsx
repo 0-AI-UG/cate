@@ -6,7 +6,7 @@ import * as React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { rect } from '@workspace/canvas/contract'
-import { documentStoreFor } from '@client/document'
+import { clientStateFor, documentStoreFor } from '@client/document'
 import { resetCanvasViews, setCanvasAnimations } from './registry'
 import { canvasDocument } from './testing.canvas'
 import { openTestDocument, testRelationHost } from './testing'
@@ -57,6 +57,21 @@ describe('CanvasView', () => {
     act(() => { e2e.setZoom(2); e2e.setViewportOffset({ x: 10, y: 20 }) })
     const world = container.querySelector<HTMLElement>('[data-canvas-world]')!
     expect(world.style.transform).toBe('scale(2) translate(5px, 10px)')
+  })
+
+  it('a maximized node fills the canvas for this client only; the document stays', async () => {
+    act(() => root.render(<CanvasView workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" />))
+    await frames()
+    const before = documentStoreFor('ws')!.getSnapshot()
+    act(() => clientStateFor('ws')!.setMaximizedNode('c1', 'n1'))
+    await frames()
+    expect(container.querySelector('[data-maximized-node="n1"] [data-dock-stack-id]')).not.toBeNull()
+    expect([...container.querySelectorAll('[data-node-id]')].map((n) => n.getAttribute('data-node-id'))).toEqual(['n2'])
+    expect(documentStoreFor('ws')!.getSnapshot()).toBe(before)
+    act(() => clientStateFor('ws')!.setMaximizedNode('c1', null))
+    await frames()
+    expect(container.querySelector('[data-maximized-node]')).toBeNull()
+    expect(container.querySelectorAll('[data-node-id]')).toHaveLength(2)
   })
 
   it('e2e moves and worktree seeding are document ops', async () => {

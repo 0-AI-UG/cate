@@ -1,7 +1,9 @@
 // The chat panel view: the T3 client in a webview. It renders the session's
 // snapshot, owns the page (branding, theme, navigation guard, the `__cateHost`
 // bridge, file drops) and sends ops. The page is loaded afresh for every
-// `loadId`; a conversation the page creates itself is adopted in place.
+// `loadId`; otherwise it moves in place through T3's router: a conversation
+// the page creates itself is adopted, one another client moved the panel to
+// is followed (T3's own stream brings this page the thread).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle } from 'lucide-react'
@@ -24,6 +26,7 @@ import {
   t3Conversations,
   t3FileDropScript,
   t3HostBridgeScript,
+  t3NavigateScript,
   t3ProductCopy,
   t3ThemeScript,
   t3ThreadIdFromUrl,
@@ -33,20 +36,13 @@ import {
 import { T3ConversationPill } from '../../services/t3'
 import { WorktreePill } from '../../workspace/repository'
 import type { PlaceTarget } from '@workspace/document/contract'
-import type { ChatHarness, ChatOp, ChatSnapshot } from '@panels/chat/contract'
+import { chatPageUrl, type ChatOp, type ChatSnapshot } from '@panels/chat/contract'
 import { readFileRefDrag, type FileRef } from '@workspace/files/contract'
 import { droppedImages, droppedRefImages, useFileDragActive } from './parts/fileDrop'
 import { registerChatSurface } from './parts/surfaces'
 
 type Send = (op: ChatOp) => Promise<unknown>
 type Guest = HTMLElement & T3Guest
-
-/** The page of the panel's binding. */
-function chatPageUrl(harness: ChatHarness, threadId: string | null): string {
-  return threadId
-    ? `${harness.origin}/${encodeURIComponent(harness.environmentId)}/${encodeURIComponent(threadId)}`
-    : `${harness.origin}/`
-}
 
 export default function ChatView({ workspaceId, panelId, record, snapshot, send, focused }: PanelViewProps<ChatSnapshot, ChatOp>) {
   const runtime = useRuntime(workspaceId)
@@ -124,11 +120,8 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
   const adopted = useRef<{ from: string | null; to: string | null } | null>(null)
   if (adopted.current && snapshot.threadId !== adopted.current.from) adopted.current = null
   const threadId = adopted.current ? adopted.current.to : snapshot.threadId
-  // A thread the harness does not know yet (another client just started it)
-  // is "missing" to the page, which goes home; it is loaded once known.
-  const waiting = snapshot.threadKnown === false && threadId === snapshot.threadId
-  const latest = useRef({ threadId, bound: snapshot.threadId, waiting })
-  latest.current = { threadId, bound: snapshot.threadId, waiting }
+  const latest = useRef({ threadId, bound: snapshot.threadId })
+  latest.current = { threadId, bound: snapshot.threadId }
 
   useEffect(() => {
     let current = true
@@ -153,7 +146,7 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
   useEffect(() => {
     if (!guest) return
     let alive = true
-    const boundUrl = () => chatPageUrl(harness, latest.current.threadId)
+    const goBound = () => { void guest.executeJavaScript(t3NavigateScript(chatPageUrl(harness, latest.current.threadId))).catch(() => undefined) }
 
     // Keeps the page on this panel's thread and records a thread it created.
     // did-navigate-in-page can arrive before getURL() reflects a pushState
@@ -164,12 +157,11 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
       const url = event?.url ?? guest.getURL()
       if (isT3ProviderSettingsNavigation(url, harness.origin)) {
         clientUi().openSettings('t3 code')
-        void guest.loadURL(boundUrl())
+        goBound()
         return
       }
       if (!isAllowedT3Navigation(url, harness.origin, harness.environmentId, 'thread', threadId ?? undefined)) {
-        // Sent home from a thread it does not know yet: wait, do not fight it.
-        if (!(latest.current.waiting && isAllowedT3Navigation(url, harness.origin, harness.environmentId, 'thread'))) void guest.loadURL(boundUrl())
+        goBound()
         return
       }
       const next = t3ThreadIdFromUrl(url, harness.environmentId)
@@ -274,15 +266,15 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
   }, [guest, guestReady, panelId, workspaceId])
 
   // A thread another client's page moved the panel to (`adoptThread` is not
-  // a new load): this page follows, once the harness knows the thread. The
-  // page that adopted it is already there.
+  // a new load): this page follows in place. The page that adopted it is
+  // already there.
   useEffect(() => {
-    if (!guest || !guestReady || waiting) return
+    if (!guest || !guestReady) return
     let url = ''
     try { url = guest.getURL() } catch { return }
     if (t3ThreadIdFromUrl(url, harness.environmentId) === threadId) return
-    void guest.loadURL(chatPageUrl(harness, threadId))
-  }, [guest, guestReady, harness, threadId, waiting])
+    void guest.executeJavaScript(t3NavigateScript(chatPageUrl(harness, threadId))).catch(() => undefined)
+  }, [guest, guestReady, harness, threadId])
 
   // Change summaries for the bound thread, for the page's turn chips.
   useEffect(() => {

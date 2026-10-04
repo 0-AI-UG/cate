@@ -1,5 +1,6 @@
 // A canvas as a panel view: the surface, its nodes (viewport-culled and
 // staged across frames on a cold mount), relation drawing and the toolbar.
+// A node this client maximized fills the canvas's area instead.
 
 import React, { useCallback, useEffect, useMemo } from 'react'
 import { clientStateFor } from '@client/document'
@@ -7,6 +8,7 @@ import { useClientState, useDocument } from '../../document'
 import type { NodeId } from '@workspace/document/contract'
 import { CANVAS_REVEAL_INTENT } from '@client/host'
 import { useKeepMountedPanelIds } from '../../host/hooks'
+import { DockView } from '../dock/DockView'
 import { canvasViewFor } from './registry'
 import { focusedNodeId } from './selection'
 import { CanvasViewProvider, useCanvasView } from './context'
@@ -44,10 +46,15 @@ const NodeSlot = React.memo(function NodeSlot({ workspaceId, canvasId, canvasPan
   )
 })
 
-function CanvasNodes({ workspaceId, canvasId, canvasPanelId, store }: CanvasViewProps & { store: NonNullable<ReturnType<typeof canvasViewFor>> }) {
+function CanvasNodes({ workspaceId, canvasId, canvasPanelId, store, maximized }: CanvasViewProps & {
+  store: NonNullable<ReturnType<typeof canvasViewFor>>
+  /** Drawn over the canvas instead (maximize). */
+  maximized: NodeId | null
+}) {
   const keepMounted = useKeepMountedPanelIds(workspaceId)
   const visible = useVisibleNodeIds(store, keepMounted)
-  const mounted = useStagedVisibleNodeIds(visible)
+  const staged = useStagedVisibleNodeIds(visible)
+  const mounted = maximized ? staged.filter((nodeId) => nodeId !== maximized) : staged
   return (
     <>
       <PanelConnectionLayer workspaceId={workspaceId} />
@@ -60,6 +67,8 @@ function CanvasNodes({ workspaceId, canvasId, canvasPanelId, store }: CanvasView
 
 export function CanvasView({ workspaceId, canvasId, canvasPanelId }: CanvasViewProps): React.ReactElement | null {
   const exists = useDocument(workspaceId, (d) => !!d.canvases[canvasId])
+  const wanted = useClientState(workspaceId, (s) => s.maximizedNodes[canvasId] ?? null)
+  const maximized = useDocument(workspaceId, (d) => (wanted && d.canvases[canvasId]?.nodes[wanted] ? wanted : null))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const store = useMemo(() => (exists ? canvasViewFor(workspaceId, canvasId) : null), [workspaceId, canvasId, exists])
 
@@ -94,8 +103,13 @@ export function CanvasView({ workspaceId, canvasId, canvasPanelId }: CanvasViewP
           canvasPanelId={canvasPanelId}
           overlayChildren={<CanvasToolbar workspaceId={workspaceId} canvasId={canvasId} canvasPanelId={canvasPanelId} />}
         >
-          <CanvasNodes workspaceId={workspaceId} canvasId={canvasId} canvasPanelId={canvasPanelId} store={store} />
+          <CanvasNodes workspaceId={workspaceId} canvasId={canvasId} canvasPanelId={canvasPanelId} store={store} maximized={maximized} />
         </Canvas>
+        {maximized && (
+          <div data-maximized-node={maximized} className="absolute inset-0 z-[60] flex flex-col bg-canvas-bg">
+            <DockView workspaceId={workspaceId} dock={{ canvasId, nodeId: maximized }} />
+          </div>
+        )}
       </div>
     </CanvasViewProvider>
   )

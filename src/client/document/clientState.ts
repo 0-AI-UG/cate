@@ -2,7 +2,7 @@
 // where its attention is. Held in memory, never sent to the runtime, except
 // the viewed and focused panel, which presence reports.
 
-import type { CanvasId, NodeId, PanelId, StackId } from '@workspace/document/contract'
+import type { CanvasId, NodeId, PanelId, StackId, WindowId } from '@workspace/document/contract'
 
 export interface Viewport {
   x: number
@@ -36,6 +36,11 @@ export interface ClientState {
   viewing: readonly PanelId[]
   selection: Readonly<Record<CanvasId, CanvasSelection>>
   viewports: Readonly<Record<CanvasId, Viewport>>
+  /** Maximize: the stack this client shows alone in a window, and the node
+   *  it shows filling a canvas. An id that no longer exists shows the
+   *  layout as it is. */
+  maximizedStacks: Readonly<Record<WindowId, StackId>>
+  maximizedNodes: Readonly<Record<CanvasId, NodeId>>
   /** What this client shows of each panel (the browser tab it shows, the
    *  review files it collapsed), by panel and name. */
   panelViews: Readonly<Record<PanelId, Readonly<Record<string, unknown>>>>
@@ -50,11 +55,19 @@ export interface ClientStateStore {
   setViewing(panelIds: readonly PanelId[]): void
   setSelection(canvasId: CanvasId, selection: CanvasSelection): void
   setViewport(canvasId: CanvasId, viewport: Viewport): void
+  /** Null restores. */
+  setMaximizedStack(windowId: WindowId, stackId: StackId | null): void
+  setMaximizedNode(canvasId: CanvasId, nodeId: NodeId | null): void
   setPanelView(panelId: PanelId, key: string, value: unknown): void
   /** Queues an intent; returns its id. */
   pushIntent(intent: Omit<Intent, 'id'>): number
   /** Removes and returns the panel's queued intents. */
   takeIntents(panelId: PanelId): Intent[]
+}
+
+function withEntry<K extends string, V>(map: Readonly<Record<K, V>>, key: K, value: V | null): Record<K, V> {
+  const { [key]: _old, ...rest } = map
+  return (value === null ? rest : { ...rest, [key]: value }) as Record<K, V>
 }
 
 export function createClientStateStore(): ClientStateStore {
@@ -65,6 +78,8 @@ export function createClientStateStore(): ClientStateStore {
     viewing: [],
     selection: {},
     viewports: {},
+    maximizedStacks: {},
+    maximizedNodes: {},
     panelViews: {},
     intents: [],
   }
@@ -100,6 +115,14 @@ export function createClientStateStore(): ClientStateStore {
     },
     setViewport(canvasId, viewport) {
       update({ viewports: { ...state.viewports, [canvasId]: { ...viewport } } })
+    },
+    setMaximizedStack(windowId, stackId) {
+      if ((state.maximizedStacks[windowId] ?? null) === stackId) return
+      update({ maximizedStacks: withEntry(state.maximizedStacks, windowId, stackId) })
+    },
+    setMaximizedNode(canvasId, nodeId) {
+      if ((state.maximizedNodes[canvasId] ?? null) === nodeId) return
+      update({ maximizedNodes: withEntry(state.maximizedNodes, canvasId, nodeId) })
     },
     setPanelView(panelId, key, value) {
       const view = state.panelViews[panelId]

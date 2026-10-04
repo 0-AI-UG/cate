@@ -13,13 +13,15 @@ export interface RelationContextTransport {
   decorate(text: string): string
   /** When context last went with the panel's prompt (epoch ms). */
   sentAt?: number
+  /** Context cannot reach the agent: a short label, why, and a fix if any. */
+  blocked?: { label: string; reason: string; fix?: { label: string; run(): void } }
 }
 
 export interface RelationUiPort {
   /** A context menu at the pointer; resolves the picked id. */
   showMenu(items: RelationMenuItem[]): Promise<string | null>
   /** React hook: how the panel's running agent takes relation context, or
-   *  null when it has no prompt context hook (the toggle then hides). */
+   *  null when no agent runs there (the toggle then hides). */
   useContextTransport(workspaceId: string, panel: PanelRecord): RelationContextTransport | null
   openTextPreview(request: { workspaceId: string; sourcePanelId: string; title: string; content: string }): Promise<unknown>
 }

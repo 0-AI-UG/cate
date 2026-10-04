@@ -19,7 +19,7 @@ export {
   type CanvasDropSurface,
 } from './registry'
 export { resolveDrop, domDropEnvironment, type DropEnvironment, type CanvasHit } from './resolve'
-export { dropChanges, detachChange, type DropContext } from './commit'
+export { dropChanges, detachChange, detachBounds, type DropContext } from './commit'
 export { reduce as reduceDrag } from './runtime'
 export { setupCrossWindowDrops, shouldIgnoreDragEnd } from './crossWindow'
 export { installDragShell, dragShell, type DragShell, type DragGhostPort, type CrossWindowPort, type CrossWindowDrag } from './ports'

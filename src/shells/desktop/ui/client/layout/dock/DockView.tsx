@@ -1,6 +1,7 @@
 // The view of one dock of the document: a window's dock, or a canvas node's
 // mini dock (same tree shape). It draws the tree, commits divider moves as
-// `setSplitRatio`, and opens files dropped on it as tabs.
+// `setSplitRatio`, and opens files dropped on it as tabs. A window's dock
+// shows only the stack this client maximized there, if any.
 
 import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
@@ -14,7 +15,7 @@ import {
 } from '@workspace/document/contract'
 import type { PanelPlacementOptions } from '@panels/framework/contract'
 import { documentStoreFor } from '@client/document'
-import { useDocument } from '../../document'
+import { useClientState, useDocument } from '../../document'
 import { PanelHost } from '../../host/PanelHost'
 import { registerDropZone } from '../drag/registry'
 import { useDockFileDrop } from '../drag/fileDrop'
@@ -68,6 +69,7 @@ export function DockView({
   const selector = useMemo(() => (doc: WorkspaceDocument) => dockOf(doc, dock) ?? null, [dock])
   const tree = useDocument(workspaceId, selector, sameDockTree)
   const onCanvas = isCanvasDock(dock)
+  const soloStackId = useClientState(workspaceId, (s) => (isCanvasDock(dock) ? null : s.maximizedStacks[dock.windowId] ?? null))
   const rootRef = useRef<HTMLDivElement>(null)
 
   const typeOf = useCallback((panelId: string) => documentStoreFor(workspaceId)?.getSnapshot().panels[panelId]?.type, [workspaceId])
@@ -130,7 +132,7 @@ export function DockView({
       onDrop={fileDrop.onDrop}
     >
       {tree
-        ? <DockLayout layout={tree} renderStack={renderStack} typeOf={typeOf} onRatios={onRatios} />
+        ? <DockLayout layout={tree} renderStack={renderStack} typeOf={typeOf} onRatios={onRatios} soloStackId={soloStackId} />
         : emptyContent ?? <div className="w-full h-full" />}
     </div>
   )

@@ -166,12 +166,19 @@ it('inspects the comparison for cate.review.inspect', async () => {
   expect(result).toMatchObject({ panelId: 'review', repoPath: '/repo', resolvedBase: 'base', files: [file], notes: [] })
 })
 
-it('persists expansion, context and history state', async () => {
-  await op({ kind: 'expandFullFile', path: 'src/a.ts' })
-  await op({ kind: 'expandContext', path: 'src/a.ts' })
-  await op({ kind: 'expandContext', path: 'src/a.ts' })
+it('persists the history choice, never how a reader shows files', async () => {
+  await op({ kind: 'diff', path: 'src/a.ts', options: { fullFile: true } })
   await op({ kind: 'update', patch: { showHistory: true } })
-  expect(saved()).toMatchObject({ expandedFiles: ['src/a.ts'], contextLines: { 'src/a.ts': 20 }, showHistory: true })
+  expect(saved()).toEqual(expect.objectContaining({ showHistory: true }))
+  expect(saved()).not.toHaveProperty('expandedFiles')
+  expect(saved()).not.toHaveProperty('contextLines')
+})
+
+it('loads a diff as the asking client shows it', async () => {
+  await op({ kind: 'diff', path: 'src/a.ts', options: { contextLines: 20 } })
+  expect(repo.fileDiff).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'uncommitted' }, path: 'src/a.ts', contextLines: 20, allowLarge: false })
+  await op({ kind: 'diff', path: 'src/a.ts', options: { fullFile: true } })
+  expect(repo.fileDiff).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'uncommitted' }, path: 'src/a.ts', contextLines: 999_999, allowLarge: true })
 })
 
 it('fetches diffs on demand and relocates line notes to them', async () => {
@@ -202,10 +209,16 @@ it('returns the git apply command and the created pull request instead of touchi
   expect(deps.files.writeText).toHaveBeenCalledWith('/out/notes.md', expect.stringContaining('Check'))
 })
 
-it('merges an open request, keeping local state', async () => {
+it('merges an open request, keeping local state, and reveals its file once', async () => {
   await op({ kind: 'update', patch: { showHistory: true } })
+  expect(snap().reveal).toBeNull()
   await op({ kind: 'retarget', request: { spec: { kind: 'staged' }, focusedFile: 'src/a.ts' } })
-  expect(saved()).toMatchObject({ spec: { kind: 'staged' }, focusedFile: 'src/a.ts', showHistory: true })
+  expect(saved()).toMatchObject({ spec: { kind: 'staged' }, showHistory: true })
+  expect(saved()).not.toHaveProperty('focusedFile')
+  const reveal = snap().reveal
+  expect(reveal).toMatchObject({ path: 'src/a.ts' })
+  await op({ kind: 'retarget', request: { spec: { kind: 'staged' }, focusedFile: 'src/a.ts' } })
+  expect(snap().reveal!.seq).toBeGreaterThan(reveal!.seq)
   await vi.waitFor(() => expect(repo.compare).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'staged' } }))
 })
 

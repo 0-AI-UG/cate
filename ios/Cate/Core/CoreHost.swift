@@ -2,6 +2,7 @@
 // hidden web view. The app reads its state (`state`, pushed on every change)
 // and asks it to act (`call`, the core API in src/shells/mobile/contract.ts).
 
+import CryptoKit
 import Foundation
 import Observation
 import WebKit
@@ -20,6 +21,22 @@ final class CoreHost {
     @ObservationIgnored private var terminals: [String: (TerminalEvent) -> Void] = [:]
     /// Keystrokes reach the core in the order they were typed.
     @ObservationIgnored private var input: Task<Void, Never>?
+    /// The open panel and buffer views by their `viewId`: each gets its events
+    /// as JSON.
+    @ObservationIgnored private var views: [String: (Data) -> Void] = [:]
+    /// The open loopback streams by their `streamId`.
+    @ObservationIgnored private var streams: [String: (StreamEvent) -> Void] = [:]
+    /// Calls that must reach the core in order (edits of one buffer, writes to
+    /// one stream), by key.
+    @ObservationIgnored private var queues: [String: Task<Void, Never>] = [:]
+    /// Each workspace's web data store (cookies and storage per workspace).
+    @ObservationIgnored private var dataStores: [String: WKWebsiteDataStore] = [:]
+    /// Loopback routing for the web views (LoopbackPorts).
+    @ObservationIgnored let loopback = LoopbackPorts()
+    /// Shows the notifications the core hands over (Notifier).
+    @ObservationIgnored var notifications: ((CoreNotification) -> Void)?
+    /// Removes a shown notification by id: its agent works again.
+    @ObservationIgnored var withdrawNotification: ((String) -> Void)?
 
     init() {
         let config = WKWebViewConfiguration()
@@ -31,6 +48,7 @@ final class CoreHost {
         let bridge = ShellBridge(host: self)
         config.userContentController.addScriptMessageHandler(bridge, contentWorld: .page, name: ShellBridge.name)
         webView.load(URLRequest(url: AppSchemeHandler.entry))
+        loopback.core = self
     }
 
     // MARK: From the core
@@ -56,6 +74,20 @@ final class CoreHost {
 
     func terminalEvent(_ terminalId: String, _ event: TerminalEvent) {
         terminals[terminalId]?(event)
+    }
+
+    func notification(json: String) {
+        guard let notification = try? JSONDecoder().decode(CoreNotification.self, from: Data(json.utf8)) else { return }
+        notifications?(notification)
+    }
+
+    func viewEvent(_ viewId: String, json: String) {
+        views[viewId]?(Data(json.utf8))
+    }
+
+    func streamEvent(_ streamId: String, _ event: StreamEvent) {
+        streams[streamId]?(event)
+        if case .end = event { streams[streamId] = nil }
     }
 
     // MARK: To the core
@@ -97,6 +129,7 @@ final class CoreHost {
 
     func open(_ workspaceId: String) async { await call("workspaces.open", ["workspaceId": workspaceId]) }
     func close(_ workspaceId: String) async { await call("workspaces.close", ["workspaceId": workspaceId]) }
+    func stop(_ workspaceId: String) async { await call("workspaces.stop", ["workspaceId": workspaceId]) }
     func retry(_ workspaceId: String) async { await call("workspaces.retry", ["workspaceId": workspaceId]) }
     func forget(_ workspaceId: String) async { await call("workspaces.forget", ["workspaceId": workspaceId]) }
 
@@ -136,6 +169,168 @@ final class CoreHost {
         terminals[terminalId] = nil
         Task { await call("terminal.close", ["terminalId": terminalId]) }
     }
+}
+
+extension CoreHost {
+    // MARK: Panel views
+
+    /// Opens a view of a panel with `method` (`panel.open`, `browser.open`,
+    /// `chat.open`): `events` gets its snapshots and events as JSON until
+    /// `closeView`.
+    func openView(_ method: String, viewId: String, workspaceId: String, panelId: String, events: @escaping (Data) -> Void) {
+        views[viewId] = events
+        Task { await call(method, ["viewId": viewId, "workspaceId": workspaceId, "panelId": panelId]) }
+    }
+
+    func closeView(_ viewId: String) {
+        views[viewId] = nil
+        Task { await call("panel.close", ["viewId": viewId]) }
+    }
+
+    /// Runs one op on the view's session.
+    func panelOp<Result: Decodable>(_ viewId: String, _ op: [String: Any], as _: Result.Type = AnyJSON.self) async -> OpReply<Result> {
+        do {
+            return try await call("panel.op", ["viewId": viewId, "op": op], as: OpReply<Result>.self)
+        } catch {
+            return OpReply(ok: false, result: nil, message: error.localizedDescription, code: nil)
+        }
+    }
+
+    /// Closes a panel (a canvas takes the panels on it).
+    func removePanel(_ workspaceId: String, panelId: String) async {
+        await call("panel.remove", ["workspaceId": workspaceId, "panelId": panelId])
+    }
+
+    // MARK: Buffers
+
+    func openBuffer(_ viewId: String, workspaceId: String, path: String, events: @escaping (Data) -> Void) {
+        views[viewId] = events
+        Task { await call("buffer.open", ["viewId": viewId, "workspaceId": workspaceId, "path": path]) }
+    }
+
+    /// Replaces `length` UTF-16 units at `from`; `done` gets the whole text
+    /// after the edit. Edits reach the core in the order they were made.
+    func editBuffer(_ viewId: String, from: Int, length: Int, text: String, done: @escaping (String?) -> Void) {
+        enqueue(viewId) { [weak self] in
+            struct Reply: Decodable { let text: String }
+            let reply = try? await self?.call("buffer.edit", ["viewId": viewId, "from": from, "length": length, "text": text], as: Reply.self)
+            done(reply?.text)
+        }
+    }
+
+    func closeBuffer(_ viewId: String) {
+        views[viewId] = nil
+        enqueue(viewId) { [weak self] in await self?.call("buffer.close", ["viewId": viewId]) }
+    }
+
+    private func enqueue(_ key: String, _ work: @escaping @MainActor () async -> Void) {
+        let previous = queues[key]
+        let task = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+        queues[key] = task
+        Task { @MainActor [weak self] in
+            await task.value
+            if self?.queues[key] == task { self?.queues[key] = nil }
+        }
+    }
+
+    // MARK: Loopback routing
+
+    /// The web data store of a workspace's browser, chat and preview pages:
+    /// its own, persistent, like the desktop's partition per workspace.
+    func webDataStore(_ workspaceId: String) -> WKWebsiteDataStore {
+        if let store = dataStores[workspaceId] { return store }
+        let store = WKWebsiteDataStore(forIdentifier: Self.storeId(workspaceId))
+        dataStores[workspaceId] = store
+        return store
+    }
+
+    private static func storeId(_ workspaceId: String) -> UUID {
+        if let id = UUID(uuidString: workspaceId) { return id }
+        let digest = Array(SHA256.hash(data: Data(workspaceId.utf8)))
+        return UUID(uuid: (digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7],
+                           digest[8], digest[9], digest[10], digest[11], digest[12], digest[13], digest[14], digest[15]))
+    }
+
+    /// Before a workspace page loads `url`: when its host is loopback, this
+    /// phone's loopback forwards its port to the runtime's machine.
+    func routeLoopback(_ workspaceId: String, _ url: URL?) async {
+        guard let url, url.scheme == "http" || url.scheme == "https" else { return }
+        guard let port = try? await call("loopback.port", ["url": url.absoluteString], as: Int?.self) else { return }
+        await loopback.forward(port, to: workspaceId)
+    }
+
+    /// A stream to `port` on the runtime's machine for one forwarded
+    /// connection; `events` gets its bytes and end.
+    func openStream(_ streamId: String, workspaceId: String, port: Int, events: @escaping (StreamEvent) -> Void) async throws {
+        streams[streamId] = events
+        do {
+            _ = try await call("stream.open", ["streamId": streamId, "workspaceId": workspaceId, "port": port], as: Optional<Bool>.self)
+        } catch {
+            streams[streamId] = nil
+            throw error
+        }
+    }
+
+    func writeStream(_ streamId: String, _ data: Data) {
+        let encoded = data.base64EncodedString()
+        enqueue("stream:" + streamId) { [weak self] in await self?.call("stream.write", ["streamId": streamId, "data": encoded]) }
+    }
+
+    func closeStream(_ streamId: String) {
+        streams[streamId] = nil
+        enqueue("stream:" + streamId) { [weak self] in await self?.call("stream.close", ["streamId": streamId]) }
+    }
+
+    // MARK: Actions
+
+    /// Runs an action of the core API that answers ok or what went wrong.
+    func action(_ method: String, _ params: [String: Any]) async -> ActionResult {
+        do {
+            return try await call(method, params, as: ActionResult.self)
+        } catch {
+            return ActionResult(ok: false, message: error.localizedDescription)
+        }
+    }
+
+    /// The workspace that runtime serves, if this phone is paired with it.
+    func workspace(runtimeId: String) -> Workspace? {
+        state.workspaces.first { $0.runtimeId == runtimeId }
+    }
+
+    /// Connects to every paired workspace that is not open, so the agents
+    /// home sees all of them.
+    func openAll() async {
+        for workspace in state.workspaces where workspace.connection.kind == .closed {
+            await open(workspace.id)
+        }
+    }
+
+    /// Waits up to `timeout` for the workspace to connect (a notification's
+    /// action can arrive before the app reconnected).
+    func connected(_ workspaceId: String, timeout: Duration = .seconds(10)) async -> Bool {
+        await whenReady()
+        if workspace(workspaceId)?.connection.kind == .closed { await open(workspaceId) }
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if workspace(workspaceId)?.connection.kind == .connected { return true }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        return false
+    }
+
+    // MARK: Lists
+
+    func panelChoices(_ method: String, _ params: [String: Any]) async -> [PanelChoice] {
+        (try? await call(method, params, as: [PanelChoice].self)) ?? []
+    }
+}
+
+enum StreamEvent {
+    case data(Data)
+    case end
 }
 
 enum CoreError: LocalizedError {

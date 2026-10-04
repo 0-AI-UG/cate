@@ -30,6 +30,13 @@ export type ChatHarness = {
   session: { name: string; value: string }
 }
 
+/** The harness page of a binding: the thread's page, or the home page. */
+export function chatPageUrl(harness: ChatHarness, threadId: string | null): string {
+  return threadId
+    ? `${harness.origin}/${encodeURIComponent(harness.environmentId)}/${encodeURIComponent(threadId)}`
+    : `${harness.origin}/`
+}
+
 /** Files one turn changed that are still changed in the checkout. */
 export type ChatTurnChange = { path: string; kind: 'modified'; additions: number; deletions: number }
 export type ChatChanges = { threadId: string; turns: Record<string, ChatTurnChange[]> }
@@ -52,10 +59,6 @@ export type ChatSnapshot = {
   /** The agent running the thread ("T3 Code" until its provider is known). */
   agentName: string | null
   canReceivePrompt: boolean
-  /** Whether the harness's thread shells include the bound thread: false for
-   *  a thread another client just started, which T3 pages still treat as
-   *  missing (they go home). Null with no bound thread or no shell stream. */
-  threadKnown: boolean | null
   changes: ChatChanges | null
 }
 

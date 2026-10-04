@@ -17,6 +17,7 @@ export function dataPaths(dataDir: string) {
     settings: at(DATA_FILES.settings),
     secrets: at(DATA_FILES.secrets),
     pairings: at(DATA_FILES.pairings),
+    push: at(DATA_FILES.push),
     trust: at(DATA_FILES.trust),
     grants: at(DATA_FILES.grants),
     skills: at(DATA_FILES.skills),

@@ -1,8 +1,7 @@
 import { channelStream, defineCapability, method, stream } from '@kernel/rpc/contract'
 import type { AgentChangesSnapshot } from './changes'
-import type { AgentConversationMessage } from './conversation'
 import type { AgentHookAgentState } from './hooks'
-import type { AgentNotificationEvent, AgentSendResult, AgentSession, PanelAgentState } from './session'
+import type { AgentNotificationEvent, PanelAgentState } from './session'
 
 /** Every panel hosting an agent, keyed by panel id. */
 export type AgentPanelStates = Record<string, PanelAgentState>
@@ -30,10 +29,6 @@ export const agentsCapability = defineCapability('agents', {
     bindChanges: method<{ cwd: string; threadId: string; panelId: string }, void>({ mutates: true }),
     /** The agent a panel hosts, or null. */
     panel: method<{ panelId: string }, PanelAgentState | null>(),
-    /** The visible conversation of a panel's agent session. */
-    conversation: method<{ panelId: string }, { session: AgentSession; messages: AgentConversationMessage[] } | null>(),
-    /** Submit a prompt as the user would. */
-    send: method<{ panelId: string; prompt: string }, AgentSendResult>({ mutates: true }),
     /** Agents running a turn right now (closing their panels interrupts them). */
     busy: method<void, { panelIds: string[] }>(),
     /** Stop every worker of a mission and refuse new ones (its supervisor closed). */

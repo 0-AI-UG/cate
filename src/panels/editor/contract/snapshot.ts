@@ -2,9 +2,15 @@
 // the typed ops. The file text is not in the snapshot; views attach to the
 // file's buffer (`file.buffer`) for it.
 
-import type { BufferResolution, DocumentType } from '@workspace/files/contract'
+import { pathKey, type BufferResolution, type DocumentType } from '@workspace/files/contract'
 
-export type EditorMode = 'code' | 'preview' | 'merge'
+/** What a client shows of a text file: its source, or a markdown file's
+ *  preview. Each client picks its own (client state); a conflict's diff is
+ *  shared (`merging`). */
+export type EditorMode = 'code' | 'preview'
+
+/** A client's pick, for the file it was made on. */
+export type EditorModeChoice = { filePath: string; mode: EditorMode }
 
 /** A reveal the runtime asked for (`cate editor open file:12`). Views apply
  *  each `seq` once; reveals a view asks for itself are client intents. */
@@ -24,7 +30,8 @@ export type EditorSnapshot = {
   dirty: boolean
   /** The file changed or was deleted on disk under unsaved edits. */
   conflict: 'changed' | 'deleted' | null
-  mode: EditorMode
+  /** The diff of an on-disk change is shown (to resolve the conflict). */
+  merging: boolean
   /** Set while the editor is shared with an agent (connected editors):
    *  edits autosave. `syncError` is the last failed autosave. */
   connectedDraft: { syncError: string | null } | null
@@ -37,7 +44,8 @@ export type EditorOp =
   | { kind: 'save' }
   /** Writes the buffer to `path` (the view picked it) and follows it there. */
   | { kind: 'saveAs'; path: string }
-  | { kind: 'setMode'; mode: EditorMode }
+  /** Shows or hides the diff of a `changed` conflict. */
+  | { kind: 'showMerge'; show: boolean }
   | { kind: 'resolveConflict'; resolution: BufferResolution }
   /** Shows another file in this panel. Fails `dirty` with unsaved edits
    *  unless `discard`. */
@@ -53,3 +61,20 @@ export type EditorOp =
    *  guard): fails `dirty` with unsaved edits only this panel shows, unless
    *  `discard`, which reverts them when the panel goes. */
   | { kind: 'prepareClose'; discard?: boolean }
+
+const isMarkdown = (file: string) => /\.mdx?$/i.test(file)
+
+/** A text file that has a preview besides its source. */
+export function canPreview(snapshot: Pick<EditorSnapshot, 'filePath' | 'documentType'>): boolean {
+  return !!snapshot.filePath && !snapshot.documentType && isMarkdown(snapshot.filePath)
+}
+
+/** What this client shows: its pick for the current file, else the preview
+ *  of a saved markdown file, else the source. */
+export function editorModeOf(snapshot: Pick<EditorSnapshot, 'filePath' | 'documentType' | 'draft'>, choice: unknown): EditorMode {
+  if (!canPreview(snapshot)) return 'code'
+  const pick = choice as Partial<EditorModeChoice> | null | undefined
+  if (pick && typeof pick.filePath === 'string' && pathKey(pick.filePath) === pathKey(snapshot.filePath!)
+    && (pick.mode === 'code' || pick.mode === 'preview')) return pick.mode
+  return snapshot.draft ? 'code' : 'preview'
+}

@@ -43,6 +43,21 @@ describe('client state', () => {
     expect(state.getSnapshot().panelViews).toEqual({ p1: { tab: 't2', collapsed: ['a'] }, p2: { tab: 't9' } })
     expect(seen).toHaveBeenCalledTimes(3)
   })
+
+  it('keeps one maximize per window and per canvas; null restores', () => {
+    const state = createClientStateStore()
+    const seen = vi.fn()
+    state.subscribe(seen)
+    state.setMaximizedStack('main', 's1')
+    state.setMaximizedStack('main', 's1')
+    state.setMaximizedNode('c1', 'n1')
+    expect(state.getSnapshot()).toMatchObject({ maximizedStacks: { main: 's1' }, maximizedNodes: { c1: 'n1' } })
+    state.setMaximizedStack('main', null)
+    state.setMaximizedNode('c1', null)
+    state.setMaximizedNode('c1', null)
+    expect(state.getSnapshot()).toMatchObject({ maximizedStacks: {}, maximizedNodes: {} })
+    expect(seen).toHaveBeenCalledTimes(4)
+  })
 })
 
 describe('presence reporting', () => {

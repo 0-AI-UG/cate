@@ -88,6 +88,7 @@ let agents: AgentsRuntime
 let runner: TerminalRunner
 let notifications: AgentNotificationEvent[]
 let root: string
+let hookConfig: Partial<Record<AgentId, 'auto' | 'on' | 'off'>>
 
 async function post(env: Record<string, string>, agentId: string, payload: Record<string, unknown>, pid?: number): Promise<string> {
   const response = await fetch(`${env.CATE_HOOK_ENDPOINT}/hook`, {
@@ -100,6 +101,7 @@ async function post(env: Record<string, string>, agentId: string, payload: Recor
 
 beforeEach(() => {
   procTree = { nameByPid: new Map(), childrenByPid: new Map() }
+  hookConfig = {}
   root = tmp('root')
   terminal = fakeTerminal()
   doc = fakeDocument([
@@ -110,7 +112,7 @@ beforeEach(() => {
     root,
     agentsDir: tmp('agents'),
     trust: { isTrusted: () => true, requireTrusted: () => {} },
-    settings: { agentHookInjection: () => ({}), panelRelationsEnabled: () => true },
+    settings: { agentHookInjection: () => hookConfig, panelRelationsEnabled: () => true },
     relationRole: (type) => panelDefinition(type)?.relation,
     document: doc.document,
     resolveCheckout: async (cwd) => cwd ?? root,
@@ -183,14 +185,39 @@ describe('terminal runner', () => {
     await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
     await expect(agents.send('term', 'hello')).resolves.toEqual({ ok: false, error: 'agent-busy' })
     await post(env, 'claude-code', { hook_event_name: 'Stop', session_id: 'sess-1', cwd: root })
+    // The first turn took the one-shot context; arm it again for the send.
+    doc.modes.delete('term')
 
     await expect(agents.send('term', 'line one\nline two')).resolves.toEqual({ ok: true })
     expect(terminal.writes).toEqual([
       { id: 'pty-1', data: '\x1b[200~line one\rline two\x1b[201~' },
       { id: 'pty-1', data: '\r' },
     ])
-    // The send consumed the one-shot relation context.
+    // The agent's submit hook takes the one-shot relation context, and its
+    // turn-start disarms it.
+    expect(doc.modes.get('term')).toBeUndefined()
+    const output = await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
+    expect(JSON.parse(output).hookSpecificOutput.additionalContext).toContain('Browser')
     expect(doc.modes.get('term')).toBe('off')
+  })
+
+  it('flags an agent running without Cate hooks until one of its hooks arrives', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await vi.waitFor(() => expect(agents.registry.sessionFor('term')).toMatchObject({ agentId: 'claude-code', hooksMissing: true }), { timeout: 5_000 })
+
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    expect(agents.registry.sessionFor('term')).not.toHaveProperty('hooksMissing')
+  })
+
+  it('does not flag an agent whose hook files are installed where it runs', async () => {
+    hookConfig = { 'claude-code': 'on' }
+    await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    expect(await agents.hooks.hooksInstalled(root, 'claude-code')).toBe(true)
+    terminal.scan('pty-1', 'term', 'claude')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(agents.registry.sessionFor('term')).toMatchObject({ agentId: 'claude-code', present: true })
+    expect(agents.registry.sessionFor('term')).not.toHaveProperty('hooksMissing')
   })
 
   it('answers a native submit hook with the relation context and disarms a one-shot context', async () => {

@@ -236,9 +236,9 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const { review, comparison, loading, busy, agentBusy, error, notRepository, branches, commits } = snapshot
-  const view = useReviewView(workspaceId, panelId, review.focusedFile)
-  const { display, collapsed } = view
-  const { diffs, errors, load, reload } = useReviewDiffs(send, snapshot, display.fullFile)
+  const view = useReviewView(workspaceId, panelId, snapshot)
+  const { display, collapsed, focusedFile, fileFilter } = view
+  const { diffs, errors, load, reload } = useReviewDiffs(send, snapshot, display.fullFile, view.diffOptions)
   const picker = useAgentPicker(send)
   const [noteDraft, setNoteDraft] = useState<NoteDraft | null>(null)
   const [agentAction, setAgentAction] = useState<AgentAction | null>(null)
@@ -267,11 +267,11 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
   }, [agentAction, agentBusy])
 
   useEffect(() => {
-    if (!review.focusedFile || !comparison) return
+    if (!focusedFile || !comparison) return
     requestAnimationFrame(() => {
-      panelRef.current?.querySelector(`[data-review-file="${encodeURIComponent(review.focusedFile ?? '')}"]`)?.scrollIntoView({ block: 'start' })
+      panelRef.current?.querySelector(`[data-review-file="${encodeURIComponent(focusedFile)}"]`)?.scrollIntoView({ block: 'start' })
     })
-  }, [review.focusedFile, comparison])
+  }, [focusedFile, comparison])
 
   const openPicker = (kind: AgentAction['kind']) => {
     setAgentAction({ kind })
@@ -320,9 +320,9 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
   }
 
   const filteredFiles = useMemo(() => {
-    const query = (review.fileFilter ?? '').trim().toLowerCase()
+    const query = fileFilter.trim().toLowerCase()
     return comparison?.files.filter((file) => !query || file.path.toLowerCase().includes(query) || file.oldPath?.toLowerCase().includes(query)) ?? []
-  }, [comparison, review.fileFilter])
+  }, [comparison, fileFilter])
   const allCollapsed = filteredFiles.length > 0 && filteredFiles.every((file) => collapsed.has(file.path))
   const workingMode = review.spec.kind === 'uncommitted' || review.spec.kind === 'unstaged'
   const stagedMode = review.spec.kind === 'staged'
@@ -431,8 +431,8 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
       </ReviewToolbar>
 
       <ReviewFileFilter
-        value={review.fileFilter ?? ''}
-        onChange={(fileFilter) => void send({ kind: 'update', patch: { fileFilter } })}
+        value={fileFilter}
+        onChange={view.setFileFilter}
         allCollapsed={allCollapsed}
         disabled={filteredFiles.length === 0}
         onToggleCollapsed={() => view.setCollapsed(allCollapsed ? [] : filteredFiles.map((file) => file.path))}
@@ -451,7 +451,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
           const isCollapsed = collapsed.has(file.path)
           const fileNotes = (review.notes ?? []).filter((note) => note.path === file.path && note.side !== 'file')
           const fileDraft = noteDraft?.filePath === file.path ? noteDraft : null
-          const fullFile = display.fullFile || !!review.expandedFiles?.includes(file.path)
+          const fullFile = display.fullFile || view.isExpanded(file.path)
           return (
             <section key={file.path} data-review-file={encodeURIComponent(file.path)} className="min-w-0 border-b border-subtle scroll-mt-2">
               <div className="sticky top-0 z-10 flex items-center gap-2 px-2 py-1.5 bg-surface-2/95 backdrop-blur border-b border-subtle group">
@@ -473,7 +473,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
                       diff={diffs[file.path]}
                       error={errors[file.path]}
                       load={() => load(file.path)}
-                      allowLarge={() => reload(file.path, { kind: 'diff', path: file.path, options: { allowLarge: true } })}
+                      allowLarge={() => reload(file.path, { kind: 'diff', path: file.path, options: { ...view.diffOptions(file.path), allowLarge: true } })}
                       split={display.split}
                       wordDiff={display.wordDiff}
                       wrap={display.wrap}
@@ -488,8 +488,8 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
                       }}
                       cancelNote={() => setNoteDraft(null)}
                       fullFile={fullFile}
-                      expandContext={() => reload(file.path, { kind: 'expandContext', path: file.path })}
-                      expandFullFile={() => reload(file.path, { kind: 'expandFullFile', path: file.path })}
+                      expandContext={() => reload(file.path, { kind: 'diff', path: file.path, options: view.expandContext(file.path) })}
+                      expandFullFile={() => reload(file.path, { kind: 'diff', path: file.path, options: view.expandFullFile(file.path) })}
                     />
                   </div>
                 )}

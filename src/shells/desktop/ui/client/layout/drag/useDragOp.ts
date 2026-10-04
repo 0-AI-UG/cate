@@ -9,7 +9,8 @@ import { isCanvasDock, placementOf, type DocChange, type WorkspaceDocument } fro
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { newId, panelDefaultSize, panelDropSize } from '@client/host'
 import { windowsPort } from '../windows/ports'
-import { detachChange, dropChanges } from './commit'
+import { openWindowAt } from '../windows/windowSync'
+import { detachBounds, detachChange, dropChanges } from './commit'
 import { acquireBodyClass, releaseBodyClass } from './dom'
 import { dockTabGrabOffset } from './geometry'
 import { dragShell, type CrossWindowDrag } from './ports'
@@ -197,7 +198,9 @@ export async function commitDrop(
     }
     if (!canDetach()) return
     const grab = { x: geometry.grab.x * geometry.ghostZoom, y: geometry.grab.y * geometry.ghostZoom }
-    proposeDrop(workspaceId, [detachChange(panel, target.screen, grab, geometry.ghostSize, newId)], panel.id, true)
+    const windowId = newId()
+    openWindowAt(workspaceId, windowId, detachBounds(target.screen, grab, geometry.ghostSize))
+    proposeDrop(workspaceId, [detachChange(panel, windowId, newId)], panel.id, true)
   } finally {
     endPendingDetach(panel.id)
   }

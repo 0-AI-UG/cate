@@ -20,7 +20,6 @@ export const DESKTOP_CHANNELS = {
   windowSetTitle: 'cate-desktop:window:set-title',
   windowState: 'cate-desktop:window:state',
   windowStateChanged: 'cate-desktop:window:state-changed',
-  windowBounds: 'cate-desktop:window:bounds',
   windowCloseRequested: 'cate-desktop:window:close-requested',
   anyFullscreen: 'cate-desktop:window:any-fullscreen',
 

@@ -11,7 +11,7 @@ vi.mock('../../client/document', () => ({ useDocument: (_ws: string, select: (do
 vi.mock('@client/connections', () => ({ clientHas: () => true }))
 
 import SurfaceView from './SurfaceView'
-import { pickSurface } from './parts/pickSurface'
+import { surfaceReplacement } from '@panels/definitions'
 
 const surface: PanelRecord = { id: 'p1', type: 'surface', title: 'Open a surface', worktreeId: 'wt', fields: {} }
 let host: HTMLDivElement
@@ -45,8 +45,6 @@ it('replaces the surface with the picked type under the same id', () => {
 })
 
 it('does not turn a surface into a surface or into an unknown type', () => {
-  const store = { getSnapshot: () => h.doc, propose: h.propose } as never
-  expect(pickSurface(store, surface, 'surface')).toBe(false)
-  expect(pickSurface(store, surface, 'nope' as never)).toBe(false)
-  expect(h.propose).not.toHaveBeenCalled()
+  expect(surfaceReplacement(h.doc, surface.id, 'surface')).toBeNull()
+  expect(surfaceReplacement(h.doc, surface.id, 'nope' as never)).toBeNull()
 })

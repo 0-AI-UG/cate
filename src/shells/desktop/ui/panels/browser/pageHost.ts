@@ -109,6 +109,8 @@ export class BrowserPageHost {
   private snapshot: BrowserSnapshot | null = null
   /** The tab this client shows. */
   private shown: string | undefined
+  /** This client's page zoom (client state, not the session's). */
+  private zoom = 1
   private disposed = false
   private revision = 0
   private autofillRequest = 0
@@ -219,7 +221,7 @@ export class BrowserPageHost {
         try { webview.getWebContentsId() } catch { return }
         const first = !page.ready
         page.ready = true
-        try { webview.setZoomFactor(this.snapshot?.zoom ?? 1) } catch { /* detached */ }
+        try { webview.setZoomFactor(this.zoom) } catch { /* detached */ }
         const css = this.deps.guestCss?.()
         if (css) void webview.insertCSS(css).catch(() => { /* guest gone */ })
         if (this.deps.bridge) void this.deps.bridge.attach(this.guestRef(tabId, page)).catch(() => { /* retried on next dom-ready */ })
@@ -334,6 +336,7 @@ export class BrowserPageHost {
   }
 
   applyZoom(zoom: number): void {
+    this.zoom = zoom
     for (const page of this.pages.values()) {
       try { page.webview.setZoomFactor(zoom) } catch { /* not ready */ }
     }
@@ -418,6 +421,8 @@ export class BrowserPageHost {
 
   async ready(args: BrowserSurfaceArgs<'page.ready'>): Promise<BrowserSurfaceResult<'page.ready'>> {
     const { tabId, nav } = args
+    // A tab's page mounts once this client shows it.
+    if (!this.pages.has(tabId) && tabId === this.snapshot?.activeTabId) this.deps.reveal?.(tabId)
     const settled = await this.waitFor(() => {
       const page = this.pages.get(tabId)
       if (!page?.ready || page.seenNav < nav || page.pending) return undefined

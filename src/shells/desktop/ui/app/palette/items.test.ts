@@ -95,7 +95,7 @@ describe('panelItems', () => {
     {
       kind: 'addPanel',
       record: record('b1', 'browser', 'Docs'),
-      at: { to: 'window', windowId: 'w2', stackId: 's2', bounds: { origin: { x: 0, y: 0 }, size: { width: 100, height: 100 } } },
+      at: { to: 'window', windowId: 'w2', stackId: 's2' },
     },
   ])
 

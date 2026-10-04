@@ -156,6 +156,24 @@ describe('cate.codingAgent.*', () => {
     await expect(rpcError(coding.list({}, ctx({ panelId: undefined })))).resolves.toBe('mission-owner-required')
     expect(agentsCapabilityImpl(agents, missions).stopMission({ ownerPanelId: 'supervisor' }, {} as never)).toEqual({ stopped: 2 })
   })
+
+  it('lets a client act as the person: its own workers, every worker listed, any worker decided', async () => {
+    const missions = {
+      create: vi.fn(async () => ({ id: 'mine' })),
+      all: vi.fn(async () => [{ id: 'mine' }, { id: 'theirs' }]),
+      ownerOf: vi.fn((runId: string) => (runId === 'theirs' ? 'supervisor' : null)),
+      apply: vi.fn(async () => ({ id: 'theirs' })),
+      readyAgents: vi.fn(async () => ['codex']),
+    } as unknown as Missions
+    const coding = createCodingAgentApiHandlers(missions)
+    const phone = ctx({ kind: 'client', panelId: undefined, clientId: 'phone' })
+    await coding.create({ prompt: 'Fix it' } as never, phone)
+    expect(missions.create).toHaveBeenCalledWith('person', { prompt: 'Fix it' })
+    await expect(coding.list({}, phone)).resolves.toEqual([{ id: 'mine' }, { id: 'theirs' }])
+    await coding.apply({ runId: 'theirs' }, phone)
+    expect(missions.apply).toHaveBeenCalledWith('supervisor', 'theirs')
+    await expect(coding.agents({}, phone)).resolves.toEqual([{ agentId: 'codex', displayName: 'Codex' }])
+  })
 })
 
 describe('agents capability', () => {

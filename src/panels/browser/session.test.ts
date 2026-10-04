@@ -186,14 +186,13 @@ describe('browser session', () => {
     expect(w.snapshot(id).tabs.map((tab) => tab.id)).toEqual([second])
     await w.op(id, { kind: 'closeTab', tabId: second })
     expect(w.snapshot(id).tabs).toEqual([expect.objectContaining({ url: 'cate://newtab' })])
-    await w.op(id, { kind: 'stepZoom', direction: 1 })
-    expect(w.snapshot(id).zoom).toBe(1.1)
+    await w.op(id, { kind: 'setViewport', viewport: { preset: 'mobile', width: 390, height: 844 } })
     await expect(w.op(id, { kind: 'selectTab', tabId: 'nope' })).rejects.toMatchObject({ code: 'gone' })
     w.dispose()
 
     const again = world()
     await again.host.restore()
-    expect(again.snapshot(id)).toMatchObject({ zoom: 1.1, tabs: [expect.objectContaining({ url: 'cate://newtab' })] })
+    expect(again.snapshot(id)).toMatchObject({ viewport: { preset: 'mobile', width: 390, height: 844 }, tabs: [expect.objectContaining({ url: 'cate://newtab' })] })
     again.dispose()
   })
 

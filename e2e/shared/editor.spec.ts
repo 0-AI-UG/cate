@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { describeShared, doc, sessionOp, sessionOpError, seedShared, snapshot, type SharedClient } from '../fixtures/shared-workspace'
 
-type EditorSnapshot = { filePath: string | null; dirty: boolean; conflict: 'changed' | 'deleted' | null; mode: 'code' | 'preview' | 'merge'; loading: boolean }
+type EditorSnapshot = { filePath: string | null; dirty: boolean; conflict: 'changed' | 'deleted' | null; merging: boolean; loading: boolean }
 const ed = (c: SharedClient, id: string) => snapshot<EditorSnapshot>(c, id)
 const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
 
@@ -148,19 +148,19 @@ describeShared('editor', (pair) => {
     file = copy
   })
 
-  test('markdown preview and source mode switch for both clients', async () => {
+  test('markdown opens in preview on both clients; source or preview is each client\'s own', async () => {
     const { a, b, project } = pair()
     const md = path.join(project, 'README.md')
     writeFileSync(md, '# Shared heading\n\nbody text\n')
     const mdEditor = await seedShared(pair(), a, 'editor', { x: 900, y: 80 }, { filePath: md })
-    for (const c of [a, b]) await expect.poll(async () => (await ed(c, mdEditor.panelId))?.mode, { timeout: 15_000 }).toBe('preview')
-    await expect(b.page.locator(`[data-node-id="${mdEditor.nodeId}"] [data-testid="markdown-preview"]`)).toContainText('Shared heading', { timeout: 15_000 })
+    const preview = (c: typeof a) => c.page.locator(`[data-node-id="${mdEditor.nodeId}"] [data-testid="markdown-preview"]`)
+    for (const c of [a, b]) await expect(preview(c)).toContainText('Shared heading', { timeout: 15_000 })
 
-    await sessionOp(b, mdEditor.panelId, { kind: 'setMode', mode: 'code' })
-    for (const c of [a, b]) await expect.poll(async () => (await ed(c, mdEditor.panelId))?.mode).toBe('code')
-    await expect(monaco(a, mdEditor.nodeId)).toContainText('# Shared heading', { timeout: 15_000 })
-    // Preview only applies to markdown and documents.
-    expect(await sessionOpError(a, panelId, { kind: 'setMode', mode: 'preview' })).toBe('rejected')
+    await b.page.locator(`[data-node-id="${mdEditor.nodeId}"]`).getByRole('button', { name: 'Source', exact: true }).click()
+    await expect(monaco(b, mdEditor.nodeId)).toContainText('# Shared heading', { timeout: 15_000 })
+    await expect(preview(a)).toContainText('Shared heading')
+    // The diff of a conflict is shared; without one there is nothing to show.
+    expect(await sessionOpError(a, panelId, { kind: 'showMerge', show: true })).toBe('rejected')
   })
 
   test('two editors on one file (one per client) share the buffer', async () => {

@@ -15,6 +15,7 @@ import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { fingerprint, generateKeyPair, type KeyPair } from '../security/contract'
 import { PinMismatchError } from '../security/client'
 import { decodePairingUri, pairingCapability, parsePairingCode } from '../pairing/contract'
+import { encodeBase64, openPushMessage, pushCapability } from '../push/contract'
 import { KnownRuntimes, PairingError } from '../pairing/client'
 import type { PeerConnectionFactory } from '../transports/contract'
 import { openSecureConnection } from '../transports/client'
@@ -134,6 +135,27 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     await second.attach(again.frames)
     const info = await createCapabilityProxy(second, runtimeCapability).info()
     expect(info.clients.map((c) => c.device.name)).toContain('phone')
+  }, 30_000)
+
+  it('forwards an agent notification to a registered device, sealed for it', async () => {
+    const service = await standIn({ push: () => 'sent' })
+    const daemon = await daemonOn(service)
+    const payload = decodePairingUri((await addDevice(daemon)).created.uri)
+    const phone = { keys: generateKeyPair(), pins: new KnownRuntimes(createMemoryDeviceStore()) }
+    const paired = await openSecureConnection(await dial(service, payload.runtimeId), {
+      kind: 'pair', deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
+    })
+    const client = rpcClient('phone', phone.keys)
+    await client.attach(paired.frames)
+    const push = createCapabilityProxy(client, pushCapability)
+    const key = new Uint8Array(32).fill(3)
+    expect(await push.register({ target: `apns:sandbox:${'ab'.repeat(32)}`, key: encodeBase64(key) }))
+      .toEqual({ registered: true, blocked: null })
+
+    daemon.workspace.agents.notifications.publish({ kind: 'cate.ui.notify', title: 'Build done', body: 'All green' })
+    await expect.poll(() => service.pushes.length).toBe(1)
+    expect(service.pushes[0]).toMatchObject({ runtimeId: daemon.runtimeId, push: { target: `apns:sandbox:${'ab'.repeat(32)}` } })
+    expect(openPushMessage(key, service.pushes[0].push.sealed)).toMatchObject({ runtimeId: daemon.runtimeId, title: 'Build done', body: 'All green' })
   }, 30_000)
 
   it('refuses a second registration of the runtimeId with another key', async () => {

@@ -5,6 +5,13 @@
 import { AGENT_DEFS, isAgentId, type AgentId } from './registry'
 import type { AgentStatus } from './session'
 
+/** The owner of the workers a person starts from a client (`cate.codingAgent.create`)
+ *  rather than a supervisor panel. Never a panel id. */
+export const PERSON_MISSION_OWNER = 'person'
+
+/** What a person or supervisor decides about a worker. */
+export type CodingAgentAction = 'apply' | 'keep' | 'discard' | 'stop'
+
 /** At most this many workers of one mission run at once. */
 export const MAX_CONCURRENT_CODING_AGENTS = 5
 

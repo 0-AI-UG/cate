@@ -1,6 +1,6 @@
 // The editor session (architecture 11.3): binds its panel to the open buffer
 // of one file and owns everything around it: save and Save As, conflicts,
-// the shown mode, following a renamed file, and sharing with an agent
+// a conflict's shared diff, following a renamed file, and sharing with an agent
 // (connected editors, docs/connected-editors.md). The text itself is the
 // buffer's Yjs document; views attach to it through `file.buffer`.
 
@@ -24,7 +24,7 @@ import { ensureCateGitignore } from '@workspace/lifecycle/runtime'
 import { DRAFTS_DIR, editorDraftPath, isEditorDraft } from '@workspace/relations/contract'
 import type { SharedEditor } from '@workspace/relations/runtime'
 import { PanelSession, type DisposeReason, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
-import { editorApi, type EditorMode, type EditorOp, type EditorSnapshot } from './contract'
+import { editorApi, type EditorOp, type EditorSnapshot } from './contract'
 
 export interface EditorSessionDeps {
   /** Canonical workspace root; untitled editors outside a worktree draft here. */
@@ -39,9 +39,6 @@ export interface EditorSessionDeps {
   newId?: () => string
 }
 
-type Persisted = { filePath: string; mode: EditorMode }
-
-const MODES: readonly EditorMode[] = ['code', 'preview', 'merge']
 const RESOLUTIONS: readonly BufferResolution[] = ['reload', 'keep', 'merge']
 /** Origin of text the session writes into a buffer (Save As, relocation). */
 const SESSION_ORIGIN = Symbol('editor-session')
@@ -51,7 +48,6 @@ export const filePathOf = (record: PanelRecord): string | undefined => {
   return typeof value === 'string' && value ? value : undefined
 }
 
-const isMarkdown = (file: string) => /\.mdx?$/i.test(file)
 
 /** Where `file` lands when `from` moved to `to`; undefined when unaffected. */
 export function movedPath(file: string, from: string, to: string): string | undefined {
@@ -82,7 +78,7 @@ const initialSnapshot = (record: PanelRecord): EditorSnapshot => {
     documentType: file ? getDocumentType(file) : null,
     dirty: false,
     conflict: null,
-    mode: 'code',
+    merging: false,
     connectedDraft: null,
     loading: true,
     error: null,
@@ -108,7 +104,6 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
 
   override async start(): Promise<void> {
     this.offMoved = this.deps.onMoved?.((from, to) => { void this.followMove(from, to) })
-    const saved = this.persisted<Persisted>()
     await this.exclusive(async () => {
       let file = filePathOf(this.record)
       if (!file) {
@@ -119,9 +114,6 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
       } else {
         await this.bind(file)
       }
-      if (saved && typeof saved.filePath === 'string' && pathKey(saved.filePath) === pathKey(file) && this.modeAllowed(saved.mode)) {
-        this.publish({ mode: saved.mode })
-      }
     })
     this.deps.connected?.reconcile()
   }
@@ -131,9 +123,9 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
   protected override readonly ops: OpHandlers<EditorOp> = {
     save: async () => this.save(),
     saveAs: ({ path: target }) => this.exclusive(() => this.saveAs(target)),
-    setMode: ({ mode }) => {
-      if (!this.modeAllowed(mode)) throw new RpcError('rejected', `mode ${String(mode)} does not apply to this file`)
-      this.setMode(mode)
+    showMerge: ({ show }) => {
+      if (show && this.state.conflict !== 'changed') throw new RpcError('rejected', 'There is no on-disk change to compare')
+      this.publish({ merging: show === true })
     },
     resolveConflict: async ({ resolution }) => {
       if (!RESOLUTIONS.includes(resolution)) throw new RpcError('rejected', `unknown resolution ${String(resolution)}`)
@@ -156,7 +148,6 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
 
   /** Asks views to show a line (the `cate.editor.openFile` service). */
   reveal(line: number, column?: number): void {
-    if (this.state.mode === 'preview' && !this.state.documentType) this.setMode('code')
     this.publish({ reveal: { seq: ++this.revealSeq, line, column: column ?? null } })
   }
 
@@ -237,25 +228,6 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
     })
   }
 
-  private defaultMode(file: string, reveal = false): EditorMode {
-    if (getDocumentType(file)) return 'preview'
-    return isMarkdown(file) && !isEditorDraft(file) && !reveal ? 'preview' : 'code'
-  }
-
-  private modeAllowed(mode: EditorMode): boolean {
-    if (!MODES.includes(mode)) return false
-    const file = this.state.filePath
-    if (this.state.documentType) return mode === 'preview'
-    if (mode === 'preview') return !!file && isMarkdown(file)
-    if (mode === 'merge') return this.state.conflict === 'changed'
-    return true
-  }
-
-  private setMode(mode: EditorMode): void {
-    this.publish({ mode })
-    if (this.state.filePath) this.persist({ filePath: this.state.filePath, mode })
-  }
-
   private requireHandle(): BufferHandle {
     if (this.state.documentType) throw new RpcError('rejected', 'This panel shows a preview, not text')
     if (!this.handle) throw new RpcError('rejected', this.state.error ?? 'The file is still loading')
@@ -289,11 +261,11 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
 
   /** Binds the panel to `file`: its buffer, or nothing for a preview (the
    *  view fetches preview bytes itself). Caller holds `exclusive`. */
-  private async bind(file: string, mode = this.defaultMode(file)): Promise<void> {
+  private async bind(file: string): Promise<void> {
     this.unbind()
     const documentType = getDocumentType(file)
     this.boundPath = file
-    this.publish({ ...this.located(file), mode, dirty: false, conflict: null, loading: !documentType, error: null })
+    this.publish({ ...this.located(file), merging: false, dirty: false, conflict: null, loading: !documentType, error: null })
     if (documentType) return
     try {
       const handle = await this.deps.buffers.open(file)
@@ -335,8 +307,7 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
   private applyState(state: BufferState): void {
     if (this.disposed || !this.handle || pathKey(state.path) !== pathKey(this.handle.path)) return
     const conflict = state.conflict?.kind ?? null
-    this.publish({ dirty: state.dirty, conflict })
-    if (this.state.mode === 'merge' && conflict !== 'changed') this.setMode('code')
+    this.publish({ dirty: state.dirty, conflict, ...(conflict !== 'changed' ? { merging: false } : {}) })
   }
 
   private scheduleAutosave(): void {
@@ -379,7 +350,7 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
         if (options.discard) await this.revertIfUnshown(previous)
         previous.close()
       }
-      await this.bind(file, this.defaultMode(file, options.line !== undefined))
+      await this.bind(file)
       this.writeRecord(file)
     }
     if (options.line !== undefined) this.reveal(options.line, options.column)
@@ -408,7 +379,7 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
       previous.close()
     }
     const draft = editorDraftPath(target.path, this.deps.newId?.() ?? randomUUID())
-    await this.bind(draft, 'code')
+    await this.bind(draft)
     if (this.handle) replaceText(this.handle, text)
     this.kit.document.apply({ kind: 'updatePanel', id: this.panelId, patch: { worktreeId: this.worktreeIdFor(draft), fields: { filePath: draft } } })
     return { filePath: draft }
@@ -442,8 +413,7 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
       previous.close()
     }
     this.hold(dest)
-    this.publish({ ...this.located(target), mode: 'code', loading: false, error: null })
-    this.persist({ filePath: target, mode: 'code' })
+    this.publish({ ...this.located(target), merging: false, loading: false, error: null })
     this.writeRecord(target)
     return { path: state.path, dirty: dest.state().dirty }
   }
@@ -457,7 +427,7 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
       if (this.disposed || !bound || !target) return
       const previous = this.unhook()
       if (!previous) {
-        await this.bind(target, this.state.mode)
+        await this.bind(target)
         this.writeRecord(target)
         return
       }

@@ -34,7 +34,7 @@ async function detach(panelId: string): Promise<{ page: Page; windowId: string }
     const ok = window.__cateE2E!.propose({
       kind: 'placePanel',
       id,
-      at: { to: 'window', windowId, stackId: crypto.randomUUID(), bounds: { origin: { x: 120, y: 120 }, size: { width: 800, height: 600 } } },
+      at: { to: 'window', windowId, stackId: crypto.randomUUID() },
     } as never).ok
     return ok ? windowId : null
   }, panelId)

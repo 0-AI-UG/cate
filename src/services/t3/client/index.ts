@@ -18,6 +18,6 @@ export {
   type T3HostRequest,
 } from './bridge'
 export { createT3HostDispatcher, type T3HostActions, type T3HostDispatcher } from './dispatcher'
-export { t3FileDropScript, t3ChangesScript, t3SendTextScript, type T3Guest, type GuestDropFile } from './guest'
+export { t3FileDropScript, t3ChangesScript, t3SendTextScript, t3NavigateScript, type T3Guest, type GuestDropFile } from './guest'
 export { installT3WebviewHost, t3WebviewHost, prepareT3Page, type T3WebviewHost } from './webview'
 export { t3Conversations, t3ProductCopy, type T3ConversationSource } from './conversations'

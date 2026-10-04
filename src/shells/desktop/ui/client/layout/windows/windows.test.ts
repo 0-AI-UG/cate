@@ -8,7 +8,7 @@ import { clampToScreens } from './bounds'
 import { closeDetachedWindow } from './closeWindow'
 import { detachedWindows, panelWindowIndex, panelsByWindow, windowTitle } from './panelIndex'
 import type { WindowRef, WindowsPort } from './ports'
-import { syncDetachedWindows } from './windowSync'
+import { openWindowAt, syncDetachedWindows } from './windowSync'
 
 const main = { windowId: MAIN_WINDOW }
 const bounds = (x: number): Rect => ({ origin: { x, y: 100 }, size: { width: 800, height: 600 } })
@@ -17,7 +17,7 @@ function fixture() {
   return buildDocument([
     add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
     add('onCanvas', { to: 'canvas', canvasId: 'C', nodeId: 'N', stackId: 'ns', rect: bounds(0) }),
-    add('d1', { to: 'window', windowId: 'W1', stackId: 'ws1', bounds: bounds(200) }),
+    add('d1', { to: 'window', windowId: 'W1', stackId: 'ws1' }),
     add('d2', { to: 'stack', dock: { windowId: 'W1' }, stackId: 'ws1' }),
   ])
 }
@@ -49,33 +49,23 @@ describe('clampToScreens', () => {
 })
 
 function fakePort() {
-  const opened: (WindowRef & { bounds: Rect })[] = []
+  const opened: (WindowRef & { bounds?: Rect })[] = []
   const closed: WindowRef[] = []
-  const moved: [WindowRef, Rect][] = []
-  let report: ((window: WindowRef, bounds: Rect) => void) | null = null
   const port: WindowsPort = {
     open: (w) => { opened.push(w) },
     close: (w) => { closed.push(w) },
-    setBounds: (w, b) => { moved.push([w, b]) },
-    onBoundsChanged: (listener) => {
-      report = listener
-      return () => { report = null }
-    },
   }
-  return { port, opened, closed, moved, report: (w: WindowRef, b: Rect) => report?.(w, b) }
+  return { port, opened, closed }
 }
 
 describe('syncDetachedWindows', () => {
-  it('opens, moves and closes native windows with the document', () => {
+  it('opens and closes native windows with the document', () => {
     ws = attachTestWorkspace('w', fixture())
     const fake = fakePort()
     const stop = syncDetachedWindows('w', fake.port)
-    expect(fake.opened).toEqual([{ workspaceId: 'w', windowId: 'W1', bounds: bounds(200) }])
+    expect(fake.opened).toEqual([{ workspaceId: 'w', windowId: 'W1' }])
 
-    ws.remote({ kind: 'setWindowBounds', windowId: 'W1', bounds: bounds(300) })
-    expect(fake.moved).toEqual([[{ workspaceId: 'w', windowId: 'W1' }, bounds(300)]])
-
-    ws.remote(add('d3', { to: 'window', windowId: 'W2', stackId: 'ws2', bounds: bounds(50) }))
+    ws.remote(add('d3', { to: 'window', windowId: 'W2', stackId: 'ws2' }))
     expect(fake.opened.map((w) => w.windowId)).toEqual(['W1', 'W2'])
 
     ws.remote({ kind: 'closeWindow', windowId: 'W2' })
@@ -84,15 +74,14 @@ describe('syncDetachedWindows', () => {
     expect(fake.closed.map((w) => w.windowId)).toEqual(['W2', 'W1'])
   })
 
-  it('a move here becomes one setWindowBounds op, not an undo step', () => {
+  it('opens a window this client detached where it asked; the position is never in the document', () => {
     ws = attachTestWorkspace('w', fixture())
     const fake = fakePort()
     const stop = syncDetachedWindows('w', fake.port)
-    fake.report({ workspaceId: 'w', windowId: 'W1' }, bounds(640))
-    expect(ws.confirmed().windows.W1.bounds).toEqual(bounds(640))
-    expect(ws.document.getUndoState().canUndo).toBe(false)
-    // The echo of our own move does not move the window again.
-    expect(fake.moved).toEqual([])
+    openWindowAt('w', 'W3', bounds(640))
+    ws.document.propose(add('d4', { to: 'window', windowId: 'W3', stackId: 'ws3' }))
+    expect(fake.opened.at(-1)).toEqual({ workspaceId: 'w', windowId: 'W3', bounds: bounds(640) })
+    expect(ws.confirmed().windows.W3).not.toHaveProperty('bounds')
     stop()
   })
 })

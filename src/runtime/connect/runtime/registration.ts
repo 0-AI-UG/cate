@@ -19,6 +19,8 @@ import {
   connectEndpoint,
   decodeServiceRuntimeMessage,
   encodeConnectMessage,
+  type ConnectPush,
+  type ConnectPushResult,
   type RegisterRefusal,
   type RuntimeMessage,
 } from '../contract'
@@ -41,11 +43,17 @@ export interface ConnectRegistrationOptions {
   log?: Logger
   retry?: { minMs?: number; maxMs?: number }
   sessionTimeoutMs?: number
+  /** How long a push waits for the service's answer. Default 15 s. */
+  pushTimeoutMs?: number
 }
 
 export interface ConnectRegistration {
   state(): RegistrationState
   onState(listener: (state: RegistrationState) => void): () => void
+  /** Registered with a service that forwards pushes. */
+  pushAvailable(): boolean
+  /** Asks the service to forward a push; `unavailable` while it cannot. */
+  push(push: ConnectPush): Promise<ConnectPushResult>
   close(): void
 }
 
@@ -59,6 +67,12 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
   let delay = minMs
   let stopped = false
   let iceServers: IceServer[] = []
+  let pushes = false
+  let nextPushId = 1
+  const pendingPushes = new Map<string, (result: ConnectPushResult) => void>()
+  const settlePushes = (result: ConnectPushResult) => {
+    for (const settle of [...pendingPushes.values()]) settle(result)
+  }
   // Signals for a session; held until its peer connection listens, since the
   // offer can arrive while the WebRTC stack is still loading.
   const sessions = new Map<string, { listener: ((signal: SignalMessage) => void) | null; held: SignalMessage[] }>()
@@ -128,7 +142,9 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
     secure.onClose(() => {
       if (channel !== secure) return
       channel = null
+      pushes = false
       sessions.clear()
+      settlePushes('failed')
       scheduleRetry()
     })
     secure.onFrame((frame) => {
@@ -137,6 +153,7 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
       switch (message.t) {
         case 'registered':
           iceServers = message.iceServers
+          pushes = message.push === true
           delay = minMs
           setState({ kind: 'registered' })
           return
@@ -157,6 +174,9 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
         case 'ended':
           sessions.delete(message.session)
           return
+        case 'pushed':
+          pendingPushes.get(message.id)?.(message.result)
+          return
       }
     })
     send({ t: 'register', runtimeId: options.runtimeId, protocol: CONNECT_PROTOCOL })
@@ -170,8 +190,24 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    pushAvailable: () => pushes && state.kind === 'registered',
+    push(push) {
+      if (!pushes || state.kind !== 'registered') return Promise.resolve('unavailable')
+      const id = String(nextPushId++)
+      return new Promise<ConnectPushResult>((resolve) => {
+        const timer = setTimeout(() => settle('failed'), options.pushTimeoutMs ?? 15_000)
+        const settle = (result: ConnectPushResult) => {
+          clearTimeout(timer)
+          pendingPushes.delete(id)
+          resolve(result)
+        }
+        pendingPushes.set(id, settle)
+        send({ t: 'push', id, push })
+      })
+    },
     close() {
       stopped = true
+      settlePushes('failed')
       if (retryTimer) clearTimeout(retryTimer)
       const open = channel
       channel = null

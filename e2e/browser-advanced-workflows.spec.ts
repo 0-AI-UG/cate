@@ -287,6 +287,8 @@ test('shows recovery UI and reloads after the browser guest renderer crashes', a
 
   const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
   await expect(surface.getByText('This page crashed')).toBeVisible({ timeout: 20_000 })
+  // The first click focuses the node (its unfocused overlay takes it).
+  await page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`).click()
   await surface.getByRole('button', { name: 'Reload Page' }).click()
   await expect.poll(() => target(page, browser, "Browser is alive").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 })
@@ -396,7 +398,7 @@ test('keeps browser control bound after the panel moves into a detached window',
   const placed = await page.evaluate((panelId) => window.__cateE2E!.propose({
     kind: 'placePanel',
     id: panelId,
-    at: { to: 'window', windowId: crypto.randomUUID(), stackId: crypto.randomUUID(), bounds: { origin: { x: 80, y: 80 }, size: { width: 900, height: 700 } } },
+    at: { to: 'window', windowId: crypto.randomUUID(), stackId: crypto.randomUUID() },
   } as never), browser.panelId)
   expect(placed.ok).toBe(true)
   await page.waitForSelector(`[data-node-id="${browser.nodeId}"]`, { state: 'detached' })

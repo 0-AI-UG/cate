@@ -3,7 +3,7 @@
 // WindowsPort, closing a window, and the cross-window panel index.
 
 export { WindowView, MainWindowView, installWindowReveal, type WindowViewProps } from './WindowView'
-export { syncDetachedWindows } from './windowSync'
+export { syncDetachedWindows, openWindowAt } from './windowSync'
 export { closeDetachedWindow } from './closeWindow'
 export { clampToScreens, type ScreenArea } from './bounds'
 export { installWindowsPort, windowsPort, type WindowsPort, type WindowRef } from './ports'

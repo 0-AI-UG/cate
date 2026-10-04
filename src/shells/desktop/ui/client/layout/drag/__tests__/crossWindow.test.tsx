@@ -37,7 +37,7 @@ function fixture() {
   return buildDocument([
     add('p1', { to: 'stack', dock: main, stackId: 's1' }),
     add('cv', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }, 'canvas', { canvasId: 'C' }),
-    add('far', { to: 'window', windowId: 'W1', stackId: 'ws1', bounds: { origin: { x: 0, y: 0 }, size: { width: 400, height: 300 } } }),
+    add('far', { to: 'window', windowId: 'W1', stackId: 'ws1' }),
   ])
 }
 

@@ -47,7 +47,7 @@ function sample(): Doc {
     add('x', { to: 'canvas', canvasId: 'canvas-cv', nodeId: 'n1', stackId: 'sn1', rect: R }),
     add('y', tab('sn1', { canvasId: 'canvas-cv', nodeId: 'n1' })),
     add('z', { to: 'canvas', canvasId: 'canvas-cv', nodeId: 'n2', stackId: 'sn2', rect: rect(500, 0, 300, 200) }),
-    add('w', { to: 'window', windowId: 'w1', stackId: 'sw', bounds: rect(10, 10, 600, 400) }),
+    add('w', { to: 'window', windowId: 'w1', stackId: 'sw' }),
     { kind: 'addRelation', relation: { id: 'r1', fromPanelId: 'a', toPanelId: 'x', kind: 'context', label: 'L' } },
     { kind: 'setWorktree', worktree: { id: 'wt', path: '/r/wt', color: '#fff', status: 'ready' } },
   )
@@ -75,7 +75,7 @@ describe('invertOp', () => {
     roundTrip(doc, { kind: 'placePanel', id: 'b', at: { to: 'stack', dock: MAIN, stackId: 's1', after: null } })
     roundTrip(doc, { kind: 'placePanel', id: 'z', at: tab('s3') })
     roundTrip(doc, { kind: 'placePanel', id: 'w', at: tab('s2') })
-    roundTrip(doc, { kind: 'placePanel', id: 'd', at: { to: 'window', windowId: 'w2', stackId: 'sw2', bounds: R } })
+    roundTrip(doc, { kind: 'placePanel', id: 'd', at: { to: 'window', windowId: 'w2', stackId: 'sw2' } })
     roundTrip(doc, { kind: 'placePanel', id: 'a', at: { to: 'split', dock: MAIN, beside: 'p1', side: 'bottom', stackId: 's9', splitId: 'p9' } })
   })
 
@@ -84,7 +84,6 @@ describe('invertOp', () => {
     roundTrip(doc, { kind: 'closeWindow', windowId: 'w1' })
     roundTrip(doc, { kind: 'setSplitRatio', splitId: 'p1', ratios: [1, 1] })
     roundTrip(doc, { kind: 'setNodeRects', canvasId: 'canvas-cv', rects: [{ nodeId: 'n2', rect: R }] })
-    roundTrip(doc, { kind: 'setWindowBounds', windowId: 'w1', bounds: R })
     roundTrip(doc, { kind: 'updatePanel', id: 'a', patch: { title: 'T', worktreeId: 'wt', fields: { k: 1 } } })
     roundTrip(doc, { kind: 'replacePanel', record: record('a', 'browser') })
   })
@@ -97,15 +96,6 @@ describe('invertOp', () => {
     roundTrip(doc, { kind: 'setWorktree', worktree: { id: 'wt2', path: '/r/2', color: '#000', status: 'creating' } })
     roundTrip(doc, { kind: 'setWorktree', worktree: { id: 'wt', path: '/r/wt', color: '#000', status: 'removing' } })
     roundTrip(doc, { kind: 'removeWorktree', id: 'wt' })
-  })
-
-  it('undoes maximizing with a restore, and a restore with the same maximize', () => {
-    const doc = sample()
-    expect(roundTrip(doc, { kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 's2' })).toEqual([{ kind: 'restoreLayout', windowId: MAIN_WINDOW }])
-    for (const id of ['x', 'z']) {
-      const maximized = applyOp(doc, { kind: 'maximizePanel', id }).doc
-      expect(roundTrip(maximized, { kind: 'restoreLayout', windowId: MAIN_WINDOW })).toEqual([{ kind: 'maximizePanel', id }])
-    }
   })
 
   it('undoes a batch in reverse order', () => {

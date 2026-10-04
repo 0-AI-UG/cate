@@ -275,21 +275,4 @@ describe('dock tab drags', () => {
     scene.mouse.up()
     expect(dockPanels(dockOf(scene.doc(), { canvasId: 'C', nodeId: 'N1' }))).toEqual(['n1', 'p2'])
   })
-
-  it('a drag in a maximized window commits the maximized layout', () => {
-    const doc = buildDocument([
-      add('p1', { to: 'stack', dock: main, stackId: 's1' }),
-      add('p2', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }),
-      add('p3', { to: 'stack', dock: main, stackId: 's2' }),
-    ])
-    scene = renderScene({ doc, stacks: { s1: { x: 0, y: 0, w: 800, h: 600 } } })
-    const { document } = scene.workspace
-    act(() => { document.propose({ kind: 'maximizeStack', windowId: MAIN_WINDOW, stackId: 's1' }) })
-    scene.mouse.downOnTab('p1')
-    scene.mouse.dragBy({ x: 20, y: 5 })
-    scene.mouse.moveTo({ x: 300, y: 15 })
-    scene.mouse.up()
-    expect(dockOf(scene.doc(), main)).toEqual({ kind: 'stack', id: 's1', panels: ['p2', 'p3', 'p1'] })
-    expect(scene.doc().windows[MAIN_WINDOW].maximized).toBeUndefined()
-  })
 })

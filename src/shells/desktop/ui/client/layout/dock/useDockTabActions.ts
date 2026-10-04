@@ -29,6 +29,7 @@ import {
   panelDefaultSize,
   panelDefinitions,
 } from '@client/host'
+import { openWindowAt } from '../windows/windowSync'
 import { tabMenuContributions } from './decorations'
 
 /** The type a "Split Right" creates: the placeholder picker, when one is
@@ -121,16 +122,9 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
     const store = documentStoreFor(workspaceId)
     const record = store?.getSnapshot().panels[panelId]
     if (!store || !record) return
-    const change: DocChange = {
-      kind: 'placePanel',
-      id: panelId,
-      at: {
-        to: 'window',
-        windowId: newId(),
-        stackId: newId(),
-        bounds: { origin: { x: window.screenX + 60, y: window.screenY + 60 }, size: panelDefaultSize(record.type) },
-      },
-    }
+    const windowId = newId()
+    openWindowAt(workspaceId, windowId, { origin: { x: window.screenX + 60, y: window.screenY + 60 }, size: panelDefaultSize(record.type) })
+    const change: DocChange = { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, stackId: newId() } }
     store.propose(change)
   }, [workspaceId])
 

@@ -91,6 +91,8 @@ export interface MissionsDeps {
   submit(panelId: string, prompt: string): Promise<boolean>
   /** The hook-ready agent a worker in `cwd` uses (strict for a preference). */
   resolveAgent(cwd: string, preferred: string): Promise<AgentId>
+  /** The agents a worker in `cwd` can use, in registry order. */
+  readyAgents(cwd: string): Promise<AgentId[]>
   store?: MissionStore
   now?: () => number
 }
@@ -118,6 +120,12 @@ export interface Missions {
   create(ownerPanelId: string, args: CreateWorkerArgs): Promise<CompactCodingAgentSnapshot>
   send(ownerPanelId: string, runId: string, prompt: string): Promise<CompactCodingAgentSnapshot>
   list(ownerPanelId: string): Promise<CompactCodingAgentSnapshot[]>
+  /** Every worker of every mission, oldest first. */
+  all(): Promise<CompactCodingAgentSnapshot[]>
+  /** The mission a worker belongs to, or null for an unknown worker. */
+  ownerOf(runId: string): string | null
+  /** The agents a worker started in the root can use. */
+  readyAgents(): Promise<AgentId[]>
   wait(ownerPanelId: string, options: { runIds?: string[]; timeoutSeconds: number; baselineStatuses?: Record<string, string>; signal?: AbortSignal }): Promise<WaitResult>
   inspect(ownerPanelId: string, runId: string): Promise<CompactCodingAgentSnapshot & { recentOutput: string }>
   review(ownerPanelId: string, runId: string): Promise<CompactCodingAgentSnapshot & { review: WorktreeReview }>
@@ -379,6 +387,15 @@ export function createMissions(deps: MissionsDeps): Missions {
     async list(ownerPanelId) {
       return (await requested(ownerPanelId, undefined)).map(compactCodingAgentSnapshot)
     },
+
+    async all() {
+      const every = [...runs.values()].sort((a, b) => a.createdAt - b.createdAt)
+      return (await Promise.all(every.map(snapshotOf))).map(compactCodingAgentSnapshot)
+    },
+
+    ownerOf: (runId) => runs.get(runId)?.ownerPanelId ?? null,
+
+    readyAgents: () => deps.readyAgents(deps.root),
 
     async wait(ownerPanelId, options) {
       const initial = await requested(ownerPanelId, options.runIds)

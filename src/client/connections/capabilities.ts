@@ -8,6 +8,7 @@ import { settingsCapability } from '@kernel/settings/contract/capability'
 import { runtimeCapability } from '@runtime/daemon/contract/capability'
 import { pairingCapability } from '@runtime/pairing/contract/capability'
 import { powerCapability } from '@runtime/power/contract/capability'
+import { pushCapability } from '@runtime/push/contract/capability'
 import { serverCapability } from '@runtime/server/contract/capability'
 import { tunnelCapability } from '@runtime/tunnel/contract/capability'
 import { documentCapability, presenceCapability } from '@workspace/document/contract/capability'
@@ -28,6 +29,7 @@ export const RUNTIME_CAPABILITIES = [
   runtimeCapability,
   pairingCapability,
   powerCapability,
+  pushCapability,
   serverCapability,
   tunnelCapability,
   documentCapability,

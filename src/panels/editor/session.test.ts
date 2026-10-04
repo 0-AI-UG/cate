@@ -70,7 +70,7 @@ describe('EditorSession', () => {
     await fs.writeFile(file, 'one')
     const a = await addEditor('a', file)
     const b = await addEditor('b', file)
-    expect(a.snapshot()).toMatchObject({ filePath: file, loading: false, dirty: false, mode: 'code', documentType: null })
+    expect(a.snapshot()).toMatchObject({ filePath: file, loading: false, dirty: false, merging: false, documentType: null })
     await edit(file, 'two')
     expect(a.snapshot().dirty).toBe(true)
     expect(b.snapshot().dirty).toBe(true)
@@ -80,16 +80,16 @@ describe('EditorSession', () => {
     expect(a.snapshot().dirty).toBe(false)
   })
 
-  it('opens markdown in preview and previews images without a buffer', async () => {
+  it('opens markdown with a buffer and previews images without one', async () => {
     const md = path.join(ws.root, 'README.md')
     const png = path.join(ws.root, 'logo.png')
     await fs.writeFile(md, '# hi')
     await fs.writeFile(png, 'png')
-    expect((await addEditor('md', md)).snapshot().mode).toBe('preview')
+    await addEditor('md', md)
     const image = await addEditor('png', png)
-    expect(image.snapshot()).toMatchObject({ documentType: 'image', mode: 'preview', loading: false })
+    expect(image.snapshot()).toMatchObject({ documentType: 'image', loading: false })
     expect(ws.files.buffers.openPaths()).toEqual([md])
-    await expect(op('png', { kind: 'setMode', mode: 'code' })).rejects.toSatisfy((e) => isRpcError(e, 'rejected'))
+    await expect(op('png', { kind: 'showMerge', show: true })).rejects.toSatisfy((e) => isRpcError(e, 'rejected'))
   })
 
   it('fails a save over an external change with conflict, then merges', async () => {
@@ -100,10 +100,10 @@ describe('EditorSession', () => {
     await fs.writeFile(file, 'a\nb\nC\n')
     await expect(op('c', { kind: 'save' })).rejects.toSatisfy((e) => isRpcError(e, 'conflict'))
     expect(session.snapshot().conflict).toBe('changed')
-    await op('c', { kind: 'setMode', mode: 'merge' })
-    expect(session.snapshot().mode).toBe('merge')
+    await op('c', { kind: 'showMerge', show: true })
+    expect(session.snapshot().merging).toBe(true)
     await op('c', { kind: 'resolveConflict', resolution: 'merge' })
-    expect(session.snapshot()).toMatchObject({ conflict: null, mode: 'code', dirty: true })
+    expect(session.snapshot()).toMatchObject({ conflict: null, merging: false, dirty: true })
     await op('c', { kind: 'save' })
     expect(await read(file)).toBe('A\nb\nC\n')
   })
@@ -197,7 +197,6 @@ describe('EditorSession', () => {
     expect(draft).toBe(path.join(ws.root, '.cate', 'tmp', '00000000-0000-4000-8000-000000000001.md'))
     expect(session.snapshot()).toMatchObject({ draft: true, checkout: ws.root })
     expect(document.get().panels.u).toMatchObject({ title: 'u', fields: { filePath: draft } })
-    expect(session.snapshot().mode).toBe('code')
     await expect(fs.stat(draft)).rejects.toThrow()
     expect(ws.watcher.roots()).not.toContain(path.dirname(draft))
 
@@ -235,24 +234,6 @@ describe('EditorSession', () => {
     expect(session.snapshot().conflict).toBe('changed')
   })
 
-  it('persists the mode for its file', async () => {
-    const file = path.join(ws.root, 'notes.md')
-    await fs.writeFile(file, '# x')
-    await addEditor('m', file)
-    await op('m', { kind: 'setMode', mode: 'code' })
-    await until(async () => !!(await fs.stat(path.join(ws.data, 'sessions', 'm.json')).catch(() => null)))
-    host.dispose()
-    const again = createSessionHost({
-      document,
-      registry: createPanelRegistry([editorPanel({ root: ws.root, buffers: ws.files.buffers })]),
-      surfaces: { request: async () => null },
-      sessionFile: (panelId) => path.join(ws.data, 'sessions', `${panelId}.json`),
-    })
-    await again.restore()
-    expect((again.session('m') as EditorSession).snapshot().mode).toBe('code')
-    again.dispose()
-  })
-
   it('switches worktree to the same file, or a draft with its text where it is missing', async () => {
     const other = path.join(ws.root, '.cate', 'worktrees', 'two')
     await fs.mkdir(other, { recursive: true })
@@ -276,7 +257,7 @@ describe('EditorSession', () => {
 
     await op('w', { kind: 'switchWorktree', worktreeId: 'w2', discard: true })
     const draft = session.snapshot().filePath!
-    expect(session.snapshot()).toMatchObject({ draft: true, checkout: other, mode: 'code' })
+    expect(session.snapshot()).toMatchObject({ draft: true, checkout: other })
     expect(draft.startsWith(other)).toBe(true)
     expect((await bufferOf(draft)).text.toString()).toBe('edited')
     expect(document.get().panels.w).toMatchObject({ worktreeId: 'w2', title: 'only.ts' })

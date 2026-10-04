@@ -182,7 +182,6 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
       for (const el of layers) {
         if (!el) continue
         el.style.transform = transform
-        el.style.setProperty('--zoom', String(zoom))
       }
       // Native guests sit outside the world; realign them in this same task
       // or they trail their nodes by a frame while panning.

@@ -2,28 +2,49 @@
 // once the document arrives, its panels. Recomputed and pushed whole on any
 // change, coalesced to one push per task; it is small.
 
-import { connectionLabel, connectionRemedy, type ConnectionState } from '@client/connections'
+import { clientIdentity, connectionLabel, connectionRemedy, type ConnectionState } from '@client/connections'
 import { documentStoreFor, subscribeDocumentStores } from '@client/document'
 import type { PairedWorkspace } from '@client/workspaces'
 import { panelDefinition } from '@panels/definitions'
-import type { MobileConnection, MobileCoreState, MobilePanel, MobileWorkspace } from '../contract'
+import { canvasOf, dockPanels, type WorkspaceDocument } from '@workspace/document/contract'
+import type { MobileCanvas, MobileConnection, MobileCoreState, MobilePanel, MobileWorkspace } from '../contract'
 import type { MobileClient } from './boot'
+import type { MobileAgents } from './agents'
 
 export function connectionOf(state: ConnectionState): MobileConnection {
   const text = connectionLabel(state) ?? (state.kind === 'connected' ? 'Connected' : 'Not connected')
   return { kind: state.kind, text, retryable: connectionRemedy(state) !== null }
 }
 
+function canvasOfDoc(doc: WorkspaceDocument, canvasId: string | undefined): MobileCanvas | null {
+  const canvas = canvasId ? doc.canvases[canvasId] : undefined
+  if (!canvas) return null
+  return {
+    id: canvas.id,
+    nodes: Object.values(canvas.nodes).map((node) => ({ id: node.id, rect: { x: node.rect.origin.x, y: node.rect.origin.y, width: node.rect.size.width, height: node.rect.size.height }, panels: dockPanels(node.dock) })),
+  }
+}
+
 function panelsOf(workspaceId: string): MobilePanel[] | null {
   const store = documentStoreFor(workspaceId)
   if (!store?.isSynced()) return null
-  return Object.values(store.getSnapshot().panels).map((panel) => {
-    const typeLabel = panelDefinition(panel.type)?.label ?? panel.type
-    return { id: panel.id, type: panel.type, typeLabel, title: panel.title || typeLabel }
+  const doc = store.getSnapshot()
+  return Object.values(doc.panels).map((panel) => {
+    const definition = panelDefinition(panel.type)
+    const typeLabel = definition?.label ?? panel.type
+    return {
+      id: panel.id,
+      type: panel.type,
+      typeLabel,
+      icon: definition?.icon ?? '',
+      title: panel.title || typeLabel,
+      onCanvas: canvasOf(doc, panel.id),
+      canvas: canvasOfDoc(doc, panel.canvasId),
+    }
   })
 }
 
-export function snapshotOf(client: MobileClient): MobileCoreState {
+export function snapshotOf(client: MobileClient, agents: MobileAgents): MobileCoreState {
   const workspaces: MobileWorkspace[] = client.workspaces.getSnapshot().entries
     .filter((entry): entry is PairedWorkspace => entry.kind === 'paired')
     .map((entry) => {
@@ -34,13 +55,17 @@ export function snapshotOf(client: MobileClient): MobileCoreState {
         runtimeId: entry.runtimeId,
         connection: connectionOf(connection?.getState() ?? { kind: 'closed' }),
         panels: connection ? panelsOf(entry.id) : null,
+        agents: agents.agents(entry.id),
+        tasks: agents.tasks(entry.id),
+        power: agents.power(entry.id),
+        push: agents.push(entry.id),
       }
     })
-  return { workspaces }
+  return { clientId: clientIdentity().clientId, workspaces }
 }
 
 /** Calls `onChange` (coalesced) whenever the snapshot may have changed. */
-export function watchState(client: MobileClient, onChange: () => void): () => void {
+export function watchState(client: MobileClient, agents: MobileAgents, onChange: () => void): () => void {
   let queued = false
   const schedule = () => {
     if (queued) return
@@ -76,6 +101,7 @@ export function watchState(client: MobileClient, onChange: () => void): () => vo
     client.workspaces.subscribe(schedule),
     client.connections.subscribe(schedule),
     subscribeDocumentStores(schedule),
+    agents.subscribe(schedule),
   ]
   rewire()
   return () => {

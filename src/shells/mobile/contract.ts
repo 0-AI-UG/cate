@@ -9,6 +9,12 @@
 //   `window.cateCore.call(method, paramsJson)`, answered with JSON text; and
 //   the core's state, pushed to the app as one snapshot on every change.
 
+import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
+import type { PushStatus } from '@runtime/push/contract'
+import type { AgentId, AgentRunner, AgentStatus, CodingAgentAction, CodingAgentRunStatus } from '@services/agents/contract'
+import type { T3Conversation } from '@services/t3/contract'
+import type { GitChangeStatus, GitFileDiff } from '@workspace/repository/contract'
+
 export interface MobileAppInfo {
   /** The device's name, sent in `hello` and shown in pairing lists. */
   device: string
@@ -37,7 +43,53 @@ export interface MobileBridgeMethods {
   /** Output for a terminal the app opened (`terminal.open`). The core waits
    *  for the reply before taking more output, so a slow view slows the PTY. */
   'terminal.event': { params: MobileTerminalEvent; result: null }
+  /** An event for a view the app opened (`panel.open`, `buffer.open`): a
+   *  `MobileViewEvent` as JSON text. */
+  'view.event': { params: { viewId: string; json: string }; result: null }
+  /** Bytes or the end of a stream the app opened (`stream.open`). The core
+   *  waits for the reply before sending more. */
+  'stream.event': { params: MobileStreamEvent; result: null }
+  /** Opens a URL outside the app (the system browser). */
+  'app.openUrl': { params: { url: string }; result: null }
+  /** A notification event from a connected workspace (architecture 10.5).
+   *  The app decides how to show it; `id` is the one a push about the same
+   *  panel carries (`pushCollapseId`), so one replaces the other. */
+  'notification.show': { params: MobileNotification; result: null }
+  /** The agent went back to work: what it asked for is answered. */
+  'notification.withdraw': { params: { id: string }; result: null }
 }
+
+export interface MobileNotification {
+  id: string
+  workspaceId: string
+  panelId: string | null
+  /** The event's kind: `agent.needsInput`, `agent.needsPermission`,
+   *  `cate.ui.notify`, ... */
+  kind: string
+  title: string
+  body: string
+}
+
+/** What a view the app opened is told, as JSON text (`view.event`). */
+export type MobileViewEvent =
+  /** `panel.open`: the panel's session snapshot, whole, on every change. */
+  | { kind: 'snapshot'; snapshot: unknown }
+  /** `browser.*`: load `url` in the tab's page: the session moved it
+   *  elsewhere (another client, an agent, the address bar). */
+  | { kind: 'load'; tabId: string; url: string }
+  /** `chat.*`: run `script` in the page. */
+  | { kind: 'script'; script: string }
+  /** `buffer.open`: the buffer's whole text, once synced and on every change
+   *  not made by this view. */
+  | { kind: 'text'; text: string }
+  /** `buffer.open`: the buffer could not be opened or its stream ended. */
+  | { kind: 'error'; message: string }
+
+/** A loopback stream (`stream.open`): bytes from the runtime's machine
+ *  (base64), or its end. */
+export type MobileStreamEvent =
+  | { streamId: string; kind: 'data'; data: string }
+  | { streamId: string; kind: 'end' }
 
 /** What a terminal view is told: `size` is the PTY's grid, which the view
  *  draws (before the screen, and on every change), and whether the PTY fits
@@ -70,7 +122,68 @@ export interface MobilePanel {
   type: string
   /** The panel type's label: Terminal, Editor, ... */
   typeLabel: string
+  /** The panel type's icon name (`IconName`). */
+  icon: string
   title: string
+  /** The canvas the panel sits on; null for a panel in a window dock. */
+  onCanvas: string | null
+  /** Canvas panels: the canvas they show. */
+  canvas: MobileCanvas | null
+}
+
+export interface MobileCanvasNode {
+  id: string
+  rect: { x: number; y: number; width: number; height: number }
+  /** The panels of the node's mini dock, in tree order. */
+  panels: string[]
+}
+
+export interface MobileCanvas {
+  id: string
+  /** In creation order. */
+  nodes: MobileCanvasNode[]
+}
+
+/** An agent a panel hosts, as the agents home and the session show it. */
+export interface MobileAgent {
+  panelId: string
+  /** The hosting panel's type: `terminal` or `chat`. */
+  panelType: string
+  title: string
+  agentId: AgentId | null
+  /** Null until the agent is known. */
+  agentName: string | null
+  runner: AgentRunner
+  status: AgentStatus
+  present: boolean
+  canReceivePrompt: boolean
+  /** What the agent asked for while it waits on the person, else null. */
+  attention: string | null
+  /** When the status last changed, epoch ms (as this device saw it). */
+  since: number
+  /** The checkout the agent works in; null for the workspace root. */
+  checkout: string | null
+  /** The mission worker the panel runs, when it is one. */
+  taskId: string | null
+}
+
+/** A mission worker (`cate.codingAgent.list`): started from a device or by a
+ *  supervisor agent, with what can be decided about it. */
+export interface MobileTask {
+  id: string
+  panelId: string
+  agentName: string
+  title: string
+  status: CodingAgentRunStatus
+  checkout: string
+  /** Runs in its own worktree, which apply, keep and discard act on. */
+  isolated: boolean
+  /** The worktree was created for the worker, so discard may remove it. */
+  ownsWorktree: boolean
+  appliedToBranch: string | null
+  kept: boolean
+  statusLine: string | null
+  failureReason: string | null
 }
 
 export interface MobileWorkspace {
@@ -80,10 +193,45 @@ export interface MobileWorkspace {
   connection: MobileConnection
   /** Null until the document arrives from the runtime. */
   panels: MobilePanel[] | null
+  /** Empty while not connected. */
+  agents: MobileAgent[]
+  tasks: MobileTask[]
+  /** Keep-awake on the runtime's machine; null while not connected. */
+  power: PowerState | null
+  /** This device's pushes from the workspace; null while not connected or
+   *  before the app gave the core a push token. */
+  push: PushStatus | null
 }
 
 export interface MobileCoreState {
+  /** This client's id: browser sessions name it as the source of its own
+   *  navigations and tab selections. */
+  clientId: string
   workspaces: MobileWorkspace[]
+}
+
+/** The answer to an agent or git action: ok, or what went wrong in words. */
+export type MobileActionResult = { ok: true } | { ok: false; message: string }
+
+export interface MobileConversationMessage {
+  role: 'user' | 'assistant'
+  text: string
+  createdAt?: string
+}
+
+export interface MobileChangedFile {
+  path: string
+  status: GitChangeStatus
+  additions: number | null
+  deletions: number | null
+}
+
+/** A checkout's uncommitted changes, and what shipping them needs. */
+export interface MobileChanges {
+  branch: string | null
+  files: MobileChangedFile[]
+  additions: number
+  deletions: number
 }
 
 export type MobileJoinResult = { ok: true; workspaceId: string } | { ok: false; message: string }
@@ -93,6 +241,8 @@ export interface MobileCoreMethods {
   'workspaces.join': { params: { input: string }; result: MobileJoinResult }
   'workspaces.open': { params: { workspaceId: string }; result: null }
   'workspaces.close': { params: { workspaceId: string }; result: null }
+  /** Stops the workspace's runtime for everyone (`runtime.stop`), then closes it. */
+  'workspaces.stop': { params: { workspaceId: string }; result: null }
   'workspaces.retry': { params: { workspaceId: string }; result: null }
   /** Closes it and deletes the pinned runtime key. */
   'workspaces.forget': { params: { workspaceId: string }; result: null }
@@ -109,6 +259,128 @@ export interface MobileCoreMethods {
   /** Fits the PTY to this view ("Fit to phone"). */
   'terminal.fit': { params: { terminalId: string }; result: null }
   'terminal.close': { params: { terminalId: string }; result: null }
+
+  /** Follows a panel's session in a view the app names `viewId`: its
+   *  snapshot as `snapshot` events until `panel.close`. */
+  'panel.open': { params: { viewId: string; workspaceId: string; panelId: string }; result: null }
+  /** Runs one op on the view's session (the panel type's op JSON). */
+  'panel.op': { params: { viewId: string; op: unknown }; result: MobileOpResult }
+  'panel.close': { params: { viewId: string }; result: null }
+  /** The panel types people can create, in creation order. */
+  'panel.creatable': { params: { workspaceId: string }; result: MobilePanelChoice[] }
+  /** Creates a panel of `type`; answers with its id, or null. */
+  'panel.create': { params: { workspaceId: string; type: string }; result: string | null }
+  /** Closes a panel (`closePanel`; a canvas takes the panels on it); true
+   *  once the op went. */
+  'panel.remove': { params: { workspaceId: string; panelId: string }; result: boolean }
+  /** The panel types a surface can become where it sits. */
+  'surface.choices': { params: { workspaceId: string; panelId: string }; result: MobilePanelChoice[] }
+  /** Turns a surface into `type`, in place. */
+  'surface.pick': { params: { workspaceId: string; panelId: string; type: string }; result: boolean }
+
+  /** Shows a file's shared buffer in a view the app names `viewId`: its text
+   *  as `text` events until `buffer.close`. */
+  'buffer.open': { params: { viewId: string; workspaceId: string; path: string }; result: null }
+  /** Replaces `length` UTF-16 units at `from` with `text`; answers with the
+   *  whole text after the edit, which includes edits made elsewhere. */
+  'buffer.edit': { params: { viewId: string; from: number; length: number; text: string }; result: { text: string } }
+  'buffer.close': { params: { viewId: string }; result: null }
+  /** A folder's entries on the runtime's machine, folders first. */
+  'files.list': { params: { workspaceId: string; path: string }; result: MobileFileEntry[] }
+  /** A URL the workspace's web views load for a workspace file. */
+  'files.url': { params: { workspaceId: string; path: string }; result: string }
+
+  /** A browser panel's view: `panel.open`, and the view follows the session
+   *  (`load` events) and reports what its pages do. */
+  'browser.open': { params: { viewId: string; workspaceId: string; panelId: string }; result: null }
+  'browser.navigated': { params: { viewId: string; tabId: string; url: string; title: string; inPage: boolean; canGoBack: boolean; canGoForward: boolean }; result: null }
+  'browser.loading': { params: { viewId: string; tabId: string; loading: boolean; loadError: string | null }; result: null }
+  'browser.title': { params: { viewId: string; tabId: string; title: string }; result: null }
+
+  /** A chat panel's view: `panel.open`, and the page's binding (`script`
+   *  events). */
+  'chat.open': { params: { viewId: string; workspaceId: string; panelId: string }; result: null }
+  /** The page of the snapshot's `loadId`; null until the harness is ready. */
+  'chat.page': { params: { viewId: string; dark: boolean }; result: MobileChatPage | null }
+  /** Whether the page may go to `url` (`committed`: it already did, in page;
+   *  a refused one is moved back with a `script` event). */
+  'chat.navigation': { params: { viewId: string; url: string; committed: boolean }; result: { allow: boolean } }
+  /** A bridge request the page logged; answers with the script that replies. */
+  'chat.hostMessage': { params: { viewId: string; message: string }; result: string | null }
+  /** The conversations of the panel's checkout, latest first. Selecting one
+   *  is the `selectThread` op, renaming the current one `renameConversation`. */
+  'chat.conversations': { params: { viewId: string }; result: T3Conversation[] }
+
+  /** The conversation of a panel's agent session, oldest first; null when
+   *  it cannot be read (no session yet). */
+  'agents.conversation': { params: { workspaceId: string; panelId: string }; result: MobileConversationMessage[] | null }
+  'agents.send': { params: { workspaceId: string; panelId: string; prompt: string }; result: MobileActionResult }
+  /** The agents a new task can run with. */
+  'agents.taskAgents': { params: { workspaceId: string }; result: Array<{ agentId: AgentId; displayName: string }> }
+  /** Starts a task: `agentId` null picks the first ready agent; `worktree`
+   *  runs it in a new worktree named after the prompt. */
+  'agents.startTask': {
+    params: { workspaceId: string; prompt: string; agentId: AgentId | null; worktree: boolean }
+    result: { ok: true; panelId: string } | { ok: false; message: string }
+  }
+  'agents.taskAction': { params: { workspaceId: string; taskId: string; action: CodingAgentAction }; result: MobileActionResult }
+
+  /** A checkout's uncommitted changes (`checkout` null: the root). */
+  'changes.list': { params: { workspaceId: string; checkout: string | null }; result: MobileChanges }
+  'changes.diff': { params: { workspaceId: string; checkout: string | null; path: string }; result: GitFileDiff }
+  /** Stages everything and commits it. */
+  'changes.commit': { params: { workspaceId: string; checkout: string | null; message: string }; result: MobileActionResult }
+  /** Pushes the checkout's branch. */
+  'changes.push': { params: { workspaceId: string; checkout: string | null }; result: MobileActionResult }
+  /** Opens (or finds) the pull request of the checkout's branch. */
+  'changes.pullRequest': { params: { workspaceId: string; checkout: string | null }; result: { ok: true; url: string } | { ok: false; message: string } }
+
+  /** Keeps the runtime's machine awake for a while (`power.set`). */
+  'power.set': { params: { workspaceId: string; duration: KeepAwakeDuration }; result: MobileActionResult }
+  /** Where this device's pushes go and the key they are sealed with
+   *  (`push.register`): the core registers them with every workspace it
+   *  connects to. */
+  'push.device': { params: { target: string; key: string }; result: null }
+  /** Turns the workspace's network access to Cate Connect, which pushes go
+   *  through. */
+  'push.useCateConnect': { params: { workspaceId: string }; result: MobileActionResult }
+
+  /** Loopback routing (12.3) for the workspace's web views. WebKit never
+   *  proxies loopback hosts, so the app listens on this phone's loopback at
+   *  the runtime port a page needs and forwards each connection. The port to
+   *  forward before loading `url`: null when its host is not loopback. */
+  'loopback.port': { params: { url: string }; result: number | null }
+  /** A byte stream to `port` on the runtime's machine, for one forwarded
+   *  connection. */
+  'stream.open': { params: { streamId: string; workspaceId: string; port: number }; result: null }
+  'stream.write': { params: { streamId: string; data: string }; result: null }
+  'stream.close': { params: { streamId: string }; result: null }
+}
+
+export type MobileOpResult = { ok: true; result: unknown } | { ok: false; message: string; code: string | null }
+
+export interface MobilePanelChoice {
+  type: string
+  label: string
+  icon: string
+}
+
+export interface MobileFileEntry {
+  name: string
+  path: string
+  isDirectory: boolean
+}
+
+/** The chat page of one load: where to load it, the cookie to install first,
+ *  and what to run in it. */
+export interface MobileChatPage {
+  loadId: number
+  url: string
+  origin: string
+  cookie: { name: string; value: string }
+  /** Run at document end of every page load. */
+  script: string
+  css: string
 }
 
 export type MobileCoreMethod = keyof MobileCoreMethods

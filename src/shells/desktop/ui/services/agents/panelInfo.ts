@@ -65,3 +65,9 @@ export function agentPanelTitle(title: string, state: PanelAgentState | undefine
   if (!open || !state?.agentName || !isAgentFallbackTitle(title)) return title
   return state.agentName
 }
+
+/** `agentPanelTitle` over the info a tab or sidebar row already holds: a
+ *  terminal's info names its agent only while the CLI is open. */
+export function agentInfoTitle(title: string, info: AgentPanelInfo | undefined): string {
+  return info?.runner === 'terminal' && info.name && isAgentFallbackTitle(title) ? info.name : title
+}

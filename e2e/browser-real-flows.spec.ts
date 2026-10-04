@@ -425,6 +425,8 @@ test('renders the password manager across the complete browser content area', as
   const manager = page.locator(`[data-browser-surface="${browser.panelId}"] [data-browser-password-manager]`)
   await expect(manager).toBeVisible()
   await expect(manager.getByRole('heading', { name: 'Password manager' })).toBeVisible()
+  // The first click focuses the node (its unfocused overlay takes it).
+  await page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`).click()
   await manager.getByRole('button', { name: 'Advanced' }).click()
   await expect(manager.getByRole('heading', { name: 'Import passwords' })).toBeVisible()
 

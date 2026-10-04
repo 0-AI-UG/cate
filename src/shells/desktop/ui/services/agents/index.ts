@@ -7,6 +7,7 @@ export {
   agentPanelInfo,
   agentInfoByPanel,
   agentPanelTitle,
+  agentInfoTitle,
   isAgentFallbackTitle,
   type AgentPanelInfo,
 } from './panelInfo'

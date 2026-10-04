@@ -10,6 +10,10 @@
 //   data channel is open the client hangs up; the service never carries
 //   workspace traffic.
 //
+// A registered runtime may also ask the service to deliver a push to a
+// paired device (`push`), when `registered` said the service sends pushes.
+// The payload is sealed for the device; the service only delivers it.
+//
 // Every message is one binary WebSocket message holding UTF-8 JSON (inside
 // Noise on the runtime endpoint).
 
@@ -29,14 +33,30 @@ export function connectEndpoint(url: string, role: ConnectRole): string {
 
 export type RegisterRefusal = 'key-mismatch' | 'malformed' | 'protocol'
 
+/** A push for the service to deliver. */
+export interface ConnectPush {
+  /** Where the device's push service delivers, as the device registered it:
+   *  `apns:<sandbox|production>:<hex token>`. Only the service reads it. */
+  target: string
+  /** The notification sealed for the device (base64); opaque to the service. */
+  sealed: string
+  /** A newer push with the same id replaces the older on the device. */
+  collapseId: string
+}
+
+/** `bad-target`: the target is unknown or gone; stop sending to it. */
+export type ConnectPushResult = 'sent' | 'unavailable' | 'bad-target' | 'rate-limited' | 'failed'
+
 /** Runtime to service. */
 export type RuntimeMessage =
   | { t: 'register'; runtimeId: string; protocol: number }
   | { t: 'signal'; session: string; signal: SignalMessage }
+  | { t: 'push'; id: string; push: ConnectPush }
 
-/** Service to runtime. */
+/** Service to runtime. `push` on `registered`: the service forwards pushes. */
 export type ServiceRuntimeMessage =
-  | { t: 'registered'; iceServers: IceServer[] }
+  | { t: 'registered'; iceServers: IceServer[]; push?: boolean }
+  | { t: 'pushed'; id: string; result: ConnectPushResult }
   | { t: 'refused'; reason: RegisterRefusal }
   | { t: 'incoming'; session: string }
   | { t: 'signal'; session: string; signal: SignalMessage }
@@ -75,6 +95,15 @@ function parse(bytes: Uint8Array): Record<string, unknown> | null {
 
 const isString = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 256
 const isRuntimeId = (value: unknown): value is string => typeof value === 'string' && /^[a-z2-7]{16}$/.test(value)
+const PUSH_RESULTS: readonly ConnectPushResult[] = ['sent', 'unavailable', 'bad-target', 'rate-limited', 'failed']
+
+export function isConnectPush(value: unknown): value is ConnectPush {
+  if (!value || typeof value !== 'object') return false
+  const p = value as Record<string, unknown>
+  return typeof p.target === 'string' && p.target.length <= 256 && /^[a-z0-9]+:[A-Za-z0-9:._-]+$/.test(p.target)
+    && typeof p.sealed === 'string' && p.sealed.length <= 3_000 && /^[A-Za-z0-9+/]+=*$/.test(p.sealed)
+    && typeof p.collapseId === 'string' && /^[A-Za-z0-9._:-]{1,64}$/.test(p.collapseId)
+}
 
 export function isSignal(value: unknown): value is SignalMessage {
   if (!value || typeof value !== 'object') return false
@@ -106,6 +135,10 @@ export function decodeRuntimeMessage(bytes: Uint8Array): RuntimeMessage | null {
     return { t: 'register', runtimeId: m.runtimeId, protocol: m.protocol }
   }
   if (m.t === 'signal' && isString(m.session) && isSignal(m.signal)) return { t: 'signal', session: m.session, signal: m.signal }
+  if (m.t === 'push' && isString(m.id) && m.id.length <= 64 && isConnectPush(m.push)) {
+    const { target, sealed, collapseId } = m.push
+    return { t: 'push', id: m.id, push: { target, sealed, collapseId } }
+  }
   return null
 }
 
@@ -113,7 +146,10 @@ export function decodeServiceRuntimeMessage(bytes: Uint8Array): ServiceRuntimeMe
   const m = parse(bytes)
   if (!m) return null
   switch (m.t) {
-    case 'registered': return isIceServers(m.iceServers) ? { t: 'registered', iceServers: m.iceServers } : null
+    case 'registered':
+      return isIceServers(m.iceServers) ? { t: 'registered', iceServers: m.iceServers, ...(m.push === true ? { push: true } : {}) } : null
+    case 'pushed':
+      return isString(m.id) && PUSH_RESULTS.includes(m.result as ConnectPushResult) ? { t: 'pushed', id: m.id, result: m.result as ConnectPushResult } : null
     case 'refused':
       return m.reason === 'key-mismatch' || m.reason === 'malformed' || m.reason === 'protocol' ? { t: 'refused', reason: m.reason } : null
     case 'incoming': return isString(m.session) ? { t: 'incoming', session: m.session } : null

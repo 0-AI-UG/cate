@@ -145,6 +145,8 @@ async function printPairing(root: string, created: CreatedSecret, json?: boolean
 }
 
 async function main(): Promise<void> {
+  // Set by spawnDetachedDaemon for this process only.
+  delete process.env.NODE_COMPILE_CACHE
   const parsed = parseDaemonArgv(process.argv.slice(2))
   if (parsed.command === 'error') {
     process.stderr.write(`${parsed.message}\n`)

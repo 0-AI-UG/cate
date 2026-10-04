@@ -60,7 +60,7 @@ export interface RepositoryRuntimeDeps {
   settings: { get(key: 'closeWorktreePanelsOnDelete'): boolean }
   log?: Logger
   /** The files watcher, so a checkout's status follows file changes. */
-  watch?: (dir: string, onChange: () => void) => () => void
+  watch?: (dir: string, onChange: (changedPath: string) => void) => () => void
   /** Creates `<root>/.cate` with its `.gitignore` (workspace/lifecycle). */
   prepareCateDir?: (cateDir: string) => Promise<void>
   /** After a checkout is ready (skills sync). Failures are logged only. */
@@ -132,6 +132,7 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
     probe: (cwd) => git.probe({ cwd }),
     snapshot,
     watch: deps.watch,
+    allIgnored: (cwd, paths) => git.allIgnored({ cwd, paths }),
     log: deps.log,
     onSnapshot: (cwd, status) => {
       if (!samePath(cwd, root)) return

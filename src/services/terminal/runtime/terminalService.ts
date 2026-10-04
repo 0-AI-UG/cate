@@ -376,7 +376,10 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
 
   /** Output from the PTY, or text the service shows (a notice, a restore). */
   const output = (term: Term, data: string, fromPty: boolean): void => {
-    if (fromPty) term.lastOutputAt = Date.now()
+    if (fromPty) {
+      term.lastOutputAt = Date.now()
+      ioSinceScan = true
+    }
     term.screen.write(data)
     term.log?.append(data)
     if (term.viewers.size > 0) {
@@ -422,6 +425,8 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
   let idleTimer: ReturnType<typeof setInterval> | null = null
   let ticks = 0
   let scanning = false
+  /** A terminal read or wrote since the last scan: its foreground program may have changed. */
+  let ioSinceScan = true
 
   const liveTerms = (): Term[] => [...terms.values()].filter((t) => t.alive)
 
@@ -429,6 +434,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     const live = liveTerms().filter((t) => !t.suspended)
     if (live.length === 0) return
     deps.countPerf?.('activityScan')
+    ioSinceScan = false
     const tree = await scanner.tree()
     for (const term of live) {
       if (!term.alive) continue
@@ -466,13 +472,14 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     }
   }
 
-  // Watched terminals scan every second, ports and cwd every 5 s; with
-  // nobody watching (no viewer, or no client has the person's attention),
-  // activity every 5 s and ports every 15 s.
+  // Watched terminals scan every second after any terminal I/O (a program
+  // starting or exiting reads or writes), and every 5 s regardless; ports and
+  // cwd every 5 s. With nobody watching (no viewer, or no client has the
+  // person's attention), activity every 5 s and ports every 15 s.
   const tick = (): void => {
     ticks++
     const watched = attended() && liveTerms().some((t) => t.viewers.size > 0)
-    const activity = watched || ticks % 5 === 0
+    const activity = (watched && ioSinceScan) || ticks % 5 === 0
     const slow = watched ? ticks % 5 === 0 : ticks % 15 === 0
     if (activity || slow) void runScan(watched && slow, slow)
   }
@@ -628,6 +635,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       if (!term.alive || typeof data !== 'string' || !data) return
       resume(term)
       try { term.pty.write(data) } catch { return /* closed between exit and write */ }
+      ioSinceScan = true
       notify(inputObservers, id, data)
     },
 
@@ -686,6 +694,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         if (!data) return
         resume(term)
         try { term.pty.write(data) } catch { return }
+        ioSinceScan = true
         notify(inputObservers, term.id, data)
       })
       syncTimers()

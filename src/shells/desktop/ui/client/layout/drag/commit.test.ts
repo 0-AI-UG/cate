@@ -11,7 +11,7 @@ import {
 } from '@workspace/document/contract'
 import { registerPanelDefinitions } from '@client/host'
 import { add, buildDocument, testPanelDefinitions } from '../../../../../../test/clientWorkspace'
-import { detachChange, dropChanges } from './commit'
+import { detachBounds, detachChange, dropChanges } from './commit'
 import type { DragPanel, DragSource, DropTarget } from './types'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
@@ -144,12 +144,12 @@ describe('canvas node drops', () => {
     expect(placementOf(asSplit, 'a')?.dock).toEqual(main)
   })
 
-  it('outside the window: a new detached window at the drop point', () => {
+  it('outside the window: a new detached window, opened here at the drop point', () => {
     const doc = fixture()
-    const change = detachChange(panel(doc, 'b'), { x: 900, y: 500 }, { x: 12, y: 12 }, { width: 400, height: 300 }, ctx.newId)
-    const next = run(doc, [change])
-    const windowId = (change as { at: { windowId: string } }).at.windowId
-    expect(next.windows[windowId]).toMatchObject({ kind: 'detached', bounds: { origin: { x: 888, y: 488 }, size: { width: 400, height: 300 } } })
-    expect(dockPanels(next.windows[windowId].dock)).toEqual(['b'])
+    const next = run(doc, [detachChange(panel(doc, 'b'), 'W9', ctx.newId)])
+    expect(next.windows.W9).toMatchObject({ kind: 'detached' })
+    expect(next.windows.W9).not.toHaveProperty('bounds')
+    expect(dockPanels(next.windows.W9.dock)).toEqual(['b'])
+    expect(detachBounds({ x: 900, y: 500 }, { x: 12, y: 12 }, { width: 400, height: 300 })).toEqual({ origin: { x: 888, y: 488 }, size: { width: 400, height: 300 } })
   })
 })

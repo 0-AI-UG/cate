@@ -78,6 +78,8 @@ export interface GitHost {
   prList: Op<'prList'>
   // Building blocks of the worktree lifecycle and the status monitor.
   probe(params: { cwd?: string }): Promise<StatusProbe>
+  /** True when git ignores every one of `paths` (tracked files never count as ignored). */
+  allIgnored(params: { cwd?: string; paths: string[] }): Promise<boolean>
   listWorktrees(params: { cwd?: string }): Promise<ListedWorktree[]>
   addWorktree(params: { cwd?: string; branch: string; targetPath: string; createBranch?: boolean; baseRef?: string }): Promise<{ path: string; branch: string }>
   addWorktreeFromPr(params: { cwd?: string; prNumber: number; targetPath: string }): Promise<{ path: string; branch: string }>
@@ -886,6 +888,17 @@ export function createGitHost(deps: GitHostDeps): GitHost {
         dirty: statusOut.trim().length > 0,
         branches: branchesOut.split('\n').map((s) => s.trim()).filter(Boolean).sort(),
       }
+    },
+    async allIgnored({ cwd, paths }) {
+      if (paths.length === 0) return true
+      let out: Buffer
+      try {
+        out = await gitBuffer(await dir(cwd), ['check-ignore', '--stdin', '-z'], env(), Buffer.from(paths.join('\0') + '\0'))
+      } catch {
+        // Exit 1: none ignored. Anything else (not a repo, git failed): treat as a change.
+        return false
+      }
+      return new Set(out.toString('utf-8').split('\0').filter(Boolean)).size >= new Set(paths).size
     },
     listWorktrees,
     async addWorktree({ cwd, branch, targetPath, createBranch, baseRef }) {

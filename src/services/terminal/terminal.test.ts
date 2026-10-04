@@ -368,7 +368,7 @@ describe('terminal service', () => {
     sub.cancel()
   })
 
-  it('scans every second only while a viewer is attended, and counts scans and spawns', async () => {
+  it('scans every second only while a viewer is attended and a terminal does I/O, and counts scans and spawns', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     try {
       let attended = true
@@ -382,17 +382,20 @@ describe('terminal service', () => {
       const { service } = setup({ scanner, attended: () => attended, countPerf: (name) => counts.push(name) })
       const { id } = await service.spawn({ cols: 80, rows: 24 })
       service.attach({ id }, { emit: () => {}, bytes: () => true, drain: async () => {}, onInput: () => {}, end: () => {} })
-      const scansOver = async (seconds: number) => {
+      const scansOver = async (seconds: number, typing = false) => {
         counts.length = 0
         for (let i = 0; i < seconds; i++) {
+          if (typing) service.write(id, 'x')
           vi.advanceTimersByTime(1000)
           await tick()
         }
         return counts.filter((name) => name === 'activityScan').length
       }
-      expect(await scansOver(10)).toBe(10)
-      attended = false
+      expect(await scansOver(10, true)).toBe(10)
+      // Attended but quiet: only the 5 s safety scan.
       expect(await scansOver(10)).toBe(2)
+      attended = false
+      expect(await scansOver(10, true)).toBe(2)
     } finally {
       vi.useRealTimers()
     }

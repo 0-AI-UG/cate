@@ -285,10 +285,11 @@ shell's native side.
 | The upstream browser proxy (`browserProxyUrl`) and the loopback web proxy (section 12.3) | shell native |
 | Windows, menus, updater, crash reporting, analytics | shell native |
 | Client features (section 12.2) | declared by the shell |
-| Client state: viewport, zoom, active tabs, focus, selection, undo history, one-shot intents | core |
+| Client state: viewport, zoom, active tabs, maximize, focus, selection, per-panel view state, undo history, one-shot intents | core |
 | Document mirror with optimistic ops | core |
 | Connections: finding, starting and pairing runtimes, the security layer, reconnect, loopback routing | core |
-| Workspace list, recents, known runtimes, main window bounds, onboarding progress | core (stored through the shell's `DeviceStore`) |
+| Workspace list, recents, known runtimes, onboarding progress | core (stored through the shell's `DeviceStore`) |
+| Where each window sits on screen (main and detached) | shell native (stored in the device's `boot.json`) |
 | Client settings (section 8) | core |
 | Panel creation and placement, close guards, actions and shortcuts (section 12.4) | core |
 
@@ -320,11 +321,11 @@ Every piece of state belongs to exactly one class.
 | Class | Owner | Examples | Shared with |
 |---|---|---|---|
 | **Document** | the runtime | panel records, windows and dock trees, canvases, nodes and geometry, node mini docks, relations, worktree metadata | every client of the workspace |
-| **Session** | a panel session | terminal screen and scrollback, editor buffer, browser tabs and URLs, chat thread binding, review selection, agent status | every client viewing the panel |
+| **Session** | a panel session | terminal screen and scrollback, editor buffer and whether a conflict's diff is shown, browser tabs, URLs and viewport preset, chat thread binding, a review's comparison, notes and agent review, agent status | every client viewing the panel |
 | **Resource** | runtime capabilities | PTYs, files, git, agent processes, agent changes, T3 servers | through the runtime |
 | **Workspace data** | the runtime | workspace settings, secrets (browser passwords, the runtime key), T3 state and provider logins, browser history and bookmarks, skill sources, trust, granted paths, paired devices | every client of the workspace |
-| **Device** | one client device | client settings, workspace list and recents, known runtimes, device key, main window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
-| **Client** | one running client, in memory | viewport, zoom, active tab per stack, the tab a browser panel shows, a review's collapsed files, focus, selection, undo history, open overlays, a drag in progress, one-shot intents (reveal a line), mounted webviews | never |
+| **Device** | one client device | client settings, workspace list and recents, known runtimes, device key, main and detached window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
+| **Client** | one running client, in memory | viewport, zoom, active tab per stack, the maximized stack of a window and node of a canvas, the tab a browser panel shows and its page zoom, an editor's source or preview, a review's file filter, focused file, collapsed and expanded files and context lines, focus, selection, undo history, open overlays, a drag in progress, one-shot intents (reveal a line), mounted webviews | never |
 
 Rules:
 
@@ -333,9 +334,17 @@ Rules:
   restarts or discards a resource. Resource work is always an explicit
   operation.
 - Placement is shared. A panel docked, detached or moved by one person moves
-  for everyone. Which tab of a stack is active is client state, and so is
-  which tab of a browser panel a client shows. How a client shows a review
-  (split, wrap, whole files) is a client setting.
+  for everyone. Where a detached window sits on screen is not: each device
+  puts it where it likes. Which tab of a stack is active is client state, and
+  so is maximize: it changes what one client draws, never the document.
+- How a client looks at a panel is its own: which tab of a browser panel it
+  shows and the page's zoom, whether an editor shows a markdown file as
+  source or preview, and a review's filter, focused file and expansions. What
+  the panel is stays shared: the browser's tabs, URLs and viewport preset, the
+  file and whether a conflict's diff is shown, the review's comparison and
+  notes. A request to show something (reveal a line, open a review at a file)
+  is a one-shot `reveal` in the snapshot that each view applies once. How a
+  client shows a review (split, wrap, whole files) is a client setting.
 - Undo is per client, over that client's own document ops (section 13.6).
 - A developer adding a feature declares which class its state is in and never
   writes sync code.
@@ -477,6 +486,8 @@ persisted session and document file. It is created with mode `0700`.
   settings.json         workspace settings (hand-editable)
   secrets.json          0600: browser passwords, runtime key pair
   pairings.json         paired devices: public key, name, paired at, last seen
+  push.json             0600: devices registered for pushes: key fingerprint,
+                        delivery target (opaque), the key pushes are sealed with
   trust.json            { trusted, decidedAt }
   grants.json           granted paths outside the root
   skills/sources.json   the workspace's skill sources
@@ -522,9 +533,10 @@ persisted session and document file. It is created with mode `0700`.
 - **A client on the runtime's machine** computes the `runtimeId` from the root,
   connects to the socket, and if nothing answers runs
   `~/.cate/runtime/<build>/runtime/bin/node
-  ~/.cate/runtime/<build>/runtime.cjs serve <root> --detach` (its own build)
-  and retries
-  until connected (10 s budget).
+  ~/.cate/runtime/<build>/runtime.cjs serve <root>` (its own build) as a
+  detached process, stdio to `logs/daemon.out.log`, and retries
+  until connected (10 s budget). It also starts the runtime of the last
+  selected workspace when the app launches, before the window asks for it.
 - **A client on another machine** finds the runtime through the network
   transport (7.5) using the `runtimeId` it paired with.
 
@@ -655,6 +667,15 @@ connected client or by `cate serve`.
   afterwards. Even if that failed, clients would refuse any key but the one
   they pinned. Tests run against a
   local stand-in for the service.
+- **Pushes.** A service with an APNs key says so in `registered`
+  (`push: true`). A registered runtime then sends `push {target, sealed,
+  collapseId}` for a paired device and gets `pushed {result}` back (`sent`,
+  `unavailable`, `bad-target`, `rate-limited`, `failed`). The target is the
+  one the device registered (section 7.9, `push`) and only the service reads
+  it (`apns:<sandbox|production>:<token>` today); the payload is sealed for
+  the device. The service adds only a generic alert and delivers it, at most
+  120 per runtime per hour. Pushes therefore need network access
+  `cateConnect`.
 
 ### 7.8 Protocol
 
@@ -698,6 +719,17 @@ Capabilities not owned by a feature module, in `runtime/`:
   platform helper process (`caffeinate -i -w <pid>` on macOS,
   `systemd-inhibit` on Linux, `SetThreadExecutionState` through PowerShell on
   Windows).
+- `push` (`runtime/push`): a paired device registers where its pushes go
+  (`target`, opaque to the runtime) and a 32-byte key (`register`,
+  `unregister`, `status`; the device is the caller's key fingerprint). Every
+  notification event (section 10.5) is sealed, as it is, for each registered
+  device with ChaCha20-Poly1305 under its key and handed to the Cate Connect
+  registration (section 7.7); only the device opens it and decides how to
+  show it. One collapse id per panel (`pushCollapseId`, in the contract),
+  which clients use for their own banners too, so a push replaces a banner
+  about the same agent. Nothing is queued: with no way out a push is
+  dropped. A target the service no longer delivers to, and an unpaired
+  device, are removed.
 - `runtime`: `stop`, `update`, `info`, `perf`; the `lifecycle` stream.
 
 Feature capabilities are declared in their module's `contract/capability.ts`,
@@ -815,8 +847,7 @@ interface WorkspaceDocument {
   worktrees: Record<WorktreeId, WorktreeMeta> // status: creating | ready | removing
 }
 interface DocWindow {
-  id: WindowId; kind: 'main' | 'detached'; dock: DockNode | null; bounds?: Rect
-  maximized?: { stackId; layout: DockNode; node?: { canvasId; id; rect; dock } } // restore point
+  id: WindowId; kind: 'main' | 'detached'; dock: DockNode | null
 }
 ```
 
@@ -827,23 +858,20 @@ interface DocWindow {
   canvas panel (`addPanel`) and removed with it (`removePanels` removes the
   canvas and the panels on it; the view asks first). A canvas panel cannot
   be placed on a canvas.
-- Viewport, zoom, active tab and selection are client state and not in the
-  document.
-- Detached window bounds are shared; each client clamps them to its own
-  screens. The main window's bounds are device state.
-- Maximize is shared too: a maximize op changes the window's tree and saves
-  the previous one as the window's restore point. Any other change to that
-  tree, or to the canvas node a pane came from, clears it; split ratios do
-  not (`docs/dock-rules.md`).
+- Viewport, zoom, active tab, maximize and selection are client state and
+  not in the document (`docs/dock-rules.md`).
+- A detached window is shared: that it exists and its dock tree. Its bounds are not in the document; every window's bounds are
+  device state. The client that detaches a panel opens the window where the
+  person dropped it; another client opens it where it last had that window,
+  else where its shell puts a new window.
 
 **Ops** (each carries an `opId`; several can be sent as one atomic `batch`):
 
 | Group | Ops |
 |---|---|
 | Records | `addPanel(record, at)`, `replacePanel(record)` (a surface becoming the picked type: same id, the old session is disposed and the new one started), `updatePanel(id, patch)`, `removePanels(ids)` |
-| Placement | `placePanel(id, at)`, where `at` is a tab in a stack (`{to: 'stack', dock, stackId, after?}`), a new stack beside a stack or split (`{to: 'split', dock, beside, side, stackId, splitId}`), a new canvas node (`{to: 'canvas', canvasId, nodeId, stackId, rect}`) or a new detached window (`{to: 'window', windowId, stackId, bounds}`). `dock` is a window's dock or a canvas node's mini dock. Placing an already placed panel moves it. |
-| Containers | `setSplitRatio(splitId, ratios)`, `setNodeRects(canvasId, [{nodeId, rect}])`, `setWindowBounds(windowId, bounds)`, `closeWindow(windowId)` (removes its panels; the view asks first) |
-| Maximize | `maximizeStack(windowId, stackId)` (a split window's tabs into one stack), `maximizePanel(id)` (a canvas pane into the window showing its canvas, after the canvas tab), `restoreLayout(windowId)`; one maximize per window |
+| Placement | `placePanel(id, at)`, where `at` is a tab in a stack (`{to: 'stack', dock, stackId, after?}`), a new stack beside a stack or split (`{to: 'split', dock, beside, side, stackId, splitId}`), a new canvas node (`{to: 'canvas', canvasId, nodeId, stackId, rect}`) or a new detached window (`{to: 'window', windowId, stackId}`). `dock` is a window's dock or a canvas node's mini dock. Placing an already placed panel moves it. |
+| Containers | `setSplitRatio(splitId, ratios)`, `setNodeRects(canvasId, [{nodeId, rect}])`, `closeWindow(windowId)` (removes its panels; the view asks first) |
 | Relations | `addRelation`, `updateRelation`, `removeRelation` |
 | Worktrees | `setWorktree(meta)`, `removeWorktree(id)` (metadata only; the repository service does the resource work and writes these) |
 
@@ -856,7 +884,7 @@ interface DocWindow {
   stacks, splits, nodes and detached windows are removed by the runtime as
   part of the op that emptied them.
 - Unknown panel types are rejected with `rejected`.
-- Container values (split ratios, rects, bounds, record fields) are last write
+- Container values (split ratios, rects, record fields) are last write
   wins.
 
 **Runtime side:** holds the document in memory, persists it to
@@ -1083,6 +1111,12 @@ T3 is the bundled T3 Code harness, patched at build. The runtime runs it as a
   handled by the chat view, which asks the user through `ClientUi` where
   needed and sends document ops or session ops; `external` opens a loopback
   URL in a browser panel (12.3) and any other in the system browser.
+- **Several clients**: every client's page is its own T3 client of the same
+  harness, and T3's stream brings each the conversation. The chat panel's
+  record names the thread; a page moves to it in place through T3's router
+  (patched to `window.__cateRouter`), and loads afresh only for a new
+  `loadId`. A thread a page does not know yet stays on its route until T3
+  delivers it (patched; upstream goes home).
 - **Desktop UI** (`shells/desktop/ui/services/t3`): the usage overview, provider settings (a provider sign-in whose page
   or `redirect_uri` is loopback opens in a browser panel of the workspace).
 - **Consumers**: the chat panel, the t3 runner, settings, usage.
@@ -1112,7 +1146,12 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     panel hosts;
   - prompt context from relations, and agent notification events.
 - **Missions**: supervisor, workers and admission (at most 5 concurrent
-  workers). Workers use the `terminal` runner.
+  workers). Workers use the `terminal` runner. Everything goes through
+  `cate.codingAgent.*`. A panel caller (an agent's CLI or harness) owns its
+  own workers; a client caller is the person: it owns the workers it starts
+  (`PERSON_MISSION_OWNER`, never a panel id), `list` shows it every worker,
+  and it decides about any worker with that worker's mission's authority.
+  `agents` lists the agent CLIs a worker can run with.
 - **runners/terminal**: plugs into the terminal service (hook env on PTY spawn,
   status, resume, prompt submission into the PTY).
 - **runners/t3**: plugs into the t3 service (thread state, prompt dispatch to
@@ -1131,7 +1170,11 @@ Services publish notification events from the runtime
 (`{kind, panelId, title, body}`: an agent finished or needs attention, a
 command failed, `cate.ui.notify`). Each client decides whether to show one,
 from its notification settings and its own focus, and shows it through
-`ClientUi`.
+`ClientUi`. Every client consumes them the same way,
+`attachAgentNotifications` (`services/agents/client`): one subscription per
+open workspace, each event handed to the shell's display, and a pending
+agent notification withdrawn when that agent works again. The same events
+reach devices that are away as pushes (section 7.9, `push`).
 
 ## 11. Panels
 
@@ -1178,8 +1221,9 @@ The type's views are not in its folder. The desktop view is
 one-shot intents, asks the user before destructive ops (registering a close
 guard with `registerPanelCloseGuard` where closing can lose work), and owns a
 native surface where the type has one. The desktop renderer imports every
-view and maps each type to its view. The iOS app draws the types it shows
-with its own views.
+view and maps each type to its view. The iOS app draws every type with its
+own SwiftUI views over the core's panel API (`panel.*` and the type's own
+calls in `shells/mobile/contract.ts`).
 
 Three index files at the top of `src/panels/` list the types, so no generic
 code names one:
@@ -1245,9 +1289,9 @@ Every panel type meets the same contract.
 |---|---|---|---|---|
 | terminal | services/terminal, services/agents | pty status, title, cwd, activity, agent session and status; screen as serialized stream | xterm | shows terminal-runner sessions |
 | chat | services/t3, services/agents | thread binding, harness status, activity, agent status | T3 client in a webview | shows t3-runner sessions |
-| browser | services/browser | tabs, URLs, titles, navigation state, loading, downloads | webview | each client loads the page itself |
-| editor | workspace/files, workspace/relations | file, dirty, conflict, mode (code, preview, merge), connected draft; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge, markdown preview |
-| review | workspace/repository, services/agents | source (git diff or agent changes), file list, selection, notes, status | diff views | display and collapsed files are per client |
+| browser | services/browser | tabs, URLs, titles, viewport preset, navigation state, loading, downloads | webview | each client loads the page itself; page zoom is per client |
+| editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client |
+| review | workspace/repository, services/agents | source (git diff or agent changes), file list, notes, agent review, status, reveal | diff views | filter, focused file, collapsed and expanded files and context lines are per client |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
 
@@ -1313,8 +1357,8 @@ Rules:
    (7.8). The runtime keeps them per connection and shows them in presence.
    Each shell declares what it supports on its platform: the desktop shell
    declares all of them except `camera`, and `passkeys` only on macOS; the
-   iOS app declares `camera` where it can scan. Deciding the set is the only
-   place a shell looks at its platform.
+   iOS app declares `webview`, and `camera` where it can scan. Deciding the
+   set is the only place a shell looks at its platform.
 3. **Asked, never inferred.** Core code asks `clientHas(feature)`; runtime
    code asks the connection. Nothing shared asks which shell, platform or
    device kind a client is (the no-platform test, section 3).
@@ -1368,8 +1412,14 @@ for everyone, and what lets a network client open the chat panel's T3 UI.
   otherwise. The proxy requires a random per-launch credential, which the
   shell answers through Electron's `login` event, so other processes on the
   client machine cannot use it to reach the runtime.
-- **iOS** declares no `webview` until its web views route loopback through
-  the workspace connection.
+- **iOS.** WebKit connects to loopback hosts directly and never through a
+  proxy, so there is no web proxy: before a page of the workspace loads a
+  loopback URL (any frame), the app listens on the phone's own loopback at
+  that port (IPv4 and IPv6) and forwards each connection to the same port on
+  the runtime's machine through `dialLoopback` (the core decides which URLs
+  are loopback, `loopback.port`; the listener is the native primitive). The
+  workspace that asked last owns a port. Pages are not rewritten either. A
+  page reaching a loopback port no frame loaded first is not routed.
 
 ### 12.4 Actions and menus
 
@@ -1601,7 +1651,17 @@ not CLI commands (`cli: {command: false}`); the CLI reaches them through
   primitives only: device storage, the Keychain, mDNS, the declared
   features) and the core API (what the app asks the core to do, plus one
   state snapshot pushed on every change). The core side follows the client
-  core's rules: no Node, no Electron, no React.
+  core's rules: no Node, no Electron, no React. Its state carries each
+  connected workspace's agents (panel states with what each asked for),
+  mission workers, keep-awake state and this device's push status; the app
+  shows them as an agents home across workspaces, a session view per agent
+  (conversation and replies; permissions are answered in the agent's own
+  panel), a task composer and a review and ship view (uncommitted changes,
+  commit, push, pull request, and a worker's apply/keep/discard). The core
+  consumes notification events like every client and hands each to the
+  app (`notification.show`, `notification.withdraw`); the app registers its
+  APNs target for pushes, and a notification service extension opens them
+  with the key the app keeps in a Keychain group they share.
 
 Quitting the desktop app closes its windows and connections. Each runtime then
 follows its `runtimeLifetime`, so the desktop shell's quit blockers only guard
@@ -1614,7 +1674,7 @@ client-local work (a file drop still importing).
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
 | Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/` |
 | Machine, `~/.cate/runtime/<build>/` | the installed daemon (the program, not state) |
-| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (minimap corner, onboarding progress), `boot.json` (main window bounds, theme boot cache, last workspace), `workspaces.json` (recents, paired workspaces, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
+| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (minimap corner, onboarding progress), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (recents, paired workspaces, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 
 Every JSON state file above is written through `kernel/state`. The others
 (sockets, Yjs buffers, T3's own files, logs, downloads, screenshots, Chromium
@@ -1636,7 +1696,9 @@ src/
     security/               Noise handshake, keys, fingerprints
     pairing/                the pairing capability, secrets, codes, QR payload,
                             pairings.json
-    connect/                Cate Connect client (registration, signaling)
+    connect/                Cate Connect client (registration, signaling,
+                            pushes)
+    push/                   the push capability, sealing, push.json
     server/  tunnel/  power/  generic host capabilities
   workspace/
     document/               contract runtime/           schema, ops, ordering,

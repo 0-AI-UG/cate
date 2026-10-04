@@ -149,7 +149,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     },
     settings: { get: (key) => settings.get(key) },
     log: log.child('repository'),
-    watch: (dir, onChange) => files.watch(dir, () => onChange()),
+    watch: (dir, onChange) => files.watch(dir, (changedPath) => onChange(changedPath)),
     prepareCateDir,
     onWorktreeCreated: async (meta) => { await syncCheckout?.(meta.path) },
   })

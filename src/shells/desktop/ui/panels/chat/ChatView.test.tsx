@@ -33,7 +33,7 @@ vi.mock('../../workspace/repository', () => ({ WorktreePill: () => null }))
 const harness = { origin: 'http://127.0.0.1:49152', port: 49152, instanceId: 'inst', environmentId: 'env', session: { name: 't3_session', value: 'secret' } }
 const ready = (patch: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
   checkout: '/repo', threadId: null, phase: 'ready', error: null, harness, loadId: 1,
-  connected: true, activity: null, agentName: 'T3 Code', canReceivePrompt: true, threadKnown: true, changes: null, ...patch,
+  connected: true, activity: null, agentName: 'T3 Code', canReceivePrompt: true, changes: null, ...patch,
 })
 const record: PanelRecord = { id: 'chat', type: 'chat', title: 'T3 Code', fields: {} }
 const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW }, stackId: 's2' }
@@ -94,6 +94,12 @@ function mockGuest(url = `${harness.origin}/`) {
   })
 }
 
+/** The in-place navigations the view ran in the page. */
+const navigations = (guest: ReturnType<typeof mockGuest>) => guest.executeJavaScript.mock.calls
+  .map(([script]) => String(script))
+  .filter((script) => script.includes('__cateRouter'))
+  .map((script) => /href: "([^"]+)"/.exec(script)![1])
+
 const fire = (guest: HTMLElement, type: string, fields: object = {}) =>
   act(async () => { guest.dispatchEvent(Object.assign(new Event(type), fields)) })
 
@@ -152,6 +158,7 @@ describe('ChatView page', () => {
     expect(send).toHaveBeenCalledWith({ kind: 'adoptThread', threadId: 'created' })
     // Until the session confirms, the new thread counts as bound.
     await fire(guest, 'did-navigate-in-page', { url: `${harness.origin}/env/created` })
+    expect(navigations(guest)).toEqual([])
     expect(guest.loadURL).not.toHaveBeenCalled()
     await render(ready({ threadId: 'created' }))
     expect(host.querySelector('webview')).toBe(guest)
@@ -161,15 +168,24 @@ describe('ChatView page', () => {
     await render(ready({ threadId: 'one' }))
     const { guest } = await readyGuest(`${harness.origin}/env/one`)
     await fire(guest, 'did-navigate-in-page', { url: 'https://embedded.example/#x', isMainFrame: false })
-    expect(guest.loadURL).not.toHaveBeenCalled()
+    expect(navigations(guest)).toEqual([])
     await fire(guest, 'did-navigate', { url: `${harness.origin}/env/other` })
-    expect(guest.loadURL).toHaveBeenLastCalledWith(`${harness.origin}/env/one`)
+    expect(navigations(guest)).toEqual(['/env/one'])
     await fire(guest, 'did-navigate', { url: `${harness.origin}/settings/providers` })
     expect(ui.openSettings).toHaveBeenCalledWith('t3 code')
     const prevent = vi.fn()
     await fire(guest, 'will-navigate', { url: `${harness.origin}/pull-requests`, preventDefault: prevent })
     expect(prevent).toHaveBeenCalled()
     expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'adoptThread' }))
+  })
+
+  it('follows a thread another client moved the panel to in place', async () => {
+    await render(ready())
+    const { guest } = await readyGuest()
+    await render(ready({ threadId: 'theirs' }))
+    expect(navigations(guest)).toEqual(['/env/theirs'])
+    expect(guest.loadURL).not.toHaveBeenCalled()
+    expect(host.querySelector('webview')).toBe(guest)
   })
 
   it('reports main document load failures only', async () => {

@@ -6,11 +6,10 @@ mini dock of the same shape. Placement is shared: a drop is one document op
 (`placePanel`, `setNodeRects`, or a batch), and every client of the workspace
 sees it. Which tab of a stack is active is client state.
 
-Maximize and restore are document ops too, so every client sees them.
-`maximizeStack` gathers every tab of a split window into one stack;
-`maximizePanel` moves a canvas pane into the window showing its canvas, after
-the canvas tab. Either saves the window's previous layout as its restore point
-(`DocWindow.maximized`), and `restoreLayout` puts that layout back.
+Maximize is client state, so it changes only what this client draws: a
+maximized window stack is drawn alone in its window, and a maximized canvas
+node fills its canvas's area. The document, and every other client's layout,
+stay as they are.
 
 ## Drag and placement rules
 
@@ -42,20 +41,20 @@ sibling instead of creating an unnecessary nested split. Stacks, splits, nodes
 and detached windows emptied by an op are removed by the runtime as part of
 that op.
 
-## Maximize, restore, and invalidation rules
+## Maximize and restore
 
-Coverage for this table is `src/workspace/document/contract/apply.test.ts`
-(the reducer) and `src/client/layout/dock/DockView.test.tsx` (the button).
+Coverage: `src/client/document/clientState.test.ts` (the state),
+`src/client/layout/dock/DockView.test.tsx` (window stacks) and
+`src/client/layout/canvas/CanvasView.test.tsx` (canvas nodes).
 
-| Starting state | Action | Defined result | Restore point |
-|---|---|---|---|
-| Window dock with a split tree | Maximize a stack (`maximizeStack`) | The whole tree becomes that stack's tabs, in tree order | Saved: the previous tree |
-| Window dock with a single stack | Maximize | Nothing to merge; no button, and the op is rejected | None |
-| Canvas node pane | Maximize (`maximizePanel`) | The pane moves to a tab after its canvas panel; a singleton node is removed | Saved: the window's tree and the node as it was |
-| Maximized window | Restore (`restoreLayout`) | The saved tree comes back, and the node with it, at its current rect if it still exists | Cleared |
-| Maximized window | Any other change to the window's tree, or to the source node's tree (from any client) | The change applies to the maximized layout, which stays | Cleared for good |
-| Maximized window | A split ratio change, a node move or resize, a tab selection | Applies | Kept |
-| Maximized window | Maximize again | No button; the op is rejected (one maximize per window) | Kept |
+| Starting state | Action | Defined result |
+|---|---|---|
+| Window dock with a split tree | Maximize a stack | Only that stack is drawn, filling the window; the other stacks stay mounted, hidden |
+| Window dock with a single stack | Maximize | Nothing to maximize; no button |
+| Canvas node | Maximize (from any of its stacks) | The node's mini dock fills the canvas's area; the canvas stays mounted underneath |
+| Maximized stack or node | Restore | The layout is drawn as the document has it |
+| Maximized stack or node | Any document change, from any client | Applies; the maximize stays while its stack or node exists |
+| Maximized stack or node | Its stack or node is removed | The layout is drawn as it is; nothing to restore |
 
-Undo of a maximize is a restore, and undo of a restore maximizes again. Undo
-of a later edit brings the layout back but not the restore point.
+One stack per window and one node per canvas can be maximized. Maximize is
+not undoable: it never was a document change.

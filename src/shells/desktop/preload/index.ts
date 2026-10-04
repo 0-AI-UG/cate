@@ -144,7 +144,6 @@ const api: DesktopApi = {
     setTitle: (title) => invoke(C.windowSetTitle, title),
     state: () => invoke(C.windowState),
     onState: (listener) => listen(C.windowStateChanged, listener),
-    onBounds: (listener) => listen(C.windowBounds, listener),
     onCloseRequested: (listener) => listen(C.windowCloseRequested, listener),
     anyFullscreen: () => ipcRenderer.sendSync(C.anyFullscreen) === true,
     setZoomFactor: (factor) => {

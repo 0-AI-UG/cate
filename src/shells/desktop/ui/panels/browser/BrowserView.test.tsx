@@ -24,7 +24,7 @@ import { pageHostFor } from './surfaces'
 
 const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'cate://newtab', title: '', favicon: null, pinned: false, nav: 0, navSource: null, ...patch })
 const snapshotOf = (tabs: BrowserTab[], patch: Partial<BrowserSnapshot> = {}): BrowserSnapshot => ({
-  tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' }, zoom: 1,
+  tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' },
   canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null,
   ...patch,
 })
@@ -145,6 +145,17 @@ describe('BrowserView', () => {
     act(() => host.querySelector<HTMLElement>('[title^="B ·"]')?.click())
     expect(shown()).toBe('https://b.test/')
     expect(send).toHaveBeenCalledWith({ kind: 'selectTab', tabId: 't2' })
+  })
+
+  it('mounts a tab\'s page only once this client shows it, then keeps it', () => {
+    const slots = () => [...host.querySelectorAll('[data-browser-webview-slot]')].map((slot) => slot.getAttribute('data-browser-src'))
+    const tabs = [tab({ url: 'https://a.test/' }), tab({ id: 't2', url: 'https://b.test/', title: 'B' })]
+    render(snapshotOf(tabs))
+    render(snapshotOf(tabs, { activeTabId: 't2', activeSource: 'someone-else' }))
+    expect(slots()).toEqual(['https://a.test/'])
+    act(() => host.querySelector<HTMLElement>('[title^="B ·"]')?.click())
+    expect(slots()).toEqual(['https://a.test/', 'https://b.test/'])
+    expect(host.querySelector('webview')?.getAttribute('style')).not.toContain('display')
   })
 
   it('renders internal pages instead of a webview', async () => {

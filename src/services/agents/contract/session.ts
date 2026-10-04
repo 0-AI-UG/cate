@@ -40,6 +40,10 @@ export interface PanelAgentState {
   session: AgentSession | null
   /** When relation context last went with one of its prompts (epoch ms). */
   contextSentAt?: number
+  /** The agent runs without Cate's hooks: no hook came from it and its hook
+   *  files are not installed where it runs, so its status and connected
+   *  panel context do not reach it. */
+  hooksMissing?: true
 }
 
 export type AgentSendResult = { ok: true } | { ok: false; error: string }

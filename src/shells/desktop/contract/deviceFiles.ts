@@ -27,6 +27,9 @@ export function sharedDeviceDocument(name: unknown): SharedDeviceDocument | null
 export interface BootSnapshot {
   /** Main window bounds (main writes them). */
   geometry?: { x: number; y: number; width: number; height: number }
+  /** Detached window bounds on this device, by `<workspaceId>/<windowId>`
+   *  (main writes them). A detached window's position is never shared. */
+  detachedGeometry?: Record<string, { x: number; y: number; width: number; height: number }>
   /** Theme boot cache (main writes it from the client settings). */
   theme?: string
   backgroundColor?: string
@@ -36,4 +39,4 @@ export interface BootSnapshot {
 }
 
 /** Fields of `boot.json` only main writes; a renderer `set` keeps them. */
-export const MAIN_OWNED_BOOT_FIELDS = ['geometry', 'theme', 'backgroundColor', 'appearance'] as const
+export const MAIN_OWNED_BOOT_FIELDS = ['geometry', 'detachedGeometry', 'theme', 'backgroundColor', 'appearance'] as const

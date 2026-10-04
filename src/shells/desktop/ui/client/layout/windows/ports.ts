@@ -10,14 +10,12 @@ export interface WindowRef {
 }
 
 export interface WindowsPort {
-  /** Opens (or raises) a native window showing the document window. `bounds`
-   *  are the shared bounds; the shell clamps them to this device's screens. */
-  open(window: WindowRef & { bounds: Rect }): void
+  /** Opens (or raises) a native window showing the document window. A
+   *  window's position is this device's: the shell puts it where this device
+   *  last had it, else at `bounds` (clamped to this device's screens), else
+   *  where a new window goes. */
+  open(window: WindowRef & { bounds?: Rect }): void
   close(window: WindowRef): void
-  /** The user moved or resized a native window (reported once it settles). */
-  onBoundsChanged(listener: (window: WindowRef, bounds: Rect) => void): () => void
-  /** Another client moved the window. */
-  setBounds?(window: WindowRef, bounds: Rect): void
   /** Brings an open window to the front. */
   focus?(window: WindowRef): void
   /** False while a new window cannot open (a fullscreen main window would put

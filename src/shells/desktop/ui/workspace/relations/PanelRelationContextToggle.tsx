@@ -2,10 +2,11 @@
 // are attached and when they go with a prompt (next message, every message,
 // off). Spelled out while context is armed and for a moment after it was
 // sent; an icon otherwise. Hidden when relations are off, nothing is
-// connected, or the panel's agent has no prompt context hook.
+// connected, or no agent runs in the panel. A warning while the agent cannot
+// take context (no prompt context hook, or its hooks are not installed).
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Waypoints } from 'lucide-react'
+import { AlertTriangle, Waypoints } from 'lucide-react'
 import type { PanelRecord } from '@workspace/document/contract'
 import { compileRelationContext, isExecutionSurface, relationPanelOf, relationPanels } from '@workspace/relations/contract'
 import { relationContextMode, setRelationContextMode } from './actions'
@@ -32,7 +33,8 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
   const mode = relationContextMode(currentPanel.fields)
   const enabled = mode !== 'off'
   const justSent = useJustSent(transport?.sentAt)
-  const expanded = hovered || keyboardFocused || menuOpen || enabled || justSent
+  const blocked = transport?.blocked
+  const expanded = hovered || keyboardFocused || menuOpen || enabled || justSent || !!blocked
 
   const openMenu = async () => {
     if (menuOpen || !compiled) return
@@ -40,6 +42,13 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
     try {
       const count = compiled.relatedPanelIds.length
       const choice = await relationUiPort().showMenu([
+        ...(blocked
+          ? [
+              { label: blocked.reason, enabled: false },
+              ...(blocked.fix ? [{ id: 'fix', label: blocked.fix.label }] : []),
+              { type: 'separator' as const },
+            ]
+          : []),
         { label: `${count} connected panel${count === 1 ? '' : 's'} attached`, enabled: false },
         { type: 'separator' },
         { id: 'once', label: `${mode === 'once' ? '✓ ' : ''}Next message` },
@@ -48,7 +57,9 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
         { type: 'separator' },
         { id: 'preview', label: 'Preview sent context…' },
       ])
-      if (choice === 'once' || choice === 'always' || choice === 'off') {
+      if (choice === 'fix') {
+        blocked?.fix?.run()
+      } else if (choice === 'once' || choice === 'always' || choice === 'off') {
         setRelationContextMode(workspaceId, panel.id, choice)
       } else if (choice === 'preview') {
         await relationUiPort().openTextPreview({
@@ -71,11 +82,13 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
       aria-pressed={enabled}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
-      aria-label={`${compiled.relatedPanelIds.length} connected panels, ${mode === 'once' ? 'next message' : mode === 'always' ? 'every message' : 'off'}`}
-      title="Choose when connected panels are included"
-      className={`inline-flex h-[20px] min-w-0 items-center rounded-full border transition-[border-color,background-color,color,filter] ${enabled
-        ? 'border-focus-blue bg-focus-blue text-white shadow-sm hover:brightness-110'
-        : 'border-subtle bg-surface-3 text-muted hover:border-strong hover:text-primary'}`}
+      aria-label={`${compiled.relatedPanelIds.length} connected panels, ${blocked ? `not sent: ${blocked.label}` : mode === 'once' ? 'next message' : mode === 'always' ? 'every message' : 'off'}`}
+      title={blocked?.reason ?? 'Choose when connected panels are included'}
+      className={`inline-flex h-[20px] min-w-0 items-center rounded-full border transition-[border-color,background-color,color,filter] ${blocked
+        ? 'border-warning bg-warning-tint text-warning hover:brightness-110'
+        : enabled
+          ? 'border-focus-blue bg-focus-blue text-white shadow-sm hover:brightness-110'
+          : 'border-subtle bg-surface-3 text-muted hover:border-strong hover:text-primary'}`}
       style={{
         gap: expanded ? 4 : 0,
         padding: expanded ? '0 6px' : '0 4px',
@@ -91,7 +104,7 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
         void openMenu()
       }}
     >
-      <Waypoints size={11} className="shrink-0" />
+      {blocked ? <AlertTriangle size={11} className="shrink-0" /> : <Waypoints size={11} className="shrink-0" />}
       <span
         className="overflow-hidden whitespace-nowrap text-[10px]"
         style={{
@@ -100,7 +113,7 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
           transition: 'max-width 150ms ease, opacity 150ms ease',
         }}
       >
-        {justSent ? 'Context sent · ' : ''}{compiled.relatedPanelIds.length} panel{compiled.relatedPanelIds.length === 1 ? '' : 's'}{justSent ? '' : ` · ${mode === 'once' ? 'Next' : mode === 'always' ? 'Always' : 'Off'}`}
+        {justSent ? 'Context sent · ' : ''}{compiled.relatedPanelIds.length} panel{compiled.relatedPanelIds.length === 1 ? '' : 's'}{justSent ? '' : ` · ${blocked ? blocked.label : mode === 'once' ? 'Next' : mode === 'always' ? 'Always' : 'Off'}`}
       </span>
     </button>
   )

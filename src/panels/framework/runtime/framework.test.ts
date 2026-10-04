@@ -282,7 +282,7 @@ describe('session host lifecycle', () => {
     const nested = w.factory.createPanel('canvas', { near: onCanvas })!
     expect(placementOf(w.document.get(), nested)?.dock).toEqual({ windowId: MAIN_WINDOW })
     const detached = w.factory.createPanel('terminal', {
-      at: { to: 'window', windowId: 'w2', stackId: 'ws1', bounds: { origin: { x: 0, y: 0 }, size } },
+      at: { to: 'window', windowId: 'w2', stackId: 'ws1' },
     })!
     await w.host.restore()
 

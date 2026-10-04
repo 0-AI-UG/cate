@@ -2,7 +2,8 @@
 // cheap probe (branch, tracked dirty flag, local branches) adaptively: 2 s
 // right after a change, doubling up to 30 s while nothing moves. A probe
 // change, a file change or a kick after a git write reads the full snapshot;
-// subscribers get it when it differs from the last one.
+// subscribers get it when it differs from the last one. File changes git
+// ignores (build output, caches) read nothing.
 
 import type { Logger } from '@kernel/log/contract'
 import { checkoutPathKey, type RepoStatus } from '../contract'
@@ -11,12 +12,16 @@ import type { StatusProbe } from './git'
 export const POLL_MIN_MS = 2_000
 export const POLL_MAX_MS = 30_000
 const FS_DEBOUNCE_MS = 150
+/** Past this many changed paths in one batch, read the snapshot without asking git. */
+const FS_BATCH_MAX = 2_000
 
 export interface StatusMonitorDeps {
   probe(cwd: string): Promise<StatusProbe>
   snapshot(cwd: string): Promise<RepoStatus>
   /** File watcher of the checkout; changes read a fresh snapshot. */
-  watch?: (dir: string, onChange: () => void) => () => void
+  watch?: (dir: string, onChange: (changedPath: string) => void) => () => void
+  /** True when git ignores every one of `paths`; such a batch reads nothing. */
+  allIgnored?: (cwd: string, paths: string[]) => Promise<boolean>
   /** Every new snapshot, after subscribers got it. */
   onSnapshot?: (cwd: string, status: RepoStatus) => void
   log?: Logger
@@ -36,6 +41,8 @@ interface Monitor {
   listeners: Set<(status: RepoStatus) => void>
   timer: ReturnType<typeof setTimeout> | null
   fsTimer: ReturnType<typeof setTimeout> | null
+  /** Paths changed since the last file batch; null once it overflowed. */
+  fsPaths: Set<string> | null
   delay: number
   /** Bumped by every tick and by teardown; a tick whose epoch moved on drops
    *  its result. */
@@ -97,12 +104,30 @@ export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
     void tick(m, true)
   }
 
+  async function flushFileChanges(m: Monitor): Promise<void> {
+    const paths = m.fsPaths
+    m.fsPaths = new Set()
+    if (paths && deps.allIgnored) {
+      let ignored = false
+      try { ignored = await deps.allIgnored(m.cwd, [...paths]) } catch { /* treat as a change */ }
+      // Changes during the check are the next batch's; hold it until now.
+      m.fsTimer = null
+      if (m.closed) return
+      if (m.fsPaths === null || m.fsPaths.size > 0) m.fsTimer = setTimeout(() => void flushFileChanges(m), FS_DEBOUNCE_MS)
+      if (ignored) return
+    } else {
+      m.fsTimer = null
+    }
+    if (!m.closed) kickMonitor(m)
+  }
+
   function close(m: Monitor): void {
     m.closed = true
     m.epoch++
     if (m.timer) clearTimeout(m.timer)
     if (m.fsTimer) clearTimeout(m.fsTimer)
     m.timer = m.fsTimer = null
+    m.fsPaths = new Set()
     m.unwatch?.()
     m.unwatch = null
     monitors.delete(checkoutPathKey(m.cwd))
@@ -118,6 +143,7 @@ export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
           listeners: new Set(),
           timer: null,
           fsTimer: null,
+          fsPaths: new Set(),
           delay: POLL_MIN_MS,
           epoch: 0,
           probeKey: null,
@@ -127,12 +153,14 @@ export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
           closed: false,
         }
         monitors.set(key, created)
-        created.unwatch = deps.watch?.(cwd, () => {
-          if (created.closed || created.fsTimer) return
-          created.fsTimer = setTimeout(() => {
-            created.fsTimer = null
-            if (!created.closed) kickMonitor(created)
-          }, FS_DEBOUNCE_MS)
+        created.unwatch = deps.watch?.(cwd, (changedPath) => {
+          if (created.closed) return
+          if (created.fsPaths) {
+            created.fsPaths.add(changedPath)
+            if (created.fsPaths.size > FS_BATCH_MAX) created.fsPaths = null
+          }
+          if (created.fsTimer) return
+          created.fsTimer = setTimeout(() => void flushFileChanges(created), FS_DEBOUNCE_MS)
         }) ?? null
         m = created
         void tick(created, true)

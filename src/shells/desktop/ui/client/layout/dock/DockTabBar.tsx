@@ -191,7 +191,8 @@ export function DockTabBar(props: DockTabBarProps) {
         const type = record?.type ?? ''
         const decoration = decorations[panelId]
         const definition = panelDefinition(type)
-        const title = record ? record.title || definition?.label || type : ''
+        const recordTitle = record ? record.title || definition?.label || type : ''
+        const title = decoration?.retitle ? decoration.retitle(recordTitle) : recordTitle
         const pill = (
           <TabPill
             key={panelId}

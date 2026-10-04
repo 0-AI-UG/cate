@@ -150,7 +150,11 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
   const [error, setError] = useState<string | null>(null)
   const [idleTry, setIdleTry] = useState(() => !triedIdle.has(connection) && !runs.has(connection))
   const mounted = useRef(true)
-  useEffect(() => () => { mounted.current = false }, [])
+  // Set on every mount: StrictMode unmounts and remounts once in dev.
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   const incompatible = state.kind === 'incompatible' ? state : null
   const version = app?.version ?? ''

@@ -113,8 +113,14 @@ export const codingAgentApi = defineCateApi(
     list: {
       access: 'read',
       handler: 'service',
-      summary: 'List your workers',
+      summary: 'List your workers (a client: every worker)',
       format: 'workers',
+    },
+    agents: {
+      access: 'read',
+      handler: 'service',
+      summary: 'List the agent CLIs a worker can run with here',
+      format: 'prettyJson',
     },
     wait: {
       access: 'read',

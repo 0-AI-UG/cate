@@ -1,15 +1,42 @@
 // The core API the app calls (`MobileCoreMethods`).
 
+import { runtimeFor } from '@kernel/rpc/client'
 import { joinErrorMessage, joinWorkspace } from '@client/workspaces'
-import type { MobileCoreMethod, MobileCoreMethods } from '../contract'
+import { closePanel, createPanel, creatableDefinitions } from '@client/host'
+import { documentStoreFor } from '@client/document'
+import { surfaceChoices, surfaceReplacement } from '@panels/definitions'
+import type { AnyPanelDefinition } from '@panels/framework/contract'
+import { isPanelType } from '@workspace/document/contract'
+import type { MobileCoreMethod, MobileCoreMethods, MobilePanelChoice } from '../contract'
 import type { MobileClient } from './boot'
+import { createActionHandlers } from './actions'
+import type { MobileAgents } from './agents'
+import type { MobileBrowsers } from './browser'
+import type { MobileBuffers } from './buffers'
+import type { MobileChats } from './chat'
+import { loopbackPort, type MobileStreams } from './streams'
 import type { MobileTerminals } from './terminals'
+import type { MobileViews } from './views'
 
 type Handlers = { [M in MobileCoreMethod]: (params: MobileCoreMethods[M]['params']) => Promise<MobileCoreMethods[M]['result']> }
 
-export function createCoreApi(client: MobileClient, terminals: MobileTerminals): Handlers {
+export interface CoreParts {
+  terminals: MobileTerminals
+  views: MobileViews
+  browsers: MobileBrowsers
+  chats: MobileChats
+  buffers: MobileBuffers
+  streams: MobileStreams
+  agents: MobileAgents
+}
+
+const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({ type: definition.type, label: definition.label, icon: definition.icon })
+
+export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers {
   const { workspaces, connections } = client
+  const { terminals, views, browsers, chats, buffers, streams, agents } = parts
   return {
+    ...createActionHandlers(agents),
     async 'workspaces.join'({ input }) {
       try {
         const entry = await joinWorkspace(input, { pair: client.pair, workspaces })
@@ -25,6 +52,14 @@ export function createCoreApi(client: MobileClient, terminals: MobileTerminals):
     },
     async 'workspaces.close'({ workspaceId }) {
       workspaces.close(workspaceId)
+      return null
+    },
+    async 'workspaces.stop'({ workspaceId }) {
+      try {
+        await runtimeFor(workspaceId).runtime.stop()
+      } finally {
+        workspaces.close(workspaceId)
+      }
       return null
     },
     async 'workspaces.retry'({ workspaceId }) {
@@ -53,6 +88,97 @@ export function createCoreApi(client: MobileClient, terminals: MobileTerminals):
     },
     async 'terminal.close'({ terminalId }) {
       terminals.get(terminalId)?.close()
+      return null
+    },
+
+    async 'panel.open'(params) {
+      views.open(params)
+      return null
+    },
+    'panel.op': ({ viewId, op }) => views.op(viewId, op),
+    async 'panel.close'({ viewId }) {
+      views.get(viewId)?.close()
+      return null
+    },
+    async 'panel.creatable'() {
+      return creatableDefinitions().map(choice)
+    },
+    async 'panel.create'({ workspaceId, type }) {
+      return isPanelType(type) ? createPanel(workspaceId, type, {}) : null
+    },
+    'panel.remove': ({ workspaceId, panelId }) => closePanel(workspaceId, panelId),
+    async 'surface.choices'({ workspaceId, panelId }) {
+      const doc = documentStoreFor(workspaceId)?.getSnapshot()
+      return doc ? surfaceChoices(doc, panelId).map(choice) : []
+    },
+    async 'surface.pick'({ workspaceId, panelId, type }) {
+      const store = documentStoreFor(workspaceId)
+      const record = store && isPanelType(type) ? surfaceReplacement(store.getSnapshot(), panelId, type) : null
+      return !!record && store!.propose({ kind: 'replacePanel', record }).ok
+    },
+
+    async 'buffer.open'(params) {
+      buffers.open(params)
+      return null
+    },
+    async 'buffer.edit'({ viewId, from, length, text }) {
+      const buffer = buffers.get(viewId)
+      if (!buffer) throw new Error('The file is not open.')
+      return { text: buffer.edit(from, length, text) }
+    },
+    async 'buffer.close'({ viewId }) {
+      buffers.get(viewId)?.close()
+      return null
+    },
+    async 'files.list'({ workspaceId, path }) {
+      const entries = await runtimeFor(workspaceId).file.readDir({ path })
+      return entries
+        .map(({ name, path, isDirectory }) => ({ name, path, isDirectory }))
+        .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name))
+    },
+    async 'files.url'({ workspaceId, path }) {
+      return (await runtimeFor(workspaceId).file.serveUrl({ path })).url
+    },
+
+    async 'browser.open'(params) {
+      browsers.open(params)
+      return null
+    },
+    async 'browser.navigated'(params) {
+      browsers.navigated(params)
+      return null
+    },
+    async 'browser.loading'(params) {
+      browsers.loading(params)
+      return null
+    },
+    async 'browser.title'(params) {
+      browsers.title(params)
+      return null
+    },
+
+    async 'chat.open'(params) {
+      chats.open(params)
+      return null
+    },
+    'chat.page': async (params) => chats.page(params),
+    'chat.navigation': async (params) => chats.navigation(params),
+    'chat.hostMessage': (params) => chats.hostMessage(params),
+    'chat.conversations': (params) => chats.conversations(params),
+
+    async 'loopback.port'({ url }) {
+      return loopbackPort(url)
+    },
+    async 'stream.open'(params) {
+      await streams.open(params)
+      return null
+    },
+    async 'stream.write'({ streamId, data }) {
+      streams.get(streamId)?.write(data)
+      return null
+    },
+    async 'stream.close'({ streamId }) {
+      streams.get(streamId)?.close()
       return null
     },
   }

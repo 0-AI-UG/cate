@@ -40,3 +40,15 @@ export function t3ChangesScript(changes: { threadId: string; turns: Record<strin
 export function t3SendTextScript(text: string): string {
   return `(async () => (await window.__cateChat?.sendText?.(${JSON.stringify(text)})) === true)()`
 }
+
+/** Moves the page to `url` in place through T3's router (patched to
+ *  `window.__cateRouter`), so the page keeps its state and its stream; a page
+ *  without the router loads `url`. */
+export function t3NavigateScript(url: string): string {
+  const { pathname, search } = new URL(url)
+  return `(() => {
+    const router = window.__cateRouter;
+    if (router) void router.navigate({ href: ${JSON.stringify(pathname + search)}, replace: true });
+    else location.replace(${JSON.stringify(url)});
+  })()`
+}

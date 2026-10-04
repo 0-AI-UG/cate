@@ -31,6 +31,8 @@ import {
   decodeClientMessage,
   decodeRuntimeMessage,
   encodeConnectMessage,
+  type ConnectPush,
+  type ConnectPushResult,
   type ServiceClientMessage,
   type ServiceRuntimeMessage,
 } from '../contract'
@@ -40,6 +42,8 @@ export interface StandInOptions {
   serviceKeys?: KeyPair
   /** Terminate every session here instead of relaying it. */
   mitm?: { keys: KeyPair; createPeer: PeerConnectionFactory }
+  /** Forward pushes: each is recorded and answered with this result. */
+  push?: () => ConnectPushResult
 }
 
 export interface MitmEvent {
@@ -56,6 +60,8 @@ export interface ConnectStandIn {
   online(runtimeId: string): boolean
   /** What the man in the middle managed, per session side. */
   readonly mitmEvents: MitmEvent[]
+  /** Pushes runtimes asked to forward, oldest first. */
+  readonly pushes: Array<{ runtimeId: string; push: ConnectPush }>
   close(): Promise<void>
 }
 
@@ -78,6 +84,7 @@ export async function startConnectStandIn(options: StandInOptions = {}): Promise
   const registrations = new Map<string, Registration>()
   const sessions = new Map<string, Session>()
   const mitmEvents: MitmEvent[] = []
+  const pushes: Array<{ runtimeId: string; push: ConnectPush }> = []
 
   const server = await new Promise<WebSocketServer>((resolve) => {
     const wss: WebSocketServer = new WebSocketServer({ host: '127.0.0.1', port: 0 }, () => resolve(wss))
@@ -117,8 +124,13 @@ export async function startConnectStandIn(options: StandInOptions = {}): Promise
         runtimeId = message.runtimeId
         registrations.get(runtimeId)?.channel.close()
         registrations.set(runtimeId, registration)
-        registration.send({ t: 'registered', iceServers })
+        registration.send({ t: 'registered', iceServers, ...(options.push ? { push: true } : {}) })
         return
+      }
+      if (message.t === 'push') {
+        if (!runtimeId || !options.push) return registration.send({ t: 'pushed', id: message.id, result: 'unavailable' })
+        pushes.push({ runtimeId, push: message.push })
+        return registration.send({ t: 'pushed', id: message.id, result: options.push() })
       }
       const session = sessions.get(message.session)
       if (session && session.runtimeId === runtimeId) session.toClient(message.signal)
@@ -232,6 +244,7 @@ export async function startConnectStandIn(options: StandInOptions = {}): Promise
     bindings: () => new Map(bindings),
     online: (runtimeId) => registrations.has(runtimeId),
     mitmEvents,
+    pushes,
     close: () => new Promise<void>((resolve) => {
       for (const client of server.clients) client.terminate()
       server.close(() => resolve())

@@ -4,6 +4,7 @@ import { installMockClientUi } from '@kernel/interaction/testing'
 import { applyOp, createDocument, MAIN_WINDOW, type WorkspaceDocument } from '@workspace/document/contract'
 import { createNotificationDisplay, onNotificationFocus, runNotificationAction } from './display'
 import { createToastStore } from './toasts'
+import type { AgentNotificationEvent } from '@services/agents/contract'
 
 const h = vi.hoisted(() => ({
   doc: null as WorkspaceDocument | null,
@@ -19,7 +20,7 @@ vi.mock('@client/document', async (importOriginal) => {
   }
 })
 
-const event = { kind: 'agent.needsInput', panelId: 'p1', title: 'Codex needs input', body: 'Codex is waiting.' }
+const event: AgentNotificationEvent = { kind: 'agent.needsInput', panelId: 'p1', title: 'Codex needs input', body: 'Codex is waiting.' }
 const on = { notificationsEnabled: true, notifyOnlyWhenUnfocused: true }
 
 beforeEach(() => {

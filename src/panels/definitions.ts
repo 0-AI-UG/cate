@@ -2,7 +2,7 @@
 // (the surface picker, menus) and build fresh records; the contract test runs
 // `definitionProblems` over it. Adding a type is one import and one entry.
 
-import type { PanelId, PanelRecord, PanelType, WorkspaceDocument } from '@workspace/document/contract'
+import { isCanvasDock, placementOf, type PanelId, type PanelRecord, type PanelType, type WorkspaceDocument } from '@workspace/document/contract'
 import type { AnyPanelDefinition, PanelKit, PanelRecordInit } from './framework/contract'
 import terminal from './terminal/definition'
 import editor from './editor/definition'
@@ -91,4 +91,24 @@ export function freshRecord(doc: WorkspaceDocument, type: PanelType, options: Fr
   else captured = make({ id: newId(), title: options.title, worktreeId: options.worktreeId, fields: definition.fields?.(options) ?? {} })
   const record = captured as PanelRecord | null
   return record && id ? { ...record, id } : record
+}
+
+/** The types a surface can become where it sits. */
+export function surfaceChoices(doc: WorkspaceDocument, surfaceId: PanelId): AnyPanelDefinition[] {
+  const placement = placementOf(doc, surfaceId)
+  const onCanvas = !!placement && isCanvasDock(placement.dock)
+  return creatableDefinitions().filter((definition) => !onCanvas || definition.canLiveOnCanvas)
+}
+
+/** A surface becomes the picked type in place: the record of `type` that
+ *  replaces it (one `replacePanel` op, under the surface's id), or null when
+ *  the type cannot go where the surface sits. The runtime disposes the
+ *  surface session and starts the new one. */
+export function surfaceReplacement(doc: WorkspaceDocument, surfaceId: PanelId, type: PanelType): PanelRecord | null {
+  const definition = panelDefinition(type)
+  const surface = doc.panels[surfaceId]
+  if (!definition?.creation || !surface) return null
+  const placement = placementOf(doc, surfaceId)
+  if (!definition.canLiveOnCanvas && placement && isCanvasDock(placement.dock)) return null
+  return freshRecord(doc, type, surface.worktreeId ? { worktreeId: surface.worktreeId } : {}, surfaceId)
 }

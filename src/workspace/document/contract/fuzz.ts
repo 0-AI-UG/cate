@@ -66,7 +66,7 @@ function randomTarget(doc: WorkspaceDocument, rng: Rng, newId: () => string, can
   if (!doc.windows[MAIN_WINDOW].dock && rng.chance(0.7)) {
     return { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: newId() }
   }
-  return { to: 'window', windowId: newId(), stackId: newId(), bounds: randomRect(rng) }
+  return { to: 'window', windowId: newId(), stackId: newId() }
 }
 
 function randomRecord(rng: Rng, newId: () => string, type: PanelType): PanelRecord {
@@ -125,24 +125,13 @@ export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => stri
   if (roll < 70 && splits.length) {
     return { kind: 'setSplitRatio', splitId: rng.pick(splits), ratios: [1 + rng.int(4), 1 + rng.int(4)] }
   }
-  if (roll < 77 && canvases.length) {
+  if (roll < 81 && canvases.length) {
     const canvas = rng.pick(canvases)
     const nodes = Object.keys(canvas.nodes)
     return { kind: 'setNodeRects', canvasId: canvas.id, rects: [{ nodeId: rng.pick(nodes), rect: randomRect(rng) }] }
   }
-  if (roll < 81 && detached.length) {
-    return { kind: 'setWindowBounds', windowId: rng.pick(detached).id, bounds: randomRect(rng) }
-  }
   if (roll < 83 && detached.length) {
     return { kind: 'closeWindow', windowId: rng.pick(detached).id }
-  }
-  if (roll < 86) {
-    const window = rng.pick(Object.values(doc.windows))
-    if (window.maximized && rng.chance(0.6)) return { kind: 'restoreLayout', windowId: window.id }
-    const onCanvas = panels.filter((p) => 'canvasId' in (placementOf(doc, p.id)?.dock ?? {}))
-    if (onCanvas.length && rng.chance(0.5)) return { kind: 'maximizePanel', id: rng.pick(onCanvas).id }
-    const stacks = window.dock ? dockStacks(window.dock) : []
-    return { kind: 'maximizeStack', windowId: window.id, stackId: stacks.length ? rng.pick(stacks).id : 'no-such-stack' }
   }
   if (roll < 88) {
     return {

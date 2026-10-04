@@ -166,7 +166,9 @@ export interface DesktopApi {
   /** `settings`, `ui-state`, `boot`, `workspaces`, `known-runtimes`. */
   device: DeviceStore
   windows: {
-    /** Opens (or focuses) the native window for a detached document window. */
+    /** Opens (or focuses) the native window for a detached document window,
+     *  where this device last had it, else at `bounds`, else where the OS
+     *  puts a new window. */
     open(ref: DetachedWindowRef & { bounds?: Bounds }): Promise<void>
     close(ref: DetachedWindowRef): Promise<void>
     focus(ref: DetachedWindowRef): Promise<void>
@@ -181,8 +183,6 @@ export interface DesktopApi {
     setTitle(title: string): Promise<void>
     state(): Promise<WindowState>
     onState(listener: (state: WindowState) => void): () => void
-    /** A detached window moved or resized (sent to that window's renderer). */
-    onBounds(listener: (bounds: Bounds) => void): () => void
     /** The user closed this detached window: the renderer applies the
      *  document op; the window closes when its document window goes. */
     onCloseRequested(listener: () => void): () => void
