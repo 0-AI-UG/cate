@@ -40,7 +40,12 @@ export default function ContainerPanel({ panelId, workspaceId, nodeId = '' }: Pa
     [panelId],
   )
 
-  useEffect(() => () => unregisterContainerDockStore(panelId, dockStoreApi), [panelId, dockStoreApi])
+  // Register in the effect too: StrictMode's mount → cleanup → mount would otherwise
+  // leave a mounted container unregistered (the useMemo above only runs once).
+  useEffect(() => {
+    registerContainerDockStore(panelId, dockStoreApi)
+    return () => unregisterContainerDockStore(panelId, dockStoreApi)
+  }, [panelId, dockStoreApi])
 
   // An empty container shows the same surface picker as a fresh split: a
   // 'surface' placeholder tab that is replaced in place by whatever you choose.
