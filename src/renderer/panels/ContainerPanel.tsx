@@ -111,6 +111,7 @@ export default function ContainerPanel({ panelId, workspaceId, nodeId = '' }: Pa
       onClosePanel={handleClosePanel}
       onClosePanels={handleClosePanels}
       excludePanelTypes={excluded}
+      compact
       localOnly
     />
   )
