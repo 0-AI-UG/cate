@@ -1,7 +1,9 @@
 // A WebRTC data channel as a message port, and the offer/answer exchange that
 // opens one. The peer connection comes from a factory: `node-datachannel` in
 // the runtime and on desktop, the platform's own on mobile or in a browser.
-// Signaling goes through whatever carries it (Cate Connect). Pure.
+// Signaling goes through whatever carries it (Cate Connect). ICE picks the
+// path: direct when it can, through a TURN relay among the ICE servers when
+// it cannot. Pure.
 
 import type { MessagePortLike } from '../../security/contract'
 import { createPortCore } from './portCore'
@@ -57,10 +59,32 @@ export interface PeerConnectionLike {
   onicecandidate: ((event: { candidate: { candidate: string; sdpMid?: string | null } | null }) => void) | null
   ondatachannel: ((event: { channel: DataChannelLike }) => void) | null
   onconnectionstatechange: ((event: unknown) => void) | null
+  getStats?(): Promise<{ forEach(callback: (stat: Record<string, unknown>) => void): void }>
   close(): void
 }
 
 export type PeerConnectionFactory = (config: { iceServers: IceServer[] }) => PeerConnectionLike
+
+/** Whether ICE settled on a TURN relay or a direct path; `unknown` without
+ *  stats. Read once the channel is open. */
+export async function connectionPath(peer: PeerConnectionLike): Promise<'direct' | 'relay' | 'unknown'> {
+  const stats = new Map<string, Record<string, unknown>>()
+  try {
+    const report = await peer.getStats?.()
+    report?.forEach((stat) => { if (typeof stat.id === 'string') stats.set(stat.id, stat) })
+  } catch {
+    return 'unknown'
+  }
+  const pairs = [...stats.values()].filter((stat) => stat.type === 'candidate-pair')
+  const selectedId = [...stats.values()].find((stat) => stat.type === 'transport')?.selectedCandidatePairId
+  const pair = pairs.find((p) => p.id === selectedId)
+    ?? pairs.find((p) => p.selected === true)
+    ?? pairs.find((p) => p.nominated === true && p.state === 'succeeded')
+  if (!pair) return 'unknown'
+  const relayed = [pair.localCandidateId, pair.remoteCandidateId]
+    .some((id) => typeof id === 'string' && stats.get(id)?.candidateType === 'relay')
+  return relayed ? 'relay' : 'direct'
+}
 
 export const DATA_CHANNEL_LABEL = 'cate'
 const DEFAULT_TIMEOUT_MS = 20_000
@@ -179,7 +203,7 @@ function negotiate(
       error instanceof DataChannelError ? error : new DataChannelError(error instanceof Error ? error.message : String(error), 'signaling'),
     )
     const timer = setTimeout(
-      () => finish(new DataChannelError('no direct connection within the time limit', 'timeout')),
+      () => finish(new DataChannelError('no connection within the time limit', 'timeout')),
       options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     )
 
@@ -191,7 +215,7 @@ function negotiate(
       })
     }
     peer.onconnectionstatechange = () => {
-      if (peer.connectionState === 'failed') finish(new DataChannelError('direct connection failed', 'failed'))
+      if (peer.connectionState === 'failed') finish(new DataChannelError('connection failed', 'failed'))
       else if (peer.connectionState === 'closed') finish(new DataChannelError('peer connection closed', 'closed'))
     }
 

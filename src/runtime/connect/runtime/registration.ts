@@ -1,15 +1,19 @@
 // The runtime's registration with Cate Connect: one Noise connection to the
 // service, kept open and re-established with backoff. Each incoming session
 // becomes a WebRTC data channel handed to the network peers, which run Noise
-// again inside it with the device's pinned key (architecture 7.6).
+// again inside it with the device's pinned key (architecture 7.6). Each
+// session logs whether it went direct or through the relay, and the bytes it
+// carried when it ends.
 
 import type { Logger } from '@kernel/log/contract'
 import { openSecureChannel, type KeyPair, type MessagePortLike, type SecureChannel } from '../../security/contract'
 import {
   answerDataChannel,
+  connectionPath,
   type IceServer,
   openWebSocket,
   type PeerConnectionFactory,
+  type PeerConnectionLike,
   type SignalMessage,
   type WebSocketFactory,
 } from '../../transports/contract'
@@ -66,7 +70,6 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let delay = minMs
   let stopped = false
-  let iceServers: IceServer[] = []
   let pushes = false
   let nextPushId = 1
   const pendingPushes = new Map<string, (result: ConnectPushResult) => void>()
@@ -93,12 +96,13 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
     delay = Math.min(maxMs, delay * 2)
   }
 
-  const acceptSession = (session: string) => {
+  const acceptSession = (session: string, iceServers: IceServer[]) => {
     const entry: { listener: ((signal: SignalMessage) => void) | null; held: SignalMessage[] } = { listener: null, held: [] }
     sessions.set(session, entry)
+    let peer: PeerConnectionLike | null = null
     void options.peerConnection()
       .then((createPeer) => answerDataChannel({
-        createPeer,
+        createPeer: (config) => (peer = createPeer(config)),
         iceServers,
         timeoutMs: options.sessionTimeoutMs,
         signaling: {
@@ -111,7 +115,7 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
         },
       }))
       .then(
-        (port) => options.onConnection(port),
+        (port) => options.onConnection(options.log && peer ? logSession(port, peer, session, options.log) : port),
         (error: Error) => options.log?.info('cate connect session %s failed: %s', session, error.message),
       )
       .finally(() => sessions.delete(session))
@@ -152,7 +156,6 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
       if (!message) return
       switch (message.t) {
         case 'registered':
-          iceServers = message.iceServers
           pushes = message.push === true
           delay = minMs
           setState({ kind: 'registered' })
@@ -163,7 +166,7 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
           secure.close()
           return
         case 'incoming':
-          acceptSession(message.session)
+          acceptSession(message.session, message.iceServers)
           return
         case 'signal': {
           const entry = sessions.get(message.session)
@@ -214,5 +217,35 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
       open?.close()
       setState({ kind: 'closed' })
     },
+  }
+}
+
+/** Logs the path a session took and, when it ends, the bytes it carried:
+ *  the numbers that size the relay. Counts what the network peer sends and
+ *  receives through its one message listener. */
+function logSession(port: MessagePortLike, peer: PeerConnectionLike, session: string, log: Logger): MessagePortLike {
+  const opened = Date.now()
+  let path = 'unknown'
+  let sent = 0
+  let received = 0
+  void connectionPath(peer).then((found) => {
+    path = found
+    log.info('cate connect session %s: %s', session, path)
+  })
+  port.onClose(() => {
+    log.info('cate connect session %s ended: %s, %d bytes sent, %d received, %ds',
+      session, path, sent, received, Math.round((Date.now() - opened) / 1000))
+  })
+  return {
+    send(message) {
+      sent += message.byteLength
+      port.send(message)
+    },
+    close: () => port.close(),
+    onMessage: (listener) => port.onMessage((message) => {
+      received += message.byteLength
+      listener(message)
+    }),
+    onClose: (listener) => port.onClose(listener),
   }
 }

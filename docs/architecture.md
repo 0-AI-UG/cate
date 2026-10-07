@@ -85,7 +85,7 @@ No UI is shared between shells.
 | **Workspace** | A project (a root path) with its worktrees, panels and layout, served by one runtime. |
 | **Workspace data** | A workspace's own state directory on the runtime's machine (section 7.2). |
 | **Transport** | How a client reaches a runtime: `local` (a socket on the same machine) or `network` (same network, or Cate Connect). A transport never changes what the runtime is or does. |
-| **Cate Connect** | A coordination service we host. It passes connection setup messages so a client and a runtime connect directly. It never carries workspace traffic and is never trusted with it. |
+| **Cate Connect** | A coordination service we host. It passes connection setup messages so a client and a runtime connect directly, and runs a TURN relay for when they cannot. It never sees workspace traffic in the clear and is never trusted with it. |
 | **Pairing** | Connecting a device to a workspace for the first time with a QR code or pairing code. Afterwards both sides know each other's key. |
 | **Capability** | A typed group of runtime methods and streams (`file`, `vcs`, `process`, `server`, `tunnel`, `power`, ...), declared once with `defineCapability`. |
 | **Document** | The shared structure of a workspace: panel records, windows and their dock trees, canvases, relations, worktree metadata. The runtime holds it and orders every change to it. |
@@ -453,7 +453,8 @@ the pieces that make it reachable and secure.
   --connect --json`. Between them a folder browser lists and creates folders
   over the same SSH. The printed pairing link goes through the ordinary join
   (7.7), so afterwards the workspace is a paired one reached through Cate
-  Connect and SSH is not used again. The ssh command line is built in main
+  Connect and SSH is not used again, so the machine needs no inbound port
+  but SSH. The ssh command line is built in main
   from validated fields (destination, port, identity file, jump host), never
   from text the renderer passes.
 - **Pruning.** A daemon started from an install removes installs nothing
@@ -580,22 +581,41 @@ and T3 servers.
   trust boundary (D4).
 - **`network`**, established one of two ways, always wrapped by the security
   layer (7.6):
-  - **Same network**: the runtime listens for WebSocket connections on a LAN
-    port (path `/cate/<runtimeId>`) and advertises `_cate._tcp` over mDNS with `runtimeId` in the TXT
-    record. The pairing payload also carries its addresses, so a client that
-    cannot use mDNS still connects.
+  - **Same network**: the runtime listens for WebSocket connections on a
+    port on every interface (path `/cate/<runtimeId>`), but serves only
+    private addresses: `10/8`, `172.16/12`, `192.168/16`, `100.64/10`
+    (carrier NAT, which Tailscale uses), `169.254/16`, `127/8`, `::1`,
+    `fe80::/10` and `fc00::/7` (`isPrivateAddress` in
+    `runtime/transports/contract`). A connection from any other address is
+    closed before anything is read. It advertises `_cate._tcp` over mDNS
+    with `runtimeId` in the TXT record. The pairing payload also carries its
+    addresses, so a client that cannot use mDNS still connects. Both carry
+    only private addresses, so a machine with none (a cloud VM) advertises
+    nothing and is reached through Cate Connect. One rule holds on every
+    machine; the cost is that a LAN with only global IPv6 addresses falls
+    back to Cate Connect too.
   - **Cate Connect**: the runtime listens on the LAN exactly as for same
-    network, and also keeps a registration with the service, so a device on
+    network (private addresses only), and also keeps a registration with the service, so a device on
     the same network still connects directly. A client asks the service for the runtime; the service relays the WebRTC
     offer, answer and ICE candidates, and a STUN server lets both sides find
-    their public address. Client and runtime then talk over a direct WebRTC
-    data channel. The service never carries workspace traffic.
+    their public address. Client and runtime then talk over a WebRTC data
+    channel. The service hands both sides the session's ICE servers: STUN
+    and its TURN relay, with credentials of their own per session (below).
 - The client side of every transport is in the client core (`client/`
   side), except the raw socket, which each shell provides (the desktop shell
   through Node, the iOS app through its platform).
-- Without a relay, a direct connection can fail when both sides are behind
-  strict NATs; the client then says it could not connect directly and
-  suggests same network.
+- **Relay.** ICE prefers a direct path and falls back to the TURN relay on
+  its own when none works (typical on mobile data behind carrier NAT); there
+  is no Cate logic choosing between them. The relay forwards only the
+  Noise-encrypted data channel, so it is trusted no more than the signaling
+  (7.6). Credentials follow the TURN REST API scheme: the username is the
+  expiry time (an hour ahead), the credential an HMAC-SHA1 of it under a
+  secret the service and the relay share. The runtime logs each session's
+  path (`direct` or `relay`) and, when it ends, the bytes it carried. Only
+  when ICE finds no path at all, relay included, does the client say it
+  could not connect and suggest same network.
+- The runtime's WebRTC (`node-datachannel`, libjuice) uses TURN over UDP
+  only; the iOS web view also uses TURN over TCP.
 
 ### 7.6 Security
 
@@ -621,7 +641,15 @@ pure-JS Noise implementation), so the iOS app uses the same code.
   fingerprint the signaling carried, and Cate Connect does the signaling.
   Running Noise inside the channel with pinned keys means a compromised or
   impersonated Cate Connect can deny service but cannot read or inject
-  anything. The LAN WebSocket needs no TLS certificates for the same reason.
+  anything. The same holds for its TURN relay: a relayed session is the same
+  Noise channel, so the relay sees only ciphertext, sizes and timing. The LAN WebSocket needs no TLS certificates for the same reason.
+- **Before a key is known.** Until a connection's key is proven paired
+  (or pairs), the runtime accepts frames of at most 16 KiB, enough for
+  `pair` or a `hello`, and raises the limit to the default (64 MiB)
+  afterwards. It holds at most 32 such connections, and at most 4 from one
+  remote address on the same-network listener; more are closed at once. An
+  unknown key has 10 s to send `pair`. The refusal to an unpaired device
+  names no version.
 - **Revocation.** The workspace's settings page lists its paired devices
   live (`pairing.watch`, so a device paired or removed from another client
   shows at once). Removing
@@ -662,7 +690,7 @@ connected client or by `cate serve`.
   and burns the secret; the client pins the runtime key under its
   `runtimeId` in `known-runtimes.json`. A wrong proof burns the secret too.
 - **Afterwards** both sides reconnect by key; no code is needed again.
-- **Cate Connect** (registry, signaling, STUN) lives in its own repository and
+- **Cate Connect** (registry, signaling, STUN, TURN relay) lives in its own repository and
   is deployed separately. This repository holds only its client,
   **`runtime/connect`**: the runtime's registration and connection setup on
   both sides, written against the service's protocol. The runtime registers
@@ -1400,6 +1428,8 @@ Terminals and agents start dev servers on the runtime's machine, so in the
 browser and chat panels `localhost` means the runtime's machine on every
 client (D10). This is what makes a shared `http://localhost:3000` the same page
 for everyone, and what lets a network client open the chat panel's T3 UI.
+A dev server therefore never needs to listen on `0.0.0.0`: `localhost` is
+the runtime's machine on every client.
 
 - **Which hosts.** `localhost`, `*.localhost`, `127.0.0.0/8`, `0.0.0.0`,
   `[::1]` and `[::]`, any port (`isLoopbackHostname` in
@@ -1779,9 +1809,6 @@ client's e2e hooks. The Cate Connect service is not in this repository.
 
 Not decided, and deliberately left open:
 
-- **Strict NATs.** Without a relay, some networks cannot connect directly
-  through Cate Connect. Whether that ever needs an answer beyond "use same
-  network".
 - **Browser mirroring.** What an agent does inside a page is visible only on
   the driving client. Whether viewers should later see it mirrored.
 - **Carrying settings between workspaces.** Every workspace starts from

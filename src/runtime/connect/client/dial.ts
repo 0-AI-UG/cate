@@ -1,6 +1,7 @@
 // Client side of Cate Connect: ask the service for the runtime, trade the
-// WebRTC offer, answer and candidates through it, and hand back the direct
-// data channel. The caller then runs Noise inside it with the pinned key
+// WebRTC offer, answer and candidates through it, and hand back the data
+// channel (direct, or through the service's TURN relay when ICE finds no
+// direct path). The caller then runs Noise inside it with the pinned key
 // (`openSecureConnection` in runtime/transports), so the service cannot read
 // or inject anything even if it lies. Portable: WebSocket and peer
 // connection come from the shell.
@@ -19,7 +20,7 @@ import {
   CateConnectError,
   connectEndpoint,
   decodeServiceClientMessage,
-  DIRECT_CONNECTION_FAILED,
+  CONNECTION_FAILED,
   encodeConnectMessage,
   type ClientMessage,
   type ServiceClientMessage,
@@ -107,7 +108,7 @@ export async function lookupRuntime(options: Omit<CateConnectOptions, 'createPee
   }
 }
 
-/** Opens a direct data channel to the runtime through Cate Connect signaling. */
+/** Opens a data channel to the runtime through Cate Connect signaling. */
 export async function dialCateConnect(options: CateConnectOptions): Promise<MessagePortLike> {
   const link = await openService(options)
   try {
@@ -134,7 +135,7 @@ export async function dialCateConnect(options: CateConnectOptions): Promise<Mess
         },
       })
     } catch (error) {
-      if (error instanceof DataChannelError) throw new CateConnectError('direct-failed', DIRECT_CONNECTION_FAILED)
+      if (error instanceof DataChannelError) throw new CateConnectError('no-path', CONNECTION_FAILED)
       throw error
     } finally {
       offMessages()

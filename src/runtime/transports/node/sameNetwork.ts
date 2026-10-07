@@ -6,6 +6,7 @@ import { Bonjour, type Service } from 'bonjour-service'
 import WebSocket from 'ws'
 import {
   formatAddress,
+  isPrivateAddress,
   MDNS_RUNTIME_ID_KEY,
   MDNS_SERVICE_TYPE,
   NETWORK_MAX_MESSAGE,
@@ -17,14 +18,16 @@ import {
 export const nodeWebSocketFactory: WebSocketFactory = (url) =>
   new WebSocket(url, { maxPayload: NETWORK_MAX_MESSAGE }) as unknown as WebSocketLike
 
-/** This machine's LAN addresses: non-internal IPv4, or IPv6 (not link-local)
- *  when there is no IPv4. Few addresses keep the pairing QR code small. */
-export function lanAddresses(port: number): string[] {
+/** This machine's LAN addresses: private, non-internal IPv4, or private IPv6
+ *  (not link-local) when there is no IPv4. Public addresses are left out, as
+ *  the listener serves no one there; a machine with none (a cloud VM) has
+ *  none. Few addresses keep the pairing QR code small. */
+export function lanAddresses(port: number, interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): string[] {
   const v4: string[] = []
   const v6: string[] = []
-  for (const entries of Object.values(os.networkInterfaces())) {
+  for (const entries of Object.values(interfaces)) {
     for (const entry of entries ?? []) {
-      if (entry.internal) continue
+      if (entry.internal || !isPrivateAddress(entry.address)) continue
       if (entry.family === 'IPv4') v4.push(formatAddress(entry.address, port))
       else if (!entry.address.toLowerCase().startsWith('fe80')) v6.push(formatAddress(entry.address, port))
     }

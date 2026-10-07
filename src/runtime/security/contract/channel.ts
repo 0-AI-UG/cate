@@ -22,6 +22,8 @@ export interface SecureChannel {
   onFrame(listener: (frame: Uint8Array) => void): () => void
   onClose(listener: (error?: Error) => void): () => void
   close(error?: Error): void
+  /** Changes the largest reassembled frame accepted from now on. */
+  setMaxFrameBytes(bytes: number): void
   readonly closed: boolean
 }
 
@@ -41,7 +43,7 @@ export const MAX_CHUNK = NOISE_MAX_MESSAGE - TAGLEN - 1
 const LAST = 1
 const MORE = 0
 const DEFAULT_TIMEOUT_MS = 15_000
-const DEFAULT_MAX_FRAME = 64 * 1024 * 1024
+export const DEFAULT_MAX_FRAME = 64 * 1024 * 1024
 
 export class SecureChannelError extends Error {}
 
@@ -117,8 +119,12 @@ class Channel implements SecureChannel {
     private readonly receiver: CipherState,
     readonly remoteStatic: Uint8Array,
     readonly handshakeHash: Uint8Array,
-    private readonly maxFrame: number,
+    private maxFrame: number,
   ) {}
+
+  setMaxFrameBytes(bytes: number): void {
+    this.maxFrame = bytes
+  }
 
   send(frame: Uint8Array): void {
     if (this.closed) throw new SecureChannelError('channel closed')

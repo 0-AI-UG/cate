@@ -8,7 +8,7 @@ import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { fingerprint, generateKeyPair, type KeyPair } from '../security/contract'
+import { createMemoryPortPair, fingerprint, generateKeyPair, type KeyPair, type MemoryPort } from '../security/contract'
 import { connectToRuntime } from '../security/client'
 import { decodePairingUri, parsePairingCode } from '../pairing/contract'
 import { KnownRuntimes, pairWithRuntime, PairingError } from '../pairing/client'
@@ -153,8 +153,38 @@ describe('same network', () => {
     const client = rpcClient(stranger)
     const attached = client.attach(frames)
     await expect(attached).rejects.toThrow()
+    // The refusal tells an unpaired key nothing about the runtime.
+    expect(client.remote?.error).toBeTruthy()
+    expect(client.remote?.version).toBe('')
     expect(peers.connected()).toHaveLength(0)
     expect(pairing.list()).toEqual([])
+  })
+
+  it('caps connections not yet proven paired, by source and in all', async () => {
+    const idle: MemoryPort[] = []
+    // A connection that never completes the handshake.
+    const stall = (source?: string) => {
+      const [a, b] = createMemoryPortPair()
+      idle.push(a)
+      void peers.accept(b, source)
+      return b
+    }
+    try {
+      for (let i = 0; i < 4; i++) stall('10.0.0.9')
+      expect(stall('10.0.0.9').closed).toBe(true)
+      // Another address, a paired device here, still connects.
+      const phone = device()
+      await pairByQr(phone)
+      const { frames } = await connectByKey(phone)
+      const client = rpcClient(phone)
+      await client.attach(frames)
+      expect(await createCapabilityProxy(client, pingCap).ping()).toBe('pong')
+
+      for (let i = 0; i < 28; i++) expect(stall().closed).toBe(false)
+      expect(stall().closed).toBe(true)
+    } finally {
+      for (const port of idle) port.close()
+    }
   })
 
   it('gives an unknown key one attempt: a wrong proof is refused, closes, and burns the secret', async () => {

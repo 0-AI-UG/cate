@@ -10,6 +10,12 @@
 //   data channel is open the client hangs up; the service never carries
 //   workspace traffic.
 //
+// ICE servers come with `opened` (client) and `incoming` (runtime), fresh for
+// each session: STUN, and a TURN relay with short-lived credentials when the
+// service has one. ICE prefers a direct path and falls back to the relay; the
+// relay only ever carries the Noise-encrypted data channel. `registered` and
+// `lookup` carry them too.
+//
 // A registered runtime may also ask the service to deliver a push to a
 // paired device (`push`), when `registered` said the service sends pushes.
 // The payload is sealed for the device; the service only delivers it.
@@ -58,7 +64,7 @@ export type ServiceRuntimeMessage =
   | { t: 'registered'; iceServers: IceServer[]; push?: boolean }
   | { t: 'pushed'; id: string; result: ConnectPushResult }
   | { t: 'refused'; reason: RegisterRefusal }
-  | { t: 'incoming'; session: string }
+  | { t: 'incoming'; session: string; iceServers: IceServer[] }
   | { t: 'signal'; session: string; signal: SignalMessage }
   | { t: 'ended'; session: string }
 
@@ -152,7 +158,8 @@ export function decodeServiceRuntimeMessage(bytes: Uint8Array): ServiceRuntimeMe
       return isString(m.id) && PUSH_RESULTS.includes(m.result as ConnectPushResult) ? { t: 'pushed', id: m.id, result: m.result as ConnectPushResult } : null
     case 'refused':
       return m.reason === 'key-mismatch' || m.reason === 'malformed' || m.reason === 'protocol' ? { t: 'refused', reason: m.reason } : null
-    case 'incoming': return isString(m.session) ? { t: 'incoming', session: m.session } : null
+    case 'incoming':
+      return isString(m.session) && isIceServers(m.iceServers) ? { t: 'incoming', session: m.session, iceServers: m.iceServers } : null
     case 'ended': return isString(m.session) ? { t: 'ended', session: m.session } : null
     case 'signal': return isString(m.session) && isSignal(m.signal) ? { t: 'signal', session: m.session, signal: m.signal } : null
     default: return null

@@ -130,7 +130,7 @@ export class PairingService implements PeerPolicy {
    * it was for.
    */
   async pairUnknown(channel: SecureChannel): Promise<boolean> {
-    const frame = await firstFrame(channel, this.options.pairTimeoutMs ?? 30_000)
+    const frame = await firstFrame(channel, this.options.pairTimeoutMs ?? 10_000)
     if (!frame) return false
     const request = decodePairMessage(frame)
     // Not the pairing protocol at all: a client whose key is not (or no

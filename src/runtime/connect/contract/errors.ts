@@ -1,4 +1,4 @@
-export type CateConnectErrorCode = 'unreachable' | 'offline' | 'refused' | 'direct-failed' | 'protocol'
+export type CateConnectErrorCode = 'unreachable' | 'offline' | 'refused' | 'no-path' | 'protocol'
 
 export class CateConnectError extends Error {
   constructor(readonly code: CateConnectErrorCode, message: string) {
@@ -6,5 +6,6 @@ export class CateConnectError extends Error {
   }
 }
 
-/** What the user sees when no direct path exists (no relay, by design). */
-export const DIRECT_CONNECTION_FAILED = 'Could not connect directly; try same network.'
+/** What the user sees when ICE found no path, neither direct nor through the
+ *  service's TURN relay. */
+export const CONNECTION_FAILED = 'Could not connect through Cate Connect; try same network.'

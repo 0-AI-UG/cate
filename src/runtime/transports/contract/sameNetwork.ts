@@ -39,3 +39,29 @@ export function preferredPort(runtimeId: string): number {
   for (let i = 0; i < runtimeId.length; i++) hash = (hash * 31 + runtimeId.charCodeAt(i)) >>> 0
   return 49_152 + (hash % 16_384)
 }
+
+/**
+ * Whether a peer address is on a private network: RFC 1918, CGNAT (which
+ * Tailscale uses), link-local, loopback, and IPv6 loopback, link-local and
+ * unique local. The same-network listener serves only these.
+ */
+export function isPrivateAddress(ip: string): boolean {
+  let address = ip.trim().toLowerCase().replace(/%.*$/, '')
+  if (address.startsWith('::ffff:') && address.includes('.')) address = address.slice('::ffff:'.length)
+  if (address.includes('.')) {
+    const parts = address.split('.')
+    if (parts.length !== 4 || !parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) return false
+    const [a, b] = parts.map(Number)
+    return a === 10
+      || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 168)
+      || (a === 100 && b >= 64 && b <= 127)
+      || (a === 169 && b === 254)
+      || a === 127
+  }
+  if (address === '::1') return true
+  const first = address.split(':')[0]
+  if (!/^[0-9a-f]{1,4}$/.test(first)) return false
+  const hextet = parseInt(first, 16)
+  return (hextet >= 0xfe80 && hextet <= 0xfebf) || (hextet >= 0xfc00 && hextet <= 0xfdff)
+}

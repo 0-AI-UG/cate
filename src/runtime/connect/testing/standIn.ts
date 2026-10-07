@@ -175,7 +175,7 @@ export async function startConnectStandIn(options: StandInOptions = {}): Promise
             registration.send({ t: 'ended', session: id })
           },
         })
-        registration.send({ t: 'incoming', session: id })
+        registration.send({ t: 'incoming', session: id, iceServers })
       }
       send({ t: 'opened', session: id, iceServers })
     })
@@ -202,7 +202,7 @@ export async function startConnectStandIn(options: StandInOptions = {}): Promise
       end: () => sessions.delete(runtimeSession),
     }
     sessions.set(runtimeSession, runtimeHandler)
-    registration.send({ t: 'incoming', session: runtimeSession })
+    registration.send({ t: 'incoming', session: runtimeSession, iceServers })
     const runtimeSide = offerDataChannel({
       createPeer: mitm.createPeer,
       iceServers,

@@ -10,19 +10,19 @@ import path from 'node:path'
 import { framePortOver } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
-import { createLogger, installLogSink, nullSink } from '@kernel/log/contract'
+import { createLogger, installLogSink, nullSink, type LogRecord } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { fingerprint, generateKeyPair, type KeyPair } from '../security/contract'
+import { fingerprint, generateKeyPair, type KeyPair, type MessagePortLike } from '../security/contract'
 import { PinMismatchError } from '../security/client'
 import { decodePairingUri, pairingCapability, parsePairingCode } from '../pairing/contract'
 import { encodeBase64, openPushMessage, pushCapability } from '../push/contract'
 import { KnownRuntimes, PairingError } from '../pairing/client'
-import type { PeerConnectionFactory } from '../transports/contract'
+import type { IceServer, PeerConnectionFactory } from '../transports/contract'
 import { openSecureConnection } from '../transports/client'
 import { dialLocal, loadNodePeerConnection, nodeWebSocketFactory } from '../transports/node'
 import { runtimeCapability } from '../daemon/contract'
 import { serveWorkspace, type Daemon } from '../daemon/entry'
-import { CateConnectError, DIRECT_CONNECTION_FAILED } from './contract'
+import { CateConnectError, CONNECTION_FAILED } from './contract'
 import { dialCateConnect, lookupRuntime } from './client'
 import { startConnectRegistration, type ConnectRegistration, type RegistrationState } from './runtime'
 import { startConnectStandIn, type ConnectStandIn } from './testing/standIn'
@@ -175,7 +175,42 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     expect(service.bindings().size).toBe(1)
   }, 20_000)
 
-  it('says it could not connect directly when no data channel opens', async () => {
+  it('hands both sides the ICE servers of the session, and logs its path and bytes', async () => {
+    const iceServers: IceServer[] = [{ urls: 'turn:relay.test:3478', username: '1700000000', credential: 'c2VjcmV0' }]
+    const service = await standIn({ iceServers })
+    const records: LogRecord[] = []
+    installLogSink((record) => records.push(record))
+    // Each side records what it was given, then connects over host candidates.
+    const given: { side: string; iceServers: IceServer[] }[] = []
+    const recording = (side: string): PeerConnectionFactory => (config) => {
+      given.push({ side, iceServers: config.iceServers })
+      return createPeer({ iceServers: [] })
+    }
+    const echo = startConnectRegistration({
+      url: service.url,
+      runtimeId: 'relayrelayrelayr',
+      runtimeKeys: generateKeyPair(),
+      webSocket: nodeWebSocketFactory,
+      peerConnection: async () => recording('runtime'),
+      onConnection: (port) => { port.onMessage((message) => port.send(message)) },
+      log: createLogger('connect'),
+    })
+    registrations.push(echo)
+    await registered(echo)
+    const port: MessagePortLike = await dialCateConnect({
+      url: service.url, runtimeId: 'relayrelayrelayr', webSocket: nodeWebSocketFactory, createPeer: recording('client'),
+    })
+    const back = new Promise<Uint8Array>((resolve) => port.onMessage(resolve))
+    port.send(new Uint8Array(5))
+    expect((await back).byteLength).toBe(5)
+    port.close()
+    expect(given).toEqual(expect.arrayContaining([{ side: 'runtime', iceServers }, { side: 'client', iceServers }]))
+    await expect.poll(() => records.map((r) => r.message), { timeout: 10_000 }).toContain('cate connect session %s ended: %s, %d bytes sent, %d received, %ds')
+    const ended = records.find((r) => r.message.includes('ended'))!
+    expect(ended.args.slice(1, 4)).toEqual(['direct', 5, 5])
+  }, 20_000)
+
+  it('says it could not connect when no data channel opens', async () => {
     const service = await standIn()
     const runtimeKeys = generateKeyPair()
     // Registered, but never answers an offer.
@@ -191,7 +226,7 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     await registered(silent)
     const error = await dial(service, 'silentsilentsile', 1_500).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(CateConnectError)
-    expect(error).toMatchObject({ code: 'direct-failed', message: DIRECT_CONNECTION_FAILED })
+    expect(error).toMatchObject({ code: 'no-path', message: CONNECTION_FAILED })
     await expect(dial(service, 'offlineofflineof')).rejects.toMatchObject({ code: 'offline' })
   }, 20_000)
 

@@ -23,12 +23,17 @@ export interface NetworkPeersOptions {
   pairing: NetworkPairing
   log?: Logger
   handshakeTimeoutMs?: number
+  /** Connections not yet proven paired, in all. Default 32. */
+  maxUnproven?: number
+  /** Of those, from one remote address. Default 4. */
+  maxUnprovenPerSource?: number
 }
 
 export interface NetworkPeers {
   /** Secures and serves one incoming connection. Resolves once it is served
-   *  or refused; a refusal closes the port. */
-  accept(port: MessagePortLike): Promise<void>
+   *  or refused; a refusal closes the port. `source` is the remote address,
+   *  where the transport knows one. */
+  accept(port: MessagePortLike, source?: string): Promise<void>
   /** Live connections by device (hex public key). */
   connected(): string[]
   /** Drops every network connection (network access turned off). */
@@ -38,6 +43,11 @@ export interface NetworkPeers {
 
 export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
   const live = new Map<SecureChannel, string>()
+  const maxUnproven = options.maxUnproven ?? 32
+  const maxPerSource = options.maxUnprovenPerSource ?? 4
+  // Connections between accept and a proven key, in all and by source.
+  let unproven = 0
+  const unprovenBySource = new Map<string, number>()
 
   const offRevoked = options.pairing.onRevoked((publicKey) => {
     for (const [channel, key] of live) {
@@ -46,7 +56,15 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
   })
 
   return {
-    async accept(port) {
+    async accept(port, source) {
+      const fromSource = source === undefined ? 0 : unprovenBySource.get(source) ?? 0
+      if (unproven >= maxUnproven || fromSource >= maxPerSource) {
+        options.log?.info('refused a network connection: too many unpaired connections')
+        port.close()
+        return
+      }
+      unproven++
+      if (source !== undefined) unprovenBySource.set(source, fromSource + 1)
       let channel: SecureChannel
       try {
         channel = await acceptPeer(port, {
@@ -58,6 +76,13 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
       } catch (error) {
         options.log?.info('refused a network connection: %s', (error as Error).message)
         return
+      } finally {
+        unproven--
+        if (source !== undefined) {
+          const left = (unprovenBySource.get(source) ?? 1) - 1
+          if (left > 0) unprovenBySource.set(source, left)
+          else unprovenBySource.delete(source)
+        }
       }
       const key = bytesToHex(channel.remoteStatic)
       // A revoke can land while the handshake runs.
@@ -84,7 +109,8 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
 
 /**
  * Answers an unpaired (never paired or removed) device's hello with a
- * refusal, so its client stops retrying and says why.
+ * refusal, so its client stops retrying and says why. It names no version:
+ * an unpaired peer learns nothing about the runtime.
  */
 function refuse(channel: SecureChannel, rpc: RpcServer): void {
   secureFramePort(channel).send({
@@ -92,7 +118,7 @@ function refuse(channel: SecureChannel, rpc: RpcServer): void {
     msg: {
       t: 'hello',
       protocol: rpc.protocol,
-      version: rpc.opts.version,
+      version: '',
       error: toWireError(new RpcError('rejected', 'This device is not paired with this workspace')),
     },
   })

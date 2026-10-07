@@ -1,9 +1,13 @@
 // Runtime side of the same-network transport: a WebSocket server on a LAN
-// port, advertised over mDNS. Connections go to the network peers, which
-// secure them before anything else is read.
+// port, advertised over mDNS. It serves private addresses only; any other
+// connection is closed before anything is read. Connections go to the
+// network peers, which secure them before anything else is read.
 
+import http from 'node:http'
+import type { IncomingMessage } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import {
+  isPrivateAddress,
   NETWORK_MAX_MESSAGE,
   preferredPort,
   sameNetworkPath,
@@ -24,6 +28,8 @@ export interface SameNetworkOptions {
   advertise?: boolean
   /** The addresses to hand out. Default: this machine's LAN addresses. */
   addresses?: (port: number) => string[]
+  /** Whether to serve a peer at this address. Default: private addresses only. */
+  isAllowed?: (remoteAddress: string) => boolean
   onError?: (error: Error) => void
 }
 
@@ -41,14 +47,16 @@ export async function serveSameNetwork(options: SameNetworkOptions): Promise<Sam
       return listen(options, 0)
     })
   const port = (server.address() as { port: number }).port
+  const addresses = () => (options.addresses ?? lanAddresses)(port)
 
-  server.on('connection', (socket: WebSocket) => {
-    void options.peers.accept(webSocketPort(socket as unknown as WebSocketLike))
+  server.on('connection', (socket: WebSocket, request: IncomingMessage) => {
+    void options.peers.accept(webSocketPort(socket as unknown as WebSocketLike), request.socket.remoteAddress)
   })
   server.on('error', (error) => options.onError?.(error))
 
   let advertisement: Advertisement | null = null
-  if (options.advertise !== false) {
+  // No private address (a cloud VM): nothing on the network could reach it.
+  if (options.advertise !== false && addresses().length > 0) {
     try {
       advertisement = advertiseRuntime({ runtimeId: options.runtimeId, port, onError: options.onError })
     } catch (error) {
@@ -58,20 +66,28 @@ export async function serveSameNetwork(options: SameNetworkOptions): Promise<Sam
 
   return {
     port,
-    addresses: () => (options.addresses ?? lanAddresses)(port),
+    addresses,
     async close() {
       await advertisement?.stop().catch(() => {})
       for (const client of server.clients) client.terminate()
+      const httpServer = server.options.server as http.Server
       await new Promise<void>((resolve) => server.close(() => resolve()))
+      httpServer.closeAllConnections()
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()))
     },
   }
 }
 
 function listen(options: SameNetworkOptions, port: number): Promise<WebSocketServer> {
   return new Promise((resolve, reject) => {
+    const isAllowed = options.isAllowed ?? isPrivateAddress
+    const httpServer = http.createServer()
+    // Ahead of the HTTP parser, so a refused peer gets nothing read.
+    httpServer.prependListener('connection', (socket) => {
+      if (!isAllowed(socket.remoteAddress ?? '')) socket.destroy()
+    })
     const server = new WebSocketServer({
-      host: options.host,
-      port,
+      server: httpServer,
       maxPayload: NETWORK_MAX_MESSAGE,
       perMessageDeflate: false,
       // A stale address that now belongs to another runtime refuses the
@@ -87,5 +103,6 @@ function listen(options: SameNetworkOptions, port: number): Promise<WebSocketSer
       server.off('error', onError)
       resolve(server)
     })
+    httpServer.listen(port, options.host)
   })
 }
